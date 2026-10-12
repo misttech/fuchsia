@@ -9,6 +9,7 @@ import("BUILD.generated_tests.gni")
 ################################################################################
 # Public targets
 
+# LINT.IfChange(boringssl_groups)
 group("boringssl") {
   public_deps = [
     ":crypto",
@@ -30,6 +31,9 @@ group("boringssl-static") {
   ]
 }
 
+# LINT.ThenChange(BUILD.bazel:boringssl_groups)
+
+# LINT.IfChange(crypto_sources)
 crypto_sources += crypto_sources_asm
 
 # TODO(https://fxbug.dev/42122741): remove this added source.
@@ -37,6 +41,8 @@ crypto_sources += [ "src/decrepit/xts/xts.cc" ]
 
 # TODO(https://fxbug.dev/42122741): Required for TPM2.0 TSS Library //third_party/tpm2-tss.
 crypto_sources += [ "src/decrepit/cfb/cfb.cc" ]
+
+# LINT.ThenChange(BUILD.bazel:crypto_sources)
 
 ################
 # libcrypto.so #
@@ -57,6 +63,7 @@ if (is_kernel) {
 }
 
 foreach(lib_type, lib_types) {
+  # LINT.IfChange(crypto_targets)
   target("${lib_type}_library", "crypto-${lib_type}") {
     if (default_library_type == "${lib_type}_library") {
       output_name = "crypto"
@@ -87,6 +94,9 @@ foreach(lib_type, lib_types) {
     }
   }
 
+  # LINT.ThenChange(BUILD.bazel:crypto_targets)
+
+  # LINT.IfChange(ssl_targets)
   target("${lib_type}_library", "ssl-${lib_type}") {
     if (default_library_type == "${lib_type}_library") {
       output_name = "ssl"
@@ -115,8 +125,11 @@ foreach(lib_type, lib_types) {
       configs += [ "//build/config:optimize_speed" ]
     }
   }
+
+  # LINT.ThenChange(BUILD.bazel:ssl_targets)
 }
 
+# LINT.IfChange(lib_aliases)
 foreach(lib_name, lib_names) {
   group("$lib_name") {
     if (default_library_type == "shared_library") {
@@ -128,6 +141,8 @@ foreach(lib_name, lib_names) {
     }
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:lib_aliases)
 
 if (!is_kernel) {
   import("//build/fuzz.gni")
@@ -422,6 +437,7 @@ if (!is_kernel) {
 
 # Note that //zircon/kernel/lib/crypto/boringssl/BUILD.gn uses this config but
 # it doesn't use the rest of this file's targets or configs for kernel cases.
+# LINT.IfChange(boringssl_config)
 config("boringssl_config") {
   include_dirs = [
     "fuchsia/include",
@@ -446,10 +462,16 @@ config("boringssl_config") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel:boringssl_config)
+
+# LINT.IfChange(export_symbols)
 config("export_symbols") {
   defines = [ "BORINGSSL_IMPLEMENTATION" ]
 }
 
+# LINT.ThenChange(BUILD.bazel:export_symbols)
+
+# LINT.IfChange(internal_config)
 config("internal_config") {
   visibility = [ ":*" ]
   defines = [
@@ -470,6 +492,8 @@ config("internal_config") {
     configs += [ "//build/config/fuchsia:static_cpp_standard_library" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:internal_config)
 
 config("test_config") {
   visibility = [ ":*" ]

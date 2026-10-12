@@ -1,0 +1,321 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library", "cc_shared_library")
+load("@rules_license//rules:license.bzl", "license")
+load(
+    ":BUILD.generated.bzl",
+    "crypto_headers",
+    "crypto_internal_headers",
+    "crypto_sources",
+    "crypto_sources_asm",
+    "fips_fragments",
+    "ssl_headers",
+    "ssl_internal_headers",
+    "ssl_sources",
+)
+
+package(default_applicable_licenses = [":license"])
+
+license(
+    name = "license",
+    package_name = "BoringSSL",
+    license_kinds = [
+        "@rules_license//licenses/spdx:Apache-2.0",
+    ],
+    license_text = "src/LICENSE",
+    visibility = [":__subpackages__"],
+)
+
+exports_files(["src/LICENSE"])
+
+# LINT.IfChange(boringssl_config)
+# Cannot be migrated to build_flags() because build_flags() does not support
+# public_configs-style propagation of include directories to dependents;
+# cc_library(includes = ...) is required to propagate header search paths via
+# CcInfo and to pass include paths to .S assembly actions.
+_BORINGSSL_INCLUDES = [
+    "fuchsia/include",
+    "src/include",
+]
+
+# TODO(https://fxbug.dev/572563685): Migrate _BORINGSSL_COPTS and
+# _BORINGSSL_CXXOPTS to build_flags() once fx_cc_library() supports .S assembly
+# preprocessing flags.
+_BORINGSSL_COPTS = [
+    "-Wno-conversion",
+    "-Wno-unused-but-set-variable",
+    "-Wno-unused-function",
+    "-Wno-extra-semi",
+]
+
+_BORINGSSL_CXXOPTS = [
+    "-Wno-deprecated-copy",
+    "-Wno-deprecated-volatile",
+]
+# LINT.ThenChange(BUILD.gn:boringssl_config)
+
+# LINT.IfChange(export_symbols)
+# TODO(https://fxbug.dev/572563685): Migrate _EXPORT_SYMBOLS_DEFINES to
+# build_flags() once fx_cc_library() passes defines to .S assembly
+# preprocessing actions.
+_EXPORT_SYMBOLS_DEFINES = [
+    "BORINGSSL_IMPLEMENTATION",
+]
+# LINT.ThenChange(BUILD.gn:export_symbols)
+
+# LINT.IfChange(internal_config)
+# TODO(https://fxbug.dev/572563685): Migrate _INTERNAL_CONFIG_DEFINES to
+# build_flags() once fx_cc_library() passes defines (such as OPENSSL_SMALL,
+# checked by poly_rq_mul.S) to .S assembly preprocessing actions.
+_INTERNAL_CONFIG_DEFINES = [
+    "BORINGSSL_ALLOW_CXX_RUNTIME",
+    "BORINGSSL_NO_STATIC_INITIALIZER",
+    "BORINGSSL_SHARED_LIBRARY",
+    "OPENSSL_SMALL",
+] + select({
+    # pthread_rwlock_t on Linux requires a feature flag.
+    "@platforms//os:linux": ["_XOPEN_SOURCE=700"],
+    "//conditions:default": [],
+})
+
+# Cannot be migrated to build_flags() because fx_cc_library() sets
+# target_type = "cxx_common" (which ignores ldflags) and cc_shared_library()
+# does not support build_flags; the C++ toolchain feature must be set on
+# cc_shared_library() directly.
+_BORINGSSL_FEATURES = select({
+    "@platforms//os:fuchsia": ["static_cpp_standard_library"],
+    "//conditions:default": [],
+})
+# LINT.ThenChange(BUILD.gn:internal_config)
+
+# For static libraries, do not export symbols when building for the host (Linux)
+# to prevent potential name conflicts if statically included in a .so used via
+# dlopen.
+_BORINGSSL_STATIC_LOCAL_DEFINES = _INTERNAL_CONFIG_DEFINES + select({
+    "@platforms//os:fuchsia": _EXPORT_SYMBOLS_DEFINES,
+    "//conditions:default": [],
+})
+
+_BORINGSSL_SHARED_LOCAL_DEFINES = _INTERNAL_CONFIG_DEFINES + _EXPORT_SYMBOLS_DEFINES
+
+# LINT.IfChange(crypto_sources)
+_CRYPTO_SRCS = (
+    crypto_sources +
+    crypto_sources_asm + [
+        # TODO(https://fxbug.dev/42122741): remove this added source.
+        "src/decrepit/xts/xts.cc",
+        # TODO(https://fxbug.dev/42122741): Required for TPM2.0 TSS Library //third_party/tpm2-tss.
+        "src/decrepit/cfb/cfb.cc",
+    ] +
+    crypto_internal_headers +
+    fips_fragments
+)
+# LINT.ThenChange(BUILD.gn:crypto_sources)
+
+# LINT.IfChange(crypto_targets)
+# fuchsia/include/openssl/span.h is a Fuchsia-specific wrapper header around
+# src/include/openssl/span.h that must be exposed in Bazel sandboxes.
+_CRYPTO_HDRS = ["fuchsia/include/openssl/span.h"] + crypto_headers
+
+# TODO(https://fxbug.dev/572563685): Migrate _CRYPTO_COPTS to build_flags()
+# once //build/config:no_profile, //build/config:default_optimize, and
+# //build/config:optimize_speed are ported to build_flags().
+_CRYPTO_COPTS = _BORINGSSL_COPTS + select({
+    "@platforms//os:fuchsia": [
+        # boringssl should always be optimized for speed because otherwise
+        # performance is significantly worse, impacting pave and boot times on
+        # debug builds. See https://fxbug.dev/42133086.
+        "-O3",
+        # TODO(https://fxbug.dev/42138737): profile instrumentation significantly affects performance.
+        "-fno-profile-instr-generate",
+        "-fno-coverage-mapping",
+    ],
+    "//conditions:default": [],
+})
+
+_CRYPTO_DEPS = select({
+    # sysrand() uses Zircon system call.
+    "@platforms//os:fuchsia": ["//src/zircon/lib/zircon"],
+    "//conditions:default": [],
+})
+
+# Header-only target used by cc_import() so downstream consumers receive the
+# public headers and include directories without hitting Bazel 8's
+# cc_import(includes) package-prefix bug (https://fxbug.dev/478970857).
+cc_library(
+    name = "_crypto_headers",
+    hdrs = _CRYPTO_HDRS,
+    includes = _BORINGSSL_INCLUDES,
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "crypto-static",
+    srcs = _CRYPTO_SRCS,
+    hdrs = _CRYPTO_HDRS,
+    copts = _CRYPTO_COPTS,
+    cxxopts = _BORINGSSL_CXXOPTS,
+    includes = _BORINGSSL_INCLUDES,
+    local_defines = _BORINGSSL_STATIC_LOCAL_DEFINES,
+    visibility = ["//:__subpackages__"],
+    deps = _CRYPTO_DEPS,
+)
+
+# To match GN's shared_library("crypto-shared") and ensure Rust targets
+# (e.g., in //third_party/boringssl/rust/BUILD.bazel) link dynamically against
+# libcrypto.so (`-lcrypto`) rather than statically archiving object files, we
+# build the shared object with `cc_shared_library` and re-expose it as a
+# `CcInfo`-providing target via `cc_import`.
+cc_library(
+    name = "_crypto_shared_cc",
+    srcs = _CRYPTO_SRCS,
+    hdrs = _CRYPTO_HDRS,
+    copts = _CRYPTO_COPTS,
+    cxxopts = _BORINGSSL_CXXOPTS,
+    includes = _BORINGSSL_INCLUDES,
+    local_defines = _BORINGSSL_SHARED_LOCAL_DEFINES,
+    visibility = ["//visibility:private"],
+    deps = _CRYPTO_DEPS,
+)
+
+cc_shared_library(
+    name = "_crypto_shared_lib",
+    features = _BORINGSSL_FEATURES,
+    shared_lib_name = "libcrypto.so",
+    user_link_flags = ["-Wl,-soname=libcrypto.so"],
+    visibility = ["//visibility:private"],
+    deps = [":_crypto_shared_cc"],
+)
+
+cc_import(
+    name = "crypto-shared",
+    hdrs = _CRYPTO_HDRS,
+    shared_library = ":_crypto_shared_lib",
+    visibility = ["//:__subpackages__"],
+    deps = [":_crypto_headers"],
+)
+# LINT.ThenChange(BUILD.gn:crypto_targets)
+
+# LINT.IfChange(ssl_targets)
+_SSL_SRCS = (
+    ssl_sources +
+    ssl_internal_headers +
+    crypto_internal_headers
+)
+
+# TODO(https://fxbug.dev/572563685): Migrate _SSL_COPTS to build_flags() once
+# //build/config:default_optimize and //build/config:optimize_speed are ported
+# to build_flags().
+_SSL_COPTS = _BORINGSSL_COPTS + select({
+    # boringssl should always be optimized for speed because otherwise
+    # performance is significantly worse, impacting pave and boot times on
+    # debug builds (https://fxbug.dev/42133086).
+    "@platforms//os:fuchsia": ["-O3"],
+    "//conditions:default": [],
+})
+
+cc_library(
+    name = "_ssl_headers",
+    hdrs = ssl_headers,
+    includes = _BORINGSSL_INCLUDES,
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "ssl-static",
+    srcs = _SSL_SRCS,
+    hdrs = ssl_headers,
+    copts = _SSL_COPTS,
+    cxxopts = _BORINGSSL_CXXOPTS,
+    includes = _BORINGSSL_INCLUDES,
+    local_defines = _BORINGSSL_STATIC_LOCAL_DEFINES,
+    visibility = ["//:__subpackages__"],
+    deps = [":crypto-static"],
+)
+
+# As with `crypto-shared` above, `ssl-shared` uses `cc_shared_library` +
+# `cc_import` so that downstream C++ and Rust consumers dynamically link
+# against `libssl.so` (matching GN's `shared_library("ssl-shared")`).
+cc_library(
+    name = "_ssl_shared_cc",
+    srcs = _SSL_SRCS,
+    hdrs = ssl_headers,
+    copts = _SSL_COPTS,
+    cxxopts = _BORINGSSL_CXXOPTS,
+    includes = _BORINGSSL_INCLUDES,
+    local_defines = _BORINGSSL_SHARED_LOCAL_DEFINES,
+    visibility = ["//visibility:private"],
+    deps = [":crypto-shared"],
+)
+
+cc_shared_library(
+    name = "_ssl_shared_lib",
+    features = _BORINGSSL_FEATURES,
+    shared_lib_name = "libssl.so",
+    user_link_flags = ["-Wl,-soname=libssl.so"],
+    visibility = ["//visibility:private"],
+    deps = [":_ssl_shared_cc"],
+)
+
+cc_import(
+    name = "ssl-shared",
+    hdrs = ssl_headers,
+    shared_library = ":_ssl_shared_lib",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":_ssl_headers",
+        ":crypto-shared",
+    ],
+)
+# LINT.ThenChange(BUILD.gn:ssl_targets)
+
+# LINT.IfChange(lib_aliases)
+alias(
+    name = "crypto",
+    actual = select({
+        "@platforms//os:fuchsia": ":crypto-shared",
+        "//conditions:default": ":crypto-static",
+    }),
+    visibility = ["//:__subpackages__"],
+)
+
+alias(
+    name = "ssl",
+    actual = select({
+        "@platforms//os:fuchsia": ":ssl-shared",
+        "//conditions:default": ":ssl-static",
+    }),
+    visibility = ["//:__subpackages__"],
+)
+# LINT.ThenChange(BUILD.gn:lib_aliases)
+
+# LINT.IfChange(boringssl_groups)
+cc_library(
+    name = "boringssl-static",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":crypto-static",
+        ":ssl-static",
+    ],
+)
+
+cc_library(
+    name = "boringssl-shared",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":crypto-shared",
+        ":ssl-shared",
+    ],
+)
+
+cc_library(
+    name = "boringssl",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":crypto",
+        ":ssl",
+    ],
+)
+# LINT.ThenChange(BUILD.gn:boringssl_groups)
