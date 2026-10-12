@@ -26,6 +26,14 @@
 ##       Disable ResultStore uploading during fx build.
 ##       --local: Disable for the current build directory instead of globally.
 ##
+##  fx resultstore profile [subcommand]
+##       Manage the active ResultStore configuration profile.
+##       If no subcommand is given, prints the currently active profile name.
+##       Subcommands:
+##         list [-v|--verbose]: Lists all available ResultStore profiles.
+##         select <name>: Activates the profile named `<name>`.
+##         active [-v|--verbose]: Prints the active ResultStore profile name/details.
+##
 ## ResultStore data will contain information about the users's environment,
 ## including $USER name, and working directory.
 ## ResultStore data however, is only visible internally to Googlers.
@@ -67,24 +75,26 @@ action_args=("$@")
 # Parse subcommand options
 use_local=0
 value="all"
-for opt in "${action_args[@]}"; do
-  case "$opt" in
-    --local)
-      use_local=1
-      ;;
-    --ninja)
-      value="ninja"
-      ;;
-    --bazel)
-      value="bazel"
-      ;;
-    *)
-      fx-error "Invalid option: $opt"
-      usage
-      exit 1
-      ;;
-  esac
-done
+if [[ "$action" == "enable" || "$action" == "disable" || "$action" == "status" ]]; then
+  for opt in "${action_args[@]}"; do
+    case "$opt" in
+      --local)
+        use_local=1
+        ;;
+      --ninja)
+        value="ninja"
+        ;;
+      --bazel)
+        value="bazel"
+        ;;
+      *)
+        fx-error "Invalid option: $opt"
+        usage
+        exit 1
+        ;;
+    esac
+  done
+fi
 
 if [[ "$use_local" -eq 1 ]]; then
   if [[ -z "${FUCHSIA_BUILD_DIR}" || ! -d "${FUCHSIA_BUILD_DIR}" ]]; then
@@ -147,8 +157,8 @@ case "$action" in
 
     cat <<EOF
 ResultStore uploading is currently:
-  Global: ${global_status}
-  Local:  ${local_status}
+  Global:  ${global_status}
+  Local:   ${local_status}
 
 To change it, run: fx resultstore <enable|disable> [--local] [--ninja|--bazel]
 EOF
@@ -179,6 +189,10 @@ EOF
     fi
     fx-resultstore-write-config "${CONFIG_PATH}" "none"
     echo "ResultStore uploading is now $(styled-status "none") in ${SCOPE}."
+    ;;
+
+  profile)
+    "${PREBUILT_PYTHON3}" -S "${FUCHSIA_DIR}/build/resultstore/rs_profile.py" "${action_args[@]}"
     ;;
 
   *)

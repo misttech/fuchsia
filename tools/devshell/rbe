@@ -12,6 +12,8 @@
 ##      Verify authentication to RBE services through reclient and bazel.
 ##      Options:
 ##        -f,--force: Always request a fresh authentication token.
+##        -p,--profile <name>: Force-load specific profile for authentication testing.
+##        --no-rs,--no-resultstore: Test Bazel RBE without uploading build events to ResultStore.
 ##        All other unknown options are forwarded to 'gcloud auth application-default login'.
 ##      Testing tips:
 ##        To revoke gcloud credentials: gcloud auth revoke
@@ -48,6 +50,14 @@
 ##
 ##  fx rbe version
 ##      Reports re-client version.
+##
+##  fx rbe profile [subcommand]
+##      Manage the active RBE configuration profile.
+##      If no subcommand is given, prints the currently active profile name.
+##      Subcommands:
+##        list [-v|--verbose]: Lists all available RBE profiles.
+##        select <name>: Activates the profile named `<name>`.
+##        active [-v|--verbose]: Prints the active RBE profile name/details.
 
 set -e
 set -o pipefail
@@ -156,7 +166,7 @@ EOF
   # outputs, but this test command (echo) has neither inputs nor outputs.
   # b/376105913 is an example of failing to execute remotely for this reason.
   cd "$FUCHSIA_DIR"
-  until "${reclient_auth_test_cmd[@]}"
+  until "$python" -S "$FUCHSIA_DIR/build/rbe/rbe_profile.py" run -- "${reclient_auth_test_cmd[@]}"
   do
     # gcert only works in environments that get unrestricted LOAS credentials
     # whereas gcloud auth will always work.
@@ -220,6 +230,9 @@ function ensure_adc_file_exists() {
 }
 
 function test_bazel_rbe() {
+  local -r no_rs="$1"
+  shift
+
   ensure_adc_file_exists
   setup_bazel_workspace
   # Test authentication to RBE and BES (both share the same gcloud auth).
@@ -231,6 +244,14 @@ function test_bazel_rbe() {
   if [[ "$auth_type" == "loas" ]]
   then auth_config_args+=( --config=gcertauth )
   fi
+
+  local -a extra_args=()
+  if [[ "$no_rs" == 1 ]]; then
+    extra_args+=( --bes_backend="" )
+  else
+    extra_args+=( --config=resultstore )
+  fi
+
   (
     cd "$BAZEL_TEST_DIR/workspace" &&
       ../bazel shutdown && \
@@ -239,7 +260,7 @@ function test_bazel_rbe() {
           --nouse_action_cache \
           --nocache_test_results \
           --config=remote \
-          --config=resultstore \
+          "${extra_args[@]}" \
           "${auth_config_args[@]}" \
           --build_event_upload_max_retries=1 \
           --bes_timeout=10s \
@@ -272,6 +293,9 @@ function check_credential_helper_latency() {
 }
 
 function bazel_auth_test() {
+  local -r no_rs="$1"
+  shift
+
   cat <<EOF
 Testing a small remote-enabled bazel build end-to-end.
 If the first build attempt fails, follow the authentication prompts.
@@ -280,7 +304,7 @@ EOF
   check_credential_helper_latency
   for tries in 1 2 3; do
       printf "\n=== Attempt $tries/3 =====================\n"
-      if test_bazel_rbe; then
+      if test_bazel_rbe "$no_rs" "$@"; then
           style::echo --green "bazel+RBE authentication successful"
           return 0
       fi
@@ -297,14 +321,27 @@ EOF
 
 function auth_subcommand() {
   local force=0
+  local no_rs=0
+  local override_profile=""
   local gcloud_auth_args=()
-  for opt in "$@"
-  do
-    case "$opt" in
-      -f|--force) force=1 ;;
-      *) gcloud_auth_args+=("$opt") ;;
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--force) force=1 ; shift ;;
+      -p|--profile) override_profile="$2" ; shift 2 ;;
+      --no-rs|--no-resultstore) no_rs=1 ; shift ;;
+      *) gcloud_auth_args+=("$1") ; shift ;;
     esac
   done
+
+  if [[ -n "$override_profile" ]]; then
+    export FX_BUILD_RBE_PROFILE="$override_profile"
+    export FX_BUILD_RS_PROFILE="$override_profile"
+  fi
+
+  # Determine and print active RBE profile name
+  local active_profile
+  active_profile="$("$python" -S "$FUCHSIA_DIR/build/rbe/rbe_profile.py" active)"
+  style::echo --bold "Testing RBE authentication for profile: ${active_profile}"
 
   if [[ "$force" == 1 ]]
   then
@@ -322,7 +359,7 @@ function auth_subcommand() {
     "${check_runt_script}" || exit 1
   fi
 
-  bazel_auth_test "${gcloud_auth_args[@]}" && \
+  bazel_auth_test "$no_rs" "${gcloud_auth_args[@]}" && \
     echo && \
     reclient_auth_test "${gcloud_auth_args[@]}" && \
     echo && \
@@ -527,6 +564,9 @@ case "$action" in
   last_logdir) last_logdir_subcommand "${action_args[@]}" ;;
   diagnose) diagnose_subcommand "${action_args[@]}" ;;
   preflight) preflight_subcommand "${action_args[@]}" ;;
+  profile)
+    "$python" -S "${FUCHSIA_DIR}/build/rbe/rbe_profile.py" "${action_args[@]}"
+    ;;
   version) version_subcommand "${action_args[@]}" ;;
 
   *)
