@@ -1,0 +1,123 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+assert(
+    is_host && current_toolchain == toolchain_variant.base,
+    "mypy librt extensions can only be built in the base (uninstrumented) host toolchain")
+
+config("librt_config") {
+  include_dirs = [
+    "src/mypyc/lib-rt",
+    "${python_include_dir}/python${python_version}",
+  ]
+  cflags = [
+    "-O3",
+    "-w",
+  ]
+}
+
+template("_librt_extension") {
+  shared_library(target_name) {
+    output_dir = "${target_out_dir}/librt"
+    output_name = invoker.module_name
+    output_prefix_override = true
+    output_extension = "so"
+    sources = invoker.sources
+    if (defined(invoker.include_dirs)) {
+      include_dirs = invoker.include_dirs
+    }
+    libs = [ "pthread" ]
+    configs += [
+      ":librt_config",
+      "//build/config:symbol_no_undefined",
+    ]
+    configs -= [ "//build/config:symbol_no_undefined" ]
+  }
+}
+
+_librt_common_sources = [
+  "src/mypyc/lib-rt/exc_ops.c",
+  "src/mypyc/lib-rt/getargsfast.c",
+  "src/mypyc/lib-rt/init.c",
+  "src/mypyc/lib-rt/int_ops.c",
+  "src/mypyc/lib-rt/pythonsupport.c",
+]
+
+_librt_extension("librt_internal") {
+  module_name = "internal"
+  sources =
+      [ "src/mypyc/lib-rt/internal/librt_internal.c" ] + _librt_common_sources
+  include_dirs = [ "src/mypyc/lib-rt/internal" ]
+}
+
+_librt_extension("librt_strings") {
+  module_name = "strings"
+  sources =
+      [ "src/mypyc/lib-rt/strings/librt_strings.c" ] + _librt_common_sources
+  include_dirs = [ "src/mypyc/lib-rt/strings" ]
+}
+
+_librt_extension("librt_base64") {
+  module_name = "base64"
+  sources = [
+    "src/mypyc/lib-rt/base64/arch/avx/codec.c",
+    "src/mypyc/lib-rt/base64/arch/avx2/codec.c",
+    "src/mypyc/lib-rt/base64/arch/avx512/codec.c",
+    "src/mypyc/lib-rt/base64/arch/generic/codec.c",
+    "src/mypyc/lib-rt/base64/arch/neon32/codec.c",
+    "src/mypyc/lib-rt/base64/arch/neon64/codec.c",
+    "src/mypyc/lib-rt/base64/arch/sse41/codec.c",
+    "src/mypyc/lib-rt/base64/arch/sse42/codec.c",
+    "src/mypyc/lib-rt/base64/arch/ssse3/codec.c",
+    "src/mypyc/lib-rt/base64/codec_choose.c",
+    "src/mypyc/lib-rt/base64/lib.c",
+    "src/mypyc/lib-rt/base64/librt_base64.c",
+    "src/mypyc/lib-rt/base64/tables/tables.c",
+  ]
+  include_dirs = [ "src/mypyc/lib-rt/base64" ]
+}
+
+_librt_extension("librt_vecs") {
+  module_name = "vecs"
+  sources = [
+    "src/mypyc/lib-rt/vecs/librt_vecs.c",
+    "src/mypyc/lib-rt/vecs/vec_bool.c",
+    "src/mypyc/lib-rt/vecs/vec_float.c",
+    "src/mypyc/lib-rt/vecs/vec_i16.c",
+    "src/mypyc/lib-rt/vecs/vec_i32.c",
+    "src/mypyc/lib-rt/vecs/vec_i64.c",
+    "src/mypyc/lib-rt/vecs/vec_nested.c",
+    "src/mypyc/lib-rt/vecs/vec_t.c",
+    "src/mypyc/lib-rt/vecs/vec_u8.c",
+  ]
+  include_dirs = [ "src/mypyc/lib-rt/vecs" ]
+}
+
+_librt_extension("librt_time") {
+  module_name = "time"
+  sources = [ "src/mypyc/lib-rt/time/librt_time.c" ]
+}
+
+_librt_extension("librt_random") {
+  module_name = "random"
+  sources = [ "src/mypyc/lib-rt/random/librt_random.c" ] + _librt_common_sources
+}
+
+_librt_extension("librt_threading") {
+  module_name = "threading"
+  sources = [ "src/mypyc/lib-rt/threading/librt_threading.c" ]
+  include_dirs = [ "src/mypyc/lib-rt/threading" ]
+}
+
+group("librt") {
+  public_deps = [
+    ":librt_base64",
+    ":librt_internal",
+    ":librt_random",
+    ":librt_strings",
+    ":librt_threading",
+    ":librt_time",
+    ":librt_vecs",
+  ]
+}

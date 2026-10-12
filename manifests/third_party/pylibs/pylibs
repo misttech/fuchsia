@@ -51,11 +51,11 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/PyCQA/mccabe"
         revision="1b15a1bb1c17b4926515290540d5eeb688f4d967"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- mypy-1.7.1 -->
+    <!-- mypy-2.4.0 -->
     <project name="third_party/pylibs/mypy"
         path="third_party/pylibs/mypy/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/python/mypy"
-        revision="6b3c41838d8e7a39242b6fd035535e2d76eabfc6"
+        revision="935ba8afba7ceacca0651579450c74339f343016"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- mypy_extensions-1.1.0 -->
     <project name="third_party/pylibs/mypy_extensions"

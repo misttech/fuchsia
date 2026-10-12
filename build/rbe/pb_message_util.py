@@ -11,13 +11,13 @@ This works on any proto Message subtype.
 from collections.abc import Sequence
 from typing import Any
 
-from google.protobuf import (  # type: ignore[import-untyped]
+from google.protobuf import (
     descriptor,
     json_format,
     message,
     timestamp_pb2,
 )
-from google.protobuf.internal import containers  # type: ignore[import-untyped]
+from google.protobuf.internal import containers
 
 
 def _dict_to_key_values(d: dict[str, Any]) -> Sequence[dict[str, Any]]:

@@ -34,6 +34,11 @@ skip_glob = ["**/.venvs/*", "**/third_party/*", "**/*.pyz", "out/*"]
 strict = true
 pretty = true
 
+# Mypy 2.4+ enables the Rust-based native parser (which requires the
+# `ast_serialize` native extension) by default. Use the stdlib `ast` parser
+# instead so `ast_serialize` does not need to be vendored.
+native_parser = false
+
 # We need to ignore missing imports since some of our source code dependencies
 # reside in the 'third_party' directory, which may not always be in python path.
 ignore_missing_imports = true

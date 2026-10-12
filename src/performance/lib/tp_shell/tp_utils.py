@@ -580,7 +580,7 @@ class PerfettoTraceProcessor:
     tp_shell_path: str
     debug: bool
     _tp: PerfettoTP
-    _finalizer: weakref.finalize
+    _finalizer: weakref.finalize[Any, Any]
     _tp_shell_context: Any
 
     def __init__(

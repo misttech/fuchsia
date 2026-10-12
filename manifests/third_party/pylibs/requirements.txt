@@ -8,6 +8,10 @@ annotated-types==0.8.0
     # via
     #   -r requirements.in
     #   pydantic
+ast-serialize==0.11.2
+    # via
+    #   -r requirements.in
+    #   mypy
 astroid==4.0.4
     # via
     #   -r requirements.in
@@ -28,9 +32,17 @@ mccabe==0.7.0
     # via
     #   -r requirements.in
     #   pylint
-mypy==1.7.1
+librt==0.16.0
+    # via
+    #   -r requirements.in
+    #   mypy
+mypy==2.4.0
     # via -r requirements.in
 mypy-extensions==1.1.0
+    # via
+    #   -r requirements.in
+    #   mypy
+pathspec==1.0.4
     # via
     #   -r requirements.in
     #   mypy

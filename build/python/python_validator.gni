@@ -87,7 +87,10 @@ template("validate_python") {
         args += rebase_path(invoker.data_sources, root_build_dir)
       }
     }
-    deps = [ invoker.library_infos ]
+    deps = [
+      "//third_party/pylibs/mypy:librt($host_x64_toolchain)",
+      invoker.library_infos,
+    ]
 
     # Required for generated sources like C extension wrappers.
     if (defined(invoker.deps)) {

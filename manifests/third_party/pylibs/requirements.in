@@ -1,5 +1,5 @@
 coverage==7.15.4 # github.com/coveragepy/coveragepy
-mypy==1.7.1 # github.com/python/mypy
+mypy==2.4.0 # github.com/python/mypy
 pylint==4.0.6 # github.com/pylint-dev/pylint
 autoflake==2.3.3 # github.com/PyCQA/autoflake
 pyusb==1.3.1 # github.com/pyusb/pyusb
@@ -22,3 +22,13 @@ typing_inspection # github.com/pydantic/typing-inspection
 # //tools/build/scripts/extract_pydantic_core_wheel.sh for how this is extracted and integrated to
 # the build and see //manifests/prebuilts for downloading the CIPD package.
 pydantic_core # Ignore
+# pathspec is vendored in as a prebuilt wheel via CIPD because its upstream git repository is not
+# mirrored on fuchsia.googlesource.com. See //tools/build/scripts/extract_pathspec_wheel.sh and
+# //manifests/prebuilts.
+pathspec==1.0.4 # Ignore
+# librt C extensions are compiled from //third_party/pylibs/mypy/src/mypyc/lib-rt via
+# //third_party/pylibs/mypy:librt.
+librt # Ignore
+# ast_serialize is only imported when Mypy's native parser is enabled; //pyproject.toml sets
+# `native_parser = false` to use the stdlib `ast` parser instead.
+ast_serialize # Ignore

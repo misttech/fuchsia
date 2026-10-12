@@ -278,11 +278,17 @@ def run_mypy_checks(
     fuchsia_dir = Path(__file__).parent.parent.parent
     config_path = fuchsia_dir / "pyproject.toml"
     pylibs_dir = fuchsia_dir / "third_party" / "pylibs"
+    prebuilt_dir = fuchsia_dir / "prebuilt" / "third_party"
+    build_dir = Path(os.environ.get("FUCHSIA_BUILD_DIR_FROM_FX", "."))
+    librt_dir = (
+        build_dir / "host_x64" / "obj" / "third_party" / "pylibs" / "mypy"
+    )
     try:
         return subprocess.run(
             (
                 [
                     sys.executable,
+                    "-B",
                     "-S",
                     "-m",
                     "mypy",
@@ -313,6 +319,8 @@ def run_mypy_checks(
                         str(pylibs_dir / "mypy" / "src"),
                         str(pylibs_dir / "mypy_extensions" / "src"),
                         str(pylibs_dir / "typing_extensions" / "src" / "src"),
+                        str(prebuilt_dir / "pathspec-py3"),
+                        str(librt_dir.resolve()),
                     ]
                 )
             },

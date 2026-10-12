@@ -39,7 +39,7 @@ if protobuf_wheel.exists() and str(protobuf_wheel) not in sys.path:
 
 # Bypass strict protobuf gencode/runtime version check to align prebuilts at build-time (see b/537501139)
 try:
-    import google.protobuf.runtime_version as rv  # type: ignore
+    import google.protobuf.runtime_version as rv
 
     rv.ValidateProtobufRuntimeVersion = lambda *args, **kwargs: None
 except ImportError:

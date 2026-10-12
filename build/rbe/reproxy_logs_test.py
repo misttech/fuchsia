@@ -19,7 +19,7 @@ from unittest import mock
 import reproxy_logs
 from api.log import log_pb2
 from go.api.command import command_pb2
-from google.protobuf import timestamp_pb2  # type: ignore[import-untyped]
+from google.protobuf import timestamp_pb2
 
 
 def _write_file_contents(path: Path, contents: str) -> None:

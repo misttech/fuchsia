@@ -258,4 +258,4 @@ def dataparse(cls: T) -> T:
     if not hasattr(cls, "from_dict"):
         setattr(cls, "from_dict", classmethod(from_dict))
 
-    return cls  # type: ignore
+    return cls

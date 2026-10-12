@@ -30,7 +30,7 @@ fx format-code
 
 echo "Checking types..."
 OLD_PYTHONPATH=$PYTHONPATH
-PYTHONPATH="$FUCHSIA_DIR"/third_party/pylibs/mypy_extensions/src:"$FUCHSIA_DIR"/third_party/pylibs/typing_extensions/src/src:"$FUCHSIA_DIR"/third_party/pylibs/mypy/src:$PYTHONPATH
+PYTHONPATH="$FUCHSIA_DIR"/third_party/pylibs/mypy_extensions/src:"$FUCHSIA_DIR"/third_party/pylibs/typing_extensions/src/src:"$FUCHSIA_DIR"/prebuilt/third_party/pathspec-py3:"$FUCHSIA_DIR"/third_party/pylibs/mypy/src:"$FUCHSIA_BUILD_DIR"/host_x64/obj/third_party/pylibs/mypy:$PYTHONPATH
 
 # Execute the Mypy command with python path
 MYPY_CMD="python3 -S -m mypy --config-file $FUCHSIA_DIR/pyproject.toml $FXTEST_SRC"

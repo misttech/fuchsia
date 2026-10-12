@@ -13,7 +13,7 @@ import pb_message_util
 # upload_reproxy_logs.py uses, and it is very stable.
 from api.log import log_pb2
 from go.api.command import command_pb2
-from google.protobuf import timestamp_pb2  # type: ignore[import-untyped]
+from google.protobuf import timestamp_pb2
 
 
 class ProtoMessageToBQDictTest(unittest.TestCase):
