@@ -119,6 +119,11 @@ func testToResultSink(test *runtests.TestDetails, tags []*resultpb.StringPair, r
 			ts = append(ts, testSkipped)
 		}
 	}
+	// TODO(b/527958852): Report test cases blocked by a fixture setup failure as
+	// PRECLUDED once runtests.TestStatus has a dedicated not-run status.
+	// This must run after the test case and top-level results are collected so
+	// that the *fixture is not reported twice under the same fine_name.
+	r, ts = appendFixtureResult(r, ts, test)
 	return r, exonerations, ts
 }
 
@@ -498,6 +503,10 @@ func testIdentifierFromGo(testCase *runtests.TestCaseResult, goPkg string) (stri
 	return goPkg, caseName
 }
 
+// rustCrateRootModule is the fine_name of Rust tests defined at the crate root,
+// using "crate", the official Rust keyword for the crate root module.
+const rustCrateRootModule = "crate"
+
 // testIdentifierFromRust returns the fineName and caseName for Rust tests.
 // In Rust, test functions defined at the crate root outside of a submodule have an empty
 // SuiteName. ResultDB scheme "rust" requires a fine_name (Rust Module).
@@ -505,7 +514,7 @@ func testIdentifierFromGo(testCase *runtests.TestCaseResult, goPkg string) (stri
 func testIdentifierFromRust(testCase *runtests.TestCaseResult) (string, string) {
 	fineName := testCase.SuiteName
 	if fineName == "" {
-		fineName = "crate"
+		fineName = rustCrateRootModule
 	}
 	return fineName, testCase.CaseName
 }

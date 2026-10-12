@@ -14,6 +14,7 @@ go_library(
     name = "lib",
     srcs = [
         "client.go",
+        "fixture.go",
         "lib.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/testing/resultdb",
@@ -62,6 +63,7 @@ host_go_test(
     name = "resultdb_lib_tests",
     srcs = [
         "client_test.go",
+        "fixture_test.go",
         "lib_test.go",
     ],
     embed = [":lib"],
