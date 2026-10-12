@@ -2335,6 +2335,13 @@ multiconst!(u32, [
     ZX_INFO_VCPU_FLAG_KICKED = 1 << 0;
 ]);
 
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
+pub struct zx_info_interrupt_t {
+    pub options: u32,
+}
+
 multiconst!(u32, [
     ZX_INFO_PROCESS_FLAG_STARTED = 1 << 0;
     ZX_INFO_PROCESS_FLAG_EXITED = 1 << 1;
@@ -3332,7 +3339,16 @@ multiconst!(u32, [
 
 // Options for zx_interrupt_create
 multiconst!(u32, [
+    ZX_INTERRUPT_REMAP_IRQ = 0x1;
+    ZX_INTERRUPT_MODE_DEFAULT = 0 << 1;
+    ZX_INTERRUPT_MODE_EDGE_LOW = 1 << 1;
+    ZX_INTERRUPT_MODE_EDGE_HIGH = 2 << 1;
+    ZX_INTERRUPT_MODE_LEVEL_LOW = 3 << 1;
+    ZX_INTERRUPT_MODE_LEVEL_HIGH = 4 << 1;
+    ZX_INTERRUPT_MODE_EDGE_BOTH = 5 << 1;
+    ZX_INTERRUPT_MODE_MASK = 0xe;
     ZX_INTERRUPT_VIRTUAL = 0x10;
+    ZX_INTERRUPT_WAKE_VECTOR = 0x20;
     ZX_INTERRUPT_TIMESTAMP_MONO = 1 << 6;
 ]);
 
