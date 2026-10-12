@@ -175,14 +175,6 @@ function ffx-configured-repository-server-port {
   return 0
 }
 
-function default-repository-url {
-
-    ffx_repo="$(ffx-default-repository-name)" || return $?
-    echo "fuchsia-pkg://${ffx_repo}"
-
-  return 0
-}
-
 function join-repository-ip-port {
   local expected_ip="$1"
   local expected_port="$2"

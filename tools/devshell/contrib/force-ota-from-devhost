@@ -4,20 +4,11 @@
 # found in the LICENSE file.
 
 #### CATEGORY=Software delivery
-### force an Over The Air system update from devhost (reboots!)
-## This command is essentially an alias for:
-##   fx shell update force-install fuchsia-pkg://devhost/update
-## This command requires an update server (`fx serve`) to be running in order to succeed.
+#### DEPRECATED
+### deprecated alias for fx ota
+## Deprecated: runs 'fx ota'
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/vars.sh || exit $?
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/updates.sh || exit $?
-fx-config-read
 
-repo_url="$(default-repository-url)"
-err=$?
-if [[ $err != 0 ]]; then
-    fx-error "Unable to determine default package repository name"
-    exit $err
-fi
-
-fx-command-run ffx target update force-install "${repo_url}/update"
+fx-warn "This tool has been deprecated in favor of 'fx ota'."
+fx-command-run ota "$@"
