@@ -10,7 +10,7 @@ use fidl_fuchsia_component_runner as frunner;
 use fidl_fuchsia_power_system as fpower;
 use frunner::{ComponentControllerMarker, ComponentStartInfo};
 use fuchsia_component::client::connect_to_protocol;
-use fuchsia_sync::Mutex;
+use starnix_sync::{KernelsLock, LockDepMutex};
 use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
@@ -26,7 +26,7 @@ fn create_lease_name(kernel_name: &str) -> String {
 
 /// [`Kernels`] manages a collection of starnix kernels.
 pub struct Kernels {
-    kernels: Arc<Mutex<HashMap<zx::Koid, StarnixKernel>>>,
+    kernels: Arc<LockDepMutex<HashMap<zx::Koid, StarnixKernel>, KernelsLock>>,
     background_tasks: ExecutionScope,
 }
 

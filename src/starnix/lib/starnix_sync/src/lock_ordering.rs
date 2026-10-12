@@ -120,6 +120,7 @@ lock_ordering! {
     InputEventRelayOpenedFilesLock => WaitQueueImplLock,
     InputRelayDeviceInfosLock => InputDeviceInfoLock,
     IoUringStateLock => MemoryManagerStateLock,
+    KernelsLock => StarnixKernelWakeLeaseLock,
     LoopDeviceStateLock => FsContextStateLock,
     LoopDeviceStateLock => FsNodeInfoLevel,
     LoopDeviceStateLock => RemoteBundleInnerLock,

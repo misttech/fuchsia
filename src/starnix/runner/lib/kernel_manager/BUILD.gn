@@ -38,7 +38,6 @@ rustc_library("kernel_manager") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//src/performance/memory/attribution/refaults_vmo",
     "//src/starnix/kernel/core",
