@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_license//rules:license.bzl", "license")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = [":license"])
+
+# @bazel2gn:skip
+license(
+    name = "license",
+    license_kinds = [
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:MIT",
+    ],
+    license_text = "LICENSE-APACHE",
+)
+
+rustc_library(
+    name = "modinv",
+    srcs = [
+        "src/lib.rs",
+        "src/modinv.rs",
+    ],
+    edition = "2021",
+    visibility = ["//src/lib/assembly/vbmeta:__pkg__"],
+)
