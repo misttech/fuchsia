@@ -98,6 +98,7 @@ pub enum ArgValue<'a> {
     Double(f64),
     String(&'a str),
     InternedString(&'static InternedString),
+    StringId(u16),
     Pointer(usize),
     Koid(u64),
     Blob(&'a [u8]),
@@ -241,7 +242,7 @@ impl<'a> Argument<'a> {
             | ArgValue::Pointer(_)
             | ArgValue::Koid(_) => 2,
             ArgValue::String(s) => 1 + s.len().min(0x7fff).div_ceil(8),
-            ArgValue::InternedString(_) => 1,
+            ArgValue::InternedString(_) | ArgValue::StringId(_) => 1,
             ArgValue::Blob(b) => 1 + b.len().div_ceil(8).min(0x7fff),
         }
     }
@@ -299,6 +300,14 @@ impl<'a> Argument<'a> {
                     ArgumentHeader::for_argument(name_id, size_words, ArgumentType::String);
                 let mut str_ref = StringRefHeader::new();
                 str_ref.set_is_inline(false).set_id_or_len(s.id());
+                header.set_value_bits(str_ref.bits() as u32);
+                res.write_word(header.bits())?;
+            }
+            ArgValue::StringId(id) => {
+                let mut header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::String);
+                let mut str_ref = StringRefHeader::new();
+                str_ref.set_is_inline(false).set_id_or_len(*id);
                 header.set_value_bits(str_ref.bits() as u32);
                 res.write_word(header.bits())?;
             }

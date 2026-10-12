@@ -302,6 +302,9 @@ variant("kernel_config") {
   if (channel_message_body_tracing_enabled) {
     rustflags += [ "--cfg=channel_message_body_tracing_enabled" ]
   }
+  if (lock_name_tracing_enabled) {
+    rustflags += [ "--cfg=lock_name_tracing_enabled" ]
+  }
 
   if (kernel_extra_defines + [
         "ENABLE_ENTROPY_COLLECTOR_TEST=1",
@@ -400,6 +403,9 @@ config("scheduler") {
   rustflags = []
   if (scheduler_lock_spin_tracing_enabled) {
     rustflags += [ "--cfg=scheduler_lock_spin_tracing_enabled" ]
+  }
+  if (scheduler_lock_spin_tracing_compressed) {
+    rustflags += [ "--cfg=scheduler_lock_spin_tracing_compressed" ]
   }
 }
 

@@ -13,7 +13,8 @@
 #include <kernel/lock_trace_config.h>
 #include <kernel/lockdep.h>
 #include <kernel/spin_tracing_config.h>
-#include <ktl/atomic.h>
+
+extern "C" uint64_t rust_spin_tracing_create_lock_id();
 
 namespace spin_tracing {
 
@@ -21,10 +22,7 @@ class LockIdGenerator {
  protected:
   LockIdGenerator() = default;
   ~LockIdGenerator() = default;
-  static uint64_t CreateId() { return generator_.fetch_add(1, ktl::memory_order_relaxed); }
-
- private:
-  static inline ktl::atomic<uint64_t> generator_{1};
+  static uint64_t CreateId() { return rust_spin_tracing_create_lock_id(); }
 };
 
 template <LockType kLockType, bool Enabled>

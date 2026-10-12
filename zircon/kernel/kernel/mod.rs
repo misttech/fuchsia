@@ -18,6 +18,7 @@ pub mod restricted;
 pub mod restricted_state;
 pub mod scheduler;
 pub mod scheduler_state;
+pub mod spin_tracing;
 pub mod stats;
 pub mod thread;
 pub mod timer;
