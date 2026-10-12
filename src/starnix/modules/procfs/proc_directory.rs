@@ -19,7 +19,7 @@ use crate::pressure_directory::pressure_directory;
 use crate::self_symlink::SelfSymlink;
 use crate::stat::StatFile;
 use crate::swaps::SwapsFile;
-use crate::sysctl::{net_directory, sysctl_directory};
+use crate::sysctl::{KptrRestrict, net_directory, sysctl_directory};
 use crate::sysrq::SysRqNode;
 use crate::thread_self::ThreadSelfSymlink;
 use crate::uid_cputime::uid_cputime_directory;
@@ -29,6 +29,7 @@ use crate::uptime::UptimeFile;
 use crate::vmstat::VmStatFile;
 use crate::zoneinfo::ZoneInfoFile;
 use maplit::btreemap;
+use starnix_core::security;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, SimpleFileNode};
@@ -41,7 +42,7 @@ use starnix_core::vfs::{
 };
 use starnix_logging::{BugRef, bug_ref, track_stub};
 
-use starnix_uapi::auth::FsCred;
+use starnix_uapi::auth::{CAP_SYSLOG, FsCred};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
@@ -91,9 +92,22 @@ impl ProcDirectory {
             "device-tree".into() => symlink_file(fs, DeviceTreeSymlink::new_node()),
             "diskstats".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322893370")),
             "filesystems".into() => read_only_file(fs, FilesystemsFile::new_node(&kernel.expando.get::<FsRegistry>())),
-            "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|_| {
+            "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|current_task| {
                 track_stub!(TODO("https://fxbug.dev/369067922"), "Provide a real /proc/kallsyms");
-                Ok(BytesFile::new(b"0000000000000000 T security_inode_copy_up".to_vec()))
+                let show_value = match current_task.kernel().expando.get::<KptrRestrict>().load() {
+                    0 => true,
+                    1 => security::is_task_capable_noaudit(current_task, CAP_SYSLOG),
+                    _ => false,
+                };
+                let mut contents = String::new();
+                for &(address, symbol_type, name) in KALLSYMS {
+                    let display_address = if show_value { address } else { 0 };
+                    let _ = std::fmt::Write::write_fmt(
+                        &mut contents,
+                        format_args!("{display_address:016x} {symbol_type} {name}\n"),
+                    );
+                }
+                Ok(BytesFile::new(contents.into_bytes()))
             })),
             "kmsg".into() => kmsg_file(fs),
             "loadavg".into() => read_only_file(fs, LoadavgFile::new_node(kernel)),
@@ -142,6 +156,22 @@ impl ProcDirectory {
         ProcDirectoryNode(Arc::new(ProcDirectory { nodes }))
     }
 }
+
+const KALLSYMS: &[(u64, char, &str)] = &[
+    (0xffffffff81000000, 'T', "_text"),
+    (0xffffffff81000000, 'T', "_stext"),
+    (0xffffffff81001000, 'T', "do_one_initcall"),
+    (0xffffffff81002000, 'T', "schedule"),
+    (0xffffffff81003000, 'T', "security_inode_copy_up"),
+    (0xffffffff81100000, 'T', "_etext"),
+    (0xffffffff81200000, 'T', "_sinittext"),
+    (0xffffffff81210000, 'T', "_einittext"),
+    (0xffffffff81400000, 'D', "_sdata"),
+    (0xffffffff81500000, 'D', "_edata"),
+    (0xffffffff81600000, 'B', "__bss_start"),
+    (0xffffffff81700000, 'B', "__bss_stop"),
+    (0xffffffff81800000, 'B', "_end"),
+];
 
 /// Creates a stub file that logs a message with the associated bug when it is accessed.
 fn stub_file(fs: &FileSystemHandle, bug: BugRef) -> FsNodeHandle {
