@@ -49,8 +49,10 @@ core_tests_for_postsubmit = [
 # FYI don't cause any alerting if they break, so having the test here doesn't
 # provide much of a safety net. Consider moving it to one of the blocking groups
 # above.
-core_tests_for_fyi =
-    [ "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed" ]
+core_tests_for_fyi = [
+  "//src/connectivity/wlan/tests/core:association_rejection_test",
+  "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
+]
 
 # FYI Tests that require an iperf server
 core_tests_for_fyi_iperf =
