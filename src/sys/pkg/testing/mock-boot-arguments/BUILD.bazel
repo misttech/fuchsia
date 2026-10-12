@@ -1,0 +1,93 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "mock_boot_arguments",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//src/recovery/system:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:maplit",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "lib_test_packaged_bin",
+    testonly = True,
+    binary = ":lib_test",
+    binary_name = "mock_boot_arguments_lib_test",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "mock-boot-arguments-tests-manifest",
+    testonly = True,
+    component_name = "mock-boot-arguments-tests",
+    includes = [
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/mock_boot_arguments_tests.cml",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "mock-boot-arguments-tests-component",
+    compiled_manifest = ":mock-boot-arguments-tests-manifest",
+    component_name = "mock-boot-arguments-tests",
+    visibility = ["//visibility:private"],
+    deps = [":lib_test_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "mock-boot-arguments-tests-package",
+    package_name = "mock-boot-arguments-tests",
+    test_components = [":mock-boot-arguments-tests-component"],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "mock-boot-arguments-tests",
+    package = ":mock-boot-arguments-tests-package",
+    visibility = ["//visibility:public"],
+)

@@ -4,15 +4,14 @@
 
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
+    "fuchsia_cc_library",
     "fuchsia_fidl_library",
 )
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
-fuchsia_fidl_library(
+fidl_library(
     name = "fuchsia.boot",
     srcs = [
         "arguments.fidl",
@@ -23,12 +22,43 @@ fuchsia_fidl_library(
         "svc-stash.fidl",
         "userboot.fidl",
     ],
-    cc_bindings = [
-        "cpp",
-        "cpp_wire",
-        "cpp_driver_wire",
-        "cpp_driver",
+    api_area = "Kernel",
+    # @bazel2gn:skip
+    enable_cpp = False,
+    enable_hlcpp = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/fidl/fuchsia.io",
+        "//zircon/vdso/zx",
     ],
-    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+# @bazel2gn:skip
+fuchsia_fidl_library(
+    name = "fuchsia.boot_sdk",
+    srcs = [
+        "arguments.fidl",
+        "factory-items.fidl",
+        "items.fidl",
+        "log.fidl",
+        "overview.fidl",
+        "svc-stash.fidl",
+        "userboot.fidl",
+    ],
+    cc_bindings = ["cpp"],
+    library = "fuchsia.boot",
+    tags = ["manual"],
+    target_compatible_with = [
+        "@platforms//os:fuchsia",
+        "//build/bazel/platforms:fuchsia_artifacts_build_with_sdk_rules",
+    ],
+    visibility = ["//visibility:private"],
     deps = ["@fuchsia_sdk//fidl/fuchsia.io"],
+)
+
+# @bazel2gn:skip
+fuchsia_cc_library(
+    name = "fuchsia.boot_cpp",
+    visibility = ["//visibility:public"],
+    deps = [":fuchsia.boot_sdk_cpp"],
 )
