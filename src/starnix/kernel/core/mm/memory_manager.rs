@@ -3250,12 +3250,13 @@ impl ArchSpecific for MemoryManager {
 }
 
 fn check_access_permissions_in_page_fault(
-    decoded: &PageFaultExceptionReport,
+    is_write: bool,
+    is_execute: bool,
     mapping: &Mapping,
 ) -> bool {
-    let exec_denied = decoded.is_execute && !mapping.can_exec();
-    let write_denied = decoded.is_write && !mapping.can_write();
-    let read_denied = (!decoded.is_execute && !decoded.is_write) && !mapping.can_read();
+    let exec_denied = is_execute && !mapping.can_exec();
+    let write_denied = is_write && !mapping.can_write();
+    let read_denied = (!is_execute && !is_write) && !mapping.can_read();
     !exec_denied && !write_denied && !read_denied
 }
 
@@ -4132,16 +4133,22 @@ impl MemoryManager {
         decoded: PageFaultExceptionReport,
         error_code: zx::Status,
     ) -> ExceptionResult {
+        let PageFaultExceptionReport {
+            faulting_address: raw_faulting_address,
+            not_present,
+            is_write,
+            is_execute,
+        } = decoded;
         #[cfg(target_arch = "aarch64")]
         // On aarch64, 64-bit processes can use Top Byte Ignore (TBI). We need to mask out the
         // top byte of the faulting address to get the actual userspace address.
         let addr = if self.is_arch64() {
-            UserAddress::from(decoded.faulting_address & 0x00FF_FFFF_FFFF_FFFF)
+            UserAddress::from(raw_faulting_address & 0x00FF_FFFF_FFFF_FFFF)
         } else {
-            UserAddress::from(decoded.faulting_address)
+            UserAddress::from(raw_faulting_address)
         };
         #[cfg(not(target_arch = "aarch64"))]
-        let addr = UserAddress::from(decoded.faulting_address);
+        let addr = UserAddress::from(raw_faulting_address);
 
         // On uffd-registered range, handle according to the uffd rules
         if error_code == zx::Status::ACCESS_DENIED {
@@ -4160,14 +4167,14 @@ impl MemoryManager {
                         return ExceptionResult::Signal(SignalInfo::with_detail(
                             SIGBUS,
                             BUS_ADRERR as i32,
-                            SignalDetail::SigFault { addr: decoded.faulting_address },
+                            SignalDetail::SigFault { addr: raw_faulting_address },
                         ));
                     };
                 }
                 // There is a data race resulting from uffd unregistration and page fault happening
                 // at the same time. To detect it, we check if the access was meant to be rejected
                 // according to Starnix own information about the mapping.
-                if check_access_permissions_in_page_fault(&decoded, mapping) {
+                if check_access_permissions_in_page_fault(is_write, is_execute, mapping) {
                     track_stub!(
                         TODO("https://fxbug.dev/435171399"),
                         "Inconsistent permission fault"
@@ -4178,7 +4185,7 @@ impl MemoryManager {
             std::mem::drop(state);
         }
 
-        if decoded.not_present {
+        if not_present {
             {
                 let mut state = self.state.write();
                 match state.ensure_range_mapped_in_user_vmar(addr, None, &self.mapping_context) {
@@ -4206,10 +4213,7 @@ impl MemoryManager {
 
             // We should only attempt growth on a not-present fault and we should only extend if the
             // access type matches the protection on the GROWSDOWN mapping.
-            match self.extend_growsdown_mapping_to_address(
-                UserAddress::from(decoded.faulting_address),
-                decoded.is_write,
-            ) {
+            match self.extend_growsdown_mapping_to_address(addr, is_write) {
                 Ok(true) => {
                     return ExceptionResult::Handled;
                 }
@@ -4241,7 +4245,7 @@ impl MemoryManager {
         ExceptionResult::Signal(SignalInfo::with_detail(
             signo,
             si_code,
-            SignalDetail::SigFault { addr: decoded.faulting_address },
+            SignalDetail::SigFault { addr: raw_faulting_address },
         ))
     }
 
@@ -6489,6 +6493,45 @@ mod tests {
             let addr = map_memory_growsdown(&current_task, *PAGE_SIZE) - *PAGE_SIZE;
 
             assert_matches!(mm.extend_growsdown_mapping_to_address(addr.unwrap(), false), Ok(true));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_handle_page_fault_growsdown() {
+        spawn_kernel_and_run(async |current_task| {
+            let mm = current_task.mm().unwrap();
+
+            let mapped_addr = map_memory_growsdown(&current_task, *PAGE_SIZE);
+            let fault_addr = (mapped_addr - *PAGE_SIZE).unwrap();
+            assert!(mm.state.read().mappings.get(fault_addr).is_none());
+
+            #[cfg(target_arch = "aarch64")]
+            let raw_faulting_address = fault_addr.ptr() as u64 | (0xab << 56);
+            #[cfg(not(target_arch = "aarch64"))]
+            let raw_faulting_address = fault_addr.ptr() as u64;
+
+            let make_report = || PageFaultExceptionReport {
+                faulting_address: raw_faulting_address,
+                not_present: true,
+                is_write: true,
+                is_execute: false,
+            };
+
+            // The first page fault after `map_memory_growsdown` observes a new mapping generation
+            // and returns `Handled` to retry without extending the mapping yet.
+            assert!(matches!(
+                mm.handle_page_fault(make_report(), zx::Status::NOT_FOUND),
+                ExceptionResult::Handled
+            ));
+            assert!(mm.state.read().mappings.get(fault_addr).is_none());
+
+            // The retry with an unchanged mapping generation extends the GROWSDOWN mapping.
+            assert!(matches!(
+                mm.handle_page_fault(make_report(), zx::Status::NOT_FOUND),
+                ExceptionResult::Handled
+            ));
+            assert!(mm.state.read().mappings.get(fault_addr).is_some());
         })
         .await;
     }

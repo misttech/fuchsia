@@ -1087,6 +1087,23 @@ TEST_F(MapGrowsdownTest, TouchHighestGuardRegionPage) {
   ASSERT_EQ(errno, EEXIST);
 }
 
+#if defined(__aarch64__)
+TEST_F(MapGrowsdownTest, GrowWithTaggedAddress) {
+  intptr_t test_offset = initial_grows_down_low_offset() - page_size();
+  uintptr_t untagged_addr = reinterpret_cast<uintptr_t>(OffsetToAddress(test_offset));
+  // Set a non-zero Top Byte Ignore (TBI) tag in bits [63:56].
+  uintptr_t tagged_addr = untagged_addr | (uintptr_t{0xb4} << 56);
+
+  volatile char* tagged_ptr = reinterpret_cast<volatile char*>(tagged_addr);
+  *tagged_ptr = 't';
+  EXPECT_EQ(*tagged_ptr, 't');
+  EXPECT_EQ(ReadAtOffset(test_offset), 't');
+
+  // Also test a tagged read fault on an unmapped page further down.
+  EXPECT_EQ(*(tagged_ptr - page_size()), '\0');
+}
+#endif
+
 TEST_F(MapGrowsdownTest, MapNoreplaceInGuardRegion) {
   // Make a MAP_GROWSDOWN mapping slightly below the top of the playground area.
   size_t initial_grows_down_size = 2 * page_size();
