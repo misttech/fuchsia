@@ -34,58 +34,43 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
 
   void AttachElement(async_dispatcher_t* dispatcher, PowerElementHandles handles);
 
-  // Called by DriverRunner whenever a new node is bound. If the node is a leaf driver instance,
-  // it will be added to |leaf_driver_instances_|.
+  // Called by DriverRunner whenever a new node is bound. If the node is a leaf driver, adds a
+  // power dependency on the node to the AllDrivers element, passing the startup lease to be held
+  // until the dependency addition completes.
   void OnNodeBound(std::shared_ptr<const Node> node);
 
  private:
-  // Transfers startup leases from leaf nodes over to this element. Should only be called once
-  // when the system first switches to the "on" level, marking the end of the boot phase.
-  //
-  // It traverses the topology bottom-up (post-order) to identify leaf driver nodes and
-  // extracts the startup lease from every bound node:
-  //   - Leaves: Are added to |leaf_driver_instances_|. Their startup lease is kept in |leases_|
-  //             or a new lease is asynchronously requested.
-  //   - Non-leaves: Their startup lease is temporarily placed into a list so it is
-  //                 kept alive until all leaf asynchronous acquisitions finish.
+  // Traverses the topology bottom-up (post-order) to identify leaf driver nodes and adds
+  // power dependencies on them, passing their startup leases to be dropped once the dependencies
+  // are added. Should only be called once when the system first switches to the "on" level.
   void CompleteStartupTransition();
 
   // Processes startup transition logic for a single |node|:
   // If the node is not bound, does nothing.
   // Otherwise, retrieves the node's startup lease.
-  //   - If |has_bound_descendant| is false (the node is a leaf driver instance), adds it to
-  //     |leaf_driver_instances_|. If it has a valid startup lease, transfers it to |leases_|.
+  //   - If |has_bound_descendant| is false (the node is a leaf driver instance), adds a power
+  //     dependency on the node and passes the startup lease.
   //   - If |has_bound_descendant| is true, the node is not a leaf; its startup lease is dropped.
   void ProcessStartupNode(const std::shared_ptr<const Node>& node, bool has_bound_descendant);
 
-  // Asynchronously acquires a lease for the given node. |deferred| will be executed when the
-  // operation completes (and all references to its shared pointer are destroyed).
-  void AcquireLease(std::shared_ptr<const Node> node,
-                    std::shared_ptr<fit::deferred_callback> deferred);
-  void RemoveAncestors(const std::shared_ptr<const Node>& node);
+  // Adds a power dependency on a leaf driver node to the AllDrivers element.
+  // The optional |startup_lease| is held until the AddDependency call completes asynchronously,
+  // preventing the node from dropping power before the dependency is established.
+  // Adding a dependency that already exists is harmless: Power Broker rejects it with
+  // ALREADY_EXISTS, which is ignored.
+  void AddDependency(const std::shared_ptr<const Node>& node,
+                     std::optional<zx::eventpair> startup_lease = std::nullopt);
 
   fidl::ServerBindingGroup<fuchsia_power_broker::ElementRunner> element_runner_bindings_;
   fidl::Client<fuchsia_power_broker::ElementControl> element_control_;
   fidl::Client<fuchsia_power_broker::Lessor> lessor_;
 
-  // Contains all leaf driver instances in the node topology. Maps the node's weak pointer to
-  // its topological path.
-  std::unordered_map<std::string, std::weak_ptr<const Node>> leaf_driver_instances_;
-
-  // Leases are acquired when the level is set to 1 for all current leaf nodes,
-  // and when a new leaf node is bound. They are dropped when the level is set to 0,
-  // or when a node is no longer a driver-bounded leaf node.
-  // The keys in |leases_| must match with |leaf_driver_instances_|.
-  std::unordered_map<std::string, zx::eventpair> leases_;
-
   // The current power level of this element. 0 represents low power, 1 represents the active/on
   // state.
   uint32_t current_level_ = 0;
 
-  // Set to true after the initial startup transition has finished.
-  // During boot, this is false. The startup transition is completed when the element's power
-  // level is first set to 1, at which point all startup leases are transferred from the leaf nodes
-  // to this element.
+  // Set to true when the element first transitions to the "on" level (level 1), marking the
+  // completion of the initial startup transition.
   bool transition_complete_ = false;
 
   // A weak pointer to the root of the node topology, used to discover all nodes during the
