@@ -54,8 +54,11 @@ host_go_test(
     srcs = ["testparser_test.go"],
     embed = [":testparser"],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
-    deps = ["//third_party/golibs:github.com/google/go-cmp"],
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
+    ],
 )
 
 host_go_test(
@@ -63,16 +66,6 @@ host_go_test(
     srcs = ["cmd/main_test.go"],
     embed = [":main"],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
-    deps = ["//third_party/golibs:github.com/google/go-cmp"],
-)
-
-test_suite(
-    name = "tests",
-    target_compatible_with = HOST_CONSTRAINTS,
-    tests = [
-        ":testparser_cmd_test",
-        ":testparser_tests",
-    ],
-    visibility = ["//:__subpackages__"],
+    visibility = ["//tools:__pkg__"],
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )

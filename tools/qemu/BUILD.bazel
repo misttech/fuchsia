@@ -19,7 +19,6 @@ go_library(
     visibility = ["//tools:__subpackages__"],
 )
 
-# @bazel2gn:skip
 host_go_test(
     name = "qemu_tests",
     srcs = [

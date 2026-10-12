@@ -49,18 +49,3 @@ if (is_host) {
     ]
   }
 }
-if (is_host) {
-  go_test("subprocess_tests") {
-    sources = [ "subprocess_test.go" ]
-    embed = [ ":subprocess" ]
-    deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
-  }
-}
-group("tests") {
-  deps = [ ":subprocess_tests" ]
-  visibility = [
-    ":*",
-    "//tools:*",
-  ]
-  testonly = true
-}

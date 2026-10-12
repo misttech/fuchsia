@@ -26,11 +26,13 @@ set -euo pipefail
 #    Bazel `fx_package`. Rust device tests migrate the same way (explicit `.cml` with the Rust
 #    test runner shard, `fx_packaged_binary` of the `rustc_*` `:<name>_test` or a `rustc_test`).
 #    Tests whose language is unknown never trigger it.
-# 4. test_generated_by_bazel2gn (error): tests move to Bazel and bazel2gn does not translate
-#    them. In a dual-build package, flags a BUILD.bazel test target (`rustc_test`, `go_test`,
-#    `host_go_test`, `test_suite`, ...) or a `with_unit_tests`/`with_host_unit_tests`/`test_deps`
-#    attribute of a `rustc_*` target without `# @bazel2gn:skip`, and a generated section of
-#    BUILD.gn that contains `with_unit_tests`, `test_deps`, `rustc_test(` or `go_test(`.
+# 4. test_generated_by_bazel2gn (error): tests move to Bazel and must not be translated to GN.
+#    bazel2gn still translates `rustc_test`, `go_test`, `fidlgentest_go_test`, `test_suite`
+#    and the `with_unit_tests`/`with_host_unit_tests`/`test_deps` attributes of `rustc_*`
+#    targets, so in a dual-build package this flags any of those without `# @bazel2gn:skip`.
+#    `host_*_test` and `fx_*` rules are never translated, so they aren't flagged. Also flags
+#    a generated section of BUILD.gn that contains `with_unit_tests`, `test_deps`,
+#    `rustc_test(` or `go_test(`.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -106,9 +108,11 @@ EXCLUDED_GLOBAL_DIRS = (
     "build/config/rust/lints",
 )
 
-# Tests move to Bazel and bazel2gn does not translate them: these rules must carry
-# `# @bazel2gn:skip` in a dual-build BUILD.bazel (fx_* test rules are not convertible at all).
-BAZEL2GN_TEST_RULES = {"rustc_test", "rust_test", "go_test", "host_go_test", "fidlgentest_go_test", "test_suite"}
+# bazel2gn still translates these rules into GN, so in a dual-build BUILD.bazel they need
+# `# @bazel2gn:skip` to keep the tests Bazel-only. `host_*_test` and `fx_*` rules aren't listed
+# because they map to __NO_GN_EQUIVALENT__ in build/tools/bazel2gn/constants.go, so bazel2gn
+# skips them without the annotation.
+BAZEL2GN_TEST_RULES = {"rustc_test", "rust_test", "go_test", "fidlgentest_go_test", "test_suite"}
 RUST_UNIT_TEST_OWNERS = {"rustc_library", "rustc_binary", "rustc_proc_macro", "rust_library", "rust_binary", "rust_proc_macro"}
 UNIT_TEST_ATTRS = ("with_unit_tests", "with_host_unit_tests", "test_deps", "test_compile_data", "test_rustc_flags")
 

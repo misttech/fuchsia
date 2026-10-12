@@ -288,6 +288,45 @@ fx_unittest_package(
 )`,
 			wantGN: "",
 		},
+		{
+			name: "Bazel host test rules",
+			bazel: `host_go_test(
+	name = "foo_go_test",
+	srcs = ["foo_test.go"],
+	embed = [":foo"],
+)
+
+host_rustc_test(
+	name = "foo_rust_test",
+	srcs = ["src/lib.rs"],
+)
+
+host_cc_test(
+	name = "foo_cc_test",
+	srcs = ["foo_test.cc"],
+)
+
+host_py_test(
+	name = "foo_py_test",
+	main = "foo_test.py",
+)
+
+host_shac_test(
+	name = "foo_shac_test",
+	srcs = ["foo_test.star"],
+)
+
+host_test(
+	name = "foo_test",
+	binary = ":foo_bin",
+)
+
+host_test_data_files(
+	name = "foo_test_data",
+	srcs = ["testdata/foo.json"],
+)`,
+			wantGN: "",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

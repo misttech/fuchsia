@@ -95,9 +95,10 @@ translate tests, and a Bazel test reaches `tests.json` (`fx test`, CQ) only thro
 - **Nothing test-related is generated into BUILD.gn.** In a dual-build BUILD.bazel, put
   `# @bazel2gn:skip` on every test target (`fx_cc_binary(testonly)`, `rustc_test`,
   `fx_packaged_binary`, `fx_component_manifest`, `fx_test_component`, `fx_package`, `fx_test`,
-  `test_suite`, `host_*_test`, `go_test`) and on the `with_unit_tests`, `test_deps` (and any other
+  `test_suite`, `go_test`) and on the `with_unit_tests`, `test_deps` (and any other
   test-only) attributes of a `rustc_library`/`rustc_binary`/`rustc_proc_macro`, so the generated
-  GN target has no `with_unit_tests`. Delete the GN test targets (`fuchsia_unittest_package`,
+  GN target has no `with_unit_tests`. `host_*_test` rules (`host_go_test`, `host_rustc_test`,
+  `host_py_test`, ...) need no annotation: bazel2gn always skips them. Delete the GN test targets (`fuchsia_unittest_package`,
   `fuchsia_test_package`, `fuchsia_*_component` for tests, test `executable`/`test`, `rustc_test`).
 - **Unwrap the magic manifest.** `fuchsia_unittest_package`/`fuchsia_unittest_component` without
   `manifest` generate the `.cml` from deps metadata; Bazel does not. Add `meta/<component>.cml`

@@ -25,7 +25,6 @@ group("tests") {
     "//tools/lib/retry:retry_tests",
     "//tools/lib/serdedoc:tests",
     "//tools/lib/streams:streams_tests",
-    "//tools/lib/subprocess:subprocess_tests",
     "//tools/lib/syslog:syslog_tests",
   ]
 }

@@ -143,7 +143,6 @@ go_binary_host_tool(
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
-# @bazel2gn:skip
 host_go_test(
     name = "botanist_cmd_tests",
     srcs = ["cmd/run_test.go"],
@@ -152,7 +151,6 @@ host_go_test(
     visibility = ["//tools:__pkg__"],
 )
 
-# @bazel2gn:skip
 host_go_test(
     name = "botanist_lib_tests",
     srcs = [
@@ -164,7 +162,6 @@ host_go_test(
     visibility = ["//tools:__pkg__"],
 )
 
-# @bazel2gn:skip
 host_go_test(
     name = "botanist_repo_tests",
     srcs = [
@@ -176,7 +173,6 @@ host_go_test(
     visibility = ["//tools:__pkg__"],
 )
 
-# @bazel2gn:skip
 host_go_test(
     name = "botanist_targets_tests",
     srcs = [

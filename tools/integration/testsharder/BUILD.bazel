@@ -121,6 +121,7 @@ host_go_test(
         "test_modifier_test.go",
     ],
     embed = [":testsharder_lib"],
+    visibility = ["//tools:__pkg__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
         "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
@@ -133,6 +134,7 @@ host_go_test(
         "metadata/metadata_test.go",
     ],
     embed = [":metadata"],
+    visibility = ["//tools:__pkg__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
     ],

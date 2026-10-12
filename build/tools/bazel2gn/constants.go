@@ -68,10 +68,9 @@ var bazelRuleToGNTemplate = map[string]string{
 	"alias": "group",
 
 	// Go
-	"go_binary":    "go_binary",
-	"go_library":   "go_library",
-	"go_test":      "go_test",
-	"host_go_test": "go_test",
+	"go_binary":  "go_binary",
+	"go_library": "go_library",
+	"go_test":    "go_test",
 
 	// Python
 	"py_library": "python_library",
@@ -145,6 +144,19 @@ var bazelRuleToGNTemplate = map[string]string{
 	"fx_test_component":     noGNEquivalent,
 	"fx_unittest_component": noGNEquivalent,
 	"fx_unittest_package":   noGNEquivalent,
+
+	// Bazel host test rules. Migrated host tests are only defined in Bazel and
+	// reach GN through `bazel_test_suite()`, so they should never get a GN twin.
+	"host_cc_test":    noGNEquivalent,
+	"host_go_test":    noGNEquivalent,
+	"host_py_test":    noGNEquivalent,
+	"host_rustc_test": noGNEquivalent,
+	"host_shac_test":  noGNEquivalent,
+	"host_test":       noGNEquivalent,
+
+	// Runtime data for Bazel host tests, so it's only consumed by the rules
+	// above.
+	"host_test_data_files": noGNEquivalent,
 }
 
 // attrsToOmitByRules stores a mapping from known Bazel rules to attributes to
@@ -190,9 +202,8 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// the rule.
 	"stamp_group": {"stamp": true},
 	// The Bazel test target attribute `size` is not supported in GN.
-	"go_test":      {"size": true},
-	"host_go_test": {"size": true},
-	"rustc_test":   {"size": true},
+	"go_test":    {"size": true},
+	"rustc_test": {"size": true},
 }
 
 // Common Bazel attributes that use different names in GN.

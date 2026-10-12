@@ -66,29 +66,3 @@ if (is_host) {
     deps = [ ":testparser" ]
   }
 }
-if (is_host) {
-  go_test("testparser_tests") {
-    sources = [ "testparser_test.go" ]
-    embed = [ ":testparser" ]
-    visibility = [ "//*" ]
-    deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
-  }
-}
-if (is_host) {
-  go_test("testparser_cmd_test") {
-    sources = [ "cmd/main_test.go" ]
-    embed = [ ":main" ]
-    visibility = [ "//*" ]
-    deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
-  }
-}
-if (is_host) {
-  group("tests") {
-    deps = [
-      ":testparser_cmd_test",
-      ":testparser_tests",
-    ]
-    visibility = [ "//*" ]
-    testonly = true
-  }
-}

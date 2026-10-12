@@ -30,6 +30,5 @@ Adding support for new test frameworks is easy, simple, and fun!
 ## Testing
 
 ```
-fx set core.x64 --with-host //tools/testing/testparser:tests
-fx test //tools/testing/testparser
+fx bazel test --config=host //tools/testing/testparser:all
 ```

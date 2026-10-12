@@ -8,6 +8,5 @@ group("tests") {
   deps = [
     "runtests:tests",
     "tap:tap_tests",
-    "testparser:tests",
   ]
 }

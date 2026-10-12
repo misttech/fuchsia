@@ -83,11 +83,7 @@ if (is_host) {
 
 group("tests") {
   testonly = true
-  deps = [
-    ":testsharder_lib_tests($host_toolchain)",
-    ":testsharder_metadata_tests($host_toolchain)",
-    ":testsharder_tests($host_toolchain)",
-  ]
+  deps = [ ":testsharder_tests($host_toolchain)" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -192,26 +188,4 @@ if (is_host) {
       "//tools/lib/logger",
     ]
   }
-}
-go_test("testsharder_lib_tests") {
-  sources = [
-    "durations_test.go",
-    "ffx_deps_test.go",
-    "images_test.go",
-    "postprocess_test.go",
-    "preprocess_test.go",
-    "shard_test.go",
-    "task_requests_test.go",
-    "test_modifier_test.go",
-  ]
-  embed = [ ":testsharder_lib" ]
-  deps = [
-    "//third_party/golibs:github.com/google/go-cmp/cmp",
-    "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
-  ]
-}
-go_test("testsharder_metadata_tests") {
-  sources = [ "metadata/metadata_test.go" ]
-  embed = [ ":metadata" ]
-  deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
 }

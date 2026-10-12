@@ -29,11 +29,6 @@ host_go_test(
     srcs = ["subprocess_test.go"],
     embed = [":subprocess"],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
-)
-
-test_suite(
-    name = "tests",
-    tests = [":subprocess_tests"],
     visibility = ["//tools:__pkg__"],
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )
