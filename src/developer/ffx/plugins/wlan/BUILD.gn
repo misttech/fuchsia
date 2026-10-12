@@ -20,7 +20,6 @@ ffx_plugin("ffx_wlan") {
     "//src/developer/ffx/core:lib",
     "//third_party/rust_crates:argh",
   ]
-  test_deps = [ "common:ffx-wlan-common_test" ]
 }
 
 ffx_tool("ffx_wlan_tool") {
@@ -49,5 +48,8 @@ group("bin") {
 
 group("tests") {
   testonly = true
-  deps = [ ":ffx_wlan_tests($host_toolchain)" ]
+  deps = [
+    ":ffx_wlan_tests($host_toolchain)",
+    "common:ffx-wlan-common_test($host_toolchain)",
+  ]
 }

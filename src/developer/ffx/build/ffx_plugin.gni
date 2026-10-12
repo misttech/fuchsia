@@ -72,9 +72,6 @@ template("ffx_plugin") {
   _crate_name = target_name
 
   tests_deps = []
-  if (defined(invoker.test_deps)) {
-    tests_deps += invoker.test_deps
-  }
 
   if (is_host) {
     # The `args_*` parameters should not be passed to other sub-targets, and
@@ -169,6 +166,7 @@ template("ffx_plugin") {
                                      "sources",
                                      "enforce_source_listing",
                                      "target_name",
+                                     "test_deps",
                                      "with_unit_tests",
                                      "original_target_name",
                                      "proc_macro_deps",
@@ -265,6 +263,8 @@ template("ffx_plugin") {
     }
 
     includes_execution = defined(invoker.sources) && invoker.sources != []
+    assert(includes_execution || !defined(invoker.test_deps),
+           "`test_deps` requires `sources` to be specified.")
 
     # Adding `_plugins_rs_deps` as public_deps would not make the libraries in
     # it available to the suite target, which depends on this library and
@@ -348,6 +348,7 @@ template("ffx_plugin") {
                                    "target_name",
                                    "sources",
                                    "enforce_source_listing",
+                                   "test_deps",
                                    "with_unit_tests",
                                    "original_target_name",
                                    "proc_macro_deps",
