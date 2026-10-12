@@ -9,7 +9,6 @@ use crate::fuchsia::node::{FxNode, OpenedNode};
 use crate::fuchsia::pager::PagerBacked;
 use crate::fuchsia::volume::FxVolume;
 use anyhow::{Context as _, Error, anyhow, ensure};
-use arrayref::{array_refs, mut_array_refs};
 use async_trait::async_trait;
 use fuchsia_async as fasync;
 use fuchsia_hash::Hash;
@@ -26,7 +25,6 @@ use fxfs::object_store::{
 };
 use linked_hash_map::LinkedHashMap;
 use scopeguard::ScopeGuard;
-use std::cmp::{Eq, PartialEq};
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -34,11 +32,10 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use storage_device::buffer::{BufferFuture, BufferRef};
-use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
+use storage_profile::{BlobMessage, FILE_OPEN_MARKER, FileMessage, Message};
 use storage_units::page_size;
 use vfs::execution_scope::ActiveGuard;
 
-const FILE_OPEN_MARKER: u64 = u64::MAX;
 const REPLAY_THREADS: usize = 2;
 // The number of messages to buffer before sending to record. They are chunked up to reduce the
 // number of allocations in the serving threads.
@@ -290,7 +287,7 @@ impl RecordingHandle for AttributeRecordingHandle {
 trait RecordedVolume: Send + Sync + Sized + Unpin {
     type IdType: std::fmt::Display + Ord + Send + Sized;
     type NodeType: PagerBacked;
-    type MessageType: Message<IdType = Self::IdType>;
+    type MessageType: NodeMessage<IdType = Self::IdType>;
 
     fn new(volume: Arc<FxVolume>) -> Self;
 
@@ -534,135 +531,25 @@ impl RecordedVolume for FileVolume {
     }
 }
 
-trait Message: Eq + PartialEq + Sized + Send + Sync + std::hash::Hash + 'static {
-    type IdType: std::fmt::Display + Ord + Send + Sized;
-
-    fn id(&self) -> Self::IdType;
-    fn offset(&self) -> u64;
-    fn encode_to(&self, dest: MutPtrByteSlice<'_>);
-    fn decode_from(src: PtrByteSlice<'_>) -> Self;
-    fn is_zeroes(&self) -> bool;
+trait NodeMessage: Message {
     fn from_node_request(node: Arc<dyn FxNode>, offset: u64) -> Result<Self, Error>;
-    fn is_open_marker(&self) -> bool;
 }
 
-#[derive(Debug, Eq, std::hash::Hash, PartialEq)]
-struct BlobMessage {
-    id: Hash,
-    // Don't bother with offset+length. The kernel is going split up and align it one way and then
-    // we're going to change it all with read-ahead/read-around.
-    offset: u64,
-}
-
-impl BlobMessage {
-    fn encode_to_impl(&self, dest: &mut [u8; size_of::<Self>()]) {
-        let (first, second) = mut_array_refs![dest, size_of::<Hash>(), size_of::<u64>()];
-        *first = self.id.into();
-        *second = self.offset.to_le_bytes();
-    }
-
-    fn decode_from_impl(src: &[u8; size_of::<Self>()]) -> Self {
-        let (first, second) = array_refs!(src, size_of::<Hash>(), size_of::<u64>());
-        Self { id: Hash::from_array(*first), offset: u64::from_le_bytes(*second) }
-    }
-}
-
-impl Message for BlobMessage {
-    type IdType = Hash;
-
-    fn id(&self) -> Self::IdType {
-        self.id
-    }
-
-    fn offset(&self) -> u64 {
-        self.offset
-    }
-
-    fn encode_to(&self, mut dest: MutPtrByteSlice<'_>) {
-        let mut buf = [0u8; size_of::<Self>()];
-        self.encode_to_impl(&mut buf);
-        dest.copy_from_slice(&buf);
-    }
-
-    fn decode_from(src: PtrByteSlice<'_>) -> Self {
-        let mut buf = [0u8; size_of::<Self>()];
-        src.copy_to_slice(&mut buf);
-        Self::decode_from_impl(&buf)
-    }
-
-    fn is_zeroes(&self) -> bool {
-        self.id == Hash::from_array([0u8; size_of::<Hash>()]) && self.offset == 0
-    }
-
+impl NodeMessage for BlobMessage {
     fn from_node_request(node: Arc<dyn FxNode>, offset: u64) -> Result<Self, Error> {
         match node.into_any().downcast::<FxBlob>() {
             Ok(blob) => Ok(Self { id: blob.root(), offset }),
             Err(_) => Err(anyhow!("Cannot record non-blob entry.")),
         }
     }
-
-    fn is_open_marker(&self) -> bool {
-        self.offset == FILE_OPEN_MARKER
-    }
 }
 
-#[derive(Debug, Eq, std::hash::Hash, PartialEq)]
-struct FileMessage {
-    id: u64,
-    // Don't bother with offset+length. The kernel is going split up and align it one way and then
-    // we're going to change it all with read-ahead/read-around.
-    offset: u64,
-}
-
-impl FileMessage {
-    fn encode_to_impl(&self, dest: &mut [u8; size_of::<Self>()]) {
-        let (first, second) = mut_array_refs![dest, size_of::<u64>(), size_of::<u64>()];
-        *first = self.id.to_le_bytes();
-        *second = self.offset.to_le_bytes();
-    }
-
-    fn decode_from_impl(src: &[u8; size_of::<Self>()]) -> Self {
-        let (first, second) = array_refs!(src, size_of::<u64>(), size_of::<u64>());
-        Self { id: u64::from_le_bytes(*first), offset: u64::from_le_bytes(*second) }
-    }
-}
-
-impl Message for FileMessage {
-    type IdType = u64;
-
-    fn id(&self) -> Self::IdType {
-        self.id
-    }
-
-    fn offset(&self) -> u64 {
-        self.offset
-    }
-
-    fn encode_to(&self, mut dest: MutPtrByteSlice<'_>) {
-        let mut buf = [0u8; size_of::<Self>()];
-        self.encode_to_impl(&mut buf);
-        dest.copy_from_slice(&buf);
-    }
-
-    fn decode_from(src: PtrByteSlice<'_>) -> Self {
-        let mut buf = [0u8; size_of::<Self>()];
-        src.copy_to_slice(&mut buf);
-        Self::decode_from_impl(&buf)
-    }
-
-    fn is_zeroes(&self) -> bool {
-        self.id == 0 && self.offset == 0
-    }
-
+impl NodeMessage for FileMessage {
     fn from_node_request(node: Arc<dyn FxNode>, offset: u64) -> Result<Self, Error> {
         match node.into_any().downcast::<FxFile>() {
             Ok(file) => Ok(Self { id: file.object_id(), offset }),
             Err(_) => Err(anyhow!("Cannot record non-file entry")),
         }
-    }
-
-    fn is_open_marker(&self) -> bool {
-        self.offset == FILE_OPEN_MARKER
     }
 }
 
@@ -676,18 +563,18 @@ pub trait Recorder: Send + Sync {
     fn record_open(&mut self, node: Arc<dyn FxNode>) -> Result<(), Error>;
 }
 
-struct RecorderImpl<T: Message> {
+struct RecorderImpl<T: NodeMessage> {
     sender: async_channel::Sender<Vec<T>>,
     buffer: Vec<T>,
 }
 
-impl<T: Message> RecorderImpl<T> {
+impl<T: NodeMessage> RecorderImpl<T> {
     fn new(sender: async_channel::Sender<Vec<T>>) -> Self {
         Self { sender, buffer: Vec::with_capacity(MESSAGE_CHUNK_SIZE) }
     }
 }
 
-impl<T: Message> Recorder for RecorderImpl<T> {
+impl<T: NodeMessage> Recorder for RecorderImpl<T> {
     fn record(&mut self, node: Arc<dyn FxNode>, offset: u64) -> Result<(), Error> {
         self.buffer.push(T::from_node_request(node, offset)?);
         if self.buffer.len() >= MESSAGE_CHUNK_SIZE {
@@ -707,7 +594,7 @@ impl<T: Message> Recorder for RecorderImpl<T> {
     }
 }
 
-impl<T: Message> Drop for RecorderImpl<T> {
+impl<T: NodeMessage> Drop for RecorderImpl<T> {
     fn drop(&mut self) {
         // Best effort sending what messages have already been queued.
         if self.buffer.len() > 0 {
@@ -916,8 +803,7 @@ impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
 mod tests {
     use super::{
         AttributeRecordingHandle, BlobMessage, BlobVolume, FileMessage, FileRecordingHandle,
-        FileVolume, IO_SIZE, Message, MutPtrByteSlice, PtrByteSlice, RecordedVolume,
-        RecordingHandle, Request, new_profile_state,
+        FileVolume, IO_SIZE, Message, RecordedVolume, RecordingHandle, Request, new_profile_state,
     };
     use crate::fuchsia::file::FxFile;
     use crate::fuchsia::fxblob::blob::FxBlob;
@@ -949,6 +835,7 @@ mod tests {
     use std::time::Duration;
     use storage_device::buffer::{BufferRef, MutableBufferRef};
     use storage_device::buffer_allocator::{BufferAllocator, BufferFuture, BufferSource};
+    use storage_ptr_slice::MutPtrByteSlice;
     use storage_units::BlockSize;
 
     struct FakeReaderWriterInner {
@@ -1078,25 +965,6 @@ mod tests {
         fn get_size(&self) -> u64 {
             self.inner.lock().data.len() as u64
         }
-    }
-
-    #[fuchsia::test]
-    async fn test_encode_decode_blob() {
-        let mut buf = [0u8; size_of::<BlobMessage>()];
-        let m = BlobMessage { id: [88u8; 32].into(), offset: 77 };
-        m.encode_to(MutPtrByteSlice::from(&mut buf[..]));
-        let m2 = BlobMessage::decode_from(PtrByteSlice::from(&buf[..]));
-        assert_eq!(m, m2);
-    }
-
-    #[fuchsia::test]
-    async fn test_encode_decode_file() {
-        let mut buf = [0u8; size_of::<FileMessage>()];
-        let m = FileMessage { id: 88, offset: 77 };
-        m.encode_to(MutPtrByteSlice::from(&mut buf[..]));
-        let m2 = FileMessage::decode_from(PtrByteSlice::from(&buf[..]));
-        assert!(!m2.is_zeroes());
-        assert_eq!(m, m2);
     }
 
     const TEST_PROFILE_NAME: &str = "test_profile";
@@ -1687,10 +1555,10 @@ mod tests {
             // Make a profile long enough to require 2 reads.
             let replay_handle = Box::new(FakeReaderWriter::new());
             let mut buff = vec![0u8; IO_SIZE * 2];
-            message.encode_to_impl((&mut buff[0..size_of::<BlobMessage>()]).try_into().unwrap());
-            message.encode_to_impl(
-                (&mut buff[IO_SIZE..IO_SIZE + size_of::<BlobMessage>()]).try_into().unwrap(),
-            );
+            message.encode_to(MutPtrByteSlice::from(&mut buff[0..size_of::<BlobMessage>()]));
+            message.encode_to(MutPtrByteSlice::from(
+                &mut buff[IO_SIZE..IO_SIZE + size_of::<BlobMessage>()],
+            ));
 
             replay_handle.inner.lock().data = buff;
             let delay1 = Event::new();
@@ -1730,19 +1598,16 @@ mod tests {
             // replay.
             {
                 let message = BlobMessage { id: [42u8; 32].into(), offset: 0 };
-                message
-                    .encode_to_impl((&mut buff[0..size_of::<BlobMessage>()]).try_into().unwrap());
+                message.encode_to(MutPtrByteSlice::from(&mut buff[0..size_of::<BlobMessage>()]));
             }
 
             // Create the blob that won't be missing and encode that.
             {
                 let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
                 let message = BlobMessage { id: blob.root(), offset: 0 };
-                message.encode_to_impl(
-                    (&mut buff[size_of::<BlobMessage>()..(size_of::<BlobMessage>() * 2)])
-                        .try_into()
-                        .unwrap(),
-                );
+                message.encode_to(MutPtrByteSlice::from(
+                    &mut buff[size_of::<BlobMessage>()..(size_of::<BlobMessage>() * 2)],
+                ));
             }
         }
         let device = fixture.close().await;
@@ -1784,7 +1649,7 @@ mod tests {
         {
             let id = write_file(&fixture, "foo", &[1, 2, 3, 4]).await;
             let message = FileMessage { id, offset: 0 };
-            message.encode_to_impl((&mut buff[0..size_of::<FileMessage>()]).try_into().unwrap());
+            message.encode_to(MutPtrByteSlice::from(&mut buff[0..size_of::<FileMessage>()]));
         }
         // Remove the file now.
         fixture
@@ -1798,22 +1663,18 @@ mod tests {
         {
             tombstoned_file_id = write_file(&fixture, "bar", &[1, 2, 3, 4]).await;
             let message = FileMessage { id: tombstoned_file_id, offset: 0 };
-            message.encode_to_impl(
-                (&mut buff[size_of::<FileMessage>()..(size_of::<FileMessage>() * 2)])
-                    .try_into()
-                    .unwrap(),
-            );
+            message.encode_to(MutPtrByteSlice::from(
+                &mut buff[size_of::<FileMessage>()..(size_of::<FileMessage>() * 2)],
+            ));
         }
 
         // Encode the file that will remain and be replayed last.
         {
             remaining_file_id = write_file(&fixture, "baz", &[1, 2, 3, 4]).await;
             let message = FileMessage { id: remaining_file_id, offset: 0 };
-            message.encode_to_impl(
-                (&mut buff[(size_of::<FileMessage>() * 2)..(size_of::<FileMessage>() * 3)])
-                    .try_into()
-                    .unwrap(),
-            );
+            message.encode_to(MutPtrByteSlice::from(
+                &mut buff[(size_of::<FileMessage>() * 2)..(size_of::<FileMessage>() * 3)],
+            ));
         }
         let device = fixture.close().await;
         device.ensure_unique();
@@ -1881,15 +1742,13 @@ mod tests {
 
         let unlinked_file_id = write_file(&fixture, "unlinked", &[1, 2, 3, 4]).await;
         let message = FileMessage { id: unlinked_file_id, offset: 0 };
-        message.encode_to_impl((&mut buff[0..size_of::<FileMessage>()]).try_into().unwrap());
+        message.encode_to(MutPtrByteSlice::from(&mut buff[0..size_of::<FileMessage>()]));
 
         let remaining_file_id = write_file(&fixture, "remaining", &[5, 6, 7, 8]).await;
         let message = FileMessage { id: remaining_file_id, offset: 0 };
-        message.encode_to_impl(
-            (&mut buff[size_of::<FileMessage>()..(size_of::<FileMessage>() * 2)])
-                .try_into()
-                .unwrap(),
-        );
+        message.encode_to(MutPtrByteSlice::from(
+            &mut buff[size_of::<FileMessage>()..(size_of::<FileMessage>() * 2)],
+        ));
 
         let device = fixture.close().await;
         device.ensure_unique();

@@ -6,6 +6,7 @@ group("lib") {
   deps = [
     "blob_metadata",
     "mapping",
+    "profile",
     "ramdevice_client",
     "storage_device",
     "vfs/cpp",
@@ -31,6 +32,7 @@ group("tests") {
     "key-bag:tests",
     "mapping:tests",
     "operation:tests",
+    "profile:tests",
     "pseudo_fs:tests",
     "ptr_slice:tests",
     "ramdevice_client:tests",
