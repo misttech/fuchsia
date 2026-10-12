@@ -14,8 +14,5 @@ group("tools") {
 group("tests") {
   testonly = true
 
-  deps = [
-    "fint:tests",
-    "testsharder:tests",
-  ]
+  deps = [ "fint:tests" ]
 }

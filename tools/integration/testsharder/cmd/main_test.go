@@ -49,10 +49,9 @@ func (m *mockFFX) GetPBArtifacts(ctx context.Context, pbPath, group string) ([]s
 //
 // To add a new test case:
 //  1. Add an entry to the `testCases` slice here.
-//  2. Run `tools/integration/testsharder/update_goldens.sh` to generate the new
-//     golden file.
-//  3. Add the new golden file as a dependency of the test executable in
-//     testsharder's BUILD.gn file.
+//  2. Run `tools/integration/testsharder/update_goldens.sh`. It generates the
+//     new golden file and automatically adds it to goldens.bzl, so no BUILD
+//     file edits are needed.
 func TestExecute(t *testing.T) {
 	ctx := context.Background()
 

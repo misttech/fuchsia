@@ -45,6 +45,7 @@ test_suite(
         "//tools/gtest_test_parser:gtest_test_parser_lib_tests",
         "//tools/integration/testsharder:testsharder_lib_tests",
         "//tools/integration/testsharder:testsharder_metadata_tests",
+        "//tools/integration/testsharder:testsharder_tests",
         "//tools/lib/agents:agents_tests",
         "//tools/lib/subprocess:subprocess_tests",
         "//tools/mobly_test_parser:mobly_test_parser_lib_tests",
