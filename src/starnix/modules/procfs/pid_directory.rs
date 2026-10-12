@@ -450,7 +450,13 @@ impl FsNodeOps for FdDirectory {
         // Make sure that the file descriptor exists before creating the node.
         let file = task.files()?.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         // Derive the symlink's mode from the mode in which the file was opened.
-        let mode = FileMode::IFLNK | Access::from_open_flags(file.flags()).user_mode();
+        // Readable and/or writable file descriptors also set execute permission on the symlink
+        // (0500 for O_RDONLY, 0300 for O_WRONLY, 0700 for O_RDWR, and 0000 for O_PATH).
+        let mut access = Access::from_open_flags(file.flags());
+        if access.is_nontrivial() {
+            access |= Access::EXEC;
+        }
+        let mode = FileMode::IFLNK | access.user_mode();
         let target = self.target.clone();
         Ok(entry.node.fs().create_node_and_allocate_node_id(
             CallbackSymlinkNode::new(move || {

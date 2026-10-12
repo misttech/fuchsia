@@ -711,6 +711,33 @@ TEST_F(ProcTaskDirTest, FdOpath) {
   ASSERT_TRUE(regular_fd.is_valid());
 }
 
+TEST_F(ProcTaskDirTest, FdOpathMode) {
+  test_helper::ScopedTempFD temp_file;
+  ASSERT_TRUE(temp_file);
+
+  constexpr struct {
+    int open_flags;
+    mode_t expected_mode;
+  } kTestCases[] = {
+      {O_RDONLY, S_IFLNK | 0500},
+      {O_WRONLY, S_IFLNK | 0300},
+      {O_RDWR, S_IFLNK | 0700},
+      {O_RDONLY | O_PATH, S_IFLNK | 0000},
+      {O_WRONLY | O_PATH, S_IFLNK | 0000},
+      {O_RDWR | O_PATH, S_IFLNK | 0000},
+  };
+
+  for (const auto& [open_flags, expected_mode] : kTestCases) {
+    SCOPED_TRACE(fxl::StringPrintf("open_flags=0x%x", open_flags));
+    fbl::unique_fd fd(SAFE_SYSCALL(open(temp_file.name().c_str(), open_flags)));
+    ASSERT_TRUE(fd.is_valid());
+    std::string fd_path = fxl::StringPrintf(kProcSelfFdPath, fd.get());
+    struct stat fd_stat = {};
+    SAFE_SYSCALL(fstatat(AT_FDCWD, fd_path.c_str(), &fd_stat, AT_SYMLINK_NOFOLLOW));
+    EXPECT_EQ(fd_stat.st_mode, expected_mode);
+  }
+}
+
 TEST_F(ProcTaskDirTest, FdOpathSymlink) {
   test_helper::ScopedTempFD temp_file;
   ASSERT_TRUE(temp_file);

@@ -191,12 +191,14 @@ mod inner_access {
 
     impl Access {
         pub fn from_open_flags(flags: OpenFlags) -> Self {
-            match flags & OpenFlags::ACCESS_MASK {
-                OpenFlags::RDONLY => Self::READ,
-                OpenFlags::WRONLY => Self::WRITE,
-                OpenFlags::RDWR => Self::READ | Self::WRITE,
-                _ => Self::EXIST, // Nonstandard access modes can be opened but will fail to read or write.
+            let mut access = Self::EXIST;
+            if flags.can_read() {
+                access |= Self::READ;
             }
+            if flags.can_write() {
+                access |= Self::WRITE;
+            }
+            access
         }
 
         pub fn rwx() -> Self {
@@ -249,5 +251,17 @@ mod test {
         assert!(FileMode::from_string(b"123".into()).is_err());
         assert!(FileMode::from_string(b"\x80".into()).is_err());
         assert!(FileMode::from_string(b"0999".into()).is_err());
+    }
+
+    #[::fuchsia::test]
+    fn test_access_from_open_flags() {
+        assert_eq!(Access::from_open_flags(OpenFlags::RDONLY), Access::READ);
+        assert_eq!(Access::from_open_flags(OpenFlags::WRONLY), Access::WRITE);
+        assert_eq!(Access::from_open_flags(OpenFlags::RDWR), Access::READ | Access::WRITE);
+        assert_eq!(Access::from_open_flags(OpenFlags::ACCESS_MASK), Access::EXIST);
+        assert_eq!(Access::from_open_flags(OpenFlags::PATH), Access::EXIST);
+        assert_eq!(Access::from_open_flags(OpenFlags::PATH | OpenFlags::RDONLY), Access::EXIST);
+        assert_eq!(Access::from_open_flags(OpenFlags::PATH | OpenFlags::WRONLY), Access::EXIST);
+        assert_eq!(Access::from_open_flags(OpenFlags::PATH | OpenFlags::RDWR), Access::EXIST);
     }
 }
