@@ -22,7 +22,7 @@
         },
         {
             name: "netstack",
-            url: "netstack#meta/netstack.cm",
+            url: "netstack#meta/netstack3.cm",
         },
     ],
     offer: [

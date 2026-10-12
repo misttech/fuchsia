@@ -237,7 +237,7 @@ class WebRunnerPixelTest : public ui_testing::PortableUITest,
   static constexpr auto kMemoryPressureSignalerUrl = "#meta/memory_pressure_signaler.cm";
 
   static constexpr auto kNetstack = "netstack";
-  static constexpr auto kNetstackUrl = "#meta/netstack.cm";
+  static constexpr auto kNetstackUrl = "#meta/netstack3.cm";
 
   static constexpr auto kWebContextProvider = "web_context_provider";
   static constexpr auto kWebContextProviderUrl =

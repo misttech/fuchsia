@@ -231,7 +231,7 @@ class ChromiumInputTest : public ChromiumInputBase {
   static constexpr auto kMemoryPressureSignalerUrl = "#meta/memory_pressure_signaler.cm";
 
   static constexpr auto kNetstack = "netstack";
-  static constexpr auto kNetstackUrl = "#meta/netstack.cm";
+  static constexpr auto kNetstackUrl = "#meta/netstack3.cm";
 
   static constexpr auto kBuildInfoProvider = "build_info_provider";
   static constexpr auto kBuildInfoProviderUrl = "#meta/fake_build_info.cm";

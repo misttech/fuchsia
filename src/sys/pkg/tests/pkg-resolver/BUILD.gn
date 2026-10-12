@@ -562,7 +562,7 @@ fuchsia_test_package("pkg-resolver-integration-tests") {
     "//src/sys/pkg/bin/system-update-committer:component",
 
     # Isolated, low-deps netstack
-    "//src/connectivity/network:netstack-for-tests",
+    "//src/connectivity/network/netstack3:component-for-tests",
 
     # For ramdisk devices, needed to back blobfs (which in turn backs pkg-cache)
     "//src/storage/testing:storage_driver_test_realm",

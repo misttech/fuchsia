@@ -119,8 +119,8 @@ fuchsia_test_package("pkg-cache-integration-tests") {
   test_components = [ ":pkg-cache-integration-test" ]
   deps = [
     ":ca.cert-resource",
-    "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
+    "//src/connectivity/network/netstack3:component-for-tests",
     "//src/connectivity/policy/http-client:component",
     "//src/sys/pkg/bin/pkg-cache:component",
     "//src/sys/pkg/bin/system-update-committer:component",

@@ -182,7 +182,7 @@ fuchsia_unittest_package("timekeeper-tests") {
     ":bin_test",
     ":testdata",
     "//src/connectivity/network/dns:component",
-    "//src/connectivity/network/netstack3:component-dropin",
+    "//src/connectivity/network/netstack3:component-for-tests",
   ]
   test_specs = {
     environments = [

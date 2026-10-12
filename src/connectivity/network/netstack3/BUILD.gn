@@ -374,21 +374,6 @@ ns3_test_component("component-conformance") {
   deps = [ ":bin-instrumented" ]
 }
 
-# Drop-in component with the name "netstack" rather than "netstack3."
-ns3_test_component("component-dropin") {
-  component_name = "netstack"
-  manifest = "meta/netstack3_test.cml"
-  config_values_source = "config/test.json5"
-  deps = [ ":bin" ]
-}
-
-ns3_test_component("component-debug-dropin") {
-  component_name = "netstack-debug"
-  manifest = "meta/netstack3_debug.cml"
-  config_values_source = "config/test-debug.json5"
-  deps = [ ":bin-instrumented" ]
-}
-
 fuchsia_unittest_package("netstack3-bin_test") {
   deps = [
     ":bin_test",

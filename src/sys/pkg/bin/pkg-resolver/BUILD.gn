@@ -184,8 +184,8 @@ fuchsia_test_package("unit-tests-package") {
   deps = [
     ":eng-component-and-config",
     ":unit-tests-driver",
-    "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
+    "//src/connectivity/network/netstack3:component-for-tests",
     "//src/connectivity/policy/http-client:component",
     "//src/sys/pkg/lib/fuchsia-pkg-testing/certs",
     "//src/sys/pkg/testing:fake-ssl-certs",

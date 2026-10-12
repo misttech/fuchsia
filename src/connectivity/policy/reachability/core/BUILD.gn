@@ -88,7 +88,7 @@ fuchsia_test_component("reachability-core-lib-test-component") {
 
 fuchsia_test_package("reachability-core-lib-test") {
   test_components = [ ":reachability-core-lib-test-component" ]
-  deps = [ "//src/connectivity/network:netstack-for-tests" ]
+  deps = [ "//src/connectivity/network/netstack3:component-for-tests" ]
 }
 
 group("tests") {

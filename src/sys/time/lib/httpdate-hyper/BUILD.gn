@@ -54,7 +54,7 @@ fuchsia_unittest_package("httpdate-hyper-tests") {
   deps = [
     ":httpdate-hyper_test",
     "//src/connectivity/network/dns:component",
-    "//src/connectivity/network/netstack3:component-dropin",
+    "//src/connectivity/network/netstack3:component-for-tests",
   ]
 
   # This test depends on root ssl certificate which is a system capability.

@@ -127,7 +127,7 @@ if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
     package_name = "netstack"
     testonly = true
     visibility = [ ":*" ]
-    deps = [ "//src/connectivity/network/netstack3:component-dropin" ]
+    deps = [ "//src/connectivity/network/netstack3:component-for-tests" ]
   }
 
   fuchsia_test_package(

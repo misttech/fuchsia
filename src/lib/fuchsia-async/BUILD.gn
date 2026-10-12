@@ -13,7 +13,7 @@ fuchsia_unittest_package("fuchsia-async-tests") {
   manifest = "meta/fuchsia_async_lib_test.cml"
   deps = [
     ":fuchsia-async_test",
-    "//src/connectivity/network:netstack-for-tests",
+    "//src/connectivity/network/netstack3:component-for-tests",
   ]
   test_specs = {
     environments = [ emu_env ]

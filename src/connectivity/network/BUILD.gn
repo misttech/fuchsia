@@ -28,15 +28,6 @@ fuchsia_component("component-basic") {
   manifest = "meta/network-basic.cml"
 }
 
-# Some tests depend on Netstack, but don't exercise its functionality and
-# don't care between Netstack 2 and 3. We give them Netstack3.
-# TODO(https://fxbug.dev/42083163): Define a package here instead of a group, then
-# use it as a subpackage within the tests that need it.
-group("netstack-for-tests") {
-  testonly = true
-  deps = [ "netstack3:component-dropin" ]
-}
-
 fuchsia_package("netstack2") {
   package_name = "netstack"
   deps = [ _netstack2_component ]
