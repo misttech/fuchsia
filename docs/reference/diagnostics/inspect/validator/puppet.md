@@ -108,11 +108,10 @@ There are the following CML files in [//src/diagnostics/validator/inspect/meta](
   of the validator and the component.
 
 These shards are used by the puppet's and validator's CML files in each puppet directory, or by
-the test manager. Currently there are 4 puppets:
+the test manager. Currently there are 2 puppets:
 
 * [Rust](/src/diagnostics/validator/inspect/lib/rust)
 * [C++](/src/diagnostics/validator/inspect/lib/cpp)
-* [Go](/src/connectivity/network/netstack/inspect/validator)
 
 The Validator conroller's CML is referred to in the `manifest` key of `fuchsia_unittest_package()`
 (for Rust or C++) or `fuchsia_unittest_component()` (for Go).
