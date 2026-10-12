@@ -60,15 +60,11 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   struct Irqs {
     fuchsia_hardware_pci::InterruptMode mode;  // The mode currently configured.
     zx::interrupt legacy;                      // Virtual interrupt for legacy signaling.
-    uint32_t legacy_vector;             // Vector for the legacy interrupt, mirrors kInterruptLine
-                                        // in Config.
-    uint8_t legacy_pin;                 // Pin for the legacy interrupt, mirrors kInterruptPin.
-    zx_time_t legacy_irq_period_start;  // Timestamp of the current second we're monitoring for
-                                        // IRQ floods.
-    bool legacy_disabled{false};        // Whether the legacy vector has been disabled
-    zx::msi msi_allocation;             // The MSI allocation object for MSI & MSI-X
-    uint64_t irqs_in_period;  // Current count of interrupts per fpci::InterruptMode::kLegacyNoack
-                              // period.
+    uint32_t legacy_vector;       // Vector for the legacy interrupt, mirrors kInterruptLine
+                                  // in Config.
+    uint8_t legacy_pin;           // Pin for the legacy interrupt, mirrors kInterruptPin.
+    bool legacy_disabled{false};  // Whether the legacy vector has been disabled
+    zx::msi msi_allocation;       // The MSI allocation object for MSI & MSI-X
   };
 
   struct Capabilities {

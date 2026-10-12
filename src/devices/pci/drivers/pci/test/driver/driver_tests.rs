@@ -577,8 +577,8 @@ async fn get_interrupt_modes() {
     assert_eq!(modes.msix_count, FAKE_QUADRO_MSIX_IRQ_CNT);
 }
 
-// Verifies interrupt mode transitions (Legacy, Msi, MsiX, Disabled), LegacyNoack rejection, and
-// idempotent MSI reconfiguration when no vectors are mapped.
+// Verifies interrupt mode transitions (Legacy, Msi, MsiX, Disabled) and idempotent MSI
+// reconfiguration when no vectors are mapped.
 #[fuchsia::test]
 async fn get_and_set_interrupt_mode() {
     let fixture = TestFixture::new().await;
@@ -586,10 +586,6 @@ async fn get_and_set_interrupt_mode() {
     assert!(modes.has_legacy);
     assert_eq!(modes.msi_count, FAKE_QUADRO_MSI_IRQ_CNT);
     assert_eq!(fixture.set_interrupt_mode(fpci::InterruptMode::Legacy, 1).await, Ok(()));
-    assert_eq!(
-        fixture.set_interrupt_mode(fpci::InterruptMode::LegacyNoack, 1).await,
-        Err(zx::Status::INVALID_ARGS)
-    );
     assert_eq!(
         fixture.set_interrupt_mode(fpci::InterruptMode::Msi, u32::from(modes.msi_count)).await,
         Ok(())

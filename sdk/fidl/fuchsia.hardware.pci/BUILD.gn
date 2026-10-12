@@ -42,7 +42,7 @@ fidl("fuchsia.hardware.pci") {
   sdk_category = "partner"
   enable_rust = true
   enable_rust_next = true
-  stable = true
+  stable = false
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }

@@ -313,7 +313,6 @@ impl State {
                 self.requested_irq_count = requested_irq_count;
                 Ok(())
             }
-            _ => Err(zx::Status::NOT_SUPPORTED),
         }
     }
 

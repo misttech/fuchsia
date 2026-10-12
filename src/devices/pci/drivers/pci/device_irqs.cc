@@ -40,7 +40,6 @@ zx::result<uint32_t> Device::QueryIrqMode(fpci::InterruptMode mode) {
       }
       break;
     case fpci::InterruptMode::kDisabled:
-    case fpci::InterruptMode::kLegacyNoack:
     default:
       return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -64,9 +63,6 @@ pci_interrupt_modes_t Device::GetInterruptModes() {
 }
 
 zx_status_t Device::SetIrqMode(fpci::InterruptMode mode, uint32_t irq_cnt) {
-  if (mode == fpci::InterruptMode::kLegacyNoack) {
-    return ZX_ERR_INVALID_ARGS;
-  }
   if (mode != fpci::InterruptMode::kDisabled && irq_cnt == 0) {
     return ZX_ERR_INVALID_ARGS;
   }

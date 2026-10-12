@@ -556,10 +556,6 @@ TEST_F(PciBusTests, LegacyInterruptAckLegacyIrqModes) {
     ASSERT_OK(bus_device->AckLegacyIrq());
   }
 
-  // Setting LegacyNoack returns ZX_ERR_INVALID_ARGS.
-  ASSERT_STATUS(ZX_ERR_INVALID_ARGS,
-                bus_device->SetIrqMode(fuchsia_hardware_pci::InterruptMode::kLegacyNoack, 1));
-
   ASSERT_OK(bus_device->SetIrqMode(fuchsia_hardware_pci::InterruptMode::kDisabled, 0));
   {
     fbl::AutoLock _(bus_device->dev_lock());

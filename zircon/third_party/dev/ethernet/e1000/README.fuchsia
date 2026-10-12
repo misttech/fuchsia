@@ -1,21 +1,28 @@
 Name: Fuchsia Intel Ethernet Driver
 URL: https://github.com/freebsd/freebsd/tree/master/sys/dev/e1000
 Revision: 3258eeeb442b48695165a6cb66aabd5b8422478c
-License File: LICENSE
-Description: Fuchsia Intel Ethernet Driver
-Local Modifications: Detailed below to make driver work for Fuchsia.
-=============================
 
-This directory contains a port of the FreeBSD Intel ethernet driver. Original
-source was obtained here:
+License: BSD-2-Clause, BSD-3-Clause
+License File: LICENSE
+Generated Notice File: NOTICE.fuchsia
+
+Description:
+  Fuchsia Intel Ethernet Driver
+
+Local Modifications:
+  Detailed below to make driver work for Fuchsia.
+  =============================
+
+  This directory contains a port of the FreeBSD Intel ethernet driver. Original
+  source was obtained here:
 
     https://github.com/freebsd/freebsd/tree/master/sys/dev/e1000
 
-at hash 3258eeeb442b48695165a6cb66aabd5b8422478c, under the BSD-3-Clause
-license (https://opensource.org/licenses/BSD-3-Clause).
+  at hash 3258eeeb442b48695165a6cb66aabd5b8422478c, under the BSD-3-Clause
+  license (https://opensource.org/licenses/BSD-3-Clause).
 
-This port contains the complete source of the FreeBSD driver, with a few
-modifications and additions:
+  This port contains the complete source of the FreeBSD driver, with a few
+  modifications and additions:
 
     em_txrx.c
     if_em.c

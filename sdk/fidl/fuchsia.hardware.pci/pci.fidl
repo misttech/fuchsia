@@ -1,7 +1,7 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-@available(added=15)
+@available(added=HEAD)
 library fuchsia.hardware.pci;
 using zx;
 
@@ -243,20 +243,15 @@ type ExtendedCapabilityId = flexible enum : uint16 {
 
 /// Used with ||SetInterruptMode| to configure an interrupt mode for the device.
 /// Devices configured to use the LEGACY Irq mode must ack their interrupt after
-/// servicing by calling |AckInterrupt|. To avoid this, LEGACY_NOACK can be
-/// used, but the driver's interrupt function will be disabled by the PCI Bus
-/// Driver if it sees excessive interrupt triggers in a given period.
-type InterruptMode = flexible enum : uint8 {
+/// servicing by calling |AckInterrupt|.
+type InterruptMode = strict enum : uint8 {
     DISABLED = 0;
     /// Legacy interrupt mode.
     LEGACY = 1;
-    /// Legacy interrupt mode (without ACKing, see |AckInterrupt|).
-    @available(removed=29)
-    LEGACY_NOACK = 2;
-    /// MSI (messaage-signaled interrupt) mode.
-    MSI = 3;
+    /// MSI (message-signaled interrupt) mode.
+    MSI = 2;
     /// MSI-X mode.
-    MSI_X = 4;
+    MSI_X = 3;
 };
 
 /// Returned by |GetInterruptModes|. Contains the number of interrupts supported

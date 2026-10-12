@@ -69,7 +69,6 @@ zx_status_t FakePciProtocolInternal::PciMapInterrupt(uint32_t which_irq,
 
   switch (irq_mode_) {
     case fpci::InterruptMode::kLegacy:
-    case fpci::InterruptMode::kLegacyNoack:
       if (which_irq > 0) {
         return ZX_ERR_INVALID_ARGS;
       }
@@ -116,7 +115,6 @@ zx_status_t FakePciProtocolInternal::PciSetInterruptMode(fpci::InterruptMode mod
 
   switch (mode) {
     case fpci::InterruptMode::kLegacy:
-    case fpci::InterruptMode::kLegacyNoack:
       if (requested_irq_count > 1) {
         return ZX_ERR_INVALID_ARGS;
       }

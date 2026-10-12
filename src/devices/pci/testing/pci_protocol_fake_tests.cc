@@ -264,17 +264,6 @@ TEST_F(FakePciProtocolTests, MapInterrupt) {
   ASSERT_EQ(ZX_ERR_INVALID_ARGS, pci().MapInterrupt(irq_cnt, &interrupt));
   interrupt.reset();
 
-  ASSERT_OK(pci().SetInterruptMode(fuchsia_hardware_pci::InterruptMode::kLegacyNoack, irq_cnt));
-  ASSERT_OK(pci().MapInterrupt(0, &interrupt));
-  ASSERT_TRUE(MatchKoids(legacy, interrupt));
-  ASSERT_FALSE(MatchKoids(msi0, interrupt));
-  ASSERT_FALSE(MatchKoids(msi1, interrupt));
-  ASSERT_FALSE(MatchKoids(msix0, interrupt));
-  ASSERT_FALSE(MatchKoids(msix1, interrupt));
-  ASSERT_FALSE(MatchKoids(msix2, interrupt));
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, pci().MapInterrupt(irq_cnt, &interrupt));
-  interrupt.reset();
-
   irq_cnt = 2;
   ASSERT_OK(pci().SetInterruptMode(fuchsia_hardware_pci::InterruptMode::kMsi, irq_cnt));
   ASSERT_OK(pci().MapInterrupt(0, &interrupt));
@@ -341,8 +330,6 @@ TEST_F(FakePciProtocolTests, VerifyAllocatedMsis) {
   // Changing to other IRQ modes should be blocked because IRQ handles are outstanding.
   ASSERT_EQ(ZX_ERR_BAD_STATE,
             pci().SetInterruptMode(fuchsia_hardware_pci::InterruptMode::kLegacy, 1));
-  ASSERT_EQ(ZX_ERR_BAD_STATE,
-            pci().SetInterruptMode(fuchsia_hardware_pci::InterruptMode::kLegacyNoack, 1));
   ASSERT_EQ(ZX_ERR_BAD_STATE,
             pci().SetInterruptMode(fuchsia_hardware_pci::InterruptMode::kMsiX, 1));
   zero.reset();

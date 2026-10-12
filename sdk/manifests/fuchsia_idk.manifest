@@ -244,7 +244,7 @@ fidl_library://fidl/fuchsia.hardware.mediacodec (unstable)
 fidl_library://fidl/fuchsia.hardware.network
 fidl_library://fidl/fuchsia.hardware.network.driver (unstable)
 fidl_library://fidl/fuchsia.hardware.nfc (unstable)
-fidl_library://fidl/fuchsia.hardware.pci
+fidl_library://fidl/fuchsia.hardware.pci (unstable)
 fidl_library://fidl/fuchsia.hardware.pin
 fidl_library://fidl/fuchsia.hardware.pinimpl
 fidl_library://fidl/fuchsia.hardware.platform.bus (unstable)

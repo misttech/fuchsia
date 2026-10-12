@@ -16,7 +16,7 @@ fidl_library(
     category = "partner",
     enable_rust = True,
     enable_rust_next = True,
-    stable = True,
+    stable = False,
     visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",

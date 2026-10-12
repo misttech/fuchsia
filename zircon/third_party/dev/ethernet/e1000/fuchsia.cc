@@ -265,10 +265,6 @@ zx::result<> Driver::Start(fdf::DriverContext context) {
     return zx::error(status);
   }
   adapter->irq_mode = fuchsia_hardware_pci::InterruptMode(irq_mode);
-  if (adapter->irq_mode.IsUnknown()) {
-    fdf::error("unknown interrupt mode: {}", irq_mode);
-    return zx::error(ZX_ERR_INTERNAL);
-  }
 
   if (zx_status_t status = e1000_pci_map_interrupt(pci, 0, adapter->irq.reset_and_get_address());
       status != ZX_OK) {
