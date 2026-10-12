@@ -27,6 +27,7 @@ group("tests") {
     ":output_leak_scanner_test($host_toolchain)",
     ":prebuilt_tool_remote_wrapper_test($host_toolchain)",
     ":rbe_diagnose_test($host_toolchain)",
+    ":rbe_profile_test($host_toolchain)",
     ":rbe_settings_test($host_toolchain)",
     ":relativize_args_test($host_toolchain)",
     ":remote_action_test($host_toolchain)",
@@ -170,6 +171,19 @@ if (is_host) {
   python_build_time_tests("remotetool_test") {
     tests = [ "remotetool_test.py" ]
     deps = [ ":remotetool" ]
+  }
+
+  python_library("rbe_profile") {
+    sources = [ "rbe_profile.py" ]
+    library_deps = [
+      "//build/python/modules/serialization",
+      "//build/scripts:service_profile_lib",
+    ]
+  }
+
+  python_build_time_tests("rbe_profile_test") {
+    tests = [ "rbe_profile_test.py" ]
+    deps = [ ":rbe_profile" ]
   }
 
   python_library("remote_action") {
@@ -368,6 +382,8 @@ if (is_host) {
       "bb_fetch_rbe_cas_test.py",
       "pb_message_util.py",
       "pb_message_util_test.py",
+      "rbe_profile.py",
+      "rbe_profile_test.py",
       "rbe_settings.py",
       "rbe_settings_test.py",
       "reproxy_logs.py",

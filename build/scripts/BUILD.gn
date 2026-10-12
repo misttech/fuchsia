@@ -28,6 +28,10 @@ if (is_host) {
     sources = [ "ninjatrace2json.py" ]
   }
 
+  python_library("service_profile_lib") {
+    sources = [ "service_profile.py" ]
+  }
+
   python_build_time_tests("main_build_test") {
     tests = [ "main_build_test.py" ]
     deps = [
@@ -36,6 +40,11 @@ if (is_host) {
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
     ]
+  }
+
+  python_build_time_tests("service_profile_test") {
+    tests = [ "service_profile_test.py" ]
+    deps = [ ":service_profile_lib" ]
   }
 
   python_build_time_tests("signal_utils_test") {
@@ -54,6 +63,7 @@ group("tests") {
   deps = [
     ":main_build_test($host_toolchain)",
     ":ninjatrace2json_test($host_toolchain)",
+    ":service_profile_test($host_toolchain)",
     ":signal_utils_test($host_toolchain)",
   ]
 }

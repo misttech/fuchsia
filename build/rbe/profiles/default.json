@@ -1,0 +1,10 @@
+{
+    "profile_name": "default",
+    "rbe_instance": "projects/rbe-fuchsia-prod/instances/default",
+    "remote_exec_root": "/b/f/w",
+    "worker_pools": {
+        "default": "Pool=default",
+        "large": "Pool=large_worker"
+    },
+    "auth_type": "google"
+}

@@ -1,0 +1,7 @@
+{
+    "profile_name": "default",
+    "rs_instance": "projects/rbe-fuchsia-prod/instances/default",
+    "cas_instance": "projects/rbe-fuchsia-prod/instances/default",
+    "results_url": "http://go/fxbtx",
+    "auth_type": "google"
+}

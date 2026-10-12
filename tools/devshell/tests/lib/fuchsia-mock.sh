@@ -72,6 +72,28 @@ function fx-setup-isolated-adc {
 }
 EOF
 
+  # Create centralized mock profiles for RbeProfile and RsProfile loading
+  mkdir -p "${_FUCHSIA_DIR}/.fx/config"
+  cat > "${_FUCHSIA_DIR}/.fx/config/rbe_profile.json" <<EOF
+{
+  "rbe_instance": "projects/fake-project/instances/fake-instance",
+  "remote_exec_root": "/b/f/w",
+  "worker_pools": {
+    "default": "Pool=fake-default-pool"
+  },
+  "auth_type": "google"
+}
+EOF
+
+  cat > "${_FUCHSIA_DIR}/.fx/config/rs_profile.json" <<EOF
+{
+  "rs_instance": "projects/fake-project/instances/fake-instance",
+  "cas_instance": "projects/fake-project/instances/fake-cas",
+  "results_url": "http://fake-results-url",
+  "auth_type": "google"
+}
+EOF
+
   if (( with_metrics )); then
     BT_ASSERT_FILE_EXISTS "${_FUCHSIA_DIR}/tools/devshell/lib/metrics.sh"
   else

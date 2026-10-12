@@ -20,6 +20,8 @@ BT_FILE_DEPS=(
     "build/scripts/top_build_wrap.sh"
     "build/profile/hardware_profiler.py"
     "build/rbe/rbe_settings.py"
+    "build/rbe/rbe_profile.py"
+    "build/resultstore/rs_profile.py"
     "build/python/modules/serialization/serialization.py"
     "tools/devshell/lib/vars.sh"
     "tools/devshell/lib/is_invoked_by_agent.sh"
