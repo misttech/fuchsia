@@ -292,18 +292,13 @@ TEST(TraceEngineWritingTest, FillBufferStreaming) {
   verify_buffer(rolling_buffer1, header->rolling_data_end[1]);
 }
 
-// Regression test for https://fxbug.dev/553091090.
-// Verifies that when tracing is stopped artificially (e.g. upon durable buffer exhaustion),
-// unallocated trailing space in the rolling buffer is filled with valid placeholder BLOB records,
-// allowing trace parsers reading up to rolling_data_end to cleanly parse the entire buffer
-// without hitting uninitialized memory or failing on 0-sized records.
-TEST(TraceEngineWritingTest, DurableOverflowFillsRollingBufferWithPlaceholderBlob) {
+// Verifies that when the durable buffer becomes full, subsequent string, thread, and virtual
+// thread registrations fall back to inline references and tracing continues recording events into
+// the rolling buffers rather than artificially stopping the trace.
+TEST(TraceEngineWritingTest, DurableOverflowFallsBackToInlineRefsWithoutStoppingTracing) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   constexpr size_t kBufSize = 4096;
   alignas(uint64_t) uint8_t buffer[kBufSize];
-  // Fill the buffer with 0x7 words (uninitialized pattern where size field is 0).
-  std::fill_n(reinterpret_cast<uint64_t*>(buffer), kBufSize / sizeof(uint64_t),
-              0x0000000000000007ULL);
   trace_handler_t handler{&ops};
 
   zx_status_t init = trace_engine_initialize(loop.dispatcher(), &handler,
@@ -318,15 +313,46 @@ TEST(TraceEngineWritingTest, DurableOverflowFillsRollingBufferWithPlaceholderBlo
   trace_context_t* context = trace_acquire_context();
   ASSERT_TRUE(context);
 
-  // Write a valid record into the rolling buffer.
-  trace_thread_ref_t thread_ref = trace_make_unknown_thread_ref();
-  trace_string_ref_t cat_ref = trace_make_inline_c_string_ref("enabled_cat");
-  trace_string_ref_t name_ref = trace_make_inline_c_string_ref("test_event");
-  trace_context_write_instant_event_record(context, 1000, &thread_ref, &cat_ref, &name_ref,
-                                           TRACE_SCOPE_THREAD, nullptr, 0);
+  // Exhaust the durable buffer completely (down to 8-byte words).
+  while (trace_context_alloc_durable_record(context, 8) != nullptr) {
+  }
 
-  // Exhaust the durable buffer to trigger MarkTracingArtificiallyStopped().
-  while (trace_context_alloc_durable_record(context, 64) != nullptr) {
+  // Subsequent string and thread registrations must gracefully fall back to inline references, and
+  // process/thread kKernelObject info records must fall back to the active rolling buffer.
+  trace_string_ref_t cat_ref;
+  trace_context_register_string_literal(context, "enabled_cat", &cat_ref);
+  EXPECT_TRUE(trace_is_inline_string_ref(&cat_ref));
+
+  trace_string_ref_t name_ref;
+  const unsigned char kEventName[] = {'f', 'a', 'l', 'l', 'b', 'a', 'c', 'k'};
+  trace_context_register_bytestring(context, kEventName, sizeof(kEventName), &name_ref);
+  EXPECT_TRUE(trace_is_inline_string_ref(&name_ref));
+
+  constexpr zx_koid_t kProcessKoid = 42;
+  trace_context_write_process_info_record(context, kProcessKoid, &name_ref);
+
+  trace_thread_ref_t thread_ref;
+  trace_context_register_current_thread(context, &thread_ref);
+  EXPECT_TRUE(trace_is_inline_thread_ref(&thread_ref));
+
+  trace_thread_ref_t vthread_ref;
+  trace_context_register_vthread(context, ZX_KOID_INVALID, "fallback_vthread", 99, &vthread_ref);
+  EXPECT_TRUE(trace_is_inline_thread_ref(&vthread_ref));
+
+  // For kBufSize = 4096 (128-byte header + 256-byte durable buffer), each rolling buffer is
+  // (4096 - 128 - 256) / 2 = 1856 bytes. After the 3 fallback kKernelObject records (~136 bytes),
+  // rolling buffer 0 has ~1720 bytes left, fitting 26 64-byte inline kInstant events (8 header +
+  // 8 timestamp + 16 inline thread + 16 inline category + 8 inline name + 8 scope). Writing 48
+  // events puts 26 in rolling buffer 0 and 22 (1408 bytes) in rolling buffer 1, wrapping once
+  // without overwriting rolling buffer 0. Release and re-acquire the context on each write so
+  // ServiceBuffers() can mark the wrapped circular buffer as serviced.
+  constexpr size_t kNumEvents = 48;
+  for (size_t i = 0; i < kNumEvents; ++i) {
+    trace_context_write_instant_event_record(context, 1000 + i, &vthread_ref, &cat_ref, &name_ref,
+                                             TRACE_SCOPE_THREAD, nullptr, 0);
+    trace_release_context(context);
+    context = trace_acquire_context();
+    ASSERT_TRUE(context);
   }
 
   trace_release_context(context);
@@ -335,16 +361,42 @@ TEST(TraceEngineWritingTest, DurableOverflowFillsRollingBufferWithPlaceholderBlo
   trace_engine_terminate();
   loop.RunUntilIdle();
 
-  // Attempt to parse the rolling buffer using the reported rolling_data_end offset.
   trace_buffer_header* header = reinterpret_cast<trace_buffer_header*>(buffer);
-  uint8_t* rolling_buffer = buffer + sizeof(trace_buffer_header) + header->durable_buffer_size;
-  size_t rolling_words = header->rolling_data_end[0] / sizeof(uint64_t);
+  EXPECT_EQ(header->durable_data_end, header->durable_buffer_size);
+  EXPECT_EQ(header->num_records_dropped, 0u);
+  EXPECT_EQ(header->wrapped_count, 1u);
 
-  trace::Chunk chunk(reinterpret_cast<const uint64_t*>(rolling_buffer), rolling_words);
   std::vector<std::string> errors;
-  trace::TraceReader reader([](trace::Record) {},
-                            [&errors](std::string_view err) { errors.emplace_back(err); });
+  size_t process_object_count = 0;
+  size_t thread_object_count = 0;
+  size_t event_count = 0;
+  trace::TraceReader reader(
+      [&](trace::Record record) {
+        if (record.type() == trace::RecordType::kKernelObject) {
+          const auto& obj = record.GetKernelObject();
+          if (obj.object_type == ZX_OBJ_TYPE_PROCESS) {
+            EXPECT_EQ(obj.koid, kProcessKoid);
+            EXPECT_EQ(obj.name, "fallback");
+            ++process_object_count;
+          } else if (obj.object_type == ZX_OBJ_TYPE_THREAD) {
+            ++thread_object_count;
+          }
+        } else if (record.type() == trace::RecordType::kEvent) {
+          ++event_count;
+        }
+      },
+      [&errors](std::string_view err) { errors.emplace_back(err); });
 
-  EXPECT_TRUE(reader.ReadRecords(chunk));
+  for (size_t b = 0; b < 2; ++b) {
+    uint8_t* rolling_buffer = buffer + sizeof(trace_buffer_header) + header->durable_buffer_size +
+                              b * header->rolling_buffer_size;
+    size_t rolling_words = header->rolling_data_end[b] / sizeof(uint64_t);
+    ASSERT_GT(rolling_words, 0u);
+    trace::Chunk chunk(reinterpret_cast<const uint64_t*>(rolling_buffer), rolling_words);
+    EXPECT_TRUE(reader.ReadRecords(chunk));
+  }
   EXPECT_TRUE(errors.empty());
+  EXPECT_EQ(process_object_count, 1u);
+  EXPECT_EQ(thread_object_count, 2u);
+  EXPECT_EQ(event_count, kNumEvents);
 }

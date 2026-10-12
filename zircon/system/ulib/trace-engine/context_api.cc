@@ -951,6 +951,12 @@ void trace_context_write_kernel_object_record(trace_context_t* context, bool use
                              trace::SizeOfEncodedStringRef(name_ref) +
                              trace::SizeOfEncodedArgs(args, num_args);
   trace::Payload payload(context, use_durable, record_size);
+  if (unlikely(!payload && use_durable && context->UsingDurableBuffer())) {
+    // If the durable buffer is full, fall back to writing the kernel object
+    // record into the rolling buffer so process and thread names remain
+    // available for events in the active rolling buffer.
+    payload = trace::Payload(context, false, record_size);
+  }
   if (payload) {
     payload
         .WriteUint64(trace::MakeRecordHeader(trace::RecordType::kKernelObject, record_size) |

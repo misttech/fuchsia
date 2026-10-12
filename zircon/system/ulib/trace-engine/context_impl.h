@@ -176,8 +176,6 @@ struct trace_context {
 
   void SetPendingBufferService(RollingBufferState prev_state);
 
-  void MarkTracingArtificiallyStopped();
-
   // The generation counter associated with this context to distinguish
   // it from previously created contexts.
   uint32_t generation_{0u};
@@ -209,9 +207,6 @@ struct trace_context {
 
   // A count of the number of records that have been dropped.
   std::atomic<uint64_t> num_records_dropped_{0};
-
-  // Set to true if the engine needs to stop tracing for some reason.
-  std::atomic<bool> tracing_artificially_stopped_{false};
 
   // Handler associated with the trace session.
   trace_handler_t* const handler_;

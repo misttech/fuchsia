@@ -195,9 +195,6 @@ class RollingBuffer {
   ///          buffer before calling this.
   bool SetBufferServiced(uint32_t wrapped_count);
 
-  // Mark the currently set buffer as full.
-  void SetBufferFull();
-
  private:
   // Our rolling double buffers.
   std::span<uint8_t> rolling_buffers_[2];

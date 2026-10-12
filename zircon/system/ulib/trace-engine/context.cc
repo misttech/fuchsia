@@ -41,9 +41,9 @@
 // small strings are recorded there. The two buffers holding normal trace
 // output are called "rolling buffers", as they fill we roll from one to the
 // next. Thread and string records typically aren't very large, the durable
-// buffer can hold a lot of records. To keep things simple, until there's a
-// compelling reason to do something more, once the durable buffer fills
-// tracing effectively stops, and all further records are dropped.
+// buffer can hold a lot of records. Once the durable buffer fills, subsequent
+// string and thread registrations fall back to inline references so tracing
+// can continue recording into the rolling buffers.
 // Note: The term "rolling buffer" is intended to be internal to the trace
 // engine/reader/manager and is not intended to appear in public APIs
 // (at least not today). Externally, the two rolling buffers comprise the
@@ -124,10 +124,6 @@ uint64_t* trace_context::AllocRecord(size_t num_bytes) {
         return nullptr;
       },
       [this](SwitchingAllocation alloc) -> uint64_t* {
-        // If the durable buffer is full, it will
-        if (unlikely(tracing_artificially_stopped_.load(std::memory_order_relaxed))) {
-          return nullptr;
-        }
         // If we filled the buffer, we are responsible for switching to the next buffer.
         SetPendingBufferService(alloc.prev_state);
         return alloc.ptr;
@@ -151,16 +147,10 @@ void trace_context::SetPendingBufferService(RollingBufferState prev_state) {
 
 uint64_t* trace_context::AllocDurableRecord(size_t num_bytes) {
   ZX_DEBUG_ASSERT(UsingDurableBuffer());
-  uint64_t* ptr = durable_buffer_.AllocRecord(num_bytes);
-  if (likely(ptr != nullptr)) {
-    return ptr;
-  }
-  // A record may be written that relies on this durable record. To preserve data integrity, we
-  // disable all further tracing. There is a small window where a non-durable record could get
-  // emitted that depends on this durable record. It's rare enough and inconsequential enough that
-  // we ignore it.
-  MarkTracingArtificiallyStopped();
-  return nullptr;
+  // When the durable buffer is full, callers fall back to inline string and
+  // thread references (or rolling buffer allocations for kernel object info
+  // records) so tracing can continue without dropping rolling buffer events.
+  return durable_buffer_.AllocRecord(num_bytes);
 }
 
 bool trace_context::AllocThreadIndex(trace_thread_index_t* out_index) {
@@ -317,26 +307,6 @@ void trace_context::ServiceBuffers() {
       // In circular mode, we can immediately mark the buffer has serviced, freeing it for reuse.
       rolling_buffer_.SetBufferServiced(expected_service.GetWrappedCount());
     }
-  }
-}
-
-void trace_context::MarkTracingArtificiallyStopped() {
-  bool expected = false;
-  const bool desired = true;
-  bool success = tracing_artificially_stopped_.compare_exchange_strong(
-      expected, desired, std::memory_order::relaxed, std::memory_order::relaxed);
-
-  // We only want to stop the trace once.
-  if (success) {
-    {
-      std::lock_guard<std::mutex> lock(header_mutex_);
-      header_->durable_data_end = durable_buffer_.BytesAllocated();
-    }
-
-    // Disable tracing by making it look like the current rolling
-    // buffer is full. AllocRecord, on seeing the buffer is full, will
-    // then check |tracing_artificially_stopped_|.
-    rolling_buffer_.SetBufferFull();
   }
 }
 
