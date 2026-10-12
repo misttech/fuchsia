@@ -168,13 +168,12 @@ impl FileSystem {
         mut options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
         let uses_external_node_ids = ops.uses_external_node_ids();
-        let node_cache = Arc::new(FsNodeCache::new(uses_external_node_ids));
+        let fs_lockdep_type = ops.fs_lockdep_type();
+        let node_cache = Arc::new(FsNodeCache::new(uses_external_node_ids, fs_lockdep_type));
         assert_eq!(ops.uses_external_node_ids(), node_cache.uses_external_node_ids());
 
         let mount_options = security::sb_eat_lsm_opts(&kernel, &mut options.params)?;
         let security_state = security::file_system_init_security(&mount_options, &ops)?;
-
-        let fs_lockdep_type = ops.fs_lockdep_type();
 
         let file_system = Arc::new(FileSystem {
             kernel: kernel.weak_self.clone(),

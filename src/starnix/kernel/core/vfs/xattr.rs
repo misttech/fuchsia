@@ -5,12 +5,13 @@
 use crate::vfs::{FsStr, FsString, XattrOp, XattrStorage};
 use starnix_rcu::rcu_hash_map::Entry;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
+use starnix_sync::RcuHashMapLock;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 
 pub struct MemoryXattrStorage {
     // Arbitrary userspace programs can define xattr keys so we use a collision-resistant hasher.
-    xattrs: RcuHashMap<FsString, FsString, std::collections::hash_map::RandomState>,
+    xattrs: RcuHashMap<FsString, FsString, RcuHashMapLock, std::collections::hash_map::RandomState>,
 }
 
 impl Default for MemoryXattrStorage {

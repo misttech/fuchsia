@@ -8,6 +8,7 @@ use crate::vfs::socket::{Socket, SocketAddress, SocketHandle};
 use fuchsia_rcu::RcuDroppable;
 use starnix_rcu::RcuReadScope;
 use starnix_rcu::rcu_hash_map::{Entry, RcuHashMap};
+use starnix_sync::AbstractSocketNamespaceLock;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::sync::{Arc, Weak};
@@ -23,7 +24,7 @@ pub struct AbstractSocketNamespace<K>
 where
     K: std::cmp::Eq + std::hash::Hash + Clone + RcuDroppable + Sync,
 {
-    table: RcuHashMap<K, Weak<Socket>>,
+    table: RcuHashMap<K, Weak<Socket>, AbstractSocketNamespaceLock>,
     address_maker: Box<dyn Fn(K) -> SocketAddress + Send + Sync>,
 }
 
@@ -37,7 +38,7 @@ where
     pub fn new(
         address_maker: Box<dyn Fn(K) -> SocketAddress + Send + Sync>,
     ) -> Arc<AbstractSocketNamespace<K>> {
-        Arc::new(AbstractSocketNamespace::<K> { table: RcuHashMap::default(), address_maker })
+        Arc::new(AbstractSocketNamespace::<K> { table: RcuHashMap::new(), address_maker })
     }
 
     pub fn bind(

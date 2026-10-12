@@ -2250,7 +2250,8 @@ impl Mounts {
     // TODO(https://fxbug.dev/295073633): Graceful shutdown should try to first unmount the mounts
     // and only force a FileSystem unmount on failure.
     pub fn clear(&self) {
-        for (_dir_entry, mounts) in self.mounts.lock().drain() {
+        let drained: Vec<_> = self.mounts.lock().drain().collect();
+        for (_dir_entry, mounts) in drained {
             for mount in mounts {
                 if let Some(mount) = mount.0.upgrade() {
                     mount.fs.force_unmount_ops();

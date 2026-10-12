@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::vfs::{FsNode, FsNodeHandle, WeakFsNodeHandle};
+use crate::vfs::{FsLockDepType, FsNode, FsNodeHandle, WeakFsNodeHandle};
 use fuchsia_rcu::RcuReadScope;
 use starnix_lifecycle::AtomicCounter;
-use starnix_rcu::rcu_hash_map::{Entry, RcuHashMap};
+use starnix_rcu::rcu_hash_map::{DynamicRcuHashMap, Entry};
+use starnix_sync::{FsNodeCacheLock, FsNodeCacheRecursiveLock, FuseFsNodeCacheLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::ino_t;
 use std::ops::Range;
@@ -16,24 +17,28 @@ pub struct FsNodeCache {
     next_ino: Option<AtomicCounter<u64>>,
 
     /// The FsNodes that have been created for this file system.
-    nodes: RcuHashMap<ino_t, WeakFsNodeHandle>,
+    nodes: DynamicRcuHashMap<ino_t, WeakFsNodeHandle>,
 }
 
 impl Default for FsNodeCache {
     fn default() -> Self {
-        Self::new(false)
+        Self::new(false, FsLockDepType::Normal)
     }
 }
 
 impl FsNodeCache {
-    pub fn new(uses_external_node_ids: bool) -> Self {
+    pub fn new(uses_external_node_ids: bool, fs_lockdep_type: FsLockDepType) -> Self {
         Self {
             next_ino: if uses_external_node_ids {
                 None
             } else {
                 Some(AtomicCounter::<u64>::new(1))
             },
-            nodes: RcuHashMap::default(),
+            nodes: match fs_lockdep_type {
+                FsLockDepType::Normal => DynamicRcuHashMap::new::<FsNodeCacheLock>(),
+                FsLockDepType::Recursive => DynamicRcuHashMap::new::<FsNodeCacheRecursiveLock>(),
+                FsLockDepType::Fuse => DynamicRcuHashMap::new::<FuseFsNodeCacheLock>(),
+            },
         }
     }
 

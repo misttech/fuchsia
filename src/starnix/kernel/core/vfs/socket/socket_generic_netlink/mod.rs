@@ -591,6 +591,7 @@ mod tests {
         multicast_message_sinks: RcuHashMap<
             String,
             mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>,
+            starnix_sync::RcuHashMapLock,
             std::collections::hash_map::RandomState,
         >,
     }
