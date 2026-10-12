@@ -1,0 +1,57 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "async-helpers",
+    srcs = [
+        "src/hanging_get/async_server.rs",
+        "src/hanging_get/mod.rs",
+        "src/lib.rs",
+        "src/maybe_stream.rs",
+        "src/responding_channel.rs",
+    ],
+    edition = "2024",
+    rustc_flags = ["-Dunused_results"],
+    # @bazel2gn:skip
+    test_deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+    ],
+    visibility = ["//src/connectivity/bluetooth:__subpackages__"],
+    # @bazel2gn:skip
+    with_unit_tests = True,
+    deps = [
+        "//src/lib/async-utils",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_library(
+    name = "async-test-helpers",
+    testonly = True,
+    srcs = ["src/test/lib.rs"],
+    crate_root = "src/test/lib.rs",
+    edition = "2024",
+    rustc_flags = ["-Dunused_results"],
+    visibility = ["//src/connectivity/bluetooth:__subpackages__"],
+    deps = [
+        "//src/lib/async-utils",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "async-helpers-tests",
+    package_name = "async-helpers-tests",
+    unit_tests = [":async-helpers_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)

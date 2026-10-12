@@ -10,6 +10,7 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/connectivity/bluetooth/lib/async-helpers:async-helpers-tests",
         "//src/connectivity/bluetooth/lib/bt-obex/objects:bt-obex-objects-tests",
         "//src/connectivity/bluetooth/lib/fuchsia-bluetooth:bluetooth-crate-tests",
         "//src/connectivity/bluetooth/lib/packet-encoding:packet-encoding-tests",
