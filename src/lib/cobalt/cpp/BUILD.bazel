@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_library(
+    name = "unittests",
+    testonly = True,
+    srcs = ["metric_event_builder_unittest.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    implementation_deps = [
+        ":metric_event_builder",
+        "@com_google_googletest//:gtest",
+    ],
+    visibility = ["//src/lib/cobalt:__pkg__"],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "metric_event_builder",
+    srcs = ["metric_event_builder.cc"],
+    hdrs = ["metric_event_builder.h"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    implementation_deps = ["//sdk/lib/syslog/cpp"],
+    visibility = [
+        "//src/cobalt/bin/app:__pkg__",
+        "//src/cobalt/bin/system-metrics:__pkg__",
+    ],
+    deps = ["//sdk/fidl/fuchsia.metrics:fuchsia.metrics_hlcpp"],
+    alwayslink = True,
+)
