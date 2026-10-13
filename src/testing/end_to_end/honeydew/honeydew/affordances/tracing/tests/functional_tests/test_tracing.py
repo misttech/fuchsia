@@ -3,10 +3,8 @@
 # found in the LICENSE file.
 """Mobly test for Tracing affordance."""
 
-import json
 import logging
 import os
-import subprocess
 import tempfile
 import time
 
@@ -17,8 +15,6 @@ from parameterized import parameterized
 from trace_processing import trace_importing
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
-# This path is generated from host_test_data deps defined in this folder's BUILD.gn
-TRACE2JSON = "trace_runtime_deps/trace2json"
 
 
 class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
@@ -104,11 +100,7 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         await self.dut.tracing.stop()
 
         # Terminate the tracing session.
-        with tempfile.NamedTemporaryFile(
-            suffix=".fxt"
-        ) as trace_fxt, tempfile.NamedTemporaryFile(
-            mode="w+", suffix=".json", encoding="utf8"
-        ) as trace_json:
+        with tempfile.NamedTemporaryFile(suffix=".fxt") as trace_fxt:
             res = await self.dut.tracing.terminate_and_download(
                 directory=os.path.dirname(trace_fxt.name),
                 trace_file=os.path.basename(trace_fxt.name),
@@ -120,44 +112,11 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             asserts.assert_true(
                 os.path.exists(trace_fxt.name), msg="trace failed"
             )
-            output_json_path = trace_json.name
-            subprocess.check_call(
-                [
-                    TRACE2JSON,
-                    f"--input-file={res}",
-                    f"--output-file={output_json_path}",
-                ]
-            )
-            js_obj = json.load(trace_json)
-            asserts.assert_true(
-                js_obj.get("traceEvents") is not None,
-                "Expected traceEvents to be present",
-            )
-            # The general schema of the trace file looks like:
-            #
-            # {
-            #   'displayTimeUnit': #TIME_UNIT (usually 'ns'),
-            #   'traceEvents': [ #TRACE_EVENT ]
-            # }
-            #
-            # Trace event is defined (roughly) as:
-            #
-            # {
-            #   'cat': #CATEGORY,
-            #   'name': #NAME,
-            #   'ts': #TIMESTAMP
-            #   'pid': #PID,
-            #   'tid': #TID,
-            #   ...
-            # }
-            events = js_obj["traceEvents"]
-            asserts.assert_true(
-                len(events) > 0,
-                "Expected at least one captured trace event",
-            )
 
             # Verify that the trace is valid and non-empty using trace_processing model
-            model = trace_importing.create_model_from_trace_file_path(res)
+            model = trace_importing.create_model_from_trace_file_path(
+                res, without_json_conversion=True
+            )
             asserts.assert_true(
                 model.processes,
                 f"Trace model (compression={compression}) contains no processes, "

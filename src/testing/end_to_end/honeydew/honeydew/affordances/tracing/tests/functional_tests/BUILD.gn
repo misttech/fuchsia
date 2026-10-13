@@ -4,15 +4,8 @@
 
 import("//build/python/python_mobly_test.gni")
 import("//build/testing/environments.gni")
-import("//build/testing/host_test_data.gni")
 
 if (is_host) {
-  host_test_data("tracing_runtime_deps") {
-    sources = [ "$root_out_dir/trace2json" ]
-    outputs = [ "$root_build_dir/trace_runtime_deps/{{source_file_part}}" ]
-    deps = [ "//src/performance/trace2json:bin" ]
-  }
-
   python_mobly_test("tracing_test") {
     main_source = "test_tracing.py"
     libraries = [
@@ -29,7 +22,13 @@ if (is_host) {
       nelson_env,
       sherlock_env,
     ]
-    deps = [ ":tracing_runtime_deps" ]
+    honeydew_config = {
+      transports = {
+        adb = {
+          enabled = false
+        }
+      }
+    }
   }
 
   python_mobly_test("tracing_ffx_test") {
@@ -54,8 +53,12 @@ if (is_host) {
           implementation = "ffx"
         }
       }
+      transports = {
+        adb = {
+          enabled = false
+        }
+      }
     }
-    deps = [ ":tracing_runtime_deps" ]
   }
 }
 
