@@ -1,0 +1,95 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:defs.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+rustc_test(
+    name = "driver",
+    srcs = ["src/lib.rs"],
+    crate_name = "far_integration_test",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-fs",
+        "//src/sys/pkg/testing/shell-process",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "driver_packaged_bin",
+    testonly = True,
+    binary = ":driver",
+    binary_name = "far_integration_test",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "far_packaged_bin",
+    testonly = True,
+    binary = "//src/sys/pkg/bin/far:bin",
+    binary_name = "far",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "far-integration-tests-manifest",
+    testonly = True,
+    component_name = "far-integration-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/far-integration-test.cml",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "far-integration-tests-component",
+    compiled_manifest = ":far-integration-tests-manifest",
+    component_name = "far-integration-tests",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":driver_packaged_bin",
+        ":far_packaged_bin",
+    ],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "far-integration-tests-package",
+    package_name = "far-integration-tests",
+    test_components = [":far-integration-tests-component"],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "far-integration-tests",
+    package = ":far-integration-tests-package",
+    visibility = ["//visibility:public"],
+)

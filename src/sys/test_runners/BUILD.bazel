@@ -6,5 +6,8 @@ package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["tmp_storage.shard.cml"],
-    visibility = ["//src/lib/files:__pkg__"],
+    visibility = [
+        "//src/lib/files:__pkg__",
+        "//src/sys/pkg/tests/far:__pkg__",
+    ],
 )
