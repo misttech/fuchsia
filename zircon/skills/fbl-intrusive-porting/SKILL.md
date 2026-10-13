@@ -168,8 +168,11 @@ Containers whose sentinel points back at the container itself (such as
     `PhantomPinned` trips `improper_ctypes` in `extern` signatures). Element
     types that use `#[pin_data]` must mark their node field(s) `#[pin]`
     (otherwise `#[pin_data]`'s generated `Unpin` impl ignores the node and the
-    element becomes `Unpin` again). Types without `#[pin_data]` inherit `!Unpin`
-    automatically.
+    element becomes `Unpin` again). `#[derive(DoublyLinkedListContainable)]`
+    enforces this at compile time: it rejects `#[dll_node]` fields on
+    `#[pin_data]` structs that are not also marked `#[pin]` (place the derive
+    above `#[pin_data]` so it can see the attribute). Types without
+    `#[pin_data]` inherit `!Unpin` automatically.
   * Mutable element accessors (`front_mut`, `back_mut`, `iter_mut`,
     `forward_iter_mut`, `reverse_iter_mut`, `CursorMut::get_mut`) return
     `Pin<&mut P::Target>` (or iterators yielding it). Mutate element fields via
