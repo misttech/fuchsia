@@ -12,6 +12,7 @@ rustc_library("paged_ring_buffer") {
   sources = [
     "src/lib.rs",
     "src/lockless_ring_buffer.rs",
+    "src/tail_val.rs",
   ]
   visibility = [
     ":*",
@@ -27,6 +28,7 @@ rustc_library("paged_ring_buffer") {
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
+    "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:scopeguard",
     "//third_party/rust_crates:static_assertions",
   ]

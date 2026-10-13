@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 mod lockless_ring_buffer;
+mod tail_val;
 
 pub use lockless_ring_buffer::{
     LocklessRingBuffer, OutputBuffer, OutputBufferCallback, Reservation,

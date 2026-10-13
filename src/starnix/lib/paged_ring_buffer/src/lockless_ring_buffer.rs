@@ -15,6 +15,8 @@ use starnix_uapi::{errno, error, from_status_like_fdio};
 use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::tail_val::{AtomicTailVal, TailVal};
+
 /// Callback passed to `OutputBuffer::write_each()`. Matches starnix_core's `OutputBufferCallback`.
 pub type OutputBufferCallback<'a> = dyn FnMut(&mut [MaybeUninit<u8>]) -> Result<usize, Errno> + 'a;
 
@@ -130,6 +132,7 @@ impl Node {
     fn finalize(&self) {
         // Attempt to claim the finalization role for this page.
         // If another thread already claimed it, return early to avoid a data race on `page_data`.
+        // A page reset clears `PAGE_FINALIZED_BIT`. See the TODO in `advance_to_next_page()`.
         let old_val = self.active_writers.fetch_or(PAGE_FINALIZED_BIT, Ordering::AcqRel);
         if old_val & PAGE_FINALIZED_BIT != 0 {
             return;
@@ -206,8 +209,8 @@ pub struct LocklessRingBuffer {
     nodes: Vec<Node>,
     // The page where to read the data from the ring.
     head_page: AtomicUsize,
-    // The page where writes add to the ring.
-    tail_page: AtomicUsize,
+    // The page where writes add to the ring, tagged with a generation. See `TailVal`.
+    tail_page: AtomicTailVal,
 
     // A page used by the reader of the ring.
     reader_page: AtomicUsize,
@@ -247,10 +250,14 @@ impl LocklessRingBuffer {
         overwrite: bool,
         write_event_async_id: fuchsia_trace::Id,
     ) -> Result<Self, Errno> {
-        let requested_pages = (size_bytes + (*PAGE_SIZE) as usize - 1) / (*PAGE_SIZE) as usize;
+        let requested_pages = size_bytes.div_ceil((*PAGE_SIZE) as usize);
         // 3 pages are needed, 1 for the read page, 1 for head, and one to swap.
         let pages = std::cmp::max(3, requested_pages);
         let total_nodes = pages;
+        // Every node index must fit in the index field of `tail_page`.
+        if total_nodes > TailVal::MAX_NODES {
+            return error!(ENOMEM);
+        }
         let capacity = total_nodes * (*PAGE_SIZE) as usize;
 
         // Create VMO
@@ -309,7 +316,7 @@ impl LocklessRingBuffer {
             mapping,
             nodes,
             head_page: AtomicUsize::new(0),
-            tail_page: AtomicUsize::new(0),
+            tail_page: AtomicTailVal::new(TailVal::INITIAL),
             reader_page: AtomicUsize::new(pages - 1),
 
             ref_count: AtomicUsize::new(RING_ENABLED_BIT),
@@ -462,6 +469,7 @@ impl LocklessRingBuffer {
 
         Ok((current_offset, now, delta))
     }
+
     /// Advances the tail page to the next page in the ring.
     ///
     /// Handles marking the current page as full, moving the head page if overwrite is enabled,
@@ -469,7 +477,7 @@ impl LocklessRingBuffer {
     fn advance_to_next_page(
         &self,
         tail_node: &Node,
-        tail_val: usize,
+        tail_val: TailVal,
         yield_tracker: &mut YieldTracker,
     ) -> AdvanceResult {
         // Short-circuit if another thread has already advanced the tail page past tail_val.
@@ -477,11 +485,24 @@ impl LocklessRingBuffer {
             return AdvanceResult::Advanced;
         }
 
-        // If there are no active writers, finalize the page.
-        // We need to check both here and in commit() (and Drop) to avoid race conditions.
-        // Specifically, a writer might finish and see the page is not full yet, while the
-        // thread that failed to fit its data and is moving to the next page hasn't marked it full yet.
-        // By checking in both places, we ensure that at least one thread sees both conditions.
+        // Finalize the tail page and publish its size.
+        // Writers that already hold reservations on it may still be writing. The reader waits
+        // for them through `active_writers`.
+        //
+        // TODO(https://fxbug.dev/570251032): `data_size` can leave out records of writers that
+        // are still registered on the page. The `write_offset` load in `finalize()` can return an
+        // offset older than their claims, and a writer that registered before `finalize()` clears
+        // `PAGE_ACTIVE_BIT` can still claim space after that load. The reader stops at
+        // `data_size`, so those records are silently lost.
+        //
+        // TODO(https://fxbug.dev/570251032): A thread preempted between the `tail_page` check
+        // above and this call can make the call after `tail_node` has been reset, either as a
+        // later tail here or as a returned reader page in `swap_reader_page()`. The reset clears
+        // `PAGE_FINALIZED_BIT`, so this call wins the claim and closes a live or empty page,
+        // possibly with `data_size == 0`. Once that page is the head, `swap_reader_page()`
+        // returns `None` forever, so the reader stalls and, without overwrite, writers fail with
+        // `ENOSPC`. Below, the same thread can also find `FLAG_HEADER` on `tail_node.next` and
+        // drop the head page, or fail with `ENOSPC`, while the ring still has free pages.
         if self.is_enabled() {
             tail_node.finalize();
         }
@@ -606,15 +627,36 @@ impl LocklessRingBuffer {
                 next_node.page_data.write_at(8, &0u64.to_le_bytes());
             }
 
-            // Try to move tail_page to next_val.
-            // If it fails, it means another thread has already successfully advanced tail_page.
+            // Move the tail to `next_idx` in the next generation. If the CAS fails, another
+            // thread has already moved it.
+            // - Release: a writer whose `tail_page.load(Acquire)` in `reserve()` reads this value
+            //   synchronizes with this CAS. It therefore sees the reset of `write_offset` (see
+            //   `Node::write_offset`) and, if this thread won the reset, the `active_writers`
+            //   store and the header write above.
+            // - Acquire: orders nothing. This function reads nothing after the CAS, and
+            //   `reserve()` loads `tail_page` again with Acquire before it uses the new tail.
+            //   TODO(https://fxbug.dev/570251032): Relax to Release.
+            //
+            // TODO(https://fxbug.dev/570251032): A thread that did not win the reset publishes
+            // neither the `active_writers` store nor the header write, because it never read
+            // them. If the winner was preempted after its `write_offset` CAS, it has not even
+            // made them yet. A writer that reads the page's old `active_writers` value, with
+            // `PAGE_ACTIVE_BIT` clear, skips the page and moves the tail past it. When the
+            // winner's store lands, the page is active again behind the tail, and nothing
+            // finalizes it. If the writer instead finalizes the page after that store, it closes
+            // the page with `data_size == 0`. Either way, once the page is the head,
+            // `swap_reader_page()` returns `None` forever: without overwrite the reader stalls and
+            // writers fail with `ENOSPC`; with overwrite the head drop eventually discards the
+            // page.
             if let Err(err) = self.tail_page.compare_exchange(
                 tail_val,
-                next_val,
+                tail_val.next(next_idx),
                 Ordering::AcqRel,
                 Ordering::Relaxed,
             ) {
-                starnix_logging::log_debug!("Tail page already advanced by another thread: {err}");
+                starnix_logging::log_debug!(
+                    "Tail page already advanced by another thread: {err:?}"
+                );
             }
         }
         AdvanceResult::Advanced
@@ -668,7 +710,7 @@ impl LocklessRingBuffer {
                 break error!(ENOMEM);
             }
             let tail_val = self.tail_page.load(Ordering::Acquire);
-            let tail_idx = Node::get_index(tail_val);
+            let tail_idx = tail_val.index() as usize;
             let tail_node = &self.nodes[tail_idx];
 
             // Increment the writer count before trying to reserve space, if it fails decrement it.
@@ -773,7 +815,7 @@ impl LocklessRingBuffer {
             let head_val = self.head_page.load(Ordering::Acquire);
             let head_idx = Node::get_index(head_val);
             let tail_val = self.tail_page.load(Ordering::Acquire);
-            let tail_idx = Node::get_index(tail_val);
+            let tail_idx = tail_val.index() as usize;
             if head_idx == tail_idx {
                 // Ring is empty or we are writing to the only page.
                 return None;
@@ -975,9 +1017,9 @@ impl LocklessRingBuffer {
 
     /// If the ring is disabled, resets it to empty, enables it, and returns the time of the reset.
     ///
-    /// If the ring is already enabled, does nothing, so in-flight writers and readers are
-    /// unaffected. In that case it returns the time of the last reset, by `new()` or by an earlier
-    /// `enable()`.
+    /// If the ring is already enabled, does nothing, so in-flight writers and readers, and the
+    /// `tail_page` generation, are unaffected. In that case it returns the time of the last reset,
+    /// by `new()` or by an earlier `enable()`.
     pub fn enable(&self) -> Result<zx::BootInstant, Errno> {
         let mut last_reset_guard = self.state_mutex.lock();
         // Only `enable()` and `disable()` change `RING_ENABLED_BIT` once the ring is shared, and
@@ -1003,9 +1045,24 @@ impl LocklessRingBuffer {
             return Err(from_status_like_fdio!(e));
         }
         let now = zx::BootInstant::get();
-        // Reset state
+        // Reset state.
         self.head_page.store(0, Ordering::Release);
-        self.tail_page.store(0, Ordering::Release);
+        // Move the tail to node 0 in the next generation rather than back to generation 0. Today
+        // no `tail_page` sample survives into the new ring: every thread that loads `tail_page`
+        // holds a `ref_count` reference, and `disable()` drained them. The bump keeps a stale
+        // sample from matching the new tail if a later change loads `tail_page` without a
+        // reference.
+        // Relaxed load: `new()` and earlier `enable()` calls happen before this call, by
+        // construction and through `state_mutex`. Every other `tail_page` write was made by a
+        // thread that held a reference and released it with a Release decrement. The only plain
+        // store to `ref_count` is in `enable()`, before any reference of its epoch is taken, so
+        // every later write to it is a read-modify-write. The Acquire load in `disable()` that
+        // saw 0 therefore reads from the release sequence of each decrement of that epoch, and
+        // `state_mutex` orders `disable()` before this call, so the load returns the latest
+        // value.
+        // Relaxed store: the Release store of `ref_count` at the end of this function publishes
+        // it.
+        self.tail_page.store(self.tail_page.load(Ordering::Relaxed).next(0), Ordering::Relaxed);
 
         self.reader_page.store(initial_pages, Ordering::Release);
 
@@ -1349,7 +1406,7 @@ mod tests {
                             let tail_val = buffer_reader.tail_page.load(Ordering::Relaxed);
                             // If the writers are done and the reader has caught up to the tail page
                             // index, all readable pages have been drained, so we break the loop.
-                            if Node::get_index(head_val) == Node::get_index(tail_val) {
+                            if Node::get_index(head_val) == tail_val.index() as usize {
                                 break;
                             }
                             consecutive_eagain += 1;
@@ -1357,7 +1414,7 @@ mod tests {
                                 consecutive_eagain < 500,
                                 "LocklessRingBuffer reader stuck: consecutive EAGAIN limit exceeded (5s) after writers finished. head_page={}, tail_page={}, reader_page={}",
                                 Node::get_index(head_val),
-                                Node::get_index(tail_val),
+                                tail_val.index(),
                                 buffer_reader.reader_page.load(Ordering::Relaxed)
                             );
                         }
@@ -2106,6 +2163,75 @@ mod tests {
     }
 
     #[test]
+    fn test_stale_tail_advance_across_wraparound() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, true, fuchsia_trace::Id::new())
+                .unwrap();
+        let max_payload = (*PAGE_SIZE) as usize - LocklessRingBuffer::PAGE_HEADER_SIZE;
+
+        // Capture the initial tail_val on Node 0 (generation 0, index 0).
+        let stale_tail_val = buffer.tail_page.load(Ordering::Acquire);
+        assert_eq!(stale_tail_val, TailVal::INITIAL);
+
+        // Fill Node 0 and advance to Node 1.
+        let (res0, _, _) = buffer.reserve(max_payload).unwrap();
+        buffer.commit(res0);
+        let (res1, _, _) = buffer.reserve(max_payload).unwrap();
+        assert_eq!(res1.node_idx, 1);
+        buffer.commit(res1);
+
+        // Overflow Node 1, which forces an overwrite back onto Node 0 and moves head_page to
+        // Node 1.
+        let (res2, _, _) = buffer.reserve(100).unwrap();
+        assert_eq!(res2.node_idx, 0);
+        buffer.commit(res2);
+
+        // Now tail_page points to Node 0 again (with an incremented generation counter),
+        // head_page is Node 1, and nodes[0].next has FLAG_HEADER pointing to Node 1.
+        let current_tail_val = buffer.tail_page.load(Ordering::Acquire);
+        assert_eq!(current_tail_val.index(), 0);
+        assert_eq!(current_tail_val.generation(), 2);
+        assert_eq!(buffer.head_page.load(Ordering::Acquire), 1);
+        assert_eq!(buffer.dropped_pages(), 1);
+
+        // Simulate a delayed thread from generation 0 calling advance_to_next_page with
+        // `stale_tail_val`. It must short-circuit at the entry check and NOT finalize Node 0, NOT
+        // overwrite Node 1, and NOT advance `tail_page` or `head_page`. This covers only the entry
+        // check. The re-check in the reset loop and the `tail_page` CAS would need the thread to
+        // be paused inside `advance_to_next_page()`.
+        let mut yield_tracker = YieldTracker::default();
+        let res = buffer.advance_to_next_page(&buffer.nodes[0], stale_tail_val, &mut yield_tracker);
+        assert_eq!(res, AdvanceResult::Advanced);
+        assert_eq!(
+            buffer.tail_page.load(Ordering::Acquire),
+            current_tail_val,
+            "Stale advance_to_next_page must not advance tail_page on a later generation"
+        );
+        assert_eq!(buffer.head_page.load(Ordering::Acquire), 1);
+        assert_eq!(buffer.dropped_pages(), 1);
+        assert_ne!(
+            buffer.nodes[0].active_writers.load(Ordering::Acquire) & PAGE_ACTIVE_BIT,
+            0,
+            "Stale advance_to_next_page must not clear PAGE_ACTIVE_BIT on the active tail page"
+        );
+
+        // Subsequent reservation on Node 0 should still succeed on Node 0.
+        let (res3, _, _) = buffer.reserve(100).unwrap();
+        assert_eq!(res3.node_idx, 0);
+        buffer.commit(res3);
+    }
+
+    #[test]
+    fn test_new_rejects_more_nodes_than_tail_val_can_index() {
+        // The check runs before the VMO is created, so this allocates nothing.
+        let size_bytes = (TailVal::MAX_NODES + 1) * (*PAGE_SIZE) as usize;
+        assert_eq!(
+            LocklessRingBuffer::new(size_bytes, true, fuchsia_trace::Id::new()).err(),
+            Some(errno!(ENOMEM))
+        );
+    }
+
+    #[test]
     fn test_enable_on_new_ring_returns_creation_time() {
         let before_new = zx::BootInstant::get();
         let buffer =
@@ -2208,14 +2334,14 @@ mod tests {
         assert_eq!(res.node_idx, 1);
         buffer.commit(res);
         let tail_before = buffer.tail_page.load(Ordering::Acquire);
-        assert_eq!(tail_before, 1);
+        assert_eq!(tail_before.index(), 1);
 
-        // Disabling and re-enabling resets the ring, and later no-op enables return the new time.
-        // Two clock reads can be equal, so the tail and offset checks, not the time, show that
-        // the ring was reset.
+        // Disabling and re-enabling resets the ring to node 0 in the next generation, and later
+        // no-op enables return the new time. Two clock reads can be equal, so the tail and offset
+        // checks, not the time, show that the ring was reset.
         buffer.disable().unwrap();
         let reenabled_at = buffer.enable().unwrap();
-        assert_eq!(buffer.tail_page.load(Ordering::Acquire), 0);
+        assert_eq!(buffer.tail_page.load(Ordering::Acquire), tail_before.next(0));
         assert_eq!(
             buffer.nodes[0].write_offset.load(Ordering::Relaxed),
             LocklessRingBuffer::PAGE_HEADER_SIZE
