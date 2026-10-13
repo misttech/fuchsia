@@ -39,7 +39,7 @@ type stringInLogCheck struct {
 	// in the Swarming task passed.
 	SkipAllPassedTests bool
 	// SkipPassedTest will cause Check() to return true only if it finds the
-	// log in the per-test output (swarming, syslog, or serial) of a failed test.
+	// log in the per-test swarming output of a failed test.
 	SkipPassedTest bool
 	// IgnoreFlakes will cause Check() to behave in the following ways when
 	// combined with other options:
@@ -53,7 +53,7 @@ type stringInLogCheck struct {
 	AlwaysFlake bool
 	// Type of log that will be checked.
 	Type logType
-	// Whether to check the per-test output for this log and emit a
+	// Whether to check the per-test Swarming output for this log and emit a
 	// check that's specific to the test during which the log appeared.
 	AttributeToTest bool
 	// If combined with AttributeToTest, it'll list the test name as a tag instead
@@ -168,8 +168,7 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 		return false
 	}
 
-	if c.AttributeToTest || c.SkipPassedTest {
-		_, perTestLogs := to.allLogs(c.Type)
+	if c.Type == swarmingOutputType && (c.AttributeToTest || c.SkipPassedTest) {
 		type testdata struct {
 			name       string
 			outputFile string
@@ -177,50 +176,45 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 			index      int
 			line       string
 		}
-		matchedTestsMap := make(map[string]testdata)
-		for _, testLogs := range perTestLogs {
-			for i, testLog := range testLogs {
-				var testResult runtests.TestStatus
-				if to.TestSummary != nil && i < len(to.TestSummary.Tests) {
-					testResult = to.TestSummary.Tests[i].Status
-				}
-				if c.SkipPassedTest && testResult == runtests.TestSuccess {
-					if c.IgnoreFlakes {
-						if test, ok := matchedTestsMap[testLog.TestName]; ok {
-							test.isFlake = true
-							matchedTestsMap[testLog.TestName] = test
-						}
+		failedTestsMap := make(map[string]testdata)
+		for i, testLog := range to.SwarmingOutputPerTest {
+			var testResult runtests.TestStatus
+			if to.TestSummary != nil {
+				testResult = to.TestSummary.Tests[i].Status
+			}
+			if c.SkipPassedTest && testResult == runtests.TestSuccess {
+				if c.IgnoreFlakes {
+					if test, ok := failedTestsMap[testLog.TestName]; ok {
+						test.isFlake = true
+						failedTestsMap[testLog.TestName] = test
 					}
-					continue
 				}
-				if len(testLog.Bytes) == 0 {
-					continue
-				}
-				found, line := c.checkBytes(testLog.Bytes)
-				if found {
-					matchedTestsMap[testLog.TestName] = testdata{testLog.TestName, testLog.FilePath, c.AlwaysFlake, i, string(line)}
-				}
+				continue
+			}
+			found, line := c.checkBytes(to.SwarmingOutput, testLog.Index, testLog.Index+len(testLog.Bytes))
+			if found {
+				failedTestsMap[testLog.TestName] = testdata{testLog.TestName, testLog.FilePath, c.AlwaysFlake, i, string(line)}
 			}
 		}
-		var unflakedMatches []testdata
+		var failedTests []testdata
 		var flakedTests []testdata
-		for _, data := range matchedTestsMap {
+		for _, data := range failedTestsMap {
 			if data.isFlake {
 				flakedTests = append(flakedTests, data)
 			} else {
-				unflakedMatches = append(unflakedMatches, data)
+				failedTests = append(failedTests, data)
 			}
 		}
 		// Prioritize returning the first failure. If there are no failures,
 		// then return the first flake.
-		if len(unflakedMatches) > 0 {
-			slices.SortFunc(unflakedMatches, func(a, b testdata) int {
+		if len(failedTests) > 0 {
+			slices.SortFunc(failedTests, func(a, b testdata) int {
 				return a.index - b.index
 			})
 			if c.AttributeToTest {
-				c.testName = unflakedMatches[0].name
-				c.outputFile = unflakedMatches[0].outputFile
-				c.line = unflakedMatches[0].line
+				c.testName = failedTests[0].name
+				c.outputFile = failedTests[0].outputFile
+				c.line = failedTests[0].line
 			}
 			return true
 		}
@@ -241,8 +235,18 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 		}
 	}
 
-	for _, file := range to.logs(c.Type) {
-		found, line := c.checkBytes(file)
+	var toCheck [][]byte
+	switch c.Type {
+	case serialLogType:
+		toCheck = to.SerialLogs
+	case swarmingOutputType:
+		toCheck = [][]byte{to.SwarmingOutput}
+	case syslogType:
+		toCheck = to.Syslogs
+	}
+
+	for _, file := range toCheck {
+		found, line := c.checkBytes(file, 0, len(file))
 		if found {
 			if c.AlwaysFlake {
 				c.isFlake = true
@@ -254,23 +258,24 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 	return false
 }
 
-func (c *stringInLogCheck) checkBytes(toCheck []byte) (bool, []byte) {
+func (c *stringInLogCheck) checkBytes(toCheck []byte, start int, end int) (bool, []byte) {
+	toCheckBlock := toCheck[start:end]
 	for _, s := range c.ExceptStrings {
-		if bytes.Contains(toCheck, []byte(s)) {
+		if bytes.Contains(toCheckBlock, []byte(s)) {
 			return false, nil
 		}
 	}
 	stringBytes := []byte(c.String)
 	if len(c.ExceptBlocks) == 0 {
-		if idx := bytes.Index(toCheck, stringBytes); idx != -1 {
-			line := getLine(toCheck, idx)
+		if idx := bytes.Index(toCheckBlock, stringBytes); idx != -1 {
+			line := getLine(toCheckBlock, idx)
 			return true, line
 		} else {
 			return false, nil
 		}
 	}
-	index := bytes.Index(toCheck, stringBytes)
-	for index >= 0 && index < len(toCheck) {
+	index := bytes.Index(toCheckBlock, stringBytes) + start
+	for index >= start && index < end {
 		foundString := true
 		beforeBlock := toCheck[:index]
 		nextStartIndex := index + len(stringBytes)

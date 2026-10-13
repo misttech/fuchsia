@@ -6,7 +6,6 @@ package tefmocheck
 
 import (
 	"testing"
-	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 
@@ -301,68 +300,6 @@ func TestNearbyStringCheckWithSwarming(t *testing.T) {
 				if diff := cmp.Diff(tc.expectedIsFlake, tc.check.IsFlake()); diff != "" {
 					t.Errorf("IsFlake() mismatch (-want +got):\n%s", diff)
 				}
-			}
-		})
-	}
-}
-
-func TestNearbyStringCheckSkipPassedTestSyslog(t *testing.T) {
-	check := &NearbyStringCheck{
-		String1:          "string1",
-		String2:          "string2",
-		MaxDistanceLines: 5,
-		SkipPassedTest:   true,
-		Type:             syslogType,
-	}
-
-	testCases := []struct {
-		name          string
-		testSummary   *runtests.TestSummary
-		syslogs       [][]byte
-		expectedCheck bool
-	}{
-		{
-			name: "skips when string in passed test syslog",
-			testSummary: &runtests.TestSummary{
-				Tests: []runtests.TestDetails{
-					{Name: "failed_test", Status: runtests.TestFailure, StartTime: time.Date(2026, 10, 5, 14, 0, 0, 0, time.UTC), DurationMillis: 60000},
-					{Name: "passed_test", Status: runtests.TestSuccess, StartTime: time.Date(2026, 10, 5, 14, 5, 0, 0, time.UTC), DurationMillis: 60000},
-				},
-			},
-			syslogs: [][]byte{
-				[]byte("2026-10-05 14:00:00.000000 failed test line\n" +
-					"2026-10-05 14:05:00.000000 string1\n" +
-					"2026-10-05 14:05:01.000000 string2\n"),
-			},
-			expectedCheck: false,
-		},
-		{
-			name: "matches when string in failed test syslog",
-			testSummary: &runtests.TestSummary{
-				Tests: []runtests.TestDetails{
-					{Name: "failed_test", Status: runtests.TestFailure, StartTime: time.Date(2026, 10, 5, 14, 0, 0, 0, time.UTC), DurationMillis: 60000},
-					{Name: "passed_test", Status: runtests.TestSuccess, StartTime: time.Date(2026, 10, 5, 14, 5, 0, 0, time.UTC), DurationMillis: 60000},
-				},
-			},
-			syslogs: [][]byte{
-				[]byte("2026-10-05 14:00:00.000000 string1\n" +
-					"2026-10-05 14:00:01.000000 string2\n" +
-					"2026-10-05 14:05:00.000000 passed test line\n"),
-			},
-			expectedCheck: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			outputs := &TestingOutputs{
-				SwarmingSummary: &SwarmingTaskSummary{Results: &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true}},
-				TestSummary:     tc.testSummary,
-				Syslogs:         tc.syslogs,
-			}
-			c := *check
-			if got := c.Check(outputs); got != tc.expectedCheck {
-				t.Errorf("Check() got %v, want %v", got, tc.expectedCheck)
 			}
 		})
 	}

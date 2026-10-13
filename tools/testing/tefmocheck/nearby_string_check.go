@@ -28,7 +28,7 @@ type NearbyStringCheck struct {
 	// in the Swarming task passed.
 	SkipAllPassedTests bool
 	// SkipPassedTest will cause Check() to return true only if it finds the
-	// log in the per-test output (swarming, syslog, or serial) of a failed test.
+	// log in the per-test swarming output of a failed test.
 	SkipPassedTest bool
 	// IgnoreFlakes will cause Check() to behave in the following ways when
 	// combined with other options:
@@ -103,38 +103,29 @@ func (c *NearbyStringCheck) Check(outputs *TestingOutputs) bool {
 		}
 	}
 
-	if c.SkipPassedTest {
-		perTestLogs := outputs.perTestLogs(c.Type)
-		if len(perTestLogs) == 0 {
-			return false
-		}
+	if c.Type == swarmingOutputType && c.SkipPassedTest {
 		type testdata struct {
 			name    string
 			isFlake bool
 			index   int
 		}
 		failedTestsMap := make(map[string]testdata)
-		for _, testLogs := range perTestLogs {
-			for i, testLog := range testLogs {
-				var testStatus runtests.TestStatus
-				if outputs.TestSummary != nil && i < len(outputs.TestSummary.Tests) {
-					testStatus = outputs.TestSummary.Tests[i].Status
-				}
-				if testStatus == runtests.TestSuccess {
-					if c.IgnoreFlakes {
-						if test, ok := failedTestsMap[testLog.TestName]; ok {
-							test.isFlake = true
-							failedTestsMap[testLog.TestName] = test
-						}
+		for i, testLog := range outputs.SwarmingOutputPerTest {
+			var testStatus runtests.TestStatus
+			if outputs.TestSummary != nil && i < len(outputs.TestSummary.Tests) {
+				testStatus = outputs.TestSummary.Tests[i].Status
+			}
+			if testStatus == runtests.TestSuccess {
+				if c.IgnoreFlakes {
+					if test, ok := failedTestsMap[testLog.TestName]; ok {
+						test.isFlake = true
+						failedTestsMap[testLog.TestName] = test
 					}
-					continue
 				}
-				if len(testLog.Bytes) == 0 {
-					continue
-				}
-				if c.findNearbyStrings(testLog.Bytes) {
-					failedTestsMap[testLog.TestName] = testdata{testLog.TestName, c.AlwaysFlake, i}
-				}
+				continue
+			}
+			if c.findNearbyStrings(testLog.Bytes) {
+				failedTestsMap[testLog.TestName] = testdata{testLog.TestName, c.AlwaysFlake, i}
 			}
 		}
 		var failedTests []testdata
@@ -156,7 +147,18 @@ func (c *NearbyStringCheck) Check(outputs *TestingOutputs) bool {
 		return false
 	}
 
-	logs := outputs.logs(c.Type)
+	var logs [][]byte
+	switch c.Type {
+	case serialLogType:
+		logs = outputs.SerialLogs
+	case swarmingOutputType:
+		logs = [][]byte{outputs.SwarmingOutput}
+	case syslogType:
+		logs = outputs.Syslogs
+	default:
+		return false
+	}
+
 	if slices.ContainsFunc(logs, c.findNearbyStrings) {
 		if c.AlwaysFlake {
 			c.isFlake = true

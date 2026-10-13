@@ -62,13 +62,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Track counts of base filenames across both serial and syslog splits to
-	// disambiguate any duplicate names (e.g. syslog.txt, syslog_1.txt) and prevent
-	// files from different directories overwriting each other.
-	logBaseNameCounts := make(map[string]int)
-	serialLogs, serialLogsPerTest, err := tefmocheck.ReadAndSplitLogs(serialLogPaths, inputSummary, *outputsDir, logBaseNameCounts)
-	if err != nil {
-		log.Fatal(err)
+	var serialLogs [][]byte
+	for _, serialLogPath := range serialLogPaths {
+		serialLog, err := os.ReadFile(serialLogPath)
+		if err != nil {
+			log.Fatalf("failed to read serial log from %s: %v", serialLogPath, err)
+		}
+		serialLogs = append(serialLogs, serialLog)
 	}
 
 	var swarmingOutput []byte
@@ -83,31 +83,44 @@ func main() {
 			log.Fatalf("failed to split swarming output into per-test logs: %s", err)
 		}
 	}
-
-	syslogs, syslogsPerTest, err := tefmocheck.ReadAndSplitLogs(syslogPaths, inputSummary, *outputsDir, logBaseNameCounts)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// inputSummary is empty if -test-summary-json is not specified. This happens
 	// when the recipe detects no summary.json exists.
 	if *outputsDir != "" && *inputSummaryPath != "" {
-		allPerTestLogs := append([][]tefmocheck.TestLog{swarmingOutputPerTest}, serialLogsPerTest...)
-		allPerTestLogs = append(allPerTestLogs, syslogsPerTest...)
-		if err := tefmocheck.RecordTestOutputFiles(inputSummary, allPerTestLogs, *outputsDir); err != nil {
-			log.Fatal(err)
+		for i := range swarmingOutputPerTest {
+			test := &inputSummary.Tests[i]
+			testLog := &swarmingOutputPerTest[i]
+			// TODO(olivernewman): This check fails when a unit test for
+			// testrunner fails and the failure output contains the TAP output
+			// referencing fake tests used for test data. Make this check less
+			// strict by having `SplitTestLogs` only create a split log for
+			// tests that actually appear in summary.json.
+			if test.Name != testLog.TestName {
+				log.Fatalf("swarmingOutputPerTest[%d].TestName != inputSummary.Tests[%d] (%q vs %q)", i, i, testLog.TestName, test.Name)
+			}
+			relPath, err := filepath.Rel(filepath.Join(*outputsDir, test.OutputDir), testLog.FilePath)
+			if err != nil {
+				log.Fatal(err)
+			}
+			test.OutputFiles = append(test.OutputFiles, relPath)
 		}
+	}
+
+	var syslogs [][]byte
+	for _, syslogPath := range syslogPaths {
+		syslog, err := os.ReadFile(syslogPath)
+		if err != nil {
+			log.Fatalf("failed to read syslog from %s: %v", syslogPath, err)
+		}
+		syslogs = append(syslogs, syslog)
 	}
 
 	testingOutputs := tefmocheck.TestingOutputs{
 		TestSummary:           inputSummary,
 		SwarmingSummary:       swarmingSummary,
 		SerialLogs:            serialLogs,
-		SerialLogsPerTest:     serialLogsPerTest,
 		SwarmingOutput:        swarmingOutput,
 		SwarmingOutputPerTest: swarmingOutputPerTest,
 		Syslogs:               syslogs,
-		SyslogsPerTest:        syslogsPerTest,
 	}
 
 	// These should be ordered from most specific to least specific. If an earlier

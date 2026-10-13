@@ -14,74 +14,9 @@ type TestingOutputs struct {
 	TestSummary           *runtests.TestSummary
 	SwarmingSummary       *SwarmingTaskSummary
 	SerialLogs            [][]byte
-	SerialLogsPerTest     [][]TestLog
 	SwarmingOutput        []byte
 	SwarmingOutputPerTest []TestLog
 	Syslogs               [][]byte
-	SyslogsPerTest        [][]TestLog
-}
-
-func (to *TestingOutputs) getLogsPerTest(logs [][]byte, cache *[][]TestLog) [][]TestLog {
-	if *cache != nil {
-		return *cache
-	}
-	if to.TestSummary == nil || len(to.TestSummary.Tests) == 0 {
-		return nil
-	}
-	var res [][]TestLog
-	for _, log := range logs {
-		split := splitLogByTestTime(log, to.TestSummary.Tests)
-		if split != nil {
-			res = append(res, split)
-		}
-	}
-	*cache = res
-	return res
-}
-
-func (to *TestingOutputs) getSyslogsPerTest() [][]TestLog {
-	return to.getLogsPerTest(to.Syslogs, &to.SyslogsPerTest)
-}
-
-func (to *TestingOutputs) getSerialLogsPerTest() [][]TestLog {
-	return to.getLogsPerTest(to.SerialLogs, &to.SerialLogsPerTest)
-}
-
-// logs returns the raw byte slices for the given log type.
-func (to *TestingOutputs) logs(lt logType) [][]byte {
-	switch lt {
-	case swarmingOutputType:
-		return [][]byte{to.SwarmingOutput}
-	case syslogType:
-		return to.Syslogs
-	case serialLogType:
-		return to.SerialLogs
-	default:
-		return nil
-	}
-}
-
-// perTestLogs returns any per-test logs for the given log type, lazily splitting
-// by test time window if necessary.
-func (to *TestingOutputs) perTestLogs(lt logType) [][]TestLog {
-	switch lt {
-	case swarmingOutputType:
-		if len(to.SwarmingOutputPerTest) > 0 {
-			return [][]TestLog{to.SwarmingOutputPerTest}
-		}
-		return nil
-	case syslogType:
-		return to.getSyslogsPerTest()
-	case serialLogType:
-		return to.getSerialLogsPerTest()
-	default:
-		return nil
-	}
-}
-
-// allLogs returns both raw byte slices and per-test logs for the given log type.
-func (to *TestingOutputs) allLogs(lt logType) (raw [][]byte, perTest [][]TestLog) {
-	return to.logs(lt), to.perTestLogs(lt)
 }
 
 type logType string
