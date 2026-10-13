@@ -152,7 +152,112 @@ def _bazel_no_repo_rules_canonical_names(ctx):
                     end_col = match.offset + 1 + len(match.groups[0]),
                 )
 
+_GLOB_ALLOWLIST_PATH = "build/bazel/shac/glob_allowlist.json"
+
+def _glob_calls(ctx, line):
+    # Mentions of glob() in comments are fine.
+    code = line.split("#", 1)[0]
+    return ctx.re.allmatches(r"\bglob\s*\(", code)
+
+def _bazel_no_glob(ctx):
+    """Rejects uses of `glob()` in Bazel files.
+
+    `fx build` builds Bazel targets through Ninja actions, and those actions'
+    depfiles only list the files that a `glob()` matched when it last ran.
+    Adding a file that the `glob()` would now match changes nothing Ninja
+    tracks, so incremental builds keep using the old file list until something
+    else invalidates the action. Listing files explicitly avoids this, because
+    adding one means editing a BUILD.bazel file, which Ninja does track.
+
+    This is only a problem because Ninja drives Bazel. Once the GN-to-Bazel
+    migration is done and Bazel builds directly, Bazel's own tracking of glob
+    results makes `glob()` safe again, so this check could be reconsidered.
+    Even then, it should keep enforcing the glob rules in the Bazel style guide
+    (https://bazel.build/build/style-guide#globs): no globs that match nothing
+    and no recursive globs for source files.
+
+    Files that already used `glob()` when this check was added are listed in
+    build/bazel/shac/glob_allowlist.json. Entries ending in "/" allow every
+    file under that directory, for directories like sdk/history where new
+    files that use `glob()` show up regularly. The allowlist is meant to only
+    shrink, so entries that no longer match any file using `glob()` are errors
+    too. Upstream third-party code is excluded.
+    """
+    allowlist_contents = str(ctx.io.read_file(_GLOB_ALLOWLIST_PATH))
+    allowlist = json.decode(allowlist_contents)["allowed_paths"]
+    allowed_files = set([e for e in allowlist if not e.endswith("/")])
+    allowed_dirs = [e for e in allowlist if e.endswith("/")]
+
+    def is_allowed(path):
+        if path in allowed_files:
+            return True
+        return any([path.startswith(d) for d in allowed_dirs])
+
+    def uses_glob(path):
+        return any([
+            _glob_calls(ctx, line)
+            for line in str(ctx.io.read_file(path)).splitlines()
+        ])
+
+    files = ctx.scm.affected_files(glob = [
+        "*.bazel",
+        "*.bzl",
+        "!**/third_party/**",
+    ])
+    for path, meta in files.items():
+        if is_allowed(path):
+            continue
+        for num, line in meta.new_lines():
+            for match in _glob_calls(ctx, line):
+                ctx.emit.finding(
+                    level = "error",
+                    message = (
+                        "Don't use `glob()`; list files explicitly instead. " +
+                        "Ninja doesn't notice when a file that a `glob()` " +
+                        "would match is added, so incremental `fx build` " +
+                        "and `fx test` runs can silently use a stale file " +
+                        "list."
+                    ),
+                    filepath = path,
+                    line = num,
+                    col = match.offset + 1,
+                    end_col = match.offset + 1 + len(match.groups[0]),
+                )
+
+    # Every entry is checked on every run, not just affected files, so a change
+    # that removes the last glob() an entry covers fails until it also trims
+    # the allowlist. Reading the ~100 small files involved is cheap.
+    all_files = set(ctx.scm.all_files())
+    allowlist_lines = allowlist_contents.splitlines()
+    for entry in allowlist:
+        if entry.endswith("/"):
+            if any([
+                uses_glob(f)
+                for f in all_files
+                if f.startswith(entry) and (f.endswith(".bazel") or f.endswith(".bzl"))
+            ]):
+                continue
+            reason = "contains no Bazel files that use `glob()`"
+        elif entry not in all_files:
+            reason = "doesn't exist"
+        elif uses_glob(entry):
+            continue
+        else:
+            reason = "no longer uses `glob()`"
+        line = [
+            i + 1
+            for i, text in enumerate(allowlist_lines)
+            if json.encode(entry) in text
+        ][0]
+        ctx.emit.finding(
+            level = "error",
+            message = "%s %s; remove it from the allowlist." % (entry, reason),
+            filepath = _GLOB_ALLOWLIST_PATH,
+            line = line,
+        )
+
 def register_bazel_checks():
     shac.register_check(shac.check(_bazel_default_applicable_licenses, formatter = False))
     shac.register_check(shac.check(_bazel_disallowed_workspace_root_package_labels, formatter = False))
+    shac.register_check(shac.check(_bazel_no_glob, formatter = False))
     shac.register_check(shac.check(_bazel_no_repo_rules_canonical_names, formatter = False))
