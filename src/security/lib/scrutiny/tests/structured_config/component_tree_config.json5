@@ -19,6 +19,7 @@
                     "fuchsia.netsvc.disable",
                     "fuchsia.netsvc.netboot",
                     "fuchsia.androidboot.slot_suffix",
+                    "fuchsia.kernel.serial",
                     "fuchsia.omaha_app_id",
                     "fuchsia.omaha_url",
                     "fuchsia.ota_channel",

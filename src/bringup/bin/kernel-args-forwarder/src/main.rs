@@ -68,6 +68,28 @@ async fn initialize_dictionary(
         dictionary.insert(&format!("fuchsia.{}", key), config).await;
     }
 
+    // Model `kernel.serial` as a boolean indicating whether the kernel has claimed the debug
+    // serial UART:
+    // - If `kernel.serial` is "none", false (kernel did not claim the UART; usermode can drive it).
+    // - If `kernel.serial` is unset or anything other than "none" (e.g. "legacy", or a uart config),
+    //   true (kernel has claimed the debug serial UART).
+    // This avoids leaking the raw `kernel.serial` boot option string format to usermode drivers,
+    // providing a clean boolean API surface for whether the UART is claimed by the kernel.
+    //
+    // Note: Only the kernel command line (ZBI CMDLINE items) configures the kernel. A value that
+    // fuchsia.boot.Arguments takes from ImageArgs or /boot/config/additional_boot_args
+    // overrides the command line here without changing the kernel.
+    let kernel_serial = boot_args.get_string("kernel.serial").await?;
+    let kernel_serial_enabled = match kernel_serial.as_deref() {
+        Some("none") => false,
+        _ => true,
+    };
+    let config = fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(kernel_serial_enabled));
+    let config =
+        Data::new_with_proxy(capabilities_proxy.clone(), DataValue::Bytes(fidl::persist(&config)?))
+            .await;
+    dictionary.insert("fuchsia.kernel.serial", config).await;
+
     Ok(dictionary)
 }
 
@@ -107,18 +129,20 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::rc::Rc;
 
-    #[fuchsia::test]
-    async fn initialize_dictionary_test() {
+    async fn test_with_kernel_serial(
+        kernel_serial: Option<&'static str>,
+    ) -> HashMap<String, fdecl::ConfigValue> {
         let (capabilities_proxy, mut capabilities_stream) =
             fidl::endpoints::create_proxy_and_stream::<fruntime::CapabilitiesMarker>();
         let (boot_args_proxy, mut boot_args_stream) =
             fidl::endpoints::create_proxy_and_stream::<fboot::ArgumentsMarker>();
 
         // Spawn boot args server
-        fuchsia_async::Task::local(async move {
+        let _boot_args_task = fuchsia_async::Task::local(async move {
             while let Some(Ok(request)) = boot_args_stream.next().await {
                 match request {
                     fboot::ArgumentsRequest::GetBools { keys, responder } => {
@@ -135,29 +159,45 @@ mod tests {
                         }
                         responder.send(&values).unwrap();
                     }
+                    fboot::ArgumentsRequest::GetString { key, responder } => {
+                        assert_eq!(key, "kernel.serial");
+                        responder.send(kernel_serial).unwrap();
+                    }
                     _ => {
                         panic!("unexpected message to boot args");
                     }
                 }
             }
-        })
-        .detach();
+        });
 
-        let insert_count = Rc::new(Cell::new(0));
-        let insert_count_clone = insert_count.clone();
+        let created_config = Rc::new(RefCell::new(None));
+        let created_config_clone = created_config.clone();
+        let inserted_configs = Rc::new(RefCell::new(HashMap::new()));
+        let inserted_configs_clone = inserted_configs.clone();
 
         // Spawn capabilities server
-        fuchsia_async::Task::local(async move {
+        let _capabilities_task = fuchsia_async::Task::local(async move {
             while let Some(Ok(request)) = capabilities_stream.next().await {
                 match request {
                     fruntime::CapabilitiesRequest::DictionaryCreate { responder, .. } => {
                         responder.send(Ok(())).unwrap();
                     }
-                    fruntime::CapabilitiesRequest::DataCreate { responder, .. } => {
+                    fruntime::CapabilitiesRequest::DataCreate { data, responder, .. } => {
+                        let config = match data {
+                            fruntime::Data::Bytes(bytes) => {
+                                fidl::unpersist::<fdecl::ConfigValue>(&bytes).unwrap()
+                            }
+                            _ => panic!("unexpected data type"),
+                        };
+                        *created_config_clone.borrow_mut() = Some(config);
                         responder.send(Ok(())).unwrap();
                     }
-                    fruntime::CapabilitiesRequest::DictionaryInsert { responder, .. } => {
-                        insert_count_clone.update(|x| x + 1);
+                    fruntime::CapabilitiesRequest::DictionaryInsert { key, responder, .. } => {
+                        let config = created_config_clone
+                            .borrow_mut()
+                            .take()
+                            .expect("DataCreate must precede DictionaryInsert");
+                        inserted_configs_clone.borrow_mut().insert(key, config);
                         responder.send(Ok(())).unwrap();
                     }
                     _ => {
@@ -165,10 +205,39 @@ mod tests {
                     }
                 }
             }
-        })
-        .detach();
+        });
 
         let _dictionary = initialize_dictionary(boot_args_proxy, capabilities_proxy).await.unwrap();
-        assert_eq!(insert_count.get(), 23);
+        inserted_configs.take()
+    }
+
+    #[fuchsia::test]
+    async fn initialize_dictionary_test() {
+        let configs = test_with_kernel_serial(None).await;
+        assert_eq!(configs.len(), 24);
+        assert_eq!(
+            configs.get("fuchsia.kernel.serial"),
+            Some(&fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(true)))
+        );
+    }
+
+    #[fuchsia::test]
+    async fn kernel_serial_none_produces_false() {
+        let configs = test_with_kernel_serial(Some("none")).await;
+        assert_eq!(configs.len(), 24);
+        assert_eq!(
+            configs.get("fuchsia.kernel.serial"),
+            Some(&fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(false)))
+        );
+    }
+
+    #[fuchsia::test]
+    async fn kernel_serial_set_produces_true() {
+        let configs = test_with_kernel_serial(Some("legacy")).await;
+        assert_eq!(configs.len(), 24);
+        assert_eq!(
+            configs.get("fuchsia.kernel.serial"),
+            Some(&fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(true)))
+        );
     }
 }

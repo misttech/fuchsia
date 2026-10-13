@@ -538,6 +538,16 @@
             availability: "optional",
             source_availability: "unknown",
         },
+        {
+            // The kernel's `kernel.serial` argument forwarded as a boolean (false when "none",
+            // true otherwise), so that a driver for the kernel's debug UART can tell whether
+            // the kernel owns that UART.
+            config: "fuchsia.kernel.serial",
+            from: "#kernel-args-forwarder/boot_args",
+            to: "#boot-drivers",
+            availability: "optional",
+            source_availability: "unknown",
+        },
     ],
     expose: [
         {
