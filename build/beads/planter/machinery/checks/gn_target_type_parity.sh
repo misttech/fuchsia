@@ -30,7 +30,12 @@ set -euo pipefail
 #      Bazel and bazel2gn does not translate them). A GN host binary or
 #      `install_host_tools` target (`rustc_binary`, `go_binary`, `executable`,
 #      `install_host_tools`) may likewise become a `bazel_host_tool` (or a
-#      forwarding `group` in a `BUILD.gn` that defines a `bazel_host_tool`).
+#      forwarding `group` in a `BUILD.gn` that defines a `bazel_host_tool`), and a
+#      `bazel_input_file` or `bazel_input_directory` whose generator moved to
+#      Bazel may become an empty `group` for soft transitions (while keeping
+#      `bazel_input_file` for a Bazel-migrated/`bazel_host_tool` generator or
+#      leaving `@gn_targets//.../<pkg>` references under `build/bazel/` is an
+#      error).
 # - If the GN target is gone (BUILD.gn deleted in a full removal, or the target
 #   removed) and BUILD.bazel defines a cc_library or fx_cc_library of the same
 #   name, its `alwayslink` must match the GN type:
@@ -77,6 +82,34 @@ GN_HOST_TOOL_TEMPLATES = {
     "executable",
     "install_host_tools",
 }
+GN_BAZEL_INPUT_TEMPLATES = {
+    "bazel_input_file",
+    "bazel_input_directory",
+}
+
+
+def bazel_input_generator_migrated(gn_text, name, pkg, bazel_names, new_map):
+    if not gn_text:
+        return False
+    code = blank_comments(gn_text)
+    pat = re.compile(r'\b(?:bazel_input_file|bazel_input_directory)\(\s*"' + re.escape(name) + r'"\s*\)\s*\{')
+    for m in pat.finditer(code):
+        body = code[m.end() - 1 : call_end(code, m.end() - 1)]
+        gm = re.search(r'\bgenerator\s*=\s*"([^"]+)"', body)
+        if not gm:
+            continue
+        gen = gm.group(1).split("(")[0].strip()
+        if gen.startswith(":"):
+            gname = gen[1:]
+        elif gen.startswith(f"//{pkg}:"):
+            gname = gen[len(f"//{pkg}:") :]
+        elif gen == f"//{pkg}":
+            gname = os.path.basename(pkg)
+        else:
+            continue
+        if gname in bazel_names or "bazel_host_tool" in new_map.get(gname, (set(), 0))[0]:
+            return True
+    return False
 
 
 def git_lines(args):
@@ -301,12 +334,41 @@ for pkg in sorted(candidate_dirs):
     old = gn_types(before)
     new = gn_types(after) if after is not None else {}
     bazel_text = new_text(bazel_rel)
+    bazel_names = set(BAZEL_NAME.findall(blank_comments(bazel_text))) if bazel_text else set()
     cc_libs = bazel_cc_libraries(bazel_text) if bazel_text else {}
     has_bazel_host_tool = any("bazel_host_tool" in t for t, _ in new.values())
+    had_bazel_input = any(t & GN_BAZEL_INPUT_TEMPLATES for t, _ in old.values())
     for name, (old_types, _) in sorted(old.items()):
         label = f"//{pkg}:{name}"
         if name in new:
             new_types, line = new[name]
+            if new_types & GN_BAZEL_INPUT_TEMPLATES and (
+                has_bazel_host_tool or bazel_input_generator_migrated(after, name, pkg, bazel_names, new)
+            ):
+                findings.append(
+                    {
+                        "source": "gn_target_type_parity",
+                        "category": "stale_bazel_input_target",
+                        "severity": "ERROR",
+                        "file": gn_rel,
+                        "line": line,
+                        "message": (
+                            f"`{label}` in `{gn_rel}` still uses `bazel_input_file`/`bazel_input_directory` for a "
+                            f"target now built in `{bazel_rel}` (or wrapped by `bazel_host_tool()`). A "
+                            "`bazel_host_tool()` or Bazel-migrated target must never be bridged back to Bazel via "
+                            "`bazel_input_file()`."
+                        ),
+                        "remediation": (
+                            f"Replace `bazel_input_file(\"{name}\")` (and any `else` branch) in `{gn_rel}` with an "
+                            f"empty `group(\"{name}\") {{}}` for soft-transitioning references in other repositories "
+                            "(or delete it if unreferenced), wrap migrated host binaries in `bazel_host_tool()` "
+                            "instead of dual-building them with `bazel2gn`, and update any "
+                            f"`@gn_targets//.../{pkg}:...` references in `.bzl` or `BUILD.bazel` files to point "
+                            f"directly at the migrated target in `//{pkg}`."
+                        ),
+                    }
+                )
+                continue
             is_test_suite_conversion = (
                 FX_TEST_AVAILABLE
                 and new_types == {"bazel_test_suite"}
@@ -315,15 +377,56 @@ for pkg in sorted(candidate_dirs):
             is_host_tool_conversion = (
                 has_bazel_host_tool
                 and new_types <= {"bazel_host_tool", "group"}
-                and old_types <= GN_HOST_TOOL_TEMPLATES | {"group"}
+                and old_types <= GN_HOST_TOOL_TEMPLATES | GN_BAZEL_INPUT_TEMPLATES | {"group"}
             )
-            if new_types != old_types and not (is_test_suite_conversion or is_host_tool_conversion):
+            is_bazel_input_transition = (
+                bool(bazel_text)
+                and new_types == {"group"}
+                and old_types <= GN_BAZEL_INPUT_TEMPLATES | {"group"}
+            )
+            if new_types != old_types and not (
+                is_test_suite_conversion or is_host_tool_conversion or is_bazel_input_transition
+            ):
                 findings.append(type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types))
         elif name in cc_libs:
             rule, alwayslink, line = cc_libs[name]
             f = alwayslink_finding(label, name, pkg, bazel_rel, rule, alwayslink, line, old_types)
             if f:
                 findings.append(f)
+
+    if bazel_text and (had_bazel_input or has_bazel_host_tool):
+        gn_targets_pat = re.compile(r'@gn_targets//(?:[^\s"\':]+/)?' + re.escape(pkg) + r'(?::([^\s"\']+))?')
+        bazel_dir = os.path.join(workdir, "build/bazel")
+        if os.path.isdir(bazel_dir):
+            for root, _, files in os.walk(bazel_dir):
+                for fn in sorted(files):
+                    if not (fn in ("BUILD.bazel", "BUILD") or fn.endswith(".bzl")):
+                        continue
+                    rel_f = os.path.relpath(os.path.join(root, fn), workdir)
+                    txt = new_text(rel_f)
+                    if not txt:
+                        continue
+                    code_f = blank_comments(txt)
+                    for gm in gn_targets_pat.finditer(code_f):
+                        findings.append(
+                            {
+                                "source": "gn_target_type_parity",
+                                "category": "stale_gn_targets_reference",
+                                "severity": "ERROR",
+                                "file": rel_f,
+                                "line": line_of(code_f, gm.start()),
+                                "message": (
+                                    f"`{rel_f}` still references `{gm.group(0)}`, which bridged `//{pkg}` from GN "
+                                    f"via `bazel_input_file`, even though `//{pkg}` is now migrated to `{bazel_rel}`."
+                                ),
+                                "remediation": (
+                                    f"Replace `{gm.group(0)}` in `{rel_f}` with the migrated Bazel target label in "
+                                    f"`//{pkg}` (e.g. `//{pkg}:<target>`) so Bazel rules use the Bazel-compiled "
+                                    f"target directly, and ensure `{bazel_rel}` grants visibility to `{rel_f}`'s "
+                                    "package or callers (such as `\"//build/bazel:__subpackages__\"`)."
+                                ),
+                            }
+                        )
 
 print(json.dumps(findings, indent=2))
 PYEOF

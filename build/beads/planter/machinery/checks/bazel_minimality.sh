@@ -170,6 +170,21 @@ def referenced_shared_configs():
 allowed_gni_files, allowed_lint_pkgs = referenced_shared_configs()
 
 
+def references_in_scope_package_at_base(norm: str) -> bool:
+    """True when `norm` at `change_base` referenced an in-scope migrated package (e.g. `@gn_targets//.../<pkg>` or `//<pkg>`)."""
+    in_scope = list(target_dirs) + sorted(dependency_dirs)
+    if not in_scope:
+        return False
+    base_txt = "\n".join(git_lines(["show", f"{change_base}:{norm}"]))
+    if not base_txt:
+        return False
+    for td in in_scope:
+        pat = r'(?:@gn_targets//(?:[^\s"\':]+/)?|//)' + re.escape(td) + r'(?=[:"/\s\'])'
+        if re.search(pat, base_txt):
+            return True
+    return False
+
+
 def is_allowed_scope(path: str) -> bool:
     if not target_dirs:
         return True
@@ -181,7 +196,9 @@ def is_allowed_scope(path: str) -> bool:
         if pkg_dir and td.startswith(pkg_dir + "/") and os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel"):
             return True
     if is_shared_bazel_rule_file(norm):
-        return False
+        return references_in_scope_package_at_base(norm)
+    if (os.path.basename(norm) in ("BUILD.bazel", "BUILD", "BUILD.gn") or norm.endswith((".bzl", ".gni"))) and references_in_scope_package_at_base(norm):
+        return True
     if norm in allowed_gni_files:
         return True
     if pkg_dir in allowed_lint_pkgs and os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel"):
