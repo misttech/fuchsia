@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "fuchsia.board.dml.config",
+    srcs = ["fidl/config.fidl"],
+    visibility = [
+        "//src/devices:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = ["//sdk/fidl/fuchsia.driver.metadata"],
+)
+
+rustc_library(
+    name = "dml-config",
+    srcs = [
+        "src/lib.rs",
+        "src/parser.rs",
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,  # @bazel2gn:skip
+    visibility = [
+        "//src/devices:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        ":fuchsia.board.dml.config_rust",
+        "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            # TODO(https://fxbug.dev/546092413): This target is only built on
+            # host in Bazel (via `target_compatible_with` above) because
+            # `:board_structured_config`, `//sdk/lib/driver/runtime/rust/fidl`,
+            # and FIDL `_rust_next` bindings do not have Bazel targets yet.
+            # However, `bazel2gn` needs this branch to generate the
+            # `if (is_fuchsia)` deps in BUILD.gn, and Bazel's `genquery` still
+            # requires every label in `select()` to resolve to an existing Bazel
+            # target.
+            #
+            # The placeholder `filegroup` targets below exist solely for
+            # `@bazel2gn:path_overwrite`; remove them and replace all overwrites
+            # with the real Bazel targets once they are available.
+            ":board_structured_config",  # @bazel2gn:path_overwrite::board_structured_config
+            ":fuchsia.driver.framework_rust_next",  # @bazel2gn:path_overwrite://sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next
+            ":fuchsia.hardware.platform.bus_rust_next",  # @bazel2gn:path_overwrite://sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_rust_next
+            ":fuchsia.hardware.power_rust_next",  # @bazel2gn:path_overwrite://sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_rust_next
+            ":sdk_lib_driver_runtime_rust_fidl",  # @bazel2gn:path_overwrite://sdk/lib/driver/runtime/rust/fidl
+            "//sdk/rust/zx",
+            "//src/lib/fidl/rust_next/fidl_next",
+            "//third_party/rust_crates/vendor:futures",
+            "//third_party/rust_crates/vendor:log",
+            "//third_party/rust_crates/vendor:phf",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+filegroup(name = "board_structured_config")
+
+# @bazel2gn:skip
+filegroup(name = "fuchsia.driver.framework_rust_next")
+
+# @bazel2gn:skip
+filegroup(name = "fuchsia.hardware.platform.bus_rust_next")
+
+# @bazel2gn:skip
+filegroup(name = "fuchsia.hardware.power_rust_next")
+
+# @bazel2gn:skip
+filegroup(name = "sdk_lib_driver_runtime_rust_fidl")
+
+# @bazel2gn:skip
+host_rustc_test(
+    name = "dml-config_host_test",
+    crate = ":dml-config",
+)
