@@ -11,6 +11,7 @@ import pathlib
 import re
 from collections.abc import Callable, Sequence
 
+# LINT.IfChange
 _EXCLUDED_PATHS = frozenset(
     {
         "build/bazel/rules/cipd_prebuilt.bzl",
@@ -40,6 +41,7 @@ _EXCLUDED_BASENAMES = frozenset(
         "CODEOWNERS",
     }
 )
+# LINT.ThenChange(//scripts/shac/prebuilts.star)
 
 _SHELL_RE = re.compile(
     r"//prebuilts?/|"
@@ -205,6 +207,7 @@ def _find_c_family_prebuilts(content: str) -> Sequence[tuple[int, int]]:
     )
 
 
+# LINT.IfChange
 def _is_devshell_path(path: str) -> bool:
     if not (
         path.startswith("tools/devshell/")
@@ -296,6 +299,7 @@ LANGUAGE_FAMILIES: Sequence[LanguageFamily] = (
         ),
     ),
 )
+# LINT.ThenChange(//scripts/shac/prebuilts.star)
 
 
 def match_language_family(path: str) -> LanguageFamily | None:
