@@ -441,7 +441,7 @@ Common error messages in Fuchsia driver development:
 
 ### Failed to load driver <...> driver note not found {:#failed-to-load-driver}
 
-When migrating a DFv1 driver to DFv2, you may run into the following error message
+When developing a driver, you may run into the following error message
 in the logs:
 
 ```none {:.devsite-disable-click-to-copy}
@@ -463,13 +463,13 @@ workflow.
 instructions below**:
 
 The error occurs if the driver does not have a `fuchsia.driver.compat` service
-routed to it from a DFv2 driver. To route this service, the DFv2 driver needs to
+routed to it from a parent driver. To route this service, the parent driver needs to
 [set up a compat device server][compat-device-server] for each child.
 
 To fix this issue, go through each parent driver starting from the affected driver.
 For example, if the node topology shows `A->B->C->D` and `D` is the affected driver,
-then go through `C`, `B`, and `A`. For each parent driver in the chain, if it's
-written in DFv2, verify that its compat device server is set up properly.
+then go through `C`, `B`, and `A`. For each parent driver in the chain, verify
+that its compat device server is set up properly.
 
 Here are some common issues related to setting up a compat device server:
 
@@ -479,7 +479,7 @@ Here are some common issues related to setting up a compat device server:
 
 ### Driver-Loader: libdriver.so: Not in allowlist {:#driver-loader-libdriver-so-not-in-allowlist}
 
-This error occurs if `libdriver` is in one of a DFv2 driver's dependencies, which
+This error occurs if `libdriver` is in one of a driver's dependencies, which
 can be transitive.
 
 To fix the issue, search and remove `//src/devices/lib/driver` from the dependencies.
@@ -492,7 +492,7 @@ fx gn path <out_directory> //path/to/driver //path/to/libdriver
 
 ### \__fuchsia_driver_registration\_\_ symbol not available {:#fuchsia-driver-registration-symbol-not-available}
 
-When migrating a DFv1 driver to DFv2, you may run into the following error message
+When developing a driver, you may run into the following error message
 in the logs:
 
 ```none {:.devsite-disable-click-to-copy}
@@ -500,7 +500,7 @@ in the logs:
 [driver_host,driver] ERROR: [src/devices/bin/driver_host/driver.cc(316)] Failed to start driver 'fuchsia-pkg://fuchsia.com/fake-battery#meta/fake_battery.cm', could not Load driver: ZX_ERR_NOT_FOUND
 ```
 
-This error occurs when a DFv2 driver doesn't include the `FUCHSIA_DRIVER_EXPORT` macro.
+This error occurs when a driver doesn't include the `FUCHSIA_DRIVER_EXPORT2` macro.
 
 To fix this issue, see [Add the driver export macro][driver-export-macro].
 
@@ -508,7 +508,7 @@ Also, make sure that the macro is defined in `.cc` files, not in header (`.h`) f
 
 ### Could not load driver: <...>: Failed to open bind file (or Missing bind path) {:#could-not-load-driver-failed-to-open-bind-file}
 
-When migrating a DFv1 driver to DFv2, you may run into the following error message
+When developing a driver, you may run into the following error message
 in the logs:
 
 ```none {:.devsite-disable-click-to-copy}
@@ -521,8 +521,8 @@ Or
 Could not load driver: fuchsia-pkg://fuchsia.com/fake-battery#meta/fake_battery.cm: Missing bind path
 ```
 
-This error occurs when the `bind` field  is either missing or incorrect in
-a DFv2 driver's component manifest (`.cml`) file, for example:
+This error occurs when the `bind` field is either missing or incorrect in
+a driver's component manifest (`.cml`) file, for example:
 
 ```none {:.devsite-disable-click-to-copy}
 {
@@ -572,7 +572,7 @@ be `fake_battery_bind.bindbc` in the example above.
 
 ### Failed to start driver, missing 'binary' argument: ZX_ERR_NOT_FOUND {:#could-not-start-driver-missing-binary}
 
-When writing a DFv2 driver, you may run into the following error message
+When writing a driver, you may run into the following error message
 in the logs:
 
 ```none {:.devsite-disable-click-to-copy}
@@ -617,7 +617,7 @@ like below:
 
 ### no member named 'destroy' in 'fdf_internal::DriverServer<...>' {:#no-member-named-destroy}
 
-If a DFv2 driver implements an open FIDL protocol (that is,
+If a driver implements an open FIDL protocol (that is,
 `open protocol <PROTOCOL_NAME>`), the driver needs to override and implement
 the `handle_unknown_method()` function.
 

@@ -23,8 +23,9 @@ Replace DDK dependencies in source header files:
 
 * {DFv1}
 
-  ```none
-  //sdk/lib/driver/component/cpp:cpp
+  ```cpp
+  #include <lib/ddk/driver.h>
+  #include <ddktl/device.h>
   ```
 
 * {DFv2}
@@ -565,12 +566,12 @@ _Write a minimal DFv2 driver_ guide.
 
 <!-- Reference links -->
 
-[ddk]: /docs/development/drivers/concepts/driver_development/using-ddktl.md
+[ddk]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/ddk/
 [driver-component]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/
 [device-h]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/ddktl/include/ddktl/device.h
-[driver-base]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_base.h
+[driver-base]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_base2.h
 [dfv1-simple-driver]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/simple/dfv1/simple_driver.cc
-[driver-export]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_export.h
+[driver-export]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_export2.h
 [add-a-child-node]: /docs/development/drivers/developer_guide/write-a-minimal-dfv2-driver.md#add-a-child-node
 [composite-nodes]: /docs/development/drivers/developer_guide/create-a-composite-node.md
 [banjo-client]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/compat/cpp/include/lib/driver/compat/cpp/banjo_client.h

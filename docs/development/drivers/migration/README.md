@@ -22,7 +22,7 @@ Notice the following key differences between DFv1 and DFv2:
 
 - **DFv1**: Drivers are not components. The Banjo protocol is
   used for driver-to-driver communication. Driver host interfaces or the
-  DDK ([Driver Development Kits][ddk]) wrapper are used to manage the life
+  DDK (Driver Development Kit) wrapper are used to manage the life
   cycle of drivers.
 
 - **DFv2**: Drivers are components. FIDL is used for all communication,
@@ -84,4 +84,3 @@ missing in the playbook:
 [serve-banjo-protocols]: /docs/development/drivers/migration/serve-banjo-protocols.md
 [set-up-services]: /docs/concepts/drivers/driver_communication.md
 [dfv2-concepts]: /docs/concepts/drivers/README.md
-[ddk]: /docs/development/drivers/concepts/driver_development/using-ddktl.md
