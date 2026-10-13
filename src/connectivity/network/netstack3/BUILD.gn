@@ -242,6 +242,7 @@ config("compiler_profile") {
   visibility = [ ":*" ]
 }
 
+# LINT.IfChange(netstack3_configs)
 config("netstack3_configs") {
   if (is_release && !is_host) {
     configs = [
@@ -250,6 +251,8 @@ config("netstack3_configs") {
     ]
   }
 }
+
+# LINT.ThenChange(//src/connectivity/network/netstack3/BUILD.bazel:netstack3_configs)
 
 config("netstack3_debug_configs") {
   if (is_debug) {

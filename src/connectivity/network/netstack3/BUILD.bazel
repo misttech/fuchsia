@@ -1,0 +1,19 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/config/derived:compilation_modes.bzl", "is_release")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(netstack3_configs)
+build_flags(
+    name = "netstack3_configs",
+    rustflags = select({
+        "@platforms//os:fuchsia": ["-Copt-level=3"],
+        "//conditions:default": [],
+    }) if is_release else [],
+    visibility = ["//src/connectivity/network:__subpackages__"],
+)
+# LINT.ThenChange(//src/connectivity/network/netstack3/BUILD.gn:netstack3_configs)

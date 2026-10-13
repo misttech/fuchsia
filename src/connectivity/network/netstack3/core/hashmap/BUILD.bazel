@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "hashmap",
+    srcs = ["src/lib.rs"],
+    build_flags = [
+        "//build/config/rust/lints:deny_unused_results",
+        "//src/connectivity/network/netstack3:netstack3_configs",
+    ],
+    crate_name = "netstack3_hashmap",
+    edition = "2024",
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = ["//third_party/rust_crates/vendor:hashbrown"],
+)
