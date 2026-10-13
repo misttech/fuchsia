@@ -48,6 +48,11 @@ board_input_bundle("main_bundle") {
   # Additional drivers to support running as a virtualization guest.
   drivers += [
     {
+      package_target = "//src/connectivity/ethernet/drivers/gvnic:gvnic-package"
+      package_set = "base"
+      driver_components = [ "meta/gvnic.cm" ]
+    },
+    {
       package_target = "//src/devices/block/drivers/ahci:package"
       package_set = "bootfs"
       driver_components = [ "meta/ahci.cm" ]
