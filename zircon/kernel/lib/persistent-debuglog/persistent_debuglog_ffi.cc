@@ -6,14 +6,20 @@
 
 #include <lib/persistent-debuglog.h>
 
-#include <kernel/ffi.h>
+void persistent_dlog_init_early() { rust_persistent_dlog_init_early(); }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE void cpp_persistent_dlog_write(const char* ptr, size_t len) {
-  persistent_dlog_write({ptr, len});
+void persistent_dlog_set_location(void* vaddr, size_t len) {
+  rust_persistent_dlog_set_location(vaddr, len);
 }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE void cpp_persistent_dlog_set_location(void* vaddr, size_t len) {
-  persistent_dlog_set_location(vaddr, len);
+void persistent_dlog_write(const ktl::string_view str) {
+  rust_persistent_dlog_write(str.data(), str.size());
+}
+
+void persistent_dlog_invalidate() { rust_persistent_dlog_invalidate(); }
+
+ktl::string_view persistent_dlog_get_recovered_log() {
+  size_t len = 0;
+  const char* ptr = rust_persistent_dlog_get_recovered_log(&len);
+  return ktl::string_view{ptr, len};
 }

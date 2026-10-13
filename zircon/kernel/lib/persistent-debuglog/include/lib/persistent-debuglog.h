@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <zircon/compiler.h>
 
-#include <kernel/ffi.h>
 #include <kernel/persistent_ram.h>
 #include <ktl/limits.h>
 #include <ktl/string_view.h>
@@ -43,15 +42,15 @@ void persistent_dlog_write(const ktl::string_view str);
 void persistent_dlog_invalidate();
 
 // Fetch a string view which references the recovered crashlog (if any).
-// size written.
 ktl::string_view persistent_dlog_get_recovered_log();
 
 __BEGIN_CDECLS
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_persistent_dlog_write(const char* ptr, size_t len);
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_persistent_dlog_set_location(void* vaddr, size_t len);
+void rust_persistent_dlog_init_early(void);
+void rust_persistent_dlog_set_location(void* vaddr, size_t len);
+void rust_persistent_dlog_write(const char* ptr, size_t len);
+void rust_persistent_dlog_invalidate(void);
+const char* rust_persistent_dlog_get_recovered_log(size_t* out_len);
 
 __END_CDECLS
 

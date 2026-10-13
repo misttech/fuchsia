@@ -16,16 +16,10 @@ library_headers("headers") {
 static_library("persistent-debuglog") {
   public_deps = [ ":headers" ]
 
-  sources = [
-    "persistent-debuglog.cc",
-    "persistent_debuglog_ffi.cc",
-  ]
+  sources = [ "persistent_debuglog_ffi.cc" ]
   deps = [
     ":persistent-debuglog-rs",
-    "//src/lib/lazy_init",
-    "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/ktl",
-    "//zircon/system/ulib/fbl",
   ]
 }
 
@@ -33,6 +27,19 @@ kernel_rust_mod("persistent-debuglog-rs") {
   output_name = "persistent_debuglog_rs"
   source_root = "persistent_debuglog.rs"
   sources = [ "persistent_debuglog.rs" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//src/lib/kprint",
+    "//src/lib/ksync",
+    "//src/lib/lazy_init",
+    "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/console:console_rs",
+  ]
+  test_deps = [
+    "//src/lib/kalloc",
+    "//zircon/kernel/lib/unittest:unittest-rs",
+  ]
 }
 
 config("config") {
@@ -47,7 +54,6 @@ group("tests") {
 
 group("kernel-tests") {
   testonly = true
-  deps = [ "tests" ]
 }
 
 group("phys-tests") {
