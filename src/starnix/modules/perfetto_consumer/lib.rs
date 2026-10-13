@@ -67,7 +67,11 @@ struct CallbackState {
     /// first time it is needed.
     connection: Option<perfetto::Consumer>,
     /// Prolonged trace context to prevent the Fuchsia trace session from terminating while reading
-    /// data from Perfetto.
+    /// data from Perfetto. `TraceState::Started` stores it only once it has sent EnableTracing,
+    /// and only `TraceState::Stopping` takes it, to disable Perfetto tracing and read the data.
+    /// So it is `Some` exactly when Started has requested Perfetto tracing and Stopping hasn't run
+    /// since. Holding it keeps trace-engine from reaching Stopped, so the session it belongs to
+    /// can't end, and no other session can start, until Stopping releases it.
     prolonged_context: Option<ProlongedContext>,
     /// Partial trace packet returned from Perfetto but not yet written to Fuchsia.
     packet_data: Vec<u8>,
@@ -78,6 +82,18 @@ struct CallbackState {
 }
 
 impl CallbackState {
+    /// Returns the state for a consumer that hasn't seen any trace state change yet.
+    fn new(socket_path: FsString) -> Self {
+        Self {
+            prev_state: TraceState::Stopped,
+            socket_path,
+            connection: None,
+            prolonged_context: None,
+            packet_data: Vec::new(),
+            session: None,
+        }
+    }
+
     fn connection(
         &mut self,
         current_task: &CurrentTask,
@@ -92,8 +108,9 @@ impl CallbackState {
         }
     }
 
+    /// Clears the state kept for a trace session that has ended. Leaves `prolonged_context`
+    /// alone: only `TraceState::Stopping` releases it (see `prolonged_context`).
     fn handle_stopped(&mut self) {
-        self.prolonged_context = None;
         self.packet_data.clear();
         self.session = None;
     }
@@ -110,15 +127,44 @@ impl CallbackState {
         );
         match new_state {
             TraceState::Started => {
-                if prev_state != TraceState::Stopped {
-                    // This means something unexpected has caused the trace_engine to change
-                    // states faster than we're processing the trace observer events.
-                    log_error!(
+                if self.prolonged_context.is_some() {
+                    // Perfetto tracing has already been requested for the session whose context
+                    // we hold, and that session hasn't ended (see `prolonged_context`). So this
+                    // Started is a repeat for that session (see
+                    // `start_perfetto_consumer_thread()` for how that happens), or a stale one
+                    // for a session that ended before we acquired the context. Either way there
+                    // is nothing to do.
+                    return Ok(());
+                }
+                if prev_state == TraceState::Stopping {
+                    // The observer reads the current state when it is woken, so it misses the
+                    // previous session's Stopped if the next session has already started by then.
+                    // A stale Stopping that disabled Perfetto tracing early (see Stopping below)
+                    // can also be followed by Started. Either way the pid/koid session and packet
+                    // data are left over from before.
+                    log_warn!(
                         "Started received in {prev_state:?} state! Cleaning up then starting."
                     );
                     self.handle_stopped();
                 }
-                self.prolonged_context = ProlongedContext::acquire();
+                // After Stopped, or after a Started that didn't enable Perfetto tracing (see
+                // below), there is nothing to clean up.
+
+                // `ProlongedContext::acquire()` fails only while trace-engine's context count is
+                // zero. With Started reported, that means one of:
+                // - The session has already ended, for example because its Stopping and Stopped
+                //   states were queued behind this one.
+                // - The session is still starting. `trace_engine_start()` stores Started before
+                //   it makes the count nonzero, and notifies observers only after that, so a
+                //   `trace_state()` read in between returns Started while the count is zero.
+                // Either way another state change follows: the end of the session, or its start
+                // notification (see `start_perfetto_consumer_thread()` for why neither is
+                // missed). Skip Perfetto until then. `prolonged_context` stays `None`, so a
+                // later Stopping skips Perfetto and a later Started tries again.
+                let Some(prolonged_context) = ProlongedContext::acquire() else {
+                    log_info!("No trace context for Started; not enabling Perfetto tracing yet");
+                    return Ok(());
+                };
                 let connection = self.connection(current_task)?;
                 // A fixed set of data sources that may be of interest. As demand for other sources
                 // is found, add them here, and it may become worthwhile to allow this set to be
@@ -210,24 +256,35 @@ impl CallbackState {
                         attach_notification_only: None,
                     },
                 )?;
+                // EnableTracing has been sent now, so hold the context until Stopping tears
+                // Perfetto tracing down. If an error above returned early, EnableTracing wasn't
+                // sent and the context was dropped without being stored.
+                self.prolonged_context = Some(prolonged_context);
                 // Once tracing has started, open a recording session so pid/koid
                 // mappings are tracked for the duration of the trace.
                 self.session = Some(current_task.kernel().trace_event_manager.open());
             }
             TraceState::Stopping => {
-                if prev_state != TraceState::Started {
-                    // If we receive a stop request and we don't think we're actually tracing, our
-                    // local state likely desynced from the global trace state. Clean up our state
-                    // and ensure we're stopped so we re-synchronize.
-                    log_error!("Stopping received in {prev_state:?} state! Cleaning up.");
-                    self.handle_stopped();
+                // Hold the prolonged context so that trace-engine can't finish stopping while
+                // we forward Perfetto data. Taking it out of `self` also drops it if we bail
+                // below.
+                let Some(_prolonged_context) = self.prolonged_context.take() else {
+                    // Without a prolonged context Perfetto tracing isn't enabled (see
+                    // `prolonged_context`), so there is no Perfetto session to disable or read.
+                    if prev_state != TraceState::Started {
+                        // If we receive a stop request and we don't think we're actually
+                        // tracing, our local state likely desynced from the global trace state.
+                        // Clean up our state and ensure we're stopped so we re-synchronize.
+                        log_error!("Stopping received in {prev_state:?} state! Cleaning up.");
+                        self.handle_stopped();
+                    }
                     return Ok(());
-                }
-
-                // We want to hold the prolonged context to ensure the trace session doesn't
-                // exit out from under us, but we also want to ensure we drop the prolonged
-                // context if we bail for whatever reason below.
-                let _local_prolonged_context = std::mem::replace(&mut self.prolonged_context, None);
+                };
+                // With the context held, this Stopping is for the session it belongs to, or a
+                // stale one for a session that ended before we acquired the context. In the
+                // stale case Perfetto tracing pauses for the current session until its own
+                // Started, which is queued after this Stopping, enables it again, unless that
+                // session is already stopping by then. Either way it is not left enabled.
                 let start_time = std::time::Instant::now();
 
                 let connection = self.connection(current_task)?;
@@ -330,6 +387,13 @@ impl CallbackState {
                 );
             }
             TraceState::Stopped => {
+                if self.prolonged_context.is_some() {
+                    // The session whose context we hold can't reach Stopped until Stopping
+                    // releases the context, so this Stopped is stale: it is for a session that
+                    // ended before we acquired the context. The held session's Stopping is still
+                    // to come, so keep its context and pid/koid session until then.
+                    return Ok(());
+                }
                 self.handle_stopped();
             }
         }
@@ -490,13 +554,15 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
     // trace-engine's engine mutex, which `trace_engine_start()` holds from storing Started until
     // it has made the context count nonzero and notified observers. So if a start begins after
     // registration, this observer gets its start notification. If it finished before
-    // registration, the worker's read sees it.
+    // registration, the worker sees the nonzero count, and then `ProlongedContext::acquire()`
+    // fails only for a session that has since ended, which this observer reports. The observer
+    // clears its event before it reads the state, so if it reads Started before the count is
+    // nonzero, the start notification signals it again.
     //
     // One session's Started can also be reported twice: by the worker's read and by the start
     // notification, if the start falls between registration and that read, or by two observer
     // reads, if the observer was woken earlier and reads Started before the notification comes.
-    // `CallbackState::on_state_change()` handles a Started after Started as a desync and sends
-    // EnableTracing again, which traced rejects while the first Perfetto session keeps running.
+    // `CallbackState::on_state_change()` ignores a Started while it holds the prolonged context.
     let observer = TraceObserver::new();
 
     // Listens for trace state changes and sends them to Perfetto consumer thread.
@@ -517,14 +583,7 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
     // This task can block, so we spawn it on a dedicated thread to not block the observer or the
     // main async executor.
     let worker_closure = async move |current_task: &CurrentTask| {
-        let mut callback_state = CallbackState {
-            prev_state: TraceState::Stopped,
-            socket_path,
-            connection: None,
-            prolonged_context: None,
-            packet_data: Vec::new(),
-            session: None,
-        };
+        let mut callback_state = CallbackState::new(socket_path);
 
         fn handle_state_change(
             callback_state: &mut CallbackState,
@@ -559,9 +618,9 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
                                     "perfetto_consumer initial start tracing failed because perfetto socket connection not established: {e:?} retrying in 5 seconds..."
                                 );
                                 std::thread::sleep(RETRY_DELAY);
-                                callback_state.prev_state = TraceState::Stopped;
+                                // `prev_state` stays at the failed Started, so if the session
+                                // is stopping by now, the retry handles its Stopping quietly.
                                 callback_state.connection = None;
-                                callback_state.prolonged_context = None;
                                 state = trace_state();
                                 continue; // Retry
                             }
@@ -589,4 +648,251 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
     kernel.kthreads.spawner().spawn_from_request(worker_req);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starnix_core::testing::spawn_kernel_and_run;
+    use std::ffi::c_uint;
+
+    // The tests below run `CallbackState::on_state_change()` with and without a trace context.
+    // They have no Perfetto consumer endpoint that answers EnableTracing, DisableTracing and
+    // ReadBuffers, so every attempt to connect to Perfetto fails. So no test covers a Started that
+    // enables Perfetto tracing and keeps the context, or a Stopping that then disables Perfetto
+    // tracing, reads the buffers and releases the context. If Started stopped storing the context
+    // after EnableTracing, every Stopping would skip Perfetto and no test here would fail.
+
+    /// Serializes the tests that depend on whether a trace session is running: trace-engine's
+    /// state is global to the test process. `TraceSession` also holds it to keep its calls into
+    /// trace-engine's test fixture from overlapping.
+    static TRACE_ENGINE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Locks `TRACE_ENGINE_LOCK`. A test that panicked while holding it doesn't fail the others.
+    fn lock_trace_engine() -> std::sync::MutexGuard<'static, ()> {
+        TRACE_ENGINE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    // `attach_to_thread_t` (from <trace-test-utils/fixture.h>) and `trace_buffering_mode_t` are C
+    // enums with no negative enumerators, so clang gives them the underlying type `unsigned int`.
+    const NO_ATTACH_TO_THREAD: c_uint = 0; // kNoAttachToThread
+    const TRACE_BUFFER_SIZE: usize = 1 << 16;
+    // Only `TraceSession` calls these, and only while it holds `TRACE_ENGINE_LOCK`.
+    unsafe extern "C" {
+        fn fixture_set_up(attach_to_thread: c_uint, mode: c_uint, buffer_size: usize);
+        fn fixture_initialize_and_start_tracing();
+        fn fixture_stop_and_terminate_tracing();
+        fn fixture_tear_down();
+    }
+
+    /// A trace session run in this process by trace-engine's test fixture, so that
+    /// `ProlongedContext::acquire()` succeeds while it exists. It holds `TRACE_ENGINE_LOCK` for its
+    /// whole life, so a test that starts one must not lock it too. Dropping it waits until
+    /// trace-engine has stopped, so it hangs if a prolonged context is still held.
+    struct TraceSession {
+        /// Held from before the fixture is set up until after it is torn down: `Drop::drop()`
+        /// runs before the fields are dropped.
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TraceSession {
+        fn start() -> Self {
+            let lock = lock_trace_engine();
+            // SAFETY: The fixture functions take no pointers. fixture.cc keeps the fixture in a
+            // global without synchronization, which `fixture_set_up()` requires to be empty and
+            // the other functions require to be set. So the calls must not overlap, and set-up
+            // must come first.
+            // - Only a `TraceSession` calls these functions, and only while it holds
+            //   `TRACE_ENGINE_LOCK` (`lock` here, `_lock` in `drop()`), so no calls overlap.
+            // - An earlier `TraceSession` tore the fixture down in `drop()` before it released
+            //   the lock, including when a panic unwound through it, or, if it was leaked, still
+            //   holds the lock. So no fixture is set up here.
+            // - fixture.cc is built with `-fno-exceptions`, so neither call can unwind, and
+            //   `Self` below takes over `lock` and tears the fixture down.
+            // The fixture runs trace-engine on its own async loop thread (`kNoAttachToThread`).
+            unsafe {
+                fixture_set_up(
+                    NO_ATTACH_TO_THREAD,
+                    BufferingMode::OneShot as c_uint,
+                    TRACE_BUFFER_SIZE,
+                );
+                fixture_initialize_and_start_tracing();
+            }
+            Self { _lock: lock }
+        }
+    }
+
+    impl Drop for TraceSession {
+        fn drop(&mut self) {
+            // SAFETY: `start()` set up the fixture and started tracing, and `self._lock` still
+            // holds `TRACE_ENGINE_LOCK`, so no other fixture call overlaps these.
+            // `fixture_tear_down()` frees the trace buffer. Before that,
+            // `fixture_stop_and_terminate_tracing()` waits for trace-engine to reach Stopped,
+            // which it does only once no context is held, and terminates it. The context count
+            // is then zero, and only a new `trace_engine_start()` makes it nonzero, so no context
+            // can be acquired that uses the freed buffer.
+            unsafe {
+                fixture_stop_and_terminate_tracing();
+                fixture_tear_down();
+            }
+        }
+    }
+
+    #[fuchsia::test]
+    async fn started_without_trace_context_skips_perfetto() {
+        spawn_kernel_and_run(async |current_task| {
+            let _lock = lock_trace_engine();
+            // No trace session runs in this test, so `ProlongedContext::acquire()` fails as it
+            // does for a session that has already ended or hasn't finished starting. The second
+            // Started is a repeat that finds no context either.
+            // `started_without_trace_context_tries_again_on_next_started` covers a later Started
+            // that does find one. This test doesn't cover the observer registration order in
+            // `start_perfetto_consumer_thread()`.
+            assert!(ProlongedContext::acquire().is_none(), "a trace session is running");
+            // Nothing listens on this path, so any attempt to connect to Perfetto fails.
+            let mut callback_state = CallbackState::new("/nonexistent/perfetto-consumer".into());
+            for state in [
+                TraceState::Started,
+                TraceState::Started,
+                TraceState::Stopping,
+                TraceState::Stopped,
+            ] {
+                if let Err(e) = callback_state.on_state_change(state, current_task) {
+                    panic!("{state:?}: {e:?}");
+                }
+                assert_eq!(callback_state.prev_state, state);
+                assert!(callback_state.connection.is_none(), "{state:?}: connected to Perfetto");
+                assert!(callback_state.prolonged_context.is_none(), "{state:?}: holds a context");
+                assert!(callback_state.session.is_none(), "{state:?}: opened a pid/koid session");
+            }
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn started_without_trace_context_tries_again_on_next_started() {
+        spawn_kernel_and_run(async |current_task| {
+            // Declared before `callback_state` so that it is dropped after it, also when a
+            // failed assertion unwinds: dropping a session waits until no context is held.
+            let _session;
+            // Nothing listens on this path, so any attempt to connect to Perfetto fails.
+            let mut callback_state = CallbackState::new("/nonexistent/perfetto-consumer".into());
+            {
+                let _lock = lock_trace_engine();
+                assert!(ProlongedContext::acquire().is_none(), "a trace session is running");
+                // A Started read while the session was still starting, before trace-engine made
+                // the context count nonzero.
+                if let Err(e) = callback_state.on_state_change(TraceState::Started, current_task) {
+                    panic!("first Started: {e:?}");
+                }
+                assert!(
+                    callback_state.prolonged_context.is_none(),
+                    "first Started: holds a context"
+                );
+                assert!(
+                    callback_state.connection.is_none(),
+                    "first Started: connected to Perfetto"
+                );
+            }
+            // `TraceSession::start()` takes `TRACE_ENGINE_LOCK` itself, so it is released above.
+            // Other tests may run in between, but they don't share `callback_state`.
+            _session = TraceSession::start();
+            // The session's start notification. Started now acquires a context and tries to
+            // enable Perfetto tracing, which fails to connect. Only that attempt can return an
+            // error, so the error shows that this Started got past `ProlongedContext::acquire()`.
+            assert!(
+                callback_state.on_state_change(TraceState::Started, current_task).is_err(),
+                "second Started didn't try to enable Perfetto tracing"
+            );
+            assert!(callback_state.prolonged_context.is_none(), "second Started kept the context");
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn trace_context_is_held_until_stopping() {
+        spawn_kernel_and_run(async |current_task| {
+            let _session = TraceSession::start();
+            // Nothing listens on this path, so any attempt to connect to Perfetto fails.
+            let mut callback_state = CallbackState::new("/nonexistent/perfetto-consumer".into());
+            // Stand in for a Started that enabled Perfetto tracing and opened a pid/koid session.
+            // Enabling it for real needs a Perfetto service, which this test doesn't have.
+            callback_state.prev_state = TraceState::Started;
+            callback_state.prolonged_context = ProlongedContext::acquire();
+            assert!(callback_state.prolonged_context.is_some(), "no trace session is running");
+            callback_state.session = Some(current_task.kernel().trace_event_manager.open());
+            // A repeated Started, and stale Stopped and Started states of an earlier session,
+            // keep the context and the pid/koid session, and don't touch Perfetto. The test feeds
+            // these states directly: the trace-engine timing that produces them (see
+            // `start_perfetto_consumer_thread()`) isn't reproduced here.
+            for state in
+                [TraceState::Started, TraceState::Stopped, TraceState::Started, TraceState::Stopped]
+            {
+                if let Err(e) = callback_state.on_state_change(state, current_task) {
+                    panic!("{state:?}: {e:?}");
+                }
+                assert!(callback_state.prolonged_context.is_some(), "{state:?}: dropped context");
+                assert!(callback_state.session.is_some(), "{state:?}: dropped pid/koid session");
+                assert!(callback_state.connection.is_none(), "{state:?}: connected to Perfetto");
+            }
+            // Stopping takes the context to disable Perfetto tracing, even after a Stopped. Here
+            // it fails to connect to Perfetto, and drops the context anyway, so the trace session
+            // can stop when `_session` is dropped.
+            assert!(
+                callback_state.on_state_change(TraceState::Stopping, current_task).is_err(),
+                "Stopping didn't try to disable Perfetto tracing"
+            );
+            assert!(callback_state.prolonged_context.is_none(), "Stopping kept the context");
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn started_after_stopping_cleans_up_before_starting() {
+        spawn_kernel_and_run(async |current_task| {
+            let _session = TraceSession::start();
+            // Nothing listens on this path, so any attempt to connect to Perfetto fails.
+            let mut callback_state = CallbackState::new("/nonexistent/perfetto-consumer".into());
+            // Stand in for a previous session whose Stopped the observer missed, which left a
+            // pid/koid session and a partial packet behind, and whose Stopping released the
+            // context.
+            callback_state.prev_state = TraceState::Stopping;
+            callback_state.packet_data = vec![0; 8];
+            callback_state.session = Some(current_task.kernel().trace_event_manager.open());
+            // Started clears what is left over, then acquires a context and tries to enable
+            // Perfetto tracing, which fails to connect. Only that attempt can return an error,
+            // so the error shows that this Started got past `ProlongedContext::acquire()`.
+            assert!(
+                callback_state.on_state_change(TraceState::Started, current_task).is_err(),
+                "Started after Stopping didn't try to enable Perfetto tracing"
+            );
+            assert!(callback_state.packet_data.is_empty(), "Started kept the old packet data");
+            assert!(callback_state.session.is_none(), "Started kept the old pid/koid session");
+            assert!(callback_state.prolonged_context.is_none(), "Started kept the context");
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn started_that_fails_to_enable_perfetto_keeps_no_context() {
+        spawn_kernel_and_run(async |current_task| {
+            let _session = TraceSession::start();
+            // Nothing listens on this path, so any attempt to connect to Perfetto fails.
+            let mut callback_state = CallbackState::new("/nonexistent/perfetto-consumer".into());
+            // Started acquires a context, then fails to connect, so Perfetto tracing isn't
+            // enabled and the context must not be kept.
+            assert!(
+                callback_state.on_state_change(TraceState::Started, current_task).is_err(),
+                "Started connected to Perfetto"
+            );
+            assert!(callback_state.prolonged_context.is_none(), "Started kept the context");
+            assert!(callback_state.session.is_none(), "Started opened a pid/koid session");
+            // So Stopping has no Perfetto session to disable and doesn't try to connect.
+            if let Err(e) = callback_state.on_state_change(TraceState::Stopping, current_task) {
+                panic!("Stopping: {e:?}");
+            }
+            assert!(callback_state.connection.is_none(), "Stopping connected to Perfetto");
+        })
+        .await;
+    }
 }

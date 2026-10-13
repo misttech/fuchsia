@@ -41,13 +41,17 @@ rustc_library("perfetto_consumer") {
     "//third_party/rust_crates:futures",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//zircon/system/ulib/trace-test-utils",
+  ]
 }
 
 fuchsia_unittest_package("perfetto_consumer_tests") {
   package_name = "perfetto_consumer_tests"
   manifest = "meta/perfetto_consumer_tests.cml"
   deps = [ ":perfetto_consumer_test" ]
+  test_type = "starnix"
 }
 
 group("tests") {
