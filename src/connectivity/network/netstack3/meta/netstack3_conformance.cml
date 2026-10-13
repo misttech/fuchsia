@@ -29,7 +29,7 @@
             key: "tcp_gro_enabled",
             type: "bool",
             availability: "transitional",
-            default: false,
+            default: true,
         },
     ],
 }
