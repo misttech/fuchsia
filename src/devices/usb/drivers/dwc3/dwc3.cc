@@ -1121,6 +1121,10 @@ zx_status_t Dwc3::ResetHw() {
     }
   }
 
+  // Fuchsia's dwc3.cc currently only supports device/peripheral mode.
+  // Restore controller mode to device after software reset.
+  GCTL::Get().ReadFrom(mmio).set_PRTCAPDIR(GCTL::PRTCAPDIR_DEVICE).WriteTo(mmio);
+
   // Mask event interrupts immediately after reset to prevent level interrupt storms
   // while the controller is unconfigured or stopped.
   GEVNTSIZ::Get(0).FromValue(0).set_EVNTINTRPTMASK(1).WriteTo(mmio);
