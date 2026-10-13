@@ -493,6 +493,34 @@ arch_translate_data! {
         colorspace,
         reserved,
     }
+
+    BidiFrom<usbdevfs_ctrltransfer> {
+        bRequestType,
+        bRequest,
+        wValue,
+        wIndex,
+        wLength,
+        timeout,
+        data,
+    }
+
+    BidiFrom<usbdevfs_bulktransfer> {
+        ep,
+        len,
+        timeout,
+        data,
+    }
+
+    BidiFrom<usbdevfs_disconnectsignal> {
+        signr,
+        context,
+    }
+
+    BidiFrom<usbdevfs_ioctl> {
+        ifno,
+        ioctl_code,
+        data,
+    }
 }
 
 #[cfg(test)]
