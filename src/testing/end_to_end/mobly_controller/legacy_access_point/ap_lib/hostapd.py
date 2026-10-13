@@ -633,7 +633,7 @@ class Hostapd(object):
             f"Interface {self._interface} wasn't started", self._log_file
         )
         if bad_config:
-            raise Error("Interface wasn't started", self)
+            raise InterfaceInitError("Interface wasn't started", self)
 
         if should_be_up and is_dead:
             raise Error("Hostapd failed to start", self)

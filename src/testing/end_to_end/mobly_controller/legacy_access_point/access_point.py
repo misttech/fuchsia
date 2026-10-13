@@ -676,6 +676,11 @@ class AccessPoint:
             BRIDGE_DEL = f"brctl delbr {iface}"
             self.ssh.run(BRIDGE_DOWN)
             self.ssh.run(BRIDGE_DEL)
+        # Stopping hostapd resets the wireless interface to station mode, which
+        # causes shill on Whirlwind/Gale APs to claim and enable it. Bring the
+        # interface down and set its type back to AP mode so shill ignores it.
+        self.ssh.run(f"ip link set {identifier} down")
+        self.ssh.run(f"iw dev {identifier} set type __ap")
 
     def stop_all_aps(self) -> None:
         """Stops all running aps on this device."""

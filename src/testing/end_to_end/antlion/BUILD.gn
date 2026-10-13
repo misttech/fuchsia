@@ -7,6 +7,7 @@
 # checkout:
 #   `jiri init -fetch-optional=antlion`
 
+import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 
 assert(is_host, "antlion only supported on the host toolchain")
@@ -41,10 +42,18 @@ group("e2e_tests_netstack_quick") {
   ]
 }
 
+python_host_test("hostapd_test") {
+  main_source = "packages/antlion/unit_tests/controllers/ap_lib/hostapd_test.py"
+  libraries = [ ":antlion" ]
+}
+
 # Unit tests only
 group("unit_tests") {
   testonly = true
-  public_deps = [ "runner:tests" ]
+  public_deps = [
+    ":hostapd_test",
+    "runner:tests",
+  ]
 }
 
 python_library("antlion") {
