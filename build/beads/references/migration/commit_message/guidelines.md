@@ -206,7 +206,7 @@ Migrate //src/storage/lib/ptr_slice from GN to Bazel using the
 
 Bug: 123456789
 Test: fx test //src/storage/lib/ptr_slice:tests
-Test: fx bazel2gn
+Test: fx host-tool shac check --only verify_bazel2gn
 Bazel-Migration-Target: //src/storage/lib/ptr_slice:ptr_slice
 Bazel-Migration-Target: //src/storage/lib/ptr_slice:ptr_slice_test
 ```
@@ -227,7 +227,7 @@ Migrate the `pkg` and `pkg_config` libraries in
 - Sync `pkg` and `pkg_config` to `BUILD.gn` via `bazel2gn`.
 
 Test: fx bazel test --config=host @//src/developer/ffx/lib/pkg:pkg_test @//src/developer/ffx/lib/pkg:pkg_config_test
-Test: fx bazel2gn
+Test: fx host-tool shac check --only verify_bazel2gn
 Bazel-Migration-Target: //src/developer/ffx/lib/pkg:pkg
 Bazel-Migration-Target: //src/developer/ffx/lib/pkg:pkg_config
 ```

@@ -747,7 +747,8 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
             "remediation": (
                 "Consolidate the commit message `Test:` footers (and `CoderReport.tests_run`) to at most 3 lines: "
                 "one `fx bazel test|build --config=fuchsia_platform @//<dir>:<test>` line for the migrated test targets, "
-                "one `fx bazel test --config=host @//<dir>:<host test>` line when host tests exist, and `fx bazel2gn` last; "
+                "one `fx bazel test --config=host @//<dir>:<host test>` line when host tests exist, and "
+                "`fx host-tool shac check --only verify_bazel2gn` last; "
                 "remove redundant per-package `fx build` / `fx bazel build` / `fx bazel query` lines."
             ),
         })

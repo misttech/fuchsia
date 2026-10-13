@@ -55,3 +55,10 @@ Automated verification tools (such as Planter's test verifier) execute `Test:` l
 
 - `Test:` lines may exceed the 72-character commit message line limit in order to fit the entire command and target label(s).
 - A `Test:` line **MUST NOT** be broken or wrapped across multiple lines.
+
+### G. `bazel2gn` Synchronization Verification
+
+- When a migration synchronizes targets back to `BUILD.gn` via `bazel2gn`, record `bazel2gn` sync verification using the single canonical line:
+  - `Test: fx host-tool shac check --only verify_bazel2gn`
+- Place this line **last** after all build and test `Test:` lines.
+- Do not list `Test: fx bazel2gn` (which mutates files rather than checking for drift) or per-directory `verify_bazel2gn` commands.

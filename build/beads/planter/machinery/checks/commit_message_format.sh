@@ -12,7 +12,7 @@
 #            its parent migrates nothing: INFO instead of subject findings.
 #   Test: footers: `fx bazel` commands need --config=..., Bazel labels start
 #            with @//, no redundant //a/b:b labels, bazel2gn verification is
-#            the single line `Test: fx bazel2gn`, listed last.
+#            the single line `Test: fx host-tool shac check --only verify_bazel2gn`, listed last.
 # Only runs when HEAD is the task's own commit (PLANTER_CHANGE_BASE != HEAD).
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
@@ -119,7 +119,10 @@ if head and base_rev and head != base_rev:
                 add("test_footer_redundant_label", ln,
                     f"`Test:` footer label `//{pkg}:{name}` repeats the package name.",
                     f"Write `//{pkg}` instead of `//{pkg}:{name}`.")
-        if re.search(r"\bfx bazel2gn\s+\S", cmd) or re.search(r"verify_bazel2gn", cmd):
+        if re.search(r"\bfx bazel2gn\s+\S", cmd) or (
+            re.search(r"verify_bazel2gn", cmd)
+            and cmd != "fx host-tool shac check --only verify_bazel2gn"
+        ):
             add("test_footer_bazel2gn_form", ln,
                 f"`Test:` footer `{cmd}` verifies bazel2gn in a narrower or indirect form.",
                 "Use the single line `Test: fx host-tool shac check --only verify_bazel2gn` (covers affected bazel2gn targets).")
@@ -225,7 +228,7 @@ if head and base_rev and head != base_rev:
     if b2g and test_lines and b2g[-1] != test_lines[-1][0]:
         add("test_footer_bazel2gn_not_last", b2g[-1],
             "The bazel2gn verification `Test:` line is not last.",
-            "Group build/test commands together and put `Test: fx bazel2gn` last.")
+            "Group build/test commands together and put `Test: fx host-tool shac check --only verify_bazel2gn` last.")
     # Bazel-Migration-Target: footers (required for every non-empty migration commit).
     is_empty = not changed and not git("status", "--porcelain", "--ignore-submodules=all")
     bmt_lines = [(i + 1, l) for i, l in enumerate(lines) if re.match(r"^Bazel-Migration-Target\s*:", l)]
