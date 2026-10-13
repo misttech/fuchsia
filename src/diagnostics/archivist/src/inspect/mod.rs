@@ -122,12 +122,11 @@ impl ReaderServer {
         futures::stream::iter(unpopulated_diagnostics_sources)
             .map(move |unpopulated| {
                 let global_stats = Arc::clone(stats.global_stats());
-                unpopulated.populate(batch_timeout, global_stats, parent_trace_id)
+                unpopulated.populate(batch_timeout, global_stats, parent_trace_id).boxed()
             })
-            .flatten()
-            .map(future::ready)
-            // buffer a small number in memory in case later components time out
-            .buffer_unordered(maximum_concurrent_snapshots_per_reader as usize)
+            // snapshot a small number of components concurrently so that a component that
+            // times out doesn't block the components after it
+            .flatten_unordered(maximum_concurrent_snapshots_per_reader as usize)
             // filter each component's inspect
             .filter_map(move |populated| {
                 let server_clone = Arc::clone(&server);
@@ -407,6 +406,185 @@ mod tests {
         });
 
         fasync::OnSignals::new(&done0, zx::Signals::USER_0).await.unwrap();
+    }
+
+    const CONCURRENCY_TEST_BATCH_TIMEOUT_SECONDS: i64 = 10;
+
+    /// State that must be kept alive while a `ReaderServer` stream built by
+    /// `reader_server_with_hanging_component` is polled.
+    struct ConcurrencyTestHarness {
+        _scope: fasync::Scope,
+        _pipeline: Arc<Pipeline>,
+        _inspect_repo: Arc<InspectRepository>,
+        _hanging_tree_requests: fidl_fuchsia_inspect::TreeRequestStream,
+        _accessor_stats: Arc<AccessorStats>,
+        inspector: Inspector,
+        stream: std::pin::Pin<Box<dyn Stream<Item = Data<Inspect>> + Send>>,
+    }
+
+    /// Builds a `ReaderServer` stream over a component whose `fuchsia.inspect.Tree` never
+    /// responds, followed by two healthy components.
+    fn reader_server_with_hanging_component(
+        maximum_concurrent_snapshots_per_reader: u64,
+    ) -> ConcurrencyTestHarness {
+        let scope = fasync::Scope::new();
+        let pipeline = Arc::new(Pipeline::for_test(None));
+        let inspect_repo =
+            Arc::new(InspectRepository::new(vec![Arc::downgrade(&pipeline)], fasync::Scope::new()));
+
+        // Requests on this stream are never served, so reading this tree hangs.
+        let (hanging_proxy, hanging_tree_requests) = create_proxy_and_stream::<TreeMarker>();
+        let components = [
+            ("a_hanging", hanging_proxy),
+            (
+                "b_healthy",
+                service::spawn_tree_server(
+                    inspector_for_reader_test(),
+                    TreeServerSendPreference::default(),
+                    &scope,
+                )
+                .into_proxy(),
+            ),
+            (
+                "c_healthy",
+                service::spawn_tree_server(
+                    inspector_for_reader_test(),
+                    TreeServerSendPreference::default(),
+                    &scope,
+                )
+                .into_proxy(),
+            ),
+        ];
+        for (name, proxy) in components {
+            let moniker = ExtendedMoniker::parse_str(name).unwrap();
+            let identity = Arc::new(ComponentIdentity::new(moniker, TEST_URL));
+            inspect_repo.add_inspect_handle(identity, InspectHandle::tree(proxy, None::<&str>));
+        }
+
+        // The repository doesn't guarantee an order, so put the hanging component first.
+        let mut sources =
+            inspect_repo.fetch_inspect_data(&None, pipeline.static_hierarchy_allowlist());
+        sources.sort_by_key(|source| source.identity.moniker.to_string());
+
+        let inspector = Inspector::default();
+        let accessor_stats = Arc::new(AccessorStats::new(
+            inspector.root().create_child("test_archive_accessor_node"),
+        ));
+        let stats = Arc::new(accessor_stats.new_inspect_batch_iterator());
+
+        let stream = ReaderServer::stream(
+            sources,
+            PerformanceConfig {
+                batch_timeout_sec: CONCURRENCY_TEST_BATCH_TIMEOUT_SECONDS,
+                aggregated_content_limit_bytes: None,
+                maximum_concurrent_snapshots_per_reader,
+            },
+            None,
+            stats,
+            ftrace::Id::new(),
+        )
+        .boxed();
+
+        ConcurrencyTestHarness {
+            _scope: scope,
+            _pipeline: pipeline,
+            _inspect_repo: inspect_repo,
+            _hanging_tree_requests: hanging_tree_requests,
+            _accessor_stats: accessor_stats,
+            inspector,
+            stream,
+        }
+    }
+
+    async fn poll_next_moniker(
+        stream: &mut std::pin::Pin<Box<dyn Stream<Item = Data<Inspect>> + Send>>,
+    ) -> std::task::Poll<Option<String>> {
+        fasync::TestExecutor::poll_until_stalled(stream.next())
+            .await
+            .map(|data| data.map(|data| data.moniker.to_string()))
+    }
+
+    fn moniker_string(name: &str) -> String {
+        ExtendedMoniker::parse_str(name).unwrap().to_string()
+    }
+
+    async fn advance_past_batch_timeout() {
+        fasync::TestExecutor::advance_to(fasync::MonotonicInstant::after(
+            zx::MonotonicDuration::from_seconds(CONCURRENCY_TEST_BATCH_TIMEOUT_SECONDS),
+        ))
+        .await;
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn reader_server_snapshots_components_concurrently() {
+        let mut harness = reader_server_with_hanging_component(4);
+
+        // The healthy components are returned without waiting for the hanging one.
+        let mut healthy = vec![];
+        for _ in 0..2 {
+            match poll_next_moniker(&mut harness.stream).await {
+                std::task::Poll::Ready(Some(moniker)) => healthy.push(moniker),
+                other => panic!("expected a healthy component, got {other:?}"),
+            }
+        }
+        healthy.sort();
+        assert_eq!(healthy, vec![moniker_string("b_healthy"), moniker_string("c_healthy")]);
+        assert!(poll_next_moniker(&mut harness.stream).await.is_pending());
+        assert_data_tree!(harness.inspector, root: {
+            test_archive_accessor_node: contains {
+                inspect: contains {
+                    component_timeouts_count: 0u64,
+                },
+            },
+        });
+
+        // The hanging component is returned once it times out.
+        advance_past_batch_timeout().await;
+        assert_eq!(
+            poll_next_moniker(&mut harness.stream).await,
+            std::task::Poll::Ready(Some(moniker_string("a_hanging")))
+        );
+        assert_eq!(poll_next_moniker(&mut harness.stream).await, std::task::Poll::Ready(None));
+        assert_data_tree!(harness.inspector, root: {
+            test_archive_accessor_node: contains {
+                inspect: contains {
+                    component_timeouts_count: 1u64,
+                },
+            },
+        });
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn reader_server_respects_concurrency_limit() {
+        let mut harness = reader_server_with_hanging_component(1);
+
+        // Only one component is snapshotted at a time, so the hanging component blocks the rest.
+        assert!(poll_next_moniker(&mut harness.stream).await.is_pending());
+
+        advance_past_batch_timeout().await;
+        let mut monikers = vec![];
+        loop {
+            match poll_next_moniker(&mut harness.stream).await {
+                std::task::Poll::Ready(Some(moniker)) => monikers.push(moniker),
+                std::task::Poll::Ready(None) => break,
+                std::task::Poll::Pending => panic!("stream should not stall after the timeout"),
+            }
+        }
+        assert_eq!(
+            monikers,
+            vec![
+                moniker_string("a_hanging"),
+                moniker_string("b_healthy"),
+                moniker_string("c_healthy")
+            ]
+        );
+        assert_data_tree!(harness.inspector, root: {
+            test_archive_accessor_node: contains {
+                inspect: contains {
+                    component_timeouts_count: 1u64,
+                },
+            },
+        });
     }
 
     #[test_case(vec![63, 65], vec![64, 64] ; "merge_errorful_component_into_next_batch")]

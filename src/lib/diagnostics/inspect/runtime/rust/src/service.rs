@@ -198,6 +198,7 @@ mod tests {
     use std::sync::Arc;
 
     use futures::FutureExt;
+    use std::task::Poll;
     use std::time::Duration;
 
     /// Spawns a `fuchsia.inspect.Tree` server and returns the task handling
@@ -363,6 +364,78 @@ mod tests {
         });
 
         Ok(())
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn multiple_hanging_lazy_nodes_time_out_concurrently() {
+        let inspector = Inspector::default();
+        let root = inspector.root();
+        root.record_int("int", 3);
+
+        for i in 0..3 {
+            root.record_lazy_values(format!("lazy-node-always-hangs-{i}"), || {
+                async move {
+                    futures::future::pending::<()>().await;
+                    Ok(Inspector::default())
+                }
+                .boxed()
+            });
+        }
+
+        root.record_lazy_values("lazy-node-doesnt-hang", || {
+            async move {
+                let inspector = Inspector::default();
+                inspector.root().record_string("from", "non-hanging");
+                Ok(inspector)
+            }
+            .boxed()
+        });
+
+        root.record_lazy_child("healthy", || {
+            async move {
+                let inspector = Inspector::default();
+                inspector.root().record_string("status", "ok");
+                inspector.root().record_lazy_values("nested-lazy-node-always-hangs", || {
+                    async move {
+                        futures::future::pending::<()>().await;
+                        Ok(Inspector::default())
+                    }
+                    .boxed()
+                });
+                Ok(inspector)
+            }
+            .boxed()
+        });
+
+        let instrumentation = Inspector::default();
+        let counter = instrumentation.root().create_uint("counter", 0);
+
+        let (_server, proxy) = spawn_server_proxy(inspector, TreeServerSendPreference::default());
+        let mut read = Box::pin(read_with_timeout(&proxy, Duration::from_secs(5), &counter));
+
+        // Without fake time advancing, the hanging lazy nodes keep the read pending.
+        assert!(fasync::TestExecutor::poll_until_stalled(&mut read).await.is_pending());
+        assert_json_diff!(instrumentation, root: { counter: 0 });
+
+        // A single timeout period is enough for every hanging lazy node to time out, including
+        // the nested one, since they are all read concurrently.
+        fasync::TestExecutor::advance_to(fasync::MonotonicInstant::after(
+            zx::MonotonicDuration::from_seconds(5),
+        ))
+        .await;
+        let result = match fasync::TestExecutor::poll_until_stalled(&mut read).await {
+            Poll::Ready(result) => result.expect("read hierarchy"),
+            Poll::Pending => panic!("read should complete after a single timeout period"),
+        };
+
+        assert_json_diff!(instrumentation, root: { counter: 4 });
+        assert_json_diff!(result, root: {
+            int: 3i64,
+            from: "non-hanging",
+            healthy: {
+                status: "ok",
+            },
+        });
     }
 
     async fn verify_iterator(

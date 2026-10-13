@@ -153,6 +153,7 @@ async fn read_component_with_hanging_lazy_node() -> Result<(), Error> {
     writer.record_int("int", 3).await?;
 
     let accessor = utils::connect_accessor(&realm_proxy, utils::ALL_PIPELINE).await;
+    let start = zx::MonotonicInstant::get();
     let data = ArchiveReader::inspect()
         .with_archive(accessor)
         .with_batch_retrieval_timeout_seconds(10)
@@ -160,6 +161,11 @@ async fn read_component_with_hanging_lazy_node() -> Result<(), Error> {
         .snapshot()
         .await
         .expect("got inspect data");
+
+    // Both hanging lazy nodes are read concurrently, so they time out after a single 10s period
+    // rather than one period per node (which would take >= 20s).
+    let elapsed = zx::MonotonicInstant::get() - start;
+    assert!(elapsed < zx::MonotonicDuration::from_seconds(18), "snapshot took {elapsed:?}");
 
     assert_eq!(data.len(), 1);
     assert_eq!(data[0].metadata.errors.as_ref().unwrap().len(), 2);
