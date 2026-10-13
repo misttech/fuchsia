@@ -44,6 +44,18 @@ static_assert(THREAD_SUSPENDED == 6);
 static_assert(THREAD_DEATH == 7);
 // LINT.ThenChange(//zircon/kernel/kernel/scheduler_state.rs:ThreadStateKind)
 
+// LINT.IfChange(ThreadStallState)
+// Keep `enum class ThreadStallState` in sync with Rust's `ThreadStallState`. It has no fixed
+// underlying type, so it is an `int`, which the Rust mirror matches with #[repr(i32)].
+static_assert(sizeof(ThreadStallState) == 4);
+static_assert(static_cast<int>(ThreadStallState::IgnoredKernelOnly) == 0);
+static_assert(static_cast<int>(ThreadStallState::Inactive) == 1);
+static_assert(static_cast<int>(ThreadStallState::Progressing) == 2);
+static_assert(static_cast<int>(ThreadStallState::Stalling) == 3);
+// LINT.ThenChange(//zircon/kernel/kernel/thread.rs:ThreadStallState)
+
+ThreadStallState cpp_thread_memory_stall_state(const Thread* thread);
+void cpp_thread_set_memory_stall_state(Thread* thread, ThreadStallState value);
 const SchedulerState* cpp_thread_scheduler_state(const Thread* thread);
 
 Thread* cpp_thread_create_default(const char* name, thread_start_routine entry, void* arg);
@@ -292,6 +304,23 @@ FFI_ALWAYS_INLINE bool cpp_thread_is_running(const Thread* thread) TA_NO_THREAD_
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE const char* cpp_thread_name(const Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
   return thread->name();
+}
+
+// A thread's memory_stall_state is guarded by preempt_disabled_token. The accessors below drop
+// thread safety analysis because the scheduler, their only caller, does not formally disable
+// preemption when it switches threads, but in fact it is disabled, because the scheduler does not
+// preempt itself.
+//
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE ThreadStallState cpp_thread_memory_stall_state(const Thread* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread->memory_stall_state();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_set_memory_stall_state(Thread* thread, ThreadStallState value)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  thread->set_memory_stall_state(value);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

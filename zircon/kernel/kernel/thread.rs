@@ -102,7 +102,66 @@ unsafe extern "C" {
         policy_exception_code: u32,
         policy_exception_data: u32,
     );
+    fn cpp_thread_memory_stall_state(thread: *const Thread) -> ThreadStallState;
+    fn cpp_thread_set_memory_stall_state(thread: *mut Thread, value: ThreadStallState);
     fn cpp_thread_scheduler_state(thread: *const Thread) -> *const SchedulerState;
+}
+
+/// Stall accounting state of a thread.
+///
+/// Kernel-only threads are never considered for the purpose of memory stall accounting
+/// (`IgnoredKernelOnly`).
+///
+/// If a user thread is not signalling a stall, it will contribute to the current CPU's memory
+/// stall accumulator as `Progressing` while running and do not contribute (`Inactive`) in any
+/// other state.
+///
+/// If a user thread signals that a stall is ongoing, it will contribute to the current CPU's
+/// accumulator as `Stalling`. If preempted, the contribution will persist on the last CPU's
+/// accumulator. Normal operation is resumed when the thread signals that the stall is over.
+// LINT.IfChange(ThreadStallState)
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreadStallState {
+    IgnoredKernelOnly = 0,
+    Inactive = 1,
+    Progressing = 2,
+    Stalling = 3,
+}
+// LINT.ThenChange(//zircon/kernel/kernel/thread_ffi.cc:ThreadStallState)
+
+// `enum class ThreadStallState` has no fixed underlying type, so it is `int`.
+zr::static_assert!(core::mem::size_of::<ThreadStallState>() == 4);
+zr::static_assert!(core::mem::align_of::<ThreadStallState>() == 4);
+
+/// Returns `thread`'s stall accounting state.
+///
+/// # Safety
+///
+/// `thread` must point to a valid, initialized `Thread` that remains alive for the duration of the
+/// call, with no concurrent writes to its `memory_stall_state_`. The state is guarded by
+/// `preempt_disabled_token`, so the caller must have preemption (or interrupts, as during a
+/// scheduler context switch) disabled on the current CPU.
+#[inline]
+pub unsafe fn memory_stall_state(thread: *const Thread) -> ThreadStallState {
+    // SAFETY: The caller guarantees `thread` is a valid, live `Thread` and that preemption or
+    // interrupts are disabled with no concurrent writes to `memory_stall_state_`.
+    unsafe { cpp_thread_memory_stall_state(thread) }
+}
+
+/// Sets `thread`'s stall accounting state.
+///
+/// # Safety
+///
+/// `thread` must point to a valid, initialized `Thread` that remains alive for the duration of the
+/// call, with exclusive access to its `memory_stall_state_`. The state is guarded by
+/// `preempt_disabled_token`, so the caller must have preemption (or interrupts, as during a
+/// scheduler context switch) disabled on the current CPU.
+#[inline]
+pub unsafe fn set_memory_stall_state(thread: *mut Thread, value: ThreadStallState) {
+    // SAFETY: The caller guarantees `thread` is a valid, live `Thread` and that preemption or
+    // interrupts are disabled with exclusive access to `memory_stall_state_`.
+    unsafe { cpp_thread_set_memory_stall_state(thread, value) }
 }
 
 /// Returns a reference to `thread`'s [`SchedulerState`].
