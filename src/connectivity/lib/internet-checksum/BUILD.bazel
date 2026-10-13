@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_check_cfg_build_flags.bzl", "rustc_check_cfg_build_flags")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_check_cfg_build_flags(
+    name = "check_cfg_flags",
+    cfgs = ["test"],
+    features = ["benchmark"],
+)
+
+rustc_library(
+    name = "internet-checksum",
+    srcs = ["src/lib.rs"],
+    build_flags = [
+        ":check_cfg_flags",
+        "//build/config/rust/lints:deny_unused_results",
+        "//src/connectivity/network:performance_critical_rust_crate",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/lib:__subpackages__",
+        "//src/connectivity/network/netstack3/core/device:__pkg__",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "internet-checksum_test",
+    build_flags = [
+        ":check_cfg_flags",
+        "//build/config/rust/lints:deny_unused_results",
+        "//src/connectivity/network:performance_critical_rust_crate",
+    ],
+    crate = ":internet-checksum",
+    deps = [
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:rand_xorshift",
+    ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "internet-checksum_host_test",
+    binary_name = "internet-checksum_test",
+)
+
+fx_unittest_package(
+    name = "internet-checksum-test",
+    unit_tests = [":internet-checksum_test"],
+)

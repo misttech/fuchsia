@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "diagnostics-traits",
+    srcs = [
+        "src/lib.rs",
+    ] + select({
+        "@platforms//os:fuchsia": ["src/fuchsia.rs"],
+        "//conditions:default": [],
+    }),
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = ["//src/connectivity/network:__subpackages__"],
+    deps = [
+        "//src/connectivity/lib/net-types",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+            "//src/lib/fuchsia-async",
+            "//third_party/rust_crates/vendor:log",
+        ],
+        "//conditions:default": [],
+    }),
+)

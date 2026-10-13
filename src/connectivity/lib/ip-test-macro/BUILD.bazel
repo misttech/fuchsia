@@ -1,0 +1,44 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_proc_macro(
+    name = "ip-test-macro",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    # @bazel2gn:skip
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/connectivity/lib:__subpackages__",
+        "//src/connectivity/network:__subpackages__",
+        "//src/lib/network/fidl_fuchsia_net_routes_ext:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:proc-macro2",
+        "//third_party/rust_crates/vendor:quote",
+        "//third_party/rust_crates/vendor:syn",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "ip-test-macro_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":ip-test-macro",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = ["//third_party/rust_crates/vendor:assert_matches"],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "ip-test-macro_host_test",
+    binary_name = "ip-test-macro_test",
+)
