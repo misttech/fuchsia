@@ -14,11 +14,9 @@ By default, `fx build` triggers an incremental build. In most cases, `fx build`
 is sufficient for building. If you need a full build, use `fx clean-build`,
 but avoid it as much as possible as it is very slow.
 
-Avoid specifying individual targets after the `fx build` command, as doing
-so prevents certain Bazel targets from building correctly. They can however
-save considerable time when iterating during development, especially when
-updating build definitions, so use them when interacting directly with
-the user.
+Prefer target-scoped builds (e.g. `fx build //path/to/dir:target`) for faster
+iteration. Append `--host` for host tools. If a target is unknown, follow
+`fx build` suggestions or fall back to a full `fx build`.
 
 To run a test, run `fx -t <target> test <name of test>` (see
 [`src/testing/skills/fx-test/SKILL.md`](src/testing/skills/fx-test/SKILL.md)).
