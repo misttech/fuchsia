@@ -130,7 +130,7 @@ fn initial_contexts() {
 
     let kernel_context = policy.initial_context(InitialSid::Kernel);
     assert_eq!(
-        policy.serialize_security_context(&kernel_context),
+        policy.serialize_security_context(kernel_context),
         b"user0:object_r:type0:s0:c0-s1:c0.c2,c4"
     );
 }

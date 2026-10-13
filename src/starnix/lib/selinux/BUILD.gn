@@ -56,7 +56,6 @@ rustc_library("selinux") {
     "src/policy/common_symbols.rs",
     "src/policy/compute.rs",
     "src/policy/constraints.rs",
-    "src/policy/context.rs",
     "src/policy/error.rs",
     "src/policy/filename_transitions.rs",
     "src/policy/id_type.rs",

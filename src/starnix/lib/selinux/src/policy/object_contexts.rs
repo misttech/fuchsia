@@ -6,34 +6,34 @@
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
+use super::SecurityContext;
 use super::classes::ClassId;
-use super::context::Context;
 use super::error::{ParseError, SerializeError};
 use super::metadata::PolicyVersion;
 use super::parser::{Array, ByteArray, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, Serialize};
 
-/// Named context pair mapping a filesystem type string to mount and root security [`Context`]s.
+/// Named context pair mapping a filesystem type string to mount and root [`SecurityContext`]s.
 ///
 /// Corresponding SELinux text policy syntax: `fs_con <fs_type> <fs_context> <root_context>`.
 #[derive(Debug, Clone, Parse, Serialize, Validate)]
 pub struct FilesystemContext {
     name: ByteArray,
-    fs_context: Context,
-    root_context: Context,
+    fs_context: SecurityContext,
+    root_context: SecurityContext,
 }
 
-/// Named context pair mapping a network interface string to device and packet security [`Context`]s.
+/// Named context pair mapping a network interface string to device and packet [`SecurityContext`]s.
 ///
 /// Corresponding SELinux text policy syntax: `netifcon <interface_name> <if_context> <packet_context>`.
 #[derive(Debug, Clone, Parse, Serialize, Validate)]
 pub struct NetworkInterfaceContext {
     name: ByteArray,
-    if_context: Context,
-    msg_context: Context,
+    if_context: SecurityContext,
+    msg_context: SecurityContext,
 }
 
-/// Port specification mapping a protocol and port range to a security [`Context`].
+/// Port specification mapping a protocol and port range to a [`SecurityContext`].
 ///
 /// Corresponding SELinux text policy syntax: `portcon <protocol> <port_low>-<port_high> <context>`.
 #[derive(Debug, Clone, Parse, Serialize, Validate)]
@@ -41,17 +41,17 @@ pub struct PortContext {
     protocol: u32,
     low_port: u32,
     high_port: u32,
-    context: Context,
+    context: SecurityContext,
 }
 
-/// IPv4 node specification mapping an address and mask to a security [`Context`].
+/// IPv4 node specification mapping an address and mask to a [`SecurityContext`].
 ///
 /// Corresponding SELinux text policy syntax: `nodecon <ipv4_addr> <netmask> <context>`.
 #[derive(Debug, Clone, Parse, Serialize, Validate)]
 pub struct IPv4NodeContext {
     address: u32,
     mask: u32,
-    context: Context,
+    context: SecurityContext,
 }
 
 /// Discriminates among the different kinds of `fs_use_*` labeling statements in policy.
@@ -71,7 +71,7 @@ pub enum FsUseType {
 pub struct FsUse {
     behavior: FsUseType,
     name: ByteArray,
-    context: Context,
+    context: SecurityContext,
 }
 
 impl FsUse {
@@ -85,20 +85,20 @@ impl FsUse {
         &self.name
     }
 
-    /// Returns the security [`Context`].
-    pub fn context(&self) -> &Context {
+    /// Returns the [`SecurityContext`].
+    pub fn context(&self) -> &SecurityContext {
         &self.context
     }
 }
 
-/// IPv6 node specification mapping a 128-bit address and mask to a security [`Context`].
+/// IPv6 node specification mapping a 128-bit address and mask to a [`SecurityContext`].
 ///
 /// Corresponding SELinux text policy syntax: `nodecon <ipv6_addr> <netmask> <context>`.
 #[derive(Debug, Clone, Parse, Serialize, Validate)]
 pub struct IPv6NodeContext {
     address: [u32; 4],
     mask: [u32; 4],
-    context: Context,
+    context: SecurityContext,
 }
 
 /// InfiniBand partition key specification (for policy versions >= [`PolicyVersion::MIN_INFINIBAND`]).
@@ -108,7 +108,7 @@ pub struct IPv6NodeContext {
 pub struct InfiniBandPartitionKey {
     low: u32,
     high: u32,
-    context: Context,
+    context: SecurityContext,
 }
 
 /// InfiniBand end port specification (for policy versions >= [`PolicyVersion::MIN_INFINIBAND`]).
@@ -118,7 +118,7 @@ pub struct InfiniBandPartitionKey {
 pub struct InfiniBandEndPort {
     name: ByteArray,
     port: u32,
-    context: Context,
+    context: SecurityContext,
 }
 
 /// Container for system object context labeling statements (`fs_con`, `portcon`, `netifcon`,
@@ -229,7 +229,7 @@ impl Serialize for ObjectContexts {
 pub struct GenfsConPath {
     partial_path: ByteArray,
     class: Option<ClassId>,
-    context: Context,
+    context: SecurityContext,
 }
 
 impl GenfsConPath {
@@ -243,8 +243,8 @@ impl GenfsConPath {
         self.class
     }
 
-    /// Returns the security [`Context`].
-    pub fn context(&self) -> &Context {
+    /// Returns the [`SecurityContext`].
+    pub fn context(&self) -> &SecurityContext {
         &self.context
     }
 }
@@ -299,7 +299,7 @@ mod tests {
             5, 0, 0, 0, b's', b'y', b's', b'f', b's', // paths count = 1:
             1, 0, 0, 0, // GenfsConPath partial_path (ByteArray: len + "/"):
             1, 0, 0, 0, b'/', // class = 0 (all classes):
-            0, 0, 0, 0, // Context:
+            0, 0, 0, 0, // SecurityContext:
             1, 0, 0, 0, // user = 1
             1, 0, 0, 0, // role = 1
             1, 0, 0, 0, // type = 1

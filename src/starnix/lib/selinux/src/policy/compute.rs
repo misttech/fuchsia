@@ -10,7 +10,7 @@ use super::traits::{HasName, HasPolicyId};
 use super::{
     AccessDecision, AccessVector, CategorySet, Class, ClassDefault, ClassDefaultRange, ClassId,
     FsUseType, GenfsConPath, MlsLevel, OBJECT_R_ROLE_NAME, PermissionId, Policy, PolicyCap, RoleId,
-    SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, SecurityContextError, TypeId,
+    SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, TypeId,
 };
 use crate::{InitialSid, NullessByteStr};
 
@@ -89,37 +89,14 @@ impl Policy {
     /// # Panics
     ///
     /// Panics if [`Self::validate`] has not verified that all required initial SIDs are present.
-    pub fn initial_context(&self, mut id: InitialSid) -> SecurityContext {
+    pub fn initial_context(&self, mut id: InitialSid) -> &SecurityContext {
         let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
         if id == InitialSid::Init && !need_init_sid {
             id = InitialSid::Kernel;
         }
-        let context = self
-            .initial_sids()
+        self.initial_sids()
             .get_by_id(id as u32)
-            .expect("initial SID must be present in validated policy");
-        SecurityContext::from_policy_context(context)
-    }
-
-    /// Returns a [`SecurityContext`] with fields parsed from the supplied Security Context string.
-    pub fn parse_security_context(
-        &self,
-        security_context: NullessByteStr<'_>,
-    ) -> Result<SecurityContext, SecurityContextError> {
-        SecurityContext::from_string(self, security_context)
-    }
-
-    /// Validates a [`SecurityContext`] against this policy's constraints.
-    pub fn validate_security_context(
-        &self,
-        security_context: &SecurityContext,
-    ) -> Result<(), SecurityContextError> {
-        security_context.validate(self)
-    }
-
-    /// Returns a byte string describing the supplied [`SecurityContext`].
-    pub fn serialize_security_context(&self, security_context: &SecurityContext) -> Vec<u8> {
-        security_context.to_string(self)
+            .expect("initial SID must be present in validated policy")
     }
 
     /// Returns the set of permissions for the given class, including both the explicitly owned
@@ -179,7 +156,7 @@ impl Policy {
             .iter()
             .find(|fs_use| fs_use.fs_type() == fs_type.as_bytes())
             .map(|fs_use| FsUseLabelAndType {
-                context: SecurityContext::from_policy_context(fs_use.context()),
+                context: fs_use.context().clone(),
                 use_type: fs_use.behavior(),
             })
     }
@@ -277,7 +254,7 @@ impl Policy {
 
         // The returned SecurityContext must be valid with respect to the policy, since otherwise
         // we'd have rejected the policy load.
-        Some(SecurityContext::from_policy_context(result?.context()))
+        Some(result?.context().clone())
     }
 
     /// Returns the [`SecurityContext`] that should be applied to a newly created SELinux object
@@ -386,16 +363,12 @@ impl Policy {
                 Some((low_level, high_level)) => (low_level, high_level),
                 None => match defaults.range() {
                     ClassDefaultRange::SourceLow => (source.low_level().clone(), None),
-                    ClassDefaultRange::SourceHigh => {
-                        (source.high_level().unwrap_or_else(|| source.low_level()).clone(), None)
-                    }
+                    ClassDefaultRange::SourceHigh => (source.effective_high_level().clone(), None),
                     ClassDefaultRange::SourceLowHigh => {
                         (source.low_level().clone(), source.high_level().cloned())
                     }
                     ClassDefaultRange::TargetLow => (target.low_level().clone(), None),
-                    ClassDefaultRange::TargetHigh => {
-                        (target.high_level().unwrap_or_else(|| target.low_level()).clone(), None)
-                    }
+                    ClassDefaultRange::TargetHigh => (target.effective_high_level().clone(), None),
                     ClassDefaultRange::TargetLowHigh => {
                         (target.low_level().clone(), target.high_level().cloned())
                     }
@@ -629,7 +602,7 @@ impl Policy {
             {
                 let mls_range = range_transition.mls_range();
                 let low_level = mls_range.low().clone();
-                let high_level = mls_range.high().clone();
+                let high_level = mls_range.high().cloned();
                 return Some((low_level, high_level));
             }
         }
@@ -641,7 +614,7 @@ impl Policy {
 /// Returns the set of categories present in both `left` and `right`.
 fn intersect_categories(left: &MlsLevel, right: &MlsLevel) -> CategorySet {
     let right_categories = right.categories();
-    CategorySet::from_ids(left.category_ids().filter(|id| right_categories.contains(*id)))
+    CategorySet::from_ids(left.categories().iter().filter(|id| right_categories.contains(*id)))
 }
 
 /// Returns the intersection of the `source` and `target` ranges.

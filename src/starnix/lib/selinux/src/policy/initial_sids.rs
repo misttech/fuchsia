@@ -4,14 +4,14 @@
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
-use super::context::Context;
+use super::SecurityContext;
 use super::parser::Array;
 
 /// Policy entry defining an initial security context for a well-known security ID.
 #[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
 struct InitialSid {
     id: u32,
-    context: Context,
+    context: SecurityContext,
 }
 
 impl InitialSid {
@@ -21,7 +21,7 @@ impl InitialSid {
     }
 
     /// Returns the initial security context defined by this entry.
-    fn context(&self) -> &Context {
+    fn context(&self) -> &SecurityContext {
         &self.context
     }
 }
@@ -34,7 +34,7 @@ pub struct InitialSids {
 
 impl InitialSids {
     /// Returns the initial security context for the specified numeric ID, if present.
-    pub fn get_by_id(&self, id: u32) -> Option<&Context> {
+    pub fn get_by_id(&self, id: u32) -> Option<&SecurityContext> {
         self.entries.iter().find(|initial| initial.id() == id).map(|initial| initial.context())
     }
 

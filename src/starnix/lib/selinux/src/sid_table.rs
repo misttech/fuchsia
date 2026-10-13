@@ -91,11 +91,11 @@ impl SidTable {
     /// previously allocated dynamic SIDs from `portable_sids` that are valid under `policy`.
     pub(super) fn new(policy: &Policy, portable_sids: &PortableSidTable) -> Self {
         let num_entries = ReferenceInitialSid::FirstUnused as usize + portable_sids.entries.len();
-        let unlabeled_context = policy.initial_context(InitialSid::Unlabeled);
+        let unlabeled_context = policy.initial_context(InitialSid::Unlabeled).clone();
         let mut entries = vec![unlabeled_context; num_entries];
 
         for initial_sid in InitialSid::all_variants() {
-            entries[*initial_sid as usize] = policy.initial_context(*initial_sid);
+            entries[*initial_sid as usize] = policy.initial_context(*initial_sid).clone();
         }
 
         let context_to_sid = RcuRawHashMap::with_capacity(portable_sids.entries.len());
@@ -398,13 +398,13 @@ mod tests {
         let unmapped_sid = portable_sids.get_or_allocate_sid(b"unknown_u:object_r:type0:s0".into());
         let (resolved_unmapped, resolved_target) =
             sid_table.sids_to_security_contexts(&scope, unmapped_sid, target_sid);
-        assert_eq!(resolved_unmapped, &unlabeled_context);
+        assert_eq!(resolved_unmapped, unlabeled_context);
         assert_eq!(resolved_target, &target_context);
 
         let (resolved_source, resolved_unmapped) =
             sid_table.sids_to_security_contexts(&scope, source_sid, unmapped_sid);
         assert_eq!(resolved_source, &source_context);
-        assert_eq!(resolved_unmapped, &unlabeled_context);
+        assert_eq!(resolved_unmapped, unlabeled_context);
     }
 
     #[test]
@@ -439,11 +439,11 @@ mod tests {
 
         assert_eq!(
             sid_table.sid_to_security_context(&scope, invalid_parse_sid),
-            &unlabeled_context
+            unlabeled_context
         );
         assert_eq!(
             sid_table.sid_to_security_context(&scope, invalid_constraints_sid),
-            &unlabeled_context
+            unlabeled_context
         );
         assert_eq!(
             sid_table.security_context_to_existing_sid(&scope, &invalid_constraints_context),

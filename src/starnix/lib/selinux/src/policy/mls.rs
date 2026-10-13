@@ -6,14 +6,13 @@ use std::num::NonZeroU16;
 
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
-use super::TypeId;
 use super::bitmap::{IdSet, IdSetBuilder};
 use super::classes::ClassId;
-use super::context::{MlsLevel, MlsRange};
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
+use super::{MlsLevel, MlsRange, TypeId};
 
 /// Tag type for type safety of policy sensitivity identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
