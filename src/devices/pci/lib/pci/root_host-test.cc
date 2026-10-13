@@ -70,6 +70,33 @@ TEST_F(PciRootHostTests, ResourceAllocationLifecycle) {
   ASSERT_OK(root_host().AllocateMmio64Window(kRangeStart, kRangeSize, &res, &endpoint));
 }
 
+TEST_F(PciRootHostTests, SubPageMmioAllocationIsPageAligned) {
+  const zx_paddr_t kWindowBase = page_size();
+  const size_t kWindowSize = page_size() * 8;
+  ASSERT_OK(root_host().Mmio32().AddRegion({kWindowBase, kWindowSize}));
+
+  zx::resource res1, res2, res3, res4;
+  zx::eventpair ep1, ep2, ep3, ep4;
+
+  // Dynamic sub-page MMIO allocations must be rounded to page size so consecutive
+  // allocations do not share the same physical page.
+  auto alloc1 = root_host().AllocateMmio32Window(0, 0x80, &res1, &ep1);
+  ASSERT_OK(alloc1.status_value());
+  EXPECT_EQ(alloc1.value(), kWindowBase);
+
+  auto alloc2 = root_host().AllocateMmio32Window(0, 0x40, &res2, &ep2);
+  ASSERT_OK(alloc2.status_value());
+  EXPECT_EQ(alloc2.value(), kWindowBase + page_size());
+
+  // Preassigned sub-page MMIO allocations reserve the full page.
+  const zx_paddr_t kPreassignedPage = kWindowBase + (page_size() * 2);
+  auto alloc3 = root_host().AllocateMmio32Window(kPreassignedPage, 0x80, &res3, &ep3);
+  ASSERT_OK(alloc3.status_value());
+  EXPECT_EQ(alloc3.value(), kPreassignedPage);
+  EXPECT_EQ(ZX_ERR_NOT_FOUND,
+            root_host().AllocateMmio32Window(kPreassignedPage, 0x40, &res4, &ep4).status_value());
+}
+
 TEST_F(PciRootHostTests, Mcfg) {
   const McfgAllocation in_mcfg = {
       .address = 0x100000000,

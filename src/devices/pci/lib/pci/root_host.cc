@@ -20,6 +20,7 @@
 #include <array>
 #include <limits>
 
+#include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
 #include <fbl/mutex.h>
 #include <region-alloc/region-alloc.h>
@@ -71,6 +72,9 @@ zx::result<zx_paddr_t> PciRootHost::Allocate(AllocationType type, uint32_t kind,
   }
 
   ProcessQueue();
+  if (rsrc_kind == ZX_RSRC_KIND_MMIO) {
+    size = fbl::round_up<size_t>(size, zx_system_get_page_size());
+  }
   // If |base| is set then we have been requested to find address space starting
   // at a given |base|. If it's zero then we just need a region big enough for
   // the request, starting anywhere. Some address space requests will want a
@@ -81,8 +85,8 @@ zx::result<zx_paddr_t> PciRootHost::Allocate(AllocationType type, uint32_t kind,
   if (base) {
     st = allocator->GetRegion({.base = base, .size = size}, region_uptr);
   } else {
-    st = allocator->GetRegion(/*size=*/static_cast<uint64_t>(size), /*alignment=*/size,
-                              region_uptr);
+    st =
+        allocator->GetRegion(/*size=*/static_cast<uint64_t>(size), /*alignment=*/size, region_uptr);
   }
 
   if (st != ZX_OK) {
