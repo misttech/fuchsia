@@ -35,7 +35,7 @@
 #include "sdk/lib/zxio/private.h"
 #include "sdk/lib/zxio/socket_address.h"
 #include "sdk/lib/zxio/vector.h"
-#include "src/connectivity/network/netstack/udp_serde/udp_serde.h"
+#include "src/connectivity/network/lib/udp_serde/udp_serde.h"
 
 namespace fio = fuchsia_io;
 namespace fsocket = fuchsia_posix_socket;

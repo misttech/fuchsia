@@ -122,7 +122,7 @@ test("fdio-test") {
       "//sdk/lib/driver_test_realm/simple",
       "//sdk/lib/fdio",
       "//sdk/lib/zxio",
-      "//src/connectivity/network/netstack/udp_serde",
+      "//src/connectivity/network/lib/udp_serde",
       "//src/connectivity/network/tests/socket:util",
       "//zircon/system/ulib/sync",
       "//zircon/system/ulib/test-utils",

@@ -24,7 +24,7 @@
 #include <lib/fdio/fdio.h>
 #include <zircon/status.h>
 
-#include "src/connectivity/network/netstack/udp_serde/udp_serde.h"
+#include "src/connectivity/network/lib/udp_serde/udp_serde.h"
 #include "src/lib/testing/predicates/status.h"
 #endif
 

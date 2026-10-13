@@ -146,7 +146,7 @@ library_headers("udp_socket_private") {
   visibility = [
     ":*",
     "//sdk/lib/zxio/*",
-    "//src/connectivity/network/netstack/udp_serde:*",
+    "//src/connectivity/network/lib/udp_serde:*",
   ]
   deps = [ "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp" ]
 }
@@ -207,7 +207,7 @@ source_set("zxio") {
     "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
     "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp",
     "//sdk/lib/stdcompat",
-    "//src/connectivity/network/netstack/udp_serde",
+    "//src/connectivity/network/lib/udp_serde",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/safemath",

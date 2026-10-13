@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_CONNECTIVITY_NETWORK_NETSTACK_UDP_SERDE_UDP_SERDE_H_
-#define SRC_CONNECTIVITY_NETWORK_NETSTACK_UDP_SERDE_UDP_SERDE_H_
+// TODO(https://fxbug.dev/571631316): Delete this once Fast UDP is no longer supported.
+
+#ifndef SRC_CONNECTIVITY_NETWORK_LIB_UDP_SERDE_UDP_SERDE_H_
+#define SRC_CONNECTIVITY_NETWORK_LIB_UDP_SERDE_UDP_SERDE_H_
 
 #include <ifaddrs.h>
 #include <stdbool.h>
@@ -202,4 +204,4 @@ deserialize_recv_msg_meta(cpp20::span<uint8_t> buf);
 
 #endif  // __cplusplus
 
-#endif  // SRC_CONNECTIVITY_NETWORK_NETSTACK_UDP_SERDE_UDP_SERDE_H_
+#endif  // SRC_CONNECTIVITY_NETWORK_LIB_UDP_SERDE_UDP_SERDE_H_

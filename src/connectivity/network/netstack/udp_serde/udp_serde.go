@@ -20,7 +20,7 @@ import (
 // #cgo LDFLAGS: -ludp_serde_for_cgo -lc++ -lzircon
 // #include <ifaddrs.h>
 // #include <string.h>
-// #include "udp_serde.h"
+// #include "src/connectivity/network/lib/udp_serde/udp_serde.h"
 import "C"
 
 func TxUdpPreludeSize() uint32 {

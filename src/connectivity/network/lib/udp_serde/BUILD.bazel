@@ -6,6 +6,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
+# TODO(https://fxbug.dev/571631316): Delete this once Fast UDP is no longer supported.
 cc_library(
     name = "udp_serde",
     srcs = ["udp_serde.cc"],

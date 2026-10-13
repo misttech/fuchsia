@@ -91,7 +91,7 @@ test("netstack_${dgramsocket_label}_test") {
     deps += [
       "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
       "//sdk/lib/fdio",
-      "//src/connectivity/network/netstack/udp_serde",
+      "//src/connectivity/network/lib/udp_serde",
     ]
   }
 }

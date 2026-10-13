@@ -33,7 +33,7 @@
 #include <zxtest/zxtest.h>
 
 #include "predicates.h"
-#include "src/connectivity/network/netstack/udp_serde/udp_serde.h"
+#include "src/connectivity/network/lib/udp_serde/udp_serde.h"
 #include "src/connectivity/network/tests/socket/util.h"
 
 namespace {

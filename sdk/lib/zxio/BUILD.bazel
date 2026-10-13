@@ -54,7 +54,7 @@ fx_cc_library_headers(
         # The udp_serde library needs access to the constants in this file as
         # part of the serialization protocol used for sending UDP packets
         # between netstack and clients using fdio.
-        "//src/connectivity/network/netstack/udp_serde:__pkg__",
+        "//src/connectivity/network/lib/udp_serde:__pkg__",
     ],
     deps = [
         "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
@@ -127,7 +127,7 @@ fx_cc_library(
         "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
         "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp",
         "//sdk/lib/stdcompat",
-        "//src/connectivity/network/netstack/udp_serde",
+        "//src/connectivity/network/lib/udp_serde",
         "//zircon/system/ulib/fbl",
         "//zircon/system/ulib/zx",
         "//zircon/third_party/ulib/safemath",

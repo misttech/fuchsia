@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_CONNECTIVITY_NETWORK_NETSTACK_UDP_SERDE_UDP_SERDE_TEST_UTIL_H_
-#define SRC_CONNECTIVITY_NETWORK_NETSTACK_UDP_SERDE_UDP_SERDE_TEST_UTIL_H_
+// TODO(https://fxbug.dev/571631316): Delete this once Fast UDP is no longer supported.
+
+#ifndef SRC_CONNECTIVITY_NETWORK_LIB_UDP_SERDE_UDP_SERDE_TEST_UTIL_H_
+#define SRC_CONNECTIVITY_NETWORK_LIB_UDP_SERDE_UDP_SERDE_TEST_UTIL_H_
 
 #include <iostream>
 
@@ -123,4 +125,4 @@ class TestRecvMsgMeta {
   AddrKind kind_;
 };
 
-#endif
+#endif  // SRC_CONNECTIVITY_NETWORK_LIB_UDP_SERDE_UDP_SERDE_TEST_UTIL_H_
