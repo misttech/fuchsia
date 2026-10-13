@@ -125,6 +125,15 @@ pub struct TreeCounters {
     pub layer_files_total: AtomicUsize,
     /// Tracks how many layer files we skipped searching thanks to the bloom filter rejecting them.
     pub layer_files_skipped: AtomicUsize,
+    /// Tracks how many times a bloom filter returned true but the key was not found in the layer
+    /// (false positive) during point queries. Range-based queries are not able to properly
+    /// measure false positives since it is possible for them to find a key different than the
+    /// one that hit in the Bloom filter, which would skew the values.
+    pub bloom_filter_false_positives: AtomicUsize,
+    /// Tracks how many times a bloom filter rejected a point query across all layers (true
+    /// negative). Range-based queries are excluded to align with
+    /// `bloom_filter_false_positives`.
+    pub bloom_filter_negatives: AtomicUsize,
     /// Tracks the number of queries that had an excessive number of fuzzy hash partitions.
     pub excessive_hash_partitions: AtomicUsize,
     /// Embedded counters for mutable metrics that require locking.
@@ -137,6 +146,8 @@ impl Default for TreeCounters {
             num_seeks: AtomicUsize::new(0),
             layer_files_total: AtomicUsize::new(0),
             layer_files_skipped: AtomicUsize::new(0),
+            bloom_filter_false_positives: AtomicUsize::new(0),
+            bloom_filter_negatives: AtomicUsize::new(0),
             excessive_hash_partitions: AtomicUsize::new(0),
             compaction: Mutex::new(CompactionCounters::default()),
         }
@@ -561,13 +572,30 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         {
             let counters = self.counters.compaction.lock().unwrap();
             root.record_uint("num_seeks", self.counters.num_seeks.load(Ordering::Relaxed) as u64);
-            root.record_uint("bloom_filter_success_percent", {
+            root.record_double("bloom_filter_success_percent", {
                 let layer_files_total = self.counters.layer_files_total.load(Ordering::Relaxed);
                 let layer_files_skipped = self.counters.layer_files_skipped.load(Ordering::Relaxed);
                 if layer_files_total == 0 {
-                    0
+                    0.0
                 } else {
-                    (layer_files_skipped * 100).div_ceil(layer_files_total) as u64
+                    (layer_files_skipped as f64 * 100.0) / (layer_files_total as f64)
+                }
+            });
+            // False positive rate for point queries: FP / (FP + TN). This matches the definition
+            // of false positive rate used for calculating params based on the target false
+            // positive rate. See usage of `crate::lsm_tree::bloom_filter::TARGET_FP_RATE.`
+            // Range-based queries are not able to properly measure false positives since it is
+            // possible for them to find a key different than the one that hit in the Bloom filter,
+            // which would skew the false positive rate.
+            root.record_double("bloom_filter_false_positive_percent", {
+                let false_positives =
+                    self.counters.bloom_filter_false_positives.load(Ordering::Relaxed);
+                let negatives = self.counters.bloom_filter_negatives.load(Ordering::Relaxed);
+                let total_negatives = false_positives + negatives;
+                if total_negatives == 0 {
+                    0.0
+                } else {
+                    (false_positives as f64 * 100.0) / (total_negatives as f64)
                 }
             });
             root.record_uint(
@@ -671,16 +699,19 @@ impl<K: Key + LayerKey + OrdLowerBound, V: Value> LayerSet<K, V> {
                 self.counters.layer_files_total.fetch_add(1, Ordering::Relaxed);
                 if layer.maybe_contains_key(search_key) == MaybeContainsKey::False {
                     self.counters.layer_files_skipped.fetch_add(1, Ordering::Relaxed);
+                    self.counters.bloom_filter_negatives.fetch_add(1, Ordering::Relaxed);
                     continue;
                 }
                 let iter = layer.seek(Bound::Included(search_key)).await?;
-                if let Some(item_ref) = iter.get() {
-                    if item_ref.key == search_key {
-                        if *item_ref.value == V::DELETED_MARKER {
-                            return Ok(None);
-                        } else {
-                            return Ok(Some(f(item_ref)));
-                        }
+                let found = iter.get().filter(|item_ref| item_ref.key == search_key);
+                if layer.has_bloom_filter() && found.is_none() {
+                    self.counters.bloom_filter_false_positives.fetch_add(1, Ordering::Relaxed);
+                }
+                if let Some(item_ref) = found {
+                    if *item_ref.value == V::DELETED_MARKER {
+                        return Ok(None);
+                    } else {
+                        return Ok(Some(f(item_ref)));
                     }
                 }
             }
@@ -747,13 +778,15 @@ mod tests {
     use anyhow::{Error, anyhow};
     use async_trait::async_trait;
 
+    use fuchsia_inspect::hierarchy::{DiagnosticsHierarchy, Property};
+    use fuchsia_inspect::{Inspector, reader};
     use fuchsia_sync::{Mutex, MutexGuard};
-
+    use futures::future::BoxFuture;
     use rand::rng;
     use rand::seq::SliceRandom as _;
-
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
+    use test_util::assert_near;
 
     use super::testing::TestKey;
 
@@ -1102,6 +1135,172 @@ mod tests {
         // The mock layer is skipped by the bloom filter on both queries.
         assert_eq!(skipped_after - skipped_before, 2);
         assert_eq!(total_after - total_before, 4);
+    }
+
+    #[fuchsia::test]
+    async fn test_bloom_filter_false_positive_metrics() {
+        struct MockBloomLayerIterator {
+            item: Option<Item<TestKey, u64>>,
+        }
+
+        impl LayerIterator<TestKey, u64> for MockBloomLayerIterator {
+            async fn advance(&mut self) -> Result<(), Error> {
+                self.item = None;
+                Ok(())
+            }
+
+            fn advance_dyn<'a>(
+                &'a mut self,
+            ) -> Result<Option<BoxFuture<'a, Result<(), Error>>>, Error> {
+                self.item = None;
+                Ok(None)
+            }
+
+            fn get(&self) -> Option<ItemRef<'_, TestKey, u64>> {
+                self.item.as_ref().map(|item| item.as_item_ref())
+            }
+        }
+
+        struct MockBloomLayer {
+            drop_event: Mutex<Option<Arc<DropEvent>>>,
+            items: Vec<Item<TestKey, u64>>,
+            key_rejected_prefix: u64,
+        }
+
+        impl MockBloomLayer {
+            fn new(items: Vec<Item<TestKey, u64>>, key_rejected_prefix: u64) -> Self {
+                Self {
+                    drop_event: Mutex::new(Some(Arc::new(DropEvent::new()))),
+                    items,
+                    key_rejected_prefix,
+                }
+            }
+        }
+
+        #[async_trait]
+        impl Layer<TestKey, u64> for MockBloomLayer {
+            async fn seek(
+                &self,
+                bound: std::ops::Bound<&TestKey>,
+            ) -> Result<BoxedLayerIterator<'_, TestKey, u64>, Error> {
+                let item = match bound {
+                    std::ops::Bound::Included(k) => {
+                        self.items.iter().find(|i| i.key.0.start >= k.0.start).cloned()
+                    }
+                    _ => None,
+                };
+                Ok(Box::new(MockBloomLayerIterator { item }))
+            }
+
+            fn lock(&self) -> Option<Arc<DropEvent>> {
+                self.drop_event.lock().clone()
+            }
+
+            fn len(&self) -> usize {
+                self.items.len()
+            }
+
+            async fn close(&self) {}
+
+            fn get_version(&self) -> Version {
+                LATEST_VERSION
+            }
+
+            fn has_bloom_filter(&self) -> bool {
+                true
+            }
+
+            fn maybe_contains_key(&self, key: &TestKey) -> MaybeContainsKey {
+                if key.0.start >= self.key_rejected_prefix {
+                    MaybeContainsKey::False
+                } else {
+                    MaybeContainsKey::Maybe
+                }
+            }
+
+            async fn key_exists(&self, _key: &TestKey) -> Result<Existence, Error> {
+                unimplemented!()
+            }
+        }
+
+        let items = vec![
+            Item::new(TestKey(10..10), 42),
+            Item::new(TestKey(20..20), u64::DELETED_MARKER),
+            Item::new(TestKey(30..30), 100),
+        ];
+        // Keys with start >= 90 are rejected by the bloom filter (True Negatives).
+        let layer = Arc::new(MockBloomLayer::new(items, 90));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
+        tree.set_layers(vec![layer.clone()]);
+
+        let get_fpr = |hierarchy: &DiagnosticsHierarchy| match hierarchy
+            .get_property("bloom_filter_false_positive_percent")
+        {
+            Some(Property::Double(_, val)) => *val,
+            other => panic!("Unexpected property: {other:?}"),
+        };
+        let get_success_percent = |hierarchy: &DiagnosticsHierarchy| match hierarchy
+            .get_property("bloom_filter_success_percent")
+        {
+            Some(Property::Double(_, val)) => *val,
+            other => panic!("Unexpected property: {other:?}"),
+        };
+
+        // 1. Initial inspect: 0 total negatives (FP=0, TN=0), FPR should be 0.0
+        let inspector = Inspector::default();
+        tree.record_inspect_data(inspector.root());
+        let hierarchy = reader::read(&inspector).await.unwrap();
+        assert_near!(get_fpr(&hierarchy), 0.0, 1e-6);
+        assert_near!(get_success_percent(&hierarchy), 0.0, 1e-6);
+
+        // 2. Query key 10..10: present item -> true positive (not counted as FP or Neg).
+        assert_eq!(tree.find_value(&TestKey(10..10)).await.expect("find failed"), Some(42));
+        assert_eq!(tree.counters.bloom_filter_false_positives.load(Ordering::Relaxed), 0);
+        assert_eq!(tree.counters.bloom_filter_negatives.load(Ordering::Relaxed), 0);
+
+        // 3. Query key 20..20: deleted tombstone item -> found is true, not an FP or Neg.
+        assert_eq!(tree.find_value(&TestKey(20..20)).await.expect("find failed"), None);
+        assert_eq!(tree.counters.bloom_filter_false_positives.load(Ordering::Relaxed), 0);
+        assert_eq!(tree.counters.bloom_filter_negatives.load(Ordering::Relaxed), 0);
+
+        // 4. Query key 25..25: miss that lands on next key (30..30) -> false positive.
+        // FP = 1, TN = 0 => classical FPR = 1 / (1 + 0) = 100.0%.
+        assert_eq!(tree.find_value(&TestKey(25..25)).await.expect("find failed"), None);
+        assert_eq!(tree.counters.bloom_filter_false_positives.load(Ordering::Relaxed), 1);
+        assert_eq!(tree.counters.bloom_filter_negatives.load(Ordering::Relaxed), 0);
+
+        let inspector = Inspector::default();
+        tree.record_inspect_data(inspector.root());
+        let hierarchy = reader::read(&inspector).await.unwrap();
+        assert_near!(get_fpr(&hierarchy), 100.0, 1e-6);
+        assert_near!(get_success_percent(&hierarchy), 0.0, 1e-6);
+
+        // 5. Query key 90..90: bloom filter says False (rejected, true negative).
+        // FP = 1, TN = 1 => classical FPR = 1 / (1 + 1) = 50.0%.
+        // 1 layer skipped out of 8 total layer evaluations (2 layers across 4 queries) => 12.5%.
+        assert_eq!(tree.find_value(&TestKey(90..90)).await.expect("find failed"), None);
+        assert_eq!(tree.counters.bloom_filter_false_positives.load(Ordering::Relaxed), 1);
+        assert_eq!(tree.counters.bloom_filter_negatives.load(Ordering::Relaxed), 1);
+
+        let inspector = Inspector::default();
+        tree.record_inspect_data(inspector.root());
+        let hierarchy = reader::read(&inspector).await.unwrap();
+        assert_near!(get_fpr(&hierarchy), 50.0, 1e-6);
+        assert_near!(get_success_percent(&hierarchy), 12.5, 1e-6);
+
+        // 6. Query keys 91..91 and 92..92: two more true negatives.
+        // FP = 1, TN = 3 => classical FPR = 1 / (1 + 3) = 25.0%.
+        // 3 layers skipped out of 12 total layer evaluations (2 layers across 6 queries) => 25.0%.
+        assert_eq!(tree.find_value(&TestKey(91..91)).await.expect("find failed"), None);
+        assert_eq!(tree.find_value(&TestKey(92..92)).await.expect("find failed"), None);
+        assert_eq!(tree.counters.bloom_filter_false_positives.load(Ordering::Relaxed), 1);
+        assert_eq!(tree.counters.bloom_filter_negatives.load(Ordering::Relaxed), 3);
+
+        let inspector = Inspector::default();
+        tree.record_inspect_data(inspector.root());
+        let hierarchy = reader::read(&inspector).await.unwrap();
+        assert_near!(get_fpr(&hierarchy), 25.0, 1e-6);
+        assert_near!(get_success_percent(&hierarchy), 25.0, 1e-6);
     }
 
     #[fuchsia::test]

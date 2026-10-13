@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::log::*;
-use crate::lsm_tree;
+use crate::lsm_tree::TreeCounters;
 use crate::lsm_tree::types::{
     BoxedItem, Item, ItemRef, Key, Layer, LayerIterator, LayerIteratorMut, LayerKey,
     MaybeContainsKey, MergeType, OrdLowerBound, Value,
@@ -246,7 +246,7 @@ pub struct Merger<'a, K, V> {
     trace: bool,
 
     // Tracks statistics related to the LSM tree.
-    counters: Arc<lsm_tree::TreeCounters>,
+    counters: Arc<TreeCounters>,
 }
 
 /// Query describes the goal of a search in the LSM tree.  The caller specifies this to guide the
@@ -300,7 +300,7 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
     pub(super) fn new<I: Iterator<Item = &'a dyn Layer<K, V>>>(
         layers: I,
         merge_fn: MergeFn<K, V>,
-        counters: Arc<lsm_tree::TreeCounters>,
+        counters: Arc<TreeCounters>,
     ) -> Merger<'a, K, V> {
         Merger {
             iterators: layers
@@ -338,7 +338,18 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
                 .iter_mut()
                 .rev()
                 .filter(|l| match query.check_layer(l.layer.unwrap()) {
-                    MaybeContainsKey::False => false,
+                    MaybeContainsKey::False => {
+                        // Range-based queries are not able to properly measure false positives
+                        // since it is possible for them to find a key different than the one that
+                        // hit in the Bloom filter, which would skew the false positive rate.
+                        // Therefore, we only record negatives for point queries.
+                        if matches!(query, Query::Point(_)) {
+                            self.counters
+                                .bloom_filter_negatives
+                                .fetch_add(1, atomic::Ordering::Relaxed);
+                        }
+                        false
+                    }
                     MaybeContainsKey::Maybe => true,
                     MaybeContainsKey::RangeKeyTooLarge => {
                         excessive_partitions = true;
@@ -383,7 +394,11 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
             }
             Query::FullScan => Bound::Unbounded,
         };
-        merger_iter.seek(search_key).await?;
+        // Range-based queries are not able to properly measure false positives since it is
+        // possible for them to find a key different than the one that hit in the Bloom filter,
+        // which would skew the values. Therefore, we only pass bloom counters for point queries.
+        let bloom_counters = matches!(query, Query::Point(_)).then_some(&*self.counters);
+        merger_iter.seek(search_key, bloom_counters).await?;
         Ok(merger_iter)
     }
 
@@ -419,8 +434,12 @@ impl<'a, 'b, K: Key + LayerKey + OrdLowerBound, V: Value> MergerIterator<'a, 'b,
     }
 
     /// Positions the iterator using `search_key`.
-    async fn seek(&mut self, search_key: Bound<&K>) -> Result<(), Error> {
-        self.push_iterators(search_key).await?;
+    async fn seek(
+        &mut self,
+        search_key: Bound<&K>,
+        bloom_counters: Option<&TreeCounters>,
+    ) -> Result<(), Error> {
+        self.push_iterators(search_key, bloom_counters).await?;
         self.advance_impl(search_key).await
     }
 
@@ -527,10 +546,24 @@ impl<'a, 'b, K: Key + LayerKey + OrdLowerBound, V: Value> MergerIterator<'a, 'b,
 
     // Pushes additional iterators onto the heap until we are confident that the top element will
     // yield what we are looking for.
-    async fn push_iterators(&mut self, search_key: Bound<&K>) -> Result<(), Error> {
+    async fn push_iterators(
+        &mut self,
+        search_key: Bound<&K>,
+        bloom_counters: Option<&TreeCounters>,
+    ) -> Result<(), Error> {
         while self.needs_more_iterators(search_key) {
             let iter = self.pending_iterators.pop().unwrap();
-            let sub_iter = iter.layer.as_ref().unwrap().seek(search_key).await?;
+            let layer = iter.layer.as_ref().unwrap();
+            let sub_iter = layer.seek(search_key).await?;
+            if let (Some(counters), Bound::Included(target)) = (bloom_counters, search_key)
+                && layer.has_bloom_filter()
+            {
+                let found =
+                    sub_iter.get().is_some_and(|item| item.key.cmp_upper_bound(target).is_eq());
+                if !found {
+                    counters.bloom_filter_false_positives.fetch_add(1, atomic::Ordering::Relaxed);
+                }
+            }
             if self.trace {
                 writeln!(
                     self.history,
@@ -612,7 +645,7 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
 
                     // We must push other iterators here before pushing iterator onto the heap
                     // because we know `iterator` would end up at the top of the heap.
-                    self.push_iterators(search_key).await?;
+                    self.push_iterators(search_key, None).await?;
                 }
             } else {
                 iterator.advance().await?;
@@ -621,7 +654,7 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
                 self.heap.push(iterator);
             }
         } else {
-            self.push_iterators(search_key).await?;
+            self.push_iterators(search_key, None).await?;
         }
 
         self.advance_impl(search_key).await
@@ -789,7 +822,7 @@ mod tests {
         FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter,
         MaybeContainsKey, MergeType, OrdLowerBound, OrdUpperBound, SortByU64,
     };
-    use crate::lsm_tree::{self, Query, Value};
+    use crate::lsm_tree::{Query, TreeCounters, Value};
     use crate::object_store::{self, AttributeId, ObjectKey, ObjectValue, VOLUME_DATA_KEY_ID};
     use crate::serialized_types::{
         LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
@@ -802,6 +835,7 @@ mod tests {
     use std::hash::Hash;
     use std::ops::{Bound, Range};
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
     use storage_units::BlockSize;
 
     use crate::lsm_tree::testing::TestKey;
@@ -822,8 +856,8 @@ mod tests {
         layers.iter().map(|x| x.as_ref())
     }
 
-    fn counters() -> Arc<lsm_tree::TreeCounters> {
-        Arc::new(lsm_tree::TreeCounters::default())
+    fn counters() -> Arc<TreeCounters> {
+        Arc::new(TreeCounters::default())
     }
 
     #[fuchsia::test]
@@ -1820,12 +1854,19 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge_bloom_filters_point_query() {
-        let layer_0_items = vec![Item::new(1, 1), Item::new(2, 1)];
-        let layer_1_items = vec![Item::new(2, 1), Item::new(4, 1)];
+        let mut layer_0_items = vec![Item::new(1, 1), Item::new(2, 1)];
+        let mut layer_1_items = vec![Item::new(2, 1), Item::new(4, 1)];
+        for i in 1000..1300 {
+            layer_0_items.push(Item::new(i, 1));
+            layer_1_items.push(Item::new(i + 1000, 1));
+        }
         let items = [Item::new(1, 1), Item::new(2, 2), Item::new(4, 1)];
         let layers: [Arc<dyn Layer<i32, i32>>; 2] =
             [write_layer(layer_0_items).await, write_layer(layer_1_items).await];
-        let mut merger = Merger::new(dyn_layer_ref_iter(&layers), merge_sum, counters());
+        assert!(layers[0].has_bloom_filter());
+        assert!(layers[1].has_bloom_filter());
+        let counters = counters();
+        let mut merger = Merger::new(dyn_layer_ref_iter(&layers), merge_sum, counters.clone());
 
         {
             // Key that exists in layer 0 only
@@ -1834,10 +1875,15 @@ mod tests {
             assert_eq!((key, *value), (&items[0].key, items[0].value));
         }
         {
-            // Key that exists in layer 1 and 2
+            // Key that exists in layer 0 and 1: must not increment false positives.
+            let fp_before = counters.bloom_filter_false_positives.load(Ordering::Relaxed);
             let iter = merger.query(Query::Point(&2)).await.expect("seek failed");
             let ItemRef { key, value, .. } = iter.get().expect("missing item");
             assert_eq!((key, *value), (&items[1].key, items[1].value));
+            assert_eq!(
+                counters.bloom_filter_false_positives.load(Ordering::Relaxed) - fp_before,
+                0
+            );
         }
         {
             // Key that exists in layer 1
@@ -1846,9 +1892,16 @@ mod tests {
             assert_eq!((key, *value), (&items[2].key, items[2].value));
         }
         {
-            // Key that doesn't exist at all
+            // Key that doesn't exist at all: both layers must either reject (true negative) or
+            // falsely match (false positive).
+            let neg_before = counters.bloom_filter_negatives.load(Ordering::Relaxed);
+            let fp_before = counters.bloom_filter_false_positives.load(Ordering::Relaxed);
             let iter = merger.query(Query::Point(&400)).await.expect("seek failed");
             assert!(iter.get().is_none());
+            let delta_neg = counters.bloom_filter_negatives.load(Ordering::Relaxed) - neg_before;
+            let delta_fp =
+                counters.bloom_filter_false_positives.load(Ordering::Relaxed) - fp_before;
+            assert_eq!(delta_neg + delta_fp, 2);
         }
     }
 
