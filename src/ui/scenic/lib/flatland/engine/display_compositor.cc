@@ -415,6 +415,7 @@ fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::Image
         return fpromise::error();
       })
       .and_then([this, metadata]() -> fpromise::result<> {
+        TRACE_DURATION("gfx", "flatland::DisplayCompositor::ImportBufferImage[display]");
         std::scoped_lock lock(lock_);
         FX_DCHECK(display_coordinator_.is_valid());
 
