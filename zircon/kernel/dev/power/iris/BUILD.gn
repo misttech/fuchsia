@@ -28,14 +28,10 @@ kernel_rust_mod("iris-rs") {
 }
 
 source_set("iris") {
-  sources = [ "iris_ffi.cc" ]
   public_deps = [ ":headers" ]
   deps = [
     ":iris-rs",
     "//zircon/kernel/dev/pdev/power",
     "//zircon/kernel/dev/psci",
-    "//zircon/kernel/lib/arch",
-    "//zircon/kernel/lib/power-management",
-    "//zircon/system/ulib/fbl",
   ]
 }

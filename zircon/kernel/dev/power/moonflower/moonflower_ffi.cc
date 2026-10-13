@@ -10,7 +10,6 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
-#include <arch/arm64/periphmap.h>
 #include <arch/arm64/smccc.h>
 #include <dev/power/moonflower/init.h>
 #include <dev/power/moonflower/moonflower_ffi.h>
@@ -20,11 +19,6 @@
 #include <kernel/scheduler.h>
 
 extern "C" {
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uintptr_t cpp_moonflower_get_opp_vaddr() {
-  return reinterpret_cast<uintptr_t>(periph_paddr_to_vaddr(0xf521000));
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE int64_t cpp_moonflower_tz_config_hw_for_ram_dump(uint64_t disable_wd_dbg,

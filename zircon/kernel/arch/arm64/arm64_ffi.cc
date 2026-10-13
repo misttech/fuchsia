@@ -5,16 +5,23 @@
 // https://opensource.org/licenses/MIT
 
 #include <arch/arm64/mp.h>
+#include <arch/arm64/periphmap.h>
 #include <kernel/cpu.h>
 #include <kernel/ffi.h>
 
 extern "C" {
 
 uint64_t cpp_arm64_cpu_num_to_mpidr(cpu_num_t cpu_num);
+uintptr_t cpp_arm64_periph_paddr_to_vaddr(uint64_t paddr);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uint64_t cpp_arm64_cpu_num_to_mpidr(cpu_num_t cpu_num) {
   return arch_cpu_num_to_mpidr(cpu_num);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uintptr_t cpp_arm64_periph_paddr_to_vaddr(uint64_t paddr) {
+  return static_cast<uintptr_t>(periph_paddr_to_vaddr(static_cast<paddr_t>(paddr)));
 }
 
 }  // extern "C"

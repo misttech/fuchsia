@@ -11,6 +11,7 @@
 // Implements platform power lifecycle operations (reboot, shutdown, CPU on/off)
 // and hardware Operating Performance Point (OPP) frequency scaling for the Moonflower SoC.
 
+use crate::kernel::types::PAddr;
 use crate::pdev_power::{
     CONTROL_INTERFACE_ARM_WFI, CONTROL_INTERFACE_CPU_DRIVER,
     K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT, PdevPowerOps, PowerCpuState, PowerDomainConfigFfi,
@@ -47,12 +48,12 @@ const MAX_OPP_INDEX: u64 = 3;
 
 // Register offset within the MMIO bank
 const OPP_INDEX_OFFSET: Offset<u32, RwSafe> = Offset::new(0x920);
+const OPP_REG_PHYS_BASE: PAddr = PAddr(0x0f52_1000);
 const OPP_BANK_SIZE: usize = 0x1000;
 
 static OPP_REG_BASE: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut());
 
 unsafe extern "C" {
-    fn cpp_moonflower_get_opp_vaddr() -> usize;
     fn cpp_moonflower_tz_config_hw_for_ram_dump(
         disable_wd_dbg: u64,
         boot_partition_sel: u64,
@@ -200,9 +201,10 @@ static MOONFLOWER_POWER_OPS: PdevPowerOps = PdevPowerOps {
 #[unsafe(no_mangle)]
 pub extern "C" fn moonflower_power_init_early() {
     dprintf!(INFO, "POWER: registering moonflower power hooks\n");
-    // SAFETY: Retrieves the mapped virtual address for the OPP peripheral block.
-    let vaddr = unsafe { cpp_moonflower_get_opp_vaddr() };
-    OPP_REG_BASE.store(core::ptr::with_exposed_provenance_mut::<u32>(vaddr), Ordering::Release);
+    // Retrieves the mapped virtual address for the OPP peripheral block.
+    let vaddr = crate::arch_rs::arm64::periph_paddr_to_vaddr(OPP_REG_PHYS_BASE)
+        .map_or(core::ptr::null_mut(), |v| core::ptr::with_exposed_provenance_mut::<u32>(v.0));
+    OPP_REG_BASE.store(vaddr, Ordering::Release);
 
     let mut current_opp = 0u64;
     let opp_res = moonflower_opp_get(DOMAIN_ID, &mut current_opp);

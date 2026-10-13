@@ -11,6 +11,7 @@
 // Implements platform power lifecycle operations (reboot, shutdown, CPU on/off)
 // and hardware Operating Performance Point (OPP) frequency scaling across Iris CPU domains.
 
+use crate::kernel::types::PAddr;
 use crate::pdev_power::{
     CONTROL_INTERFACE_ARM_WFI, CONTROL_INTERFACE_CPU_DRIVER,
     K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT, PdevPowerOps, PowerCpuState, PowerDomainConfigFfi,
@@ -35,6 +36,7 @@ const DOMAIN0_REG_OFFSET: Offset<u32, RwSafe> = Offset::new(0x00);
 const DOMAIN1_REG_OFFSET: Offset<u32, RwSafe> = Offset::new(0x08);
 const DOMAIN2_REG_OFFSET: Offset<u32, RwSafe> = Offset::new(0x10);
 const DOMAIN3_REG_OFFSET: Offset<u32, RwSafe> = Offset::new(0x18);
+const OPP_REG_PHYS_BASE: PAddr = PAddr(0x200c_0790);
 const OPP_BANK_SIZE: usize = 0x20;
 
 static OPP_REG_BASE: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut());
@@ -131,7 +133,6 @@ const DOMAIN_INFOS: [DomainInfo; 4] = [
 ];
 
 unsafe extern "C" {
-    fn cpp_iris_get_opp_vaddr() -> usize;
     fn psci_system_reset_cold() -> Result<(), Status>;
     fn psci_system_reset2_raw(reset_type: u32, cookie: u32) -> Result<(), Status>;
     fn psci_system_off() -> Result<(), Status>;
@@ -303,9 +304,10 @@ static IRIS_POWER_OPS: PdevPowerOps = PdevPowerOps {
 #[unsafe(no_mangle)]
 pub extern "C" fn iris_power_init_early() {
     dprintf!(INFO, "POWER: registering iris power hooks\n");
-    // SAFETY: Retrieves the mapped virtual address for the OPP peripheral block.
-    let vaddr = unsafe { cpp_iris_get_opp_vaddr() };
-    OPP_REG_BASE.store(core::ptr::with_exposed_provenance_mut::<u32>(vaddr), Ordering::Release);
+    // Retrieves the mapped virtual address for the OPP peripheral block.
+    let vaddr = crate::arch_rs::arm64::periph_paddr_to_vaddr(OPP_REG_PHYS_BASE)
+        .map_or(core::ptr::null_mut(), |v| core::ptr::with_exposed_provenance_mut::<u32>(v.0));
+    OPP_REG_BASE.store(vaddr, Ordering::Release);
 
     for (domain_id, info) in DOMAIN_INFOS.iter().enumerate() {
         let _ = iris_opp_set(domain_id as u32, info.boot_opp);

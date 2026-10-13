@@ -20,7 +20,7 @@ zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
 pub mod cache;
 pub mod vm;
 
-use crate::kernel::types::cpu_num_t;
+use crate::kernel::types::{PAddr, VAddr, cpu_num_t};
 use arch_arm64_aspace_bindings as aspace_bindings;
 use core::fmt::Write;
 use debug::ltrace::KernelConsoleWriter;
@@ -44,6 +44,7 @@ unsafe extern "C" {
     fn cpp_arm64_get_general_regs(regs: *mut zx_thread_state_general_regs_t) -> zx_status_t;
     fn cpp_arm64_set_general_regs(regs: *const zx_thread_state_general_regs_t) -> zx_status_t;
     fn cpp_arm64_cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64;
+    fn cpp_arm64_periph_paddr_to_vaddr(paddr: u64) -> usize;
 }
 
 /// The maximum cache line seen on any known ARM hardware.
@@ -61,6 +62,17 @@ pub fn cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64 {
     // topology table with no side effects. Out of range CPU numbers are handled by the C++
     // implementation.
     unsafe { cpp_arm64_cpu_num_to_mpidr(cpu_num) }
+}
+
+/// Translates an arm64 peripheral physical address to a virtual address in the kernel periphmap.
+///
+/// Returns `None` if `paddr` is not in the peripheral mappings.
+#[inline]
+pub fn periph_paddr_to_vaddr(paddr: PAddr) -> Option<VAddr> {
+    // SAFETY: `cpp_arm64_periph_paddr_to_vaddr` is a read-only lookup into the arm64
+    // peripheral mapping table initialized at boot.
+    let vaddr = unsafe { cpp_arm64_periph_paddr_to_vaddr(paddr.0 as u64) };
+    if vaddr == 0 { None } else { Some(VAddr(vaddr)) }
 }
 
 /// Instruction Synchronization Barrier, full system.
@@ -459,6 +471,14 @@ pub fn enter_full(
 mod arm64_tests {
     use super::vm::{is_kernel_address, is_user_accessible, is_valid_user_pc};
     use unittest::{assert_err, assert_false, assert_ok, assert_true};
+
+    /// Tests `periph_paddr_to_vaddr`.
+    #[test]
+    fn test_periph_paddr_to_vaddr() {
+        assert_true!(
+            super::periph_paddr_to_vaddr(crate::kernel::types::PAddr::from(u64::MAX)).is_none()
+        );
+    }
 
     /// Tests `is_user_accessible`.
     #[test]
