@@ -1141,31 +1141,101 @@ impl StackOffset {
     }
 }
 
+// The initialized elements of the stack are tracked in a `u64` bitmask.
+const _: () = assert!(BPF_STACK_SIZE / STACK_ELEMENT_SIZE <= u64::BITS as usize);
+
+/// Returns an iterator over the indices of the bits set in `mask`, in increasing order.
+fn bit_indices(mut mask: u64) -> impl Iterator<Item = usize> {
+    std::iter::from_fn(move || {
+        if mask == 0 {
+            return None;
+        }
+        let index = mask.trailing_zeros() as usize;
+        mask &= mask - 1;
+        Some(index)
+    })
+}
+
 /// The state of the stack
+///
+/// Only the initialized elements are stored, densely and in increasing index order. The storage is
+/// shared between the clones made for each verified instruction and copied on write. This makes
+/// cloning cheap and comparing two stacks, the hot path of state pruning, a linear scan.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Stack {
-    data: BTreeMap<usize, Type>,
+    /// Bit `i` is set iff element `i` is initialized.
+    mask: u64,
+    /// The initialized elements, in increasing index order.
+    data: Arc<Vec<Type>>,
 }
 
 impl Stack {
+    fn bit(index: usize) -> u64 {
+        assert!(index < u64::BITS as usize);
+        1 << index
+    }
+
+    /// Returns the position of the element at `index` in `data`, or the position where it must be
+    /// inserted if it is not initialized.
+    fn position(&self, index: usize) -> usize {
+        (self.mask & (Self::bit(index) - 1)).count_ones() as usize
+    }
+
     /// Replace all instances of the NullOr type with the given `null_id` to either 0 or the
     /// subtype depending on `is_null`
     fn set_null(&mut self, null_id: &MemoryId, is_null: bool) {
-        for (_, t) in self.data.iter_mut() {
+        if !self.data.iter().any(|t| matches!(t, Type::NullOr { id, .. } if id == null_id)) {
+            return;
+        }
+        for t in Arc::make_mut(&mut self.data).iter_mut() {
             t.set_null(null_id, is_null);
         }
     }
 
     fn get(&self, index: usize) -> &Type {
-        self.data.get(&index).unwrap_or(&Type::UNINITIALIZED)
+        if self.mask & Self::bit(index) == 0 {
+            &Type::UNINITIALIZED
+        } else {
+            &self.data[self.position(index)]
+        }
     }
 
     fn set(&mut self, index: usize, t: Type) {
+        let bit = Self::bit(index);
+        let position = self.position(index);
+        let is_set = self.mask & bit != 0;
         if t == Type::UNINITIALIZED {
-            self.data.remove(&index);
+            if is_set {
+                Arc::make_mut(&mut self.data).remove(position);
+                self.mask &= !bit;
+            }
+        } else if is_set {
+            if self.data[position] != t {
+                Arc::make_mut(&mut self.data)[position] = t;
+            }
         } else {
-            self.data.insert(index, t);
+            Arc::make_mut(&mut self.data).insert(position, t);
+            self.mask |= bit;
         }
+    }
+
+    /// Uninitializes all the elements whose bit is not set in `mask`.
+    fn retain(&mut self, mask: u64) {
+        if self.mask & !mask == 0 {
+            return;
+        }
+        if mask == 0 {
+            match Arc::get_mut(&mut self.data) {
+                Some(data) => data.clear(),
+                None => self.data = Default::default(),
+            }
+            self.mask = 0;
+            return;
+        }
+
+        let mut indices = bit_indices(self.mask);
+        Arc::make_mut(&mut self.data).retain(|_| mask & Self::bit(indices.next().unwrap()) != 0);
+        self.mask &= mask;
     }
 
     fn extract_sub_value(value: u64, offset: usize, byte_count: usize) -> u64 {
@@ -1369,32 +1439,19 @@ impl Stack {
 /// a proof that a program in a state `t2` finish.
 impl PartialOrd for Stack {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let mut result = Ordering::Equal;
-        let mut data_iter1 = self.data.iter().peekable();
-        let mut data_iter2 = other.data.iter().peekable();
-        loop {
-            match (data_iter1.peek(), data_iter2.peek()) {
-                (None, None) => return Some(result),
-                (Some(_), None) => return associate_orderings(result, Ordering::Less),
-                (None, Some(_)) => return associate_orderings(result, Ordering::Greater),
-                (Some((k1, v1)), Some((k2, v2))) => match k1.cmp(k2) {
-                    Ordering::Less => {
-                        data_iter1.next();
-                        result = associate_orderings(result, Ordering::Less)?;
-                    }
-                    Ordering::Greater => {
-                        data_iter2.next();
-                        result = associate_orderings(result, Ordering::Greater)?;
-                    }
-                    Ordering::Equal => {
-                        let (v1, v2) = (*v1, *v2);
-                        data_iter1.next();
-                        data_iter2.next();
-                        result = associate_orderings(result, v1.partial_cmp(v2)?)?;
-                    }
-                },
-            }
+        if self.mask == other.mask && Arc::ptr_eq(&self.data, &other.data) {
+            return Some(Ordering::Equal);
         }
+        let mut result = match (self.mask & !other.mask != 0, !self.mask & other.mask != 0) {
+            (true, true) => return None,
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            (false, false) => Ordering::Equal,
+        };
+        for index in bit_indices(self.mask & other.mask) {
+            result = associate_orderings(result, self.get(index).partial_cmp(other.get(index))?)?;
+        }
+        Some(result)
     }
 }
 
@@ -2200,11 +2257,7 @@ impl ComputationContext {
                         current.set_reg(register, Default::default())?;
                     }
                 }
-                if dependencies.stack == 0 {
-                    current.stack.data.clear();
-                } else if dependencies.stack != !0 {
-                    current.stack.data.retain(|k, _| dependencies.has_stack(*k));
-                }
+                current.stack.retain(dependencies.stack);
 
                 // 3. Add the cleared state to the set of `terminating_contexts`
                 let mut is_dominated = false;
@@ -4636,11 +4689,56 @@ mod tests {
 
         assert_eq!(s1.partial_cmp(&s2), Some(Ordering::Equal));
         s1.set(0, 0.into());
+        assert_eq!(s1.partial_cmp(&s1.clone()), Some(Ordering::Equal));
         assert_eq!(s1.partial_cmp(&s2), Some(Ordering::Less));
         assert_eq!(s2.partial_cmp(&s1), Some(Ordering::Greater));
-        s2.set(1, 1.into());
+        s2.set(0, Type::UNKNOWN_SCALAR);
+        assert_eq!(s1.partial_cmp(&s2), Some(Ordering::Less));
+        assert_eq!(s2.partial_cmp(&s1), Some(Ordering::Greater));
+        s1.set(1, 1.into());
+        assert_eq!(s1.partial_cmp(&s2), Some(Ordering::Less));
+        assert_eq!(s2.partial_cmp(&s1), Some(Ordering::Greater));
+        s2.set(2, 1.into());
         assert_eq!(s1.partial_cmp(&s2), None);
         assert_eq!(s2.partial_cmp(&s1), None);
+    }
+
+    #[test]
+    fn test_stack_set_and_retain() {
+        let mut s = Stack::default();
+        for index in [5, 63, 0, 9] {
+            s.set(index, (index as u64).into());
+        }
+        let mut copy = s.clone();
+        s.set(5, 5.into());
+        assert!(Arc::ptr_eq(&s.data, &copy.data));
+        s.set_null(&MemoryId::new(), true);
+        assert!(Arc::ptr_eq(&s.data, &copy.data));
+        let mut copy_to_clear = copy.clone();
+        assert_eq!(Arc::strong_count(&copy.data), 3);
+        copy_to_clear.retain(0);
+        assert_eq!(copy_to_clear.mask, 0);
+        assert!(copy_to_clear.data.is_empty());
+        assert_eq!(Arc::strong_count(&copy.data), 2);
+        s.set(9, Type::UNINITIALIZED);
+        s.set(10, Type::UNINITIALIZED);
+        s.set(63, 1.into());
+        assert_eq!(copy.get(9), &Type::from(9));
+        assert_eq!(copy.get(63), &Type::from(63));
+        let id = MemoryId::new();
+        copy.set(5, Type::NullOr { id: id.clone(), inner: Type::from(42).into() });
+        copy.set_null(&id, false);
+        assert_eq!(copy.get(5), &Type::from(42));
+        s.retain(!(1 << 5));
+        assert_eq!(s.mask, 1 | (1 << 63));
+        assert_eq!(*s.data, vec![Type::from(0), Type::from(1)]);
+        for index in [5, 9, 10] {
+            assert_eq!(s.get(index), &Type::UNINITIALIZED);
+        }
+        s.retain(0);
+        assert_eq!(s.mask, 0);
+        assert!(s.data.is_empty());
+        assert_eq!(copy.mask, 1 | (1 << 5) | (1 << 9) | (1 << 63));
     }
 
     #[test]
