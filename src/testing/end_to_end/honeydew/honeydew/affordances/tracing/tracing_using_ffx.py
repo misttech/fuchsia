@@ -185,8 +185,13 @@ class TracingUsingFfx(tracing.Tracing):
 
         self._session_started = True
 
-    async def stop(self) -> None:
-        """Stops the current trace."""
+    async def stop(self, verify_trace: bool = True) -> None:
+        """Stops the current trace.
+
+        Args:
+            verify_trace: If True, verifies that the trace file is valid and
+                not empty.
+        """
         if not self._session_started:
             raise TracingStateError(
                 f"Trace session is not started on {self._name}"
@@ -198,8 +203,12 @@ class TracingUsingFfx(tracing.Tracing):
         fd, temp_file_path = tempfile.mkstemp(suffix=".fxt")
         os.close(fd)
 
+        cmd = ["trace", "stop", "--output", temp_file_path]
+        if not verify_trace:
+            cmd.append("--no-verify-trace")
+
         try:
-            self._ffx.run(["trace", "stop", "--output", temp_file_path])
+            self._ffx.run(cmd)
         except FfxCommandError as err:
             raise TracingError(
                 f"Failed to stop FFX trace on {self._name}: {err}"

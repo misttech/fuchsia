@@ -110,7 +110,10 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
         for i in range(PROCESS_RUNS):
             results_files.append(
                 await self._run_tracing_microbenchmark(
-                    i, ["nonexistent_category"], ".tracing_categories_disabled"
+                    i,
+                    ["nonexistent_category"],
+                    ".tracing_categories_disabled",
+                    verify_trace=False,
                 )
             )
             model = trace_importing.create_model_from_trace_file_path(
@@ -147,6 +150,7 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
             download=True,
             directory=self.test_case_path,
             trace_file="trace.fxt",
+            verify_trace=False,
         ):
             results_file: str = run_test_component.once(
                 self.dut.ffx,
@@ -184,7 +188,11 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
         )
 
     async def _run_tracing_microbenchmark(
-        self, run_id: int, categories: list[str], results_suffix: str
+        self,
+        run_id: int,
+        categories: list[str],
+        results_suffix: str,
+        verify_trace: bool = True,
     ) -> str:
         async with self.dut.tracing.trace_session(
             categories=categories,
@@ -192,6 +200,7 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
             download=True,
             directory=self.test_case_path,
             trace_file="trace.fxt",
+            verify_trace=verify_trace,
         ):
             results_file: str = run_test_component.once(
                 self.dut.ffx,

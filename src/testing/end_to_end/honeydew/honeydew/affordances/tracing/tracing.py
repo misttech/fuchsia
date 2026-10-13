@@ -73,8 +73,12 @@ class Tracing(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def stop(self) -> None:
+    async def stop(self, verify_trace: bool = True) -> None:
         """Stops the current trace.
+
+        Args:
+            verify_trace: If True, verifies that the trace file is valid and
+                not empty (if supported by the implementation).
 
         Raises:
            TracingStateError: When trace session is not initialized or
@@ -123,6 +127,7 @@ class Tracing(abc.ABC):
         buffering_mode: f_tracing.BufferingMode | None = None,
         defer_transfer: bool | None = None,
         compression: bool | None = None,
+        verify_trace: bool = True,
     ) -> AsyncGenerator[None, None]:
         """Starts and captures trace data within a context and automatically
             cleans up trace sessions, making it easier to capture trace data.
@@ -144,6 +149,8 @@ class Tracing(abc.ABC):
                             records if events are produced faster than they can be streamed
             defer_transfer: If true, the trace_manager will delay sending data until tracing has stopped
             compression: If true, compress the trace data.
+            verify_trace: If True, verifies that the trace file is valid and
+                not empty (if supported by the implementation).
 
          Raises:
             ValueError: If `download` is True but either `directory` or
@@ -162,7 +169,7 @@ class Tracing(abc.ABC):
             await self.start()
             yield
         finally:
-            await self.stop()
+            await self.stop(verify_trace=verify_trace)
             if download:
                 if directory is None or not os.path.isabs(directory):
                     raise ValueError(

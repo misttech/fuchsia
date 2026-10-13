@@ -36,6 +36,13 @@ python_perf_test("perftest_trace_events_test") {
 
 python_perf_test("tracing_microbenchmarks_test") {
   main_source = "test/tracing_microbenchmarks_test.py"
+  honeydew_config = {
+    affordances = {
+      tracing = {
+        implementation = "ffx"
+      }
+    }
+  }
   data_package_name = "test_data"
   expected_metric_names_filepaths = [
     "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.microbenchmarks.tracing.txt",

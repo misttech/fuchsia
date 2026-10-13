@@ -258,8 +258,11 @@ class TracingUsingFc(tracing.Tracing):
         self._ensure_drain_task()
 
     @decorators.async_liveness_check
-    async def stop(self) -> None:
+    async def stop(self, verify_trace: bool = True) -> None:
         """Stops the current trace.
+
+        Args:
+            verify_trace: Ignored by this implementation.
 
         Raises:
            TracingStateError: When trace session is not initialized or

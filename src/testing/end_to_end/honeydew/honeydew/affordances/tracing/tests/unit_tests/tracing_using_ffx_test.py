@@ -219,6 +219,14 @@ class TracingFfxTests(unittest.IsolatedAsyncioTestCase):
                     "tracing_active": True,
                 },
             ),
+            (
+                {
+                    "label": "with_verify_trace_false",
+                    "session_initialized": True,
+                    "tracing_active": True,
+                    "verify_trace": False,
+                },
+            ),
         ],
         name_func=_custom_test_name_func,
     )
@@ -230,6 +238,7 @@ class TracingFfxTests(unittest.IsolatedAsyncioTestCase):
         # Perform setup based on parameters.
         session_initialized = parameterized_dict.get("session_initialized")
         tracing_active = parameterized_dict.get("tracing_active")
+        verify_trace = parameterized_dict.get("verify_trace", True)
         if session_initialized:
             self.tracing_obj.initialize()
         if tracing_active:
@@ -239,15 +248,21 @@ class TracingFfxTests(unittest.IsolatedAsyncioTestCase):
         # state is not valid.
         if not session_initialized or not tracing_active:
             with self.assertRaises(TracingStateError):
-                await self.tracing_obj.stop()
+                await self.tracing_obj.stop(verify_trace=verify_trace)
             return
 
-        await self.tracing_obj.stop()
+        await self.tracing_obj.stop(verify_trace=verify_trace)
 
         self.assertIsNotNone(self.tracing_obj._temp_trace_file)
-        self.ffx_obj.run.assert_called_with(
-            ["trace", "stop", "--output", self.tracing_obj._temp_trace_file]
-        )
+        expected_cmd = [
+            "trace",
+            "stop",
+            "--output",
+            self.tracing_obj._temp_trace_file,
+        ]
+        if not verify_trace:
+            expected_cmd.append("--no-verify-trace")
+        self.ffx_obj.run.assert_called_with(expected_cmd)
         self.assertFalse(self.tracing_obj.is_active())
 
         # Cleanup
@@ -442,6 +457,7 @@ class TracingFfxTests(unittest.IsolatedAsyncioTestCase):
                 download=True,
                 directory=tmpdir,
                 trace_file="trace.fxt",
+                verify_trace=False,
             ):
                 self.assertTrue(self.tracing_obj.is_session_initialized())
                 self.assertEqual(self.tracing_obj._categories, ["category1"])
@@ -464,6 +480,15 @@ class TracingFfxTests(unittest.IsolatedAsyncioTestCase):
                     "1024",
                     "--buffering-mode",
                     "oneshot",
+                ]
+            )
+            self.ffx_obj.run.assert_any_call(
+                [
+                    "trace",
+                    "stop",
+                    "--output",
+                    mock.ANY,
+                    "--no-verify-trace",
                 ]
             )
             trace_path: str = os.path.join(tmpdir, "trace.fxt")
