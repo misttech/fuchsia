@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "logger_rust_bin",
+    testonly = True,
+    srcs = ["src/logger_rust.rs"],
+    crate_name = "logger_rust",
+    crate_root = "src/logger_rust.rs",
+    edition = "2024",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
