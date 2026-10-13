@@ -326,6 +326,30 @@ where
         self.table.as_slice(scope)
     }
 
+    /// Returns true if the map contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Removes all entries from the map.
+    ///
+    /// Concurrent readers holding an active `RcuReadScope` continue to observe a consistent snapshot
+    /// of the previous bucket table until the RCU grace period completes and `rcu_drop` reclaims the
+    /// retired bucket array and entry nodes.
+    ///
+    /// # Safety
+    ///
+    /// Requires external synchronization to exclude concurrent writers.
+    pub unsafe fn clear(&self) {
+        // SAFETY: Caller guarantees exclusive writer access. `self.table` retains ownership of the
+        // entry allocations until `self.table.update(Vec::new())` below.
+        unsafe {
+            self.insertion_chain.clear(&RcuReadScope::new(), |_| {});
+        }
+        self.table.update(Vec::new());
+        self.num_entries.store(0, Ordering::Relaxed);
+    }
+
     /// Returns a cursor that can be used to traverse and modify the map.
     ///
     /// The cursor iterates through the map in insertion order.
@@ -333,9 +357,19 @@ where
         RcuRawHashMapCursor { inner: self.insertion_chain.cursor(scope), map: self }
     }
 
+    /// Returns an iterator over the key-value pairs in the map in insertion order.
+    pub fn iter<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = (&'a K, &'a V)> {
+        self.insertion_chain.iter(scope).map(|entry| (&entry.key, &entry.value))
+    }
+
     /// Returns an iterator over the keys in the map.
     pub fn keys<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a K> {
         self.insertion_chain.iter(scope).map(|entry| &entry.key)
+    }
+
+    /// Returns an iterator over the values in the map.
+    pub fn values<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a V> {
+        self.insertion_chain.iter(scope).map(|entry| &entry.value)
     }
 }
 

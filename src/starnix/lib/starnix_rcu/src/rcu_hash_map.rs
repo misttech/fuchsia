@@ -113,9 +113,68 @@ where
         self.iter(scope).map(|(k, _)| k)
     }
 
+    /// Returns an iterator over the map's values.
+    pub fn values<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a V> {
+        self.iter(scope).map(|(_, v)| v)
+    }
+
     /// Returns the number of entries in the map.
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+
+    /// Returns true if the map contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    /// Removes all entries from the map while preserving active RCU reader snapshots.
+    pub fn clear(&self) {
+        self.lock().clear();
+    }
+}
+
+impl<K, V, S> starnix_sync::MutexLike for DynamicRcuHashMap<K, V, S>
+where
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
+    S: BuildHasher + Send + Sync + 'static,
+{
+    type Guard<'a>
+        = RcuHashMapGuard<'a, K, V, S>
+    where
+        Self: 'a;
+    type Context = <DynamicLockDepMutex<()> as starnix_sync::MutexLike>::Context;
+
+    #[inline(always)]
+    fn context() -> Self::Context {
+        <DynamicLockDepMutex<()> as starnix_sync::MutexLike>::context()
+    }
+
+    #[inline(always)]
+    fn lock(&self, context: &mut Self::Context) -> Self::Guard<'_> {
+        RcuHashMapGuard {
+            map: &self.map,
+            _guard: <DynamicLockDepMutex<()> as starnix_sync::MutexLike>::lock(
+                &self.mutex,
+                context,
+            ),
+        }
+    }
+}
+
+impl<K, V, S> fuchsia_sync::ResetDependencies for DynamicRcuHashMap<K, V, S>
+where
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
+    S: BuildHasher + Send + Sync + 'static,
+{
+    #[inline(always)]
+    unsafe fn reset_dependencies(&self) {
+        // SAFETY: The caller must uphold the safety requirements of `ResetDependencies`.
+        unsafe {
+            self.mutex.reset_dependencies();
+        }
     }
 }
 
@@ -211,6 +270,46 @@ where
     }
 }
 
+impl<K, V, L, S> starnix_sync::MutexLike for RcuHashMap<K, V, L, S>
+where
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
+    L: LockLevel,
+    S: BuildHasher + Send + Sync + 'static,
+{
+    type Guard<'a>
+        = RcuHashMapGuard<'a, K, V, S>
+    where
+        Self: 'a;
+    type Context = <DynamicRcuHashMap<K, V, S> as starnix_sync::MutexLike>::Context;
+
+    #[inline(always)]
+    fn context() -> Self::Context {
+        <DynamicRcuHashMap<K, V, S> as starnix_sync::MutexLike>::context()
+    }
+
+    #[inline(always)]
+    fn lock(&self, context: &mut Self::Context) -> Self::Guard<'_> {
+        <DynamicRcuHashMap<K, V, S> as starnix_sync::MutexLike>::lock(&self.inner, context)
+    }
+}
+
+impl<K, V, L, S> fuchsia_sync::ResetDependencies for RcuHashMap<K, V, L, S>
+where
+    K: Eq + Hash + Clone + RcuDroppable + Sync,
+    V: Clone + RcuDroppable + Sync,
+    L: LockLevel,
+    S: BuildHasher + Send + Sync + 'static,
+{
+    #[inline(always)]
+    unsafe fn reset_dependencies(&self) {
+        // SAFETY: The caller must uphold the safety requirements of `ResetDependencies`.
+        unsafe {
+            self.inner.reset_dependencies();
+        }
+    }
+}
+
 // TODO(https://fxbug.dev/482462174): switch back to #[derive(Debug)]
 impl<K, V, L, S> std::fmt::Debug for RcuHashMap<K, V, L, S>
 where
@@ -269,6 +368,29 @@ where
     {
         // SAFETY: We have exclusive access to the map because we have exclusive access to the mutex.
         unsafe { self.map.remove(key) }
+    }
+
+    /// Removes all entries from the map while preserving active RCU reader snapshots.
+    pub fn clear(&mut self) {
+        // SAFETY: Exclusive access to the map is guaranteed by the held mutex guard.
+        unsafe {
+            self.map.clear();
+        }
+    }
+
+    /// Returns the number of entries in the map.
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    /// Returns true if the map contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    /// Returns an iterator over the map's entries under the provided RCU read scope.
+    pub fn iter<'b>(&'b self, scope: &'b RcuReadScope) -> impl Iterator<Item = (&'b K, &'b V)> {
+        self.map.iter(scope)
     }
 
     /// Removes all values from the map and returns them.

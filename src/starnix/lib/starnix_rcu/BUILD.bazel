@@ -14,6 +14,7 @@ rustc_library(
         "src/rcu_cache.rs",
         "src/rcu_hash_map.rs",
         "src/rcu_string.rs",
+        "src/rcu_vfs_conformance_tests.rs",
     ],
     edition = "2024",
     visibility = [
@@ -25,6 +26,7 @@ rustc_library(
     deps = [
         "//src/lib/fuchsia-rcu",
         "//src/lib/fuchsia-rcu-collections",
+        "//src/lib/fuchsia-sync",
         "//src/starnix/lib/starnix_sync",
         "//src/starnix/lib/starnix_types",
         "//third_party/rust_crates/vendor:rapidhash",
