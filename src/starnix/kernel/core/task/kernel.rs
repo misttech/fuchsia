@@ -1027,7 +1027,7 @@ impl Kernel {
                 let set_properties = |node: &fuchsia_inspect::Node| {
                     node.record_string("command", task.command().to_string());
 
-                    let scheduler_state = task.read().scheduler_state;
+                    let scheduler_state = task.read().scheduler_state.clone();
                     if !scheduler_state.is_default() {
                         node.record_child("sched", |node| {
                             node.record_string(

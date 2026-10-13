@@ -358,7 +358,7 @@ pub fn create_kernel_thread(
     let default_timerslack_ns;
     {
         let state = system_task.read();
-        scheduler_state = state.scheduler_state;
+        scheduler_state = state.scheduler_state.fork();
         uts_ns = state.uts_ns.clone();
         default_timerslack_ns = state.default_timerslack_ns;
     }

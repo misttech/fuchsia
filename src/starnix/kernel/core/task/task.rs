@@ -155,7 +155,8 @@ pub struct TaskMutableState {
     /// The exit status that this task exited with.
     exit_status: Option<ExitStatus>,
 
-    /// Desired scheduler state for the task.
+    /// Desired scheduler state for the task. This may not reflect the actual committed Zircon
+    /// priority, which can be confirmed via SchedulerState::applied_role_name.
     pub scheduler_state: SchedulerState,
 
     /// The UTS namespace assigned to this thread.
@@ -204,9 +205,6 @@ pub struct TaskMutableState {
 
     /// Information that a tracer needs to inspect this process.
     pub captured_thread_state: Option<Box<CapturedThreadState>>,
-
-    /// The last applied scheduler role name.
-    last_applied_role: Option<String>,
 
     /// The cpuset cgroup path of this task.
     pub cpuset_path: String,
@@ -1131,7 +1129,6 @@ impl Task {
                     default_timerslack_ns: timerslack_ns,
                     ptrace: None,
                     captured_thread_state: None,
-                    last_applied_role: None,
                     cpuset_path: "/".to_string(),
                 }
                 .into(),
@@ -1262,13 +1259,6 @@ impl Task {
         })
     }
 
-    /// Overwrite the existing scheduler state with a new one and update the task's thread's role.
-    pub fn set_scheduler_state(&self, scheduler_state: SchedulerState) -> Result<(), Errno> {
-        self.update_scheduler_state_then_role(|task_scheduler_state| {
-            *task_scheduler_state = scheduler_state
-        })
-    }
-
     /// Update the task's thread's role based on its current scheduler state without making any
     /// changes to the state.
     ///
@@ -1284,10 +1274,10 @@ impl Task {
         let process_name = self.thread_group().read().leader_command();
         let thread_name = self.command();
 
-        let (new_scheduler_state, cpuset_path, last_applied_role) = {
+        let (new_scheduler_state, cpuset_path) = {
             let mut state = self.write();
             updater(&mut state.scheduler_state);
-            (state.scheduler_state, state.cpuset_path.clone(), state.last_applied_role.clone())
+            (state.scheduler_state.clone(), state.cpuset_path.clone())
         };
 
         let scheduler = &self.thread_group().kernel.scheduler;
@@ -1295,17 +1285,17 @@ impl Task {
             &process_name,
             &thread_name,
             &cpuset_path,
-            new_scheduler_state,
+            &new_scheduler_state,
         );
-        if last_applied_role.as_deref() == Some(role_name) {
+        if new_scheduler_state.applied_role_name.as_deref() == Some(role_name) {
             return Ok(());
         }
         scheduler.set_thread_role(self, role_name)?;
-        // Note: Re-acquiring the lock here to update `last_applied_role` has a minor race if
+        // Note: Re-acquiring the lock here to update `applied_role_name` has a minor race if
         // concurrent state updates execute `set_thread_role` out of order relative to cache writes.
         // Dropping the lock across `set_thread_role` avoids holding `Task` write lock over FIDL RPCs,
         // and any cache mismatch will self-correct on the next scheduler state or cgroup change.
-        self.write().last_applied_role = Some(role_name.to_string());
+        self.write().scheduler_state.applied_role_name = Some(role_name.to_string());
         Ok(())
     }
 

@@ -671,8 +671,7 @@ pub fn sys_sched_getscheduler(current_task: &CurrentTask, pid: pid_t) -> Result<
 
     let target_task = get_task_or_current(current_task, pid)?;
     security::check_task_getscheduler_access(current_task, target_task.as_ref())?;
-    let current_scheduler_state = target_task.read().scheduler_state;
-    Ok(current_scheduler_state.policy_for_sched_getscheduler())
+    Ok(target_task.read().scheduler_state.policy_for_sched_getscheduler())
 }
 
 pub fn sys_sched_setscheduler(
@@ -695,7 +694,7 @@ pub fn sys_sched_setscheduler(
         policy.realtime_priority_from(current_task.read_object(param)?.sched_priority)?;
 
     // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
-    let current_state = target_task.read().scheduler_state;
+    let current_state = target_task.read().scheduler_state.clone();
 
     // Check capabilities and permissions, if required, for the operation.
     let euid_friendly = current_task.is_euid_friendly_with(&target_task);
@@ -855,7 +854,7 @@ pub fn sys_sched_setparam(
     let target_task = get_task_or_current(current_task, pid)?;
 
     // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
-    let current_state = target_task.read().scheduler_state;
+    let current_state = target_task.read().scheduler_state.clone();
 
     let realtime_priority = current_state
         .policy
@@ -1625,7 +1624,7 @@ pub fn sys_setpriority(
     let normal_priority = NormalPriority::from_setpriority_syscall(priority);
 
     // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
-    let current_state = target_task.read().scheduler_state;
+    let current_state = target_task.read().scheduler_state.clone();
 
     // Check capabilities and permissions, if required, for the operation.
     let euid_friendly = current_task.is_euid_friendly_with(&target_task);
