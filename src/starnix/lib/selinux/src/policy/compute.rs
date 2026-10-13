@@ -391,9 +391,7 @@ impl Policy {
     /// An [`AccessDecision`] is accumulated, starting from no permissions to be granted,
     /// nor audit-logged if allowed, and all permissions to be audit-logged if denied.
     /// Permissions that are explicitly `allow`ed, but that are subject to unsatisfied
-    /// constraints, are removed from the allowed set. For the `process` class, cross-role
-    /// `transition` and `dyntransition` permissions are also removed unless the role
-    /// transition is explicitly allowed by policy.
+    /// constraints, are removed from the allowed set.
     pub fn compute_access_decision(
         &self,
         source: &SecurityContext,
@@ -403,24 +401,6 @@ impl Policy {
         let mut access_decision =
             self.compute_explicitly_allowed(source.type_(), target.type_(), class);
         access_decision.allow -= self.compute_denied_by_constraints(source, target, class);
-
-        // Process domain transitions ("transition" and "dyntransition") across different roles
-        // require explicit authorization in policy via a role allow rule ("allow old_role new_role;").
-        if access_decision.allow != AccessVector::NONE
-            && source.role() != target.role()
-            && class.name() == b"process"
-            && !self.role_transition_is_explicitly_allowed(source.role(), target.role())
-        {
-            let mut transition_permissions = AccessVector::NONE;
-            if let Some(permission_id) = self.find_permission_id_by_name(class, "transition") {
-                transition_permissions |= AccessVector::from(permission_id);
-            }
-            if let Some(permission_id) = self.find_permission_id_by_name(class, "dyntransition") {
-                transition_permissions |= AccessVector::from(permission_id);
-            }
-            access_decision.allow -= transition_permissions;
-        }
-
         access_decision
     }
 
@@ -583,7 +563,9 @@ impl Policy {
             .map(|x| x.new_role())
     }
 
-    fn role_transition_is_explicitly_allowed(&self, source: RoleId, new: RoleId) -> bool {
+    /// Returns whether a transition from `source` to `new` is explicitly authorized by a role allow
+    /// rule (`allow <source> <new>;`).
+    pub fn role_transition_is_explicitly_allowed(&self, source: RoleId, new: RoleId) -> bool {
         self.role_allowlist()
             .iter()
             .any(|role_allow| role_allow.source_role() == source && role_allow.new_role() == new)

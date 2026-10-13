@@ -1124,43 +1124,9 @@ fn compute_create_context_role_transition_not_allowed() {
         .expect("valid expected security context");
 
     // Role-allow rules are not checked during `compute_create_context()`; they are checked
-    // during `compute_access_decision()` on the "process" class.
+    // during `PolicyIndex::compute_access_decision()` on the "process" class.
     assert_eq!(expected, actual);
     assert!(policy.validate_security_context(&actual).is_ok());
-}
-
-#[test]
-fn compute_access_decision_role_allow() {
-    // 1. With `role_transition_policy`, `allow source_r transition_r;` is present.
-    let policy_bytes =
-        include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy");
-    let policy = parse_and_validate(policy_bytes);
-    let process_class = policy.classes().get_by_name(b"process").expect("process class");
-    let source = policy
-        .parse_security_context(b"source_u:source_r:source_t:s0:c0-s2:c0.c1".into())
-        .expect("valid source security context");
-    let target = policy
-        .parse_security_context(b"source_u:transition_r:target_t:s0:c0".into())
-        .expect("valid target security context");
-
-    let decision_allowed = policy.compute_access_decision(&source, &target, process_class);
-    assert_ne!(decision_allowed.allow, AccessVector::NONE);
-
-    // 2. With `role_transition_not_allowed_policy`, `allow source_r transition_r;` is missing.
-    let policy_bytes = include_bytes!(
-        "../../testdata/composite_policies/compiled/role_transition_not_allowed_policy"
-    );
-    let policy = parse_and_validate(policy_bytes);
-    let process_class = policy.classes().get_by_name(b"process").expect("process class");
-    let source = policy
-        .parse_security_context(b"source_u:source_r:source_t:s0:c0-s2:c0.c1".into())
-        .expect("valid source security context");
-    let target = policy
-        .parse_security_context(b"source_u:transition_r:target_t:s0:c0".into())
-        .expect("valid target security context");
-
-    let decision_denied = policy.compute_access_decision(&source, &target, process_class);
-    assert_eq!(decision_denied.allow, AccessVector::NONE);
 }
 
 #[test]

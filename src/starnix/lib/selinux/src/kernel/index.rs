@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::permissions::{ClassPermission as _, FileClass, KernelClass, KernelPermission};
+use super::permissions::{
+    ClassPermission as _, FileClass, KernelClass, KernelPermission, ProcessPermission,
+};
 use super::{AccessVectorComputer, KernelAccessDecision, ObjectClass};
 use crate::NullessByteStr;
 use crate::policy::{
@@ -18,6 +20,14 @@ use strum::VariantArray as _;
 /// Array of [`PermissionId`] values for each of a kernel security class' permissions.
 type KernelPermissionIdsArray = [Option<PermissionId>; 32];
 
+/// Cached `process` class identifier and permission bitmask for `transition` and `dyntransition`
+/// checks across different roles.
+#[derive(Copy, Clone, Debug)]
+struct ProcessTransitionPermissions {
+    class: ClassId,
+    permissions: AccessVector,
+}
+
 /// Index for facilitating fast lookup of common abstractions inside parsed binary policy data
 /// structures. Typically, data is indexed by an enum that describes a well-known value and the
 /// index stores the ID or offset of the data in the binary policy to avoid scanning a collection to
@@ -32,6 +42,9 @@ pub(crate) struct PolicyIndex {
     classes: HashMap<KernelClass, ClassId>,
     /// Index mapping kernel class permissions to their policy-specific [`AccessVector`] bit index.
     permissions: [KernelPermissionIdsArray; KernelClass::VARIANTS.len()],
+    /// Cached `process` class ID and `transition`/`dyntransition` permission bitmask, if defined by
+    /// the policy.
+    process_transition_permissions: Option<ProcessTransitionPermissions>,
     /// Parsed binary policy.
     policy: Policy,
 }
@@ -90,7 +103,24 @@ impl PolicyIndex {
             }
         }
 
-        Ok(Self { classes, permissions, policy })
+        let mut index = Self { classes, permissions, process_transition_permissions: None, policy };
+        index.process_transition_permissions =
+            index.classes.get(&KernelClass::Process).map(|&class| {
+                let mut permissions = AccessVector::NONE;
+                if let Some(transition) =
+                    index.kernel_permission_to_access_vector(ProcessPermission::Transition)
+                {
+                    permissions |= transition;
+                }
+                if let Some(dyntransition) =
+                    index.kernel_permission_to_access_vector(ProcessPermission::DynTransition)
+                {
+                    permissions |= dyntransition;
+                }
+                ProcessTransitionPermissions { class, permissions }
+            });
+
+        Ok(index)
     }
 
     /// Returns the policy entry for a class identified either by its well-known kernel object
@@ -134,6 +164,9 @@ impl PolicyIndex {
     }
 
     /// Computes the access decision for `source_context` and `target_context` on `object_class`.
+    ///
+    /// For the `process` class, cross-role `transition` and `dyntransition` permissions are removed
+    /// unless the role transition is explicitly allowed by policy.
     pub fn compute_access_decision(
         &self,
         source_context: &SecurityContext,
@@ -141,7 +174,25 @@ impl PolicyIndex {
         object_class: impl Into<ObjectClass>,
     ) -> AccessDecision {
         if let Some(target_class) = self.class(object_class.into()) {
-            self.policy.compute_access_decision(source_context, target_context, target_class)
+            let mut decision =
+                self.policy.compute_access_decision(source_context, target_context, target_class);
+
+            // Process domain transitions ("transition" and "dyntransition") across different roles
+            // require explicit authorization in policy via a role allow rule ("allow old_role
+            // new_role;").
+            if let Some(process_transition) = self.process_transition_permissions
+                && target_class.id() == process_transition.class
+                && source_context.role() != target_context.role()
+                && (decision.allow & process_transition.permissions) != AccessVector::NONE
+                && !self.policy.role_transition_is_explicitly_allowed(
+                    source_context.role(),
+                    target_context.role(),
+                )
+            {
+                decision.allow -= process_transition.permissions;
+            }
+
+            decision
         } else {
             let mut decision = AccessDecision::allow(AccessVector::NONE);
             if self.policy.is_permissive(source_context.type_()) {
@@ -248,5 +299,63 @@ impl Deref for PolicyIndex {
 
     fn deref(&self) -> &Self::Target {
         &self.policy
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_and_index(policy_bytes: &[u8]) -> PolicyIndex {
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+        PolicyIndex::new(policy).expect("build policy index")
+    }
+
+    #[test]
+    fn compute_access_decision_role_transition() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy");
+        let index = parse_and_index(policy_bytes);
+        let process_class = index.classes().get_by_name(b"process").expect("process class");
+        let source = index
+            .parse_security_context(b"source_u:source_r:source_t:s0:c0-s2:c0.c1".into())
+            .expect("valid source security context");
+        let target = index
+            .parse_security_context(b"source_u:transition_r:target_t:s0:c0".into())
+            .expect("valid target security context");
+
+        assert_ne!(
+            index.compute_access_decision(&source, &target, KernelClass::Process).allow,
+            AccessVector::NONE
+        );
+        assert_ne!(
+            index.compute_access_decision(&source, &target, process_class.id()).allow,
+            AccessVector::NONE
+        );
+    }
+
+    #[test]
+    fn compute_access_decision_role_transition_not_allowed() {
+        let policy_bytes = include_bytes!(
+            "../../testdata/composite_policies/compiled/role_transition_not_allowed_policy"
+        );
+        let index = parse_and_index(policy_bytes);
+        let process_class = index.classes().get_by_name(b"process").expect("process class");
+        let source = index
+            .parse_security_context(b"source_u:source_r:source_t:s0:c0-s2:c0.c1".into())
+            .expect("valid source security context");
+        let target = index
+            .parse_security_context(b"source_u:transition_r:target_t:s0:c0".into())
+            .expect("valid target security context");
+
+        assert_eq!(
+            index.compute_access_decision(&source, &target, KernelClass::Process).allow,
+            AccessVector::NONE
+        );
+        assert_eq!(
+            index.compute_access_decision(&source, &target, process_class.id()).allow,
+            AccessVector::NONE
+        );
     }
 }

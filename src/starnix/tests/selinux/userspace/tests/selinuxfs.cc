@@ -737,6 +737,44 @@ TEST(SeLinuxFsAccess, ComputeAccessAudit) {
       SyscallResultIsOk("0 ffffffff 0 fffffff0 1 0"));
 }
 
+// Validate whether cross-role `process` `transition` and `dyntransition` permissions are filtered
+// according to `allow <source_role> <target_role>;` rules when queried via
+// `/sys/fs/selinux/access`.
+TEST(SeLinuxFsAccess, ComputeAccessProcessRoleAllow) {
+  constexpr uint32_t kAllPerms = UINT32_MAX;
+  const uint32_t kFork = GetAccessVector("process", "fork");
+  const uint32_t kTransition = GetAccessVector("process", "transition");
+  const uint32_t kDynTransition = GetAccessVector("process", "dyntransition");
+  const uint32_t kAllGranted = kFork | kTransition | kDynTransition;
+
+  // Same role (`test_selinuxfs_r` -> `test_selinuxfs_r`): `fork`, `transition`, and
+  // `dyntransition` are all allowed.
+  EXPECT_THAT(
+      ComputeAccess(
+          "test_selinuxfs_access_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+          "test_selinuxfs_access_u:test_selinuxfs_r:test_selinuxfs_access_process_target_t:s0",
+          "process", kAllPerms),
+      SyscallResultIsOk(fxl::StringPrintf("%x ffffffff 0 ffffffff 1 0", kAllGranted)));
+
+  // Different role with `allow test_selinuxfs_r test_selinuxfs_access_allowed_r;`: `fork`,
+  // `transition`, and `dyntransition` are all allowed.
+  EXPECT_THAT(
+      ComputeAccess(
+          "test_selinuxfs_access_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+          "test_selinuxfs_access_u:test_selinuxfs_access_allowed_r:test_selinuxfs_access_process_target_t:s0",
+          "process", kAllPerms),
+      SyscallResultIsOk(fxl::StringPrintf("%x ffffffff 0 ffffffff 1 0", kAllGranted)));
+
+  // Different role without role `allow` rule (`test_selinuxfs_access_denied_r`): `fork` remains
+  // allowed, while `transition` and `dyntransition` are removed from the allowed set.
+  EXPECT_THAT(
+      ComputeAccess(
+          "test_selinuxfs_access_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+          "test_selinuxfs_access_u:test_selinuxfs_access_denied_r:test_selinuxfs_access_process_target_t:s0",
+          "process", kAllPerms),
+      SyscallResultIsOk(fxl::StringPrintf("%x ffffffff 0 ffffffff 1 0", kFork)));
+}
+
 TEST(SeLinuxFsPolicy, ReadPolicyPermission) {
   auto enforcement = ScopedEnforcement::SetEnforcing();
 

@@ -253,7 +253,7 @@ impl SecurityContext {
     }
 
     /// Returns the role ID.
-    pub(super) fn role(&self) -> RoleId {
+    pub fn role(&self) -> RoleId {
         self.role
     }
 
