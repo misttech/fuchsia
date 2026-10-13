@@ -483,11 +483,26 @@ impl CallbackState {
 pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) -> Result<(), Errno> {
     let (mut tx, mut rx) = futures::channel::mpsc::channel::<TraceState>(32);
 
+    // Register the observer here, before the worker below reads `trace_state()` to find a session
+    // that started earlier (for example on boot). trace-engine's observer protocol is to register
+    // first and then read the state (see `trace_register_observer()` in instrumentation.h), so
+    // that every state change after that read is reported. This holds because registration takes
+    // trace-engine's engine mutex, which `trace_engine_start()` holds from storing Started until
+    // it has made the context count nonzero and notified observers. So if a start begins after
+    // registration, this observer gets its start notification. If it finished before
+    // registration, the worker's read sees it.
+    //
+    // One session's Started can also be reported twice: by the worker's read and by the start
+    // notification, if the start falls between registration and that read, or by two observer
+    // reads, if the observer was woken earlier and reads Started before the notification comes.
+    // `CallbackState::on_state_change()` handles a Started after Started as a desync and sends
+    // EnableTracing again, which traced rejects while the first Perfetto session keeps running.
+    let observer = TraceObserver::new();
+
     // Listens for trace state changes and sends them to Perfetto consumer thread.
     // Unlike the perfetto thread, it won't block, so we can spawn it on the main async executor.
     kernel.kthreads.spawn_future(
         move || async move {
-            let observer = TraceObserver::new();
             while let Ok(state) = observer.on_state_changed().await {
                 if let Err(e) = tx.send(state).await {
                     log_error!("perfetto-trace-observer failed to send trace state change: {:?}. Receiver dropped.", e);
