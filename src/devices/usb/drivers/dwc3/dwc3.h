@@ -15,7 +15,6 @@
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.policy/cpp/common_types_format.h>
 #include <fidl/fuchsia.hardware.usb.policy/cpp/fidl.h>
-#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -88,10 +87,6 @@ class Dwc3 : public fdf::DriverBase2,
   const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 
   inspect::ComponentInspector& inspector() { return *inspector_; }
-
-  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> take_power_element_runner() {
-    return std::move(power_element_runner_);
-  }
 
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
                          ConnectToEndpointCompleter::Sync& completer) override;
@@ -597,8 +592,6 @@ class Dwc3 : public fdf::DriverBase2,
   bool supports_gfladj_ = false;
 
   std::optional<inspect::ComponentInspector> inspector_;
-
-  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> power_element_runner_;
 
   // The basic model here is:
   //   * Record data outside of Inspect structures for better memory efficiency

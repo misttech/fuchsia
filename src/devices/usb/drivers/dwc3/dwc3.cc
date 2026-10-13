@@ -476,10 +476,6 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
   inspector_ = context.CreateInspector(this);
   incoming_ = context.take_incoming();
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  power_element_runner_ = context.take_power_element_runner();
-#endif
-
   auto phy_result = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
   if (phy_result.is_ok()) {
     phy_ =
