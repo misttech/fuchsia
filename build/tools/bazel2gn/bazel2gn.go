@@ -216,8 +216,14 @@ func targetCompatibleWithToGNConditions(expr syntax.Expr) ([]string, error) {
 //
 // [0] https://github.com/bazelbuild/starlark/blob/master/spec.md#function-and-method-calls
 func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
-	fn := expr.Fn.(*syntax.Ident)
+	fn, ok := expr.Fn.(*syntax.Ident)
+	if !ok {
+		return nil, fmt.Errorf("expected identifier for call expression, got %T", expr.Fn)
+	}
 	bazelRule := fn.Name
+	if bazelRule == "rustc_check_cfg_build_flags" {
+		return rustcCheckCfgBuildFlagsToGN(expr)
+	}
 	gnTemplateName, ok := bazelRuleToGNTemplate[bazelRule]
 	if !ok {
 		return nil, fmt.Errorf("%s is not a known Bazel rule to convert to GN", bazelRule)

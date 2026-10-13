@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Do not load from or add to this file. Load from the individual files instead."""
+
 load("//build/bazel/rules/rust:rustc_binary.bzl", _rustc_binary = "rustc_binary")
 load("//build/bazel/rules/rust:rustc_dylib.bzl", _rustc_dylib = "rustc_dylib")
 load("//build/bazel/rules/rust:rustc_embed_files.bzl", _rustc_embed_files = "rustc_embed_files")
