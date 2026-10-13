@@ -5,6 +5,7 @@ fangism@google.com
 jayzhuang@google.com
 olivernewman@google.com
 waynechou@google.com
+wittrock@google.com
 
 per-file fuzz.gni = file://src/sys/fuzzing/OWNERS
 per-file security.gni = file://src/security/OWNERS
