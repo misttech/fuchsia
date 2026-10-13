@@ -142,6 +142,9 @@ fuchsia_unittest_package("xhci-event-ring-unittest") {
   deps = [ ":xhci-event-ring-unittest-bin" ]
   test_specs = {
     environments = basic_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
   }
 }
 

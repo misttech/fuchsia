@@ -106,9 +106,13 @@ zx_status_t Interrupter::StartIrqThread() {
       return;
     }
 
+    // Acknowledge the interrupt after HandleIRQ() has drained the event ring and cleared
+    // IMAN.IP/ERDP.EHB so level-triggered interrupts do not immediately re-assert while
+    // the event ring is still asserted.
     total_irqs_.Add(1);
     irq_.ack();
   });
+  irq_handler_.Begin(dispatcher_.async_dispatcher());
   if (!interrupter_) {
     // Note: We need to run the ring 0 bringup after
     // initializing interrupts, since Qemu initialization
@@ -119,7 +123,6 @@ zx_status_t Interrupter::StartIrqThread() {
       return ZX_ERR_INTERNAL;
     }
   }
-  irq_handler_.Begin(dispatcher_.async_dispatcher());
   return ZX_OK;
 }
 

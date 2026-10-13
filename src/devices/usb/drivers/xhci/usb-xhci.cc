@@ -1348,6 +1348,12 @@ zx_status_t UsbXhci::InitMmio() {
   }
   mmio_ = std::move(*mmio);
   irq_count_ = static_cast<uint16_t>(HCSPARAMS1::Get().ReadFrom(&mmio_.value()).MaxIntrs());
+  if (zx::result<fdf::PDev::DeviceInfo> dev_info = pdev_.GetDeviceInfo(); dev_info.is_ok()) {
+    irq_count_ =
+        std::max<uint16_t>(1, std::min(irq_count_, static_cast<uint16_t>(dev_info->irq_count)));
+  } else {
+    irq_count_ = 1;
+  }
   fbl::AllocChecker ac;
   interrupters_ = fbl::MakeArray<Interrupter>(&ac, irq_count_);
   if (!ac.check()) {

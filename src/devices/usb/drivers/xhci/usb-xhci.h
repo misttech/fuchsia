@@ -320,6 +320,11 @@ class UsbXhci : public fdf::DriverBase2,
 
   bool Is32BitController() const { return is_32bit_; }
 
+  uint16_t irq_count() const { return irq_count_; }
+
+  void SetRunningForTesting(bool running) { running_ = running; }
+  void SignalBringupForTesting() { sync_completion_signal(&bringup_); }
+
   // Asynchronously submits a command to the command queue.
   TRBPromise SubmitCommand(const TRB& command, std::unique_ptr<TRBContext> trb_context);
 

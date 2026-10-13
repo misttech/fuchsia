@@ -1129,6 +1129,12 @@ TEST_F(XhciMmioHarness, HubDeviceRemovedWhenBusInvalidDoesNotAssert) {
   EXPECT_OK(driver_test().driver()->UsbHciHubDeviceRemoved(hub_id, 1));
 }
 
+TEST_F(XhciMmioHarness, IrqCountClampedToPDevDeviceInfo) {
+  // Verify that UsbXhci clamps irq_count_ to the PDev IRQ count instead of allocating
+  // excess interrupters beyond what the platform device provides.
+  EXPECT_EQ(driver_test().driver()->irq_count(), 1u);
+}
+
 }  // namespace
 
 }  // namespace usb_xhci

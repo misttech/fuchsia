@@ -399,7 +399,21 @@ void EventRing::SchedulePortStatusChange(uint8_t port_id, bool preempt) {
 
 zx_status_t EventRing::Ring0Bringup() {
   hci_->WaitForBringup();
-  enumerating_ = false;
+  if (!hci_->Running()) {
+    fdf::error("Cannot bring up ring 0: xHCI controller is not running");
+    return ZX_ERR_BAD_STATE;
+  }
+  // Queue may be asynchronously pushed to, so use an empty check instead of ranged iteration.
+  while (!enumeration_queue_.is_empty()) {
+    auto task = enumeration_queue_.pop_front();
+    if (task->completer.has_value()) {
+      task->completer->complete_ok(nullptr);
+    }
+  }
+  enumerating_ = true;
+  CallPortStatusChanged(fbl::MakeRefCounted<PortStatusChangeState>(
+      1, static_cast<uint8_t>(hci_->GetPortCount() + 1)));
+  executor_.run_until_idle();
   return ZX_OK;
 }
 
@@ -585,12 +599,18 @@ zx_paddr_t EventRing::UpdateErdpReg(zx_paddr_t last_phys, size_t processed_trb_c
 }
 
 zx_status_t EventRing::HandleIRQ() {
-  iman_reg_.set_IP(1).set_IE(1).WriteTo(mmio_);
+  iman_reg_.set_IP(1).set_IE(0).WriteTo(mmio_);
   bool avoid_yield = false;
   zx_paddr_t last_phys = 0;
   uint64_t processed_trbs{0};
 
-  auto update_inspect_data = fit::defer([&processed_trbs, this]() {
+  auto update_inspect_data = fit::defer([&processed_trbs, this] {
+    if (processed_trbs == 0) {
+      fbl::AutoLock l(&segment_mutex_);
+      erdp_reg_ =
+          erdp_reg_.set_Pointer(erdp_phys_).set_DESI(segment_index_).set_EHB(1).WriteTo(mmio_);
+    }
+    iman_reg_.set_IP(0).set_IE(1).WriteTo(mmio_);
     total_event_trbs_.Add(processed_trbs);
     if (max_single_irq_event_trbs_value_ < processed_trbs) {
       max_single_irq_event_trbs_value_ = processed_trbs;

@@ -58,6 +58,7 @@ class EventRingHarness : public ::testing::Test {
       ERDP reg;
       reg.set_reg_value(value);
       erdp_ = reg.Pointer();
+      last_erdp_ = reg;
     });
 
     // Port/per-slot registers
@@ -83,6 +84,8 @@ class EventRingHarness : public ::testing::Test {
   void TearDown() override { ASSERT_TRUE(driver_test().StopDriver().is_ok()); }
 
   void Interrupt() { ring_->HandleIRQ(); }
+
+  zx_status_t Ring0Bringup() { return ring_->Ring0Bringup(); }
 
   void AddTRB(const TRB& trb) {
     auto ptr = ddk_fake::PhysToVirt<TRB*>(erdp_);
@@ -128,7 +131,9 @@ class EventRingHarness : public ::testing::Test {
     AddTRB(trb);
   }
 
-  TRB* trb() { return ddk_fake::PhysToVirt<TRB*>(erdp_); }
+  TRB* trb() const { return ddk_fake::PhysToVirt<TRB*>(erdp_); }
+
+  const ERDP& last_erdp() const { return last_erdp_; }
 
   using TestRequest = usb::CallbackRequest<sizeof(max_align_t)>;
   template <typename Callback>
@@ -248,10 +253,13 @@ class EventRingHarness : public ::testing::Test {
   CommandRing command_ring_;
   uint64_t dcbaa_[128];
   uint64_t erdp_;
+  ERDP last_erdp_;
   std::optional<fake_mmio::FakeMmioRegRegion> region_;
 };
 
 // UsbXhci Methods
+bool UsbXhci::Running() const { return running_; }
+
 zx::result<> UsbXhci::Init(std::unique_ptr<dma_buffer::BufferFactory> buffer_factory) {
   buffer_factory_ = std::move(buffer_factory);
 
@@ -594,6 +602,20 @@ TEST_F(EventRingHarness, Usb2DeviceAttachNonPollingPortSpeed) {
   ASSERT_EQ(cmd->port, kPortNo);
   ASSERT_EQ(cmd->type, CommandType::EnumerateDevice);
   ASSERT_FALSE(cmd->hub);
+}
+
+TEST_F(EventRingHarness, HandleIRQClearsEhbWhenNoTrbsProcessed) {
+  // Trigger HandleIRQ without queuing any event TRBs.
+  // When processed_trbs == 0, ERDP is written with EHB=1 to clear Event Handler Busy
+  // and acknowledge to the controller that the event ring was checked.
+  Interrupt();
+  EXPECT_TRUE(last_erdp().EHB());
+}
+
+TEST_F(EventRingHarness, Ring0BringupFailsWhenNotRunning) {
+  driver_test().driver()->SetRunningForTesting(false);
+  driver_test().driver()->SignalBringupForTesting();
+  EXPECT_STATUS(Ring0Bringup(), ZX_ERR_BAD_STATE);
 }
 
 }  // namespace
