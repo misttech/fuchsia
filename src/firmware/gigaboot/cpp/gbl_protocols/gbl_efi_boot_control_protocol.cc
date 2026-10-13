@@ -16,9 +16,6 @@
 
 #include "efi/types.h"
 
-#define GBL_EFI_BOOT_CONTROL_PROTOCOL_GUID \
-  {0xd382db1b, 0x9ac2, 0x11f0, {0x84, 0xc7, 0x04, 0x7b, 0xcb, 0xa9, 0x60, 0x19}}
-
 // Set within `LaunchGbl()`;
 bool g_should_stop_in_fastboot = false;
 

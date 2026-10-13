@@ -23,8 +23,8 @@
  * terms apply by default.
  */
 
-#ifndef __GBL_EFI_AVF_PROTOCOL_H__
-#define __GBL_EFI_AVF_PROTOCOL_H__
+#ifndef __GBL_AVF_PROTOCOL_H__
+#define __GBL_AVF_PROTOCOL_H__
 
 #include <stdint.h>
 
@@ -32,6 +32,9 @@
 #include <gbl/uefi/gbl_protocol_utils.h>
 
 static const uint64_t GBL_EFI_AVF_PROTOCOL_REVISION = GBL_PROTOCOL_REVISION(1, 0);
+
+EFI_GUID(GBL_EFI_AVF_PROTOCOL_GUID, 0xe7f1c4a6, 0x0a52, 0x4f61, 0xbd, 0x98, 0x9e, 0x60, 0xb5, 0x59,
+         0x45, 0x2a);
 
 typedef struct GblEfiAvfProtocol {
   uint64_t revision;
@@ -46,4 +49,4 @@ typedef struct GblEfiAvfProtocol {
 
 } GblEfiAvfProtocol;
 
-#endif  //__GBL_EFI_AVF_PROTOCOL_H__
+#endif  //__GBL_AVF_PROTOCOL_H__

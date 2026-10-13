@@ -71,6 +71,9 @@ typedef struct {
 
 static const uint64_t GBL_EFI_OS_CONFIGURATION_PROTOCOL_REVISION = GBL_PROTOCOL_REVISION(1, 0);
 
+EFI_GUID(GBL_EFI_OS_CONFIGURATION_PROTOCOL_GUID, 0xdda0d135, 0xaa5b, 0x42ff, 0x85, 0xac, 0xe3, 0xad,
+         0x6e, 0xfb, 0x46, 0x19);
+
 typedef struct GblEfiOsConfigurationProtocol {
   uint64_t revision;
 

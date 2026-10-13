@@ -74,5 +74,9 @@ typedef uint16_t EfiChar16;
 typedef efi_status EfiStatus;
 typedef uint64_t EfiPhysicalAddr;
 typedef efi_memory_descriptor EfiMemoryDescriptor;
+typedef efi_guid EfiGuid;
+
+#define EFI_GUID(name, d1, d2, d3, d4_0, d4_1, d4_2, d4_3, d4_4, d4_5, d4_6, d4_7) \
+  static const EfiGuid name = {d1, d2, d3, {d4_0, d4_1, d4_2, d4_3, d4_4, d4_5, d4_6, d4_7}}
 
 #endif  // __GBL_PROTOCOL_UTILS_H__

@@ -36,6 +36,9 @@ EFI_ENUM(GblEfiFastbootRxMode, uint32_t, GBL_EFI_FASTBOOT_RX_MODE_SINGLE_PACKET,
 
 static const uint64_t GBL_EFI_FASTBOOT_TRANSPORT_PROTOCOL_REVISION = GBL_PROTOCOL_REVISION(1, 0);
 
+EFI_GUID(GBL_EFI_FASTBOOT_TRANSPORT_PROTOCOL_GUID, 0xedade92c, 0x5c48, 0x440d, 0x84, 0x9c, 0xe2,
+         0xa0, 0xc7, 0xe5, 0x51, 0x43);
+
 typedef struct GblEfiFastbootTransportProtocol {
   uint64_t revision;
   const EfiChar8* description;
