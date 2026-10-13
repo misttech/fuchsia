@@ -5,7 +5,7 @@
 import asyncio
 import types
 import unittest
-from typing import TypeVar
+from typing import Any, TypeVar
 from unittest import mock
 
 import fidl_fuchsia_wlan_common as f_wlan_common
@@ -128,8 +128,12 @@ class WlanPolicyApTests(unittest.IsolatedAsyncioTestCase):
             spec=f_wlan_device_service.DeviceMonitorClient,
             autospec=True,
         )
-        self.device_monitor_proxy.list_phys.return_value = _async_response(
-            f_wlan_device_service.DeviceMonitorListPhysResponse(phy_list=[1])
+        self.device_monitor_proxy.list_phys.side_effect = (
+            lambda *args, **kwargs: _async_response(
+                f_wlan_device_service.DeviceMonitorListPhysResponse(
+                    phy_list=[1]
+                )
+            )
         )
 
         mock_get_supported_mac_roles_response = mock.Mock()
@@ -137,8 +141,10 @@ class WlanPolicyApTests(unittest.IsolatedAsyncioTestCase):
             f_wlan_common.WlanMacRole.AP
         ]
 
-        self.device_monitor_proxy.get_supported_mac_roles.return_value = (
-            _async_response(mock_get_supported_mac_roles_response)
+        self.device_monitor_proxy.get_supported_mac_roles.side_effect = (
+            lambda *args, **kwargs: _async_response(
+                mock_get_supported_mac_roles_response
+            )
         )
 
         for target, return_value in [
@@ -346,6 +352,192 @@ class WlanPolicyApTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TimeoutError):
             await self.wlan_policy_ap_obj.get_update(timeout=10)
         wait_for_mock.assert_called_once()
+
+    async def test_make_ready_unsupported_ap_resets_ready(self) -> None:
+        """Verify that if make_ready fails due to unsupported AP role, _ready remains False."""
+        mock_roles_resp = mock.Mock()
+        mock_roles_resp.unwrap.return_value.supported_mac_roles = [
+            f_wlan_common.WlanMacRole.CLIENT
+        ]
+        self.device_monitor_proxy.list_phys.side_effect = (
+            lambda *args, **kwargs: _async_response(
+                f_wlan_device_service.DeviceMonitorListPhysResponse(
+                    phy_list=[1]
+                )
+            )
+        )
+        self.device_monitor_proxy.get_supported_mac_roles.side_effect = (
+            lambda *args, **kwargs: _async_response(mock_roles_resp)
+        )
+
+        affordance = wlan_policy_ap.WlanPolicyAp(
+            device_name="fuchsia-emulator",
+            ffx=self.ffx_transport_obj,
+            fuchsia_controller=self.fc_transport_obj,
+            reboot_affordance=self.reboot_affordance_obj,
+            fuchsia_device_close=self.fuchsia_device_close_obj,
+            suspend_resume_affordance=self.suspend_resume_affordance_obj,
+        )
+        self.assertFalse(affordance._ready)
+
+        # First call fails in make_ready
+        with self.assertRaises(HoneydewWlanError) as ctx:
+            await affordance.start(
+                _TEST_SSID,
+                f_wlan_policy.SecurityType.NONE,
+                None,
+                f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
+                f_wlan_policy.OperatingBand.ANY,
+            )
+        self.assertIn(
+            "Device does not support an access point interface",
+            str(ctx.exception),
+        )
+        self.assertFalse(affordance._ready)
+
+        # Subsequent call must re-attempt make_ready and raise HoneydewWlanError, NOT AssertionError
+        with self.assertRaises(HoneydewWlanError) as ctx:
+            await affordance.start(
+                _TEST_SSID,
+                f_wlan_policy.SecurityType.NONE,
+                None,
+                f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
+                f_wlan_policy.OperatingBand.ANY,
+            )
+        self.assertIn(
+            "Device does not support an access point interface",
+            str(ctx.exception),
+        )
+        self.assertFalse(affordance._ready)
+
+    async def test_start_uninitialized_controller_raises_assertion_error(
+        self,
+    ) -> None:
+        """Verify calling start with uninitialized controller raises AssertionError."""
+        affordance = wlan_policy_ap.WlanPolicyAp(
+            device_name="fuchsia-emulator",
+            ffx=self.ffx_transport_obj,
+            fuchsia_controller=self.fc_transport_obj,
+            reboot_affordance=self.reboot_affordance_obj,
+            fuchsia_device_close=self.fuchsia_device_close_obj,
+            suspend_resume_affordance=self.suspend_resume_affordance_obj,
+        )
+        # Simulate state where _ready is True but controller is None
+        affordance._ready = True
+        affordance._access_point_controller = None
+
+        with self.assertRaises(AssertionError):
+            await affordance.start(
+                _TEST_SSID,
+                f_wlan_policy.SecurityType.NONE,
+                None,
+                f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
+                f_wlan_policy.OperatingBand.ANY,
+            )
+
+    async def test_make_ready_direct_call_failure_resets_ready(self) -> None:
+        """Verify calling make_ready directly resets _ready on failure."""
+        mock_roles_resp = mock.Mock()
+        mock_roles_resp.unwrap.return_value.supported_mac_roles = [
+            f_wlan_common.WlanMacRole.CLIENT
+        ]
+        self.device_monitor_proxy.list_phys.side_effect = (
+            lambda *args, **kwargs: _async_response(
+                f_wlan_device_service.DeviceMonitorListPhysResponse(
+                    phy_list=[1]
+                )
+            )
+        )
+        self.device_monitor_proxy.get_supported_mac_roles.side_effect = (
+            lambda *args, **kwargs: _async_response(mock_roles_resp)
+        )
+
+        affordance = wlan_policy_ap.WlanPolicyAp(
+            device_name="fuchsia-emulator",
+            ffx=self.ffx_transport_obj,
+            fuchsia_controller=self.fc_transport_obj,
+            reboot_affordance=self.reboot_affordance_obj,
+            fuchsia_device_close=self.fuchsia_device_close_obj,
+            suspend_resume_affordance=self.suspend_resume_affordance_obj,
+        )
+        self.assertFalse(affordance._ready)
+
+        # Call make_ready directly (like the resume callback does)
+        with self.assertRaises(HoneydewWlanError):
+            await affordance.make_ready()
+        self.assertFalse(affordance._ready)
+
+    async def test_close_resets_ready(self) -> None:
+        """Verify _close() resets _ready to False and clears controller."""
+        self.assertTrue(self.wlan_policy_ap_obj._ready)
+        self.assertIsNotNone(self.wlan_policy_ap_obj._access_point_controller)
+
+        await self.wlan_policy_ap_obj._close()
+
+        self.assertFalse(self.wlan_policy_ap_obj._ready)
+        self.assertIsNone(self.wlan_policy_ap_obj._access_point_controller)
+
+    async def test_make_ready_cleans_up_existing_controller(self) -> None:
+        """Verify make_ready() cancels existing controller task and replaces it."""
+        assert self.wlan_policy_ap_obj._access_point_controller is not None
+        old_task = (
+            self.wlan_policy_ap_obj._access_point_controller.access_point_state_updates_server_task
+        )
+        self.assertFalse(old_task.cancelled())
+
+        await self.wlan_policy_ap_obj.make_ready()
+
+        self.assertTrue(old_task.cancelled())
+        assert self.wlan_policy_ap_obj._access_point_controller is not None
+        new_task = (
+            self.wlan_policy_ap_obj._access_point_controller.access_point_state_updates_server_task
+        )
+        self.assertNotEqual(old_task, new_task)
+        self.assertFalse(new_task.cancelled())
+        self.assertTrue(self.wlan_policy_ap_obj._ready)
+
+    async def test_make_ready_failure_clears_existing_controller(self) -> None:
+        """Verify make_ready() cleans up existing controller even if make_ready fails."""
+        assert self.wlan_policy_ap_obj._access_point_controller is not None
+        old_task = (
+            self.wlan_policy_ap_obj._access_point_controller.access_point_state_updates_server_task
+        )
+        self.assertFalse(old_task.cancelled())
+
+        mock_roles_resp = mock.Mock()
+        mock_roles_resp.unwrap.return_value.supported_mac_roles = [
+            f_wlan_common.WlanMacRole.CLIENT
+        ]
+        self.device_monitor_proxy.get_supported_mac_roles.side_effect = (
+            lambda *args, **kwargs: _async_response(mock_roles_resp)
+        )
+
+        with self.assertRaises(HoneydewWlanError):
+            await self.wlan_policy_ap_obj.make_ready()
+
+        self.assertTrue(old_task.cancelled())
+        self.assertIsNone(self.wlan_policy_ap_obj._access_point_controller)
+        self.assertFalse(self.wlan_policy_ap_obj._ready)
+
+    async def test_set_new_update_listener_cancels_task_on_error(self) -> None:
+        """Verify set_new_update_listener() cancels and awaits task if get_listener fails."""
+        self.ap_listener_proxy.get_listener.side_effect = FcTransportStatus(
+            FcTransportStatus.FC_ERR_INTERNAL
+        )
+        created_tasks: list[asyncio.Task[None]] = []
+        original_create_task = asyncio.create_task
+
+        def create_task_spy(*args: Any, **kwargs: Any) -> asyncio.Task[Any]:
+            t = original_create_task(*args, **kwargs)
+            created_tasks.append(t)
+            return t
+
+        with mock.patch("asyncio.create_task", side_effect=create_task_spy):
+            with self.assertRaises(HoneydewWlanError):
+                await self.wlan_policy_ap_obj.set_new_update_listener()
+
+        self.assertEqual(len(created_tasks), 1)
+        self.assertTrue(created_tasks[0].cancelled())
 
 
 if __name__ == "__main__":

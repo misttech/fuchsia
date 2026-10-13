@@ -98,6 +98,7 @@ class WlanPolicyAp(AsyncLazyReady):
 
     async def _close(self) -> None:
         """Release handle on access point controller."""
+        self._ready = False
         if self._access_point_controller:
             self._access_point_controller.access_point_state_updates_server_task.cancel()
             try:
@@ -107,6 +108,7 @@ class WlanPolicyAp(AsyncLazyReady):
             self._access_point_controller = None
 
     async def make_ready(self) -> None:
+        await self._close()
         await super().make_ready()
         device_monitor_proxy = f_wlan_device_service.DeviceMonitorClient(
             self._fc_transport.connect_device_proxy(
@@ -185,6 +187,9 @@ class WlanPolicyAp(AsyncLazyReady):
         Raises:
             HoneydewWlanError: Error from WLAN stack.
         """
+        if self._access_point_controller:
+            await self._close()
+
         (
             controller_client,
             controller_server,
@@ -203,27 +208,39 @@ class WlanPolicyAp(AsyncLazyReady):
         )
         task = asyncio.create_task(access_point_state_updates_server.serve())
 
-        access_point_provider_proxy = f_wlan_policy.AccessPointProviderClient(
-            self._fc_transport.connect_device_proxy(
-                _ACCESS_POINT_PROVIDER_PROXY
-            )
-        )
-
         try:
-            access_point_provider_proxy.get_controller(
-                requests=controller_server.take(),
-                updates=updates_client.take(),
+            access_point_provider_proxy = (
+                f_wlan_policy.AccessPointProviderClient(
+                    self._fc_transport.connect_device_proxy(
+                        _ACCESS_POINT_PROVIDER_PROXY
+                    )
+                )
             )
-        except FcTransportStatus as status:
-            raise wlan_errors.HoneydewWlanError(
-                f"AccessPointProvider.GetController() error {status}"
-            ) from status
 
-        self._access_point_controller = _AccessPointControllerState(
-            proxy=access_point_controller_proxy,
-            updates=updates,
-            access_point_state_updates_server_task=task,
-        )
+            try:
+                access_point_provider_proxy.get_controller(
+                    requests=controller_server.take(),
+                    updates=updates_client.take(),
+                )
+            except FcTransportStatus as status:
+                raise wlan_errors.HoneydewWlanError(
+                    f"AccessPointProvider.GetController() error {status}"
+                ) from status
+
+            self._access_point_controller = _AccessPointControllerState(
+                proxy=access_point_controller_proxy,
+                updates=updates,
+                access_point_state_updates_server_task=task,
+            )
+        except BaseException:
+            # If controller setup fails or is cancelled, cleanly cancel and await
+            # the background updates server task to avoid leaking an orphaned task.
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            raise
 
     @ensure_ready
     async def start(
@@ -248,7 +265,9 @@ class WlanPolicyAp(AsyncLazyReady):
             HoneydewWlanError: Error from WLAN stack
             HoneydewWlanRequestRejectedError: WLAN rejected the request
         """
-        assert self._access_point_controller is not None
+        assert (
+            self._access_point_controller is not None
+        ), "AccessPointController is not initialized"
 
         try:
             resp = await self._access_point_controller.proxy.start_access_point(
@@ -293,7 +312,9 @@ class WlanPolicyAp(AsyncLazyReady):
             HoneydewWlanError: Error from WLAN stack
             HoneydewWlanRequestRejectedError: WLAN rejected the request
         """
-        assert self._access_point_controller is not None
+        assert (
+            self._access_point_controller is not None
+        ), "AccessPointController is not initialized"
 
         try:
             resp = await self._access_point_controller.proxy.stop_access_point(
@@ -343,11 +364,13 @@ class WlanPolicyAp(AsyncLazyReady):
         # API is designed to only allow a single caller to make AccessPointController
         # calls which would impact WLAN state. If we lose our handle to the
         # AccessPointController, some other component on the system could take it.
-        assert self._access_point_controller is not None
+        assert (
+            self._access_point_controller is not None
+        ), "AccessPointController is not initialized"
         self._access_point_controller.access_point_state_updates_server_task.cancel()
         try:
             await self._access_point_controller.access_point_state_updates_server_task
-        except asyncio.exceptions.CancelledError:
+        except asyncio.CancelledError:
             pass
 
         access_point_listener_proxy = f_wlan_policy.AccessPointListenerClient(
@@ -366,18 +389,28 @@ class WlanPolicyAp(AsyncLazyReady):
         task = asyncio.create_task(access_point_state_updates_server.serve())
 
         try:
-            access_point_listener_proxy.get_listener(
-                updates=updates_client.take(),
-            )
-        except FcTransportStatus as status:
-            raise wlan_errors.HoneydewWlanError(
-                f"AccessPointListener.GetListener() error {status}"
-            ) from status
+            try:
+                access_point_listener_proxy.get_listener(
+                    updates=updates_client.take(),
+                )
+            except FcTransportStatus as status:
+                raise wlan_errors.HoneydewWlanError(
+                    f"AccessPointListener.GetListener() error {status}"
+                ) from status
 
-        self._access_point_controller.updates = updates
-        self._access_point_controller.access_point_state_updates_server_task = (
-            task
-        )
+            self._access_point_controller.updates = updates
+            self._access_point_controller.access_point_state_updates_server_task = (
+                task
+            )
+        except BaseException:
+            # If listener registration fails or is cancelled, cleanly cancel and await
+            # the background updates server task to avoid leaking an orphaned task.
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            raise
 
     @ensure_ready
     async def get_update(
@@ -404,7 +437,9 @@ class WlanPolicyAp(AsyncLazyReady):
             HoneydewWlanError: Error from WLAN stack.
             TimeoutError: Reached timeout without any updates.
         """
-        assert self._access_point_controller is not None
+        assert (
+            self._access_point_controller is not None
+        ), "AccessPointController is not initialized"
         return await asyncio.wait_for(
             self._access_point_controller.updates.get(), timeout
         )
