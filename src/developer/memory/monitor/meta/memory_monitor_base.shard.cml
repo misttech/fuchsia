@@ -49,30 +49,35 @@
             key: "capture_on_pressure_change",
             availability: "optional",
             type: "bool",
+            default: true,
         },
         {
             config: "fuchsia.memory.ImminentOomCaptureDelay",
             key: "imminent_oom_capture_delay_s",
             availability: "optional",
             type: "uint32",
+            default: 30,
         },
         {
             config: "fuchsia.memory.CriticalCaptureDelay",
             key: "critical_capture_delay_s",
             availability: "optional",
             type: "uint32",
+            default: 60,
         },
         {
             config: "fuchsia.memory.WarningCaptureDelay",
             key: "warning_capture_delay_s",
             availability: "optional",
             type: "uint32",
+            default: 300,
         },
         {
             config: "fuchsia.memory.NormalCaptureDelay",
             key: "normal_capture_delay_s",
             availability: "optional",
             type: "uint32",
+            default: 600,
         },
     ],
     expose: [
@@ -81,11 +86,4 @@
             from: "self",
         },
     ],
-    config: {
-        capture_on_pressure_change: { type: "bool" },
-        imminent_oom_capture_delay_s: { type: "uint32" },
-        critical_capture_delay_s: { type: "uint32" },
-        warning_capture_delay_s: { type: "uint32" },
-        normal_capture_delay_s: { type: "uint32" },
-    },
 }

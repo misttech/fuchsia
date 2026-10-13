@@ -38,13 +38,6 @@ fuchsia_structured_config_cpp_elf_lib("adb-shell-config") {
   cm_label = ":manifest"
 }
 
-fuchsia_structured_config_values("adb-shell-config-default-values") {
-  cm_label = ":manifest"
-  values = {
-    dash_moniker = "./bootstrap/console-launcher"
-  }
-}
-
 fuchsia_component("adb-shell-component") {
   cm_label = ":manifest"
   deps = [ ":adb-shell" ]

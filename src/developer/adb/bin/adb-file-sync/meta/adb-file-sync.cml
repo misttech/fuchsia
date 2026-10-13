@@ -19,6 +19,15 @@
             ],
             from: "parent",
         },
+        {
+            config: "fuchsia.adb.FileSyncMoniker",
+            from: "parent",
+            key: "filesync_moniker",
+            type: "string",
+            max_size: 256,
+            availability: "optional",
+            default: "",
+        },
     ],
     expose: [
         {
@@ -26,10 +35,4 @@
             from: "self",
         },
     ],
-    config: {
-        filesync_moniker: {
-            type: "string",
-            max_size: 256,
-        },
-    },
 }

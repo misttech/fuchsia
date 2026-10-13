@@ -17,6 +17,15 @@
                 "fuchsia.sys2.LifecycleController.root",
             ],
         },
+        {
+            config: "fuchsia.adb.DashMoniker",
+            from: "parent",
+            key: "dash_moniker",
+            type: "string",
+            max_size: 256,
+            availability: "optional",
+            default: "./bootstrap/console-launcher",
+        },
     ],
     expose: [
         {
@@ -24,10 +33,4 @@
             from: "self",
         },
     ],
-    config: {
-        dash_moniker: {
-            type: "string",
-            max_size: 256,
-        },
-    },
 }

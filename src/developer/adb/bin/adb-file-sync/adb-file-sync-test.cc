@@ -255,8 +255,15 @@ class AdbFileSyncTest : public gtest::RealLoopFixture {
     builder.AddRoute(Route{.capabilities = {Protocol{fuchsia::hardware::adb::Provider::Name_}},
                            .source = ChildRef{"adb-file-sync"},
                            .targets = {ParentRef()}});
-    builder.InitMutableConfigToEmpty("adb-file-sync");
-    builder.SetConfigValue("adb-file-sync", "filesync_moniker", std::move(default_moniker));
+    std::vector<ConfigCapability> configurations;
+    configurations.push_back({
+        .name = "fuchsia.adb.FileSyncMoniker",
+        .value = std::move(default_moniker),
+    });
+    builder.AddConfiguration(std::move(configurations));
+    builder.AddRoute(Route{.capabilities = {Config{.name = "fuchsia.adb.FileSyncMoniker"}},
+                           .source = SelfRef{},
+                           .targets = {ChildRef{"adb-file-sync"}}});
     realm_ = builder.Build(dispatcher());
 
     ASSERT_EQ(realm_->component().Connect<fuchsia::hardware::adb::Provider>(

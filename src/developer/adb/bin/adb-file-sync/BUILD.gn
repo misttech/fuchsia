@@ -14,13 +14,6 @@ fuchsia_structured_config_cpp_elf_lib("adb-file-sync-config") {
   cm_label = ":manifest"
 }
 
-fuchsia_structured_config_values("adb-file-sync-config-default-values") {
-  cm_label = ":manifest"
-  values = {
-    filesync_moniker = ""
-  }
-}
-
 executable("adb-file-sync") {
   sources = [
     "adb-file-sync.cc",
@@ -72,10 +65,7 @@ fuchsia_component("adb-file-sync-test-component") {
 
 fuchsia_test_package("adb-file-sync-test") {
   test_components = [ ":adb-file-sync-test-component" ]
-  deps = [
-    ":adb-file-sync-component",
-    ":adb-file-sync-config-default-values",
-  ]
+  deps = [ ":adb-file-sync-component" ]
 }
 
 group("tests") {

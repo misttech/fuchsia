@@ -13,5 +13,11 @@
             from: "parent",
             to: "#adb-services",
         },
+        {
+            config: "fuchsia.adb.DashMoniker",
+            from: "void",
+            to: "#adb-services",
+            availability: "optional",
+        },
     ],
 }

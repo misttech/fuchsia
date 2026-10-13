@@ -11,5 +11,11 @@
             from: "parent",
             to: "#adb-services",
         },
+        {
+            config: "fuchsia.adb.FileSyncMoniker",
+            from: "void",
+            to: "#adb-services",
+            availability: "optional",
+        },
     ],
 }

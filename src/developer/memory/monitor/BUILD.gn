@@ -94,23 +94,9 @@ fuchsia_structured_config_cpp_elf_lib("memory_monitor_config") {
   cm_label = ":memory_monitor_manifest"
 }
 
-fuchsia_structured_config_values("memory_monitor_default_config") {
-  cm_label = ":memory_monitor_manifest"
-  values_source = "config/config_values.json5"
-}
-
 fuchsia_component("component") {
   cm_label = ":memory_monitor_manifest"
-  deps = [
-    ":bin",
-    ":memory_monitor_default_config",
-  ]
-}
-
-fuchsia_structured_config_values(
-    "memory_monitor_with_memory_sampler_default_config") {
-  cm_label = ":memory_monitor_with_memory_sampler_manifest"
-  values_source = "config/config_values.json5"
+  deps = [ ":bin" ]
 }
 
 fuchsia_component("component_with_memory_sampler") {
@@ -120,16 +106,10 @@ fuchsia_component("component_with_memory_sampler") {
 
 fuchsia_package("monitor_without_memory_sampler") {
   package_name = "memory_monitor"
-  deps = [
-    ":component",
-    ":memory_monitor_default_config",
-  ]
+  deps = [ ":component" ]
 }
 
 fuchsia_package("monitor_with_memory_sampler") {
   package_name = "memory_monitor"
-  deps = [
-    ":component_with_memory_sampler",
-    ":memory_monitor_with_memory_sampler_default_config",
-  ]
+  deps = [ ":component_with_memory_sampler" ]
 }

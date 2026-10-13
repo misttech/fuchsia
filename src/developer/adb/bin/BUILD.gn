@@ -30,13 +30,5 @@ group("adb-components") {
 }
 
 fuchsia_package("adb") {
-  deps = [
-    ":adb-components",
-
-    # An adb file sync config needs to be part of the adb package.
-    "adb-file-sync:adb-file-sync-config-default-values",
-
-    # An adb shell config needs to be part of the adb package.
-    "adb-shell:adb-shell-config-default-values",
-  ]
+  deps = [ ":adb-components" ]
 }
