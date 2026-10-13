@@ -16,7 +16,7 @@ use fidl_next_fuchsia_hardware_spiimpl::{
     SpiImplUnregisterVmoResponse, spi_impl as fspi_impl,
 };
 use fidl_next_fuchsia_mem as fmem;
-use futures::lock::Mutex;
+use futures::lock::{Mutex, MutexGuard};
 use log::{debug, error, warn};
 use mmio::Register;
 use mmio::region::MmioRegion;
@@ -93,6 +93,13 @@ impl DwSpiDevice {
 
     pub async fn resume(&self) -> Result<(), DriverError> {
         self.inner.lock().await.resume().await
+    }
+
+    async fn get_if_resumed(&self) -> MutexGuard<'_, DwSpiDeviceInner> {
+        let inner = self.inner.lock().await;
+        // It shouldn't be possible to get here since our dispatcher will be paused in suspend.
+        assert!(!inner.suspended);
+        inner
     }
 }
 
@@ -521,11 +528,6 @@ impl DwSpiDeviceInner {
         rx: bool,
         size: usize,
     ) -> Result<Vec<u8>, Status> {
-        if self.suspended {
-            // It shouldn't be possible to get here since our dispatcher will be paused in suspend.
-            return Err(Status::BAD_STATE);
-        }
-
         if size == 0 {
             return Ok(vec![]);
         }
@@ -678,10 +680,6 @@ impl DwSpiDeviceInner {
         chip_select: u32,
         buffer: &fsharedmemory::natural::SharedVmoBuffer,
     ) -> Result<(), Status> {
-        if self.suspended {
-            return Err(Status::BAD_STATE);
-        }
-
         // TODO(https://fxbug.dev/529838127): Use DMA instead of copying into/out of vectors.
         let mut tx_data = vec![0u8; buffer.size as usize];
         {
@@ -699,10 +697,6 @@ impl DwSpiDeviceInner {
         chip_select: u32,
         buffer: &fsharedmemory::natural::SharedVmoBuffer,
     ) -> Result<(), Status> {
-        if self.suspended {
-            return Err(Status::BAD_STATE);
-        }
-
         let rx_data = self.exchange_pio(chip_select, &[], true, buffer.size as usize).await?;
 
         // TODO(https://fxbug.dev/529838127): Use DMA instead of copying into/out of vectors.
@@ -717,10 +711,6 @@ impl DwSpiDeviceInner {
         tx_buffer: &fsharedmemory::natural::SharedVmoBuffer,
         rx_buffer: &fsharedmemory::natural::SharedVmoBuffer,
     ) -> Result<(), Status> {
-        if self.suspended {
-            return Err(Status::BAD_STATE);
-        }
-
         if tx_buffer.size != rx_buffer.size {
             return Err(Status::INVALID_ARGS);
         }
@@ -744,6 +734,7 @@ impl DwSpiDeviceInner {
 
 impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
     async fn get_chip_select_count(&mut self, responder: Responder<fspi_impl::GetChipSelectCount>) {
+        let _ = self.get_if_resumed().await;
         let _ = responder.respond(1).await;
     }
 
@@ -754,8 +745,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
     ) {
         let payload = request.payload();
         let result = self
-            .inner
-            .lock()
+            .get_if_resumed()
             .await
             .exchange_pio(payload.chip_select, &payload.data, false, payload.data.len())
             .await
@@ -770,8 +760,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
     ) {
         let payload = request.payload();
         let result = self
-            .inner
-            .lock()
+            .get_if_resumed()
             .await
             .exchange_pio(payload.chip_select, &[], true, payload.size as usize)
             .await
@@ -786,8 +775,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
     ) {
         let payload = request.payload();
         let result = self
-            .inner
-            .lock()
+            .get_if_resumed()
             .await
             .exchange_pio(payload.chip_select, &payload.txdata, true, payload.txdata.len())
             .await
@@ -800,6 +788,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
         _request: Request<fspi_impl::LockBus>,
         responder: Responder<fspi_impl::LockBus>,
     ) {
+        let _ = self.get_if_resumed().await;
         let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 
@@ -808,6 +797,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
         _request: Request<fspi_impl::UnlockBus>,
         responder: Responder<fspi_impl::UnlockBus>,
     ) {
+        let _ = self.get_if_resumed().await;
         let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 
@@ -817,7 +807,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
         responder: Responder<fspi_impl::RegisterVmo>,
     ) {
         let payload = request.payload();
-        let result = self.inner.lock().await.register_vmo_impl(
+        let result = self.get_if_resumed().await.register_vmo_impl(
             payload.chip_select,
             payload.vmo_id,
             payload.vmo,
@@ -833,8 +823,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
     ) {
         let payload = request.payload();
         let result = self
-            .inner
-            .lock()
+            .get_if_resumed()
             .await
             .unregister_vmo_impl(payload.chip_select, payload.vmo_id)
             .map(|vmo| SpiImplUnregisterVmoResponse { vmo });
@@ -846,7 +835,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
         request: Request<fspi_impl::ReleaseRegisteredVmos>,
     ) {
         let payload = request.payload();
-        self.inner.lock().await.release_registered_vmos_impl(payload.chip_select);
+        self.get_if_resumed().await.release_registered_vmos_impl(payload.chip_select);
     }
 
     async fn transmit_vmo(
@@ -855,8 +844,11 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
         responder: Responder<fspi_impl::TransmitVmo>,
     ) {
         let payload = request.payload();
-        let result =
-            self.inner.lock().await.transmit_vmo_impl(payload.chip_select, &payload.buffer).await;
+        let result = self
+            .get_if_resumed()
+            .await
+            .transmit_vmo_impl(payload.chip_select, &payload.buffer)
+            .await;
         let _ = responder.respond_with(result).await;
     }
 
@@ -866,8 +858,11 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
         responder: Responder<fspi_impl::ReceiveVmo>,
     ) {
         let payload = request.payload();
-        let result =
-            self.inner.lock().await.receive_vmo_impl(payload.chip_select, &payload.buffer).await;
+        let result = self
+            .get_if_resumed()
+            .await
+            .receive_vmo_impl(payload.chip_select, &payload.buffer)
+            .await;
         let _ = responder.respond_with(result).await;
     }
 
@@ -878,8 +873,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
     ) {
         let payload = request.payload();
         let result = self
-            .inner
-            .lock()
+            .get_if_resumed()
             .await
             .exchange_vmo_impl(payload.chip_select, &payload.tx_buffer, &payload.rx_buffer)
             .await;
