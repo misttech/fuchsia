@@ -1,6 +1,1 @@
-patricklu@google.com
-priyankach@google.com
-paulsethi@google.com
-jpavankumar@google.com
-
-include /src/connectivity/wlan/OWNERS
+include /src/testing/end_to_end/mobly_base_tests/fuchsia_wlan_base_test/OWNERS
