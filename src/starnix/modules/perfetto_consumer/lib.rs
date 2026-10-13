@@ -4,13 +4,10 @@
 
 #![recursion_limit = "256"]
 
-use anyhow::bail;
-use fuchsia_trace::{
-    BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state, trace_string_ref_t,
-};
+use fuchsia_trace::{BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state};
 use fuchsia_trace_observer::TraceObserver;
 use futures::{SinkExt, StreamExt};
-use fxt::blob::{BlobHeader, BlobType};
+use fxt::blob::{BlobType, build_blob_record};
 use perfetto_protos::perfetto::protos::trace_config::buffer_config::FillPolicy;
 use perfetto_protos::perfetto::protos::trace_config::{BufferConfig, DataSource};
 use perfetto_protos::perfetto::protos::{
@@ -38,6 +35,27 @@ use starnix_uapi::errors::Errno;
 mod atrace;
 
 const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
+
+/// Maximum number of Perfetto bytes carried by one FXT blob record.
+///
+/// The drain writes each Perfetto packet, framed as a field of a `Trace` message, as one
+/// record, and splits only framed packets longer than this limit. Packets can be that long:
+/// upstream traced_probes can put the ftrace events from several ring-buffer pages into one
+/// `FtraceEventBundle` packet.
+///
+/// The value balances these limits:
+/// - An FXT blob record holds at most `fxt::MAX_RECORD_SIZE_WORDS` words: the header word,
+///   the inline blob name and the payload, each padded to 8 bytes (see
+///   [`build_blob_record()`]).
+/// - Bigger blobs split a long packet into fewer records, so there is less header and name
+///   overhead per byte.
+/// - A record that does not fit in the rest of the current rolling buffer goes into the next
+///   one, and the rest of the current one stays unused, so each buffer switch can waste up to
+///   one record. With trace_manager's minimum default trace buffer, 1 MiB, each rolling
+///   buffer is about 480 KiB, so a 4 KiB blob wastes under 1% of one. A per-provider buffer
+///   size is also a whole number of MiB, so every provider buffer that can hold records is
+///   at least that large.
+const MAX_BLOB_PAYLOAD_SIZE: usize = 4096;
 
 /// State needed to act upon trace state changes.
 struct CallbackState {
@@ -229,13 +247,6 @@ impl CallbackState {
                 let read_buffers_request =
                     connection.read_buffers(current_task, ReadBuffersRequest {})?;
 
-                let blob_name_ref = {
-                    let Some(context) = fuchsia_trace::Context::acquire() else {
-                        bail!("Tracing stopped despite holding prolonged context");
-                    };
-                    context.register_string_literal(NAME_PERFETTO_BLOB)
-                };
-
                 // IPC responses may be spread across multiple frames, so loop until we get a
                 // message that indicates it is the last one. Additionally, if there are
                 // unrelated messages on the socket (e.g. leftover from a previous trace
@@ -292,7 +303,7 @@ impl CallbackState {
                                     // aggregate the number of records dropped and we can query
                                     // the trace system later to determine if we dropped
                                     // records when it's more efficient to do so.
-                                    let _ = self.forward_packet(blob_name_ref, rewritten);
+                                    let _ = self.forward_packet(&rewritten);
                                 }
                             }
                         } else {
@@ -325,41 +336,27 @@ impl CallbackState {
         Ok(())
     }
 
-    // Forward `data` to the trace buffer by wrapping it in fxt blob records with the name
-    // `blob_name_ref`..
-    fn forward_packet(&self, blob_name_ref: trace_string_ref_t, data: Vec<u8>) -> Option<usize> {
-        // The blob data may be larger than what we can fit in a single record. If so, split it up
-        // over multiple chunks.
+    /// Forwards `data` to the trace buffer as FXT blob records, split into chunks of at most
+    /// `MAX_BLOB_PAYLOAD_SIZE` bytes.
+    ///
+    /// Returns the number of payload bytes written (`data.len()`), or `None` if a chunk was
+    /// dropped. Chunks written before the dropped one stay in the trace buffer.
+    fn forward_packet(&self, data: &[u8]) -> Option<usize> {
         let mut bytes_written = 0;
-        let mut data_to_write = &data[..];
-
-        // We want to break the data into chunks:
-        // - Bigger chunks means less per-write overheader
-        // - Bigger chunks means less overhead due to blob meta
-        //
-        // However, too big and the blobs won't fit nicely into the trace buffer.
-        // The trace buffer is minimum 1MiB in size, so writing 4k at a time seems like a
-        // reasonable place to start that is both reasonably large and not going to leave a ton of
-        // space at the end of the trace buffer.
-        let max_chunk_size = 4096;
-        while !data_to_write.is_empty() {
-            let chunk_size = data_to_write.len().min(max_chunk_size);
-            let chunk = &data_to_write[..chunk_size];
-            self.forward_blob(blob_name_ref, &chunk)?;
-            data_to_write = &data_to_write[chunk_size..];
-            bytes_written += chunk_size;
+        for chunk in data.chunks(MAX_BLOB_PAYLOAD_SIZE) {
+            self.forward_blob(chunk)?;
+            bytes_written += chunk.len();
         }
         Some(bytes_written)
     }
 
-    // Given a blob name, wrap the data in an fxt perfetto blob and write it to the trace buffer.
-    fn forward_blob(&self, blob_name_ref: trace_string_ref_t, blob_data: &[u8]) -> Option<usize> {
-        let mut header = BlobHeader::empty();
-        header.set_name_ref(blob_name_ref.encoded_value);
-        header.set_payload_len(blob_data.len() as u16);
-        header.set_blob_format_type(BlobType::Perfetto.into());
-
-        let record_words = fxt::fxt_builder::FxtBuilder::new(header).atom(blob_data).build();
+    /// Writes one Perfetto blob record that carries `blob_data`.
+    ///
+    /// Returns the number of words written, or `None` if the record was dropped because
+    /// `blob_data` does not fit in one record, the buffer is full outside streaming mode, or no
+    /// trace context is available.
+    fn forward_blob(&self, blob_data: &[u8]) -> Option<usize> {
+        let record_words = build_blob_record(NAME_PERFETTO_BLOB, BlobType::Perfetto, blob_data)?;
 
         while let Some(context) = fuchsia_trace::Context::acquire() {
             if let Some(words) = context.copy_record(&record_words) {
@@ -386,8 +383,8 @@ impl CallbackState {
         None
     }
 
-    fn rewrite_pids(&mut self, protobuf_blob: &Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        let mut proto = decode_trace(protobuf_blob.as_slice())?;
+    fn rewrite_pids(&mut self, protobuf_blob: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let mut proto = decode_trace(protobuf_blob)?;
         for p in &mut proto.packet {
             if let Some(ref mut data) = p.data {
                 match data {
