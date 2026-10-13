@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuchsia-log-contrib",
+    srcs = [
+        "src/future.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/lib/diagnostics/log:__pkg__",
+        "//vendor/google/moonflower/hrtimer/drivers/qcom-pm5100-hrtimer-rust:__pkg__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
