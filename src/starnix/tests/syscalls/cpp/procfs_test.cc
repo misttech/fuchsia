@@ -385,6 +385,62 @@ TEST_F(ProcTaskDirTest, PidDirNotAccessibleAfterExitWithOpenChildFd) {
   EXPECT_THAT(stat(child_status.c_str(), &st), SyscallFailsWithErrno(ENOENT));
 }
 
+TEST_F(ProcTaskDirTest, PidDirFdLookupsFailAfterExit) {
+  test_helper::Rendezvous child_exit = test_helper::MakeRendezvous();
+
+  test_helper::ForkHelper helper;
+  pid_t child_pid = helper.RunInForkedProcess(
+      [holder = std::move(child_exit.holder)]() mutable { holder.hold(); });
+
+  std::string child_dir = fxl::StringPrintf("/proc/%d", child_pid);
+  fbl::unique_fd dirfd(SAFE_SYSCALL(open(child_dir.c_str(), O_RDONLY | O_DIRECTORY)));
+  fbl::unique_fd status_fd(SAFE_SYSCALL(openat(dirfd.get(), "status", O_RDONLY)));
+
+  // Allow the child to exit and reap it while keeping the fds open.
+  child_exit.poker.poke();
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  // The open fds themselves remain valid.
+  struct stat st;
+  EXPECT_THAT(fstat(dirfd.get(), &st), SyscallSucceeds());
+  EXPECT_THAT(fstat(status_fd.get(), &st), SyscallSucceeds());
+
+  // Lookups relative to the dead task's directory fail with ESRCH, whether or not the entry has
+  // been looked up before, and even for names that never existed.
+  EXPECT_THAT(openat(dirfd.get(), "status", O_RDONLY), SyscallFailsWithErrno(ESRCH));
+  EXPECT_THAT(openat(dirfd.get(), "cmdline", O_RDONLY), SyscallFailsWithErrno(ESRCH));
+  EXPECT_THAT(fstatat(dirfd.get(), "status", &st, 0), SyscallFailsWithErrno(ESRCH));
+  EXPECT_THAT(fstatat(dirfd.get(), "stat", &st, 0), SyscallFailsWithErrno(ESRCH));
+  EXPECT_THAT(fstatat(dirfd.get(), "nonexistent", &st, 0), SyscallFailsWithErrno(ESRCH));
+}
+
+TEST_F(ProcTaskDirTest, PidDirFdListingAndReadsFailAfterExit) {
+  test_helper::Rendezvous child_exit = test_helper::MakeRendezvous();
+
+  test_helper::ForkHelper helper;
+  pid_t child_pid = helper.RunInForkedProcess(
+      [holder = std::move(child_exit.holder)]() mutable { holder.hold(); });
+
+  std::string child_dir = fxl::StringPrintf("/proc/%d", child_pid);
+  fbl::unique_fd dirfd(SAFE_SYSCALL(open(child_dir.c_str(), O_RDONLY | O_DIRECTORY)));
+  fbl::unique_fd status_fd(SAFE_SYSCALL(openat(dirfd.get(), "status", O_RDONLY)));
+  fbl::unique_fd task_fd(SAFE_SYSCALL(openat(dirfd.get(), "task", O_RDONLY | O_DIRECTORY)));
+
+  // Allow the child to exit and reap it while keeping the fds open.
+  child_exit.poker.poke();
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  // Listing the dead task's directories fails with ENOENT.
+  char buf[4096];
+  EXPECT_THAT(syscall(SYS_getdents64, dirfd.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(syscall(SYS_getdents64, task_fd.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(ENOENT));
+
+  // Reading an already-open file of the dead task fails with ESRCH.
+  EXPECT_THAT(read(status_fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(ESRCH));
+}
+
 TEST_F(ProcTaskDirTest, SelfAuxvIsNotEmpty) {
   std::string contents;
   ASSERT_TRUE(files::ReadFileToString("/proc/self/auxv", &contents));
