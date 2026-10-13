@@ -14,7 +14,6 @@ mod canary;
 mod conditional_select_nospec;
 mod confine_array_index;
 mod doubly_linked_list;
-mod hash_table;
 mod inline_array;
 #[cfg(feature = "kernel")]
 mod name;
@@ -51,10 +50,6 @@ pub use doubly_linked_list::{
 pub use fbl_macros::{
     DoublyLinkedListContainable, Recyclable, SinglyLinkedListContainable, WavlTreeContainable,
     ref_counted,
-};
-pub use hash_table::{
-    DefaultHashTraits, DefaultHashable, HashTable, HashTableBucket, HashTableCursorMut,
-    HashTableInsertOrFindResult, HashTableIter, HashTableKeyable, HashTraits,
 };
 pub use inline_array::InlineArray;
 #[cfg(feature = "kernel")]

@@ -4,13 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
-use core::pin::Pin;
 use core::ptr::slice_from_raw_parts_mut;
 use kalloc::{AllocError, Allocator, Box, DefaultAllocator};
-use pin_init::PinInit;
 use zerocopy::FromZeros;
 
 /// A fixed-size array that takes ownership of its elements.
@@ -44,69 +41,6 @@ impl<T, A: Allocator> Array<T, A> {
         }
         // SAFETY: All elements have been initialized.
         Ok(Self { buf: unsafe { b.assume_init() } })
-    }
-
-    /// Allocates a new pinned array of the given length with the given allocator, initializing
-    /// each element in place with a pin-initializer returned by `init`.
-    ///
-    /// This supports element types which must not move once initialized (and hence cannot
-    /// implement `Default`), such as `DoublyLinkedList`. See `try_new_pin_init` for details.
-    pub fn try_new_pin_init_in<I, F>(
-        len: usize,
-        mut init: F,
-        allocator: A,
-    ) -> Result<Pin<Self>, AllocError>
-    where
-        F: FnMut() -> I,
-        I: PinInit<T, Infallible>,
-    {
-        let mut b = Box::<[T], A>::try_new_uninit_slice_in(len, allocator)?;
-
-        // Drops the elements initialized so far if `init` (or an initializer) panics, so that
-        // pinned elements are never deallocated without being dropped first.
-        struct InitGuard<'a, T> {
-            slots: &'a mut [MaybeUninit<T>],
-            initialized: usize,
-        }
-
-        impl<T> Drop for InitGuard<'_, T> {
-            fn drop(&mut self) {
-                for slot in &mut self.slots[..self.initialized] {
-                    // SAFETY: The first `initialized` slots have been initialized.
-                    unsafe { slot.assume_init_drop() };
-                }
-            }
-        }
-
-        let mut guard = InitGuard { slots: &mut b, initialized: 0 };
-        while guard.initialized < len {
-            let slot = guard.slots[guard.initialized].as_mut_ptr();
-            // SAFETY: `slot` is a valid, aligned, writable pointer to uninitialized memory inside
-            // the newly allocated buffer. The buffer is never moved or resized, and it is returned
-            // as a `Pin` below (or its initialized elements are dropped in place by `guard`), so
-            // the element is never moved before it is dropped, satisfying `PinInit`.
-            match unsafe { init().__pinned_init(slot) } {
-                Ok(()) => guard.initialized += 1,
-                Err(never) => match never {},
-            }
-        }
-        core::mem::forget(guard);
-
-        // SAFETY: All elements have been initialized by the loop above.
-        Ok(Self { buf: unsafe { b.assume_init() } }.into_pin())
-    }
-
-    /// Converts the array into a `Pin<Array<T, A>>`, pinning its elements in place.
-    ///
-    /// This does not allocate or move the elements, which live in a heap allocation that is
-    /// never moved for the lifetime of the array.
-    pub const fn into_pin(self) -> Pin<Self> {
-        // SAFETY: The elements of the array live in a heap allocation which `Array` never moves
-        // or reallocates, its `Deref` and `DerefMut` implementations hand out references to them
-        // in place, and dropping the array drops the elements in place. The returned `Pin`
-        // prevents safe code from obtaining the array (or a mutable reference to its elements)
-        // unless `T: Unpin`.
-        unsafe { Pin::new_unchecked(self) }
     }
 
     /// Allocates a new uninitialized array of the given length with the given allocator.
@@ -198,37 +132,6 @@ impl<T> Array<T, DefaultAllocator> {
         T: Default,
     {
         Self::try_new_in(len, DefaultAllocator)
-    }
-
-    /// Allocates a new pinned array of the given length using the default allocator,
-    /// initializing each element in place with a pin-initializer returned by `init`.
-    ///
-    /// This supports element types which must not move once initialized (and hence cannot
-    /// implement `Default`), such as `DoublyLinkedList`:
-    ///
-    /// ```rust
-    /// # use fbl::{Array, DoublyLinkedList, UniquePtr};
-    /// # #[derive(fbl::DoublyLinkedListContainable, fbl::Recyclable)]
-    /// # struct Foo {
-    /// #     #[dll_node]
-    /// #     node: fbl::DoublyLinkedListNode<Foo>,
-    /// # }
-    /// type List = DoublyLinkedList<UniquePtr<Foo>>;
-    /// let lists = Array::<List>::try_new_pin_init(4, List::new).unwrap();
-    /// assert!(lists.iter().all(|list| list.is_empty()));
-    /// ```
-    ///
-    /// The elements are never moved by `Array`. The array is returned as a `Pin` so that safe code
-    /// cannot move them either (e.g. with `core::mem::swap` through `DerefMut`): shared access to
-    /// the elements is available through `Deref`, while mutable access requires `unsafe` code
-    /// (e.g. `Pin::get_unchecked_mut` on `Pin::as_mut`) which must not move any element out of
-    /// the array. If an initializer panics, the elements initialized so far are dropped in place.
-    pub fn try_new_pin_init<I, F>(len: usize, init: F) -> Result<Pin<Self>, AllocError>
-    where
-        F: FnMut() -> I,
-        I: PinInit<T, Infallible>,
-    {
-        Self::try_new_pin_init_in(len, init, DefaultAllocator)
     }
 
     /// Allocates a new uninitialized array of the given length using the default allocator.
@@ -674,111 +577,5 @@ mod tests {
         let reconstructed =
             unsafe { Array::<u32, TestAllocator<'_>>::from_raw_parts_in(ptr, len, returned_alloc) };
         assert_eq!(&reconstructed[..], &[7, 9]);
-    }
-
-    /// An object which records its own address when it is pin-initialized.
-    #[pin_init::pin_data]
-    struct SelfAddressed {
-        addr: *mut SelfAddressed,
-        #[pin]
-        _pin: core::marker::PhantomPinned,
-    }
-
-    impl SelfAddressed {
-        fn new() -> impl PinInit<Self, Infallible> {
-            pin_init::pin_init!(&this in Self {
-                addr: this.as_ptr(),
-                _pin: core::marker::PhantomPinned,
-            })
-        }
-
-        fn is_at_initial_address(&self) -> bool {
-            core::ptr::eq(self.addr, self)
-        }
-    }
-
-    #[test]
-    fn test_try_new_pin_init() {
-        let mut init_count = 0;
-        let arr = Array::<SelfAddressed>::try_new_pin_init(5, || {
-            init_count += 1;
-            SelfAddressed::new()
-        })
-        .unwrap();
-        assert_eq!(init_count, 5);
-        assert_eq!(arr.len(), 5);
-        assert!(arr.iter().all(SelfAddressed::is_at_initial_address));
-
-        // Moving the array does not move its elements.
-        let moved = arr;
-        assert!(moved.iter().all(SelfAddressed::is_at_initial_address));
-    }
-
-    #[test]
-    fn test_try_new_pin_init_zero_sized() {
-        let mut init_count = 0;
-        let arr = Array::<SelfAddressed>::try_new_pin_init(0, || {
-            init_count += 1;
-            SelfAddressed::new()
-        })
-        .unwrap();
-        assert_eq!(init_count, 0);
-        assert!(arr.is_empty());
-    }
-
-    #[test]
-    fn test_try_new_pin_init_allocation_failure() {
-        let state = TestState::default();
-        state.fail_threshold.set(0); // Fail immediately
-
-        let mut init_count = 0;
-        let res = Array::<SelfAddressed, TestAllocator<'_>>::try_new_pin_init_in(
-            5,
-            || {
-                init_count += 1;
-                SelfAddressed::new()
-            },
-            TestAllocator { state: &state },
-        );
-        assert!(res.is_err());
-        assert_eq!(init_count, 0);
-    }
-
-    #[test]
-    fn test_try_new_pin_init_drop_behavior() {
-        let state = TestState::default();
-        {
-            let mut next_val = 0;
-            let arr = Array::<TestObject<'_>, TestAllocator<'_>>::try_new_pin_init_in(
-                3,
-                || {
-                    next_val += 1;
-                    TestObject::new(next_val, &state)
-                },
-                TestAllocator { state: &state },
-            )
-            .unwrap();
-            assert_eq!(state.alloc_count.get(), 1);
-            assert_eq!(state.live_obj_count.get(), 3);
-            assert_eq!(arr.iter().map(|obj| obj.val).sum::<usize>(), 1 + 2 + 3);
-        }
-        assert_eq!(state.live_obj_count.get(), 0);
-        assert_eq!(state.dtor_count.get(), 3);
-    }
-
-    #[test]
-    fn test_into_pin() {
-        let mut arr = Array::<u32>::try_new(2).unwrap();
-        arr[0] = 1;
-        arr[1] = 2;
-        let elements: *const u32 = arr.as_ptr();
-
-        let mut pinned = arr.into_pin();
-        assert!(core::ptr::eq(pinned.as_ptr(), elements));
-        assert_eq!(&pinned[..], &[1, 2]);
-
-        // Elements which are `Unpin` may still be mutated through the pin.
-        pinned.as_mut().get_mut()[0] = 3;
-        assert_eq!(&pinned[..], &[3, 2]);
     }
 }
