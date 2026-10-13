@@ -65,9 +65,7 @@
                 "mdns",
                 "netcfg-advanced",
                 "netcfg-basic",
-                "netstack",
                 "netstack3",
-                "netstack-migration",
                 "network",
                 "reachability"
             ]
