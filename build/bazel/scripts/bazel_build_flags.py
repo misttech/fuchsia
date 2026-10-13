@@ -59,32 +59,65 @@ class DefaultBuildFlagsSet:
 def get_build_flags_targets_from_ast(
     content: str, build_file: Path
 ) -> set[str]:
-    """Use Python parser to get build_flags() target names
+    """Use Python parser to get build_flags() target names.
+
+    Recognizes:
+      - Direct calls to `build_flags(...)` or any wrapper macro ending with
+        `_build_flags(...)` (e.g., `compiler_build_flags`,
+        `riscv64_abi_build_flags`) with a literal string `name = "..."`.
+      - List comprehensions invoking such macros over constant string
+        lists/tuples (e.g., `[compiler_build_flags(name = v, ...) for v in
+        ["v9", "v9.1"]]`).
 
     Args:
-        content: BUILD.bazel content as string
+        content: BUILD.bazel content as string.
         build_file: Path to BUILD.bazel file.
     Returns:
-        A set of target name strings
+        A set of target name strings.
     Raises:
         Any exception encountered by the Python parser when
         processing the input.
     """
     targets: set[str] = set()
     tree = ast.parse(content, filename=str(build_file))
-    for node in ast.walk(tree):
-        # Only support direct calls (e.g. build_flags(...))
-        if not isinstance(node, ast.Call) or not isinstance(
-            node.func, ast.Name
+
+    def _collect_call_targets(
+        call_node: ast.Call, loop_vars: dict[str, list[str]]
+    ) -> None:
+        if not isinstance(call_node.func, ast.Name):
+            return
+        func_name = call_node.func.id
+        if func_name != "build_flags" and not func_name.endswith(
+            "_build_flags"
         ):
-            continue
-        func_name = node.func.id
-        if func_name not in ("build_flags", "compiler_build_flags"):
-            continue
-        for kw in node.keywords:
-            if kw.arg == "name" and isinstance(kw.value, ast.Constant):
-                assert isinstance(kw.value.value, str)
-                targets.add(kw.value.value)
+            return
+        for kw in call_node.keywords:
+            if kw.arg == "name":
+                if isinstance(kw.value, ast.Constant) and isinstance(
+                    kw.value.value, str
+                ):
+                    targets.add(kw.value.value)
+                elif (
+                    isinstance(kw.value, ast.Name) and kw.value.id in loop_vars
+                ):
+                    targets.update(loop_vars[kw.value.id])
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ListComp) and isinstance(node.elt, ast.Call):
+            loop_vars: dict[str, list[str]] = {}
+            for gen in node.generators:
+                if isinstance(gen.target, ast.Name) and isinstance(
+                    gen.iter, (ast.List, ast.Tuple)
+                ):
+                    loop_vars[gen.target.id] = [
+                        e.value
+                        for e in gen.iter.elts
+                        if isinstance(e, ast.Constant)
+                        and isinstance(e.value, str)
+                    ]
+            _collect_call_targets(node.elt, loop_vars)
+        elif isinstance(node, ast.Call):
+            _collect_call_targets(node, {})
     return targets
 
 

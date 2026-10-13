@@ -12,7 +12,11 @@ from pathlib import Path
 _SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
-from bazel_build_flags import DefaultBuildFlagsMap, DefaultBuildFlagsSet
+from bazel_build_flags import (
+    DefaultBuildFlagsMap,
+    DefaultBuildFlagsSet,
+    get_build_flags_targets_from_ast,
+)
 
 
 class DefaultBuildFlagsTest(unittest.TestCase):
@@ -247,6 +251,63 @@ build_flags_toolchain_instance(
         # Check comments for missing configs at the bottom
         self.assertIn("# - //build/flags:missing1", generated_content)
         self.assertIn("# - //build/flags:missing2", generated_content)
+
+    def test_get_build_flags_targets_from_ast_custom_macros_and_comprehensions(
+        self,
+    ) -> None:
+        build_bazel_content = """
+riscv64_abi_build_flags(
+    name = "abi",
+    visibility = ["//visibility:public"],
+)
+
+riscv64_abi_build_flags(
+    name = "no-vector",
+    exclude_letters = ["v"],
+)
+
+[
+    compiler_build_flags(
+        name = v,
+        c_family_flags = ["-march=arm{}-a".format(v)],
+    )
+    for v in ["v9", "v9.1", "v9.2"]
+]
+
+[
+    custom_build_flags(name = t)
+    for t in ("tuple_flag_a", "tuple_flag_b")
+]
+
+# Unrelated rules and unbound variables should be ignored.
+cc_library(
+    name = "ignored_library",
+)
+
+[
+    cc_library(name = lib)
+    for lib in ["ignored_comp_a", "ignored_comp_b"]
+]
+
+compiler_build_flags(
+    name = unknown_var,
+)
+"""
+        targets = get_build_flags_targets_from_ast(
+            build_bazel_content, Path("BUILD.bazel")
+        )
+        self.assertEqual(
+            targets,
+            {
+                "abi",
+                "no-vector",
+                "v9",
+                "v9.1",
+                "v9.2",
+                "tuple_flag_a",
+                "tuple_flag_b",
+            },
+        )
 
 
 if __name__ == "__main__":
