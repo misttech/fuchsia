@@ -412,7 +412,10 @@
                 source_name: "fuchsia.component.resolution.Resolver",
                 capability: "protocol",
                 target_monikers: [
-                    "/**",
+                    "/bootstrap/full_resolver",
+                    "/core/test_manager",
+                    "/core/testing/component-framework-tests:**",
+                    "/core/testing/test-arch-tests:**",
                 ],
             },
             {
