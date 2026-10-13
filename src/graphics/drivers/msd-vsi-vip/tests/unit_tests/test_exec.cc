@@ -603,7 +603,8 @@ TEST_F(TestExec, ReleaseMappingOnConnectionTeardown) {
 
   // Queue a released mapping in mappings_to_release_.
   default_connection()->ReleaseBuffer(buffer->platform_buffer());
-  EXPECT_EQ(1u, default_connection()->mappings_to_release().size());
+  // Should have 2 mappings queued for release (1 buffer, 1 page table page).
+  EXPECT_EQ(2u, default_connection()->mappings_to_release().size());
 
   // Destroying the client/connection triggers ~MsdVsiConnection, which submits
   // a MappingReleaseBatch associated with internal_context_.

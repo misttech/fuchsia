@@ -100,16 +100,19 @@ AddressSpace::pte_t* AddressSpace::PageDirectory::GetPageTableEntry(uint32_t pag
   return table->entry(page_table_index);
 }
 
-void AddressSpace::PageDirectory::PageTableUpdated(uint32_t page_directory_index,
-                                                   uint32_t valid_count) {
+std::unique_ptr<magma::PlatformBusMapper::BusMapping> AddressSpace::PageDirectory::PageTableUpdated(
+    uint32_t page_directory_index, uint32_t valid_count) {
   DASSERT(valid_count <= kPageDirectoryEntries);
   DASSERT(page_directory_index < kPageDirectoryEntries);
   valid_counts_[page_directory_index] = valid_count;
   page_tables_[page_directory_index]->Flush();
+  std::unique_ptr<magma::PlatformBusMapper::BusMapping> bus_mapping;
   if (valid_count == 0) {
     *entry(page_directory_index) = kInvalidPde;
+    bus_mapping = page_tables_[page_directory_index]->release_bus_mapping();
     page_tables_[page_directory_index].reset();
   }
+  return bus_mapping;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -186,7 +189,10 @@ bool AddressSpace::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMapp
     *page_table_entry++ = pte;
 
     if (++page_table_index == kPageTableEntries) {
-      root_->PageTableUpdated(page_directory_index, valid_count);
+      auto released_pt_bus_mapping = root_->PageTableUpdated(page_directory_index, valid_count);
+      if (released_pt_bus_mapping) {
+        mappings_to_release_.emplace_back(std::move(released_pt_bus_mapping));
+      }
       page_table_index = 0;
 
       if (++page_directory_index == kPageDirectoryEntries) {
@@ -198,7 +204,10 @@ bool AddressSpace::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMapp
     }
   }
 
-  root_->PageTableUpdated(page_directory_index, valid_count);
+  auto released_pt_bus_mapping = root_->PageTableUpdated(page_directory_index, valid_count);
+  if (released_pt_bus_mapping) {
+    mappings_to_release_.emplace_back(std::move(released_pt_bus_mapping));
+  }
 
   return true;
 }
@@ -241,7 +250,10 @@ bool AddressSpace::ClearLocked(uint64_t addr, uint64_t page_count) {
     page_table_entry++;
 
     if (++page_table_index == kPageTableEntries) {
-      root_->PageTableUpdated(page_directory_index, valid_count);
+      auto released_pt_bus_mapping = root_->PageTableUpdated(page_directory_index, valid_count);
+      if (released_pt_bus_mapping) {
+        mappings_to_release_.emplace_back(std::move(released_pt_bus_mapping));
+      }
       page_table_index = 0;
 
       if (++page_directory_index == kPageDirectoryEntries) {
@@ -253,7 +265,10 @@ bool AddressSpace::ClearLocked(uint64_t addr, uint64_t page_count) {
     }
   }
 
-  root_->PageTableUpdated(page_directory_index, valid_count);
+  auto released_pt_bus_mapping = root_->PageTableUpdated(page_directory_index, valid_count);
+  if (released_pt_bus_mapping) {
+    mappings_to_release_.emplace_back(std::move(released_pt_bus_mapping));
+  }
 
   return true;
 }

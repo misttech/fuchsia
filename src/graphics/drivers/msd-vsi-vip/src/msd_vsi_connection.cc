@@ -104,6 +104,11 @@ void MsdVsiConnection::QueueReleasedMappings(std::vector<std::shared_ptr<GpuMapp
       }
     }
   }
+
+  auto address_space_mappings = address_space_->ExtractPendingReleaseMappings();
+  for (auto& mapping : address_space_mappings) {
+    mappings_to_release_.emplace_back(std::move(mapping));
+  }
 }
 
 bool MsdVsiConnection::ReleaseMapping(magma::PlatformBuffer* buffer, uint64_t gpu_va) {

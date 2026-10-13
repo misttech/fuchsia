@@ -11,6 +11,8 @@
 #include <lib/magma_service/util/address_space.h>
 
 #include <bit>
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "gpu_mapping.h"
@@ -59,6 +61,11 @@ class AddressSpace : public magma::AddressSpace<GpuMapping> {
       return true;
     }
     return false;
+  }
+
+  std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>>
+  ExtractPendingReleaseMappings() {
+    return std::move(mappings_to_release_);
   }
 
  private:
@@ -122,6 +129,10 @@ class AddressSpace : public magma::AddressSpace<GpuMapping> {
     Owner* owner() { return owner_; }
     void Flush() { buffer_->CleanCache(0, buffer_->size(), false); }
 
+    std::unique_ptr<magma::PlatformBusMapper::BusMapping> release_bus_mapping() {
+      return std::move(bus_mapping_);
+    }
+
    private:
     Owner* owner_;
     std::unique_ptr<magma::PlatformBuffer> buffer_;
@@ -164,8 +175,10 @@ class AddressSpace : public magma::AddressSpace<GpuMapping> {
                              uint32_t* valid_count_out);
 
     // Should be called after a page table has been modified; if |valid_count| is
-    // zero, the page table will be removed.
-    void PageTableUpdated(uint32_t page_directory_index, uint32_t valid_count);
+    // zero, the page table will be removed and its BusMapping is returned so it
+    // can be kept alive until the next TLB flush completes.
+    [[nodiscard]] std::unique_ptr<magma::PlatformBusMapper::BusMapping> PageTableUpdated(
+        uint32_t page_directory_index, uint32_t valid_count);
 
     static std::unique_ptr<PageDirectory> Create(Owner* owner);
 
@@ -186,6 +199,7 @@ class AddressSpace : public magma::AddressSpace<GpuMapping> {
   uint32_t page_table_array_slot_;
 
   std::shared_ptr<GpuMapping> ringbuffer_gpu_mapping_;
+  std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>> mappings_to_release_;
 
   friend class TestAddressSpace;
   friend class TestAddressSpace_GarbageCollect_Test;

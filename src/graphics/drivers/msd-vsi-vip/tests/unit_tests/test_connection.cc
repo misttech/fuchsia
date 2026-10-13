@@ -149,7 +149,7 @@ TEST_F(TestMsdVsiConnection, ReleaseBuffer) {
 
   const std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>>& mappings =
       connection_->mappings_to_release();
-  EXPECT_EQ(1u, mappings.size());
+  EXPECT_EQ(2u, mappings.size());
 }
 
 TEST_F(TestMsdVsiConnection, ReleaseBufferWhileMapped) {
@@ -237,8 +237,8 @@ TEST_F(TestMsdVsiConnection, ReleaseMappingOnDestruction) {
 
   connection_->ReleaseBuffer(buffer->platform_buffer());
 
-  // Should have 1 mapping queued for release.
-  EXPECT_EQ(1u, connection_->mappings_to_release().size());
+  // Should have 2 mappings queued for release (1 buffer, 1 page table page).
+  EXPECT_EQ(2u, connection_->mappings_to_release().size());
 
   // Destroy the connection.
   connection_.reset();
