@@ -27,14 +27,14 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-go_library("jsonutil") {
-  sources = [ "jsonutil.go" ]
-  visibility = [ "*" ]
-}
 if (is_host) {
-  go_test("tests") {
-    sources = [ "jsonutil_test.go" ]
-    embed = [ ":jsonutil" ]
-    deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
+  go_library("jsonutil") {
+    sources = [ "jsonutil.go" ]
+    visibility = [
+      ":*",
+      "//src/connectivity/network/testing/conformance/ffx:*",
+      "//src/tests/memory_budget:*",
+      "//tools/*",
+    ]
   }
 }

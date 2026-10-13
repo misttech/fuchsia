@@ -27,11 +27,20 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-go_library("logger") {
-  sources = [ "logger.go" ]
-  deps = [ "//tools/lib/color" ]
-}
-go_test("logger_tests") {
-  sources = [ "logger_test.go" ]
-  embed = [ ":logger" ]
+if (is_host) {
+  go_library("logger") {
+    sources = [ "logger.go" ]
+    visibility = [
+      ":*",
+      "//build/tools/*",
+      "//src/firmware/*",
+      "//src/sys/*",
+      "//src/testing/host-target-testing/*",
+      "//third_party/network-conformance/*",
+      "//tools/*",
+      "//vendor/google/*",
+      "//zircon/tools/*",
+    ]
+    deps = [ "//tools/lib/color" ]
+  }
 }

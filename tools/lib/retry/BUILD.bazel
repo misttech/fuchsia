@@ -3,7 +3,9 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -16,5 +18,21 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/lib/retry",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//src/sys/pkg/lib/repo:__pkg__",
+        "//src/testing/host-target-testing/cli:__pkg__",
+        "//src/testing/host-target-testing/device:__pkg__",
+        "//tools:__subpackages__",
+    ],
+)
+
+host_go_test(
+    name = "retry_tests",
+    srcs = [
+        "backoff_test.go",
+        "retry_test.go",
+    ],
+    embed = [":retry"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
 )

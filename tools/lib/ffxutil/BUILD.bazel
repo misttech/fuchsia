@@ -3,7 +3,9 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -19,7 +21,13 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/lib/ffxutil",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//src/connectivity/network/testing/conformance/ffx:__pkg__",
+        "//src/testing/host-target-testing/ffx:__pkg__",
+        "//src/tests/early-boot-coverage/host-test:__pkg__",
+        "//third_party/network-conformance/orchestrator:__pkg__",
+        "//tools:__subpackages__",
+    ],
     deps = [
         ":constants",
         "//tools/botanist:constants",
@@ -38,5 +46,18 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/lib/ffxutil/constants",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = ["//tools/testing/testrunner:__pkg__"],
+)
+
+host_go_test(
+    name = "ffxutil_tests",
+    srcs = [
+        "ffx_test.go",
+    ],
+    embed = [":ffxutil"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//tools/lib/clock",
+    ],
 )

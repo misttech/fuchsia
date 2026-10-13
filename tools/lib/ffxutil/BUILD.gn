@@ -2,17 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
-
-go_test("tests") {
-  embed = [ ":ffxutil" ]
-  output_name = "ffxutil_tests"
-  deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
-
-  sources = [ "ffx_test.go" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -48,7 +37,14 @@ if (is_host) {
       "repository.go",
       "test.go",
     ]
-    visibility = [ "*" ]
+    visibility = [
+      ":*",
+      "//src/connectivity/network/testing/conformance/ffx:*",
+      "//src/testing/host-target-testing/ffx:*",
+      "//src/tests/early-boot-coverage/host-test:*",
+      "//third_party/network-conformance/orchestrator:*",
+      "//tools/*",
+    ]
     deps = [
       ":constants",
       "//tools/botanist:constants",
@@ -63,6 +59,9 @@ if (is_host) {
 if (is_host) {
   go_library("constants") {
     sources = [ "constants/constants.go" ]
-    visibility = [ "*" ]
+    visibility = [
+      ":*",
+      "//tools/testing/testrunner:*",
+    ]
   }
 }

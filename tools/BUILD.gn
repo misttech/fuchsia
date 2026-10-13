@@ -110,7 +110,6 @@ group("tests_no_e2e") {
     "//tools/integration:tests($host_toolchain)",
     "//tools/jq5:tests($host_toolchain)",
     "//tools/lib:tests($host_toolchain)",
-    "//tools/lib/serial:tests($host_toolchain)",
     "//tools/make-fuchsia-vol:tests",
     "//tools/mdlint:tests",
     "//tools/pbtool:tests($host_toolchain)",

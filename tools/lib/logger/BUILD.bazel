@@ -2,12 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 go_library(
     name = "logger",
@@ -15,12 +15,23 @@ go_library(
         "logger.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/lib/logger",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build/tools:__subpackages__",
+        "//src/firmware:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//src/testing/host-target-testing:__subpackages__",
+        "//third_party/network-conformance:__subpackages__",
+        "//tools:__subpackages__",
+        "//vendor/google:__subpackages__",
+        "//zircon/tools:__subpackages__",
+    ],
     deps = [
         "//tools/lib/color",
     ],
 )
 
-go_test(
+host_go_test(
     name = "logger_tests",
     srcs = [
         "logger_test.go",
@@ -28,4 +39,6 @@ go_test(
     embed = [
         ":logger",
     ],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
 )

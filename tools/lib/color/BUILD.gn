@@ -27,11 +27,20 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-go_library("color") {
-  sources = [ "color.go" ]
-  deps = [ "//tools/lib/isatty" ]
-}
-go_test("color_tests") {
-  sources = [ "color_test.go" ]
-  embed = [ ":color" ]
+if (is_host) {
+  go_library("color") {
+    sources = [ "color.go" ]
+    visibility = [
+      ":*",
+      "//build/tools/*",
+      "//src/firmware/*",
+      "//src/sys/*",
+      "//src/testing/host-target-testing/omaha_tool:*",
+      "//third_party/network-conformance/*",
+      "//tools/*",
+      "//vendor/google/*",
+      "//zircon/tools/*",
+    ]
+    deps = [ "//tools/lib/isatty" ]
+  }
 }

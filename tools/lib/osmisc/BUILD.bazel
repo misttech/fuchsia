@@ -3,7 +3,9 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -15,5 +17,19 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/lib/osmisc",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//src/testing/host-target-testing/packages:__pkg__",
+        "//tools:__subpackages__",
+    ],
+)
+
+host_go_test(
+    name = "osmisc_tests",
+    srcs = [
+        "dir_test.go",
+        "file_test.go",
+    ],
+    embed = [":osmisc"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
 )

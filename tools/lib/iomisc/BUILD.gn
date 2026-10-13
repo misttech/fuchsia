@@ -2,19 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
-
-go_test("tests") {
-  embed = [ ":iomisc" ]
-  output_name = "iomisc_tests"
-
-  sources = [
-    "match_test.go",
-    "reader_test.go",
-  ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -48,7 +35,10 @@ if (is_host) {
       "match.go",
       "reader.go",
     ]
-    visibility = [ "//*" ]
+    visibility = [
+      ":*",
+      "//tools/*",
+    ]
     deps = [ "//tools/lib/logger" ]
   }
 }

@@ -2,15 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
-
-go_test("streams_tests") {
-  embed = [ ":streams" ]
-
-  sources = [ "streams_test.go" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -42,6 +33,9 @@ if (is_host) {
       "doc.go",
       "streams.go",
     ]
-    visibility = [ "//*" ]
+    visibility = [
+      ":*",
+      "//tools/*",
+    ]
   }
 }

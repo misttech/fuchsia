@@ -2,18 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
-
-go_test("cache_tests") {
-  sources = [
-    "cache_test.go",
-    "filecache_test.go",
-  ]
-
-  embed = [ ":cache" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -45,6 +33,9 @@ if (is_host) {
       "cache.go",
       "filecache.go",
     ]
-    visibility = [ "//*" ]
+    visibility = [
+      ":*",
+      "//tools/*",
+    ]
   }
 }
