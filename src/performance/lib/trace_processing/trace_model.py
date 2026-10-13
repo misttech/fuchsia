@@ -167,14 +167,14 @@ class DurationEvent(Event):
     duration: trace_time.TimeDelta | None
     parent: Self | None
     child_durations: list[Self]
-    child_flows: list["FlowEvent"]
+    child_flows: list[FlowEvent]
 
     def __init__(
         self,
         duration: trace_time.TimeDelta | None,
         parent: Self | None,
         child_durations: list[Self],
-        child_flows: list["FlowEvent"],
+        child_flows: list[FlowEvent],
         base: Event,
     ) -> None:
         super().__init__(

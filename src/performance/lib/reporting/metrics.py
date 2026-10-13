@@ -133,7 +133,7 @@ class TestCaseResult:
 
     @staticmethod
     def write_fuchsiaperf_json(
-        results: Collection["TestCaseResult"],
+        results: Collection[TestCaseResult],
         test_suite: str,
         output_path: pathlib.Path,
     ) -> None:

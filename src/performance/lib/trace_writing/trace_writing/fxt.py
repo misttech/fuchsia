@@ -891,7 +891,7 @@ class Builder:
     @classmethod
     def from_json_dict(
         cls, data: dict[str, Any], ticks_per_second: int = 1000000000
-    ) -> "Builder":
+    ) -> Self:
         """Construct a Builder populated from Chrome JSON trace data.
 
         Args:
@@ -1010,7 +1010,7 @@ class Builder:
     @classmethod
     def from_json_string(
         cls, json_str: str, ticks_per_second: int = 1000000000
-    ) -> "Builder":
+    ) -> Self:
         """Construct a Builder from a JSON trace string.
 
         Args:
