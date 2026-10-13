@@ -72,7 +72,7 @@ rust_library(
     version = "0.11.5",
     deps = [
         "//third_party/rust_crates/forks/libc-0.2.189:libc",
-        "//third_party/rust_crates/vendor/bitflags-2.13.0:bitflags",
+        "//third_party/rust_crates/vendor/bitflags-2.13.2:bitflags",
         "//third_party/rust_crates/vendor/inotify-sys-0.1.8:inotify_sys",
     ],
 )

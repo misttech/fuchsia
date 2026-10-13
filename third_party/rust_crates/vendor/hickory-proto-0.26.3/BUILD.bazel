@@ -80,7 +80,7 @@ rust_library(
     }),
     version = "0.26.3",
     deps = [
-        "//third_party/rust_crates/vendor/bitflags-2.13.0:bitflags",
+        "//third_party/rust_crates/vendor/bitflags-2.13.2:bitflags",
         "//third_party/rust_crates/vendor/data-encoding-2.11.1:data_encoding",
         "//third_party/rust_crates/vendor/idna-1.1.0:idna",
         "//third_party/rust_crates/vendor/ipnet-2.11.0:ipnet",

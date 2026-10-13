@@ -81,7 +81,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/ask2patch/memchr",
         "//third_party/rust_crates/forks/libc-0.2.189:libc",
-        "//third_party/rust_crates/vendor/bitflags-2.13.0:bitflags",
+        "//third_party/rust_crates/vendor/bitflags-2.13.2:bitflags",
         "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
         "//third_party/rust_crates/vendor/home-0.5.12:home",
         "//third_party/rust_crates/vendor/log-0.4.29:log",

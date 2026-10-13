@@ -228,11 +228,11 @@ group("bitfield-0.19.5") {
 }
 
 group("bitflags") {
-  public_deps = [ ":bitflags-v2_13_0" ]
+  public_deps = [ ":bitflags-v2_13_2" ]
 }
 
-group("bitflags-2.13.0") {
-  public_deps = [ ":bitflags-v2_13_0" ]
+group("bitflags-2.13.2") {
+  public_deps = [ ":bitflags-v2_13_2" ]
 }
 
 group("blocking") {
@@ -4941,18 +4941,18 @@ rustc_library("bitflags-v1_3_2") {
   applicable_licenses = [ ":bitflags-v1_3_2.license" ]
 }
 
-license("bitflags-v2_13_0.license") {
+license("bitflags-v2_13_2.license") {
   public_package_name = "bitflags"
   license_files = [
-    "//third_party/rust_crates/vendor/bitflags-2.13.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bitflags-2.13.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/bitflags-2.13.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/bitflags-2.13.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("bitflags-v2_13_0") {
+rustc_library("bitflags-v2_13_2") {
   crate_name = "bitflags"
-  source_root = "//third_party/rust_crates/vendor/bitflags-2.13.0/src/lib.rs"
-  output_name = "bitflags-2043246776ae7a71"
+  source_root = "//third_party/rust_crates/vendor/bitflags-2.13.2/src/lib.rs"
+  output_name = "bitflags-199dea9a1aaf3a6f"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -4965,8 +4965,8 @@ rustc_library("bitflags-v2_13_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2043246776ae7a71",
-    "-Cextra-filename=-2043246776ae7a71",
+    "-Cmetadata=199dea9a1aaf3a6f",
+    "-Cextra-filename=-199dea9a1aaf3a6f",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"serde_core\"",
     "--cfg=feature=\"std\"",
@@ -4977,7 +4977,7 @@ rustc_library("bitflags-v2_13_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":bitflags-v2_13_0.license" ]
+  applicable_licenses = [ ":bitflags-v2_13_2.license" ]
 }
 
 license("block-buffer-v0_10_4.license") {
@@ -10938,7 +10938,7 @@ rustc_library("gpt-v4_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":crc-v3_4_0" ]
   deps += [ ":simple-bytes-v0_2_14" ]
   deps += [ ":uuid-v1_23_3" ]
@@ -11397,7 +11397,7 @@ rustc_library("hickory-net-v0_26_3") {
 
   deps = []
   deps += [ ":async-trait-v0_1_92($host_toolchain)" ]
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":data-encoding-v2_11_1" ]
   deps += [ ":futures-channel-v0_3_34" ]
@@ -11454,7 +11454,7 @@ rustc_library("hickory-proto-v0_26_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":data-encoding-v2_11_1" ]
   deps += [ ":idna-v1_1_0" ]
   deps += [ ":ipnet-v2_11_0" ]
@@ -12709,7 +12709,7 @@ rustc_library("inotify-v0_11_5") {
 
   deps = []
   deps += [ ":libc-v0_2_189" ]
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":inotify-sys-v0_1_8" ]
 
   rustenv = []
@@ -14569,7 +14569,7 @@ rustc_library("nix-v0_29_0") {
 
   deps = []
   deps += [ ":libc-v0_2_189" ]
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":memoffset-v0_9_1" ]
 
@@ -14631,7 +14631,7 @@ rustc_library("nix-v0_31_3") {
 
   deps = []
   deps += [ ":libc-v0_2_189" ]
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":memoffset-v0_9_1" ]
 
@@ -14811,7 +14811,7 @@ rustc_library("notify-v8_2_0") {
     deps += [ ":mio-v1_2_1" ]
   }
   if (current_os == "mac") {
-    deps += [ ":bitflags-v2_13_0" ]
+    deps += [ ":bitflags-v2_13_2" ]
     deps += [ ":fsevent-sys-v4_1_0" ]
   }
   if (false) {
@@ -14851,7 +14851,7 @@ rustc_library("notify-types-v2_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
 
   rustenv = []
 
@@ -15561,7 +15561,7 @@ rustc_library("openssl-v0_10_81") {
 
   deps = []
   deps += [ ":libc-v0_2_189" ]
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":foreign-types-v0_3_2" ]
   deps += [ ":openssl-macros-v0_1_1($host_toolchain)" ]
@@ -17072,7 +17072,7 @@ rustc_library("png-v0_18_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":crc32fast-v1_5_0" ]
   deps += [ ":fdeflate-v0_3_7" ]
   deps += [ ":flate2-v1_1_9" ]
@@ -17706,7 +17706,7 @@ rustc_library("proptest-v1_11_0") {
   deps = []
   deps += [ ":bit-set-v0_8_0" ]
   deps += [ ":bit-vec-v0_8_0" ]
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":num-traits-v0_2_19" ]
   deps += [ ":rand-v0_9_4" ]
   deps += [ ":rand_chacha-v0_9_0" ]
@@ -18066,7 +18066,7 @@ rustc_library("pulldown-cmark-v0_13_4") {
 
   deps = []
   deps += [ ":memchr-v2_8_3" ]
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":getopts-v0_2_24" ]
   deps += [ ":pulldown-cmark-escape-v0_11_0" ]
   deps += [ ":serde-v1_0_229" ]
@@ -19987,7 +19987,7 @@ rustc_library("rustix-v1_1_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   if ((current_os == "linux" || false) &&
       (false || false ||
        !(current_os == "linux" && (true || (false || false)) &&
@@ -20334,7 +20334,7 @@ rustc_library("rustyline-v18_0_1") {
   deps = []
   deps += [ ":memchr-v2_8_3" ]
   deps += [ ":libc-v0_2_189" ]
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":home-v0_5_12" ]
   deps += [ ":log-v0_4_29" ]
@@ -23311,7 +23311,7 @@ rustc_library("redox_syscall-v0_5_17") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":bitflags-v2_13_2" ]
 
   rustenv = []
 

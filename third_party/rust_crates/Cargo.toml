@@ -49,7 +49,7 @@ bincode = "1.3.3"
 bit-set = "0.11.1"
 bit-vec = { version = "0.10.1", features = [ "serde" ] }
 bitfield = "0.19.5"
-bitflags = { version = "2.13.0", features = ["serde", "std"] }
+bitflags = { version = "2.13.2", features = ["serde", "std"] }
 blocking = "1.6.2"
 bstr = { version = "1.13.1", default-features = false, features = [ "std" ] }
 bt-bass = { version = "0.0.1", features = ["test-utils"] }
@@ -291,7 +291,7 @@ zstd-safe = "7.2.4"
 # Kernel dependencies
 [target.'cfg(kernel)'.dependencies]
 # keep-sorted start
-bitflags = { version = "2.13.0", default-features = false }
+bitflags = { version = "2.13.2", default-features = false }
 lock_api = { version = "0.4.14", default-features = false }
 num-traits = { version = "0.2.19", default-features = false }
 paste = "1.0.15"
@@ -617,10 +617,10 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 [gn.package.bitflags."1.3.2"]
 reviewed_features = ["default"]
 
-[gn.package.bitflags."2.13.0"]
+[gn.package.bitflags."2.13.2"]
 reviewed_features = [ "serde", "serde_core", "std" ]
 
-[gn.package.bitflags."2.13.0".platform."cfg(kernel)"]
+[gn.package.bitflags."2.13.2".platform."cfg(kernel)"]
 remove_features = [ "std" ]
 
 [gn.package.bssl-macros."0.1.0"]

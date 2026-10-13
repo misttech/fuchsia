@@ -85,7 +85,7 @@ rust_library(
     deps = [
         ":build_script_build",
         "//third_party/rust_crates/forks/libc-0.2.189:libc",
-        "//third_party/rust_crates/vendor/bitflags-2.13.0:bitflags",
+        "//third_party/rust_crates/vendor/bitflags-2.13.2:bitflags",
         "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
         "//third_party/rust_crates/vendor/foreign-types-0.3.2:foreign_types",
         "//third_party/rust_crates/vendor/openssl-sys-0.9.117:openssl_sys",
