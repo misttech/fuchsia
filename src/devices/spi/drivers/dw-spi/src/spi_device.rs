@@ -53,6 +53,7 @@ pub struct DwSpiTiming {
 struct DwSpiDeviceInner {
     mmio: DwSpiRegsBlock<MmioRegion<VmoMemory>>,
     cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
+    gpio_cs_selected: bool,
     interrupt: zx::Interrupt,
     resources: DwSpiResources,
     registered_vmos: HashMap<u32, RegisteredVmo>,
@@ -105,6 +106,7 @@ impl DwSpiDeviceInner {
         Self {
             mmio: DwSpiRegsBlock { mmio },
             cs_gpio,
+            gpio_cs_selected: false,
             interrupt,
             resources,
             registered_vmos: HashMap::new(),
@@ -119,6 +121,12 @@ impl DwSpiDeviceInner {
         for pin_state in &self.resources.pin_states {
             match pin_state.select_state(state).await {
                 Ok(Ok(_)) => {}
+                Ok(Err(Status::NOT_FOUND)) if state != "default" => {
+                    // Non-default pin states (such as "gpio_cs") may only be defined on a subset
+                    // of pin state parents or omitted when the board leaves the CS pin in GPIO
+                    // mode permanently.
+                    debug!("Pin state {state} not found, skipping");
+                }
                 Ok(Err(s)) => {
                     error!("Failed to select pin state {state}: {s}");
                     return Err(s.into());
@@ -181,6 +189,7 @@ impl DwSpiDeviceInner {
         self.init_registers();
 
         self.select_pin_states("default").await?;
+        self.gpio_cs_selected = false;
 
         Ok(())
     }
@@ -369,6 +378,8 @@ impl DwSpiDeviceInner {
 
         let mut rxdata = Vec::<u8>::with_capacity(if rx { size } else { 0 });
 
+        let mut ser_enabled = false;
+
         loop {
             let isr = self.mmio.isr().read();
 
@@ -389,9 +400,15 @@ impl DwSpiDeviceInner {
             let rx_words = self.mmio.rxflr().read().rxtfl() as usize;
 
             assert!(tx_words <= FIFO_SIZE);
-            // Fill the TX FIFO up to FIFO_SIZE - 1. If a byte is already in the TX shift register,
-            // filling up to the maximum could cause an RX FIFO overflow.
-            let tx_free = (FIFO_SIZE - tx_words).saturating_sub(1);
+            // When the target is already enabled (SER != 0), fill the TX FIFO up to FIFO_SIZE - 1.
+            // If a byte is already in the TX shift register, filling up to the maximum could cause
+            // an RX FIFO overflow. Before SER is enabled, the shift register is idle so we can
+            // pre-fill the full FIFO_SIZE in one batch.
+            let tx_free = if ser_enabled {
+                (FIFO_SIZE - tx_words).saturating_sub(1)
+            } else {
+                FIFO_SIZE - tx_words
+            };
 
             debug!("  RX words {rx_words}, TX words {tx_words} (free {tx_free})");
 
@@ -438,6 +455,19 @@ impl DwSpiDeviceInner {
                 debug!("  New IMR: {:#02x}", imr.to_raw());
             });
 
+            if !ser_enabled {
+                // Enable the target only after pre-filling the initial TX FIFO batch. DW APB SSI
+                // starts shifting immediately once SER is non-zero and the TX FIFO is non-empty,
+                // and automatically de-asserts hardware CS if the TX FIFO drains to empty
+                // mid-transfer.
+                self.mmio.ser_mut().write({
+                    let mut ser = registers::Ser::from_raw(0);
+                    ser.set_ser(1);
+                    ser
+                });
+                ser_enabled = true;
+            }
+
             if tx_remaining == 0 && rx_remaining == 0 {
                 break;
             }
@@ -451,20 +481,36 @@ impl DwSpiDeviceInner {
         Ok(rxdata)
     }
 
-    async fn set_cs_state(&self, chip_select: u32, assert: bool) -> Result<(), Status> {
-        if chip_select == 0 {
-            if let Some(cs_gpio) = &self.cs_gpio {
-                let mode = if assert {
-                    fgpio::natural::BufferMode::OutputLow
-                } else {
-                    fgpio::natural::BufferMode::OutputHigh
-                };
-                cs_gpio.set_buffer_mode(mode).wire().await.map_err(|e| {
-                    error!("Failed to toggle CS: {e}");
-                    Status::IO
-                })?;
-            }
+    async fn set_cs_state(
+        &mut self,
+        chip_select: u32,
+        assert: bool,
+        use_gpio_cs: bool,
+    ) -> Result<(), Status> {
+        let Some(cs_gpio) = &self.cs_gpio else {
+            return Ok(());
+        };
+
+        let state = if use_gpio_cs { "gpio_cs" } else { "default" };
+        if use_gpio_cs != self.gpio_cs_selected {
+            self.select_pin_states(state).await.map_err(|_| Status::IO)?;
+            self.gpio_cs_selected = use_gpio_cs;
         }
+
+        if chip_select != 0 || !use_gpio_cs {
+            return Ok(());
+        }
+
+        let mode = if assert {
+            fgpio::natural::BufferMode::OutputLow
+        } else {
+            fgpio::natural::BufferMode::OutputHigh
+        };
+        cs_gpio.set_buffer_mode(mode).wire().await.map_err(|e| {
+            error!("Failed to toggle CS: {e}");
+            Status::IO
+        })?;
+
         Ok(())
     }
 
@@ -513,24 +559,24 @@ impl DwSpiDeviceInner {
             });
         }
 
-        self.set_cs_state(chip_select, true).await?;
+        // Transfers up to FIFO_SIZE on CS 0 are pre-filled completely before SER is written, so
+        // hardware CS stays asserted for the entire transfer without any risk of TX FIFO underrun.
+        // For transfers larger than FIFO_SIZE, switch the CS pin to software GPIO mode to hold CS
+        // low across multiple FIFO refills. For loopback transfers, also switch the CS pin to
+        // software GPIO mode (held OutputHigh) so writing SER = 1 does not assert the physical CS
+        // line on the bus.
+        let use_gpio_cs = size > FIFO_SIZE || enable_loopback;
+        self.set_cs_state(chip_select, true, use_gpio_cs).await?;
 
         // TODO(https://fxbug.dev/529838127): Support DMA transfers for larger sizes.
         // This is a placeholder indicating where DMA support would be added.
         // For now, we only implement PIO.
 
-        // A target must be selected before the transfer can begin.
-        self.mmio.ser_mut().write({
-            let mut ser = registers::Ser::from_raw(0);
-            ser.set_ser(1);
-            ser
-        });
-
         let rxdata = self.exchange_pio_loop(txdata, rx, size);
 
         self.mmio.ser_mut().write(registers::Ser::from_raw(0));
 
-        self.set_cs_state(chip_select, false).await?;
+        self.set_cs_state(chip_select, false, use_gpio_cs).await?;
 
         rxdata
     }
