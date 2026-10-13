@@ -46,6 +46,7 @@ test("mmio-unittest") {
   deps = [
     ":cpp",
     "//sdk/lib/driver/mmio/testing/cpp",
+    "//src/devices/testing/fake-bti",
     "//zircon/system/ulib/zxtest",
   ]
 }

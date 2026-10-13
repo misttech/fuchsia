@@ -5,6 +5,7 @@
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
+#include <lib/fake-bti/bti.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -44,6 +45,14 @@ size_t VmoNumMappings(const zx::vmo& vmo) {
   zx_status_t status = vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr);
   ZX_ASSERT_MSG((status == ZX_OK), "getting vmo info failed: %s", zx_status_get_string(status));
   return info.num_mappings;
+}
+
+size_t PinnedVmoCount(const zx::bti& bti) {
+  size_t count = 0;
+  zx_status_t status = fake_bti_get_pinned_vmos(bti.get(), nullptr, 0, &count);
+  ZX_ASSERT_MSG((status == ZX_OK), "getting pinned vmos count failed: %s",
+                zx_status_get_string(status));
+  return count;
 }
 
 TEST(MmioBuffer, CInit) {
@@ -233,6 +242,41 @@ TEST(MmioBuffer, TestMmioBufferWithVmo) {
 
   buffer.Write32(test_val, offset);
   EXPECT_EQ(view.Read32(offset), test_val);
+}
+
+TEST(MmioPinnedBuffer, MoveAssignment) {
+  zx::bti bti;
+  ASSERT_OK(fake_bti_create(bti.reset_and_get_address()));
+
+  const size_t page_size = zx_system_get_page_size();
+  zx::vmo vmo = CreateVmo(page_size);
+  zx::result<fdf::MmioBuffer> buffer =
+      fdf::MmioBuffer::Create(0, page_size, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
+  ASSERT_OK(buffer.status_value());
+
+  zx::result<fdf::MmioPinnedBuffer> pinned1 = buffer->Pin(bti);
+  ASSERT_OK(pinned1.status_value());
+  EXPECT_EQ(1u, PinnedVmoCount(bti));
+  EXPECT_EQ(pinned1->get_paddr(), FAKE_BTI_PHYS_ADDR);
+
+  // Self-move-assignment for MmioPinnedBuffer: state remains valid.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wself-move"
+  *pinned1 = std::move(*pinned1);
+#pragma clang diagnostic pop
+  EXPECT_EQ(pinned1->get_paddr(), FAKE_BTI_PHYS_ADDR);
+  EXPECT_EQ(1u, PinnedVmoCount(bti));
+
+  zx::result<fdf::MmioPinnedBuffer> pinned2 = buffer->Pin(bti);
+  ASSERT_OK(pinned2.status_value());
+  EXPECT_EQ(2u, PinnedVmoCount(bti));
+
+  // Move-assigning one pinned buffer over another unpins the destination.
+  *pinned1 = std::move(*pinned2);
+  EXPECT_EQ(1u, PinnedVmoCount(bti));
+
+  pinned1->reset();
+  EXPECT_EQ(0u, PinnedVmoCount(bti));
 }
 
 TEST(MmioBuffer, SetMmioBufferOps) {

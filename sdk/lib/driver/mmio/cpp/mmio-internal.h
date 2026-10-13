@@ -27,8 +27,9 @@
 namespace fdf::internal {
 
 template <typename T>
-static MMIO_PTR volatile T* GetAddr(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
-  ZX_DEBUG_ASSERT(offs + sizeof(T) <= mmio.size);
+static MMIO_PTR volatile T* GetAddr(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs,
+                                    size_t access_size = sizeof(T)) {
+  ZX_DEBUG_ASSERT(offs <= mmio.size && access_size <= mmio.size - offs);
   const uintptr_t ptr = reinterpret_cast<uintptr_t>(mmio.vaddr);
   ZX_DEBUG_ASSERT(ptr);
   return reinterpret_cast<MMIO_PTR T*>(ptr + offs);
@@ -52,8 +53,8 @@ static uint64_t Read64(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs
 
 static void ReadBuffer(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs, void* buffer,
                        size_t size) {
-  ZX_DEBUG_ASSERT(offs + size <= mmio.size);
-  return MmioReadBuffer(buffer, GetAddr<uint64_t>(ctx, mmio, offs), size);
+  ZX_DEBUG_ASSERT(offs <= mmio.size && size <= mmio.size - offs);
+  MmioReadBuffer(buffer, GetAddr<uint8_t>(ctx, mmio, offs, size), size);
 }
 
 static void Write8(const void* ctx, const mmio_buffer_t& mmio, uint8_t val, zx_off_t offs) {
@@ -78,8 +79,8 @@ static void Write64(const void* ctx, const mmio_buffer_t& mmio, uint64_t val, zx
 
 static void WriteBuffer(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs,
                         const void* buffer, size_t size) {
-  ZX_DEBUG_ASSERT(offs + size <= mmio.size);
-  MmioWriteBuffer(GetAddr<uint64_t>(ctx, mmio, offs), buffer, size);
+  ZX_DEBUG_ASSERT(offs <= mmio.size && size <= mmio.size - offs);
+  MmioWriteBuffer(GetAddr<uint8_t>(ctx, mmio, offs, size), buffer, size);
   mmio_hw_mb();
 }
 

@@ -50,7 +50,10 @@ class MmioPinnedBuffer {
   MmioPinnedBuffer(MmioPinnedBuffer&& other) { transfer(std::move(other)); }
 
   MmioPinnedBuffer& operator=(MmioPinnedBuffer&& other) {
-    transfer(std::move(other));
+    if (this != &other) {
+      reset();
+      transfer(std::move(other));
+    }
     return *this;
   }
 

@@ -347,7 +347,7 @@ class MmioBuffer {
   // when using this operation and must only be used with devices where arbitrary access widths are
   // supported.
   void ReadBuffer(zx_off_t offs, void* buffer, size_t size) const {
-    return ops_->ReadBuffer(ctx_, mmio_, offs, buffer, size);
+    ops_->ReadBuffer(ctx_, mmio_, offs, buffer, size);
   }
 
   void Write8(uint8_t val, zx_off_t offs) const { ops_->Write8(ctx_, mmio_, val, offs); }
