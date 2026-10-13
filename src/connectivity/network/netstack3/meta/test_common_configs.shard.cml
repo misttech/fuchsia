@@ -38,13 +38,6 @@
             default: 16777216,
         },
         {
-            config: "fuchsia.netstack3.TcpGroEnabled",
-            key: "tcp_gro_enabled",
-            type: "bool",
-            availability: "transitional",
-            default: false,
-        },
-        {
             config: "fuchsia.power.SuspendEnabled",
             key: "suspend_enabled",
             type: "bool",
