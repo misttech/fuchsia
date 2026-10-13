@@ -191,8 +191,13 @@ def parse_bazel_targets(bazel_path):
         binary_ref = None
         pkg_name = None
         unit_tests = False
+        host_only = False
         unskipped_test_attrs = []
         for kw in call.keywords:
+            if kw.arg == "target_compatible_with":
+                tcw_seg = ast.get_source_segment(text, kw.value) or ""
+                if "HOST_OS_CONSTRAINTS" in tcw_seg or "HOST_CONSTRAINTS" in tcw_seg:
+                    host_only = True
             if kw.arg in UNIT_TEST_ATTRS and not has_skip_comment(lines, kw.lineno):
                 val = kw.value
                 empty = (isinstance(val, ast.Constant) and val.value in (None, False, "none")) or (
@@ -232,6 +237,7 @@ def parse_bazel_targets(bazel_path):
             "binary_ref": binary_ref,
             "package_name": pkg_name or tname,
             "unit_tests": unit_tests,
+            "host_only": host_only,
             "unskipped_test_attrs": unskipped_test_attrs,
         })
     return targets
@@ -541,7 +547,8 @@ for pkg_dir in sorted(candidate_dirs):
     if gn_info and FX_TEST_AVAILABLE:
         bazel_test_pkg_names = {t["package_name"] for t in fx_pkgs}
         bazel_rules = {t["name"]: t["rule"] for t in bazel_targets}
-        rust_unit_tests = {t["name"] + "_test" for t in bazel_targets if t["unit_tests"]}
+        bazel_host_only = {t["name"] for t in bazel_targets if t.get("host_only")}
+        rust_unit_tests = {t["name"] + "_test" for t in bazel_targets if t["unit_tests"] and not t.get("host_only")}
         third_party_gn_labels = {
             "//third_party/googletest",
             "//third_party/googletest:gtest",
@@ -581,10 +588,14 @@ for pkg_dir in sorted(candidate_dirs):
             name = label[1:]
             if name in rust_unit_tests:
                 return "rust"
-            if name.endswith("_test") and bazel_rules.get(name[: -len("_test")], "") in RUST_UNIT_TEST_OWNERS:
-                return "rust"
+            if name.endswith("_test"):
+                base_n = name[: -len("_test")]
+                if bazel_rules.get(base_n, "") in RUST_UNIT_TEST_OWNERS:
+                    return None if base_n in bazel_host_only else "rust"
             rule = bazel_rules.get(name)
             if rule:
+                if name in bazel_host_only:
+                    return None
                 if rule.startswith(("rust", "rustc")):
                     return "rust"
                 return "cc" if rule in CC_TEST_BAZEL_RULES else None
