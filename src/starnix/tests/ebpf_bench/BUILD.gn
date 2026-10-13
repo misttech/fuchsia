@@ -64,12 +64,6 @@ fuchsia_component_perf_test("ebpf_benchmark") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 rustc_binary("bin") {
   testonly = true
   sources = [ "src/main.rs" ]

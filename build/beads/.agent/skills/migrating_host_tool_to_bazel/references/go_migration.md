@@ -114,7 +114,7 @@ Bazel enforces strict dependency checking for Go compile steps.
 - **Rule:** Set `install_host_tool = true` in the `bazel_host_tool` target only if `install_host_tools()` was present in GN.
 
 ### 6. Improper `BUILD.gn` Deletion & `bazel2gn` Handling
-- **Pitfall:** Deleting `BUILD.gn` when unmigrated or externally referenced GN targets still remain, OR retaining `verify_bazel2gn` targets when `BUILD.gn` has been deleted.
+- **Pitfall:** Deleting `BUILD.gn` when unmigrated or externally referenced GN targets still remain.
 - **Rule:**
   - If all targets in original `BUILD.gn` are migrated and not referenced by targets in other GN build file (and not in `host_labels`): omit `# @bazel2gn:skip`.
   - If any migrated target in `BUILD.gn` is referenced by targets in other GN build files: add `# @bazel2gn:skip` before the binary in `BUILD.bazel`, and sync remaining targets with `bazel2gn`.

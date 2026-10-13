@@ -15,7 +15,7 @@ set -euo pipefail
 # 7. Multi-domain catch-all umbrella wildcards ('//src/lib:__subpackages__', '//sdk/lib:__subpackages__', '//src/testing:__subpackages__', '//src/tests:__subpackages__')
 # 8. Cross-area depth-2 wildcards ('//src/<area>:__subpackages__') on non-global targets outside //src/<area>
 # 9. Overbroad depth >= 3 ':__subpackages__' wildcards wider than the Lowest Common Ancestor (LCA) of actual callers on non-global targets
-# 10. False-positive rdeps from visibility allowlists (visibility.gni / visibility = [...]) or GN-only targets (:verify_bazel2gn, :tests, :benchmarks)
+# 10. False-positive rdeps from visibility allowlists (visibility.gni / visibility = [...]) or GN-only targets (:tests, :benchmarks)
 # 11. Uncovered callers: a package whose BUILD.gn/BUILD.bazel depends on the target, or on a generated
 #     '<target>_<suffix>' sub-target (e.g. fidl_library bindings '<fidl>_rust', '<fidl>_cpp'), that no
 #     visibility entry covers. References to generated sub-targets count as rdeps of the owning target.
@@ -353,8 +353,8 @@ def owning_bazel_target(sub, bazel_targets):
 def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map):
     default_target = os.path.basename(pkg_path)
     gn_file = os.path.join(workdir, pkg_path, "BUILD.gn")
-    gn_only_targets = {"verify_bazel2gn", "tests", "benchmarks"}
-    gn_nonconvertible_targets = {"verify_bazel2gn", "tests", "benchmarks"}
+    gn_only_targets = {"tests", "benchmarks"}
+    gn_nonconvertible_targets = {"tests", "benchmarks"}
     if os.path.isfile(gn_file):
         try:
             with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -939,7 +939,7 @@ for rel_path in sorted(candidate_files):
                             "severity": "error",
                             "file": rel_path,
                             "line": lineno,
-                            "message": f"Target '{target_name}' grants visibility to '{val}', but '//{caller_pkg}' does not depend on Bazel target '{target_name}' (e.g. only references :verify_bazel2gn, :tests, or :benchmarks).",
+                            "message": f"Target '{target_name}' grants visibility to '{val}', but '//{caller_pkg}' does not depend on Bazel target '{target_name}' (e.g. only references :tests or :benchmarks).",
                             "remediation": f"Remove '{val}' from visibility."
                         })
 

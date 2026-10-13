@@ -46,12 +46,6 @@ export_fuchsia_package_to_bazel("adb_proxy_bazel_inputs") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 rustc_library("server") {
   sources = [ "src/server.rs" ]
   source_root = "src/server.rs"

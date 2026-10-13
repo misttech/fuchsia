@@ -138,7 +138,7 @@ translate tests, and a Bazel test reaches `tests.json` (`fx test`, CQ) only thro
   `target_tests` only `fx_test`s, `host_tests` only host tests (`:<name>_test` of
   `with_unit_tests = "host"`/`"both"`, never `($host_toolchain)`); list it in `group("tests")`.
   A package whose remaining GN content is only `bazel_test_suite`/`group("tests")` gets no
-  sentinel, no bazel2gn run and no `verify_bazel2gn`.
+  sentinel and no bazel2gn run.
 - Only when Bazel cannot express the test yet (`test_specs` environments or timeouts, `test_type`
   or custom realms, subpackages, `bootfs_test`, Ninja-generated inputs) keep that one test
   hand-written in GN, above the sentinel, depending on the generated library; name the reason in

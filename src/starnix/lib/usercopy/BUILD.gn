@@ -59,12 +59,6 @@ fuchsia_test_package("starnix-usercopy-unittests") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 static_library("usercopy_cpp_reference_routines") {
   sources = [
     "hermetic_common.h",

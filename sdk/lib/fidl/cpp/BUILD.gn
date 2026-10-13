@@ -33,12 +33,6 @@ config("cpp_base.headers") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 sdk_source_set("cpp_base") {
   sources = [
     "natural_coding_traits.cc",

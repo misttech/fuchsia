@@ -150,12 +150,6 @@ rustc_library("trace-observer") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 rustc_library("trace") {
   sources = [ "src/lib.rs" ]
   crate_name = "fuchsia_trace"

@@ -31,12 +31,6 @@ group("magma_params") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 rustc_library("kgsl_magma_params") {
   sources = [
     "kgsl_magma_params.rs",

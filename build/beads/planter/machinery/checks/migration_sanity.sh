@@ -868,7 +868,7 @@ for pkg_dir in sorted(candidate_dirs):
                     f"which `bazel2gn` does not convert, but '{gn_rel}' has `## BAZEL2GN SENTINEL`."
                 ),
                 "remediation": (
-                    f"Remove `## BAZEL2GN SENTINEL` and `verify_bazel2gn` from '{gn_rel}', leaving only the GN-only test/library targets in "
+                    f"Remove `## BAZEL2GN SENTINEL` from '{gn_rel}', leaving only the GN-only test/library targets in "
                     f"'{gn_rel}' (or delete '{gn_rel}' if no GN targets remain)."
                 ),
             })

@@ -27,18 +27,12 @@ import (
 
 var (
 	gnBin         = flag.String("gn_bin", "", "Path to the GN binary.")
-	buildifierBin = flag.String("buildifier_bin", "", "Path to the buildifier binary. If provided, formats the input BUILD.bazel file before parsing.")
-	checkOnly     = flag.Bool("check_only", false, "When true, compare generated GN content with the input GN file without writing to it")
+	buildifierBin = flag.String("buildifier_bin", "", "Path to the buildifier binary.")
+	checkOnly     = flag.Bool("check_only", false, "When true, compare generated GN content with existing BUILD.gn files without writing to them.")
 
-	// Single mode flags
-	bazelInputPath = flag.String("bazel_input_path", "", "[Single-file mode] Path to read the BUILD.bazel file from.")
-	gnOutputPath   = flag.String("gn_output_path", "", "[Single-file mode] Path to output the converted GN targets to.")
-	diffOutputPath = flag.String("diff_output_path", "", "[Single-file mode] Path to write the diff to, only useful when checkOnly is true")
-
-	// Batch mode flags
-	directoryList = flag.String("directory_list", "", "[Batch mode] Path to a file containing a list of directories to sync, directory paths are relative to --fuchsia_dir.")
-	fuchsiaDir    = flag.String("fuchsia_dir", "", "[Batch mode] Path to the Fuchsia root directory.")
-	workers       = flag.Int("workers", runtime.NumCPU(), "[Batch mode] Number of parallel workers. Defaults to runtime.NumCPU().")
+	directoryList = flag.String("directory_list", "", "Path to a file containing a list of directories to sync, directory paths are relative to --fuchsia_dir.")
+	fuchsiaDir    = flag.String("fuchsia_dir", "", "Path to the Fuchsia root directory.")
+	workers       = flag.Int("workers", runtime.NumCPU(), "Number of parallel workers. Defaults to runtime.NumCPU().")
 )
 
 // commonFileHeader is the header to add to the top of every BUILD.gn file
@@ -67,12 +61,6 @@ const (
 # rerun bazel2gn.
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
-
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
 `
 
 	// LINT.IfChange(bazel2gn_output)
@@ -100,77 +88,45 @@ func main() {
 		log.Fatalf("--buildifier_bin is required, see --help")
 	}
 
-	if *diffOutputPath != "" && !*checkOnly {
-		log.Fatalf("--diff_output_path is set to %s, but --check_only is not set", *diffOutputPath)
+	if *fuchsiaDir == "" {
+		log.Fatalf("--fuchsia_dir is required, see --help")
 	}
 
-	// Batch mode is selected when --directory_list or --fuchsia_dir is set. If
-	// --directory_list is not set, the directories to sync are discovered by
+	// If --directory_list is not set, the directories to sync are discovered by
 	// searching --fuchsia_dir for BUILD.gn files containing the bazel2gn
 	// sentinel.
-	isBatch := *directoryList != "" || *fuchsiaDir != ""
-	if isBatch {
-		if *bazelInputPath != "" || *gnOutputPath != "" {
-			log.Fatalf("Cannot specify both batch mode (--directory_list or --fuchsia_dir) and single-file mode (--bazel_input_path or --gn_output_path), see --help")
-		}
-		// This is racy in batch mode (multiple goroutines writing to the same file), so we don't
-		// support it for simplicity.
-		if *diffOutputPath != "" {
-			log.Fatalf("--diff_output_path is not supported in batch mode")
-		}
-		// Paths in --directory_list are relative to --fuchsia_dir.
-		if *fuchsiaDir == "" {
-			log.Fatalf("--fuchsia_dir is required when --directory_list is set, see --help")
-		}
+	var dirs []string
+	var err error
+	if *directoryList != "" {
+		dirs, err = readDirectoryList(*directoryList)
 	} else {
-		if *bazelInputPath == "" {
-			log.Fatalf("--bazel_input_path is required in single-file mode, see --help")
-		}
-		if *gnOutputPath == "" {
-			log.Fatalf("--gn_output_path is required in single-file mode, see --help")
-		}
+		dirs, err = discoverSentinelDirectories(*fuchsiaDir)
+	}
+	if err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	commonParams := syncParams{
-		buildifierBin:  *buildifierBin,
-		gnBin:          *gnBin,
-		checkOnly:      *checkOnly,
-		diffOutputPath: *diffOutputPath,
-		log:            log,
+		buildifierBin: *buildifierBin,
+		gnBin:         *gnBin,
+		checkOnly:     *checkOnly,
+		log:           log,
 	}
 
-	if isBatch {
-		var dirs []string
-		var err error
-		if *directoryList != "" {
-			dirs, err = readDirectoryList(*directoryList)
-		} else {
-			dirs, err = discoverSentinelDirectories(*fuchsiaDir)
-		}
-		if err != nil {
-			log.Fatalf("%v", err)
-		}
-
-		if err := runBatch(context.Background(), dirs, *fuchsiaDir, *workers, commonParams); err != nil {
-			log.Fatalf("%v", err)
-		}
-	} else {
-		if err := syncDirectory(context.Background(), *bazelInputPath, *gnOutputPath, commonParams); err != nil {
-			log.Fatalf("Failed to sync: %v", err)
-		}
+	if err := runBatch(context.Background(), dirs, *fuchsiaDir, *workers, commonParams); err != nil {
+		log.Fatalf("%v", err)
 	}
 }
 
 type syncParams struct {
 	// relDir is the directory relative to the Fuchsia root, used to suggest a
-	// fix command in check-only mode, or empty if unknown.
+	// fix command in check-only mode.
 	relDir string
 
-	buildifierBin  string
-	gnBin          string
-	checkOnly      bool
-	diffOutputPath string
-	log            *logger.Logger
+	buildifierBin string
+	gnBin         string
+	checkOnly     bool
+	log           *logger.Logger
 }
 
 func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath string, p syncParams) error {
@@ -241,13 +197,9 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 	diff := cmp.Diff(string(actual), finalContent)
 
 	if p.checkOnly {
-		diffPrintout := ""
 		if diff != "" {
-			fixCmd := "fx bazel2gn"
-			if p.relDir != "" {
-				fixCmd += " -d " + p.relDir
-			}
-			diffPrintout = fmt.Sprintf(`
+			fixCmd := "fx bazel2gn -d " + p.relDir
+			diffPrintout := fmt.Sprintf(`
 The following BUILD files are not in sync:
 
   - %s
@@ -261,13 +213,6 @@ Diff of GN targets (-actual, +expected):
 
 %s`,
 				bazelInputPath, gnOutputPath, fixCmd, diff)
-		}
-		if p.diffOutputPath != "" {
-			if err := writeDiffOutput(p.diffOutputPath, diffPrintout); err != nil {
-				return fmt.Errorf("writing diff output to %s: %v", p.diffOutputPath, err)
-			}
-		}
-		if diffPrintout != "" {
 			return errors.New(outOfSyncMessage + diffPrintout)
 		}
 	} else {
@@ -426,18 +371,6 @@ func runBatch(ctx context.Context, dirs []string, fuchsiaDir string, workers int
 			sb.WriteString(fmt.Sprintf("%s%s: %v\n", batchErrorPrefix, e.dir, e.err))
 		}
 		return errors.New(sb.String())
-	}
-	return nil
-}
-
-func writeDiffOutput(path string, content string) error {
-	diffOut, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
-	if err != nil {
-		return fmt.Errorf("opening %s for writing: %v", path, err)
-	}
-	defer diffOut.Close()
-	if _, err := io.WriteString(diffOut, content); err != nil {
-		return fmt.Errorf("writing diff to %s: %v", path, err)
 	}
 	return nil
 }

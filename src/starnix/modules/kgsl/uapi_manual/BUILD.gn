@@ -56,12 +56,6 @@ golden_files("check_golden") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 if (is_host) {
   rustc_binary("kgsl_codegen") {
     sources = [ "main.rs" ]

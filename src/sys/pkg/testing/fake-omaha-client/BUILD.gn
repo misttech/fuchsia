@@ -34,12 +34,6 @@ group("fake-omaha-client-host") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 if (is_host) {
   sdk_rustc_binary_host_tool("fake-omaha-client") {
     sources = [ "src/main.rs" ]

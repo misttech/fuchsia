@@ -33,12 +33,6 @@ group("tests") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 rustc_library("fidl_table_validation") {
   sources = [ "src/lib.rs" ]
   edition = "2024"

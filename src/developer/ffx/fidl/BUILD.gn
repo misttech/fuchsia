@@ -32,12 +32,6 @@ assert(is_host || is_fidl_toolchain,
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 fidl("fuchsia.developer.ffx") {
   sources = [
     "echo.fidl",

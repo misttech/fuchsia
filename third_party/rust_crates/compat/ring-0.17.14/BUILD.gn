@@ -58,12 +58,6 @@ config("ring-config") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 COMMON_SRCS = [
   "//third_party/rust_crates/vendor/ring-0.17.14/crypto/curve25519/curve25519.c",
   "//third_party/rust_crates/vendor/ring-0.17.14/crypto/fipsmodule/aes/aes_nohw.c",

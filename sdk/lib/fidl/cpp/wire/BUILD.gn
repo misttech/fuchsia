@@ -33,12 +33,6 @@ config("include") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-# A self-verification target for generated content in this file.
-if (is_host) {
-  verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
 wavl_tree_headers = [
   "include/lib/fidl/cpp/wire/internal/intrusive_container/node_utils.h",
   "include/lib/fidl/cpp/wire/internal/intrusive_container/container_utils.h",

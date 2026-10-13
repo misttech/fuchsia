@@ -9,7 +9,7 @@ set -euo pipefail
 # of a target package directory while filtering out:
 # 1. References inside visibility = [...] or visibility.gni allowlists
 # 2. Substring prefix collisions with sibling packages (e.g. //a/b-foo or //a/b/subpkg)
-# 3. References to GN-only targets above #LOCAL_BAZEL_BUILD_SENTINEL or bazel2gn verification targets (:verify_bazel2gn, :tests, :benchmarks)
+# 3. References to GN-only targets above #LOCAL_BAZEL_BUILD_SENTINEL (:tests, :benchmarks)
 # Also detects relative GN label references from ancestor BUILD.gn files and computes deterministic,
 # tiered Bazel visibility lists per target:
 # - Tier 1 (Narrow / Subsystem-Scoped, <= 15 entries): exact :__pkg__ and depth >= 3 LCA :__subpackages__
@@ -123,8 +123,8 @@ GN_PACKAGE_TEMPLATES = {
     "fuchsia_package_with_single_component",
 }
 
-gn_only_targets = {"verify_bazel2gn", "tests", "benchmarks"}
-gn_nonconvertible_targets = {"verify_bazel2gn", "tests", "benchmarks"}
+gn_only_targets = {"tests", "benchmarks"}
+gn_nonconvertible_targets = {"tests", "benchmarks"}
 if os.path.isfile(gn_file):
     try:
         with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
