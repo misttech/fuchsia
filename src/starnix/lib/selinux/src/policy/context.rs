@@ -12,7 +12,7 @@ use super::traits::{Parse, Serialize, Validate};
 use super::{CategoryId, CategorySet, RoleId, SensitivityId, TypeId, UserId};
 
 /// Security level in MLS (Multi-Level Security), consisting of a sensitivity and a set of categories.
-#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Parse, Serialize, Validate)]
 pub struct MlsLevel {
     sensitivity: SensitivityId,
     categories: CategorySet,
@@ -61,7 +61,7 @@ impl MlsLevel {
 }
 
 /// Security range in MLS, consisting of a low level and an optional high level.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MlsRange {
     low: MlsLevel,
     high: Option<MlsLevel>,
@@ -140,7 +140,7 @@ impl MlsRange {
 }
 
 /// Security context containing user, role, type, and MLS range.
-#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Parse, Serialize, Validate)]
 pub struct Context {
     user: UserId,
     role: RoleId,

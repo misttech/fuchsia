@@ -310,7 +310,7 @@ impl<T> Validate for PhantomData<T> {
 
 /// Standard policy array container, storing elements in a heap-allocated slice.
 /// Prefixed by a 32-bit count field in the binary policy format.
-#[derive(Debug, Clone, PartialEq, Eq, Validate)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Validate)]
 pub struct Array<T> {
     elements: Box<[T]>,
 }

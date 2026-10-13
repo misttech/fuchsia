@@ -19,7 +19,7 @@ use thiserror::Error;
 ///
 /// Security contexts are configured by userspace atop Starnix, and mapped to
 /// [`SecurityId`]s for internal use in Starnix.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SecurityContext {
     inner: Context,
 }

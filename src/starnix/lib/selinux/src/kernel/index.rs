@@ -13,7 +13,6 @@ use crate::policy::{
 
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::Arc;
 use strum::VariantArray as _;
 
 /// Array of [`PermissionId`] values for each of a kernel security class' permissions.
@@ -34,7 +33,7 @@ pub(crate) struct PolicyIndex {
     /// Index mapping kernel class permissions to their policy-specific [`AccessVector`] bit index.
     permissions: [KernelPermissionIdsArray; KernelClass::VARIANTS.len()],
     /// Parsed binary policy.
-    policy: Arc<Policy>,
+    policy: Policy,
 }
 
 impl PolicyIndex {
@@ -44,7 +43,7 @@ impl PolicyIndex {
     /// The policy's `handle_unknown()` configuration determines whether the policy can be loaded
     /// even if it omits classes or permissions expected by the kernel, and whether to allow or
     /// deny those permissions if so.
-    pub fn new(policy: Arc<Policy>) -> Result<Self, anyhow::Error> {
+    pub fn new(policy: Policy) -> Result<Self, anyhow::Error> {
         let policy_classes = policy.classes();
 
         let mut classes = HashMap::with_capacity(KernelClass::VARIANTS.len());

@@ -27,7 +27,7 @@ const fn node_bit_index(index: u32) -> u32 {
 }
 
 /// Binary map item in the extensible bitmap.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Parse, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Parse, Serialize)]
 struct BinaryMapItem {
     start_bit: u32,
     map: MapNode,
@@ -60,7 +60,7 @@ struct BinaryExtensibleBitmapMetadata {
     high_bit: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ExtensibleBitmap {
     items: Array<BinaryMapItem>,
 }
@@ -403,7 +403,7 @@ impl<'a> Iterator for BitIter<'a> {
 ///
 /// If `WITH_ID_ZERO` is `false` (default), the zeroth bit of the bitmap corresponds to
 /// identifier value one. If `true` (including a slot for ID 0), the first bit (index 1) corresponds to identifier value one.
-#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Parse, Serialize)]
 pub struct IdSet<T: PolicyId, const WITH_ID_ZERO: bool = false> {
     bitmap: ExtensibleBitmap,
     _phantom: PhantomData<T>,
