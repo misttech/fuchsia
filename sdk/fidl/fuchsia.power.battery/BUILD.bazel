@@ -2,30 +2,28 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load(
-    "@rules_fuchsia//fuchsia:defs.bzl",
-    "fuchsia_fidl_library",
-)
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
-fuchsia_fidl_library(
+fidl_library(
     name = "fuchsia.power.battery",
     srcs = [
         "battery.fidl",
     ],
-    cc_bindings = [
-        "cpp",
-        "cpp_wire",
-        "cpp_driver_wire",
-        "cpp_driver",
+    visibility = [
+        "//sdk/fidl:__subpackages__",
+        "//src/connectivity:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/diagnostics:__subpackages__",
+        "//src/power:__subpackages__",
+        "//src/starnix:__subpackages__",
+        "//src/storage:__subpackages__",
+        "//vendor/google:__subpackages__",
     ],
-    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
-        "@fuchsia_sdk//fidl/fuchsia.power.system",
-        "@fuchsia_sdk//fidl/zx",
+        "//sdk/fidl/fuchsia.power.system",
+        "//zircon/vdso/zx",
     ],
 )

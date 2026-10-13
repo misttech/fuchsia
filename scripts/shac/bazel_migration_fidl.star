@@ -538,6 +538,10 @@ def _check_visibility(ctx, path, target, bazel_vis, gn_vis):
     if bazel_vis and gn_vis:
         mapped_gn_visibility = []
         for v in gn_vis:
+            # bazel2gn's ensureSamePackageVisibility adds ":*" to restricted GN
+            # visibility lists because same-package visibility is implicit in Bazel.
+            if v == ":*" and len(gn_vis) > 1 and "//visibility:private" not in bazel_vis:
+                continue
             mapped_gn_visibility.append(_map_gn_visibility_to_bazel(v))
 
         if sorted(bazel_vis) != sorted(mapped_gn_visibility):
@@ -586,7 +590,6 @@ _BAZEL_BUILD_PATHS_TO_IGNORE = [
     "sdk/fidl/fuchsia.hardware.power.stats/BUILD.bazel",
     "sdk/fidl/fuchsia.hardware.qcom.hvdcpopti/BUILD.bazel",
     "sdk/fidl/fuchsia.hardware.sockettunnel/BUILD.bazel",
-    "sdk/fidl/fuchsia.power.battery/BUILD.bazel",
 
     # TODO(https://fxbug.dev/454449781): Enable this check when bazel2gn supports zither libraries.
     "sdk/fidl/zbi/BUILD.bazel",
