@@ -267,7 +267,7 @@
              path="prebuilt/third_party/fonts"/>
     <!--   ICU time zone resource files -->
     <package name="fuchsia/third_party/tzres"
-             version="version:2026a"
+             version="version:2026e"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/tzres"/>
     <!--   IANA Time Zone DB -->
