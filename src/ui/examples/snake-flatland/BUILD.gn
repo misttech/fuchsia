@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/rust/rustc_binary.gni")
+
+rustc_binary("bin") {
+  output_name = "snake-flatland"
+  with_unit_tests = true
+  version = "0.1.0"
+  edition = "2024"
+  source_root = "src/main.rs"
+  sources = [
+    "src/game.rs",
+    "src/internal_message.rs",
+    "src/keyboard.rs",
+    "src/main.rs",
+    "src/mouse.rs",
+    "src/scene.rs",
+    "src/touch.rs",
+  ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
+    "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+    "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+    "//src/lib/async-utils",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/ui/fuchsia-scenic",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+fuchsia_component("snake-flatland") {
+  component_name = "snake-flatland"
+  manifest = "meta/snake-flatland.cml"
+  deps = [ ":bin" ]
+}
+
+fuchsia_unittest_package("snake-flatland-tests") {
+  deps = [ ":bin_test" ]
+}

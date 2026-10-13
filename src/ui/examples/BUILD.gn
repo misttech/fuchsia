@@ -14,7 +14,10 @@ group("examples") {
 
 group("tests") {
   testonly = true
-  public_deps = [ "flatland-rainbow:flatland-rainbow-tests" ]
+  public_deps = [
+    "flatland-rainbow:flatland-rainbow-tests",
+    "snake-flatland:snake-flatland-tests",
+  ]
 }
 
 fuchsia_package("flatland-examples") {
@@ -26,5 +29,6 @@ fuchsia_package("flatland-examples") {
     "simplest-app-flatland",
     "simplest-app-flatland:simplest-app-flatland-session",
     "simplest_sysmem:simplest_sysmem_component",
+    "snake-flatland",
   ]
 }
