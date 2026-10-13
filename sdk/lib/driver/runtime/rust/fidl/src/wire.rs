@@ -206,6 +206,12 @@ impl OptionalDriverChannel {
     }
 }
 
+impl fmt::Debug for OptionalDriverChannel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_raw_handle().fmt(f)
+    }
+}
+
 // SAFETY: `decode` only returns `Ok` if either:
 // - It wrote to the `decoded` field of the handle, initializing it.
 // - The handle's encoded (and decoded) value was zero, indicating `None`.
