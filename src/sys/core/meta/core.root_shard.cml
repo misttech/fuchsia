@@ -62,6 +62,7 @@
         {
             config: [
                 "fuchsia.adb.IsRecovery",
+                "fuchsia.audio.device.IgnoreDevices",
                 "fuchsia.bluetooth.AutostartSnoop",
                 "fuchsia.bluetooth.BredrConnectable",
                 "fuchsia.bluetooth.BredrSecurityMode",
@@ -97,6 +98,9 @@
                 "fuchsia.fshost.MergeSuperAndUserdata",
                 "fuchsia.http-client.StopOnIdleTimeoutMillis",
                 "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+                "fuchsia.hwinfo.ProductManufacturer",
+                "fuchsia.hwinfo.ProductModel",
+                "fuchsia.hwinfo.ProductName",
                 "fuchsia.memory.CaptureOnPressureChange",
                 "fuchsia.memory.CriticalCaptureDelay",
                 "fuchsia.memory.ImminentOomCaptureDelay",
@@ -149,6 +153,9 @@
                 "fuchsia.ui.SupportedInputDevices",
                 "fuchsia.ui.ViewingDistance",
                 "fuchsia.ui.VisualDebuggingLevel",
+                "fuchsia.vulkan.loader.AllowGoldfishIcd",
+                "fuchsia.vulkan.loader.AllowLavapipeIcd",
+                "fuchsia.vulkan.loader.AllowMagmaIcds",
                 "fuchsia.wlan.RecoveryEnabled",
                 "fuchsia.wlan.RecoveryProfile",
                 "fuchsia.wlan.RoamingPolicy",

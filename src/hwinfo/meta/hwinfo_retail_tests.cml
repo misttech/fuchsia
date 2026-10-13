@@ -22,6 +22,16 @@
     ],
     offer: [
         {
+            config: [
+                "fuchsia.hwinfo.ProductManufacturer",
+                "fuchsia.hwinfo.ProductModel",
+                "fuchsia.hwinfo.ProductName",
+            ],
+            from: "void",
+            to: [ "#device" ],
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.factory.MiscFactoryStoreProvider",
             from: "#misc",
             to: [ "#device" ],

@@ -17,7 +17,36 @@
             startup: "eager",
         },
     ],
+    capabilities: [
+        {
+            config: "fuchsia.vulkan.loader.AllowGoldfishIcd",
+            type: "bool",
+            value: true,
+        },
+        {
+            config: "fuchsia.vulkan.loader.AllowMagmaIcds",
+            type: "bool",
+            value: true,
+        },
+    ],
     offer: [
+        {
+            config: [
+                "fuchsia.vulkan.loader.AllowGoldfishIcd",
+                "fuchsia.vulkan.loader.AllowMagmaIcds",
+            ],
+            from: "self",
+            to: [ "#vulkan_loader" ],
+        },
+        {
+            config: [
+                "fuchsia.vulkan.loader.AllowLavapipeIcd",
+                "fuchsia.vulkan.loader.LavapipeIcdUrl",
+            ],
+            from: "void",
+            to: [ "#vulkan_loader" ],
+            availability: "optional",
+        },
         {
             dictionary: "diagnostics",
             from: "parent",

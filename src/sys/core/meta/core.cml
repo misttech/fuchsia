@@ -437,6 +437,16 @@
             to: "#hwinfo",
         },
         {
+            config: [
+                "fuchsia.hwinfo.ProductManufacturer",
+                "fuchsia.hwinfo.ProductModel",
+                "fuchsia.hwinfo.ProductName",
+            ],
+            from: "parent",
+            to: "#hwinfo",
+            availability: "optional",
+        },
+        {
             directory: "config-data",
             from: "parent",
             to: "#font_provider",
@@ -538,6 +548,22 @@
             service: "fuchsia.hardware.display.Service",
             from: "parent",
             to: [ "#agis" ],
+        },
+        {
+            config: [
+                "fuchsia.vulkan.loader.AllowGoldfishIcd",
+                "fuchsia.vulkan.loader.AllowLavapipeIcd",
+                "fuchsia.vulkan.loader.AllowMagmaIcds",
+            ],
+            from: "parent",
+            to: "#vulkan_loader",
+            availability: "optional",
+        },
+        {
+            config: "fuchsia.vulkan.loader.LavapipeIcdUrl",
+            from: "void",
+            to: "#vulkan_loader",
+            availability: "optional",
         },
         {
             protocol: "fuchsia.memorypressure.Provider",

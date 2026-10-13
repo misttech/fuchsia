@@ -20,7 +20,36 @@
             url: "fuchsia-pkg://fuchsia.com/hwinfo_negative_tests#meta/hwinfo.cm",
         },
     ],
+    capabilities: [
+        {
+            config: "fuchsia.hwinfo.ProductName",
+            type: "string",
+            max_size: 40,
+            value: "test_product_name",
+        },
+        {
+            config: "fuchsia.hwinfo.ProductModel",
+            type: "string",
+            max_size: 40,
+            value: "test_product_model",
+        },
+        {
+            config: "fuchsia.hwinfo.ProductManufacturer",
+            type: "string",
+            max_size: 40,
+            value: "test_manufacturer",
+        },
+    ],
     offer: [
+        {
+            config: [
+                "fuchsia.hwinfo.ProductManufacturer",
+                "fuchsia.hwinfo.ProductModel",
+                "fuchsia.hwinfo.ProductName",
+            ],
+            from: "self",
+            to: "#protocol",
+        },
         {
             protocol: "fuchsia.factory.MiscFactoryStoreProvider",
             from: "#misc",

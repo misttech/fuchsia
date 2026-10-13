@@ -20,8 +20,6 @@ group("tests") {
 ## Packages
 fuchsia_package("device_registry") {
   package_name = "audio_device_registry"
-  validate_structured_config = false
-
   deps = [ ":device_registry_comp" ]
 }
 

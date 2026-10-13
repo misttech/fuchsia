@@ -48,6 +48,14 @@
             // This service replaces the directory capability above.
             service: "fuchsia.hardware.audio.CodecConnectorService",
         },
+        {
+            // Do not detect/acquire audio devices; allow others to directly connect to audio drivers.
+            config: "fuchsia.audio.device.IgnoreDevices",
+            key: "ignore_devices",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
     expose: [
         {
@@ -59,8 +67,4 @@
             from: "self",
         },
     ],
-    config: {
-        // Do not detect/acquire audio devices; allow others to directly connect to audio drivers.
-        ignore_devices: { type: "bool" },
-    },
 }

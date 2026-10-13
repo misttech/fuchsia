@@ -81,16 +81,19 @@ impl DefineSubsystemConfiguration<(&GraphicsConfig, &PlatformUiConfig)>
                 builder.core_shard(&context.get_resource("lavapipe-disabled.core_shard.cml"));
             }
 
-            builder
-                .package("vulkan_loader")
-                .component("meta/vulkan_loader.cm")?
-                .field("allow_magma_icds", allow_magma)?
-                .field("allow_goldfish_icd", allow_goldfish)?
-                .field("allow_lavapipe_icd", allow_lavapipe)?
-                .field(
-                    "lavapipe_icd_url",
-                    "fuchsia-pkg://fuchsia.com/libvulkan_lavapipe#meta/vulkan.cm",
-                )?;
+            // LavapipeIcdUrl is not configurable in assembly; it uses the vulkan_loader.cml default.
+            builder.set_config_capability(
+                "fuchsia.vulkan.loader.AllowMagmaIcds",
+                Config::new_bool(allow_magma),
+            )?;
+            builder.set_config_capability(
+                "fuchsia.vulkan.loader.AllowGoldfishIcd",
+                Config::new_bool(allow_goldfish),
+            )?;
+            builder.set_config_capability(
+                "fuchsia.vulkan.loader.AllowLavapipeIcd",
+                Config::new_bool(allow_lavapipe),
+            )?;
         }
 
         match &graphics_config.fake_display {
@@ -361,6 +364,21 @@ mod tests {
             config.bundles,
             ["display_drivers_base".to_string(), "vulkan_loader".to_string()].into()
         );
+        assert_eq!(
+            config.configuration_capabilities.get("fuchsia.vulkan.loader.AllowMagmaIcds"),
+            Some(&Config::new_bool(false))
+        );
+        assert_eq!(
+            config.configuration_capabilities.get("fuchsia.vulkan.loader.AllowGoldfishIcd"),
+            Some(&Config::new_bool(true))
+        );
+        assert_eq!(
+            config.configuration_capabilities.get("fuchsia.vulkan.loader.AllowLavapipeIcd"),
+            Some(&Config::new_bool(false))
+        );
+        assert!(
+            !config.configuration_capabilities.contains_key("fuchsia.vulkan.loader.LavapipeIcdUrl")
+        );
     }
 
     #[test]
@@ -400,6 +418,21 @@ mod tests {
                 "lavapipe_pkg".to_string()
             ]
             .into()
+        );
+        assert_eq!(
+            config.configuration_capabilities.get("fuchsia.vulkan.loader.AllowMagmaIcds"),
+            Some(&Config::new_bool(false))
+        );
+        assert_eq!(
+            config.configuration_capabilities.get("fuchsia.vulkan.loader.AllowGoldfishIcd"),
+            Some(&Config::new_bool(false))
+        );
+        assert_eq!(
+            config.configuration_capabilities.get("fuchsia.vulkan.loader.AllowLavapipeIcd"),
+            Some(&Config::new_bool(true))
+        );
+        assert!(
+            !config.configuration_capabilities.contains_key("fuchsia.vulkan.loader.LavapipeIcdUrl")
         );
     }
 

@@ -5,6 +5,7 @@
 use crate::subsystems::prelude::*;
 use crate::util;
 use anyhow::{bail, ensure};
+use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::media_config::{AudioConfig, PlatformMediaConfig};
 use assembly_constants::BoardFeature;
 
@@ -39,10 +40,10 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
             }
             Some(AudioConfig::DeviceRegistry(adr_config)) => {
                 builder.platform_bundle("audio_device_registry")?;
-                builder
-                    .package("audio_device_registry")
-                    .component("meta/audio_device_registry.cm")?
-                    .field("ignore_devices", adr_config.ignore_devices)?;
+                builder.set_config_capability(
+                    "fuchsia.audio.device.IgnoreDevices",
+                    Config::new(ConfigValueType::Bool, adr_config.ignore_devices.into()),
+                )?;
                 if adr_config.eager_start {
                     builder.platform_bundle("audio_device_registry_eager")?;
                 } else {

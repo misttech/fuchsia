@@ -4,6 +4,12 @@
 {
     offer: [
         {
+            config: "fuchsia.audio.device.IgnoreDevices",
+            from: "parent",
+            to: "#audio_device_registry",
+            availability: "optional",
+        },
+        {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
             from: "parent",
             to: "#audio_device_registry",

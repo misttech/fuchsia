@@ -115,27 +115,13 @@ fuchsia_component("test_realm") {
   manifest = "meta/test_realm.cml"
 }
 
-fuchsia_structured_config_values("test_config_values") {
-  cm_label = "..:manifest"
-  component_name = "vulkan_loader"
-  values = {
-    allow_magma_icds = true
-    allow_goldfish_icd = true
-    allow_lavapipe_icd = false
-    lavapipe_icd_url =
-        "fuchsia-pkg://fuchsia.com/libvulkan_lavapipe#meta/vulkan.cm"
-  }
-}
-
 fuchsia_test_package("vulkan_loader_tests") {
   test_components = [
     ":vulkan_loader_test",
     ":vulkan_loader_unittest",
   ]
-  validate_structured_config = false
   deps = [
     ":manifest-json",
-    ":test_config_values",
     ":test_realm",
     ":test_vulkan_driver",
     ":vulkan_loader_test_lib_provider_cmp",

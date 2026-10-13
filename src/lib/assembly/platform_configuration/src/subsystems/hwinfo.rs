@@ -4,6 +4,7 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::Context;
+use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::product_settings::ProductInfoConfig;
 use assembly_constants::FileEntry;
 
@@ -15,18 +16,21 @@ impl DefineSubsystemConfiguration<Option<ProductInfoConfig>> for HwinfoSubsystem
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         // Set the product information that's returned by the hardware info protocol.
-        let hwinfo = config.clone().unwrap_or_else(|| ProductInfoConfig {
-            name: "default-fuchsia".into(),
-            model: "default-model".into(),
-            manufacturer: "default-manufacturer".into(),
-        });
-
-        builder
-            .package("hwinfo")
-            .component("meta/hwinfo.cm")?
-            .field("product_name", hwinfo.name)?
-            .field("product_model", hwinfo.model)?
-            .field("product_manufacturer", hwinfo.manufacturer)?;
+        // When not configured by the product, fall back to the default values in hwinfo.cml.
+        let (name, model, manufacturer) = match config {
+            Some(hwinfo) => (
+                Config::new(ConfigValueType::String { max_size: 40 }, hwinfo.name.clone().into()),
+                Config::new(ConfigValueType::String { max_size: 40 }, hwinfo.model.clone().into()),
+                Config::new(
+                    ConfigValueType::String { max_size: 40 },
+                    hwinfo.manufacturer.clone().into(),
+                ),
+            ),
+            None => (Config::new_void(), Config::new_void(), Config::new_void()),
+        };
+        builder.set_config_capability("fuchsia.hwinfo.ProductName", name)?;
+        builder.set_config_capability("fuchsia.hwinfo.ProductModel", model)?;
+        builder.set_config_capability("fuchsia.hwinfo.ProductManufacturer", manufacturer)?;
 
         // Set the board name to be returned by hardware_info.  If the board
         // doesn't provide a separate value, use the name of the board instead.

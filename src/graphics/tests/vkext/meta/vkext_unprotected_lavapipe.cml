@@ -32,6 +32,17 @@
             type: "bool",
             value: true,
         },
+        {
+            config: "fuchsia.vulkan.loader.AllowLavapipeIcd",
+            type: "bool",
+            value: true,
+        },
+        {
+            config: "fuchsia.vulkan.loader.LavapipeIcdUrl",
+            type: "string",
+            max_size: 120,
+            value: "lavapipe_icd#meta/vulkan.cm",
+        },
     ],
     offer: [
         {
@@ -43,6 +54,23 @@
             config: "fuchsia.gpu.test.SupportSysmemLinearNonRGBA",
             from: "self",
             to: "#test",
+        },
+        {
+            config: [
+                "fuchsia.vulkan.loader.AllowLavapipeIcd",
+                "fuchsia.vulkan.loader.LavapipeIcdUrl",
+            ],
+            from: "self",
+            to: "#vulkan_loader",
+        },
+        {
+            config: [
+                "fuchsia.vulkan.loader.AllowGoldfishIcd",
+                "fuchsia.vulkan.loader.AllowMagmaIcds",
+            ],
+            from: "void",
+            to: "#vulkan_loader",
+            availability: "optional",
         },
         {
             protocol: "fuchsia.vulkan.loader.Loader",

@@ -56,7 +56,6 @@ fuchsia_structured_config_rust_lib("hwinfo_structured_config") {
 }
 
 fuchsia_package("hwinfo") {
-  validate_structured_config = false
   deps = [ ":hwinfo_component" ]
 }
 
@@ -162,19 +161,12 @@ hwinfo_integration_test("hwinfo_positive_tests") {
     ":hwinfo_positive_test",
     ":hwinfo_tests_config",
     ":hwinfo_tests_factory_config",
-    ":hwinfo_tests_product_config",
   ]
 }
 
 hwinfo_integration_test("hwinfo_negative_tests") {
   manifest = "meta/hwinfo_negative_tests.cml"
-  deps = [
-    ":hwinfo_negative_test",
-
-    # The component cannot be compiled without the correct structured config
-    # values, therefore we cannot have a missing name, model, or manufacturer.
-    ":hwinfo_tests_product_config",
-  ]
+  deps = [ ":hwinfo_negative_test" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -188,7 +180,6 @@ hwinfo_integration_test("hwinfo_retail_tests") {
     ":hwinfo_retail_test",
     ":hwinfo_retail_tests_config",
     ":hwinfo_retail_tests_factory_config",
-    ":hwinfo_tests_product_config",
   ]
 }
 
@@ -211,15 +202,6 @@ resource("hwinfo_retail_tests_factory_config") {
 resource("hwinfo_retail_tests_config") {
   sources = [ "testdata/board_config.json" ]
   outputs = [ "hwinfo_retail_tests/{{source_file_part}}" ]
-}
-
-fuchsia_structured_config_values("hwinfo_tests_product_config") {
-  cm_label = ":manifest"
-  values = {
-    product_name = "test_product_name"
-    product_model = "test_product_model"
-    product_manufacturer = "test_manufacturer"
-  }
 }
 
 group("tests") {

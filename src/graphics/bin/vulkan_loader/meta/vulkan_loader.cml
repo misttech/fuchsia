@@ -97,6 +97,35 @@
             from: "parent",
             availability: "optional",
         },
+        {
+            config: "fuchsia.vulkan.loader.AllowMagmaIcds",
+            key: "allow_magma_icds",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            config: "fuchsia.vulkan.loader.AllowGoldfishIcd",
+            key: "allow_goldfish_icd",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            config: "fuchsia.vulkan.loader.AllowLavapipeIcd",
+            key: "allow_lavapipe_icd",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            config: "fuchsia.vulkan.loader.LavapipeIcdUrl",
+            key: "lavapipe_icd_url",
+            type: "string",
+            max_size: 120,
+            availability: "optional",
+            default: "fuchsia-pkg://fuchsia.com/libvulkan_lavapipe#meta/vulkan.cm",
+        },
     ],
     expose: [
         {
@@ -120,13 +149,4 @@
             ],
         },
     ],
-    config: {
-        allow_magma_icds: { type: "bool" },
-        allow_goldfish_icd: { type: "bool" },
-        allow_lavapipe_icd: { type: "bool" },
-        lavapipe_icd_url: {
-            type: "string",
-            max_size: 120,
-        },
-    },
 }
