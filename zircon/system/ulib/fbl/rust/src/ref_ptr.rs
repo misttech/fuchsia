@@ -18,7 +18,7 @@ use pin_init::{Init, PinInit};
 ///
 /// T should be a struct that contains a `fbl::RefCounted` field and implements
 /// `HasRefCount` and `Destroy` traits.
-#[repr(C)]
+#[repr(transparent)]
 pub struct RefPtr<T>
 where
     T: HasRefCount + Recyclable,
