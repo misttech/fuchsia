@@ -374,14 +374,17 @@ pub(in crate::security) fn file_mprotect(
             )?;
         }
     }
+    let mapping_options = mapping.flags().options();
+    // Mappings with anonymous memory may be named after a file (only `/dev/zero` does this). They
+    // are checked as anonymous mappings, rather than against the file's node: `ANONYMOUS` on a
+    // file mapping means that the memory is never the file's content.
     let fs_node = match mapping.name() {
-        MappingNameRef::File(file) => {
+        MappingNameRef::File(file) if !mapping_options.contains(MappingOptions::ANONYMOUS) => {
             let node: &FsNode = file.node();
             Some(node)
         }
         _ => None,
     };
-    let mapping_options = mapping.flags().options();
     file_map_prot_check(security_server, current_task, fs_node, prot, mapping_options)?;
     Ok(())
 }
