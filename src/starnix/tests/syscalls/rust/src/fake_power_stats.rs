@@ -32,6 +32,25 @@ fn reports() -> Vec<fpowerstats::Stats> {
             ],
         },
         fpowerstats::Stats {
+            entity: "pwrblk_dpu".to_string(),
+            state_residency_data: vec![
+                fpowerstats::StateResidency {
+                    id: 0,
+                    name: "STATE_OFF".to_string(),
+                    entry_count: 3,
+                    total_time_ms: 12,
+                    last_entry_timestamp_ms: 5,
+                },
+                fpowerstats::StateResidency {
+                    id: 1,
+                    name: "STATE_ON".to_string(),
+                    entry_count: 4,
+                    total_time_ms: 7,
+                    last_entry_timestamp_ms: 9,
+                },
+            ],
+        },
+        fpowerstats::Stats {
             entity: "soc_power_state".to_string(),
             state_residency_data: vec![
                 fpowerstats::StateResidency {

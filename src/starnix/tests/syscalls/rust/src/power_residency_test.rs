@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 const DEVICE_DIR: &str = "/sys/devices/platform/powerdashboard";
 const BUS_DEVICE_LINK: &str = "/sys/bus/platform/devices/powerdashboard";
-const RESIDENCY_FILES: [&str; 2] = ["lpcm_gmc0", "platform_power_residency"];
+const RESIDENCY_FILES: [&str; 3] = ["lpcm_gmc0", "platform_power_residency", "pwrblk_dpu"];
 
 /// How long to wait for the device to be added before failing.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -53,6 +53,18 @@ fn perf_state_residency_is_reported() {
         "num_pf_states: 2\n\
          pf_state: 0\npf_entry_count: 11\npf_time_in_state: 2200000 (us)\n\n\
          pf_state: 1\npf_entry_count: 4\npf_time_in_state: 7000 (us)\n\n"
+    );
+}
+
+#[test]
+fn power_domain_residency_is_reported() {
+    assert_eq!(
+        read("pwrblk_dpu"),
+        "\nSSWRP lpb\n\n\
+         power_state: STATE_OFF\nentry_count: 3\ntime_in_state: 12000 (us)\n\
+         last_entry_timestamp: 5000\nlast_exit_timestamp: 0\n\
+         power_state: STATE_ON\nentry_count: 4\ntime_in_state: 7000 (us)\n\
+         last_entry_timestamp: 9000\nlast_exit_timestamp: 0\n\n"
     );
 }
 

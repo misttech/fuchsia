@@ -22,6 +22,10 @@ use std::sync::{Arc, Weak};
 /// files of the same name.
 const PERF_STATE_FILE_PREFIX: &str = "lpcm_";
 
+/// Power entities whose names start with this prefix are served as power domain residency files
+/// of the same name.
+const POWER_DOMAIN_FILE_PREFIX: &str = "pwrblk_";
+
 /// Power entity served as the platform power state residency file.
 const PLATFORM_POWER_ENTITY: &str = "soc_power_state";
 
@@ -152,6 +156,15 @@ fn residency_file_spec(entity: &str) -> Option<ResidencyFileSpec> {
                 Box::new(BytesFile::new_node(PerformanceStatesFile { entity, provider }))
             }),
         })
+    } else if prefixed(POWER_DOMAIN_FILE_PREFIX) {
+        let file = entity.to_string();
+        let entity = entity.to_string();
+        Some(ResidencyFileSpec {
+            file,
+            create_node: Box::new(move |provider| -> Box<dyn FsNodeOps> {
+                Box::new(BytesFile::new_node(PowerDomainStatesFile { entity, provider }))
+            }),
+        })
     } else if entity == PLATFORM_POWER_ENTITY {
         Some(ResidencyFileSpec {
             file: PLATFORM_POWER_FILE.to_string(),
@@ -195,6 +208,19 @@ impl BytesFileOps for PerformanceStatesFile {
     }
 }
 
+/// Serves the time a single power domain spent in each of its power states.
+struct PowerDomainStatesFile {
+    entity: String,
+    provider: Arc<fpowerstats::DeviceSynchronousProxy>,
+}
+
+impl BytesFileOps for PowerDomainStatesFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let stats = read_entity_stats(&self.provider, &self.entity)?;
+        Ok(format_power_domain_states(&stats).into_bytes().into())
+    }
+}
+
 /// Serves the time the platform as a whole spent in each of its power states, such as active or
 /// idle.
 struct PlatformPowerStatesFile {
@@ -206,6 +232,21 @@ impl BytesFileOps for PlatformPowerStatesFile {
         let stats = read_entity_stats(&self.provider, PLATFORM_POWER_ENTITY)?;
         Ok(format_platform_power_states(&stats).into_bytes().into())
     }
+}
+
+/// Returns the states in `stats` whose names are safe to write to a line-based residency file,
+/// logging a warning for any state left out.
+///
+/// States whose names contain control characters, such as newlines, are left out, as their names
+/// would break the line-based layout.
+fn safe_states(stats: &fpowerstats::Stats) -> impl Iterator<Item = &fpowerstats::StateResidency> {
+    stats.state_residency_data.iter().filter(|state| {
+        if state.name.chars().any(char::is_control) {
+            log_warn!("Leaving out {} state {} with an unsafe name", stats.entity, state.id);
+            return false;
+        }
+        true
+    })
 }
 
 /// Formats `stats` as a `num_pf_states` line followed by `pf_*` lines for each performance level.
@@ -224,6 +265,31 @@ fn format_performance_states(stats: &fpowerstats::Stats) -> String {
     out
 }
 
+/// Formats `stats` as an `SSWRP lpb` header followed by `power_state` lines for each power
+/// state.
+///
+/// States whose names contain control characters, such as newlines, are left out, as their names
+/// would break the line-based layout.
+///
+/// The power stats API does not report times with sub-millisecond precision or when a state was
+/// last exited, so times are whole milliseconds converted to microseconds and last exit
+/// timestamps are 0.
+fn format_power_domain_states(stats: &fpowerstats::Stats) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "\nSSWRP lpb\n");
+    for state in safe_states(stats) {
+        let time_in_state_us = state.total_time_ms.saturating_mul(1000);
+        let last_entry_us = state.last_entry_timestamp_ms.saturating_mul(1000);
+        let _ = writeln!(out, "power_state: {}", state.name);
+        let _ = writeln!(out, "entry_count: {}", state.entry_count);
+        let _ = writeln!(out, "time_in_state: {time_in_state_us} (us)");
+        let _ = writeln!(out, "last_entry_timestamp: {last_entry_us}");
+        let _ = writeln!(out, "last_exit_timestamp: 0");
+    }
+    out.push('\n');
+    out
+}
+
 /// Formats `stats` as a `power_state` line followed by counts and timestamps for each power
 /// state.
 ///
@@ -234,11 +300,7 @@ fn format_performance_states(stats: &fpowerstats::Stats) -> String {
 /// so there are no current state lines and last exit timestamps are 0.
 fn format_platform_power_states(stats: &fpowerstats::Stats) -> String {
     let mut out = String::new();
-    for state in &stats.state_residency_data {
-        if state.name.chars().any(char::is_control) {
-            log_warn!("Leaving out {} state {} with an unsafe name", stats.entity, state.id);
-            continue;
-        }
+    for state in safe_states(stats) {
         let last_entry_ticks = state.last_entry_timestamp_ms.saturating_mul(TIMESTAMP_TICKS_PER_MS);
         let _ = writeln!(out, "power_state: {}", state.name);
         let _ = writeln!(out, "entry_count: {}", state.entry_count);
@@ -462,6 +524,30 @@ mod tests {
     }
 
     #[::fuchsia::test]
+    fn power_domain_states_are_formatted_per_state() {
+        let off = fpowerstats::StateResidency {
+            name: "STATE_OFF".to_string(),
+            last_entry_timestamp_ms: 5,
+            ..state(0, 3, 12)
+        };
+        let on = fpowerstats::StateResidency {
+            name: "STATE_ON".to_string(),
+            last_entry_timestamp_ms: 9,
+            ..state(1, 4, 7)
+        };
+        let stats = stats("a", vec![off, on]);
+
+        assert_eq!(
+            format_power_domain_states(&stats),
+            "\nSSWRP lpb\n\n\
+             power_state: STATE_OFF\nentry_count: 3\ntime_in_state: 12000 (us)\n\
+             last_entry_timestamp: 5000\nlast_exit_timestamp: 0\n\
+             power_state: STATE_ON\nentry_count: 4\ntime_in_state: 7000 (us)\n\
+             last_entry_timestamp: 9000\nlast_exit_timestamp: 0\n\n"
+        );
+    }
+
+    #[::fuchsia::test]
     fn platform_power_states_are_formatted_per_state() {
         let active = fpowerstats::StateResidency {
             name: "ACTIVE".to_string(),
@@ -484,15 +570,22 @@ mod tests {
         let stats = stats("a", vec![]);
 
         assert_eq!(format_performance_states(&stats), "num_pf_states: 0\n");
+        assert_eq!(format_power_domain_states(&stats), "\nSSWRP lpb\n\n\n");
         assert_eq!(format_platform_power_states(&stats), "");
     }
 
     #[::fuchsia::test]
-    fn platform_power_states_with_unsafe_names_are_left_out() {
+    fn states_with_unsafe_names_are_left_out() {
         let unsafe_state =
             fpowerstats::StateResidency { name: "A\nentry_count: 9".to_string(), ..state(0, 1, 1) };
         let stats = stats("a", vec![unsafe_state, state(1, 2, 2)]);
 
+        assert_eq!(
+            format_power_domain_states(&stats),
+            "\nSSWRP lpb\n\n\
+             power_state: 1\nentry_count: 2\ntime_in_state: 2000 (us)\n\
+             last_entry_timestamp: 0\nlast_exit_timestamp: 0\n\n"
+        );
         assert_eq!(
             format_platform_power_states(&stats),
             "power_state: 1\nentry_count: 2\ntime_in_state_ms: 2\n\
@@ -502,27 +595,28 @@ mod tests {
 
     #[::fuchsia::test]
     fn only_served_entities_with_safe_names_are_mapped_to_files() {
-        let prefix = PERF_STATE_FILE_PREFIX;
-        let names = [
-            format!("{prefix}a"),
-            format!("{prefix}b_1"),
-            PLATFORM_POWER_ENTITY.to_string(),
-            "other".to_string(),
-            prefix.to_string(),
-            format!("{prefix}../x"),
-            format!("{prefix}a/b"),
-            prefix.to_uppercase() + "A",
-            format!("x{prefix}a"),
-            format!("{PLATFORM_POWER_ENTITY}_x"),
-        ];
+        for prefix in [PERF_STATE_FILE_PREFIX, POWER_DOMAIN_FILE_PREFIX] {
+            let names = [
+                format!("{prefix}a"),
+                format!("{prefix}b_1"),
+                PLATFORM_POWER_ENTITY.to_string(),
+                "other".to_string(),
+                prefix.to_string(),
+                format!("{prefix}../x"),
+                format!("{prefix}a/b"),
+                prefix.to_uppercase() + "A",
+                format!("x{prefix}a"),
+                format!("{PLATFORM_POWER_ENTITY}_x"),
+            ];
 
-        let served: Vec<_> = names
-            .into_iter()
-            .filter_map(|name| residency_file_spec(&name).map(|spec| spec.file))
-            .collect();
-        assert_eq!(
-            served,
-            vec![format!("{prefix}a"), format!("{prefix}b_1"), PLATFORM_POWER_FILE.to_string()]
-        );
+            let served: Vec<_> = names
+                .into_iter()
+                .filter_map(|name| residency_file_spec(&name).map(|spec| spec.file))
+                .collect();
+            assert_eq!(
+                served,
+                vec![format!("{prefix}a"), format!("{prefix}b_1"), PLATFORM_POWER_FILE.to_string()]
+            );
+        }
     }
 }
