@@ -75,8 +75,12 @@ const LOST_RECORD_SIZE: u64 = 24;
 // Register indices in the profiler's register capture block.
 const AARCH64_REG_PC: usize = 32;
 const AARCH64_REG_SP: usize = 31;
-const AARCH32_REG_R15: usize = 15; // AArch32 PC
-const AARCH32_REG_R13: usize = 13; // AArch32 SP
+const AARCH64_REG_LR: usize = 30;
+// AArch32 state arrives in the same block, R0-R14 in x0-x14 (the Linux
+// compat layout); the AArch32 PC, LR and SP are R15, R14 and R13.
+const AARCH32_REG_PC: usize = 15; // R15
+const AARCH32_REG_LR: usize = 14; // R14
+const AARCH32_REG_SP: usize = 13; // R13
 
 mod event;
 pub use event::{TraceEvent, TraceEventQueue, TraceEventQueueList};
@@ -980,14 +984,24 @@ fn process_fxt_record(
                 // only consume indices 0-15 -- x15 carries no
                 // meaningful value for AArch32 state.
                 let pc_offset = AARCH64_REG_PC * 8;
-                let pc_bytes = blob_regs[pc_offset..pc_offset + 8].to_vec();
-                let r15_offset = AARCH32_REG_R15 * 8;
-                blob_regs[r15_offset..r15_offset + 8].copy_from_slice(&pc_bytes);
+                let r15_offset = AARCH32_REG_PC * 8;
+                blob_regs.copy_within(pc_offset..pc_offset + 8, r15_offset);
+                // Likewise, AArch32 execution keeps its stack pointer
+                // and link register in R13 and R14; the sp and lr
+                // slots hold SP_EL0 and X30, which it never updates.
+                // Report R13/R14 in the sp/lr slots, as Linux does for
+                // compat tasks (compat_sp / compat_lr).
+                let r13_offset = AARCH32_REG_SP * 8;
+                let sp_offset = AARCH64_REG_SP * 8;
+                blob_regs.copy_within(r13_offset..r13_offset + 8, sp_offset);
+                let r14_offset = AARCH32_REG_LR * 8;
+                let lr_offset = AARCH64_REG_LR * 8;
+                blob_regs.copy_within(r14_offset..r14_offset + 8, lr_offset);
             }
 
             let sp = if is_32bit {
                 // The arm32 stack pointer is R13.
-                let r13_offset = AARCH32_REG_R13 * 8;
+                let r13_offset = AARCH32_REG_SP * 8;
                 u64::from_ne_bytes(blob_regs[r13_offset..r13_offset + 8].try_into().unwrap())
             } else {
                 let sp_offset = AARCH64_REG_SP * 8;
@@ -1850,5 +1864,236 @@ mod tests {
         assert_eq!(&record_bytes[48..56], &stack_data);
         let dyn_size = u64::from_ne_bytes(record_bytes[56..64].try_into().unwrap());
         assert_eq!(dyn_size, 8);
+    }
+
+    // Stack-sample (DWARF) blobs, laid out as the profiler's StackSampler
+    // emits them: [u64 regs_size][thread-state regs][{u64 base, u64 size,
+    // bytes}...].
+    const GUEST_ASPACE_END: u64 = RESTRICTED_ASPACE_HIGHEST_ADDRESS as u64;
+    const RESTRICTED_STATE_ADDR: u64 = GUEST_ASPACE_END + 0x5000_0000;
+    const GUEST_PC: u64 = 0x7a00_1234;
+    const GUEST_SP: u64 = 0x7f00_1000;
+    const ALL_REGS_MASK: u64 = (1 << 33) - 1;
+    const SAMPLE_STACK_USER: u64 = 256;
+
+    fn u64s_to_bytes(values: &[u64]) -> Vec<u8> {
+        values.iter().flat_map(|value| value.to_ne_bytes()).collect()
+    }
+
+    fn read_u64(bytes: &[u8], pos: &mut usize) -> u64 {
+        let value = u64::from_ne_bytes(bytes[*pos..*pos + 8].try_into().unwrap());
+        *pos += 8;
+        value
+    }
+
+    // An arm64 zx_thread_state_general_regs_t: r0-r29, lr, sp, pc, cpsr,
+    // tpidr.
+    fn thread_state_regs(pc: u64, sp: u64, cpsr: u64) -> Vec<u64> {
+        let mut regs: Vec<u64> = (0..31).map(|i| 0xa000 + i).collect();
+        regs.extend([sp, pc, cpsr, 0x7777]);
+        regs
+    }
+
+    fn stack_sample_blob(thread_regs: &[u64], chunks: &[(u64, &[u8])]) -> Vec<u8> {
+        let regs_bytes = u64s_to_bytes(thread_regs);
+        let mut blob = (regs_bytes.len() as u64).to_ne_bytes().to_vec();
+        blob.extend(regs_bytes);
+        for (base, data) in chunks {
+            blob.extend(base.to_ne_bytes());
+            blob.extend((data.len() as u64).to_ne_bytes());
+            blob.extend_from_slice(data);
+        }
+        blob
+    }
+
+    // A zx_restricted_state_t with x0-x30 from `x`, laid out per the
+    // struct's field offsets.
+    #[cfg(target_arch = "aarch64")]
+    fn restricted_state_bytes(x: &[u64; 31], sp: u64, pc: u64, cpsr: u32) -> Vec<u8> {
+        use zx::sys::zx_restricted_state_t;
+        let mut state = vec![0u8; std::mem::size_of::<zx_restricted_state_t>()];
+        state[..31 * 8].copy_from_slice(&u64s_to_bytes(x));
+        let sp_offset = std::mem::offset_of!(zx_restricted_state_t, sp);
+        state[sp_offset..sp_offset + 8].copy_from_slice(&sp.to_ne_bytes());
+        let pc_offset = std::mem::offset_of!(zx_restricted_state_t, pc);
+        state[pc_offset..pc_offset + 8].copy_from_slice(&pc.to_ne_bytes());
+        let cpsr_offset = std::mem::offset_of!(zx_restricted_state_t, cpsr);
+        state[cpsr_offset..cpsr_offset + 4].copy_from_slice(&cpsr.to_ne_bytes());
+        state
+    }
+
+    fn stack_bytes(seed: u8, len: usize) -> Vec<u8> {
+        (0..len).map(|i| seed.wrapping_add(i as u8)).collect()
+    }
+
+    struct ParsedStackSample {
+        ip: u64,
+        callchain: Vec<u64>,
+        abi: u64,
+        regs: Vec<u64>,
+        stack: Vec<u8>,
+    }
+
+    // Runs `blob` through process_fxt_record as a sample of process 1001 /
+    // thread 1002 (pid 42 / tid 43) and parses the one record it writes.
+    fn process_stack_sample(blob: Vec<u8>, sample_regs_user: u64) -> ParsedStackSample {
+        let manager = Arc::new(TracePerformanceEventManager::new(std::sync::Weak::new()));
+        let session = manager.open();
+        manager.record(
+            42,
+            43,
+            ZirconIdentity { process: zx::Koid::from_raw(1001), thread: zx::Koid::from_raw(1002) },
+        );
+        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
+        let vmo_handle_copy =
+            perf_data_vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        // SAFETY: The test maintains exclusive write access to this VMO.
+        let seq_lock = unsafe { create_seq_lock(&vmo_handle_copy, ESTIMATED_MMAP_BUFFER_SIZE) };
+        let sample_type = (perf_event_sample_format_PERF_SAMPLE_IP
+            | perf_event_sample_format_PERF_SAMPLE_TID
+            | perf_event_sample_format_PERF_SAMPLE_CALLCHAIN
+            | perf_event_sample_format_PERF_SAMPLE_REGS_USER
+            | perf_event_sample_format_PERF_SAMPLE_STACK_USER) as u64;
+        let record = TraceRecord::LargeBlob(fxt::LargeBlobRecord {
+            provider: None,
+            ty: fxt::BlobType::Data,
+            category: "cpu_profiler".into(),
+            name: "stack_sample".into(),
+            bytes: blob,
+            metadata: Some(fxt::LargeBlobMetadata {
+                timestamp: 1000,
+                process: fxt::ProcessKoid(1001),
+                thread: fxt::ThreadKoid(1002),
+                args: vec![],
+            }),
+        });
+        let mut vmo_write_offset = 0;
+        let mut lost_events = 0;
+        process_fxt_record(
+            record,
+            &seq_lock,
+            &perf_data_vmo,
+            sample_type,
+            0,
+            0,
+            0,
+            sample_regs_user,
+            SAMPLE_STACK_USER,
+            Some(&session),
+            &mut vmo_write_offset,
+            &mut lost_events,
+        );
+        assert!(vmo_write_offset > 0, "no record written");
+        assert_eq!(lost_events, 0);
+
+        let mut record = vec![0u8; vmo_write_offset as usize];
+        perf_data_vmo.read(&mut record, seq_lock.get().data_offset).unwrap();
+        assert_eq!(
+            u32::from_ne_bytes(record[0..4].try_into().unwrap()),
+            perf_event_type_PERF_RECORD_SAMPLE
+        );
+        assert_eq!(u16::from_ne_bytes(record[6..8].try_into().unwrap()) as usize, record.len());
+
+        let mut pos = 8;
+        let ip = read_u64(&record, &mut pos);
+        // pid and tid.
+        pos += 8;
+        let nr = read_u64(&record, &mut pos);
+        let callchain = (0..nr).map(|_| read_u64(&record, &mut pos)).collect();
+        let abi = read_u64(&record, &mut pos);
+        let regs = if abi == perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE as u64 {
+            vec![]
+        } else {
+            (0..sample_regs_user.count_ones()).map(|_| read_u64(&record, &mut pos)).collect()
+        };
+        let stack_size = read_u64(&record, &mut pos) as usize;
+        assert_eq!(stack_size, SAMPLE_STACK_USER as usize);
+        let stack_region = record[pos..pos + stack_size].to_vec();
+        pos += stack_size;
+        let dyn_size = read_u64(&record, &mut pos) as usize;
+        assert_eq!(pos, record.len());
+        ParsedStackSample { ip, callchain, abi, regs, stack: stack_region[..dyn_size].to_vec() }
+    }
+
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_guest_reports_thread_regs() {
+        // A thread suspended in restricted mode reports the guest registers
+        // itself; the restricted state then holds stale values and is
+        // ignored.
+        let guest_stack = stack_bytes(0x20, 64);
+        let stale_stack = stack_bytes(0x90, 64);
+        const STALE_SP: u64 = GUEST_SP + 0x10000;
+        #[cfg(target_arch = "aarch64")]
+        let stale_state = restricted_state_bytes(&[0x5a; 31], STALE_SP, GUEST_PC + 0x100, 0);
+        #[cfg(not(target_arch = "aarch64"))]
+        let stale_state = vec![0x5au8; 280];
+        let thread_regs = thread_state_regs(GUEST_PC, GUEST_SP + 16, 0);
+        let blob = stack_sample_blob(
+            &thread_regs,
+            &[
+                (GUEST_SP, &guest_stack),
+                (RESTRICTED_STATE_ADDR, &stale_state),
+                (STALE_SP, &stale_stack),
+            ],
+        );
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_eq!(sample.ip, GUEST_PC);
+        assert_eq!(
+            sample.callchain,
+            vec![
+                perf_callchain_context_PERF_CONTEXT_KERNEL,
+                perf_callchain_context_PERF_CONTEXT_USER,
+                GUEST_PC,
+            ]
+        );
+        assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64);
+        assert_eq!(sample.regs, thread_regs[..33].to_vec());
+        // The stack starts exactly at the SP, inside the first capture.
+        assert_eq!(sample.stack, guest_stack[16..].to_vec());
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_guest_aarch32_reports_sp_lr_from_r13_r14() {
+        // A thread suspended in AArch32 restricted mode: Zircon reports its
+        // stack pointer in r[13] and link register in r[14]; the sp and lr
+        // slots hold SP_EL0 and X30, which AArch32 execution never updates.
+        const GUEST_PC32: u64 = 0x0040_1234;
+        const GUEST_SP32: u64 = 0xff80_1000;
+        const GUEST_LR32: u64 = 0x0040_5678;
+        const STALE_SP: u64 = 0xdead_0000;
+        const STALE_LR: u64 = 0xbeef_0000;
+        let guest_stack = stack_bytes(0x30, 64);
+        let mut thread_regs =
+            thread_state_regs(GUEST_PC32, STALE_SP, zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u64);
+        thread_regs[AARCH32_REG_SP] = GUEST_SP32;
+        thread_regs[AARCH32_REG_LR] = GUEST_LR32;
+        thread_regs[AARCH64_REG_LR] = STALE_LR;
+        let blob = stack_sample_blob(&thread_regs, &[(GUEST_SP32, &guest_stack)]);
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_eq!(sample.ip, GUEST_PC32);
+        assert_eq!(
+            sample.callchain,
+            vec![
+                perf_callchain_context_PERF_CONTEXT_KERNEL,
+                perf_callchain_context_PERF_CONTEXT_USER,
+                GUEST_PC32,
+            ]
+        );
+        assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32 as u64);
+        assert_eq!(sample.regs.len(), 33);
+        assert_eq!(sample.regs[AARCH64_REG_SP], GUEST_SP32);
+        assert_eq!(sample.regs[AARCH64_REG_LR], GUEST_LR32);
+        assert_eq!(sample.regs[AARCH32_REG_SP], GUEST_SP32);
+        assert_eq!(sample.regs[AARCH32_REG_LR], GUEST_LR32);
+        assert_eq!(sample.regs[AARCH32_REG_PC], GUEST_PC32);
+        assert_eq!(sample.regs[AARCH64_REG_PC], GUEST_PC32);
+        assert_eq!(sample.regs[0], 0xa000);
+        // The stack is selected by R13, not by the stale sp slot.
+        assert_eq!(sample.stack, guest_stack);
     }
 }
