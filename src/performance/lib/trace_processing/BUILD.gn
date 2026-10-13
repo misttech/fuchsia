@@ -28,6 +28,7 @@ python_library("trace_processing") {
     "metrics/scenic.py",
     "metrics/suspend.py",
     "metrics/wakeup.py",
+    "run_cpu_breakdown.py",
     "trace_importing.py",
     "trace_importing_fxt.py",
     "trace_metrics.py",

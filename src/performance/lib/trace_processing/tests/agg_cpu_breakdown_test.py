@@ -4,10 +4,16 @@
 # found in the LICENSE file.
 """Unit tests for agg_cpu_breakdown.py."""
 
+import argparse
+import json
+import os
+import tempfile
 import unittest
+import unittest.mock
 
 import trace_processing.trace_model as trace_model
 import trace_processing.trace_time as trace_time
+from trace_processing import run_cpu_breakdown, trace_importing
 from trace_processing.metrics import agg_cpu_breakdown, cpu
 
 
@@ -307,6 +313,54 @@ class AggCpuBreakdownTest(unittest.TestCase):
                         "thread_name": "small-thread",
                         "percent": 5.495,
                         "duration": 500.0,
+                    },
+                ],
+            },
+        )
+
+    def test_run_agg_breakdown_percent_cutoff(self) -> None:
+        model = self.construct_trace_model()
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            unittest.mock.patch.object(
+                trace_importing,
+                "create_model_from_file_path",
+                return_value=model,
+            ),
+        ):
+            output_path = os.path.join(temp_dir, "agg_breakdown.json")
+            args = argparse.Namespace(
+                hardware_profile="vim3",
+                percent_cutoff=40.0,
+                output_path=output_path,
+            )
+            run_cpu_breakdown.RunAggBreakdown(args, "unused.json")
+            with open(output_path, "r") as json_file:
+                agg_breakdown = json.load(json_file)
+
+        self.assertEqual(
+            agg_breakdown,
+            {
+                "2.2": [
+                    {
+                        "process_name": "big_process",
+                        "thread_name": "thread-2",
+                        "percent": 65.934,
+                        "duration": 6000.0,
+                    },
+                    {
+                        "process_name": "big_process",
+                        "thread_name": "thread-1",
+                        "percent": 49.451,
+                        "duration": 4500.0,
+                    },
+                ],
+                "1.8": [
+                    {
+                        "process_name": "big_process",
+                        "thread_name": "thread-2",
+                        "percent": 61.538,
+                        "duration": 5600.0,
                     },
                 ],
             },
