@@ -417,6 +417,27 @@ async fn update(
             drop(cancel_receiver);
             attempt_res
         };
+        let attempt_res = match attempt_res {
+            Ok((state, mode, current_configuration)) => {
+                // Commit the update
+                let state = state.enter_commit(&mut co).await;
+                phase = metrics::Phase::ImageCommit;
+
+                match commit_images(&env.boot_manager, mode, current_configuration).await {
+                    Ok(()) => {
+                        // Success!
+                        let state = state.enter_wait_to_reboot(&mut co).await;
+                        phase = metrics::Phase::SuccessPendingReboot;
+                        Ok((state, mode))
+                    }
+                    Err(e) => {
+                        state.fail(&mut co).await;
+                        Err(AttemptError::Commit(e))
+                    }
+                }
+            }
+            Err(e) => Err(e),
+        };
 
         let status_code = metrics::result_to_status_code(attempt_res.as_ref().map(|_| ()));
         // TODO(https://fxbug.dev/568366644): account for suspend duration.
@@ -765,7 +786,8 @@ impl Attempt<'_> {
         co: &mut async_generator::Yield<fupdate_installer_ext::State>,
         phase: &mut metrics::Phase,
         target_version: &mut history::Version,
-    ) -> Result<(state::WaitToReboot, update_package::UpdateMode), AttemptError> {
+    ) -> Result<(state::Fetch, update_package::UpdateMode, paver::CurrentConfiguration), AttemptError>
+    {
         // Prepare
         let state = state::Prepare::enter(co).await;
 
@@ -827,23 +849,7 @@ impl Attempt<'_> {
             }
         };
 
-        // Commit the update
-        let state = state.enter_commit(co).await;
-        *phase = metrics::Phase::ImageCommit;
-
-        let () = match commit_images(&self.env.boot_manager, mode, current_configuration).await {
-            Ok(()) => (),
-            Err(e) => {
-                state.fail(co).await;
-                return Err(AttemptError::Commit(e));
-            }
-        };
-
-        // Success!
-        let state = state.enter_wait_to_reboot(co).await;
-        *phase = metrics::Phase::SuccessPendingReboot;
-
-        Ok((state, mode))
+        Ok((state, mode, current_configuration))
     }
 
     /// Acquire the necessary data to perform the update.
@@ -1212,7 +1218,8 @@ impl PackagelessAttempt<'_> {
         co: &mut async_generator::Yield<fupdate_installer_ext::State>,
         phase: &mut metrics::Phase,
         target_version: &mut history::Version,
-    ) -> Result<(state::WaitToReboot, update_package::UpdateMode), AttemptError> {
+    ) -> Result<(state::Fetch, update_package::UpdateMode, paver::CurrentConfiguration), AttemptError>
+    {
         // Prepare
         let state = state::Prepare::enter(co).await;
 
@@ -1274,25 +1281,7 @@ impl PackagelessAttempt<'_> {
             }
         };
 
-        // Commit the update
-        let state = state.enter_commit(co).await;
-        *phase = metrics::Phase::ImageCommit;
-
-        let () = match commit_images(&self.env.boot_manager, manifest.mode, current_configuration)
-            .await
-        {
-            Ok(()) => (),
-            Err(e) => {
-                state.fail(co).await;
-                return Err(AttemptError::Commit(e));
-            }
-        };
-
-        // Success!
-        let state = state.enter_wait_to_reboot(co).await;
-        *phase = metrics::Phase::SuccessPendingReboot;
-
-        Ok((state, manifest.mode))
+        Ok((state, manifest.mode, current_configuration))
     }
 
     /// Acquire the necessary data to perform the update.
