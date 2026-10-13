@@ -330,6 +330,18 @@
                 ],
             },
             {
+                // Gives access to executable package handles.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.PackageResolver-base",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
                 // Gives access to executable package handles which can bypass VX security policy.
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
@@ -341,7 +353,7 @@
                 ],
             },
             {
-                // Write files to blobfs.
+                // Writes files to blobfs.
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
                 source_name: "fuchsia.pkg.PackageResolver-ota",
@@ -355,9 +367,38 @@
                 // Interferes with OTA.
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
+                source_name: "fuchsia.pkg.RetainedBlobs",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/system-update/system-updater",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Interferes with OTA.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
                 source_name: "fuchsia.pkg.RetainedPackages",
                 capability: "protocol",
                 target_monikers: [
+                    "/core/system-update/system-updater",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Deletes blobs from blobfs, which interferes with OTA.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.garbagecollector.Manager",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/system-update/system-update-checker",
                     "/core/system-update/system-updater",
 
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
@@ -396,6 +437,20 @@
                 target_monikers: [],
             },
             {
+                // Gives direct access to executable binaries.
+                source_moniker: "/bootstrap/pkg-shell-commands",
+                source: "component",
+                source_name: "bin",
+                capability: "directory",
+                target_monikers: [
+                    "/bootstrap/console-launcher",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
+                    "/bootstrap/pkg-shell-commands",
+                ],
+            },
+            {
                 // We restrict access to Resolver because it gives direct access to package
                 // handles which provide executability which bypasses VX security policy.
                 source_moniker: "/core/pkg-resolver",
@@ -405,6 +460,28 @@
                 target_monikers: [
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
                     "/core",
+                    "/core/pkg-resolver",
+                ],
+            },
+            {
+                source_moniker: "/core/pkg-resolver",
+                source: "component",
+                source_name: "fuchsia.pkg.Authority",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/core/pkg-resolver",
+                ],
+            },
+            {
+                source_moniker: "/core/pkg-resolver",
+                source: "component",
+                source_name: "fuchsia.pkg.Cup",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/system-update/omaha-client-service",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
                     "/core/pkg-resolver",
                 ],
             },
@@ -439,6 +516,60 @@
                     "/core/system-update/system-updater",
 
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/core/pkg-resolver",
+                ],
+            },
+            {
+                // This capability is disabled on user builds by pkg-resolver itself.
+                source_moniker: "/core/pkg-resolver",
+                source: "component",
+                source_name: "fuchsia.pkg.RepositoryManager",
+                capability: "protocol",
+                target_monikers: [
+                    "/bootstrap/console-launcher",
+                    "/core/system-update/system-update-checker",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/core",
+                    "/core/pkg-resolver",
+                ],
+            },
+            {
+                // Writes files to blobfs and interferes with OTA.
+                source_moniker: "/core/pkg-resolver",
+                source: "component",
+                source_name: "fuchsia.pkg.internal.OtaDownloader",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/system-update/system-updater",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/core/pkg-resolver",
+                ],
+            },
+            {
+                // Writes files to blobfs.
+                source_moniker: "/core/pkg-resolver",
+                source: "component",
+                source_name: "fuchsia.pkg.resolution.PackageResolver",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/core",
+                    "/core/pkg-resolver",
+                ],
+            },
+            {
+                // This capability is disabled on user builds by pkg-resolver itself.
+                source_moniker: "/core/pkg-resolver",
+                source: "component",
+                source_name: "fuchsia.pkg.rewrite.Engine",
+                capability: "protocol",
+                target_monikers: [
+                    "/bootstrap/console-launcher",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/core",
                     "/core/pkg-resolver",
                 ],
             },

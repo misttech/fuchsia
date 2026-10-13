@@ -325,16 +325,6 @@
             {
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
-                source_name: "bin",
-                capability: "directory",
-                target_monikers: [
-                    "/bootstrap/console-launcher",
-                    "/toolbox",
-                ],
-            },
-            {
-                source_moniker: "/bootstrap/pkg-cache",
-                source: "component",
                 source_name: "build-info",
                 capability: "directory",
                 target_monikers: [
@@ -381,7 +371,7 @@
             {
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
-                source_name: "fuchsia.garbagecollector.Manager",
+                source_name: "fuchsia.pkg.garbagecollector.Manager",
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
@@ -404,6 +394,16 @@
                 target_monikers: [
                     "/core/debug-dash-launcher",
                     "/core/process_resolver",
+                ],
+            },
+            {
+                // Gives direct access to executable binaries.
+                source_moniker: "/bootstrap/pkg-shell-commands",
+                source: "component",
+                source_name: "bin",
+                capability: "directory",
+                target_monikers: [
+                    "/toolbox",
                 ],
             },
             {
@@ -431,7 +431,25 @@
             {
                 source_moniker: "/core/pkg-resolver",
                 source: "component",
+                source_name: "fuchsia.pkg.RepositoryManager",
+                capability: "protocol",
+                target_monikers: [
+                    "/toolbox",
+                ],
+            },
+            {
+                source_moniker: "/core/pkg-resolver",
+                source: "component",
                 source_name: "fuchsia.pkg.resolution.PackageResolver",
+                capability: "protocol",
+                target_monikers: [
+                    "/toolbox",
+                ],
+            },
+            {
+                source_moniker: "/core/pkg-resolver",
+                source: "component",
+                source_name: "fuchsia.pkg.rewrite.Engine",
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
