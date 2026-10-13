@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
@@ -72,7 +72,7 @@ host_rustc_test(
     name = "cml_test",
     crate = ":cml",
     edition = "2024",
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = ["//tools:__pkg__"],
     deps = [
         "//third_party/rust_crates/vendor:anyhow",

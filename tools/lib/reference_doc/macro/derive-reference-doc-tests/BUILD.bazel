@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
 
 package(default_applicable_licenses = ["//:license"])
@@ -13,7 +13,7 @@ host_rustc_test(
     crate_name = "derive_reference_doc",
     crate_root = "src/lib.rs",
     edition = "2024",
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = ["//tools:__pkg__"],
     deps = [
         "//third_party/rust_crates/vendor:pretty_assertions",
