@@ -235,11 +235,25 @@ void UsbFunction::EndpointSetStall(EndpointSetStallRequest& request,
     completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
     return;
   }
-  zx_status_t status = CommonEndpointSetStall(request.endpoint_address());
-  if (status != ZX_OK) {
-    completer.Reply(fit::as_error(status));
+  const uint8_t ep_address = request.endpoint_address();
+  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_FOUND));
     return;
   }
+
+  fidl::Arena arena;
+  auto result = peripheral_->dci().buffer(arena)->EndpointSetStall(ep_address);
+  if (!result.ok()) {
+    fdf::error("Failed to send EndpointSetStall request: {}", result.status_string());
+    completer.Reply(fit::as_error(result.status()));
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("EndpointSetStall failed: {}", zx_status_get_string(result->error_value()));
+    completer.Reply(fit::as_error(result->error_value()));
+    return;
+  }
+  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} stalled", ep_address));
   completer.Reply(fit::ok());
 }
 
@@ -251,11 +265,26 @@ void UsbFunction::EndpointClearStall(EndpointClearStallRequest& request,
     completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
     return;
   }
-  zx_status_t status = CommonEndpointClearStall(request.endpoint_address());
-  if (status != ZX_OK) {
-    completer.Reply(fit::as_error(status));
+  const uint8_t ep_address = request.endpoint_address();
+  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_FOUND));
     return;
   }
+
+  fidl::Arena arena;
+  auto result = peripheral_->dci().buffer(arena)->EndpointClearStall(ep_address);
+  if (!result.ok()) {
+    fdf::error("Failed to send EndpointClearStall request: {}", result.status_string());
+    completer.Reply(fit::as_error(result.status()));
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("EndpointClearStall failed: {}", zx_status_get_string(result->error_value()));
+    completer.Reply(fit::as_error(result->error_value()));
+    return;
+  }
+  peripheral_->dci_inspect().RecordEvent(
+      std::format("endpoint 0x{:02x} stall cleared", ep_address));
   completer.Reply(fit::ok());
 }
 
@@ -267,12 +296,49 @@ void UsbFunction::ConfigureEndpoint(ConfigureEndpointRequest& request,
     completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
     return;
   }
-  zx_status_t status =
-      CommonEndpointConfigure(request.endpoint_address(), request.endpoint_configuration());
-  if (status != ZX_OK) {
-    completer.Reply(fit::as_error(status));
+  const auto& endpoint_configuration = request.endpoint_configuration();
+  if (!endpoint_configuration.descriptor().has_value()) {
+    completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
     return;
   }
+  const uint8_t ep_address = request.endpoint_address();
+  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_FOUND));
+    return;
+  }
+
+  fidl::Arena arena;
+  fdescriptor::wire::UsbEndpointDescriptor fep_desc = {
+      .b_endpoint_address = ep_address,
+      .bm_attributes = endpoint_configuration.descriptor()->bm_attributes(),
+      // TODO(https://fxbug.dev/497048374): FIDL types should use host
+      // endianness.
+      .w_max_packet_size = htole16(endpoint_configuration.descriptor()->w_max_packet_size()),
+      .b_interval = endpoint_configuration.descriptor()->b_interval(),
+  };
+  fdescriptor::wire::UsbSsEpCompDescriptor fss_comp_desc = {};
+  if (endpoint_configuration.super_speed_companion().has_value()) {
+    fss_comp_desc = {
+        .b_max_burst = endpoint_configuration.super_speed_companion()->b_max_burst(),
+        .bm_attributes = endpoint_configuration.super_speed_companion()->bm_attributes(),
+        // TODO(https://fxbug.dev/497048374): FIDL types should use host
+        // endianness.
+        .w_bytes_per_interval =
+            htole16(endpoint_configuration.super_speed_companion()->w_bytes_per_interval()),
+    };
+  }
+  auto result = peripheral_->dci().buffer(arena)->ConfigureEndpoint(fep_desc, fss_comp_desc);
+  if (!result.ok()) {
+    fdf::error("Failed to send ConfigureEndpoint request: {}", result.status_string());
+    completer.Reply(fit::as_error(result.status()));
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("Failed to configure endpoint: {}", zx_status_get_string(result->error_value()));
+    completer.Reply(fit::as_error(result->error_value()));
+    return;
+  }
+  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} configured", ep_address));
   completer.Reply(fit::ok());
 }
 
@@ -284,11 +350,33 @@ void UsbFunction::DisableEndpoint(DisableEndpointRequest& request,
     completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
     return;
   }
-  zx_status_t status = CommonEndpointDisable(request.endpoint_address());
-  if (status != ZX_OK) {
-    completer.Reply(fit::as_error(status));
+  const uint8_t ep_address = request.endpoint_address();
+  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_FOUND));
     return;
   }
+
+  fidl::Arena arena;
+  auto result = peripheral_->dci().buffer(arena)->DisableEndpoint(ep_address);
+  if (!result.ok()) {
+    fdf::error("Failed to send DisableEndpoint request: {}", result.status_string());
+    completer.Reply(fit::as_error(result.status()));
+    return;
+  }
+  if (result->is_error()) {
+    // When the USB peripheral is disconnected or the DCI controller transitions
+    // to an unpowered/stopped state, hardware endpoints are no longer present,
+    // and the DCI driver returns ZX_ERR_IO_NOT_PRESENT. Because the endpoint
+    // is already inactive/inaccessible in hardware, treating this as a success (ZX_OK)
+    // allows teardown and disconnect cleanups to complete cleanly without logging
+    // spurious errors, while recording the inspect event.
+    if (result->error_value() != ZX_ERR_IO_NOT_PRESENT) {
+      fdf::error("Failed to disable endpoint: {}", zx_status_get_string(result->error_value()));
+      completer.Reply(fit::as_error(result->error_value()));
+      return;
+    }
+  }
+  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} disabled", ep_address));
   completer.Reply(fit::ok());
 }
 
@@ -751,118 +839,6 @@ void UsbFunction::Control(const fdescriptor::wire::UsbSetup& setup,
             std::vector<uint8_t> read_data_vec(response->read.begin(), response->read.end());
             completer(zx::ok(std::move(read_data_vec)));
           });
-}
-
-zx_status_t UsbFunction::CommonEndpointSetStall(uint8_t ep_address) {
-  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
-    return ZX_ERR_NOT_FOUND;
-  }
-
-  fidl::Arena arena;
-  auto result = peripheral_->dci().buffer(arena)->EndpointSetStall(ep_address);
-
-  if (!result.ok()) {
-    fdf::error("Failed to send EndpointSetStall request: {}", result.status_string());
-    return result.status();
-  }
-  if (result->is_error()) {
-    fdf::error("EndpointSetStall failed: {}", zx_status_get_string(result->error_value()));
-    return result->error_value();
-  }
-  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} stalled", ep_address));
-  return ZX_OK;
-}
-
-zx_status_t UsbFunction::CommonEndpointClearStall(uint8_t ep_address) {
-  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
-    return ZX_ERR_NOT_FOUND;
-  }
-
-  fidl::Arena arena;
-  auto result = peripheral_->dci().buffer(arena)->EndpointClearStall(ep_address);
-
-  if (!result.ok()) {
-    fdf::error("Failed to send EndpointClearStall request: {}", result.status_string());
-    return result.status();
-  }
-  if (result->is_error()) {
-    fdf::error("EndpointClearStall failed: {}", zx_status_get_string(result->error_value()));
-    return result->error_value();
-  }
-  peripheral_->dci_inspect().RecordEvent(
-      std::format("endpoint 0x{:02x} stall cleared", ep_address));
-  return ZX_OK;
-}
-
-zx_status_t UsbFunction::CommonEndpointConfigure(
-    uint8_t ep_address, ffunction::EndpointConfiguration endpoint_configuration) {
-  if (!endpoint_configuration.descriptor().has_value()) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
-    return ZX_ERR_NOT_FOUND;
-  }
-
-  fidl::Arena arena;
-  fdescriptor::wire::UsbEndpointDescriptor fep_desc = {
-      .b_endpoint_address = ep_address,
-      .bm_attributes = endpoint_configuration.descriptor()->bm_attributes(),
-      // TODO(https://fxbug.dev/497048374): FIDL types should use host
-      // endianness.
-      .w_max_packet_size = htole16(endpoint_configuration.descriptor()->w_max_packet_size()),
-      .b_interval = endpoint_configuration.descriptor()->b_interval(),
-  };
-  fdescriptor::wire::UsbSsEpCompDescriptor fss_comp_desc;
-  if (endpoint_configuration.super_speed_companion().has_value()) {
-    fss_comp_desc = {
-        .b_max_burst = endpoint_configuration.super_speed_companion()->b_max_burst(),
-        .bm_attributes = endpoint_configuration.super_speed_companion()->bm_attributes(),
-        // TODO(https://fxbug.dev/497048374): FIDL types should use host
-        // endianness.
-        .w_bytes_per_interval =
-            htole16(endpoint_configuration.super_speed_companion()->w_bytes_per_interval()),
-    };
-  }
-  auto result = peripheral_->dci().buffer(arena)->ConfigureEndpoint(fep_desc, fss_comp_desc);
-
-  if (!result.ok()) {
-    fdf::error("Failed to send ConfigureEndpoint request: {}", result.status_string());
-    return result.status();
-  }
-  if (result->is_error()) {
-    fdf::error("Failed to configure endpoint: {}", zx_status_get_string(result->error_value()));
-    return result->error_value();
-  }
-  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} configured", ep_address));
-  return ZX_OK;
-}
-
-zx_status_t UsbFunction::CommonEndpointDisable(uint8_t ep_address) {
-  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
-    return ZX_ERR_NOT_FOUND;
-  }
-
-  fidl::Arena arena;
-  auto result = peripheral_->dci().buffer(arena)->DisableEndpoint(ep_address);
-
-  if (!result.ok()) {
-    fdf::error("Failed to send DisableEndpoint request: {}", result.status_string());
-    return result.status();
-  }
-  if (result->is_error()) {
-    // When the USB peripheral is disconnected or the DCI controller transitions
-    // to an unpowered/stopped state, hardware endpoints are no longer present,
-    // and the DCI driver returns ZX_ERR_IO_NOT_PRESENT. Because the endpoint
-    // is already disabled/inaccessible in hardware, treating this as a success (ZX_OK)
-    // allows teardown and disconnect cleanups to complete cleanly without logging
-    // spurious errors, while recording the inspect event.
-    if (result->error_value() != ZX_ERR_IO_NOT_PRESENT) {
-      fdf::error("Failed to disable endpoint: {}", zx_status_get_string(result->error_value()));
-      return result->error_value();
-    }
-  }
-  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} disabled", ep_address));
-  return ZX_OK;
 }
 
 void UsbFunction::SetDescriptors(uint8_t* descriptors, size_t length) {

@@ -118,8 +118,6 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
   std::optional<std::vector<uint8_t>> GetEndpointsForInterface(uint8_t interface_num,
                                                                uint8_t alt_setting) const;
 
-  zx_status_t UsbFunctionCancelAll(uint8_t ep_address);
-
   // fuchsia_hardware_usb_function.UsbFunction protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
                          ConnectToEndpointCompleter::Sync& completer) override;
@@ -167,12 +165,6 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
     kCleared,
   };
 
-  zx_status_t CommonEndpointSetStall(uint8_t ep_address);
-  zx_status_t CommonEndpointClearStall(uint8_t ep_address);
-  zx_status_t CommonEndpointConfigure(
-      uint8_t ep_address,
-      fuchsia_hardware_usb_function::EndpointConfiguration endpoint_configuration);
-  zx_status_t CommonEndpointDisable(uint8_t ep_address);
   void CloseFunctionInterface();
   void StartUnconfigure(fuchsia_hardware_usb_descriptor::wire::UsbSpeed speed);
   void CompletePendingUnconfigures(zx_status_t status);

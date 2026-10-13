@@ -43,36 +43,28 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
     This driver is responsible for USB in the peripheral role, that is,
     acting as a USB device to a USB host.
     It serves as the central point of coordination for the peripheral role.
-    It is configured via the fuchsia.hardware.usb.peripheral FIDL interface.
-    Based on this configuration, it creates one or more devmgr devices with protocol
-    ZX_PROTOCOL_USB_FUNCTION. These devices are bind points for USB function drivers,
-    which implement USB interfaces for particular functions (like USB ethernet or mass storage).
-    This driver also binds to a device with protocol ZX_PROTOCOL_USB_DCI
-    (Device Controller Interface) which is implemented by a driver for the actual
-    USB controller hardware for the peripheral role.
+    It is configured via the fuchsia.hardware.usb.peripheral.Device FIDL protocol
+    (or via structured configuration in Start()). Based on this configuration,
+    it creates child nodes that serve fuchsia.hardware.usb.function.UsbFunction.
+    These child nodes are bind points for USB function drivers, which implement
+    USB interfaces for particular functions (such as USB ethernet, ADB, or VSOCK).
 
-    The FIDL interface SetConfiguration() is used to initialize and start USB in the
-    peripheral role. Internally this consists of several steps.
-    The first step is setting up the USB device descriptor to be presented to the host
-    during enumeration.
-    Next, the descriptors for the USB functions are added to the configuration.
-    Finally after all the functions have been added, the configuration is complete and
-    it is now possible to build the configuration descriptor.
-    Once we get to this point, UsbPeripheral.functions_bound_ is set to true.
+    This driver binds to a parent Device Controller Interface (DCI) driver via the
+    fuchsia.hardware.usb.dci.UsbDci FIDL service and registers a
+    fuchsia.hardware.usb.dci.UsbDciInterface server (hosted on a dedicated
+    synchronized dispatcher by UsbDciInterfaceServer) to receive host connection,
+    speed, and control transfer events.
 
-    If the role is set to UsbMode::kPeripheral and functions_bound_ is true,
-    then we are ready to start USB in peripheral role.
-    At this point, we create DDK devices for our list of functions.
-    When the function drivers bind to these functions, they register an interface of type
-    usb_function_interface_protocol_t with this driver via the usb_function_register() API.
-    Once all of the function drivers have registered themselves this way,
-    UsbPeripheral.functions_registered_ is set to true.
-
-    if the usb mode is set to UsbMode::kPeripheral and functions_registered_ is true,
-    we are now finally ready to operate in the peripheral role.
-
-    Teardown of the peripheral role:
-    The FIDL ClearFunctions() message will reset this device's list of USB functions.
+    Lifecycle and state coordination are governed by two explicit state machines:
+    - UsbPeripheral::DeviceState tracks the controller and configuration lifecycle
+      (from kNoConfiguration and kWaitForFunctionBind through kStarting,
+      kPeripheralReady, and kHostConnected, as well as the teardown states
+      kUnregisteringFunction, kClearingFunctions, and kStoppingDriver).
+    - UsbFunction::FunctionState tracks each function's binding and
+      UsbFunctionInterface::SetConfigured RPC state, coalescing concurrent
+      unconfiguration requests across host disconnects, function unregistrations,
+      and configuration teardowns before stopping the DCI controller or removing
+      child nodes.
 */
 
 namespace usb_peripheral {
@@ -511,11 +503,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   fdescriptor::UsbMode cur_usb_mode_ __TA_GUARDED(lock_) = fdescriptor::UsbMode::kNone;
   // Our parent's USB mode. Should not change after being set.
   fdescriptor::UsbMode parent_usb_mode_ __TA_GUARDED(lock_) = fdescriptor::UsbMode::kNone;
-  // True if we have added child devices for our functions.
-  bool function_devs_added_ __TA_GUARDED(lock_) = false;
-  // True if fuchsia_hardware_usb_dci::SetInterface performed in Init().
-  bool set_interface_in_init_ __TA_GUARDED(lock_) = false;
-  // True if we are connected to a host,
+  // True if we are connected to a host.
   bool connected_ __TA_GUARDED(lock_) = false;
   // Current configuration number selected via StandardRequest::SET_CONFIGURATION
   // (will be 0 or 1 since we currently do not support multiple configurations).
@@ -529,9 +517,6 @@ class UsbPeripheral : public fdf::DriverBase2,
   fidl::WireSharedClient<fuchsia_hardware_usb_peripheral::Events> listener_;
 
   DeviceState state_ __TA_GUARDED(lock_) = DeviceState::kNoConfiguration;
-
-  bool cache_enabled_ = true;
-  bool cache_report_enabled_ = true;
 
   UsbMonitor usb_monitor_;
 

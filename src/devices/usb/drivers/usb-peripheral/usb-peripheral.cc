@@ -182,30 +182,22 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   zx::result dci_fidl = incoming_->Connect<fdci::UsbDciService::Device>();
   if (dci_fidl.is_error()) {
     fdf::error("Failed to connect dci fidl protocol: {}", dci_fidl);
-  } else {
-    // Try to set DciIntf over FIDL. We don't do this for Banjo because SetInterface is used to
-    // indicate that all functions have been attached/un-attached. This is a separate method in
-    // FIDL, so we set DciIntf here for FIDL.
-    fidl::Arena arena;
-    auto client_end = intf_srv_.AddBinding();
-    auto result = fidl::WireCall(*dci_fidl)->SetInterface(std::move(client_end));
-    // DCI FIDL is not available. Return OK because we could be using Banjo DCI instead.
-    // In the future when we remove banjo. This should be an error.
-    if (!result.ok()) {
-      fdf::info("SetInterface failed (framework): {}", result.status_string());
-    } else if (result->is_error()) {
-      fdf::error("SetInterface failed (DCI error): {}",
-                 zx_status_get_string(result->error_value()));
-    } else {
-      if (zx_status_t status = InitializeDci(std::move(*dci_fidl)); status != ZX_OK) {
-        return zx::error(status);
-      }
-    }
+    return dci_fidl.take_error();
   }
 
-  if (!dci_.is_valid()) {
-    fdf::error("No FIDL UsbDci protocol served by parent");
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  // Register our UsbDciInterface server with the parent DCI driver.
+  auto client_end = intf_srv_.AddBinding();
+  auto result = fidl::WireCall(*dci_fidl)->SetInterface(std::move(client_end));
+  if (!result.ok()) {
+    fdf::error("SetInterface failed (framework): {}", result.status_string());
+    return zx::error(result.status());
+  }
+  if (result->is_error()) {
+    fdf::error("SetInterface failed (DCI error): {}", zx_status_get_string(result->error_value()));
+    return zx::error(result->error_value());
+  }
+  if (zx_status_t status = InitializeDci(std::move(*dci_fidl)); status != ZX_OK) {
+    return zx::error(status);
   }
 
   // Starting USB mode is determined from device metadata.
@@ -635,8 +627,9 @@ zx_status_t UsbPeripheral::CheckAndStartController() {
   {
     fbl::AutoLock lock(&lock_);
     cur_usb_mode_ = fdescriptor::UsbMode::kPeripheral;
-    // The host connection event can be received before we transition to kPeripheralReady.
-    // This is not required once we move to a single dispatcher.
+    // UsbDciInterfaceServer runs on a dedicated dispatcher and may deliver SetConnected(true)
+    // while StartController() is in flight, transitioning state_ to kHostConnected before we
+    // re-acquire lock_ here.
     if (state_ == DeviceState::kStarting) {
       SetStateLocked(DeviceState::kPeripheralReady);
     }
@@ -884,8 +877,6 @@ zx_status_t UsbPeripheral::StopController() {
       return result->error_value();
     }
   }
-  // Note: Banjo DCI doesn't have a dedicated StopController call.
-  // Transitioning cur_usb_mode_ to UsbMode::kNone is sufficient here.
 
   SetUsbMode(fdescriptor::UsbMode::kNone);
 
@@ -2362,9 +2353,9 @@ void UsbPeripheral::OnHostConnectionChanged(bool connected, fit::callback<void()
     connected_ = connected;
 
     if (connected) {
-      // We also allow transition from kStarting because the controller might report
-      // connection before we fully transition to kPeripheralReady in CheckAndStartController. This
-      // is not required once we move to a single dispatcher.
+      // Allow transition from kStarting as well, because UsbDciInterfaceServer runs on a dedicated
+      // dispatcher and may deliver SetConnected(true) while StartController() is still executing
+      // inside CheckAndStartController().
       if (state_ == DeviceState::kPeripheralReady || state_ == DeviceState::kStarting) {
         SetStateLocked(DeviceState::kHostConnected);
       } else if (state_ == DeviceState::kHostConnected && unconfiguring_functions_) {
