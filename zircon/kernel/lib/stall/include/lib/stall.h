@@ -23,17 +23,6 @@
 //  - Contributing to an accumulator as a stalling thread.
 class StallAccumulator {
  public:
-  struct Stats {
-    // Monotonic time spent with num_contributors_stalling > 0.
-    zx_duration_mono_t total_time_stall_some = 0;
-
-    // Monotonic time spent with num_contributors_stalling > 0 && num_contributors_progressing == 0.
-    zx_duration_mono_t total_time_stall_full = 0;
-
-    // Monotonic time spent with num_contributors_progressing > 0 || num_contributors_stalling > 0.
-    zx_duration_mono_t total_time_active = 0;
-  };
-
   StallAccumulator();
   StallAccumulator(const StallAccumulator &) = delete;
   StallAccumulator(StallAccumulator &&) = delete;
@@ -45,9 +34,6 @@ class StallAccumulator {
   // Only values between -1 and +1 are accepted.
   void Update(int op_contributors_progressing, int op_contributors_stalling);
 
-  // Reads the current stats and resets them to zero.
-  Stats Flush();
-
   // Internally called by the scheduler at every context switch.
   static void ApplyContextSwitch(Thread *current_thread, Thread *next_thread)
       TA_REQ(current_thread->get_lock(), next_thread->get_lock());
@@ -55,8 +41,8 @@ class StallAccumulator {
  private:
   // Storage mirroring the Rust `StallAccumulator` in ../../src/mod.rs, which owns this object:
   // Rust initializes it, acquires its lock and updates its counters. C++ only reserves the
-  // storage - a `struct percpu` holds one by value - and forwards the calls above over FFI, so
-  // none of these fields are ever read here.
+  // storage - a `struct percpu` holds one by value - and forwards the two calls above over FFI,
+  // so none of these fields are ever read here.
   //
   // //zircon/kernel/kernel/percpu.rs asserts that the two layouts agree.
   struct Storage {
@@ -73,24 +59,25 @@ class StallAccumulator {
     zx_instant_mono_t last_consolidate_time;
 
     // Accumulated totals at the time of the last update.
-    Stats accumulated_stats;
+    struct {
+      zx_duration_mono_t total_time_stall_some;
+      zx_duration_mono_t total_time_stall_full;
+      zx_duration_mono_t total_time_active;
+    } accumulated_stats;
   };
-  Storage storage_ = {};
+  // Never read here: the FFI calls above hand Rust the whole object, which begins with it.
+  [[maybe_unused]] Storage storage_ = {};
 };
 
 extern "C" {
+
+// Moves the stall contributions of the outgoing and incoming threads across a context switch.
+void rust_stall_apply_context_switch(Thread *current_thread, Thread *next_thread);
 
 void rust_stall_accumulator_init(StallAccumulator *accumulator);
 
 void rust_stall_accumulator_update(StallAccumulator *accumulator, int op_contributors_progressing,
                                    int op_contributors_stalling);
-
-void rust_stall_accumulator_update_no_irq(StallAccumulator *accumulator,
-                                          int op_contributors_progressing,
-                                          int op_contributors_stalling);
-
-void rust_stall_accumulator_flush(StallAccumulator *accumulator,
-                                  StallAccumulator::Stats *out_stats);
 }
 
 // A stall observer that keeps a circular queue with the last N samples (where N corresponds to the
