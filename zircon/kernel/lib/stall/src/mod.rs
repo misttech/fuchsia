@@ -252,7 +252,9 @@ impl EventReceiver for CppEventReceiver {
 /// This type doesn't need to be thread safe because all its usages are protected by the
 /// [`StallAggregator`]'s `observers_lock`.
 #[derive(DoublyLinkedListContainable, fbl::Recyclable)]
+#[pin_data]
 pub struct StallObserver {
+    #[pin]
     #[dll_node]
     node: DoublyLinkedListNode<StallObserver>,
 
@@ -297,19 +299,20 @@ impl StallObserver {
     }
 
     /// Stores `sample`, evicting the oldest one, and notifies the event receiver.
-    pub fn push_sample(&mut self, sample: DurationMono) {
-        self.samples_sum = self.samples_sum + (sample - self.samples[self.samples_pos]);
-        self.samples[self.samples_pos] = sample;
-        self.samples_pos += 1;
-        if self.samples_pos == self.samples.len() {
-            self.samples_pos = 0;
+    pub fn push_sample(self: Pin<&mut Self>, sample: DurationMono) {
+        let this = self.project();
+        *this.samples_sum = *this.samples_sum + (sample - this.samples[*this.samples_pos]);
+        this.samples[*this.samples_pos] = sample;
+        *this.samples_pos += 1;
+        if *this.samples_pos == this.samples.len() {
+            *this.samples_pos = 0;
         }
 
         // SAFETY: the observer's creator guarantees that the receiver outlives it, and removing
         // an observer from the aggregator before dropping it is what keeps the sampling thread
         // from being inside this call when that happens.
-        let event_receiver = unsafe { self.event_receiver.as_ref() };
-        if self.samples_sum >= self.threshold {
+        let event_receiver = unsafe { this.event_receiver.as_ref() };
+        if *this.samples_sum >= *this.threshold {
             event_receiver.on_above_threshold();
         } else {
             event_receiver.on_below_threshold();
@@ -408,11 +411,9 @@ impl StallAggregator {
     }
 
     /// Runs `func` on the observer lists with `observers_lock` held.
-    fn with_observers<R>(&self, func: impl FnOnce(&mut Observers) -> R) -> R {
+    fn with_observers<R>(&self, func: impl FnOnce(Pin<&mut Observers>) -> R) -> R {
         ksync::lock!(let mut guard = self.lock_observers_lock());
-        // SAFETY: `observers` is structurally pinned inside the pinned aggregator; taking a `&mut`
-        // reference to it never moves it.
-        func(unsafe { guard.as_mut().observers_mut().get_unchecked_mut() })
+        func(guard.as_mut().observers_mut())
     }
 
     /// Registers `observer` to be notified of the "some" stall time.
@@ -423,7 +424,9 @@ impl StallAggregator {
     /// [`Self::remove_observer_some`] before it is destroyed.
     pub unsafe fn add_observer_some(&self, observer: NonNull<StallObserver>) {
         // SAFETY: Guaranteed by this function's contract.
-        self.with_observers(|observers| unsafe { observers.some.push_back_raw(observer.as_ptr()) });
+        self.with_observers(|observers| unsafe {
+            observers.project().some.push_back_raw(observer.as_ptr())
+        });
     }
 
     /// Unregisters an observer previously passed to [`Self::add_observer_some`].
@@ -435,7 +438,7 @@ impl StallAggregator {
     /// head dangling.
     pub unsafe fn remove_observer_some(&self, observer: &StallObserver) {
         // SAFETY: Guaranteed by this function's contract.
-        self.with_observers(|observers| unsafe { observers.some.erase(observer) });
+        self.with_observers(|observers| unsafe { observers.project().some.erase(observer) });
     }
 
     /// Registers `observer` to be notified of the "full" stall time.
@@ -446,7 +449,9 @@ impl StallAggregator {
     /// [`Self::remove_observer_full`] before it is destroyed.
     pub unsafe fn add_observer_full(&self, observer: NonNull<StallObserver>) {
         // SAFETY: Guaranteed by this function's contract.
-        self.with_observers(|observers| unsafe { observers.full.push_back_raw(observer.as_ptr()) });
+        self.with_observers(|observers| unsafe {
+            observers.project().full.push_back_raw(observer.as_ptr())
+        });
     }
 
     /// Unregisters an observer previously passed to [`Self::add_observer_full`].
@@ -458,7 +463,7 @@ impl StallAggregator {
     /// head dangling.
     pub unsafe fn remove_observer_full(&self, observer: &StallObserver) {
         // SAFETY: Guaranteed by this function's contract.
-        self.with_observers(|observers| unsafe { observers.full.erase(observer) });
+        self.with_observers(|observers| unsafe { observers.project().full.erase(observer) });
     }
 
     /// Aggregates a new set of per-CPU samples. Called periodically by the sampling thread.
@@ -516,6 +521,7 @@ impl StallAggregator {
 
         // Notify observers.
         self.with_observers(|observers| {
+            let observers = observers.project();
             for observer in observers.some.iter_mut() {
                 observer.push_sample(delta_some);
             }

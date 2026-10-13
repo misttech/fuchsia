@@ -43,8 +43,9 @@ pub use canary::{Canary, magic};
 pub use conditional_select_nospec::{conditional_select_nospec_eq, conditional_select_nospec_lt};
 pub use confine_array_index::confine_array_index;
 pub use doubly_linked_list::{
-    DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, ForwardIterator, Iterator,
-    ReverseIterator, remove_from_container,
+    DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, ForwardIterator,
+    ForwardIteratorMut, Iterator, IteratorMut, ReverseIterator, ReverseIteratorMut,
+    remove_from_container,
 };
 pub use fbl_macros::{
     DoublyLinkedListContainable, Recyclable, SinglyLinkedListContainable, WavlTreeContainable,
@@ -56,7 +57,7 @@ pub use name::Name;
 pub use opaque_ref_counted::{IsOpaqueRefCounted, OpaqueRefCounted, OpaqueRefCountedFacade};
 pub use packed_pointer::PackedPointer;
 pub use pin_init;
-pub use ptr_traits::{ManagedPtr, PtrTraits};
+pub use ptr_traits::{ManagedPtr, MutPtr, PtrTraits};
 pub use recyclable::{Recyclable, UninitRecyclable};
 pub use ref_counted::{HasRefCount, HasRefCountUpgradeable, RefCounted};
 pub use ref_ptr::RefPtr;

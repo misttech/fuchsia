@@ -29,7 +29,9 @@ define_kcounter!(MBUF_TOTAL_BYTES_COUNT, "mbuf.total_bytes", Sum);
 /// An MBuf is a small fixed-size chainable memory buffer.
 #[repr(C)]
 #[derive(DoublyLinkedListContainable)]
+#[pin_data]
 struct MBuf {
+    #[pin]
     #[dll_node]
     node: DoublyLinkedListNode<MBuf>,
 
@@ -90,13 +92,14 @@ impl MBuf {
 
     /// Returns a mutable slice of uninitialized capacity starting after current `len` up to
     /// `max_len` (capped by `available_space()`), typed as `MaybeUninit<c_char>` for user copies.
-    pub fn extend(&mut self, max_len: usize) -> &mut [MaybeUninit<c_char>] {
+    pub fn extend(self: Pin<&mut Self>, max_len: usize) -> &mut [MaybeUninit<c_char>] {
         let copy_len = min(self.available_space(), max_len);
-        let offset = self.len as usize;
+        let this = self.project();
+        let offset = *this.len as usize;
         // SAFETY: `offset + copy_len <= PAYLOAD_SIZE`.
         // `MaybeUninit<c_char>` and `u8` have identical size (1 byte) and alignment (1 byte).
         unsafe {
-            let ptr = self.data.as_mut_ptr().cast::<MaybeUninit<c_char>>().add(offset);
+            let ptr = this.data.as_mut_ptr().cast::<MaybeUninit<c_char>>().add(offset);
             from_raw_parts_mut(ptr, copy_len)
         }
     }
@@ -104,16 +107,16 @@ impl MBuf {
     /// Copies up to `len - *pos` bytes from user pointer `src` at `*pos` into this `MBuf`,
     /// advancing `*pos` and `self.len` by the number of bytes copied.
     pub fn write_from_user(
-        &mut self,
+        mut self: Pin<&mut Self>,
         src: UserInPtr<c_char>,
         pos: &mut usize,
         len: usize,
     ) -> Result<(), Status> {
-        let dst_slice = self.extend(len - *pos);
+        let dst_slice = self.as_mut().extend(len - *pos);
         let copy_len = dst_slice.len();
         src.byte_offset(*pos as isize).copy_slice_from_user(dst_slice)?;
         *pos += copy_len;
-        self.len += copy_len as u32;
+        *self.project().len += copy_len as u32;
         Ok(())
     }
 
@@ -156,7 +159,7 @@ static_assert!(align_of::<MBuf>() == 8);
 /// Helper function to allocate `num` `MBuf` buffers into a `DoublyLinkedList`.
 ///
 /// If allocation of any buffer fails, the error is returned and `bufs` is left unmodified.
-fn alloc_mbufs(num: usize, bufs: &mut DoublyLinkedList<*mut MBuf>) -> Result<(), Status> {
+fn alloc_mbufs(num: usize, mut bufs: Pin<&mut DoublyLinkedList<*mut MBuf>>) -> Result<(), Status> {
     if num == 0 {
         return Ok(());
     }
@@ -164,14 +167,12 @@ fn alloc_mbufs(num: usize, bufs: &mut DoublyLinkedList<*mut MBuf>) -> Result<(),
     stack_pin_init!(let pages = VmPageDoublyLinkedList::new());
     pmm::alloc_pages(num, 0, pages.as_mut())?;
 
-    // SAFETY: `pages` is pinned on stack; obtaining mutable reference to pop pages is safe.
-    let pages = unsafe { pages.get_unchecked_mut() };
-    while let Some(page_raw) = pages.pop_front() {
+    while let Some(page_raw) = pages.as_mut().pop_front() {
         // SAFETY: `page_raw` was popped from `pages` allocated by `pmm::alloc_pages` and is valid.
         // The resulting `buf_ptr` is newly initialized and not currently in any list.
         unsafe {
             let buf_ptr = MBuf::init_in_page(page_raw.as_ptr());
-            bufs.push_back_raw(buf_ptr);
+            bufs.as_mut().push_back_raw(buf_ptr);
         }
     }
 
@@ -180,22 +181,20 @@ fn alloc_mbufs(num: usize, bufs: &mut DoublyLinkedList<*mut MBuf>) -> Result<(),
 }
 
 /// Helper function to free all `MBuf` buffers in a `DoublyLinkedList`.
-fn free_mbufs(bufs: &mut DoublyLinkedList<*mut MBuf>) {
+fn free_mbufs(mut bufs: Pin<&mut DoublyLinkedList<*mut MBuf>>) {
     if bufs.is_empty() {
         return;
     }
 
     stack_pin_init!(let pages = VmPageDoublyLinkedList::new());
-    // SAFETY: `pages` is pinned on stack; obtaining mutable reference to the list is safe.
-    let pages_list = unsafe { pages.as_mut().get_unchecked_mut() };
 
     let mut count = 0usize;
-    while let Some(buf_ptr) = bufs.pop_front() {
+    while let Some(buf_ptr) = bufs.as_mut().pop_front() {
         // SAFETY: `buf_ptr` was popped from `bufs` and points to a valid, initialized `MBuf`
         // allocated from PMM whose backing page is not in any list.
         unsafe {
             let page_ptr = (*buf_ptr).page;
-            pages_list.push_back_raw(page_ptr.as_non_null());
+            pages.as_mut().push_back_raw(page_ptr.as_non_null());
         }
         count += 1;
     }
@@ -214,14 +213,13 @@ fn free_mbufs(bufs: &mut DoublyLinkedList<*mut MBuf>) {
 /// PMM via `free_mbufs`. This ensures that temporary allocations during writes or buffers collected
 /// during reads are never leaked on error or early return.
 struct MBufListGuard<'a> {
-    list: Option<&'a mut DoublyLinkedList<*mut MBuf>>,
+    list: Option<Pin<&'a mut DoublyLinkedList<*mut MBuf>>>,
 }
 
 impl<'a> MBufListGuard<'a> {
     /// Creates an armed guard wrapping a pinned `list`.
     fn new(list: Pin<&'a mut DoublyLinkedList<*mut MBuf>>) -> Self {
-        // SAFETY: `list` is pinned on the caller's stack and will not be moved for lifetime `'a`.
-        Self { list: Some(unsafe { list.get_unchecked_mut() }) }
+        Self { list: Some(list) }
     }
 
     /// Pushes an unlinked `MBuf` to the back of the list.
@@ -232,13 +230,13 @@ impl<'a> MBufListGuard<'a> {
         }
     }
 
-    /// Returns a mutable reference to the underlying list.
-    fn as_mut(&mut self) -> &mut DoublyLinkedList<*mut MBuf> {
-        self.list.as_deref_mut().expect("MBufListGuard already disarmed")
+    /// Returns a pinned mutable reference to the underlying list.
+    fn as_mut(&mut self) -> Pin<&mut DoublyLinkedList<*mut MBuf>> {
+        self.list.as_mut().expect("MBufListGuard already disarmed").as_mut()
     }
 
     /// Disarms the guard, returning the underlying list so its buffers will not be freed on drop.
-    fn disarm(mut self) -> &'a mut DoublyLinkedList<*mut MBuf> {
+    fn disarm(mut self) -> Pin<&'a mut DoublyLinkedList<*mut MBuf>> {
         self.list.take().expect("MBufListGuard already disarmed")
     }
 }
@@ -296,11 +294,9 @@ impl MBufChain {
         src: UserInPtr<c_char>,
         mut len: usize,
     ) -> (Result<(), Status>, usize) {
-        // SAFETY: We hold `Pin<&mut Self>` and obtain `&mut Self` to perform buffer writes without
-        // moving `Self`.
-        let this = unsafe { self.get_unchecked_mut() };
+        let mut this = self.project();
         // Cap len by the max we are allowed to write.
-        len = min(Self::MAX_SIZE - this.size, len);
+        len = min(Self::MAX_SIZE - *this.size, len);
         if len == 0 {
             return (Err(Status::SHOULD_WAIT), 0);
         }
@@ -318,7 +314,7 @@ impl MBufChain {
         let mut pos = 0usize;
         let mut tail_written = 0usize;
 
-        let tail = this.buffers.back_mut().filter(|b| b.available_space() > 0);
+        let tail = this.buffers.as_mut().back_mut().filter(|b| b.available_space() > 0);
         let bufs = tail
             .into_iter()
             .map(|b| (b, true))
@@ -327,7 +323,7 @@ impl MBufChain {
         for (buf, is_tail) in bufs {
             let res = buf.write_from_user(src, &mut pos, len);
             if is_tail {
-                this.size += pos;
+                *this.size += pos;
                 tail_written = pos;
             }
             if let Err(err) = res {
@@ -344,7 +340,7 @@ impl MBufChain {
         }
 
         this.buffers.splice(bufs_guard.disarm());
-        this.size += pos - tail_written;
+        *this.size += pos - tail_written;
         (Ok(()), pos)
     }
 
@@ -364,16 +360,14 @@ impl MBufChain {
         src: UserInPtr<c_char>,
         len: usize,
     ) -> (Result<(), Status>, usize) {
-        // SAFETY: We hold `Pin<&mut Self>` and obtain `&mut Self` to perform buffer writes without
-        // moving `Self`.
-        let this = unsafe { self.get_unchecked_mut() };
+        let this = self.project();
         if len == 0 {
             return (Err(Status::INVALID_ARGS), 0);
         }
         if len > Self::MAX_SIZE {
             return (Err(Status::OUT_OF_RANGE), 0);
         }
-        if Self::MAX_SIZE - this.size < len {
+        if Self::MAX_SIZE - *this.size < len {
             return (Err(Status::SHOULD_WAIT), 0);
         }
 
@@ -393,11 +387,11 @@ impl MBufChain {
             }
         }
 
-        bufs_guard.as_mut().front_mut().unwrap().pkt_len = len as u32;
+        *bufs_guard.as_mut().front_mut().unwrap().project().pkt_len = len as u32;
 
         // Successfully built the packet mbufs. Splice into this.buffers.
         this.buffers.splice(bufs_guard.disarm());
-        this.size += len;
+        *this.size += len;
         (Ok(()), len)
     }
 
@@ -412,15 +406,13 @@ impl MBufChain {
         dst: UserOutPtr<c_char>,
         len: usize,
     ) -> (Result<(), Status>, usize) {
-        // SAFETY: We hold `Pin<&mut Self>` and obtain `&mut Self` to read and remove buffers from
-        // `Self`.
-        let this = unsafe { self.get_unchecked_mut() };
-        if this.size == 0 || len == 0 {
+        let mut this = self.project();
+        if *this.size == 0 || len == 0 {
             return (Ok(()), 0);
         }
 
         let mut pos = 0usize;
-        let mut read_off = this.read_cursor_off;
+        let mut read_off = *this.read_cursor_off;
 
         stack_pin_init!(let free_list = DoublyLinkedList::<*mut MBuf>::new());
         let mut free_list = MBufListGuard::new(free_list);
@@ -436,10 +428,10 @@ impl MBufChain {
 
                 pos += copy_len;
                 read_off += copy_len;
-                this.size -= copy_len;
+                *this.size -= copy_len;
 
                 if read_off == front.len as usize {
-                    if let Some(buf) = this.buffers.pop_front() {
+                    if let Some(buf) = this.buffers.as_mut().pop_front() {
                         free_list.push(buf);
                     }
                     read_off = 0;
@@ -450,7 +442,7 @@ impl MBufChain {
 
         // Record the fact that some data might have been read, even if the overall operation is
         // considered a failure.
-        this.read_cursor_off = read_off;
+        *this.read_cursor_off = read_off;
         (res, pos)
     }
 
@@ -471,10 +463,8 @@ impl MBufChain {
         dst: UserOutPtr<c_char>,
         mut len: usize,
     ) -> (Result<(), Status>, usize) {
-        // SAFETY: We hold `Pin<&mut Self>` and obtain `&mut Self` to read and remove buffers from
-        // `Self`.
-        let this = unsafe { self.get_unchecked_mut() };
-        if this.size == 0 || len == 0 {
+        let mut this = self.project();
+        if *this.size == 0 || len == 0 {
             return (Ok(()), 0);
         }
 
@@ -494,8 +484,8 @@ impl MBufChain {
                 let copy_res = dst.byte_offset(pos as isize).copy_slice_to_user(&slice[..copy_len]);
 
                 // In datagram mode, each visited buffer is popped and discarded completely.
-                this.size -= front.len as usize;
-                if let Some(buf) = this.buffers.pop_front() {
+                *this.size -= front.len as usize;
+                if let Some(buf) = this.buffers.as_mut().pop_front() {
                     free_list.push(buf);
                 }
 
@@ -510,8 +500,8 @@ impl MBufChain {
         while let Some(front) = this.buffers.front()
             && front.pkt_len == 0
         {
-            this.size -= front.len as usize;
-            if let Some(buf) = this.buffers.pop_front() {
+            *this.size -= front.len as usize;
+            if let Some(buf) = this.buffers.as_mut().pop_front() {
                 free_list.push(buf);
             }
         }
@@ -592,10 +582,7 @@ impl MBufChain {
 #[pinned_drop]
 impl PinnedDrop for MBufChain {
     fn drop(self: Pin<&mut Self>) {
-        // SAFETY: `self` is being dropped and will not be accessed again. Obtaining `&mut Self`
-        // allows freeing remaining buffers.
-        let this = unsafe { self.get_unchecked_mut() };
-        free_mbufs(&mut this.buffers);
+        free_mbufs(self.project().buffers);
     }
 }
 

@@ -53,6 +53,23 @@ impl<T, Class> KCell<T, Class> {
         unsafe { &mut *self.value.get() }
     }
 
+    /// Access the guarded value as a pinned mutable reference using a mutable lock token.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that the provided `LockToken` belongs to the specific lock
+    /// instance that guards this `KCell` (rather than a different lock of the same lock class
+    /// `Class`), and that this `KCell` is pinned in memory so its inner value is never moved.
+    #[inline]
+    pub unsafe fn get_pinned_mut_locked<'b>(
+        &self,
+        token: &'b mut LockToken<'_, Class>,
+    ) -> core::pin::Pin<&'b mut T> {
+        // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
+        // instance that guards this cell, and that the cell is pinned in memory.
+        unsafe { core::pin::Pin::new_unchecked(self.get_mut(token)) }
+    }
+
     /// Returns a mutable raw pointer to the guarded value.
     ///
     /// # Safety
@@ -215,6 +232,21 @@ mod tests {
             let token = LockToken::<MyClass>::new();
             let val = cell.as_ref().get_ref().get(&token);
             assert_eq!(*val, 42);
+        }
+    }
+
+    #[test]
+    fn test_kcell_get_pinned_mut_locked() {
+        let cell = core::pin::pin!(KCell::<u32, MyClass>::new(7));
+        let cell: &KCell<u32, MyClass> = cell.as_ref().get_ref();
+
+        unsafe {
+            let mut token = LockToken::<MyClass>::new();
+            let mut pinned: core::pin::Pin<&mut u32> = cell.get_pinned_mut_locked(&mut token);
+            assert_eq!(*pinned, 7);
+            pinned.set(8);
+            *pinned.as_mut().get_mut() += 1;
+            assert_eq!(*cell.get(&token), 9);
         }
     }
 }

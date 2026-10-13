@@ -168,6 +168,7 @@ fn get_region_pool(token: &mut LockToken<'_, ResourcesLock>) -> Result<RefPtr<Re
 pub struct ResourceDispatcherState {
     canary: Canary<{ fbl::magic(b"RSRC") }>,
 
+    #[pin]
     node: DoublyLinkedListNode<ResourceDispatcher>,
 
     #[mutex]
@@ -276,8 +277,7 @@ impl PinnedDrop for ResourceDispatcherState {
         unsafe {
             if let Some(storage) = self.storage.as_ref() {
                 let disp = self.dispatcher();
-                let _ =
-                    storage.guard_mu_mut(token).resource_list_mut().get_unchecked_mut().erase(disp);
+                let _ = storage.guard_mu_mut(token).resource_list_mut().erase(disp);
             }
         }
     }
@@ -451,7 +451,6 @@ impl ResourceDispatcher {
             storage
                 .guard_mu_mut(token)
                 .resource_list_mut()
-                .get_unchecked_mut()
                 .push_back_raw(RefPtr::as_ptr(handle.dispatcher()).cast_mut());
 
             handle

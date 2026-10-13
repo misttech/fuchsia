@@ -49,9 +49,11 @@ pub enum OperationType {
 #[derive(DoublyLinkedListContainable)]
 #[pin_data(PinnedDrop)]
 pub struct Operation {
+    #[pin]
     #[dll_node(tag = WriteQueueTag)]
     write_node: DoublyLinkedListNode<Operation>,
 
+    #[pin]
     #[dll_node(tag = ReadQueueTag)]
     read_node: DoublyLinkedListNode<Operation>,
 
@@ -379,10 +381,7 @@ impl StreamSizeManager {
         let mut guard = self.guard_lock_mut(token);
         // SAFETY: `op` is pinned for the duration of the operation and inserted into `write_q`.
         unsafe {
-            guard
-                .write_q_mut()
-                .get_unchecked_mut()
-                .push_back_raw(core::ptr::from_ref(op).cast_mut());
+            guard.write_q_mut().push_back_raw(core::ptr::from_ref(op).cast_mut());
         }
     }
 
@@ -394,10 +393,7 @@ impl StreamSizeManager {
         let mut guard = self.guard_lock_mut(token);
         // SAFETY: `op` is pinned for the duration of the operation and inserted into `read_q`.
         unsafe {
-            guard
-                .read_q_mut()
-                .get_unchecked_mut()
-                .push_back_raw(core::ptr::from_ref(op).cast_mut());
+            guard.read_q_mut().push_back_raw(core::ptr::from_ref(op).cast_mut());
         }
     }
 
@@ -407,10 +403,7 @@ impl StreamSizeManager {
         op: &Operation,
     ) {
         let mut guard = self.guard_lock_mut(token);
-        // SAFETY: `op` is in `write_q`.
-        unsafe {
-            Self::dequeue_from_list::<WriteQueueTag>(guard.write_q_mut().get_unchecked_mut(), op);
-        }
+        Self::dequeue_from_list::<WriteQueueTag>(guard.write_q_mut(), op);
     }
 
     fn dequeue_read_queue_locked(
@@ -419,10 +412,7 @@ impl StreamSizeManager {
         op: &Operation,
     ) {
         let mut guard = self.guard_lock_mut(token);
-        // SAFETY: `op` is in `read_q`.
-        unsafe {
-            Self::dequeue_from_list::<ReadQueueTag>(guard.read_q_mut().get_unchecked_mut(), op);
-        }
+        Self::dequeue_from_list::<ReadQueueTag>(guard.read_q_mut(), op);
     }
 
     /// Marks and registers the beginning of a read operation.
@@ -476,10 +466,10 @@ impl StreamSizeManager {
         self.push_write_queue_locked(guard.as_mut().token_mut(), op);
 
         // Check if there are any set size operations in front of this that sets the stream size
-        // smaller than `target_size`.
+        // smaller than `target_size`. `op` was just pushed to the back of the write queue while
+        // holding the lock, so skipping the tail visits every operation in front of it.
         let mut block_due_to_set = false;
-        for item in fbl::ReverseIterator::<*mut Operation, WriteQueueTag>::from_element(op).skip(1)
-        {
+        for item in self.guard_lock(guard.token()).write_q().reverse_iter().skip(1) {
             if item.get_type_locked(guard.token()) == OperationType::SetSize
                 && item.get_size_locked(guard.token()) < target_size
             {
@@ -539,8 +529,9 @@ impl StreamSizeManager {
         // rare, prefer reading once over continuously re-reading the atomic in a loop.
         let mut cur_stream_size = self.get_stream_size();
 
-        for item in fbl::ReverseIterator::<*mut Operation, WriteQueueTag>::from_element(op).skip(1)
-        {
+        // `op` was just pushed to the back of the write queue while holding the lock, so skipping
+        // the tail visits every operation in front of it.
+        for item in self.guard_lock(guard.token()).write_q().reverse_iter().skip(1) {
             let item_op_type = item.get_type_locked(guard.token());
             if item_op_type == OperationType::SetSize
                 || item_op_type == OperationType::Append
@@ -608,8 +599,9 @@ impl StreamSizeManager {
         // rare, prefer reading once over continuously re-reading the atomic in a loop.
         let cur_stream_size = self.get_stream_size();
 
-        for item in fbl::ReverseIterator::<*mut Operation, WriteQueueTag>::from_element(op).skip(1)
-        {
+        // `op` was just pushed to the back of both queues while holding the lock, so skipping the
+        // tail visits every operation in front of it.
+        for item in self.guard_lock(guard.token()).write_q().reverse_iter().skip(1) {
             let item_op_type = item.get_type_locked(guard.token());
             if item_op_type == OperationType::SetSize
                 || item_op_type == OperationType::Append
@@ -623,9 +615,7 @@ impl StreamSizeManager {
         }
 
         if !should_block {
-            for item in
-                fbl::ReverseIterator::<*mut Operation, ReadQueueTag>::from_element(op).skip(1)
-            {
+            for item in self.guard_lock(guard.token()).read_q().reverse_iter().skip(1) {
                 if item.get_type_locked(guard.token()) == OperationType::Read
                     && item.get_size_locked(guard.token()) > target_size
                 {
@@ -750,28 +740,23 @@ impl StreamSizeManager {
         debug_assert!(!op.read_node.in_container());
     }
 
-    fn dequeue_from_list<Tag>(list: &mut DoublyLinkedList<*mut Operation, Tag>, op: &Operation)
-    where
+    fn dequeue_from_list<Tag>(
+        mut list: Pin<&mut DoublyLinkedList<*mut Operation, Tag>>,
+        op: &Operation,
+    ) where
         Operation: DoublyLinkedListContainable<Operation, Tag>,
     {
         let is_head = list.front().map(|f| core::ptr::eq(f, op)).unwrap_or(false);
-        let next_op_ptr: Option<*const Operation> =
-            fbl::ForwardIterator::<*mut Operation, Tag>::from_element(op)
-                .nth(1)
-                .map(|next| next as *const Operation);
 
         // SAFETY: `op` is guaranteed to be contained within `list`.
         unsafe {
-            let _ = list.erase(op);
+            let _ = list.as_mut().erase(op);
         }
 
-        // If the current operation is now at the head of the list, signal to the next operation
+        // If the current operation was at the head of the list, signal to the next operation
         // that it should wake to complete its task after this one finishes dequeueing.
-        if is_head && let Some(next_ptr) = next_op_ptr {
-            // SAFETY: `next_ptr` was in `list` and is now the new head.
-            unsafe {
-                (*next_ptr).ready_event.signal();
-            }
+        if is_head && let Some(next_op) = list.front() {
+            next_op.ready_event.signal();
         }
     }
 }

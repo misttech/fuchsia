@@ -202,8 +202,8 @@ impl PmmArena {
                 // SAFETY: We have conceptual ownership of the freshly constructed arena page.
                 unsafe { p.set_state(VmPageState(vm_page_state::WIRED)) };
             } else {
-                // SAFETY: `list` is pinned on stack; obtaining mutable reference to the list is safe.
-                unsafe { list.as_mut().get_unchecked_mut().push_back_raw(NonNull::from(p)) };
+                // SAFETY: The freshly constructed arena page is valid and not in any list.
+                unsafe { list.as_mut().push_back_raw(NonNull::from(p)) };
             }
         }
 

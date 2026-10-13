@@ -191,13 +191,10 @@ impl PhysicalPageProvider {
         // state == OBJECT yet.  During processing we rely on that interval occurring only under
         // the other VMO's lock, but we can't acquire the other VMO's lock here since we're
         // already currently holding the underlying owning contiguous VMO's lock.
-        // SAFETY: Unpinning `pending_requests` is sound because the list is not moved out of the
-        // reference. `PageSource` only sends a request that is not already queued, and it keeps
+        // SAFETY: `PageSource` only sends a request that is not already queued, and it keeps
         // the request alive until it either clears it via `clear_async_request` or the request
         // completes, so it outlives its membership in `pending_requests`.
-        unsafe {
-            fields.pending_requests.get_unchecked_mut().push_back_raw(NonNull::from(request))
-        };
+        unsafe { fields.pending_requests.push_back_raw(NonNull::from(request)) };
     }
 
     /// Removes a previously queued asynchronous request.
@@ -208,10 +205,9 @@ impl PhysicalPageProvider {
         let fields = guard.as_mut().fields_mut();
         assert!(!*fields.closed);
         if request.in_container() {
-            // SAFETY: Unpinning `pending_requests` is sound because the list is not moved out of
-            // the reference. `PageSource` routes a request back to the same provider that queued
-            // it, so a request in a `PageProviderTag` list is in this `pending_requests`.
-            let _ = unsafe { fields.pending_requests.get_unchecked_mut().erase(request) };
+            // SAFETY: `PageSource` routes a request back to the same provider that queued it, so
+            // a request in a `PageProviderTag` list is in this `pending_requests`.
+            let _ = unsafe { fields.pending_requests.erase(request) };
         }
 
         // No need to chase down any currently-processing request here, since before processing
@@ -229,14 +225,12 @@ impl PhysicalPageProvider {
         let fields = guard.as_mut().fields_mut();
         assert!(!*fields.closed);
         if old.in_container() {
-            // SAFETY: Unpinning `pending_requests` is sound because the list is not moved out of
-            // the reference.
-            let pending_requests = unsafe { fields.pending_requests.get_unchecked_mut() };
+            let mut pending_requests = fields.pending_requests;
             // SAFETY: `PageSource` routes both requests to the provider that queued `old`, so
             // `old` is only ever in this `pending_requests`, and `new_req` is a fresh request
             // that is not yet in any `PageProviderTag` list and outlives its membership here.
             unsafe {
-                pending_requests.cursor_at(old).insert_before_raw(NonNull::from(new_req));
+                pending_requests.as_mut().cursor_at(old).insert_before_raw(NonNull::from(new_req));
                 let _ = pending_requests.erase(old);
             }
         }
@@ -255,11 +249,7 @@ impl PhysicalPageProvider {
             let fields = guard.as_mut().fields_mut();
             if *fields.detached || self.phys_base.load(Ordering::Acquire) == Self::INVALID_PHYS_BASE
             {
-                // SAFETY: Unpinning `free_list` and `pages` is sound because neither list is moved
-                // out of its reference.
-                unsafe {
-                    fields.free_list.get_unchecked_mut().splice(pages.as_mut().get_unchecked_mut());
-                }
+                fields.free_list.splice(pages.as_mut());
                 return;
             }
         }
@@ -373,9 +363,7 @@ impl PhysicalPageProvider {
             // Done with all requests (or remaining requests cancelled).
             return None;
         }
-        // SAFETY: Unpinning `pending_requests` is sound because the list is not moved out of the
-        // reference.
-        let request = unsafe { fields.pending_requests.get_unchecked_mut() }.pop_front();
+        let request = fields.pending_requests.pop_front();
         debug_assert!(request.is_some());
         // SAFETY: We just checked there is a pending request.
         let request = unsafe { request.unwrap_unchecked() };
@@ -542,9 +530,8 @@ impl PhysicalPageProvider {
             }
             debug_assert_eq!(page_ptr.state(), VmPageState(vm_page_state::ALLOC));
             // SAFETY: `page_ptr` is a valid allocated page pointer that we now own, and the page
-            // outlives its membership in `pages`. Unpinning `pages` is sound because the list is
-            // not moved out of the reference.
-            unsafe { pages.as_mut().get_unchecked_mut().push_back_raw(page_ptr.as_non_null()) };
+            // outlives its membership in `pages`.
+            unsafe { pages.as_mut().push_back_raw(page_ptr.as_non_null()) };
         } // for pages of request
     }
 
@@ -600,14 +587,9 @@ impl PhysicalPageProvider {
                 if contiguous_pages.is_empty()
                     || (contiguous_pages.back().unwrap().paddr().0 + ::page::SIZE) == next_paddr
                 {
-                    // SAFETY: Unpinning `unloaned_pages` is sound because the list is not moved
-                    // out of the reference.
-                    let page =
-                        unsafe { unloaned_pages.as_mut().get_unchecked_mut() }.pop_front().unwrap();
-                    // SAFETY: `page` is a valid page popped from `unloaned_pages`. Unpinning
-                    // `contiguous_pages` is sound because the list is not moved out of the
-                    // reference.
-                    unsafe { contiguous_pages.as_mut().get_unchecked_mut().push_back_raw(page) };
+                    let page = unloaned_pages.as_mut().pop_front().unwrap();
+                    // SAFETY: `page` is a valid page popped from `unloaned_pages`.
+                    unsafe { contiguous_pages.as_mut().push_back_raw(page) };
                     // Generally want to keep trying to find more contiguous pages, unless there
                     // are no more pages.
                     if !unloaned_pages.is_empty() {
@@ -677,13 +659,9 @@ impl PhysicalPageProvider {
                                 debug_assert!(!page.get_node().in_container());
                                 // SAFETY: `p` is a valid page that is not in any container, and
                                 // the pages backing `VmPage`s outlive their membership in
-                                // `self.contiguous_pages`. Unpinning `self.contiguous_pages` is
-                                // sound because the list is not moved out of the reference.
+                                // `self.contiguous_pages`.
                                 unsafe {
-                                    self.contiguous_pages
-                                        .as_mut()
-                                        .get_unchecked_mut()
-                                        .push_back_raw(p.as_non_null())
+                                    self.contiguous_pages.as_mut().push_back_raw(p.as_non_null())
                                 };
                             }
                         }
@@ -838,22 +816,20 @@ impl PhysicalPageProvider {
 impl PinnedDrop for PhysicalPageProvider {
     fn drop(self: Pin<&mut Self>) {
         debug::ltracef!("PhysicalPageProvider::drop: {:p}\n", self.as_ref().get_ref());
-        // SAFETY: `self` is being dropped and will not be moved; mutable access is exclusive.
-        let this = unsafe { self.get_unchecked_mut() };
-        let phys_base = *this.phys_base.get_mut();
+        let mut this = self;
+        let phys_base = *this.as_mut().project().phys_base.get_mut();
         // Possible we were destructed without being initialized and in error paths we can destruct
         // without `detached` or `closed` becoming true, so cannot check for those.
         if phys_base == Self::INVALID_PHYS_BASE {
-            let free_list = this.free_list.get_inner_mut();
+            let free_list = this.project().free_list.get_pinned_mut();
             // If a failure is encountered during creation, we might have accumulated some pages
             // which need to be returned to the PMM. Initialization isn't complete and these pages
             // haven't been used yet, so no need to unloan and no need to delay reuse either.
             if !free_list.is_empty() {
                 core::hint::cold_path();
-                // SAFETY: Returning uninitialized creation pages to PMM; `free_list` is not moved
-                // by pinning it in place here.
+                // SAFETY: Returning uninitialized creation pages to PMM.
                 unsafe {
-                    pmm::node().free_list(Pin::new_unchecked(free_list), PmmOptDelayReuse::Default);
+                    pmm::node().free_list(free_list, PmmOptDelayReuse::Default);
                 }
             }
             return;
@@ -862,8 +838,7 @@ impl PinnedDrop for PhysicalPageProvider {
         stack_pin_init!(let free_list = VmPageDoublyLinkedList::new());
         // Move the cached pages into a locally pinned list to avoid borrow checker conflicts when
         // passing the free_list into unloan_range.
-        // SAFETY: `free_list` is not moved out of the reference.
-        unsafe { free_list.as_mut().get_unchecked_mut() }.splice(this.free_list.get_inner_mut());
+        free_list.as_mut().splice(this.as_mut().project().free_list.get_pinned_mut());
 
         // To return our pages first retrieve any pages that are loaned, before returning
         // everything to the PMM. This is inefficient as instead of retrieving the loaned page
@@ -873,7 +848,7 @@ impl PinnedDrop for PhysicalPageProvider {
         this.unloan_range(0, this.size, free_list.as_mut());
         assert_eq!(free_list.iter().count() as u64, this.size / (::page::SIZE as u64));
 
-        let cow_pages = *this.cow_pages.get_mut();
+        let cow_pages = *this.as_mut().project().cow_pages.get_mut();
         let delay_reuse = if cow_pages.is_null() {
             PmmOptDelayReuse::Default
         } else {

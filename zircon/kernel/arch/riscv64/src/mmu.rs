@@ -869,7 +869,7 @@ impl<'a> ConsistencyManager<'a> {
         let this = self.project();
         // SAFETY: `paddr` names a page table page from `alloc_page_table()` that has
         // just been unlinked from its parent table, so it is in no other container.
-        unsafe { this.to_free.get_unchecked_mut().push_back_raw(page.as_non_null()) };
+        unsafe { this.to_free.push_back_raw(page.as_non_null()) };
         this.aspace.pt_pages.fetch_sub(1, Ordering::Relaxed);
     }
 }

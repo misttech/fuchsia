@@ -4,17 +4,20 @@
 
 use crate::bitmap::{Bitmap, GetResult};
 
+use core::pin::Pin;
 use pin_init::{PinInit, pin_data, pin_init};
 use zx_status::Status;
 
 /// An element representing a run of set bits in an `RleBitmapBase`.
 #[derive(Default, Debug, fbl::DoublyLinkedListContainable, fbl::Recyclable)]
+#[pin_data]
 #[repr(C)]
 pub struct Element<T> {
     /// The start offset of this run of 1-bits.
     pub bitoff: T,
     /// The number of 1-bits in this run.
     pub bitlen: T,
+    #[pin]
     #[dll_node]
     node: fbl::DoublyLinkedListNode<Self>,
 }
@@ -42,6 +45,12 @@ pub type ElementPtr<T> = fbl::UniquePtr<Element<T>>;
 pub type FreeList<T> = fbl::DoublyLinkedList<ElementPtr<T>>;
 
 /// A run-length encoded bitmap.
+///
+/// # Invariants
+///
+/// `RleBitmapBase` contains a pinned intrusive `DoublyLinkedList` and can only be constructed in
+/// place via its `PinInit` initializer (`RleBitmapBase::new()`). It must never be constructed by
+/// value or moved after initialization.
 #[pin_data]
 #[derive(Debug)]
 pub struct RleBitmapBase<T> {
@@ -52,7 +61,7 @@ pub struct RleBitmapBase<T> {
 }
 
 fn allocate_element<T: Default>(
-    free_list: Option<&mut FreeList<T>>,
+    free_list: Option<Pin<&mut FreeList<T>>>,
 ) -> Result<ElementPtr<T>, Status> {
     if let Some(fl) = free_list {
         if let Some(elem) = fl.pop_front() {
@@ -64,7 +73,7 @@ fn allocate_element<T: Default>(
     fbl::UniquePtr::try_new(elem).map_err(|_| Status::NO_MEMORY)
 }
 
-fn release_element<T>(free_list: Option<&mut FreeList<T>>, elem: ElementPtr<T>) {
+fn release_element<T>(free_list: Option<Pin<&mut FreeList<T>>>, elem: ElementPtr<T>) {
     if let Some(fl) = free_list {
         fl.push_back(elem);
     }
@@ -119,10 +128,10 @@ where
     /// one allocation. If any nodes need to be deleted, they will be appended
     /// to `free_list`.
     pub fn set_no_alloc(
-        &mut self,
+        self: Pin<&mut Self>,
         bitoff: T,
         bitmax: T,
-        free_list: &mut FreeList<T>,
+        free_list: Pin<&mut FreeList<T>>,
     ) -> Result<(), Status> {
         self.set_internal(bitoff, bitmax, Some(free_list))
     }
@@ -137,20 +146,21 @@ where
     /// one allocation. If any nodes need to be deleted, they will be appended
     /// to `free_list`.
     pub fn clear_no_alloc(
-        &mut self,
+        self: Pin<&mut Self>,
         bitoff: T,
         bitmax: T,
-        free_list: &mut FreeList<T>,
+        free_list: Pin<&mut FreeList<T>>,
     ) -> Result<(), Status> {
         self.clear_internal(bitoff, bitmax, Some(free_list))
     }
 
     fn set_internal(
-        &mut self,
+        self: Pin<&mut Self>,
         bitoff: T,
         bitmax: T,
-        mut free_list: Option<&mut FreeList<T>>,
+        mut free_list: Option<Pin<&mut FreeList<T>>>,
     ) -> Result<(), Status> {
+        let this = self.project();
         if bitmax < bitoff {
             return Err(Status::INVALID_ARGS);
         }
@@ -159,13 +169,12 @@ where
             return Ok(());
         }
 
-        let free_list_ref = free_list.as_deref_mut();
-        let mut new_elem = allocate_element(free_list_ref)?;
-        self.num_elems += 1;
+        let mut new_elem = allocate_element(free_list.as_mut().map(Pin::as_mut))?;
+        *this.num_elems += 1;
         new_elem.bitoff = bitoff;
         new_elem.bitlen = bitlen;
 
-        let mut cursor = self.elems.cursor_front_mut();
+        let mut cursor = this.elems.cursor_front_mut();
         while let Some(e) = cursor.get() {
             if e.bitoff + e.bitlen >= bitoff {
                 break;
@@ -174,7 +183,7 @@ where
         }
 
         cursor.insert_before(new_elem);
-        self.num_bits = self.num_bits + bitlen;
+        *this.num_bits = *this.num_bits + bitlen;
 
         let mut has_successor = false;
         let mut successor_bitoff = T::default();
@@ -191,10 +200,10 @@ where
             let diff = elem_bitoff - successor_bitoff;
             elem_bitlen = elem_bitlen + diff;
             elem_bitoff = successor_bitoff;
-            let elem = cursor.get_mut().unwrap();
-            elem.bitoff = elem_bitoff;
-            elem.bitlen = elem_bitlen;
-            self.num_bits = self.num_bits + diff;
+            let elem = cursor.get_mut().unwrap().project();
+            *elem.bitoff = elem_bitoff;
+            *elem.bitlen = elem_bitlen;
+            *this.num_bits = *this.num_bits + diff;
         }
 
         cursor.move_next();
@@ -206,25 +215,25 @@ where
             }
             let succ_max = succ_bitoff + succ_bitlen;
             max = core::cmp::max(max, succ_max);
-            self.num_bits = self.num_bits - elem_bitlen - succ_bitlen + (max - elem_bitoff);
+            *this.num_bits = *this.num_bits - elem_bitlen - succ_bitlen + (max - elem_bitoff);
             elem_bitlen = max - elem_bitoff;
             let erased = cursor.erase().unwrap();
-            self.num_elems -= 1;
-            let free_list_ref = free_list.as_deref_mut();
-            release_element(free_list_ref, erased);
+            *this.num_elems -= 1;
+            release_element(free_list.as_mut().map(Pin::as_mut), erased);
         }
 
         cursor.move_prev();
-        cursor.get_mut().unwrap().bitlen = elem_bitlen;
+        *cursor.get_mut().unwrap().project().bitlen = elem_bitlen;
         Ok(())
     }
 
     fn clear_internal(
-        &mut self,
+        self: Pin<&mut Self>,
         bitoff: T,
         bitmax: T,
-        mut free_list: Option<&mut FreeList<T>>,
+        mut free_list: Option<Pin<&mut FreeList<T>>>,
     ) -> Result<(), Status> {
+        let this = self.project();
         if bitmax < bitoff {
             return Err(Status::INVALID_ARGS);
         }
@@ -233,7 +242,7 @@ where
             return Ok(());
         }
 
-        let mut cursor = self.elems.cursor_front_mut();
+        let mut cursor = this.elems.cursor_front_mut();
         while let Some(e) = cursor.get() {
             let (elem_bitoff, elem_bitlen) = (e.bitoff, e.bitlen);
 
@@ -247,40 +256,38 @@ where
             if elem_bitoff < bitoff {
                 if elem_bitoff + elem_bitlen <= bitmax {
                     let new_bitlen = bitoff - elem_bitoff;
-                    self.num_bits = self.num_bits - (elem_bitlen - new_bitlen);
-                    cursor.get_mut().unwrap().bitlen = new_bitlen;
+                    *this.num_bits = *this.num_bits - (elem_bitlen - new_bitlen);
+                    *cursor.get_mut().unwrap().project().bitlen = new_bitlen;
                     cursor.move_next();
                     continue;
                 }
-                let free_list_ref = free_list.as_deref_mut();
-                let mut new_elem = allocate_element(free_list_ref)?;
-                self.num_elems += 1;
+                let mut new_elem = allocate_element(free_list.as_mut().map(Pin::as_mut))?;
+                *this.num_elems += 1;
                 new_elem.bitoff = bitmax;
                 new_elem.bitlen = elem_bitoff + elem_bitlen - bitmax;
                 cursor.insert_after(new_elem);
                 let new_bitlen = bitoff - elem_bitoff;
-                self.num_bits = self.num_bits - (bitmax - bitoff);
-                cursor.get_mut().unwrap().bitlen = new_bitlen;
+                *this.num_bits = *this.num_bits - (bitmax - bitoff);
+                *cursor.get_mut().unwrap().project().bitlen = new_bitlen;
                 break;
             }
             if bitmax < elem_bitoff + elem_bitlen {
-                self.num_bits = self.num_bits - (bitmax - elem_bitoff);
-                let elem_mut = cursor.get_mut().unwrap();
-                elem_mut.bitlen = elem_mut.bitoff + elem_mut.bitlen - bitmax;
-                elem_mut.bitoff = bitmax;
+                *this.num_bits = *this.num_bits - (bitmax - elem_bitoff);
+                let elem_mut = cursor.get_mut().unwrap().project();
+                *elem_mut.bitlen = *elem_mut.bitoff + *elem_mut.bitlen - bitmax;
+                *elem_mut.bitoff = bitmax;
                 break;
             }
-            self.num_bits = self.num_bits - elem_bitlen;
-            self.num_elems -= 1;
+            *this.num_bits = *this.num_bits - elem_bitlen;
+            *this.num_elems -= 1;
             let erased = cursor.erase().unwrap();
-            let free_list_ref = free_list.as_deref_mut();
-            release_element(free_list_ref, erased);
+            release_element(free_list.as_mut().map(Pin::as_mut), erased);
         }
         Ok(())
     }
 }
 
-impl<T> Bitmap<T> for RleBitmapBase<T>
+impl<T> Bitmap<T> for Pin<&mut RleBitmapBase<T>>
 where
     T: Copy
         + Eq
@@ -334,17 +341,18 @@ where
     }
 
     fn set(&mut self, bitoff: T, bitmax: T) -> Result<(), Status> {
-        self.set_internal(bitoff, bitmax, None)
+        self.as_mut().set_internal(bitoff, bitmax, None)
     }
 
     fn clear(&mut self, bitoff: T, bitmax: T) -> Result<(), Status> {
-        self.clear_internal(bitoff, bitmax, None)
+        self.as_mut().clear_internal(bitoff, bitmax, None)
     }
 
     fn clear_all(&mut self) {
-        self.elems.clear();
-        self.num_elems = 0;
-        self.num_bits = T::default();
+        let this = self.as_mut().project();
+        this.elems.clear();
+        *this.num_elems = 0;
+        *this.num_bits = T::default();
     }
 }
 

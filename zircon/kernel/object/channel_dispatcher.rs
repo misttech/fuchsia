@@ -288,9 +288,7 @@ impl PinnedDrop for ChannelDispatcherState {
         //
         // It's not possible to do this safely in on_zero_handles_locked().
         let this = self.project();
-        // SAFETY: We have exclusive access to `self` in `drop`, and clearing the list does not
-        // move the pinned list header.
-        unsafe { this.messages.get_unchecked_mut() }.as_mut().clear();
+        this.messages.get_pinned_mut().clear();
 
         match *this.max_message_count.as_mut() {
             0..=1 => CHANNEL_PACKET_DEPTH_1.add(1),
@@ -377,9 +375,7 @@ impl ChannelDispatcher {
             return Err(Status::BAD_HANDLE);
         }
 
-        // SAFETY: `channel_lock` is held (witnessed by guard token), giving exclusive access to
-        // messages.
-        let messages = unsafe { g.messages_mut().get_unchecked_mut() };
+        let mut messages = g.messages_mut();
         let Some(front) = messages.front() else {
             return Err(if *g.peer_has_closed() {
                 Status::PEER_CLOSED
@@ -395,7 +391,7 @@ impl ChannelDispatcher {
             return Err(Status::BUFFER_TOO_SMALL);
         }
 
-        let msg = messages.pop_front().unwrap();
+        let msg = messages.as_mut().pop_front().unwrap();
         if messages.is_empty() {
             self.clear_signals(ZX_CHANNEL_READABLE);
         }
@@ -647,11 +643,9 @@ impl ChannelDispatcher {
         let previous_signals = {
             ksync::lock!(let mut guard = state.channel_lock.lock());
             let mut g = state.guard_channel_lock_mut(guard.token_mut());
-            // SAFETY: `channel_lock` is held (witnessed by guard token), giving exclusive access to
-            // messages.
-            let messages = unsafe { g.messages_mut().get_unchecked_mut() };
+            let mut messages = g.messages_mut();
 
-            messages.push_back(msg);
+            messages.as_mut().push_back(msg);
             let previous_signals = self.raise_signals_locked(token, ZX_CHANNEL_READABLE);
             let size = messages.len();
             *g.max_message_count_mut() = cmp::max(size as u64, *g.max_message_count());
@@ -822,10 +816,10 @@ impl ChannelDispatcher {
     fn waiters_mut<'a>(
         &'a self,
         token: &'a mut ksync::LockToken<'_, PeerHolderMuClass<Self>>,
-    ) -> &'a mut DoublyLinkedList<NonNull<MessageWaiter>> {
-        // SAFETY: `token` witnesses that `mu` is held, giving exclusive access to `waiters`, and
-        // the list is never moved through the returned reference.
-        unsafe { self.state().waiters.get_mut(token) }
+    ) -> Pin<&'a mut DoublyLinkedList<NonNull<MessageWaiter>>> {
+        // SAFETY: `token` witnesses that `mu` is held, giving exclusive access to `waiters`. The
+        // list is a pinned field of the pinned dispatcher state, so it is never moved.
+        unsafe { self.state().waiters.get_pinned_mut_locked(token) }
     }
 
     // PeeredDispatcher implementation.
@@ -968,6 +962,7 @@ impl ChannelDispatcher {
 #[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct MessageWaiter {
+    #[pin]
     #[dll_node]
     node: DoublyLinkedListNode<MessageWaiter>,
     channel: UnsafeCell<Option<RefPtr<ChannelDispatcher>>>,

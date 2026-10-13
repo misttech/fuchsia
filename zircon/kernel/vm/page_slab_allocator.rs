@@ -273,7 +273,7 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
         // Insert it into the available slabs.
         // SAFETY: `slab` is valid for insertion and not in any other list.
         unsafe {
-            this.available_slabs.get_unchecked_mut().push_front_raw(slab);
+            this.available_slabs.push_front_raw(slab);
         }
 
         *this.allocated_slabs += 1;
@@ -289,11 +289,9 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
             self.as_mut().add_slab()?;
         }
 
-        let mut this = self.project();
+        let this = self.project();
 
-        // SAFETY: `available_slabs` is pinned and not moved.
-        let mut cursor =
-            unsafe { this.available_slabs.as_mut().get_unchecked_mut().cursor_front_mut() };
+        let mut cursor = this.available_slabs.cursor_front_mut();
 
         let page = NonNull::from(cursor.get().expect("available slabs list has elements"));
 
@@ -338,11 +336,9 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
         if free_slot == Self::END_OF_LIST && (peak as usize) == Self::ALLOCS_PER_SLAB {
             debug_assert_eq!(allocated as usize, Self::ALLOCS_PER_SLAB);
             let page = cursor.erase().unwrap();
-            // SAFETY: `full_slabs` is pinned and not moved.
-            let full_slabs = unsafe { this.full_slabs.get_unchecked_mut() };
             // SAFETY: `page` is valid for insertion and not in any list.
             unsafe {
-                full_slabs.push_front_raw(page);
+                this.full_slabs.push_front_raw(page);
             }
         } else {
             debug_assert!((allocated as usize) < Self::ALLOCS_PER_SLAB);
@@ -356,10 +352,8 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
         A: SlabProvider,
     {
         let this = self.as_mut().project();
-        // SAFETY: `available_slabs` is pinned and not moved.
-        let available_slabs = unsafe { this.available_slabs.get_unchecked_mut() };
-        // SAFETY: `full_slabs` is pinned and not moved.
-        let full_slabs = unsafe { this.full_slabs.get_unchecked_mut() };
+        let mut available_slabs = this.available_slabs;
+        let full_slabs = this.full_slabs;
 
         // Lookup the slab this was allocated in.
         let (slab, index) = Self::alloc_to_slab(ptr);
@@ -378,7 +372,7 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
             // Slab has become empty, can free it.
             // SAFETY: `slab` is valid for removal and present in `available_slabs`.
             unsafe {
-                available_slabs.erase(slab.as_ref());
+                available_slabs.as_mut().erase(slab.as_ref());
             }
             *this.allocated_slabs -= 1;
             // SAFETY: `slab` is valid to free and not in any list.
@@ -396,7 +390,7 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
             // SAFETY: `slab` is valid for list transfer from `full_slabs` to `available_slabs`.
             unsafe {
                 full_slabs.erase(slab.as_ref());
-                available_slabs.push_back_raw(slab);
+                available_slabs.as_mut().push_back_raw(slab);
             }
         }
 
@@ -460,7 +454,6 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
             heap::profile_track_free(slab.profile_cookie, page::SIZE);
         }
         // SAFETY: Slabs in full_slabs and available_slabs are valid allocated PMM pages.
-        // We do not move the DoublyLinkedList containers out of their pinned location.
         unsafe {
             pmm::free_list(this.full_slabs);
             pmm::free_list(this.available_slabs);

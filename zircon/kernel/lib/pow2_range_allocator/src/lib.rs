@@ -53,8 +53,8 @@ impl Range {
 ///
 /// The lists hold raw pointers and perform no lifecycle management, so ownership of each element
 /// has to be reclaimed explicitly.
-fn free_block_list(list: &mut DoublyLinkedList<*mut Block>) {
-    while let Some(block) = list.pop_front() {
+fn free_block_list(mut list: Pin<&mut DoublyLinkedList<*mut Block>>) {
+    while let Some(block) = list.as_mut().pop_front() {
         // SAFETY: Every `Block` in one of the allocator's lists was allocated with
         // `kalloc::Box::try_new` and leaked with `kalloc::Box::into_raw`.  It has just been removed
         // from `list`, so this is the only pointer to it.
@@ -63,13 +63,23 @@ fn free_block_list(list: &mut DoublyLinkedList<*mut Block>) {
 }
 
 /// Frees every `Range` remaining in `list`.
-fn free_range_list(list: &mut DoublyLinkedList<*mut Range>) {
-    while let Some(range) = list.pop_front() {
+fn free_range_list(mut list: Pin<&mut DoublyLinkedList<*mut Range>>) {
+    while let Some(range) = list.as_mut().pop_front() {
         // SAFETY: Every `Range` in the allocator's range list was allocated with
         // `kalloc::Box::try_new` and leaked with `kalloc::Box::into_raw`.  It has just been removed
         // from `list`, so this is the only pointer to it.
         drop(unsafe { kalloc::Box::from_raw(range) });
     }
+}
+
+/// Returns the free bucket list for `bucket`.
+fn free_bucket(
+    buckets: &mut Array<DoublyLinkedList<*mut Block>>,
+    bucket: u32,
+) -> Pin<&mut DoublyLinkedList<*mut Block>> {
+    // SAFETY: The bucket lists are initialized in place in the heap allocation owned by the
+    // `Array`, which never moves its elements.
+    unsafe { Pin::new_unchecked(&mut buckets[bucket as usize]) }
 }
 
 /// All of the mutable state of a `Pow2RangeAllocator`, protected by the allocator's mutex.
@@ -99,9 +109,7 @@ impl PinnedDrop for Inner {
         // destroyed without calling `Free()` simply leaks its bookkeeping.  Rust's lists hold raw
         // pointers and debug assert that they are empty when dropped, so the bookkeeping is
         // released here instead.
-        // SAFETY: We are being dropped, so nothing is moved out of the pinned `Inner`.
-        let this = unsafe { self.get_unchecked_mut() };
-        this.release();
+        self.release();
     }
 }
 
@@ -116,7 +124,7 @@ impl Inner {
         })
     }
 
-    fn init(&mut self, bucket_count: u32) -> Result<(), Status> {
+    fn init(self: Pin<&mut Self>, bucket_count: u32) -> Result<(), Status> {
         let mut uninit = kalloc::Box::<[DoublyLinkedList<*mut Block>]>::try_new_uninit_slice(
             bucket_count as usize,
         )
@@ -134,27 +142,32 @@ impl Inner {
         }
         // SAFETY: All elements in `uninit` were initialized in the loop above.
         let buf = unsafe { uninit.assume_init() };
-        self.free_block_buckets = Array::from_box(buf);
-        self.bucket_count = bucket_count;
+        let this = self.project();
+        *this.free_block_buckets = Array::from_box(buf);
+        *this.bucket_count = bucket_count;
         Ok(())
     }
 
     /// Releases every piece of bookkeeping still held by the allocator.
-    fn release(&mut self) {
-        free_range_list(&mut self.ranges);
-        free_block_list(&mut self.unused_blocks);
-        free_block_list(&mut self.allocated_blocks);
-        for bucket in self.free_block_buckets.iter_mut() {
-            free_block_list(bucket);
+    fn release(self: Pin<&mut Self>) {
+        let this = self.project();
+        free_range_list(this.ranges);
+        free_block_list(this.unused_blocks);
+        free_block_list(this.allocated_blocks);
+        for bucket in this.free_block_buckets.iter_mut() {
+            // SAFETY: The bucket lists live in the heap allocation owned by the `Array`, which
+            // never moves its elements.
+            free_block_list(unsafe { Pin::new_unchecked(bucket) });
         }
     }
 
     /// Returns a block of bookkeeping, recycling one from the unused list if possible.
     ///
     /// Returns `None` if a new block had to be allocated and the allocation failed.
-    fn get_unused_block(&mut self) -> Option<*mut Block> {
-        if !self.unused_blocks.is_empty() {
-            return self.unused_blocks.pop_front();
+    fn get_unused_block(self: Pin<&mut Self>) -> Option<*mut Block> {
+        let unused_blocks = self.project().unused_blocks;
+        if !unused_blocks.is_empty() {
+            return unused_blocks.pop_front();
         }
 
         match kalloc::Box::try_new(Block::new()) {
@@ -169,15 +182,16 @@ impl Inner {
     ///
     /// `block` must be a valid pointer to a `Block` owned by this allocator which is not currently
     /// a member of any list.
-    unsafe fn return_free_block(&mut self, mut block: *mut Block) {
+    unsafe fn return_free_block(mut self: Pin<&mut Self>, mut block: *mut Block) {
         // The C++ implementation recurses into `ReturnFreeBlock` after a successful merge.  This is
         // the same algorithm written as a loop.
         loop {
+            let this = self.as_mut().project();
             debug_assert!(!block.is_null());
             // SAFETY: The caller guarantees that `block` points at a valid `Block` which is not in
             // any container.  On subsequent loop iterations `block` was just erased from a bucket.
             let block_ref = unsafe { &*block };
-            debug_assert!(block_ref.bucket < self.bucket_count);
+            debug_assert!(block_ref.bucket < *this.bucket_count);
             debug_assert!(!block_ref.node.in_container());
 
             let bucket = block_ref.bucket;
@@ -187,10 +201,10 @@ impl Inner {
 
             // Return the block to its proper free bucket, sorted by base ID.  Start by
             // finding the block which should come after this block in the list.
-            let list = &mut self.free_block_buckets[bucket as usize];
+            let mut list = free_bucket(this.free_block_buckets, bucket);
             let mut inserted = false;
             {
-                let mut cursor = list.cursor_front_mut();
+                let mut cursor = list.as_mut().cursor_front_mut();
                 while let Some(after) = cursor.get() {
                     // We do not allow ranges to overlap.
                     let after_len = 1u32 << after.bucket;
@@ -215,13 +229,13 @@ impl Inner {
             // If no block comes after this one, it goes on the end of the list.
             if !inserted {
                 // SAFETY: See the `insert_before_raw` call above.
-                unsafe { list.push_back_raw(block) };
+                unsafe { list.as_mut().push_back_raw(block) };
             }
 
             // After this point, the bucket list owns |block|.
 
             // Don't merge blocks in the largest bucket.
-            if bucket + 1 == self.bucket_count {
+            if bucket + 1 == *this.bucket_count {
                 return;
             }
 
@@ -229,14 +243,14 @@ impl Inner {
             let (first, second) = if (block_start & ((block_len << 1) - 1)) != 0 {
                 // Odd alignment.  This might be the second block of a merge pair.
                 // SAFETY: `block` was just inserted into `list`.
-                let mut cursor = unsafe { list.cursor_at(&*block) };
+                let mut cursor = unsafe { list.as_mut().cursor_at(&*block) };
                 cursor.move_prev();
                 let first = cursor.get().map(|b| core::ptr::from_ref(b).cast_mut());
                 (first, Some(block))
             } else {
                 // Even alignment.  This might be the first block of a merge pair.
                 // SAFETY: `block` was just inserted into `list`.
-                let mut cursor = unsafe { list.cursor_at(&*block) };
+                let mut cursor = unsafe { list.as_mut().cursor_at(&*block) };
                 cursor.move_next();
                 let second = cursor.get().map(|b| core::ptr::from_ref(b).cast_mut());
                 (Some(block), second)
@@ -259,13 +273,13 @@ impl Inner {
             // Remove the two blocks' bookkeeping from their bucket.
             // SAFETY: Both `first` and `second` are valid and are currently members of `list`.
             unsafe {
-                let _ = list.erase(&*first);
+                let _ = list.as_mut().erase(&*first);
                 let _ = list.erase(&*second);
             }
 
             // Place one half of the bookkeeping back on the unused list.
             // SAFETY: `second` was just erased from `list`, so it is in no container.
-            unsafe { self.unused_blocks.push_back_raw(second) };
+            unsafe { this.unused_blocks.push_back_raw(second) };
 
             // Reuse the other half to track the newly merged block, and place
             // it in the next bucket size up.
@@ -275,7 +289,11 @@ impl Inner {
         }
     }
 
-    fn add_range(&mut self, mut range_start: u32, mut range_len: u32) -> Result<(), Status> {
+    fn add_range(
+        mut self: Pin<&mut Self>,
+        mut range_start: u32,
+        mut range_len: u32,
+    ) -> Result<(), Status> {
         for range in self.ranges.iter() {
             if ((range.start >= range_start) && (range.start < range_start.wrapping_add(range_len)))
                 || ((range_start >= range.start)
@@ -304,8 +322,6 @@ impl Inner {
         debug_assert!(self.bucket_count != 0);
         debug_assert!(!self.free_block_buckets.is_empty());
         pin_init::stack_pin_init!(let new_blocks = DoublyLinkedList::<*mut Block>::new());
-        // SAFETY: `new_blocks` is pinned on the stack and is never moved out of.
-        let new_blocks = unsafe { new_blocks.get_unchecked_mut() };
 
         let mut bucket = self.bucket_count - 1;
         let mut csize = 1u32 << bucket;
@@ -339,13 +355,13 @@ impl Inner {
             debug_assert!(csize <= range_len);
             debug_assert!(csize != 0);
 
-            let Some(block) = self.get_unused_block() else {
+            let Some(block) = self.as_mut().get_unused_block() else {
                 tracef!(
                     "WARNING! Failed to allocate block bookkeeping with sub-range [{}, {}] still left to track.\n",
                     range_start,
                     range_start.wrapping_add(range_len).wrapping_sub(1)
                 );
-                free_block_list(new_blocks);
+                free_block_list(new_blocks.as_mut());
                 return Err(Status::NO_MEMORY);
             };
 
@@ -354,7 +370,7 @@ impl Inner {
             unsafe {
                 (*block).bucket = bucket;
                 (*block).start = range_start;
-                new_blocks.push_back_raw(block);
+                new_blocks.as_mut().push_back_raw(block);
             }
 
             range_start += csize;
@@ -364,23 +380,23 @@ impl Inner {
         // Looks like we managed to allocate everything we needed to.  Go ahead and
         // add all of our newly allocated bookkeeping to the state.
         // SAFETY: `new_range` was just allocated and is a member of no list.
-        unsafe { self.ranges.push_back_raw(kalloc::Box::into_raw(new_range)) };
+        unsafe { self.as_mut().project().ranges.push_back_raw(kalloc::Box::into_raw(new_range)) };
 
-        while let Some(block) = new_blocks.pop_front() {
+        while let Some(block) = new_blocks.as_mut().pop_front() {
             // SAFETY: `block` was just popped from `new_blocks` and is owned by this allocator.
-            unsafe { self.return_free_block(block) };
+            unsafe { self.as_mut().return_free_block(block) };
         }
 
         Ok(())
     }
 
-    fn allocate_range(&mut self, orig_bucket: u32) -> Result<u32, Status> {
+    fn allocate_range(mut self: Pin<&mut Self>, orig_bucket: u32) -> Result<u32, Status> {
         // Find the smallest sized chunk which can hold the allocation and is
         // compatible with the requested addressing capabilities.
         let mut bucket = orig_bucket;
         let mut block: Option<*mut Block> = None;
         while bucket < self.bucket_count {
-            block = self.free_block_buckets[bucket as usize].pop_front();
+            block = free_bucket(self.as_mut().project().free_block_buckets, bucket).pop_front();
             if block.is_some() {
                 break;
             }
@@ -402,12 +418,12 @@ impl Inner {
             // If we failed to allocate bookkeeping for the split block, put the block
             // we failed to split back into the free list (merging if required),
             // then fail the allocation.
-            let Some(split_block) = self.get_unused_block() else {
+            let Some(split_block) = self.as_mut().get_unused_block() else {
                 tracef!(
                     "Failed to allocate free bookkeeping block when attempting to split for allocation\n"
                 );
                 // SAFETY: `block` is valid and is a member of no list.
-                unsafe { self.return_free_block(block) };
+                unsafe { self.as_mut().return_free_block(block) };
                 return Err(Status::NO_MEMORY);
             };
 
@@ -424,7 +440,7 @@ impl Inner {
                 (*split_block).bucket = bucket;
 
                 // Return the second half of the chunk to the free pool.
-                self.return_free_block(split_block);
+                self.as_mut().return_free_block(split_block);
             }
         }
 
@@ -432,12 +448,12 @@ impl Inner {
         // SAFETY: `block` is valid and is a member of no list.
         let range_start = unsafe { (*block).start };
         // SAFETY: `block` is valid and is a member of no list.
-        unsafe { self.allocated_blocks.push_front_raw(block) };
+        unsafe { self.project().allocated_blocks.push_front_raw(block) };
 
         Ok(range_start)
     }
 
-    fn free_range(&mut self, range_start: u32, bucket: u32) {
+    fn free_range(mut self: Pin<&mut Self>, range_start: u32, bucket: u32) {
         // In a debug build, find the specific block being returned in the list of
         // allocated blocks and use it as the bookkeeping for returning to the free
         // bucket.  Because this is an O(n) operation, and serves only as an integrity
@@ -449,12 +465,13 @@ impl Inner {
         // `#if DEBUG_ASSERT_IMPLEMENTED`.  Rust's `debug_assertions` gates `debug_assert!` in
         // exactly the same way that `DEBUG_ASSERT_IMPLEMENTED` gates `DEBUG_ASSERT`, so it is used
         // here to keep the port self consistent.
+        let allocated_blocks = self.as_mut().project().allocated_blocks;
         let block: Option<*mut Block> = if cfg!(debug_assertions) {
-            self.allocated_blocks.erase_if(|candidate| {
+            allocated_blocks.erase_if(|candidate| {
                 (candidate.start == range_start) && (candidate.bucket == bucket)
             })
         } else {
-            let block = self.allocated_blocks.pop_front();
+            let block = allocated_blocks.pop_front();
             if let Some(block) = block {
                 // SAFETY: `block` was just popped off of `allocated_blocks`.
                 unsafe {
@@ -530,18 +547,14 @@ impl Pow2RangeAllocator {
         let bucket_count = max_alloc_size.ilog2() + 1;
 
         ksync::lock!(let mut guard = self.lock_lock());
-        // SAFETY: `inner` is structurally pinned inside the pinned allocator; taking a `&mut`
-        // reference to it never moves it.
-        let inner = unsafe { guard.as_mut().inner_mut().get_unchecked_mut() };
+        let inner = guard.as_mut().inner_mut();
         inner.init(bucket_count)
     }
 
     /// Free all of the state associated with a previously initialized pow2 range allocator.
     pub fn free(&self) {
         ksync::lock!(let mut guard = self.lock_lock());
-        // SAFETY: `inner` is structurally pinned inside the pinned allocator; taking a `&mut`
-        // reference to it never moves it.
-        let inner = unsafe { guard.as_mut().inner_mut().get_unchecked_mut() };
+        let inner = guard.as_mut().inner_mut();
 
         debug_assert!(inner.bucket_count != 0);
         debug_assert!(!inner.free_block_buckets.is_empty());
@@ -575,9 +588,7 @@ impl Pow2RangeAllocator {
 
         // Enter the lock and check for overlap with pre-existing ranges.
         ksync::lock!(let mut guard = self.lock_lock());
-        // SAFETY: `inner` is structurally pinned inside the pinned allocator; taking a `&mut`
-        // reference to it never moves it.
-        let inner = unsafe { guard.as_mut().inner_mut().get_unchecked_mut() };
+        let inner = guard.as_mut().inner_mut();
         inner.add_range(range_start, range_len)
     }
 
@@ -607,9 +618,7 @@ impl Pow2RangeAllocator {
 
         // Lock state during allocation.
         ksync::lock!(let mut guard = self.lock_lock());
-        // SAFETY: `inner` is structurally pinned inside the pinned allocator; taking a `&mut`
-        // reference to it never moves it.
-        let inner = unsafe { guard.as_mut().inner_mut().get_unchecked_mut() };
+        let inner = guard.as_mut().inner_mut();
 
         if orig_bucket >= inner.bucket_count {
             tracef!(
@@ -632,9 +641,7 @@ impl Pow2RangeAllocator {
         let bucket = size.ilog2();
 
         ksync::lock!(let mut guard = self.lock_lock());
-        // SAFETY: `inner` is structurally pinned inside the pinned allocator; taking a `&mut`
-        // reference to it never moves it.
-        let inner = unsafe { guard.as_mut().inner_mut().get_unchecked_mut() };
+        let inner = guard.as_mut().inner_mut();
         inner.free_range(range_start, bucket);
     }
 }

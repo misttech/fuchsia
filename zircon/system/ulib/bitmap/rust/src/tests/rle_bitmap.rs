@@ -30,9 +30,7 @@ fn verify_counts(
 
 #[test]
 fn test_rle_initialized_empty() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
     assert!(!bitmap.get(5, 6).all_set);
     let mut iter = bitmap.into_iter();
     assert!(iter.next().is_none());
@@ -40,30 +38,26 @@ fn test_rle_initialized_empty() {
 
 #[test]
 fn test_rle_single_bit() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
     assert!(!bitmap.get(2, 3).all_set);
 
-    assert_eq!(bitmap.set(2, 3), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 2, 3), Ok(()));
     assert!(bitmap.get(2, 3).all_set);
     assert_eq!(bitmap.num_bits(), 1);
 
-    verify_counts(bitmap, 1, 1, |_index, bitoff, bitlen| {
+    verify_counts(&bitmap, 1, 1, |_index, bitoff, bitlen| {
         assert_eq!(bitoff, 2);
         assert_eq!(bitlen, 1);
     });
 
     assert_eq!(bitmap.clear(2, 3), Ok(()));
     assert!(!bitmap.get(2, 3).all_set);
-    verify_counts(bitmap, 0, 0, |_, _, _| {});
+    verify_counts(&bitmap, 0, 0, |_, _, _| {});
 }
 
 #[test]
 fn test_rle_set_twice() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
     assert_eq!(bitmap.set_one(2), Ok(()));
     assert!(bitmap.get_one(2));
@@ -73,7 +67,7 @@ fn test_rle_set_twice() {
     assert!(bitmap.get_one(2));
     assert_eq!(bitmap.num_bits(), 1);
 
-    verify_counts(bitmap, 1, 1, |_, bitoff, bitlen| {
+    verify_counts(&bitmap, 1, 1, |_, bitoff, bitlen| {
         assert_eq!(bitoff, 2);
         assert_eq!(bitlen, 1);
     });
@@ -81,9 +75,7 @@ fn test_rle_set_twice() {
 
 #[test]
 fn test_rle_clear_twice() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
     assert_eq!(bitmap.set_one(2), Ok(()));
     assert_eq!(bitmap.num_bits(), 1);
@@ -102,9 +94,7 @@ fn test_rle_clear_twice() {
 
 #[test]
 fn test_rle_get_return_arg() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
     let res = bitmap.get(2, 3);
     assert!(!res.all_set);
@@ -119,12 +109,12 @@ fn test_rle_get_return_arg() {
     assert!(!res.all_set);
     assert_eq!(res.first_unset, 3);
 
-    assert_eq!(bitmap.set(3, 4), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 3, 4), Ok(()));
     let res = bitmap.get(2, 5);
     assert!(!res.all_set);
     assert_eq!(res.first_unset, 4);
 
-    verify_counts(bitmap, 1, 2, |_, bitoff, bitlen| {
+    verify_counts(&bitmap, 1, 2, |_, bitoff, bitlen| {
         assert_eq!(bitoff, 2);
         assert_eq!(bitlen, 2);
     });
@@ -132,10 +122,8 @@ fn test_rle_get_return_arg() {
 
 #[test]
 fn test_rle_set_range() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
-    assert_eq!(bitmap.set(2, 100), Ok(()));
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
+    assert_eq!(Bitmap::set(&mut bitmap, 2, 100), Ok(()));
     assert_eq!(bitmap.num_bits(), 98);
 
     let res = bitmap.get(2, 3);
@@ -165,25 +153,23 @@ fn test_rle_set_range() {
 
 #[test]
 fn test_rle_clear_all() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
-    assert_eq!(bitmap.set(2, 100), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 2, 100), Ok(()));
 
     bitmap.clear_all();
 
     let mut iter = bitmap.into_iter();
     assert!(iter.next().is_none());
 
-    assert_eq!(bitmap.set(2, 100), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 2, 100), Ok(()));
 
     for range in bitmap.into_iter() {
         assert_eq!(range.bitoff, 2);
         assert_eq!(range.bitlen, 98);
     }
 
-    verify_counts(bitmap, 1, 98, |_, bitoff, bitlen| {
+    verify_counts(&bitmap, 1, 98, |_, bitoff, bitlen| {
         assert_eq!(bitoff, 2);
         assert_eq!(bitlen, 98);
     });
@@ -191,11 +177,9 @@ fn test_rle_clear_all() {
 
 #[test]
 fn test_rle_clear_subrange() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
-    assert_eq!(bitmap.set(2, 100), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 2, 100), Ok(()));
     assert_eq!(bitmap.num_bits(), 98);
     assert_eq!(bitmap.clear(50, 80), Ok(()));
     assert_eq!(bitmap.num_bits(), 68);
@@ -216,7 +200,7 @@ fn test_rle_clear_subrange() {
     assert!(!res.all_set);
     assert_eq!(res.first_unset, 50);
 
-    verify_counts(bitmap, 2, 68, |index, bitoff, bitlen| {
+    verify_counts(&bitmap, 2, 68, |index, bitoff, bitlen| {
         if index == 0 {
             assert_eq!(bitoff, 2);
             assert_eq!(bitlen, 48);
@@ -229,9 +213,7 @@ fn test_rle_clear_subrange() {
 
 #[test]
 fn test_rle_merge_ranges() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
     const MAX_VAL: usize = 100;
 
@@ -239,7 +221,7 @@ fn test_rle_merge_ranges() {
         assert_eq!(bitmap.set_one(i), Ok(()));
     }
 
-    verify_counts(bitmap, MAX_VAL / 2, MAX_VAL / 2, |index, bitoff, bitlen| {
+    verify_counts(&bitmap, MAX_VAL / 2, MAX_VAL / 2, |index, bitoff, bitlen| {
         assert_eq!(bitoff, 2 * index);
         assert_eq!(bitlen, 1);
     });
@@ -248,7 +230,7 @@ fn test_rle_merge_ranges() {
         assert_eq!(bitmap.set_one(i), Ok(()));
     }
 
-    verify_counts(bitmap, MAX_VAL / 4, 3 * MAX_VAL / 4, |index, bitoff, bitlen| {
+    verify_counts(&bitmap, MAX_VAL / 4, 3 * MAX_VAL / 4, |index, bitoff, bitlen| {
         assert_eq!(bitoff, 4 * index);
         assert_eq!(bitlen, 3);
     });
@@ -256,18 +238,16 @@ fn test_rle_merge_ranges() {
 
 #[test]
 fn test_rle_split_ranges() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
     const MAX_VAL: usize = 100;
-    assert_eq!(bitmap.set(0, MAX_VAL), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 0, MAX_VAL), Ok(()));
 
     for i in (1..MAX_VAL).step_by(4) {
         assert_eq!(bitmap.clear_one(i), Ok(()));
     }
 
-    verify_counts(bitmap, MAX_VAL / 4 + 1, 3 * MAX_VAL / 4, |index, bitoff, bitlen| {
+    verify_counts(&bitmap, MAX_VAL / 4 + 1, 3 * MAX_VAL / 4, |index, bitoff, bitlen| {
         if index == 0 {
             assert_eq!(bitoff, 0);
             assert_eq!(bitlen, 1);
@@ -283,7 +263,7 @@ fn test_rle_split_ranges() {
         assert_eq!(bitmap.clear_one(i), Ok(()));
     }
 
-    verify_counts(bitmap, MAX_VAL / 4, MAX_VAL / 4, |index, bitoff, bitlen| {
+    verify_counts(&bitmap, MAX_VAL / 4, MAX_VAL / 4, |index, bitoff, bitlen| {
         assert_eq!(bitoff, 4 * index + 3);
         assert_eq!(bitlen, 1);
     });
@@ -291,13 +271,11 @@ fn test_rle_split_ranges() {
 
 #[test]
 fn test_rle_boundary_arguments() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
-    assert_eq!(bitmap.set(0, 0), Ok(()));
-    assert_eq!(bitmap.set(5, 4), Err(Status::INVALID_ARGS));
-    assert_eq!(bitmap.set(5, 5), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 0, 0), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 5, 4), Err(Status::INVALID_ARGS));
+    assert_eq!(Bitmap::set(&mut bitmap, 5, 5), Ok(()));
 
     assert_eq!(bitmap.clear(0, 0), Ok(()));
     assert_eq!(bitmap.clear(5, 4), Err(Status::INVALID_ARGS));
@@ -310,38 +288,36 @@ fn test_rle_boundary_arguments() {
 
 #[test]
 fn test_rle_no_alloc() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
+    stack_pin_init!(let free_list = FreeList::<usize>::new());
 
-    stack_pin_init!(let free_list_pinned = FreeList::<usize>::new());
-    // SAFETY: We do not move the FreeList out of its pinned location during the test.
-    let free_list = unsafe { free_list_pinned.as_mut().get_unchecked_mut() };
-
-    assert_eq!(bitmap.set_no_alloc(0, 65536, free_list), Err(Status::NO_MEMORY));
+    assert_eq!(bitmap.as_mut().set_no_alloc(0, 65536, free_list.as_mut()), Err(Status::NO_MEMORY));
 
     let elem = Element::new(0, 0);
-    free_list.push_back(fbl::UniquePtr::try_new(elem).unwrap());
+    free_list.as_mut().push_back(fbl::UniquePtr::try_new(elem).unwrap());
 
-    assert_eq!(bitmap.set_no_alloc(0, 65536, free_list), Ok(()));
+    assert_eq!(bitmap.as_mut().set_no_alloc(0, 65536, free_list.as_mut()), Ok(()));
     assert!(bitmap.get(0, 65536).all_set);
     assert!(free_list.is_empty());
 
-    assert_eq!(bitmap.clear_no_alloc(1, 65535, free_list), Err(Status::NO_MEMORY));
+    assert_eq!(
+        bitmap.as_mut().clear_no_alloc(1, 65535, free_list.as_mut()),
+        Err(Status::NO_MEMORY)
+    );
 
     let elem = Element::new(0, 0);
-    free_list.push_back(fbl::UniquePtr::try_new(elem).unwrap());
+    free_list.as_mut().push_back(fbl::UniquePtr::try_new(elem).unwrap());
 
-    assert_eq!(bitmap.clear_no_alloc(1, 65535, free_list), Ok(()));
+    assert_eq!(bitmap.as_mut().clear_no_alloc(1, 65535, free_list.as_mut()), Ok(()));
     let res = bitmap.get(0, 65536);
     assert!(!res.all_set);
     assert_eq!(res.first_unset, 1);
     assert!(free_list.is_empty());
 
     let elem = Element::new(0, 0);
-    free_list.push_back(fbl::UniquePtr::try_new(elem).unwrap());
+    free_list.as_mut().push_back(fbl::UniquePtr::try_new(elem).unwrap());
 
-    assert_eq!(bitmap.set_no_alloc(1, 65535, free_list), Ok(()));
+    assert_eq!(bitmap.as_mut().set_no_alloc(1, 65535, free_list.as_mut()), Ok(()));
     // Check free list size is 2 after merge
     let mut count = 0;
     for _ in free_list.iter() {
@@ -349,7 +325,7 @@ fn test_rle_no_alloc() {
     }
     assert_eq!(count, 2);
 
-    assert_eq!(bitmap.clear_no_alloc(0, 65536, free_list), Ok(()));
+    assert_eq!(bitmap.as_mut().clear_no_alloc(0, 65536, free_list.as_mut()), Ok(()));
     let mut count = 0;
     for _ in free_list.iter() {
         count += 1;
@@ -359,25 +335,29 @@ fn test_rle_no_alloc() {
 
 #[test]
 fn test_rle_set_out_of_order() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
-    assert_eq!(bitmap.set(0x64, 0x65), Ok(()));
-    assert_eq!(bitmap.set(0x60, 0x61), Ok(()));
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
+    assert_eq!(Bitmap::set(&mut bitmap, 0x64, 0x65), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 0x60, 0x61), Ok(()));
     assert_eq!(bitmap.num_ranges(), 2);
     assert_eq!(bitmap.num_bits(), 2);
     assert!(bitmap.get(0x64, 0x65).all_set);
     assert!(bitmap.get(0x60, 0x61).all_set);
 }
 
-fn verify_range(bitmap: &RleBitmap, bitoff: usize, bitmax: usize, min_val: usize, max_val: usize) {
+fn verify_range(
+    bitmap: &core::pin::Pin<&mut RleBitmap>,
+    bitoff: usize,
+    bitmax: usize,
+    min_val: usize,
+    max_val: usize,
+) {
     assert!(bitmap.get(bitoff, bitmax).all_set);
     assert_eq!(bitmap.find(false, min_val, max_val, bitoff - min_val), Ok(min_val));
     assert_eq!(bitmap.find(false, min_val, max_val, max_val - bitmax), Ok(bitmax));
     assert_eq!(bitmap.num_bits(), bitmax - bitoff);
 }
 
-fn verify_cleared(bitmap: &RleBitmap, min_val: usize, max_val: usize) {
+fn verify_cleared(bitmap: &core::pin::Pin<&mut RleBitmap>, min_val: usize, max_val: usize) {
     assert_eq!(bitmap.find(false, min_val, max_val, max_val - min_val), Ok(min_val));
     assert_eq!(bitmap.num_bits(), 0);
 }
@@ -395,16 +375,14 @@ fn check_overlap(
     assert!(bitmax1 <= max_val);
     assert!(bitmax2 <= max_val);
 
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
     let min_off = core::cmp::min(bitoff1, bitoff2);
     let max_max = core::cmp::max(bitmax1, bitmax2);
-    assert_eq!(bitmap.set(bitoff1, bitmax1), Ok(()));
-    assert_eq!(bitmap.set(bitoff2, bitmax2), Ok(()));
-    verify_range(bitmap, min_off, max_max, min_val, max_val);
+    assert_eq!(Bitmap::set(&mut bitmap, bitoff1, bitmax1), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, bitoff2, bitmax2), Ok(()));
+    verify_range(&bitmap, min_off, max_max, min_val, max_val);
     assert_eq!(bitmap.clear(min_off, max_max), Ok(()));
-    verify_cleared(bitmap, min_val, max_val);
+    verify_cleared(&bitmap, min_val, max_val);
 }
 
 #[test]
@@ -422,11 +400,9 @@ fn test_rle_set_overlap() {
 
 #[test]
 fn test_rle_find_range() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<usize>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
+    stack_pin_init!(let bitmap = RleBitmapBase::<usize>::new());
 
-    assert_eq!(bitmap.set(5, 10), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 5, 10), Ok(()));
     assert_eq!(bitmap.num_bits(), 5);
 
     // Find unset run before range
@@ -444,7 +420,7 @@ fn test_rle_find_range() {
     // Set range too large
     assert_eq!(bitmap.find(true, 0, 8, 4), Err(Status::NO_RESOURCES));
 
-    assert_eq!(bitmap.set(20, 30), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 20, 30), Ok(()));
     assert_eq!(bitmap.num_bits(), 15);
     // Find unset run after both ranges
     assert_eq!(bitmap.find(false, 0, 50, 11), Ok(30));
@@ -464,13 +440,11 @@ fn test_rle_find_range() {
 
 #[test]
 fn test_rle_different_offset_type() {
-    stack_pin_init!(let bitmap_pinned = RleBitmapBase::<u32>::new());
-    // SAFETY: We do not move the RleBitmapBase out of its pinned location during the test.
-    let bitmap = unsafe { bitmap_pinned.as_mut().get_unchecked_mut() };
-    assert_eq!(bitmap.set(5, 10), Ok(()));
+    stack_pin_init!(let bitmap = RleBitmapBase::<u32>::new());
+    assert_eq!(Bitmap::set(&mut bitmap, 5, 10), Ok(()));
     assert_eq!(bitmap.num_bits(), 5);
     assert_eq!(bitmap.clear(5, 10), Ok(()));
     assert_eq!(bitmap.num_bits(), 0);
-    assert_eq!(bitmap.set(1000, u32::MAX), Ok(()));
+    assert_eq!(Bitmap::set(&mut bitmap, 1000, u32::MAX), Ok(()));
     assert_eq!(bitmap.num_bits(), u32::MAX - 1000);
 }

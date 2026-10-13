@@ -16,7 +16,7 @@ use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 use core::ptr::{self, NonNull};
 use core::{cmp, slice};
-use fbl::{DoublyLinkedListContainable, DoublyLinkedListNode, ManagedPtr, PtrTraits};
+use fbl::{DoublyLinkedListContainable, DoublyLinkedListNode, ManagedPtr, MutPtr, PtrTraits};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zr::{static_assert, static_assert_size_and_align};
 use zx_status::Status;
@@ -496,6 +496,10 @@ unsafe impl PtrTraits for MessagePacketPtr {
 }
 
 unsafe impl ManagedPtr for MessagePacketPtr {}
+
+// SAFETY: `MessagePacketPtr` uniquely owns its `MessagePacket`, so exclusive access to a container
+// holding it implies exclusive access to the packet.
+unsafe impl MutPtr for MessagePacketPtr {}
 
 impl Drop for MessagePacketPtr {
     #[inline]
@@ -993,18 +997,17 @@ mod tests {
         expect_false!(packet2.node.in_container());
 
         stack_pin_init!(let list = DoublyLinkedList::<MessagePacketPtr>::new());
-        let list = unsafe { list.get_unchecked_mut() };
         expect_true!(list.is_empty());
 
-        list.push_back(packet1);
-        list.push_back(packet2);
+        list.as_mut().push_back(packet1);
+        list.as_mut().push_back(packet2);
         expect_false!(list.is_empty());
 
-        let popped1 = list.pop_front().expect("expected packet1");
+        let popped1 = list.as_mut().pop_front().expect("expected packet1");
         expect_eq!(popped1.data_size(), 5);
         expect_false!(popped1.node.in_container());
 
-        let popped2 = list.pop_front().expect("expected packet2");
+        let popped2 = list.as_mut().pop_front().expect("expected packet2");
         expect_eq!(popped2.data_size(), 6);
         expect_false!(popped2.node.in_container());
 

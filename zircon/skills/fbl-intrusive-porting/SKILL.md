@@ -137,6 +137,53 @@ types (`UniquePtr`).
     allocations naturally protect against memory leaks while bypassing borrow
     checker limitations cleanly.
 
+### 12. Pinned Receivers for Address-Sensitive Containers
+Containers whose sentinel points back at the container itself (such as
+`DoublyLinkedList`) are `!Unpin` and must never move after initialization.
+* **Pattern**: Every mutating method takes `self: Pin<&mut Self>` (and any other
+  list argument, e.g. `splice(other: Pin<&mut DoublyLinkedList<..>>)`, is also
+  pinned). Read-only methods keep taking `&self`, which works through `Pin`'s
+  `Deref`. The container never materializes an unpinned `&mut` to itself, even
+  internally: `CursorMut` (and `IteratorMut::new`) store/take `Pin<&'a mut
+  DoublyLinkedList<..>>`, and because `DoublyLinkedList` is `#[pin_data]`, the
+  cursor mutates its non-structurally-pinned `head` and `size` fields through
+  pin projection (e.g. `*self.list.as_mut().project().head = new_head;`,
+  `self.list.as_mut().project().size.set(n);`) instead of `get_unchecked_mut()`.
+* **Usage**: Callers never need `unsafe { list.get_unchecked_mut() }`. Pin the
+  list with `stack_pin_init!(let list = ...)` or a `#[pin]` struct field
+  projection, and reborrow with `as_mut()` for each mutation:
+  ```rust
+  stack_pin_init!(let list = DoublyLinkedList::<UniquePtr<Foo>>::new());
+  list.as_mut().push_back(UniquePtr::try_new(Foo::new(1)).unwrap());
+  while let Some(foo) = list.as_mut().pop_front() { /* ... */ }
+  ```
+  Helper functions should accept `Pin<&mut DoublyLinkedList<..>>` (and
+  `Option<Pin<&mut ..>>`, reborrowed via `as_mut().map(Pin::as_mut)`) rather
+  than `&mut DoublyLinkedList<..>`.
+* **Pinned Elements**: Pinning the container alone does not stop safe code from
+  `mem::swap`/`replace`-ing a *linked element* (and therefore its embedded node
+  pointers) through a `&mut` element reference. To prevent this:
+  * `DoublyLinkedListNode<T>` contains `PhantomData<PhantomPinned>` and is
+    `!Unpin` (the `PhantomData` wrapper keeps the node FFI-safe; a bare
+    `PhantomPinned` trips `improper_ctypes` in `extern` signatures). Element
+    types that use `#[pin_data]` must mark their node field(s) `#[pin]`
+    (otherwise `#[pin_data]`'s generated `Unpin` impl ignores the node and the
+    element becomes `Unpin` again). Types without `#[pin_data]` inherit `!Unpin`
+    automatically.
+  * Mutable element accessors (`front_mut`, `back_mut`, `iter_mut`,
+    `forward_iter_mut`, `reverse_iter_mut`, `CursorMut::get_mut`) return
+    `Pin<&mut P::Target>` (or iterators yielding it). Mutate element fields via
+    `#[pin_data]` projection, e.g.
+    `*list.as_mut().front_mut().unwrap().project().value = 1;`, and give element
+    methods that mutate `self: Pin<&mut Self>` receivers.
+* **Exclusive Access (`MutPtr`)**: The mutable element accessors are only
+  available when `P: MutPtr`. `MutPtr` is an `unsafe` marker trait asserting
+  that exclusive access to the container implies exclusive access to each
+  pointee; it is implemented for `*mut T`, `NonNull<T>`, `UniquePtr<T>` (and
+  uniquely-owning kernel pointers such as `MessagePacketPtr`), but **not** for
+  shared-ownership pointers like `RefPtr<T>`, where other clones could observe
+  the object while it is being mutated.
+
 ## Step-by-Step Porting Guide
 
 1.  **Analyze C++ Implementation**: Understand layout, sentinel values, and

@@ -216,10 +216,8 @@ pub const CONTIGUOUS_SIZE: usize = RAW_DATA_SIZE - BUFFER_CHAIN_SIZE;
 #[pinned_drop]
 impl PinnedDrop for BufferChain {
     fn drop(self: Pin<&mut Self>) {
-        // SAFETY: We have pinned mutable access during drop.
-        let this = unsafe { self.get_unchecked_mut() };
-        debug_assert!(this.used_pages.is_empty());
-        debug_assert!(this.unused_pages.is_empty());
+        debug_assert!(self.used_pages.is_empty());
+        debug_assert!(self.unused_pages.is_empty());
     }
 }
 
@@ -277,10 +275,7 @@ impl BufferChain {
         page_cache().alloc(num_buffers, temp_pages.as_mut())?;
 
         // SAFETY: `temp_pages` contains the allocated pages from the page cache.
-        let chain = unsafe {
-            let pages = temp_pages.get_unchecked_mut();
-            Self::init_in_pages(pages.list_mut())?
-        };
+        let chain = unsafe { Self::init_in_pages(temp_pages.as_mut().list_mut())? };
         Ok(chain)
     }
 
@@ -290,16 +285,15 @@ impl BufferChain {
     ///
     /// `chain` must be a valid, uniquely owned pointer returned from `BufferChain::alloc`.
     pub unsafe fn free(mut chain: NonNull<Self>) {
-        // SAFETY: Caller guarantees `chain` is valid and uniquely owned.
-        let this = unsafe { chain.as_mut() };
+        // SAFETY: Caller guarantees `chain` is valid and uniquely owned. The chain lives in place
+        // inside its first buffer and is never moved.
+        let this = unsafe { Pin::new_unchecked(chain.as_mut()) }.project();
         // Remove the buffers and vm_page_t's from the chain *before* destroying it.
-        let mut buffers = mem::take(&mut this.buffers);
+        let mut buffers = mem::take(this.buffers);
 
         stack_pin_init!(let all_pages = PageList::new());
-        // SAFETY: `all_pages` is pinned on the stack; mutating list does not move `all_pages`.
-        let pages = unsafe { all_pages.as_mut().get_unchecked_mut() };
-        pages.splice(&mut this.used_pages);
-        pages.splice(&mut this.unused_pages);
+        all_pages.as_mut().list_mut().splice(this.used_pages);
+        all_pages.as_mut().list_mut().splice(this.unused_pages);
 
         // Now both `this.used_pages` and `this.unused_pages` are completely empty.
         // SAFETY: `chain` points to initialized `BufferChain`.
@@ -322,8 +316,10 @@ impl BufferChain {
     /// # Safety
     ///
     /// `pages` must contain valid allocated pages with `ALLOC` state.
-    unsafe fn init_in_pages(pages: &mut VmPageDoublyLinkedList) -> Result<NonNull<Self>, Status> {
-        let first_page = pages.pop_front().ok_or(Status::NO_MEMORY)?;
+    unsafe fn init_in_pages(
+        mut pages: Pin<&mut VmPageDoublyLinkedList>,
+    ) -> Result<NonNull<Self>, Status> {
+        let first_page = pages.as_mut().pop_front().ok_or(Status::NO_MEMORY)?;
         // SAFETY: `first_page` was popped from `pages` and is a valid allocated page.
         let first_buffer = unsafe { Buffer::init_in_page(first_page, BUFFER_CHAIN_SIZE as u32) };
 
@@ -351,10 +347,10 @@ impl BufferChain {
             return Err(Status::NO_MEMORY);
         }
 
-        // SAFETY: `chain_ptr` is now initialized, `first_page` was allocated for this chain,
-        // and `chain_ptr` is non-null.
+        // SAFETY: `chain_ptr` is now initialized in place (never moved), `first_page` was
+        // allocated for this chain, and `chain_ptr` is non-null.
         unsafe {
-            let chain = &mut *chain_ptr;
+            let chain = Pin::new_unchecked(&mut *chain_ptr).project();
             chain.used_pages.push_back_raw(first_page);
             chain.unused_pages.splice(pages);
             Ok(NonNull::new_unchecked(chain_ptr))
@@ -362,15 +358,16 @@ impl BufferChain {
     }
 
     /// Takes an unused page, initializes a new `Buffer` in it, and appends it to `buffers`.
-    fn add_next_buffer(&mut self) -> Result<(), Status> {
-        let page_raw = self.unused_pages.pop_front().ok_or(Status::OUT_OF_RANGE)?;
-        let tail = self.buffer_tail.ok_or(Status::OUT_OF_RANGE)?;
+    fn add_next_buffer(self: Pin<&mut Self>) -> Result<(), Status> {
+        let this = self.project();
+        let page_raw = this.unused_pages.pop_front().ok_or(Status::OUT_OF_RANGE)?;
+        let tail = this.buffer_tail.ok_or(Status::OUT_OF_RANGE)?;
         // SAFETY: `page_raw` was popped from `unused_pages` and is a valid page.
         unsafe {
-            self.used_pages.push_back_raw(page_raw);
+            this.used_pages.push_back_raw(page_raw);
             let va = Buffer::init_in_page(page_raw, 0);
-            self.buffers.insert_after_raw(tail.as_ptr(), va);
-            self.buffer_tail = Some(va);
+            this.buffers.insert_after_raw(tail.as_ptr(), va);
+            *this.buffer_tail = Some(va);
         }
         Ok(())
     }
@@ -380,11 +377,10 @@ impl BufferChain {
     ///
     /// Assumes that it is called only at the beginning of the buffer chain.
     pub fn skip(self: Pin<&mut Self>, size: usize) {
-        // SAFETY: Modifying unpinned field `buffer_offset` does not move `Self`.
-        let this = unsafe { self.get_unchecked_mut() };
-        debug_assert_eq!(this.buffer_offset, 0);
+        let this = self.project();
+        debug_assert_eq!(*this.buffer_offset, 0);
         debug_assert!(size <= CONTIGUOUS_SIZE);
-        this.buffer_offset += size;
+        *this.buffer_offset += size;
     }
 
     /// Appends |size| bytes from |src| to this chain.
@@ -436,50 +432,45 @@ impl BufferChain {
 
     /// Free unused pages.
     pub fn free_unused_buffers(self: Pin<&mut Self>) {
-        // SAFETY: Mutating `unused_pages` does not move `Self`.
-        let this = unsafe { self.get_unchecked_mut() };
         stack_pin_init!(let temp_pages = PageList::new());
-        // SAFETY: `temp_pages` is pinned on the stack; mutating list does not move `temp_pages`.
-        let pages = unsafe { temp_pages.as_mut().get_unchecked_mut() };
-        pages.splice(&mut this.unused_pages);
+        temp_pages.as_mut().list_mut().splice(self.project().unused_pages);
         page_cache().free(temp_pages);
     }
 
     /// Common implementation for appending bytes from a source reader.
     fn append_common<R: SourceReader>(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         mut src: R,
         size: usize,
     ) -> Result<(), Status> {
         if size == 0 {
             return Ok(());
         }
-        // SAFETY: We hold `Pin<&mut Self>` and obtain `&mut Self` to perform buffer writes without
-        // moving `Self`.
-        let this = unsafe { self.get_unchecked_mut() };
         let mut rem = size;
         while rem > 0 {
-            let Some(mut tail) = this.buffer_tail else {
+            let this = self.as_mut().project();
+            let Some(mut tail) = *this.buffer_tail else {
                 return Err(Status::OUT_OF_RANGE);
             };
             // SAFETY: `tail` is verified non-null and points to a valid Buffer.
             let buf = unsafe { tail.as_mut() };
-            let copy_len = cmp::min(rem, buf.size() - this.buffer_offset);
-            let dst = &mut buf.as_mut_slice()[this.buffer_offset..this.buffer_offset + copy_len];
+            let offset = *this.buffer_offset;
+            let copy_len = cmp::min(rem, buf.size() - offset);
+            let dst = &mut buf.as_mut_slice()[offset..offset + copy_len];
             if let Err(status) = src.copy_to(dst) {
-                this.buffer_tail = None;
+                *this.buffer_tail = None;
                 return Err(status);
             }
 
-            this.buffer_offset += copy_len;
+            *this.buffer_offset += copy_len;
             rem -= copy_len;
 
             if rem > 0 {
-                if let Err(status) = this.add_next_buffer() {
-                    this.buffer_tail = None;
+                if let Err(status) = self.as_mut().add_next_buffer() {
+                    *self.as_mut().project().buffer_tail = None;
                     return Err(status);
                 }
-                this.buffer_offset = 0;
+                *self.as_mut().project().buffer_offset = 0;
             }
         }
         Ok(())
@@ -487,9 +478,7 @@ impl BufferChain {
 
     /// Returns a mutable pointer to the usable data payload in the first buffer.
     pub fn first_buffer_data_mut(self: Pin<&mut Self>) -> *mut u8 {
-        // SAFETY: Inspecting buffers list does not move `Self`.
-        let this = unsafe { self.get_unchecked_mut() };
-        this.buffers.front_mut().unwrap().data_mut()
+        self.project().buffers.front_mut().unwrap().data_mut()
     }
 
     /// Returns true if the buffer chain has no buffers.

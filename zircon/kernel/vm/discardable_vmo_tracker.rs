@@ -282,7 +282,7 @@ impl Drop for CursorGuard<'_> {
         debug_assert!(self.cursor.node.in_container());
         // SAFETY: Per `CursorGuard::new`'s contract, `cursor` is in `lists.cursors`.
         unsafe {
-            lists.cursors.erase(self.cursor.get_ref());
+            lists.project().cursors.erase(self.cursor.get_ref());
         }
     }
 }
@@ -354,10 +354,13 @@ init::lk_init_hook!(
 // is a mutex, no other thread can obtain one either. Callers must never create a second
 // reference to the lists by other means (e.g. via a separately minted `LockToken`) while one
 // returned from here is live.
-fn get_lists<'a>(token: &'a mut LockToken<'_, DiscardableVmosLock>) -> &'a mut DiscardableVmoLists {
+fn get_lists<'a>(
+    token: &'a mut LockToken<'_, DiscardableVmosLock>,
+) -> Pin<&'a mut DiscardableVmoLists> {
     // SAFETY: `DiscardableVmosLock` is a singleton, so `token` is necessarily for the lock
-    // instance that guards `LISTS`.
-    unsafe { LISTS.get().get_mut(token) }
+    // instance that guards `LISTS`. `LISTS` is a static initialized in place via `init_pin`, so
+    // the lists are never moved.
+    unsafe { LISTS.get().get_pinned_mut_locked(token) }
 }
 
 impl DiscardableVmoTracker {
@@ -428,7 +431,8 @@ impl DiscardableVmoTracker {
         debug_assert!(self.node.in_container());
 
         let lists = get_lists(guard.token_mut());
-        advance_cursors(lists, self.get_ref());
+        advance_cursors(&lists, self.get_ref());
+        let lists = lists.project();
 
         if *state == DiscardableState::Reclaimable {
             // SAFETY: `self` is currently in `reclaim_candidates`, and all cursors have been
@@ -692,13 +696,14 @@ impl DiscardableVmoTracker {
     fn move_to_reclaim_candidates_list_locked(
         self: Pin<&Self>,
         _token: &LockToken<'_, VmCowPagesLockClass>,
-        lists: &mut DiscardableVmoLists,
+        lists: Pin<&mut DiscardableVmoLists>,
     ) {
         // SAFETY: We hold `DiscardableVmosLock` (proven by `lists`).
         debug_assert!(!unsafe { self.cow() }.is_null());
         debug_assert!(self.node.in_container());
 
-        advance_cursors(lists, self.get_ref());
+        advance_cursors(&lists, self.get_ref());
+        let lists = lists.project();
         // SAFETY: `self` is currently in `non_reclaim_candidates`, and all cursors have been
         // advanced past it.
         unsafe {
@@ -725,7 +730,7 @@ impl DiscardableVmoTracker {
     fn move_to_non_reclaim_candidates_list_locked(
         self: Pin<&Self>,
         _token: &LockToken<'_, VmCowPagesLockClass>,
-        lists: &mut DiscardableVmoLists,
+        mut lists: Pin<&mut DiscardableVmoLists>,
         new_candidate: bool,
     ) {
         // SAFETY: We hold `DiscardableVmosLock` (proven by `lists`).
@@ -734,11 +739,11 @@ impl DiscardableVmoTracker {
             debug_assert!(!self.node.in_container());
         } else {
             debug_assert!(self.node.in_container());
-            advance_cursors(lists, self.get_ref());
+            advance_cursors(&lists, self.get_ref());
             // SAFETY: `self` is currently in `reclaim_candidates`, and all cursors have been
             // advanced past it.
             unsafe {
-                lists.reclaim_candidates.erase(self.get_ref());
+                lists.as_mut().project().reclaim_candidates.erase(self.get_ref());
             }
         }
 
@@ -748,7 +753,10 @@ impl DiscardableVmoTracker {
         // destructor) before it is dropped. The list only writes through the pointer to
         // `self.node`, whose fields are `UnsafeCell`s.
         unsafe {
-            lists.non_reclaim_candidates.push_back_raw(ptr::from_ref(self.get_ref()).cast_mut());
+            lists
+                .project()
+                .non_reclaim_candidates
+                .push_back_raw(ptr::from_ref(self.get_ref()).cast_mut());
         }
     }
 
@@ -817,7 +825,7 @@ impl DiscardableVmoTracker {
             // scope. The list only writes through the pointer to `cursor.node`, whose fields are
             // `UnsafeCell`s.
             unsafe {
-                lists.cursors.push_front_raw(ptr::from_ref(cursor.get_ref()).cast_mut());
+                lists.project().cursors.push_front_raw(ptr::from_ref(cursor.get_ref()).cast_mut());
             }
             // SAFETY: `cursor` was just added to `lists.cursors`. `_cursor_guard` is dropped at
             // the end of this loop iteration, while `guard` still holds `DiscardableVmosLock` and
@@ -1725,10 +1733,11 @@ mod tests {
         {
             ksync::lock!(let mut guard = DiscardableVmosLock::lock());
             let lists = get_lists(guard.token_mut());
+            let cursor_ptr = ptr::from_ref(cursor.get_ref()).cast_mut();
             // SAFETY: `cursor` is pinned on the stack and not in any list. It is unlinked below,
             // before it goes out of scope; no `assert_*` (which would return early) is used until
             // then.
-            unsafe { lists.cursors.push_front_raw(ptr::from_ref(cursor.get_ref()).cast_mut()) };
+            unsafe { lists.project().cursors.push_front_raw(cursor_ptr) };
         }
 
         // Removing `a` while the cursor points at it must advance the cursor past `a`.
@@ -1778,7 +1787,7 @@ mod tests {
             ksync::lock!(let mut guard = DiscardableVmosLock::lock());
             let lists = get_lists(guard.token_mut());
             // SAFETY: `cursor` is in `lists.cursors`.
-            unsafe { lists.cursors.erase(cursor.get_ref()) };
+            unsafe { lists.project().cursors.erase(cursor.get_ref()) };
         }
     }
 }

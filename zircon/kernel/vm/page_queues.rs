@@ -849,7 +849,8 @@ impl PageQueues {
             queue_ref.store(queue.0, Ordering::Relaxed);
 
             let page_queues = fields.page_queues.get_unchecked_mut();
-            page_queues[queue.0 as usize].push_front_raw(page.as_non_null());
+            Pin::new_unchecked(&mut page_queues[queue.0 as usize])
+                .push_front_raw(page.as_non_null());
         }
         self.page_queue_counts[queue.0 as usize].fetch_add(1, Ordering::Relaxed);
     }
@@ -1362,7 +1363,7 @@ impl PageQueues {
                 // into `out_list`.
                 unsafe {
                     self.remove_locked_list(pages[i], guard.token());
-                    out_list.as_mut().get_unchecked_mut().push_back_raw(pages[i].as_non_null());
+                    out_list.as_mut().push_back_raw(pages[i].as_non_null());
                 }
                 i += 1;
                 if i >= count || self.batch_op_should_drop_lock(i) {

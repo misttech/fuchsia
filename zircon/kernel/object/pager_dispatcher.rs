@@ -237,8 +237,7 @@ impl PagerDispatcher {
         // cycle.
         unsafe { proxy.set_page_source_unchecked(src.clone()) };
 
-        // SAFETY: `proxies` is pinned inside `PagerDispatcherState` and we do not move it.
-        unsafe { guard.as_mut().fields_mut().proxies.get_unchecked_mut().push_front(proxy) };
+        guard.as_mut().fields_mut().proxies.push_front(proxy);
         Ok(src)
     }
 
@@ -260,9 +259,8 @@ impl PagerDispatcher {
             if in_container { "" } else { "not " }
         );
         if in_container {
-            // SAFETY: `proxies` is pinned inside `PagerDispatcherState` and `proxy` is in
-            // `proxies`.
-            unsafe { guard.as_mut().fields_mut().proxies.get_unchecked_mut().erase(proxy) }
+            // SAFETY: `proxy` is in `proxies`.
+            unsafe { guard.as_mut().fields_mut().proxies.erase(proxy) }
         } else {
             None
         }
@@ -276,10 +274,7 @@ impl PagerDispatcher {
         // call to PagerDispatcher::release_proxy knows it's not incorrect to not find the proxy in
         // the list.
         *guard.as_mut().fields_mut().triggered_zero_handles = true;
-        // SAFETY: `proxies` is pinned inside `PagerDispatcherState` and we do not move it.
-        while let Some(proxy) =
-            unsafe { guard.as_mut().fields_mut().proxies.get_unchecked_mut().pop_front() }
-        {
+        while let Some(proxy) = guard.as_mut().fields_mut().proxies.pop_front() {
             // Call unlocked to prevent a double-lock if PagerDispatcher::release_proxy is called,
             // and to preserve the lock order that PagerProxy locks are acquired before the
             // list lock.

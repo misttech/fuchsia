@@ -148,3 +148,39 @@ pub unsafe trait ManagedPtr: PtrTraits {}
 unsafe impl<T: Recyclable> ManagedPtr for UniquePtr<T> {}
 // SAFETY: `RefPtr<T>` manages `T`'s lifetime via atomic reference counting.
 unsafe impl<T: HasRefCount + Recyclable> ManagedPtr for RefPtr<T> {}
+
+/// Marker trait for pointer types through which intrusive containers may hand out mutable
+/// (pinned) access to their elements (e.g. `front_mut()`, `iter_mut()`, `CursorMut::get_mut()`).
+///
+/// # Safety
+///
+/// Implementing this trait is unsafe because containers rely on it to soundly produce
+/// `Pin<&mut Self::Target>` from their stored pointers. The implementer must guarantee that
+/// exclusive access to a container holding `Self` (i.e. `Pin<&mut Container<Self>>`) implies
+/// exclusive mutable access to every `Self::Target` stored in it. In particular:
+/// - `Self` must not represent shared ownership of the target (as `RefPtr<T>` does), since other
+///   owners could otherwise observe the target while it is being mutated through the container.
+/// - For unmanaged pointers (e.g. `*mut T`, `NonNull<T>`), when mutable element accessors
+///   (`front_mut`, `back_mut`, `iter_mut`, `CursorMut::get_mut`, etc.) are used on the container,
+///   callers of the container's `unsafe` raw insertion APIs take on the obligation that no other
+///   references to the element are accessed while it is mutably borrowed through the container.
+/// - Because mutable element accessors expose `Pin<&mut Self::Target>`, elements accessed through
+///   them must satisfy `Pin`'s drop guarantee: unless `Self::Target: Unpin`, an element must not be
+///   moved out of its memory location (or have that memory reused) before it is dropped. For
+///   managed pointers this is upheld by the pointer type itself; for unmanaged pointers it is an
+///   obligation of the callers of the container's `unsafe` raw insertion APIs.
+pub unsafe trait MutPtr: PtrTraits {}
+
+// SAFETY: Raw pointers carry no ownership. When mutable element accessors are used, callers of the
+// `unsafe` raw insertion APIs guarantee that no other references to the pointee are accessed while
+// it is mutably borrowed through the container, and that the pointee satisfies `Pin`'s drop
+// guarantee (it is not moved before being dropped).
+unsafe impl<T> MutPtr for *mut T {}
+// SAFETY: `NonNull<T>` carries no ownership. When mutable element accessors are used, callers of
+// the `unsafe` raw insertion APIs guarantee that no other references to the pointee are accessed
+// while it is mutably borrowed through the container, and that the pointee satisfies `Pin`'s drop
+// guarantee (it is not moved before being dropped).
+unsafe impl<T> MutPtr for NonNull<T> {}
+// SAFETY: `UniquePtr<T>` holds the only reference to `T`, so exclusive access to the container
+// that owns it implies exclusive access to `T`.
+unsafe impl<T: Recyclable> MutPtr for UniquePtr<T> {}

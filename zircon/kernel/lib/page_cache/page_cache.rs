@@ -7,7 +7,7 @@
 use crate::vm::page::VmPageDoublyLinkedList;
 use crate::vm::pmm;
 use core::ffi;
-use core::ops::{Deref, DerefMut};
+use core::ops::Deref;
 use core::pin::Pin;
 use core::ptr::{self, NonNull};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
@@ -50,9 +50,9 @@ impl PageList {
         &self.pages
     }
 
-    /// Returns a mutable reference to the underlying `VmPageDoublyLinkedList`.
-    pub fn list_mut(&mut self) -> &mut VmPageDoublyLinkedList {
-        &mut self.pages
+    /// Returns a pinned mutable reference to the underlying `VmPageDoublyLinkedList`.
+    pub fn list_mut(self: Pin<&mut Self>) -> Pin<&mut VmPageDoublyLinkedList> {
+        self.project().pages
     }
 }
 
@@ -61,12 +61,6 @@ impl Deref for PageList {
 
     fn deref(&self) -> &Self::Target {
         &self.pages
-    }
-}
-
-impl DerefMut for PageList {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.pages
     }
 }
 
@@ -116,25 +110,24 @@ impl PageCache {
     pub fn alloc(
         &self,
         count: usize,
-        mut out_pages: Pin<&mut PageList>,
+        out_pages: Pin<&mut PageList>,
     ) -> Result<AvailablePages, Status> {
         let mut available_pages = 0;
-        // SAFETY: `out_pages` is pinned in memory; we access its inner list without moving it.
-        let list = unsafe { out_pages.as_mut().get_unchecked_mut() };
+        // SAFETY: The C++ side only mutates the list in place and never moves it.
+        let list = unsafe { out_pages.list_mut().get_unchecked_mut() };
         // SAFETY: Calling C++ FFI with valid PageCache pointer and valid out_pages pointer.
-        let status = unsafe {
-            cpp_page_cache_alloc(self.ptr.as_ptr(), count, &mut list.pages, &mut available_pages)
-        };
+        let status =
+            unsafe { cpp_page_cache_alloc(self.ptr.as_ptr(), count, list, &mut available_pages) };
         Status::ok(status)?;
         Ok(available_pages)
     }
 
     /// Frees pages back to the page cache. Excess pages are returned to the PMM.
-    pub fn free(&self, mut pages: Pin<&mut PageList>) {
-        // SAFETY: `pages` is pinned in memory; we access its inner list without moving it.
-        let list = unsafe { pages.as_mut().get_unchecked_mut() };
+    pub fn free(&self, pages: Pin<&mut PageList>) {
+        // SAFETY: The C++ side only mutates the list in place and never moves it.
+        let list = unsafe { pages.list_mut().get_unchecked_mut() };
         // SAFETY: Calling C++ FFI with valid PageCache pointer and valid pages pointer.
-        unsafe { cpp_page_cache_free(self.ptr.as_ptr(), &mut list.pages) };
+        unsafe { cpp_page_cache_free(self.ptr.as_ptr(), list) };
     }
 }
 
