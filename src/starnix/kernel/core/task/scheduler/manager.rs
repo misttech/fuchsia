@@ -49,7 +49,7 @@ impl SchedulerManager {
     }
 
     /// Create a new empty SchedulerManager for testing.
-    pub fn empty_for_tests() -> Self {
+    pub(crate) fn empty_for_tests() -> Self {
         Self {
             role_manager: None,
             role_overrides: RoleOverrides::new().build().unwrap(),
@@ -58,7 +58,8 @@ impl SchedulerManager {
     }
 
     /// Create a new SchedulerManager with a custom role manager and overrides for testing.
-    pub fn new_for_tests(
+    #[cfg(test)]
+    pub(crate) fn new_for_tests(
         role_manager: Option<RoleManagerSynchronousProxy>,
         role_overrides: RoleOverrides,
     ) -> Self {
@@ -67,16 +68,12 @@ impl SchedulerManager {
 
     /// Return the currently active role name for this task. Requires read access to `task`'s state,
     /// should only be called by code which is not already modifying the provided `task`.
-    pub fn role_name(&self, task: &Task) -> Result<&str, Errno> {
+    pub(crate) fn role_name(&self, task: &Task) -> Result<&str, Errno> {
         let scheduler_state = task.read().scheduler_state;
         self.role_name_inner(task, scheduler_state)
     }
 
-    pub fn role_name_inner(
-        &self,
-        task: &Task,
-        scheduler_state: SchedulerState,
-    ) -> Result<&str, Errno> {
+    fn role_name_inner(&self, task: &Task, scheduler_state: SchedulerState) -> Result<&str, Errno> {
         let thread_group = task.thread_group();
         let thread_group_state = thread_group.read();
         // Only inherit custom roles if the process has executed `execve`. Child processes created
@@ -102,7 +99,7 @@ impl SchedulerManager {
         Ok(scheduler_state.role_name())
     }
 
-    pub fn resolve_role_name(
+    pub(crate) fn resolve_role_name(
         &self,
         process_name: &TaskCommand,
         thread_name: &TaskCommand,
@@ -118,7 +115,7 @@ impl SchedulerManager {
     }
 
     /// Give the provided `task`'s Zircon thread a role.
-    pub fn set_thread_role(&self, task: &Task, role_name: &str) -> Result<(), Errno> {
+    pub(crate) fn set_thread_role(&self, task: &Task, role_name: &str) -> Result<(), Errno> {
         let Some(role_manager) = self.role_manager.as_ref() else {
             log_debug!("no role manager for setting role");
             return Ok(());
@@ -290,20 +287,6 @@ impl NormalPriority {
         }
     }
 
-    /// Creates a normal priority from a value to be interpreted according
-    /// to the "user-space nice" (-20..=19) scale, rejecting values outside
-    /// that scale.
-    ///
-    /// It would be strange for this to be called from anywhere outside of
-    /// our Binder implementation.
-    pub fn from_binder(user_nice: i8) -> Result<Self, Errno> {
-        let value = (Self::DEFAULT_VALUE as i8).saturating_sub(user_nice);
-        if value < (Self::MIN_VALUE as i8) || value > (Self::MAX_VALUE as i8) {
-            return error!(EINVAL);
-        }
-        Ok(Self { value: u8::try_from(value).expect("normal priority should fit in a u8") })
-    }
-
     /// Returns this normal priority's integer representation according
     /// to the "user-space nice" (-20..=19) scale.
     pub fn as_nice(&self) -> i8 {
@@ -416,43 +399,11 @@ pub struct SchedulerState {
 }
 
 impl SchedulerState {
-    pub fn is_default(&self) -> bool {
+    pub(crate) fn is_default(&self) -> bool {
         self == &Self::default()
     }
 
-    /// Create a policy according to the "sched_policy" and "priority" bits of
-    /// a flat_binder_object_flags bitmask (see uapi/linux/android/binder.h).
-    ///
-    /// It would be very strange for this to need to be called anywhere outside
-    /// of our Binder implementation.
-    pub fn from_binder(policy: u8, priority_or_nice: u8) -> Result<Self, Errno> {
-        let (policy, normal_priority, realtime_priority) = match policy as u32 {
-            SCHED_NORMAL => (
-                SchedulingPolicy::Normal,
-                NormalPriority::from_binder(priority_or_nice as i8)?,
-                RealtimePriority::NON_REAL_TIME,
-            ),
-            SCHED_BATCH => (
-                SchedulingPolicy::Batch,
-                NormalPriority::from_binder(priority_or_nice as i8)?,
-                RealtimePriority::NON_REAL_TIME,
-            ),
-            SCHED_FIFO => (
-                SchedulingPolicy::Fifo,
-                NormalPriority::default(),
-                SchedulingPolicy::Fifo.realtime_priority_from(priority_or_nice as i32)?,
-            ),
-            SCHED_RR => (
-                SchedulingPolicy::RoundRobin,
-                NormalPriority::default(),
-                SchedulingPolicy::RoundRobin.realtime_priority_from(priority_or_nice as i32)?,
-            ),
-            _ => return error!(EINVAL),
-        };
-        Ok(Self { policy, normal_priority, realtime_priority, reset_on_fork: false })
-    }
-
-    pub fn fork(self) -> Self {
+    pub(crate) fn fork(self) -> Self {
         if self.reset_on_fork {
             let (policy, normal_priority, realtime_priority) = if self.is_realtime() {
                 // If the calling task has a real-time scheduling policy, the
@@ -493,7 +444,7 @@ impl SchedulerState {
     ///
     /// It would be strange for this to need to be called anywhere outside the
     /// implementation of the sched_getscheduler system call.
-    pub fn policy_for_sched_getscheduler(&self) -> u32 {
+    pub(crate) fn policy_for_sched_getscheduler(&self) -> u32 {
         let mut base = match self.policy {
             SchedulingPolicy::Normal => SCHED_NORMAL,
             SchedulingPolicy::Batch => SCHED_BATCH,
@@ -511,7 +462,7 @@ impl SchedulerState {
     ///
     /// It would be strange for this to need to be called anywhere outside the
     /// implementation of the sched_getparam system call.
-    pub fn get_sched_param(&self) -> sched_param {
+    pub(crate) fn get_sched_param(&self) -> sched_param {
         sched_param {
             sched_priority: (if self.is_realtime() {
                 self.realtime_priority.value
@@ -525,7 +476,7 @@ impl SchedulerState {
         self.normal_priority
     }
 
-    pub fn is_realtime(&self) -> bool {
+    fn is_realtime(&self) -> bool {
         match self.policy {
             SchedulingPolicy::Normal | SchedulingPolicy::Batch | SchedulingPolicy::Idle => false,
             SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => true,
@@ -544,7 +495,7 @@ impl SchedulerState {
     ///    default for Fuchsia processes.
     /// 4. 17-26 (inclusive) is used for higher-than-default-priority SCHED_OTHER/SCHED_BATCH tasks.
     /// 5. Realtime tasks receive their own profile name.
-    pub(crate) fn role_name(&self) -> &'static str {
+    fn role_name(&self) -> &'static str {
         match self.policy {
             // Mapped to 0; see "the [...] nice value has no influence for [the SCHED_IDLE] policy"
             // at sched(7).
@@ -568,43 +519,6 @@ impl SchedulerState {
             SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => REALTIME_ROLE_NAME,
         }
     }
-
-    // TODO: https://fxbug.dev/425726327 - better understand what are Binder's requirements when
-    // comparing one scheduling with another.
-    pub fn is_less_than_for_binder(&self, other: Self) -> bool {
-        match self.policy {
-            SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => match other.policy {
-                SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => {
-                    self.realtime_priority < other.realtime_priority
-                }
-                SchedulingPolicy::Normal | SchedulingPolicy::Batch | SchedulingPolicy::Idle => {
-                    false
-                }
-            },
-            SchedulingPolicy::Normal => match other.policy {
-                SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => true,
-                SchedulingPolicy::Normal => {
-                    self.normal_priority.value < other.normal_priority.value
-                }
-                SchedulingPolicy::Batch | SchedulingPolicy::Idle => false,
-            },
-            SchedulingPolicy::Batch => match other.policy {
-                SchedulingPolicy::Fifo
-                | SchedulingPolicy::RoundRobin
-                | SchedulingPolicy::Normal => true,
-                SchedulingPolicy::Batch => self.normal_priority.value < other.normal_priority.value,
-                SchedulingPolicy::Idle => false,
-            },
-            // see "the [...] nice value has no influence for [the SCHED_IDLE] policy" at sched(7).
-            SchedulingPolicy::Idle => match other.policy {
-                SchedulingPolicy::Fifo
-                | SchedulingPolicy::RoundRobin
-                | SchedulingPolicy::Normal
-                | SchedulingPolicy::Batch => true,
-                SchedulingPolicy::Idle => false,
-            },
-        }
-    }
 }
 
 impl std::default::Default for SchedulerState {
@@ -618,14 +532,14 @@ impl std::default::Default for SchedulerState {
     }
 }
 
-pub fn min_priority_for_sched_policy(policy: u32) -> Result<u8, Errno> {
+pub(crate) fn min_priority_for_sched_policy(policy: u32) -> Result<u8, Errno> {
     Ok(match policy {
         SCHED_DEADLINE => RealtimePriority::NON_REAL_TIME_VALUE,
         _ => SchedulingPolicy::try_from(policy)?.realtime_priority_min(),
     })
 }
 
-pub fn max_priority_for_sched_policy(policy: u32) -> Result<u8, Errno> {
+pub(crate) fn max_priority_for_sched_policy(policy: u32) -> Result<u8, Errno> {
     Ok(match policy {
         SCHED_DEADLINE => RealtimePriority::NON_REAL_TIME_VALUE,
         _ => SchedulingPolicy::try_from(policy)?.realtime_priority_max(),
@@ -675,7 +589,6 @@ const REALTIME_ROLE_NAME: &str = "fuchsia.starnix.realtime";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
 
     #[fuchsia::test]
     fn default_role_name() {
@@ -772,130 +685,6 @@ mod tests {
             .role_name(),
             "fuchsia.starnix.fair.0"
         );
-    }
-
-    #[fuchsia::test]
-    fn build_policy_from_binder() {
-        assert_matches!(SchedulerState::from_binder(SCHED_NORMAL as u8, 0), Ok(_));
-        assert_matches!(
-            SchedulerState::from_binder(SCHED_NORMAL as u8, ((-21) as i8) as u8),
-            Err(_)
-        );
-        assert_matches!(
-            SchedulerState::from_binder(SCHED_NORMAL as u8, ((-20) as i8) as u8),
-            Ok(SchedulerState {
-                policy: SchedulingPolicy::Normal,
-                normal_priority: NormalPriority { value: 40 },
-                realtime_priority: RealtimePriority::NON_REAL_TIME,
-                reset_on_fork: false,
-            })
-        );
-        assert_matches!(SchedulerState::from_binder(SCHED_NORMAL as u8, 1), Ok(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_NORMAL as u8, 19), Ok(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_NORMAL as u8, 20), Err(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_FIFO as u8, 0), Err(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_FIFO as u8, 1), Ok(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_FIFO as u8, 99), Ok(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_FIFO as u8, 100), Err(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_RR as u8, 0), Err(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_RR as u8, 1), Ok(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_RR as u8, 99), Ok(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_RR as u8, 100), Err(_));
-        assert_matches!(SchedulerState::from_binder(SCHED_BATCH as u8, 11), Ok(_));
-        assert_eq!(SchedulerState::from_binder(SCHED_IDLE as u8, 11), error!(EINVAL));
-        assert_matches!(SchedulerState::from_binder(42, 0), Err(_));
-        assert_matches!(SchedulerState::from_binder(42, 0), Err(_));
-    }
-
-    // NOTE(https://fxbug.dev/425726327): some or all of this test may need to change based
-    // on what is learned in https://fxbug.dev/425726327.
-    #[fuchsia::test]
-    fn is_less_than_for_binder() {
-        let rr_50 = SchedulerState {
-            policy: SchedulingPolicy::RoundRobin,
-            normal_priority: NormalPriority { value: 1 },
-            realtime_priority: RealtimePriority { value: 50 },
-            reset_on_fork: false,
-        };
-        let rr_40 = SchedulerState {
-            policy: SchedulingPolicy::RoundRobin,
-            normal_priority: NormalPriority { value: 1 },
-            realtime_priority: RealtimePriority { value: 40 },
-            reset_on_fork: false,
-        };
-        let fifo_50 = SchedulerState {
-            policy: SchedulingPolicy::Fifo,
-            normal_priority: NormalPriority { value: 1 },
-            realtime_priority: RealtimePriority { value: 50 },
-            reset_on_fork: false,
-        };
-        let fifo_40 = SchedulerState {
-            policy: SchedulingPolicy::Fifo,
-            normal_priority: NormalPriority { value: 1 },
-            realtime_priority: RealtimePriority { value: 40 },
-            reset_on_fork: false,
-        };
-        let normal_40 = SchedulerState {
-            policy: SchedulingPolicy::Normal,
-            normal_priority: NormalPriority { value: 40 },
-            realtime_priority: RealtimePriority::NON_REAL_TIME,
-            reset_on_fork: true,
-        };
-        let normal_10 = SchedulerState {
-            policy: SchedulingPolicy::Normal,
-            normal_priority: NormalPriority { value: 10 },
-            realtime_priority: RealtimePriority::NON_REAL_TIME,
-            reset_on_fork: true,
-        };
-        let batch_40 = SchedulerState {
-            policy: SchedulingPolicy::Batch,
-            normal_priority: NormalPriority { value: 40 },
-            realtime_priority: RealtimePriority::NON_REAL_TIME,
-            reset_on_fork: true,
-        };
-        let batch_30 = SchedulerState {
-            policy: SchedulingPolicy::Batch,
-            normal_priority: NormalPriority { value: 30 },
-            realtime_priority: RealtimePriority::NON_REAL_TIME,
-            reset_on_fork: true,
-        };
-        let idle_40 = SchedulerState {
-            policy: SchedulingPolicy::Idle,
-            normal_priority: NormalPriority { value: 40 },
-            realtime_priority: RealtimePriority::NON_REAL_TIME,
-            reset_on_fork: true,
-        };
-        let idle_30 = SchedulerState {
-            policy: SchedulingPolicy::Idle,
-            normal_priority: NormalPriority { value: 30 },
-            realtime_priority: RealtimePriority::NON_REAL_TIME,
-            reset_on_fork: true,
-        };
-        assert!(!fifo_50.is_less_than_for_binder(fifo_50));
-        assert!(!rr_50.is_less_than_for_binder(rr_50));
-        assert!(!fifo_50.is_less_than_for_binder(rr_50));
-        assert!(!rr_50.is_less_than_for_binder(fifo_50));
-        assert!(!fifo_50.is_less_than_for_binder(rr_40));
-        assert!(rr_40.is_less_than_for_binder(fifo_50));
-        assert!(!rr_50.is_less_than_for_binder(fifo_40));
-        assert!(fifo_40.is_less_than_for_binder(rr_50));
-        assert!(!fifo_40.is_less_than_for_binder(normal_40));
-        assert!(normal_40.is_less_than_for_binder(fifo_40));
-        assert!(!rr_40.is_less_than_for_binder(normal_40));
-        assert!(normal_40.is_less_than_for_binder(rr_40));
-        assert!(!normal_40.is_less_than_for_binder(normal_40));
-        assert!(!normal_40.is_less_than_for_binder(normal_10));
-        assert!(normal_10.is_less_than_for_binder(normal_40));
-        assert!(!normal_10.is_less_than_for_binder(batch_40));
-        assert!(batch_40.is_less_than_for_binder(normal_10));
-        assert!(!batch_40.is_less_than_for_binder(batch_40));
-        assert!(!batch_40.is_less_than_for_binder(batch_30));
-        assert!(batch_30.is_less_than_for_binder(batch_40));
-        assert!(!batch_30.is_less_than_for_binder(idle_40));
-        assert!(idle_40.is_less_than_for_binder(batch_30));
-        assert!(!idle_40.is_less_than_for_binder(idle_40));
-        assert!(!idle_40.is_less_than_for_binder(idle_30));
-        assert!(!idle_30.is_less_than_for_binder(idle_40));
     }
 
     #[fuchsia::test]
