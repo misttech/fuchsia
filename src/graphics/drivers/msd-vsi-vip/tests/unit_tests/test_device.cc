@@ -221,7 +221,7 @@ TEST_F(MsdVsiDeviceTest, LoadAddressSpace) {
 }
 
 TEST_F(MsdVsiDeviceTest, Connections) {
-  std::vector<std::unique_ptr<MsdVsiConnection>> connections;
+  std::vector<std::shared_ptr<MsdVsiConnection>> connections;
   for (uint32_t i = 0; i < PageTableArrays::size(); i++) {
     auto connection = device_->OpenVsiConnection(i);
     EXPECT_TRUE(connection);

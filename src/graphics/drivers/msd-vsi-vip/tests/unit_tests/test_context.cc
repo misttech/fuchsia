@@ -94,20 +94,22 @@ class BatchData {
 
 class TestMsdVsiContext : public ::testing::Test {
  public:
+  TestMsdVsiContext() : mock_connection_owner_(&ringbuffer_) {}
+
   void SetUp() {
     static constexpr uint32_t kAddressSpaceIndex = 1;
     address_space_ = AddressSpace::Create(&mock_address_space_owner_, kAddressSpaceIndex);
     EXPECT_NE(address_space_, nullptr);
-
-    connection_ = std::make_shared<MsdVsiConnection>(&mock_connection_owner_, address_space_,
-                                                     0 /* client_id */);
-    EXPECT_NE(connection_, nullptr);
 
     // Buffers are not submitted to hardware, so we just need a mock ringbuffer that the
     // context can map.
     const uint32_t kRingbufferSize = magma::page_size();
     ringbuffer_ = std::make_unique<Ringbuffer>(MsdVsiBuffer::Create(kRingbufferSize, "ringbuffer"));
     EXPECT_NE(ringbuffer_, nullptr);
+
+    connection_ =
+        MsdVsiConnection::Create(&mock_connection_owner_, address_space_, 0 /* client_id */);
+    EXPECT_NE(connection_, nullptr);
 
     context_ = MsdVsiContext::Create(connection_, address_space_, ringbuffer_.get());
     EXPECT_NE(context_, nullptr);
@@ -116,8 +118,11 @@ class TestMsdVsiContext : public ::testing::Test {
  protected:
   class MockConnectionOwner : public MsdVsiConnection::Owner {
    public:
+    explicit MockConnectionOwner(std::unique_ptr<Ringbuffer>* ringbuffer)
+        : ringbuffer_(ringbuffer) {}
+
     // MsdVsiConnection::Owner
-    Ringbuffer* GetRingbuffer() override { return nullptr; }
+    Ringbuffer* GetRingbuffer() override { return ringbuffer_->get(); }
 
     magma::Status SubmitBatch(std::unique_ptr<MappedBatch> batch, bool do_flush) override {
       submitted_batch_ids_.push_back(batch->GetBatchBufferId());
@@ -138,6 +143,7 @@ class TestMsdVsiContext : public ::testing::Test {
     std::vector<uint64_t> GetSubmittedBatchIds() { return submitted_batch_ids_; }
 
    private:
+    std::unique_ptr<Ringbuffer>* ringbuffer_;
     std::vector<uint64_t> submitted_batch_ids_;
     uint32_t num_expected_batches_ = 0;
     std::shared_ptr<magma::PlatformSemaphore> finished_semaphore_;

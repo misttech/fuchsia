@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_TESTS_UNIT_TESTS_TEST_COMMAND_BUFFER_H_
+#define SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_TESTS_UNIT_TESTS_TEST_COMMAND_BUFFER_H_
+
 #include <lib/magma_service/test_util/platform_msd_device_helper.h>
 
 #include <gtest/gtest.h>
@@ -110,8 +113,7 @@ class TestCommandBuffer : public ::testing::Test {
 
     device_->page_table_arrays()->AssignAddressSpace(address_space_index, address_space.get());
 
-    auto connection =
-        std::make_shared<MsdVsiConnection>(device_.get(), address_space, 1 /* client_id */);
+    auto connection = MsdVsiConnection::Create(device_.get(), address_space, 1 /* client_id */);
     ASSERT_NE(connection, nullptr);
     auto context = MsdVsiContext::Create(connection, address_space, device_->GetRingbuffer());
     ASSERT_NE(context, nullptr);
@@ -183,3 +185,5 @@ class TestCommandBuffer : public ::testing::Test {
   std::unique_ptr<MsdVsiDevice> device_;
   std::unique_ptr<Client> client_;
 };
+
+#endif  // SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_TESTS_UNIT_TESTS_TEST_COMMAND_BUFFER_H_

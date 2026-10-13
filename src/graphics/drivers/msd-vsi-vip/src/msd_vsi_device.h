@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MSD_VSI_DEVICE_H
-#define MSD_VSI_DEVICE_H
+#ifndef SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_MSD_VSI_DEVICE_H_
+#define SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_MSD_VSI_DEVICE_H_
 
 #include <lib/magma/platform/platform_bus_mapper.h>
 #include <lib/magma/platform/platform_semaphore.h>
@@ -84,7 +84,7 @@ class MsdVsiDevice : public msd::Device,
   void MsdDumpStatus(uint32_t dump_flags) override;
   std::unique_ptr<msd::Connection> MsdOpen(msd::msd_client_id_t client_id) override;
 
-  std::unique_ptr<MsdVsiConnection> OpenVsiConnection(msd::msd_client_id_t client_id);
+  std::shared_ptr<MsdVsiConnection> OpenVsiConnection(msd::msd_client_id_t client_id);
 
   magma_status_t ChipIdentity(magma_vsi_vip_chip_identity* out_identity);
   magma_status_t ChipOption(magma_vsi_vip_chip_option* out_option);
@@ -438,6 +438,7 @@ class MsdVsiDevice : public msd::Device,
   friend class TestExec_SwitchAddressSpace_Test;
   friend class TestExec_SwitchMultipleAddressSpaces_Test;
   friend class TestExec_ResetAfterSubmit_Test;
+  friend class TestExec_ReleaseMappingOnConnectionTeardown_Test;
   friend class TestEvents;
   friend class TestEvents_AllocAndFree_Test;
   friend class TestEvents_Submit_Test;
@@ -457,4 +458,4 @@ class MsdVsiDevice : public msd::Device,
   friend class MsdVsiDeviceTest_UnmapInvalidSram_Test;
 };
 
-#endif  // MSD_VSI_DEVICE_H
+#endif  // SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_MSD_VSI_DEVICE_H_

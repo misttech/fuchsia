@@ -126,15 +126,35 @@ void MsdVsiConnection::ReleaseBuffer(magma::PlatformBuffer* buffer) {
 }
 
 bool MsdVsiConnection::SubmitPendingReleaseMappings(std::shared_ptr<MsdVsiContext> context) {
-  if (!mappings_to_release_.empty()) {
-    magma::Status status =
-        SubmitBatch(std::make_unique<MappingReleaseBatch>(context, std::move(mappings_to_release_)),
-                    true /* do_flush */);
-    mappings_to_release_.clear();
-    if (!status.ok()) {
-      MAGMA_LOG(ERROR, "Failed to submit mapping release batch: %d", status.get());
-      return false;
-    }
+  if (mappings_to_release_.empty()) {
+    return true;
   }
+
+  DASSERT(context);
+  magma::Status status =
+      SubmitBatch(std::make_unique<MappingReleaseBatch>(context, std::move(mappings_to_release_)),
+                  true /* do_flush */);
+  mappings_to_release_.clear();
+  if (!status.ok()) {
+    MAGMA_LOG(ERROR, "Failed to submit mapping release batch: %d", status.get());
+    return false;
+  }
+
   return true;
 }
+
+// static
+std::shared_ptr<MsdVsiConnection> MsdVsiConnection::Create(
+    Owner* owner, std::shared_ptr<AddressSpace> address_space, msd::msd_client_id_t client_id) {
+  auto connection = std::shared_ptr<MsdVsiConnection>(
+      new MsdVsiConnection(owner, std::move(address_space), client_id));
+  connection->internal_context_ =
+      MsdVsiContext::Create(connection, connection->address_space(), connection->GetRingbuffer());
+  if (!connection->internal_context_) {
+    MAGMA_LOG(ERROR, "Failed to create internal context");
+    return nullptr;
+  }
+  return connection;
+}
+
+MsdVsiConnection::~MsdVsiConnection() { SubmitPendingReleaseMappings(internal_context_); }

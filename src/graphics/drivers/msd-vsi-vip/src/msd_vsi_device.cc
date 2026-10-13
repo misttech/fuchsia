@@ -1346,7 +1346,7 @@ magma::Status MsdVsiDevice::ProcessBatch(std::unique_ptr<MappedBatch> batch, boo
   return MAGMA_STATUS_OK;
 }
 
-std::unique_ptr<MsdVsiConnection> MsdVsiDevice::OpenVsiConnection(msd::msd_client_id_t client_id) {
+std::shared_ptr<MsdVsiConnection> MsdVsiDevice::OpenVsiConnection(msd::msd_client_id_t client_id) {
   uint32_t page_table_array_slot;
   if (!page_table_slot_allocator_->Alloc(&page_table_array_slot)) {
     MAGMA_LOG(ERROR, "couldn't allocate page table slot");
@@ -1361,11 +1361,11 @@ std::unique_ptr<MsdVsiConnection> MsdVsiDevice::OpenVsiConnection(msd::msd_clien
 
   page_table_arrays_->AssignAddressSpace(page_table_array_slot, address_space.get());
 
-  return std::make_unique<MsdVsiConnection>(this, std::move(address_space), client_id);
+  return MsdVsiConnection::Create(this, std::move(address_space), client_id);
 }
 
 std::unique_ptr<msd::Connection> MsdVsiDevice::MsdOpen(msd::msd_client_id_t client_id) {
-  auto connection = OpenVsiConnection(client_id);
+  std::shared_ptr<MsdVsiConnection> connection = OpenVsiConnection(client_id);
   if (connection) {
     return std::make_unique<MsdVsiAbiConnection>(std::move(connection));
   } else {

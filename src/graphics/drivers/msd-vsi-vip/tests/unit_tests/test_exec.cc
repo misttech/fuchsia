@@ -581,3 +581,45 @@ TEST_F(TestExec, KillContextOnSubmitFail) {
       false /* validate_buffer */));
   ASSERT_TRUE(default_context()->killed());
 }
+
+TEST_F(TestExec, ReleaseMappingOnConnectionTeardown) {
+  device_->StartDeviceThread();
+
+  BufferDesc buffer_desc = {
+      .buffer_size = 4096,
+      .map_page_count = 1,
+      .data_size = 8,
+      .batch_offset = 0,
+      .gpu_addr = 0x10000,
+  };
+  std::shared_ptr<MsdVsiBuffer> buffer;
+  ASSERT_NO_FATAL_FAILURE(CreateAndSubmitBufferWaitCompletion(
+      default_context(), buffer_desc, std::nullopt /* context_state_buffer */,
+      true /* validate_batch */, &buffer));
+  ASSERT_EQ(1u, device_->num_events_completed_);
+
+  std::weak_ptr<MsdVsiContext> weak_internal_context = default_connection()->internal_context_;
+  ASSERT_NE(weak_internal_context.lock(), nullptr);
+
+  // Queue a released mapping in mappings_to_release_.
+  default_connection()->ReleaseBuffer(buffer->platform_buffer());
+  EXPECT_EQ(1u, default_connection()->mappings_to_release().size());
+
+  // Destroying the client/connection triggers ~MsdVsiConnection, which submits
+  // a MappingReleaseBatch associated with internal_context_.
+  DropDefaultClient();
+
+  // Wait for the device thread to process and complete the mapping release batch.
+  auto start = std::chrono::high_resolution_clock::now();
+  while (device_->num_events_completed_ < 2u &&
+         std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::high_resolution_clock::now() - start)
+                 .count() < 5000) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  EXPECT_EQ(2u, device_->num_events_completed_);
+  // Once the MappingReleaseBatch completes, its shared_ptr reference to
+  // internal_context_ is released, destroying the context.
+  EXPECT_EQ(weak_internal_context.lock(), nullptr);
+}

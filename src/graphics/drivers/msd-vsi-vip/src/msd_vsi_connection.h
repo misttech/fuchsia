@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MSD_VSI_CONNECTION_H
-#define MSD_VSI_CONNECTION_H
+#ifndef SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_MSD_VSI_CONNECTION_H_
+#define SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_MSD_VSI_CONNECTION_H_
 
 #include <lib/fit/thread_safety.h>
 #include <lib/magma/util/short_macros.h>
@@ -25,9 +25,11 @@ class MsdVsiConnection {
     virtual magma::Status SubmitBatch(std::unique_ptr<MappedBatch> batch, bool do_flush) = 0;
   };
 
-  explicit MsdVsiConnection(Owner* owner, std::shared_ptr<AddressSpace> address_space,
-                            msd::msd_client_id_t client_id)
-      : owner_(owner), address_space_(std::move(address_space)), client_id_(client_id) {}
+  static std::shared_ptr<MsdVsiConnection> Create(Owner* owner,
+                                                  std::shared_ptr<AddressSpace> address_space,
+                                                  msd::msd_client_id_t client_id);
+
+  ~MsdVsiConnection();
 
   magma::Status MapBufferGpu(std::shared_ptr<MsdVsiBuffer> buffer, uint64_t gpu_va,
                              uint64_t page_offset, uint64_t page_count);
@@ -59,6 +61,10 @@ class MsdVsiConnection {
   std::shared_ptr<AddressSpace> address_space() { return address_space_; }
 
  private:
+  explicit MsdVsiConnection(Owner* owner, std::shared_ptr<AddressSpace> address_space,
+                            msd::msd_client_id_t client_id)
+      : owner_(owner), address_space_(std::move(address_space)), client_id_(client_id) {}
+
   // Saves the released bus mappings to |mappings_to_release_|, to be transferred to the next
   // created |MappingReleaseBatch|.
   // Sends a ContextKilled notification if a mapping is still in use.
@@ -74,6 +80,8 @@ class MsdVsiConnection {
   msd::msd_client_id_t client_id_;
 
   std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>> mappings_to_release_;
+  // This internal context is used to submit a mapping release batch during teardown.
+  std::shared_ptr<MsdVsiContext> internal_context_;
   bool address_space_dirty_ = false;
 
   class Notifications {
@@ -100,6 +108,8 @@ class MsdVsiConnection {
   friend class TestMsdVsiConnection_ReleaseMapping_Test;
   friend class TestMsdVsiConnection_ReleaseBuffer_Test;
   friend class TestMsdVsiConnection_ReleaseBufferWhileMapped_Test;
+  friend class TestMsdVsiConnection_ReleaseMappingOnDestruction_Test;
+  friend class TestExec_ReleaseMappingOnConnectionTeardown_Test;
 };
 
 class MsdVsiAbiConnection : public msd::Connection {
@@ -138,4 +148,4 @@ class MsdVsiAbiConnection : public msd::Connection {
   const uint32_t magic_;
 };
 
-#endif  // MSD_VSI_CONNECTION_H
+#endif  // SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_MSD_VSI_CONNECTION_H_
