@@ -20,6 +20,8 @@ source_set("view_ref_installed") {
 
 source_set("view_tree_snapshot") {
   sources = [
+    "input_ownership_evaluator.cc",
+    "input_ownership_evaluator.h",
     "snapshot_dump.cc",
     "snapshot_dump.h",
     "snapshot_holder.cc",
@@ -29,7 +31,11 @@ source_set("view_tree_snapshot") {
     "view_tree_snapshotter.cc",
     "view_tree_snapshotter.h",
   ]
-  deps = [ "//src/ui/scenic/lib/utils" ]
+  deps = [
+    "//sdk/fidl/fuchsia.ui.input.internal:fuchsia.ui.input.internal_cpp",
+    "//src/ui/scenic/lib/utils",
+    "//zircon/system/ulib/trace",
+  ]
   public_deps = [
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",

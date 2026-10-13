@@ -17,6 +17,7 @@ source_set("common_deps") {
 cc_test_executable("view_tree_test_bin") {
   testonly = true
   sources = [
+    "input_ownership_evaluator_unittest.cc",
     "snapshot_dump_unittest.cc",
     "snapshot_types_unittest.cc",
     "view_ref_installed_impl_unittest.cc",
@@ -24,6 +25,7 @@ cc_test_executable("view_tree_test_bin") {
   ]
   deps = [
     ":common_deps",
+    "//sdk/fidl/fuchsia.ui.input.internal:fuchsia.ui.input.internal_cpp",
     "//sdk/lib/async-default",
     "//sdk/lib/async-testing",
     "//sdk/lib/ui/scenic/cpp",

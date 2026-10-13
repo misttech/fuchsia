@@ -409,7 +409,10 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
   }
 
   {
+    input_ownership_evaluator_.SetOwnershipEvent(display->ownership_event());
     singleton_display_service_.emplace(display);
+    singleton_display_service_->SetOnViewRefRegisteredCallback(
+        [this](zx_koid_t koid) { input_ownership_evaluator_.RegisterViewRef(koid); });
     singleton_display_service_->AddPublicService(app_context_->outgoing().get());
     display_info_delegate_.emplace(display);
   }
@@ -793,6 +796,7 @@ void App::InitializeHeartbeat(display::Display& display) {
       // synchronously on the main thread ensures consistency. See b/42155704 for more detail.
       snapshot_holder_->SetSnapshot(snapshot);
       input_manager_.AsyncCall(&input::InputManager::OnNewViewTreeSnapshot);
+      input_ownership_evaluator_.OnNewViewTreeSnapshot(std::move(snapshot));
     }});
 
     if (enable_snapshot_dump_) {

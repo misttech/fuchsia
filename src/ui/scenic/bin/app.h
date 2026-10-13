@@ -40,6 +40,7 @@
 #include "src/ui/scenic/lib/shutdown/shutdown_manager.h"
 #include "src/ui/scenic/lib/utils/metrics_impl.h"
 #include "src/ui/scenic/lib/view_tree/geometry_provider.h"
+#include "src/ui/scenic/lib/view_tree/input_ownership_evaluator.h"
 #include "src/ui/scenic/lib/view_tree/observer_registry.h"
 #include "src/ui/scenic/lib/view_tree/scoped_observer_registry.h"
 #include "src/ui/scenic/lib/view_tree/view_ref_installed_impl.h"
@@ -113,6 +114,10 @@ class App {
 
   RendererType renderer_type_;
   std::optional<display::DisplayManager> display_manager_;
+  // Callbacks registered in `singleton_display_service_` and `view_tree_snapshotter_`
+  // invoke member functions on `input_ownership_evaluator_`, so it must be declared
+  // before them and destroyed after them.
+  view_tree::InputOwnershipEvaluator input_ownership_evaluator_;
   std::optional<display::SingletonDisplayService> singleton_display_service_;
   std::optional<DisplayInfoDelegate> display_info_delegate_;
   // `VsyncSourceManager` has a reference to `display_manager_`, so it should be

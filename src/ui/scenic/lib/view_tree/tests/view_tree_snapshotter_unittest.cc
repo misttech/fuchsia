@@ -4,18 +4,26 @@
 
 #include "src/ui/scenic/lib/view_tree/view_tree_snapshotter.h"
 
+#include <fidl/fuchsia.ui.input.internal/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
 #include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/event.h>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/lib/view_tree/input_ownership_evaluator.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace view_tree::test {
 
 namespace {
+
+using fuchsia_ui_input_internal::InputOwnershipSignal;
 
 enum : zx_koid_t {
   kRoot1A = 1,
@@ -37,6 +45,31 @@ ViewNode NewViewNode(zx_koid_t parent, std::unordered_set<zx_koid_t> children) {
       .children = children,
       .view_ref = std::make_shared<const types::ViewRef>(fuchsia_ui_views::ViewRef{}),
   };
+}
+
+ViewNode NewViewNodeWithBounds(zx_koid_t parent, std::unordered_set<zx_koid_t> children,
+                               float width, float height,
+                               const glm::mat4& local_from_world = glm::mat4(1.f)) {
+  return ViewNode{
+      .parent = parent,
+      .children = std::move(children),
+      .bounding_box = {.min = {0.f, 0.f}, .max = {width, height}},
+      .local_from_world_transform = local_from_world,
+      .view_ref = std::make_shared<const types::ViewRef>(fuchsia_ui_views::ViewRef{}),
+  };
+}
+
+zx::event CreateEvent(uint32_t initial_signals = 0) {
+  zx::event event;
+  FX_CHECK(zx::event::create(0, &event) == ZX_OK);
+  if (initial_signals != 0) {
+    FX_CHECK(event.signal(0, initial_signals) == ZX_OK);
+  }
+  return event;
+}
+
+bool IsSignalled(const zx::event& event, InputOwnershipSignal signal) {
+  return utils::IsEventSignalled(event, static_cast<uint32_t>(signal));
 }
 
 // Generates a valid tree out of three subtrees: A, B and C
@@ -283,6 +316,64 @@ TEST(ViewTreeSnapshotterTest, NoDiff) {
   tree->UpdateSnapshot();
 
   EXPECT_EQ(snapshots.size(), 2U);
+}
+
+TEST(ViewTreeSnapshotterTest, ViewTreeSnapshotterWithInputOwnershipSubscriber) {
+  zx::event event = CreateEvent(static_cast<uint32_t>(InputOwnershipSignal::kDisplayPlatformOwned |
+                                                      InputOwnershipSignal::kInputPlatformOwned));
+
+  InputOwnershipEvaluator evaluator;
+  evaluator.SetOwnershipEvent(event);
+  evaluator.RegisterViewRef(kNode2);
+
+  int frame_index = 0;
+  std::vector<SubtreeSnapshotGenerator> subtrees;
+  subtrees.emplace_back([&frame_index] {
+    auto subtree = std::make_unique<SubtreeSnapshot>();
+    subtree->root = kRoot1A;
+    if (frame_index == 0) {
+      // Frame 0: single fullscreen view
+      subtree->view_tree[kRoot1A] =
+          NewViewNodeWithBounds(ZX_KOID_INVALID, {kNode2}, 1000.f, 1000.f);
+      subtree->view_tree[kNode2] = NewViewNodeWithBounds(kRoot1A, {}, 1000.f, 1000.f);
+    } else if (frame_index == 1) {
+      // Frame 1: overlay added
+      subtree->view_tree[kRoot1A] =
+          NewViewNodeWithBounds(ZX_KOID_INVALID, {kNode2, kNode3}, 1000.f, 1000.f);
+      subtree->view_tree[kNode2] = NewViewNodeWithBounds(kRoot1A, {}, 1000.f, 1000.f);
+      subtree->view_tree[kNode3] = NewViewNodeWithBounds(kRoot1A, {}, 200.f, 200.f);
+    } else {
+      // Frame 2: overlay removed
+      subtree->view_tree[kRoot1A] =
+          NewViewNodeWithBounds(ZX_KOID_INVALID, {kNode2}, 1000.f, 1000.f);
+      subtree->view_tree[kNode2] = NewViewNodeWithBounds(kRoot1A, {}, 1000.f, 1000.f);
+    }
+    return subtree;
+  });
+
+  std::vector<ViewTreeSnapshotter::Subscriber> subscribers;
+  subscribers.push_back({.on_new_view_tree = [&evaluator](auto snapshot) {
+    evaluator.OnNewViewTreeSnapshot(snapshot);
+  }});
+
+  ViewTreeSnapshotter tree(std::move(subtrees), std::move(subscribers));
+
+  // Frame 0
+  tree.UpdateSnapshot();
+  EXPECT_TRUE(IsSignalled(event, InputOwnershipSignal::kInputClientOwned));
+  EXPECT_FALSE(IsSignalled(event, InputOwnershipSignal::kInputPlatformOwned));
+
+  // Frame 1
+  frame_index = 1;
+  tree.UpdateSnapshot();
+  EXPECT_TRUE(IsSignalled(event, InputOwnershipSignal::kInputPlatformOwned));
+  EXPECT_FALSE(IsSignalled(event, InputOwnershipSignal::kInputClientOwned));
+
+  // Frame 2
+  frame_index = 2;
+  tree.UpdateSnapshot();
+  EXPECT_TRUE(IsSignalled(event, InputOwnershipSignal::kInputClientOwned));
+  EXPECT_FALSE(IsSignalled(event, InputOwnershipSignal::kInputPlatformOwned));
 }
 
 }  // namespace view_tree::test
