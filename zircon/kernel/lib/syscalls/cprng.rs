@@ -14,6 +14,7 @@ const MAX_CPRNG_SEED: usize = ZX_CPRNG_ADD_ENTROPY_MAX_LEN;
 
 unsafe extern "C" {
     fn mandatory_memset(dst: *mut u8, c: core::ffi::c_int, n: usize) -> *mut u8;
+    fn cpp_global_prng_is_thread_safe() -> bool;
     fn cpp_global_prng_draw(buffer: *mut u8, len: usize);
     fn cpp_global_prng_add_entropy(buffer: *const u8, len: usize);
 }
@@ -57,6 +58,7 @@ pub fn sys_cprng_draw_once(buffer: UserOutPtr<u8>, len: usize) -> Result<(), Sta
 
     // SAFETY: `kernel_buf` points to valid stack memory with capacity of `MAX_CPRNG_DRAW` bytes.
     unsafe {
+        assert!(cpp_global_prng_is_thread_safe());
         cpp_global_prng_draw(kernel_buf.as_mut_ptr(), len);
     }
 
@@ -80,6 +82,7 @@ pub fn sys_cprng_add_entropy(buffer: UserInPtr<u8>, buffer_size: usize) -> Resul
 
     // SAFETY: `slice` has been initialized from userspace and has length `buffer_size`.
     unsafe {
+        assert!(cpp_global_prng_is_thread_safe());
         cpp_global_prng_add_entropy(slice.as_ptr(), buffer_size);
     }
     Ok(())

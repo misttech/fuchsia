@@ -194,17 +194,18 @@ Prng* GetInstance() {
 
 extern "C" {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_global_prng_is_thread_safe() {
+  return crypto::global_prng::GetInstance()->is_thread_safe();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_global_prng_draw(uint8_t* buffer, size_t len) {
-  auto prng = crypto::global_prng::GetInstance();
-  ASSERT(prng->is_thread_safe());
-  prng->Draw(buffer, len);
+  crypto::global_prng::GetInstance()->Draw(buffer, len);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_global_prng_add_entropy(const uint8_t* buffer, size_t len) {
-  auto prng = crypto::global_prng::GetInstance();
-  ASSERT(prng->is_thread_safe());
-  prng->AddEntropy(buffer, len);
+  crypto::global_prng::GetInstance()->AddEntropy(buffer, len);
 }
 }
 

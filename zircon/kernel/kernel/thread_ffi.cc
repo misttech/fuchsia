@@ -398,4 +398,16 @@ FFI_ALWAYS_INLINE void cpp_thread_current_signal_policy_exception(uint32_t polic
   Thread::Current::SignalPolicyException(policy_exception_code, policy_exception_data);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE cpu_mask_t cpp_thread_get_cpu_affinity(const Thread* thread) {
+  DEBUG_ASSERT(thread != nullptr);
+  return thread->GetCpuAffinity();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE cpu_mask_t cpp_thread_set_cpu_affinity(Thread* thread, cpu_mask_t affinity) {
+  DEBUG_ASSERT(thread != nullptr);
+  return thread->SetCpuAffinity(affinity);
+}
+
 }  // extern "C"

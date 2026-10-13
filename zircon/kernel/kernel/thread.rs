@@ -17,6 +17,7 @@ use zx_types::{zx_instant_mono_t, zx_status_t};
 
 use crate::kernel::restricted_state::RestrictedState;
 use crate::kernel::scheduler_state::{SchedulerState, SchedulerStateBaseProfile};
+use crate::kernel::types::cpu_mask_t;
 use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
 
@@ -105,6 +106,8 @@ unsafe extern "C" {
     fn cpp_thread_memory_stall_state(thread: *const Thread) -> ThreadStallState;
     fn cpp_thread_set_memory_stall_state(thread: *mut Thread, value: ThreadStallState);
     fn cpp_thread_scheduler_state(thread: *const Thread) -> *const SchedulerState;
+    fn cpp_thread_get_cpu_affinity(thread: *const Thread) -> cpu_mask_t;
+    fn cpp_thread_set_cpu_affinity(thread: *mut Thread, affinity: cpu_mask_t) -> cpu_mask_t;
 }
 
 /// Stall accounting state of a thread.
@@ -318,6 +321,28 @@ impl ThreadPtr {
     /// underlying thread has not been destroyed.
     pub unsafe fn fxt_ref(self) -> FxtRef {
         unsafe { cpp_thread_fxt_ref(self.as_raw()) }
+    }
+
+    /// Returns the current CPU affinity mask of the thread.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the thread pointer is still valid and the
+    /// underlying thread has not been destroyed.
+    pub unsafe fn get_cpu_affinity(self) -> cpu_mask_t {
+        // SAFETY: Caller guarantees `self` points to a valid, live `Thread`.
+        unsafe { cpp_thread_get_cpu_affinity(self.as_ptr()) }
+    }
+
+    /// Sets the CPU affinity mask of the thread and returns its previous affinity mask.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the thread pointer is still valid and the
+    /// underlying thread has not been destroyed.
+    pub unsafe fn set_cpu_affinity(self, affinity: cpu_mask_t) -> cpu_mask_t {
+        // SAFETY: Caller guarantees `self` points to a valid, live `Thread`.
+        unsafe { cpp_thread_set_cpu_affinity(self.as_raw(), affinity) }
     }
 }
 

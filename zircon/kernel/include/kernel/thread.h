@@ -1778,4 +1778,9 @@ class ScopedMemoryStall {
   ScopedMemoryStall& operator=(ScopedMemoryStall&&) = delete;
 };
 
+extern "C" {
+cpu_mask_t cpp_thread_get_cpu_affinity(const Thread* thread);
+cpu_mask_t cpp_thread_set_cpu_affinity(Thread* thread, cpu_mask_t affinity);
+}
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_THREAD_H_

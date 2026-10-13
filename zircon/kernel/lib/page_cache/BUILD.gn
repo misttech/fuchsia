@@ -8,35 +8,29 @@ import("//build/cpp/library_headers.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 
 kernel_rust_mod("page_cache-rs") {
-  sources = [ "page_cache.rs" ]
+  sources = [
+    "page_cache.rs",
+    "page_cache_ffi.rs",
+  ]
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
+    "//src/lib/kalloc",
+    "//src/lib/ksync",
+    "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
+    "//zircon/system/ulib/fbl/rust:fbl",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
-static_library("page_cache") {
+source_set("page_cache") {
   public_deps = [ ":headers" ]
-
-  sources = [
-    "page_cache.cc",
-    "page_cache_ffi.cc",
-  ]
-  deps = [
-    ":page_cache-rs",
-    "//zircon/kernel/lib/counters",
-    "//zircon/kernel/lib/crypto",
-    "//zircon/kernel/lib/ktl",
-  ]
+  deps = [ ":page_cache-rs" ]
 }
 
 library_headers("headers") {
-  headers = [
-    "lib/page_cache.h",
-    "lib/page_cache_ffi.h",
-  ]
+  headers = [ "lib/page_cache.h" ]
   public_deps = [
     "//zircon/kernel/lib/ktl:headers",
     "//zircon/kernel/vm:headers",
