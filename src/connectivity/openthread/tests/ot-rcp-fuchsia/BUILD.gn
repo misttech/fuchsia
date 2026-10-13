@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/test.gni")
+
+group("tests") {
+  testonly = true
+  deps = [ ":ot-rcp-fuchsia-platform-unittests" ]
+}
+
+# The OpenThread platform: the ot_rcp::Platform class (platform.{h,cc}) and
+# the otPlat* entry points that forward to it (ot_platform.cc, logging.cc).
+# Built against the public OpenThread headers only; the OpenThread library
+# itself is linked by the final RCP binary.
+source_set("platform") {
+  testonly = true
+  visibility = [ ":*" ]
+  sources = [
+    "rcp/platform/logging.cc",
+    "rcp/platform/ot_platform.cc",
+    "rcp/platform/platform.cc",
+    "rcp/platform/platform.h",
+  ]
+  public_deps = [
+    "//sdk/lib/async:async-cpp",
+    "//sdk/lib/syslog/cpp",
+    "//third_party/openthread/include/openthread",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+test("platform_unittests") {
+  output_name = "ot_rcp_fuchsia_platform_unittests"
+  visibility = [ ":*" ]
+  sources = [ "rcp/platform/platform_unittest.cc" ]
+  deps = [
+    ":platform",
+    "//sdk/lib/async-testing",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
+  ]
+}
+
+fuchsia_unittest_package("ot-rcp-fuchsia-platform-unittests") {
+  visibility = [ ":*" ]
+  deps = [ ":platform_unittests" ]
+}
