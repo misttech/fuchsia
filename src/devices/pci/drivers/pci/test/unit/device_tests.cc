@@ -382,7 +382,11 @@ TEST_F(PciDeviceTestsExtendedCam, MapInterruptMsi) {
   auto result = dev.MapInterrupt(0);
   ASSERT_TRUE(result.is_ok());
   EXPECT_TRUE(result.value().is_valid());
+  // Disabling MSI while an interrupt handle is still held should fail with ZX_ERR_BAD_STATE.
+  EXPECT_STATUS(ZX_ERR_BAD_STATE,
+                dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kDisabled, 0));
   result.value().reset();
+  EXPECT_OK(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kDisabled, 0));
 }
 
 TEST_F(PciDeviceTestsExtendedCam, MapInterruptMsiX) {
@@ -396,7 +400,44 @@ TEST_F(PciDeviceTestsExtendedCam, MapInterruptMsiX) {
   auto result = dev.MapInterrupt(0);
   ASSERT_TRUE(result.is_ok());
   EXPECT_TRUE(result.value().is_valid());
+  EXPECT_STATUS(ZX_ERR_BAD_STATE,
+                dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kDisabled, 0));
   result.value().reset();
+  EXPECT_OK(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kDisabled, 0));
+}
+
+TEST_F(PciDeviceTestsExtendedCam, NonKernelMsiAllocationDisableAndReenable) {
+  bus().set_use_non_kernel_msi_allocation(true);
+  pci::Device& dev =
+      CreateTestDevice(MockDevice::FakeRootParent().get(), kFakeQuadroDeviceConfig.data(),
+                       kFakeQuadroDeviceConfig.max_size());
+  ConfigureDownstreamDevices();
+
+  // Enable MSI, map an interrupt, disable MSI, and re-enable MSI (as happens across endpoint
+  // driver restarts on platforms like google-pci where PcirootAllocateMsi returns a placeholder
+  // zx::event).
+  ASSERT_OK(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kMsi, 1));
+  {
+    auto irq = dev.MapInterrupt(0);
+    ASSERT_OK(irq.status_value());
+    EXPECT_TRUE(irq->is_valid());
+  }
+  ASSERT_OK(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kDisabled, 0));
+  ASSERT_OK(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kMsi, 1));
+  {
+    auto irq = dev.MapInterrupt(0);
+    ASSERT_OK(irq.status_value());
+    EXPECT_TRUE(irq->is_valid());
+  }
+
+  // Also verify MSI-X disable and re-enable with a non-kernel MSI allocation.
+  ASSERT_OK(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kMsiX, 1));
+  {
+    auto irq = dev.MapInterrupt(0);
+    ASSERT_OK(irq.status_value());
+    EXPECT_TRUE(irq->is_valid());
+  }
+  ASSERT_OK(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kDisabled, 0));
 }
 
 // Verify that power state transitions wait the necessary amount of time, and that they end up in

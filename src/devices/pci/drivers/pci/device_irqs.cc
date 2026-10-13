@@ -342,6 +342,11 @@ zx_status_t Device::VerifyAllMsisFreed() {
   zx_info_msi_t info = {};
   const zx_status_t st =
       irqs_.msi_allocation.get_info(ZX_INFO_MSI, &info, sizeof(info), nullptr, nullptr);
+  if (st == ZX_ERR_WRONG_TYPE) {
+    // Some Pciroot implementations manage MSI controllers in-driver rather than via kernel
+    // zx::msi allocations and return a placeholder handle (such as a zx::event).
+    return ZX_OK;
+  }
   if (st != ZX_OK) {
     return st;
   }

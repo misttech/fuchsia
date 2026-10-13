@@ -6,6 +6,7 @@
 
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/zx/event.h>
 #include <lib/zx/msi.h>
 #include <lib/zx/resource.h>
 
@@ -35,6 +36,17 @@ class FakeBus : public BusDeviceInterface {
 
   zx_status_t AllocateMsi(uint32_t count, zx::msi* msi, msi_allocation_info_t* out_info) final {
     fbl::AutoLock devices_lock(&devices_lock_);
+    if (use_non_kernel_msi_allocation_) {
+      zx::event event;
+      if (zx_status_t status = zx::event::create(0, &event); status != ZX_OK) {
+        return status;
+      }
+      *msi = zx::msi(event.release());
+      out_info->target_addr = 0xCAFE;
+      out_info->target_data = 0xC0FE;
+      out_info->irq_count = count;
+      return ZX_OK;
+    }
     // Using fake MSIs supplied by lib/fake-msi
     zx_status_t status = zx::msi::allocate(*zx::unowned_resource(ZX_HANDLE_INVALID), count, msi);
     if (status != ZX_OK) {
@@ -54,7 +66,17 @@ class FakeBus : public BusDeviceInterface {
   zx_status_t GetMsiHandle(const zx::msi& allocation, uint32_t options, uint16_t msi_id,
                            const zx::vmo& cfg_vmo, uint64_t cfg_offset,
                            zx::interrupt* out_interrupt) final {
+    fbl::AutoLock devices_lock(&devices_lock_);
+    if (use_non_kernel_msi_allocation_) {
+      return zx::interrupt::create(*zx::unowned_resource(ZX_HANDLE_INVALID), 0,
+                                   ZX_INTERRUPT_VIRTUAL, out_interrupt);
+    }
     return zx::msi::create(allocation, options, msi_id, cfg_vmo, cfg_offset, out_interrupt);
+  }
+
+  void set_use_non_kernel_msi_allocation(bool enable) {
+    fbl::AutoLock devices_lock(&devices_lock_);
+    use_non_kernel_msi_allocation_ = enable;
   }
 
   zx_status_t GetBti(const pci::Device* /*device*/, uint32_t /*index*/, zx::bti* /*bti*/) final {
@@ -82,6 +104,7 @@ class FakeBus : public BusDeviceInterface {
   fbl::Mutex devices_lock_;
   pci::DeviceTree devices_;
   FakePciroot pciroot_;
+  bool use_non_kernel_msi_allocation_ __TA_GUARDED(devices_lock_) = false;
 };
 
 }  // namespace pci
