@@ -49,7 +49,7 @@ board_input_bundle("main_bundle") {
   drivers += [
     {
       package_target = "//src/connectivity/ethernet/drivers/gvnic:gvnic-package"
-      package_set = "base"
+      package_set = "bootfs"
       driver_components = [ "meta/gvnic.cm" ]
     },
     {
