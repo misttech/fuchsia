@@ -42,6 +42,11 @@ pub struct Role {
 
 impl Role {
     #[cfg(test)]
+    pub fn set_id(&mut self, id: RoleId) {
+        self.id = id;
+    }
+
+    #[cfg(test)]
     pub fn bounds(&self) -> Option<RoleId> {
         self.bounds
     }

@@ -99,6 +99,13 @@ impl<C> Deref for IdAndNameIndexed<C> {
     }
 }
 
+#[cfg(test)]
+impl<C> std::ops::DerefMut for IdAndNameIndexed<C> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.container
+    }
+}
+
 impl<C: Debug> Debug for IdAndNameIndexed<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IdAndNameIndexed").field("container", &self.container).finish()

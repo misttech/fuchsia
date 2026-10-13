@@ -30,6 +30,8 @@ mod types;
 mod u24_index;
 mod users;
 
+use std::num::NonZeroU16;
+
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use crate::InitialSid;
@@ -81,8 +83,9 @@ use users::{User, UserId};
 /// tests.
 const MAXIMUM_POLICY_SIZE: usize = (1 << 24) - 1;
 
-/// Mandatory role name assigned to non-process/non-socket SELinux objects by default.
+/// Mandatory role name and ID assigned to non-process/non-socket SELinux objects by default.
 const OBJECT_R_ROLE_NAME: &[u8] = b"object_r";
+const OBJECT_R_ROLE_ID: RoleId = RoleId::new(NonZeroU16::MIN);
 
 /// Top-level parsed SELinux binary policy.
 #[derive(Debug, Parse, Serialize, Validate)]
@@ -147,8 +150,12 @@ impl Policy {
                 .ok_or(ValidateError::MissingInitialSid { initial_sid: *initial_sid })?;
         }
 
-        // Validate that the well-known "object_r" role is defined by the policy.
-        self.roles().get_by_name(OBJECT_R_ROLE_NAME).ok_or(ValidateError::MissingObjectRRole)?;
+        // Validate that the well-known "object_r" role is defined at role ID 1.
+        if self.roles().get_by_id(OBJECT_R_ROLE_ID).map(|role| role.name())
+            != Some(OBJECT_R_ROLE_NAME)
+        {
+            return Err(ValidateError::MissingObjectRRole);
+        }
 
         // TODO(https://fxbug.dev/356569876): Determine which "bounds" should be verified for
         // correctness here.
@@ -405,6 +412,31 @@ mod parse_tests {
             policy.initial_sids().get_by_id(crate::InitialSid::Unlabeled as u32).unwrap();
         assert!(policy.users().get_by_id(unlabeled_context.user()).is_some());
         assert!(policy.roles().get_by_id(unlabeled_context.role()).is_some());
+    }
+
+    #[test]
+    fn test_object_r_role_id_validation() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/minimal_policy");
+        let mut policy = Policy::parse(policy_bytes).expect("parse minimal policy");
+        policy.validate().expect("validate minimal policy");
+
+        // Swap the role ID of "object_r" (ID 1) with another role so that role ID 1 still exists
+        // in the policy, but is no longer assigned to "object_r".
+        let object_r_index =
+            policy.roles.iter().position(|role| role.name() == OBJECT_R_ROLE_NAME).unwrap();
+        let other_index =
+            policy.roles.iter().position(|role| role.name() != OBJECT_R_ROLE_NAME).unwrap();
+        let object_r_id = policy.roles[object_r_index].id();
+        let other_id = policy.roles[other_index].id();
+        policy.roles[object_r_index].set_id(other_id);
+        policy.roles[other_index].set_id(object_r_id);
+
+        let mut serialized = Vec::new();
+        policy.serialize(&mut serialized).expect("serialize modified policy");
+
+        let reparsed = Policy::parse(&serialized).expect("re-parse modified policy");
+        assert_eq!(reparsed.validate(), Err(ValidateError::MissingObjectRRole));
     }
 }
 

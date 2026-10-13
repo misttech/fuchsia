@@ -9,7 +9,7 @@ use super::rules::{
 use super::traits::{HasName, HasPolicyId};
 use super::{
     AccessDecision, AccessVector, CategorySet, Class, ClassDefault, ClassDefaultRange, ClassId,
-    FsUseType, GenfsConPath, MlsLevel, OBJECT_R_ROLE_NAME, PermissionId, Policy, PolicyCap, RoleId,
+    FsUseType, GenfsConPath, MlsLevel, OBJECT_R_ROLE_ID, PermissionId, Policy, PolicyCap, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, TypeId,
 };
 use crate::{InitialSid, NullessByteStr};
@@ -73,15 +73,8 @@ impl Policy {
 
     /// Returns the [`RoleId`] of the `"object_r"` role within the policy, for use when validating
     /// and computing Security Context fields.
-    ///
-    /// # Panics
-    ///
-    /// Panics if [`Self::validate`] has not verified the presence of `"object_r"`.
     pub(super) fn object_role(&self) -> RoleId {
-        self.roles()
-            .get_by_name(OBJECT_R_ROLE_NAME)
-            .expect("validated policy must contain object_r role")
-            .id()
+        OBJECT_R_ROLE_ID
     }
 
     /// Returns the [`SecurityContext`] defined by this policy for the specified [`InitialSid`].

@@ -21,8 +21,7 @@ pub struct IdType<T, Tag> {
 
 impl<T, Tag> IdType<T, Tag> {
     /// Constructs a new [`IdType`] wrapping the specified `id` value.
-    #[cfg(test)]
-    pub(super) fn new(id: T) -> Self {
+    pub(super) const fn new(id: T) -> Self {
         Self { value: id, _phantom: PhantomData }
     }
 }

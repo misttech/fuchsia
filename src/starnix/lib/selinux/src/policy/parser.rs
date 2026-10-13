@@ -334,6 +334,13 @@ impl<T> Deref for Array<T> {
     }
 }
 
+#[cfg(test)]
+impl<T> std::ops::DerefMut for Array<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.elements
+    }
+}
+
 impl<T> AsRef<[T]> for Array<T> {
     fn as_ref(&self) -> &[T] {
         &self.elements
@@ -373,6 +380,13 @@ impl<T> Deref for SymbolArray<T> {
     type Target = [T];
     fn deref(&self) -> &Self::Target {
         &self.items
+    }
+}
+
+#[cfg(test)]
+impl<T> std::ops::DerefMut for SymbolArray<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.items
     }
 }
 
