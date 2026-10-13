@@ -18,7 +18,7 @@ See http://www.minicircuits.com/softwaredownload/Prog_Manual-6-Programmable_Atte
 # mypy: disable-error-code="no-untyped-def"
 import urllib.request
 
-from antlion.controllers import attenuator
+import attenuator
 
 
 class AttenuatorInstrument(attenuator.AttenuatorInstrument):

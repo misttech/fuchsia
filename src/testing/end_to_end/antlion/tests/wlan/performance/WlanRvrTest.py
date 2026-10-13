@@ -9,11 +9,8 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum, auto, unique
 
-from antlion.controllers.attenuator import (
-    Attenuator,
-    get_attenuators_for_device,
-)
 from antlion.controllers.fuchsia_device import FuchsiaDevice
+from attenuator import Attenuator, get_attenuators_for_device
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from iperf.iperf_server import IPerfResult
 from legacy_access_point.ap_lib.hostapd_ap_preset import create_ap_preset

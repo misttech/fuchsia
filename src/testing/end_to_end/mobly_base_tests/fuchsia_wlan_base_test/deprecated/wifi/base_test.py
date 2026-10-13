@@ -10,13 +10,14 @@ Base Class for Defining Common WiFi Test Functionality
 import logging
 from typing import Protocol, TypedDict, TypeVar
 
+import attenuator
 import fuchsia_async_extension
 import openwrt_access_point
 from antlion import context, controllers
-from antlion.controllers.attenuator import Attenuator
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.pdu import PduDevice
 from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
+from attenuator import Attenuator
 from honeydew.typing import custom_types
 from iperf.iperf_client import IPerfClientBase
 from iperf.iperf_server import IPerfServer, IPerfServerOverSsh
@@ -125,9 +126,7 @@ class WifiBaseTest(BaseTestClass):
         self.openwrt_aps: list[OpenWrtAP] = register_controller(
             openwrt_access_point
         )
-        self.attenuators: list[Attenuator] = register_controller(
-            controllers.attenuator
-        )
+        self.attenuators: list[Attenuator] = register_controller(attenuator)
         self.fuchsia_devices: list[FuchsiaDevice] = register_controller(
             controllers.fuchsia_device
         )
@@ -144,8 +143,8 @@ class WifiBaseTest(BaseTestClass):
         ]
         self.pdu_devices: list[PduDevice] = register_controller(controllers.pdu)
 
-        for attenuator in self.attenuators:
-            attenuator.set_atten(0)
+        for attn in self.attenuators:
+            attn.set_atten(0)
 
     def setup_test(self) -> None:
         self.write_to_device_logs(

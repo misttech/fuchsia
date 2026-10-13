@@ -27,11 +27,12 @@ class Model(enum.StrEnum):
     def create(self, instrument_count: int) -> AttenuatorInstrument:
         match self:
             case Model.MINICIRCUITS_HTTP:
-                import antlion.controllers.attenuator_lib.minicircuits.http
+                import attenuator.lib.minicircuits.http
 
-                return antlion.controllers.attenuator_lib.minicircuits.http.AttenuatorInstrument(
+                return attenuator.lib.minicircuits.http.AttenuatorInstrument(
                     instrument_count
                 )
+        raise ValueError(f"Unsupported attenuator model: {self}")
 
 
 def create(configs: list[ControllerConfig]) -> list[Attenuator]:
