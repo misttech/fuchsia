@@ -1709,13 +1709,20 @@ pub fn sys_unshare(current_task: &CurrentTask, flags: u32) -> Result<(), Errno> 
 pub fn sys_swapon(
     current_task: &CurrentTask,
     user_path: UserCString,
-    _flags: i32,
+    flags: u32,
 ) -> Result<(), Errno> {
     const MAX_SWAPFILES: usize = 32; // See https://man7.org/linux/man-pages/man2/swapon.2.html
+    const SWAP_FLAGS_VALID: u32 = 0x7ffff; // Defined in include/linux/swap.h
+
+    if (flags & !SWAP_FLAGS_VALID) != 0 {
+        return error!(EINVAL);
+    }
 
     security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
 
-    track_stub!(TODO("https://fxbug.dev/322893905"), "swapon validate flags");
+    if flags != 0 {
+        track_stub!(TODO("https://fxbug.dev/322893905"), "swapon flags", flags);
+    }
 
     let path = current_task.read_path(user_path)?;
     let file = current_task.open_file(path.as_ref(), OpenFlags::RDWR)?;
