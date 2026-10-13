@@ -459,6 +459,81 @@ fn map_in_vmar(
     Ok(())
 }
 
+/// Advice values for `madvise(2)` that update per-mapping flags in `MemoryManagerState::mappings`
+/// and therefore require holding the `MemoryManagerState` write lock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MadviseFlagAdvice {
+    DontFork,
+    DoFork,
+    WipeOnFork,
+    KeepOnFork,
+    DontDump,
+    DoDump,
+    Mergeable,
+    Unmergeable,
+}
+
+/// Advice values for `madvise(2)` that only perform VMO range operations or provide paging hints
+/// without modifying `MemoryManagerState::mappings`, allowing execution under a shared read lock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MadviseReadOnlyAdvice {
+    Normal,
+    Random,
+    Sequential,
+    DontNeed,
+    DontNeedLocked,
+    WillNeed,
+    Cold,
+    PageOut,
+    PopulateRead,
+    Free,
+    Remove,
+    HwPoison,
+    SoftOffline,
+    HugePage,
+    Collapse,
+    NoHugePage,
+    Unknown(u32),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MadviseAdvice {
+    UpdateFlags(MadviseFlagAdvice),
+    ReadOnly(MadviseReadOnlyAdvice),
+}
+
+impl MadviseAdvice {
+    fn from_raw(advice: u32) -> Self {
+        match advice {
+            MADV_DONTFORK => Self::UpdateFlags(MadviseFlagAdvice::DontFork),
+            MADV_DOFORK => Self::UpdateFlags(MadviseFlagAdvice::DoFork),
+            MADV_WIPEONFORK => Self::UpdateFlags(MadviseFlagAdvice::WipeOnFork),
+            MADV_KEEPONFORK => Self::UpdateFlags(MadviseFlagAdvice::KeepOnFork),
+            MADV_DONTDUMP => Self::UpdateFlags(MadviseFlagAdvice::DontDump),
+            MADV_DODUMP => Self::UpdateFlags(MadviseFlagAdvice::DoDump),
+            MADV_MERGEABLE => Self::UpdateFlags(MadviseFlagAdvice::Mergeable),
+            MADV_UNMERGEABLE => Self::UpdateFlags(MadviseFlagAdvice::Unmergeable),
+            MADV_NORMAL => Self::ReadOnly(MadviseReadOnlyAdvice::Normal),
+            MADV_RANDOM => Self::ReadOnly(MadviseReadOnlyAdvice::Random),
+            MADV_SEQUENTIAL => Self::ReadOnly(MadviseReadOnlyAdvice::Sequential),
+            MADV_DONTNEED => Self::ReadOnly(MadviseReadOnlyAdvice::DontNeed),
+            MADV_DONTNEED_LOCKED => Self::ReadOnly(MadviseReadOnlyAdvice::DontNeedLocked),
+            MADV_WILLNEED => Self::ReadOnly(MadviseReadOnlyAdvice::WillNeed),
+            MADV_COLD => Self::ReadOnly(MadviseReadOnlyAdvice::Cold),
+            MADV_PAGEOUT => Self::ReadOnly(MadviseReadOnlyAdvice::PageOut),
+            MADV_POPULATE_READ => Self::ReadOnly(MadviseReadOnlyAdvice::PopulateRead),
+            MADV_FREE => Self::ReadOnly(MadviseReadOnlyAdvice::Free),
+            MADV_REMOVE => Self::ReadOnly(MadviseReadOnlyAdvice::Remove),
+            MADV_HWPOISON => Self::ReadOnly(MadviseReadOnlyAdvice::HwPoison),
+            MADV_SOFT_OFFLINE => Self::ReadOnly(MadviseReadOnlyAdvice::SoftOffline),
+            MADV_HUGEPAGE => Self::ReadOnly(MadviseReadOnlyAdvice::HugePage),
+            MADV_COLLAPSE => Self::ReadOnly(MadviseReadOnlyAdvice::Collapse),
+            MADV_NOHUGEPAGE => Self::ReadOnly(MadviseReadOnlyAdvice::NoHugePage),
+            other => Self::ReadOnly(MadviseReadOnlyAdvice::Unknown(other)),
+        }
+    }
+}
+
 impl MemoryManagerState {
     /// Returns occupied address ranges that intersect with the given range.
     ///
@@ -1370,17 +1445,31 @@ impl MemoryManagerState {
             addr..end
         };
 
-        let mut range_list = vec![];
         let mapping_context = &current_task.mm()?.mapping_context;
-        let length = prot_range.end - prot_range.start;
-        self.ensure_range_mapped_in_user_vmar(prot_range.start, Some(length), mapping_context)?;
+        let mut has_lazy = false;
+        let mut range_list = SmallVec::<[(Range<UserAddress>, Mapping); 1]>::new();
 
         for (range, mapping) in self.mappings.range(prot_range.clone()) {
+            if mapping.mapping_mode() == MappingMode::Lazy
+                && mapping.flags().access_flags() != prot_flags
+            {
+                has_lazy = true;
+                break;
+            }
             range_list.push((range.clone(), mapping.clone()));
         }
 
+        if has_lazy {
+            let length = prot_range.end - prot_range.start;
+            self.ensure_range_mapped_in_user_vmar(prot_range.start, Some(length), mapping_context)?;
+            range_list.clear();
+            for (range, mapping) in self.mappings.range(prot_range.clone()) {
+                range_list.push((range.clone(), mapping.clone()));
+            }
+        }
+
         let mut start_cursor = prot_range.start;
-        let mut updates = vec![];
+        let mut updates = SmallVec::<[(Range<UserAddress>, Mapping); 1]>::new();
         let mut final_result = Ok(());
 
         for (range, mapping) in range_list {
@@ -1449,12 +1538,16 @@ impl MemoryManagerState {
         final_result
     }
 
-    fn madvise(
+    /// Applies `madvise(2)` advice that mutates [`MappingFlags`] in `self.mappings`.
+    ///
+    /// Advice values that only perform VMO range operations or paging hints without modifying
+    /// `self.mappings` are handled by [`Self::madvise_read_only`].
+    fn madvise_update_flags(
         &mut self,
         context: &MappingContext,
         addr: UserAddress,
         length: usize,
-        advice: u32,
+        advice: MadviseFlagAdvice,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
         if !addr.is_aligned(*PAGE_SIZE) {
@@ -1467,12 +1560,104 @@ impl MemoryManagerState {
             return error!(EFAULT);
         }
 
-        if advice == MADV_NORMAL || advice == MADV_RANDOM || advice == MADV_SEQUENTIAL {
-            track_stub!(TODO("https://fxbug.dev/322874202"), "madvise paging hints", advice);
-            return Ok(());
+        let mut updates = vec![];
+        let range_for_op = addr..end_addr;
+        for (range, mapping) in self.mappings.range(range_for_op.clone()) {
+            let range_to_zero = range.intersect(&range_for_op);
+            if range_to_zero.is_empty() {
+                continue;
+            }
+            // WIPEONFORK is only supported on private anonymous mappings per madvise(2).
+            // KEEPONFORK can be specified on ranges that cover other sorts of mappings. It should
+            // have no effect on mappings that are not private and anonymous as such mappings cannot
+            // have the WIPEONFORK option set.
+            if advice == MadviseFlagAdvice::WipeOnFork && !mapping.private_anonymous() {
+                return error!(EINVAL);
+            }
+            let new_flags = match advice {
+                MadviseFlagAdvice::DontFork => mapping.flags() | MappingFlags::DONTFORK,
+                MadviseFlagAdvice::DoFork => mapping.flags() & MappingFlags::DONTFORK.complement(),
+                MadviseFlagAdvice::WipeOnFork => mapping.flags() | MappingFlags::WIPEONFORK,
+                MadviseFlagAdvice::KeepOnFork => {
+                    mapping.flags() & MappingFlags::WIPEONFORK.complement()
+                }
+                MadviseFlagAdvice::DontDump => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_DONTDUMP");
+                    mapping.flags()
+                }
+                MadviseFlagAdvice::DoDump => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_DODUMP");
+                    mapping.flags()
+                }
+                MadviseFlagAdvice::Mergeable => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_MERGEABLE");
+                    mapping.flags()
+                }
+                MadviseFlagAdvice::Unmergeable => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_UNMERGEABLE");
+                    mapping.flags()
+                }
+            };
+            let mut new_mapping = mapping.clone();
+            new_mapping.set_flags(new_flags);
+            updates.push((range_to_zero, new_mapping));
+        }
+        // Use a separate loop to avoid mutating the mappings structure while iterating over it.
+        for (range, mapping) in updates {
+            released_mappings.extend(self.mappings.insert(range, mapping));
+        }
+        Ok(())
+    }
+
+    /// Applies `madvise(2)` advice that operates on backing VMOs or provides paging hints without
+    /// modifying `self.mappings`, allowing it to execute under a shared read lock.
+    ///
+    /// Flag-mutating advice values are handled by [`Self::madvise_update_flags`].
+    fn madvise_read_only(
+        &self,
+        context: &MappingContext,
+        addr: UserAddress,
+        length: usize,
+        advice: MadviseReadOnlyAdvice,
+    ) -> Result<(), Errno> {
+        if !addr.is_aligned(*PAGE_SIZE) {
+            return error!(EINVAL);
         }
 
-        let mut updates = vec![];
+        let end_addr =
+            addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?.round_up(*PAGE_SIZE)?;
+        if end_addr > context.max_address() {
+            return error!(EFAULT);
+        }
+
+        match advice {
+            MadviseReadOnlyAdvice::Normal => {
+                track_stub!(
+                    TODO("https://fxbug.dev/322874202"),
+                    "madvise paging hints",
+                    MADV_NORMAL
+                );
+                return Ok(());
+            }
+            MadviseReadOnlyAdvice::Random => {
+                track_stub!(
+                    TODO("https://fxbug.dev/322874202"),
+                    "madvise paging hints",
+                    MADV_RANDOM
+                );
+                return Ok(());
+            }
+            MadviseReadOnlyAdvice::Sequential => {
+                track_stub!(
+                    TODO("https://fxbug.dev/322874202"),
+                    "madvise paging hints",
+                    MADV_SEQUENTIAL
+                );
+                return Ok(());
+            }
+            _ => {}
+        }
+
         let range_for_op = addr..end_addr;
         for (range, mapping) in self.mappings.range(range_for_op.clone()) {
             let range_to_zero = range.intersect(&range_for_op);
@@ -1481,153 +1666,110 @@ impl MemoryManagerState {
             }
             let start_offset = mapping.address_to_offset(range_to_zero.start);
             let end_offset = mapping.address_to_offset(range_to_zero.end);
-            if advice == MADV_DONTFORK
-                || advice == MADV_DOFORK
-                || advice == MADV_WIPEONFORK
-                || advice == MADV_KEEPONFORK
-                || advice == MADV_DONTDUMP
-                || advice == MADV_DODUMP
-                || advice == MADV_MERGEABLE
-                || advice == MADV_UNMERGEABLE
-            {
-                // WIPEONFORK is only supported on private anonymous mappings per madvise(2).
-                // KEEPONFORK can be specified on ranges that cover other sorts of mappings. It should
-                // have no effect on mappings that are not private and anonymous as such mappings cannot
-                // have the WIPEONFORK option set.
-                if advice == MADV_WIPEONFORK && !mapping.private_anonymous() {
+            if mapping.flags().contains(MappingFlags::SHARED) {
+                continue;
+            }
+            let op = match advice {
+                MadviseReadOnlyAdvice::Normal
+                | MadviseReadOnlyAdvice::Random
+                | MadviseReadOnlyAdvice::Sequential => unreachable!(),
+                MadviseReadOnlyAdvice::DontNeed
+                    if !mapping.flags().contains(MappingFlags::ANONYMOUS) =>
+                {
+                    // Note, we cannot simply implemented MADV_DONTNEED with
+                    // zx::VmoOp::DONT_NEED because they have different
+                    // semantics.
+                    track_stub!(
+                        TODO("https://fxbug.dev/322874496"),
+                        "MADV_DONTNEED with file-backed mapping"
+                    );
+                    return Ok(());
+                }
+                MadviseReadOnlyAdvice::DontNeed
+                    if mapping.flags().contains(MappingFlags::LOCKED) =>
+                {
                     return error!(EINVAL);
                 }
-                let new_flags = match advice {
-                    MADV_DONTFORK => mapping.flags() | MappingFlags::DONTFORK,
-                    MADV_DOFORK => mapping.flags() & MappingFlags::DONTFORK.complement(),
-                    MADV_WIPEONFORK => mapping.flags() | MappingFlags::WIPEONFORK,
-                    MADV_KEEPONFORK => mapping.flags() & MappingFlags::WIPEONFORK.complement(),
-                    MADV_DONTDUMP => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_DONTDUMP");
-                        mapping.flags()
-                    }
-                    MADV_DODUMP => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_DODUMP");
-                        mapping.flags()
-                    }
-                    MADV_MERGEABLE => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_MERGEABLE");
-                        mapping.flags()
-                    }
-                    MADV_UNMERGEABLE => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_UNMERGEABLE");
-                        mapping.flags()
-                    }
-                    // Only the variants in this match should be reachable given the condition for
-                    // the containing branch.
-                    unknown_advice => unreachable!("unknown advice {unknown_advice}"),
-                };
-                let mut new_mapping = mapping.clone();
-                new_mapping.set_flags(new_flags);
-                updates.push((range_to_zero, new_mapping));
-            } else {
-                if mapping.flags().contains(MappingFlags::SHARED) {
-                    continue;
+                MadviseReadOnlyAdvice::DontNeed => zx::VmoOp::ZERO,
+                MadviseReadOnlyAdvice::DontNeedLocked => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_DONTNEED_LOCKED");
+                    return error!(EINVAL);
                 }
-                let op = match advice {
-                    MADV_DONTNEED if !mapping.flags().contains(MappingFlags::ANONYMOUS) => {
-                        // Note, we cannot simply implemented MADV_DONTNEED with
-                        // zx::VmoOp::DONT_NEED because they have different
-                        // semantics.
-                        track_stub!(
-                            TODO("https://fxbug.dev/322874496"),
-                            "MADV_DONTNEED with file-backed mapping"
-                        );
-                        return Ok(());
+                MadviseReadOnlyAdvice::WillNeed => {
+                    if mapping.flags().contains(MappingFlags::WRITE) {
+                        zx::VmoOp::COMMIT
+                    } else {
+                        zx::VmoOp::PREFETCH
                     }
-                    MADV_DONTNEED if mapping.flags().contains(MappingFlags::LOCKED) => {
-                        return error!(EINVAL);
-                    }
-                    MADV_DONTNEED => zx::VmoOp::ZERO,
-                    MADV_DONTNEED_LOCKED => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_DONTNEED_LOCKED");
-                        return error!(EINVAL);
-                    }
-                    MADV_WILLNEED => {
-                        if mapping.flags().contains(MappingFlags::WRITE) {
-                            zx::VmoOp::COMMIT
-                        } else {
-                            zx::VmoOp::PREFETCH
-                        }
-                    }
-                    MADV_COLD => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_COLD");
-                        return error!(EINVAL);
-                    }
-                    MADV_PAGEOUT => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_PAGEOUT");
-                        return error!(EINVAL);
-                    }
-                    MADV_POPULATE_READ => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_POPULATE_READ");
-                        return error!(EINVAL);
-                    }
-                    MADV_FREE if !mapping.flags().contains(MappingFlags::ANONYMOUS) => {
-                        track_stub!(
-                            TODO("https://fxbug.dev/411748419"),
-                            "MADV_FREE with file-backed mapping"
-                        );
-                        return error!(EINVAL);
-                    }
-                    MADV_FREE if mapping.flags().contains(MappingFlags::LOCKED) => {
-                        return error!(EINVAL);
-                    }
-                    MADV_FREE => {
-                        track_stub!(TODO("https://fxbug.dev/411748419"), "MADV_FREE");
-                        // TODO(https://fxbug.dev/411748419) For now, treat MADV_FREE like
-                        // MADV_DONTNEED as a stopgap until we have proper support.
-                        zx::VmoOp::ZERO
-                    }
-                    MADV_REMOVE => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_REMOVE");
-                        return error!(EINVAL);
-                    }
-                    MADV_HWPOISON => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_HWPOISON");
-                        return error!(EINVAL);
-                    }
-                    MADV_SOFT_OFFLINE => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_SOFT_OFFLINE");
-                        return error!(EINVAL);
-                    }
-                    MADV_HUGEPAGE => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_HUGEPAGE");
-                        return error!(EINVAL);
-                    }
-                    MADV_COLLAPSE => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_COLLAPSE");
-                        return error!(EINVAL);
-                    }
-                    MADV_NOHUGEPAGE => return Ok(()),
-                    advice => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "madvise", advice);
-                        return error!(EINVAL);
-                    }
-                };
+                }
+                MadviseReadOnlyAdvice::Cold => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_COLD");
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::PageOut => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_PAGEOUT");
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::PopulateRead => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_POPULATE_READ");
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::Free
+                    if !mapping.flags().contains(MappingFlags::ANONYMOUS) =>
+                {
+                    track_stub!(
+                        TODO("https://fxbug.dev/411748419"),
+                        "MADV_FREE with file-backed mapping"
+                    );
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::Free if mapping.flags().contains(MappingFlags::LOCKED) => {
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::Free => {
+                    track_stub!(TODO("https://fxbug.dev/411748419"), "MADV_FREE");
+                    // TODO(https://fxbug.dev/411748419) For now, treat MADV_FREE like
+                    // MADV_DONTNEED as a stopgap until we have proper support.
+                    zx::VmoOp::ZERO
+                }
+                MadviseReadOnlyAdvice::Remove => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_REMOVE");
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::HwPoison => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_HWPOISON");
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::SoftOffline => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_SOFT_OFFLINE");
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::HugePage => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_HUGEPAGE");
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::Collapse => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_COLLAPSE");
+                    return error!(EINVAL);
+                }
+                MadviseReadOnlyAdvice::NoHugePage => return Ok(()),
+                MadviseReadOnlyAdvice::Unknown(advice) => {
+                    track_stub!(TODO("https://fxbug.dev/322874202"), "madvise", advice);
+                    return error!(EINVAL);
+                }
+            };
 
-                let memory = match self.get_mapping_backing(mapping) {
-                    MappingBacking::Memory(backing) => backing.memory(),
-                    MappingBacking::PrivateAnonymous => &context.private_anonymous.backing,
-                };
-                memory.op_range(op, start_offset, end_offset - start_offset).map_err(
-                    |s| match s {
-                        zx::Status::OUT_OF_RANGE => errno!(EINVAL),
-                        zx::Status::NO_MEMORY => errno!(ENOMEM),
-                        zx::Status::INVALID_ARGS => errno!(EINVAL),
-                        zx::Status::ACCESS_DENIED => errno!(EACCES),
-                        _ => impossible_error(s),
-                    },
-                )?;
-            }
-        }
-        // Use a separate loop to avoid mutating the mappings structure while iterating over it.
-        for (range, mapping) in updates {
-            released_mappings.extend(self.mappings.insert(range, mapping));
+            let memory = match self.get_mapping_backing(mapping) {
+                MappingBacking::Memory(backing) => backing.memory(),
+                MappingBacking::PrivateAnonymous => &context.private_anonymous.backing,
+            };
+            memory.op_range(op, start_offset, end_offset - start_offset).map_err(|s| match s {
+                zx::Status::OUT_OF_RANGE => errno!(EINVAL),
+                zx::Status::NO_MEMORY => errno!(ENOMEM),
+                zx::Status::INVALID_ARGS => errno!(EINVAL),
+                zx::Status::ACCESS_DENIED => errno!(EACCES),
+                _ => impossible_error(s),
+            })?;
         }
         Ok(())
     }
@@ -4019,12 +4161,25 @@ impl MemoryManager {
     }
 
     pub fn madvise(&self, addr: UserAddress, length: usize, advice: u32) -> Result<(), Errno> {
-        let mut state = self.state.write();
-        let mut released_mappings = ReleasedMappings::default();
-        let result =
-            state.madvise(&self.mapping_context, addr, length, advice, &mut released_mappings);
-        released_mappings.finalize(state);
-        result
+        match MadviseAdvice::from_raw(advice) {
+            MadviseAdvice::UpdateFlags(advice) => {
+                let mut state = self.state.write();
+                let mut released_mappings = ReleasedMappings::default();
+                let result = state.madvise_update_flags(
+                    &self.mapping_context,
+                    addr,
+                    length,
+                    advice,
+                    &mut released_mappings,
+                );
+                released_mappings.finalize(state);
+                result
+            }
+            MadviseAdvice::ReadOnly(advice) => {
+                let state = self.state.read();
+                state.madvise_read_only(&self.mapping_context, addr, length, advice)
+            }
+        }
     }
 
     pub fn mlock(
@@ -4152,7 +4307,7 @@ impl MemoryManager {
 
         // On uffd-registered range, handle according to the uffd rules
         if error_code == zx::Status::ACCESS_DENIED {
-            let state = self.state.write();
+            let state = self.state.read();
             if let Some((_, mapping)) = state.mappings.get(addr) {
                 if mapping.flags().contains(MappingFlags::UFFD) {
                     // TODO(https://fxbug.dev/391599171): Support other modes
