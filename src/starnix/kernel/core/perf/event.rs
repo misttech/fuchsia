@@ -10,6 +10,7 @@ use crate::task::Kernel;
 use crate::vfs::OutputBuffer;
 use fuchsia_rcu::RcuDroppableArc;
 use starnix_logging::log_error;
+use starnix_sync::{LockDepMutex, PerfTraceEventQueueListLock};
 use starnix_uapi::errors::Errno;
 use zerocopy::native_endian::{I32, U16, U32, U64};
 use zerocopy::{Immutable, IntoBytes, Unaligned};
@@ -250,6 +251,10 @@ impl<'a> TraceEventQueue {
 
 pub struct TraceEventQueueList {
     pub queues: Vec<Arc<TraceEventQueue>>,
+    // Serializes `enable()` and `disable()`, so that the queues and `tracing_enabled` change
+    // together, as Linux `trace_types_lock` does for `tracing_on`. Readers of `tracing_enabled`
+    // and writers to the queues do not take it.
+    state_mutex: LockDepMutex<(), PerfTraceEventQueueListLock>,
     tracing_enabled: Arc<AtomicBool>,
     tracefs_node: fuchsia_inspect::Node,
 }
@@ -266,7 +271,7 @@ impl TraceEventQueueList {
                 let queue = Arc::new(TraceEventQueue::new(cpu as u32).expect("create queue"));
                 queues.push(queue);
             }
-            Self { queues, tracing_enabled, tracefs_node }
+            Self { queues, state_mutex: Default::default(), tracing_enabled, tracefs_node }
         })
     }
 
@@ -279,6 +284,7 @@ impl TraceEventQueueList {
     /// keeps the buffer readable after `tracing_on` is cleared, `disable()` discards each queue's
     /// contents, so enabling a disabled queue starts from empty.
     pub fn enable(&self) -> Result<(), Errno> {
+        let _lock = self.state_mutex.lock();
         let mut first_error = None;
         for queue in &self.queues {
             if let Err(e) = queue.enable() {
@@ -295,6 +301,7 @@ impl TraceEventQueueList {
     }
 
     pub fn disable(&self) -> Result<(), Errno> {
+        let _lock = self.state_mutex.lock();
         // Set disabled to stop new access to the queue, then clean up each one.
         self.tracing_enabled.store(false, Ordering::Release);
         let mut first_error = None;
@@ -321,9 +328,14 @@ impl TraceEventQueueList {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_RING_BUFFER_SIZE_BYTES, LocklessRingBuffer, TraceEvent, TraceEventQueue};
+    use super::{
+        DEFAULT_RING_BUFFER_SIZE_BYTES, LocklessRingBuffer, TraceEvent, TraceEventQueue,
+        TraceEventQueueList,
+    };
     use crate::vfs::OutputBuffer;
     use crate::vfs::buffers::VecOutputBuffer;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::error;
@@ -443,5 +455,40 @@ mod tests {
         // Try reading another page.
         let mut buffer = VecOutputBuffer::new(*PAGE_SIZE as usize);
         assert_eq!(queue.read(&mut buffer), error!(EAGAIN));
+    }
+
+    // Races list-level enable() against disable() and checks that the queues and
+    // `tracing_enabled` agree afterwards. Without `state_mutex`, enable() can enable every queue,
+    // then disable() can clear `tracing_enabled` and disable every queue, and then enable() can
+    // set `tracing_enabled`, leaving it set with every queue disabled. That needs disable() to
+    // run in the short window between enable()'s queue loop and its store, so this test catches
+    // a regression only on some runs.
+    #[fuchsia::test]
+    fn concurrent_enable_disable_keeps_list_consistent() {
+        let list = Arc::new(TraceEventQueueList {
+            queues: (0..4).map(|cpu| Arc::new(TraceEventQueue::new(cpu).unwrap())).collect(),
+            state_mutex: Default::default(),
+            tracing_enabled: Arc::new(AtomicBool::new(false)),
+            tracefs_node: fuchsia_inspect::Node::default(),
+        });
+        for _ in 0..200 {
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let enabler = {
+                let list = Arc::clone(&list);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    list.enable().unwrap();
+                })
+            };
+            barrier.wait();
+            list.disable().unwrap();
+            enabler.join().unwrap();
+
+            let enabled = list.is_enabled();
+            for queue in &list.queues {
+                assert_eq!(queue.ring_buffer.read().is_enabled(), enabled);
+            }
+        }
     }
 }
