@@ -151,5 +151,23 @@ TEST_F(UsbCdcAcmTest, DISABLED_ReadAndWriteTest) {
   }
 }
 
+TEST_F(UsbCdcAcmTest, ShortReadRejection) {
+  zx::result result = component::ConnectAt<fuchsia_hardware_serial::DeviceProxy>(
+      fdio_cpp::UnownedFdioCaller(bus_->GetRootFd()).directory(), devpath_.c_str());
+  ASSERT_OK(result.status_value());
+  auto [client_end, server] = fidl::Endpoints<fuchsia_hardware_serial::Device>::Create();
+  ASSERT_OK(fidl::WireCall(result.value())->GetChannel(std::move(server)).status());
+
+  fuchsia_hardware_serial::wire::Config config = {
+      .character_width = fuchsia_hardware_serial::wire::CharacterWidth::kBits8,
+      .stop_width = fuchsia_hardware_serial::wire::StopWidth::kBits1,
+      .parity = fuchsia_hardware_serial::wire::Parity::kNone,
+      .control_flow = fuchsia_hardware_serial::wire::FlowControl::kNone,
+      .baud_rate = 115200,
+  };
+  const fidl::WireResult res = fidl::WireCall(client_end)->SetConfig(config);
+  ASSERT_OK(res.status());
+}
+
 }  // namespace
 }  // namespace usb_virtual_bus

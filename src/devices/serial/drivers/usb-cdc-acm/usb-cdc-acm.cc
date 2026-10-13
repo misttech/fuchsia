@@ -338,14 +338,15 @@ zx_status_t UsbCdcAcmDevice::ConfigureDevice(uint32_t baud_rate, uint32_t flags)
   const bool baud_rate_only = flags & fuchsia_hardware_serialimpl::wire::kSerialSetBaudRateOnly;
   if (baud_rate_only) {
     size_t coding_length;
-    status =
-        usb_client_.ControlIn(kClassInterfaceIn, kUsbCdcAcmGetLineCoding, 0, 0, ZX_TIME_INFINITE,
-                              reinterpret_cast<uint8_t*>(&coding), sizeof(coding), &coding_length);
+    status = usb_client_.ControlIn(kClassInterfaceIn, kUsbCdcAcmGetLineCoding, 0, comm_intf_num_,
+                                   ZX_TIME_INFINITE, reinterpret_cast<uint8_t*>(&coding),
+                                   sizeof(coding), &coding_length);
     if (status != ZX_OK) {
       return status;
     }
     if (coding_length != sizeof(coding)) {
       fdf::trace("usb-cdc-acm: failed to fetch line coding");
+      return ZX_ERR_IO;
     }
   } else {
     switch (flags & fuchsia_hardware_serialimpl::wire::kSerialStopBitsMask) {
@@ -392,8 +393,8 @@ zx_status_t UsbCdcAcmDevice::ConfigureDevice(uint32_t baud_rate, uint32_t flags)
   coding.dwDTERate = baud_rate;
 
   status =
-      usb_client_.ControlOut(kClassInterfaceOut, kUsbCdcAcmSetLineCoding, 0, 0, ZX_TIME_INFINITE,
-                             reinterpret_cast<uint8_t*>(&coding), sizeof(coding));
+      usb_client_.ControlOut(kClassInterfaceOut, kUsbCdcAcmSetLineCoding, 0, comm_intf_num_,
+                             ZX_TIME_INFINITE, reinterpret_cast<uint8_t*>(&coding), sizeof(coding));
 
   if (status == ZX_OK) {
     baud_rate_ = baud_rate;
@@ -429,20 +430,36 @@ zx::result<> UsbCdcAcmDevice::Start(fdf::DriverContext context) {
   fbl::AutoLock lock(&lock_);
   uint8_t bulk_in_address = 0;
   uint8_t bulk_out_address = 0;
+  bool comm_intf_found = false;
 
   for (auto interface : *usb_interface_list) {
-    if (interface.descriptor()->b_num_endpoints > 1) {
-      for (auto& endpoint : interface.GetEndpointList()) {
-        if (usb_ep_type(endpoint.descriptor()) == fdescriptor::EndpointType::kBulk) {
-          if (usb_ep_direction(endpoint.descriptor()) == fdescriptor::EndpointDirection::kIn) {
-            bulk_in_address = endpoint.descriptor()->b_endpoint_address;
-          } else if (usb_ep_direction(endpoint.descriptor()) ==
-                     fdescriptor::EndpointDirection::kOut) {
-            bulk_out_address = endpoint.descriptor()->b_endpoint_address;
+    if (!comm_intf_found && interface.descriptor()->b_interface_class ==
+                                fidl::ToUnderlying(fdescriptor::UsbClass::kComm)) {
+      comm_intf_num_ = interface.descriptor()->b_interface_number;
+      comm_intf_found = true;
+    }
+    if (!bulk_in_address || !bulk_out_address) {
+      if (interface.descriptor()->b_num_endpoints > 1) {
+        for (auto& endpoint : interface.GetEndpointList()) {
+          if (usb_ep_type(endpoint.descriptor()) == fdescriptor::EndpointType::kBulk) {
+            if (usb_ep_direction(endpoint.descriptor()) == fdescriptor::EndpointDirection::kIn) {
+              bulk_in_address = endpoint.descriptor()->b_endpoint_address;
+            } else if (usb_ep_direction(endpoint.descriptor()) ==
+                       fdescriptor::EndpointDirection::kOut) {
+              bulk_out_address = endpoint.descriptor()->b_endpoint_address;
+            }
           }
         }
       }
     }
+    if (comm_intf_found && bulk_in_address && bulk_out_address) {
+      break;
+    }
+  }
+
+  if (!comm_intf_found) {
+    fdf::error("usb-cdc-acm: Start() could not find communications interface");
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   if (!bulk_in_address || !bulk_out_address) {

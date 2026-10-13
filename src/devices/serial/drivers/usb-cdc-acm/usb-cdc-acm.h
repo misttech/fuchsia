@@ -90,6 +90,7 @@ class UsbCdcAcmDevice : public fdf::DriverBase2,
   size_t parent_req_size_ = 0;
   uint32_t baud_rate_ = 0;
   uint32_t config_flags_ = 0;
+  uint16_t comm_intf_num_ = 0;
 
   // Queues of free USB write requests and completed reads not yet read by the upper layer.
   usb::RequestQueue<> free_write_queue_ __TA_GUARDED(lock_);
