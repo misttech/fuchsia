@@ -98,7 +98,7 @@ class Gvnic : public DeviceType,
   __WARN_UNUSED_RESULT zx_status_t SetUpPci();
   __WARN_UNUSED_RESULT zx_status_t SetUpInterrupts();
   __WARN_UNUSED_RESULT zx_status_t MapBars();
-  __WARN_UNUSED_RESULT zx_status_t ResetCard(bool use_new_reset_sequence);
+  void ResetCard(bool use_new_reset_sequence);
   __WARN_UNUSED_RESULT zx_status_t WriteVersion(const char* ver, uint32_t len);
   __WARN_UNUSED_RESULT zx_status_t CreateAdminQueue();
   __WARN_UNUSED_RESULT zx_status_t EnableCard();
@@ -114,15 +114,16 @@ class Gvnic : public DeviceType,
 
   void AbortPendingTX();
   void AbortPendingRX();
-  void SendTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count);
-  void EnqueueTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count);
+  void SendTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count)
+      __TA_REQUIRES(tx_queue_lock_);
+  void EnqueueTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count)
+      __TA_REQUIRES(tx_queue_lock_);
   void FlushTXBuffers();
 
   GvnicAdminqEntry* NextAdminQEntry();
   void SubmitPendingAdminQEntries(bool wait);
   void WaitForAdminQueueCompletion();
 
-  uint32_t GetNextFreeDoorbellIndex();
   uint32_t GetNextQueueResourcesIndex();
   zx_paddr_t GetQueueResourcesPhysAddr(uint32_t index);
   GvnicQueueResources* GetQueueResourcesVirtAddr(uint32_t index);
@@ -155,54 +156,54 @@ class Gvnic : public DeviceType,
   std::unique_ptr<dma_buffer::ContiguousBuffer> scratch_page_;
   std::unique_ptr<dma_buffer::ContiguousBuffer> counter_page_;
 
-  // ConfigureDeviceResources(), will cause the card to allocate some IRQ doorbells. It will need
-  // to report which indices were allocated so that this driver can avoid allocating an index that
-  // was already allocated. This buffer is how that information will be reported.
+  // ConfigureDeviceResources() populates irq_doorbell_idx_page_ with the BAR2 doorbell index for
+  // each notification block (indexed by ntfy_id * kIrqDoorbellIdxStride).
   std::unique_ptr<dma_buffer::ContiguousBuffer> irq_doorbell_idx_page_;
   // The stride sets the distance between consecutive doorbell entries. This can be used to space
   // them out (for example, to keep each doorbell in its own cacheline).
-  static constexpr uint32_t kIrqDoorbellIdxStride = 16;  // Measuered in entries, not bytes.
-  static constexpr uint32_t kNumIrqDoorbellIdxs = 3;     // Management,  RX and TX.
-  uint32_t rx_irq_index_;
-  uint32_t tx_irq_index_;
+  static constexpr uint32_t kIrqDoorbellIdxStride = 16;  // Measured in entries, not bytes.
+  static constexpr uint32_t kNumIrqDoorbellIdxs = 2;     // TX and RX notification blocks.
+  static constexpr uint32_t kNumMsixVectors = 3;         // TX, RX, and Management.
+  static constexpr uint32_t kTxIrqIndex = 0;
+  static constexpr uint32_t kRxIrqIndex = 1;
+  uint32_t tx_irq_index_ = kTxIrqIndex;
+  uint32_t rx_irq_index_ = kRxIrqIndex;
   zx::interrupt tx_interrupt_;
   zx::interrupt rx_interrupt_;
 
-  uint32_t next_doorbell_idx_ = 0;  // Index of the next potentially-allocatable doorbell.
-
-  GvnicDeviceDescriptor dev_descr_;
+  GvnicDeviceDescriptor dev_descr_ = {};
   std::unique_ptr<GvnicDeviceOption[]> dev_opts_;
-  uint64_t link_speed_;
+  uint64_t link_speed_ = 0;
 
   std::unique_ptr<PageList> tx_page_list_;
   std::unique_ptr<PageList> rx_page_list_;
 
   std::unique_ptr<dma_buffer::ContiguousBuffer> queue_resources_;
   uint32_t next_queue_resources_index_ = 0;
-  GvnicQueueResources* tx_queue_resources_;
-  GvnicQueueResources* rx_queue_resources_;
+  GvnicQueueResources* tx_queue_resources_ = nullptr;
+  GvnicQueueResources* rx_queue_resources_ = nullptr;
 
   std::unique_ptr<dma_buffer::ContiguousBuffer> tx_ring_;
   // The RX side has two rings, one for the driver to send empty buffers to the device, and one for
   // the device to send back filled in buffers.
   std::unique_ptr<dma_buffer::ContiguousBuffer> rx_desc_ring_;  // From NIC
   std::unique_ptr<dma_buffer::ContiguousBuffer> rx_data_ring_;  // To NIC
-  uint32_t tx_doorbell_;
-  uint32_t tx_counter_;
+  uint32_t tx_doorbell_ = 0;
+  uint32_t tx_counter_ = 0;
 
-  // Each incoming packet needs space allocated. The packets are at most MTU bytes long. There is
-  // also a 2 byte padding at the start of each packet for alignment reasons (the Ethernet header is
-  // 14 bytes). And packets should not share a cache line with any other packet. So, this is the
-  // MTU, plus the 2 byte padding, rounded up to the nearest cache line.
-  uint16_t rounded_mtu_;
-  uint16_t rx_ring_len_;
+  // Each incoming packet needs space allocated. The packets are at most MTU + ETH_HLEN bytes long.
+  // There is also a 2 byte padding at the start of each packet for alignment reasons (the Ethernet
+  // header is 14 bytes). Packet buffers are aligned to 2048 bytes.
+  uint16_t rounded_mtu_ = 0;
+  uint16_t rx_ring_len_ = 0;
 
   fdf::SynchronizedDispatcher rx_dispatcher_;
   libsync::Completion rx_dispatcher_shutdown_;
 
-  uint16_t tx_ring_len_;
-  uint16_t tx_ring_index_;
+  uint16_t tx_ring_len_ = 0;
+  uint16_t tx_ring_index_ = 0;
 
+  bool network_device_impl_initialized_ = false;
   bool network_device_impl_started_ = false;
 
   network::SharedLock ifc_lock_;

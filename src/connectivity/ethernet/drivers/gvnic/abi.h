@@ -27,10 +27,11 @@ struct __PACKED GvnicRegisters {
   uint8_t padding[2];
   BigEndian<uint8_t> dma_mask;
   BigEndian<uint8_t> driver_version;
-  BigEndian<uint64_t> admin_queue_base_address;
-  BigEndian<uint32_t> admin_queue_length;
+  BigEndian<uint32_t> admin_queue_base_address_hi;
+  BigEndian<uint32_t> admin_queue_base_address_lo;
+  BigEndian<uint16_t> admin_queue_length;
 };
-static_assert(sizeof(GvnicRegisters) == 44);
+static_assert(sizeof(GvnicRegisters) == 42);
 
 // Since we will be reading and writing individual struct members, and relying on their offsets, it
 // is vital that these struct members are the correct size and offset. Check that the offsets and
@@ -47,8 +48,9 @@ assert_offset_size(0x18, 4, admin_queue_counter);
 assert_offset_size(0x1C, 2, padding);
 assert_offset_size(0x1E, 1, dma_mask);
 assert_offset_size(0x1f, 1, driver_version);
-assert_offset_size(0x20, 8, admin_queue_base_address);
-assert_offset_size(0x28, 4, admin_queue_length);
+assert_offset_size(0x20, 4, admin_queue_base_address_hi);
+assert_offset_size(0x24, 4, admin_queue_base_address_lo);
+assert_offset_size(0x28, 2, admin_queue_length);
 #undef assert_offset_size
 
 //

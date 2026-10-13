@@ -8,6 +8,9 @@
 #include <lib/ddk/binding_driver.h>
 #include <lib/fit/defer.h>
 
+#include <atomic>
+#include <limits>
+
 #include "src/connectivity/ethernet/drivers/gvnic/abi.h"
 
 #define DIV_ROUND_UP(a, b) (((a) + (b) - 1) / (b))
@@ -28,12 +31,13 @@
     uint32_t loop_limit = n;                                      \
     while (unlikely(!(cond))) {                                   \
       ZX_ASSERT_MSG(loop_limit--, "Polling timed out for " msg);  \
-      sched_yield();                                              \
+      zx_nanosleep(zx_deadline_after(ZX_USEC(10)));               \
       zxlogf(DEBUG, "Polling for " msg);                          \
     }                                                             \
   } while (0)
 
 #define CACHELINE_SIZE (64)
+#define GVNIC_PACKET_BUFFER_SIZE_ALIGNMENT (2048)
 
 namespace gvnic {
 
@@ -68,11 +72,7 @@ zx_status_t Gvnic::Bind() {
     zxlogf(ERROR, "Couldn't map bars: %s", zx_status_get_string(status));
     return status;
   }
-  status = ResetCard(true);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Couldn't reset card: %s", zx_status_get_string(status));
-    return status;
-  }
+  ResetCard(true);
   static constexpr const char* const version_string = "Fuchsia gvnic driver " GVNIC_VERSION;
   status = WriteVersion(version_string, strlen(version_string));
   if (status != ZX_OK) {
@@ -234,7 +234,7 @@ zx_status_t Gvnic::SetUpInterrupts() {
   zx_status_t status;
 
   fuchsia_hardware_pci::InterruptMode mode;
-  status = pci_.ConfigureInterruptMode(kNumIrqDoorbellIdxs, &mode);
+  status = pci_.ConfigureInterruptMode(kNumMsixVectors, &mode);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Couldn't configure interrupt mode: %s", zx_status_get_string(status));
     return status;
@@ -270,25 +270,33 @@ zx_status_t Gvnic::MapBars() {
   // Initialize the local copies of regs_.
   memset(&regs_, 0, sizeof(regs_));
   READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(dev_status);
+  READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(drv_status);
   READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(max_tx_queues);
   READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(max_rx_queues);
+  READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(admin_queue_pfn);
   READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(admin_queue_counter);
   READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(dma_mask);
+  READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(admin_queue_base_address_hi);
+  READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(admin_queue_base_address_lo);
+  READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(admin_queue_length);
   return ZX_OK;
 }
 
-zx_status_t Gvnic::ResetCard(bool use_new_reset_sequence) {
+void Gvnic::ResetCard(bool use_new_reset_sequence) {
   if (use_new_reset_sequence) {
     // A driver can cause a device reset by writing GVE_RESET to the DRV_STATUS register. Drivers
     // should then poll the DEV_STATUS register until the GVE_IS_RESET bit is set to confirm the AQ
     // was released and the device reset is complete.
-    SET_LOCAL_REG_AND_WRITE_TO_MMIO(drv_status, GVNIC_DRIVER_STATUS_RESET);
-    // In practice, this "polling" succeeds instantly.
-    POLL_AT_MOST_N_TIMES_UNTIL_CONDITION_IS_MET(
-        10,
-        READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(dev_status) &
-            GVNIC_DEVICE_STATUS_DEVICE_IS_RESET,
-        "reset completion (new)");
+    if (!(READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(dev_status) &
+          GVNIC_DEVICE_STATUS_DEVICE_IS_RESET)) {
+      SET_LOCAL_REG_AND_WRITE_TO_MMIO(drv_status, GVNIC_DRIVER_STATUS_RESET);
+      // In practice, this "polling" succeeds instantly.
+      POLL_AT_MOST_N_TIMES_UNTIL_CONDITION_IS_MET(
+          10000,
+          READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(dev_status) &
+              GVNIC_DEVICE_STATUS_DEVICE_IS_RESET,
+          "reset completion (new)");
+    }
   } else {
     // To be compatible with older driver versions, writing 0x0 to the ADMIN_QUEUE_PFN register will
     // also cause a device reset but all future driver versions should use the DRV_STATUS register.
@@ -298,34 +306,23 @@ zx_status_t Gvnic::ResetCard(bool use_new_reset_sequence) {
     SET_LOCAL_REG_AND_WRITE_TO_MMIO(admin_queue_pfn, 0);
     // In practice, this "polling" succeeds instantly.
     POLL_AT_MOST_N_TIMES_UNTIL_CONDITION_IS_MET(
-        10, READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(admin_queue_pfn) == 0,
+        10000, READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(admin_queue_pfn) == 0,
         "reset completion (old)");
   }
   // Now that we know the device is not using the admin queue (or any other physical addresses) we
   // can release any quarentined pages.
   bti_.release_quarantine();
-  return ZX_OK;
 }
 
 zx_status_t Gvnic::WriteVersion(const char* ver, uint32_t len) {
   // DRIVER_VERSION Register:
   // Drivers should identify themselves by writing a human readable version string to this register
-  // one byte at a time, followed by a newline. After each write, a driver can poll the register and
-  // wait for it to read 0 before writing it again. If the driver does not poll and wait, then it is
-  // not guaranteed that the driver version will be correctly processed by the device.
-
+  // one byte at a time, followed by a newline.
   while (len--) {
-    // Write one byte
     SET_LOCAL_REG_AND_WRITE_TO_MMIO(driver_version, *ver++);
-    // Poll until the byte has been "digested", indicated by reading back a 0.
-    // In practice, this "polling" succeeds instantly.
-    POLL_AT_MOST_N_TIMES_UNTIL_CONDITION_IS_MET(
-        10, READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(driver_version) == 0,
-        "version byte write confirmation.");
   }
   // Terminate by writing the newline.
   SET_LOCAL_REG_AND_WRITE_TO_MMIO(driver_version, '\n');
-  // Not bothering to wait for the newline to be digested, because there is no benefit.
   return ZX_OK;
 }
 
@@ -339,8 +336,11 @@ zx_status_t Gvnic::CreateAdminQueue() {
     zxlogf(ERROR, "Couldn't create admin queue: %s", zx_status_get_string(status));
     return status;
   }
-  SET_LOCAL_REG_AND_WRITE_TO_MMIO(admin_queue_base_address, admin_queue_->phys());
   SET_LOCAL_REG_AND_WRITE_TO_MMIO(admin_queue_length, GVNIC_ADMINQ_SIZE);
+  SET_LOCAL_REG_AND_WRITE_TO_MMIO(admin_queue_base_address_hi,
+                                  static_cast<uint32_t>(admin_queue_->phys() >> 32));
+  SET_LOCAL_REG_AND_WRITE_TO_MMIO(admin_queue_base_address_lo,
+                                  static_cast<uint32_t>(admin_queue_->phys() & 0xffffffff));
   ZX_ASSERT_MSG(!scratch_page_, "Scratch page alredy allocated.");
   status = buffer_factory_->CreateContiguous(bti_, zx_system_get_page_size(), 0,
                                              dma_buffer::CacheOptions::kEnabled, &scratch_page_);
@@ -353,6 +353,11 @@ zx_status_t Gvnic::CreateAdminQueue() {
 
 zx_status_t Gvnic::EnableCard() {
   SET_LOCAL_REG_AND_WRITE_TO_MMIO(drv_status, GVNIC_DRIVER_STATUS_RUN);
+  if (READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(dev_status) &
+      GVNIC_DEVICE_STATUS_DEVICE_IS_RESET) {
+    const uint64_t pfn = admin_queue_->phys() / zx_system_get_page_size();
+    SET_LOCAL_REG_AND_WRITE_TO_MMIO(admin_queue_pfn, static_cast<uint32_t>(pfn));
+  }
   return ZX_OK;
 }
 
@@ -368,7 +373,7 @@ zx_status_t Gvnic::DescribeDevice() {
                 "length did not fit in uint32_t");
   SubmitPendingAdminQEntries(true);
   if (ent->status != GVNIC_ADMINQ_STATUS_PASSED) {
-    zxlogf(ERROR, "Describe device command status is not 'passed'");
+    zxlogf(ERROR, "Describe device command status is not 'passed' (0x%x)", ent->status.val());
     return ZX_ERR_INTERNAL;
   }
   auto volatile dev_descr_in_scratch =
@@ -388,6 +393,13 @@ zx_status_t Gvnic::DescribeDevice() {
   for (int o = 0; o < dev_descr_.num_device_options; o++) {
     dev_opts_[o] = options_in_scratch[o];
   }
+
+  const uint32_t full_rounded_mtu =
+      ROUND_UP(dev_descr_.mtu + ETH_HLEN + GVNIC_RX_PADDING, GVNIC_PACKET_BUFFER_SIZE_ALIGNMENT);
+  ZX_ASSERT_MSG(full_rounded_mtu <= std::numeric_limits<uint16_t>::max(),
+                "full_rounded_mtu did not fit in uint16_t");
+  rounded_mtu_ = static_cast<uint16_t>(full_rounded_mtu);
+
   return ZX_OK;
 }
 
@@ -399,7 +411,7 @@ zx_status_t Gvnic::ReportLinkSpeed() {
   ent->report_link_speed.link_speed_address = scratch_page_->phys();
   SubmitPendingAdminQEntries(true);
   if (ent->status != GVNIC_ADMINQ_STATUS_PASSED) {
-    zxlogf(ERROR, "Report link speed command status is not 'passed'");
+    zxlogf(ERROR, "Report link speed command status is not 'passed' (0x%x)", ent->status.val());
     return ZX_ERR_INTERNAL;
   }
 
@@ -416,8 +428,10 @@ zx_status_t Gvnic::ConfigureDeviceResources() {
   ent->status = 0x0;  // Device will set this when the command completes.
 
   ZX_ASSERT_MSG(!counter_page_, "Counter page alredy allocated.");
-  status = buffer_factory_->CreateContiguous(bti_, zx_system_get_page_size(), 0,
-                                             dma_buffer::CacheOptions::kEnabled, &counter_page_);
+  const uint32_t num_counters = dev_descr_.event_counters;
+  status = buffer_factory_->CreateContiguous(
+      bti_, ROUND_UP(num_counters * sizeof(uint32_t), zx_system_get_page_size()), 0,
+      dma_buffer::CacheOptions::kEnabled, &counter_page_);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Couldn't create counter page: %s", zx_status_get_string(status));
     return status;
@@ -431,7 +445,6 @@ zx_status_t Gvnic::ConfigureDeviceResources() {
       return status;
     }
   }
-  const uint32_t num_counters = 2;
 
   ent->device_resources.counter_array = counter_page_->phys();
   ent->device_resources.irq_db_addr_base = irq_doorbell_idx_page_->phys();
@@ -442,7 +455,7 @@ zx_status_t Gvnic::ConfigureDeviceResources() {
   // corresponding counter acks that the transmit is complete, and the buffer(s) can be reused. For
   // RX queue(s), the doorbell is incremented for each "empty" packet buffer provided, and the
   // counter indicates when they have been filled.
-  ent->device_resources.num_counters = num_counters;  // 1024 allocated, but using 2: 1 TX and 1 RX
+  ent->device_resources.num_counters = num_counters;
   ent->device_resources.num_irq_dbs = kNumIrqDoorbellIdxs;
   ent->device_resources.irq_db_stride = sizeof(uint32_t) * kIrqDoorbellIdxStride;
 
@@ -457,7 +470,8 @@ zx_status_t Gvnic::ConfigureDeviceResources() {
 
   SubmitPendingAdminQEntries(true);
   if (ent->status != GVNIC_ADMINQ_STATUS_PASSED) {
-    zxlogf(ERROR, "Configure device resources command status is not 'passed'");
+    zxlogf(ERROR, "Configure device resources command status is not 'passed' (0x%x)",
+           ent->status.val());
     return ZX_ERR_INTERNAL;
   }
   return ZX_OK;
@@ -478,7 +492,7 @@ zx_status_t Gvnic::RegisterPageList(std::unique_ptr<PageList>& page_list) {
 
   SubmitPendingAdminQEntries(true);
   if (ent->status != GVNIC_ADMINQ_STATUS_PASSED) {
-    zxlogf(ERROR, "Register page list command status is not 'passed'");
+    zxlogf(ERROR, "Register page list command status is not 'passed' (0x%x)", ent->status.val());
     return ZX_ERR_INTERNAL;
   }
   return ZX_OK;
@@ -494,29 +508,31 @@ zx_status_t Gvnic::CreateTXQueue() {
   const uint32_t qr_idx = GetNextQueueResourcesIndex();
   tx_queue_resources_ = GetQueueResourcesVirtAddr(qr_idx);
 
+  tx_ring_len_ = dev_descr_.tx_queue_size;
+  ZX_ASSERT_MSG(rounded_mtu_ * tx_ring_len_ <= tx_page_list_->pages()->size(),
+                "Can't fit %u MTUs (%u bytes each) (= %u bytes) in the TX page list (%lu bytes)",
+                tx_ring_len_, rounded_mtu_, rounded_mtu_ * tx_ring_len_,
+                tx_page_list_->pages()->size());
   if (!tx_ring_) {
-    status = buffer_factory_->CreateContiguous(bti_, zx_system_get_page_size(), 0,
+    status = buffer_factory_->CreateContiguous(bti_, tx_ring_len_ * sizeof(GvnicTxPktDesc), 0,
                                                dma_buffer::CacheOptions::kEnabled, &tx_ring_);
     if (status != ZX_OK) {
       zxlogf(ERROR, "Couldn't create tx ring: %s", zx_status_get_string(status));
       return status;
     }
   }
-  const auto full_len = tx_ring_->size() / sizeof(GvnicTxPktDesc);
-  tx_ring_len_ = static_cast<uint16_t>(full_len);
-  ZX_ASSERT_MSG(tx_ring_len_ == full_len, "tx_ring_len_ did not fit in uint16_t");
 
   ent->create_tx_queue.queue_id = 0;  // Only making one TX Queue.
   ent->create_tx_queue.queue_resources_addr = GetQueueResourcesPhysAddr(qr_idx);
   ent->create_tx_queue.tx_ring_addr = tx_ring_->phys();
   ent->create_tx_queue.queue_page_list_id = tx_page_list_->id();
-  tx_irq_index_ = GetNextFreeDoorbellIndex();
+  tx_irq_index_ = kTxIrqIndex;
   ent->create_tx_queue.ntfy_id = tx_irq_index_;
   ent->create_tx_queue.tx_comp_ring_addr = 0;  // Not relevant when in GQI format.
   ent->create_tx_queue.tx_ring_size = tx_ring_len_;
   SubmitPendingAdminQEntries(true);
   if (ent->status != GVNIC_ADMINQ_STATUS_PASSED) {
-    zxlogf(ERROR, "Crete tx queue command status is not 'passed'");
+    zxlogf(ERROR, "Create tx queue command status is not 'passed' (0x%x)", ent->status.val());
     return ZX_ERR_INTERNAL;
   }
 
@@ -533,8 +549,9 @@ zx_status_t Gvnic::CreateRXQueue() {
   const uint32_t qr_idx = GetNextQueueResourcesIndex();
   rx_queue_resources_ = GetQueueResourcesVirtAddr(qr_idx);
 
+  rx_ring_len_ = dev_descr_.rx_queue_size;
   if (!rx_desc_ring_) {  // From NIC
-    status = buffer_factory_->CreateContiguous(bti_, zx_system_get_page_size(), 0,
+    status = buffer_factory_->CreateContiguous(bti_, rx_ring_len_ * sizeof(GvnicRxDesc), 0,
                                                dma_buffer::CacheOptions::kEnabled, &rx_desc_ring_);
     if (status != ZX_OK) {
       zxlogf(ERROR, "Couldn't create rx desc ring: %s", zx_status_get_string(status));
@@ -543,7 +560,7 @@ zx_status_t Gvnic::CreateRXQueue() {
   }
 
   if (!rx_data_ring_) {  // To NIC
-    status = buffer_factory_->CreateContiguous(bti_, zx_system_get_page_size(), 0,
+    status = buffer_factory_->CreateContiguous(bti_, rx_ring_len_ * sizeof(uint64_t), 0,
                                                dma_buffer::CacheOptions::kEnabled, &rx_data_ring_);
     if (status != ZX_OK) {
       zxlogf(ERROR, "Couldn't create rx data ring: %s", zx_status_get_string(status));
@@ -551,17 +568,9 @@ zx_status_t Gvnic::CreateRXQueue() {
     }
   }
 
-  const auto full_rounded_mtu = ROUND_UP(dev_descr_.mtu + GVNIC_RX_PADDING, CACHELINE_SIZE);
-  rounded_mtu_ = static_cast<uint16_t>(full_rounded_mtu);
-  ZX_ASSERT_MSG(rounded_mtu_ == full_rounded_mtu, "uint16_t did not fit in uint16_t");
-
-  const auto full_len = rx_desc_ring_->size() / sizeof(GvnicRxDesc);
-  rx_ring_len_ = static_cast<uint16_t>(full_len);
-  ZX_ASSERT_MSG(rx_ring_len_ == full_len, "rx_ring_len_ did not fit in uint16_t");
-
   ent->create_rx_queue.queue_id = 0;  // Only making one RX Queue.
   ent->create_rx_queue.slice = 0;     // Obsolete. Not used.
-  rx_irq_index_ = GetNextFreeDoorbellIndex();
+  rx_irq_index_ = kRxIrqIndex;
   ent->create_rx_queue.ntfy_id = rx_irq_index_;
   ent->create_rx_queue.queue_resources_addr = GetQueueResourcesPhysAddr(qr_idx);
   ent->create_rx_queue.rx_desc_ring_addr = rx_desc_ring_->phys();
@@ -571,7 +580,7 @@ zx_status_t Gvnic::CreateRXQueue() {
   ent->create_rx_queue.packet_buffer_size = rounded_mtu_;
   SubmitPendingAdminQEntries(true);
   if (ent->status != GVNIC_ADMINQ_STATUS_PASSED) {
-    zxlogf(ERROR, "Create rx queue command status is not 'passed'");
+    zxlogf(ERROR, "Create rx queue command status is not 'passed' (0x%x)", ent->status.val());
     return ZX_ERR_INTERNAL;
   }
 
@@ -596,8 +605,10 @@ GvnicAdminqEntry* Gvnic::NextAdminQEntry() {
 void Gvnic::SubmitPendingAdminQEntries(bool wait) {
   ZX_ASSERT_MSG(admin_queue_num_allocated_ > 0, "Cannot submit, %u entries allocated",
                 admin_queue_num_allocated_);
+  std::atomic_thread_fence(std::memory_order_release);
   SET_LOCAL_REG_AND_WRITE_TO_MMIO(admin_queue_doorbell, admin_queue_index_);
   admin_queue_num_pending_ += admin_queue_num_allocated_;
+  admin_queue_num_allocated_ = 0;
   if (wait) {
     WaitForAdminQueueCompletion();
   }
@@ -608,33 +619,12 @@ void Gvnic::WaitForAdminQueueCompletion() {
                 admin_queue_num_pending_);
   // In practice, this "polling" succeeds instantly.
   POLL_AT_MOST_N_TIMES_UNTIL_CONDITION_IS_MET(
-      10,
+      10000,
       READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(admin_queue_counter) ==
           regs_.admin_queue_doorbell,
       "admin queue completion.");
+  std::atomic_thread_fence(std::memory_order_acquire);
   admin_queue_num_pending_ = 0;
-}
-
-uint32_t Gvnic::GetNextFreeDoorbellIndex() {
-  auto volatile const irq_doorbell_idxs =
-      reinterpret_cast<BigEndian<uint32_t>*>(irq_doorbell_idx_page_->virt());
-
-  for (;; next_doorbell_idx_++) {
-    // Cannot just return next_doorbell_idx_ here, because it might already be
-    // allocated to an IRQ. Scan through the irq doorbells, and skip to the
-    // next one if we collide.
-    uint32_t i;
-    for (i = 0; i < kNumIrqDoorbellIdxs &&
-                irq_doorbell_idxs[i * kIrqDoorbellIdxStride] != next_doorbell_idx_;
-         i++)
-      ;
-    if (i < kNumIrqDoorbellIdxs)
-      continue;  // Can't use this index, it is in use by IRQ i. Try the next one.
-    // No collision found. Fine to return it (and increment for the next call).
-    return next_doorbell_idx_++;
-  }
-  ZX_ASSERT_MSG(false, "This code should be unreachable.");
-  return 0xdeadbeef;
 }
 
 uint32_t Gvnic::GetNextQueueResourcesIndex() {
@@ -706,13 +696,16 @@ zx_status_t Gvnic::StartRXThread() {
 
 void Gvnic::WriteDoorbell(uint32_t index, uint32_t value) {
   const BigEndian<uint32_t> doorbell_val = value;
+  std::atomic_thread_fence(std::memory_order_release);
   doorbell_mmio_->Write<uint32_t>(doorbell_val.GetBE(), DOORBELL_IDX_TO_OFFSET(index));
 }
 
 uint32_t Gvnic::ReadCounter(uint32_t index) {
-  ZX_ASSERT_MSG(scratch_page_, "Scratch page not allocated.");
+  ZX_ASSERT_MSG(counter_page_, "Counter page not allocated.");
   const auto volatile counter_base = reinterpret_cast<BigEndian<uint32_t>*>(counter_page_->virt());
-  return counter_base[index];
+  const uint32_t val = counter_base[index];
+  std::atomic_thread_fence(std::memory_order_acquire);
+  return val;
 }
 
 // TODO(https://fxbug.dev/42059141): Find a clever way to get zerocopy rx to work, and then delete
@@ -728,7 +721,7 @@ int Gvnic::RXThread() {
   const auto desc_ring_base = reinterpret_cast<GvnicRxDesc*>(rx_desc_ring_->virt());
   const auto pagelist_base = reinterpret_cast<uint8_t*>(rx_page_list_->pages()->virt());
 
-  ZX_ASSERT_MSG(rounded_mtu_ * rx_ring_len_ < rx_page_list_->pages()->size(),
+  ZX_ASSERT_MSG(rounded_mtu_ * rx_ring_len_ <= rx_page_list_->pages()->size(),
                 "Can't fit %u MTUs (%u bytes each) (= %u bytes) in the page list (%lu bytes)",
                 rx_ring_len_, rounded_mtu_, rounded_mtu_ * rx_ring_len_,
                 rx_page_list_->pages()->size());
@@ -750,21 +743,32 @@ int Gvnic::RXThread() {
   const uint32_t irq_db_index = irq_doorbell_idxs[rx_irq_index_ * kIrqDoorbellIdxStride];
   for (;;) {
     zx_status_t status = rx_interrupt_.wait(nullptr);
+    if (status == ZX_ERR_CANCELED) {
+      break;
+    }
     ZX_ASSERT_MSG(status == ZX_OK, "Couldn't wait for rx interrupt: %s",
                   zx_status_get_string(status));
-    WriteDoorbell(irq_db_index, 0);  // Ack the interrupt by clearing the doorbell back to zero.
+    WriteDoorbell(irq_db_index, GVNIC_IRQ_ACK | GVNIC_IRQ_EVENT);
 
     const uint32_t counter = ReadCounter(counter_idx);
     uint32_t packets_processed = 0;
     uint32_t packets_written = 0;
     for (; ring_counter != counter; ring_counter++) {
       const uint32_t idx = ring_counter % rx_ring_len_;
-      const uint32_t len = desc_ring_base[idx].length - 2;
-      uint8_t* const data = pagelist_base + (idx * rounded_mtu_) + 2;
+      const uint16_t flags_seq = desc_ring_base[idx].flags_seq;
+      const uint16_t raw_len = desc_ring_base[idx].length;
       packets_processed++;
+      if ((flags_seq & (GVNIC_RX_FLAG_ERR | GVNIC_RX_FLAG_CONT)) || raw_len <= GVNIC_RX_PADDING ||
+          raw_len > rounded_mtu_) {
+        zxlogf(WARNING, "Dropping invalid RX packet (flags_seq=0x%04x, len=%u).", flags_seq,
+               raw_len);
+        continue;
+      }
+      const uint32_t len = raw_len - GVNIC_RX_PADDING;
+      uint8_t* const data = pagelist_base + (idx * rounded_mtu_) + GVNIC_RX_PADDING;
 
       std::lock_guard rx_lock(rx_queue_lock_);
-      if (rx_space_buffer_queue_.Count() == 0) {
+      if (!network_device_impl_started_ || rx_space_buffer_queue_.Count() == 0) {
         zxlogf(WARNING, "No buffer space. Dropping packet.");
         continue;
       }
@@ -826,6 +830,12 @@ void Gvnic::DdkSuspend(ddk::SuspendTxn txn) {
 }
 
 void Gvnic::Shutdown() {
+  if (rx_interrupt_.is_valid()) {
+    rx_interrupt_.destroy();
+  }
+  if (tx_interrupt_.is_valid()) {
+    tx_interrupt_.destroy();
+  }
   if (rx_dispatcher_.get()) {
     rx_dispatcher_.ShutdownAsync();
     rx_dispatcher_shutdown_.Wait();
@@ -835,6 +845,9 @@ void Gvnic::Shutdown() {
     netdevice_dispatcher_.ShutdownAsync();
     netdevice_dispatcher_shutdown_.Wait();
     netdevice_dispatcher_.reset();
+  }
+  if (reg_mmio_.has_value()) {
+    ResetCard(true);
   }
 }
 
@@ -847,9 +860,8 @@ void Gvnic::DdkRelease() { delete this; }
 void Gvnic::Init(netdev::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
                  InitCompleter::Sync& completer) {
   // "`Init` is only called once during the lifetime of the device..."
-  static bool called = false;
-  ZX_ASSERT_MSG(!called, "NetworkDeviceImplInit already called.");
-  called = true;
+  ZX_ASSERT_MSG(!network_device_impl_initialized_, "NetworkDeviceImplInit already called.");
+  network_device_impl_initialized_ = true;
 
   fbl::AutoLock lock(&ifc_lock_);
   ifc_.Bind(std::move(request->iface), netdevice_dispatcher_.get());
@@ -877,19 +889,17 @@ void Gvnic::Init(netdev::wire::NetworkDeviceImplInitRequest* request, fdf::Arena
 }
 
 void Gvnic::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
-  if (network_device_impl_started_) {
-    completer.buffer(arena).Reply(ZX_ERR_ALREADY_BOUND);
-    return;
-  }
   {
-    std::lock_guard tx_lock(rx_queue_lock_);
-    rx_space_buffer_queue_.Init(rx_ring_len_);
-  }
-  {
+    std::lock_guard rx_lock(rx_queue_lock_);
     std::lock_guard tx_lock(tx_queue_lock_);
+    if (network_device_impl_started_) {
+      completer.buffer(arena).Reply(ZX_ERR_ALREADY_BOUND);
+      return;
+    }
+    rx_space_buffer_queue_.Init(rx_ring_len_);
     tx_buffer_id_queue_.Init(tx_ring_len_);
+    network_device_impl_started_ = true;
   }
-  network_device_impl_started_ = true;
   completer.buffer(arena).Reply(ZX_OK);
 }
 
@@ -905,6 +915,7 @@ void Gvnic::AbortPendingTX() {
     });
     tx_buffer_id_queue_.Dequeue();
   }
+  tx_counter_ = tx_doorbell_;
   if (tx_total_count) {
     fdf::Arena arena(0u);
     network::SharedAutoLock lock(&ifc_lock_);
@@ -912,7 +923,7 @@ void Gvnic::AbortPendingTX() {
             ifc_.buffer(arena)->CompleteTx(fidl::VectorView<netdev::wire::TxResult>::FromExternal(
                 completed_tx.data(), completed_tx.size()));
         !status.ok()) {
-      zxlogf(ERROR, "Failed to co complete %u TX buffers: %s", tx_total_count,
+      zxlogf(ERROR, "Failed to complete %u TX buffers: %s", tx_total_count,
              status.FormatDescription().c_str());
       // This is a critical error, recover by unbinding to allow the driver to reload if possible.
       DdkAsyncRemove();
@@ -928,9 +939,13 @@ void Gvnic::AbortPendingRX() {
   std::vector<netdev::wire::RxBuffer> completed_rx(rx_total_count);
   std::vector<netdev::wire::RxBufferPart> completed_rx_parts(rx_total_count);
   for (uint32_t i = 0; i < rx_total_count; i++) {
-    completed_rx_parts[i] = {.id = rx_space_buffer_queue_.Front().id};
+    completed_rx_parts[i] = {.id = rx_space_buffer_queue_.Front().id, .offset = 0, .length = 0};
     completed_rx[i] = {
-        .meta = {.frame_type = fuchsia_hardware_network::FrameType::kEthernet},
+        .meta =
+            {
+                .port = kNetworkPortId,
+                .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
+            },
         .data =
             fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(&completed_rx_parts[i], 1),
     };
@@ -954,8 +969,12 @@ void Gvnic::AbortPendingRX() {
 }
 
 void Gvnic::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
-  ZX_ASSERT_MSG(network_device_impl_started_, "NetworkDeviceImpl not Started.");
-  network_device_impl_started_ = false;
+  {
+    std::lock_guard rx_lock(rx_queue_lock_);
+    std::lock_guard tx_lock(tx_queue_lock_);
+    ZX_ASSERT_MSG(network_device_impl_started_, "NetworkDeviceImpl not Started.");
+    network_device_impl_started_ = false;
+  }
 
   AbortPendingTX();
   AbortPendingRX();
@@ -993,6 +1012,7 @@ void Gvnic::WriteBufferToCard(const netdev::wire::TxBuffer& buffer, uint8_t* dat
   network::SharedAutoLock lock(&vmo_lock_);
   const auto len = static_cast<uint32_t>(buffer.data[0].length);
   ZX_ASSERT_MSG(len == buffer.data[0].length, "Length did not fit in uint32_t");
+  ZX_ASSERT_MSG(len <= rounded_mtu_, "Length (%u) exceeds rounded MTU (%u)", len, rounded_mtu_);
   vmo_map_.at(buffer.data[0].vmo).read(data, buffer.data[0].offset, len);
 }
 
@@ -1031,7 +1051,6 @@ void Gvnic::SendTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_cou
 }
 
 void Gvnic::EnqueueTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count) {
-  std::lock_guard lock(tx_queue_lock_);
   for (uint32_t i = 0; i < buf_count; i++) {
     ZX_ASSERT_MSG(buf_list[i].data.size() == 1, "Buffer %u has count %lu (max is 1)", i,
                   buf_list[i].data.size());
@@ -1045,56 +1064,100 @@ void Gvnic::FlushTXBuffers() {
     return tx_buffer_id_queue_.Count();
   };
   const auto initial_queue_count = get_queue_count();
-  if (initial_queue_count < (tx_ring_len_ / 2)) {
-    // Don't bother to complete the tx buffers until half (or more) are used.
-    return;
-  }
 
   fdf::Arena arena(0u);
   do {
-    const uint32_t counter = ReadCounter(tx_queue_resources_->counter_index);
-    const uint32_t count = counter - tx_counter_;
-    if (count == 0) {
-      // Nothing to do.
-      continue;
-    }
-    tx_counter_ = counter;
-
-    std::vector<netdev::wire::TxResult> completed_tx(count);
-    for (uint32_t i = 0; i < count; i++) {
+    std::vector<netdev::wire::TxResult> completed_tx;
+    {
       std::lock_guard tx_lock(tx_queue_lock_);
-      completed_tx[i] = {
-          .id = tx_buffer_id_queue_.Front(),
-          .status = ZX_OK,
-      };
-      tx_buffer_id_queue_.Dequeue();
+      if (!network_device_impl_started_) {
+        return;
+      }
+      const uint32_t counter = ReadCounter(tx_queue_resources_->counter_index);
+      const uint32_t count = counter - tx_counter_;
+      if (count == 0) {
+        // Nothing to do.
+        continue;
+      }
+      tx_counter_ = counter;
+
+      completed_tx.resize(count);
+      for (uint32_t i = 0; i < count; i++) {
+        completed_tx[i] = {
+            .id = tx_buffer_id_queue_.Front(),
+            .status = ZX_OK,
+        };
+        tx_buffer_id_queue_.Dequeue();
+      }
     }
     network::SharedAutoLock lock(&ifc_lock_);
-    if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteTx(
-            fidl::VectorView<netdev::wire::TxResult>::FromExternal(completed_tx.data(), count));
+    if (fidl::OneWayStatus status =
+            ifc_.buffer(arena)->CompleteTx(fidl::VectorView<netdev::wire::TxResult>::FromExternal(
+                completed_tx.data(), completed_tx.size()));
         !status.ok()) {
-      zxlogf(ERROR, "Failed to complete %u tx buffers: %s", count,
+      zxlogf(ERROR, "Failed to complete %zu tx buffers: %s", completed_tx.size(),
              status.FormatDescription().c_str());
       // This is a critical error, recover by unbinding to allow the driver to reload if possible.
       DdkAsyncRemove();
       return;
     }
-    // Don't give up until at least one buffer is available. Yeah, this is pretty ugly, but in
-    // practice, this is never actually needed. The card returns completed tx buffers WAY faster
-    // than they are sent.
-  } while (unlikely(initial_queue_count >= tx_ring_len_ && get_queue_count() >= tx_ring_len_));
+    // Don't give up until at least half the ring is available.
+  } while (unlikely(initial_queue_count >= (tx_ring_len_ / 2) &&
+                    get_queue_count() >= (tx_ring_len_ / 2)));
 }
 
 void Gvnic::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* request, fdf::Arena& arena,
                     QueueTxCompleter::Sync& completer) {
-  SendTXBuffers(request->buffers.data(), request->buffers.size());
-  EnqueueTXBuffers(request->buffers.data(), request->buffers.size());
+  {
+    std::lock_guard tx_lock(tx_queue_lock_);
+    if (!network_device_impl_started_) {
+      std::vector<netdev::wire::TxResult> completed_tx(request->buffers.size());
+      for (size_t i = 0; i < request->buffers.size(); i++) {
+        completed_tx[i] = {
+            .id = request->buffers[i].id,
+            .status = ZX_ERR_UNAVAILABLE,
+        };
+      }
+      if (!completed_tx.empty()) {
+        network::SharedAutoLock lock(&ifc_lock_);
+        [[maybe_unused]] fidl::OneWayStatus status =
+            ifc_.buffer(arena)->CompleteTx(fidl::VectorView<netdev::wire::TxResult>::FromExternal(
+                completed_tx.data(), completed_tx.size()));
+      }
+      return;
+    }
+    EnqueueTXBuffers(request->buffers.data(), request->buffers.size());
+    SendTXBuffers(request->buffers.data(), request->buffers.size());
+  }
   FlushTXBuffers();
 }
 
 void Gvnic::QueueRxSpace(netdev::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
                          fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) {
   std::lock_guard rx_lock(rx_queue_lock_);
+  if (!network_device_impl_started_) {
+    const size_t count = request->buffers.size();
+    std::vector<netdev::wire::RxBuffer> completed_rx(count);
+    std::vector<netdev::wire::RxBufferPart> completed_rx_parts(count);
+    for (size_t i = 0; i < count; i++) {
+      completed_rx_parts[i] = {.id = request->buffers[i].id, .offset = 0, .length = 0};
+      completed_rx[i] = {
+          .meta =
+              {
+                  .port = kNetworkPortId,
+                  .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
+              },
+          .data =
+              fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(&completed_rx_parts[i], 1),
+      };
+    }
+    if (count > 0) {
+      network::SharedAutoLock lock(&ifc_lock_);
+      [[maybe_unused]] fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteRx(
+          fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(completed_rx.data(), count));
+    }
+    return;
+  }
   for (const auto& buffer : request->buffers) {
     rx_space_buffer_queue_.Enqueue(buffer);
   }
@@ -1114,9 +1177,12 @@ void Gvnic::PrepareVmo(netdev::wire::NetworkDeviceImplPrepareVmoRequest* request
 
 void Gvnic::ReleaseVmo(netdev::wire::NetworkDeviceImplReleaseVmoRequest* request, fdf::Arena& arena,
                        ReleaseVmoCompleter::Sync& completer) {
-  fbl::AutoLock lock(&vmo_lock_);
-  const auto num_erased = vmo_map_.erase(request->id);
-  ZX_ASSERT_MSG(num_erased == 1, "Expected to erase one vmo, instead erased %lu.", num_erased);
+  {
+    fbl::AutoLock lock(&vmo_lock_);
+    const auto num_erased = vmo_map_.erase(request->id);
+    ZX_ASSERT_MSG(num_erased == 1, "Expected to erase one vmo, instead erased %lu.", num_erased);
+  }
+  completer.buffer(arena).Reply();
 }
 
 // ------- NetworkPort -------
@@ -1139,10 +1205,14 @@ void Gvnic::GetInfo(fdf::Arena& arena,
 }
 
 void Gvnic::GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) {
+  fuchsia_hardware_network::wire::StatusFlags flags;
+  if (READ_REG_FROM_MMIO_TO_LOCAL_AND_RETURN_VALUE(dev_status) & GVNIC_DEVICE_STATUS_LINK_STATUS) {
+    flags = fuchsia_hardware_network::wire::StatusFlags::kOnline;
+  }
   fuchsia_hardware_network::wire::PortStatus status =
       fuchsia_hardware_network::wire::PortStatus::Builder(arena)
           .mtu(dev_descr_.mtu)
-          .flags(fuchsia_hardware_network::wire::StatusFlags::kOnline)
+          .flags(flags)
           .Build();
   completer.buffer(arena).Reply(status);
 }
@@ -1184,6 +1254,7 @@ void Gvnic::SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest
                 "unsupported mode %u", static_cast<uint32_t>(request->mode));
   ZX_ASSERT_MSG(request->multicast_macs.size() == 0, "unsupported multicast count %zu",
                 request->multicast_macs.size());
+  completer.buffer(arena).Reply();
 }
 
 static zx_driver_ops_t gvnic_driver_ops = []() -> zx_driver_ops_t {
