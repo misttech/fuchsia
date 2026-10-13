@@ -908,6 +908,7 @@ pub struct AsyncBlockService<I: Interface + ?Sized> {
     interface: Arc<I>,
     allocator: Arc<BufferAllocator>,
     block_size: u32,
+    max_transfer_bytes: usize,
     scope: fasync::ScopeHandle,
 }
 
@@ -924,7 +925,7 @@ impl<I: Interface + ?Sized> AsyncBlockService<I> {
             std::cmp::max(block_size as usize, zx::system_get_page_size() as usize),
             source,
         ));
-        Ok(Self { interface, allocator, block_size, scope })
+        Ok(Self::new_with_allocator(interface, block_size, allocator, scope))
     }
 
     pub fn new_with_allocator(
@@ -933,7 +934,18 @@ impl<I: Interface + ?Sized> AsyncBlockService<I> {
         allocator: Arc<BufferAllocator>,
         scope: fasync::ScopeHandle,
     ) -> Self {
-        Self { interface, allocator, block_size, scope }
+        let max_transfer_bytes = interface
+            .get_info()
+            .max_transfer_blocks()
+            .map(|blocks| {
+                let bytes = (blocks.get() as usize).saturating_mul(block_size as usize);
+                std::cmp::max(
+                    bytes & !(mapping::BLOCK_SIZE as usize - 1),
+                    mapping::BLOCK_SIZE as usize,
+                )
+            })
+            .unwrap_or(MAX_READ_BUFFER_SIZE);
+        Self { interface, allocator, block_size, max_transfer_bytes, scope }
     }
 
     pub fn interface(&self) -> &Arc<I> {
@@ -947,10 +959,10 @@ impl<I: Interface + ?Sized> AsyncBlockService<I> {
 
 impl<I: Interface + ?Sized> BlockService for AsyncBlockService<I> {
     fn allocate_buffer(&self, max_len: usize) -> OwnedBuffer {
-        let max_len = std::cmp::min(
-            std::cmp::min(max_len, MAX_READ_BUFFER_SIZE),
-            self.allocator.buffer_source().size(),
-        );
+        let max_len = max_len
+            .min(MAX_READ_BUFFER_SIZE)
+            .min(self.max_transfer_bytes)
+            .min(self.allocator.buffer_source().size());
         self.allocator.allocate_buffer_sync_owned(max_len)
     }
 

@@ -20,6 +20,7 @@ pub struct DefaultCallbackBlockService<I: Interface + ?Sized> {
     orchestrator: Weak<I::Orchestrator>,
     allocator: Arc<BufferAllocator>,
     block_size: u32,
+    max_transfer_bytes: usize,
 }
 
 impl<I: Interface + ?Sized> DefaultCallbackBlockService<I> {
@@ -33,12 +34,29 @@ impl<I: Interface + ?Sized> DefaultCallbackBlockService<I> {
     ) -> Self {
         let sm: &SessionManager<I> = orchestrator.as_ref().borrow();
         let block_size = sm.block_size();
+        let max_transfer_bytes = sm
+            .interface
+            .get_info()
+            .max_transfer_blocks()
+            .map(|blocks| {
+                let bytes = (blocks.get() as usize).saturating_mul(block_size as usize);
+                std::cmp::max(
+                    bytes & !(mapping::BLOCK_SIZE as usize - 1),
+                    mapping::BLOCK_SIZE as usize,
+                )
+            })
+            .unwrap_or(MAX_READ_BUFFER_SIZE);
         let source = BufferSource::new(pool_capacity);
         let allocator = Arc::new(BufferAllocator::new(
             std::cmp::max(block_size as usize, zx::system_get_page_size() as usize),
             source,
         ));
-        Self { orchestrator: Arc::downgrade(orchestrator), allocator, block_size }
+        Self {
+            orchestrator: Arc::downgrade(orchestrator),
+            allocator,
+            block_size,
+            max_transfer_bytes,
+        }
     }
 
     pub fn orchestrator(&self) -> Option<Arc<I::Orchestrator>> {
@@ -52,10 +70,10 @@ impl<I: Interface + ?Sized> DefaultCallbackBlockService<I> {
 
 impl<I: Interface + ?Sized> BlockService for DefaultCallbackBlockService<I> {
     fn allocate_buffer(&self, max_len: usize) -> OwnedBuffer {
-        let max_len = std::cmp::min(
-            std::cmp::min(max_len, MAX_READ_BUFFER_SIZE),
-            self.allocator.buffer_source().size(),
-        );
+        let max_len = max_len
+            .min(MAX_READ_BUFFER_SIZE)
+            .min(self.max_transfer_bytes)
+            .min(self.allocator.buffer_source().size());
         self.allocator.allocate_buffer_sync_owned(max_len)
     }
 
@@ -266,5 +284,33 @@ mod tests {
         session_manager.complete_request(req.request_id, Err(zx::Status::IO));
 
         recv.await.unwrap();
+    }
+
+    #[test]
+    fn test_default_callback_block_service_respects_max_transfer_blocks() {
+        struct MaxTransferInterface {
+            max_transfer_blocks: Option<std::num::NonZero<u32>>,
+        }
+        impl Interface for MaxTransferInterface {
+            type Orchestrator = SessionManager<Self>;
+            fn get_info(&self) -> Cow<'_, DeviceInfo> {
+                Cow::Owned(DeviceInfo::Block(BlockInfo {
+                    block_count: 1024,
+                    max_transfer_blocks: self.max_transfer_blocks,
+                    device_flags: fblock::DeviceFlag::empty(),
+                }))
+            }
+            fn spawn_session(&self, _session: Arc<Session<Self>>) {}
+            fn on_requests(&self, _requests: &[Request]) {}
+        }
+
+        // 16 blocks * 512 bytes = 8192 bytes max transfer size.
+        let interface =
+            Arc::new(MaxTransferInterface { max_transfer_blocks: std::num::NonZero::new(16) });
+        let session_manager = Arc::new(SessionManager::new(interface, BLOCK_SIZE));
+        let service = session_manager.into_block_service(&session_manager);
+
+        let buf = service.allocate_buffer(64 * 1024);
+        assert_eq!(buf.len(), 8192);
     }
 }
