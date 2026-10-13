@@ -1763,6 +1763,90 @@ TEST_F(VsockUsbTest, CanceledRxCompletionWhileOnlineReturnsToPoolWithoutRequeue)
 
   UnconfigureDevice();
 }
+
+TEST_F(VsockUsbTest, SuspendDrainInspectAndEventHistory) {
+  auto expect_bool = [](const inspect::NodeValue& node, const char* name, bool expected) {
+    const auto* prop = node.get_property<inspect::BoolPropertyValue>(name);
+    ASSERT_NE(prop, nullptr) << name;
+    EXPECT_EQ(prop->value(), expected) << name;
+  };
+  auto expect_uint = [](const inspect::NodeValue& node, const char* name, uint64_t expected) {
+    const auto* prop = node.get_property<inspect::UintPropertyValue>(name);
+    ASSERT_NE(prop, nullptr) << name;
+    EXPECT_EQ(prop->value(), expected) << name;
+  };
+  auto expect_str = [](const inspect::NodeValue& node, const char* name, const char* expected) {
+    const auto* prop = node.get_property<inspect::StringPropertyValue>(name);
+    ASSERT_NE(prop, nullptr) << name;
+    EXPECT_EQ(prop->value(), expected) << name;
+  };
+
+  ConfigureDevice();
+
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+    const auto* vsock = hierarchy.GetByPath({"vsock-usb"});
+    ASSERT_NE(vsock, nullptr);
+    ASSERT_NO_FATAL_FAILURE(expect_bool(vsock->node(), "online", true));
+    ASSERT_NO_FATAL_FAILURE(expect_str(vsock->node(), "state", "Running"));
+    ASSERT_NO_FATAL_FAILURE(expect_bool(vsock->node(), "configured", true));
+    ASSERT_NO_FATAL_FAILURE(expect_bool(vsock->node(), "unconfiguring", false));
+    ASSERT_NO_FATAL_FAILURE(expect_uint(vsock->node(), "set_configured_true_count", 1u));
+
+    for (const char* ep_name : {"bulk_in", "bulk_out"}) {
+      const auto* ep = hierarchy.GetByPath({"vsock-usb", ep_name});
+      ASSERT_NE(ep, nullptr) << ep_name;
+      ASSERT_NO_FATAL_FAILURE(expect_bool(ep->node(), "cancelled", false));
+      const auto* total = ep->node().get_property<inspect::UintPropertyValue>("total_requests");
+      ASSERT_NE(total, nullptr) << ep_name;
+      EXPECT_GT(total->value(), 0u);
+    }
+  });
+
+  UnconfigureDevice();
+
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+    const auto* vsock = hierarchy.GetByPath({"vsock-usb"});
+    ASSERT_NE(vsock, nullptr);
+    ASSERT_NO_FATAL_FAILURE(expect_bool(vsock->node(), "online", false));
+    ASSERT_NO_FATAL_FAILURE(expect_str(vsock->node(), "state", "Unconfigured"));
+    ASSERT_NO_FATAL_FAILURE(expect_bool(vsock->node(), "configured", false));
+    ASSERT_NO_FATAL_FAILURE(expect_bool(vsock->node(), "unconfiguring", false));
+    ASSERT_NO_FATAL_FAILURE(expect_uint(vsock->node(), "set_configured_false_count", 1u));
+
+    const auto* func_events = hierarchy.GetByPath({"vsock-usb", "event_history"});
+    ASSERT_NE(func_events, nullptr);
+    std::vector<std::string> events;
+    for (const auto& child : func_events->children()) {
+      const auto* ev = child.node().get_property<inspect::StringPropertyValue>("event");
+      ASSERT_NE(ev, nullptr);
+      events.push_back(ev->value());
+    }
+    EXPECT_THAT(events,
+                ::testing::ElementsAre("SetConfigured(true)", "SetConfigured(false) start",
+                                       "DisableEndpoints complete", "SetConfigured(false) reply"));
+
+    for (const char* ep_name : {"bulk_in", "bulk_out"}) {
+      const auto* ep = hierarchy.GetByPath({"vsock-usb", ep_name});
+      ASSERT_NE(ep, nullptr) << ep_name;
+      ASSERT_NO_FATAL_FAILURE(expect_bool(ep->node(), "cancelled", true));
+      ASSERT_NO_FATAL_FAILURE(expect_uint(ep->node(), "in_flight_requests", 0u));
+
+      const auto* ep_events = hierarchy.GetByPath({"vsock-usb", ep_name, "event_history"});
+      ASSERT_NE(ep_events, nullptr) << ep_name;
+      std::vector<std::string> ep_event_list;
+      for (const auto& child : ep_events->children()) {
+        const auto* ev = child.node().get_property<inspect::StringPropertyValue>("event");
+        ASSERT_NE(ev, nullptr);
+        ep_event_list.push_back(ev->value());
+      }
+      EXPECT_THAT(ep_event_list, ::testing::Contains("CancelAll complete"));
+      EXPECT_THAT(ep_event_list, ::testing::Not(::testing::Contains("SetConfigured(true)")));
+      EXPECT_THAT(ep_event_list, ::testing::Not(::testing::Contains("SetConfigured(false) start")));
+    }
+  });
+}
 // NOLINTEND(readability-container-data-pointer)
 // NOLINTEND(readability-convert-member-functions-to-static)
 // NOLINTEND(misc-use-anonymous-namespace)

@@ -247,15 +247,11 @@ class UsbAdbDevice : public fdf::DriverBase2,
   // Inspect diagnostics
   std::optional<inspect::ComponentInspector> component_inspector_;
   inspect::Node inspect_node_;
-  inspect::StringProperty state_property_;
-  inspect::BoolProperty online_property_;
+  usb_inspect::FunctionDriverInspect function_inspect_;
   usb_inspect::EndpointInspect bulk_in_inspect_;
   usb_inspect::EndpointInspect bulk_out_inspect_;
 
-  void RecordEvent(const std::string& event_name) {
-    bulk_in_inspect_.RecordEvent(event_name);
-    bulk_out_inspect_.RecordEvent(event_name);
-  }
+  void RecordEvent(std::string_view event_name) { function_inspect_.RecordEvent(event_name); }
   void UpdateQueueStats() {
     bulk_in_inspect_.UpdateTxQueue(tx_pending_reqs_.size());
     bulk_out_inspect_.UpdateRxQueue(rx_requests_.size());

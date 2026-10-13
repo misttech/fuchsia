@@ -190,10 +190,11 @@ zx::result<> VsockUsb::Start(fdf::DriverContext context) {
   }
 
   inspect_node_ = inspector().root().CreateChild("vsock-usb");
-  online_property_ = inspect_node_.CreateBool("online", false);
-  state_property_ = inspect_node_.CreateString("state", "Unconfigured");
+  function_inspect_.Init(inspect_node_, "Unconfigured");
   bulk_in_inspect_.Init(inspect_node_, "bulk_in");
+  bulk_in_inspect_.SetPoolCountsCallback([this]() { return bulk_in_ep_.GetPoolCounts(); });
   bulk_out_inspect_.Init(inspect_node_, "bulk_out");
+  bulk_out_inspect_.SetPoolCountsCallback([this]() { return bulk_out_ep_.GetPoolCounts(); });
   throughput_tracker_.emplace(dispatcher(), [this](zx::duration delta) {
     bulk_in_inspect_.MeasureThroughput(delta);
     bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
@@ -283,7 +284,12 @@ zx_status_t VsockUsb::ConfigureEndpoints() {
   }
 
   endpoints_configured_ = true;
-  return StartSocketSession();
+  zx_status_t status = StartSocketSession();
+  if (status == ZX_OK) {
+    bulk_out_inspect_.SetCancelled(false);
+    bulk_in_inspect_.SetCancelled(false);
+  }
+  return status;
 }
 
 zx_status_t VsockUsb::StartSocketSession() {
@@ -388,6 +394,7 @@ void VsockUsb::CancelAllEndpoints() {
   if (bulk_out_ep_.client().is_valid()) {
     bulk_out_ep_->CancelAll().Then([this](fidl::Result<fendpoint::Endpoint::CancelAll>& result) {
       bulk_out_cancelled_ = true;
+      bulk_out_inspect_.OnCancelAllComplete();
       if (result.is_error()) {
         if (IsExpectedFidlDisconnect(result.error_value())) {
           FDF_SLOG(
@@ -406,10 +413,12 @@ void VsockUsb::CancelAllEndpoints() {
     });
   } else {
     bulk_out_cancelled_ = true;
+    bulk_out_inspect_.SetCancelled(true);
   }
   if (bulk_in_ep_.client().is_valid()) {
     bulk_in_ep_->CancelAll().Then([this](fidl::Result<fendpoint::Endpoint::CancelAll>& result) {
       bulk_in_cancelled_ = true;
+      bulk_in_inspect_.OnCancelAllComplete();
       if (result.is_error()) {
         if (IsExpectedFidlDisconnect(result.error_value())) {
           FDF_SLOG(
@@ -428,6 +437,7 @@ void VsockUsb::CancelAllEndpoints() {
     });
   } else {
     bulk_in_cancelled_ = true;
+    bulk_in_inspect_.SetCancelled(true);
   }
 }
 
@@ -439,6 +449,8 @@ void VsockUsb::CheckUnconfigureComplete() {
     return;
   }
   zx_status_t status = DisableEndpoints();
+  function_inspect_.RecordEvent("DisableEndpoints complete");
+  function_inspect_.OnUnconfigureComplete();
   auto completer = std::move(*unconfigure_completer_);
   unconfigure_completer_.reset();
   completer.Reply(zx::make_result(status));
@@ -447,6 +459,9 @@ void VsockUsb::CheckUnconfigureComplete() {
     auto cfg_completer = std::move(*pending_configure_completer_);
     pending_configure_completer_.reset();
     zx_status_t cfg_status = ConfigureEndpoints();
+    if (cfg_status == ZX_OK) {
+      function_inspect_.OnConfigured();
+    }
     cfg_completer.Reply(zx::make_result(cfg_status));
   }
 }
@@ -477,6 +492,9 @@ void VsockUsb::SetConfigured(SetConfiguredRequest& request,
       return;
     }
     zx_status_t status = ConfigureEndpoints();
+    if (status == ZX_OK) {
+      function_inspect_.OnConfigured();
+    }
     completer.Reply(zx::make_result(status));
     return;
   }
@@ -492,6 +510,7 @@ void VsockUsb::SetConfigured(SetConfiguredRequest& request,
     return;
   }
 
+  function_inspect_.OnUnconfigureStart();
   UnconfigureEndpoints(/*disable_immediately=*/false);
   unconfigure_completer_.emplace(completer.ToAsync());
   CheckUnconfigureComplete();
@@ -944,11 +963,6 @@ void VsockUsb::Shutdown(fit::function<void()> callback) {
     throughput_tracker_->Stop();
   }
 
-  if (unconfigure_completer_.has_value()) {
-    unconfigure_completer_->Reply(zx::ok());
-    unconfigure_completer_.reset();
-  }
-
   if (pending_configure_completer_.has_value()) {
     pending_configure_completer_->Reply(zx::error(ZX_ERR_CANCELED));
     pending_configure_completer_.reset();
@@ -970,6 +984,15 @@ void VsockUsb::ShutdownComplete() {
     if (state->IsFinished() || !bulk_out_cancelled_ || !bulk_in_cancelled_ ||
         HasPendingRequests()) {
       return;
+    }
+    if (unconfigure_completer_.has_value()) {
+      (void)DisableEndpoints();
+      function_inspect_.RecordEvent("DisableEndpoints complete");
+      function_inspect_.OnUnconfigureComplete();
+      unconfigure_completer_->Reply(zx::ok());
+      unconfigure_completer_.reset();
+    } else {
+      function_inspect_.SetConfigured(false);
     }
     bulk_in_ep_.Close();
     bulk_out_ep_.Close();

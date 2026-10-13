@@ -57,38 +57,42 @@ class EndpointInspect {
             size_t event_capacity = kDefaultEventCapacity,
             size_t transfer_snapshot_capacity = kDefaultTransferCapacity);
   // Update TX pending requests count.
-  void UpdateTxQueue(size_t pending_requests) {
-    tx_pending_requests_.store(pending_requests, std::memory_order_relaxed);
-  }
+  void UpdateTxQueue(size_t pending_requests) { tx_pending_requests_ = pending_requests; }
 
   // Update RX pending requests count.
-  void UpdateRxQueue(size_t pending_requests) {
-    rx_pending_requests_.store(pending_requests, std::memory_order_relaxed);
-  }
+  void UpdateRxQueue(size_t pending_requests) { rx_pending_requests_ = pending_requests; }
 
   void UpdateRxPendingProcessing(size_t pending_requests) {
-    rx_pending_processing_.store(pending_requests, std::memory_order_relaxed);
+    rx_pending_processing_ = pending_requests;
   }
 
-  void AddTxBytes(size_t bytes) { total_bytes_tx_.fetch_add(bytes, std::memory_order_relaxed); }
+  void AddTxBytes(size_t bytes) { total_bytes_tx_ += bytes; }
 
-  void AddRxBytes(size_t bytes) { total_bytes_rx_.fetch_add(bytes, std::memory_order_relaxed); }
+  void AddRxBytes(size_t bytes) { total_bytes_rx_ += bytes; }
 
-  void AddFailedTxBytes(size_t bytes) {
-    failed_bytes_tx_.fetch_add(bytes, std::memory_order_relaxed);
+  void AddFailedTxBytes(size_t bytes) { failed_bytes_tx_ += bytes; }
+
+  void AddFailedRxBytes(size_t bytes) { failed_bytes_rx_ += bytes; }
+
+  void SetMaxByteRate(uint64_t max_rate) { max_bytes_per_second_ = max_rate; }
+
+  using PoolCountsCallback = fit::function<std::pair<size_t, size_t>()>;
+
+  void SetPoolCountsCallback(PoolCountsCallback cb) {
+    std::scoped_lock _(lock_);
+    pool_counts_cb_ = std::move(cb);
   }
 
-  void AddFailedRxBytes(size_t bytes) {
-    failed_bytes_rx_.fetch_add(bytes, std::memory_order_relaxed);
-  }
+  void SetCancelled(bool cancelled) { cancelled_ = cancelled; }
 
-  void SetMaxByteRate(uint64_t max_rate) {
-    max_bytes_per_second_.store(max_rate, std::memory_order_relaxed);
+  void OnCancelAllComplete() {
+    SetCancelled(true);
+    RecordEvent("CancelAll complete");
   }
 
   void MeasureThroughput(zx::duration elapsed);
 
-  void RecordEvent(const std::string& event_name);
+  void RecordEvent(std::string_view event_name);
 
   // Captures an independent cumulative transfer stats snapshot at current boot time.
   // Note: These values represent the totals and max rate since boot, not the
@@ -96,12 +100,12 @@ class EndpointInspect {
   // Called automatically by RecordEvent(), or directly by drivers at any point.
   void SnapshotTransferStats();
 
-  uint64_t total_bytes_tx_val() const { return total_bytes_tx_.load(std::memory_order_relaxed); }
-  uint64_t total_bytes_rx_val() const { return total_bytes_rx_.load(std::memory_order_relaxed); }
+  uint64_t total_bytes_tx_val() const { return total_bytes_tx_; }
+  uint64_t total_bytes_rx_val() const { return total_bytes_rx_; }
 
-  uint64_t failed_bytes_tx_val() const { return failed_bytes_tx_.load(std::memory_order_relaxed); }
+  uint64_t failed_bytes_tx_val() const { return failed_bytes_tx_; }
 
-  uint64_t failed_bytes_rx_val() const { return failed_bytes_rx_.load(std::memory_order_relaxed); }
+  uint64_t failed_bytes_rx_val() const { return failed_bytes_rx_; }
 
  private:
   struct EventLogEntry {
@@ -117,7 +121,7 @@ class EndpointInspect {
   void SnapshotTransferStatsLocked(zx_instant_boot_t raw_time) __TA_REQUIRES(lock_);
 
   mutable std::mutex lock_;
-  inspect::LazyNode lazy_node_;
+  PoolCountsCallback pool_counts_cb_ __TA_GUARDED(lock_);
 
   std::atomic<uint64_t> tx_pending_requests_{0};
   std::atomic<uint64_t> rx_pending_requests_{0};
@@ -127,6 +131,7 @@ class EndpointInspect {
   std::atomic<uint64_t> failed_bytes_tx_{0};
   std::atomic<uint64_t> failed_bytes_rx_{0};
   std::atomic<uint64_t> max_bytes_per_second_{0};
+  std::atomic<bool> cancelled_{false};
 
   std::deque<EventLogEntry> event_history_ __TA_GUARDED(lock_);
   size_t event_history_capacity_ = kDefaultEventCapacity;
@@ -137,6 +142,9 @@ class EndpointInspect {
   size_t transfer_snapshots_index_ __TA_GUARDED(lock_) = 0;
 
   std::atomic<uint64_t> last_total_bytes_val_{0};
+
+  // Must remain last so its destructor unregisters the lazy callback before members are destroyed.
+  inspect::LazyNode lazy_node_;
 };
 
 // Class to manage common DCI/peripheral controller Inspect metrics.
@@ -193,7 +201,6 @@ class DciInspect {
   };
 
   mutable std::mutex lock_;
-  inspect::LazyNode lazy_node_;
 
   std::string state_ __TA_GUARDED(lock_) = "unknown";
   bool connected_ __TA_GUARDED(lock_) = false;
@@ -207,6 +214,9 @@ class DciInspect {
   std::deque<ControlTransferLogEntry> control_history_ __TA_GUARDED(lock_);
   size_t control_history_capacity_ = kDefaultControlTransferCapacity;
   size_t control_history_index_ __TA_GUARDED(lock_) = 0;
+
+  // Must remain last so its destructor unregisters the lazy callback before members are destroyed.
+  inspect::LazyNode lazy_node_;
 };
 
 // Class to manage common USB function metrics (configuration, interface descriptors, events).
@@ -232,7 +242,7 @@ class FunctionInspect {
     std::string event;
   };
 
-  inspect::LazyNode lazy_node_;
+  mutable std::mutex lock_;
 
   uint8_t index_ __TA_GUARDED(lock_) = 0;
   uint8_t configuration_ __TA_GUARDED(lock_) = 0;
@@ -242,10 +252,89 @@ class FunctionInspect {
   uint8_t interface_protocol_ __TA_GUARDED(lock_) = 0;
   std::vector<uint8_t> descriptors_ __TA_GUARDED(lock_);
 
-  mutable std::mutex lock_;
   std::deque<EventLogEntry> event_history_ __TA_GUARDED(lock_);
   size_t event_history_capacity_ = kDefaultEventCapacity;
   size_t event_history_index_ __TA_GUARDED(lock_) = 0;
+
+  // Must remain last so its destructor unregisters the lazy callback before members are destroyed.
+  inspect::LazyNode lazy_node_;
+};
+
+// Class to manage common USB function-driver state, unconfigure/suspend drain metrics,
+// and a single function-level event_history log using pure on-demand lazy Inspect nodes.
+class FunctionDriverInspect {
+ public:
+  static constexpr size_t kDefaultEventCapacity = 40;
+
+  FunctionDriverInspect() = default;
+
+  void Init(inspect::Node& driver_node,
+            std::optional<std::string_view> initial_state = std::nullopt,
+            size_t event_capacity = kDefaultEventCapacity);
+
+  void SetOnline(bool online) { online_ = online; }
+
+  void SetState(std::string_view state) {
+    std::scoped_lock _(lock_);
+    state_ = std::string(state);
+  }
+
+  void SetConfigured(bool configured) {
+    std::scoped_lock _(lock_);
+    configured_ = configured;
+    if (!configured) {
+      unconfiguring_ = false;
+      unconfigure_start_boot_time_ = 0;
+    }
+  }
+
+  // Marks USB configuration active, clears unconfiguring, increments set_configured_true_count,
+  // and logs "SetConfigured(true)".
+  void OnConfigured();
+
+  // Marks unconfigure active, increments set_configured_false_count, records start timestamp,
+  // and logs "SetConfigured(false) start".
+  void OnUnconfigureStart();
+
+  bool is_unconfiguring() const { return unconfiguring_; }
+
+  void ResetUnconfiguring() {
+    unconfiguring_ = false;
+    unconfigure_start_boot_time_ = 0;
+  }
+
+  // Marks unconfigure complete, clears unconfiguring & configured, computes duration since
+  // OnUnconfigureStart() (or 0 if `immediate` is true), and logs "SetConfigured(false) reply".
+  void OnUnconfigureComplete(bool immediate = false);
+
+  void RecordEvent(std::string_view event_name);
+
+ private:
+  struct EventLogEntry {
+    zx_instant_boot_t timestamp;
+    std::string event;
+  };
+
+  void RecordEventLocked(std::string_view event_name, zx_instant_boot_t raw_time)
+      __TA_REQUIRES(lock_);
+
+  mutable std::mutex lock_;
+
+  std::atomic<bool> online_{false};
+  std::atomic<bool> configured_{false};
+  std::atomic<bool> unconfiguring_{false};
+  std::atomic<uint64_t> set_configured_true_count_{0};
+  std::atomic<uint64_t> set_configured_false_count_{0};
+  std::atomic<int64_t> unconfigure_start_boot_time_{0};
+  std::atomic<int64_t> last_unconfigure_duration_ns_{0};
+
+  std::optional<std::string> state_ __TA_GUARDED(lock_);
+  std::deque<EventLogEntry> event_history_ __TA_GUARDED(lock_);
+  size_t event_history_capacity_ = kDefaultEventCapacity;
+  size_t event_history_index_ __TA_GUARDED(lock_) = 0;
+
+  // Must remain last so its destructor unregisters the lazy callback before members are destroyed.
+  inspect::LazyNode lazy_values_;
 };
 
 // Periodically triggers a measurement callback at a fixed interval to calculate throughput.

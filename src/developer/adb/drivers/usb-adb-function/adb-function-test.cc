@@ -890,9 +890,8 @@ TEST_F(UsbAdbTest, VerifyInspect) {
       usb_inspect::VerifyEndpointInspect(bulk_out, std::nullopt, 200, std::nullopt, 0, 200, 0);
   EXPECT_TRUE(err_out.is_ok()) << err_out.error_value();
 
-  // Verify events are logged
-  auto* event_history =
-      this->hierarchy().GetByPath({"usb-adb-function", "bulk_in", "event_history"});
+  // Verify function-level lifecycle events are logged under usb-adb-function/event_history
+  auto* event_history = this->hierarchy().GetByPath({"usb-adb-function", "event_history"});
   ASSERT_NE(nullptr, event_history);
   EXPECT_GT(event_history->children().size(), 0u);
 
@@ -1235,7 +1234,22 @@ TEST_F(UsbAdbTest, InspectStateTransitions) {
 }
 
 TEST_F(UsbAdbTest, InspectLifecycleEvents) {
-  auto has_event = [&](const char* endpoint_name, const std::string& expected_event) {
+  auto has_function_event = [&](const std::string& expected_event) {
+    const auto* event_history = this->hierarchy().GetByPath({"usb-adb-function", "event_history"});
+    if (event_history == nullptr) {
+      return false;
+    }
+    for (const auto& child : event_history->children()) {
+      const auto* time_prop = child.node().get_property<inspect::UintPropertyValue>("@time");
+      const auto* event_prop = child.node().get_property<inspect::StringPropertyValue>("event");
+      if (time_prop != nullptr && event_prop != nullptr && event_prop->value() == expected_event) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  auto has_endpoint_event = [&](const char* endpoint_name, const std::string& expected_event) {
     const auto* event_history =
         this->hierarchy().GetByPath({"usb-adb-function", endpoint_name, "event_history"});
     if (event_history == nullptr) {
@@ -1256,20 +1270,24 @@ TEST_F(UsbAdbTest, InspectLifecycleEvents) {
     driver_test_.RunInDriverContext(
         [&](UsbAdbDevice& dev) { inspector = UsbAdbTestHelper::GetInspector(dev); });
     ASSERT_NO_FATAL_FAILURE(ReadInspect(inspector));
-    EXPECT_TRUE(has_event("bulk_in", expected_event))
-        << "Missing event '" << expected_event << "' in bulk_in/event_history";
-    EXPECT_TRUE(has_event("bulk_out", expected_event))
-        << "Missing event '" << expected_event << "' in bulk_out/event_history";
+    EXPECT_TRUE(has_function_event(expected_event))
+        << "Missing event '" << expected_event << "' in usb-adb-function/event_history";
+    EXPECT_FALSE(has_endpoint_event("bulk_in", expected_event))
+        << "Function event '" << expected_event << "' unexpectedly duplicated in bulk_in";
+    EXPECT_FALSE(has_endpoint_event("bulk_out", expected_event))
+        << "Function event '" << expected_event << "' unexpectedly duplicated in bulk_out";
   };
 
-  // 1. StartAdb logs "adb_client_connected".
+  // 1. StartAdb logs "adb_client_connected" and configuring USB logs "SetConfigured(true)".
   auto usb_impl = NormalStartAdb();
   EventHandler handler;
   handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
   ExpectHandleOneEventSafe(usb_impl, handler);
   ASSERT_NO_FATAL_FAILURE(expect_lifecycle_event("adb_client_connected"));
+  ASSERT_NO_FATAL_FAILURE(expect_lifecycle_event("SetConfigured(true)"));
 
-  // 2. SetConfigured(false) while kOnline logs "usb_bus_disconnected: SetConfigured(false)".
+  // 2. SetConfigured(false) while kOnline logs unconfigure milestones on the function node
+  // and per-endpoint "CancelAll complete" on bulk_in and bulk_out.
   auto deconfig_result = iface_client_->SetConfigured({{
       .configured = false,
       .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
@@ -1277,6 +1295,51 @@ TEST_F(UsbAdbTest, InspectLifecycleEvents) {
   ASSERT_TRUE(deconfig_result.is_ok());
   WaitForState(State::kAwaitingUsbConnection);
   ASSERT_NO_FATAL_FAILURE(expect_lifecycle_event("usb_bus_disconnected: SetConfigured(false)"));
+  ASSERT_NO_FATAL_FAILURE(expect_lifecycle_event("SetConfigured(false) start"));
+  ASSERT_NO_FATAL_FAILURE(expect_lifecycle_event("DisableEndpoints complete"));
+  ASSERT_NO_FATAL_FAILURE(expect_lifecycle_event("SetConfigured(false) reply"));
+  EXPECT_TRUE(has_endpoint_event("bulk_in", "CancelAll complete"));
+  EXPECT_TRUE(has_endpoint_event("bulk_out", "CancelAll complete"));
+
+  {
+    inspect::Inspector inspector;
+    driver_test_.RunInDriverContext(
+        [&](UsbAdbDevice& dev) { inspector = UsbAdbTestHelper::GetInspector(dev); });
+    ASSERT_NO_FATAL_FAILURE(ReadInspect(inspector));
+    const auto* adb_node = hierarchy_->GetByPath({"usb-adb-function"});
+    ASSERT_NE(adb_node, nullptr);
+    const auto* cfg_prop = adb_node->node().get_property<inspect::BoolPropertyValue>("configured");
+    ASSERT_NE(cfg_prop, nullptr);
+    EXPECT_FALSE(cfg_prop->value());
+    const auto* uncfg_prop =
+        adb_node->node().get_property<inspect::BoolPropertyValue>("unconfiguring");
+    ASSERT_NE(uncfg_prop, nullptr);
+    EXPECT_FALSE(uncfg_prop->value());
+    const auto* true_cnt =
+        adb_node->node().get_property<inspect::UintPropertyValue>("set_configured_true_count");
+    ASSERT_NE(true_cnt, nullptr);
+    EXPECT_EQ(true_cnt->value(), 1u);
+    const auto* false_cnt =
+        adb_node->node().get_property<inspect::UintPropertyValue>("set_configured_false_count");
+    ASSERT_NE(false_cnt, nullptr);
+    EXPECT_EQ(false_cnt->value(), 1u);
+
+    for (const char* ep_name : {"bulk_in", "bulk_out"}) {
+      const auto* ep_node = hierarchy_->GetByPath({"usb-adb-function", ep_name});
+      ASSERT_NE(ep_node, nullptr) << ep_name;
+      const auto* canc = ep_node->node().get_property<inspect::BoolPropertyValue>("cancelled");
+      ASSERT_NE(canc, nullptr) << ep_name;
+      EXPECT_TRUE(canc->value());
+      const auto* inflight =
+          ep_node->node().get_property<inspect::UintPropertyValue>("in_flight_requests");
+      ASSERT_NE(inflight, nullptr) << ep_name;
+      EXPECT_EQ(inflight->value(), 0u);
+      const auto* total =
+          ep_node->node().get_property<inspect::UintPropertyValue>("total_requests");
+      ASSERT_NE(total, nullptr) << ep_name;
+      EXPECT_GT(total->value(), 0u);
+    }
+  }
 
   // 3. StopAdb logs "adb_client_disconnected: StopAdb".
   usb_impl = {};
@@ -1306,16 +1369,13 @@ TEST_F(UsbAdbTest, InspectLifecycleEvents) {
   iface_client_ = {};
   WaitConfigured();
   iface_client_ = {};
-  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
-      [&]() {
-        inspect::Inspector inspector;
-        driver_test_.RunInDriverContext(
-            [&](UsbAdbDevice& dev) { inspector = UsbAdbTestHelper::GetInspector(dev); });
-        ReadInspect(inspector);
-        return has_event("bulk_in", "usb_function_disconnected: unbind") &&
-               has_event("bulk_out", "usb_function_disconnected: unbind");
-      },
-      zx::sec(5)));
+  driver_test_.runtime().RunUntil([&]() {
+    inspect::Inspector inspector;
+    driver_test_.RunInDriverContext(
+        [&](UsbAdbDevice& dev) { inspector = UsbAdbTestHelper::GetInspector(dev); });
+    ReadInspect(inspector);
+    return has_function_event("usb_function_disconnected: unbind");
+  });
 
   // 6. Stopping the driver logs "driver_stopped".
   inspect::Inspector inspector;
@@ -1323,8 +1383,7 @@ TEST_F(UsbAdbTest, InspectLifecycleEvents) {
       [&](UsbAdbDevice& dev) { inspector = UsbAdbTestHelper::GetInspector(dev); });
   ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
   ASSERT_NO_FATAL_FAILURE(ReadInspect(inspector));
-  EXPECT_TRUE(has_event("bulk_in", "driver_stopped"));
-  EXPECT_TRUE(has_event("bulk_out", "driver_stopped"));
+  EXPECT_TRUE(has_function_event("driver_stopped"));
 }
 
 TEST_F(UsbAdbTest, StartAdbFailsWhileStopping) {

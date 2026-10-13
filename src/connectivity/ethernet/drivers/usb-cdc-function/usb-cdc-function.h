@@ -192,14 +192,6 @@ class UsbCdcFunction : public fdf::DriverBase2,
   std::string mac_addr_string_;
   fdf::WireClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> netdevice_ifc_;
 
-  std::optional<inspect::ComponentInspector> inspector_;
-  inspect::Node inspect_node_;
-  inspect::BoolProperty online_property_;
-  usb_inspect::EndpointInspect bulk_in_inspect_;
-  usb_inspect::EndpointInspect bulk_out_inspect_;
-
-  std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
-
   compat::SyncInitializedDeviceServer child_;
   std::shared_ptr<fdf::Namespace> incoming_;
 
@@ -355,6 +347,14 @@ class UsbCdcFunction : public fdf::DriverBase2,
               .b_interval = 0,
           },
   };
+
+  std::optional<inspect::ComponentInspector> inspector_;
+  inspect::Node inspect_node_;
+  usb_inspect::FunctionDriverInspect function_inspect_;
+  usb_inspect::EndpointInspect bulk_in_inspect_;
+  usb_inspect::EndpointInspect bulk_out_inspect_;
+  usb_inspect::EndpointInspect intr_inspect_;
+  std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
 };
 
 }  // namespace usb_cdc_function

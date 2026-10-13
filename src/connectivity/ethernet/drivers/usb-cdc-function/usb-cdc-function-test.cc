@@ -2496,5 +2496,94 @@ TEST_F(UsbCdcTest, StopWithInFlightTxConsumesSubsequentUsbCompletionWithoutError
       ExecuteMockNetworkTransaction(kBufferId2, sizeof(data), ZX_OK, complete_both_usb_requests));
 }
 
+TEST_F(UsbCdcTest, SuspendDrainInspectAndEventHistory) {
+  auto read_hierarchy = [&]() {
+    inspect::Hierarchy hierarchy;
+    driver_test_.RunInDriverContext([&](UsbCdcFunction& driver) {
+      hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+    });
+    return hierarchy;
+  };
+  auto expect_bool = [](const inspect::NodeValue& node, const char* name, bool expected) {
+    const auto* prop = node.get_property<inspect::BoolPropertyValue>(name);
+    ASSERT_NE(prop, nullptr) << name;
+    EXPECT_EQ(prop->value(), expected) << name;
+  };
+  auto expect_uint = [](const inspect::NodeValue& node, const char* name, uint64_t expected) {
+    const auto* prop = node.get_property<inspect::UintPropertyValue>(name);
+    ASSERT_NE(prop, nullptr) << name;
+    EXPECT_EQ(prop->value(), expected) << name;
+  };
+
+  StartNetworkDevice();
+  ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
+
+  {
+    auto hierarchy = read_hierarchy();
+    const auto* func = hierarchy.GetByPath({"usb-cdc-function"});
+    ASSERT_NE(func, nullptr);
+    ASSERT_NO_FATAL_FAILURE(expect_bool(func->node(), "online", true));
+    ASSERT_NO_FATAL_FAILURE(expect_bool(func->node(), "configured", true));
+    ASSERT_NO_FATAL_FAILURE(expect_bool(func->node(), "unconfiguring", false));
+    ASSERT_NO_FATAL_FAILURE(expect_uint(func->node(), "set_configured_true_count", 1u));
+
+    for (const char* ep_name : {"bulk_in", "bulk_out", "intr"}) {
+      const auto* ep = hierarchy.GetByPath({"usb-cdc-function", ep_name});
+      ASSERT_NE(ep, nullptr) << ep_name;
+      ASSERT_NO_FATAL_FAILURE(expect_bool(ep->node(), "cancelled", false));
+      const auto* total = ep->node().get_property<inspect::UintPropertyValue>("total_requests");
+      ASSERT_NE(total, nullptr) << ep_name;
+      EXPECT_GT(total->value(), 0u);
+    }
+  }
+
+  fidl::Result res = function_client_->SetConfigured({{
+      .configured = false,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined,
+  }});
+  ASSERT_TRUE(res.is_ok()) << res.error_value().FormatDescription();
+
+  {
+    auto hierarchy = read_hierarchy();
+    const auto* func = hierarchy.GetByPath({"usb-cdc-function"});
+    ASSERT_NE(func, nullptr);
+    ASSERT_NO_FATAL_FAILURE(expect_bool(func->node(), "online", false));
+    ASSERT_NO_FATAL_FAILURE(expect_bool(func->node(), "configured", false));
+    ASSERT_NO_FATAL_FAILURE(expect_bool(func->node(), "unconfiguring", false));
+    ASSERT_NO_FATAL_FAILURE(expect_uint(func->node(), "set_configured_false_count", 1u));
+
+    const auto* func_events = hierarchy.GetByPath({"usb-cdc-function", "event_history"});
+    ASSERT_NE(func_events, nullptr);
+    std::vector<std::string> events;
+    for (const auto& child : func_events->children()) {
+      const auto* ev = child.node().get_property<inspect::StringPropertyValue>("event");
+      ASSERT_NE(ev, nullptr);
+      events.push_back(ev->value());
+    }
+    EXPECT_THAT(events,
+                ::testing::ElementsAre("SetConfigured(true)", "SetConfigured(false) start",
+                                       "DisableEndpoints complete", "SetConfigured(false) reply"));
+
+    for (const char* ep_name : {"bulk_in", "bulk_out", "intr"}) {
+      const auto* ep = hierarchy.GetByPath({"usb-cdc-function", ep_name});
+      ASSERT_NE(ep, nullptr) << ep_name;
+      ASSERT_NO_FATAL_FAILURE(expect_bool(ep->node(), "cancelled", true));
+      ASSERT_NO_FATAL_FAILURE(expect_uint(ep->node(), "in_flight_requests", 0u));
+
+      const auto* ep_events = hierarchy.GetByPath({"usb-cdc-function", ep_name, "event_history"});
+      ASSERT_NE(ep_events, nullptr) << ep_name;
+      std::vector<std::string> ep_event_list;
+      for (const auto& child : ep_events->children()) {
+        const auto* ev = child.node().get_property<inspect::StringPropertyValue>("event");
+        ASSERT_NE(ev, nullptr);
+        ep_event_list.push_back(ev->value());
+      }
+      EXPECT_THAT(ep_event_list, ::testing::Contains("CancelAll complete"));
+      EXPECT_THAT(ep_event_list, ::testing::Not(::testing::Contains("SetConfigured(true)")));
+      EXPECT_THAT(ep_event_list, ::testing::Not(::testing::Contains("SetConfigured(false) start")));
+    }
+  }
+}
+
 }  // namespace
 }  // namespace usb_cdc_function

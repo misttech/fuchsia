@@ -87,11 +87,9 @@ void UsbAdbDevice::StopAdb(StopAdbCompleter::Sync& completer) {
 void UsbAdbDevice::SetState(State new_state) {
   zxlogf(INFO, "state_ = State::%s", StateToString(new_state).c_str());
   state_ = new_state;
-  if (state_property_) {
-    state_property_.Set(StateToString(state_));
-    if (online_property_) {
-      online_property_.Set(state_ == State::kOnline);
-    }
+  if (component_inspector_.has_value()) {
+    function_inspect_.SetState(StateToString(state_));
+    function_inspect_.SetOnline(state_ == State::kOnline);
     RecordEvent(std::string("state_changed: ") + StateToString(state_));
     UpdateQueueStats();
   }
@@ -148,6 +146,7 @@ void UsbAdbDevice::ResetOrStopUsb(State stop_state) {
   bulk_in_cancelled_ = false;
   bulk_out_cancelled_ = false;
 
+  const bool was_online = (state_ == State::kOnline);
   SetState(stop_state);
 
   // Cancel in-flight bulk endpoint requests.
@@ -155,6 +154,7 @@ void UsbAdbDevice::ResetOrStopUsb(State stop_state) {
   if (bulk_in_ep_.client().is_valid()) {
     bulk_in_ep_->CancelAll().Then([this](auto& result) {
       bulk_in_cancelled_ = true;
+      bulk_in_inspect_.OnCancelAllComplete();
       if (result.is_error()) {
         if (result.error_value().is_domain_error() &&
             result.error_value().domain_error() == ZX_ERR_IO_NOT_PRESENT) {
@@ -170,11 +170,13 @@ void UsbAdbDevice::ResetOrStopUsb(State stop_state) {
     });
   } else {
     bulk_in_cancelled_ = true;
+    bulk_in_inspect_.SetCancelled(true);
   }
 
   if (bulk_out_ep_.client().is_valid()) {
     bulk_out_ep_->CancelAll().Then([this](auto& result) {
       bulk_out_cancelled_ = true;
+      bulk_out_inspect_.OnCancelAllComplete();
       if (result.is_error()) {
         if (result.error_value().is_domain_error() &&
             result.error_value().domain_error() == ZX_ERR_IO_NOT_PRESENT) {
@@ -190,24 +192,28 @@ void UsbAdbDevice::ResetOrStopUsb(State stop_state) {
     });
   } else {
     bulk_out_cancelled_ = true;
+    bulk_out_inspect_.SetCancelled(true);
   }
 
-  // Disconnect USB by disabling endpoints.
+  // Disconnect USB by disabling endpoints if previously online.
   // TODO(b/417808660): Replace logs with Inspect once the bug is fixed.
-  zxlogf(INFO, "Disconnecting from USB by disabling endpoints");
-  for (const uint8_t ep_addr : {bulk_out_addr(), bulk_in_addr()}) {
-    fidl::Result result = function_->DisableEndpoint({ep_addr});
-    if (result.is_error()) {
-      if (result.error_value().is_domain_error() &&
-          (result.error_value().domain_error() == ZX_ERR_IO_NOT_PRESENT ||
-           result.error_value().domain_error() == ZX_ERR_BAD_STATE)) {
-        zxlogf(INFO, "DisableEndpoint on 0x%x: hardware endpoint is inactive during teardown",
-               ep_addr);
-      } else {
-        zxlogf(WARNING, "Failed to disable endpoint 0x%x: %s", ep_addr,
-               result.error_value().FormatDescription().c_str());
+  if (was_online) {
+    zxlogf(INFO, "Disconnecting from USB by disabling endpoints");
+    for (const uint8_t ep_addr : {bulk_out_addr(), bulk_in_addr()}) {
+      fidl::Result result = function_->DisableEndpoint({ep_addr});
+      if (result.is_error()) {
+        if (result.error_value().is_domain_error() &&
+            (result.error_value().domain_error() == ZX_ERR_IO_NOT_PRESENT ||
+             result.error_value().domain_error() == ZX_ERR_BAD_STATE)) {
+          zxlogf(INFO, "DisableEndpoint on 0x%x: hardware endpoint is inactive during teardown",
+                 ep_addr);
+        } else {
+          zxlogf(WARNING, "Failed to disable endpoint 0x%x: %s", ep_addr,
+                 result.error_value().FormatDescription().c_str());
+        }
       }
     }
+    RecordEvent("DisableEndpoints complete");
   }
 
   CheckUsbStopComplete();
@@ -452,6 +458,7 @@ zx::result<> UsbAdbDevice::EnableEndpoints() {
   switch (state_) {
     case State::kOnline:
       zxlogf(INFO, "USB endpoints already enabled");
+      function_inspect_.OnConfigured();
       return zx::ok();
     case State::kStoppingForUnbind:
       zxlogf(WARNING, "Received request to enable endpoints while unbinding driver");
@@ -502,6 +509,12 @@ zx::result<> UsbAdbDevice::EnableEndpoints() {
                          ? result_in.error_value().domain_error()
                          : result_in.error_value().framework_error().status());
   }
+
+  bulk_out_inspect_.SetCancelled(false);
+  bulk_in_inspect_.SetCancelled(false);
+  bulk_out_inspect_.SnapshotTransferStats();
+  bulk_in_inspect_.SnapshotTransferStats();
+  function_inspect_.OnConfigured();
 
   // queue RX requests
   std::vector<fuchsia_hardware_usb_request::Request> requests;
@@ -556,6 +569,7 @@ void UsbAdbDevice::SetConfigured(SetConfiguredRequest& request,
         break;
       case State::kOnline:
         RecordEvent("usb_bus_disconnected: SetConfigured(false)");
+        function_inspect_.OnUnconfigureStart();
         ResetOrStopUsb(State::kStoppingForReconnect);
         break;
       case State::kStoppingForUnbind:
@@ -606,6 +620,11 @@ void UsbAdbDevice::CheckUsbStopComplete() {
   }
 
   zxlogf(INFO, "Completing USB stop.");
+  if (function_inspect_.is_unconfiguring()) {
+    function_inspect_.OnUnconfigureComplete();
+  } else {
+    function_inspect_.SetConfigured(false);
+  }
 
   if (usb_function_binding_.has_value()) {
     fidl::Result deconfigure = function_->Deconfigure();
@@ -753,10 +772,11 @@ zx::result<> UsbAdbDevice::Start(fdf::DriverContext context) {
   component_inspector_ = context.CreateInspector(this);
   if (component_inspector_.has_value()) {
     inspect_node_ = component_inspector_->root().CreateChild("usb-adb-function");
-    state_property_ = inspect_node_.CreateString("state", StateToString(state_));
-    online_property_ = inspect_node_.CreateBool("online", state_ == State::kOnline);
+    function_inspect_.Init(inspect_node_, StateToString(state_));
     bulk_in_inspect_.Init(inspect_node_, "bulk_in");
+    bulk_in_inspect_.SetPoolCountsCallback([this]() { return bulk_in_ep_.GetPoolCounts(); });
     bulk_out_inspect_.Init(inspect_node_, "bulk_out");
+    bulk_out_inspect_.SetPoolCountsCallback([this]() { return bulk_out_ep_.GetPoolCounts(); });
 
     RecordEvent("driver_started");
     throughput_tracker_.emplace(dispatcher(), [this](zx::duration delta) {

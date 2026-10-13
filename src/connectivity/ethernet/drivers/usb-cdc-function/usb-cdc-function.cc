@@ -595,6 +595,8 @@ struct UsbCdcFunction::SetConfiguredSharedState
             self_shared->self->DrainRxCompletionQueue();
             self_shared->self->speed_ = fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined;
             self_shared->self->configured_ = false;
+            self_shared->self->function_inspect_.RecordEvent("DisableEndpoints complete");
+            self_shared->self->function_inspect_.OnUnconfigureComplete();
             if (self_shared->self->set_configured_state_ == self_shared) {
               self_shared->self->set_configured_state_.reset();
             }
@@ -609,6 +611,7 @@ struct UsbCdcFunction::SetConfiguredSharedState
       if (!self->async_function_.is_valid()) {
         fdf::error("async_function_ is not valid during soft reset ConfigureEndpoint");
         self->configured_ = false;
+        self->function_inspect_.SetConfigured(false);
         self->speed_ = fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined;
         if (self->set_configured_state_ == self_shared) {
           self->set_configured_state_.reset();
@@ -638,6 +641,7 @@ struct UsbCdcFunction::SetConfiguredSharedState
               fdf::error("[bug] ConfigureEndpoint(intr): {}",
                          result.error_value().FormatDescription());
               self_shared->self->configured_ = false;
+              self_shared->self->function_inspect_.SetConfigured(false);
               self_shared->self->speed_ = fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined;
               if (self_shared->self->set_configured_state_ == self_shared) {
                 self_shared->self->set_configured_state_.reset();
@@ -647,6 +651,10 @@ struct UsbCdcFunction::SetConfiguredSharedState
             }
             self_shared->self->speed_ = self_shared->target_speed;
             self_shared->self->configured_ = true;
+            self_shared->self->intr_inspect_.SetCancelled(false);
+            self_shared->self->bulk_in_inspect_.SetCancelled(false);
+            self_shared->self->bulk_out_inspect_.SetCancelled(false);
+            self_shared->self->function_inspect_.OnConfigured();
             self_shared->self->CdcSendNotifications();
             if (self_shared->self->set_configured_state_ == self_shared) {
               self_shared->self->set_configured_state_.reset();
@@ -685,12 +693,13 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
   if (set_configured_state_) {
     set_configured_state_->Cancel();
     set_configured_state_.reset();
+    function_inspect_.ResetUnconfiguring();
   }
   CancelSetInterface();
 
   // Instantly isolate the data plane from new packets
   online_ = false;
-  online_property_.Set(false);
+  function_inspect_.SetOnline(false);
   UpdatePortStatus();
 
   fdf::info("configured = {}", configured);
@@ -741,6 +750,10 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
           }
           state->self->speed_ = state->target_speed;
           state->self->configured_ = true;
+          state->self->intr_inspect_.SetCancelled(false);
+          state->self->bulk_in_inspect_.SetCancelled(false);
+          state->self->bulk_out_inspect_.SetCancelled(false);
+          state->self->function_inspect_.OnConfigured();
           state->self->CdcSendNotifications();
           if (state->self->set_configured_state_ == state) {
             state->self->set_configured_state_.reset();
@@ -756,6 +769,11 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
 
   // Either deconfiguring (true -> false) or host soft-reset (true -> true):
   // Endpoints were previously configured. Asynchronously cancel and drain active requests.
+  if (!configured) {
+    if (configured_ || function_inspect_.is_unconfiguring()) {
+      function_inspect_.OnUnconfigureStart();
+    }
+  }
   pending_notification_ = false;
   auto async_completer = completer.ToAsync();
 
@@ -768,11 +786,15 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
 
   if (!intr_ep_.client().is_valid()) {
     state->intr_cancelled = true;
+    intr_inspect_.SetCancelled(true);
   } else {
     intr_ep_->CancelAll().Then(
         [state](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
           if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("intr ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          if (state->self) {
+            state->self->intr_inspect_.OnCancelAllComplete();
           }
           state->intr_cancelled = true;
           state->CheckDone();
@@ -781,11 +803,15 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
 
   if (!bulk_out_ep_.client().is_valid()) {
     state->bulk_out_cancelled = true;
+    bulk_out_inspect_.SetCancelled(true);
   } else {
     bulk_out_ep_->CancelAll().Then(
         [state](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
           if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("bulk out ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          if (state->self) {
+            state->self->bulk_out_inspect_.OnCancelAllComplete();
           }
           state->bulk_out_cancelled = true;
           state->CheckDone();
@@ -794,11 +820,15 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
 
   if (!bulk_in_ep_.client().is_valid()) {
     state->bulk_in_cancelled = true;
+    bulk_in_inspect_.SetCancelled(true);
   } else {
     bulk_in_ep_->CancelAll().Then(
         [state](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
           if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("bulk in ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          if (state->self) {
+            state->self->bulk_in_inspect_.OnCancelAllComplete();
           }
           state->bulk_in_cancelled = true;
           state->CheckDone();
@@ -963,6 +993,7 @@ struct UsbCdcFunction::SetInterfaceSharedState
             self_shared->Reply(zx::error(ZX_ERR_INTERNAL));
             return;
           }
+          self_shared->self->bulk_out_inspect_.SetCancelled(false);
           self_shared->StepDisableBulkIn();
         });
   }
@@ -1015,6 +1046,7 @@ struct UsbCdcFunction::SetInterfaceSharedState
             self_shared->Reply(zx::error(ZX_ERR_INTERNAL));
             return;
           }
+          self_shared->self->bulk_in_inspect_.SetCancelled(false);
           self_shared->StepCompleteAltSetting1();
         });
   }
@@ -1023,7 +1055,7 @@ struct UsbCdcFunction::SetInterfaceSharedState
     // Set online and update port status BEFORE queueing rx requests so that any
     // completions that fire immediately are processed normally rather than dropped.
     self->online_ = true;
-    self->online_property_.Set(true);
+    self->function_inspect_.SetOnline(true);
     self->UpdatePortStatus();
     self->CdcSendNotifications();
 
@@ -1126,7 +1158,7 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
 
   // Instantly isolate the data plane from new packets!
   online_ = false;
-  online_property_.Set(false);
+  function_inspect_.SetOnline(false);
   UpdatePortStatus();
   if (alt_setting == 0) {
     CdcSendNotifications();
@@ -1141,11 +1173,15 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
 
   if (!bulk_out_ep_.client().is_valid()) {
     state->bulk_out_cancelled = true;
+    bulk_out_inspect_.SetCancelled(true);
   } else {
     bulk_out_ep_.client()->CancelAll().Then(
         [state](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
           if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("bulk out ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          if (state->self) {
+            state->self->bulk_out_inspect_.OnCancelAllComplete();
           }
           state->bulk_out_cancelled = true;
           state->CheckDone();
@@ -1154,11 +1190,15 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
 
   if (!bulk_in_ep_.client().is_valid()) {
     state->bulk_in_cancelled = true;
+    bulk_in_inspect_.SetCancelled(true);
   } else {
     bulk_in_ep_.client()->CancelAll().Then(
         [state](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
           if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("bulk in ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          if (state->self) {
+            state->self->bulk_in_inspect_.OnCancelAllComplete();
           }
           state->bulk_in_cancelled = true;
           state->CheckDone();
@@ -1327,9 +1367,13 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
   }
 
   inspect_node_ = inspector().root().CreateChild("usb-cdc-function");
-  online_property_ = inspect_node_.CreateBool("online", online_);
+  function_inspect_.Init(inspect_node_);
   bulk_in_inspect_.Init(inspect_node_, "bulk_in");
+  bulk_in_inspect_.SetPoolCountsCallback([this]() { return bulk_in_ep_.GetPoolCounts(); });
   bulk_out_inspect_.Init(inspect_node_, "bulk_out");
+  bulk_out_inspect_.SetPoolCountsCallback([this]() { return bulk_out_ep_.GetPoolCounts(); });
+  intr_inspect_.Init(inspect_node_, "intr");
+  intr_inspect_.SetPoolCountsCallback([this]() { return intr_ep_.GetPoolCounts(); });
 
   throughput_tracker_.emplace(dispatcher(), [this](zx::duration delta) {
     bulk_in_inspect_.MeasureThroughput(delta);
@@ -1409,6 +1453,7 @@ void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
 
   DrainRxCompletionQueue();
   online_ = false;
+  function_inspect_.SetOnline(false);
   netdevice_started_ = false;
 
   DiscardPendingTxBuffers(ZX_ERR_CANCELED);
@@ -1416,12 +1461,14 @@ void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
 
   if (!intr_ep_.client().is_valid()) {
     intr_cancelled_ = true;
+    intr_inspect_.SetCancelled(true);
   } else {
     intr_ep_->CancelAll().Then(
         [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
           if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("intr ep CancelAll failed: {}", result.error_value().FormatDescription());
           }
+          intr_inspect_.OnCancelAllComplete();
           intr_cancelled_ = true;
           CheckStopComplete();
         });
@@ -1429,12 +1476,14 @@ void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
 
   if (!bulk_out_ep_.client().is_valid()) {
     bulk_out_cancelled_ = true;
+    bulk_out_inspect_.SetCancelled(true);
   } else {
     bulk_out_ep_->CancelAll().Then(
         [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
           if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("bulk out ep CancelAll failed: {}", result.error_value().FormatDescription());
           }
+          bulk_out_inspect_.OnCancelAllComplete();
           bulk_out_cancelled_ = true;
           CheckStopComplete();
         });
@@ -1442,12 +1491,14 @@ void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
 
   if (!bulk_in_ep_.client().is_valid()) {
     bulk_in_cancelled_ = true;
+    bulk_in_inspect_.SetCancelled(true);
   } else {
     bulk_in_ep_->CancelAll().Then(
         [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
           if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("bulk in ep CancelAll failed: {}", result.error_value().FormatDescription());
           }
+          bulk_in_inspect_.OnCancelAllComplete();
           bulk_in_cancelled_ = true;
           CheckStopComplete();
         });
@@ -1491,6 +1542,9 @@ void UsbCdcFunction::CheckStopComplete() {
       if (status != ZX_OK) {
         fdf::error("DisableAllEndpoints failed: {}", zx_status_get_string(status));
       }
+      if (configured_ || function_inspect_.is_unconfiguring()) {
+        function_inspect_.RecordEvent("DisableEndpoints complete");
+      }
       if (async_function_.is_valid()) {
         async_function_->Deconfigure().Then(
             [this](fidl::Result<fuchsia_hardware_usb_function::UsbFunction::Deconfigure>
@@ -1519,6 +1573,11 @@ void UsbCdcFunction::CheckStopComplete() {
   }
 
   fdf::info("Deconfigure complete. Invoking stop_completer_.");
+  if (function_inspect_.is_unconfiguring()) {
+    function_inspect_.OnUnconfigureComplete();
+  } else {
+    function_inspect_.SetConfigured(false);
+  }
   if (bulk_out_ep_.client().is_valid()) {
     bulk_out_ep_.Close();
   }

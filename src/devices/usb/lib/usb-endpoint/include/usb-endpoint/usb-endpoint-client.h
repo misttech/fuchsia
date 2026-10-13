@@ -50,6 +50,7 @@ class EndpointClientBase {
   bool RequestsEmpty() { return free_reqs_.Empty(); }
   size_t GetInFlightCount() { return free_reqs_.GetInFlightCount(); }
   size_t GetTotalCount() { return free_reqs_.GetTotalCount(); }
+  std::pair<size_t, size_t> GetPoolCounts() { return free_reqs_.GetPoolCounts(); }
   // Helper function that deletes a request from the pool. If this function is not called when
   // deleting a request from the pool, it will stay mapped (and registered) until the endpoint is
   // destructed.

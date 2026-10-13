@@ -723,6 +723,11 @@ class FidlRequestPool {
     return size_;
   }
 
+  std::pair<size_t, size_t> GetPoolCounts() __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
+    return {size_ - free_reqs_.size(), size_};
+  }
+
  private:
   std::optional<RequestType> GetLocked() __TA_REQUIRES(mutex_) {
     if (free_reqs_.empty()) {

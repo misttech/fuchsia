@@ -304,12 +304,8 @@ class VsockUsb : public fdf::DriverBase2,
             },
         },
         state_);
-    if (state_property_) {
-      state_property_.Set(name);
-    }
-    if (online_property_) {
-      online_property_.Set(online);
-    }
+    function_inspect_.SetState(name);
+    function_inspect_.SetOnline(online);
   }
 
   // Transition from Running to Unconfigured, usually due to a connection error.
@@ -398,8 +394,7 @@ class VsockUsb : public fdf::DriverBase2,
 
   std::optional<inspect::ComponentInspector> inspector_;
   inspect::Node inspect_node_;
-  inspect::BoolProperty online_property_;
-  inspect::StringProperty state_property_;
+  usb_inspect::FunctionDriverInspect function_inspect_;
   usb_inspect::EndpointInspect bulk_in_inspect_;
   usb_inspect::EndpointInspect bulk_out_inspect_;
   std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
