@@ -29,10 +29,6 @@ KCOUNTER(pq_lru_pages_evicted, "pq.lru.pages_evicted")
 KCOUNTER(pq_lru_pages_compressed, "pq.lru.pages_compressed")
 KCOUNTER(pq_lru_pages_discarded, "pq.lru.pages_discarded")
 KCOUNTER(pq_lru_sweeping_skipped_unloan, "pq.lru.sweeping_skipped_unloan")
-KCOUNTER(pq_accessed_normal, "pq.accessed.normal")
-KCOUNTER(pq_accessed_normal_same_queue, "pq.accessed.normal_same_queue")
-KCOUNTER(pq_accessed_isolate, "pq.accessed.isolate")
-KCOUNTER(pq_accessed_not_reclaim, "pq.accessed.not_reclaim")
 KCOUNTER(pq_peek_sync_aging, "pq.peek.sync_aging")
 KCOUNTER(pq_peek_process_lru, "pq.peek.process_lru")
 KCOUNTER(pq_peek_sync_aging_all_inactive, "pq.peek.sync_aging.all_inactive")
@@ -874,58 +870,6 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
   }
 }
 
-void PageQueues::MarkAccessedMaybeIsolate(vm_page_t* page) {
-  pq_accessed_isolate.Add(1);
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    auto queue_ref = page->object.get_page_queue_ref();
-    uint8_t old_gen = queue_ref.load(ktl::memory_order_relaxed);
-    // With the lock held check if the page is in a reclaim queue. Although it can move between
-    // different reclaim queues, it cannot go from reclaim->non-reclaim without the lock.
-    if (!queue_is_reclaim(static_cast<PageQueue>(old_gen))) {
-      pq_accessed_not_reclaim.Add(1);
-      return;
-    }
-    MoveToQueueLockedList(page, mru_gen_to_queue());
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::MarkAccessed(vm_page_t* page) {
-  pq_accessed_normal.Add(1);
-  auto queue_ref = page->object.get_page_queue_ref();
-  uint8_t old_gen = queue_ref.load(ktl::memory_order_relaxed);
-  const uint32_t target_queue = mru_gen_to_queue();
-  if (old_gen == target_queue) {
-    pq_accessed_normal_same_queue.Add(1);
-    return;
-  }
-  do {
-    // If we ever find old_gen to not be in the active/inactive range then this means the page has
-    // either been racily removed from, or was never in, the reclaim queue. In which case we
-    // can return as there's nothing to be marked accessed.
-    if (!queue_is_reclaim(static_cast<PageQueue>(old_gen))) {
-      pq_accessed_not_reclaim.Add(1);
-      return;
-    }
-    // The Isolate queue is a reclaim queue, but we cannot just change the queue in the vm_page_t
-    // and must actually move it between the lists.
-    if (old_gen == PageQueueReclaimIsolate) {
-      MarkAccessedMaybeIsolate(page);
-      return;
-    }
-    // Between loading the mru_gen and finally storing it in the queue_ref it's possible for our
-    // calculated target_queue to become invalid. This is extremely unlikely as it would require
-    // us to stall for long enough for the lru_gen to pass this point, but if it does happen then
-    // ProcessLruQueues will notice our queue is invalid and correct our age to be that of lru_gen.
-  } while (!queue_ref.compare_exchange_weak(old_gen, static_cast<uint8_t>(target_queue),
-                                            ktl::memory_order_relaxed));
-  page_queue_counts_[old_gen].fetch_sub(1, ktl::memory_order_relaxed);
-  page_queue_counts_[target_queue].fetch_add(1, ktl::memory_order_relaxed);
-
-  MaybeCheckActiveRatioAging(1);
-}
-
 void PageQueues::MaybeCheckActiveRatioAging(size_t pages) {
   if (unlikely(!RecordActiveRatioSkips(pages))) {
     Guard<CriticalMutex> guard{&lock_};
@@ -952,123 +896,6 @@ void PageQueues::MoveToQueueLockedList(vm_page_t* page, PageQueue queue) {
   page_queues_[queue].push_front(page);
   page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
   page_queue_counts_[queue].fetch_add(1, ktl::memory_order_relaxed);
-}
-
-void PageQueues::MoveToIsolateLockedList(vm_page_t* page, size_t isolate_queue_index) {
-  DEBUG_ASSERT(isolate_queue_index < kNumIsolateQueues);
-  DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
-  DEBUG_ASSERT(!page->is_free());
-  DEBUG_ASSERT(page->queue_node.InContainer());
-  DEBUG_ASSERT(page->object.get_object());
-  uint32_t old_queue = page->object.get_page_queue_ref().exchange(PageQueueReclaimIsolate,
-                                                                  ktl::memory_order_relaxed);
-  DEBUG_ASSERT(old_queue != PageQueueNone);
-
-  page->queue_node.template RemoveFromContainer<vm_page_node_traits>();
-  isolate_queues_[isolate_queue_index].push_back(page);
-  page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
-  page_queue_counts_[PageQueueReclaimIsolate].fetch_add(1, ktl::memory_order_relaxed);
-}
-
-void PageQueues::MoveToWired(vm_page_t* page) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    MoveToQueueLockedList(page, PageQueueWired);
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::MoveToHighPriority(vm_page_t* page) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    MoveToQueueLockedList(page, PageQueueHighPriority);
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::MoveToAnonymous(vm_page_t* page, bool skip_reclaim) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    MoveToQueueLockedList(
-        page, anonymous_is_reclaimable_ && !skip_reclaim ? mru_gen_to_queue() : PageQueueAnonymous);
-#if DEBUG_ASSERT_IMPLEMENTED
-    if (debug_compressor_) {
-      debug_compressor_->Add(page, reinterpret_cast<VmCowPages*>(page->object.get_object()),
-                             page->object.get_page_offset());
-    }
-#endif
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::MoveToReclaim(vm_page_t* page) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    MoveToQueueLockedList(page, mru_gen_to_queue());
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::MoveToReclaimDontNeed(vm_page_t* page) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    MoveToIsolateLockedList(page, kIsolateQueueDontNeed);
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::MoveToPagerBackedDirty(vm_page_t* page) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    MoveToQueueLockedList(page, PageQueuePagerBackedDirty);
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::MoveAnonymousToAnonymousZeroFork(vm_page_t* page) {
-  // First perform a common case short-circuit where the page is already in the anonymous queue and
-  // both the anonymous and zero fork queues are the same reclaimable queue. In this case the page
-  // is already in the correct queue, and nothing needs to be done.
-  if (zero_fork_is_reclaimable_ && anonymous_is_reclaimable_ &&
-      queue_is_reclaim(static_cast<PageQueue>(
-          page->object.get_page_queue_ref().load(ktl::memory_order_relaxed)))) {
-    return;
-  }
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    // First check if the page is presently in whatever counts as the anonymous queue. If it isn't,
-    // then we don't move it.
-    PageQueue queue =
-        static_cast<PageQueue>(page->object.get_page_queue_ref().load(ktl::memory_order_relaxed));
-    if (anonymous_is_reclaimable_ && !queue_is_reclaim(queue)) {
-      return;
-    }
-    if (!anonymous_is_reclaimable_ && queue != PageQueueAnonymous) {
-      return;
-    }
-    // In the anonymous queue, move to whatever counts as the anonymous zero fork queue.
-    MoveToQueueLockedList(
-        page, zero_fork_is_reclaimable_ ? mru_gen_to_queue() : PageQueueAnonymousZeroFork);
-#if DEBUG_ASSERT_IMPLEMENTED
-    if (debug_compressor_) {
-      debug_compressor_->Add(page, reinterpret_cast<VmCowPages*>(page->object.get_object()),
-                             page->object.get_page_offset());
-    }
-#endif
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::CompressFailed(vm_page_t* page) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    // Move the page if its currently in some kind of reclaimable queue.
-    if (queue_is_reclaim(static_cast<PageQueue>(
-            page->object.get_page_queue_ref().load(ktl::memory_order_relaxed)))) {
-      MoveToQueueLockedList(page, PageQueueFailedReclaim);
-    }
-  }
-  MaybeCheckActiveRatioAging(1);
 }
 
 PageQueues::ReclaimCounts PageQueues::GetReclaimQueueCounts() const {
@@ -1207,26 +1034,7 @@ void PageQueues::SetAgingEvent(Event* event) {
 }
 
 void PageQueues::EnableAnonymousReclaim(bool zero_forks) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    anonymous_is_reclaimable_ = true;
-    zero_fork_is_reclaimable_ = zero_forks;
-
-    const PageQueue mru_queue = mru_gen_to_queue();
-
-    // Migrate any existing pages into the reclaimable queues.
-
-    while (!page_queues_[PageQueueAnonymous].is_empty()) {
-      vm_page_t* page = &page_queues_[PageQueueAnonymous].front();
-      MoveToQueueLockedList(page, mru_queue);
-    }
-    while (zero_forks && !page_queues_[PageQueueAnonymousZeroFork].is_empty()) {
-      vm_page_t* page = &page_queues_[PageQueueAnonymousZeroFork].front();
-      MoveToQueueLockedList(page, mru_queue);
-    }
-  }
-  Guard<CriticalMutex> guard{&lock_};
-  CheckActiveRatioAgingLocked();
+  rust_page_queues_enable_anonymous_reclaim(this, zero_forks);
 }
 
 ktl::optional<PageQueues::VmoBacklink> PageQueues::GetCowForLoanedPage(vm_page_t* page) {
