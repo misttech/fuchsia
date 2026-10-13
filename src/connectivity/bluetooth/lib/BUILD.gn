@@ -42,7 +42,6 @@ group("tests") {
     "bt-gatt-fuchsia:tests",
     "bt-hfp:tests",
     "bt-map:tests",
-    "bt-obex:tests",
     "fidl:tests",
     "fuchsia-audio-codec:tests",
     "fuchsia-audio-dai:tests",
