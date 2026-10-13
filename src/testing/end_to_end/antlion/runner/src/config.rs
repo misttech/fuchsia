@@ -115,6 +115,7 @@ pub(crate) struct HoneydewFfx {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct HoneydewAffordances {
     pub bluetooth: HoneydewAffordanceSpec,
+    pub tracing: HoneydewAffordanceSpec,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -123,6 +124,7 @@ pub(crate) struct HoneydewAffordanceSpec {
 }
 
 pub const HONEYDEW_IMPL_FUCHSIA_CONTROLLER: &'static str = "fuchsia-controller";
+pub const HONEYDEW_IMPL_FFX: &'static str = "ffx";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// Reference to a PDU device. Used to specify which port the attached device

@@ -166,6 +166,9 @@ impl Driver for LocalDriver {
                                     implementation: config::HONEYDEW_IMPL_FUCHSIA_CONTROLLER
                                         .to_string(),
                                 },
+                                tracing: config::HoneydewAffordanceSpec {
+                                    implementation: config::HONEYDEW_IMPL_FFX.to_string(),
+                                },
                             },
                         },
                     }],
@@ -355,6 +358,8 @@ mod test {
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
+                  tracing:
+                    implementation: ffx
         MoblyParams:
           LogPath: {out_path}
         "#};
@@ -417,6 +422,8 @@ mod test {
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
+                  tracing:
+                    implementation: ffx
         MoblyParams:
           LogPath: {out_path}
         "#};
@@ -487,6 +494,8 @@ mod test {
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
+                  tracing:
+                    implementation: ffx
           TestParams:
             my_test_params:
               foo: bar
@@ -555,6 +564,8 @@ mod test {
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
+                  tracing:
+                    implementation: ffx
             AccessPoint:
             - wan_interface: eth0
               ssh_config:
