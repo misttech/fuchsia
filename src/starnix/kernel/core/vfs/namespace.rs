@@ -1521,6 +1521,8 @@ impl NamespaceNode {
         Ok(self.with_new_entry(dir_entry))
     }
 
+    /// Creates a socket node `name` bound to `socket`. The socket holds a strong reference to the
+    /// node until `Socket::close()`, so callers must close it to avoid leaking both.
     pub fn bind_socket(
         &self,
         current_task: &CurrentTask,

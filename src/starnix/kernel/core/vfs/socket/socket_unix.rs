@@ -99,6 +99,14 @@ struct UnixSocketInner {
     /// The address that this socket has been bound to, if it has been bound.
     address: Option<SocketAddress>,
 
+    /// The `FsNode` that this socket has been bound to in the filesystem, if any.
+    ///
+    /// Retaining a strong reference while the socket is open prevents the `FsNode` (and its
+    /// `bound_socket` association) from being evicted from `FsNodeCache` when its `DirEntry` is
+    /// purged from a bounded `DirEntryCache::Lru` (e.g. on `RemoteFs`). This forms a `Socket` <->
+    /// `FsNode` cycle that only `close()` breaks, so callers must close bound sockets.
+    fs_node: Option<FsNodeHandle>,
+
     /// Whether this end of the socket has been shut down and can no longer receive message. It is
     /// still possible to send messages to the peer, if it exists and hasn't also been shut down.
     is_read_shutdown: bool,
@@ -152,6 +160,7 @@ impl UnixSocket {
             inner: UnixSocketInner {
                 messages: MessageQueue::new(SOCKET_DEFAULT_SIZE),
                 address: None,
+                fs_node: None,
                 is_read_shutdown: false,
                 is_write_shutdown: false,
                 peer_closed_with_unread_data: false,
@@ -473,6 +482,7 @@ impl UnixSocket {
         let unix_socket = downcast_socket_to_unix(socket);
         let mut inner = unix_socket.lock();
         inner.bind(address)?;
+        inner.fs_node = Some(node.clone());
         node.set_bound_socket(socket.clone());
         Ok(())
     }
@@ -826,15 +836,17 @@ impl SocketOps for UnixSocket {
     /// Close differs from shutdown in two ways. First, close will call
     /// mark_peer_closed_with_unread_data if this socket has unread data,
     /// which changes how read() behaves on that socket. Second, close
-    /// transitions the internal state of this socket to Closed, which breaks
-    /// the reference cycle that exists in the connected state.
+    /// transitions the internal state of this socket to Closed and releases
+    /// any bound filesystem node, which breaks the reference cycles that exist
+    /// in the connected and bound states.
     fn close(&self, _current_task: &CurrentTask, socket: &Socket) {
-        let (maybe_peer, has_unread) = {
+        // Keep `_maybe_fs_node` in the tuple so that it is dropped outside of `self.lock()`.
+        let (maybe_peer, has_unread, _maybe_fs_node) = {
             let mut inner = self.lock();
             let maybe_peer = inner.peer().map(Arc::clone);
             inner.is_read_shutdown = true;
             inner.state = UnixSocketState::Closed;
-            (maybe_peer, !inner.messages.is_empty())
+            (maybe_peer, !inner.messages.is_empty(), inner.fs_node.take())
         };
         self.notify_shutdown();
         // If this is a connected socket type, also shut down the connected peer.
@@ -1291,7 +1303,9 @@ mod tests {
     use super::*;
     use crate::mm::MemoryAccessor;
     use crate::testing::{map_memory, spawn_kernel_and_run};
+    use crate::vfs::{DirectoryMode, UnlinkKind};
     use starnix_types::user_buffer::UserBuffer;
+    use starnix_uapi::file_mode::mode;
 
     #[::fuchsia::test]
     async fn test_socket_send_capacity() {
@@ -1380,6 +1394,63 @@ mod tests {
                 .ops
                 .connect(&socket1, &current_task, SocketPeer::Address(SocketAddress::Unspecified))
                 .expect("Failed to disconnect socket1 with AF_UNSPEC.");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bind_socket_retains_fs_node_until_close() {
+        spawn_kernel_and_run(async |current_task| {
+            let socket = Socket::new(
+                &current_task,
+                SocketDomain::Unix,
+                SocketType::Stream,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
+            )
+            .expect("Failed to create socket.");
+
+            let root = current_task.fs().root();
+            let bound_node = root
+                .bind_socket(
+                    &current_task,
+                    "test_sock".into(),
+                    socket.clone(),
+                    SocketAddress::Unix("test_sock".into()),
+                    mode!(IFSOCK, 0o777),
+                )
+                .expect("Failed to bind socket to node.");
+            let weak_fs_node = Arc::downgrade(&bound_node.entry.node);
+            std::mem::drop(bound_node);
+
+            // Unlink the directory entry so that `TmpFs`'s permanent `DirEntryCache` drops its
+            // reference to the `DirEntry` and `FsNode`, simulating `DirEntryCache::Lru` eviction on
+            // cached filesystems (such as `RemoteFs`).
+            root.unlink(
+                &current_task,
+                "test_sock".into(),
+                UnlinkKind::NonDirectory,
+                DirectoryMode::AllowAny,
+            )
+            .expect("Failed to unlink socket.");
+            current_task.trigger_delayed_releaser();
+
+            // While the socket remains open, it must retain the bound `FsNode` and its
+            // `bound_socket` association.
+            let fs_node =
+                weak_fs_node.upgrade().expect("FsNode should remain alive while socket is open");
+            assert!(fs_node.bound_socket().is_some());
+            std::mem::drop(fs_node);
+
+            // Closing the socket must release its reference to the `FsNode`, breaking the
+            // `Socket` <-> `FsNode` reference cycle so both can be freed.
+            let weak_socket = Arc::downgrade(&socket);
+            socket.close(&current_task);
+            std::mem::drop(socket);
+            current_task.trigger_delayed_releaser();
+
+            assert!(weak_fs_node.upgrade().is_none());
+            assert!(weak_socket.upgrade().is_none());
         })
         .await;
     }
