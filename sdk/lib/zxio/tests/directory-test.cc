@@ -88,7 +88,7 @@ class TestDirectoryServer : public zxio_tests::TestDirectoryServerBase {
     fidl::BindServer(dispatcher_, std::move(file_server), &file_);
   }
 
-  void GetToken(GetTokenCompleter::Sync& completer) final {
+  void DeprecatedGetToken(DeprecatedGetTokenCompleter::Sync& completer) final {
     zx::event dup;
     zx_status_t status = token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
     if (status != ZX_OK) {
@@ -98,6 +98,19 @@ class TestDirectoryServer : public zxio_tests::TestDirectoryServerBase {
     }
     completer.Reply(ZX_OK, std::move(dup));
   }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  void GetToken(GetTokenCompleter::Sync& completer) final {
+    zx::event dup;
+    zx_status_t status = token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
+    if (status != ZX_OK) {
+      ADD_FAILURE() << "Could not duplicate token handle: " << zx_status_get_string(status);
+      completer.ReplyError(ZX_ERR_INTERNAL);
+      return;
+    }
+    completer.ReplySuccess(std::move(dup));
+  }
+#endif
 
   void GetAttributes(GetAttributesRequestView, GetAttributesCompleter::Sync& completer) override {
     fuchsia_io::ImmutableNodeAttributes immutable_attrs;

@@ -104,7 +104,7 @@ async fn io2_link() {
         let dir =
             dir.open_node::<fio::DirectoryMarker>(".", rights, None).await.expect("open failed");
 
-        let (status, token) = dir.get_token().await.unwrap();
+        let (status, token) = dir.deprecated_get_token().await.unwrap();
         let status = zx::Status::ok(status);
         if rights.contains(fio::Flags::PERM_MODIFY_DIRECTORY) {
             status.expect("get_token failed");

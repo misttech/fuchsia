@@ -376,7 +376,7 @@ closed protocol FileBackedVolumeProvider {
     /// file's size is not a multiple of the block size, the apparent size of the device will be
     /// rounded down.
     ///
-    /// `parent_directory_token` is a token obtained via `fuchsia.io.Directory/GetToken`.  The
+    /// `parent_directory_token` is a token obtained via `fuchsia.io.Directory/DeprecatedGetToken`.  The
     /// directory connection must have the `MODIFY_DIRECTORY` right.
     ///
     /// Errors will be sent as an epitaph on `server_end`.

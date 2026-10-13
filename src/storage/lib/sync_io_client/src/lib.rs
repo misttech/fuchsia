@@ -471,7 +471,7 @@ impl RemoteIo {
     pub fn link_into(&self, target_dir: &Self, name: &str) -> Result<(), zx::Status> {
         let target_dir_proxy = target_dir.cast_proxy::<fio::DirectorySynchronousProxy>();
         let (status, token) = target_dir_proxy
-            .get_token(zx::MonotonicInstant::INFINITE)
+            .deprecated_get_token(zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?;
         zx::Status::ok(status)?;
         let token = token.ok_or(zx::Status::NOT_SUPPORTED)?;
@@ -503,8 +503,9 @@ impl RemoteIo {
         new_path: &str,
     ) -> Result<(), zx::Status> {
         let new_dir_proxy = new_directory.cast_proxy::<fio::DirectorySynchronousProxy>();
-        let (status, token) =
-            new_dir_proxy.get_token(zx::MonotonicInstant::INFINITE).map_err(|_| zx::Status::IO)?;
+        let (status, token) = new_dir_proxy
+            .deprecated_get_token(zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?;
         zx::Status::ok(status)?;
         let token = token.ok_or(zx::Status::NOT_SUPPORTED)?;
         let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();

@@ -2711,7 +2711,7 @@ mod tests {
             .await;
 
             // Link temporary unnamed file into filesystem, making it permanent.
-            let (status, dst_token) = root.get_token().await.expect("FIDL call failed");
+            let (status, dst_token) = root.deprecated_get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
             tmpfile
                 .link_into(zx::Event::from(dst_token.unwrap()), FILE1)
@@ -2721,7 +2721,7 @@ mod tests {
                 .expect("link_into failed");
 
             // We should be able to link the temporary file proxy multiple times.
-            let (status, dst_token) = root.get_token().await.expect("FIDL call failed");
+            let (status, dst_token) = root.deprecated_get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
             tmpfile
                 .link_into(zx::Event::from(dst_token.unwrap()), FILE2)
@@ -2842,7 +2842,8 @@ mod tests {
 
         // Similar to a regular file, linking a temporary unnamed file into the directory will only
         // work if they have the same wrapping key ID.
-        let (status, dst_token) = encrypted_directory.get_token().await.expect("FIDL call failed");
+        let (status, dst_token) =
+            encrypted_directory.deprecated_get_token().await.expect("FIDL call failed");
         zx::Status::ok(status).expect("get_token failed");
         encryped_tmpfile
             .link_into(zx::Event::from(dst_token.unwrap()), "foo")
@@ -2867,7 +2868,8 @@ mod tests {
             .map_err(zx::Status::err_from_raw)
             .expect("get_attributes failed");
         assert_eq!(mutable_attributes.encryption_policy, None);
-        let (status, dst_token) = encrypted_directory.get_token().await.expect("FIDL call failed");
+        let (status, dst_token) =
+            encrypted_directory.deprecated_get_token().await.expect("FIDL call failed");
         zx::Status::ok(status).expect("get_token failed");
         assert_eq!(
             unencryped_tmpfile
@@ -2976,9 +2978,11 @@ mod tests {
             .await;
 
             // Get tokens to the sub directory to use for `link_into`.
-            let (status, dst_token1) = sub_dir.get_token().await.expect("FIDL call failed");
+            let (status, dst_token1) =
+                sub_dir.deprecated_get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
-            let (status, dst_token2) = sub_dir.get_token().await.expect("FIDL call failed");
+            let (status, dst_token2) =
+                sub_dir.deprecated_get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
 
             join!(

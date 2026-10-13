@@ -831,6 +831,10 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 .trace(trace::trace_future_args!("storage", "File::Allocate"))
                 .await?;
             }
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            fio::FileRequest::GetToken { responder } => {
+                responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
+            }
             fio::FileRequest::_UnknownMethod { .. } => (),
         }
         Ok(ConnectionState::Alive)

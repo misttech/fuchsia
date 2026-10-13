@@ -124,7 +124,7 @@ mod fuchsia {
                 .await
                 .map_err(WriteError::Fidl)?
                 .map_err(|s| WriteError::WriteError(zx::Status::err_from_raw(s)))?;
-            let (status, token) = dir.get_token().await.map_err(WriteError::Fidl)?;
+            let (status, token) = dir.deprecated_get_token().await.map_err(WriteError::Fidl)?;
             zx::ok(status).map_err(WriteError::Link)?;
             let token = zx::Event::from(token.unwrap());
             tmp.link_into(token, &tmp_filename)
@@ -468,6 +468,10 @@ pub async fn rename(dir: &fio::DirectoryProxy, src: &str, dst: &str) -> Result<(
     let src_parent = src_parent.as_ref().unwrap_or(dir);
     let (dst_parent, dst_filename) = split_path(dir, dst).await?;
     let dst_parent = dst_parent.as_ref().unwrap_or(dir);
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    let (status, dst_parent_dir_token) =
+        dst_parent.deprecated_get_token().await.map_err(RenameError::SendGetTokenRequest)?;
+    #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
     let (status, dst_parent_dir_token) =
         dst_parent.get_token().await.map_err(RenameError::SendGetTokenRequest)?;
     zx_status::Status::ok(status).map_err(RenameError::GetTokenError)?;

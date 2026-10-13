@@ -146,7 +146,7 @@ impl Directory {
         dst_parent: &Directory,
         dst_name: &str,
     ) -> Result<(), Status> {
-        let dst_token = match dst_parent.proxy.get_token().await {
+        let dst_token = match dst_parent.proxy.deprecated_get_token().await {
             Ok((_raw_status_code, Some(handle))) => Ok(handle),
             Ok((_raw_status_code, None)) => {
                 panic!("No handle");

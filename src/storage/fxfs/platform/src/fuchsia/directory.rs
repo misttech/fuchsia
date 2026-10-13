@@ -2778,7 +2778,8 @@ mod tests {
             }
         }
 
-        let (status, parent_2_token) = parent_2.get_token().await.expect("get token failed");
+        let (status, parent_2_token) =
+            parent_2.deprecated_get_token().await.expect("get token failed");
         zx::Status::ok(status).unwrap();
 
         assert_eq!(
@@ -2912,25 +2913,25 @@ mod tests {
             }
         }
 
-        let (status, parent_2_token) = parent_2.get_token().await.expect("get token failed");
-        zx::Status::ok(status).unwrap();
+        let parent_2_token =
+            parent_2.get_token().await.expect("get token failed").expect("get_token failed");
 
         // Rename cross-directory when locked should fail.
         assert_eq!(
             parent_1
-                .rename(&encrypted_name, parent_2_token.unwrap().into(), "file_2")
+                .rename(&encrypted_name, parent_2_token, "file_2")
                 .await
                 .expect("FIDL transport error"),
             Err(zx::Status::ACCESS_DENIED.into_raw())
         );
 
-        let (status, parent_1_token) = parent_1.get_token().await.expect("get token failed");
-        zx::Status::ok(status).unwrap();
+        let parent_1_token =
+            parent_1.get_token().await.expect("get token failed").expect("get_token failed");
 
         // Rename same-directory when locked should fail.
         assert_eq!(
             parent_1
-                .rename(&encrypted_name, parent_1_token.unwrap().into(), "file_2")
+                .rename(&encrypted_name, parent_1_token, "file_2")
                 .await
                 .expect("FIDL transport error"),
             Err(zx::Status::ACCESS_DENIED.into_raw())
@@ -3016,7 +3017,8 @@ mod tests {
 
         close_file_checked(file).await;
 
-        let (status, parent_2_token) = parent_2.get_token().await.expect("get token failed");
+        let (status, parent_2_token) =
+            parent_2.deprecated_get_token().await.expect("get token failed");
         zx::Status::ok(status).unwrap();
 
         assert_eq!(
@@ -3090,7 +3092,8 @@ mod tests {
 
         close_file_checked(file).await;
 
-        let (status, parent_1_token) = parent_1.get_token().await.expect("get token failed");
+        let (status, parent_1_token) =
+            parent_1.deprecated_get_token().await.expect("get token failed");
         zx::Status::ok(status).unwrap();
 
         assert_eq!(
@@ -3220,7 +3223,8 @@ mod tests {
             }
         }
 
-        let (status, parent_2_token) = parent_2.get_token().await.expect("get token failed");
+        let (status, parent_2_token) =
+            parent_2.deprecated_get_token().await.expect("get token failed");
         zx::Status::ok(status).unwrap();
 
         assert_eq!(
@@ -3631,7 +3635,7 @@ mod tests {
             }
         }
 
-        let (status, dst_token) = parent.get_token().await.expect("FIDL call failed");
+        let (status, dst_token) = parent.deprecated_get_token().await.expect("FIDL call failed");
         zx::Status::ok(status).expect("get_token failed");
         let new_encrypted_name = "aabbcc";
         parent
@@ -3639,7 +3643,7 @@ mod tests {
             .await
             .expect("FIDL call failed")
             .expect_err("rename should fail on a locked directory");
-        let (status, dst_token) = parent.get_token().await.expect("FIDL call failed");
+        let (status, dst_token) = parent.deprecated_get_token().await.expect("FIDL call failed");
         zx::Status::ok(status).expect("get_token failed");
         crypt
             .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
@@ -3731,7 +3735,8 @@ mod tests {
 
             let proxy = open_symlink(&parent, "symlink").await;
 
-            let (status, dst_token) = parent.get_token().await.expect("FIDL call failed");
+            let (status, dst_token) =
+                parent.deprecated_get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
             proxy
                 .link_into(zx::Event::from(dst_token.unwrap()), "symlink2")
@@ -3827,7 +3832,8 @@ mod tests {
 
             let proxy = open_symlink(&root, "symlink").await;
 
-            let (status, dst_token) = parent.get_token().await.expect("FIDL call failed");
+            let (status, dst_token) =
+                parent.deprecated_get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
             proxy
                 .link_into(zx::Event::from(dst_token.unwrap()), "symlink2")
@@ -4154,7 +4160,7 @@ mod tests {
                 &Default::default(),
             )
             .await;
-            let (status, dst_token) = root.get_token().await.expect("FIDL call failed");
+            let (status, dst_token) = root.deprecated_get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
             root.rename("target", zx::Event::from(dst_token.unwrap()), "symlink")
                 .await
@@ -4205,11 +4211,10 @@ mod tests {
                 .expect("unlink failed");
 
             // 4. Try to LinkInto to a new path.
-            let (status, dst_token) = root.get_token().await.expect("FIDL call failed");
-            zx::Status::ok(status).expect("get_token failed");
+            let dst_token =
+                root.get_token().await.expect("FIDL call failed").expect("get_token failed");
 
-            let link_result =
-                proxy.link_into(zx::Event::from(dst_token.unwrap()), "symlink_new").await;
+            let link_result = proxy.link_into(dst_token, "symlink_new").await;
             assert_matches!(
                 link_result,
                 Ok(Err(status)) if status == zx::Status::NOT_FOUND.into_raw()
@@ -4292,13 +4297,13 @@ mod tests {
             close_file_checked(file).await;
 
             let inner_token = inner
-                .get_token()
+                .deprecated_get_token()
                 .await
                 .expect("fidl failed")
                 .1
                 .expect("get_token returned no handle");
             let root_token = root
-                .get_token()
+                .deprecated_get_token()
                 .await
                 .expect("fidl failed")
                 .1
@@ -4403,7 +4408,7 @@ mod tests {
 
             let proxy = open_symlink(&root, "symlink").await;
 
-            let (status, dst_token) = root.get_token().await.expect("FIDL call failed");
+            let (status, dst_token) = root.deprecated_get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
             proxy
                 .link_into(zx::Event::from(dst_token.unwrap()), "symlink2")
@@ -5499,7 +5504,7 @@ mod tests {
         let bar_object_id = immutable.id.unwrap();
 
         // Check rename.
-        let (status, dst_token) = root.get_token().await.expect("FIDL call failed");
+        let (status, dst_token) = root.deprecated_get_token().await.expect("FIDL call failed");
         zx::Status::ok(status).expect("get_token failed");
         root.rename("foo", zx::Event::from(dst_token.unwrap()), "bar")
             .await
@@ -5730,9 +5735,8 @@ mod tests {
         .await;
         close_file_checked(file).await;
 
-        let (status, dst_token) = dir.get_token().await.expect("FIDL call failed");
-        zx::Status::ok(status).expect("get_token failed");
-        dir.rename("FOO", zx::Event::from(dst_token.unwrap()), "bar")
+        let dst_token = dir.get_token().await.expect("FIDL call failed").expect("get_token failed");
+        dir.rename("FOO", dst_token, "bar")
             .await
             .expect("Rename FIDL call failed")
             .expect("rename failed");
@@ -5893,9 +5897,8 @@ mod tests {
         let fixture = TestFixture::new().await;
         let (dir, mut watcher) = set_up_casefold_dir_with_files(&fixture, "dir", &["foo"]).await;
 
-        let (status, dst_token) = dir.get_token().await.expect("FIDL call failed");
-        zx::Status::ok(status).expect("get_token failed");
-        dir.rename("FOO", zx::Event::from(dst_token.unwrap()), "BAR")
+        let dst_token = dir.get_token().await.expect("FIDL call failed").expect("get_token failed");
+        dir.rename("FOO", dst_token, "BAR")
             .await
             .expect("Rename FIDL call failed")
             .expect("rename failed");
@@ -5912,9 +5915,8 @@ mod tests {
         let (dir, mut watcher) =
             set_up_casefold_dir_with_files(&fixture, "dir", &["foo", "bar"]).await;
 
-        let (status, dst_token) = dir.get_token().await.expect("FIDL call failed");
-        zx::Status::ok(status).expect("get_token failed");
-        dir.rename("FOO", zx::Event::from(dst_token.unwrap()), "BAR")
+        let dst_token = dir.get_token().await.expect("FIDL call failed").expect("get_token failed");
+        dir.rename("FOO", dst_token, "BAR")
             .await
             .expect("Rename FIDL call failed")
             .expect("rename failed");
@@ -5934,10 +5936,10 @@ mod tests {
         let (dst_dir, mut dst_watcher) =
             set_up_casefold_dir_with_files(&fixture, "dst_dir", &["bar"]).await;
 
-        let (status, dst_token) = dst_dir.get_token().await.expect("FIDL call failed");
-        zx::Status::ok(status).expect("get_token failed");
+        let dst_token =
+            dst_dir.get_token().await.expect("FIDL call failed").expect("get_token failed");
         src_dir
-            .rename("FOO", zx::Event::from(dst_token.unwrap()), "BAR")
+            .rename("FOO", dst_token, "BAR")
             .await
             .expect("Rename FIDL call failed")
             .expect("rename failed");
@@ -5970,9 +5972,8 @@ mod tests {
         let fixture = TestFixture::new().await;
         let (dir, mut watcher) = set_up_casefold_dir_with_files(&fixture, "dir", &["Foo"]).await;
 
-        let (status, dst_token) = dir.get_token().await.expect("FIDL call failed");
-        zx::Status::ok(status).expect("get_token failed");
-        dir.rename("Foo", zx::Event::from(dst_token.unwrap()), "FOO")
+        let dst_token = dir.get_token().await.expect("FIDL call failed").expect("get_token failed");
+        dir.rename("Foo", dst_token, "FOO")
             .await
             .expect("Rename FIDL call failed")
             .expect("rename failed");

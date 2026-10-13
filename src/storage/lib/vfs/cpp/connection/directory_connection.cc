@@ -205,6 +205,24 @@ void DirectoryConnection::UpdateAttributes(fio::wire::MutableNodeAttributes* req
   completer.Reply(Connection::NodeUpdateAttributes(update));
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+void DirectoryConnection::GetToken(GetTokenCompleter::Sync& completer) {
+  FS_PRETTY_TRACE_DEBUG("[DirectoryGetToken] our rights: ", rights());
+  if (!(rights() & fuchsia_io::Rights::kModifyDirectory)) {
+    completer.ReplyError(ZX_ERR_BAD_HANDLE);
+    return;
+  }
+  zx::event returned_token;
+  auto fs = vfs();
+  zx_status_t status = fs ? fs->VnodeToToken(vnode(), &token(), &returned_token) : ZX_ERR_CANCELED;
+  if (status == ZX_OK) {
+    completer.ReplySuccess(std::move(returned_token));
+  } else {
+    completer.ReplyError(status);
+  }
+}
+#endif
+
 void DirectoryConnection::GetFlags(GetFlagsCompleter::Sync& completer) {
   completer.ReplySuccess(fio::Flags::kProtocolDirectory | RightsToFlags(rights()));
 }
@@ -426,7 +444,11 @@ void DirectoryConnection::Rewind(RewindCompleter::Sync& completer) {
   completer.Reply(ZX_OK);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+void DirectoryConnection::DeprecatedGetToken(DeprecatedGetTokenCompleter::Sync& completer) {
+#else
 void DirectoryConnection::GetToken(GetTokenCompleter::Sync& completer) {
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   FS_PRETTY_TRACE_DEBUG("[DirectoryGetToken] our rights: ", rights());
   // GetToken exists to support linking, so we must make sure the connection has the permission to
   // modify the directory.

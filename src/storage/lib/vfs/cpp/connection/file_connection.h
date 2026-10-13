@@ -109,6 +109,11 @@ class FileConnection : public Connection, public fidl::WireServer<fuchsia_io::Fi
                 LinkIntoCompleter::Sync& completer) final {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  void GetToken(GetTokenCompleter::Sync& completer) final {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+#endif
 
   //
   // |fuchsia.io/File| operations.

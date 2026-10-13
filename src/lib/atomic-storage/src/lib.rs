@@ -624,15 +624,24 @@ mod tests {
                             .expect("failed to forward Unlink request");
                         responder.send(response).expect("failed to respond to Unlink request");
                     }
+                    fio::DirectoryRequest::DeprecatedGetToken { responder } => {
+                        let response = self
+                            .real_dir
+                            .deprecated_get_token()
+                            .await
+                            .expect("failed to forward GetToken request");
+                        responder
+                            .send(response.0, response.1)
+                            .expect("failed to respond to GetToken request");
+                    }
+                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
                     fio::DirectoryRequest::GetToken { responder } => {
                         let response = self
                             .real_dir
                             .get_token()
                             .await
                             .expect("failed to forward GetToken request");
-                        responder
-                            .send(response.0, response.1)
-                            .expect("failed to respond to GetToken request");
+                        responder.send(response).expect("failed to respond to GetToken request");
                     }
                     request => unimplemented!("request: {:?}", request),
                 }

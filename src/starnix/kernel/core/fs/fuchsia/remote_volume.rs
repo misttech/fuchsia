@@ -241,22 +241,20 @@ impl VolumeKeys {
                 log_error!("File.Sync failed with {:?}", err);
                 err
             })?;
-        let (status, token) = data.get_token(zx::MonotonicInstant::INFINITE).map_err(|e| {
-            log_error!("transport error on get_token for the data directory, error: {:?}", e);
-            errno!(ENOENT)
-        })?;
-        zx::Status::ok(status).map_err(|e| {
-            let err = from_status_like_fdio!(e);
-            log_error!("Failed to get_token for the data directory, error: {:?}", err);
-            err
-        })?;
+        let token = data
+            .get_token(zx::MonotonicInstant::INFINITE)
+            .map_err(|e| {
+                log_error!("transport error on get_token for the data directory, error: {:?}", e);
+                errno!(ENOENT)
+            })?
+            .map_err(|status| {
+                let err = from_status_like_fdio!(zx::Status::err_from_raw(status));
+                log_error!("Failed to get_token for the data directory, error: {:?}", err);
+                err
+            })?;
 
         tmp_file
-            .link_into(
-                zx::Event::from(token.ok_or_else(|| errno!(ENOENT))?),
-                key_path,
-                zx::MonotonicInstant::INFINITE,
-            )
+            .link_into(token, key_path, zx::MonotonicInstant::INFINITE)
             .map_err(|e| {
                 log_error!("FIDL transport error on File.LinkInto {:?}", e);
                 errno!(EIO)

@@ -1281,7 +1281,7 @@ mod tests {
         .await;
         close_file_checked(f).await;
 
-        let (status, dst_token) = dst.get_token().await.expect("FIDL call failed");
+        let (status, dst_token) = dst.deprecated_get_token().await.expect("FIDL call failed");
         Status::ok(status).expect("get_token failed");
         src.rename("a", Event::from(dst_token.unwrap()), "b")
             .await
@@ -1332,7 +1332,7 @@ mod tests {
         .await;
         close_file_checked(f).await;
 
-        let (status, src_token) = src.get_token().await.expect("FIDL call failed");
+        let (status, src_token) = src.deprecated_get_token().await.expect("FIDL call failed");
         Status::ok(status).expect("get_token failed");
         src.rename("a", Event::from(src_token.unwrap()), "b")
             .await
@@ -1409,7 +1409,7 @@ mod tests {
         .await;
         close_file_checked(f).await;
 
-        let (status, dst_token) = dst.get_token().await.expect("FIDL call failed");
+        let (status, dst_token) = dst.deprecated_get_token().await.expect("FIDL call failed");
         Status::ok(status).expect("get_token failed");
         src.rename("a", Event::from(dst_token.unwrap()), "b")
             .await
@@ -1492,7 +1492,7 @@ mod tests {
         )
         .await;
 
-        let (status, dst_token) = dst.get_token().await.expect("FIDL call failed");
+        let (status, dst_token) = dst.deprecated_get_token().await.expect("FIDL call failed");
         Status::ok(status).expect("get_token failed");
         src.rename("a", Event::from(dst_token.unwrap()), "b")
             .await

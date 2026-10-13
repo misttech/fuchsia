@@ -1632,16 +1632,16 @@ zx_status_t OpteeClient::HandleRpcCommandFileSystemRenameFile(
     message->set_return_code(TEEC_ERROR_GENERIC);
     return token_result.status();
   }
-  if (token_result.value().s != ZX_OK) {
-    LOG(ERROR, "could not get destination directory's storage token (IO status: %d)",
-        token_result.value().s);
+  if (token_result.value().is_error()) {
+    LOG(ERROR, "could not get destination directory's storage token (IO status: %s)",
+        zx_status_get_string(token_result.value().error_value()));
     message->set_return_code(TEEC_ERROR_GENERIC);
-    return token_result.value().s;
+    return token_result.value().error_value();
   }
 
   auto rename_result = fidl::WireCall(old_storage.value().borrow())
                            ->Rename(fidl::StringView::FromExternal(old_name),
-                                    zx::event(std::move(token_result.value().token)),
+                                    std::move(token_result.value().value()->token),
                                     fidl::StringView::FromExternal(new_name));
   if (!rename_result.ok()) {
     LOG(ERROR, "failed to rename file (FIDL status: %s)", rename_result.status_string());

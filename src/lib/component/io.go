@@ -146,6 +146,10 @@ func (*Service) UpdateAttributes(fidl.Context, io.MutableNodeAttributes) (io.Nod
 	return io.NodeUpdateAttributesResultWithErr(int32(zx.ErrNotSupported)), nil
 }
 
+func (*Service) GetToken(fidl.Context) (io.NodeGetTokenResult, error) {
+	return io.NodeGetTokenResultWithErr(int32(zx.ErrNotSupported)), nil
+}
+
 func (*Service) ListExtendedAttributes(_ fidl.Context, request io.ExtendedAttributeIteratorWithCtxInterfaceRequest) error {
 	if err := closeWithEpitaphIgnorePeerClosed(request.Channel, zx.ErrNotSupported); err != nil {
 		logError(fmt.Errorf("Service.ListExtendedAttributes: %w", err))
@@ -485,8 +489,12 @@ func (dirState *directoryState) Rewind(fidl.Context) (int32, error) {
 	return int32(zx.ErrOk), nil
 }
 
-func (*directoryState) GetToken(fidl.Context) (int32, zx.Handle, error) {
+func (*directoryState) DeprecatedGetToken(fidl.Context) (int32, zx.Handle, error) {
 	return int32(zx.ErrNotSupported), zx.HandleInvalid, nil
+}
+
+func (*directoryState) GetToken(fidl.Context) (io.NodeGetTokenResult, error) {
+	return io.NodeGetTokenResultWithErr(int32(zx.ErrNotSupported)), nil
 }
 
 func (*directoryState) Rename(fidl.Context, string, zx.Event, string) (io.DirectoryRenameResult, error) {
@@ -743,6 +751,10 @@ func (*fileState) GetAttributes(fidl.Context, io.NodeAttributesQuery) (io.NodeGe
 
 func (*fileState) UpdateAttributes(fidl.Context, io.MutableNodeAttributes) (io.NodeUpdateAttributesResult, error) {
 	return io.NodeUpdateAttributesResultWithErr(int32(zx.ErrNotSupported)), nil
+}
+
+func (*fileState) GetToken(fidl.Context) (io.NodeGetTokenResult, error) {
+	return io.NodeGetTokenResultWithErr(int32(zx.ErrNotSupported)), nil
 }
 
 func (*fileState) ListExtendedAttributes(_ fidl.Context, request io.ExtendedAttributeIteratorWithCtxInterfaceRequest) error {

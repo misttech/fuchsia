@@ -172,7 +172,7 @@ async fn watch_dir_rename() {
         WatchMessage { event: WatchEvent::ADD_FILE, filename: PathBuf::from("foo") },
     );
 
-    let (status, token) = dir.get_token().await.unwrap();
+    let (status, token) = dir.deprecated_get_token().await.unwrap();
     assert_eq!(status, zx::sys::ZX_OK);
     let token = token.unwrap();
     dir.rename("foo", token.into(), "bar").await.expect("fidl error").expect("rename error");

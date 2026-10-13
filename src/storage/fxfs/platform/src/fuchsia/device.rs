@@ -537,7 +537,7 @@ mod tests {
                 FileBackedVolumeProviderMarker,
             >(fixture.volume_out_dir())
             .unwrap();
-            let (status, token) = fixture.root().get_token().await.expect("FIDL error");
+            let (status, token) = fixture.root().deprecated_get_token().await.expect("FIDL error");
             zx::ok(status).expect("get_token error");
             Self { proxy, token: token.unwrap() }
         }

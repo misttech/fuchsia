@@ -616,18 +616,17 @@ open protocol Node {
         4: symlink SymlinkInfo;
     });
 
-    // TODO(https://fxbug.dev/42157659): uncomment and implement.
-
-    // /// Acquires a token which can be used to identify this connection at a later point in
-    // /// time. The token will remain valid for as long as the connection requesting the token
-    // /// remains open.
-    // ///
-    // /// This method does not require any rights. Note that the token identifies
-    // /// the connection, hence carries the rights information on this connection.
-    // @selector("fuchsia.io/Node.GetToken")
-    // GetToken2() -> (resource struct {
-    //     token Token;
-    // }) error zx.Status;
+    /// Acquires a token which can be used to identify this connection at a later point in
+    /// time. The token will remain valid for as long as the connection requesting the token
+    /// remains open.
+    ///
+    /// This method does not require any rights. Note that the token identifies
+    /// the connection, hence carries the rights information on this connection.
+    @selector("fuchsia.io/Node.GetToken")
+    @available(added=NEXT)
+    flexible GetToken() -> (resource struct {
+        token Token;
+    }) error zx.Status;
 
     /// Acquires information about the node.
     ///

@@ -52,11 +52,9 @@ TEST_P(SymlinkTest, LinkIntoFromUnlinkedSymlinkFails) {
   fdio_cpp::FdioCaller dir_caller(std::move(dir_fd));
   auto token_result = fidl::WireCall(dir_caller.borrow_as<fio::Directory>())->GetToken();
   ASSERT_EQ(token_result.status(), ZX_OK);
-  ASSERT_EQ(token_result->s, ZX_OK);
+  ASSERT_TRUE(token_result->is_ok()) << zx_status_get_string(token_result->error_value());
 
-  zx::handle duplicated_token;
-  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicated_token), ZX_OK);
-  zx::event token(duplicated_token.release());
+  zx::event token = std::move(token_result->value()->token);
 
   // Call LinkInto using the client end we held
   auto link_result = fidl::WireCall(symlink_endpoints.client)

@@ -368,15 +368,16 @@ TEST_P(RenameTest, Raw) {
 
   auto token_result = fidl::WireCall(caller.borrow_as<fio::Directory>())->GetToken();
   ASSERT_EQ(token_result.status(), ZX_OK);
-  ASSERT_EQ(token_result->s, ZX_OK);
+  ASSERT_TRUE(token_result.value().is_ok());
 
   // Pass a path, instead of a name, to rename.
   // Observe that paths are rejected.
   constexpr char src[] = "bravo/charlie";
   constexpr char dst[] = "bravo/delta";
-  auto rename_result = fidl::WireCall(caller.borrow_as<fio::Directory>())
-                           ->Rename(fidl::StringView(src), zx::event(token_result->token.get()),
-                                    fidl::StringView(dst));
+  auto rename_result =
+      fidl::WireCall(caller.borrow_as<fio::Directory>())
+          ->Rename(fidl::StringView(src), std::move(token_result.value().value()->token),
+                   fidl::StringView(dst));
   ASSERT_TRUE(rename_result.ok());
   ASSERT_TRUE(rename_result->is_error());
   ASSERT_EQ(rename_result->error_value(), ZX_ERR_INVALID_ARGS);
@@ -431,11 +432,9 @@ TEST_P(RenameTest, RenameRightsEscalation) {
 
   auto token_result = dst_client->GetToken();
   ASSERT_EQ(token_result.status(), ZX_OK);
-  ASSERT_EQ(token_result->s, ZX_OK);
+  ASSERT_TRUE(token_result->is_ok()) << zx_status_get_string(token_result->error_value());
 
-  zx::handle token_handle;
-  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_handle), ZX_OK);
-  zx::event token(token_handle.release());
+  zx::event token = std::move(token_result->value()->token);
 
   auto rename_result =
       src_client->Rename(fidl::StringView("file"), std::move(token), fidl::StringView("file"));
@@ -464,11 +463,9 @@ TEST_P(RenameTest, RenameWithinSameDirectoryWithRestrictedRightsSucceeds) {
 
   auto token_result = src_client->GetToken();
   ASSERT_EQ(token_result.status(), ZX_OK);
-  ASSERT_EQ(token_result->s, ZX_OK);
+  ASSERT_TRUE(token_result->is_ok()) << zx_status_get_string(token_result->error_value());
 
-  zx::handle token_handle;
-  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_handle), ZX_OK);
-  zx::event token(token_handle.release());
+  zx::event token = std::move(token_result->value()->token);
 
   auto rename_result =
       src_client->Rename(fidl::StringView("file"), std::move(token), fidl::StringView("file2"));
@@ -505,11 +502,9 @@ TEST_P(RenameTest, RenameWithoutModifyDirectoryFails) {
 
   auto token_result = dst_client->GetToken();
   ASSERT_EQ(token_result.status(), ZX_OK);
-  ASSERT_EQ(token_result->s, ZX_OK);
+  ASSERT_TRUE(token_result->is_ok()) << zx_status_get_string(token_result->error_value());
 
-  zx::handle token_handle;
-  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_handle), ZX_OK);
-  zx::event token(token_handle.release());
+  zx::event token = std::move(token_result->value()->token);
 
   auto rename_result =
       src_client->Rename(fidl::StringView("file"), std::move(token), fidl::StringView("file"));
@@ -550,11 +545,9 @@ TEST_P(RenameTest, RenameWithinSameDirectoryWithoutModifyDirectoryFails) {
 
   auto token_result = src_full_client->GetToken();
   ASSERT_EQ(token_result.status(), ZX_OK);
-  ASSERT_EQ(token_result->s, ZX_OK);
+  ASSERT_TRUE(token_result->is_ok()) << zx_status_get_string(token_result->error_value());
 
-  zx::handle token_handle;
-  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_handle), ZX_OK);
-  zx::event token(token_handle.release());
+  zx::event token = std::move(token_result->value()->token);
 
   // Call Rename on the restricted connection, using the token from the full connection.
   auto rename_result = src_restricted_client->Rename(fidl::StringView("file"), std::move(token),

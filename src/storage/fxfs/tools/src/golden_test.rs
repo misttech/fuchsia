@@ -315,9 +315,12 @@ async fn check_data_volume(
         fio::PERM_READABLE | fio::PERM_WRITABLE,
     )
     .await?;
-    let (status, handle) = some_dir_rw.get_token().await.context("FIDL get_token for link")?;
-    Status::ok(status).context("get_token status")?;
-    let token = zx::Event::from(handle.unwrap());
+    let token = some_dir_rw
+        .get_token()
+        .await
+        .context("FIDL get_token for link")?
+        .map_err(Status::err_from_raw)
+        .context("get_token status")?;
     let status = some_dir_rw
         .link("test_file.txt", token.into(), "linked_test_file.txt")
         .await
@@ -328,11 +331,14 @@ async fn check_data_volume(
         "Linked file contents"
     );
 
-    let (status, handle) = some_dir_rw.get_token().await.context("FIDL get_token for rename")?;
-    Status::ok(status).context("get_token status")?;
-    let token = zx::Event::from(handle.unwrap());
+    let token = some_dir_rw
+        .get_token()
+        .await
+        .context("FIDL get_token for rename")?
+        .map_err(Status::err_from_raw)
+        .context("get_token status")?;
     let res = some_dir_rw
-        .rename("linked_test_file.txt", token.into(), "renamed_test_file.txt")
+        .rename("linked_test_file.txt", token, "renamed_test_file.txt")
         .await
         .context("FIDL rename")?;
     res.map_err(Status::err_from_raw).context("rename on directory")?;

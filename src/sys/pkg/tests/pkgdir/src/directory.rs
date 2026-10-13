@@ -979,7 +979,7 @@ async fn get_token_per_package_source(source: PackageSource) {
             .await
             .unwrap();
 
-        let (status, token) = dir.get_token().await.unwrap();
+        let (status, token) = dir.deprecated_get_token().await.unwrap();
         let status = zx::Status::ok(status);
         assert_eq!(status, Err(zx::Status::NOT_SUPPORTED));
         assert!(token.is_none(), "token should be absent");

@@ -693,7 +693,7 @@ mod tests {
         let data = vec![];
         let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
-        let (status, token) = fixture.root().get_token().await.expect("FIDL failed");
+        let (status, token) = fixture.root().deprecated_get_token().await.expect("FIDL failed");
         Status::ok(status).unwrap();
         fixture
             .root()
@@ -712,7 +712,7 @@ mod tests {
         let data = vec![];
         let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
-        let (status, token) = fixture.root().get_token().await.expect("FIDL failed");
+        let (status, token) = fixture.root().deprecated_get_token().await.expect("FIDL failed");
         Status::ok(status).unwrap();
         let status = fixture
             .root()

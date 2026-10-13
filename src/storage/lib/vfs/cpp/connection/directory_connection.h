@@ -83,6 +83,9 @@ class DirectoryConnection final : public Connection,
                      GetAttributesCompleter::Sync& completer) final;
   void UpdateAttributes(fuchsia_io::wire::MutableNodeAttributes* request,
                         UpdateAttributesCompleter::Sync& completer) final;
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  void GetToken(GetTokenCompleter::Sync& completer) final;
+#endif
   void ListExtendedAttributes(ListExtendedAttributesRequestView request,
                               ListExtendedAttributesCompleter::Sync& completer) final {
     request->iterator.Close(ZX_ERR_NOT_SUPPORTED);
@@ -112,7 +115,11 @@ class DirectoryConnection final : public Connection,
   void Unlink(UnlinkRequestView request, UnlinkCompleter::Sync& completer) final;
   void ReadDirents(ReadDirentsRequestView request, ReadDirentsCompleter::Sync& completer) final;
   void Rewind(RewindCompleter::Sync& completer) final;
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  void DeprecatedGetToken(DeprecatedGetTokenCompleter::Sync& completer) final;
+#else
   void GetToken(GetTokenCompleter::Sync& completer) final;
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   void Rename(RenameRequestView request, RenameCompleter::Sync& completer) final;
   void Link(LinkRequestView request, LinkCompleter::Sync& completer) final;
   void Watch(WatchRequestView request, WatchCompleter::Sync& completer) final;
