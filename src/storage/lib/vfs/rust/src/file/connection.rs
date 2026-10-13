@@ -16,6 +16,7 @@ use crate::object_request::{
 };
 use crate::protocols::ToFileOptions;
 use crate::request_handler::{RequestHandler, RequestListener};
+use crate::token_registry::{TokenInterface, TokenRegistry, TokenTarget, Tokenizable};
 use crate::{ObjectRequestRef, ProtocolsExt};
 use anyhow::Error;
 use flex_client::fidl::{DiscoverableProtocolMarker as _, ServerEnd};
@@ -55,7 +56,7 @@ async fn create_connection<
 
     let connection = FileConnection { scope: scope.clone(), file, options };
     if let Ok(requests) = object_request.take().into_request_stream(&connection).await {
-        scope.spawn(RequestListener::new(requests, Some(connection)));
+        scope.spawn(RequestListener::new(requests, Some(Tokenizable::new(connection))));
     }
     Ok(())
 }
@@ -549,7 +550,10 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
 {
     /// Handle a [`FileRequest`]. This function is responsible for handing all the file operations
     /// that operate on the connection-specific buffer.
-    async fn handle_request(&mut self, req: fio::FileRequest) -> Result<ConnectionState, Error> {
+    async fn handle_request(
+        this: Pin<&mut Tokenizable<Self>>,
+        req: fio::FileRequest,
+    ) -> Result<ConnectionState, Error> {
         match req {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
@@ -565,7 +569,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::Clone { request, control_handle: _ } => {
                 trace::duration!("storage", "File::Clone");
-                self.handle_clone(ServerEnd::new(request.into_channel()));
+                this.as_mut().handle_clone(ServerEnd::new(request.into_channel()));
             }
             fio::FileRequest::Close { responder } => {
                 return Ok(ConnectionState::Closed(responder));
@@ -577,13 +581,14 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             #[cfg(target_os = "fuchsia")]
             fio::FileRequest::Describe { responder } => {
                 trace::duration!("storage", "File::Describe");
-                let stream = self.file.duplicate_stream()?;
+                let stream = this.file.duplicate_stream()?;
                 responder.send(fio::FileInfo { stream, ..Default::default() })?;
             }
             fio::FileRequest::LinkInto { dst_parent_token, dst, responder } => {
                 async move {
                     responder.send(
-                        self.handle_link_into(dst_parent_token, dst)
+                        this.as_mut()
+                            .handle_link_into(dst_parent_token, dst)
                             .await
                             .map_err(Status::into_raw),
                     )
@@ -593,7 +598,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::Sync { responder } => {
                 async move {
-                    responder.send(self.file.sync(SyncMode::Normal).await.map_err(Status::into_raw))
+                    responder.send(this.file.sync(SyncMode::Normal).await.map_err(Status::into_raw))
                 }
                 .trace(trace::trace_future_args!("storage", "File::Sync"))
                 .await?;
@@ -602,7 +607,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             fio::FileRequest::DeprecatedGetAttr { responder } => {
                 async move {
                     let (status, attrs) =
-                        crate::common::io2_to_io1_attrs(self.file.as_ref(), self.options.rights)
+                        crate::common::io2_to_io1_attrs(this.file.as_ref(), this.options.rights)
                             .await;
                     responder.send(status, &attrs)
                 }
@@ -613,7 +618,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             fio::FileRequest::GetAttr { responder } => {
                 async move {
                     let (status, attrs) =
-                        crate::common::io2_to_io1_attrs(self.file.as_ref(), self.options.rights)
+                        crate::common::io2_to_io1_attrs(this.file.as_ref(), this.options.rights)
                             .await;
                     responder.send(status, &attrs)
                 }
@@ -623,8 +628,10 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             #[cfg(fuchsia_api_level_at_least = "28")]
             fio::FileRequest::DeprecatedSetAttr { flags, attributes, responder } => {
                 async move {
-                    let result =
-                        self.handle_update_attributes(io1_to_io2_attrs(flags, attributes)).await;
+                    let result = this
+                        .as_mut()
+                        .handle_update_attributes(io1_to_io2_attrs(flags, attributes))
+                        .await;
                     responder.send(Status::result_into_raw(result))
                 }
                 .trace(trace::trace_future_args!("storage", "File::SetAttr"))
@@ -633,8 +640,10 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             #[cfg(not(fuchsia_api_level_at_least = "28"))]
             fio::FileRequest::SetAttr { flags, attributes, responder } => {
                 async move {
-                    let result =
-                        self.handle_update_attributes(io1_to_io2_attrs(flags, attributes)).await;
+                    let result = this
+                        .as_mut()
+                        .handle_update_attributes(io1_to_io2_attrs(flags, attributes))
+                        .await;
                     responder.send(Status::result_into_raw(result))
                 }
                 .trace(trace::trace_future_args!("storage", "File::SetAttr"))
@@ -642,7 +651,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::GetAttributes { query, responder } => {
                 async move {
-                    match self.handle_get_attributes(query).await {
+                    match this.handle_get_attributes(query).await {
                         Ok(attrs) => responder
                             .send(Ok((&attrs.mutable_attributes, &attrs.immutable_attributes))),
                         Err(status) => responder.send(Err(status.into_raw())),
@@ -653,22 +662,29 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::UpdateAttributes { payload, responder } => {
                 async move {
-                    let result =
-                        self.handle_update_attributes(payload).await.map_err(Status::into_raw);
+                    let result = this
+                        .as_mut()
+                        .handle_update_attributes(payload)
+                        .await
+                        .map_err(Status::into_raw);
                     responder.send(result)
                 }
                 .trace(trace::trace_future_args!("storage", "File::UpdateAttributes"))
                 .await?;
             }
             fio::FileRequest::ListExtendedAttributes { iterator, control_handle: _ } => {
-                self.handle_list_extended_attribute(iterator)
+                this.as_mut()
+                    .handle_list_extended_attribute(iterator)
                     .trace(trace::trace_future_args!("storage", "File::ListExtendedAttributes"))
                     .await;
             }
             fio::FileRequest::GetExtendedAttribute { name, responder } => {
                 async move {
-                    let res =
-                        self.handle_get_extended_attribute(name).await.map_err(Status::into_raw);
+                    let res = this
+                        .as_mut()
+                        .handle_get_extended_attribute(name)
+                        .await
+                        .map_err(Status::into_raw);
                     responder.send(res)
                 }
                 .trace(trace::trace_future_args!("storage", "File::GetExtendedAttribute"))
@@ -676,7 +692,8 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::SetExtendedAttribute { name, value, mode, responder } => {
                 async move {
-                    let res = self
+                    let res = this
+                        .as_mut()
                         .handle_set_extended_attribute(name, value, mode)
                         .await
                         .map_err(Status::into_raw);
@@ -687,8 +704,11 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::RemoveExtendedAttribute { name, responder } => {
                 async move {
-                    let res =
-                        self.handle_remove_extended_attribute(name).await.map_err(Status::into_raw);
+                    let res = this
+                        .as_mut()
+                        .handle_remove_extended_attribute(name)
+                        .await
+                        .map_err(Status::into_raw);
                     responder.send(res)
                 }
                 .trace(trace::trace_future_args!("storage", "File::RemoveExtendedAttribute"))
@@ -697,7 +717,8 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             fio::FileRequest::EnableVerity { options, responder } => {
                 async move {
-                    let res = self.handle_enable_verity(options).await.map_err(Status::into_raw);
+                    let res =
+                        this.as_mut().handle_enable_verity(options).await.map_err(Status::into_raw);
                     responder.send(res)
                 }
                 .trace(trace::trace_future_args!("storage", "File::EnableVerity"))
@@ -707,7 +728,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 let trace_args =
                     trace::trace_future_args!("storage", "File::Read", "bytes" => count);
                 async move {
-                    let result = self.handle_read(count).await;
+                    let result = this.as_mut().handle_read(count).await;
                     responder.send(result.as_deref().map_err(|s| s.into_raw()))
                 }
                 .trace(trace_args)
@@ -721,7 +742,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     "bytes" => count
                 );
                 async move {
-                    let result = self.handle_read_at(offset, count).await;
+                    let result = this.handle_read_at(offset, count).await;
                     responder.send(result.as_deref().map_err(|s| s.into_raw()))
                 }
                 .trace(trace_args)
@@ -731,7 +752,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 let trace_args =
                     trace::trace_future_args!("storage", "File::Write", "bytes" => data.len());
                 async move {
-                    let result = self.handle_write(data).await;
+                    let result = this.as_mut().handle_write(data).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
                 .trace(trace_args)
@@ -745,7 +766,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     "bytes" => data.len()
                 );
                 async move {
-                    let result = self.handle_write_at(offset, data).await;
+                    let result = this.handle_write_at(offset, data).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
                 .trace(trace_args)
@@ -753,7 +774,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::Seek { origin, offset, responder } => {
                 async move {
-                    let result = self.handle_seek(offset, origin).await;
+                    let result = this.as_mut().handle_seek(offset, origin).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
                 .trace(trace::trace_future_args!("storage", "File::Seek"))
@@ -761,7 +782,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::Resize { length, responder } => {
                 async move {
-                    let result = self.handle_truncate(length).await;
+                    let result = this.as_mut().handle_truncate(length).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
                 .trace(trace::trace_future_args!("storage", "File::Resize"))
@@ -769,34 +790,36 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::GetFlags { responder } => {
                 trace::duration!("storage", "File::GetFlags");
-                responder.send(Ok(fio::Flags::from(&self.options)))?;
+                responder.send(Ok(fio::Flags::from(&this.options)))?;
             }
             fio::FileRequest::SetFlags { flags, responder } => {
                 trace::duration!("storage", "File::SetFlags");
                 // The only supported flag is APPEND.
                 if flags.is_empty() || flags == fio::Flags::FILE_APPEND {
-                    self.options.is_append = flags.contains(fio::Flags::FILE_APPEND);
-                    responder.send(self.file.set_flags(flags).map_err(Status::into_raw))?;
+                    let this = this.as_mut().get_mut();
+                    this.options.is_append = flags.contains(fio::Flags::FILE_APPEND);
+                    responder.send(this.file.set_flags(flags).map_err(Status::into_raw))?;
                 } else {
                     responder.send(Err(Status::INVALID_ARGS.into_raw()))?;
                 }
             }
             fio::FileRequest::DeprecatedGetFlags { responder } => {
                 trace::duration!("storage", "File::DeprecatedGetFlags");
-                responder.send(zx_status::sys::ZX_OK, self.options.to_io1())?;
+                responder.send(zx_status::sys::ZX_OK, this.options.to_io1())?;
             }
             fio::FileRequest::DeprecatedSetFlags { flags, responder } => {
                 trace::duration!("storage", "File::DeprecatedSetFlags");
                 // The only supported flag is APPEND.
                 let is_append = flags.contains(fio::OpenFlags::APPEND);
-                self.options.is_append = is_append;
+                let this = this.as_mut().get_mut();
+                this.options.is_append = is_append;
                 let flags = if is_append { fio::Flags::FILE_APPEND } else { fio::Flags::empty() };
-                responder.send(Status::result_into_raw(self.file.set_flags(flags)))?;
+                responder.send(Status::result_into_raw(this.file.set_flags(flags)))?;
             }
             #[cfg(target_os = "fuchsia")]
             fio::FileRequest::GetBackingMemory { flags, responder } => {
                 async move {
-                    let result = self.handle_get_backing_memory(flags).await;
+                    let result = this.as_mut().handle_get_backing_memory(flags).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
                 .trace(trace::trace_future_args!("storage", "File::GetBackingMemory"))
@@ -817,7 +840,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::QueryFilesystem { responder } => {
                 trace::duration!("storage", "File::QueryFilesystem");
-                match self.file.query_filesystem() {
+                match this.file.query_filesystem() {
                     Err(status) => responder.send(status.into_raw(), None)?,
                     Ok(info) => responder.send(zx_status::sys::ZX_OK, Some(&info))?,
                 }
@@ -825,7 +848,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             fio::FileRequest::Allocate { offset, length, mode, responder } => {
                 async move {
-                    let result = self.handle_allocate(offset, length, mode).await;
+                    let result = this.as_mut().handle_allocate(offset, length, mode).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
                 .trace(trace::trace_future_args!("storage", "File::Allocate"))
@@ -833,7 +856,12 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             #[cfg(fuchsia_api_level_at_least = "NEXT")]
             fio::FileRequest::GetToken { responder } => {
-                responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
+                trace::duration!("storage", "File::GetToken");
+                let res = match TokenRegistry::get_token(this.into_ref()) {
+                    Ok(token) => Ok(token.into()),
+                    Err(status) => Err(status.into_raw()),
+                };
+                responder.send(res)?;
             }
             fio::FileRequest::_UnknownMethod { .. } => (),
         }
@@ -857,7 +885,10 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 return;
             }
         };
-        self.scope.spawn(RequestListener::new(server_end.into_stream(), Some(connection)));
+        self.scope.spawn(RequestListener::new(
+            server_end.into_stream(),
+            Some(Tokenizable::new(connection)),
+        ));
     }
 
     async fn handle_read(&mut self, count: u64) -> Result<Vec<u8>, Status> {
@@ -1054,17 +1085,16 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
 // The `FileConnection` is wrapped in an `Option` so it can be dropped before responding to a Close
 // request.
 impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler + Unpin>
-    RequestHandler for Option<FileConnection<U>>
+    RequestHandler for Option<Tokenizable<FileConnection<U>>>
 {
     type Request = Result<fio::FileRequest, fidl::Error>;
 
-    async fn handle_request(self: Pin<&mut Self>, request: Self::Request) -> ControlFlow<()> {
-        let option_this = self.get_mut();
-        let this = option_this.as_mut().unwrap();
+    async fn handle_request(mut self: Pin<&mut Self>, request: Self::Request) -> ControlFlow<()> {
+        let this = self.as_mut().as_pin_mut().unwrap();
         let Some(_guard) = this.scope.try_active_guard() else { return ControlFlow::Break(()) };
         let state = match request {
             Ok(request) => {
-                this.handle_request(request)
+                FileConnection::handle_request(this, request)
                     .await
                     // Protocol level error.  Close the connection on any unexpected error.
                     // TODO: Send an epitaph.
@@ -1080,6 +1110,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         match state {
             ConnectionState::Alive => ControlFlow::Continue(()),
             ConnectionState::Dropped => {
+                let this = self.as_mut().as_pin_mut().unwrap();
                 if this.should_sync_before_close() {
                     let _ = this.file.sync(SyncMode::PreClose).await;
                 }
@@ -1087,7 +1118,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             ConnectionState::Closed(responder) => {
                 async move {
-                    let this = option_this.as_mut().unwrap();
+                    let this = self.as_mut().as_pin_mut().unwrap();
                     let _ = responder.send({
                         let result = if this.should_sync_before_close() {
                             this.file.sync(SyncMode::PreClose).await.map_err(Status::into_raw)
@@ -1096,7 +1127,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                         };
                         // The file gets closed when we drop the connection, so we should do that
                         // before sending the response.
-                        std::mem::drop(option_this.take());
+                        self.set(None);
                         result
                     });
                 }
@@ -1108,12 +1139,28 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
     }
 
     async fn stream_closed(self: Pin<&mut Self>) {
-        let this = self.get_mut().as_mut().unwrap();
+        let this = self.as_pin_mut().unwrap();
         if this.should_sync_before_close() {
             if let Some(_guard) = this.scope.try_active_guard() {
                 let _ = this.file.sync(SyncMode::PreClose).await;
             }
         }
+    }
+}
+
+impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + 'static> TokenInterface
+    for FileConnection<U>
+{
+    fn get_node(&self) -> TokenTarget {
+        TokenTarget::Node((**self.file).clone())
+    }
+
+    fn get_rights(&self) -> fio::Rights {
+        self.options.rights
+    }
+
+    fn token_registry(&self) -> &TokenRegistry {
+        self.scope.token_registry()
     }
 }
 
@@ -2064,6 +2111,26 @@ mod tests {
         } else {
             unreachable!();
         }
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    #[fuchsia::test]
+    async fn test_get_token() {
+        let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
+        let token = env.proxy.get_token().await.unwrap().map_err(Status::err_from_raw).unwrap();
+        let (node, rights) = env
+            .scope
+            .token_registry()
+            .get_owner_and_rights(token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into())
+            .unwrap()
+            .unwrap();
+        let node = node.into_node();
+        assert_eq!(Arc::as_ptr(&env.file) as *const (), Arc::as_ptr(&node) as *const ());
+        assert_eq!(rights, RIGHTS_R);
+
+        // Closing the file connection should unregister the token.
+        let () = env.proxy.close().await.unwrap().map_err(Status::err_from_raw).unwrap();
+        assert!(env.scope.token_registry().get_owner_and_rights(token.into()).unwrap().is_none());
     }
 
     #[cfg(target_os = "fuchsia")]
