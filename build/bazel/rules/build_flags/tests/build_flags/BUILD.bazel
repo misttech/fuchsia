@@ -1,0 +1,211 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+load(":host_tests.bzl", "build_flags_info_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "tests",
+    visibility = ["//build/bazel/rules/build_flags/tests:__pkg__"],
+)
+
+build_flags(
+    name = "sub_flags_1",
+    cflags = ["-sub-cflag"],
+    defines = ["SUB_DEF=1"],
+    rustflags = ["--cfg=sub_cfg"],
+)
+
+compiler_build_flags(
+    name = "compiler_sub_1",
+    c_family_flags = ["-sub-c-family"],
+    rust_target_features = ["+sub-feat"],
+)
+
+build_flags(
+    name = "basic_build_flags",
+    cflags = ["-base-cflag"],
+    cflags_c = ["-only-c"],
+    cflags_cc = ["-only-cc"],
+    defines = ["FOO=1"],
+    include_dirs = ["inc/dir"],
+    ldflags = ["-base-ldflag"],
+    lib_dirs = ["lib/dir"],
+    rustenv = ["BAR=baz"],
+    rustflags = ["-Copt-level=2"],
+    subflags = [":sub_flags_1"],
+)
+
+build_flags_info_test(
+    name = "basic_build_flags_test",
+    expected_cflags = [
+        "-base-cflag",
+        "-sub-cflag",
+    ],
+    expected_cflags_c = ["-only-c"],
+    expected_cflags_cc = ["-only-cc"],
+    expected_defines = [
+        "FOO=1",
+        "SUB_DEF=1",
+    ],
+    expected_include_dirs = ["inc/dir"],
+    expected_ldflags = ["-base-ldflag"],
+    expected_lib_dirs = ["lib/dir"],
+    expected_rustenv = ["BAR=baz"],
+    expected_rustflags = [
+        "-Copt-level=2",
+        "--cfg=sub_cfg",
+    ],
+    target_under_test = ":basic_build_flags",
+)
+
+compiler_build_flags(
+    name = "compiler_flags_all",
+    c_family_flags = [
+        "-c-family-1",
+        "-c-family-2",
+    ],
+    cflags = ["-base-cflag"],
+    cflags_c = ["-only-c"],
+    cflags_cc = ["-only-cc"],
+    compiler_subflags = [":compiler_sub_1"],
+    defines = ["FOO=1"],
+    include_dirs = ["inc/dir"],
+    ldflags = ["-base-ldflag"],
+    lib_dirs = ["lib/dir"],
+    linker_flags = [
+        "--icf=all",
+        "--gc-sections",
+    ],
+    linker_llvm_flags = ["-lto-opt=1"],
+    llvm_flags = ["-llvm-common"],
+    rust_linker_flags = ["--rust-link-only"],
+    rust_linker_llvm_flags = ["-rust-lto-opt=2"],
+    rust_llvm_flags = ["-llvm-rust"],
+    rust_target_features = [
+        "+crt-static",
+        "-avx",
+    ],
+    rustenv = ["BAR=baz"],
+    rustflags = ["-Copt-level=2"],
+    subflags = [":sub_flags_1"],
+)
+
+build_flags_info_test(
+    name = "compiler_flags_all_test",
+    expected_cflags = [
+        "-base-cflag",
+        "-c-family-1",
+        "-c-family-2",
+        "-mllvm",
+        "-llvm-common",
+        "-sub-cflag",
+        "-sub-c-family",
+    ],
+    expected_cflags_c = ["-only-c"],
+    expected_cflags_cc = ["-only-cc"],
+    expected_defines = [
+        "FOO=1",
+        "SUB_DEF=1",
+    ],
+    expected_include_dirs = ["inc/dir"],
+    expected_ldflags = [
+        "-base-ldflag",
+        "-c-family-1",
+        "-c-family-2",
+        "-Wl,--icf=all,--gc-sections,--mllvm=-lto-opt=1",
+        "-sub-c-family",
+    ],
+    expected_lib_dirs = ["lib/dir"],
+    expected_rustenv = ["BAR=baz"],
+    expected_rustflags = [
+        "-Copt-level=2",
+        "-Cllvm-args=-llvm-common",
+        "-Cllvm-args=-llvm-rust",
+        "-Clink-arg=-Wl,--icf=all,--gc-sections,--rust-link-only,--mllvm=-lto-opt=1,--mllvm=-rust-lto-opt=2",
+        "-Ctarget-feature=+crt-static",
+        "-Ctarget-feature=-avx",
+        "--cfg=sub_cfg",
+        "-Ctarget-feature=+sub-feat",
+    ],
+    target_under_test = ":compiler_flags_all",
+)
+
+compiler_build_flags(
+    name = "compiler_flags_select",
+    c_family_flags = select({
+        "@platforms//os:fuchsia": ["-fuchsia-family"],
+        "//conditions:default": ["-host-family"],
+    }),
+    cflags = select({
+        "@platforms//os:fuchsia": ["-fuchsia-cflag"],
+        "//conditions:default": ["-host-cflag"],
+    }),
+    compiler_subflags = select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": [":compiler_sub_1"],
+    }),
+    linker_flags = select({
+        "@platforms//os:fuchsia": ["--fuchsia-link"],
+        "//conditions:default": ["--host-link"],
+    }),
+    linker_llvm_flags = select({
+        "@platforms//os:fuchsia": ["-fuchsia-lld-llvm"],
+        "//conditions:default": ["-host-lld-llvm"],
+    }),
+    llvm_flags = select({
+        "@platforms//os:fuchsia": ["-fuchsia-llvm"],
+        "//conditions:default": ["-host-llvm"],
+    }),
+    rust_linker_flags = select({
+        "@platforms//os:fuchsia": ["--fuchsia-rust-link"],
+        "//conditions:default": ["--host-rust-link"],
+    }),
+    rust_linker_llvm_flags = select({
+        "@platforms//os:fuchsia": ["-fuchsia-rust-lld-llvm"],
+        "//conditions:default": ["-host-rust-lld-llvm"],
+    }),
+    rust_llvm_flags = select({
+        "@platforms//os:fuchsia": ["-fuchsia-rust-llvm"],
+        "//conditions:default": ["-host-rust-llvm"],
+    }),
+    rust_target_features = select({
+        "@platforms//os:fuchsia": ["+fuchsia-feat"],
+        "//conditions:default": ["+host-feat"],
+    }),
+    subflags = select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": [":sub_flags_1"],
+    }),
+)
+
+build_flags_info_test(
+    name = "compiler_flags_select_test",
+    expected_cflags = [
+        "-host-cflag",
+        "-host-family",
+        "-mllvm",
+        "-host-llvm",
+        "-sub-cflag",
+        "-sub-c-family",
+    ],
+    expected_defines = ["SUB_DEF=1"],
+    expected_ldflags = [
+        "-host-family",
+        "-Wl,--host-link,--mllvm=-host-lld-llvm",
+        "-sub-c-family",
+    ],
+    expected_rustflags = [
+        "-Cllvm-args=-host-llvm",
+        "-Cllvm-args=-host-rust-llvm",
+        "-Clink-arg=-Wl,--host-link,--host-rust-link,--mllvm=-host-lld-llvm,--mllvm=-host-rust-lld-llvm",
+        "-Ctarget-feature=+host-feat",
+        "--cfg=sub_cfg",
+        "-Ctarget-feature=+sub-feat",
+    ],
+    target_under_test = ":compiler_flags_select",
+)

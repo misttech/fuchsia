@@ -4,105 +4,102 @@
 
 """compiler_build_flags() is the Bazel equivalent to the GN compiler_config() template."""
 
-load(":build_flags.bzl", "build_flags")
+load(":build_flags.bzl", "BUILD_FLAGS_ATTRS", "create_build_flags_info")
+load(":providers.bzl", "BuildFlagsInfo")
 
-def _get_flag_list(kwargs, key):
-    """Extract a list or select() attribute from kwargs as a safe copy."""
-    val = kwargs.pop(key, None)
-    if val == None:
-        return []
-    if type(val) == "list":
-        return list(val)
-    return val
+def _compiler_build_flags_impl(ctx):
+    extra_cflags = list(ctx.attr.c_family_flags)
+    extra_ldflags = list(ctx.attr.c_family_flags)
+    extra_rustflags = []
 
-def compiler_build_flags(
-        name,
-        compiler_subflags = [],
-        c_family_flags = [],
-        llvm_flags = [],
-        rust_llvm_flags = [],
-        linker_flags = [],
-        rust_linker_flags = [],
-        linker_llvm_flags = [],
-        rust_linker_llvm_flags = [],
-        rust_target_features = [],
-        **kwargs):
-    """A Bazel equivalent to the GN compiler_config() template.
+    for arg in ctx.attr.llvm_flags:
+        extra_cflags.extend(["-mllvm", arg])
 
-    Note that rust_target_edits is not supported as it should never
-    be set in Bazel (only for GN Rust kernel targets).
+    for arg in ctx.attr.llvm_flags + ctx.attr.rust_llvm_flags:
+        extra_rustflags.append("-Cllvm-args={}".format(arg))
 
-    Args:
-        name: Target name.
-        compiler_subflags: A list of compiler_build_flags() dependencies.
-            Just like subflags for build_flags(), their flags will be
-            injected directly into the current instance.
-        c_family_flags: Flags added to cflags and ldflags. (Note that
-            asmflags is not supported by Bazel build_flags()).
-        llvm_flags: LLVM specific flags, each one will be added as
-            `-mllvm <arg>` to cflags, and as
-            `-Cllvm-args=<arg>` to rustflags.
-        rust_llvm_flags: Rust-only LLVM specific flags, each one will be
-            added as `-Cllvm-args=<arg>` to rustflags.
-        linker_flags: These flags are added to both `ldflags` and
-            `rustflags`, with a `-Clink-arg=-Wl,` prefix for Rust.
-        rust_linker_flags: Rust-specific linker flags. Also added with
-            an implicit `-Clink-arg=-Wl,` prefix.
-        linker_llvm_flags: LLVM specific linker flags, added as
-            `--mllvm=<arg>` to linker_flags and rust_linker_flags.
-        rust_linker_llvm_flags: Rust-only LLVM specific linker flags,
-            added as `--mllvm=<arg>` to rust_linker_flags.
-        rust_target_features: Each item is added as
-            `-Ctarget-feature=<feature>` to rustflags.
-        **kwargs: Additional attributes forwarded to build_flags().
-    """
-    if "rust_target_edits" in kwargs:
-        fail("rust_target_edits cannot be set in Bazel")
-
-    cflags = _get_flag_list(kwargs, "cflags") + c_family_flags
-    ldflags = _get_flag_list(kwargs, "ldflags") + c_family_flags
-
-    for arg in llvm_flags:
-        cflags += ["-mllvm", arg]
-
-    rustflags = _get_flag_list(kwargs, "rustflags")
-    for arg in llvm_flags + rust_llvm_flags:
-        rustflags += ["-Cllvm-args={}".format(arg)]
-
-    _linker_flags = list(linker_flags) + [
+    _linker_flags = list(ctx.attr.linker_flags) + [
         "--mllvm={}".format(arg)
-        for arg in linker_llvm_flags
+        for arg in ctx.attr.linker_llvm_flags
     ]
     _rust_linker_flags = (
-        list(linker_flags) +
-        list(rust_linker_flags) +
+        list(ctx.attr.linker_flags) +
+        list(ctx.attr.rust_linker_flags) +
         [
             "--mllvm={}".format(arg)
-            for arg in linker_llvm_flags + rust_linker_llvm_flags
+            for arg in ctx.attr.linker_llvm_flags + ctx.attr.rust_linker_llvm_flags
         ]
     )
 
     if _linker_flags:
-        ldflags += ["-Wl," + ",".join(_linker_flags)]
+        extra_ldflags.append("-Wl," + ",".join(_linker_flags))
 
     if _rust_linker_flags:
         # Bazel invocations always require the -Wl,
         # prefix, as the Rust toolchain configuration
         # differs from the GN one.
-        rustflags += [
+        extra_rustflags.append(
             "-Clink-arg=-Wl," + ",".join(_rust_linker_flags),
-        ]
+        )
 
-    rustflags += ["-Ctarget-feature={}".format(feature) for feature in rust_target_features]
+    for feature in ctx.attr.rust_target_features:
+        extra_rustflags.append("-Ctarget-feature={}".format(feature))
 
-    kwargs["cflags"] = cflags
-    kwargs["ldflags"] = ldflags
-    kwargs["rustflags"] = rustflags
+    return [
+        create_build_flags_info(
+            ctx,
+            extra_cflags = extra_cflags,
+            extra_ldflags = extra_ldflags,
+            extra_rustflags = extra_rustflags,
+            extra_subflags = ctx.attr.compiler_subflags,
+        ),
+    ]
 
-    # subflags is the same as configs
-    kwargs["subflags"] = _get_flag_list(kwargs, "subflags") + compiler_subflags
+compiler_build_flags = rule(
+    doc = """A Bazel equivalent to the GN compiler_config() template.
 
-    build_flags(
-        name = name,
-        **kwargs
-    )
+    Note that rust_target_edits is not supported as it should never
+    be set in Bazel (only for GN Rust kernel targets).
+    """,
+    implementation = _compiler_build_flags_impl,
+    provides = [BuildFlagsInfo],
+    attrs = BUILD_FLAGS_ATTRS | {
+        "compiler_subflags": attr.label_list(
+            doc = "A list of compiler_build_flags() dependencies. Just like subflags for build_flags(), their flags will be injected directly into the current instance.",
+            providers = [BuildFlagsInfo],
+            default = [],
+        ),
+        "c_family_flags": attr.string_list(
+            doc = "Flags added to cflags and ldflags. (Note that asmflags is not supported by Bazel build_flags()).",
+            default = [],
+        ),
+        "llvm_flags": attr.string_list(
+            doc = "LLVM specific flags, each one will be added as `-mllvm <arg>` to cflags, and as `-Cllvm-args=<arg>` to rustflags.",
+            default = [],
+        ),
+        "rust_llvm_flags": attr.string_list(
+            doc = "Rust-only LLVM specific flags, each one will be added as `-Cllvm-args=<arg>` to rustflags.",
+            default = [],
+        ),
+        "linker_flags": attr.string_list(
+            doc = "These flags are added to both `ldflags` and `rustflags`, with a `-Clink-arg=-Wl,` prefix for Rust.",
+            default = [],
+        ),
+        "rust_linker_flags": attr.string_list(
+            doc = "Rust-specific linker flags. Also added with an implicit `-Clink-arg=-Wl,` prefix.",
+            default = [],
+        ),
+        "linker_llvm_flags": attr.string_list(
+            doc = "LLVM specific linker flags, added as `--mllvm=<arg>` to linker_flags and rust_linker_flags.",
+            default = [],
+        ),
+        "rust_linker_llvm_flags": attr.string_list(
+            doc = "Rust-only LLVM specific linker flags, added as `--mllvm=<arg>` to rust_linker_flags.",
+            default = [],
+        ),
+        "rust_target_features": attr.string_list(
+            doc = "Each item is added as `-Ctarget-feature=<feature>` to rustflags.",
+            default = [],
+        ),
+    },
+)

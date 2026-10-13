@@ -10,6 +10,7 @@ test_suite(
     name = "host_tests",
     target_compatible_with = HOST_OS_CONSTRAINTS,
     tests = [
+        "//build/bazel/rules/build_flags/tests/build_flags:tests",
         "//build/bazel/rules/build_flags/tests/cc:tests",
         "//build/bazel/rules/build_flags/tests/rust:tests",
     ],

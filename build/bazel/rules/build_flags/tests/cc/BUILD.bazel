@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
@@ -165,4 +166,19 @@ fx_cc_binary(
 host_test(
     name = "fx_cc_binary_test",
     binary = ":fx_cc_binary_test_bin",
+)
+
+# Verify compiler_build_flags() with configurable (select()) attributes in C++.
+compiler_build_flags(
+    name = "compiler_flags_select_cc",
+    c_family_flags = select({
+        "@platforms//os:fuchsia": ["-DCFLAGS=0"],
+        "//conditions:default": ["-DCFLAGS=1"],
+    }),
+)
+
+build_flags_cc_binary_host_test(
+    name = "check_compiler_build_flags_select_cpp",
+    srcs = ["check_cflags_cpp.cc"],
+    build_flags = [":compiler_flags_select_cc"],
 )

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
@@ -87,5 +88,29 @@ host_rustc_test(
     name = "check_rustc_test_with_rustflags_and_rustenv",
     srcs = ["check_rustc_test.rs"],
     build_flags = [":flags_rust"],
+    edition = "2024",
+)
+
+# Verify compiler_build_flags() with configurable (select()) attributes in Rust.
+compiler_build_flags(
+    name = "compiler_flags_select_rust",
+    rust_llvm_flags = select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": ["--inline-threshold=225"],
+    }),
+    rustenv = select({
+        "@platforms//os:fuchsia": ["RUSTENV_TEST_VAR=wrong"],
+        "//conditions:default": ["RUSTENV_TEST_VAR=hello_world"],
+    }),
+    rustflags = select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": ["--cfg=rustflags_work"],
+    }),
+)
+
+build_flags_rust_binary_host_test(
+    name = "check_compiler_build_flags_select_rust",
+    srcs = ["check_rustflags_and_rustenv.rs"],
+    build_flags = [":compiler_flags_select_rust"],
     edition = "2024",
 )

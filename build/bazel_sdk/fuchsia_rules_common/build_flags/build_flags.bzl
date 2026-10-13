@@ -15,16 +15,32 @@ load(":providers.bzl", "BuildFlagsInfo")
 #####    build_flags() rule
 #####
 
-def _build_flags_impl(ctx):
-    cflags = list(ctx.attr.cflags)
+def create_build_flags_info(
+        ctx,
+        extra_cflags = [],
+        extra_ldflags = [],
+        extra_rustflags = [],
+        extra_subflags = []):
+    """Create a BuildFlagsInfo provider from a rule context with BUILD_FLAGS_ATTRS.
+
+    Args:
+        ctx: context for a rule with BUILD_FLAGS_ATTRS.
+        extra_cflags: Extra cflags to append to the rule's attribute.
+        extra_ldflags: Extra ldflags to append to the rule's attribute.
+        extra_rustflags: Extra rustflags to append to the rule's attribute.
+        extra_subflags: Extra subflags to append to the rule's attribute.
+    Returns:
+        A new BuildFlagsInfo value.
+    """
+    cflags = list(ctx.attr.cflags) + extra_cflags
     cflags_c = list(ctx.attr.cflags_c)
     cflags_cc = list(ctx.attr.cflags_cc)
     defines = list(ctx.attr.defines)
     include_dirs = list(ctx.attr.include_dirs)
-    ldflags = list(ctx.attr.ldflags)
+    ldflags = list(ctx.attr.ldflags) + extra_ldflags
     lib_dirs = list(ctx.attr.lib_dirs)
     rustenv = list(ctx.attr.rustenv)
-    rustflags = list(ctx.attr.rustflags)
+    rustflags = list(ctx.attr.rustflags) + extra_rustflags
 
     # Similar to what GN does with the `configs` argument, `subflags`
     # appends the sub-flags directly to the current item's flags.
@@ -33,7 +49,7 @@ def _build_flags_impl(ctx):
     # it in disable_build_flags (just like there is no way to remove a sub-config)
     # label from the `configs` list that only includes a label to the parent
     # config()).
-    for subtarget in ctx.attr.subflags:
+    for subtarget in ctx.attr.subflags + extra_subflags:
         info = subtarget[BuildFlagsInfo]
         cflags.extend(info.cflags)
         cflags_c.extend(info.cflags_c)
@@ -45,74 +61,77 @@ def _build_flags_impl(ctx):
         rustenv.extend(info.rustenv)
         rustflags.extend(info.rustflags)
 
-    return [
-        BuildFlagsInfo(
-            label = ctx.label,
-            cflags = cflags,
-            cflags_c = cflags_c,
-            cflags_cc = cflags_cc,
-            defines = defines,
-            include_dirs = include_dirs,
-            ldflags = ldflags,
-            lib_dirs = lib_dirs,
-            rustenv = rustenv,
-            rustflags = rustflags,
-        ),
-    ]
+    return BuildFlagsInfo(
+        label = ctx.label,
+        cflags = cflags,
+        cflags_c = cflags_c,
+        cflags_cc = cflags_cc,
+        defines = defines,
+        include_dirs = include_dirs,
+        ldflags = ldflags,
+        lib_dirs = lib_dirs,
+        rustenv = rustenv,
+        rustflags = rustflags,
+    )
+
+def _build_flags_impl(ctx):
+    return [create_build_flags_info(ctx)]
+
+BUILD_FLAGS_ATTRS = {
+    "cflags": attr.string_list(
+        doc = "List of C and C++ compiler flags.",
+        default = [],
+    ),
+    "cflags_c": attr.string_list(
+        doc = "List of C only compiler flags. Always appear after 'cflags' on the command-line.",
+        default = [],
+    ),
+    "cflags_cc": attr.string_list(
+        doc = "List of C++ only compiler flags. Always appear after 'cflags' on the command-line.",
+        default = [],
+    ),
+    "defines": attr.string_list(
+        doc = "List of C and C++ macro definitions for compile actions",
+        default = [],
+    ),
+    "include_dirs": attr.string_list(
+        doc = "List of header search paths, must be relative to the workspace, not the package",
+        default = [],
+    ),
+    "ldflags": attr.string_list(
+        doc = "List of linker flags.",
+        default = [],
+    ),
+    "lib_dirs": attr.string_list(
+        doc = "List of library search paths, relative to the workspace root.",
+        default = [],
+    ),
+    "rustenv": attr.string_list(
+        doc = "List of Rust environment variable definitions, each item should be a 'NAME=value' string",
+        default = [],
+    ),
+    "rustflags": attr.string_list(
+        doc = "List of Rust compiler flags. Note that as a special case, `-Clink-arg=<arg>` " +
+              "used as input will be changed to `-Clink-arg=-Wl,<arg>` if <arg> does not " +
+              "already begin with `-Wl,`. This is needed because GN invokes lld directly while " +
+              "Bazel invokes clang++ to link Rust binaries, the latter requires the prefix " +
+              "to properly pass the argument to the real linker. This automatic translation " +
+              "helps keeping GN config() and equivalent Bazel build_flags() target definitions " +
+              "closer.",
+        default = [],
+    ),
+    "subflags": attr.label_list(
+        doc = "List of other build_flags() targets whose flags will be appended to this rule's flags.",
+        providers = [BuildFlagsInfo],
+        default = [],
+    ),
+}
 
 build_flags = rule(
     doc = "Define a target exposing toolchain build flags to its dependents.",
     implementation = _build_flags_impl,
     provides = [BuildFlagsInfo],
-    attrs = {
-        "cflags": attr.string_list(
-            doc = "List of C and C++ compiler flags.",
-            default = [],
-        ),
-        "cflags_c": attr.string_list(
-            doc = "List of C only compiler flags. Always appear after 'cflags' on the command-line.",
-            default = [],
-        ),
-        "cflags_cc": attr.string_list(
-            doc = "List of C++ only compiler flags. Always appear after 'cflags' on the command-line.",
-            default = [],
-        ),
-        "defines": attr.string_list(
-            doc = "List of C and C++ macro definitions for compile actions",
-            default = [],
-        ),
-        "include_dirs": attr.string_list(
-            doc = "List of header search paths, must be relative to the workspace, not the package",
-            default = [],
-        ),
-        "ldflags": attr.string_list(
-            doc = "List of linker flags.",
-            default = [],
-        ),
-        "lib_dirs": attr.string_list(
-            doc = "List of library search paths, relative to the workspace root.",
-            default = [],
-        ),
-        "rustenv": attr.string_list(
-            doc = "List of Rust environment variable definitions, each item should be a 'NAME=value' string",
-            default = [],
-        ),
-        "rustflags": attr.string_list(
-            doc = "List of Rust compiler flags. Note that as a special case, `-Clink-arg=<arg>` " +
-                  "used as input will be changed to `-Clink-arg=-Wl,<arg>` if <arg> does not " +
-                  "already begin with `-Wl,`. This is needed because GN invokes lld directly while " +
-                  "Bazel invokes clang++ to link Rust binaries, the latter requires the prefix " +
-                  "to properly pass the argument to the real linker. This automatic translation " +
-                  "helps keeping GN config() and equivalent Bazel build_flags() target definitions " +
-                  "closer.",
-            default = [],
-        ),
-        "subflags": attr.label_list(
-            doc = "List of other build_flags() targets whose flags will be appended to this rule's flags.",
-            providers = [BuildFlagsInfo],
-            default = [],
-        ),
-    },
+    attrs = BUILD_FLAGS_ATTRS,
 )
 
 #############################################################################
