@@ -431,6 +431,11 @@ void DeviceImpl::OnEvent(fuchsia::ui::input::MediaButtonsEvent event,
   if (event.has_mic_mute()) {
     mute_state_.hardware_muted = event.mic_mute();
     UpdateControllerStreamingState();
+    for (auto& stream : streams_) {
+      if (stream) {
+        stream->SetMuteState(mute_state_);
+      }
+    }
     for (auto& client : clients_) {
       client.second->MuteUpdated(mute_state_);
     }

@@ -1123,6 +1123,245 @@ TEST_F(DeviceImplTest, HardwareMuteState) {
   RunLoopUntilFailureOr(watch_returned);
 }
 
+TEST_F(DeviceImplTest, HardwareMuteStateStreamFrames) {
+  // Connect to the device.
+  fuchsia::camera3::DevicePtr device;
+  SetFailOnError(device, "Device");
+  device_->GetHandler()(device.NewRequest());
+
+  // Device should start unmuted.
+  bool watch_returned = false;
+  device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+    EXPECT_FALSE(software_muted);
+    EXPECT_FALSE(hardware_muted);
+    watch_returned = true;
+  });
+  RunLoopUntilFailureOr(watch_returned);
+
+  // Mute hardware before connecting to the stream to verify that a stream connected while
+  // hardware-muted receives frames after hardware is later unmuted.
+  watch_returned = false;
+  device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+    EXPECT_FALSE(software_muted);
+    EXPECT_TRUE(hardware_muted);
+    watch_returned = true;
+  });
+  {
+    fuchsia::ui::input::MediaButtonsEvent mute_event;
+    mute_event.set_mic_mute(true);
+    fake_listener_registry_.SendMediaButtonsEvent(std::move(mute_event));
+  }
+  RunLoopUntilFailureOr(watch_returned);
+
+  // Connect to the stream while hardware-muted.
+  fuchsia::camera3::StreamPtr stream;
+  SetFailOnError(stream, "Stream");
+  device->ConnectToStream(0, stream.NewRequest());
+
+  fuchsia::sysmem2::BufferCollectionTokenPtr token;
+
+  fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
+  allocate_shared_request.set_token_request(token.NewRequest());
+  allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
+
+  stream->SetBufferCollection(
+      fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+  fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> received_token;
+  watch_returned = false;
+  stream->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
+    auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+    received_token = std::move(token_v2);
+    watch_returned = true;
+  });
+  RunLoopUntilFailureOr(watch_returned);
+
+  fuchsia::sysmem2::BufferCollectionPtr collection;
+  collection.set_error_handler(MakeErrorHandler("Buffer Collection"));
+
+  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
+  bind_shared_request.set_token(std::move(received_token));
+  bind_shared_request.set_buffer_collection_request(collection.NewRequest());
+  allocator_->BindSharedCollection(std::move(bind_shared_request));
+
+  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  auto& constraints = *set_constraints_request.mutable_constraints();
+  constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_READ);
+  constraints.set_min_buffer_count_for_camping(5);
+  auto& ifc = constraints.mutable_image_format_constraints()->emplace_back();
+  ifc.set_pixel_format(fuchsia::images2::PixelFormat::NV12);
+  ifc.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::REC601_NTSC);
+  ifc.set_min_size(fuchsia::math::SizeU{.width = 1, .height = 1});
+  collection->SetConstraints(std::move(set_constraints_request));
+
+  bool buffers_allocated_returned = false;
+  collection->WaitForAllBuffersAllocated(
+      [&](fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result result) {
+        EXPECT_TRUE(result.is_response());
+        buffers_allocated_returned = true;
+      });
+  RunLoopUntil([&]() { return HasFailure() || buffers_allocated_returned; });
+  ASSERT_FALSE(HasFailure());
+
+  // Unmute hardware and verify the stream connected while hardware-muted delivers frames.
+  watch_returned = false;
+  device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+    EXPECT_FALSE(software_muted);
+    EXPECT_FALSE(hardware_muted);
+    watch_returned = true;
+  });
+  {
+    fuchsia::ui::input::MediaButtonsEvent unmute_event;
+    unmute_event.set_mic_mute(false);
+    fake_listener_registry_.SendMediaButtonsEvent(std::move(unmute_event));
+  }
+  RunLoopUntilFailureOr(watch_returned);
+
+  uint32_t next_buffer_id = 0;
+  fit::closure send_frame = [&] {
+    fuchsia::camera2::FrameAvailableInfo frame_info{
+        .frame_status = fuchsia::camera2::FrameStatus::OK, .buffer_id = next_buffer_id};
+    frame_info.metadata.set_timestamp(0);
+    frame_info.metadata.set_capture_timestamp(0);
+    zx_status_t status = controller_->SendFrameViaLegacyStream(std::move(frame_info));
+    if (status == ZX_ERR_SHOULD_WAIT || status == ZX_ERR_BAD_STATE) {
+      // Keep trying until the device starts streaming.
+      async::PostTask(async_get_default_dispatcher(), send_frame.share());
+    } else {
+      ++next_buffer_id;
+      ASSERT_EQ(status, ZX_OK);
+    }
+  };
+
+  {
+    bool frame_received = false;
+    stream->GetNextFrame([&](fuchsia::camera3::FrameInfo info) { frame_received = true; });
+    send_frame();
+    RunLoopUntilFailureOr(frame_received);
+  }
+
+  // Also verify the edge case where software mute is toggled while hardware-muted, followed by
+  // hardware unmute.
+  watch_returned = false;
+  device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+    EXPECT_FALSE(software_muted);
+    EXPECT_TRUE(hardware_muted);
+    watch_returned = true;
+  });
+  {
+    fuchsia::ui::input::MediaButtonsEvent mute_event;
+    mute_event.set_mic_mute(true);
+    fake_listener_registry_.SendMediaButtonsEvent(std::move(mute_event));
+  }
+  RunLoopUntilFailureOr(watch_returned);
+
+  bool sw_mute_done = false;
+  device->SetSoftwareMuteState(true, [&] { sw_mute_done = true; });
+  RunLoopUntilFailureOr(sw_mute_done);
+  watch_returned = false;
+  device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+    EXPECT_TRUE(software_muted);
+    EXPECT_TRUE(hardware_muted);
+    watch_returned = true;
+  });
+  RunLoopUntilFailureOr(watch_returned);
+
+  bool sw_unmute_done = false;
+  device->SetSoftwareMuteState(false, [&] { sw_unmute_done = true; });
+  RunLoopUntilFailureOr(sw_unmute_done);
+  watch_returned = false;
+  device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+    EXPECT_FALSE(software_muted);
+    EXPECT_TRUE(hardware_muted);
+    watch_returned = true;
+  });
+  RunLoopUntilFailureOr(watch_returned);
+
+  watch_returned = false;
+  device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+    EXPECT_FALSE(software_muted);
+    EXPECT_FALSE(hardware_muted);
+    watch_returned = true;
+  });
+  {
+    fuchsia::ui::input::MediaButtonsEvent unmute_event;
+    unmute_event.set_mic_mute(false);
+    fake_listener_registry_.SendMediaButtonsEvent(std::move(unmute_event));
+  }
+  RunLoopUntilFailureOr(watch_returned);
+
+  constexpr uint32_t kToggleCount = 50;
+  for (uint32_t i = 0; i < kToggleCount; ++i) {
+    // Get a frame (unmuted).
+    bool frame_received = false;
+    stream->GetNextFrame([&](fuchsia::camera3::FrameInfo info) { frame_received = true; });
+    send_frame();
+    RunLoopUntilFailureOr(frame_received);
+
+    // Get a frame then immediately try to hardware-mute the device.
+    bool mute_completed = false;
+    bool muted_frame_requested = false;
+    bool unmute_requested = false;
+    bool unmuted_frame_received = false;
+    fuchsia::camera3::Stream::GetNextFrameCallback callback =
+        [&](fuchsia::camera3::FrameInfo info) {
+          if (muted_frame_requested) {
+            ASSERT_TRUE(unmute_requested)
+                << "Frame requested after receiving mute callback returned anyway.";
+          }
+          if (unmute_requested) {
+            unmuted_frame_received = true;
+          } else {
+            if (mute_completed) {
+              muted_frame_requested = true;
+            }
+            stream->GetNextFrame(callback.share());
+            send_frame();
+          }
+        };
+    callback({});
+    uint32_t mute_buffer_id_begin = next_buffer_id;
+    uint32_t mute_buffer_id_end = mute_buffer_id_begin;
+    device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+      EXPECT_FALSE(software_muted);
+      EXPECT_TRUE(hardware_muted);
+      mute_completed = true;
+      mute_buffer_id_end = next_buffer_id;
+    });
+    fuchsia::ui::input::MediaButtonsEvent mute_event;
+    mute_event.set_mic_mute(true);
+    fake_listener_registry_.SendMediaButtonsEvent(std::move(mute_event));
+    RunLoopUntilFailureOr(mute_completed);
+
+    // Make sure all buffers were returned.
+    for (uint32_t j = mute_buffer_id_begin; j < mute_buffer_id_end; ++j) {
+      RunLoopUntil(
+          [&] { return HasFailure() || !controller_->LegacyStreamBufferIsOutstanding(j); });
+    }
+
+    // Unmute the device to get the last frame. Note that frames received while internally muted are
+    // discarded, so repeated sending of frames is necessary.
+    unmute_requested = true;
+    bool unmute_completed = false;
+    device->WatchMuteState([&](bool software_muted, bool hardware_muted) {
+      EXPECT_FALSE(software_muted);
+      EXPECT_FALSE(hardware_muted);
+      unmute_completed = true;
+    });
+    fuchsia::ui::input::MediaButtonsEvent unmute_event;
+    unmute_event.set_mic_mute(false);
+    fake_listener_registry_.SendMediaButtonsEvent(std::move(unmute_event));
+    while (!HasFailure() && (!unmuted_frame_received || !unmute_completed)) {
+      send_frame();
+      // Delay each attempt to avoid flooding the channel.
+      RunLoopWithTimeout(zx::msec(10));
+    }
+
+    ASSERT_FALSE(HasFailure());
+  }
+
+  collection->Release();
+}
+
 TEST_F(DeviceImplTest, GetProperties) {
   fuchsia::camera3::DevicePtr device;
   SetFailOnError(device, "Device");
