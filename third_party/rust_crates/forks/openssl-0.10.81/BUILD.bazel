@@ -16,7 +16,7 @@ package(
         ":license",
         ":package_info",
     ],
-    default_visibility = ["//visibility:public"],
+    default_visibility = ["//third_party/rust_crates:__subpackages__"],
 )
 
 package_info(

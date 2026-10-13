@@ -2,6 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# Visibility allowlists for restricted third-party Rust crates in GN.
+#
+# //third_party/rust_crates/BUILD.bazel has the corresponding Bazel allowlists
+# as package_groups, which only list packages with Bazel targets that use each
+# crate. When migrating a target to Bazel, add its package there, and remove it
+# from here once no GN targets in the package use the crate.
+
 md5_visibility = [
   #  ________  _________  ________  ________
   # |\   ____\|\___   ___\\   __  \|\   __  \

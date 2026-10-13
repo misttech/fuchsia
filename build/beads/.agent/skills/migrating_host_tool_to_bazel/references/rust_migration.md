@@ -69,6 +69,8 @@ When migrating third-party dependencies from GN to Bazel, prefix with the vendor
 
 _Note: Some crates may be located under `ask2patch`, `fork`, or `intree` instead of `vendor` (e.g., `//third_party/rust_crates/ask2patch/walkdir`)._
 
+Some crates (such as `regex`, `once_cell`, `bincode`, `md-5`, and `sha1`) have restricted visibility: `//third_party/rust_crates/visibility.gni` lists the packages allowed to use them in GN, and the `package_group` targets in `//third_party/rust_crates/BUILD.bazel` list the packages allowed to use them in Bazel. When migrating a target that depends on one of these crates, add its package to the corresponding `package_group`, and remove it from `visibility.gni` once no GN targets in the package use the crate. If `bazel2gn` generates the package's `BUILD.gn`, the generated GN targets still depend on the crate, so keep the package in both lists.
+
 For other third-party dependencies (e.g. googletest, re2, boringssl), `bazel2gn` translates targets according to [`//build/tools/bazel2gn/third_party_target_map.json`](//build/tools/bazel2gn/third_party_target_map.json).
 
 ## Test Migration for `rustc_library()` target

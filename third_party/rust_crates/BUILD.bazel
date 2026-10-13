@@ -2,9 +2,88 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-package(default_visibility = ["//visibility:public"])
-
 exports_files([
     "Cargo.toml",
     "Cargo.lock",
 ])
+
+# Visibility allowlists for restricted third-party Rust crates in Bazel.
+#
+# //third_party/rust_crates/visibility.gni has the GN allowlists, and explains
+# why each crate is restricted. These lists only contain packages with Bazel
+# targets that use the crate: when migrating such a target to Bazel, add its
+# package here, and remove it from visibility.gni once no GN targets in the
+# package use the crate.
+#
+# postprocess_crates_vendor.py restricts the crate aliases in
+# //third_party/rust_crates/vendor to these package_groups, so each name must
+# match the group_visibility variable name in Cargo.toml.
+
+# LINT.IfChange
+package_group(
+    name = "md5_visibility",
+    packages = [],
+)
+
+package_group(
+    name = "sha1_visibility",
+    packages = [],
+)
+
+package_group(
+    name = "once_cell_visibility",
+    packages = [
+        "//src/lib/async-utils",
+
+        # Not enforced, matching visibility.gni.
+        "//third_party/...",
+    ],
+)
+
+package_group(
+    name = "zeroize_visibility",
+    packages = [
+        # Matches visibility.gni, which allows all of vendor/ without exposing
+        # internal paths.
+        "//vendor/...",
+    ],
+)
+
+package_group(
+    name = "openssl_visibility",
+    packages = [
+        # Matches visibility.gni, which allows all of vendor/ without exposing
+        # internal paths.
+        "//vendor/...",
+    ],
+)
+
+package_group(
+    name = "bincode_visibility",
+    packages = [],
+)
+
+package_group(
+    name = "regex_visibility",
+    packages = [
+        "//src/developer/ffx/command",
+        "//src/developer/ffx/config",
+        "//src/developer/ffx/lib/netext",
+        "//src/developer/ffx/lib/target_errors",
+        "//src/developer/ffx/lib/trace",
+        "//src/lib/analytics/rust",
+        "//src/lib/assembly/util",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust",
+        "//src/storage/fxfs/unicode",
+        "//src/sys/lib/cm_fidl_validator",
+        "//tools/fidl/fidldoc",
+        "//tools/gtest_test_parser",
+        "//tools/pretty_serial",
+
+        # Matches visibility.gni, which allows all of vendor/ without exposing
+        # internal paths.
+        "//vendor/...",
+    ],
+)
+# LINT.ThenChange(//third_party/rust_crates/visibility.gni)

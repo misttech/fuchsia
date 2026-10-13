@@ -287,12 +287,14 @@ alias(
     name = "bincode-1.3.3",
     actual = "//third_party/rust_crates/vendor/bincode-1.3.3:bincode",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:bincode_visibility"],
 )
 
 alias(
     name = "bincode",
     actual = "//third_party/rust_crates/vendor/bincode-1.3.3:bincode",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:bincode_visibility"],
 )
 
 alias(
@@ -1619,12 +1621,14 @@ alias(
     name = "md-5-0.11.0",
     actual = "//third_party/rust_crates/vendor/md-5-0.11.0:md5",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:md5_visibility"],
 )
 
 alias(
     name = "md-5",
     actual = "//third_party/rust_crates/vendor/md-5-0.11.0:md5",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:md5_visibility"],
 )
 
 alias(
@@ -1847,12 +1851,14 @@ alias(
     name = "once_cell-1.21.4",
     actual = "//third_party/rust_crates/vendor/once_cell-1.21.4:once_cell",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:once_cell_visibility"],
 )
 
 alias(
     name = "once_cell",
     actual = "//third_party/rust_crates/vendor/once_cell-1.21.4:once_cell",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:once_cell_visibility"],
 )
 
 alias(
@@ -1871,12 +1877,14 @@ alias(
     name = "openssl-0.10.81",
     actual = "//third_party/rust_crates/forks/openssl-0.10.81:openssl",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:openssl_visibility"],
 )
 
 alias(
     name = "openssl",
     actual = "//third_party/rust_crates/forks/openssl-0.10.81:openssl",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:openssl_visibility"],
 )
 
 alias(
@@ -2345,12 +2353,14 @@ alias(
     name = "regex-1.13.1",
     actual = "//third_party/rust_crates/vendor/regex-1.13.1:regex",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:regex_visibility"],
 )
 
 alias(
     name = "regex",
     actual = "//third_party/rust_crates/vendor/regex-1.13.1:regex",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:regex_visibility"],
 )
 
 alias(
@@ -2885,12 +2895,14 @@ alias(
     name = "sha1-0.11.0",
     actual = "//third_party/rust_crates/vendor/sha1-0.11.0:sha1",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:sha1_visibility"],
 )
 
 alias(
     name = "sha1",
     actual = "//third_party/rust_crates/vendor/sha1-0.11.0:sha1",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:sha1_visibility"],
 )
 
 alias(
@@ -3659,12 +3671,14 @@ alias(
     name = "zeroize-1.9.0",
     actual = "//third_party/rust_crates/forks/zeroize:zeroize",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:zeroize_visibility"],
 )
 
 alias(
     name = "zeroize",
     actual = "//third_party/rust_crates/forks/zeroize:zeroize",
     tags = ["manual"],
+    visibility = ["//third_party/rust_crates:zeroize_visibility"],
 )
 
 alias(

@@ -10,3 +10,8 @@ python_host_test("generate_crate_annotations_test") {
   main_source = "generate_crate_annotations_test.py"
   sources = [ "generate_crate_annotations.py" ]
 }
+
+python_host_test("postprocess_crates_vendor_test") {
+  main_source = "postprocess_crates_vendor_test.py"
+  sources = [ "postprocess_crates_vendor.py" ]
+}

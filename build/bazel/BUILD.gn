@@ -74,6 +74,7 @@ group("tests") {
     "rules/tests:bazel_tests",
     "scripts:tests",
     "update-rustc-third-party:generate_crate_annotations_test($host_toolchain)",
+    "update-rustc-third-party:postprocess_crates_vendor_test($host_toolchain)",
   ]
 }
 

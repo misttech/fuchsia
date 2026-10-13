@@ -223,15 +223,12 @@ prepare_bazel_workspace "${bazel_workspace}"
       --vendor_dir=$FUCHSIA_DIR/third_party/bazel_vendor \
       :crates_vendor
 )
-# TODO(https://github.com/bazelbuild/rules_rust/issues/3732): Remove this
-# workaround when upstream issue is fixed.
-#
-# This is necessary because the generated BUILD.bazel file has aliases that
-# point to non-existent targets for patched crates. Remove them to avoid
-# confusion. Users can use the targets from patched locations directly,
-# e.g. `//third_party/rust_crates/ask2patch/walkdir`.
+# crate_universe doesn't know about patched crates
+# (https://github.com/bazelbuild/rules_rust/issues/3732) or Fuchsia's crate
+# visibility allowlists, so fix up the generated BUILD.bazel files. See the
+# script's docstring for details.
 "${FUCHSIA_DIR}/scripts/fuchsia-vendored-python" \
-  "${FUCHSIA_DIR}/build/bazel/update-rustc-third-party/remove_incorrect_aliases.py" \
+  "${FUCHSIA_DIR}/build/bazel/update-rustc-third-party/postprocess_crates_vendor.py" \
   --search-dir="${VENDOR_DIR}" \
   --fuchsia-dir="${FUCHSIA_DIR}"
 
