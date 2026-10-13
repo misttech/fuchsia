@@ -1,0 +1,110 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Configuration capabilities and default values used by embedded and test
+// archivist components. `availability: "transitional"` allows embedded
+// archivist components to fall back to their default values when parent test
+// manifests do not route these capabilities.
+{
+    use: [
+        {
+            config: "fuchsia.diagnostics.BindServices",
+            key: "bind_services",
+            availability: "transitional",
+            type: "vector",
+            max_count: 10,
+            element: {
+                type: "string",
+                max_size: 256,
+            },
+            default: [],
+        },
+        {
+            config: "fuchsia.diagnostics.LogsMaxCachedOriginalBytes",
+            key: "logs_max_cached_original_bytes",
+            availability: "transitional",
+            type: "uint64",
+            default: 4194304,
+        },
+        {
+            config: "fuchsia.diagnostics.MaximumConcurrentSnapshotsPerReader",
+            key: "maximum_concurrent_snapshots_per_reader",
+            availability: "transitional",
+            type: "uint64",
+            default: 4,
+        },
+        {
+            config: "fuchsia.diagnostics.AllowSerialLogs",
+            key: "allow_serial_logs",
+            availability: "transitional",
+            type: "vector",
+            max_count: 512,
+            element: {
+                type: "string",
+                max_size: 50,
+            },
+            default: [],
+        },
+        {
+            config: "fuchsia.diagnostics.ComponentInitialInterests",
+            key: "component_initial_interests",
+            availability: "transitional",
+            type: "vector",
+            max_count: 512,
+            element: {
+                type: "string",
+                max_size: 4096,
+            },
+            default: [],
+        },
+        {
+            config: "fuchsia.diagnostics.DenySerialLogs",
+            key: "deny_serial_log_tags",
+            availability: "transitional",
+            type: "vector",
+            max_count: 512,
+            element: {
+                type: "string",
+                max_size: 50,
+            },
+            default: [],
+        },
+        {
+            config: "fuchsia.diagnostics.EnableKlog",
+            key: "enable_klog",
+            availability: "transitional",
+            type: "bool",
+            default: false,
+        },
+        {
+            config: "fuchsia.diagnostics.NumThreads",
+            key: "num_threads",
+            availability: "transitional",
+            type: "uint8",
+            default: 1,
+        },
+        {
+            config: "fuchsia.diagnostics.PipelinesPath",
+            key: "pipelines_path",
+            availability: "transitional",
+            type: "string",
+            max_size: 256,
+            default: "/config/data",
+        },
+        {
+            config: "fuchsia.diagnostics.PerComponentBatchTimeoutSeconds",
+            key: "per_component_batch_timeout_seconds",
+            availability: "transitional",
+            type: "int64",
+            default: -1,
+        },
+        {
+            config: "fuchsia.diagnostics.SampleMinPeriodSeconds",
+            key: "fuchsia_diagnostics_sample_min_period_seconds",
+            availability: "transitional",
+            type: "int64",
+            default: 1,
+        },
+    ],
+}

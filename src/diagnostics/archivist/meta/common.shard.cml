@@ -4,7 +4,6 @@
 // This shard is meant to contain stuff that is meant to be shared across all flavors of the
 // archivist.
 {
-    include: [ "//src/diagnostics/archivist/meta/config.shard.cml" ],
     program: {
         runner: "elf",
         binary: "bin/archivist",

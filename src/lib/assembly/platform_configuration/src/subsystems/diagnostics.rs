@@ -156,7 +156,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
         )?;
         builder.set_config_capability(
             "fuchsia.diagnostics.AllowSerialLogs",
-            // LINT.ThenChange(/src/diagnostics/archivist/configs.gni)
+            // LINT.ThenChange(//src/diagnostics/archivist/meta/config_capabilities.shard.cml)
             Config::new(
                 ConfigValueType::Vector {
                     nested_type: ConfigNestedValueType::String { max_size: 50 },

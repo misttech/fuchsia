@@ -7,7 +7,6 @@ import("//build/fuzz.gni")
 import("//build/rust/rustc_fuzzer.gni")
 import("//build/rust/rustc_library.gni")
 import("//src/diagnostics/archivist/build/archivist.gni")
-import("//src/diagnostics/archivist/configs.gni")
 import("//tools/fidl/measure-tape/measure_tape.gni")
 
 measure_tape("logmessage_measure_tape") {
@@ -207,16 +206,6 @@ fuchsia_component("archivist-for-embedding-component") {
   deps = [ ":bin" ]
 }
 
-fuchsia_structured_config_values("archivist-embedded-config") {
-  cm_label = ":archivist-for-embedding-manifest"
-  values = embedded_config
-}
-
-fuchsia_structured_config_values("archivist-default-config") {
-  cm_label = ":root-manifest"
-  values = default_config
-}
-
 fuchsia_structured_config_rust_lib("archivist-config") {
   cm_label = ":root-manifest"
 }
@@ -230,18 +219,12 @@ group("archivist-for-embedding-bundle") {
     "//src/sys/test_manager:*",
     "//src/sys/time/httpsdate_time_source/tests:*",
   ]
-  deps = [
-    ":archivist-embedded-config",
-    ":archivist-for-embedding-component",
-  ]
+  deps = [ ":archivist-for-embedding-component" ]
 }
 
 fuchsia_package("package") {
   package_name = "archivist"
-  deps = [
-    ":archivist-default-config",
-    ":component",
-  ]
+  deps = [ ":component" ]
 }
 
 fuchsia_package("archivist-for-embedding") {

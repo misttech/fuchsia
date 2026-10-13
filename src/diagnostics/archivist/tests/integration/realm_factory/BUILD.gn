@@ -4,7 +4,6 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
-import("//src/diagnostics/archivist/configs.gni")
 
 rustc_binary("bin") {
   testonly = true
@@ -59,18 +58,11 @@ fuchsia_component("archivist_component") {
   cm_label = ":archivist_manifest"
 }
 
-fuchsia_structured_config_values("archivist_config") {
-  testonly = true
-  cm_label = ":archivist_manifest"
-  values = embedded_config
-}
-
 fuchsia_package("pkg") {
   package_name = "archivist_realm_factory"
   testonly = true
   deps = [
     ":archivist_component",
-    ":archivist_config",
     ":archivist_realm_factory_component",
     ":default_pipelines",
     ":do_not_filter_feedback",

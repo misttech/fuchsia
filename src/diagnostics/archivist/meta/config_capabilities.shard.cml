@@ -4,6 +4,8 @@
 {
     use: [
         {
+            // Call the given "fuchsia.component.Binder" protocols at startup. These protocols
+            // must be offered and used in the archivist manifest.
             config: "fuchsia.diagnostics.BindServices",
             key: "bind_services",
             availability: "optional",
@@ -13,20 +15,32 @@
                 type: "string",
                 max_size: 256,
             },
+            default: [
+                "fuchsia.component.DetectBinder",
+                "fuchsia.component.KernelDebugBrokerBinder",
+                "fuchsia.component.PersistenceBinder",
+                "fuchsia.component.SamplerBinder",
+            ],
         },
         {
+            // Maximum value of the sum of original (format in which they were written) log message
+            // sizes stored in the archivist. Logs are rolled out when this value is exceeded.
             config: "fuchsia.diagnostics.LogsMaxCachedOriginalBytes",
             key: "logs_max_cached_original_bytes",
             availability: "optional",
             type: "uint64",
+            default: 4194304,
         },
         {
+            // Maximum number of concurrent Inspect snapshots per reader client.
             config: "fuchsia.diagnostics.MaximumConcurrentSnapshotsPerReader",
             key: "maximum_concurrent_snapshots_per_reader",
             availability: "optional",
             type: "uint64",
+            default: 4,
         },
         {
+            // Selectors for the components whose logs will be forwarded to serial.
             config: "fuchsia.diagnostics.AllowSerialLogs",
             key: "allow_serial_logs",
             availability: "optional",
@@ -36,8 +50,11 @@
                 type: "string",
                 max_size: 50,
             },
+            default: [],
         },
         {
+            // Instructs the archivist what log levels to send to components alongside their initial
+            // interest queries.
             config: "fuchsia.diagnostics.ComponentInitialInterests",
             key: "component_initial_interests",
             availability: "optional",
@@ -47,8 +64,11 @@
                 type: "string",
                 max_size: 4096,
             },
+            default: [],
         },
         {
+            // Instructs the archivist to not send logs containing any of these tags to serial even if
+            // the component emitting these logs was configured to have its logs sent to serial.
             config: "fuchsia.diagnostics.DenySerialLogs",
             key: "deny_serial_log_tags",
             availability: "optional",
@@ -58,6 +78,51 @@
                 type: "string",
                 max_size: 50,
             },
+            default: [],
+        },
+        {
+            // Drain klog.
+            config: "fuchsia.diagnostics.EnableKlog",
+            key: "enable_klog",
+            availability: "optional",
+            type: "bool",
+            default: true,
+        },
+        {
+            // Number of threads that the archivist will use for its multithreaded executor.
+            config: "fuchsia.diagnostics.NumThreads",
+            key: "num_threads",
+            availability: "optional",
+            type: "uint8",
+            default: 1,
+        },
+        {
+            // Path to the archivist pipeline configuration.
+            config: "fuchsia.diagnostics.PipelinesPath",
+            key: "pipelines_path",
+            availability: "optional",
+            type: "string",
+            max_size: 256,
+            default: "/config/data",
+        },
+        {
+            // Number of seconds to wait for a single component to have its diagnostics data "pumped".
+            // This involves querying Inspect trees, content extraction, and snapshotting.
+            //
+            // By convention, -1 is treated as the max timeout.
+            config: "fuchsia.diagnostics.PerComponentBatchTimeoutSeconds",
+            key: "per_component_batch_timeout_seconds",
+            availability: "optional",
+            type: "int64",
+            default: 10,
+        },
+        {
+            // Number of seconds for the minimum sampling period for fuchsia.diagnostics.Sample
+            config: "fuchsia.diagnostics.SampleMinPeriodSeconds",
+            key: "fuchsia_diagnostics_sample_min_period_seconds",
+            availability: "optional",
+            type: "int64",
+            default: 60,
         },
     ],
 }

@@ -22,6 +22,18 @@
             to: "#archivist",
         },
         {
+            config: [
+                "fuchsia.diagnostics.EnableKlog",
+                "fuchsia.diagnostics.NumThreads",
+                "fuchsia.diagnostics.PerComponentBatchTimeoutSeconds",
+                "fuchsia.diagnostics.PipelinesPath",
+                "fuchsia.diagnostics.SampleMinPeriodSeconds",
+            ],
+            from: "void",
+            to: "#archivist",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.tracing.provider.Registry",
             from: "parent",
             to: "#archivist",
