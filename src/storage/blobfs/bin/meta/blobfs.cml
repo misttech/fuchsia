@@ -60,6 +60,15 @@
             protocol: "fuchsia.blobfs.internal.DecompressorCreator",
             from: "#decompressor",
         },
+        {
+            // The number of pager threads to spawn.  Setting to <= 0 will result in an
+            // implementation-chosen value being used.
+            config: "fuchsia.storage.blobfs.PagerThreads",
+            key: "pager_threads",
+            type: "int32",
+            availability: "optional",
+            default: 2,
+        },
     ],
     offer: [
         {
@@ -95,9 +104,4 @@
             to: "framework",
         },
     ],
-    config: {
-        // The number of pager threads to spawn.  Setting to <= 0 will result in an
-        // implementation-chosen value being used.
-        pager_threads: { type: "int32" },
-    },
 }

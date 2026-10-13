@@ -41,5 +41,17 @@
             from: "parent",
             to: [ "#static-test-blobfs" ],
         },
+        {
+            config: "fuchsia.storage.blobfs.PagerThreads",
+            from: "void",
+            to: "#static-test-blobfs",
+            availability: "optional",
+        },
+        {
+            config: "fuchsia.storage.minfs.DieOnMutationFailure",
+            from: "void",
+            to: "#static-test-minfs",
+            availability: "optional",
+        },
     ],
 }

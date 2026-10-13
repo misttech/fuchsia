@@ -32,4 +32,18 @@
             from: "framework",
         },
     ],
+    offer: [
+        {
+            config: "fuchsia.storage.blobfs.PagerThreads",
+            from: "void",
+            to: "#blobfs",
+            availability: "optional",
+        },
+        {
+            config: "fuchsia.storage.minfs.DieOnMutationFailure",
+            from: "void",
+            to: "#minfs",
+            availability: "optional",
+        },
+    ],
 }

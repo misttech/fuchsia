@@ -106,6 +106,16 @@
             to: [ "#power_manager" ],
             availability: "optional",
         },
+        {
+            config: [
+                "fuchsia.power.manager.DisableTemperatureFilter",
+                "fuchsia.power.manager.EnableDebugService",
+                "fuchsia.power.manager.NodeConfigPath",
+            ],
+            from: "void",
+            to: "#power_manager",
+            availability: "optional",
+        },
     ],
     expose: [
         {

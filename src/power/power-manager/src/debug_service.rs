@@ -5,16 +5,15 @@
 use crate::error::PowerManagerError;
 use crate::message::Message;
 use crate::node::Node;
+use fidl_fuchsia_power_manager_debug as fdebug;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use futures::{TryFutureExt, TryStreamExt};
 use log::*;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_power_manager_debug as fdebug, fuchsia_async as fasync};
 
 /// Publishes a service to expose debug control of the Power Manager.
-///
-/// To enable this service, add `--args=enable_power_manager_debug=true` to fx set.
 pub fn publish_debug_service<'a, 'b>(
     mut outgoing_svc_dir: ServiceFsDir<'a, ServiceObjLocal<'b, ()>>,
     nodes: HashMap<String, Rc<dyn Node>>,

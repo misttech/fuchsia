@@ -38,5 +38,11 @@
             to: "#fs-collection",
             availability: "optional",
         },
+        {
+            config: "fuchsia.storage.blobfs.PagerThreads",
+            from: "void",
+            to: "#fs-collection",
+            availability: "optional",
+        },
     ],
 }

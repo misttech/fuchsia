@@ -10,6 +10,14 @@ use crate::mocks::admin::MockStateControlAdminService;
 use crate::mocks::input_settings_service::MockInputSettingsService;
 use crate::mocks::kernel_service::MockKernelService;
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServiceMarker};
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl;
+use fidl_fuchsia_hardware_power_statecontrol as fpower;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_kernel as fkernel;
+use fidl_fuchsia_powermanager_driver_temperaturecontrol as ftemperaturecontrol;
+use fidl_fuchsia_sys2 as fsys2;
+use fidl_fuchsia_testing as ftesting;
 use fuchsia_component::client::Service;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
@@ -18,13 +26,6 @@ use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use log::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use {
-    fidl_fuchsia_driver_test as fdt, fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl,
-    fidl_fuchsia_hardware_power_statecontrol as fpower, fidl_fuchsia_io as fio,
-    fidl_fuchsia_kernel as fkernel,
-    fidl_fuchsia_powermanager_driver_temperaturecontrol as ftemperaturecontrol,
-    fidl_fuchsia_sys2 as fsys2, fidl_fuchsia_testing as ftesting,
-};
 
 const POWER_MANAGER_URL: &str = "#meta/power-manager.cm";
 const CPU_MANAGER_URL: &str = "#meta/cpu-manager.cm";
@@ -335,15 +336,43 @@ impl TestEnvBuilder {
             .await
             .unwrap();
 
-        // Update Power Manager's structured config values
-        realm_builder.init_mutable_config_from_package(&power_manager).await.unwrap();
+        // Update Power Manager's capability config values
         realm_builder
-            .set_config_value(
-                &power_manager,
-                "node_config_path",
-                self.power_manager_node_config_path
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.power.manager.EnableDebugService".parse().unwrap(),
+                value: false.into(),
+            }))
+            .await
+            .unwrap();
+        realm_builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.power.manager.NodeConfigPath".parse().unwrap(),
+                value: self
+                    .power_manager_node_config_path
                     .expect("power_manager_node_config_path not set")
                     .into(),
+            }))
+            .await
+            .unwrap();
+        realm_builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.power.manager.DisableTemperatureFilter".parse().unwrap(),
+                value: true.into(),
+            }))
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.power.manager.EnableDebugService",
+                    ))
+                    .capability(Capability::configuration("fuchsia.power.manager.NodeConfigPath"))
+                    .capability(Capability::configuration(
+                        "fuchsia.power.manager.DisableTemperatureFilter",
+                    ))
+                    .from(Ref::self_())
+                    .to(&power_manager),
             )
             .await
             .unwrap();

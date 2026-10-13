@@ -16,20 +16,6 @@ fuchsia_structured_config_cpp_elf_lib("minfs_config_lib") {
   cm_label = ":minfs_manifest"
 }
 
-fuchsia_structured_config_values("minfs_default_config") {
-  cm_label = ":minfs_manifest"
-  values = {
-    die_on_mutation_failure = true
-  }
-}
-
-fuchsia_structured_config_values("minfs_test_config_corrupt") {
-  cm_label = ":minfs_manifest"
-  values = {
-    die_on_mutation_failure = false
-  }
-}
-
 executable("minfs") {
   sources = [ "main.cc" ]
   deps = [
@@ -43,17 +29,10 @@ executable("minfs") {
   ]
 }
 
-fuchsia_component("minfs-component-base") {
+fuchsia_component("minfs-component") {
+  visibility += [ "*" ]
   cm_label = ":minfs_manifest"
   deps = [ ":minfs" ]
-}
-
-group("minfs-component") {
-  visibility += [ "*" ]
-  public_deps = [
-    ":minfs-component-base",
-    ":minfs_default_config",
-  ]
 }
 
 fuchsia_package("package") {
@@ -66,15 +45,6 @@ group("minfs-test-component") {
   visibility += [ "*" ]
   deps = [
     ":minfs-component",
-    "//src/storage/lib/fs_management:fs_management_shard",
-  ]
-}
-
-group("minfs-test-component-corrupt") {
-  visibility += [ "*" ]
-  deps = [
-    ":minfs-component-base",
-    ":minfs_test_config_corrupt",
     "//src/storage/lib/fs_management:fs_management_shard",
   ]
 }

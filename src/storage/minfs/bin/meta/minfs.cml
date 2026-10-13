@@ -29,6 +29,13 @@
             protocol: "fuchsia.scheduler.RoleManager",
             availability: "optional",
         },
+        {
+            config: "fuchsia.storage.minfs.DieOnMutationFailure",
+            key: "die_on_mutation_failure",
+            type: "bool",
+            availability: "transitional",
+            default: true,
+        },
     ],
     expose: [
         {
@@ -43,7 +50,4 @@
             from: "self",
         },
     ],
-    config: {
-        die_on_mutation_failure: { type: "bool" },
-    },
 }

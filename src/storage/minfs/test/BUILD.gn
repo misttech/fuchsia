@@ -7,6 +7,7 @@ import("//build/fuzz.gni")
 import("//build/test.gni")
 import("//src/storage/fs_test/suite.gni")
 import("//src/storage/testing/driver_test_realm.gni")
+import("//tools/cmc/build/expect_includes.gni")
 
 test("minfs_unit") {
   sources = [
@@ -249,8 +250,9 @@ fs_test_suite("minfs") {
     deps += [ ":minfs-power-test" ]
   }
 
-  # Isolate corrupt-tests into a separate package to inject the false CVF panic
-  # override without impacting the main suite.
+  # Isolate corrupt-tests into a separate package to route
+  # fuchsia.storage.minfs.DieOnMutationFailure = false without impacting the
+  # main suite.
   omit_components = [ ":minfs-corrupt-tests" ]
 
   # TODO(b/297201368): These tests timeout only on the RISC-V builders
@@ -264,13 +266,25 @@ fs_test_suite("minfs") {
   }
 }
 
+expect_includes("minfs_corrupt_test_includes") {
+  includes = [ "meta/minfs_corrupt_test.shard.cml" ]
+}
+
+storage_driver_test_realm_component("minfs-corrupt-test-component") {
+  component_name = "minfs-corrupt-tests"
+  deps = [
+    ":minfs_corrupt_test_includes",
+    "//src/storage/fs_test:corrupt_tests",
+  ]
+}
+
 fuchsia_test_package("minfs-corrupt-fs-tests") {
-  test_components = [ ":minfs-corrupt-tests" ]
+  test_components = [ ":minfs-corrupt-test-component" ]
   deps = [
     ":minfs_fs_test_config",
     ":minfs_validate_fs_test_config",
     "//src/storage/fvm:fvm-component",
-    "//src/storage/minfs/bin:minfs-test-component-corrupt",
+    "//src/storage/minfs/bin:minfs-test-component",
   ]
   test_specs = {
     log_settings = {

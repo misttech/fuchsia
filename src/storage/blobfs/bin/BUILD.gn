@@ -15,11 +15,6 @@ fuchsia_package("package") {
 
 visibility = [ "//src/storage/*" ]
 
-declare_args() {
-  # The number of pager threads to spawn for blobfs.
-  blobfs_num_pager_threads = 2
-}
-
 executable("blobfs") {
   visibility += [ "//src/storage/lib/fs_management/cpp:fs-management-test" ]
   sources = [ "main.cc" ]
@@ -49,7 +44,6 @@ fuchsia_component("component") {
   cm_label = ":blobfs.cml"
   deps = [
     ":blobfs",
-    ":blobfs-component-config-values",
     "//src/storage/blobfs:decompressor-sandbox",
   ]
   visibility += [ "//src/security/tests/pkg_test/tests:*" ]
@@ -74,13 +68,6 @@ group("blobfs-component") {
 
 fuchsia_structured_config_cpp_elf_lib("blobfs-component-config") {
   cm_label = ":blobfs.cml"
-}
-
-fuchsia_structured_config_values("blobfs-component-config-values") {
-  cm_label = ":blobfs.cml"
-  values = {
-    pager_threads = blobfs_num_pager_threads
-  }
 }
 
 test("blobfs_component_test") {

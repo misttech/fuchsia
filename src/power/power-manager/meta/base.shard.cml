@@ -55,6 +55,33 @@
             availability: "optional",
         },
         { service: "fuchsia.hardware.temperature.Service" },
+        {
+            // Enables the debug service for manipulating Power Manager state at run-time.
+            config: "fuchsia.power.manager.EnableDebugService",
+            key: "enable_debug_service",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // Path to a node config file for the Power Manager to use. Typically set as a default
+            // value, but can be overridden for integration tests.
+            config: "fuchsia.power.manager.NodeConfigPath",
+            key: "node_config_path",
+            type: "string",
+            max_size: 128,
+            availability: "optional",
+            default: "/config/node_config.json",
+        },
+        {
+            // Disables the temperature filter for all TemperatureHandler nodes. Typically false, but
+            // may be overridden for integration tests.
+            config: "fuchsia.power.manager.DisableTemperatureFilter",
+            key: "disable_temperature_filter",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
     expose: [
         {
@@ -72,20 +99,5 @@
     ],
     facets: {
         "fuchsia.dash.launcher-tool-urls": [ "fuchsia-boot:///thermal-sensor-manager-cli" ],
-    },
-    config: {
-        // Enables the debug service for manipulating Power Manager state at run-time.
-        enable_debug_service: { type: "bool" },
-
-        // Path to a node config file for the Power Manager to use. Typically set as a default
-        // value, but can be overridden for integration tests.
-        node_config_path: {
-            type: "string",
-            max_size: 128,
-        },
-
-        // Disables the temperature filter for all TemperatureHandler nodes. Typically false, but
-        // may be overridden for integration tests.
-        disable_temperature_filter: { type: "bool" },
     },
 }

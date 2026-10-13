@@ -75,24 +75,12 @@ fuchsia_component_manifest("integration-cpu-manager-manifest") {
   component_name = "cpu-manager"
 }
 
-fuchsia_structured_config_values(
-    "integration-power-manager-structured-config") {
-  testonly = true
-  cm_label = ":integration-power-manager-manifest"
-  values = {
-    enable_debug_service = false
-    node_config_path = ""
-    disable_temperature_filter = true
-  }
-}
-
 fuchsia_component("integration-component") {
   cm_label = ":integration-power-manager-manifest"
   testonly = true
   deps = [
     ":integration-cpu-manager-manifest",
     ":integration-power-manager-manifest",
-    ":integration-power-manager-structured-config",
     "//src/power/cpu-manager:bin_with_fake_time",
     "//src/power/power-manager:bin_with_fake_time",
   ]

@@ -18,4 +18,12 @@
             durability: "transient",
         },
     ],
+    offer: [
+        {
+            config: "fuchsia.storage.blobfs.PagerThreads",
+            from: "void",
+            to: "#blobfs-collection",
+            availability: "optional",
+        },
+    ],
 }
