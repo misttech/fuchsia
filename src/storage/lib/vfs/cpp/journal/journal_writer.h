@@ -86,14 +86,14 @@ class JournalWriter {
   // device.
   [[nodiscard]] bool IsWritebackEnabled() const { return transaction_handler_; }
 
+  // Deactivates all writeback, causing all subsequent write operations to fail.
+  void DisableWriteback() { transaction_handler_ = nullptr; }
+
   fpromise::result<void, zx_status_t> Flush();
 
   bool HavePendingWork() const { return !pending_work_items_.empty(); }
 
  private:
-  // Deactivates all writeback, calling all subsequent write operations to fail.
-  void DisableWriteback() { transaction_handler_ = nullptr; }
-
   // Returns the start of the portion of the journal which stores metadata.
   [[nodiscard]] uint64_t InfoStartBlock() const { return journal_start_block_; }
 

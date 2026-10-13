@@ -77,6 +77,11 @@ class Journal final : public fpromise::executor {
     // this is after |commit_callback|.  Reads to the device after this callback will then return
     // metadata from this transaction.  Optional.
     fit::callback<void()> complete_callback;
+
+    // Called on the journal's background thread if the asynchronous portion of the transaction
+    // fails. Writeback will be disabled before this is invoked. Errors returned synchronously by
+    // `CommitTransaction` are not reported via this callback. Optional.
+    fit::callback<void(zx_status_t)> error_callback;
   };
 
   // Constructs a Journal with journaling enabled. This is the traditional constructor of Journals,

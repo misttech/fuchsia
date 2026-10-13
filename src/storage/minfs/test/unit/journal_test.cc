@@ -4,6 +4,8 @@
 
 #include <lib/fit/defer.h>
 
+#include <tuple>
+
 #include <gtest/gtest.h>
 
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
@@ -12,6 +14,7 @@
 #include "src/storage/minfs/fsck.h"
 #include "src/storage/minfs/runner.h"
 #include "src/storage/minfs/test/unit/journal_integration_fixture.h"
+#include "src/storage/minfs/unowned_vmo_buffer.h"
 
 namespace minfs {
 namespace {
@@ -228,6 +231,49 @@ TEST_F(JournalIntegrationTest, BlocksAreReservedUntilMetadataIsCommitted) {
 
   // Resume so that fs can be destroyed.
   device_ptr->Resume();
+}
+
+TEST(JournalDeathTest, WriteDataFailurePanics) {
+  ASSERT_DEATH(
+      {
+        async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
+        static constexpr int kBlockCount = 1 << 15;
+        auto device = std::make_unique<block_client::FakeBlockDevice>(kBlockCount, 512);
+        zx::result bcache = Bcache::Create(std::move(device), kBlockCount);
+        ASSERT_TRUE(bcache.is_ok());
+        ASSERT_TRUE(Mkfs((*bcache).get()).is_ok());
+        zx::result fs = Runner::Create(loop.dispatcher(), *std::move(bcache), {});
+        ASSERT_TRUE(fs.is_ok());
+
+        zx::result transaction = fs->minfs().BeginTransaction(0, 0);
+        ASSERT_TRUE(transaction.is_ok());
+
+        zx::vmo vmo;
+        ASSERT_EQ(zx::vmo::create(kMinfsBlockSize, 0, &vmo), ZX_OK);
+        UnownedVmoBuffer buffer(zx::unowned_vmo(vmo.get()));
+        transaction->EnqueueMetadata(
+            storage::Operation{
+                .type = storage::OperationType::kWrite,
+                .vmo_offset = 0,
+                .dev_offset = 0,
+                .length = 1,
+            },
+            &buffer);
+
+        // An out-of-range vmo_offset will cause CopyRequests in Journal::WriteData to fail.
+        transaction->EnqueueData(
+            storage::Operation{
+                .type = storage::OperationType::kWrite,
+                .vmo_offset = 1,
+                .dev_offset = fs->minfs().Info().dat_block,
+                .length = 1,
+            },
+            &buffer);
+
+        fs->minfs().CommitTransaction(*std::move(transaction));
+        std::ignore = fs->minfs().BlockingJournalSync();
+      },
+      "Minfs asynchronous commit failed:");
 }
 
 }  // namespace

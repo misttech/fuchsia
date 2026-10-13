@@ -4,6 +4,7 @@
 
 #include "src/storage/lib/vfs/cpp/journal/journal.h"
 
+#include <lib/fit/defer.h>
 #include <lib/fpromise/promise.h>
 #include <lib/fpromise/result.h>
 #include <lib/sync/completion.h>
@@ -177,6 +178,14 @@ zx_status_t Journal::CommitTransaction(Transaction transaction) {
     return ZX_ERR_IO_REFUSED;
   }
 
+  // Both Minfs and Blobfs mutate their shared in-memory metadata buffers (bitmaps, inode/node
+  // tables, and superblock) before calling `CommitTransaction`, so any failure to commit must
+  // disable writeback to prevent a subsequent transaction from flushing those unrolled-back
+  // metadata updates to disk. Schedule `DisableWriteback()` on the executor so `writer_` state is
+  // only mutated on the background thread.
+  auto disable_writeback = fit::defer(
+      [this] { schedule_task(fpromise::make_promise([this] { writer_.DisableWriteback(); })); });
+
   auto block_count_or = CheckOperationsAndGetTotalBlockCount<storage::OperationType::kWrite>(
       transaction.metadata_operations);
   if (block_count_or.is_error()) {
@@ -249,15 +258,21 @@ zx_status_t Journal::CommitTransaction(Transaction transaction) {
   pending_ += block_count;
   auto ordered_promise = journal_sequencer_.wrap(std::move(promise));
 
-  fpromise::pending_task task;
-  if (transaction.data_promise) {
-    task = data_barrier_.wrap(std::move(transaction.data_promise))
-               .and_then(std::move(ordered_promise));
-  } else {
-    task = std::move(ordered_promise);
-  }
+  Promise task = transaction.data_promise
+                     ? Promise(data_barrier_.wrap(std::move(transaction.data_promise))
+                                   .and_then(std::move(ordered_promise)))
+                     : Promise(std::move(ordered_promise));
 
-  schedule_task(std::move(task));
+  schedule_task(
+      task.or_else([this, error_callback = std::move(transaction.error_callback)](
+                       const zx_status_t& status) mutable -> fpromise::result<void, zx_status_t> {
+        writer_.DisableWriteback();
+        if (error_callback) {
+          error_callback(status);
+        }
+        return fpromise::error(status);
+      }));
+  disable_writeback.cancel();
   return ZX_OK;
 }
 

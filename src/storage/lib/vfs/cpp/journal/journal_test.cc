@@ -2642,6 +2642,58 @@ TEST_F(JournalTest, DataWriteFailureStillLetsSyncComplete) {
   EXPECT_TRUE(sync_done);
 }
 
+TEST_F(JournalTest, CommitTransactionWithFailingDataPromiseDisablesWriteback) {
+  storage::VmoBuffer buffer = registry()->InitializeBuffer(1);
+  const std::vector<storage::UnbufferedOperation> operations = {
+      {
+          .vmo = zx::unowned_vmo(buffer.vmo().get()),
+          .op =
+              {
+                  .type = storage::OperationType::kWrite,
+                  .vmo_offset = 0,
+                  .dev_offset = 20,
+                  .length = 1,
+              },
+      },
+      {
+          .vmo = zx::unowned_vmo(buffer.vmo().get()),
+          .op =
+              {
+                  .type = storage::OperationType::kWrite,
+                  .vmo_offset = 1,
+                  .dev_offset = 30,
+                  .length = 1,
+              },
+      },
+  };
+
+  MockTransactionHandler handler(registry());
+  zx_status_t error_status = ZX_OK;
+  {
+    Journal journal(&handler, take_info(), take_journal_buffer(), take_data_buffer(), 0);
+    EXPECT_EQ(journal.CommitTransaction({
+                  .metadata_operations = {operations[0]},
+                  .data_promise = journal.WriteData({operations[1]}),
+                  .error_callback = [&](zx_status_t status) { error_status = status; },
+              }),
+              ZX_OK);
+
+    sync_completion_t sync_completion;
+    journal.schedule_task(
+        journal.Sync().inspect([&](const fpromise::result<void, zx_status_t>& result) {
+          EXPECT_TRUE(result.is_error());
+          if (result.is_error()) {
+            EXPECT_EQ(result.error(), ZX_ERR_IO_REFUSED);
+          }
+          sync_completion_signal(&sync_completion);
+        }));
+    sync_completion_wait(&sync_completion, ZX_TIME_INFINITE);
+    EXPECT_EQ(journal.CommitTransaction({.metadata_operations = {operations[0]}}),
+              ZX_ERR_IO_REFUSED);
+  }
+  EXPECT_EQ(error_status, ZX_ERR_OUT_OF_RANGE);
+}
+
 // Tests that when metadata operations fail, subsequent operations also fail to avoid leaving the
 // device in an inconsistent state.
 //

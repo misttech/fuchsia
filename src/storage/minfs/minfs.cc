@@ -736,7 +736,13 @@ void Minfs::CommitTransaction(std::unique_ptr<Transaction> transaction) {
        // Keep vnodes alive until complete because we cache data and it's not safe to read new
        // data until the transaction is complete (and we could end up doing that if the vnode
        // gets destroyed and then quickly recreated).
-       .complete_callback = [pinned_vnodes = transaction->RemovePinnedVnodes()] {}});
+       .complete_callback = [pinned_vnodes = transaction->RemovePinnedVnodes()] {},
+       .error_callback =
+           [this](zx_status_t status) {
+             if (GetMutableBcache()->die_on_mutation_failure()) {
+               ZX_PANIC("Minfs asynchronous commit failed: %s", zx_status_get_string(status));
+             }
+           }});
   if (status != ZX_OK && GetMutableBcache()->die_on_mutation_failure()) {
     ZX_PANIC("Minfs synchronous commit failed: %s", zx_status_get_string(status));
   }
