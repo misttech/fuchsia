@@ -404,6 +404,8 @@ class Dwc3 : public fdf::DriverBase2,
     fdescriptor::wire::UsbSetup cur_setup;
     fdescriptor::wire::UsbSpeed cur_speed{fdescriptor::wire::UsbSpeed::kUndefined};
     uint64_t setup_generation{0};
+    // Latched 8-bit USB 2.0 test mode selector from the upper byte of wIndex (wIndex[15:8]).
+    uint8_t test_mode{0};
   };
 
   friend struct std::formatter<Ep0::State>;

@@ -314,6 +314,7 @@ class Dwc3TestHelper {
     drv.ep0_.shared_fifo.Write(ptr);
   }
   static void HandleResetEvent(Dwc3& drv) { drv.HandleResetEvent(); }
+  static uint8_t GetEp0TestMode(const Dwc3& drv) { return drv.ep0_.test_mode; }
 
   static void ClearSharedFifo(Dwc3& drv) { drv.ep0_.shared_fifo.Clear(); }
   static bool IsSharedFifoEmpty(Dwc3& drv) { return drv.ep0_.shared_fifo.IsEmpty(); }

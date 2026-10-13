@@ -264,6 +264,17 @@ type FeatureSelector = flexible enum : uint8 {
     UNDEFINED = 0xee;
 };
 
+/// Standard USB 2.0 test mode selectors as defined in USB 2.0 specification Table 9-7.
+type TestModeSelector = flexible enum : uint8 {
+    TEST_J = 0x01;
+    TEST_K = 0x02;
+    TEST_SE0_NAK = 0x03;
+    TEST_PACKET = 0x04;
+    TEST_FORCE_ENABLE = 0x05;
+    @unknown
+    UNDEFINED = 0xee;
+};
+
 /// USB Misc subclass codes.
 type MiscSubclass = flexible enum : uint8 {
     RNDIS = 0x04;

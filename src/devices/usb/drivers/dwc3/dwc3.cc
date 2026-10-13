@@ -1247,6 +1247,11 @@ void Dwc3::HandleResetEvent() {
   TRACE_DURATION("dwc3", "Dwc3::HandleResetEvent");
   fdf::info("Dwc3::HandleResetEvent");
 
+  // Clear any active USB 2.0 test mode in DCTL.TSTCTL on bus reset, masking ULSTCHNGREQ to
+  // avoid triggering an unintended link state change.
+  if (auto dctl = DCTL::Get().ReadFrom(get_mmio()); dctl.TSTCTL() != 0) {
+    dctl.set_ULSTCHNGREQ(0).set_TSTCTL(0).WriteTo(get_mmio());
+  }
   ResetEndpoints();
   SetDeviceAddress(0);
   connection_speed_ = fdescriptor::UsbSpeed::kUndefined;
@@ -1855,6 +1860,7 @@ void Dwc3::Ep0Reset() {
   EpReset(ep0_.in);
   ep0_.cur_setup = {};
   ep0_.cur_speed = fdescriptor::wire::UsbSpeed::kUndefined;
+  ep0_.test_mode = 0;
   ep0_.state = Ep0::State::None;
   ep0_.shared_fifo.Clear();
 }

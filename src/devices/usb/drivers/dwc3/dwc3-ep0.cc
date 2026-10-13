@@ -15,12 +15,24 @@
 #include <fbl/algorithm.h>
 #include <usb/descriptors.h>
 
+#include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 #include "src/devices/usb/drivers/dwc3/dwc3.h"
 
 namespace dwc3 {
 
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 namespace fpolicy = fuchsia_hardware_usb_policy;
+
+namespace {
+
+bool IsTestModeRequest(const fdescriptor::wire::UsbSetup& setup) {
+  return setup.bm_request_type == kStandardDeviceOut &&
+         (setup.b_request == fidl::ToUnderlying(fdescriptor::StandardRequest::kSetFeature) ||
+          setup.b_request == fidl::ToUnderlying(fdescriptor::StandardRequest::kClearFeature)) &&
+         setup.w_value == fidl::ToUnderlying(fdescriptor::FeatureSelector::kDeviceTestMode);
+}
+
+}  // namespace
 
 zx_status_t Dwc3::Ep0Init() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Init");
@@ -66,6 +78,7 @@ void Dwc3::Ep0QueueSetup() {
   }
   ep0_.in.transfer_state = Endpoint::TransferState::kIdle;
   ep0_.out.transfer_state = Endpoint::TransferState::kIdle;
+  ep0_.test_mode = 0;
   if (auto status = ep0_.buffer->CacheFlushInvalidate(0, sizeof(fdescriptor::wire::UsbSetup));
       status.is_error()) {
     fdf::error("CacheFlushInvalidate failed: {}", status);
@@ -138,7 +151,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       const bool is_two_stage = ep0_.cur_setup.w_length == 0;
       const bool is_out = usb_request_is_out(ep0_.cur_setup.bm_request_type);
 
-      if (is_two_stage) {
+      if (is_two_stage || IsTestModeRequest(ep0_.cur_setup)) {
         ep0_.state = Ep0::State::TwoStage;
         HandleEp0Setup(0);
         break;
@@ -272,6 +285,13 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       break;
     }
     case Ep0::State::Status:
+      // Apply the latched test mode selector to DCTL.TSTCTL only after the Status stage has
+      // completed, masking ULSTCHNGREQ to avoid triggering an unintended link state change.
+      if (ep0_.test_mode != 0) {
+        auto* mmio = get_mmio();
+        DCTL::Get().ReadFrom(mmio).set_ULSTCHNGREQ(0).set_TSTCTL(ep0_.test_mode).WriteTo(mmio);
+        ep0_.test_mode = 0;
+      }
       Ep0QueueSetup();
       break;
     default:
@@ -374,6 +394,12 @@ void Dwc3::HandleEp0Setup(size_t length) {
   // Copy the setup packet to ensure it is correctly captured in the Then closure.
   fdescriptor::wire::UsbSetup setup = ep0_.cur_setup;
 
+  auto fail = [this]() {
+    ep0_.shared_fifo.Clear();
+    EpSetStall(ep0_.out, true);
+    Ep0QueueSetup();
+  };
+
   if (setup.bm_request_type == kStandardDeviceOut) {
     // handle some special setup requests in this driver
     switch (setup.b_request) {
@@ -394,6 +420,27 @@ void Dwc3::HandleEp0Setup(size_t length) {
         });
         return;
       }
+      case fidl::ToUnderlying(fdescriptor::StandardRequest::kSetFeature):
+        if (setup.w_value == fidl::ToUnderlying(fdescriptor::FeatureSelector::kDeviceTestMode)) {
+          const uint8_t test_selector = static_cast<uint8_t>(setup.w_index >> 8);
+          if ((setup.w_index & 0xff) != 0 || setup.w_length != 0 ||
+              test_selector < fidl::ToUnderlying(fdescriptor::TestModeSelector::kTestJ) ||
+              test_selector > fidl::ToUnderlying(fdescriptor::TestModeSelector::kTestForceEnable)) {
+            fail();
+            return;
+          }
+          ep0_.test_mode = test_selector;
+          ep0_.state = Ep0::State::WaitHost;
+          return;
+        }
+        break;
+      case fidl::ToUnderlying(fdescriptor::StandardRequest::kClearFeature):
+        if (setup.w_value == fidl::ToUnderlying(fdescriptor::FeatureSelector::kDeviceTestMode)) {
+          // The Test_Mode feature cannot be cleared by the ClearFeature() request.
+          fail();
+          return;
+        }
+        break;
       default:
         // fall through to the common DoControlCall
         break;
