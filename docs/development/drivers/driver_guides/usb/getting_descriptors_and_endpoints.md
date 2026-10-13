@@ -6,16 +6,13 @@
 
 # Getting descriptors and endpoints from USB
 
-Caution: This page may contain information that is specific to the legacy
-version of the driver framework (DFv1).
-
 The `usb` class contains several subclasses providing access to the interfaces, descriptors,
 and endpoints of the usb device. The subclasses included are:
 
-*   [`InterfaceList`](/src/devices/usb/lib/usb/include/usb/usb.h#311)
-*   [`Interface`](/src/devices/usb/lib/usb/include/usb/usb.h#290)
-*   [`DescriptorList`](/src/devices/usb/lib/usb/include/usb/usb.h#166)
-*   [`EndpointList`](/src/devices/usb/lib/usb/include/usb/usb.h#266)
+*   [`InterfaceList`](/src/devices/usb/lib/usb/include/usb/usb.h#523)
+*   [`Interface`](/src/devices/usb/lib/usb/include/usb/usb.h#405)
+*   [`DescriptorList`](/src/devices/usb/lib/usb/include/usb/usb.h#203)
+*   [`EndpointList`](/src/devices/usb/lib/usb/include/usb/usb.h#311)
 
 USB descriptor report all of the device's attributes. An endpoint is a specific type of descriptor
 that describes the terminus of a communication flow between the host and the device.
@@ -44,7 +41,7 @@ The hierarchy of these subclasses can be seen in **Figure 1.**
 These examples iterate through all the descriptors in a USB device. The example iterates through all
 of the USB Interfaces and then iterates through all the descriptors in each interface.
 
-Note: To iterate through the endpoints instead, replace `interface.getDescriptorList()` with `interface.getEndpointList()`.
+Note: To iterate through the endpoints instead, replace `interface.GetDescriptorList()` with `interface.GetEndpointList()`.
 
 #### Range-based for loop
 
