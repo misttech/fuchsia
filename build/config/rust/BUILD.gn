@@ -20,15 +20,6 @@ import("//build/rust/config.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/runtime/rust_runtime.gni")
 
-declare_args() {
-  # Controls whether the rust compiler uses v0 symbol mangling scheme
-  # (see https://github.com/rust-lang/rfcs/blob/HEAD/text/2603-rust-symbol-name-mangling-v0.md).
-  rust_v0_symbol_mangling = true
-
-  # Enable the rust parallel front-end with N threads
-  rust_parallel_frontend_threads = false
-}
-
 if (is_fuchsia) {
   rust_runtime_link_config("rust-libstd-so-ldflags") {
     name = "libstd"
@@ -70,6 +61,7 @@ config("edition_2015") {
   rustflags = [ "--edition=2015" ]
 }
 
+# LINT.IfChange(rust_build_flags)
 config("no_features") {
   rustflags = [ "-Zallow-features=" ]
 }
@@ -98,6 +90,8 @@ config("incremental") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel)
+
 config("one_codegen_unit") {
   # Disable codegen parallelism.
   # Trades incremental rebuild speed for smaller code size.
@@ -121,6 +115,7 @@ config("codegen_units_16") {
   }
 }
 
+# LINT.IfChange
 config("parallel_frontend_threads") {
   if (rust_parallel_frontend_threads != false) {
     # Use the parallel front-end with up to N threads, set by the
@@ -147,6 +142,8 @@ config("default_debug_assertions") {
     configs = [ ":no_debug_assertions" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:rust_build_flags)
 
 # LINT.IfChange(bootfs)
 # Best practices for Rust binaries that go into size-constrained bootfs.
@@ -175,9 +172,12 @@ config("proc_macro_test") {
   ]
 }
 
+# LINT.IfChange
 config("2018_idioms") {
   rustflags = [ "-Wrust-2018-idioms" ]
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 config("target") {
   rustflags = [
@@ -186,6 +186,7 @@ config("target") {
   ]
 }
 
+# LINT.IfChange
 config("cap_lints") {
   if (rust_rbe_enable && rust_rbe_exec_strategy == "local" &&
       rust_cap_lints != rust_cap_lints_default) {
@@ -203,6 +204,8 @@ config("cap_lints") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel)
+
 config("cap_lints_allow") {
   # This does not change for RBE as this config is used by targets to specify
   # that they need specific lint handling, and should override the setting from
@@ -210,6 +213,7 @@ config("cap_lints_allow") {
   rustflags = [ "--cap-lints=allow" ]
 }
 
+# LINT.IfChange
 config("panic_abort") {
   rustflags = [
     "-Cpanic=abort",
@@ -223,6 +227,8 @@ config("v0_symbol_mangling") {
     rustflags = [ "-Csymbol-mangling-version=v0" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 # TODO(https://fxbug.dev/42148577) remove this allowance
 config("allow_legacy_derive_helpers") {

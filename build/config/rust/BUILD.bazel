@@ -2,6 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "@fuchsia_build_info//:args.bzl",
+    "rust_debug_assertions",
+    "rust_parallel_frontend_threads",
+    "rust_v0_symbol_mangling",
+)
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 
 package(default_applicable_licenses = ["//:license"])
@@ -20,3 +26,105 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(//build/config/rust/BUILD.gn:bootfs)
+
+# LINT.IfChange(rust_build_flags)
+build_flags(
+    name = "2018_idioms",
+    rustflags = ["-Wrust-2018-idioms"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "cap_lints",
+
+    # --cap-lints cannot be overridden by a later --cap-lints flag on the rustc
+    # command line (rustc only honors the first occurrence).
+    #
+    # If this target added `--cap-lints=$rust_cap_lints` here, that flag would be
+    # part of the default toolchain flags and would appear before any target-specific
+    # --cap-lints flags (making the latter ignored). This in particular would break
+    # the compilation of third-party Rust crates.
+    #
+    # To work-around this, this target doesn't add any flag. Instead, the rustc_xxx()
+    # macros call with_fuchsia_rustc_flags() in //build/bazel/rules/rust/common.bzl
+    # to add --cap-lints={rust_cap_lints}.
+    #
+    # Intentionally commented, see note above.
+    # rustflags = [ "--cap-lints=$rust_cap_lints" ]
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "debug_assertions",
+    rustflags = ["-Cdebug-assertions=yes"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "no_debug_assertions",
+    rustflags = ["-Cdebug-assertions=no"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "default_debug_assertions",
+    subflags = [":debug_assertions"] if rust_debug_assertions else [":no_debug_assertions"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "error_format_human",
+    # @rules_rust always set the --error-format implicitly and trying to add it
+    # here will result in a compilation error: Option 'error-format' given more than once.
+    # Thus it is never set here.
+    # rustflags = ["--error-format=human"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "incremental",
+    # Rust's -Cincremental=<dir> is incompatible with Bazel's action sandboxing
+    # and remote caching, as each Rustc action runs in an ephemeral sandbox
+    # where non-declared incremental cache directories are neither persisted
+    # nor shared across invocations.
+    visibility = ["//visibility:public"],
+)
+
+# TODO(https://fxbug.dev/556328773): Use next generation trait solver after compile time regression is addressed.
+build_flags(
+    name = "next_solver",
+    rustflags = ["-Znext-solver=coherence"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "no_features",
+    rustflags = ["-Zallow-features="],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "panic_abort",
+    rustflags = [
+        "-Cpanic=abort",
+        "-Cforce-unwind-tables=yes",
+        "-Zpanic_abort_tests",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "parallel_frontend_threads",
+    rustflags = [
+        "-Z",
+        "threads={}".format(rust_parallel_frontend_threads),
+    ] if rust_parallel_frontend_threads else [],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "v0_symbol_mangling",
+    rustflags = ["-Csymbol-mangling-version=v0"] if rust_v0_symbol_mangling else [],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(//build/config/rust/BUILD.gn:rust_build_flags)

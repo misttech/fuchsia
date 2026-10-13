@@ -20,10 +20,17 @@ declare_args() {
   # LINT.IfChange
   rustc_prefix = default_rustc_prefix
 
-  # LINT.ThenChange(//build/bazel/BUILD.gn)
-
   # Enable debug assertions, e.g. for overflow checking.
   rust_debug_assertions = !is_release
+
+  # Enable the rust parallel front-end with N threads
+  rust_parallel_frontend_threads = false
+
+  # Controls whether the rust compiler uses v0 symbol mangling scheme
+  # (see https://github.com/rust-lang/rfcs/blob/HEAD/text/2603-rust-symbol-name-mangling-v0.md).
+  rust_v0_symbol_mangling = true
+
+  # LINT.ThenChange(//build/bazel/BUILD.gn)
 }
 
 if (rustc_prefix == default_rustc_prefix) {

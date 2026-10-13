@@ -361,6 +361,24 @@ generated_file("gn_build_variables_for_bazel") {
       type = "string"
       location = declaration
     },
+    {
+      name = "rust_debug_assertions"
+      value = rust_debug_assertions
+      type = "bool"
+      location = declaration
+    },
+    {
+      name = "rust_parallel_frontend_threads"
+      value = rust_parallel_frontend_threads
+      type = "string_or_false"
+      location = declaration
+    },
+    {
+      name = "rust_v0_symbol_mangling"
+      value = rust_v0_symbol_mangling
+      type = "bool"
+      location = declaration
+    },
   ]
 
   # LINT.ThenChange(//build/rust/config.gni)
