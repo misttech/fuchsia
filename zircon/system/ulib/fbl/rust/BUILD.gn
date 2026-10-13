@@ -19,6 +19,7 @@ rustc_library("fbl") {
     "src/conditional_select_nospec.rs",
     "src/confine_array_index.rs",
     "src/doubly_linked_list.rs",
+    "src/hash_table.rs",
     "src/inline_array.rs",
     "src/intrusive_container_test_support.rs",
     "src/lib.rs",
