@@ -24,7 +24,7 @@
              path="third_party/acpica-migrating/src"
              remote="https://fuchsia.googlesource.com/third_party/acpica"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="e4c9c02f9cf999b57c26ccbec86440bc3ef94594"/>
+             revision="f781ad1fd402a9a018e851f4100dae0d27901d44"/>
     <project name="third_party/alacritty"
              path="third_party/alacritty-migrating/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/alacritty/alacritty"
