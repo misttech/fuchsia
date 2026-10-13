@@ -6,8 +6,10 @@ import asyncio
 import logging
 import time
 
+import attenuator
 import fuchsia_base_test
 import openwrt_access_point
+from attenuator import Attenuator
 from honeydew.affordances.connectivity import netstack
 from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
@@ -33,6 +35,7 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         self.access_point: access_point.AccessPoint | None = None
         self.access_points: list[access_point.AccessPoint] = []
         self.openwrt_aps: list[OpenWrtAP] = []
+        self.attenuators: list[Attenuator] = []
         self.iperf_server: IPerfServerOverSsh | None = None
         self.test_start_marker: str | None = None
 
@@ -57,6 +60,16 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             self.openwrt_ap = self.openwrt_aps[0]
         elif self.access_points:
             self.access_point = self.access_points[0]
+
+        self.attenuators = (
+            await self.register_controller(
+                attenuator,
+                required=False,
+            )
+            or []
+        )
+        for attn in self.attenuators:
+            attn.set_atten(0)
 
     async def setup_test(self) -> None:
         await super().setup_test()

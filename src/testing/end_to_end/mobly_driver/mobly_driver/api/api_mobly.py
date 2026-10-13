@@ -253,6 +253,27 @@ def new_testbed_config(
             }
             if ssh_path:
                 controller[SSH_CONFIG_KEY][SSH_PATH_KEY] = ssh_path
+            if "attenuator" in controller:
+                attenuator_ip = controller.pop("attenuator")["ip"]
+                controller[api_infra.ATTENUATOR] = [
+                    {
+                        "Address": attenuator_ip,
+                        "attenuator_ports_wifi_2g": [1, 2, 3],
+                        "attenuator_ports_wifi_5g": [1, 2, 3],
+                    }
+                ]
+                attenuator_controller = {
+                    "Model": "minicircuits",
+                    "InstrumentCount": 4,
+                    "Address": attenuator_ip,
+                    "Protocol": "http",
+                    "Port": 80,
+                }
+                attenuator_list = controllers.setdefault(
+                    api_infra.ATTENUATOR, []
+                )
+                if attenuator_controller not in attenuator_list:
+                    attenuator_list.append(attenuator_controller)
         elif api_infra.IPERF_SERVER == controller_type:
             controller[SSH_CONFIG_KEY] = {
                 SSH_HOST_KEY: controller.pop("ip"),

@@ -12,6 +12,7 @@ FUCHSIA_DEVICE = "FuchsiaDevice"
 # Defined as an Auxiliary device in https://osscs.corp.google.com/fuchsia/fuchsia/+/main:tools/botanist/targets/auxiliary.go
 ACCESS_POINT = "AccessPoint"
 OPENWRT_AP = "OpenWrtAP"
+ATTENUATOR = "Attenuator"
 IPERF_SERVER = "IPerfServer"
 
 # LINT.IfChange(mobly_test_start)
