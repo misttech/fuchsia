@@ -5,10 +5,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::perf::lockless_ring_buffer::LocklessRingBuffer;
 use crate::task::Kernel;
 use crate::vfs::OutputBuffer;
 use fuchsia_rcu::RcuDroppableArc;
+use paged_ring_buffer::LocklessRingBuffer;
 use starnix_logging::log_error;
 use starnix_sync::{LockDepMutex, PerfTraceEventQueueListLock};
 use starnix_uapi::errors::Errno;
@@ -205,7 +205,7 @@ impl<'a> TraceEventQueue {
     /// From https://docs.kernel.org/trace/ring-buffer-design.html, when memory is mapped, a reader
     /// page can be swapped with the header page to avoid copying memory.
     pub fn read(&self, buf: &mut dyn OutputBuffer) -> Result<usize, Errno> {
-        self.ring_buffer.read().read(buf)
+        self.ring_buffer.read().read(&mut RingOutputBuffer(buf))
     }
 
     /// Write `event` into `ring_buffer`.
@@ -326,12 +326,25 @@ impl TraceEventQueueList {
     }
 }
 
+/// Adapts a starnix_core `OutputBuffer` to the `paged_ring_buffer::OutputBuffer` that
+/// `LocklessRingBuffer::read()` takes.
+struct RingOutputBuffer<'a>(&'a mut dyn OutputBuffer);
+
+impl paged_ring_buffer::OutputBuffer for RingOutputBuffer<'_> {
+    fn available(&self) -> usize {
+        self.0.available()
+    }
+    fn write_each(
+        &mut self,
+        callback: &mut paged_ring_buffer::OutputBufferCallback<'_>,
+    ) -> Result<usize, Errno> {
+        self.0.write_each(callback)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{
-        DEFAULT_RING_BUFFER_SIZE_BYTES, LocklessRingBuffer, TraceEvent, TraceEventQueue,
-        TraceEventQueueList,
-    };
+    use super::{LocklessRingBuffer, TraceEvent, TraceEventQueue, TraceEventQueueList};
     use crate::vfs::OutputBuffer;
     use crate::vfs::buffers::VecOutputBuffer;
     use std::sync::Arc;
@@ -364,9 +377,8 @@ mod tests {
         let queue = TraceEventQueue::new(0).expect("create queue");
         assert!(!queue.ring_buffer.read().is_enabled());
 
-        // Enable tracing and check the queue's state.
+        // Enable tracing.
         assert!(queue.enable().is_ok());
-        assert_eq!(queue.ring_buffer.read().size_bytes(), DEFAULT_RING_BUFFER_SIZE_BYTES);
 
         // Confirm we can push an event.
         let data = b"B|1234|slice_name";

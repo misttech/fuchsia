@@ -1,0 +1,47 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/rust/rustc_library.gni")
+
+rustc_library("paged_ring_buffer") {
+  edition = "2024"
+  with_unit_tests = true
+  lint_config = "//src/starnix/build:kernel_library_config"
+  sources = [
+    "src/lib.rs",
+    "src/lockless_ring_buffer.rs",
+  ]
+  visibility = [
+    ":*",
+    "//src/starnix/kernel/core:*",
+  ]
+  deps = [
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia-rcu",
+    "//src/lib/fuchsia-runtime",
+    "//src/lib/shared-buffer",
+    "//src/lib/trace/rust:trace",
+    "//src/starnix/lib/starnix_logging",
+    "//src/starnix/lib/starnix_sync",
+    "//src/starnix/lib/starnix_types",
+    "//src/starnix/lib/starnix_uapi",
+    "//third_party/rust_crates:scopeguard",
+    "//third_party/rust_crates:static_assertions",
+  ]
+}
+
+fuchsia_unittest_package("starnix-paged-ring-buffer-tests") {
+  deps = [ ":paged_ring_buffer_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":starnix-paged-ring-buffer-tests" ]
+}

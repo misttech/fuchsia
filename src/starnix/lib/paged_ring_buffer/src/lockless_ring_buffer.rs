@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 //! This is a lockless ring buffer modeled after https://docs.kernel.org/trace/ring-buffer-design.html
-use crate::mm::memory::MemoryObject;
-use crate::vfs::OutputBuffer;
 use fuchsia_rcu::RcuDroppable;
 use fuchsia_runtime::vmar_root_self;
 use fuchsia_trace;
@@ -14,7 +12,19 @@ use starnix_sync::{LockDepMutex, PerfRingBufferStateLock};
 use starnix_types::PAGE_SIZE;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error, from_status_like_fdio};
+use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Callback passed to `OutputBuffer::write_each()`. Matches starnix_core's `OutputBufferCallback`.
+pub type OutputBufferCallback<'a> = dyn FnMut(&mut [MaybeUninit<u8>]) -> Result<usize, Errno> + 'a;
+
+/// The subset of starnix_core's `OutputBuffer` that `LocklessRingBuffer::read()` uses.
+pub trait OutputBuffer {
+    /// Returns the number of bytes that can still be written.
+    fn available(&self) -> usize;
+    /// Calls `callback` with each writable segment, and returns the number of bytes written.
+    fn write_each(&mut self, callback: &mut OutputBufferCallback<'_>) -> Result<usize, Errno>;
+}
 
 #[derive(RcuDroppable)]
 struct Node {
@@ -190,7 +200,7 @@ const RING_ENABLED_BIT: usize = 1 << 63;
 
 #[derive(RcuDroppable)]
 pub struct LocklessRingBuffer {
-    vmo: MemoryObject,
+    vmo: zx::Vmo,
     mapping: SharedBuffer,
     // linked list of pages that represent the ring, backed by the mapping (and the vmo).
     nodes: Vec<Node>,
@@ -244,20 +254,14 @@ impl LocklessRingBuffer {
         let capacity = total_nodes * (*PAGE_SIZE) as usize;
 
         // Create VMO
-        let vmo: MemoryObject =
+        let vmo = starnix_logging::with_zx_name(
             zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, capacity as u64)
-                .map_err(|_| errno!(ENOMEM))?
-                .into();
-        let vmo = vmo.with_zx_name(b"starnix:tracefs");
+                .map_err(|_| errno!(ENOMEM))?,
+            b"starnix:tracefs",
+        );
         // Map VMO
         let addr = vmar_root_self()
-            .map(
-                0,
-                vmo.as_vmo().expect("vmo must exist"),
-                0,
-                capacity,
-                zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
-            )
+            .map(0, &vmo, 0, capacity, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
             .map_err(|e| from_status_like_fdio!(e))?;
         // SAFETY: The address returned by `vmar.map` is valid for `capacity` bytes.
         let mapping = unsafe { SharedBuffer::new(addr as *mut u8, capacity) };
@@ -318,7 +322,8 @@ impl LocklessRingBuffer {
         };
         Ok(buffer)
     }
-    pub fn dropped_pages(&self) -> u64 {
+    #[cfg(test)]
+    fn dropped_pages(&self) -> u64 {
         self.dropped_pages.load(Ordering::Relaxed)
     }
 }
@@ -762,7 +767,7 @@ impl LocklessRingBuffer {
         reservation.release();
     }
 
-    pub fn swap_reader_page(&self) -> Option<usize> {
+    fn swap_reader_page(&self) -> Option<usize> {
         let mut retries = 0;
         loop {
             let head_val = self.head_page.load(Ordering::Acquire);
@@ -1026,7 +1031,7 @@ impl LocklessRingBuffer {
         // Initialize reader page size to 0
         self.nodes[initial_pages].page_data.write_at(8, &0u64.to_le_bytes());
         // Initialize first page.
-        let _ = self.vmo.as_vmo().expect("vmo must exist").op_range(zx::VmoOp::ZERO, 0, *PAGE_SIZE);
+        let _ = self.vmo.op_range(zx::VmoOp::ZERO, 0, *PAGE_SIZE);
         let nanos = now.into_nanos() as u64;
         self.nodes[0].page_data.write_at(0, &nanos.to_le_bytes());
 
@@ -1049,9 +1054,37 @@ impl Drop for LocklessRingBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vfs::buffers::VecOutputBuffer;
-    use crate::vfs::{Buffer, OutputBufferCallback, PeekBufferSegmentsCallback};
     use std::sync::Arc;
+
+    /// An `OutputBuffer` that collects what is written into a `Vec`, in place of starnix_core's
+    /// `VecOutputBuffer`.
+    struct VecOutputBuffer {
+        data: Vec<u8>,
+        capacity: usize,
+    }
+    impl VecOutputBuffer {
+        fn new(capacity: usize) -> Self {
+            Self { data: Vec::with_capacity(capacity), capacity }
+        }
+        fn data(&self) -> &[u8] {
+            &self.data
+        }
+        fn reset(&mut self) {
+            self.data.clear();
+        }
+    }
+    impl OutputBuffer for VecOutputBuffer {
+        fn available(&self) -> usize {
+            self.capacity - self.data.len()
+        }
+        fn write_each(&mut self, callback: &mut OutputBufferCallback<'_>) -> Result<usize, Errno> {
+            let mut segment = vec![MaybeUninit::new(0u8); self.available()];
+            let written = callback(&mut segment)?;
+            // SAFETY: `segment` was fully initialized above.
+            self.data.extend(segment[..written].iter().map(|b| unsafe { b.assume_init() }));
+            Ok(written)
+        }
+    }
     #[repr(C)]
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct TestMessage {
@@ -1236,6 +1269,22 @@ mod tests {
         assert_eq!(buffer.size_bytes(), 3 * (*PAGE_SIZE) as usize);
         let res = buffer.reserve(100);
         assert!(res.is_ok());
+    }
+
+    // Mirrors how starnix_core's TraceEventQueue uses the ring: create it in overwrite mode with a
+    // page-multiple size larger than the minimum, disable it, then enable it.
+    #[test]
+    fn test_enable_after_disable_restores_requested_size() {
+        let size_bytes = 512 * (*PAGE_SIZE) as usize;
+        let buffer = LocklessRingBuffer::new(size_bytes, true, fuchsia_trace::Id::new()).unwrap();
+        assert_eq!(buffer.size_bytes(), size_bytes);
+
+        buffer.disable().unwrap();
+        assert_eq!(buffer.vmo.get_size().unwrap(), 0);
+
+        buffer.enable().unwrap();
+        assert_eq!(buffer.size_bytes(), size_bytes);
+        assert_eq!(buffer.vmo.get_size().unwrap(), size_bytes as u64);
     }
     // Spawns a reader thread that periodically drains the lockless ring buffer.
     fn start_reader_thread(
@@ -1756,17 +1805,6 @@ mod tests {
             barrier_in_available: Arc<std::sync::Barrier>,
             barrier_test_done: Arc<std::sync::Barrier>,
         }
-        impl Buffer for SleepingOutputBuffer {
-            fn segments_count(&self) -> Result<usize, Errno> {
-                Ok(1)
-            }
-            fn peek_each_segment(
-                &mut self,
-                _callback: &mut PeekBufferSegmentsCallback<'_>,
-            ) -> Result<(), Errno> {
-                Ok(())
-            }
-        }
         impl OutputBuffer for SleepingOutputBuffer {
             fn write_each(
                 &mut self,
@@ -1783,15 +1821,6 @@ mod tests {
                 self.barrier_test_done.wait();
 
                 (*PAGE_SIZE) as usize
-            }
-            fn bytes_written(&self) -> usize {
-                0
-            }
-            fn zero(&mut self) -> Result<usize, Errno> {
-                Ok(0)
-            }
-            unsafe fn advance(&mut self, _length: usize) -> Result<(), Errno> {
-                Ok(())
             }
         }
 
@@ -2134,17 +2163,6 @@ mod tests {
                 f.debug_struct("EnablingOutputBuffer").finish_non_exhaustive()
             }
         }
-        impl Buffer for EnablingOutputBuffer<'_> {
-            fn segments_count(&self) -> Result<usize, Errno> {
-                Ok(1)
-            }
-            fn peek_each_segment(
-                &mut self,
-                _callback: &mut PeekBufferSegmentsCallback<'_>,
-            ) -> Result<(), Errno> {
-                Ok(())
-            }
-        }
         impl OutputBuffer for EnablingOutputBuffer<'_> {
             fn write_each(
                 &mut self,
@@ -2158,15 +2176,6 @@ mod tests {
                 assert_eq!(self.buffer.enable(), Ok(self.enabled_at));
                 assert_eq!(self.buffer.ref_count.load(Ordering::Acquire), RING_ENABLED_BIT | 1);
                 (*PAGE_SIZE) as usize
-            }
-            fn bytes_written(&self) -> usize {
-                0
-            }
-            fn zero(&mut self) -> Result<usize, Errno> {
-                Ok(0)
-            }
-            unsafe fn advance(&mut self, _length: usize) -> Result<(), Errno> {
-                Ok(())
             }
         }
 

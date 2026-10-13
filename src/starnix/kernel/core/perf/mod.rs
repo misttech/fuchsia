@@ -81,8 +81,6 @@ const AARCH32_REG_R13: usize = 13; // AArch32 SP
 mod event;
 pub use event::{TraceEvent, TraceEventQueue, TraceEventQueueList};
 
-pub mod lockless_ring_buffer;
-
 #[repr(C)]
 #[derive(Copy, Clone, IntoBytes, Immutable)]
 struct LostRecord {
