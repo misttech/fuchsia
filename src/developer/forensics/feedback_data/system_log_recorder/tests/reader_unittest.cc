@@ -140,7 +140,8 @@ TEST(ReaderTest, SortsMessages) {
   IdentityRedactor redactor(inspect::BoolProperty{});
   LogMessageStore store(StorageSize::Kilobytes(8), StorageSize::Kilobytes(8), &redactor,
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
-  SystemLogWriter writer(temp_dir.path(), 1u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(temp_dir.path(), 1u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(0))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(3))));
@@ -208,7 +209,8 @@ TEST(ReaderTest, SortsMessagesMultipleFiles) {
   IdentityRedactor redactor(inspect::BoolProperty{});
   LogMessageStore store(kMaxLogLineSize * 4, kMaxLogLineSize * 4, &redactor, MakeIdentityEncoder(),
                         /*ignore_before_timestamp=*/std::nullopt);
-  SystemLogWriter writer(temp_dir.path(), 8u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(temp_dir.path(), 8u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(0))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(3))));

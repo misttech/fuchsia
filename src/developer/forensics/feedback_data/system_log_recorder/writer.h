@@ -58,14 +58,14 @@ class SystemLogWriter {
   static constexpr size_t kMinFilesForSufficientCoverage = 5u;
 
   SystemLogWriter(const std::string& logs_dir, size_t max_num_files, StorageSize total_log_size,
-                  std::unique_ptr<Decoder> decoder,
+                  std::unique_ptr<Decoder> decoder, bool enable_periodic_metadata_writes,
                   const std::string& metadata_path = feedback::kCurrentDiskBackedLogsMetadataPath);
 
   // Writes the consumed result to disk and returns whether a cache purge was detected.
   WriteResult Write(const LogMessageStore::ConsumeResult& result);
 
-  // Instructs the class to call `fsync` on the currently open file to ensure data makes it disk.
-  // Returns true if successful.
+  // Instructs the class to flush metadata and call `fsync` on the currently open file to ensure
+  // data makes it to disk. Returns true if successful.
   bool Fsync();
 
   // Flushes the given consume result to disk, reads all persisted logs and metadata, and returns
@@ -88,6 +88,7 @@ class SystemLogWriter {
   const size_t max_num_files_;
   const StorageSize total_log_size_;
   std::unique_ptr<Decoder> decoder_;
+  const bool enable_periodic_metadata_writes_;
 
   DiskBackedLogsMetadata metadata_;
   const std::string metadata_path_;

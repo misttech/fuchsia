@@ -43,6 +43,7 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
     size_t max_num_files;
     StorageSize total_log_size;
     std::string metadata_path;
+    bool enable_periodic_metadata_writes;
     StorageSize fallback_buffer_size;
   };
 

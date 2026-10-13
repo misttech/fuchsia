@@ -109,7 +109,8 @@ TEST_F(WriterTest, VerifyFileOrdering) {
   LogMessageStore store(kBlockSize, kBufferSize, GetIdentityRedactor(), MakeIdentityEncoder(),
                         /*ignore_before_timestamp=*/std::nullopt);
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 4u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(kWriteDirectory, 4u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   // Written to file 0
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -173,7 +174,8 @@ TEST_F(WriterTest, VerifyEncoderInput) {
   LogMessageStore store(kBlockSize, kBufferSize, GetIdentityRedactor(), std::move(encoder),
                         /*ignore_before_timestamp=*/std::nullopt);
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
   writer.Write(store.Consume());
@@ -204,7 +206,8 @@ TEST_F(WriterTest, WritesMessages) {
   LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize * 2, GetIdentityRedactor(),
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -247,7 +250,8 @@ TEST_F(WriterTest, VerifyCompressionRatio) {
   LogMessageStore store(kMaxLogLineSize * 4, kMaxLogLineSize * 4, GetIdentityRedactor(),
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -273,7 +277,8 @@ TEST_F(WriterTest, VerifyProductionEcoding) {
   LogMessageStore store(kMaxLogLineSize * 5, kMaxLogLineSize * 5, GetIdentityRedactor(),
                         std::move(encoder), /*ignore_before_timestamp=*/std::nullopt);
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -310,7 +315,8 @@ TEST_F(WriterTest, FilesAlreadyPresent) {
                           std::move(encoder), /*ignore_before_timestamp=*/std::nullopt);
     store.TurnOnRateLimiting();
 
-    SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+    SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                           /*enable_periodic_metadata_writes=*/true);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
@@ -323,7 +329,8 @@ TEST_F(WriterTest, FilesAlreadyPresent) {
                           std::move(encoder), /*ignore_before_timestamp=*/std::nullopt);
     store.TurnOnRateLimiting();
 
-    SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+    SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                           /*enable_periodic_metadata_writes=*/true);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
@@ -355,7 +362,8 @@ TEST_F(WriterTest, FailCreateDirectory) {
   LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize * 2, GetIdentityRedactor(),
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   // Create the kRootDirectory so kWriteDirectory can be made by |writer| after the next set of
   // writes.
@@ -396,7 +404,8 @@ TEST_F(WriterTest, DirectoryDisappears) {
   LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize * 2, GetIdentityRedactor(),
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
   store.TurnOnRateLimiting();
-  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(kWriteDirectory, 2u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   // Destroy kWriteDirectory so the next set of writes fail and the directory is recreated.
   ASSERT_TRUE(files::DeletePath(kWriteDirectory, /*recursive=*/true));
@@ -438,7 +447,8 @@ TEST_F(WriterTest, IgnoreNonNumericFiles) {
 
   LogMessageStore store(kMaxLogLineSize * 5, kMaxLogLineSize * 5, GetIdentityRedactor(),
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
-  SystemLogWriter writer(kWriteDirectory, 5u, kTotalLogSize, std::make_unique<IdentityDecoder>());
+  SystemLogWriter writer(kWriteDirectory, 5u, kTotalLogSize, std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true);
 
   // Additional writes should continue from file 2, ignoring invalid files.
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
@@ -456,7 +466,8 @@ TEST_F(WriterTest, SavesMetadata) {
   LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, GetIdentityRedactor(),
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   writer.Write(store.Consume());
@@ -482,7 +493,8 @@ TEST_F(WriterTest, SavesMetadataMultipleFiles) {
   LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, GetIdentityRedactor(),
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
@@ -510,7 +522,8 @@ TEST_F(WriterTest, SavesMetadataMultipleWritesInSingleBlock) {
   LogMessageStore store(kMaxLogLineSize * 10, kMaxLogLineSize, GetIdentityRedactor(),
                         MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   writer.Write(store.Consume());
@@ -560,7 +573,8 @@ TEST_F(WriterTest, RestoresMetadataOnRestart) {
     LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, GetIdentityRedactor(),
                           MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
     SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, kTotalLogSize,
-                           std::make_unique<IdentityDecoder>(), metadata_path);
+                           std::make_unique<IdentityDecoder>(),
+                           /*enable_periodic_metadata_writes=*/true, metadata_path);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
@@ -581,7 +595,8 @@ TEST_F(WriterTest, RestoresMetadataOnRestart) {
     LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, GetIdentityRedactor(),
                           MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
     SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, kTotalLogSize,
-                           std::make_unique<IdentityDecoder>(), metadata_path);
+                           std::make_unique<IdentityDecoder>(),
+                           /*enable_periodic_metadata_writes=*/true, metadata_path);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2", zx::msec(300))));
     writer.Write(store.Consume());
@@ -607,7 +622,8 @@ TEST_F(WriterTest, RollsOutRestoredMetadataOnRotation) {
     LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, GetIdentityRedactor(),
                           MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
     SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, kTotalLogSize,
-                           std::make_unique<IdentityDecoder>(), metadata_path);
+                           std::make_unique<IdentityDecoder>(),
+                           /*enable_periodic_metadata_writes=*/true, metadata_path);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
     writer.Write(store.Consume());
@@ -635,7 +651,8 @@ TEST_F(WriterTest, RollsOutRestoredMetadataOnRotation) {
     LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, GetIdentityRedactor(),
                           MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
     SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, kTotalLogSize,
-                           std::make_unique<IdentityDecoder>(), metadata_path);
+                           std::make_unique<IdentityDecoder>(),
+                           /*enable_periodic_metadata_writes=*/true, metadata_path);
 
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(400))));
     writer.Write(store.Consume());
@@ -665,7 +682,8 @@ TEST_F(WriterTest, FlushAndReadLogs) {
                         /*ignore_before_timestamp=*/std::nullopt);
   store.TurnOnRateLimiting();
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
@@ -702,7 +720,8 @@ TEST_F(WriterTest, FlushAndReadLogsEmptyLogs) {
                         std::make_unique<IdentityEncoder>(),
                         /*ignore_before_timestamp=*/std::nullopt);
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   const SystemLogWriter::FlushAndReadLogsResult result = writer.FlushAndReadLogs(store.Consume());
 
@@ -724,7 +743,8 @@ TEST_F(WriterTest, FlushAndReadLogsDetectsCachePurgeOnLogsDirectoryDeletion) {
                         std::make_unique<IdentityEncoder>(),
                         /*ignore_before_timestamp=*/std::nullopt);
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   writer.Write(store.Consume());
@@ -751,7 +771,8 @@ TEST_F(WriterTest, FlushAndReadLogsSufficientCoverageAfterMinFilesWritten) {
                         std::make_unique<IdentityEncoder>(),
                         /*ignore_before_timestamp=*/std::nullopt);
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/8u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   writer.Write(store.Consume());
@@ -793,7 +814,8 @@ TEST_F(WriterTest, WriteReturnsCachePurgedWhenLogsDirectoryDeleted) {
                         std::make_unique<IdentityEncoder>(),
                         /*ignore_before_timestamp=*/std::nullopt);
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_EQ(writer.Write(store.Consume()), SystemLogWriter::WriteResult::kOk);
@@ -814,7 +836,8 @@ TEST_F(WriterTest, WriteReopensFileAfterPurge) {
                         std::make_unique<IdentityEncoder>(),
                         /*ignore_before_timestamp=*/std::nullopt);
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, kTotalLogSize,
-                         std::make_unique<IdentityDecoder>(), metadata_path);
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/true, metadata_path);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_EQ(writer.Write(store.Consume()), SystemLogWriter::WriteResult::kOk);
@@ -829,6 +852,116 @@ TEST_F(WriterTest, WriteReopensFileAfterPurge) {
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
   EXPECT_EQ(writer.Write(store.Consume()), SystemLogWriter::WriteResult::kOk);
+}
+
+TEST_F(WriterTest, SkipsMidBlockMetadataWritesWhenPeriodicWritesDisabled) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  // Block size holds 2 log messages; buffer size holds 1 log message.
+  LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize, GetIdentityRedactor(),
+                        MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, kTotalLogSize,
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/false, metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  const LogMessageStore::ConsumeResult consume_result = store.Consume();
+  ASSERT_FALSE(consume_result.end_of_block);
+  writer.Write(consume_result);
+
+  const std::optional<DiskBackedLogsMetadata> metadata =
+      DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 0u);
+  EXPECT_FALSE(metadata->FirstTimestamp().has_value());
+  EXPECT_FALSE(metadata->LastTimestamp().has_value());
+}
+
+TEST_F(WriterTest, SavesMetadataOnRotationWhenPeriodicWritesDisabled) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  // Block size holds 2 log messages; buffer size holds 1 log message.
+  LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize, GetIdentityRedactor(),
+                        MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, kTotalLogSize,
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/false, metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  writer.Write(store.Consume());
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
+  const LogMessageStore::ConsumeResult consume_result = store.Consume();
+  ASSERT_TRUE(consume_result.end_of_block);
+  writer.Write(consume_result);
+
+  const std::optional<DiskBackedLogsMetadata> metadata =
+      DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 2u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 2u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(*metadata->FirstTimestamp(), zx::time_boot((zx::sec(15604) + zx::msec(100)).get()));
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(*metadata->LastTimestamp(), zx::time_boot((zx::sec(15604) + zx::msec(200)).get()));
+}
+
+TEST_F(WriterTest, FsyncSavesMetadataWhenPeriodicWritesDisabled) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  // Block size holds 2 log messages; buffer size holds 1 log message.
+  LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize, GetIdentityRedactor(),
+                        MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, kTotalLogSize,
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/false, metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  const LogMessageStore::ConsumeResult consume_result = store.Consume();
+  ASSERT_FALSE(consume_result.end_of_block);
+  writer.Write(consume_result);
+
+  EXPECT_TRUE(writer.Fsync());
+
+  const std::optional<DiskBackedLogsMetadata> metadata =
+      DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 1u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(*metadata->FirstTimestamp(), zx::time_boot((zx::sec(15604) + zx::msec(100)).get()));
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(*metadata->LastTimestamp(), zx::time_boot((zx::sec(15604) + zx::msec(100)).get()));
+}
+
+TEST_F(WriterTest, FlushAndReadLogsReturnsInMemoryTimestampsWhenPeriodicWritesDisabled) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  LogMessageStore store(kMaxLogLineSize * 5, kMaxLogLineSize * 5, GetIdentityRedactor(),
+                        std::make_unique<IdentityEncoder>(),
+                        /*ignore_before_timestamp=*/std::nullopt);
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, kTotalLogSize,
+                         std::make_unique<IdentityDecoder>(),
+                         /*enable_periodic_metadata_writes=*/false, metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
+
+  const SystemLogWriter::FlushAndReadLogsResult result = writer.FlushAndReadLogs(store.Consume());
+  ASSERT_TRUE(result.logs.is_ok());
+  EXPECT_EQ(result.logs->first_timestamp, zx::time_boot((zx::sec(15604) + zx::msec(100)).get()));
+  EXPECT_EQ(result.logs->last_timestamp, zx::time_boot((zx::sec(15604) + zx::msec(200)).get()));
 }
 
 }  // namespace

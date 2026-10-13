@@ -74,6 +74,8 @@ int main() {
           .max_num_files = max_num_files,
           .total_log_size = feedback_config->persisted_logs_total_size,
           .metadata_path = feedback::kCurrentDiskBackedLogsMetadataPath,
+          .enable_periodic_metadata_writes =
+              feedback_config->disk_endurance == feedback::DiskEndurance::kHigh,
           .fallback_buffer_size = feedback_data::kFallbackLogBufferSize,
       },
       // Don't set up Inspect because all messages in the previous boot log

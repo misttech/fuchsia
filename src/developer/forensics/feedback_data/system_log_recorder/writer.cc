@@ -25,11 +25,13 @@ namespace system_log_recorder {
 
 SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_files,
                                  StorageSize total_log_size, std::unique_ptr<Decoder> decoder,
+                                 const bool enable_periodic_metadata_writes,
                                  const std::string& metadata_path)
     : logs_dir_(logs_dir),
       max_num_files_(max_num_files),
       total_log_size_(total_log_size),
       decoder_(std::move(decoder)),
+      enable_periodic_metadata_writes_(enable_periodic_metadata_writes),
       metadata_({}, kFirstFileNumber),
       metadata_path_(metadata_path),
       recovering_from_purge_(false) {
@@ -137,7 +139,9 @@ SystemLogWriter::WriteResult SystemLogWriter::Write(const LogMessageStore::Consu
     StartNewFile();
   }
 
-  metadata_.ToFile(metadata_path_);
+  if (enable_periodic_metadata_writes_ || result.end_of_block || cache_purged) {
+    metadata_.ToFile(metadata_path_);
+  }
   return cache_purged ? WriteResult::kCachePurge : WriteResult::kOk;
 }
 
@@ -146,6 +150,7 @@ bool SystemLogWriter::Fsync() {
     return false;
   }
 
+  metadata_.ToFile(metadata_path_);
   return fsync(current_file_descriptor_.get()) == 0;
 }
 
