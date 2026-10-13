@@ -362,9 +362,10 @@ impl Provider {
                 .ok_or_else(|| Error::internal("No active pairing procedure"))?;
 
             let seeker_passkey = decrypt_passkey_request(encrypted_request, &key)?;
-            // Drive the ongoing pairing procedure to completion. The result of the passkey
-            // comparison (e.g whether `seeker_passkey` equals the saved passkey in
-            // `pairing_manager`) is not important as we notify the GATT characteristic regardless.
+            // Match `seeker_passkey` against pending pairing requests (made over LE or BR/EDR) in
+            // `pairing_manager`. On a mismatch, the Provider passkey is still returned to notify
+            // on the GATT characteristic (GFPS Step 14) if the Seeker's pairing request can be
+            // identified. Otherwise, returns `Error`.
             let passkey = pairing_manager.compare_passkey(peer_id, seeker_passkey)?;
             Ok(passkey_response(&key, passkey))
         };
@@ -373,10 +374,10 @@ impl Provider {
             Ok(encrypted_response) => {
                 // Notify GATT service that the write has been successfully processed.
                 response(Ok(()));
-                info!("Validated GATT passkey");
+                info!("Processed GATT passkey");
 
-                // Regardless of whether the passkeys are equal or not, we notify the
-                // characteristic. See FP Procedure Step 14.
+                // Notify the Passkey characteristic with the Provider passkey. See FP Procedure
+                // Step 14.
                 if let Err(e) = self.gatt.notify_passkey(peer_id, encrypted_response) {
                     warn!("Couldn't notify passkey characteristic: {:?}", e)
                 }

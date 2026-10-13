@@ -36,7 +36,7 @@ pub struct PairingArgs {
 
 /// The supported Fast Pair pairing methods.
 /// See `KeyBasedPairingAction` for more details on each pairing type.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PairingType {
     Initial,
     Subsequent,
@@ -74,32 +74,19 @@ impl PairingDelegateOwner {
 }
 
 /// State of a Fast Pair pairing procedure.
+#[derive(Debug)]
 enum ProcedureState {
     /// The procedure has been initialized - e.g the peer has sent a key-based pairing GATT request.
+    /// For `Initial` and `Subsequent` procedures, the procedure is waiting for the Seeker's
+    /// passkey to identify the Seeker's in-progress pairing request.
     Started,
-    /// Classic/LE pairing is in progress and will be completed upon confirmation of the Seeker's
-    /// passkey.
-    Pairing { passkey: u32, responder: PairingResponder },
-    /// Passkey verification is complete - this doesn't necessarily mean the Provider and Seeker
-    /// passkeys were equal, only that the comparison took place.
+    /// The Seeker's passkey was matched with an in-progress pairing request, which was accepted.
     PasskeyChecked,
     /// Classic/LE pairing was successfully completed.
     PairingComplete,
     /// The Account Key has been written. The peer is expected to write this key after pairing is
     /// complete (e.g. In the `PairingComplete` state).
     AccountKeyWritten,
-}
-
-impl std::fmt::Debug for ProcedureState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Started => write!(f, "Started"),
-            Self::Pairing { .. } => write!(f, "Pairing"),
-            Self::PasskeyChecked => write!(f, "PasskeyChecked"),
-            Self::PairingComplete => write!(f, "PairingComplete"),
-            Self::AccountKeyWritten => write!(f, "AccountKeyWritten"),
-        }
-    }
 }
 
 #[derive(Default, Debug)]
@@ -137,6 +124,8 @@ struct Procedure {
     bredr_id: Option<PeerId>,
     /// Shared secret used to encode/decode messages sent/received in the procedure.
     key: SharedSecret,
+    /// The type of Fast Pair procedure.
+    pairing_type: PairingType,
     /// Current status of the procedure.
     state: ProcedureState,
     /// Tracks the timeout of the pairing procedure.
@@ -152,13 +141,14 @@ impl Procedure {
     const DEFAULT_PROCEDURE_TIMEOUT_DURATION: zx::MonotonicDuration =
         zx::MonotonicDuration::from_seconds(10);
 
-    fn new(id: PeerId, key: SharedSecret) -> Self {
+    fn new(id: PeerId, key: SharedSecret, pairing_type: PairingType) -> Self {
         let timer =
             Box::pin(fasync::Timer::new(Self::DEFAULT_PROCEDURE_TIMEOUT_DURATION.after_now()));
         Self {
             le_id: id,
             bredr_id: None,
             key,
+            pairing_type,
             state: ProcedureState::Started,
             timer: Some(timer),
             inspect_node: ProcedureInspect::default(),
@@ -196,6 +186,13 @@ impl Procedure {
         matches!(self.state, ProcedureState::Started)
     }
 
+    /// Returns true if the procedure is waiting for the Seeker's passkey to complete Classic/LE
+    /// pairing.
+    fn awaits_pairing(&self) -> bool {
+        self.is_started()
+            && matches!(self.pairing_type, PairingType::Initial | PairingType::Subsequent)
+    }
+
     fn is_passkey_checked(&self) -> bool {
         matches!(self.state, ProcedureState::PasskeyChecked)
     }
@@ -226,33 +223,97 @@ impl Future for Procedure {
     }
 }
 
-impl Drop for Procedure {
-    fn drop(&mut self) {
-        // Replaced state is irrelevant as object will be dropped.
-        match std::mem::replace(&mut self.state, ProcedureState::PairingComplete) {
-            ProcedureState::Pairing { responder, .. } => {
-                // Reject the pairing request as dropping a Procedure likely signals Error or it is
-                // no longer needed.
-                let _ = responder.send(false, 0);
-            }
-            _ => {}
-        }
-    }
-}
-
 impl std::fmt::Debug for Procedure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Procedure")
             .field("le_id", &self.le_id)
             .field("bredr_id", &self.bredr_id)
+            .field("pairing_type", &self.pairing_type)
             .field("state", &self.state)
             .field("timer", &self.timer)
             .finish()
     }
 }
 
+/// A Classic/LE pairing request that has not yet been matched to a Fast Pair procedure.
+///
+/// A pairing request can't be reliably attributed to a procedure when it is received. For
+/// example, the Seeker typically initiates Fast Pair over LE but makes the pairing request over
+/// BR/EDR, in which case the system assigns a different PeerId to each.
+/// Therefore, a pairing request is held until a Seeker proves ownership of it by sending the
+/// matching passkey over the encrypted GATT channel.
+///
+/// The request is rejected if it is dropped before being accepted.
+struct PendingPairingRequest {
+    /// PeerId of the peer that made the pairing request.
+    id: PeerId,
+    /// The passkey of the pairing request, as reported by the system.
+    passkey: u32,
+    /// Used to respond to the pairing request. `None` once a response has been sent.
+    responder: Option<PairingResponder>,
+    /// Tracks the timeout of the pairing request.
+    timer: Option<Pin<Box<fasync::Timer>>>,
+}
+
+impl PendingPairingRequest {
+    fn new(id: PeerId, passkey: u32, responder: PairingResponder) -> Self {
+        let timer =
+            Box::pin(fasync::Timer::new(Procedure::DEFAULT_PROCEDURE_TIMEOUT_DURATION.after_now()));
+        Self { id, passkey, responder: Some(responder), timer: Some(timer) }
+    }
+
+    /// Accepts the pairing request.
+    fn accept(&mut self) {
+        if let Some(responder) = self.responder.take() {
+            let _ = responder.send(true, self.passkey);
+        }
+    }
+
+    /// Rejects the pairing request.
+    fn reject(&mut self) {
+        if let Some(responder) = self.responder.take() {
+            let _ = responder.send(false, 0);
+        }
+    }
+}
+
+impl Future for PendingPairingRequest {
+    type Output = PeerId;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match &mut self.timer {
+            // The deadline was already reached.
+            None => Poll::Ready(self.id),
+            Some(timer) => match timer.poll_unpin(cx) {
+                Poll::Ready(()) => {
+                    self.timer = None;
+                    Poll::Ready(self.id)
+                }
+                Poll::Pending => Poll::Pending,
+            },
+        }
+    }
+}
+
+impl Drop for PendingPairingRequest {
+    fn drop(&mut self) {
+        // Reject the pairing request if it was never accepted.
+        self.reject();
+    }
+}
+
+impl std::fmt::Debug for PendingPairingRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingPairingRequest").field("id", &self.id).finish()
+    }
+}
+
 /// The maximum number of recently completed procedures that are tracked in Inspect.
 pub const MAX_SAVED_PROCEDURES: usize = 5;
+
+/// The maximum number of pairing requests that can be waiting to be matched to a Fast Pair
+/// procedure.
+const MAX_PENDING_PAIRING_REQUESTS: usize = 5;
 
 /// An inspect node tracking a Fast Pair procedure that is in progress.
 struct ActiveProcedureInspect {
@@ -349,6 +410,13 @@ impl PairingManagerInspect {
 /// `procedures` until either explicitly removed via `PairingManager::complete_pairing_procedure` or
 /// evicted after meeting the time deadline.
 ///
+/// Pairing requests received while Fast Pair owns the Pairing Delegate are not immediately
+/// associated with a procedure. The request may come from a different PeerId than the one that
+/// initiated Fast Pair (e.g. LE vs BR/EDR), or from an unrelated peer entirely. Instead, requests
+/// are held as pending and a request is only accepted once a Seeker provides its passkey over the
+/// encrypted GATT channel (`PairingManager::compare_passkey`) and that passkey matches the request.
+/// Pending requests that aren't matched within the procedure timeout are rejected.
+///
 /// Note: Due to a limitation of the `sys.Pairing` API, any non-Fast Pair pairing request made while
 /// Fast Pair owns the Pairing Delegate will incorrectly use Fast Pair I/O capabilities. Ideally,
 /// we'd like the granularity of I/O capabilities to be at the peer level. To avoid confusion at
@@ -375,6 +443,9 @@ pub struct PairingManager {
     /// Active pairing procedures. Each pairing procedure is identified by the peer's LE-discovered
     /// PeerId.
     procedures: FutureMap<PeerId, Procedure>,
+    /// Pairing requests waiting to be matched to a procedure via the Seeker's passkey. Each
+    /// request is identified by the PeerId that made it.
+    pending_requests: FutureMap<PeerId, PendingPairingRequest>,
     /// If the PairingManager is finished - i.e either the upstream or downstream delegate
     /// connection has terminated.
     terminated: bool,
@@ -409,6 +480,7 @@ impl PairingManager {
             owner: PairingDelegateOwner::Upstream,
             relay_tasks: FuturesUnordered::new(),
             procedures: FutureMap::new(),
+            pending_requests: FutureMap::new(),
             terminated: false,
             inspect_node: PairingManagerInspect::default().with_metrics(metrics),
         };
@@ -452,8 +524,23 @@ impl PairingManager {
     }
 
     fn close_delegate(&mut self) {
+        // Pending pairing requests are associated with the current delegate and are rejected.
+        self.clear_pending_requests();
         if let Some(stream) = MaybeStream::take(&mut self.pairing_requests) {
             stream.control_handle().shutdown();
+        }
+    }
+
+    /// Rejects and removes all pending pairing requests.
+    fn clear_pending_requests(&mut self) {
+        // Dropping a `PendingPairingRequest` rejects it.
+        self.pending_requests.inner().clear();
+    }
+
+    /// Rejects and removes all pending pairing requests if no procedure can claim them.
+    fn maybe_clear_pending_requests(&mut self) {
+        if !self.procedures.inner().values().any(|p| p.awaits_pairing()) {
+            self.clear_pending_requests();
         }
     }
 
@@ -489,8 +576,18 @@ impl PairingManager {
         self.procedures.inner().get(le_id).map(|procedure| &procedure.key)
     }
 
-    fn new_procedure(&mut self, le_id: PeerId, key: SharedSecret) {
-        let mut procedure = Procedure::new(le_id, key);
+    /// Returns the LE `PeerId` (the `procedures` key) and the procedure that `le_or_bredr_id`
+    /// belongs to, either directly or via a BR/EDR `PeerId` bound in `Self::compare_passkey`.
+    fn find_procedure(&mut self, le_or_bredr_id: PeerId) -> Option<(PeerId, &mut Procedure)> {
+        self.procedures
+            .inner()
+            .iter_mut()
+            .find(|(le_id, p)| **le_id == le_or_bredr_id || p.bredr_id == Some(le_or_bredr_id))
+            .map(|(le_id, p)| (*le_id, &mut **p))
+    }
+
+    fn new_procedure(&mut self, le_id: PeerId, key: SharedSecret, pairing_type: PairingType) {
+        let mut procedure = Procedure::new(le_id, key, pairing_type);
         procedure.set_inspect(
             self.inspect_node.record_new_procedure(le_id, &inspect::unique_name("procedure_")),
         );
@@ -509,7 +606,7 @@ impl PairingManager {
             return Err(Error::internal(&format!("Pairing with {le_id} already in progress")));
         }
 
-        self.new_procedure(le_id, key);
+        self.new_procedure(le_id, key, pairing_type);
         match pairing_type {
             PairingType::Initial | PairingType::Subsequent => {
                 self.claim_delegate()?;
@@ -537,35 +634,90 @@ impl PairingManager {
         Ok(())
     }
 
-    /// Attempts to compare the provided `gatt_passkey` with the passkey saved in the ongoing
-    /// pairing procedure with the peer.
-    /// If the comparison is made, responds to the in-progress pairing request with the result of
-    /// the comparison.
+    /// Matches `gatt_passkey`, received over LE (GATT) from the Seeker (`le_id`), with a pending
+    /// pairing request (made over LE or BR/EDR) from the `sys.PairingDelegate` (see
+    /// `Self::handle_pairing_request`).
     ///
-    /// Returns Error if the comparison was unable to be made (e.g the pairing procedure didn't
-    /// exist or wasn't in the expected state).
-    /// Returns the passkey on success (e.g the comparison took place, not that `gatt_passkey`
-    /// necessarily matched the expected passkey).
+    /// Returns:
+    /// - `Ok` with the Provider's passkey (from the Seeker's pending request):
+    ///   1. If a single pending request matches `gatt_passkey`. The request is accepted (GFPS
+    ///      Step 13.1) and bound to the Seeker's procedure.
+    ///   2. If no pending request matches `gatt_passkey`, but the Seeker's procedure is the only
+    ///      one awaiting pairing and only one request is pending, allowing the Provider to notify
+    ///      its passkey (GFPS Step 14). The request is rejected (Step 13.2) and the procedure is
+    ///      canceled (Step 16.2).
+    /// - `Error` if the Seeker's procedure isn't awaiting pairing, if multiple requests match (all
+    ///   matching requests are rejected), or if none match and the Seeker's request can't be
+    ///   unambiguously identified.
     // TODO(https://fxbug.dev/42053956): There is an implicit assumption that the peer has already made the
     // pairing request before `compare_passkey` is called with the GATT passkey. While the GFPS
     // does specify this ordering, this may not always be the case in practice.
     pub fn compare_passkey(&mut self, le_id: PeerId, gatt_passkey: u32) -> Result<u32, Error> {
         debug!(le_id:%, gatt_passkey:%; "Comparing passkey");
-        let procedure = self
-            .procedures
-            .inner()
-            .get_mut(&le_id)
-            .filter(|p| matches!(p.state, ProcedureState::Pairing { .. }))
-            .ok_or_else(|| Error::internal(&format!("Unexpected passkey response for {le_id}")))?;
-
-        match procedure.transition(ProcedureState::PasskeyChecked) {
-            ProcedureState::Pairing { passkey, responder } => {
-                let accept = passkey == gatt_passkey;
-                let _ = responder.send(accept, gatt_passkey);
-                Ok(passkey)
-            }
-            _ => unreachable!("Checked `procedure.state`"),
+        if !self.procedures.inner().get(&le_id).is_some_and(|p| p.awaits_pairing()) {
+            return Err(Error::internal(&format!("Unexpected passkey response for {le_id}")));
         }
+
+        // Find pending pairing requests matching `gatt_passkey`.
+        let matching_ids: Vec<PeerId> = self
+            .pending_requests
+            .inner()
+            .iter()
+            .filter(|(_id, request)| request.passkey == gatt_passkey)
+            .map(|(id, _request)| *id)
+            .collect();
+        let request_id = match matching_ids.as_slice() {
+            [id] => *id,
+            // Passkey mismatch. If this is the only procedure awaiting pairing and only one
+            // request is pending, the Seeker's request is unambiguous: reject it (GFPS Step 13.2;
+            // also preventing its disclosed passkey from being used to claim it), cancel the
+            // procedure (Step 16.2), and return its passkey to be notified (Step 14).
+            [] => {
+                let sole_procedure =
+                    self.procedures.inner().values().filter(|p| p.awaits_pairing()).count() == 1;
+                let sole_request = if self.pending_requests.inner().len() == 1 {
+                    // Grab the known single pending pairing request.
+                    self.pending_requests.inner().keys().next().copied()
+                } else {
+                    None
+                };
+                let (true, Some(request_id)) = (sole_procedure, sole_request) else {
+                    return Err(Error::internal(&format!(
+                        "No pairing request matches the passkey for {le_id}"
+                    )));
+                };
+                warn!(le_id:%, request_id:%; "Passkey mismatch. Canceling Fast Pair procedure");
+                let mut request = self.pending_requests.remove(&request_id).expect("just found");
+                request.reject();
+                if let Err(e) = self.cancel_pairing_procedure(&le_id) {
+                    warn!(le_id:%, e:?; "Couldn't release Pairing Delegate");
+                }
+                return Ok(request.passkey);
+            }
+            // Passkey collision: the Seeker's request is ambiguous. Reject all matching requests.
+            _ => {
+                warn!(le_id:%, count:% = matching_ids.len(); "Multiple pairing requests match passkey");
+                for id in &matching_ids {
+                    let _ = self.pending_requests.remove(id);
+                }
+                return Err(Error::internal(&format!(
+                    "Multiple pairing requests match the passkey for {le_id}"
+                )));
+            }
+        };
+
+        let mut request = self.pending_requests.remove(&request_id).expect("just found");
+        let procedure = self.procedures.inner().get_mut(&le_id).expect("just checked");
+        let _ = procedure.transition(ProcedureState::PasskeyChecked);
+        // The pairing request shares the Seeker's LE PeerId if it was made over LE, or if the
+        // system already associates the peer's LE and BR/EDR identities.
+        if request_id != le_id {
+            procedure.set_bredr_id(request_id);
+        }
+        request.accept();
+        // Remaining pending requests are rejected if there are no other procedures to claim them.
+        self.maybe_clear_pending_requests();
+        Ok(gatt_passkey)
     }
 
     /// Progresses the procedure after an Account Key has been written.
@@ -608,6 +760,7 @@ impl PairingManager {
     /// Returns Ok if the PairingDelegate was successfully released, or Error otherwise.
     pub fn cancel_pairing_procedure(&mut self, id: &PeerId) -> Result<(), Error> {
         let _ = self.procedures.remove(id);
+        self.maybe_clear_pending_requests();
         self.release_delegate()
     }
 
@@ -638,6 +791,15 @@ impl PairingManager {
         }
     }
 
+    /// Handles an incoming pairing request from the `sys.PairingDelegate`.
+    ///
+    /// A Seeker initiates Fast Pair over LE (GATT), but the pairing request may be made over
+    /// either LE or BR/EDR. In the BR/EDR case, the system may assign two different `PeerId`s
+    /// to the same peer until bonding completes. As a result, `le_or_bredr_id` cannot be
+    /// reliably matched to an active `Procedure` here.
+    ///
+    /// Instead, valid requests are held in `pending_requests`, and procedure matching is deferred
+    /// to `Self::compare_passkey` when the Seeker sends the matching passkey over GATT.
     fn handle_pairing_request(
         &mut self,
         le_or_bredr_id: PeerId,
@@ -645,57 +807,60 @@ impl PairingManager {
         passkey: u32,
         responder: PairingResponder,
     ) -> Result<(), Error> {
-        // Unsupported pairing methods will always be rejected.
+        // Unsupported pairing methods will always be rejected. Any active Fast Pair procedure with
+        // the peer (matched by its LE or BR/EDR PeerId) is canceled.
         if method != PairingMethod::PasskeyComparison {
             warn!(le_or_bredr_id:?, method:?; "Received unsupported pairing method");
             let _ = responder.send(false, 0u32);
-            self.cancel_pairing_procedure(&le_or_bredr_id)?;
+            if let Some((le_id, _)) = self.find_procedure(le_or_bredr_id) {
+                self.cancel_pairing_procedure(&le_id)?;
+            }
             return Ok(());
         }
 
-        let procedure = match self.procedures.inner().get_mut(&le_or_bredr_id) {
-            // Most common case - this occurs because the peer initiates Fast Pair pairing via
-            // LE but is making this pairing request over BR/EDR. Therefore, the system will
-            // have assigned two unique PeerIds for the same peer. This will get coalesced once
-            // the peer successfully bonds. For now, we try to find the first valid pairing
-            // procedure that is in the correct state.
-            // TODO(https://fxbug.dev/42059167): Consider limiting the PairingManager to one active procedure
-            // at a time. Then we won't have to worry about this case.
-            None => {
-                let procedure =
-                    self.procedures.inner().iter_mut().find(|(_le_id, p)| p.is_started());
-                if procedure.is_none() {
-                    warn!(
-                        le_or_bredr_id:%;
-                        "Couldn't match pairing request with inflight Fast Pair procedure"
-                    );
-                    // TODO(https://fxbug.dev/42052578): Consider relaying upstream if I/O capabilities are
-                    // defined per peer.
-                    let _ = responder.send(false, 0u32);
-                    return Ok(());
-                }
-                procedure.unwrap().1
-            }
-            // The pairing request is matched to a known procedure that is in the right state.
-            Some(p) if p.is_started() => p,
-            // There is an active Fast Pair procedure with the peer but it is not in the right
-            // state. Error.
-            Some(p) => {
-                warn!(
-                    le_or_bredr_id:%, p_state:? = p.state;
-                    "Received unexpected pairing request",
-                );
-                // The current pairing procedure is no longer valid.
-                let _ = responder.send(false, 0u32);
-                self.cancel_pairing_procedure(&le_or_bredr_id)?;
-                return Ok(());
-            }
-        };
+        // There is an active Fast Pair procedure with the peer (matched by its LE or BR/EDR
+        // PeerId), but it is not waiting for a pairing request. Invalidates the current pairing
+        // procedure and rejects the pairing request.
+        if let Some((le_id, procedure)) =
+            self.find_procedure(le_or_bredr_id).filter(|(_, p)| !p.awaits_pairing())
+        {
+            warn!(
+                le_or_bredr_id:%, le_id:%, procedure_state:? = procedure.state;
+                "Received unexpected pairing request"
+            );
+            let _ = responder.send(false, 0u32);
+            self.cancel_pairing_procedure(&le_id)?;
+            return Ok(());
+        }
 
-        // We've successfully matched the pairing request to an ongoing Procedure. The `responder`
-        // will be used when passkey verification occurs.
-        let _ = procedure.transition(ProcedureState::Pairing { passkey, responder });
-        procedure.set_bredr_id(le_or_bredr_id);
+        // There is no Fast Pair procedure awaiting pairing (i.e. an Initial or Subsequent
+        // procedure in the Started state). Rejects the pairing request.
+        if !self.procedures.inner().values().any(|p| p.awaits_pairing()) {
+            warn!(
+                le_or_bredr_id:%;
+                "Couldn't match pairing request with inflight Fast Pair procedure"
+            );
+            // TODO(https://fxbug.dev/42052578): Consider relaying upstream if I/O capabilities are
+            // defined per peer.
+            let _ = responder.send(false, 0u32);
+            return Ok(());
+        }
+
+        // A newer request from the same peer replaces any older one, which is rejected.
+        let _ = self.pending_requests.remove(&le_or_bredr_id);
+
+        // The number of pending pairing requests is bounded by `MAX_PENDING_PAIRING_REQUESTS`.
+        // New pairing requests are rejected until an existing pending request is matched,
+        // canceled, or expires.
+        if self.pending_requests.inner().len() >= MAX_PENDING_PAIRING_REQUESTS {
+            warn!(le_or_bredr_id:%; "Too many pending pairing requests. Rejecting");
+            let _ = responder.send(false, 0u32);
+            return Ok(());
+        }
+
+        let _ = self
+            .pending_requests
+            .insert(le_or_bredr_id, PendingPairingRequest::new(le_or_bredr_id, passkey, responder));
         Ok(())
     }
 
@@ -705,25 +870,21 @@ impl PairingManager {
         success: bool,
     ) -> Result<Option<PeerId>, Error> {
         debug!(le_or_bredr_id:%, success; "pairing complete");
+        // Pairing with the peer has finished, so any pending request from it is no longer valid.
+        let _ = self.pending_requests.remove(&le_or_bredr_id);
         // Try to match the request to the peer's LE or BR/EDR PeerId.
-        let procedure = self
-            .procedures
-            .inner()
-            .iter_mut()
-            .find(|(id, p)| **id == le_or_bredr_id || p.bredr_id == Some(le_or_bredr_id));
-        if procedure.is_none() {
+        let Some((le_id, procedure)) = self.find_procedure(le_or_bredr_id) else {
             debug!(le_or_bredr_id:%; "Pairing complete for non-Fast Pair peer. Ignoring..");
             // TODO(https://fxbug.dev/42052578): Consider relaying upstream if I/O capabilities are defined
             // per peer.
             return Ok(None);
-        }
-        let (le_id, procedure) = procedure.unwrap();
+        };
 
         if success && procedure.is_passkey_checked() {
             let _ = procedure.transition(ProcedureState::PairingComplete);
             // Regardless of which PeerId matched, we want to notify the component that the LE
             // variant has completed - the rest of the component only cares about LE.
-            return Ok(Some(*le_id));
+            return Ok(Some(le_id));
         }
 
         if success {
@@ -734,8 +895,7 @@ impl PairingManager {
             info!(le_id:%; "Pairing failure");
         }
 
-        let id = *le_id;
-        self.cancel_pairing_procedure(&id)?;
+        self.cancel_pairing_procedure(&le_id)?;
         Ok(None)
     }
 
@@ -784,9 +944,20 @@ impl PairingManager {
             let _ = self.cancel_pairing_procedure(&id);
         }
     }
+
+    fn poll_pending_request_deadlines(&mut self, cx: &mut Context<'_>) {
+        if self.pending_requests.is_terminated() {
+            return;
+        }
+
+        // The expired request is removed from `pending_requests` and rejected when dropped.
+        while let Poll::Ready(Some(id)) = self.pending_requests.poll_next_unpin(cx) {
+            info!(id:%; "Pairing request wasn't matched with a Fast Pair procedure in time");
+        }
+    }
 }
 
-/// The Stream implementation for `PairingManager` does 4 things:
+/// The Stream implementation for `PairingManager` does 5 things:
 ///   (1) Poll the connection to the upstream `sys.Pairing` client to check if it is open. Because
 ///       pairing functionality is determined by the client's existence, the `PairingManager` stream
 ///       will terminate if the client disconnects.
@@ -798,6 +969,8 @@ impl PairingManager {
 ///   (4) Poll the set of active Fast Pair pairing procedures. Per the GFPS, if a procedure doesn't
 ///       progress within `Procedure::DEFAULT_PROCEDURE_TIMEOUT_DURATION`, the shared secret `key` is no
 ///       longer valid.
+///   (5) Poll the set of pending pairing requests. Requests that aren't matched to a procedure
+///       within `Procedure::DEFAULT_PROCEDURE_TIMEOUT_DURATION` are rejected.
 /// The Stream produces an item anytime Fast Pair pairing successfully completes with a remote peer.
 impl Stream for PairingManager {
     type Item = PeerId;
@@ -849,6 +1022,8 @@ impl Stream for PairingManager {
 
         // Check if any procedures have missed deadlines.
         self.poll_procedure_deadlines(cx);
+        // Check if any pending pairing requests have missed deadlines.
+        self.poll_pending_request_deadlines(cx);
         Poll::Pending
     }
 }
@@ -1216,7 +1391,7 @@ pub(crate) mod tests {
     }
 
     #[fuchsia::test]
-    async fn unequal_passkey_comparison_is_ok() {
+    async fn passkey_mismatch_with_single_request_returns_provider_passkey() {
         let (mut manager, mut mock) = MockPairing::new_with_manager().await;
 
         // A new pairing procedure is started between us and the peer.
@@ -1233,18 +1408,130 @@ pub(crate) mod tests {
         let request_fut = mock.make_pairing_request(id, provider_passkey);
         assert_matches!(manager.select_next_some().now_or_never(), None);
 
-        // Remote peer requests to compare passkeys (Seeker passkey is sent over GATT). Comparison
-        // should succeed even though passkeys are different.
+        // Remote peer requests to compare passkeys (Seeker passkey is sent over GATT). The passkeys
+        // don't match, but the only pending request is the Seeker's. The Provider passkey is
+        // returned to be notified (GFPS Step 14). Because the Seeker didn't prove ownership of the
+        // request, the request is rejected and the procedure is canceled.
         let seeker_passkey = 987654;
-        let passkey = manager.compare_passkey(id, seeker_passkey).expect("successful comparison");
-        assert_eq!(passkey, provider_passkey);
+        assert_eq!(
+            manager.compare_passkey(id, seeker_passkey).expect("comparison"),
+            provider_passkey
+        );
         assert_matches!(manager.select_next_some().now_or_never(), None);
-        // Expect the pairing request to complete with failure as passkeys were not the same.
-        let (success, _) = request_fut.await.expect("fidl response");
-        assert!(!success);
-        // Even though passkeys were mismatched, the pairing procedure can still continue as the
-        // GFPS notes that the Seeker can still accept pairing after doing its own passkey check.
-        assert_matches!(manager.key_for_procedure(&id), Some(_));
+        assert_eq!(request_fut.await.expect("fidl response"), (false, 0));
+        assert_matches!(manager.key_for_procedure(&id), None);
+        // There are no active pairing procedures so pairing is handed back to upstream.
+        mock.expect_set_pairing_delegate().await;
+    }
+
+    #[fuchsia::test]
+    async fn passkey_mismatch_with_multiple_requests_returns_error() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        // Two pairing requests with different passkeys.
+        let mut request_fut1 = pin!(mock.make_pairing_request(PeerId(456), 111111));
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        let mut request_fut2 = pin!(mock.make_pairing_request(PeerId(789), 222222));
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+
+        // The Seeker's passkey matches neither request, and the Seeker's request can't be
+        // identified. The comparison fails and neither request is resolved.
+        assert_matches!(manager.compare_passkey(le_id, 999999), Err(Error::Internal(_)));
+        assert_matches!(request_fut1.as_mut().now_or_never(), None);
+        assert_matches!(request_fut2.as_mut().now_or_never(), None);
+
+        // The procedure is canceled by the owner of the PairingManager after the failed comparison.
+        // No procedure can claim the pending requests, so both are rejected.
+        assert_matches!(manager.cancel_pairing_procedure(&le_id), Ok(_));
+        assert_eq!(request_fut1.await.expect("fidl response"), (false, 0));
+        assert_eq!(request_fut2.await.expect("fidl response"), (false, 0));
+        mock.expect_set_pairing_delegate().await;
+    }
+
+    #[fuchsia::test]
+    async fn passkey_matching_multiple_requests_rejects_all() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        // Two pairing requests with the same passkey.
+        let request_fut1 = mock.make_pairing_request(PeerId(456), 555666);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        let request_fut2 = mock.make_pairing_request(PeerId(789), 555666);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+
+        // The Seeker's request can't be identified, so both are rejected.
+        assert_matches!(manager.compare_passkey(le_id, 555666), Err(Error::Internal(_)));
+        assert_eq!(request_fut1.await.expect("fidl response"), (false, 0));
+        assert_eq!(request_fut2.await.expect("fidl response"), (false, 0));
+    }
+
+    #[fuchsia::test]
+    async fn passkey_mismatch_does_not_affect_other_procedures() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        let le_id1 = PeerId(1);
+        let le_id2 = PeerId(2);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id1,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id2,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+
+        // Both Seekers make pairing requests over BR/EDR.
+        let mut request_fut1 = pin!(mock.make_pairing_request(PeerId(11), 111111));
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        let mut request_fut2 = pin!(mock.make_pairing_request(PeerId(22), 222222));
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+
+        // The first Seeker sends a passkey that doesn't match any pairing request. The comparison
+        // fails and the owner of the PairingManager cancels the first procedure.
+        assert_matches!(manager.compare_passkey(le_id1, 999999), Err(Error::Internal(_)));
+        assert_matches!(manager.cancel_pairing_procedure(&le_id1), Ok(_));
+        // The second procedure is still active, so the Pairing Delegate is not released and the
+        // pending pairing requests are not rejected.
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
+        assert_matches!(manager.key_for_procedure(&le_id2), Some(_));
+        assert_matches!(request_fut1.as_mut().now_or_never(), None);
+        assert_matches!(request_fut2.as_mut().now_or_never(), None);
+
+        // The second Seeker's passkey is matched with its own pairing request.
+        assert_matches!(manager.compare_passkey(le_id2, 222222), Ok(222222));
+        assert_eq!(request_fut2.await.expect("fidl response"), (true, 222222));
+        // No procedure can claim the remaining request, so it is rejected.
+        assert_eq!(request_fut1.await.expect("fidl response"), (false, 0));
     }
 
     #[fuchsia::test]
@@ -1286,7 +1573,7 @@ pub(crate) mod tests {
 
         // Comparing passkeys before pairing begins is an error.
         assert_matches!(manager.compare_passkey(id, 555666), Err(Error::Internal(_)));
-        // Put the procedure in the `Pairing` state.
+        // Peer makes a pairing request, which is matched by the passkey comparison.
         let request_fut = mock.make_pairing_request(id, 555666);
         assert_matches!(manager.select_next_some().now_or_never(), None);
         assert_matches!(manager.compare_passkey(id, 555666), Ok(_));
@@ -1350,14 +1637,13 @@ pub(crate) mod tests {
     async fn concurrent_pairing_procedures() {
         let (mut manager, mut mock) = MockPairing::new_with_manager().await;
 
-        let id1 = PeerId(123);
-        let id2 = PeerId(987);
-
+        let le_id1 = PeerId(1);
+        let le_id2 = PeerId(2);
         // We can start two pairing procedures - we only expect one SetPairingDelegate since Fast
         // Pair will request it after the first call.
         assert_matches!(
             manager.new_pairing_procedure(
-                id1,
+                le_id1,
                 keys::tests::example_aes_key(),
                 PairingType::Initial
             ),
@@ -1366,7 +1652,7 @@ pub(crate) mod tests {
         mock.expect_set_pairing_delegate().await;
         assert_matches!(
             manager.new_pairing_procedure(
-                id2,
+                le_id2,
                 keys::tests::example_aes_key(),
                 PairingType::Initial
             ),
@@ -1374,39 +1660,302 @@ pub(crate) mod tests {
         );
         assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
 
-        // First peer tries to pair - no stream item since pairing isn't complete.
-        let request_fut = mock.make_pairing_request(id1, 555666);
+        // Both Seekers make pairing requests over BR/EDR, in the opposite order in which they
+        // started Fast Pair.
+        let bredr_id1 = PeerId(11);
+        let bredr_id2 = PeerId(22);
+        let mut request_fut2 = pin!(mock.make_pairing_request(bredr_id2, 222222));
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        let request_fut1 = mock.make_pairing_request(bredr_id1, 111111);
         assert_matches!(manager.select_next_some().now_or_never(), None);
 
-        // No stream item after comparing passkeys since pairing isn't complete.
-        let passkey = manager.compare_passkey(id1, 555666).expect("successful comparison");
-        assert_eq!(passkey, 555666);
-        assert_matches!(manager.select_next_some().now_or_never(), None);
-        // Expect the pairing request to resolve as passkeys have been verified.
-        let result = request_fut.await.expect("fidl response");
-        assert_eq!(result, (true, 555666));
+        // Match first Seeker's procedure with its pairing request using PassKey.
+        assert_matches!(manager.compare_passkey(le_id1, 111111), Ok(111111));
+        assert_eq!(request_fut1.await.expect("fidl response"), (true, 111111));
+        // The second Seeker's request should still be pending.
+        assert_matches!(request_fut2.as_mut().now_or_never(), None);
+        assert_matches!(manager.compare_passkey(le_id2, 222222), Ok(222222));
+        assert_eq!(request_fut2.await.expect("fidl response"), (true, 222222));
 
-        // Downstream server signals pairing completion.
+        // Pairing completion is attributed to the correct LE PeerId.
         let _ = mock
             .downstream_delegate_client
-            .on_pairing_complete(&id1.into(), true)
+            .on_pairing_complete(&bredr_id2.into(), true)
             .expect("valid fidl request");
-        // Expect a Pairing Manager stream item indicating completion of pairing with the peer.
-        let result = manager.select_next_some().await;
-        assert_eq!(result, id1);
+        assert_eq!(manager.select_next_some().await, le_id2);
+        let _ = mock
+            .downstream_delegate_client
+            .on_pairing_complete(&bredr_id1.into(), true)
+            .expect("valid fidl request");
+        assert_eq!(manager.select_next_some().await, le_id1);
 
-        // Peer makes a GATT write to the Account Key characteristic.
-        assert_matches!(manager.account_key_write(id1), Ok(_));
-
-        // PairingManager owner will complete pairing once the peer optionally sets a personalized
-        // name. If no name is set, then the procedure will eventually time out after
-        // `Procedure::DEFAULT_PROCEDURE_TIMEOUT_DURATION`.
-        assert_matches!(manager.complete_pairing_procedure(id1), Ok(_));
-        // Because a pairing procedure for `id2` is still active, the Pairing Delegate
+        // First Seeker makes a GATT write to the Account Key characteristic and completes.
+        assert_matches!(manager.account_key_write(le_id1), Ok(_));
+        assert_matches!(manager.complete_pairing_procedure(le_id1), Ok(_));
+        // Because a pairing procedure for `le_id2` is still active, the Pairing Delegate
         // should not be reset.
         assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
-        assert_matches!(manager.key_for_procedure(&id1), None);
-        assert_matches!(manager.key_for_procedure(&id2), Some(_));
+        assert_matches!(manager.key_for_procedure(&le_id1), None);
+        assert_matches!(manager.key_for_procedure(&le_id2), Some(_));
+
+        // Completing the second Seeker's procedure releases the Pairing Delegate.
+        assert_matches!(manager.account_key_write(le_id2), Ok(_));
+        assert_matches!(manager.complete_pairing_procedure(le_id2), Ok(_));
+        mock.expect_set_pairing_delegate().await;
+    }
+
+    #[fuchsia::test]
+    async fn pairing_request_from_unrelated_peer_does_not_hijack_procedure() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        // The Seeker starts Fast Pair over LE.
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        // An unrelated peer makes a pairing request before the Seeker does.
+        let attacker_id = PeerId(456);
+        let attacker_passkey = 111111;
+        let attacker_request_fut = mock.make_pairing_request(attacker_id, attacker_passkey);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+
+        // The Seeker makes its pairing request over BR/EDR.
+        let seeker_bredr_id = PeerId(789);
+        let seeker_passkey = 222222;
+        let seeker_request_fut = mock.make_pairing_request(seeker_bredr_id, seeker_passkey);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+
+        // The Seeker's passkey (received over GATT) should be matched with the Seeker's pairing
+        // request, not the unrelated peer's.
+        let passkey =
+            manager.compare_passkey(le_id, seeker_passkey).expect("successful comparison");
+        assert_eq!(passkey, seeker_passkey);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        let result = seeker_request_fut.await.expect("fidl response");
+        assert_eq!(result, (true, seeker_passkey));
+        // No other procedure can claim the unrelated peer's request, so it is rejected.
+        let (accepted, _) = attacker_request_fut.await.expect("fidl response");
+        assert!(!accepted);
+
+        // Pairing completion over BR/EDR is attributed to the Seeker's LE PeerId.
+        let _ = mock
+            .downstream_delegate_client
+            .on_pairing_complete(&seeker_bredr_id.into(), true)
+            .expect("valid fidl request");
+        let result = manager.select_next_some().await;
+        assert_eq!(result, le_id);
+
+        assert_matches!(manager.account_key_write(le_id), Ok(_));
+        assert_matches!(manager.complete_pairing_procedure(le_id), Ok(_));
+        mock.expect_set_pairing_delegate().await;
+    }
+
+    #[fuchsia::test]
+    async fn pairing_request_without_procedure_awaiting_pairing_is_rejected() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        // A personalized name write doesn't involve pairing.
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::PersonalizedNameWrite
+            ),
+            Ok(_)
+        );
+        // Fast Pair owns the delegate (e.g. on behalf of a procedure that has since finished).
+        assert_matches!(manager.claim_delegate(), Ok(_));
+        mock.expect_set_pairing_delegate().await;
+
+        // A pairing request is immediately rejected since there is no procedure awaiting pairing
+        // (i.e. an Initial or Subsequent procedure in the Started state) to claim it.
+        let request_fut = mock.make_pairing_request(PeerId(456), 555666);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        assert_eq!(request_fut.await.expect("fidl response"), (false, 0));
+        // The personalized name write procedure is unaffected.
+        assert_matches!(manager.key_for_procedure(&le_id), Some(_));
+    }
+
+    #[fuchsia::test]
+    async fn pairing_request_from_same_peer_replaces_pending_request() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        let bredr_id = PeerId(789);
+        let first_request_fut = mock.make_pairing_request(bredr_id, 111111);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        let second_request_fut = mock.make_pairing_request(bredr_id, 222222);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        // The older request is rejected.
+        assert_eq!(first_request_fut.await.expect("fidl response"), (false, 0));
+
+        assert_matches!(manager.compare_passkey(le_id, 222222), Ok(222222));
+        assert_eq!(second_request_fut.await.expect("fidl response"), (true, 222222));
+    }
+
+    #[fuchsia::test]
+    async fn pairing_request_over_pending_limit_is_rejected() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        let mut request_futs = Vec::new();
+        for i in 0..MAX_PENDING_PAIRING_REQUESTS {
+            let i = i as u64;
+            request_futs.push(mock.make_pairing_request(PeerId(1000 + i), 100000 + i as u32));
+            assert_matches!(manager.select_next_some().now_or_never(), None);
+        }
+
+        // Pending requests are at capacity - the newest request is rejected.
+        let extra_request_fut = mock.make_pairing_request(PeerId(2000), 999999);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        assert_eq!(extra_request_fut.await.expect("fidl response"), (false, 0));
+
+        // Requests that were already pending can still be matched.
+        assert_matches!(manager.compare_passkey(le_id, 100000), Ok(100000));
+        let mut request_futs = request_futs.into_iter();
+        let first_request_fut = request_futs.next().unwrap();
+        assert_eq!(first_request_fut.await.expect("fidl response"), (true, 100000));
+        // The rest are rejected since no other procedure can claim them.
+        for request_fut in request_futs {
+            assert_eq!(request_fut.await.expect("fidl response"), (false, 0));
+        }
+    }
+
+    #[fuchsia::test]
+    fn pairing_request_pending_past_deadline_is_rejected() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(1_000_000_000));
+
+        let setup_fut = MockPairing::new_with_manager();
+        let mut setup_fut = pin!(setup_fut);
+        let (mut manager, mut mock) =
+            exec.run_until_stalled(&mut setup_fut).expect("can create pairing manager");
+
+        let le_id1 = PeerId(1);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id1,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
+        {
+            let expect_fut = mock.expect_set_pairing_delegate();
+            let mut expect_fut = pin!(expect_fut);
+            let () = exec.run_until_stalled(&mut expect_fut).expect("pairing delegate request");
+        }
+
+        // An unrelated peer makes a pairing request.
+        let first_request_fut = mock.make_pairing_request(PeerId(456), 111111);
+        let mut first_request_fut = pin!(first_request_fut);
+        let _ =
+            exec.run_until_stalled(&mut first_request_fut).expect_pending("waiting for response");
+        let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
+
+        // Halfway through the first deadline, a second Seeker starts a procedure and makes its
+        // pairing request.
+        let half_dur = Procedure::DEFAULT_PROCEDURE_TIMEOUT_DURATION / 2;
+        exec.set_fake_time(fasync::MonotonicInstant::after(half_dur));
+        assert!(!exec.wake_expired_timers());
+        let le_id2 = PeerId(2);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id2,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        let second_request_fut = mock.make_pairing_request(PeerId(789), 222222);
+        let mut second_request_fut = pin!(second_request_fut);
+        let _ =
+            exec.run_until_stalled(&mut second_request_fut).expect_pending("waiting for response");
+        let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
+
+        // The first request is rejected once its deadline is reached, while the second Seeker's
+        // procedure and request are still active.
+        exec.set_fake_time(fasync::MonotonicInstant::after(half_dur));
+        assert!(exec.wake_expired_timers());
+        let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
+        let (accepted, _) = exec
+            .run_until_stalled(&mut first_request_fut)
+            .expect("pairing response")
+            .expect("result is OK");
+        assert!(!accepted);
+        let _ =
+            exec.run_until_stalled(&mut second_request_fut).expect_pending("waiting for response");
+        assert_matches!(manager.key_for_procedure(&le_id1), None);
+        assert_matches!(manager.key_for_procedure(&le_id2), Some(_));
+
+        // The second Seeker's passkey is matched with its request.
+        assert_matches!(manager.compare_passkey(le_id2, 222222), Ok(222222));
+        let result = exec
+            .run_until_stalled(&mut second_request_fut)
+            .expect("pairing response")
+            .expect("result is OK");
+        assert_eq!(result, (true, 222222));
+    }
+
+    #[fuchsia::test]
+    async fn pairing_request_from_bound_bredr_id_cancels_procedure() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        let le_id = PeerId(123);
+        let bredr_id = PeerId(789);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        // The Seeker's BR/EDR pairing request is matched and bound to the procedure.
+        let request_fut = mock.make_pairing_request(bredr_id, 123456);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        assert_matches!(manager.compare_passkey(le_id, 123456), Ok(123456));
+        assert_eq!(request_fut.await.expect("fidl response"), (true, 123456));
+
+        // Another pairing request from the bound BR/EDR PeerId is unexpected. The request is
+        // rejected and the procedure is canceled.
+        let second_request_fut = mock.make_pairing_request(bredr_id, 555666);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        assert_eq!(second_request_fut.await.expect("fidl response"), (false, 0));
+        assert_matches!(manager.key_for_procedure(&le_id), None);
+        // There are no other active procedures so the Pairing Delegate is handed back.
+        mock.expect_set_pairing_delegate().await;
     }
 
     #[fuchsia::test]
@@ -1446,7 +1995,7 @@ pub(crate) mod tests {
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(1_000_000_000));
 
         let id = PeerId(123);
-        let procedure = Procedure::new(id, keys::tests::example_aes_key());
+        let procedure = Procedure::new(id, keys::tests::example_aes_key(), PairingType::Initial);
         let mut procedure = pin!(procedure);
         let _ = exec.run_until_stalled(&mut procedure).expect_pending("deadline not reached");
 
@@ -1504,18 +2053,17 @@ pub(crate) mod tests {
         let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
         assert_matches!(manager.key_for_procedure(&id), Some(_));
 
-        // Peer makes a pairing request - should transition to the next state in the procedure.
+        // Peer makes a pairing request - this is held as pending and does not reset the
+        // procedure's deadline.
         let request_fut = mock.make_pairing_request(id, 555666);
         let mut request_fut = pin!(request_fut);
         let _ = exec.run_until_stalled(&mut request_fut).expect_pending("waiting for response");
         let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
         assert_matches!(manager.key_for_procedure(&id), Some(_));
 
-        // Advancing time to the deadline should evict the procedure - shared secret no longer
-        // available.
-        exec.set_fake_time(fasync::MonotonicInstant::after(
-            Procedure::DEFAULT_PROCEDURE_TIMEOUT_DURATION,
-        ));
+        // Advancing time to the original deadline should evict the procedure - shared secret no
+        // longer available.
+        exec.set_fake_time(fasync::MonotonicInstant::after(half_dur));
         assert!(exec.wake_expired_timers());
         let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
         assert_matches!(manager.key_for_procedure(&id), None);
