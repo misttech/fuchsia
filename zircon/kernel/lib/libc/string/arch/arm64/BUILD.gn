@@ -10,6 +10,7 @@ source_set("arm64") {
   include_dirs = [ "//zircon/" ]
   sources = [
     "memcpy.S",
+    "memmove.S",
     "memset.S",
   ]
 }

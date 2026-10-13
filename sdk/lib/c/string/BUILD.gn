@@ -30,6 +30,7 @@ llvm_libc_group("string") {
 llvm_libc_group("pure-compiler") {
   deps = [
     ":memcpy",
+    ":memmove",
     ":memset",
   ]
 }
@@ -65,7 +66,6 @@ llvm_libc_source_set("pure-no-compiler") {
   deps = [
     ":memchr",
     ":memcmp",
-    ":memmove",
     ":strlen",
   ]
 }
@@ -100,9 +100,10 @@ foreach(funcs,
             # both, not just each for itself.  They get separate hermetic TUs
             # even though any non-inlined subroutines will likely be common
             # across both.  But some environments need one and not the other
-            # (such as the kernel proper where memcpy is replaced but not
-            # memmove), so they need to stay independent.  Any commonalities
-            # should still be merged by ICF in the final link, ideally.
+            # (such as the kernel proper on x86 where memcpy is replaced but
+            # not memmove), so they need to stay independent.  Any
+            # commonalities should still be merged by ICF in the final link,
+            # ideally.
             "memcpy",
             "memmove",
           ],
@@ -168,7 +169,13 @@ foreach(funcs,
     _label = get_label_info(":$func", "label_with_toolchain")
 
     llvm_libc_source_set(func) {
-      visibility = [ ":*" ]
+      visibility = [
+        ":*",
+
+        # TODO(https://fxbug.dev/568268077): llvm-libc function performance for
+        # the kernel configs on each machine.
+        "//zircon/kernel/lib/libc/string/*",
+      ]
 
       functions = [ func ]
 
@@ -369,7 +376,8 @@ source_set("kernel") {
   ]
 }
 
-# The kernel omits this on machines that replace memcpy / memset in assembly.
+# The kernel omits this on machines that replace memcpy / memmove / memset in
+# assembly.
 source_set("kernel-compiler") {
   visibility = [ "//zircon/kernel/lib/libc/string/*" ]
   deps = [ ":pure-compiler" ]

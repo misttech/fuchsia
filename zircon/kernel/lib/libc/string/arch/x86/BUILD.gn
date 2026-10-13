@@ -26,6 +26,7 @@ if (toolchain_environment == "kernel") {
     deps = [
       ":__unsanitized_memcpy",
       ":__unsanitized_memset",
+      "//sdk/lib/c/string:memmove",
     ]
   }
 

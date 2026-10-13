@@ -10,8 +10,8 @@ import("//build/zircon/zircon_cpu.gni")
 group("string") {
   deps = [ "//sdk/lib/c/string:kernel" ]
 
-  # For the functions the compiler calls (memcpy, memset), the kernel proper
-  # has special versions on some machines.
+  # For the functions the compiler calls (memcpy, memmove, memset), the kernel
+  # proper has special versions on some machines.
   if (toolchain_environment == "kernel" &&
       (zircon_cpu == "arm64" || zircon_cpu == "x86")) {
     deps += [ "arch/$zircon_cpu" ]
