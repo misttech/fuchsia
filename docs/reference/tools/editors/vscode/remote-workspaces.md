@@ -55,10 +55,10 @@ SSH environment:
    {{ '<var>' }}username{{ '</var>' }}@{{ '<var>' }}hostname{{ '</var>' }}.com
    ```
 
-1. If VS Code cannot detect the type of server, select the type manually.
+1. If VS Code cannot detect the type of server, select **Linux** manually.
    <img class="vscode-image"
         alt="This figure shows a dropdown menu in VS Code to select the type of
-        server. The options include Windows, Linux, and macOS."
+        server."
         src="images/remote-workspaces/select-platform.png"/>
 1. After connecting, the bottom left status bar displays your current SSH session.
 

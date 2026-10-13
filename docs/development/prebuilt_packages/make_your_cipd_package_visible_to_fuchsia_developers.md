@@ -24,7 +24,7 @@ Do the following:
     <pre>
     &lt;package name="fuchsia/third_party/qemu/${platform}"
              version="git_revision:533bf2563d0213a7e002d9fcde75519d30ffa70f,1"
-             platforms="linux-amd64,linux-arm64,mac-amd64"
+             platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/qemu/&#0123{.OS}}-&#0123{.Arch}}"/&gt;
     </pre>
 

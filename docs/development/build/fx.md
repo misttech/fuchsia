@@ -81,7 +81,7 @@ Fuchsia development involves compiling and running code for different
 environments:
 
 1.  **Target**: The Fuchsia device or emulator (e.g., x64 or arm64 Fuchsia).
-2.  **Host**: Your development workstation (e.g., Linux or macOS).
+2.  **Host**: Your development workstation (Linux).
 
 ### `fx build`
 
@@ -526,7 +526,7 @@ a target, this combination provides a convenient auto-test loop, great for
 high focus workflows like test driven development.
 
 Note: Iterative mode (indicated by the *-i* option) requires the `inotify-tools`
-or `fswatch` package on the host system.
+package on the host system.
 
 ## Connect to a target shell {#connect-to-a-target-shell}
 

@@ -44,7 +44,6 @@ follows:
 
 1.  `__is_fuchsia__`: test only runs in a QEMU instance running Fuchsia
 1.  `__is_linux__`: test only runs on a Linux machine
-1.  `__is_mac__`: test only runs on a Mac machine
 
 (1) means that hardware is opt-in; test authors must explicitly specify hardware
 environments in order to run tests there. The reasoning for this is that not all

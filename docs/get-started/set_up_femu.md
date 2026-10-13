@@ -47,7 +47,7 @@ To build a FEMU Fuchsia image, do the following:
 
 ## 3. Enable VM acceleration (Optional) {#enable-vm-acceleration}
 
-(**Linux only**) Most Linux machines support VM acceleration through
+Most Linux machines support VM acceleration through
 KVM, which greatly improves the performance and usability of the emulator.
 
 1. If KVM is available on your machine, add yourself to the `kvm` group
@@ -302,7 +302,6 @@ input options:
 [build-fuchsia]: /docs/get-started/build_fuchsia.md
 [femu-overview]: /docs/development/build/emulator.md
 [ffx-emu-reference]: https://fuchsia.dev/reference/tools/sdk/ffx#emu
-[hypervisor-framework]: https://developer.apple.com/documentation/hypervisor
 [explore-fuchsia]: /docs/get-started/explore_fuchsia.md
 [swiftshader]: https://swiftshader.googlesource.com/SwiftShader/
 [tuntap]: https://en.wikipedia.org/wiki/TUN/TAP

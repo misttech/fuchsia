@@ -349,7 +349,7 @@ WHERE (slice.ts + slice.dur) >= <START_TS>
 You can run SQL queries interactively inside the [Perfetto UI][perfetto-ui]:
 1. Open your `.fxt` file in [https://ui.perfetto.dev][perfetto-ui].
 2. Click **Query (SQL)** in the left sidebar.
-3. Enter your query and press `Ctrl+Enter` (or `Cmd+Enter` on macOS).
+3. Enter your query and press `Ctrl+Enter`.
 
 ![Perfetto SQL Query interface](images/sql_query_interface.png "The Query (SQL) tab in the Perfetto UI"){: width="600"}
 

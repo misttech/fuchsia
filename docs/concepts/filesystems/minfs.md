@@ -11,10 +11,7 @@ It currently supports files up to 4 GB in size.
  * Create a disk image that stores MinFS
 
   ```shell
-  # (Linux)
   $ truncate --size=16G blk.bin
-  # (Mac)
-  $ mkfile -n 16g blk.bin
   ```
 
  * Execute the run zircon script on your platform with the '--' to pass

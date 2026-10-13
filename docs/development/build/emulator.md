@@ -140,7 +140,7 @@ fx shell
 
 FEMU currently does not run on:
 
-* ARM64 processors, including the Apple M1 processor.
+* ARM64 processors.
 * AMD processors.
 
 ## Supported hardware for graphics acceleration {#supported-hardware}

@@ -117,7 +117,7 @@ Fuzzer variants like `asan-fuzzer` are used when running tests under the
 meant for manual selection, instead follow the fuzzing instructions to set up the build.
 
 There are additionally some shorthand selectors that apply variants to host binaries (the tools
-that run on the Linux or Mac host computer):
+that run on the Linux host computer):
   * `host_asan`
   * `host_asan-ubsan`
   * `host_coverage`

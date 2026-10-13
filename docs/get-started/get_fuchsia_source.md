@@ -261,7 +261,7 @@ In either case, you need `jiri` in your `PATH`.
 
 ### Enable KVM acceleration {#enable-kvm-acceleration}
 
-(**Linux only**) Most Linux machines support VM acceleration through KVM,
+Most Linux machines support VM acceleration through KVM,
 which greatly improves the performance and usability of the emulator.
 
 If KVM is available on your machine, add yourself to the `kvm` group:
@@ -274,7 +274,7 @@ For this change to take effect, you may need to log out and log back in.
 
 ### Configure emulator networking {#configure-emulator-networking}
 
-(**Linux only**) To allow the [Fuchsia emulator (FEMU)][femu] to
+To allow the [Fuchsia emulator (FEMU)][femu] to
 access the network, you can configure an IPv6 network using
 [TUN/TAP][tuntap]{: .external}.
 

@@ -28,9 +28,8 @@ The Fuchsia extension also provides syntax highlighting for
 
 ## Core features
 
-All features are accessible via the VS Code command palette `Ctrl+Shift+P`
-(Linux/Windows) or `Cmd+Shift+P`(Mac). Type "Fuchsia" in the command palette to
-see a list of available commands.
+All features are accessible via the VS Code command palette `Ctrl+Shift+P`.
+Type "Fuchsia" in the command palette to see a list of available commands.
 
 <img class="vscode-image vscode-image-center"
      alt="This figure shows Fuchsia commands with the command palette."
@@ -64,9 +63,8 @@ and you can see more details in `Output > Fuchsia Extension`.
      alt="This figure shows fx build in the command palette and build progress."
      src="images/extensions/ext-fx-build.png"/>
 
-Tip: Set `fx build` as the default build task to run with `Ctrl+Shift+B`
-(Linux/Windows) or `Cmd+Shift+B` (Mac). For a custom keyboard shortcut, assign
-one in Preferences:Keyboard Shortcuts.
+Tip: Set `fx build` as the default build task to run with `Ctrl+Shift+B`.
+For a custom keyboard shortcut, assign one in Preferences:Keyboard Shortcuts.
 
 File paths in the build output errors are clickable, allowing you to jump directly
 to the error in the source code.

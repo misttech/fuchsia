@@ -354,5 +354,5 @@ discussed above.
 [^3]: Also see our
     [guidelines for unsafe](/docs/development/languages/rust/unsafe.md)
     in first-party code.
-[^4]: We support Fuchsia, Linux, and Mac, and should expect to support Windows
+[^4]: We support Fuchsia and Linux, and should expect to support Windows
     at some point. Some of our Rust code is also compiled for wasm targets.

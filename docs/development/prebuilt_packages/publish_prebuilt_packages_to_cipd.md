@@ -85,14 +85,13 @@ use the following CIPD path naming conventions:
     ```
 
     *   `<CIPD_OS>` is a CIPD-compatible OS name.
-        *   Use `linux` or `mac` for `<CIPD_OS>` (not `Linux`, `osx`, `darwin`
-            or `mach`).
+        *   Use `linux` for `<CIPD_OS>` (not `Linux`).
     *   `<CIPD_HOST_ARCHITECTURE>` a CIPD-compatible CPU architecture name.
         *   Use `i386`, `amd64` or `arm64` for `<CIPD_HOST_ARCHITECTURE>` (not
             `x86`, `x64` or `aarch64`).
 
-    For example, `fuchsia/third_party/clang/mac-amd64` is the path used for the
-    CIPD package that contains the 64-bit Intel OS X Clang toolchain binaries.
+    For example, `fuchsia/third_party/clang/linux-amd64` is the path used for the
+    CIPD package that contains the 64-bit Intel Linux Clang toolchain binaries.
 
 *   Fuchsia ELF prebuilts need to use a path that ends with the following:
 

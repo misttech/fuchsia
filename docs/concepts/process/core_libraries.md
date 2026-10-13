@@ -43,7 +43,7 @@ For more information about FBL,
 FXL is a platform-independent library containing basic C++ building blocks, such
 as logging and reference counting. FXL depends on the C++ standard library but
 not on any Zircon- or Fuchsia-specific libraries. We build FXL both for target
-(Fuchsia) and for host (Linux, Mac) systems.
+(Fuchsia) and for host (Linux) systems.
 
 Generally speaking, we try to use the C++ standard library for basic building
 blocks, but in some cases the C++ standard library either doesn't have something

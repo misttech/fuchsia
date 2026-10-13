@@ -14,7 +14,7 @@ analytics is enabled, invocations and usage of these tools will result in data
 collection including the following:
 
 - CPU architecture (e.g. `x86_64`, `arm64`, etc.), kernel name (e.g. Linux,
-  Darwin, etc...) of the system.
+  etc...) of the system.
 - The version of the tool and related Fuchsia environments (e.g. the Fuchsia SDK
   version).
 - Usage of and interactions with features and whether certain features are

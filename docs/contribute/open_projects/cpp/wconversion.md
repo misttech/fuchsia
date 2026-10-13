@@ -335,12 +335,6 @@ for the `"Wno-conversion"` config target.
 
 Find reviewers via owners and merge your change.
 
-Note: we recommend also attempting debug builds on Macs.
-If you don't use a Mac, you can add these checks to your change with CQ.
-In Gerrit click "choose tryjobs" and select `fuchsia-arm64-debug-mac-build_default`
-and `fuchsia-x64-debug-mac-build_default`.
-If the tryjobs turn red, you can click on them to find descriptive errors.
-
 ## Examples
 
 *   [469454: \[debugger\] Fix -Wconversion issues](https://fuchsia-review.googlesource.com/c/fuchsia/+/469454)

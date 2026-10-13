@@ -24,9 +24,6 @@ flag. If you want to use clangd, you can additionally edit that file to set
 See the [installation
 guide](https://github.com/Valloric/YouCompleteMe#installation).
 
-Note: Installing YCM on MacOS with Homebrew is not recommended because of
-library compatibility errors. Use the official installation guide instead.
-
 {% dynamic endif %}
 
 ## Generate compilation database

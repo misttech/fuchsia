@@ -11,8 +11,6 @@ to troubleshoot common issues with zxdb's symbolizer, see
 Zxdb locates the symbols for a binary on a target device by using the binary's
 **build ID**.
 
-Note: If you are using macOS, you have to install `readelf`.
-
 For example, to see the build ID for a binary on Linux, dump the `notes` for
 the ELF binary:
 

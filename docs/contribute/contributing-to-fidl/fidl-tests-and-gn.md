@@ -25,7 +25,7 @@ This document uses the following terminology:
 
 *   **target**: a [GN target] defined in a BUILD.gn file
 *   **toolchain**: see `fx gn help toolchain`
-*   **host**: a developer's platform, specifically linux or mac
+*   **host**: a developer's platform, specifically Linux
 *   **device**: a Fuchsia platform, either physical or emulated (i.e. qemu)
 *   **package**: a [Fuchsia package]; the unit of distribution in
     Fuchsia

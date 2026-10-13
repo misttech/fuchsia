@@ -28,7 +28,7 @@ development environment on your host machine.
 You can build Fuchsia on a host machine with the x86-64 Linux architecture
 (Debian-based distributions only).
 
-**Windows is not supported.**
+**Windows and macOS are not supported.**
 
 ## Set your build configuration {#set-your-build-configuration .numbered}
 
