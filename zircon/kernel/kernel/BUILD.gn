@@ -250,6 +250,107 @@ kernel_bindgen_crate("thread-lock-guard-bindings") {
   raw_lines = [ "#![no_std]" ]
 }
 
+kernel_bindgen_crate("wait-queue-bindings") {
+  visibility = [ "//zircon/kernel/*" ]
+  headers = [ "//zircon/kernel/include/kernel/wait.h" ]
+  non_rust_deps = [ ":kernel" ]
+  cpp = true
+
+  notice_year = 2026
+  function_allowlist = [ "cpp_wait_queue_.*" ]
+  type_allowlist = [
+    "ResourceOwnership",
+    "Interruptible",
+    "ForceInheritance",
+    "WaitQueueCollection",
+    "WaitQueueCollection::ThreadState",
+    "WaitQueueCollection_ThreadState",
+    "WaitQueueBase",
+    "WaitQueue",
+    "SchedulerState::WaitQueueInheritedSchedulerState",
+    "SchedulerState_WaitQueueInheritedSchedulerState",
+  ]
+  var_allowlist = [ "WaitQueue_kMagic" ]
+  var_blocklist = [ "WaitQueueCollection_kPrimaryKeyZero" ]
+  opaque_types = [
+    "SchedulerState::WaitQueueInheritedSchedulerState",
+    "SchedulerState_WaitQueueInheritedSchedulerState",
+  ]
+  rustified_enum = [
+    "ResourceOwnership",
+    "Interruptible",
+    "ForceInheritance",
+  ]
+  type_blocklist = [
+    "WaitQueueCollection_BlockedThreadTreeTraits",
+    "WaitQueueCollection_MinRelativeDeadlineTraits.*",
+    "WaitQueueCollection_PrimaryKey",
+    "WaitQueueCollection_Key",
+    "WaitQueueBase_.*",
+    "WaitQueue_.*",
+    "SchedDuration",
+    "zx_status_t",
+  ]
+  function_blocklist = [
+    "WaitQueueCollection_.*",
+    "WaitQueueBase_.*",
+    "WaitQueue_.*",
+    "SchedulerState_WaitQueueInheritedSchedulerState_.*",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//sdk/rust/zx-types" ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::{zx_duration_mono_t as SchedDuration, zx_instant_mono_t as WaitQueueCollection_PrimaryKey, zx_status_t};",
+  ]
+}
+
+kernel_bindgen_crate("owned-wait-queue-bindings") {
+  visibility = [ "//zircon/kernel/*" ]
+  headers = [ "//zircon/kernel/include/kernel/owned_wait_queue.h" ]
+  non_rust_deps = [ ":kernel" ]
+  cpp = true
+
+  notice_year = 2026
+  function_allowlist = [ "cpp_owned_wait_queue_.*" ]
+  type_allowlist = [
+    "WaitQueueBase",
+    "OwnedWaitQueue",
+  ]
+  var_allowlist = [ "OwnedWaitQueue_kOwnedMagic" ]
+  var_blocklist = [
+    "OwnedWaitQueue_AddSingleEdgeOp",
+    "OwnedWaitQueue_RemoveSingleEdgeOp",
+    "OwnedWaitQueue_BaseProfileChangedOp",
+    "OwnedWaitQueue_default_wake_hooks_",
+  ]
+  opaque_types = [ "WaitQueueBase" ]
+  type_blocklist = [
+    "WaitQueueBase_.*",
+    "OwnedWaitQueue_.*",
+    "SchedulerState_WaitQueueInheritedSchedulerState",
+    "Thread",
+  ]
+  function_blocklist = [
+    "WaitQueueBase_.*",
+    "OwnedWaitQueue_.*",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+  raw_lines = [
+    "#![no_std]",
+    "pub type Thread = core::ffi::c_void;",
+    "pub type SchedulerState_WaitQueueInheritedSchedulerState = core::ffi::c_void;",
+  ]
+}
+
 kernel_rust_mod("kernel-rs") {
   output_name = "kernel"
   source_root = "mod.rs"
@@ -274,11 +375,14 @@ kernel_rust_mod("kernel-rs") {
     "thread.rs",
     "timer.rs",
     "types.rs",
+    "wait_queue.rs",
   ]
   deps = [
     ":event-bindings",
+    ":owned-wait-queue-bindings",
     ":percpu-bindings",
     ":thread-lock-guard-bindings",
+    ":wait-queue-bindings",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",

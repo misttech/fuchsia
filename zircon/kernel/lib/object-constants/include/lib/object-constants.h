@@ -174,29 +174,6 @@ constexpr size_t kWaitSignalObserverStorageSize = 32;
 constexpr size_t kWaitSignalObserverStorageAlign = 8;
 constexpr size_t kWaitSignalObserverStorageOffset = 40;
 
-// Size and alignment for ChainLock.
-//
-// A ChainLock is a simple pair of atomics (the lock token and the contention
-// state bitmask).  It is the sole member of ChainLockable, which in turn is the
-// first base of every chain lockable type in the kernel, so these constants also
-// describe the leading bytes of Thread, WaitQueueBase, WaitQueue, and
-// OwnedWaitQueue.
-constexpr size_t kChainLockSize = 16;
-constexpr size_t kChainLockAlign = 8;
-
-// Size and alignment for WaitQueueCollection.
-constexpr size_t kWaitQueueCollectionSize = 32;
-constexpr size_t kWaitQueueCollectionAlign = 8;
-
-// Size and alignment for WaitQueue (and its WaitQueueBase base class, which has
-// the same layout; WaitQueue declares no members of its own).
-constexpr size_t kWaitQueueSize = 56;
-constexpr size_t kWaitQueueAlign = 8;
-
-// Size and alignment for OwnedWaitQueue.
-constexpr size_t kOwnedWaitQueueSize = 88;
-constexpr size_t kOwnedWaitQueueAlign = 8;
-
 // Size, alignment, and offset for ResourceDispatcherState.
 constexpr size_t kResourceDispatcherStateSize = 128 + kLockClassIdSize;
 constexpr size_t kResourceDispatcherStateAlign = 8;

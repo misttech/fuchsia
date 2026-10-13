@@ -625,7 +625,6 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
 
 extern "C" {
 void cpp_owned_wait_queue_init(ffi::Uninitialized<OwnedWaitQueue>* queue);
-void cpp_owned_wait_queue_destroy(OwnedWaitQueue* queue);
 void cpp_owned_wait_queue_reset_owner_if_no_waiters(OwnedWaitQueue* queue);
 }  // extern "C"
 

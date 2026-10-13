@@ -23,3 +23,4 @@ pub mod stats;
 pub mod thread;
 pub mod timer;
 pub mod types;
+pub mod wait_queue;

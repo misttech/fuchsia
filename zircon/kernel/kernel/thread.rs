@@ -197,7 +197,7 @@ pub struct FxtRef {
 // LINT.ThenChange(//zircon/kernel/kernel/thread_ffi.cc:FxtRef)
 
 /// An opaque type representing the C++ `Thread` class.
-#[repr(C)]
+#[repr(C, align(8))]
 pub struct Thread {
     _private: [u8; 0],
 }
@@ -723,38 +723,7 @@ impl Drop for ScopedMemoryAllocationDisabled {
     }
 }
 
-/// Whether a block or sleep operation can be interrupted, matching C++ `Interruptible`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct Interruptible(pub bool);
-
-zr::static_assert!(core::mem::size_of::<Interruptible>() == 1);
-zr::static_assert!(core::mem::align_of::<Interruptible>() == 1);
-
-impl Interruptible {
-    pub const NO: Self = Self(false);
-    pub const YES: Self = Self(true);
-
-    /// Converts the `Interruptible` setting to a boolean value (`Interruptible::YES` is `true`).
-    #[inline]
-    pub const fn as_bool(self) -> bool {
-        self.0
-    }
-}
-
-impl From<Interruptible> for bool {
-    #[inline]
-    fn from(i: Interruptible) -> bool {
-        i.0
-    }
-}
-
-impl From<bool> for Interruptible {
-    #[inline]
-    fn from(b: bool) -> Interruptible {
-        Interruptible(b)
-    }
-}
+pub use crate::kernel::wait_queue::Interruptible;
 
 /// Puts the current thread to sleep until the specified `deadline` has occurred.
 ///

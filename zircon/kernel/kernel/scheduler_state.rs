@@ -7,8 +7,9 @@
 //! Types and structures for kernel scheduler state (`include/kernel/scheduler_state.h`).
 
 use crate::kernel::types::cpu_num_t;
-use core::mem::MaybeUninit;
+use core::mem::{MaybeUninit, align_of, size_of};
 use object_constants_rs as object_constants;
+use wait_queue_bindings as bindings;
 use zr::OpaqueFacade;
 
 /// The scheduling state of a thread matching C++ `enum thread_state : uint8_t`.
@@ -121,3 +122,18 @@ impl SchedulerStateBaseProfile {
         self.0.get()
     }
 }
+
+/// An opaque type representing the C++ `SchedulerState::WaitQueueInheritedSchedulerState` struct.
+#[repr(C)]
+pub struct WaitQueueInheritedSchedulerState {
+    raw: zr::Opaque<bindings::SchedulerState_WaitQueueInheritedSchedulerState>,
+}
+
+zr::static_assert!(
+    size_of::<WaitQueueInheritedSchedulerState>()
+        == size_of::<bindings::SchedulerState_WaitQueueInheritedSchedulerState>()
+);
+zr::static_assert!(
+    align_of::<WaitQueueInheritedSchedulerState>()
+        == align_of::<bindings::SchedulerState_WaitQueueInheritedSchedulerState>()
+);

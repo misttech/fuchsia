@@ -348,4 +348,10 @@ class WaitQueue : public WaitQueueBase {
       TA_REQ(source->get_lock(), dest->get_lock(), ChainLockable::GetLock(*t));
 };
 
+#include <kernel/ffi.h>
+
+extern "C" {
+void cpp_wait_queue_init(ffi::Uninitialized<WaitQueue>* wait_queue);
+}  // extern "C"
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_WAIT_H_
