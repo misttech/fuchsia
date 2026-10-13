@@ -10,15 +10,15 @@ use crate::nanohub_gpio_stub::register_gpio_chip_device;
 use crate::socket_tunnel_file::register_socket_tunnel_device;
 use fidl_fuchsia_hardware_google_nanohub as fnanohub;
 use fidl_fuchsia_hardware_serial as fserial;
-use fuchsia_component::client::Service;
 use futures::TryStreamExt;
+use starnix_core::device::service_watcher::watch_fidl_service;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::Kernel;
 use starnix_logging::{log_error, log_info, log_warn};
 use starnix_modules_serial::SerialDevice;
 use starnix_uapi::auth::FsCred;
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 const SERIAL_DIRECTORY: &str = "/dev/class/serial";
 
@@ -52,64 +52,52 @@ pub fn nanohub_device_init(kernel: &Arc<Kernel>) {
         "register_serial_device",
     );
 
-    kernel.kthreads.spawn_future(
-        {
-            let kernel = kernel.clone();
-            move || async move { register_datachannel_devices(kernel).await }
-        },
+    watch_fidl_service(
+        kernel,
+        fnanohub::StarnixDataChannelServiceMarker,
         "register_datachannel_devices",
+        register_datachannel_device,
     );
 }
 
-async fn register_datachannel_devices(kernel: Arc<Kernel>) {
-    let service = match Service::open(fnanohub::StarnixDataChannelServiceMarker) {
-        Ok(service) => service,
+async fn register_datachannel_device(
+    weak_kernel: &Weak<Kernel>,
+    data_channel_service_proxy: fnanohub::StarnixDataChannelServiceProxy,
+) {
+    let name = match async {
+        let device_proxy = data_channel_service_proxy.connect_to_waitable()?;
+        let id = device_proxy.get_identifier().await?;
+        Ok::<Option<String>, fidl::Error>(id.name)
+    }
+    .await
+    {
+        Ok(Some(name)) => name,
+        Ok(None) => {
+            log_error!("Data channel device has no name, skipping registration");
+            return;
+        }
         Err(e) => {
-            log_warn!("Failed to open DriverService: {:?}", e);
+            log_error!("Failed to get device info: {:?}", e);
             return;
         }
     };
-    let mut watcher = match service.watch().await {
-        Ok(watcher) => watcher,
-        Err(e) => {
-            log_warn!("Failed to create watcher: {:?}", e);
-            return;
-        }
+
+    let Some(kernel) = weak_kernel.upgrade() else {
+        return;
     };
 
-    while let Ok(Some(data_channel_service_proxy)) = watcher.try_next().await {
-        let name = match (|| {
-            let device_proxy = data_channel_service_proxy.connect_to_waitable_sync()?;
-            let id = device_proxy.get_identifier(zx::MonotonicInstant::INFINITE)?;
-            Ok::<std::option::Option<std::string::String>, fidl::Error>(id.name)
-        })() {
-            Ok(Some(name)) => name,
-            Ok(None) => {
-                log_error!("Data channel device has no name, skipping registration");
-                continue;
-            }
-            Err(e) => {
-                log_error!("Failed to get device info: {:?}", e);
-                continue;
-            }
-        };
+    let registry = &kernel.device_registry;
 
-        let registry = &kernel.device_registry;
+    let device_class = registry.objects.get_or_create_class("nanohub".into());
 
-        let device_class = registry.objects.get_or_create_class("nanohub".into());
-
-        if let Err(e) = registry.register_dyn_device_with_dir(
-            &kernel,
-            name.as_bytes().into(),
-            device_class,
-            build_device_directory,
-            DataChannelDevice::new(
-                data_channel_service_proxy,
-                kernel.suspend_resume_manager.clone(),
-            ),
-        ) {
-            log_warn!("Failed to register datachannel device: {:?}", e);
-        }
+    if let Err(e) = registry.register_dyn_device_with_dir(
+        &kernel,
+        name.as_bytes().into(),
+        device_class,
+        build_device_directory,
+        DataChannelDevice::new(data_channel_service_proxy, kernel.suspend_resume_manager.clone()),
+    ) {
+        log_warn!("Failed to register datachannel device: {:?}", e);
     }
 }
 

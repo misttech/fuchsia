@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::device::service_watcher::watch_fidl_service;
 use crate::fs::sysfs::build_device_directory;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
-use anyhow::Context as _;
 use fidl_fuchsia_hardware_power_stats as fpowerstats;
-use fuchsia_component::client as fclient;
-use futures::TryStreamExt;
-use starnix_logging::{log_info, log_warn};
+use starnix_logging::log_warn;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::fmt::Write as _;
 use std::sync::{Arc, Weak};
 
@@ -62,81 +61,66 @@ struct ResidencyFileSpec {
 /// The entities are only known once a provider has started, so the device is added in the
 /// background, once a provider reports at least one served entity.
 pub fn init_power_residency_device(kernel: &Kernel) {
-    let weak_kernel = kernel.weak_self.clone();
-    kernel.kthreads.spawn_future(
-        move || async move {
-            let result = match fclient::Service::open(fpowerstats::ServiceMarker) {
-                Ok(service) => add_residency_device(weak_kernel, service).await,
-                Err(e) => Err(e.context("failed to open power stats service directory")),
-            };
-            if let Err(e) = result {
-                log_info!("Power residency files unavailable: {e:#}");
-            }
-        },
+    let device_added = Cell::new(false);
+    watch_fidl_service(
+        kernel,
+        fpowerstats::ServiceMarker,
         "power_residency",
+        async move |weak_kernel, instance| {
+            handle_power_stats_instance(weak_kernel, instance, &device_added).await;
+        },
     );
 }
 
-/// Watches `service` for power stats providers and adds the device, with a file for each served
-/// entity, for the first provider that reports any. Served entities from other providers are
-/// ignored.
-async fn add_residency_device(
-    kernel: Weak<Kernel>,
-    service: fclient::Service<fpowerstats::ServiceMarker>,
-) -> Result<(), anyhow::Error> {
-    let mut instances = service.watch().await.context("failed to watch power stats service")?;
-    let mut device_added = false;
-    while let Some(instance) = instances.try_next().await? {
-        let name = instance.instance_name().to_string();
-        let entities = match instance.connect_to_device() {
-            Ok(device) => device.get_entities().await.map_err(anyhow::Error::from),
-            Err(e) => Err(anyhow::Error::from(e)),
-        };
-        let entities = match entities {
-            Ok(entities) => entities,
-            Err(e) => {
-                log_warn!("Failed to get power entities from {name}: {e:#}");
-                continue;
-            }
-        };
-        let files: Vec<_> =
-            entities.iter().filter_map(|entity| residency_file_spec(&entity.name)).collect();
-        if files.is_empty() {
-            continue;
+async fn handle_power_stats_instance(
+    kernel: &Weak<Kernel>,
+    instance: fpowerstats::ServiceProxy,
+    device_added: &Cell<bool>,
+) {
+    let name = instance.instance_name().to_string();
+    let entities = match instance.connect_to_device() {
+        Ok(device) => device.get_entities().await.map_err(anyhow::Error::from),
+        Err(e) => Err(anyhow::Error::from(e)),
+    };
+    let entities = match entities {
+        Ok(entities) => entities,
+        Err(e) => {
+            log_warn!("Failed to get power entities from {name}: {e:#}");
+            return;
         }
-        if device_added {
-            log_warn!("Ignoring power residency entities from additional provider {name}");
-            continue;
-        }
-        let Some(kernel) = kernel.upgrade() else {
-            return Ok(());
-        };
-        let provider = match instance.connect_to_device_sync() {
-            Ok(provider) => Arc::new(provider),
-            Err(e) => {
-                log_warn!("Failed to connect to power stats provider {name}: {e:#}");
-                continue;
-            }
-        };
-        let registry = &kernel.device_registry;
-        registry.add_bus_device(
-            RESIDENCY_DEVICE_NAME.into(),
-            Some(registry.objects.platform_device()),
-            registry.objects.platform_bus(),
-            |device, dir| {
-                build_device_directory(device, dir);
-                for spec in files {
-                    dir.entry(
-                        &spec.file,
-                        (spec.create_node)(provider.clone()),
-                        mode!(IFREG, 0o444),
-                    );
-                }
-            },
-        );
-        device_added = true;
+    };
+    let files: Vec<_> =
+        entities.iter().filter_map(|entity| residency_file_spec(&entity.name)).collect();
+    if files.is_empty() {
+        return;
     }
-    Ok(())
+    if device_added.get() {
+        log_warn!("Ignoring power residency entities from additional provider {name}");
+        return;
+    }
+    let Some(kernel) = kernel.upgrade() else {
+        return;
+    };
+    let provider = match instance.connect_to_device_sync() {
+        Ok(provider) => Arc::new(provider),
+        Err(e) => {
+            log_warn!("Failed to connect to power stats provider {name}: {e:#}");
+            return;
+        }
+    };
+    let registry = &kernel.device_registry;
+    registry.add_bus_device(
+        RESIDENCY_DEVICE_NAME.into(),
+        Some(registry.objects.platform_device()),
+        registry.objects.platform_bus(),
+        |device, dir| {
+            build_device_directory(device, dir);
+            for spec in files {
+                dir.entry(&spec.file, (spec.create_node)(provider.clone()), mode!(IFREG, 0o444));
+            }
+        },
+    );
+    device_added.set(true);
 }
 
 /// Returns how to serve the power entity named `entity`, or [`None`] if it is not served.
@@ -314,14 +298,27 @@ fn format_platform_power_states(stats: &fpowerstats::Stats) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::device::service_watcher::run_fidl_service_watcher;
     use crate::testing::spawn_kernel_and_run;
     use fidl::endpoints::{ServerEnd, create_endpoints, create_sync_proxy};
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
+    use fuchsia_component::client as fclient;
     use fuchsia_component::server::ServiceFs;
     use futures::{FutureExt, StreamExt, select};
     use std::pin::pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    async fn add_residency_device(
+        kernel: Weak<Kernel>,
+        service: fclient::Service<fpowerstats::ServiceMarker>,
+    ) -> Result<(), anyhow::Error> {
+        let device_added = Cell::new(false);
+        run_fidl_service_watcher(&kernel, service, async move |weak_kernel, instance| {
+            handle_power_stats_instance(weak_kernel, instance, &device_added).await;
+        })
+        .await
+    }
 
     fn state(id: i32, entry_count: u32, total_time_ms: u64) -> fpowerstats::StateResidency {
         fpowerstats::StateResidency {

@@ -40,6 +40,7 @@ _starnix_core_sources = [
   "device/mod.rs",
   "device/registry.rs",
   "device/remote_block_device.rs",
+  "device/service_watcher.rs",
   "device/terminal.rs",
   "execution/crash_reporter.rs",
   "execution/executor.rs",
