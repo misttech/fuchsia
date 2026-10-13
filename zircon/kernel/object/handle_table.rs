@@ -179,6 +179,7 @@ impl HandleTable {
     /// Matching C++ `HandleTable::RemoveHandles(ProcessDispatcher&, ktl::span<const zx_handle_t>)`,
     /// `ZX_HANDLE_INVALID` entries are skipped, and if any non-zero handle is missing, returns
     /// `ZX_ERR_BAD_HANDLE` after processing the remaining handles.
+    #[inline]
     pub fn remove_handles(
         &self,
         caller: &ProcessDispatcher,

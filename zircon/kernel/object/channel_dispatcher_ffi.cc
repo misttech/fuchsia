@@ -18,8 +18,7 @@
 
 extern "C" {
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_channel_dispatcher_create(
+zx_status_t cpp_channel_dispatcher_create(
     void* holder, ffi::Uninitialized<KernelHandle<ChannelDispatcher>>* handle_out) {
   fbl::AllocChecker ac;
   auto disp = fbl::AdoptRef(new (&ac) ChannelDispatcher(holder));
@@ -28,19 +27,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_channel_dispatcher_create(
   }
   handle_out->Initialize(ktl::move(disp));
   return ZX_OK;
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_message_waiter_begin_wait(OwnedWaitQueue* wait_queue,
-                                                     bool* signaled_out) {
-  const auto do_transaction =
-      [&] TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<> {
-    ChainLockGuard guard(wait_queue->get_lock());
-    *signaled_out = false;
-    return ChainLockTransaction::Done;
-  };
-  ChainLockTransaction::UntilDone(EagerReschedDisableAndIrqSaveOption,
-                                  CLT_TAG("OwnedWaitQueue::BeginWait"), do_transaction);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

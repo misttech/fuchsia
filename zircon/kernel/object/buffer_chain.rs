@@ -53,6 +53,7 @@ use zx_status::Status;
 
 static PAGE_CACHE: LazyInit<PageCache> = LazyInit::uninit();
 
+#[inline]
 fn page_cache() -> &'static PageCache {
     &PAGE_CACHE
 }
@@ -102,6 +103,7 @@ static_assert!(size_of::<Buffer>() == BUFFER_SIZE);
 
 impl Buffer {
     /// Returns a raw pointer to the usable data payload in this buffer.
+    #[inline]
     fn data(&self) -> *const u8 {
         self.canary.assert();
         // SAFETY: `self.raw_data` has length `RAW_DATA_SIZE` and `reserved <= RAW_DATA_SIZE`.
@@ -109,6 +111,7 @@ impl Buffer {
     }
 
     /// Returns a mutable raw pointer to the usable data payload in this buffer.
+    #[inline]
     fn data_mut(&mut self) -> *mut u8 {
         self.canary.assert();
         // SAFETY: `self.raw_data` has length `RAW_DATA_SIZE` and `reserved <= RAW_DATA_SIZE`.
@@ -116,12 +119,14 @@ impl Buffer {
     }
 
     /// Returns the capacity in bytes of the usable data payload in this buffer.
+    #[inline]
     fn size(&self) -> usize {
         RAW_DATA_SIZE - (self.reserved as usize)
     }
 
     /// Returns a mutable slice of the usable data payload in this buffer as maybe-uninitialized
     /// bytes.
+    #[inline]
     fn as_mut_slice(&mut self) -> &mut [MaybeUninit<u8>] {
         self.canary.assert();
         // SAFETY: `self.raw_data` has length `RAW_DATA_SIZE` and `reserved <= RAW_DATA_SIZE`.
@@ -138,6 +143,7 @@ impl Buffer {
     /// # Safety
     ///
     /// `page_raw` must be a valid pointer to an allocated `VmPage` with `ALLOC` state.
+    #[inline]
     unsafe fn init_in_page(page_raw: NonNull<VmPage>, reserved: u32) -> NonNull<Buffer> {
         // SAFETY: Caller guarantees `page_raw` is a valid allocated VmPage.
         let page = unsafe { page_raw.as_ref() };
@@ -265,6 +271,7 @@ impl BufferChain {
     /// `BufferChain::free`.
     ///
     /// Returns `Err(Status)` on error.
+    #[inline]
     pub fn alloc(size: usize) -> Result<NonNull<Self>, Status> {
         let size = size.checked_add(BUFFER_CHAIN_SIZE).ok_or(Status::OUT_OF_RANGE)?;
         let num_buffers = size.div_ceil(RAW_DATA_SIZE);
@@ -284,6 +291,7 @@ impl BufferChain {
     /// # Safety
     ///
     /// `chain` must be a valid, uniquely owned pointer returned from `BufferChain::alloc`.
+    #[inline]
     pub unsafe fn free(mut chain: NonNull<Self>) {
         // SAFETY: Caller guarantees `chain` is valid and uniquely owned. The chain lives in place
         // inside its first buffer and is never moved.
@@ -316,6 +324,7 @@ impl BufferChain {
     /// # Safety
     ///
     /// `pages` must contain valid allocated pages with `ALLOC` state.
+    #[inline]
     unsafe fn init_in_pages(
         mut pages: Pin<&mut VmPageDoublyLinkedList>,
     ) -> Result<NonNull<Self>, Status> {
@@ -376,6 +385,7 @@ impl BufferChain {
     /// `append_kernel`.
     ///
     /// Assumes that it is called only at the beginning of the buffer chain.
+    #[inline]
     pub fn skip(self: Pin<&mut Self>, size: usize) {
         let this = self.project();
         debug_assert_eq!(*this.buffer_offset, 0);
@@ -477,11 +487,13 @@ impl BufferChain {
     }
 
     /// Returns a mutable pointer to the usable data payload in the first buffer.
+    #[inline]
     pub fn first_buffer_data_mut(self: Pin<&mut Self>) -> *mut u8 {
         self.project().buffers.front_mut().unwrap().data_mut()
     }
 
     /// Returns true if the buffer chain has no buffers.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.buffers.is_empty()
     }

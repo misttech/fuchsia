@@ -26,14 +26,6 @@ unsafe extern "C" {
         handle_out: *mut MaybeUninit<KernelHandle<ChannelDispatcher>>,
     ) -> zx_status_t;
 
-    /// Prepares an owned wait queue for waiting on message arrival.
-    ///
-    /// # Safety
-    ///
-    /// `wait_queue` must point to a valid `OwnedWaitQueue`. `signaled_out` must point to a valid
-    /// writable `bool`.
-    pub fn cpp_message_waiter_begin_wait(wait_queue: *mut c_void, signaled_out: *mut bool);
-
     /// Signals the owned wait queue waking up a waiter.
     ///
     /// # Safety

@@ -85,6 +85,7 @@ impl MessagePacket {
     /// Creates a message packet containing the provided data copied from userspace and space for
     /// `num_handles` handles. The handles array is uninitialized and must be completely overwritten
     /// by clients.
+    #[inline]
     pub fn create_from_user(
         data: UserInPtr<u8>,
         data_size: usize,
@@ -177,9 +178,13 @@ impl MessagePacket {
     /// for `num_handles` handles.
     pub fn create_from_kernel(data: &[u8], num_handles: usize) -> Result<MessagePacketPtr, Status> {
         let mut new_msg = Self::create_common(data.len(), num_handles)?;
-        let dst = new_msg.start_of_payload_mut();
+        let dst = new_msg.start_of_payload_uninit_mut();
         if dst.len() == data.len() {
-            dst.copy_from_slice(data);
+            // SAFETY: `dst` and `data` have equal length (`dst.len() == data.len()`) and do not
+            // overlap (`dst` is inside the freshly allocated `BufferChain`).
+            unsafe {
+                ptr::copy_nonoverlapping(data.as_ptr(), dst.as_mut_ptr().cast::<u8>(), data.len());
+            }
         } else {
             new_msg.buffer_chain_mut().append_kernel(data)?;
         }
@@ -195,6 +200,7 @@ impl MessagePacket {
     /// Copies the packet's `data_size` bytes to `buf`.
     ///
     /// Returns an error if `buf` points to a bad user address.
+    #[inline]
     pub fn copy_data_to(&self, buf: UserOutPtr<u8>) -> Result<(), Status> {
         let data_size = self.data_size as usize;
         if data_size == 0 {
@@ -219,20 +225,34 @@ impl MessagePacket {
     /// leading bytes of the payload as a transaction ID of type `zx_txid_t`).
     #[inline]
     pub fn get_txid(&self) -> zx_txid_t {
+        if (self.data_size as usize) < size_of::<zx_txid_t>() {
+            return 0;
+        }
         // The first few bytes of the payload are a zx_txid_t.
-        self.start_of_payload()
-            .first_chunk::<{ size_of::<zx_txid_t>() }>()
-            .map(|&bytes| zx_txid_t::from_ne_bytes(bytes))
-            .unwrap_or(0)
+        // SAFETY: `MIN_CONTIGUOUS_SIZE <= CONTIGUOUS_SIZE` guarantees that the `zx_txid_t` at
+        // `payload_offset()` fits within the first buffer, and `payload_offset()` is
+        // pointer-aligned (`>= align_of::<zx_txid_t>()`).
+        unsafe {
+            *ptr::from_ref(self)
+                .cast::<u8>()
+                .wrapping_add(self.payload_offset())
+                .cast::<zx_txid_t>()
+        }
     }
 
     /// Sets the transaction ID in the payload header.
     #[inline]
     pub fn set_txid(&mut self, txid: zx_txid_t) {
-        if let Some(dst) =
-            self.start_of_payload_mut().first_chunk_mut::<{ size_of::<zx_txid_t>() }>()
-        {
-            *dst = txid.to_ne_bytes();
+        if (self.data_size as usize) >= size_of::<zx_txid_t>() {
+            // SAFETY: `MIN_CONTIGUOUS_SIZE <= CONTIGUOUS_SIZE` guarantees that the `zx_txid_t` at
+            // `payload_offset()` fits within the first buffer, and `payload_offset()` is
+            // pointer-aligned (`>= align_of::<zx_txid_t>()`).
+            unsafe {
+                *ptr::from_mut(self)
+                    .cast::<u8>()
+                    .wrapping_add(self.payload_offset())
+                    .cast::<zx_txid_t>() = txid;
+            }
         }
     }
 
@@ -252,8 +272,8 @@ impl MessagePacket {
     #[inline]
     pub unsafe fn recycle(packet: *mut MessagePacket) {
         // SAFETY:
-        // - `packet` is a valid, uniquely owned pointer to an allocated `MessagePacket` that is not
-        //   linked in any container.
+        // - `packet` is a valid, uniquely owned, aligned pointer to an allocated `MessagePacket`
+        //   that is not linked in any container.
         // - We read `buffer_chain` before dropping `packet` in place so the backing memory can be
         //   freed.
         // - `chain` is a valid pointer originally returned from `BufferChain::alloc`.
@@ -280,6 +300,7 @@ impl MessagePacket {
     // Note: This method does not write the payload into the MessagePacket.
     //
     // Returns Ok(MessagePacketPtr) on success.
+    #[inline]
     fn create_common(data_size: usize, num_handles: usize) -> Result<MessagePacketPtr, Status> {
         if data_size > ZX_CHANNEL_MAX_MSG_BYTES as usize
             || num_handles > ZX_CHANNEL_MAX_MSG_HANDLES as usize
@@ -347,17 +368,17 @@ impl MessagePacket {
     /// Returns a const pointer to the array of handle pointers attached to this message packet.
     #[inline]
     pub fn handles(&self) -> *const *mut c_void {
-        // SAFETY: Handles are stored immediately after `MessagePacket` at `HANDLES_OFFSET`
-        // inside the first buffer's contiguous data region.
-        unsafe { ptr::from_ref(self).cast::<u8>().add(HANDLES_OFFSET).cast() }
+        // Handles are stored immediately after `MessagePacket` at `HANDLES_OFFSET` inside the
+        // first buffer's contiguous data region.
+        ptr::from_ref(self).cast::<u8>().wrapping_add(HANDLES_OFFSET).cast()
     }
 
     /// Returns a mutable pointer to the array of handle pointers attached to this message packet.
     #[inline]
     pub fn handles_mut(&mut self) -> *mut *mut c_void {
-        // SAFETY: Handles are stored immediately after `MessagePacket` at `HANDLES_OFFSET`
-        // inside the first buffer's contiguous data region.
-        unsafe { ptr::from_mut(self).cast::<u8>().add(HANDLES_OFFSET).cast() }
+        // Handles are stored immediately after `MessagePacket` at `HANDLES_OFFSET` inside the
+        // first buffer's contiguous data region.
+        ptr::from_mut(self).cast::<u8>().wrapping_add(HANDLES_OFFSET).cast()
     }
 
     /// Sets whether this packet owns its attached handles and should delete them on recycle.
@@ -374,7 +395,7 @@ impl MessagePacket {
         // SAFETY: `self` is at the start of the first buffer's data, which contains at least
         // `payload_offset() + contiguous_payload_size()` contiguous bytes.
         unsafe {
-            let ptr = ptr::from_ref(self).cast::<u8>().add(self.payload_offset());
+            let ptr = ptr::from_ref(self).cast::<u8>().wrapping_add(self.payload_offset());
             slice::from_raw_parts(ptr, self.contiguous_payload_size())
         }
     }
@@ -384,17 +405,8 @@ impl MessagePacket {
         // SAFETY: `self` is at the start of the first buffer's data, which contains at least
         // `payload_offset() + contiguous_payload_size()` contiguous bytes.
         unsafe {
-            let ptr = ptr::from_mut(self).cast::<MaybeUninit<u8>>().add(self.payload_offset());
-            slice::from_raw_parts_mut(ptr, self.contiguous_payload_size())
-        }
-    }
-
-    #[inline]
-    fn start_of_payload_mut(&mut self) -> &mut [u8] {
-        // SAFETY: `self` is at the start of the first buffer's data, which contains at least
-        // `payload_offset() + contiguous_payload_size()` contiguous bytes.
-        unsafe {
-            let ptr = ptr::from_mut(self).cast::<u8>().add(self.payload_offset());
+            let ptr =
+                ptr::from_mut(self).cast::<MaybeUninit<u8>>().wrapping_add(self.payload_offset());
             slice::from_raw_parts_mut(ptr, self.contiguous_payload_size())
         }
     }

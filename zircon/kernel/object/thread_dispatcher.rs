@@ -525,6 +525,7 @@ pub struct AutoBlocked {
 
 impl AutoBlocked {
     /// Sets the blocked reason on the current thread.
+    #[inline]
     pub fn new(reason: Blocked) -> Self {
         // SAFETY: `cpp_thread_dispatcher_set_blocked_reason` transitions the current thread's
         // blocked state on the current CPU and returns the previous blocked reason.
@@ -536,6 +537,7 @@ impl AutoBlocked {
 }
 
 impl Drop for AutoBlocked {
+    #[inline]
     fn drop(&mut self) {
         // SAFETY: Restoring the previous blocked reason on the current thread upon exiting
         // the blocking scope is always safe and restores previous thread state.

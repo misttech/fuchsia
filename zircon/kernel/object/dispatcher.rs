@@ -524,6 +524,7 @@ impl Dispatcher {
 
     /// Safely downcasts a `&Dispatcher` reference to a specific facade reference `&T` if the
     /// dispatcher types match.
+    #[inline]
     pub fn downcast<T: DispatcherOps>(&self) -> Option<&T> {
         if T::TYPE == zx_types::ZX_OBJ_TYPE_NONE || self.get_type() == T::TYPE {
             // SAFETY: `T` implements `DispatcherOps` and its `TYPE` matches `self.get_type()`.

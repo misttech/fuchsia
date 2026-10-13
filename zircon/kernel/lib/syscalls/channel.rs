@@ -43,6 +43,7 @@ define_kcounter!(CHANNEL_MSG_32_HANDLES, "channel.handles.32", Sum);
 define_kcounter!(CHANNEL_MSG_64_HANDLES, "channel.handles.64", Sum);
 define_kcounter!(CHANNEL_MSG_RECEIVED, "channel.messages", Sum);
 
+#[inline]
 fn record_recv_msg_sz(num_bytes: u32, num_handles: u32) {
     CHANNEL_MSG_RECEIVED.add(1);
 
@@ -84,26 +85,32 @@ struct RawChannelCallArgs {
 }
 
 impl RawChannelCallArgs {
+    #[inline]
     fn wr_bytes(&self) -> UserInPtr<u8> {
         UserInPtr::new(ptr::with_exposed_provenance(self.wr_bytes))
     }
 
+    #[inline]
     fn rd_bytes(&self) -> UserOutPtr<u8> {
         UserOutPtr::new(ptr::with_exposed_provenance_mut(self.rd_bytes))
     }
 
+    #[inline]
     fn wr_handles(&self) -> UserInPtr<zx_handle_t> {
         UserInPtr::new(ptr::with_exposed_provenance(self.wr_handles))
     }
 
+    #[inline]
     fn rd_handles(&self) -> UserOutPtr<zx_handle_t> {
         UserOutPtr::new(ptr::with_exposed_provenance_mut(self.rd_handles))
     }
 
+    #[inline]
     fn wr_handle_dispositions(&self) -> UserInOutPtr<zx_handle_disposition_t> {
         UserInOutPtr::new(ptr::with_exposed_provenance_mut(self.wr_handles))
     }
 
+    #[inline]
     fn rd_handle_infos(&self) -> UserOutPtr<zx_handle_info_t> {
         UserOutPtr::new(ptr::with_exposed_provenance_mut(self.rd_handles))
     }
@@ -144,6 +151,7 @@ pub fn sys_channel_create(
     Ok(())
 }
 
+#[inline]
 fn copy_out_message<R: ReadHandles>(
     proc: &ProcessDispatcher,
     mut msg: MessagePacketPtr,
@@ -168,6 +176,7 @@ fn copy_out_message<R: ReadHandles>(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn channel_read<R: ReadHandles>(
     handle_value: HandleValue,
     options: u32,
@@ -273,6 +282,7 @@ pub fn sys_channel_read_etc(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn prepare_write<W: WriteHandles>(
     proc: &ProcessDispatcher,
     handle: HandleValue,
@@ -323,6 +333,7 @@ fn prepare_write<W: WriteHandles>(
     Ok((channel, handle_table.get_koid(), msg))
 }
 
+#[inline]
 fn channel_write<W: WriteHandles>(
     handle: HandleValue,
     options: u32,
@@ -379,6 +390,7 @@ pub fn sys_channel_write_etc(
     channel_write(handle, options, bytes, num_bytes, handles, num_handles)
 }
 
+#[inline]
 fn channel_call_epilogue<R: ReadHandles>(
     proc: &ProcessDispatcher,
     reply: MessagePacketPtr,
@@ -400,6 +412,7 @@ fn channel_call_epilogue<R: ReadHandles>(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn channel_call_noretry<W: WriteHandles, R: ReadHandles>(
     handle: HandleValue,
     options: u32,
@@ -426,10 +439,11 @@ fn channel_call_noretry<W: WriteHandles, R: ReadHandles>(
     let deadline = Deadline::new(InstantUnknown(deadline), proc.get_timer_slack_policy());
 
     // Write message and wait for reply, deadline, or cancellation.
-    let reply = channel.call(owner, msg, deadline)?;
+    let reply = ChannelDispatcher::call(channel, owner, msg, deadline)?;
     channel_call_epilogue(&proc, reply, &args, rd_handles, actual_bytes, actual_handles)
 }
 
+#[inline]
 fn channel_call_finish<R: ReadHandles>(
     deadline: zx_instant_mono_t,
     args: RawChannelCallArgs,
@@ -438,11 +452,9 @@ fn channel_call_finish<R: ReadHandles>(
     actual_handles: UserOutPtr<u32>,
 ) -> Result<(), Status> {
     let waiter = ThreadDispatcher::get_current_message_waiter();
-    let channel = waiter.get_channel().ok_or(Status::BAD_STATE)?;
-
     let proc = ProcessDispatcher::get_current();
     let deadline = Deadline::new(InstantUnknown(deadline), proc.get_timer_slack_policy());
-    let reply = channel.resume_interrupted_call(&waiter, deadline)?;
+    let reply = ChannelDispatcher::resume_interrupted_call(&waiter, deadline)?;
     channel_call_epilogue(&proc, reply, &args, rd_handles, actual_bytes, actual_handles)
 }
 

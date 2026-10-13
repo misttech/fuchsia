@@ -57,6 +57,7 @@ zr::static_assert_size_and_align!(
 );
 
 /// Returns an iterator yielding a [`HandleRef`] for each handle currently stored in `msg`.
+#[inline]
 pub(super) fn msg_handle_refs(msg: &MessagePacket) -> impl Iterator<Item = HandleRef<'_>> {
     let handles_ptr = msg.handles();
     (0..msg.num_handles()).map(move |i| {
@@ -154,6 +155,7 @@ impl ReadHandles for UserOutPtr<zx_handle_info_t> {
 }
 
 /// Basic checks for `handle` to be able to be sent via `channel`.
+#[inline]
 fn common_handle_checks_locked(
     handle: HandleRef<'_>,
     channel: &ChannelDispatcher,
@@ -178,6 +180,7 @@ fn common_handle_checks_locked(
     Ok(())
 }
 
+#[inline]
 fn move_handle_for_transfer(
     mut handle: HandleOwner,
     channel: &ChannelDispatcher,
@@ -196,6 +199,7 @@ fn move_handle_for_transfer(
     Ok(handle)
 }
 
+#[inline]
 fn duplicate_handle_for_transfer(
     source: HandleRef<'_>,
     channel: &ChannelDispatcher,
@@ -219,6 +223,7 @@ fn duplicate_handle_for_transfer(
 /// Returns a handle that should be sent over `channel`. In case of error, the return value should
 /// be reflected back to the user.
 // This helper is used by zx_channel_write.
+#[inline]
 fn get_handle_for_message_locked(
     token: &mut LockToken<'_, HandleTableLockClass>,
     proc: &ProcessDispatcher,
@@ -235,6 +240,7 @@ fn get_handle_for_message_locked(
 /// Returns a handle that should be sent over `channel`. In case of error, the return value should
 /// be reflected back to the user.
 // This helper is used by zx_channel_write_etc.
+#[inline]
 fn get_handle_disposition_for_message_locked(
     token: &mut LockToken<'_, HandleTableLockClass>,
     proc: &ProcessDispatcher,
@@ -303,20 +309,11 @@ fn put_handles_from_user<'a, T: FromBytes>(
 ) -> Result<(&'a mut [T], Result<(), Status>), Status> {
     let num_handles = msg.num_handles();
     debug_assert!(num_handles <= ZX_CHANNEL_MAX_MSG_HANDLES as usize); // This must be checked before calling.
-    let handles_ptr = msg.handles_mut();
+    // `msg` is created with `owns_handles = false`, so if copying from userspace fails before any
+    // handles are written to `handles_ptr`, `MessagePacket::drop` will not inspect `handles_ptr`.
+    let items = user_in.copy_slice_from_user(&mut buf[..num_handles])?;
 
-    let items = match user_in.copy_slice_from_user(&mut buf[..num_handles]) {
-        Ok(items) => items,
-        Err(err) => {
-            // SAFETY: `handles_ptr` points to `num_handles` writable `*mut c_void` entries in
-            // `msg`.
-            unsafe {
-                ptr::write_bytes(handles_ptr, 0, num_handles);
-            }
-            msg.set_owns_handles(true);
-            return Err(err);
-        }
-    };
+    let handles_ptr = msg.handles_mut();
 
     let mut result = Ok(());
     {
@@ -363,6 +360,7 @@ pub trait WriteHandles: Copy {
 }
 
 impl WriteHandles for UserInPtr<zx_handle_t> {
+    #[cold]
     fn remove_user_handles(self, proc: &ProcessDispatcher, num_handles: u32) {
         let num_handles = num_handles as usize;
         let mut handles =
@@ -399,6 +397,7 @@ impl WriteHandles for UserInPtr<zx_handle_t> {
 }
 
 impl WriteHandles for UserInOutPtr<zx_handle_disposition_t> {
+    #[cold]
     fn remove_user_handles(self, proc: &ProcessDispatcher, num_handles: u32) {
         let num_handles = num_handles as usize;
         let user_dispositions = self.reinterpret::<RawHandleDisposition>();
