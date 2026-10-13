@@ -1401,7 +1401,8 @@ impl<T: Driver> ServeTo<EpskcRequestStream> for T {
                     .send(
                         self.stop_ephemeral_key(retain_active_session).map_err(|e| e.into_raw()),
                     )?,
-                EpskcRequest::_UnknownMethod { .. } => {
+                EpskcRequest::WatchEphemeralKeyState { .. }
+                | EpskcRequest::_UnknownMethod { .. } => {
                     warn!("ePSKc encountered unknown method");
                 }
             }

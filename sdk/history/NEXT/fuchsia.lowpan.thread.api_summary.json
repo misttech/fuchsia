@@ -206,6 +206,37 @@
         "type": "uint32"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.lowpan.thread/EphemeralKeyState.ACCEPTED",
+        "value": "5"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.lowpan.thread/EphemeralKeyState.CONNECTED",
+        "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.lowpan.thread/EphemeralKeyState.DISABLED",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.lowpan.thread/EphemeralKeyState.STARTED",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.lowpan.thread/EphemeralKeyState.STOPPED",
+        "value": "2"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.lowpan.thread/EphemeralKeyState",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.lowpan.thread/Epskc.StartEphemeralKey",
         "strictness": "flexible",
@@ -224,6 +255,14 @@
         "request": "fuchsia.lowpan.thread/EpskcStopEphemeralKeyRequest",
         "response": "fuchsia.lowpan.thread/Epskc_StopEphemeralKey_Response",
         "error": "int32"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.lowpan.thread/Epskc.WatchEphemeralKeyState",
+        "strictness": "flexible",
+        "ordinal": "8871267460056713411",
+        "direction": "two_way",
+        "response": "fuchsia.lowpan.thread/Epskc_WatchEphemeralKeyState_Response"
     },
     {
         "kind": "protocol",
@@ -291,6 +330,16 @@
     {
         "kind": "struct",
         "name": "fuchsia.lowpan.thread/Epskc_StartEphemeralKey_Response"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.lowpan.thread/Epskc_WatchEphemeralKeyState_Response.state",
+        "ordinal": "1",
+        "type": "fuchsia.lowpan.thread/EphemeralKeyState"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.lowpan.thread/Epskc_WatchEphemeralKeyState_Response"
     },
     {
         "kind": "protocol/member",

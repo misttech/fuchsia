@@ -37,6 +37,22 @@ open protocol EpskcConnector {
     });
 };
 
+/// Operational state of the Ephemeral Key Manager.
+/// See https://openthread.io/reference/group/api-border-agent for more details.
+@available(added=NEXT)
+type EphemeralKeyState = flexible enum {
+    /// Ephemeral Key Manager is disabled.
+    DISABLED = 1;
+    /// Enabled, but no ephemeral key is in use (not set or started).
+    STOPPED = 2;
+    /// Ephemeral key is set. Listening to accept secure connections.
+    STARTED = 3;
+    /// Session is established with an external commissioner candidate.
+    CONNECTED = 4;
+    /// Session is established and candidate is accepted as full commissioner.
+    ACCEPTED = 5;
+};
+
 /// ePSKc configuration protocol
 ///
 /// This allows callers to interact with the Thread stack's ePSKc functionality
@@ -92,4 +108,24 @@ open protocol Epskc {
     flexible StopEphemeralKey(struct {
         retain_active_session bool;
     }) -> () error zx.Status;
+
+    /// Observes changes to the operational state of the Ephemeral Key Manager.
+    ///
+    /// The first call returns the current [`EphemeralKeyState`] immediately.
+    /// Subsequent calls block until the state differs from the value last
+    /// returned on this channel. Intermediate states are not queued: if the
+    /// state changes several times between calls, only the latest state is
+    /// returned, and a change that reverts to the last-returned value may not
+    /// be observed at all.
+    ///
+    /// When ePSKc is disabled via `fuchsia.lowpan.thread/FeatureConnector`,
+    /// the state is reported as `DISABLED`.
+    ///
+    /// Having more than one concurrent call to this method on the same channel
+    /// is an error and will cause the channel to be closed with a
+    /// `ZX_ERR_BAD_STATE` epitaph.
+    @available(added=NEXT)
+    flexible WatchEphemeralKeyState() -> (struct {
+        state EphemeralKeyState;
+    });
 };
