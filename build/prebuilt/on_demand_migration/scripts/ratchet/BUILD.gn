@@ -11,7 +11,18 @@ python_host_test("languages_test") {
   sources = [ "languages.py" ]
 }
 
+python_host_test("ratchet_test") {
+  main_source = "ratchet_test.py"
+  sources = [
+    "languages.py",
+    "ratchet.py",
+  ]
+}
+
 group("tests") {
   testonly = true
-  deps = [ ":languages_test" ]
+  deps = [
+    ":languages_test",
+    ":ratchet_test",
+  ]
 }
