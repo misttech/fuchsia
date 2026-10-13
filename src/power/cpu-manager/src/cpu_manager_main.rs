@@ -118,15 +118,22 @@ struct CpuCluster {
     /// The max frequency limit OPP that this cluster can run at.
     max_frequency_limit_opp_index: Option<u64>,
 
+    /// Optional initial minimum OPP floor held from startup until the first boost cycle ends.
+    /// On headless builds (such as `minimal`) where nothing requests a boost, this keeps the
+    /// cluster pinned at a fixed floor for predictable microbenchmark performance.
+    boot_min_opp: Option<usize>,
+
     /// The minimum OPP limit index to apply when CPU boost is enabled.
     boost_opp: usize,
 }
 
 impl CpuCluster {
     /// Returns the minimum operating point limit index for this cluster given whether boost is
-    /// currently enabled.
+    /// currently enabled. Operating points are sorted from highest frequency (index 0) to lowest,
+    /// so the higher-performance floor is the lower OPP index.
     fn min_opp(&self, boost_enabled: bool) -> usize {
-        if boost_enabled { self.boost_opp } else { self.opps.len() - 1 }
+        let default_min_opp = self.boot_min_opp.unwrap_or(self.opps.len() - 1);
+        if boost_enabled { self.boost_opp.min(default_min_opp) } else { default_min_opp }
     }
 
     /// Given fractional loads for all system CPUs, gives this cluster's corresponding load and its
@@ -423,6 +430,8 @@ struct ClusterConfig {
     boost_opp: Option<usize>,
     #[serde(default)]
     boot_max_opp: Option<u64>,
+    #[serde(default)]
+    boot_min_opp: Option<usize>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -551,6 +560,7 @@ impl<'a> CpuManagerMainBuilder<'a> {
             thermal_states: Vec::new(),
             throttling_state_recorder,
             active_boosts: HashSet::new(),
+            boot_min_opp_active: true,
         };
 
         Ok(Rc::new(CpuManagerMain {
@@ -879,6 +889,12 @@ impl CpuManagerMain {
 
         self.inspect.boost_enabled.set(should_be_enabled);
 
+        if !should_be_enabled && std::mem::take(&mut inner.boot_min_opp_active) {
+            for cluster in inner.clusters.iter_mut() {
+                cluster.boot_min_opp = None;
+            }
+        }
+
         let messages: Vec<_> = inner
             .clusters
             .iter()
@@ -1073,6 +1089,10 @@ struct MutableInner {
 
     /// Set of active boost sources.
     active_boosts: HashSet<u64>,
+
+    /// Whether the `boot_min_opp` cluster floors remain active. Cleared when boost transitions to
+    /// disabled, including before `init()` populates `clusters`.
+    boot_min_opp_active: bool,
 }
 
 #[async_trait(?Send)]
@@ -1165,6 +1185,34 @@ impl Node for CpuManagerMain {
                 );
             }
 
+            if let Some(min_opp) = cluster_config.boot_min_opp {
+                anyhow::ensure!(
+                    min_opp < opps.len(),
+                    "Cluster {} boot_min_opp ({}) must be less than number of OPPs ({})",
+                    cluster_config.name,
+                    min_opp,
+                    opps.len()
+                );
+                let state_0_opp = *thermal_state_configs
+                    .first()
+                    .and_then(|state| state.cluster_opps.get(cluster_config.cluster_index))
+                    .ok_or_else(|| {
+                        format_err!(
+                            "Missing thermal state 0 OPP for cluster {} (index {})",
+                            cluster_config.name,
+                            cluster_config.cluster_index
+                        )
+                    })?;
+                anyhow::ensure!(
+                    min_opp >= state_0_opp,
+                    "Cluster {} boot_min_opp ({}) must not be higher frequency than thermal \
+                    state 0 OPP ({})",
+                    cluster_config.name,
+                    min_opp,
+                    state_0_opp
+                );
+            }
+
             // The current opp will be set when CpuManagerMain's thermal state is initialized below,
             // so initialize it to a range of all possible values for now.
             let opp_range = Range { lower: 0, upper: opps.len() - 1 };
@@ -1179,6 +1227,7 @@ impl Node for CpuManagerMain {
                 opps,
                 current_opp,
                 max_frequency_limit_opp_index: cluster_config.boot_max_opp,
+                boot_min_opp: cluster_config.boot_min_opp,
                 boost_opp,
             });
         }
@@ -1212,6 +1261,11 @@ impl Node for CpuManagerMain {
 
         {
             let mut inner = self.mutable_inner.lock().await;
+            if !inner.boot_min_opp_active {
+                for cluster in clusters.iter_mut() {
+                    cluster.boot_min_opp = None;
+                }
+            }
             inner.num_cpus = num_cpus;
             inner.clusters = clusters;
             inner.thermal_states = thermal_states;
@@ -1409,6 +1463,7 @@ mod tests {
                 normperfs_per_ghz: BIG_PERFORMANCE_PER_GHZ.0,
                 boost_opp: None,
                 boot_max_opp: None,
+                boot_min_opp: None,
             },
             ClusterConfig {
                 name: "little_cluster".to_string(),
@@ -1418,6 +1473,7 @@ mod tests {
                 normperfs_per_ghz: LITTLE_PERFORMANCE_PER_GHZ.0,
                 boost_opp: None,
                 boot_max_opp: None,
+                boot_min_opp: None,
             },
         ]
     }
@@ -2590,6 +2646,103 @@ mod tests {
 
             let node = handlers.builder(cluster_configs, thermal_state_configs).build().unwrap();
             assert!(node.init().await.is_err());
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_boot_min_opp() {
+        let handlers = Handlers::new_base();
+        handlers.expect_big_opp(0);
+        handlers.expect_little_opp(0);
+        // Expect init() to apply boot_min_opp ([1, 2]) instead of opps.len() - 1 ([2, 3]).
+        handlers.expect_big_min_opp(1);
+        handlers.expect_little_min_opp(2);
+
+        let mut cluster_configs = make_default_cluster_configs();
+        // Big cluster: boost_opp (2) is lower frequency than boot_min_opp (1), so boost must not
+        // drop below boot_min_opp (min(2, 1) == 1).
+        cluster_configs[0].boot_min_opp = Some(1);
+        cluster_configs[0].boost_opp = Some(2);
+        // Little cluster: boost_opp (1) is higher frequency than boot_min_opp (2), so boost raises
+        // floor to 1, and disabling boost releases boot_min_opp to opps.len() - 1.
+        cluster_configs[1].boot_min_opp = Some(2);
+        cluster_configs[1].boost_opp = Some(1);
+
+        let thermal_state_configs = vec![ThermalStateConfig {
+            cluster_opps: vec![0, 0],
+            min_performance_normperfs: 0.0,
+            static_power_w: 2.0,
+            dynamic_power_per_normperf_w: 1.0,
+        }];
+
+        let node = handlers.builder(cluster_configs, thermal_state_configs).build_and_init().await;
+
+        handlers.expect_big_min_opp(1);
+        handlers.expect_little_min_opp(1);
+        node.handle_message(&Message::SetBoost(true, 0)).await.unwrap();
+
+        handlers.expect_big_min_opp((BIG_OPPS.len() - 1) as u32);
+        handlers.expect_little_min_opp((LITTLE_OPPS.len() - 1) as u32);
+        node.handle_message(&Message::SetBoost(false, 0)).await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_set_boost_enabled_and_disabled_before_init_releases_boot_min_opp() {
+        let handlers = Handlers::new_base();
+
+        let mut cluster_configs = make_default_cluster_configs();
+        cluster_configs[0].boot_min_opp = Some(1);
+        cluster_configs[1].boot_min_opp = Some(2);
+
+        let thermal_state_configs = vec![ThermalStateConfig {
+            cluster_opps: vec![0, 0],
+            min_performance_normperfs: 0.0,
+            static_power_w: 1.5,
+            dynamic_power_per_normperf_w: 0.0,
+        }];
+
+        let node = handlers.builder(cluster_configs, thermal_state_configs).build().unwrap();
+
+        // A boost starts and ends before `init()` populates `inner.clusters`.
+        node.handle_message(&Message::SetBoost(true, 0)).await.unwrap();
+        node.handle_message(&Message::SetBoost(false, 0)).await.unwrap();
+
+        // Since an active boost already ended, `init()` should release `boot_min_opp` and set the
+        // minimum OPP limit to `opps.len() - 1` rather than holding `boot_min_opp` ([1, 2]).
+        handlers.expect_big_opp(0);
+        handlers.expect_little_opp(0);
+        handlers.expect_big_min_opp((BIG_OPPS.len() - 1) as u32);
+        handlers.expect_little_min_opp((LITTLE_OPPS.len() - 1) as u32);
+        node.init().await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_boot_min_opp_validation() {
+        // Invalid cases on the last cluster (so both cluster handlers consume
+        // `GetCpuOperatingPoints` before validation fails):
+        // 1. `boot_min_opp` out of bounds (`LITTLE_OPPS.len()`).
+        // 2. Missing thermal state 0 `cluster_opps` entry for the cluster.
+        // 3. `boot_min_opp` higher frequency (lower index) than thermal state 0 (`1 < 2`).
+        for (boot_min_opp, cluster_opps, expected_err) in [
+            (LITTLE_OPPS.len(), vec![0, 0], "must be less than number of OPPs"),
+            (1, vec![0], "Missing thermal state 0 OPP"),
+            (1, vec![0, 2], "must not be higher frequency than thermal state 0 OPP"),
+        ] {
+            let handlers = Handlers::new_base();
+
+            let mut cluster_configs = make_default_cluster_configs();
+            cluster_configs[1].boot_min_opp = Some(boot_min_opp);
+
+            let thermal_state_configs = vec![ThermalStateConfig {
+                cluster_opps,
+                min_performance_normperfs: 0.0,
+                static_power_w: 2.0,
+                dynamic_power_per_normperf_w: 1.0,
+            }];
+
+            let node = handlers.builder(cluster_configs, thermal_state_configs).build().unwrap();
+            let err = node.init().await.unwrap_err();
+            assert!(format!("{err:#}").contains(expected_err), "Unexpected error: {err:#}");
         }
     }
 }

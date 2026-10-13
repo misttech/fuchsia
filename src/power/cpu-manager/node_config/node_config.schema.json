@@ -197,6 +197,10 @@
                                         "boot_max_opp": {
                                             "type": "integer",
                                             "minimum": 0
+                                        },
+                                        "boot_min_opp": {
+                                            "type": "integer",
+                                            "minimum": 0
                                         }
                                     }
                                 },
