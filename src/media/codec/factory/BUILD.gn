@@ -12,8 +12,6 @@ source_set("factory_source") {
     "codec_factory_app.h",
     "codec_factory_hw_policy.cc",
     "codec_factory_hw_policy.h",
-    "codec_factory_hw_policy_astro.cc",
-    "codec_factory_hw_policy_astro.h",
     "codec_factory_impl.cc",
     "codec_factory_impl.h",
     "codec_factory_policy.cc",

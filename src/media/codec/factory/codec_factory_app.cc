@@ -645,7 +645,7 @@ void CodecFactoryApp::ProcessDiscoveryQueue() {
       // Now the CodecFactory can begin serving (shortly).
       if (!existing_devices_discovered_) {
         existing_devices_discovered_ = true;
-        FX_LOGS(INFO) << "CodecFactory calling PublishService()";
+        FX_LOGS(DEBUG) << "CodecFactory calling PublishService()";
         PublishService();
       }
       // The marker has done its job, so remove the marker.

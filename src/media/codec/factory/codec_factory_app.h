@@ -121,9 +121,7 @@ class CodecFactoryApp {
   inspect::Node hardware_factory_nodes_;
   std::string board_name_;
 
-  // Per-board (or similar) policy on # of concurrent HW decoders that use
-  // contiguous_memory_size before falling back to SW (or other similar sorts of
-  // policy).
+  // Per-board (or similar) hardware codec admission policy.
   CodecFactoryPolicy policy_;
 
   // We don't keep a fidl::BindingSet<> here, as we want each CodecFactory

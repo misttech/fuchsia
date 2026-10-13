@@ -290,7 +290,7 @@ CodecFactoryImpl::CodecFactoryImpl(
   //
   // This message is deprecated, but is sent for the benefit of clients that haven't yet moved to
   // GetDetailedCodecDescriptions.
-  FX_LOGS(INFO) << "Sending OnCodecList";
+  FX_LOGS(DEBUG) << "Sending OnCodecList";
   binding_.events().OnCodecList(app_->MakeCodecList());
 }
 

@@ -5,23 +5,20 @@
 #include "codec_factory_policy.h"
 
 #include "codec_factory_app.h"
-// For now, all HW-specific policy for various HW is directly included in the codec factory binary
-// regardless of which HW a build is for.
-#include "codec_factory_hw_policy_astro.h"
-
-#define LIMIT_ASTRO_HW_DECODE_CONCURRENCY (0)
 
 CodecFactoryPolicy::CodecFactoryPolicy(CodecFactoryApp* app) : app_(app) {
   ZX_DEBUG_ASSERT(hw_policies_.empty());
-  std::string board_name = app_->board_name();
-  FX_LOGS(INFO) << "board_name: " << board_name.c_str();
-#if LIMIT_ASTRO_HW_DECODE_CONCURRENCY
-  if (board_name == "astro") {
-    FX_LOGS(INFO) << "board name is astro";
-    hw_policies_.emplace_back(
-        std::unique_ptr<CodecFactoryHwPolicy>(new CodecFactoryHwPolicyAstro(this)));
-  }
-#endif
+  FX_LOGS(DEBUG) << "board_name: " << app_->board_name();
+  // When/if an admission policy needs to be added, it can be added like this:
+  //
+  // // Please don't delete this example; currently we have zero admission policies but this seems
+  // // fairly likely to change again in future.
+  // const std::string& board_name = app_->board_name();
+  // if (board_name == "astro") {
+  //   FX_LOGS(INFO) << "board name is astro";
+  //   hw_policies_.emplace_back(
+  //       std::unique_ptr<CodecFactoryHwPolicy>(new CodecFactoryHwPolicyAstro(this)));
+  // }
 }
 
 bool CodecFactoryPolicy::AdmitHwDecoder(const fuchsia::mediacodec::CreateDecoder_Params& params,
