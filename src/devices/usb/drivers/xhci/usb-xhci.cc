@@ -376,6 +376,10 @@ fpromise::promise<void, zx_status_t> UsbXhci::DeviceOffline(uint32_t slot) {
     for (auto& trb : trbs) {
       std::get<Request>(*trb.request).Complete(ZX_ERR_IO_NOT_PRESENT, 0);
     }
+    if (!running_ || !bus.is_valid()) {
+      cb.complete_ok();
+      return ZX_OK;
+    }
     zx_status_t status = bus.RemoveDevice(slot - 1);
     if (status != ZX_OK) {
       cb.complete_error(status);
@@ -666,11 +670,15 @@ void UsbXhci::UsbHciSetBusInterface(const usb_bus_interface_protocol_t* bus_intf
   // that the system is halted for any longer
   static const zx::duration kAbnormalHaltedDuration = zx::sec(12);
 
+  if (bus_intf == nullptr || bus_intf->ops == nullptr) {
+    fdf::info("xhci: UsbHciSetBusInterface clearing bus_ interface on unbind");
+    bus_.clear();
+    return;
+  }
+
   // We must be unbinding if the bus is currently valid.
   if (bus_.is_valid()) {
-    // Assert that we've started unbinding and are no longer accepting
-    // any requests to prevent a use-after-free situation.
-    ZX_ASSERT(!running_);
+    bus_.clear();
     return;
   }
   ZX_ASSERT(bus_intf != nullptr);
@@ -967,7 +975,7 @@ zx_status_t UsbXhci::UsbHciHubDeviceAdded(uint32_t device_id, uint32_t port, usb
 
 zx_status_t UsbXhci::UsbHciHubDeviceRemoved(uint32_t hub_id, uint32_t port) {
   if (!running_) {
-    return ZX_ERR_IO_NOT_PRESENT;
+    return ZX_OK;
   }
   auto hub_state = device_state_[hub_id];
   if (!hub_state) {
@@ -1016,9 +1024,9 @@ zx_status_t UsbXhci::UsbHciHubDeviceRemoved(uint32_t hub_id, uint32_t port) {
     std::get<Request>(*trb.request).Complete(ZX_ERR_IO_NOT_PRESENT, 0);
   }
   RunUntilIdle();
-  // Bus should always be valid since we're getting a callback from a hub
-  // that is a child of the bus.
-  ZX_ASSERT(bus_.is_valid());
+  if (!running_ || !bus_.is_valid()) {
+    return ZX_OK;
+  }
   zx_status_t status = bus_.RemoveDevice(device_state->GetSlot() - 1);
   if (status != ZX_OK) {
     return status;

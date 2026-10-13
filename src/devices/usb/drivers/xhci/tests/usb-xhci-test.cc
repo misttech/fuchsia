@@ -257,6 +257,10 @@ class FakeUsbBus : public ddk::UsbBusInterfaceProtocol<FakeUsbBus> {
 
   void wait() { sync_completion_wait(&completion_, ZX_TIME_INFINITE); }
 
+  void reset_remove() { sync_completion_reset(&remove_completion_); }
+
+  void wait_for_remove() { sync_completion_wait(&remove_completion_, ZX_TIME_INFINITE); }
+
   usb_bus_interface_protocol_t* proto() {
     proto_.ctx = this;
     proto_.ops = &usb_bus_interface_protocol_ops_;
@@ -276,6 +280,7 @@ class FakeUsbBus : public ddk::UsbBusInterfaceProtocol<FakeUsbBus> {
 
   zx_status_t UsbBusInterfaceRemoveDevice(uint32_t device_id) {
     devices_.erase(device_id);
+    sync_completion_signal(&remove_completion_);
     return ZX_OK;
   }
 
@@ -289,6 +294,7 @@ class FakeUsbBus : public ddk::UsbBusInterfaceProtocol<FakeUsbBus> {
  private:
   std::map<uint32_t, FakeUsbDevice> devices_;
   sync_completion_t completion_;
+  sync_completion_t remove_completion_;
   usb_bus_interface_protocol_t proto_;
 };
 
@@ -1090,6 +1096,37 @@ TEST_F(XhciMmioHarness, GetPortStateUsesOneBasedPortIndex) {
 
   EXPECT_EQ(driver_test().driver()->GetPortState(1).slot_id, 42);
   EXPECT_EQ(driver_test().driver()->GetPortState(2).slot_id, 84);
+}
+
+TEST_F(XhciMmioHarness, HubDeviceRemovedWhenBusInvalidDoesNotAssert) {
+  // 1. Connect a simulated USB hub on root hub port 1.
+  FakeUsbDevice hub_dev = ConnectDevice(1, USB_SPEED_HIGH);
+  const uint32_t hub_id = hub_dev.device_id;
+  auto hub_state = driver_test().driver()->GetDeviceState()[hub_id];
+  ASSERT_TRUE(hub_state);
+
+  // 2. Connect a child device on root hub port 2 (to allocate device state and slot).
+  FakeUsbDevice child_dev = ConnectDevice(2, USB_SPEED_FULL);
+  const uint32_t child_device_id = child_dev.device_id;
+  auto child_state = driver_test().driver()->GetDeviceState()[child_device_id];
+  ASSERT_TRUE(child_state);
+
+  // 3. Configure the hub state so child_device_id is attached downstream of hub port 1.
+  HubInfo hub_info = {};
+  hub_info.port_to_device[0] = static_cast<uint8_t>(child_device_id);
+  {
+    fbl::AutoLock _(&hub_state->transaction_lock());
+    hub_state->GetHubLocked() = hub_info;
+  }
+
+  // 4. Simulate bus unbind prior to xhci shutdown, clearing the bus interface
+  // (matching DFv2 bottom-up unbind where usb-bus clears the bus interface).
+  driver_test().driver()->UsbHciSetBusInterface(nullptr);
+
+  // 5. Invoke UsbHciHubDeviceRemoved for the child device on hub port 1.
+  // Without the fix, ZX_ASSERT(bus_.is_valid()) fails fatally because bus_ was cleared.
+  // With the fix, UsbHciHubDeviceRemoved returns ZX_OK safely.
+  EXPECT_OK(driver_test().driver()->UsbHciHubDeviceRemoved(hub_id, 1));
 }
 
 }  // namespace
