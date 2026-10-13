@@ -7,8 +7,10 @@
 use crate::scalar_value::{ScalarValueData, U32Range, U32ScalarValueData, U64Range};
 use crate::visitor::{BpfVisitor, ProgramCounter, Register, Source};
 use crate::{
-    BPF_LDDW, BPF_MAX_INSTS, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE, BPF_STACK_SIZE,
-    DataWidth, EbpfError, EbpfInstruction, GENERAL_REGISTER_COUNT, MapSchema, REGISTER_COUNT,
+    BPF_ATOMIC, BPF_CALL, BPF_CLS_MASK, BPF_CMPXCHG, BPF_DW, BPF_EXIT, BPF_JA, BPF_JMP, BPF_JMP32,
+    BPF_LDDW, BPF_MAX_INSTS, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE, BPF_STACK_SIZE, BPF_STX,
+    BPF_SUB_OP_MASK, BPF_W, DataWidth, EbpfError, EbpfInstruction, GENERAL_REGISTER_COUNT,
+    MapSchema, REGISTER_COUNT,
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian, NativeEndian};
 use linux_uapi::{bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY};
@@ -922,6 +924,13 @@ pub fn verify_program(
     // 2. It ensures that the second part of every LDDW has a `code` of 0 (invalid opcode).
     //    This guarantees that any attempt to jump directly into the second part of an
     //    LDDW will be rejected during verification as an invalid instruction.
+    //
+    // It also computes the prune points: the targets of the jumps and the instructions following
+    // a conditional jump or a `cmpxchg` (which also branches into two states). Every loop and
+    // every join of two branches goes through one of them, and the states are only compared with
+    // and recorded as terminating contexts at these points.
+    let mut terminating_contexts: Vec<Option<Vec<TerminatingContext>>> =
+        (0..code.len()).map(|_| None).collect();
     let mut scan_pc = 0;
     while scan_pc < code.len() {
         let inst = &code[scan_pc];
@@ -938,6 +947,27 @@ pub fn verify_program(
             }
             scan_pc += 2;
         } else {
+            let class = inst.code() & BPF_CLS_MASK;
+            let op = inst.code() & BPF_SUB_OP_MASK;
+            let is_cmpxchg = (inst.code() == (BPF_STX | BPF_ATOMIC | BPF_W)
+                || inst.code() == (BPF_STX | BPF_ATOMIC | BPF_DW))
+                && inst.imm() as u8 == BPF_CMPXCHG;
+            if (class == BPF_JMP || class == BPF_JMP32) && op != BPF_CALL && op != BPF_EXIT {
+                // Invalid targets are ignored here, and rejected if they are reached.
+                let target = scan_pc.checked_add_signed(isize::from(inst.offset()) + 1);
+                if let Some(entry) = target.and_then(|pc| terminating_contexts.get_mut(pc)) {
+                    *entry = Some(Default::default());
+                }
+                if op != BPF_JA {
+                    if let Some(entry) = terminating_contexts.get_mut(scan_pc + 1) {
+                        *entry = Some(Default::default());
+                    }
+                }
+            } else if is_cmpxchg {
+                if let Some(entry) = terminating_contexts.get_mut(scan_pc + 1) {
+                    *entry = Some(Default::default());
+                }
+            }
             scan_pc += 1;
         }
     }
@@ -948,9 +978,10 @@ pub fn verify_program(
         context.set_reg((i + 1) as u8, t.clone()).map_err(EbpfError::ProgramVerifyError)?;
     }
     let states = vec![context];
-    let mut verification_context = VerificationContext::new(calling_context, logger, &code, states);
+    let mut verification_context =
+        VerificationContext::new(calling_context, logger, &code, states, terminating_contexts);
     while let Some(mut context) = verification_context.states.pop() {
-        if let Some(terminating_contexts) =
+        if let Some(Some(terminating_contexts)) =
             verification_context.terminating_contexts.get(context.pc)
         {
             // Check whether there exist a context that terminate and prove that this context does
@@ -1010,8 +1041,9 @@ struct VerificationContext<'a> {
     iteration: usize,
     /// Keep track of the context that terminates at a given pc. The list of context will all be
     /// incomparables as each time a bigger context is computed, the smaller ones are removed from
-    /// the list. Indexed directly by `ProgramCounter` (`0..code.len()`) for O(1) lookup.
-    terminating_contexts: Vec<Vec<TerminatingContext>>,
+    /// the list. Indexed directly by `ProgramCounter` (`0..code.len()`) for O(1) lookup, and
+    /// `None` if the pc is not a prune point.
+    terminating_contexts: Vec<Option<Vec<TerminatingContext>>>,
     /// The current set of struct access instructions that will need to be updated when the
     /// program is linked. This is also used to ensure that a given instruction always loads the
     /// same field. If this is not the case, the verifier will reject the program.
@@ -1024,7 +1056,9 @@ impl<'a> VerificationContext<'a> {
         logger: &'a mut dyn VerifierLogger,
         code: &'a [EbpfInstruction],
         states: Vec<ComputationContext>,
+        terminating_contexts: Vec<Option<Vec<TerminatingContext>>>,
     ) -> Self {
+        debug_assert_eq!(code.len(), terminating_contexts.len());
         Self {
             calling_context,
             logger,
@@ -1032,7 +1066,7 @@ impl<'a> VerificationContext<'a> {
             code,
             counter: 0,
             iteration: 0,
-            terminating_contexts: (0..code.len()).map(|_| Vec::new()).collect(),
+            terminating_contexts,
             struct_access_instructions: Default::default(),
         }
     }
@@ -2128,11 +2162,13 @@ impl ComputationContext {
     /// The following steps are performed:
     /// 1. **Dependency Calculation:** The data dependencies of the context are computed based on
     ///    the dependencies of its terminated children and the instruction at the current PC.
-    /// 2. **Context Broadening:** The context's state is broadened by clearing registers and stack
-    ///    slots that are *not* in the calculated data dependencies. This optimization assumes that
-    ///    data not used by the terminated branch is irrelevant for future execution paths.
-    /// 3. **Termination Registration:** The broadened context is added to the set of terminating
-    ///    contexts if it is not less than any existing terminating context at the same PC.
+    /// 2. **Context Broadening:** At a prune point, the context's state is broadened by clearing
+    ///    registers and stack slots that are *not* in the calculated data dependencies. This
+    ///    optimization assumes that data not used by the terminated branch is irrelevant for
+    ///    future execution paths.
+    /// 3. **Termination Registration:** At a prune point, the broadened context is added to the
+    ///    set of terminating contexts if it is not less than any existing terminating context at
+    ///    the same PC.
     /// 4. **Parent Termination:** If all the children of the current context have terminated,
     ///    its parent context is recursively terminated.
     fn terminate(self, verification_context: &mut VerificationContext<'_>) -> Result<(), String> {
@@ -2155,34 +2191,39 @@ impl ComputationContext {
                 verification_context.code[current.pc],
             )?;
 
-            // 2. Clear the state depending on the dependencies states
-            for register in 0..GENERAL_REGISTER_COUNT {
-                if !dependencies.has_reg(register) {
-                    current.set_reg(register, Default::default())?;
+            if let Some(terminating_contexts) =
+                &mut verification_context.terminating_contexts[current.pc]
+            {
+                // 2. Clear the state depending on the dependencies states
+                for register in 0..GENERAL_REGISTER_COUNT {
+                    if !dependencies.has_reg(register) {
+                        current.set_reg(register, Default::default())?;
+                    }
                 }
-            }
-            if dependencies.stack == 0 {
-                current.stack.data.clear();
-            } else if dependencies.stack != !0 {
-                current.stack.data.retain(|k, _| dependencies.has_stack(*k));
-            }
+                if dependencies.stack == 0 {
+                    current.stack.data.clear();
+                } else if dependencies.stack != !0 {
+                    current.stack.data.retain(|k, _| dependencies.has_stack(*k));
+                }
 
-            // 3. Add the cleared state to the set of `terminating_contexts`
-            let terminating_contexts = &mut verification_context.terminating_contexts[current.pc];
-            let mut is_dominated = false;
-            terminating_contexts.retain(|c| match c.computation_context.partial_cmp(&current) {
-                Some(Ordering::Less) => false,
-                Some(Ordering::Equal) | Some(Ordering::Greater) => {
-                    // If the list contains a context greater or equal to the current one, it
-                    // should not be added.
-                    is_dominated = true;
-                    true
+                // 3. Add the cleared state to the set of `terminating_contexts`
+                let mut is_dominated = false;
+                terminating_contexts.retain(|c| {
+                    match c.computation_context.partial_cmp(&current) {
+                        Some(Ordering::Less) => false,
+                        Some(Ordering::Equal) | Some(Ordering::Greater) => {
+                            // If the list contains a context greater or equal to the current one, it
+                            // should not be added.
+                            is_dominated = true;
+                            true
+                        }
+                        _ => true,
+                    }
+                });
+                if !is_dominated {
+                    terminating_contexts
+                        .push(TerminatingContext { computation_context: current, dependencies });
                 }
-                _ => true,
-            });
-            if !is_dominated {
-                terminating_contexts
-                    .push(TerminatingContext { computation_context: current, dependencies });
             }
 
             // 4. Register the computed dependencies in our parent, and terminate it if all
@@ -4854,7 +4895,7 @@ mod tests {
     fn make_verification_context<'a>(
         logger: &'a mut dyn VerifierLogger,
     ) -> VerificationContext<'a> {
-        VerificationContext::new(CallingContext::default(), logger, &[], vec![])
+        VerificationContext::new(CallingContext::default(), logger, &[], vec![], vec![])
     }
 
     /// Verifies that multiple invocations returning PtrToMemory receive

@@ -1,0 +1,16 @@
+# A bounded loop whose counter dependent memory access is in bounds on all iterations but the
+# last one.
+-- asm
+mov %r0, 0
+mov %r6, 0
+mov %r2, %r6
+add %r2, %r1
+ldxb %r3, [%r2]
+add %r0, %r3
+add %r6, 1
+jlt %r6, 9, -6
+exit
+-- mem
+0102030405060708
+-- error
+out of bound access

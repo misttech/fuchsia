@@ -1,0 +1,19 @@
+# The join at the `mov %r4, %r3` is a prune point, but the instructions between it and the memory
+# access are not. The fall-through branch (r3 == 0) is explored first and terminates. The value of
+# r3 only reaches the access through the instructions that are not prune points, so its data
+# dependency must still be propagated through them. Otherwise, the terminating context of the first
+# branch would forget r3 and prune the jump branch (r3 == 100), whose access is out of bound.
+-- asm
+ldxb %r2, [%r1]
+mov %r3, 100
+jeq %r2, 0, +1
+mov %r3, 0
+mov %r4, %r3
+mov %r5, %r4
+add %r5, %r1
+ldxb %r0, [%r5]
+exit
+-- mem
+00000000000000000000000000000000
+-- error
+out of bound access

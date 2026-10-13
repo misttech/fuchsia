@@ -1,0 +1,11 @@
+# The loop does not change the state: each iteration reaches the loop head with a state equal to
+# the one of the previous iteration. This must not be mistaken for a proof of termination.
+-- asm
+ldxb %r2, [%r1]
+jne %r2, 0, -2
+mov %r0, 0
+exit
+-- mem
+01
+-- error
+bpf byte code does not terminate

@@ -1,0 +1,44 @@
+# Each cmpxchg branches into two states (r0 == dst and r0 != dst) that rejoin at the next
+# instruction. Without marking the instruction following a 64-bit or 32-bit cmpxchg as a prune
+# point, a straight-line sequence of 16 cmpxchg and 16 cmpxchg32 instructions without any jumps
+# would explore 2^16 states per group and fail verification.
+-- asm
+ldxdw %r0, [%r1]
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+lock cmpxchg32 [%r1], %r2
+mov %r0, 0
+exit
+-- mem
+00 00 00 00 00 00 00 00
+-- result
+0
