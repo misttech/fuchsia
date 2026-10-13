@@ -22,6 +22,7 @@ test_suite(
         ":gn_test",
         ":keep_sorted_test",
         ":mirror_blocklists_test",
+        ":prebuilts_test",
         ":python_test",
         ":underscore_vs_dash_test",
     ],
@@ -98,6 +99,12 @@ host_shac_test(
 host_shac_test(
     name = "mirror_blocklists_test",
     src = "mirror_blocklists_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "prebuilts_test",
+    src = "prebuilts_test.star",
     data = ["//scripts/shac:starlark_files"],
 )
 
