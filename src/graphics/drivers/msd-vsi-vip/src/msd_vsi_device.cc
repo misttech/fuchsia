@@ -244,7 +244,11 @@ void MsdVsiDevice::KillCurrentContext() {
 }
 
 void MsdVsiDevice::Reset() {
-  HardwareReset();
+  if (!HardwareReset()) {
+    MAGMA_LOG(ERROR, "HardwareReset failed! Aborting to prevent DMA corruption.");
+    // This is not know to occur.
+    abort();
+  }
 
   // Save the pending batches that have been posted to the ringbuffer.
   std::vector<DeferredRequest> pending_batches;
@@ -727,20 +731,9 @@ bool MsdVsiDevice::HardwareReset() {
   // This number was chosen arbitrarily and can be adjusted as needed.
   constexpr uint32_t kMaxResetAttempts = 3;
 
-  bool initial_reset_succeeded = false;
+  bool power_reset_done = false;
   uint32_t failed_resets = 0;
   while (failed_resets < kMaxResetAttempts) {
-    if (initial_reset_succeeded) {
-      // We have been seeing issues where a soft reset is not enough to restart the hardware and
-      // the hardware is hung forever. A simple fix for this is to fully reset the device's power.
-      // The device needs to be idle to do a power reset, so we have to do one soft reset first.
-      // The flow is: Soft Reset -> Hard Reset -> Soft Reset.
-      magma_status_t status = platform_device_->ResetPower();
-      if (status != MAGMA_STATUS_OK) {
-        MAGMA_LOG(ERROR, "Failed to reset power");
-      }
-    }
-
     // Power on is needed to write to pulse-eater.
     PowerOn();
 
@@ -784,12 +777,28 @@ bool MsdVsiDevice::HardwareReset() {
       failed_resets += 1;
       MAGMA_LOG(WARNING, "Hardware reset attempt failed %d/%d: is_idle %d is_idle_3d %d",
                 failed_resets, kMaxResetAttempts, is_idle, is_idle_3d);
+      if (!power_reset_done) {
+        // If the first soft reset failed, fall back to hard reset.
+        magma_status_t status = platform_device_->ResetPower();
+        if (status != MAGMA_STATUS_OK) {
+          MAGMA_LOG(ERROR, "Failed to reset power");
+        }
+        power_reset_done = true;
+      }
       continue;
     }
 
     // If we haven't power cycled yet then go back through the loop.
-    if (!initial_reset_succeeded) {
-      initial_reset_succeeded = true;
+    if (!power_reset_done) {
+      // We have been seeing issues where a soft reset is not enough to restart the hardware and
+      // the hardware is hung forever. A simple fix for this is to fully reset the device's power.
+      // The device needs to be idle to do a power reset, so we have to do one soft reset first.
+      // The flow is: Soft Reset -> Hard Reset -> Soft Reset.
+      magma_status_t status = platform_device_->ResetPower();
+      if (status != MAGMA_STATUS_OK) {
+        MAGMA_LOG(ERROR, "Failed to reset power");
+      }
+      power_reset_done = true;
       continue;
     }
 
