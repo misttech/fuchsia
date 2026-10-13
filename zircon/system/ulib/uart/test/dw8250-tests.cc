@@ -48,6 +48,7 @@ void AppendInitSequence(Mock& mock) {
       .ExpectRead(uint32_t{0x83}, 3)   // LineControl readback (took effect)
       .ExpectRead(uint32_t{0x0d}, 0)   // DivisorLatchLower
       .ExpectRead(uint32_t{0x01}, 1)   // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x08}, 48)  // FractionalDivisorLatch
       .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
       .ExpectRead(uint32_t{0x03}, 3)   // LineControl readback (took effect)
@@ -72,6 +73,7 @@ void AppendWakeupFromSuspendSequence(Mock& mock) {
   mock.ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
       .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x08}, 48)  // FractionalDivisorLatch
       .ExpectWrite(uint32_t{0x0d}, 0)   // DivisorLatchLower
       .ExpectWrite(uint32_t{0x01}, 1)   // DivisorLatchUpper
       .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
@@ -110,6 +112,7 @@ TEST(Dw8250Tests, SetLineControl8N1) {
       .ExpectRead(uint32_t{0b0000'0000}, 31)  // UserStatus
       .ExpectWrite(uint32_t{0b1000'0000}, 3)  // LineControl setting divisor latch access
       .ExpectRead(uint32_t{0b1000'0000}, 3)   // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x00}, 48)        // FractionalDivisorLatch (cleared)
       .ExpectWrite(uint32_t{0b0000'0001}, 0)  // Divisor to 1
       .ExpectWrite(uint32_t{0b0000'0000}, 1)
       .ExpectRead(uint32_t{0b0000'0000}, 31)   // UserStatus
@@ -129,6 +132,7 @@ TEST(Dw8250Tests, SetLineControl7E1) {
       .ExpectRead(uint32_t{0b0000'0000}, 31)  // UserStatus
       .ExpectWrite(uint32_t{0b1000'0000}, 3)  // LineControl setting divisor latch access
       .ExpectRead(uint32_t{0b1000'0000}, 3)   // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x00}, 48)        // FractionalDivisorLatch (cleared)
       .ExpectWrite(uint32_t{0b0000'0001}, 0)  // Divisor to 1
       .ExpectWrite(uint32_t{0b0000'0000}, 1)
       .ExpectRead(uint32_t{0b0000'0000}, 31)   // UserStatus
@@ -136,6 +140,46 @@ TEST(Dw8250Tests, SetLineControl7E1) {
 
   driver.Init();
   driver.SetLineControl(uart::DataBits::k7, uart::Parity::kEven, uart::StopBits::k1);
+}
+
+// SetLineControl programs an integer divisor and clears the fractional divisor
+// latch, so a subsequent WakeupFromSuspend must restore DLF as zero (not the
+// value recorded by Init).
+TEST(Dw8250Tests, SuspendResumeAfterSetLineControlRestoresZeroFractionalDivisor) {
+  SimpleTestDriver driver(kTestConfig);
+
+  auto& mock = driver.io().mock();
+  AppendInitSequence(mock);
+  mock
+      // SetLineControl()
+      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x80}, 3)   // LineControl setting divisor latch access
+      .ExpectRead(uint32_t{0x80}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x00}, 48)  // FractionalDivisorLatch (cleared)
+      .ExpectWrite(uint32_t{0x01}, 0)   // DivisorLatchLower
+      .ExpectWrite(uint32_t{0x00}, 1)   // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3);  // LineControl setting 8N1
+  AppendPrepareForSuspendSequence(mock);
+  mock
+      // WakeupFromSuspend()
+      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
+      .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x00}, 48)  // FractionalDivisorLatch (zero, as set by SetLineControl)
+      .ExpectWrite(uint32_t{0x01}, 0)   // DivisorLatchLower
+      .ExpectWrite(uint32_t{0x00}, 1)   // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
+      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
+
+  driver.Init();
+  driver.SetLineControl(uart::DataBits::k8, uart::Parity::kNone, uart::StopBits::k1);
+  driver.PrepareForSuspend();
+  driver.WakeupFromSuspend();
 }
 
 // If the DLAB write in SetLineControl is ignored (because the UART became busy
@@ -282,6 +326,7 @@ TEST(Dw8250Tests, InitWaitsForTxDrained) {
       .ExpectRead(uint32_t{0x83}, 3)         // LineControl readback (took effect)
       .ExpectRead(uint32_t{0x0d}, 0)         // DivisorLatchLower
       .ExpectRead(uint32_t{0x01}, 1)         // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x08}, 48)        // FractionalDivisorLatch
       .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x03}, 3)        // LineControl (8N1)
       .ExpectRead(uint32_t{0x03}, 3);        // LineControl readback (took effect)
@@ -306,6 +351,7 @@ TEST(Dw8250Tests, InitDoesNotWriteLcrWhileBusy) {
       .ExpectRead(uint32_t{0x83}, 3)   // LineControl readback (took effect)
       .ExpectRead(uint32_t{0x0d}, 0)   // DivisorLatchLower
       .ExpectRead(uint32_t{0x01}, 1)   // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x08}, 48)  // FractionalDivisorLatch
       .ExpectRead(uint32_t{0x01}, 31)  // UartStatus (busy)
       .ExpectWrite(uint32_t{0x17}, 2)  // FifoControl (reset FIFOs to force idle)
       .ExpectRead(uint32_t{0x00}, 0)   // DivisorLatchLower (drain, DLAB still set)
@@ -343,6 +389,7 @@ TEST(Dw8250Tests, WakeupRetriesIgnoredLcrWrite) {
       .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
       .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x08}, 48)  // FractionalDivisorLatch
       .ExpectWrite(uint32_t{0x0d}, 0)   // DivisorLatchLower
       .ExpectWrite(uint32_t{0x01}, 1)   // DivisorLatchUpper
       .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
@@ -398,11 +445,12 @@ TEST(Dw8250Tests, DivisorNotRecordedIfDlabCannotBeCleared) {
 
   auto& mock = driver.io().mock();
   AppendInitPrologue(mock);
-  mock.ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x83}, 3)  // LineControl (8N1 | DLAB)
-      .ExpectRead(uint32_t{0x83}, 3)   // LineControl readback (took effect)
-      .ExpectRead(uint32_t{0x0d}, 0)   // DivisorLatchLower
-      .ExpectRead(uint32_t{0x01}, 1);  // DivisorLatchUpper
+  mock.ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
+      .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
+      .ExpectRead(uint32_t{0x0d}, 0)    // DivisorLatchLower
+      .ExpectRead(uint32_t{0x01}, 1)    // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x08}, 48);  // FractionalDivisorLatch
   // Every attempt to clear DLAB is ignored.
   for (size_t i = 0; i < uart::dw8250::kLcrWriteAttempts; ++i) {
     mock.ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
@@ -441,6 +489,7 @@ TEST(Dw8250Tests, WakeupDoesNotRestoreIerIfDlabCannotBeCleared) {
       .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
       .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x08}, 48)  // FractionalDivisorLatch
       .ExpectWrite(uint32_t{0x0d}, 0)   // DivisorLatchLower
       .ExpectWrite(uint32_t{0x01}, 1);  // DivisorLatchUpper
   // Every attempt to clear DLAB is ignored.
@@ -452,6 +501,49 @@ TEST(Dw8250Tests, WakeupDoesNotRestoreIerIfDlabCannotBeCleared) {
   mock.ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
       .ExpectWrite(uint32_t{0x03}, 4);  // ModemControl
   // No InterruptEnable write.
+
+  driver.Init();
+  driver.PrepareForSuspend();
+  driver.WakeupFromSuspend();
+}
+
+// Without additional features, the fractional divisor latch is assumed absent
+// and is never touched.
+TEST(Dw8250Tests, SuspendResumeWithoutFractionalDivisor) {
+  SimpleTestDriver driver(kTestConfig);
+
+  auto& mock = driver.io().mock();
+  mock
+      // Init()
+      .ExpectRead(uint32_t{0x103c32}, 0x3d)  // ComponentParameterRegister (no ADDITIONAL_FEAT)
+      .ExpectRead(uint32_t{0x60}, 5)         // LineStatus (THRE and TEMT set: TX drained)
+      .ExpectWrite(uint32_t{0x80}, 1)        // InterruptEnableRegister write
+      .ExpectWrite(uint32_t{0x17}, 2)        // FifoControlRegister write
+      .ExpectWrite(uint32_t{0x03}, 4)        // ModemControlRegister write
+      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
+      .ExpectRead(uint32_t{0x03}, 3)         // LineControl (8N1)
+      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x83}, 3)        // LineControl (8N1 | DLAB)
+      .ExpectRead(uint32_t{0x83}, 3)         // LineControl readback (took effect)
+      .ExpectRead(uint32_t{0x0d}, 0)         // DivisorLatchLower
+      .ExpectRead(uint32_t{0x01}, 1)         // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)        // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3);        // LineControl readback (took effect)
+  AppendPrepareForSuspendSequence(mock);
+  mock
+      // WakeupFromSuspend()
+      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
+      .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x0d}, 0)   // DivisorLatchLower
+      .ExpectWrite(uint32_t{0x01}, 1)   // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
+      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
 
   driver.Init();
   driver.PrepareForSuspend();

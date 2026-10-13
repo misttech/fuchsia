@@ -193,6 +193,18 @@ class DivisorLatchUpperRegister : public hwreg::RegisterBase<DivisorLatchUpperRe
   static auto Get() { return hwreg::RegisterAddr<DivisorLatchUpperRegister>(1); }
 };
 
+// Fractional divisor latch (DLF), present only if the UART was configured with
+// FRACTIONAL_BAUD_DIVISOR_EN.  Its width (DLF_SIZE) is configurable; the
+// fraction is DLF / 2^DLF_SIZE.  Unlike DLL and DLH, it is not multiplexed by
+// LCR.DLAB, but it must be written before DLL and DLH.
+class FractionalDivisorLatchRegister
+    : public hwreg::RegisterBase<FractionalDivisorLatchRegister, uint32_t> {
+ public:
+  DEF_RSVDZ_FIELD(31, 8);
+  DEF_FIELD(7, 0, data);
+  static auto Get() { return hwreg::RegisterAddr<FractionalDivisorLatchRegister>(0xc0 / 4); }
+};
+
 // DW8250 value add registers:
 
 class UartStatusRegister : public hwreg::RegisterBase<UartStatusRegister, uint32_t> {
@@ -304,6 +316,16 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
       // FIFOs at any given point in time, which is maximally useful for efficiently filling and
       // reading them.
       fifo_stat_ = cpr.fifo_stat();
+
+      // The CPR does not report FRACTIONAL_BAUD_DIVISOR_EN directly.  As a
+      // heuristic, assume the fractional divisor latch (DLF) is present when
+      // the CPR reports additional features.  (Linux's dw-apb-uart driver
+      // instead probes DLF by writing it and reading it back.)  UARTs without
+      // a valid CPR, or without additional features, keep the integer-only
+      // behavior.  If DLF is in fact absent, its offset is expected to read as
+      // zero and ignore writes, as reserved registers typically do, though the
+      // databook does not guarantee this.
+      has_fractional_divisor_ = cpr.additional_feat();
     }
 
     // Whoever used the UART before us (e.g. a boot loader or a previous boot
@@ -373,15 +395,11 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
       return;
     }
 
-    DivisorLatchLowerRegister::Get()
-        .FromValue(0)
-        .set_data(static_cast<uint32_t>(kDivisor))
-        .WriteTo(io.io());
-    DivisorLatchUpperRegister::Get()
-        .FromValue(0)
-        .set_data(static_cast<uint32_t>(kDivisor >> 8))
-        .WriteTo(io.io());
+    // Clear any fractional part the boot loader may have programmed, so that
+    // the divisor is exactly kDivisor.
+    WriteDivisor(io, static_cast<uint16_t>(kDivisor), 0);
     saved_divisor_ = static_cast<uint16_t>(kDivisor);
+    saved_fractional_divisor_ = 0;
     has_saved_divisor_ = true;
 
     auto lcr = LineControlRegister::Get().FromValue(0).set_divisor_latch_access(false);
@@ -633,14 +651,7 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
                                                .FromValue(saved_lcr_)
                                                .set_divisor_latch_access(true)
                                                .reg_value())) {
-      DivisorLatchLowerRegister::Get()
-          .FromValue(0)
-          .set_data(static_cast<uint32_t>(saved_divisor_ & 0xff))
-          .WriteTo(io.io());
-      DivisorLatchUpperRegister::Get()
-          .FromValue(0)
-          .set_data(static_cast<uint32_t>(saved_divisor_ >> 8))
-          .WriteTo(io.io());
+      WriteDivisor(io, saved_divisor_, saved_fractional_divisor_);
     }
     const bool lcr_restored = WriteLcr(io, saved_lcr_);
 
@@ -751,20 +762,45 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
     }
     const uint32_t dll = DivisorLatchLowerRegister::Get().ReadFrom(io.io()).data();
     const uint32_t dlh = DivisorLatchUpperRegister::Get().ReadFrom(io.io()).data();
+    const uint32_t dlf = has_fractional_divisor_
+                             ? FractionalDivisorLatchRegister::Get().ReadFrom(io.io()).data()
+                             : 0;
     if (!WriteLcr(io, lcr)) {
       // DLAB is stuck set, so the UART is not usable.  There is nothing more
       // we can do about that here, but at least don't claim success.
       return false;
     }
     saved_divisor_ = static_cast<uint16_t>((dlh << 8) | dll);
+    saved_fractional_divisor_ = static_cast<uint8_t>(dlf);
     has_saved_divisor_ = true;
     return true;
   }
 
+  // Program the divisor.  LCR.DLAB must be set.  The fractional part (if
+  // supported) must be written before DLL and DLH.
+  template <class IoProvider>
+  void WriteDivisor(IoProvider& io, uint16_t divisor, uint8_t fractional_divisor) {
+    if (has_fractional_divisor_) {
+      FractionalDivisorLatchRegister::Get()
+          .FromValue(0)
+          .set_data(fractional_divisor)
+          .WriteTo(io.io());
+    }
+    DivisorLatchLowerRegister::Get()
+        .FromValue(0)
+        .set_data(static_cast<uint32_t>(divisor & 0xff))
+        .WriteTo(io.io());
+    DivisorLatchUpperRegister::Get()
+        .FromValue(0)
+        .set_data(static_cast<uint32_t>(divisor >> 8))
+        .WriteTo(io.io());
+  }
+
  protected:
   uint32_t fifo_depth_ = kFifoDepthDw8250Minimum;
-  bool thre_mode_ = false;  // Do we have programmable THRE mode?
-  bool fifo_stat_ = false;  // Do we have a FIFO status register?
+  bool thre_mode_ = false;               // Do we have programmable THRE mode?
+  bool fifo_stat_ = false;               // Do we have a FIFO status register?
+  bool has_fractional_divisor_ = false;  // Do we (probably) have DLF?
 
   // State saved by PrepareForSuspend and restored by WakeupFromSuspend.
   uint32_t saved_ier_ = 0;
@@ -774,6 +810,7 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
   // The baud rate divisor, recorded by Init (or SetLineControl, which programs
   // it) and restored by WakeupFromSuspend.
   uint16_t saved_divisor_ = 0;
+  uint8_t saved_fractional_divisor_ = 0;  // DLF, if present.
   bool has_saved_divisor_ = false;
   bool prepared_for_suspend_ = false;
 };
