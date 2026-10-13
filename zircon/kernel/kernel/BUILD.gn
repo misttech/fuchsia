@@ -287,6 +287,7 @@ kernel_rust_mod("kernel-rs") {
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/kconcurrent:kconcurrent_rs",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",

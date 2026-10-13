@@ -56,6 +56,9 @@ pub mod counters;
 #[path = "lib/debuglog/debuglog.rs"]
 pub mod debuglog_rs;
 
+#[path = "lib/kconcurrent/src/mod.rs"]
+pub mod kconcurrent;
+
 #[path = "lib/ktrace/src/mod.rs"]
 pub mod ktrace_rs;
 

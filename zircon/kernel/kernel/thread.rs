@@ -20,6 +20,8 @@ use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
 use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
 
+pub use crate::kconcurrent::CallsiteInfo as CltTag;
+
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     fn cpp_thread_create_default(
@@ -244,28 +246,6 @@ impl ThreadPtr {
     }
 }
 
-/// A chain lock transaction's call site, matching C++ `ChainLockTransaction::CallsiteInfo`.
-/// Build one with `clt_tag!`.
-#[derive(Clone, Copy)]
-pub struct CltTag {
-    /// The interned label naming the call site.
-    pub label: &'static InternedString,
-    /// The source line of the call site.
-    pub line: u32,
-}
-
-/// Returns a [`CltTag`] for the given string literal label at the current source line, like C++
-/// `CLT_TAG(label)`.
-#[macro_export]
-macro_rules! clt_tag {
-    ($label:literal) => {
-        $crate::kernel::thread::CltTag {
-            label: $crate::ktrace_rs::resolve_string!($label),
-            line: line!(),
-        }
-    };
-}
-
 /// A thread's lock, held with interrupts disabled until the guard is dropped: the
 /// `SingleChainLockGuard{IrqSaveOption, thread->get_lock(), tag}` that a C++ scope would hold.
 ///
@@ -285,7 +265,10 @@ impl ThreadLockGuard {
     /// chain lock transaction with `tag`.
     ///
     /// # Safety
-    /// - `thread` points to a valid C++ `Thread` instance for as long as the guard lives.
+    ///
+    /// The caller must ensure that:
+    /// - `thread` is non-null and points to a valid C++ `Thread` instance for as long as the guard
+    ///   lives.
     /// - The calling CPU is not already in a chain lock transaction, and none starts while the
     ///   guard lives.
     /// - The guard is a stack-pinned local (`ksync::lock!` or `pin_init::stack_pin_init!`) that is
@@ -295,17 +278,27 @@ impl ThreadLockGuard {
         tag: CltTag,
     ) -> impl PinInit<Self, core::convert::Infallible> {
         debug_assert!(!thread.is_null());
-        // SAFETY: the closure initializes every field of `slot` in place and never moves it:
-        // `thread` by a write, `raw` by the C++ constructor, and `phantom` is zero-sized. The
-        // caller upholds the rest of `lock`'s contract.
+        let label = tag.label.unwrap_or_else(|| crate::ktrace_rs::resolve_string!("<unnamed>"));
+        // SAFETY:
+        // - `pin_init_from_closure`: the closure initializes every field of `slot` in place and
+        //   never moves it (`thread` via `ptr::write`, `raw` via `cpp_thread_lock_guard_init`, and
+        //   `phantom` is zero-sized), and returns `Ok(())`.
+        // - `NonNull::new_unchecked(thread)`: `thread` is non-null by the caller's `# Safety`
+        //   precondition.
+        // - `(&raw mut (*slot).thread).write(...)`: `pin_init_from_closure` guarantees `slot` is
+        //   non-null, properly aligned, and valid for writes to `Self`.
+        // - `cpp_thread_lock_guard_init`: `(&raw mut (*slot).raw).cast()` points to valid,
+        //   properly aligned storage for the C++ guard, `label` is a valid `'static`
+        //   `InternedString` reference, and the caller upholds `lock`'s remaining `# Safety`
+        //   preconditions for `thread` and the active transaction/CPU state.
         unsafe {
             pin_init::pin_init_from_closure(move |slot: *mut Self| {
                 (&raw mut (*slot).thread).write(NonNull::new_unchecked(thread));
                 cpp_thread_lock_guard_init(
                     (&raw mut (*slot).raw).cast(),
                     thread,
-                    tag.label,
-                    tag.line,
+                    label,
+                    tag.line_number,
                 );
                 Ok(())
             })

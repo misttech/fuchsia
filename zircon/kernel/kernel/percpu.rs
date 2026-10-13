@@ -4,12 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+pub use crate::kconcurrent::ChainLockTransaction;
 use crate::kernel::timer::Timer;
 use crate::kernel::types::cpu_num_t;
 use crate::stall::StallAccumulator;
 use crate::vm::page_state::VmPageCounts;
 use core::mem::offset_of;
-use core::sync::atomic::AtomicU64;
+use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use percpu_bindings as bindings;
 
 /// An opaque type representing the C++ `TimerQueue` class.
@@ -28,12 +29,6 @@ pub struct Scheduler(pub bindings::Scheduler);
 /// An opaque type representing the C++ `lockdep::ThreadLockState` class.
 #[repr(transparent)]
 pub struct ThreadLockState(pub bindings::lockdep_ThreadLockState);
-
-/// An opaque type representing the C++ `ChainLockTransaction` class.
-#[repr(C)]
-pub struct ChainLockTransaction {
-    _private: [u8; 0],
-}
 
 /// Type alias for `guest_stats`.
 pub type GuestStats = bindings::guest_stats;
@@ -73,7 +68,9 @@ pub struct PerCpu {
     pub lock_state: ThreadLockState,
     /// The state of the currently active chain-lock transaction if any, nullptr
     /// otherwise.
-    pub active_cl_transaction: *mut ChainLockTransaction,
+    // Safety invariant: Either null or points to a live, stack-pinned `ChainLockTransaction`
+    // registered on this CPU with interrupts disabled and no mutable aliases.
+    active_cl_transaction: AtomicPtr<ChainLockTransaction>,
     /// The chainlock conflict ID generator for this CPU.  This field is used by
     /// threads to know when to retry a ChainLockTransaction when a conflict is
     /// encountered.  See lib/kconcurrent for more details.
@@ -215,21 +212,57 @@ zr::static_assert!(
     align_of::<PlatformCpuResumeState>() == align_of::<bindings::PlatformCpuResumeState>()
 );
 
+zr::static_assert!(
+    size_of::<ChainLockTransaction>() == size_of::<bindings::ChainLockTransaction>()
+);
+zr::static_assert!(
+    align_of::<ChainLockTransaction>() == align_of::<bindings::ChainLockTransaction>()
+);
+
 impl PerCpu {
     /// Returns a reference to the percpu instance for given CPU number.
     pub fn get(cpu_num: cpu_num_t) -> &'static Self {
-        debug_assert!(cpu_num < Self::processor_count() as cpu_num_t);
+        assert!((cpu_num as usize) < Self::processor_count());
+        // SAFETY: `cpu_num` is checked above to be in `0..Self::processor_count()`, and
+        // `PROCESSOR_INDEX` is initialized during early boot to an array of `PROCESSOR_COUNT`
+        // valid `'static` `PerCpu` pointers.
         unsafe { &**PROCESSOR_INDEX.wrapping_add(cpu_num as usize) }
     }
 
     /// Returns a reference to the percpu instance for the calling CPU.
     pub fn get_current() -> &'static Self {
+        // SAFETY: `arch_rs::get_curr_percpu()` returns the valid `'static` `PerCpu` pointer for
+        // the calling CPU.
         unsafe { &*crate::arch_rs::get_curr_percpu() }
     }
 
     /// Returns the number of percpu instances.
     pub fn processor_count() -> usize {
+        // SAFETY: `PROCESSOR_COUNT` is initialized once during early boot before any callers run.
         unsafe { PROCESSOR_COUNT }
+    }
+
+    /// Returns the currently active [`ChainLockTransaction`] pointer on this CPU, or null if none
+    /// is active.
+    #[inline]
+    pub fn active_cl_transaction(&self) -> *mut ChainLockTransaction {
+        self.active_cl_transaction.load(Ordering::Relaxed)
+    }
+
+    /// Sets the currently active [`ChainLockTransaction`] pointer on this CPU.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `self` is the current CPU's [`PerCpu`] instance and interrupts are disabled on the
+    ///   current CPU.
+    /// - `ptr` is either null or points to a valid, initialized, stack-pinned
+    ///   [`ChainLockTransaction`] owned by the current execution context that remains valid,
+    ///   pinned, and not mutably aliased (with interrupts disabled) until cleared or replaced by a
+    ///   subsequent call to `set_active_cl_transaction`.
+    #[inline]
+    pub unsafe fn set_active_cl_transaction(&self, ptr: *mut ChainLockTransaction) {
+        self.active_cl_transaction.store(ptr, Ordering::Relaxed);
     }
 
     /// Call |func| with the current CPU's percpu struct with preemption disabled.
