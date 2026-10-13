@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "vmo-fifo",
+    srcs = [
+        "src/lib.rs",
+        "src/ring_allocator.rs",
+        "src/signal.rs",
+    ],
+    edition = "2024",
+    # @bazel2gn:skip
+    test_deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+    visibility = [
+        "//src/storage/fxfs/platform:__pkg__",
+        "//src/storage/fxfs/test:__pkg__",
+        "//src/storage/gpt/component:__pkg__",
+        "//src/storage/lib/blob_pager_and_verifier:__pkg__",
+        "//src/storage/lib/block_server:__pkg__",
+        "//src/storage/lib/mapping:__pkg__",
+    ],
+    # @bazel2gn:skip
+    with_unit_tests = True,
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-runtime",
+        "//src/storage/lib/ptr_slice",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "vmo-fifo-tests",
+    package_name = "vmo-fifo-tests",
+    unit_tests = [":vmo-fifo_test"],
+    visibility = ["//visibility:public"],
+)
