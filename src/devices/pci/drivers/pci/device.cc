@@ -388,22 +388,27 @@ zx_status_t Device::SetBusMastering(bool enabled) {
   return upstream_->SetBusMasteringUpstream(enabled);
 }
 
+void Device::WriteBar(uint8_t bar_id, uint32_t low, std::optional<uint32_t> high) {
+  cfg_->Write(Config::kBar(bar_id), low);
+  if (high) {
+    cfg_->Write(Config::kBar(bar_id + 1), *high);
+  }
+}
+
 // Configures the BAR represented by |bar| by writing to its register and configuring
 // IO and Memory access accordingly.
 zx_status_t Device::WriteBarInformation(const Bar& bar) {
   // Now write the allocated address space to the BAR.
-  uint16_t cmd_backup = cfg_->Read(Config::kCommand);
+  uint16_t cmd_backup = ReadCmdLocked();
   // Figure out the IO type of the bar and disable that while we adjust the bar address.
   uint16_t mem_io_en_flag = (bar.is_mmio) ? kCommandMemEn : kCommandIoEn;
-  ModifyCmdLocked(mem_io_en_flag, cmd_backup);
+  ModifyCmdLocked(/*clr_bits=*/mem_io_en_flag, /*set_bits=*/0);
 
-  cfg_->Write(Config::kBar(bar.bar_id), static_cast<uint32_t>(bar.address));
-  if (bar.is_64bit) {
-    const uint32_t addr_hi = static_cast<uint32_t>(bar.address >> 32);
-    cfg_->Write(Config::kBar(bar.bar_id + 1), addr_hi);
-  }
-  // Flip the IO bit back on for this type of bar
-  AssignCmdLocked(cmd_backup | mem_io_en_flag);
+  const uint32_t addr_mask = (bar.is_mmio) ? kBarMmioAddrMask : kBarPioAddrMask;
+  const uint32_t type_bits = cfg_->Read(Config::kBar(bar.bar_id)) & ~addr_mask;
+  WriteBar(bar.bar_id, (static_cast<uint32_t>(bar.address) & addr_mask) | type_bits,
+           bar.is_64bit ? std::optional(static_cast<uint32_t>(bar.address >> 32)) : std::nullopt);
+  AssignCmdLocked(cmd_backup);
   return ZX_OK;
 }
 
@@ -413,13 +418,15 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   }
 
   Bar bar{};
-  uint32_t bar_val = cfg_->Read(Config::kBar(bar_id));
+  const uint32_t orig_bar_val = cfg_->Read(Config::kBar(bar_id));
+  uint32_t bar_val = orig_bar_val;
 
   bar.bar_id = bar_id;
   bar.is_mmio = (bar_val & kBarIoTypeMask) == kBarIoTypeMmio;
   bar.is_64bit = bar.is_mmio && ((bar_val & kBarMmioTypeMask) == kBarMmioType64Bit);
   bar.is_prefetchable = bar.is_mmio && (bar_val & kBarMmioPrefetchMask);
   const uint32_t addr_mask = (bar.is_mmio) ? kBarMmioAddrMask : kBarPioAddrMask;
+  const uint32_t type_bits = orig_bar_val & ~addr_mask;
 
   // Check the read-only configuration of the BAR. If it's invalid then don't add it to our BAR
   // list.
@@ -444,36 +451,39 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   // systems are quiescent at this point in time, otherwise they might see
   // some minor glitching while access is disabled.
   uint16_t cmd_backup = ReadCmdLocked();
-  bool enabled = !!(cmd_backup & (kCommandMemEn | kCommandIoEn));
+  bool enabled = !!(cmd_backup & (bar.is_mmio ? kCommandMemEn : kCommandIoEn));
+  ModifyCmdLocked(/*clr_bits=*/kCommandMemEn | kCommandIoEn, /*set_bits=*/0);
+  auto restore_cmd = fit::defer(
+      [this, cmd_backup]() __TA_NO_THREAD_SAFETY_ANALYSIS { AssignCmdLocked(cmd_backup); });
   if (enabled) {
-    ModifyCmdLocked(/*clr_bits=*/kCommandMemEn | kCommandIoEn,
-                    /*set_bits=*/cmd_backup);
     // For enabled devices save the original address in the BAR. If the device
     // is enabled then we should assume the bios configured it and we should
     // attempt to retain the BAR allocation.
-    bar.address = bar_val & addr_mask;
+    bar.address = orig_bar_val & addr_mask;
+    if (bar.is_mmio && bar.is_64bit) {
+      bar.address |= static_cast<uint64_t>(cfg_->Read(Config::kBar(bar_id + 1))) << 32;
+    }
   }
 
   // Write ones to figure out the size of the BAR
   cfg_->Write(Config::kBar(bar_id), UINT32_MAX);
   bar_val = cfg_->Read(Config::kBar(bar_id));
   // BARs that are not wired up return all zeroes on read after probing.
-  if (bar_val == 0) {
+  if (bar_val == 0 || (!bar.is_64bit && (bar_val & addr_mask) == 0)) {
     return zx::ok();
   }
 
   uint64_t size_mask = ~(bar_val & addr_mask);
   if (bar.is_mmio && bar.is_64bit) {
-    // Retain the high 32bits of the 64bit address address if the device was
-    // enabled already.
-    if (enabled) {
-      bar.address |= static_cast<uint64_t>(cfg_->Read(Config::kBar(bar_id + 1))) << 32;
-    }
-
     // Get the high 32 bits of size for the 64 bit BAR by repeating the
     // steps of writing 1s and then reading the value of the next BAR.
     cfg_->Write(Config::kBar(bar_id + 1), UINT32_MAX);
     size_mask |= static_cast<uint64_t>(~cfg_->Read(Config::kBar(bar_id + 1))) << 32;
+    if (size_mask == std::numeric_limits<uint64_t>::max()) {
+      WriteBar(bar.bar_id, (static_cast<uint32_t>(bar.address) & addr_mask) | type_bits,
+               static_cast<uint32_t>(bar.address >> 32));
+      return zx::ok();
+    }
   } else if (!bar.is_mmio && !(bar_val & (UINT16_MAX << 16))) {
     // Per spec, if the type is IO and the upper 16 bits were zero in the read
     // then they should be removed from the size mask before incrementing it.
@@ -483,9 +493,10 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   // mask representing all the valid bits that can be set in the address.
   bar.size = size_mask + 1;
 
-  // Write the original address value we had before probing and re-enable its
-  // access mode now that probing is complete.
-  WriteBarInformation(bar);
+  // Restore the original address value we had before probing; |restore_cmd| will
+  // restore the command register when probing is complete.
+  WriteBar(bar.bar_id, (static_cast<uint32_t>(bar.address) & addr_mask) | type_bits,
+           bar.is_64bit ? std::optional(static_cast<uint32_t>(bar.address >> 32)) : std::nullopt);
 
   bars_[bar_id] = std::move(bar);
   return zx::ok();
@@ -586,17 +597,65 @@ zx::result<> Device::AllocateBar(uint8_t bar_id) {
   return zx::ok();
 }
 
+void Device::AllocatePreassignedBars() {
+  const fbl::AutoLock dev_lock(&dev_lock_);
+  AllocatePreassignedBarsLocked();
+}
+
+void Device::AllocatePreassignedBarsLocked() {
+  ZX_DEBUG_ASSERT(plugged_in_);
+  ZX_DEBUG_ASSERT(bar_count_ <= bars_.max_size());
+
+  std::vector<uint32_t> preassigned_bars;
+  preassigned_bars.reserve(kMaxBarCount);
+  for (const auto& bar : bars_) {
+    if (bar && !bar->allocation && bar->address != 0) {
+      preassigned_bars.push_back(bar->bar_id);
+    }
+  }
+
+  std::ranges::sort(preassigned_bars, [this](uint32_t a, uint32_t b) {
+    []() __TA_ASSERT(dev_lock_) {}();
+    return bars_[a]->size > bars_[b]->size;
+  });
+
+  for (uint32_t bar_id : preassigned_bars) {
+    Bar& bar = *bars_[bar_id];
+    auto result = AllocateFromUpstream(bar, bar.address);
+    if (result.is_ok()) {
+      bar.allocation = std::move(result.value());
+      bar.address = bar.allocation->base();
+      WriteBarInformation(bar);
+    } else {
+      // The firmware-assigned address could not be reserved. Disable decoding
+      // and clear the BAR register now so it cannot conflict with allocations
+      // made for other devices before this BAR is reallocated.
+      uint16_t mem_io_en_flag = (bar.is_mmio) ? kCommandMemEn : kCommandIoEn;
+      ModifyCmdLocked(/*clr_bits=*/mem_io_en_flag, /*set_bits=*/0);
+      const uint32_t addr_mask = (bar.is_mmio) ? kBarMmioAddrMask : kBarPioAddrMask;
+      const uint32_t type_bits = cfg_->Read(Config::kBar(bar.bar_id)) & ~addr_mask;
+      WriteBar(bar.bar_id, type_bits, bar.is_64bit ? std::optional(0u) : std::nullopt);
+      bar.address = 0;
+    }
+  }
+}
+
 zx::result<> Device::AllocateBars() {
   const fbl::AutoLock dev_lock(&dev_lock_);
   ZX_DEBUG_ASSERT(plugged_in_);
   ZX_DEBUG_ASSERT(bar_count_ <= bars_.max_size());
 
+  // Preserve any decode bits already enabled on a bridge for its downstream
+  // I/O or memory windows before we manipulate the command register for BARs.
+  uint16_t mem_io_en_flags = is_bridge() ? (ReadCmdLocked() & (kCommandMemEn | kCommandIoEn)) : 0;
+
+  AllocatePreassignedBarsLocked();
+
   std::vector<uint32_t> bar_allocation_order;
   bar_allocation_order.reserve(kMaxBarCount);
-  for (uint32_t i = 0; i < bars_.size(); ++i) {
-    if (bars_[i]) {
-      ZX_DEBUG_ASSERT(bars_[i]->bar_id == i);
-      bar_allocation_order.push_back(i);
+  for (const auto& bar : bars_) {
+    if (bar && !bar->allocation) {
+      bar_allocation_order.push_back(bar->bar_id);
     }
   }
 
@@ -607,21 +666,26 @@ zx::result<> Device::AllocateBars() {
     return bars_[a]->size > bars_[b]->size;
   });
 
-  // Ensure we allocate BARs that already have an assigned address first, in
-  // case it lines up with the allocators that we might use an address in a
-  // lower BAR that is already assigned to a later BAR.
-  std::ranges::stable_partition(bar_allocation_order, [this](uint32_t i) {
-    []() __TA_ASSERT(dev_lock_) {}();
-    return bars_[i]->address != 0;
-  });
-
-  // Allocate BARs for the device
+  // Allocate BARs for the device while keeping decoding disabled so that
+  // command register decode bits are only enabled once all BARs are programmed.
+  if (!bar_allocation_order.empty()) {
+    ModifyCmdLocked(/*clr_bits=*/kCommandMemEn | kCommandIoEn, /*set_bits=*/0);
+  }
   for (auto bar_id : bar_allocation_order) {
     if (auto result = AllocateBar(bar_id); result.is_error()) {
       zxlogf(ERROR, "[%s] failed to allocate bar %u: %s", cfg_->addr(), bar_id,
              result.status_string());
       return result.take_error();
     }
+  }
+
+  for (const auto& bar : bars_) {
+    if (bar && bar->allocation) {
+      mem_io_en_flags |= bar->is_mmio ? kCommandMemEn : kCommandIoEn;
+    }
+  }
+  if (mem_io_en_flags != 0) {
+    ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/mem_io_en_flags);
   }
 
   return zx::ok();

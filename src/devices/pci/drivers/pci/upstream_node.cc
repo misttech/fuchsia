@@ -33,6 +33,12 @@ void UpstreamNode::ConfigureDownstreamDevices() {
     }
   };
 
+  // Reserve firmware-assigned BARs on all already-enabled devices before
+  // allocating new BAR addresses for disabled devices so that a newly allocated
+  // BAR cannot collide with a sibling device's still-active BAR decode window.
+  for (auto& device : downstream_) {
+    device->AllocatePreassignedBars();
+  }
   // Configure bridges first so they can set up their IO windows.
   configure_downstream_devices(/*configuring_bridges=*/true);
   // Now configure device BARs and capabilities with the bridges configured ahead of time.

@@ -315,9 +315,13 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   zx::result<std::unique_ptr<PciAllocation>> AllocateFromUpstream(const Bar& bar,
                                                                   std::optional<zx_paddr_t> base)
       __TA_REQUIRES(dev_lock_);
+  void WriteBar(uint8_t bar_id, uint32_t low, std::optional<uint32_t> high = std::nullopt)
+      __TA_REQUIRES(dev_lock_);
   zx_status_t WriteBarInformation(const Bar& bar) __TA_REQUIRES(dev_lock_);
   // Allocates address space for a BAR if it does not already exist.
   zx::result<> AllocateBar(uint8_t bar_id) __TA_REQUIRES(dev_lock_);
+  void AllocatePreassignedBarsLocked() __TA_REQUIRES(dev_lock_);
+  void AllocatePreassignedBars() __TA_EXCLUDES(dev_lock_);
   // Called a device to configure (probe/allocate) its BARs
   zx::result<> AllocateBarsLocked() __TA_REQUIRES(dev_lock_);
   // Called by an UpstreamNode to configure the BARs of a device downstream.
