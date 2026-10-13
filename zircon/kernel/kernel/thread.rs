@@ -16,7 +16,7 @@ use zx_status::Status;
 use zx_types::{zx_instant_mono_t, zx_status_t};
 
 use crate::kernel::restricted_state::RestrictedState;
-use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
+use crate::kernel::scheduler_state::{SchedulerState, SchedulerStateBaseProfile};
 use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
 
@@ -102,6 +102,22 @@ unsafe extern "C" {
         policy_exception_code: u32,
         policy_exception_data: u32,
     );
+    fn cpp_thread_scheduler_state(thread: *const Thread) -> *const SchedulerState;
+}
+
+/// Returns a reference to `thread`'s [`SchedulerState`].
+///
+/// # Safety
+///
+/// `thread` must point to a valid, initialized `Thread` that remains alive for `'a`, and the
+/// caller must hold `thread`'s lock for `'a` with no concurrent mutable access to its
+/// `scheduler_state_`.
+#[inline]
+pub unsafe fn scheduler_state<'a>(thread: *const Thread) -> &'a SchedulerState {
+    // SAFETY: The caller guarantees `thread` is a valid, live `Thread` and holds its lock for
+    // `'a`, and `cpp_thread_scheduler_state` returns a non-null pointer to its embedded
+    // `SchedulerState`.
+    unsafe { &*cpp_thread_scheduler_state(thread) }
 }
 
 pub const THREAD_SIGNAL_KILL: u32 = 1 << 0;

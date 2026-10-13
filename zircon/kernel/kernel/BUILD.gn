@@ -41,6 +41,7 @@ source_set("kernel") {
     "scheduler_ffi.cc",
     "scheduler_pi.cc",
     "scheduler_state.cc",
+    "scheduler_state_ffi.cc",
     "semaphore.cc",
     "stats_ffi.cc",
     "task_runtime_stats.cc",

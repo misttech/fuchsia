@@ -44,6 +44,8 @@ static_assert(THREAD_SUSPENDED == 6);
 static_assert(THREAD_DEATH == 7);
 // LINT.ThenChange(//zircon/kernel/kernel/scheduler_state.rs:ThreadStateKind)
 
+const SchedulerState* cpp_thread_scheduler_state(const Thread* thread);
+
 Thread* cpp_thread_create_default(const char* name, thread_start_routine entry, void* arg);
 FFI_ALWAYS_INLINE Thread* cpp_thread_create_with_priority(const char* name,
                                                           thread_start_routine entry, void* arg,
@@ -290,6 +292,12 @@ FFI_ALWAYS_INLINE bool cpp_thread_is_running(const Thread* thread) TA_NO_THREAD_
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE const char* cpp_thread_name(const Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
   return thread->name();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const SchedulerState* cpp_thread_scheduler_state(const Thread* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &thread->scheduler_state();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

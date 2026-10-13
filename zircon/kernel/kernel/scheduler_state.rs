@@ -6,8 +6,10 @@
 
 //! Types and structures for kernel scheduler state (`include/kernel/scheduler_state.h`).
 
+use crate::kernel::types::cpu_num_t;
 use core::mem::MaybeUninit;
 use object_constants_rs as object_constants;
+use zr::OpaqueFacade;
 
 /// The scheduling state of a thread matching C++ `enum thread_state : uint8_t`.
 // LINT.IfChange(ThreadStateKind)
@@ -37,6 +39,31 @@ pub enum ThreadStateKind {
 zr::static_assert!(core::mem::size_of::<ThreadStateKind>() == 1);
 zr::static_assert!(core::mem::align_of::<ThreadStateKind>() == 1);
 
+/// Facade for the C++ `SchedulerState` class.
+#[repr(C)]
+pub struct SchedulerState {
+    _facade: OpaqueFacade,
+}
+
+zr::static_assert!(core::mem::size_of::<SchedulerState>() == 0);
+
+impl SchedulerState {
+    /// Returns the CPU the thread is currently assigned to, or `INVALID_CPU` if it is not
+    /// currently assigned to a CPU.
+    #[inline]
+    pub fn curr_cpu(&self) -> cpu_num_t {
+        // SAFETY: `self` is a valid `SchedulerState` reference.
+        unsafe { cpp_scheduler_state_curr_cpu(self) }
+    }
+
+    /// Returns the CPU the thread last ran on, or `INVALID_CPU` if it has never run.
+    #[inline]
+    pub fn last_cpu(&self) -> cpu_num_t {
+        // SAFETY: `self` is a valid `SchedulerState` reference.
+        unsafe { cpp_scheduler_state_last_cpu(self) }
+    }
+}
+
 /// Opaque wrapper around C++ `SchedulerState::BaseProfile`.
 #[repr(C, align(8))]
 pub struct SchedulerStateBaseProfile(
@@ -55,6 +82,8 @@ unsafe extern "C" {
         priority: i32,
         inheritable: bool,
     );
+    fn cpp_scheduler_state_curr_cpu(state: *const SchedulerState) -> cpu_num_t;
+    fn cpp_scheduler_state_last_cpu(state: *const SchedulerState) -> cpu_num_t;
 }
 
 // thread priority
