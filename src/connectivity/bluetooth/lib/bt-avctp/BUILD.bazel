@@ -1,0 +1,57 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "bt-avctp",
+    srcs = [
+        "src/avc/mod.rs",
+        "src/avc/tests.rs",
+        "src/avc/types.rs",
+        "src/avctp/mod.rs",
+        "src/avctp/tests.rs",
+        "src/avctp/types.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    rustc_flags = ["-Dunused_results"],
+    # @bazel2gn:skip
+    test_deps = [
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//src/lib/async-utils",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__pkg__",
+        "//src/connectivity/bluetooth/profiles/bt-avrcp:__pkg__",
+        "//src/connectivity/bluetooth/profiles/tests/bt-avrcp-integration-tests:__pkg__",
+    ],
+    # @bazel2gn:skip
+    with_unit_tests = True,
+    deps = [
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/packet-encoding",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:slab",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "bt-avctp-tests",
+    package_name = "bt-avctp-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":bt-avctp_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
