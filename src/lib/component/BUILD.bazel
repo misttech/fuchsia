@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "bindingstest",
+    testonly = True,
+    srcs = ["test.test.fidl"],
+    enable_cpp = False,
+    # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+    excluded_checks = [
+        "invalid-copyright-for-platform-source-library",
+        "wrong-prefix-for-platform-source-library",
+        "string-bounds-not-specified",
+        "event-names-must-start-with-on",
+    ],
+    deps = ["//zircon/vdso/zx"],
+)
