@@ -85,5 +85,6 @@ group("tests") {
     ":verify_cipd_prebuilt_host_test_data_test($host_toolchain)",
     ":verify_cipd_prebuilt_test($default_toolchain)",
     ":verify_cipd_prebuilt_test($host_toolchain)",
+    "on_demand_migration:tests",
   ]
 }

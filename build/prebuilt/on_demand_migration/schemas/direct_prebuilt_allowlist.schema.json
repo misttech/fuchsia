@@ -1,0 +1,11 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Direct Prebuilt SHAC Allowlist",
+    "description": "One-way presubmit ratchet mapping repository-relative file paths to the maximum number of legacy direct //prebuilt references currently permitted in each file.",
+    "type": "object",
+    "additionalProperties": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Baseline count of direct //prebuilt references allowed in this repository-relative file path. May only stay constant or decrease over time."
+    }
+}
