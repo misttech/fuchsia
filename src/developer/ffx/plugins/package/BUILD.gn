@@ -9,7 +9,6 @@ ffx_plugin("ffx_package") {
   sdk_category = "partner"
   version = "0.1.0"
   edition = "2024"
-  with_unit_tests = true
   plugin_deps = [
     "archive:ffx_package_archive",
     "blob:ffx_package_blob",
