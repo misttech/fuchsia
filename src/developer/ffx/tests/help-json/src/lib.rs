@@ -5,9 +5,42 @@
 #[cfg(test)]
 mod tests {
     use ffx_command::CliArgsInfo;
-    use ffx_testing::{TestContext, base_fixture};
+    use ffx_config::environment::ExecutableKind;
+    use ffx_config::{ConfigMap, EnvironmentContext};
     use fixture::fixture;
     use std::collections::HashSet;
+    use std::path::PathBuf;
+
+    struct TestContext {
+        isolate: ffx_isolate::Isolate,
+    }
+
+    impl TestContext {
+        fn isolate(&self) -> &ffx_isolate::Isolate {
+            &self.isolate
+        }
+    }
+
+    async fn base_fixture<F, Fut>(case_name: &str, test_fn: F)
+    where
+        F: FnOnce(TestContext) -> Fut + Send + 'static,
+        Fut: futures::future::Future<Output = ()>,
+    {
+        let env_context = EnvironmentContext::detect(
+            ExecutableKind::Test,
+            ConfigMap::new(),
+            &std::env::current_dir().expect("current directory"),
+            None,
+            false,
+        )
+        .expect("new detected context");
+        // Not actually used by help-json tests, which do not connect to a target.
+        let ssh_path = PathBuf::from("/dev/null");
+        let isolate = ffx_isolate::Isolate::new_in_test(case_name, ssh_path, &env_context)
+            .await
+            .expect("create isolate");
+        test_fn(TestContext { isolate }).await
+    }
 
     // base_fixture sets up the test environment this test
     #[fixture(base_fixture)]
