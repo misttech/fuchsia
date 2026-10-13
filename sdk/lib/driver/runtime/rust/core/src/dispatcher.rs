@@ -218,7 +218,10 @@ impl Dispatcher {
     pub fn is_current_dispatcher(&self) -> bool {
         // SAFETY: we don't do anything with the dispatcher pointer, and NULL is returned if this
         // isn't a dispatcher-managed thread.
-        self.0.as_ptr() == unsafe { fdf_dispatcher_get_current_dispatcher() }
+        let current = unsafe { fdf_dispatcher_get_current_dispatcher() };
+        !current.is_null()
+            && (self.0.as_ptr() == current
+                || self.0.as_ptr() == unsafe { fdf_dispatcher_get_always_on_dispatcher(current) })
     }
 
     /// Releases ownership over this dispatcher and returns a [`DispatcherRef`]

@@ -64,6 +64,8 @@ _bin_common = {
     "//third_party/rust_crates:log",
   ]
 
+  test_deps = [ "//sdk/lib/async/rust" ]
+
   sources = [
     "src/conversion.rs",
     "src/driver.rs",

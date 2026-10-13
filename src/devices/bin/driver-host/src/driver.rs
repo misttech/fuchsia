@@ -216,9 +216,6 @@ struct DriverInner {
     // The always-on interface to |dispatcher|.
     always_on_dispatcher: Option<AutoReleaseDispatcher>,
 
-    // This is the handle we use to represent the driver to the driver runtime.
-    runtime_handle: Option<fdf_env::Driver<Driver>>,
-
     // This is set through the initialize hook and passed into destroy.
     token: Option<Token>,
 
@@ -293,6 +290,8 @@ impl DriverInner {
 pub(crate) struct Driver {
     url: String,
     node_name: String,
+    // This is the handle we use to represent the driver to the driver runtime.
+    runtime_handle: Mutex<Option<fdf_env::Driver<Driver>>>,
     inner: Mutex<DriverInner>,
 }
 impl Driver {
@@ -451,12 +450,12 @@ impl Driver {
         let driver = Arc::new(Driver {
             url: url.clone(),
             node_name,
+            runtime_handle: Mutex::new(None),
             inner: Mutex::new(DriverInner {
                 legacy_state,
                 hooks,
                 dispatcher: None,
                 always_on_dispatcher: None,
-                runtime_handle: None,
                 token: None,
                 shutdown_signaler: None,
                 node_token,
@@ -508,7 +507,7 @@ impl Driver {
         let always_on_dispatcher = dispatcher.always_on_dispatcher();
         driver.inner.lock().dispatcher = Some(dispatcher);
         driver.inner.lock().always_on_dispatcher = Some(always_on_dispatcher);
-        driver.inner.lock().runtime_handle = Some(driver_runtime_handle);
+        *driver.runtime_handle.lock() = Some(driver_runtime_handle);
 
         Ok((driver, start_args))
     }
@@ -567,12 +566,12 @@ impl Driver {
         let driver = Arc::new(Driver {
             url: url.clone(),
             node_name,
+            runtime_handle: Mutex::new(None),
             inner: Mutex::new(DriverInner {
                 legacy_state: None,
                 hooks,
                 dispatcher: None,
                 always_on_dispatcher: None,
-                runtime_handle: None,
                 token: None,
                 shutdown_signaler: None,
                 node_token,
@@ -624,7 +623,7 @@ impl Driver {
         let always_on_dispatcher = dispatcher.always_on_dispatcher();
         driver.inner.lock().dispatcher = Some(dispatcher);
         driver.inner.lock().always_on_dispatcher = Some(always_on_dispatcher);
-        driver.inner.lock().runtime_handle = Some(driver_runtime_handle);
+        *driver.runtime_handle.lock() = Some(driver_runtime_handle);
 
         Ok((driver, start_args))
     }
@@ -855,6 +854,7 @@ impl Driver {
                     client,
                     scope,
                 ));
+                drop(inner);
 
                 let weak_self = Arc::downgrade(self);
                 let resume_requester = fdf_env::ResumeRequester::new(move || {
@@ -866,12 +866,13 @@ impl Driver {
                     }
                 });
 
-                let registration = inner
+                let registration = self
                     .runtime_handle
+                    .lock()
                     .as_ref()
                     .expect("driver must have a runtime handle")
                     .register_resume_requester(resume_requester);
-                inner.resume_requester = Some(registration);
+                self.inner.lock().resume_requester = Some(registration);
             }
             _ => {}
         }
@@ -1088,9 +1089,8 @@ impl Driver {
             completer_sender.send(()).ok();
         });
 
-        self.inner
+        self.runtime_handle
             .lock()
-            .runtime_handle
             .as_ref()
             .expect("driver must have a runtime handle")
             .driver_suspend(completer);
@@ -1137,9 +1137,8 @@ impl Driver {
             }
         }
 
-        self.inner
+        self.runtime_handle
             .lock()
-            .runtime_handle
             .as_ref()
             .expect("driver must have a runtime handle")
             .driver_resume();
@@ -1161,7 +1160,7 @@ impl Driver {
             registration.unregister();
         }
 
-        let runtime_handle = self.inner.lock().runtime_handle.take();
+        let runtime_handle = self.runtime_handle.lock().take();
         let shutdown_signaler = self.inner.lock().shutdown_signaler.take();
 
         // Drop the element control channel to destroy the power element
@@ -1197,6 +1196,260 @@ impl Driver {
 
 impl PartialEq<fdf_env::UnownedDriver> for Driver {
     fn eq(&self, other: &fdf_env::UnownedDriver) -> bool {
-        self.inner.lock().runtime_handle.as_ref().map(|h| h == other).unwrap_or(false)
+        self.runtime_handle.lock().as_ref().map(|h| h == other).unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf::{DispatcherBuilder, OnDriverDispatcher, WakeVectorRegistration};
+    use fidl_fuchsia_power_broker::{
+        LessorMarker, TopologyMarker, TopologyRequest, TopologyRequestStream,
+    };
+    use libasync::OnSignals;
+    use std::pin::Pin;
+    use std::sync::mpsc;
+    use std::task::{Context, Wake, Waker};
+
+    unsafe extern "C" fn fake_initialize(
+        _server_handle: fdf_sys::fdf_handle_t,
+    ) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+
+    unsafe extern "C" fn fake_destroy(_token: *mut std::ffi::c_void) {}
+
+    // The tests never initialize the driver, so these hooks are never called.
+    static FAKE_REGISTRATION: fdf_sys::DriverRegistration = fdf_sys::DriverRegistration {
+        version: fdf_sys::DRIVER_REGISTRATION_VERSION_MAX,
+        v1: fdf_sys::DriverRegistration_driver_registration_v1 {
+            initialize: Some(fake_initialize),
+            destroy: Some(fake_destroy),
+        },
+    };
+
+    /// The power broker that the power element of a test driver is connected to.
+    struct FakePowerBroker {
+        topology: TopologyRequestStream,
+        // Keep the other ends of the power element channels open.
+        _runner: ClientEnd<ElementRunnerMarker>,
+        _lessor: ServerEnd<LessorMarker>,
+    }
+
+    impl FakePowerBroker {
+        /// Waits for the driver host to lease the driver's power element and grants the lease.
+        async fn expect_lease(&mut self) -> LeaseSchema {
+            match self.topology.try_next().await {
+                Ok(Some(TopologyRequest::Lease { payload, responder })) => {
+                    responder.send(Ok(())).expect("failed to respond to lease request");
+                    payload
+                }
+                other => panic!("expected a lease request, got {other:?}"),
+            }
+        }
+    }
+
+    /// Creates a driver with a runtime controlled power element and registers it with the driver
+    /// runtime the way `Driver::load` does, without loading a driver library.
+    fn create_test_driver(env: &fdf_env::Environment) -> (Arc<Driver>, FakePowerBroker) {
+        let (runner_client, runner_server) =
+            fidl::endpoints::create_endpoints::<ElementRunnerMarker>();
+        let (lessor, lessor_server) = fidl::endpoints::create_proxy::<LessorMarker>();
+        let (topology, topology_stream) =
+            fidl::endpoints::create_proxy_and_stream::<TopologyMarker>();
+        let hooks = Hooks::new(std::ptr::addr_of!(FAKE_REGISTRATION).cast_mut()).unwrap();
+        let driver = Arc::new(Driver {
+            url: "fuchsia-boot:///#meta/test-driver.cm".to_string(),
+            node_name: "test-node".to_string(),
+            runtime_handle: Mutex::new(None),
+            inner: Mutex::new(DriverInner {
+                legacy_state: None,
+                hooks,
+                dispatcher: None,
+                always_on_dispatcher: None,
+                token: None,
+                shutdown_signaler: None,
+                node_token: None,
+                power_element: PowerElementState::RuntimeControlled(PowerElementHandles {
+                    control: None,
+                    runner: Some(runner_server),
+                    lessor,
+                    element_token: zx::Event::create(),
+                    topology: Some(topology),
+                }),
+                active_lease: None,
+                stop_lease: None,
+                power_state: DriverPowerState::Resumed,
+                resume_sender: None,
+                internal_stop_tx: None,
+                power_element_runner_task: None,
+                resume_requester: None,
+            }),
+        });
+        let runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
+        // The wake vector callbacks in these tests block, so the dispatcher has to allow that.
+        let dispatcher = runtime_handle
+            .new_dispatcher(
+                DispatcherBuilder::new().name("test-driver-default").allow_thread_blocking(),
+            )
+            .unwrap();
+        let dispatcher = AutoReleaseDispatcher::from(dispatcher);
+        {
+            let mut inner = driver.inner.lock();
+            inner.always_on_dispatcher = Some(dispatcher.always_on_dispatcher());
+            inner.dispatcher = Some(dispatcher);
+        }
+        *driver.runtime_handle.lock() = Some(runtime_handle);
+        let power_broker = FakePowerBroker {
+            topology: topology_stream,
+            _runner: runner_client,
+            _lessor: lessor_server,
+        };
+        (driver, power_broker)
+    }
+
+    /// Creates a client for the driver's `fuchsia.driver.framework/Driver` protocol. Nothing serves
+    /// the protocol because the tests never get to the point of calling into the driver.
+    fn create_driver_client(driver: &Driver) -> DriverClient {
+        let always_on =
+            driver.inner.lock().always_on_dispatcher.as_ref().unwrap().as_async_dispatcher();
+        let (client_end, _server_end) = fdf_fidl::create_channel_with_dispatchers::<
+            fidl_next_fdf::Driver,
+            _,
+        >(always_on.clone(), always_on);
+        ClientDispatcher::new(client_end).client()
+    }
+
+    /// Shuts down a driver created by `create_test_driver` and waits until it is gone.
+    async fn shutdown_test_driver(driver: Arc<Driver>, scope: fuchsia_async::Scope) {
+        // The driver runtime doesn't shut down suspended dispatchers, so resume them first, like
+        // the driver host does before it stops a driver.
+        driver.runtime_handle.lock().as_ref().unwrap().driver_resume();
+        let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+        driver.inner.lock().shutdown_signaler = Some(shutdown_sender);
+        let (_driver_client, driver_server) =
+            fidl::endpoints::create_endpoints::<fdh::DriverMarker>();
+        driver.shutdown(driver_server);
+        shutdown_receiver.await.expect("driver shutdown did not complete");
+        // The tasks and channels of the driver are registered with the test's executor, so they
+        // must be dropped on this thread before the executor goes away. The shutdown only aborted
+        // the power element runner task, and the driver runtime threads release their references
+        // to the driver asynchronously.
+        scope.abort().await;
+        while Arc::strong_count(&driver) > 1 {
+            fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_millis(1)).await;
+        }
+    }
+
+    /// A waker that blocks the thread that wakes it until it is released.
+    struct BlockingWaker {
+        entered: Mutex<Option<oneshot::Sender<()>>>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl Wake for BlockingWaker {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            let Some(entered) = self.entered.lock().take() else {
+                return;
+            };
+            let _ = entered.send(());
+            // This returns once the waker is released or the release sender is dropped.
+            let _ = self.release.lock().recv();
+        }
+    }
+
+    /// A wake vector callback that keeps executing on a driver dispatcher until it is released.
+    struct InFlightWakeVector<'a> {
+        release: mpsc::Sender<()>,
+        _wait: OnSignals<&'a zx::Event>,
+        _registration: WakeVectorRegistration,
+    }
+
+    impl InFlightWakeVector<'_> {
+        /// Lets the wake vector callback return.
+        fn release(self) {
+            self.release.send(()).expect("wake vector callback is gone");
+        }
+    }
+
+    /// Registers `event` as a wake vector of `dispatcher`, waits on it on `dispatcher` and
+    /// signals it. Returns once the callback of the wait is executing, which it keeps doing until
+    /// it is released.
+    async fn start_wake_vector_callback<'a>(
+        dispatcher: &fdf::AsyncDispatcher,
+        event: &'a zx::Event,
+    ) -> InFlightWakeVector<'a> {
+        let registration = dispatcher.register_wake_vector(event, zx::Signals::USER_0).unwrap();
+        let (entered_sender, entered_receiver) = oneshot::channel();
+        let (release, release_receiver) = mpsc::channel();
+        let waker = Waker::from(Arc::new(BlockingWaker {
+            entered: Mutex::new(Some(entered_sender)),
+            release: Mutex::new(release_receiver),
+        }));
+        // The callback of the wait wakes `waker`, which blocks it.
+        let mut wait = OnSignals::new_on(dispatcher.clone(), event, zx::Signals::USER_0);
+        assert!(Pin::new(&mut wait).poll(&mut Context::from_waker(&waker)).is_pending());
+        event.signal(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
+        entered_receiver.await.expect("wake vector callback did not run");
+        InFlightWakeVector { release, _wait: wait, _registration: registration }
+    }
+
+    // When a driver is suspended while one of its wake vector callbacks is executing, the driver
+    // runtime calls the resume requester from within `fdf_env_driver_suspend`. That must neither
+    // deadlock nor be lost.
+    #[fuchsia::test]
+    async fn suspend_with_wake_vector_in_flight_requests_power_lease() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (driver, mut power_broker) = create_test_driver(&env);
+        let client = create_driver_client(&driver);
+        let scope = fuchsia_async::Scope::new();
+        driver.start_power_element_runner(client.clone(), &scope);
+
+        let dispatcher = driver.inner.lock().dispatcher.as_ref().unwrap().as_async_dispatcher();
+        let event = zx::Event::create();
+        let wake_vector = start_wake_vector_callback(&dispatcher, &event).await;
+
+        // Suspending the runtime only completes once the wake vector callback returns, so this
+        // stays pending. It is dropped there since nothing serves the driver protocol, which is
+        // what it would use next.
+        assert!(driver.suspend_driver(&client).now_or_never().is_none());
+
+        wake_vector.release();
+        let lease = power_broker.expect_lease().await;
+        assert_eq!(lease.lease_name.as_deref(), Some("test-node:test-driver.cm"));
+        assert!(driver.inner.lock().active_lease.is_some());
+
+        shutdown_test_driver(driver, scope).await;
+    }
+
+    // When the resume requester is registered while the driver is suspended and one of its wake
+    // vector callbacks is executing, the driver runtime calls the requester from within
+    // `fdf_env_register_resume_requester`. That must neither deadlock nor be lost.
+    #[fuchsia::test]
+    async fn start_power_element_runner_while_suspended_with_wake_vector_in_flight() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (driver, mut power_broker) = create_test_driver(&env);
+        let client = create_driver_client(&driver);
+
+        let dispatcher = driver.inner.lock().dispatcher.as_ref().unwrap().as_async_dispatcher();
+        let event = zx::Event::create();
+        let wake_vector = start_wake_vector_callback(&dispatcher, &event).await;
+
+        // No resume requester is registered yet, so the driver runtime can't request a resume.
+        assert!(driver.suspend_driver(&client).now_or_never().is_none());
+
+        let scope = fuchsia_async::Scope::new();
+        driver.start_power_element_runner(client, &scope);
+
+        wake_vector.release();
+        power_broker.expect_lease().await;
+        assert!(driver.inner.lock().active_lease.is_some());
+
+        shutdown_test_driver(driver, scope).await;
     }
 }

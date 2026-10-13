@@ -216,6 +216,8 @@ impl ReadMessageState {
                         }
                         Err(e) => return Poll::Ready(Err(e)),
                     }
+                } else {
+                    state.waker.replace(cx.waker().clone());
                 }
                 Poll::Pending
             }
@@ -363,5 +365,339 @@ mod test {
                 drop(fut);
             }
         });
+    }
+
+    #[test]
+    fn always_on_dispatcher_cancel_and_read_stress() {
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            // Part 1: synchronized `always_on_dispatcher()`.
+            let (mut a, b) = Channel::<[u8]>::create();
+            let b = Arc::new(b);
+            spawn_in_driver("always_on cancel and read stress", async move {
+                let always_on = CurrentDispatcher.on_dispatcher(|d| {
+                    let d = fdf_core::dispatcher::DriverDispatcherRef::from_async_dispatcher(
+                        d.unwrap(),
+                    );
+                    assert!(d.always_on_dispatcher().is_current_dispatcher());
+                    libasync_dispatcher::AsyncDispatcher::new(&d.always_on_dispatcher())
+                });
+
+                for i in 0..1000usize {
+                    // Case 1: Start a wait on `always_on_dispatcher()`, cancel/drop it before a
+                    // message arrives, queue a write task on `always_on`, and `.await` a new read
+                    // future so its initial poll runs before the cancel callback and before the
+                    // write task.
+                    {
+                        let mut fut1 = unsafe { read_raw(&mut a, always_on.clone()) };
+                        let mut noop_cx = Context::from_waker(futures::task::noop_waker_ref());
+                        let Poll::Pending = std::pin::Pin::new(&mut fut1).poll(&mut noop_cx) else {
+                            panic!("iteration {i}: expected pending state on fut1");
+                        };
+                        drop(fut1);
+                    }
+
+                    let b_clone = b.clone();
+                    let write_join = always_on.spawn(async move {
+                        let arena = Arena::new();
+                        b_clone
+                            .write(Message::new_with(arena, |arena| {
+                                (Some(arena.insert_slice(&[1, 2, 3])), None)
+                            }))
+                            .unwrap();
+                    });
+
+                    let res = unsafe { read_raw(&mut a, always_on.clone()) }.await.unwrap();
+                    assert_eq!(res.unwrap().data().unwrap().len(), 3);
+                    let _ = write_join.await;
+
+                    // Case 2: Start a wait on `always_on_dispatcher()`, write a message so
+                    // `try_read_raw` succeeds on re-poll before the async wait callback runs, drop
+                    // the future, queue a write task on `always_on`, and `.await` a new read
+                    // future so its initial poll runs before the previous callback and before the
+                    // write task.
+                    {
+                        let mut fut1 = unsafe { read_raw(&mut a, always_on.clone()) };
+                        let mut noop_cx = Context::from_waker(futures::task::noop_waker_ref());
+                        let Poll::Pending = std::pin::Pin::new(&mut fut1).poll(&mut noop_cx) else {
+                            panic!("iteration {i}: expected pending state before write");
+                        };
+                        let arena = Arena::new();
+                        b.write(Message::new_with(arena, |arena| {
+                            (Some(arena.insert_slice(&[4, 5, 6])), None)
+                        }))
+                        .unwrap();
+                        let Poll::Ready(Ok(Some(msg))) =
+                            std::pin::Pin::new(&mut fut1).poll(&mut noop_cx)
+                        else {
+                            panic!("iteration {i}: expected ready state after write");
+                        };
+                        assert_eq!(msg.data().unwrap().len(), 3);
+                    }
+
+                    let b_clone = b.clone();
+                    let write_join = always_on.spawn(async move {
+                        let arena = Arena::new();
+                        b_clone
+                            .write(Message::new_with(arena, |arena| {
+                                (Some(arena.insert_slice(&[7, 8, 9])), None)
+                            }))
+                            .unwrap();
+                    });
+
+                    let res = unsafe { read_raw(&mut a, always_on.clone()) }.await.unwrap();
+                    assert_eq!(res.unwrap().data().unwrap().len(), 3);
+                    let _ = write_join.await;
+                }
+            });
+            let _ = done_tx.send(());
+        });
+
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("always_on_dispatcher_cancel_and_read_stress hung waiting for channel read!");
+    }
+
+    #[test]
+    fn unsynchronized_always_on_dispatcher_cancel_and_read_stress() {
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            // Exercises `cancelation_is_async = true` on `always_on_dispatcher()`.
+            let (mut a, b) = Channel::<[u8]>::create();
+            let b = Arc::new(b);
+            spawn_in_driver_etc(
+                "unsync always_on cancel and read stress",
+                false,
+                true,
+                async move {
+                    let always_on = CurrentDispatcher.on_dispatcher(|d| {
+                        let d = fdf_core::dispatcher::DriverDispatcherRef::from_async_dispatcher(
+                            d.unwrap(),
+                        );
+                        libasync_dispatcher::AsyncDispatcher::new(&d.always_on_dispatcher())
+                    });
+
+                    for i in 0..1000usize {
+                        {
+                            let mut fut1 = unsafe { read_raw(&mut a, always_on.clone()) };
+                            let mut noop_cx = Context::from_waker(futures::task::noop_waker_ref());
+                            let Poll::Pending = std::pin::Pin::new(&mut fut1).poll(&mut noop_cx)
+                            else {
+                                panic!("unsync iteration {i}: expected pending state on fut1");
+                            };
+                            drop(fut1);
+                        }
+
+                        let b_clone = b.clone();
+                        let write_join = always_on.spawn(async move {
+                            let arena = Arena::new();
+                            b_clone
+                                .write(Message::new_with(arena, |arena| {
+                                    (Some(arena.insert_slice(&[1, 2, 3])), None)
+                                }))
+                                .unwrap();
+                        });
+
+                        let res = unsafe { read_raw(&mut a, always_on.clone()) }.await.unwrap();
+                        assert_eq!(res.unwrap().data().unwrap().len(), 3);
+                        let _ = write_join.await;
+
+                        {
+                            let mut fut1 = unsafe { read_raw(&mut a, always_on.clone()) };
+                            let poll_res = {
+                                let mut noop_cx =
+                                    Context::from_waker(futures::task::noop_waker_ref());
+                                let Poll::Pending =
+                                    std::pin::Pin::new(&mut fut1).poll(&mut noop_cx)
+                                else {
+                                    panic!(
+                                        "unsync iteration {i}: expected pending state before write"
+                                    );
+                                };
+                                let arena = Arena::new();
+                                b.write(Message::new_with(arena, |arena| {
+                                    (Some(arena.insert_slice(&[4, 5, 6])), None)
+                                }))
+                                .unwrap();
+                                std::pin::Pin::new(&mut fut1).poll(&mut noop_cx)
+                            };
+                            if let Poll::Ready(Ok(Some(msg))) = poll_res {
+                                assert_eq!(msg.data().unwrap().len(), 3);
+                            } else {
+                                drop(fut1);
+                                let res =
+                                    unsafe { read_raw(&mut a, always_on.clone()) }.await.unwrap();
+                                assert_eq!(res.unwrap().data().unwrap().len(), 3);
+                            }
+                        }
+
+                        let b_clone = b.clone();
+                        let write_join = always_on.spawn(async move {
+                            let arena = Arena::new();
+                            b_clone
+                                .write(Message::new_with(arena, |arena| {
+                                    (Some(arena.insert_slice(&[7, 8, 9])), None)
+                                }))
+                                .unwrap();
+                        });
+
+                        let res = unsafe { read_raw(&mut a, always_on.clone()) }.await.unwrap();
+                        assert_eq!(res.unwrap().data().unwrap().len(), 3);
+                        let _ = write_join.await;
+                    }
+                },
+            );
+
+            let _ = done_tx.send(());
+        });
+
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect(
+                "unsynchronized_always_on_dispatcher_cancel_and_read_stress hung waiting for channel read!",
+            );
+    }
+
+    #[test]
+    fn always_on_dispatcher_during_driver_suspend_stress() {
+        use fdf_core::dispatcher::DispatcherBuilder;
+        use fdf_env::{Environment, SuspendCompleter};
+        use libasync_dispatcher::{AsAsyncDispatcherRef, AsyncDispatcher};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let env = Arc::new(Environment::start(0).unwrap());
+            let driver_value: u32 = 0x1337;
+            let driver = env.new_driver(&driver_value as *const u32);
+            let root_dispatcher = driver
+                .new_dispatcher(
+                    DispatcherBuilder::new().name("power-managed-root").allow_thread_blocking(),
+                )
+                .unwrap()
+                .release();
+
+            let always_on_async = AsyncDispatcher::new(&root_dispatcher.always_on_dispatcher());
+            let root_async = AsyncDispatcher::new(&root_dispatcher.as_async_dispatcher_ref());
+
+            let (mut srv_chan, mut cli_chan) = Channel::<[u8]>::create();
+
+            // Spawn a server loop on `root_dispatcher.always_on_dispatcher()` (matching
+            // `google-cpm`'s `mba_ctrl.start` loop).
+            let (srv_done_tx, srv_done_rx) = std::sync::mpsc::channel();
+            let always_on_for_srv = always_on_async.clone();
+            always_on_async.spawn(async move {
+                for i in 0..200usize {
+                    let expected_len = (i % 8) + 1;
+                    // Exercise cancel + immediate re-read on the always-on dispatcher while the
+                    // power-managed dispatcher is suspended.
+                    {
+                        let mut fut1 =
+                            unsafe { read_raw(&mut srv_chan, always_on_for_srv.clone()) };
+                        let mut noop_cx = Context::from_waker(futures::task::noop_waker_ref());
+                        if let Poll::Ready(Ok(Some(msg))) =
+                            std::pin::Pin::new(&mut fut1).poll(&mut noop_cx)
+                        {
+                            assert_eq!(msg.data().unwrap().len(), expected_len);
+                            let arena = Arena::new();
+                            let payload = vec![i as u8; expected_len];
+                            srv_chan
+                                .write(Message::new_with(arena, |arena| {
+                                    (Some(arena.insert_slice(&payload)), None)
+                                }))
+                                .unwrap();
+                            continue;
+                        }
+                    }
+
+                    let msg = unsafe { read_raw(&mut srv_chan, always_on_for_srv.clone()) }
+                        .await
+                        .unwrap()
+                        .expect("expected request message");
+                    assert_eq!(msg.data().unwrap().len(), expected_len);
+                    let arena = Arena::new();
+                    let payload = vec![i as u8; expected_len];
+                    srv_chan
+                        .write(Message::new_with(arena, |arena| {
+                            (Some(arena.insert_slice(&payload)), None)
+                        }))
+                        .unwrap();
+                }
+                let _ = srv_done_tx.send(());
+            });
+
+            let (req_tx, mut req_rx) = futures::channel::mpsc::unbounded::<usize>();
+            let (reply_tx, reply_rx) = std::sync::mpsc::channel::<usize>();
+            let always_on_for_cli = always_on_async.clone();
+            always_on_async.spawn(async move {
+                use futures::StreamExt;
+                while let Some(i) = req_rx.next().await {
+                    let expected_len = (i % 8) + 1;
+                    let arena = Arena::new();
+                    let payload = vec![i as u8; expected_len];
+                    cli_chan
+                        .write(Message::new_with(arena, |arena| {
+                            (Some(arena.insert_slice(&payload)), None)
+                        }))
+                        .unwrap();
+                    let reply = unsafe { read_raw(&mut cli_chan, always_on_for_cli.clone()) }
+                        .await
+                        .unwrap()
+                        .expect("expected reply message");
+                    assert_eq!(reply.data().unwrap().len(), expected_len);
+                    let _ = reply_tx.send(i);
+                }
+            });
+
+            for i in 0..200usize {
+                // Suspend the driver's power-managed dispatchers.
+                let (susp_tx, susp_rx) = std::sync::mpsc::channel();
+                driver.driver_suspend(SuspendCompleter::new(move || {
+                    let _ = susp_tx.send(());
+                }));
+                susp_rx.recv().unwrap();
+
+                // A task posted to the power-managed `root_dispatcher` must NOT run while
+                // suspended.
+                let root_ran = Arc::new(AtomicBool::new(false));
+                let root_ran_clone = root_ran.clone();
+                let (root_tx, root_rx) = std::sync::mpsc::channel();
+                root_async.spawn(async move {
+                    root_ran_clone.store(true, Ordering::SeqCst);
+                    let _ = root_tx.send(());
+                });
+
+                // Meanwhile, the server on `root_dispatcher.always_on_dispatcher()` MUST continue
+                // servicing channel reads and writes even while `driver` is suspended.
+                req_tx.unbounded_send(i).unwrap();
+                assert_eq!(reply_rx.recv().unwrap(), i);
+
+                // Confirm the power-managed task was still held in `sleep_queue_` while the
+                // always-on task completed its round-trip.
+                assert!(
+                    !root_ran.load(Ordering::SeqCst),
+                    "power-managed root_dispatcher ran while driver was suspended!"
+                );
+
+                // Resume the driver and confirm the power-managed task now runs.
+                driver.driver_resume();
+                root_rx.recv().unwrap();
+                assert!(root_ran.load(Ordering::SeqCst));
+            }
+            drop(req_tx);
+
+            srv_done_rx.recv().unwrap();
+
+            let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel();
+            driver.shutdown(move |_| {
+                let _ = shutdown_tx.send(());
+            });
+            shutdown_rx.recv().unwrap();
+            let _ = done_tx.send(());
+        });
+
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("always_on_dispatcher_during_driver_suspend_stress hung!");
     }
 }
