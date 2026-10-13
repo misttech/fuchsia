@@ -5,11 +5,17 @@
 use crate::policy::{Policy, SecurityContext, SecurityContextError};
 use crate::{InitialSid, ReferenceInitialSid, SecurityId};
 
+use fuchsia_rcu::{RcuDroppable, RcuReadScope};
+use fuchsia_rcu_collections::rcu_array::RcuArray;
+use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
-use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::num::NonZeroU32;
+
+// SAFETY: `SecurityContext` contains only plain data and heap-allocated slices that are safe to
+// drop asynchronously on the RCU reclamation thread when [`SidTable`] is resized or replaced.
+unsafe impl RcuDroppable for SecurityContext {}
 
 /// Policy-independent table mapping dynamic [`SecurityId`]s to their canonical security context
 /// byte strings across policy reloads.
@@ -62,17 +68,22 @@ impl PortableSidTable {
     }
 }
 
-/// Per-policy mapping between [`SecurityId`]s and effective [`SecurityContext`]s.
+/// Per-policy RCU-protected mapping between [`SecurityId`]s and effective [`SecurityContext`]s.
+///
+/// Readers access [`SidTable::sid_to_security_context`],
+/// [`SidTable::sids_to_security_contexts`], and [`SidTable::security_context_to_existing_sid`]
+/// lock-free within an [`RcuReadScope`]. Mutations via [`SidTable::security_context_to_sid`] are
+/// serialized by the caller's writer lock without blocking concurrent RCU readers.
 pub(super) struct SidTable {
-    /// Forward mapping from [`SecurityId`] (`sid.0.get() as usize`) to its effective
+    /// Lock-free forward mapping from [`SecurityId`] (`sid.0.get() as usize`) to its effective
     /// [`SecurityContext`] under the owning policy.
     ///
     /// Slots for unused initial SIDs or dynamic SIDs whose context strings are invalid under
     /// the policy are populated with the [`InitialSid::Unlabeled`] context.
-    entries: Vec<SecurityContext>,
+    entries: RcuArray<SecurityContext>,
 
-    /// Reverse mapping from validated [`SecurityContext`] to dynamic [`SecurityId`].
-    context_to_sid: HashMap<SecurityContext, SecurityId>,
+    /// Lock-free reverse mapping from validated [`SecurityContext`] to dynamic [`SecurityId`].
+    context_to_sid: RcuRawHashMap<SecurityContext, SecurityId>,
 }
 
 impl SidTable {
@@ -87,7 +98,8 @@ impl SidTable {
             entries[*initial_sid as usize] = policy.initial_context(*initial_sid);
         }
 
-        let mut context_to_sid = HashMap::with_capacity(portable_sids.entries.len());
+        let context_to_sid = RcuRawHashMap::with_capacity(portable_sids.entries.len());
+        let scope = RcuReadScope::new();
         for (offset, context_string) in portable_sids.entries.iter().enumerate() {
             if let Ok(context) = policy.parse_security_context(context_string.as_ref().into())
                 && policy.validate_security_context(&context).is_ok()
@@ -95,11 +107,16 @@ impl SidTable {
                 let sid_index = ReferenceInitialSid::FirstUnused as usize + offset;
                 let sid = SecurityId(NonZeroU32::new(sid_index as u32).unwrap());
                 entries[sid_index] = context.clone();
-                context_to_sid.entry(context).or_insert(sid);
+                if context_to_sid.get(&scope, &context).is_none() {
+                    // SAFETY: `context_to_sid` is exclusively owned during construction.
+                    unsafe {
+                        context_to_sid.insert(&scope, context, sid);
+                    }
+                }
             }
         }
 
-        Self { entries, context_to_sid }
+        Self { entries: RcuArray::from(entries), context_to_sid }
     }
 
     /// Returns the [`SecurityId`] representing the supplied `security_context`, if it is
@@ -108,9 +125,10 @@ impl SidTable {
     /// validated contexts.
     pub(super) fn security_context_to_existing_sid(
         &self,
+        scope: &RcuReadScope,
         security_context: &SecurityContext,
     ) -> Option<SecurityId> {
-        self.context_to_sid.get(security_context).copied()
+        self.context_to_sid.get(scope, security_context).copied()
     }
 
     /// Returns a [`SecurityId`] representing the supplied `security_context`, inserting it into
@@ -119,13 +137,18 @@ impl SidTable {
     /// If an entry already exists that matches `security_context` then the existing SID is
     /// returned. Otherwise the `security_context`'s fields are validated against `policy`
     /// constraints, and an explanatory error returned if they are inconsistent.
-    pub(super) fn security_context_to_sid(
-        &mut self,
+    ///
+    /// # Safety
+    ///
+    /// Caller must hold the exclusive writer lock to serialize mutations to this [`SidTable`].
+    pub(super) unsafe fn security_context_to_sid(
+        &self,
+        scope: &RcuReadScope,
         policy: &Policy,
         portable_sids: &mut PortableSidTable,
         security_context: &SecurityContext,
     ) -> Result<SecurityId, SecurityContextError> {
-        if let Some(sid) = self.security_context_to_existing_sid(security_context) {
+        if let Some(sid) = self.security_context_to_existing_sid(scope, security_context) {
             return Ok(sid);
         }
         policy.validate_security_context(security_context)?;
@@ -134,14 +157,33 @@ impl SidTable {
         let sid = portable_sids.get_or_allocate_sid(serialized);
         let sid_index = sid.0.get() as usize;
 
-        if self.entries.len() <= sid_index {
-            let unlabeled_context = self.entries[InitialSid::Unlabeled as usize].clone();
-            self.entries.resize(sid_index + 1, unlabeled_context);
+        // Publish the updated forward lookup array containing `security_context` at `sid_index`
+        // BEFORE publishing `sid` into `self.context_to_sid`. By Release-Acquire transitivity, any
+        // concurrent RCU reader that observes `sid` in `self.context_to_sid` is guaranteed to
+        // observe the updated `self.entries` slice containing `sid_index` without needing a
+        // per-slot atomic load.
+        let current_entries = self.entries.as_slice(scope);
+        let new_len = std::cmp::max(current_entries.len(), sid_index + 1);
+        let mut new_entries = Vec::with_capacity(new_len);
+        new_entries.extend_from_slice(current_entries);
+        if new_entries.len() < new_len {
+            let unlabeled_context = current_entries[InitialSid::Unlabeled as usize].clone();
+            new_entries.resize(new_len, unlabeled_context);
         }
-        self.entries[sid_index] = security_context.clone();
-        self.context_to_sid.insert(security_context.clone(), sid);
+        new_entries[sid_index] = security_context.clone();
+        self.entries.update(new_entries);
+
+        // SAFETY: Caller guarantees exclusive writer access to this `SidTable`.
+        unsafe {
+            self.context_to_sid.insert(scope, security_context.clone(), sid);
+        }
 
         Ok(sid)
+    }
+
+    #[inline]
+    fn resolve_from_slice(entries: &[SecurityContext], sid: SecurityId) -> &SecurityContext {
+        entries.get(sid.0.get() as usize).unwrap_or(&entries[InitialSid::Unlabeled as usize])
     }
 
     /// Returns the [`SecurityContext`] associated with `sid`.
@@ -149,10 +191,32 @@ impl SidTable {
     /// If `sid` was invalidated by a policy reload then the "unlabeled"
     /// context is returned instead.
     #[inline]
-    pub(super) fn sid_to_security_context(&self, sid: SecurityId) -> &SecurityContext {
-        self.entries
-            .get(sid.0.get() as usize)
-            .unwrap_or(&self.entries[InitialSid::Unlabeled as usize])
+    pub(super) fn sid_to_security_context<'a>(
+        &self,
+        scope: &'a RcuReadScope,
+        sid: SecurityId,
+    ) -> &'a SecurityContext {
+        let entries = self.entries.as_slice(scope);
+        Self::resolve_from_slice(entries, sid)
+    }
+
+    /// Returns the [`SecurityContext`]s associated with `source_sid` and `target_sid` using a
+    /// single RCU array load.
+    ///
+    /// If either SID was invalidated by a policy reload then the "unlabeled" context is returned
+    /// for that SID instead.
+    #[inline]
+    pub(super) fn sids_to_security_contexts<'a>(
+        &self,
+        scope: &'a RcuReadScope,
+        source_sid: SecurityId,
+        target_sid: SecurityId,
+    ) -> (&'a SecurityContext, &'a SecurityContext) {
+        let entries = self.entries.as_slice(scope);
+        (
+            Self::resolve_from_slice(entries, source_sid),
+            Self::resolve_from_slice(entries, target_sid),
+        )
     }
 }
 
@@ -176,30 +240,47 @@ mod tests {
             .parse_security_context(b"unconfined_u:unconfined_r:unconfined_t:s0".into())
             .unwrap();
         let mut portable_sids = PortableSidTable::default();
-        let mut sid_table = SidTable::new(&policy, &portable_sids);
-        let sid = sid_table
-            .security_context_to_sid(&policy, &mut portable_sids, &security_context)
-            .unwrap();
-        assert_eq!(*sid_table.sid_to_security_context(sid), security_context);
+        let sid_table = SidTable::new(&policy, &portable_sids);
+        let scope = RcuReadScope::new();
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let sid = unsafe {
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                &security_context,
+            )
+        }
+        .unwrap();
+        assert_eq!(*sid_table.sid_to_security_context(&scope, sid), security_context);
     }
 
     #[test]
     fn sids_for_different_security_contexts_differ() {
         let policy = test_policy();
         let mut portable_sids = PortableSidTable::default();
-        let mut sid_table = SidTable::new(&policy, &portable_sids);
-        let sid1 = sid_table.security_context_to_sid(
-            &policy,
-            &mut portable_sids,
-            &policy.parse_security_context(b"user0:object_r:type0:s0".into()).unwrap(),
-        );
-        let sid2 = sid_table.security_context_to_sid(
-            &policy,
-            &mut portable_sids,
-            &policy
-                .parse_security_context(b"unconfined_u:unconfined_r:unconfined_t:s0".into())
-                .unwrap(),
-        );
+        let sid_table = SidTable::new(&policy, &portable_sids);
+        let scope = RcuReadScope::new();
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let sid1 = unsafe {
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                &policy.parse_security_context(b"user0:object_r:type0:s0".into()).unwrap(),
+            )
+        };
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let sid2 = unsafe {
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                &policy
+                    .parse_security_context(b"unconfined_u:unconfined_r:unconfined_t:s0".into())
+                    .unwrap(),
+            )
+        };
         assert_ne!(sid1, sid2);
     }
 
@@ -210,12 +291,27 @@ mod tests {
             .parse_security_context(b"unconfined_u:unconfined_r:unconfined_t:s0".into())
             .unwrap();
         let mut portable_sids = PortableSidTable::default();
-        let mut sid_table = SidTable::new(&policy, &portable_sids);
+        let sid_table = SidTable::new(&policy, &portable_sids);
+        let scope = RcuReadScope::new();
         assert_eq!(portable_sids.entries.len(), 0);
-        let sid1 =
-            sid_table.security_context_to_sid(&policy, &mut portable_sids, &security_context);
-        let sid2 =
-            sid_table.security_context_to_sid(&policy, &mut portable_sids, &security_context);
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let sid1 = unsafe {
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                &security_context,
+            )
+        };
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let sid2 = unsafe {
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                &security_context,
+            )
+        };
         assert_eq!(sid1, sid2);
         assert_eq!(portable_sids.entries.len(), 1);
     }
@@ -227,11 +323,19 @@ mod tests {
             .parse_security_context(b"unconfined_u:unconfined_r:unconfined_t:s0".into())
             .unwrap();
         let mut portable_sids = PortableSidTable::default();
-        let mut sid_table = SidTable::new(&policy, &portable_sids);
+        let sid_table = SidTable::new(&policy, &portable_sids);
+        let scope = RcuReadScope::new();
         assert_eq!(portable_sids.entries.len(), 0);
-        let sid = sid_table
-            .security_context_to_sid(&policy, &mut portable_sids, &security_context)
-            .unwrap();
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let sid = unsafe {
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                &security_context,
+            )
+        }
+        .unwrap();
         assert_eq!(portable_sids.entries.len(), 1);
         assert!(sid.0.get() >= ReferenceInitialSid::FirstUnused as u32);
     }
@@ -241,14 +345,66 @@ mod tests {
         let file_initial_sid = InitialSid::File.into();
         let policy = test_policy();
         let mut portable_sids = PortableSidTable::default();
-        let mut sid_table = SidTable::new(&policy, &portable_sids);
+        let sid_table = SidTable::new(&policy, &portable_sids);
+        let scope = RcuReadScope::new();
         let file_initial_security_context =
-            sid_table.sid_to_security_context(file_initial_sid).clone();
-        let file_dynamic_sid = sid_table
-            .security_context_to_sid(&policy, &mut portable_sids, &file_initial_security_context)
-            .unwrap();
+            sid_table.sid_to_security_context(&scope, file_initial_sid);
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let file_dynamic_sid = unsafe {
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                &file_initial_security_context.clone(),
+            )
+        }
+        .unwrap();
         assert_ne!(file_initial_sid.0.get(), file_dynamic_sid.0.get());
         assert!(file_dynamic_sid.0.get() >= ReferenceInitialSid::FirstUnused as u32);
+    }
+
+    #[test]
+    fn sids_to_security_contexts() {
+        let policy = test_policy();
+        let source_context =
+            policy.parse_security_context(b"user0:object_r:type0:s0".into()).unwrap();
+        let target_context = policy
+            .parse_security_context(b"unconfined_u:unconfined_r:unconfined_t:s0".into())
+            .unwrap();
+        let unlabeled_context = policy.initial_context(InitialSid::Unlabeled);
+
+        let mut portable_sids = PortableSidTable::default();
+        let sid_table = SidTable::new(&policy, &portable_sids);
+        let scope = RcuReadScope::new();
+
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let source_sid = unsafe {
+            sid_table.security_context_to_sid(&scope, &policy, &mut portable_sids, &source_context)
+        }
+        .unwrap();
+        // SAFETY: Single-threaded test with exclusive access to `sid_table`.
+        let target_sid = unsafe {
+            sid_table.security_context_to_sid(&scope, &policy, &mut portable_sids, &target_context)
+        }
+        .unwrap();
+
+        let (resolved_source, resolved_target) =
+            sid_table.sids_to_security_contexts(&scope, source_sid, target_sid);
+        assert_eq!(resolved_source, &source_context);
+        assert_eq!(resolved_target, &target_context);
+
+        // Allocate a SID in `portable_sids` that is not mapped in `sid_table` to simulate an
+        // invalidated SID.
+        let unmapped_sid = portable_sids.get_or_allocate_sid(b"unknown_u:object_r:type0:s0".into());
+        let (resolved_unmapped, resolved_target) =
+            sid_table.sids_to_security_contexts(&scope, unmapped_sid, target_sid);
+        assert_eq!(resolved_unmapped, &unlabeled_context);
+        assert_eq!(resolved_target, &target_context);
+
+        let (resolved_source, resolved_unmapped) =
+            sid_table.sids_to_security_contexts(&scope, source_sid, unmapped_sid);
+        assert_eq!(resolved_source, &source_context);
+        assert_eq!(resolved_unmapped, &unlabeled_context);
     }
 
     #[test]
@@ -272,13 +428,26 @@ mod tests {
             portable_sids.get_or_allocate_sid(b"user0:unconfined_r:unconfined_t:s0".into());
 
         let sid_table = SidTable::new(&policy, &portable_sids);
+        let scope = RcuReadScope::new();
         let unlabeled_context = policy.initial_context(InitialSid::Unlabeled);
 
-        assert_eq!(sid_table.sid_to_security_context(valid_sid), &valid_context);
-        assert_eq!(sid_table.security_context_to_existing_sid(&valid_context), Some(valid_sid));
+        assert_eq!(sid_table.sid_to_security_context(&scope, valid_sid), &valid_context);
+        assert_eq!(
+            sid_table.security_context_to_existing_sid(&scope, &valid_context),
+            Some(valid_sid)
+        );
 
-        assert_eq!(sid_table.sid_to_security_context(invalid_parse_sid), &unlabeled_context);
-        assert_eq!(sid_table.sid_to_security_context(invalid_constraints_sid), &unlabeled_context);
-        assert_eq!(sid_table.security_context_to_existing_sid(&invalid_constraints_context), None);
+        assert_eq!(
+            sid_table.sid_to_security_context(&scope, invalid_parse_sid),
+            &unlabeled_context
+        );
+        assert_eq!(
+            sid_table.sid_to_security_context(&scope, invalid_constraints_sid),
+            &unlabeled_context
+        );
+        assert_eq!(
+            sid_table.security_context_to_existing_sid(&scope, &invalid_constraints_context),
+            None
+        );
     }
 }

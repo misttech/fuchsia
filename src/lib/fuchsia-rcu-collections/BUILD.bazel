@@ -23,6 +23,7 @@ rustc_library(
     edition = "2024",
     visibility = [
         "//src/starnix/kernel/core:__pkg__",
+        "//src/starnix/lib/selinux:__pkg__",
         "//src/starnix/lib/starnix_rcu:__pkg__",
     ],
     with_unit_tests = True,

@@ -55,6 +55,7 @@ rustc_library("fuchsia-rcu-collections") {
   visibility = [
     ":*",
     "//src/starnix/kernel/core:*",
+    "//src/starnix/lib/selinux:*",
     "//src/starnix/lib/starnix_rcu:*",
   ]
   with_unit_tests = true

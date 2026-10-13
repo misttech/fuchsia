@@ -146,6 +146,7 @@ rustc_library("selinux") {
   deps = []
   deps += [
     "//src/lib/fuchsia-rcu",
+    "//src/lib/fuchsia-rcu-collections",
     "//src/lib/trace/rust:trace",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_uapi",
