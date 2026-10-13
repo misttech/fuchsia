@@ -4,18 +4,32 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-config("includes") {
-  include_dirs = [ "include" ]
+import("//build/cpp/library_headers.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
+
+library_headers("headers") {
+  headers = [ "dev/hw_rng/amlogic_rng/init.h" ]
+  public_deps = [ "//sdk/lib/zbi-format" ]
+}
+
+kernel_rust_mod("amlogic_rng-rs") {
+  output_name = "amlogic_rng"
+  source_root = "amlogic_rng.rs"
+  sources = [ "amlogic_rng.rs" ]
+  deps = [
+    "//sdk/rust/zbi",
+    "//src/lib/lazy_init:lazy_init_rs",
+    "//src/lib/regio",
+    "//src/lib/zr",
+  ]
 }
 
 source_set("amlogic_rng") {
-  public = [ "include/dev/hw_rng/amlogic_rng/init.h" ]
-  public_deps = [ "//sdk/lib/zbi-format" ]
-  sources = [ "amlogic-rng.cc" ]
+  sources = [ "amlogic_rng_ffi.cc" ]
+  public_deps = [ ":headers" ]
   deps = [
+    ":amlogic_rng-rs",
     "//zircon/kernel/dev/hw_rng",
-    "//zircon/kernel/phys:handoff",
     "//zircon/system/ulib/explicit-memory",
   ]
-  public_configs = [ ":includes" ]
 }

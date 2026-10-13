@@ -116,6 +116,10 @@ pub mod generic_riscv64;
 pub mod pdev_interrupt;
 
 #[cfg(target_arch = "aarch64")]
+#[path = "dev/hw_rng/amlogic_rng/amlogic_rng.rs"]
+pub mod amlogic_rng;
+
+#[cfg(target_arch = "aarch64")]
 #[path = "dev/hw_watchdog/generic32/generic32.rs"]
 pub mod generic32;
 
