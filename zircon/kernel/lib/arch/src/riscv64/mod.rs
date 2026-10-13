@@ -3,9 +3,13 @@
 // found in the LICENSE file.
 
 mod feature;
+#[cfg(target_arch = "riscv64")]
+mod intrin;
 mod paging;
 mod system;
 
 pub use feature::*;
+#[cfg(target_arch = "riscv64")]
+pub use intrin::*;
 pub use paging::*;
 pub use system::*;

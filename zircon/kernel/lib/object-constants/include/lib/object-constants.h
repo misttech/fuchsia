@@ -216,4 +216,13 @@ constexpr size_t kVmObjectDispatcherStateSize = 64 + kLockClassIdSize;
 constexpr size_t kVmObjectDispatcherStateAlign = 8;
 constexpr size_t kVmObjectDispatcherStateOffset = 56;
 
+// Size, alignment, and offset for InterruptDispatcherState.
+constexpr size_t kInterruptDispatcherStateSize = 296 + (2 * kLockClassIdSize);
+constexpr size_t kInterruptDispatcherStateAlign = 8;
+constexpr size_t kInterruptDispatcherStateOffset = 56;
+
+// Size and alignment for PortInterruptPacket.
+constexpr size_t kPortInterruptPacketSize = 32;
+constexpr size_t kPortInterruptPacketAlign = 8;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

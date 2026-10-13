@@ -262,6 +262,17 @@ impl From<DurationBoot> for DurationUnknown {
     }
 }
 
+/// CurrentTicksObservation contains a coherent read of the current ticks on both the monotonic and
+/// boot timeline.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct CurrentTicksObservation {
+    pub mono_now: i64,
+    pub boot_now: i64,
+}
+
+zr::static_assert_size_and_align!(CurrentTicksObservation, 16, 8);
+
 unsafe extern "C" {
     fn cpp_timer_current_mono_ticks() -> InstantMonoTicks;
     fn cpp_timer_current_boot_ticks() -> InstantBootTicks;
@@ -269,6 +280,7 @@ unsafe extern "C" {
     fn cpp_current_boot_time() -> InstantBoot;
     fn cpp_timer_get_ticks_to_time_ratio() -> Ratio;
     fn cpp_timer_get_mono_ticks_offset() -> i64;
+    fn cpp_timer_current_mono_and_boot_ticks() -> CurrentTicksObservation;
 }
 
 /// Returns the current monotonic time in ticks.
@@ -316,6 +328,15 @@ pub fn timer_get_ticks_to_time_ratio() -> Ratio {
 pub fn timer_get_mono_ticks_offset() -> i64 {
     // SAFETY: Calling this FFI function has no preconditions and safely returns the offset.
     unsafe { cpp_timer_get_mono_ticks_offset() }
+}
+
+/// Performs a coherent read of both the mono and boot timelines and returns a tuple with the
+/// current value of both timelines.
+#[inline]
+pub fn timer_current_mono_and_boot_ticks() -> CurrentTicksObservation {
+    // SAFETY: Calling this FFI function has no preconditions and safely returns the current ticks
+    // observation.
+    unsafe { cpp_timer_current_mono_and_boot_ticks() }
 }
 
 /// Platform timer tests.

@@ -5,9 +5,10 @@
 // https://opensource.org/licenses/MIT
 
 use crate::object::{
-    BusTransactionInitiatorDispatcher, ClockDispatcher, Dispatcher, HandleValue, JobDispatcher,
-    MsiDispatcher, ProcessDispatcher, SocketDispatcher, ThreadDispatcher, TimerDispatcher,
-    VcpuDispatcher, VmAddressRegionDispatcher, VmObjectDispatcher,
+    BusTransactionInitiatorDispatcher, ClockDispatcher, Dispatcher, HandleValue,
+    InterruptDispatcher, JobDispatcher, MsiDispatcher, ProcessDispatcher, SocketDispatcher,
+    ThreadDispatcher, TimerDispatcher, VcpuDispatcher, VmAddressRegionDispatcher,
+    VmObjectDispatcher,
 };
 use crate::user_copy::UserOutPtr;
 use debug::ltracef;
@@ -264,7 +265,8 @@ pub fn sys_object_get_info(
                 ZX_RIGHT_INSPECT,
             )?;
             let report = thread.get_exception_report()?;
-            // SAFETY: `report` is a valid, fully initialized 40-byte `zx_exception_report_t` struct.
+            // SAFETY: `report` is a valid, fully initialized 40-byte `zx_exception_report_t`
+            // struct.
             let src_bytes: &[u8] = unsafe {
                 core::slice::from_raw_parts(
                     (&report as *const zx_exception_report_t).cast::<u8>(),
@@ -287,7 +289,8 @@ pub fn sys_object_get_info(
                 } else if let Some(thread) = dispatcher.downcast::<ThreadDispatcher>() {
                     thread.get_runtime_stats()
                 } else {
-                    // SAFETY: Call C++ FFI helper for topics handled by C++ dispatcher instances (e.g. ProcessDispatcher).
+                    // SAFETY: Call C++ FFI helper for topics handled by C++ dispatcher instances
+                    // (e.g. ProcessDispatcher).
                     let status = unsafe {
                         cpp_object_get_info_cpp_types(
                             handle.raw_value(),
@@ -347,9 +350,11 @@ pub fn sys_object_get_info(
         ZX_INFO_BTI => single_record_info!(BusTransactionInitiatorDispatcher, get_info),
         ZX_INFO_VCPU => single_record_info!(VcpuDispatcher, get_info),
         ZX_INFO_CLOCK_MAPPED_SIZE => single_record_info!(ClockDispatcher, get_mapped_size?),
+        ZX_INFO_INTERRUPT => single_record_info!(InterruptDispatcher, get_info),
         // C++ only topics (and VM map/vmo enumeration, system resources, process info, etc.)
         _ => {
-            // SAFETY: Call C++ FFI helper for topics handled by C++ dispatcher instances or subsystems.
+            // SAFETY: Call C++ FFI helper for topics handled by C++ dispatcher instances or
+            // subsystems.
             let status = unsafe {
                 cpp_object_get_info_cpp_types(
                     handle.raw_value(),

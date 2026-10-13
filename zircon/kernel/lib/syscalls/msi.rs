@@ -54,11 +54,12 @@ pub fn sys_msi_create(
     )?;
 
     let (kernel_handle, rights) = MsiInterruptDispatcher::create(
-        msi_alloc_disp.msi_allocation(),
+        msi_alloc_disp.msi_allocation().clone(),
         msi_id,
         vmo_disp.vmo(),
         vmo_offset,
         options,
+        None,
     )?;
 
     *out = kernel_handle.make_and_add_handle(rights)?;

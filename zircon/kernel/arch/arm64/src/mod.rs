@@ -75,55 +75,7 @@ pub fn periph_paddr_to_vaddr(paddr: PAddr) -> Option<VAddr> {
     if vaddr == 0 { None } else { Some(VAddr(vaddr)) }
 }
 
-/// Instruction Synchronization Barrier, full system.
-///
-/// Mirrors `__isb(ARM_MB_SY)` from `zircon/kernel/lib/arch/arm64/include/lib/arch/intrin.h`.
-#[inline(always)]
-pub fn isb() {
-    // SAFETY: A barrier instruction has no operands and no memory safety requirements. The
-    // absence of `nomem` preserves the `"memory"` clobber of the C++ macro, which keeps the
-    // compiler from reordering memory accesses across the barrier.
-    unsafe {
-        core::arch::asm!("isb sy", options(nostack, preserves_flags));
-    }
-}
-
-/// Data Synchronization Barrier, full system.
-///
-/// Synchronizes all memory accesses of all kinds. Mirrors `arch::DeviceMemoryBarrier()`
-/// (`__dsb(ARM_MB_SY)`) from `zircon/kernel/lib/arch/arm64/include/lib/arch/intrin.h`.
-#[inline(always)]
-pub fn device_memory_barrier() {
-    // SAFETY: See `isb()`.
-    unsafe {
-        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
-    }
-}
-
-/// Data Memory Barrier, full system.
-///
-/// Synchronizes the ordering of all memory accesses with respect to other CPUs. Mirrors
-/// `arch::ThreadMemoryBarrier()` (`__dmb(ARM_MB_SY)`) from
-/// `zircon/kernel/lib/arch/arm64/include/lib/arch/intrin.h`.
-#[inline(always)]
-pub fn thread_memory_barrier() {
-    // SAFETY: See `isb()`.
-    unsafe {
-        core::arch::asm!("dmb sy", options(nostack, preserves_flags));
-    }
-}
-
-/// Waits for an interrupt, putting the CPU in a low power state until one arrives.
-///
-/// Mirrors `__wfi()` from `zircon/kernel/lib/arch/arm64/include/lib/arch/intrin.h`.
-#[inline(always)]
-pub fn wfi() {
-    // SAFETY: See `isb()`. `wfi` is architecturally permitted to return spuriously, so callers
-    // must not rely on an interrupt having been delivered.
-    unsafe {
-        core::arch::asm!("wfi", options(nostack, preserves_flags));
-    }
-}
+pub use libarch::arm64::{device_memory_barrier, isb, thread_memory_barrier, wfi};
 
 // [arm/v8]: C5.2.19 CPSR / D13.2.112 SPSR_EL1
 pub const ARM_NCZV_FLAGS: u32 = 0xf000_0000;

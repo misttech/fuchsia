@@ -125,6 +125,7 @@ kernel_rust_mod("syscalls-rs") {
     "exceptions.rs",
     "fifo.rs",
     "guest.rs",
+    "interrupt.rs",
     "iob.rs",
     "iommu.rs",
     "job.rs",

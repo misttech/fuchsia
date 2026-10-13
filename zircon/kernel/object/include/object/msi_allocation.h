@@ -67,7 +67,7 @@ class MsiAllocation : public fbl::RefCounted<MsiAllocation> {
   // Used to synchronize access to an MSI vector control register for MSI blocks
   // that consist of multiple vectors and MsiInterruptDispatchers. It is not
   // used to guard access to anything within the MsiAllocation itself.
-  mutable DECLARE_SPINLOCK(MsiAllocation) lock_;
+  __ALIGNED(8) mutable DECLARE_SPINLOCK(MsiAllocation) lock_;
   // A pointer to the function to free the block when the object is released.
   MsiFreeFn msi_free_fn_;
   // Function pointers for MSI platform functions to facilitate unit tests.
@@ -80,6 +80,10 @@ extern "C" {
 zx_status_t cpp_msi_allocation_create(uint32_t count, MsiAllocation** alloc_out);
 void cpp_msi_allocation_recycle(MsiAllocation* msi_alloc);
 zx_info_msi_t cpp_msi_allocation_get_info(const MsiAllocation* alloc);
+zx_status_t cpp_msi_allocation_reserve_id(MsiAllocation* alloc, uint32_t msi_id);
+zx_status_t cpp_msi_allocation_release_id(MsiAllocation* alloc, uint32_t msi_id);
+const msi_block_t* cpp_msi_allocation_get_block(const MsiAllocation* alloc);
+Lock<SpinLock>* cpp_msi_allocation_get_lock(MsiAllocation* alloc);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_ALLOCATION_H_

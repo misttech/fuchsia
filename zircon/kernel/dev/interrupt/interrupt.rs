@@ -58,20 +58,28 @@ impl core::ops::Deref for InterruptVector {
     }
 }
 
+/// An interrupt handler callback and its opaque context pointer.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct InterruptHandler {
+    /// Opaque context pointer passed to `fn`.
     pub cookie: *mut core::ffi::c_void,
+    /// Callback function invoked when the interrupt fires.
     pub r#fn: Option<extern "C" fn(*mut core::ffi::c_void) -> ()>,
 }
 
 zr::static_assert_size_and_align!(InterruptHandler, 16, 8);
 
 impl InterruptHandler {
+    /// An empty `InterruptHandler` used to unregister an interrupt handler.
     pub const DEFAULT: Self = Self { cookie: core::ptr::null_mut(), r#fn: None };
+
+    /// Returns `true` if a callback function is present.
     pub fn present(&self) -> bool {
         self.r#fn.is_some()
     }
+
+    /// Invokes the interrupt handler callback with `self.cookie`.
     pub fn invoke(&self) {
         debug_assert!(self.present());
         (self.r#fn.unwrap())(self.cookie)
@@ -147,14 +155,126 @@ pub struct MsiBlock {
     pub is_32bit: bool,
 }
 
-const _: () = assert!(core::mem::size_of::<InterruptVector>() == 4);
-const _: () = assert!(core::mem::align_of::<InterruptVector>() == 4);
+zr::static_assert_size_and_align!(InterruptVector, 4, 4);
+zr::static_assert_size_and_align!(InterruptTriggerMode, 4, 4);
+zr::static_assert_size_and_align!(InterruptPolarity, 4, 4);
+zr::static_assert_size_and_align!(MsiBlock, 24, 8);
 
-const _: () = assert!(core::mem::size_of::<InterruptTriggerMode>() == 4);
-const _: () = assert!(core::mem::align_of::<InterruptTriggerMode>() == 4);
+mod sys {
+    use super::{InterruptHandler, InterruptPolarity, InterruptTriggerMode, MsiBlock};
 
-const _: () = assert!(core::mem::size_of::<InterruptPolarity>() == 4);
-const _: () = assert!(core::mem::align_of::<InterruptPolarity>() == 4);
+    unsafe extern "C" {
+        pub fn mask_interrupt(vector: u32) -> zx_types::zx_status_t;
+        pub fn unmask_interrupt(vector: u32) -> zx_types::zx_status_t;
+        #[cfg(target_arch = "aarch64")]
+        pub fn deactivate_interrupt(vector: u32) -> zx_types::zx_status_t;
+        pub fn configure_interrupt(
+            vector: u32,
+            tm: InterruptTriggerMode,
+            pol: InterruptPolarity,
+        ) -> zx_types::zx_status_t;
+        pub fn get_interrupt_config(
+            vector: u32,
+            tm: *mut InterruptTriggerMode,
+            pol: *mut InterruptPolarity,
+        ) -> zx_types::zx_status_t;
+        pub fn register_int_handler(
+            vector: u32,
+            handler: InterruptHandler,
+        ) -> zx_types::zx_status_t;
+        pub fn remap_interrupt(vector: u32) -> u32;
+        pub fn is_valid_interrupt(vector: u32, flags: u32) -> bool;
+        pub fn msi_supports_masking() -> bool;
+        pub fn msi_mask_unmask(block: *const MsiBlock, msi_id: u32, mask: bool);
+        pub fn msi_register_handler(block: *const MsiBlock, msi_id: u32, handler: InterruptHandler);
+    }
+}
 
-const _: () = assert!(core::mem::size_of::<MsiBlock>() == 24);
-const _: () = assert!(core::mem::align_of::<MsiBlock>() == 8);
+pub use sys::msi_register_handler;
+
+/// Masks the specified interrupt `vector`.
+#[inline]
+pub fn mask_interrupt(vector: u32) -> Result<(), zx_status::Status> {
+    // SAFETY: `sys::mask_interrupt` has no memory safety preconditions.
+    zx_status::Status::ok(unsafe { sys::mask_interrupt(vector) })
+}
+
+/// Unmasks the specified interrupt `vector`.
+#[inline]
+pub fn unmask_interrupt(vector: u32) -> Result<(), zx_status::Status> {
+    // SAFETY: `sys::unmask_interrupt` has no memory safety preconditions.
+    zx_status::Status::ok(unsafe { sys::unmask_interrupt(vector) })
+}
+
+/// Deactivates the specified interrupt `vector` on AArch64.
+#[cfg(target_arch = "aarch64")]
+#[inline]
+pub fn deactivate_interrupt(vector: u32) -> Result<(), zx_status::Status> {
+    // SAFETY: `sys::deactivate_interrupt` has no memory safety preconditions.
+    zx_status::Status::ok(unsafe { sys::deactivate_interrupt(vector) })
+}
+
+/// Configures the trigger mode and polarity for `vector`.
+#[inline]
+pub fn configure_interrupt(
+    vector: u32,
+    tm: InterruptTriggerMode,
+    pol: InterruptPolarity,
+) -> Result<(), zx_status::Status> {
+    // SAFETY: `sys::configure_interrupt` has no memory safety preconditions.
+    zx_status::Status::ok(unsafe { sys::configure_interrupt(vector, tm, pol) })
+}
+
+/// Fetches the current trigger mode and polarity configuration for `vector`.
+#[inline]
+pub fn get_interrupt_config(
+    vector: u32,
+    tm: &mut InterruptTriggerMode,
+    pol: &mut InterruptPolarity,
+) -> Result<(), zx_status::Status> {
+    // SAFETY: `tm` and `pol` are valid mutable references.
+    zx_status::Status::ok(unsafe { sys::get_interrupt_config(vector, tm, pol) })
+}
+
+/// Registers or unregisters an interrupt `handler` for `vector`.
+///
+/// # Safety
+///
+/// If `handler` is present, its callback and `cookie` must remain valid until the handler is
+/// unregistered by passing [`InterruptHandler::DEFAULT`].
+#[inline]
+pub unsafe fn register_int_handler(
+    vector: u32,
+    handler: InterruptHandler,
+) -> Result<(), zx_status::Status> {
+    // SAFETY: Guaranteed by the caller.
+    zx_status::Status::ok(unsafe { sys::register_int_handler(vector, handler) })
+}
+
+/// Remaps an interrupt `vector` number to the platform's internal IRQ number.
+#[inline]
+pub fn remap_interrupt(vector: u32) -> u32 {
+    // SAFETY: `sys::remap_interrupt` has no memory safety preconditions.
+    unsafe { sys::remap_interrupt(vector) }
+}
+
+/// Returns `true` if `vector` is a valid interrupt vector for `flags`.
+#[inline]
+pub fn is_valid_interrupt(vector: u32, flags: u32) -> bool {
+    // SAFETY: `sys::is_valid_interrupt` has no memory safety preconditions.
+    unsafe { sys::is_valid_interrupt(vector, flags) }
+}
+
+/// Returns `true` if the platform interrupt controller supports MSI masking.
+#[inline]
+pub fn msi_supports_masking() -> bool {
+    // SAFETY: `sys::msi_supports_masking` has no memory safety preconditions.
+    unsafe { sys::msi_supports_masking() }
+}
+
+/// Masks or unmasks `msi_id` within `block` at the platform interrupt controller.
+#[inline]
+pub fn msi_mask_unmask(block: &MsiBlock, msi_id: u32, mask: bool) {
+    // SAFETY: `block` is a valid reference to an `MsiBlock`.
+    unsafe { sys::msi_mask_unmask(block, msi_id, mask) }
+}

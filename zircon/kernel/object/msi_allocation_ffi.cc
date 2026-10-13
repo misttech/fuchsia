@@ -31,4 +31,25 @@ FFI_ALWAYS_INLINE zx_info_msi_t cpp_msi_allocation_get_info(const MsiAllocation*
   return alloc->GetInfo();
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_msi_allocation_reserve_id(MsiAllocation* alloc, uint32_t msi_id) {
+  return alloc->ReserveId(msi_id);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_msi_allocation_release_id(MsiAllocation* alloc, uint32_t msi_id) {
+  return alloc->ReleaseId(msi_id);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const msi_block_t* cpp_msi_allocation_get_block(const MsiAllocation* alloc) {
+  return &alloc->block();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Lock<SpinLock>* cpp_msi_allocation_get_lock(MsiAllocation* alloc)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &alloc->lock();
+}
+
 }  // extern "C"

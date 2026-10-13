@@ -7,127 +7,91 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_INTERRUPT_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_INTERRUPT_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <lib/wake-vector.h>
-#include <lib/zircon-internal/thread_annotations.h>
 #include <sys/types.h>
+#include <zircon/compiler.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <kernel/event.h>
-#include <kernel/spinlock.h>
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
-#include <object/port_dispatcher.h>
+#include <object/handle.h>
+#include <object/opaque_storage.h>
 
-enum class InterruptState {
-  WAITING = 0,
-  DESTROYED = 1,
-  TRIGGERED = 2,
-  NEEDACK = 3,
-  IDLE = 4,
-};
+class InterruptDispatcher;
 
-// Note that unlike most Dispatcher subclasses, this one is further
-// subclassed, and so cannot be final.
-class InterruptDispatcher : public SoloDispatcher<InterruptDispatcher, ZX_DEFAULT_INTERRUPT_RIGHTS>,
-                            public wake_vector::WakeVector {
+extern "C" {
+
+using InterruptKindInitFn = void (*)(const InterruptDispatcher* disp, void* ctx);
+
+zx_status_t cpp_interrupt_dispatcher_create(uint32_t flags, uint32_t options, void* ctx,
+                                            InterruptKindInitFn init_fn, InterruptDispatcher** out);
+void cpp_interrupt_dispatcher_wake_event_initialize(const InterruptDispatcher* disp);
+void cpp_interrupt_dispatcher_wake_event_destroy(const InterruptDispatcher* disp);
+void cpp_interrupt_dispatcher_wake_event_trigger(const InterruptDispatcher* disp,
+                                                 zx_instant_boot_t trigger_time);
+void cpp_interrupt_dispatcher_wake_event_acknowledge(const InterruptDispatcher* disp,
+                                                     bool remain_signaled);
+
+void rust_interrupt_dispatcher_state_init(const InterruptDispatcher* disp, void* state,
+                                          uint32_t flags, uint32_t options, void* ctx,
+                                          InterruptKindInitFn init_fn);
+void rust_interrupt_dispatcher_state_destroy(void* state);
+Lock<CriticalMutex>* rust_interrupt_dispatcher_state_get_lock(const void* state);
+void rust_interrupt_dispatcher_on_zero_handles(const InterruptDispatcher* disp);
+bool rust_interrupt_dispatcher_is_virtual(const InterruptDispatcher* disp);
+void rust_interrupt_dispatcher_get_diagnostics(
+    const InterruptDispatcher* disp, wake_vector::WakeVector::Diagnostics* diagnostics_out);
+zx_status_t rust_interrupt_dispatcher_wait_for_interrupt(const InterruptDispatcher* disp,
+                                                         zx_time_t* out_timestamp);
+zx_status_t rust_interrupt_dispatcher_ack(const InterruptDispatcher* disp);
+
+}  // extern "C"
+
+class InterruptDispatcher final : public Dispatcher, public wake_vector::WakeVector {
  public:
+  ~InterruptDispatcher() final;
   InterruptDispatcher& operator=(const InterruptDispatcher&) = delete;
+
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_INTERRUPT; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return true; }
 
-  bool is_wake_vector() const { return flags_ & INTERRUPT_WAKE_VECTOR; }
-
-  virtual zx_status_t WaitForInterrupt(zx_time_t* out_timestamp);
-  virtual zx_status_t Trigger(zx_time_t timestamp);
-  virtual zx_status_t Ack();
-  virtual zx_status_t Destroy();
-
-  void InterruptHandler();
-  zx_status_t Bind(fbl::RefPtr<PortDispatcher> port_dispatcher, uint64_t key);
-  zx_status_t Unbind(fbl::RefPtr<PortDispatcher> port_dispatcher);
-
-  void on_zero_handles() final;
-
-  // Default wake vector diagnostics for interrupt dispatchers.
-  void GetDiagnostics(WakeVector::Diagnostics& diagnostics_out) const override {
-    diagnostics_out.enabled = false;
-    diagnostics_out.koid = get_koid();
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
+    return UserSignalSelfSolo(
+        this, clear_mask, set_mask,
+        rust_interrupt_dispatcher_is_virtual(this) ? ZX_VIRTUAL_INTERRUPT_UNTRIGGERED : 0);
+  }
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
   }
 
-  // Returns information about this interrupt in a zx_object_get_info call.
-  zx_info_interrupt_t GetInfo() const;
+  void on_zero_handles() final { rust_interrupt_dispatcher_on_zero_handles(this); }
+
+  void GetDiagnostics(WakeVector::Diagnostics& diagnostics_out) const final;
+
+  zx_status_t WaitForInterrupt(zx_time_t* out_timestamp);
+  zx_status_t Ack();
 
  protected:
-  virtual void MaskInterrupt() = 0;
-  virtual void UnmaskInterrupt() = 0;
-  virtual void DeactivateInterrupt() = 0;
-  virtual void UnregisterInterruptHandler() = 0;
-
-  enum Flags : uint32_t {
-    // The interrupt is virtual.
-    INTERRUPT_VIRTUAL = (1u << 0),
-    // The interrupt should be unmasked before waiting on the event.
-    //
-    // Mutually exclusive with INTERRUPT_UNMASK_PREWAIT_UNLOCKED.
-    INTERRUPT_UNMASK_PREWAIT = (1u << 1),
-    // The same as |INTERRUPT_UNMASK_PREWAIT| except release the dispatcher
-    // spinlock before waiting.
-    //
-    // Mutually exclusive with INTERRUPT_UNMASK_PREWAIT.
-    INTERRUPT_UNMASK_PREWAIT_UNLOCKED = (1u << 2),
-    // The interrupt should be masked following waiting.
-    INTERRUPT_MASK_POSTWAIT = (1u << 4),
-    // The interrupt may wake the system from suspend.
-    INTERRUPT_WAKE_VECTOR = (1u << 5),
-    // Allow kernel tests to call Ack() without binding to a port.
-    INTERRUPT_ALLOW_ACK_WITHOUT_PORT_FOR_TEST = (1u << 6),
-    // The interrupt should use monotonic timestamps instead of the default,
-    // which is boot timestamps.
-    INTERRUPT_TIMESTAMP_MONO = (1u << 7),
-  };
-
-  enum PostAckState {
-    FullyAcked,   // The interrupt was acked, and there was no other interrupt pending afterwards.
-    Retriggered,  // The interrupt was acked, but immediately re-triggered due to a pending irq.
-  };
-
-  // It is an error to specify both INTERRUPT_UNMASK_PREWAIT and INTERRUPT_UNMASK_PREWAIT_UNLOCKED.
-  explicit InterruptDispatcher(Flags flags) : InterruptDispatcher(flags, 0) {}
-  explicit InterruptDispatcher(Flags flags, uint32_t options);
-  void Signal() { event_.Signal(); }
-  bool SendPacketLocked(zx_time_t timestamp) TA_REQ(spinlock_);
-  zx::result<InterruptDispatcher::PostAckState> AckInternal() TA_EXCL(spinlock_);
-
-  // Allow subclasses to add/remove the wake event instance from the global diagnostics list at the
-  // appropriate times during initialization and teardown. These methods do not need to be called
-  // unless the subclass needs to be able to wake the system from suspend. See lib/wake-vector.h for
-  // the specific requirements regarding when to initialize and destroy the wake event.
-  void InitializeWakeEvent() TA_REQ(spinlock_) { wake_event_.Initialize(); }
-  void DestroyWakeEvent() TA_REQ(spinlock_) { wake_event_.Destroy(); }
-
-  // The zx_interrupt_wait operation is broken down into two phases.  First, we
-  // BeginWaitForInterrupt, which will handle internal bookkeeping and either return a status code
-  // if the wait operation is finished (success or failure), or it will return nothing if we need to
-  // block and try again later.
-  //
-  // Afterwards, if we need to block, we will call DoWaitForInterruptBlock and try again if the
-  // block operation succeeds.
-  ktl::optional<zx_status_t> BeginWaitForInterrupt(zx_time_t* out_timestamp) TA_EXCL(spinlock_);
-  zx_status_t DoWaitForInterruptBlock() TA_EXCL(spinlock_);
+  Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  AutounsignalEvent event_;
+  friend zx_status_t cpp_interrupt_dispatcher_create(uint32_t flags, uint32_t options, void* ctx,
+                                                     InterruptKindInitFn init_fn,
+                                                     InterruptDispatcher** out);
+  friend void cpp_interrupt_dispatcher_wake_event_initialize(const InterruptDispatcher* disp);
+  friend void cpp_interrupt_dispatcher_wake_event_destroy(const InterruptDispatcher* disp);
+  friend void cpp_interrupt_dispatcher_wake_event_trigger(const InterruptDispatcher* disp,
+                                                          zx_instant_boot_t trigger_time);
+  friend void cpp_interrupt_dispatcher_wake_event_acknowledge(const InterruptDispatcher* disp,
+                                                              bool remain_signaled);
 
-  zx_time_t timestamp_ TA_GUARDED(spinlock_);
-  const Flags flags_;
-  const uint32_t options_;
-  // Current state of the interrupt object
-  InterruptState state_ TA_GUARDED(spinlock_);
-  PortInterruptPacket port_packet_ TA_GUARDED(spinlock_) = {};
-  fbl::RefPtr<PortDispatcher> port_dispatcher_ TA_GUARDED(spinlock_);
-  wake_vector::WakeEvent wake_event_ TA_GUARDED(spinlock_);
+  InterruptDispatcher(uint32_t flags, uint32_t options, void* ctx, InterruptKindInitFn init_fn);
 
-  // Controls the access to Interrupt properties
-  DECLARE_SPINLOCK(InterruptDispatcher) spinlock_;
+  OpaqueStorage<kInterruptDispatcherStateSize, kInterruptDispatcherStateAlign> opaque_storage_;
+  mutable wake_vector::WakeEvent wake_event_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_INTERRUPT_DISPATCHER_H_

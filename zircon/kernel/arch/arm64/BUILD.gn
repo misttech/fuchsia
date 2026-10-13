@@ -215,6 +215,7 @@ if (toolchain_environment == "kernel.phys" ||
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//zircon/kernel/arch:arch-types-bindings",
+      "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",
     ]
     test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]

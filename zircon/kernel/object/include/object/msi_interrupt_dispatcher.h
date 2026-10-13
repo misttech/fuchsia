@@ -6,14 +6,12 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_INTERRUPT_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_INTERRUPT_DISPATCHER_H_
 
-#include <lib/mmio-ptr/mmio-ptr.h>
 #include <sys/types.h>
 #include <zircon/types.h>
 
 #include <cstddef>
 
 #include <dev/interrupt.h>
-#include <fbl/bits.h>
 #include <fbl/ref_ptr.h>
 #include <object/handle.h>
 #include <object/interrupt_dispatcher.h>
@@ -26,20 +24,14 @@
 // to zx_msi_create contains the table entries, not the device's MSI capability.
 #define ZX_MSI_VALID_OPTIONS (ZX_MSI_MODE_MSI_X)
 
-class MsiInterruptDispatcher;
-
-#include <kernel/ffi.h>
-
-extern "C" {
-zx_status_t cpp_msi_interrupt_dispatcher_create(
+extern "C" zx_status_t rust_msi_interrupt_dispatcher_create(
     const fbl::RefPtr<MsiAllocation>* alloc, uint32_t msi_id, const fbl::RefPtr<VmObject>* vmo,
-    size_t cap_offset, uint32_t options,
-    ffi::Uninitialized<KernelHandle<MsiInterruptDispatcher>>* handle_out,
-    ffi::Uninitialized<zx_rights_t>* rights_out);
-}
+    zx_off_t cap_offset, uint32_t options, zx_rights_t* out_rights,
+    KernelHandle<InterruptDispatcher>* out_interrupt,
+    void (*register_int_fn)(const msi_block_t*, uint, interrupt_handler_t));
 
 // The common interface for all MSI related interrupt handling. This encompasses MSI and MSI-X.
-class MsiInterruptDispatcher : public InterruptDispatcher {
+class MsiInterruptDispatcher final {
  public:
   using RegisterIntFn = void (*)(const msi_block_t*, uint, interrupt_handler_t);
 
@@ -47,43 +39,10 @@ class MsiInterruptDispatcher : public InterruptDispatcher {
                             const fbl::RefPtr<VmObject>& vmo, zx_off_t cap_offset, uint32_t options,
                             zx_rights_t* out_rights,
                             KernelHandle<InterruptDispatcher>* out_interrupt,
-                            RegisterIntFn = msi_register_handler);
-  virtual ~MsiInterruptDispatcher();
-  uint32_t msi_id() const { return msi_id_; }
-  constexpr uint32_t vector() const { return base_irq_id_ + msi_id_; }
-  void UnregisterInterruptHandler() final;
-  zx_status_t RegisterInterruptHandler();
-  void DeactivateInterrupt() final {}
-
-  // This override of WakeVector::GetDiagnostics is marked final to prevent further overrides.
-  // Because this method cannot be overridden further, it is safe for this class to initialize /
-  // destroy InterruptDispatcher::wake_event_ in the constructor / destructor. See lib/wake-vector.h
-  // for more details.
-  void GetDiagnostics(WakeVector::Diagnostics& diagnostics_out) const final;
-
- protected:
-  MsiInterruptDispatcher(fbl::RefPtr<MsiAllocation> alloc, fbl::RefPtr<VmMapping> mapping,
-                         uint32_t base_irq_id, uint32_t msi_id,
-                         RegisterIntFn = msi_register_handler);
-  const fbl::RefPtr<VmMapping>& mapping() const { return mapping_; }
-  const fbl::RefPtr<MsiAllocation>& allocation() const { return alloc_; }
-
- private:
-  // MSI / MSI-X interrupts share a masking approach and should be masked while
-  // being serviced and unmasked while waiting for an interrupt message to arrive.
-  static constexpr Flags kFlags = Flags(INTERRUPT_UNMASK_PREWAIT | INTERRUPT_MASK_POSTWAIT);
-
-  // The MSI allocation block this dispatcher shares.
-  const fbl::RefPtr<MsiAllocation> alloc_;
-  // The config space of the MSI capability controlling this MSI vector.
-  const fbl::RefPtr<VmMapping> mapping_;
-  // A pointer to the function to register the msi interrupt handler. Allows
-  // tests to override msi_register_handler.
-  const RegisterIntFn register_int_fn_;
-  // Cache the base irq id of the block so we can use it without locking.
-  const uint32_t base_irq_id_ = 0;
-  // The specific MSI id within the block that this dispatcher services.
-  const uint32_t msi_id_ = 0;
+                            RegisterIntFn register_int_fn = msi_register_handler) {
+    return rust_msi_interrupt_dispatcher_create(&alloc, msi_id, &vmo, cap_offset, options,
+                                                out_rights, out_interrupt, register_int_fn);
+  }
 };
 
 // Message Signaled Interrupts --
@@ -123,35 +82,6 @@ static_assert(offsetof(MsiCapability, mask_bits_32) == 0x0C);
 static_assert(offsetof(MsiCapability, mask_bits_64) == 0x10);
 static_assert(sizeof(MsiCapability) == 24);
 
-class MsiInterruptDispatcherImpl : public MsiInterruptDispatcher {
- public:
-  MsiInterruptDispatcherImpl(fbl::RefPtr<MsiAllocation> alloc, uint32_t base_irq_id,
-                             uint32_t msi_id, fbl::RefPtr<VmMapping> mapping, zx_off_t reg_offset,
-                             bool has_cap_pvm, bool has_64bit, RegisterIntFn register_int_fn)
-      : MsiInterruptDispatcher(ktl::move(alloc), ktl::move(mapping), base_irq_id, msi_id,
-                               register_int_fn),
-        has_platform_pvm_(register_int_fn == msi_register_handler && msi_supports_masking()),
-        has_cap_pvm_(has_cap_pvm),
-        has_64bit_(has_64bit),
-        capability_(reinterpret_cast<MMIO_PTR volatile MsiCapability*>(this->mapping()->base() +
-                                                                       reg_offset)) {}
-  void MaskInterrupt() final;
-  void UnmaskInterrupt() final;
-
- private:
-  // Not all interrupt controllers / configurations support masking at the
-  // platform level. This is set accordingly if support is detected.
-  const bool has_platform_pvm_;
-  // Whether or not the given device function supports per vector masking within
-  // the PCI MSI capability.
-  const bool has_cap_pvm_;
-  const bool has_64bit_;
-  // A pointer to the MSI Mask Register for this specific device function. To
-  // synchronize with other MSI interactions in the device it requires the MSI
-  // allocation's lock.
-  MMIO_PTR volatile MsiCapability* const capability_ TA_GUARDED(allocation()->lock());
-};
-
 // For MSI-X, the kernel only needs to interact with a given table entry for a specific vector.
 // Furthermore, since each vector has its own entry and MsiInterruptDispatchers hold a reference to
 // their allocation there is no need to lock any of the accesses. If the PCI bus driver wishes
@@ -167,20 +97,5 @@ struct MsixTableEntry {
 };
 
 #define kMsixVectorControlMaskBit 0
-constexpr zx_off_t MsixTableOffset(uint32_t id) { return id * sizeof(MsixTableEntry); }
-
-class MsixInterruptDispatcherImpl : public MsiInterruptDispatcher {
- public:
-  explicit MsixInterruptDispatcherImpl(fbl::RefPtr<MsiAllocation> alloc, uint32_t base_irq_id,
-                                       uint32_t msi_id, fbl::RefPtr<VmMapping> mapping,
-                                       zx_off_t table_offset, RegisterIntFn register_int_fn);
-  virtual ~MsixInterruptDispatcherImpl();
-
-  void MaskInterrupt() final;
-  void UnmaskInterrupt() final;
-
- private:
-  MMIO_PTR volatile MsixTableEntry* const table_entries_ = {};
-};
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_INTERRUPT_DISPATCHER_H_

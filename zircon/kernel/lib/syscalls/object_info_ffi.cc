@@ -33,7 +33,6 @@
 #include <object/bus_transaction_initiator_dispatcher.h>
 #include <object/diagnostics.h>
 #include <object/handle.h>
-#include <object/interrupt_dispatcher.h>
 #include <object/io_buffer_dispatcher.h>
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
@@ -352,7 +351,6 @@ zx_status_t object_get_info_cpp(ProcessDispatcher* up, zx_handle_t handle,
   OB_GET_INFO(ZX_INFO_RESOURCE, ResourceDispatcher, GetInfo);
   OB_GET_INFO(ZX_INFO_STREAM, StreamDispatcher, GetInfo);
   OB_GET_INFO(ZX_INFO_IOB, IoBufferDispatcher, GetInfo);
-  OB_GET_INFO(ZX_INFO_INTERRUPT, InterruptDispatcher, GetInfo);
 
   OB_GET_INFO(ZX_INFO_PROCESS, ProcessDispatcher, GetInfo);
   OB_GET_INFO_ZR(ZX_INFO_TASK_STATS, ProcessDispatcher, GetProcessStats);
@@ -612,9 +610,6 @@ zx_status_t cpp_object_get_info_cpp_types(zx_handle_t handle, uint32_t topic, vo
     case ZX_INFO_MEMORY_STALL:
       return object_get_info_cpp<ZX_INFO_MEMORY_STALL>(up, handle, dst_buffer, buffer_size, actual,
                                                        avail);
-    case ZX_INFO_INTERRUPT:
-      return object_get_info_cpp<ZX_INFO_INTERRUPT>(up, handle, dst_buffer, buffer_size, actual,
-                                                    avail);
     default:
       return ZX_ERR_NOT_SUPPORTED;
   }

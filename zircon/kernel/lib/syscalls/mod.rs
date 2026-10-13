@@ -19,6 +19,7 @@ mod event;
 mod exceptions;
 mod fifo;
 mod guest;
+mod interrupt;
 mod iob;
 mod iommu;
 mod job;

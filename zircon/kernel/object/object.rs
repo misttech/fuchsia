@@ -33,6 +33,9 @@ mod guest_dispatcher_ffi;
 mod handle;
 mod handle_table;
 mod handle_table_ffi;
+mod interrupt_dispatcher;
+mod interrupt_dispatcher_ffi;
+mod interrupt_event_dispatcher;
 mod io_buffer_dispatcher;
 mod io_buffer_dispatcher_ffi;
 mod io_buffer_shared_region_dispatcher;
@@ -52,7 +55,6 @@ mod msi_allocation;
 mod msi_dispatcher;
 mod msi_dispatcher_ffi;
 mod msi_interrupt_dispatcher;
-mod msi_interrupt_dispatcher_ffi;
 mod pager_dispatcher;
 mod pager_dispatcher_ffi;
 mod pinned_memory_token_dispatcher;
@@ -85,6 +87,7 @@ mod user_handles;
 mod vcpu;
 mod vcpu_dispatcher;
 mod vcpu_dispatcher_ffi;
+mod virtual_interrupt_dispatcher;
 mod vm_address_region_dispatcher;
 mod vm_address_region_dispatcher_ffi;
 mod vm_object_dispatcher;
@@ -108,6 +111,8 @@ pub use guest::Guest;
 pub use guest_dispatcher::GuestDispatcher;
 pub use handle::{HandleOwner, HandleRef, HandleValue, KernelHandle};
 pub use handle_table::{HandleTable, HandleTableLockClass};
+pub use interrupt_dispatcher::InterruptDispatcher;
+pub use interrupt_event_dispatcher::InterruptEventDispatcher;
 pub use io_buffer_dispatcher::IoBufferDispatcher;
 pub use io_buffer_shared_region_dispatcher::IoBufferSharedRegionDispatcher;
 pub use iommu_dispatcher::IommuDispatcher;
@@ -126,7 +131,7 @@ pub use process_dispatcher::{CurrentProcessDispatcher, ProcessDispatcher};
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource::{
     StrictValidation, validate_ranged_resource, validate_ranged_resource_dispatcher,
-    validate_resource_kind_base, validate_system_resource,
+    validate_resource_irq, validate_resource_kind_base, validate_system_resource,
 };
 pub use resource_dispatcher::{ResourceDispatcher, is_valid_kind};
 pub use root_job_observer::RootJobObserver;
@@ -140,6 +145,7 @@ pub use timer_dispatcher::TimerDispatcher;
 pub use user_handles::{ReadHandles, WriteHandles};
 pub use vcpu::Vcpu;
 pub use vcpu_dispatcher::VcpuDispatcher;
+pub use virtual_interrupt_dispatcher::VirtualInterruptDispatcher;
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;
 pub use vm_object_dispatcher::{
     InitialMutability, VmObjectDispatcher, VmoOwnership, vmo_to_info_entry,

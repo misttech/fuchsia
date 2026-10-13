@@ -21,4 +21,8 @@ kernel_rust_mod("dev_interrupt") {
   visibility = [ ":*" ]
   source_root = "interrupt.rs"
   sources = [ "interrupt.rs" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+  ]
 }

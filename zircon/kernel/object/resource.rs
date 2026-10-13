@@ -29,7 +29,9 @@
 
 use range_check::get_intersect_offset_len;
 use zx_status::Status;
-use zx_types::{ZX_RSRC_KIND_MMIO, ZX_RSRC_KIND_SYSTEM, zx_rsrc_kind_t, zx_rsrc_system_base_t};
+use zx_types::{
+    ZX_RSRC_KIND_IRQ, ZX_RSRC_KIND_MMIO, ZX_RSRC_KIND_SYSTEM, zx_rsrc_kind_t, zx_rsrc_system_base_t,
+};
 
 use super::handle::HandleValue;
 use super::process_dispatcher::ProcessDispatcher;
@@ -192,6 +194,11 @@ pub fn validate_ranged_resource_with_strict(
 /// Validates access to a single system resource indexed by `base`.
 pub fn validate_system_resource(handle: HandleValue, base: u64) -> Result<(), Status> {
     validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, base, 1)
+}
+
+// Validates creation of an interrupt object based on a resource handle
+pub fn validate_resource_irq(handle: HandleValue, irq: u32) -> Result<(), Status> {
+    validate_ranged_resource(handle, ZX_RSRC_KIND_IRQ, u64::from(irq), 1)
 }
 
 /// Kernel unit tests for resource validation functions.

@@ -5,11 +5,15 @@
 mod cache;
 mod debug;
 mod feature;
+#[cfg(target_arch = "aarch64")]
+mod intrin;
 mod memory;
 mod system;
 
 pub use cache::*;
 pub use debug::*;
 pub use feature::*;
+#[cfg(target_arch = "aarch64")]
+pub use intrin::*;
 pub use memory::*;
 pub use system::*;

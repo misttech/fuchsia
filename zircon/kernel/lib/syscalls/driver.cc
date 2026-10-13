@@ -27,13 +27,10 @@
 #include <fbl/inline_array.h>
 #include <object/bus_transaction_initiator_dispatcher.h>
 #include <object/handle.h>
-#include <object/interrupt_dispatcher.h>
-#include <object/interrupt_event_dispatcher.h>
 #include <object/iommu_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/resource.h>
 #include <object/vcpu_dispatcher.h>
-#include <object/virtual_interrupt_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
 #include <vm/vm.h>
 #include <vm/vm_object_paged.h>
@@ -190,133 +187,3 @@ zx_status_t sys_ioports_release(zx_handle_t hrsrc, uint16_t io_addr, uint32_t le
   return ZX_ERR_NOT_SUPPORTED;
 }
 #endif
-
-// zx_status_t zx_interrupt_create
-zx_status_t sys_interrupt_create(zx_handle_t src_obj, uint32_t src_num, uint32_t options,
-                                 zx_handle_t* out_handle) {
-  LTRACEF("options 0x%x\n", options);
-
-  // The IRQ resource is required for all non-virtual interrupts, and virtual
-  // interrupts which are configured as wake vectors.
-  if (!(options & ZX_INTERRUPT_VIRTUAL) || (options & ZX_INTERRUPT_WAKE_VECTOR)) {
-    zx_status_t status;
-    if ((status = validate_resource_irq(src_obj, src_num)) != ZX_OK) {
-      return status;
-    }
-  }
-
-  KernelHandle<InterruptDispatcher> handle;
-  zx_rights_t rights;
-  zx_status_t result;
-  if (options & ZX_INTERRUPT_VIRTUAL) {
-    result = VirtualInterruptDispatcher::Create(&handle, &rights, options);
-  } else {
-    result = InterruptEventDispatcher::Create(&handle, &rights, src_num, options);
-  }
-  if (result != ZX_OK) {
-    return result;
-  }
-
-  return ProcessDispatcher::GetCurrent()->MakeAndAddHandle(ktl::move(handle), rights, out_handle);
-}
-
-// zx_status_t zx_interrupt_bind
-zx_status_t sys_interrupt_bind(zx_handle_t handle, zx_handle_t port_handle, uint64_t key,
-                               uint32_t options) {
-  LTRACEF("handle %x\n", handle);
-  if ((options != ZX_INTERRUPT_BIND) && (options != ZX_INTERRUPT_UNBIND)) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  zx_status_t status;
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<InterruptDispatcher> interrupt;
-  status = up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_READ, &interrupt);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  fbl::RefPtr<PortDispatcher> port;
-  status = up->handle_table().GetDispatcherWithRights(*up, port_handle, ZX_RIGHT_WRITE, &port);
-  if (status != ZX_OK) {
-    return status;
-  }
-  if (!port->can_bind_to_interrupt()) {
-    return ZX_ERR_WRONG_TYPE;
-  }
-
-  if (options == ZX_INTERRUPT_BIND) {
-    return interrupt->Bind(ktl::move(port), key);
-  } else {
-    return interrupt->Unbind(ktl::move(port));
-  }
-}
-
-// zx_status_t zx_interrupt_ack
-zx_status_t sys_interrupt_ack(zx_handle_t inth) {
-  LTRACEF("handle %x\n", inth);
-
-  zx_status_t status;
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<InterruptDispatcher> interrupt;
-  status = up->handle_table().GetDispatcherWithRights(*up, inth, ZX_RIGHT_WRITE, &interrupt);
-  if (status != ZX_OK) {
-    return status;
-  }
-  return interrupt->Ack();
-}
-
-// zx_status_t zx_interrupt_wait
-zx_status_t sys_interrupt_wait(zx_handle_t handle, user_out_ptr<zx_time_t> out_timestamp) {
-  LTRACEF("handle %x\n", handle);
-
-  zx_status_t status;
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<InterruptDispatcher> interrupt;
-  status = up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_WAIT, &interrupt);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  zx_time_t timestamp;
-  status = interrupt->WaitForInterrupt(&timestamp);
-  if (status == ZX_OK && out_timestamp) {
-    status = out_timestamp.copy_to_user(timestamp);
-  }
-
-  return status;
-}
-
-// zx_status_t zx_interrupt_destroy
-zx_status_t sys_interrupt_destroy(zx_handle_t handle) {
-  LTRACEF("handle %x\n", handle);
-
-  zx_status_t status;
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<InterruptDispatcher> interrupt;
-  status = up->handle_table().GetDispatcher(*up, handle, &interrupt);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  return interrupt->Destroy();
-}
-
-// zx_status_t zx_interrupt_trigger
-zx_status_t sys_interrupt_trigger(zx_handle_t handle, uint32_t options, zx_time_t timestamp) {
-  LTRACEF("handle %x\n", handle);
-
-  if (options) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  zx_status_t status;
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<InterruptDispatcher> interrupt;
-  status = up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_SIGNAL, &interrupt);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  return interrupt->Trigger(timestamp);
-}

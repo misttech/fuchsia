@@ -374,6 +374,7 @@ zx_instant_boot_ticks_t cpp_timer_current_boot_ticks();
 zx_instant_mono_t cpp_current_mono_time();
 zx_instant_boot_t cpp_current_boot_time();
 CppRatio cpp_timer_get_ticks_to_time_ratio();
+CurrentTicksObservation cpp_timer_current_mono_and_boot_ticks();
 
 }  // extern "C"
 
