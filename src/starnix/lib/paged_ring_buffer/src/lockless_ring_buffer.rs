@@ -36,13 +36,14 @@ struct Node {
     // creating a linked list of pages.
     next: AtomicUsize,
     prev: AtomicUsize,
-    // Offset of the next free byte in `page_data`. Writers claim space with a CAS in
-    // `try_reserve_on_page()`, and resetting the page for reuse stores `PAGE_HEADER_SIZE`.
+    // Offset of the next free byte in `page_data`, with `WRITE_OFFSET_SEALED_BIT` set once the page
+    // is sealed. Writers claim space with a CAS in `try_reserve_on_page()`, `finalize()` seals the
+    // page, and resetting the page for reuse stores `PAGE_HEADER_SIZE`, which also unseals it.
     //
-    // Memory ordering: every access is Relaxed. Claims are read-modify-writes, so they are
-    // totally ordered in this field's modification order and each one sees all the others that
-    // came before it, whatever the memory ordering. A plain load has no such guarantee and can
-    // return an older value.
+    // Memory ordering: every access is Relaxed. A claim and the seal are both read-modify-writes,
+    // and each read-modify-write reads the last value before it in this field's modification
+    // order, whatever the memory ordering. A plain load has no such guarantee and can return an
+    // older value.
     //
     // Synchronizes with: nothing.
     //
@@ -52,9 +53,8 @@ struct Node {
     // atomic, which is enough: a load cannot return a value older than one written or read by an
     // access that happens before it (coherence).
     //
-    // The loads in `finalize()` and `release_writer()` must see the claims of the writers that
-    // released the page before them. For example, Writer A is the last to release a page that
-    // Writer B filled:
+    // The load in `release_writer()` must see the claims of the writers that released the page
+    // before it. For example, Writer A is the last to release a page that Writer B filled:
     //
     //   1. Writer A claims, moving `write_offset` to `PAGE_SIZE - 8`.
     //   2. Writer B claims, moving `write_offset` to `PAGE_SIZE`.
@@ -66,8 +66,8 @@ struct Node {
     // Step 4 reads the value that step 3 wrote, and step 5 is an acquire fence after step 4, so
     // step 3 synchronizes with step 5. Then step 2 happens before step 6, so by coherence step 6
     // cannot return the older `PAGE_SIZE - 8`, and Writer A finalizes the full page. Therefore
-    // Relaxed is enough for the claims and the load. The load in `finalize()` is ordered the
-    // same way, with its AcqRel `fetch_or` of `active_writers` in place of steps 4 and 5.
+    // Relaxed is enough for the claims and the load. The seal in `finalize()` is a
+    // read-modify-write, so it needs no such edge.
     //
     // A writer on a new tail page must see the page's reset. If its load in
     // `try_reserve_on_page()` returned the offset from the page's last use, the writer could
@@ -106,6 +106,18 @@ const PAGE_FINALIZED_BIT: usize = 1 << 62;
 const FLAGS_MASK: usize = PAGE_ACTIVE_BIT | PAGE_FINALIZED_BIT;
 const ACTIVE_WRITERS_MASK: usize = !FLAGS_MASK;
 
+// Bit 63 of `write_offset` marks the page as sealed: it accepts no new reservations.
+// `Node::finalize()` sets this bit in the same read-modify-write that reads the page's final
+// offset, and `try_reserve_on_page()` rejects a sealed page. Offsets never exceed `PAGE_SIZE`, so
+// they never reach this bit.
+//
+// Ftrace closes the same window differently. The writer that does not fit overshoots `write`
+// with `local_add_return()`, and `rb_reset_tail()` pads the rest of the page and leaves `write`
+// at the end of the page, so that no later writer can slip in. Claims here are a bounded CAS that
+// never overshoots, so the page needs an explicit marker. `Node::unsealed()` plays the role of
+// ftrace's `RB_WRITE_MASK`.
+const WRITE_OFFSET_SEALED_BIT: usize = 1 << 63;
+
 // When yielding under high contention, if we busy-spin we risk priority inversion and CPU starvation
 // of preempted writers. Sleeping for 50 microseconds gives the OS scheduler sufficient window (accounting
 // for 2-5us context switch overhead and 15-30us thread execution time) to reschedule and execute the
@@ -118,6 +130,11 @@ const SPIN_SLEEP_DURATION: std::time::Duration = std::time::Duration::from_micro
 const PROGRESSIVE_SLEEP_DURATION: std::time::Duration = std::time::Duration::from_millis(10);
 
 impl Node {
+    /// Returns the byte offset in a raw `write_offset` value, without `WRITE_OFFSET_SEALED_BIT`.
+    fn unsealed(raw_write_offset: usize) -> usize {
+        raw_write_offset & !WRITE_OFFSET_SEALED_BIT
+    }
+
     fn get_index(val: usize) -> usize {
         val & !FLAG_MASK
     }
@@ -128,23 +145,43 @@ impl Node {
         index | flags
     }
 
-    /// Finalizes the page by writing the data size to the header if tracing is enabled.
+    /// Finalizes the page by sealing `write_offset` and writing the data size to the page header.
     fn finalize(&self) {
         // Attempt to claim the finalization role for this page.
-        // If another thread already claimed it, return early to avoid a data race on `page_data`.
-        // A page reset clears `PAGE_FINALIZED_BIT`. See the TODO in `advance_to_next_page()`.
+        // If another thread already claimed it, return early without touching `write_offset` or
+        // `page_data`, so a losing finalizer has no side effects. A page reset clears
+        // `PAGE_FINALIZED_BIT`. See the TODO in `advance_to_next_page()`.
+        //
+        // - Acquire: pairs with the Release store of `PAGE_ACTIVE_BIT` in `advance_to_next_page()`
+        //   that recycled this page. It is meant to order this thread's `data_size` write below
+        //   after the recycle's clear of `data_size`, so that the clear cannot overwrite it.
+        //   TODO(https://fxbug.dev/570251032): The recycle clears `data_size` after that store,
+        //   so this pairing does not order the clear yet. A recycler preempted between the two
+        //   can zero a finalized page's `data_size`, and `swap_reader_page()` then returns `None`
+        //   for that page forever.
+        //   This thread needs no edge from the writers' Release `fetch_sub`: the seal below is a
+        //   read-modify-write (see `Node::write_offset`), and the reader acquires
+        //   `active_writers` itself before it reads the records.
+        // - Release: orders nothing. Nothing this thread wrote before the `fetch_or` is read
+        //   through it, and as a read-modify-write it continues the writers' release sequences
+        //   whatever its ordering. The `fetch_and` below publishes `data_size`.
+        //   TODO(https://fxbug.dev/570251032): Relax to Acquire.
         let old_val = self.active_writers.fetch_or(PAGE_FINALIZED_BIT, Ordering::AcqRel);
         if old_val & PAGE_FINALIZED_BIT != 0 {
             return;
         }
 
-        // Relaxed: the Acquire half of the `fetch_or` above synchronizes with the Release
-        // `fetch_sub` of every writer that released the page before it. Those writers' claims
-        // therefore happen before this load, so it returns an offset at least as large as each of
-        // them. Writers that are still registered may claim space after this load.
-        let write_offset = self.write_offset.load(Ordering::Relaxed);
-        let data_size = std::cmp::min(write_offset, (*PAGE_SIZE) as usize)
-            - LocklessRingBuffer::PAGE_HEADER_SIZE;
+        // Seal `write_offset` and read the final offset in the same read-modify-write. Every
+        // claim in `try_reserve_on_page()` that comes before this RMW in `write_offset`'s
+        // modification order is included in the offset, and every claim after it reads the
+        // sealed bit and fails. Relaxed: see `Node::write_offset`.
+        let write_offset =
+            Node::unsealed(self.write_offset.fetch_or(WRITE_OFFSET_SEALED_BIT, Ordering::Relaxed));
+
+        debug_assert!(
+            (LocklessRingBuffer::PAGE_HEADER_SIZE..=(*PAGE_SIZE) as usize).contains(&write_offset)
+        );
+        let data_size = write_offset - LocklessRingBuffer::PAGE_HEADER_SIZE;
         self.page_data.write_at(8, &(data_size as u64).to_le_bytes());
 
         // Clear `PAGE_ACTIVE_BIT` to publish the completed page.
@@ -162,10 +199,10 @@ impl Node {
     /// Releases a writer reservation on this node, and finalizes the node if it was the last writer.
     fn release_writer(&self) {
         // Release: orders this writer's claim and record writes before the decrement. It pairs
-        // with the `fetch_or` in `finalize()` and the fence below, so their loads see the claim.
-        // It also pairs with the Acquire loads of `active_writers` in `swap_reader_page()`, so
-        // the reader sees the record, and in `advance_to_next_page()`, so the page is reused
-        // only after the record is written.
+        // with the `fence(Acquire)` below in whichever writer releases the page last, so that
+        // writer's `write_offset` load sees this claim. It also pairs with the Acquire loads of
+        // `active_writers` in `swap_reader_page()`, so the reader sees the record, and in
+        // `advance_to_next_page()`, so the page is reused only after the record is written.
         let prev_writers = self.active_writers.fetch_sub(1, Ordering::Release);
 
         // If this was the last writer finalizing an active page (`PAGE_ACTIVE_BIT | 1`), we ensure the page is finalized.
@@ -180,8 +217,10 @@ impl Node {
             std::sync::atomic::fence(Ordering::Acquire);
 
             // Relaxed: the fence above makes the other writers' claims happen before this load.
-            // See `Node::write_offset`.
-            let write_offset = self.write_offset.load(Ordering::Relaxed);
+            // See `Node::write_offset`. The load can also return the seal of a `finalize()` that
+            // claimed the page after our `fetch_sub`. Then the call below loses the claim and does
+            // nothing.
+            let write_offset = Node::unsealed(self.write_offset.load(Ordering::Relaxed));
             if write_offset >= (*PAGE_SIZE) as usize {
                 // Since this thread holds a valid `Reservation`, `ref_count` remains > 0, which blocks
                 // `disable()` from completing and shrinking the VMO. This guarantees that the ring VMO
@@ -425,20 +464,25 @@ enum AdvanceResult {
 impl LocklessRingBuffer {
     /// Attempts to reserve space on the current tail page.
     ///
-    /// Returns `Ok((offset, now, delta))` if successful, or `Err(())` if the page is full.
+    /// Returns `Ok((offset, now, delta))` if successful, or `Err(())` if the page is full or
+    /// sealed.
     fn try_reserve_on_page(
         &self,
         tail_node: &Node,
         size: usize,
     ) -> Result<(usize, zx::BootInstant, zx::Duration<zx::BootTimeline>), ()> {
         // Atomically reserve space on the page using a bounded CAS loop.
-        // By verifying that `current_offset + size <= PAGE_SIZE` before executing the CAS,
-        // we guarantee that failed reservations never advance `write_offset`, keeping it exactly
-        // clamped to valid data boundaries.
+        // By verifying that `WRITE_OFFSET_SEALED_BIT` is not set and that
+        // `current_offset + size <= PAGE_SIZE` before executing the CAS, we guarantee that failed
+        // reservations never advance `write_offset` and that no reservation can succeed after
+        // `Node::finalize()` seals the page. A CAS that loses to the seal returns the sealed value,
+        // so the next iteration fails without retrying.
         // Relaxed: see `Node::write_offset`.
         let mut current_offset = tail_node.write_offset.load(Ordering::Relaxed);
         loop {
-            if current_offset + size > (*PAGE_SIZE) as usize {
+            if (current_offset & WRITE_OFFSET_SEALED_BIT) != 0
+                || current_offset + size > (*PAGE_SIZE) as usize
+            {
                 return Err(());
             }
             match tail_node.write_offset.compare_exchange_weak(
@@ -485,23 +529,19 @@ impl LocklessRingBuffer {
             return AdvanceResult::Advanced;
         }
 
-        // Finalize the tail page and publish its size.
+        // Finalize the tail page: seal it against further reservations and publish its size.
         // Writers that already hold reservations on it may still be writing. The reader waits
         // for them through `active_writers`.
-        //
-        // TODO(https://fxbug.dev/570251032): `data_size` can leave out records of writers that
-        // are still registered on the page. The `write_offset` load in `finalize()` can return an
-        // offset older than their claims, and a writer that registered before `finalize()` clears
-        // `PAGE_ACTIVE_BIT` can still claim space after that load. The reader stops at
-        // `data_size`, so those records are silently lost.
         //
         // TODO(https://fxbug.dev/570251032): A thread preempted between the `tail_page` check
         // above and this call can make the call after `tail_node` has been reset, either as a
         // later tail here or as a returned reader page in `swap_reader_page()`. The reset clears
-        // `PAGE_FINALIZED_BIT`, so this call wins the claim and closes a live or empty page,
-        // possibly with `data_size == 0`. Once that page is the head, `swap_reader_page()`
-        // returns `None` forever, so the reader stalls and, without overwrite, writers fail with
-        // `ENOSPC`. Below, the same thread can also find `FLAG_HEADER` on `tail_node.next` and
+        // `PAGE_FINALIZED_BIT`, so this call wins the claim and closes the page. If the page is
+        // already the tail, it is closed live, possibly with `data_size == 0`. Once that page is
+        // the head, `swap_reader_page()` returns `None` forever, so the reader stalls and,
+        // without overwrite, writers fail with `ENOSPC`. If the tail has not reached the page
+        // yet, the page is sealed while empty, and the reset below reopens it when the tail
+        // arrives. Below, the same thread can also find `FLAG_HEADER` on `tail_node.next` and
         // drop the head page, or fail with `ENOSPC`, while the ring still has free pages.
         if self.is_enabled() {
             tail_node.finalize();
@@ -589,9 +629,11 @@ impl LocklessRingBuffer {
         }
 
         let next_node = &self.nodes[next_idx];
-        // Only the thread whose CAS moves `next_node.write_offset` from a used offset to
-        // `PAGE_HEADER_SIZE` resets the rest of the page. Any thread that still sees `tail_val` in
-        // `tail_page` then helps move the tail.
+        // Only the thread whose CAS moves `next_node.write_offset` to `PAGE_HEADER_SIZE` (from a
+        // used or sealed offset; the CAS also clears `WRITE_OFFSET_SEALED_BIT`) resets the rest
+        // of the page. Any thread that still sees `tail_val` in `tail_page` then helps move the
+        // tail. A page sealed while empty holds `PAGE_HEADER_SIZE | WRITE_OFFSET_SEALED_BIT`,
+        // not `PAGE_HEADER_SIZE`, so it is reset here too, which reopens it.
         let (should_advance, won_reset) = {
             // Relaxed: see `Node::write_offset`.
             let mut current = next_node.write_offset.load(Ordering::Relaxed);
@@ -600,10 +642,11 @@ impl LocklessRingBuffer {
                 if self.tail_page.load(Ordering::Acquire) != tail_val {
                     break (false, false);
                 }
-                // Edge Case: If `current` is already `PAGE_HEADER_SIZE`, another concurrent writer thread has
-                // already won the reset race on this target page. Since `self.tail_page` hasn't advanced yet,
-                // we must still return `should_advance = true` to cooperate in advancing the global `tail_page`
-                // pointer, while returning `won_reset = false` to avoid redundantly clobbering page metadata.
+                // If `current` is exactly `PAGE_HEADER_SIZE` (unsealed), the page was already
+                // reset: another thread won the reset race here, or `swap_reader_page()` or
+                // `enable()` reset it. Since `self.tail_page` hasn't advanced yet, we must still
+                // return `should_advance = true` to cooperate in advancing the global `tail_page`
+                // pointer, while returning `won_reset = false` to avoid clobbering page metadata.
                 if current == LocklessRingBuffer::PAGE_HEADER_SIZE {
                     break (true, false);
                 }
@@ -1150,6 +1193,15 @@ mod tests {
         delta: u64,
         data: [u8; 12],
     }
+    /// Returns the `data_size` field of the page header at the start of `page`.
+    fn read_data_size(page: &[u8]) -> usize {
+        const DATA_SIZE_OFFSET: usize = 8;
+        assert!(page.len() >= LocklessRingBuffer::PAGE_HEADER_SIZE, "page shorter than header");
+        let mut size_bytes = [0u8; 8];
+        size_bytes.copy_from_slice(&page[DATA_SIZE_OFFSET..LocklessRingBuffer::PAGE_HEADER_SIZE]);
+        u64::from_le_bytes(size_bytes) as usize
+    }
+
     impl TestMessage {
         pub const SIZE: usize = 32;
         fn to_bytes(&self) -> [u8; TestMessage::SIZE] {
@@ -1378,9 +1430,7 @@ mod tests {
                         let mut header_ts_bytes = [0u8; 8];
                         header_ts_bytes.copy_from_slice(&dest.data()[0..8]);
                         let header_timestamp = u64::from_le_bytes(header_ts_bytes);
-                        let mut size_bytes = [0u8; 8];
-                        size_bytes.copy_from_slice(&dest.data()[8..16]);
-                        let data_size = u64::from_le_bytes(size_bytes) as usize;
+                        let data_size = read_data_size(dest.data());
                         let max_offset = LocklessRingBuffer::PAGE_HEADER_SIZE + data_size;
                         let mut offset = LocklessRingBuffer::PAGE_HEADER_SIZE;
                         let mut first_msg = true;
@@ -2156,10 +2206,111 @@ mod tests {
         assert_eq!(res.node_idx, 1);
         buffer.commit(res);
 
-        // Check write_offset of Node 0.
-        // Before CAS fix, write_offset was 4116 (> page_size).
-        // After CAS fix, write_offset is exactly expected_offset (4016).
-        assert_eq!(buffer.nodes[0].write_offset.load(Ordering::Relaxed), expected_offset);
+        // The failed reservation must not advance Node 0's write_offset, and finalizing Node 0
+        // sealed it at that offset.
+        assert_eq!(
+            buffer.nodes[0].write_offset.load(Ordering::Relaxed),
+            expected_offset | WRITE_OFFSET_SEALED_BIT
+        );
+    }
+
+    #[test]
+    fn test_sealed_write_offset_prevents_late_small_reservation() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let page_size = (*PAGE_SIZE) as usize;
+        let header_size = LocklessRingBuffer::PAGE_HEADER_SIZE;
+
+        // Leave 80 bytes remaining on Node 0.
+        let initial_size = page_size - header_size - 80;
+        let (res0, _, _) = buffer.reserve(initial_size).unwrap();
+        res0.write_at(0, &vec![0xAA; initial_size]);
+        buffer.commit(res0);
+
+        // A late writer registers on Node 0 (increments `active_writers` while `PAGE_ACTIVE_BIT`
+        // is still set) but has not claimed space yet when another writer finalizes Node 0.
+        // Relaxed: this test is single-threaded. `PAGE_ACTIVE_BIT` is set, so `reserve()`'s
+        // registration CAS would succeed here too.
+        buffer.nodes[0].active_writers.fetch_add(1, Ordering::Relaxed);
+        buffer.nodes[0].finalize();
+
+        // The late writer now tries a 32-byte claim. 32 bytes fit in the 80 bytes left, but
+        // Node 0 is sealed, so the claim must fail. Otherwise the record would sit past Node 0's
+        // published `data_size` and readers would never see it.
+        assert!(buffer.try_reserve_on_page(&buffer.nodes[0], 32).is_err());
+        // The rejected claim left the sealed offset unchanged.
+        assert_eq!(
+            buffer.nodes[0].write_offset.load(Ordering::Relaxed),
+            (header_size + initial_size) | WRITE_OFFSET_SEALED_BIT
+        );
+        buffer.nodes[0].release_writer();
+
+        // The writer retries through `reserve()` and lands on Node 1.
+        let (res_small, _, _) = buffer.reserve(32).unwrap();
+        assert_eq!(res_small.node_idx, 1);
+        buffer.commit(res_small);
+
+        let mut dest = VecOutputBuffer::new(page_size);
+        let bytes_read = buffer.read(&mut dest).unwrap();
+        assert_eq!(bytes_read, page_size);
+        assert_eq!(read_data_size(dest.data()), initial_size);
+    }
+
+    #[test]
+    fn test_advance_reopens_page_sealed_while_empty() {
+        // 4 nodes: ring 0 -> 1 -> 2 -> 0, and reader page 3.
+        let buffer =
+            LocklessRingBuffer::new(4 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let page_size = (*PAGE_SIZE) as usize;
+        let header_size = LocklessRingBuffer::PAGE_HEADER_SIZE;
+        let record_size = page_size - header_size;
+
+        // A stale thread finalizes Node 1 before the tail reaches it. This is the state a stale
+        // `finalize()` leaves on a page that `swap_reader_page()` re-inserted: sealed at
+        // `PAGE_HEADER_SIZE`, `PAGE_ACTIVE_BIT` clear, `PAGE_FINALIZED_BIT` set, `data_size == 0`.
+        buffer.nodes[1].finalize();
+        assert_eq!(
+            buffer.nodes[1].write_offset.load(Ordering::Relaxed),
+            header_size | WRITE_OFFSET_SEALED_BIT
+        );
+        assert_eq!(
+            buffer.nodes[1].active_writers.load(Ordering::Relaxed) & FLAGS_MASK,
+            PAGE_FINALIZED_BIT
+        );
+
+        // Fill Node 0, so that the next reservation advances the tail to Node 1.
+        let (res0, _, _) = buffer.reserve(record_size).unwrap();
+        assert_eq!(res0.node_idx, 0);
+        res0.write_at(0, &vec![0xAA; record_size]);
+        buffer.commit(res0);
+
+        // The advance resets Node 1, because its offset is sealed rather than exactly
+        // `PAGE_HEADER_SIZE`, so the reservation lands on Node 1 instead of skipping it.
+        let (res1, _, _) = buffer.reserve(record_size).unwrap();
+        assert_eq!(res1.node_idx, 1);
+        assert_eq!(buffer.tail_page.load(Ordering::Relaxed).index(), 1);
+        assert_eq!(
+            buffer.nodes[1].active_writers.load(Ordering::Relaxed),
+            PAGE_ACTIVE_BIT | 1,
+            "Node 1 must be active again, with the one writer registered"
+        );
+        res1.write_at(0, &vec![0xBB; record_size]);
+        buffer.commit(res1);
+
+        // Move the tail to Node 2, so that Node 1 is finalized with its record.
+        let (res2, _, _) = buffer.reserve(32).unwrap();
+        assert_eq!(res2.node_idx, 2);
+        buffer.commit(res2);
+
+        // The reader gets Node 0 and then Node 1, each with a full record.
+        for fill in [0xAA, 0xBB] {
+            let mut dest = VecOutputBuffer::new(page_size);
+            assert_eq!(buffer.read(&mut dest).unwrap(), page_size);
+            assert_eq!(read_data_size(dest.data()), record_size);
+            assert!(dest.data()[header_size..].iter().all(|&b| b == fill));
+        }
     }
 
     #[test]
