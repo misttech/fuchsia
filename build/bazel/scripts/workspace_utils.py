@@ -826,13 +826,21 @@ class GnBuildArgs(object):
         Raises:
             ValueError if the input content is malformed.
         """
+        # When variants are enabled for Fuchsia (e.g. with `select_variant = [ "asan" ]`),
+        # Fuchsia artifacts are built in a variant-specific toolchain which matches the
+        # default toolchain (e.g. //build/toolchain/fuchsia:arm64-asan instead of
+        # //build/toolchain/fuchsia:arm64). Similarly, for host variants, a variant-specific
+        # host toolchain will be used (e.g. `//build/toolchain:host_x64-asan` instead of
+        # `//build/toolchain:host_x64`). These are referenced by the special values
+        # fuchsia_default_variant_toolchain and host_default_variant_toolchain.
+        #
         # Ensure all Bazel configuration flags that are defined in
-        # //build/bazel/config/bazel_args.gni, which is evaluated in
-        # the default (fuchsia) and host GN toolchain context,
-        # are written to @fuchsia_build_info//:platform_flags.bzl
-        # which should expose a single dictionary mapping one
-        # of "host", "fuchsia" or "fuchsia_platform" to a list
-        # a flags (e.g. '[ "--//some/flag:label=value" ]').
+        # //build/bazel/config/bazel_args.gni, which is evaluated in the
+        # {fuchsia,host}_default_variant_toolchain contexts, are written to
+        # @fuchsia_build_info//:platform_flags.bzl.
+        #
+        # This file should expose a single dictionary mapping one of "host", "fuchsia" or
+        # "fuchsia_platform" to a lista flags (e.g. '[ "--//some/flag:label=value" ]').
         #
         # This in turn should be used by in-tree platform definitions
         # under //build/bazel/platforms/BUILD.bazel to ensure these

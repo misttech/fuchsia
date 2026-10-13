@@ -382,15 +382,15 @@ generated_file("gn_build_variables_for_bazel") {
 if (current_toolchain == default_toolchain) {
   group("bazel_args_json") {
     deps = [
-      "//build/bazel/config:bazel_args_json($default_toolchain)",
-      "//build/bazel/config:bazel_args_json($host_toolchain)",
+      "//build/bazel/config:bazel_args_json($fuchsia_default_variant_toolchain)",
+      "//build/bazel/config:bazel_args_json($host_default_variant_toolchain)",
     ]
   }
 
   group("bazel_default_configs_json") {
     deps = [
-      "//build/bazel/config:bazel_default_configs_json($default_toolchain)",
-      "//build/bazel/config:bazel_default_configs_json($host_toolchain)",
+      "//build/bazel/config:bazel_default_configs_json($fuchsia_default_variant_toolchain)",
+      "//build/bazel/config:bazel_default_configs_json($host_default_variant_toolchain)",
     ]
   }
 }

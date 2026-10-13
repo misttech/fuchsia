@@ -1018,10 +1018,12 @@ if (!defined(toolchain_variant.name)) {
 
 # Compute fuchsia_toolchain_tags and host_toolchain_tags which contain the list
 # of toolchain tags that apply to the fuchsia and host toolchain by default,
-# based on the 'select_variant' value after canonicalization.
+# based on the 'select_variant' value after canonicalization, as well as
+# fuchsia_default_variant_toolchain and host_default_variant_toolchain which
+# hold the labels of the corresponding default variant toolchains.
 #
 # Note that these do not depend on the current toolchain context.
-# Also, fuchsia_toolchain_tags to not apply to Zircon toolchains.
+# Also, fuchsia_toolchain_tags do not apply to Zircon toolchains.
 #
 _fuchsia_toolchain_variant_name = false
 _host_toolchain_variant_name = false
@@ -1035,23 +1037,31 @@ foreach(selector, select_variant_canonical) {
     _host_toolchain_variant_name = selector.variant
   }
 }
-if (_fuchsia_toolchain_variant_name == false) {
+if (_fuchsia_toolchain_variant_name == false ||
+    _fuchsia_toolchain_variant_name == "novariant") {
   fuchsia_toolchain_tags = []
+  fuchsia_default_variant_toolchain = target_toolchain
 } else {
   foreach(toolchain_variant, all_toolchain_variants) {
     if (toolchain_variant.name == _fuchsia_toolchain_variant_name) {
       fuchsia_toolchain_tags = toolchain_variant.tags
     }
   }
+  fuchsia_default_variant_toolchain =
+      "${target_toolchain}-${_fuchsia_toolchain_variant_name}"
 }
-if (_host_toolchain_variant_name == false) {
+if (_host_toolchain_variant_name == false ||
+    _host_toolchain_variant_name == "novariant") {
   host_toolchain_tags = []
+  host_default_variant_toolchain = host_toolchain
 } else {
   foreach(toolchain_variant, all_toolchain_variants) {
     if (toolchain_variant.name == _host_toolchain_variant_name) {
       host_toolchain_tags = toolchain_variant.tags
     }
   }
+  host_default_variant_toolchain =
+      "${host_toolchain}-${_host_toolchain_variant_name}"
 }
 
 # Shared libraries built in GN toolchain() instances that implement instrumented
