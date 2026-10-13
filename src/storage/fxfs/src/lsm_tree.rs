@@ -323,6 +323,11 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         self.counters.compaction.lock().unwrap().compaction_bytes_written
     }
 
+    #[cfg(test)]
+    pub fn counters(&self) -> &TreeCounters {
+        &self.counters
+    }
+
     /// Returns an empty layer-set for this tree.
     pub fn empty_layer_set(&self) -> LayerSet<K, V> {
         LayerSet { layers: Vec::new(), merge_fn: self.merge_fn, counters: self.counters.clone() }

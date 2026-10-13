@@ -434,13 +434,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let tree = &self.store().tree;
         let layer_set = tree.layer_set();
         let key = Extent(range);
-        let lower_bound = ObjectKey::attribute(
-            self.object_id(),
-            attribute_id,
-            AttributeKey::Extent(key.search_key()),
-        );
+        let query_key =
+            ObjectKey::attribute(self.object_id(), attribute_id, AttributeKey::Extent(key.clone()));
         let mut merger = layer_set.merger();
-        let mut iter = merger.query(Query::FullRange(&lower_bound)).await?;
+        let mut iter = merger.query(Query::LimitedRange(&query_key)).await?;
         let allocator = self.store().allocator();
         let mut deallocated = 0;
         let trace = self.trace();
@@ -457,28 +454,25 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             if *object_id != self.object_id() || *attr_id != attribute_id {
                 break;
             }
+            let Some(overlap) = key.overlap(extent_key) else {
+                break;
+            };
             if let ExtentValue::Some { device_offset, .. } = value {
-                if let Some(overlap) = key.overlap(extent_key) {
-                    let range = device_offset + overlap.start - extent_key.start
-                        ..device_offset + overlap.end - extent_key.start;
-                    ensure!(block_size.is_aligned(&range), FxfsError::Inconsistent);
-                    if trace {
-                        info!(
-                            store_id = self.store().store_object_id(),
-                            oid = self.object_id(),
-                            device_range:? = range,
-                            len = range.end - range.start,
-                            extent_key:?;
-                            "D",
-                        );
-                    }
-                    allocator
-                        .deallocate(transaction, self.store().store_object_id(), range)
-                        .await?;
-                    deallocated += overlap.end - overlap.start;
-                } else {
-                    break;
+                let range = device_offset + overlap.start - extent_key.start
+                    ..device_offset + overlap.end - extent_key.start;
+                ensure!(block_size.is_aligned(&range), FxfsError::Inconsistent);
+                if trace {
+                    info!(
+                        store_id = self.store().store_object_id(),
+                        oid = self.object_id(),
+                        device_range:? = range,
+                        len = range.end - range.start,
+                        extent_key:?;
+                        "D",
+                    );
                 }
+                allocator.deallocate(transaction, self.store().store_object_id(), range).await?;
+                deallocated += overlap.end - overlap.start;
             }
             iter.advance().await?;
         }
@@ -1589,10 +1583,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let layer_set = tree.layer_set();
         let mut merger = layer_set.merger();
         let mut iter = merger
-            .query(Query::FullRange(&ObjectKey::attribute(
+            .query(Query::LimitedRange(&ObjectKey::extent(
                 self.object_id(),
                 attr_id,
-                AttributeKey::Extent(Extent::search_key_from_offset(target_range.start)),
+                target_range.start..ranges.last().unwrap().end,
             )))
             .await?;
 

@@ -454,16 +454,19 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     /// range, or no extent at all. If a single allocated and written extent is found, this returns
     /// false.
     pub async fn check_unwritten_zero(&self, range: Range<u64>) -> Result<bool, Error> {
+        if range.is_empty() {
+            return Ok(true);
+        }
         let tree = &self.store().tree();
         let layer_set = tree.layer_set();
         let key = Extent(range);
-        let lower_bound = ObjectKey::attribute(
+        let query_key = ObjectKey::attribute(
             self.object_id(),
             self.attribute_id,
-            AttributeKey::Extent(key.search_key()),
+            AttributeKey::Extent(key.clone()),
         );
         let mut merger = layer_set.merger();
-        let mut iter = merger.query(Query::FullRange(&lower_bound)).await?;
+        let mut iter = merger.query(Query::LimitedRange(&query_key)).await?;
         while let Some(ItemRef {
             key:
                 ObjectKey {
@@ -476,24 +479,23 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             && *object_id == self.object_id()
             && *attr_id == self.attribute_id
         {
+            let Some(overlap) = key.overlap(extent_key) else {
+                break;
+            };
             if let ExtentValue::Some { mode, .. } = value {
-                if let Some(overlap) = key.overlap(extent_key) {
-                    if let ExtentMode::OverwritePartial(bits) = mode {
-                        let starting_index = (overlap.start - extent_key.start) / self.block_size();
-                        for initialized in bits
-                            .iter()
-                            .skip(starting_index as usize)
-                            .take((overlap.length().unwrap() / self.block_size()) as usize)
-                        {
-                            if initialized {
-                                return Ok(false);
-                            }
+                if let ExtentMode::OverwritePartial(bits) = mode {
+                    let starting_index = (overlap.start - extent_key.start) / self.block_size();
+                    for initialized in bits
+                        .iter()
+                        .skip(starting_index as usize)
+                        .take((overlap.length().unwrap() / self.block_size()) as usize)
+                    {
+                        if initialized {
+                            return Ok(false);
                         }
-                    } else {
-                        return Ok(false);
                     }
                 } else {
-                    break;
+                    return Ok(false);
                 }
             }
             iter.advance().await?;
@@ -751,13 +753,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         {
             let tree = &self.store().tree;
             let layer_set = tree.layer_set();
-            let offset_key = ObjectKey::attribute(
-                self.object_id(),
-                self.attribute_id(),
-                AttributeKey::Extent(Extent::search_key_from_offset(new_range.start)),
-            );
+            let offset_key =
+                ObjectKey::extent(self.object_id(), self.attribute_id(), new_range.clone());
             let mut merger = layer_set.merger();
-            let mut iter = merger.query(Query::FullRange(&offset_key)).await?;
+            let mut iter = merger.query(Query::LimitedRange(&offset_key)).await?;
 
             loop {
                 match iter.get() {
@@ -1087,6 +1086,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         mut buf: MutableBufferRef<'_>,
         options: OverwriteOptions,
     ) -> Result<(), Error> {
+        if buf.is_empty() {
+            return Ok(());
+        }
         ensure!((buf.len() as u32) % self.store().device.block_size() == 0, FxfsError::InvalidArgs);
         let end = offset + buf.len() as u64;
 
@@ -1110,10 +1112,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             let layer_set = tree.layer_set();
             let mut merger = layer_set.merger();
             let mut iter = merger
-                .query(Query::FullRange(&ObjectKey::attribute(
+                .query(Query::LimitedRange(&ObjectKey::extent(
                     self.object_id(),
                     self.attribute_id(),
-                    AttributeKey::Extent(Extent::search_key_from_offset(offset)),
+                    offset..end,
                 )))
                 .await?;
             let block_size = self.block_size();
@@ -1414,10 +1416,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             let mut merger = layer_set.merger();
             let aligned_old_size = block_size.align_down(old_size);
             let iter = merger
-                .query(Query::FullRange(&ObjectKey::attribute(
+                .query(Query::LimitedRange(&ObjectKey::extent(
                     self.object_id(),
                     self.attribute_id(),
-                    AttributeKey::Extent(Extent::search_key_from_offset(aligned_old_size)),
+                    aligned_old_size..aligned_old_size + block_size,
                 )))
                 .await?;
             if let Some(ItemRef {
@@ -1431,7 +1433,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 ..
             }) = iter.get()
             {
-                if *object_id == self.object_id() && *attribute_id == self.attribute_id() {
+                if *object_id == self.object_id()
+                    && *attribute_id == self.attribute_id()
+                    && extent_key.start <= aligned_old_size
+                {
                     let device_offset = device_offset
                         .checked_add(aligned_old_size - extent_key.start)
                         .ok_or(FxfsError::Inconsistent)?;
@@ -1479,15 +1484,18 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let block_size = self.block_size();
         ensure!(block_size.is_aligned(&*file_range), FxfsError::InvalidArgs);
         ensure!(!self.handle.is_encrypted(), FxfsError::NotSupported);
+        if file_range.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut ranges = Vec::new();
         let tree = &self.store().tree;
         let layer_set = tree.layer_set();
         let mut merger = layer_set.merger();
         let mut iter = merger
-            .query(Query::FullRange(&ObjectKey::attribute(
+            .query(Query::LimitedRange(&ObjectKey::extent(
                 self.object_id(),
                 self.attribute_id(),
-                AttributeKey::Extent(Extent::search_key_from_offset(file_range.start)),
+                file_range.clone(),
             )))
             .await?;
         let mut allocated = 0;
@@ -5111,6 +5119,81 @@ mod tests {
             object.allocate(i * block_size..(i + 1) * block_size).await.expect("allocate failed");
         }
         object.allocate(0..1600 * block_size).await.expect("allocate failed");
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_bounded_extent_queries_skip_layers() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let store = fs.root_store();
+        let block_size = fs.block_size().get();
+
+        // Populate enough objects and flush so the base persistent layer has a bloom filter.
+        for _ in 0..200 {
+            let _ = create_object_with_key(fs.clone(), Some(&new_insecure_crypt()), false).await;
+        }
+        store.flush().await.expect("flush failed");
+
+        let object = create_object_with_key(fs.clone(), Some(&new_insecure_crypt()), true).await;
+        let mut buf = object.allocate_buffer(block_size as usize).await;
+        buf.fill(0xab);
+
+        let skipped = || {
+            store.tree().counters().layer_files_skipped.load(std::sync::atomic::Ordering::Relaxed)
+        };
+
+        // 1. write_or_append calls deallocate_old_extents (LimitedRange).
+        let before = skipped();
+        object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+        assert!(skipped() > before);
+
+        // 2. check_unwritten_zero (LimitedRange) and stopping at a deleted extent past range.end.
+        object.write_or_append(Some(block_size * 2), buf.as_ref()).await.expect("write failed");
+        // Insert an extent tombstone at block 1 (block_size..block_size * 2) while block 2 remains
+        // allocated. Checking unwritten zero on block 0..block 1 must stop at block 1's tombstone
+        // rather than advancing into block 2.
+        let mut transaction = object.new_transaction().await.expect("new_transaction failed");
+        transaction.add(
+            store.store_object_id(),
+            Mutation::merge_object(
+                ObjectKey::extent(
+                    object.object_id(),
+                    AttributeId::DATA,
+                    block_size..block_size * 2,
+                ),
+                ObjectValue::deleted_extent(),
+            ),
+        );
+        transaction.commit().await.expect("commit failed");
+
+        let before = skipped();
+        assert!(!object.check_unwritten_zero(0..block_size).await.expect("check failed"));
+        assert!(
+            object.check_unwritten_zero(block_size..block_size * 2).await.expect("check failed")
+        );
+        assert!(skipped() >= before + 2);
+
+        // 3. allocate and multi_overwrite (LimitedRange).
+        let before = skipped();
+        object.allocate(0..block_size * 2).await.expect("allocate failed");
+        assert!(skipped() > before);
+
+        let mut transaction = object.new_transaction().await.expect("new_transaction failed");
+        let before = skipped();
+        object
+            .multi_overwrite(&mut transaction, AttributeId::DATA, &[0..block_size], buf.as_mut())
+            .await
+            .expect("multi_overwrite failed");
+        transaction.commit().await.expect("commit failed");
+        assert!(skipped() > before);
+
+        // 4. unaligned grow (LimitedRange).
+        object.truncate(block_size / 2).await.expect("truncate failed");
+        let before = skipped();
+        object.truncate(block_size * 2).await.expect("grow failed");
+        assert!(skipped() > before);
 
         fs.close().await.expect("close failed");
     }
