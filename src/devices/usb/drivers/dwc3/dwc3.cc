@@ -120,6 +120,14 @@ class QualcommExtension final : public PlatformExtension {
     TRACE_DURATION("dwc3", "QualcommExtension::Start");
     return PowerOn(true);
   }
+  void Stop() override {
+    TRACE_DURATION("dwc3", "QualcommExtension::Stop");
+    if (power_on_) {
+      // Keep clocks and regulator enabled here because Dwc3::~Dwc3() calls
+      // ReleaseResources() after Dwc3::Stop() to reset HW over MMIO.
+      HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(false).WriteTo(&mmio_);
+    }
+  }
   zx::result<> Suspend() override {
     TRACE_DURATION("dwc3", "QualcommExtension::Suspend");
     HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(false).WriteTo(&mmio_);
@@ -1314,6 +1322,9 @@ Dwc3::~Dwc3() {
 void Dwc3::Stop(fdf::StopCompleter completer) {
   TRACE_DURATION("dwc3", "Dwc3::Stop");
   fdf::info("Dwc3::Stop called");
+  if (platform_extension_) {
+    platform_extension_->Stop();
+  }
   dwc3_root_ = {};
   phy_ = {};
   dci_bindings_.RemoveAll();

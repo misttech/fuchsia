@@ -58,6 +58,7 @@ class PlatformExtension {
  public:
   virtual ~PlatformExtension() = default;
   virtual zx::result<> Start() = 0;
+  virtual void Stop() {}
   virtual zx::result<> Suspend() = 0;
   virtual zx::result<> Resume() = 0;
   virtual bool PowersDownCoreOnDisconnect() const { return true; }
