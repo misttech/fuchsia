@@ -15,11 +15,7 @@ namespace vm_unittest {
 class TestPmmNode {
  public:
   explicit TestPmmNode(bool discardable)
-      : evictor_(
-            [this](VmCompression* compression, Evictor::EvictionLevel eviction_level) {
-              return this->TestReclaim(compression, eviction_level);
-            },
-            [this]() { return this->FreePages(); }),
+      : evictor_(this, &TestPmmNode::TestReclaimCallback, &TestPmmNode::FreePagesCallback),
         discardable_(discardable) {
     evictor_.EnableEviction(true);
   }
@@ -45,6 +41,28 @@ class TestPmmNode {
   void UncapEvictions() { max_evictions_ = UINT64_MAX; }
 
  private:
+  static bool TestReclaimCallback(void* ctx, VmCompression* compression,
+                                  Evictor::EvictionLevel eviction_level, bool* out_is_ok,
+                                  VmCowReclaimSuccess* out_success,
+                                  VmCowReclaimFailure* out_failure) {
+    auto res = static_cast<TestPmmNode*>(ctx)->TestReclaim(compression, eviction_level);
+    if (!res.has_value()) {
+      return false;
+    }
+    if (res->is_ok()) {
+      *out_is_ok = true;
+      *out_success = res->value();
+    } else {
+      *out_is_ok = false;
+      *out_failure = res->error_value();
+    }
+    return true;
+  }
+
+  static uint64_t FreePagesCallback(void* ctx) {
+    return static_cast<const TestPmmNode*>(ctx)->FreePages();
+  }
+
   ktl::optional<VmCowReclaimResult> TestReclaim(VmCompression* compression,
                                                 Evictor::EvictionLevel eviction_level) {
     if (total_evictions_ >= max_evictions_) {

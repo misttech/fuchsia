@@ -24,7 +24,6 @@ source_set("vm") {
     "compressor_ffi.cc",
     "debug_compressor.cc",
     "evictor.cc",
-    "evictor_ffi.cc",
     "kstack.cc",
     "lz4_compressor.cc",
     "mem_command.cc",
@@ -125,7 +124,7 @@ kernel_bindgen_crate("scanner-bindings") {
 
 kernel_bindgen_crate("evictor-bindings") {
   visibility = [ ":*" ]
-  headers = [ "include/vm/evictor_ffi.h" ]
+  headers = [ "include/vm/evictor.h" ]
   non_rust_deps = [ ":vm" ]
   output_name = "evictor_bindings.rs"
   cpp = true
@@ -133,18 +132,6 @@ kernel_bindgen_crate("evictor-bindings") {
   edition = "2024"
   notice_year = 2026
 
-  function_allowlist = [
-    "cpp_evictor_disable_eviction",
-    "cpp_evictor_init",
-    "cpp_evictor_enable_eviction",
-    "cpp_evictor_evict_from_external_target",
-    "cpp_evictor_evict_synchronous",
-    "cpp_evictor_evict_asynchronous",
-    "cpp_evictor_is_eviction_enabled",
-    "cpp_evictor_is_compression_enabled",
-    "cpp_evictor_get_global_stats",
-    "cpp_evictor_debug_get_evictor_thread",
-  ]
   type_allowlist = [
     "Evictor",
     "Evictor_EvictionLevel",
@@ -154,23 +141,16 @@ kernel_bindgen_crate("evictor-bindings") {
     "Evictor_EvictedPageCounts",
     "Evictor_EvictionResult",
     "Evictor_EvictorStats",
-    "Evictor_ReclaimFunction",
-    "Evictor_FreePagesFunction",
-    "EvictorTestReclaimFn",
-    "EvictorTestFreePagesFn",
     "ktl::atomic",
     "std::atomic",
   ]
   type_blocklist = [
     "AutounsignalEvent",
+    "Evictor_TestFreePagesFunction",
+    "Evictor_TestReclaimFunction",
     "Thread",
-    "VmCompression",
-    "VmCowReclaimSuccess",
-    "VmCowReclaimFailure",
   ]
   opaque_types = [
-    "Evictor_ReclaimFunction",
-    "Evictor_FreePagesFunction",
     "ktl::atomic",
     "std::atomic",
   ]
@@ -187,9 +167,6 @@ kernel_bindgen_crate("evictor-bindings") {
     "#![no_std]",
     "pub use event_bindings::AutounsignalEvent;",
     "pub type Thread = core::ffi::c_void;",
-    "pub type VmCompression = core::ffi::c_void;",
-    "pub type VmCowReclaimSuccess = core::ffi::c_void;",
-    "pub type VmCowReclaimFailure = core::ffi::c_void;",
   ]
   expect_lints = [ "non_camel_case_types" ]
 }
