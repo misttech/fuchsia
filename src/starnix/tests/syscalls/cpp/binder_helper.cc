@@ -27,7 +27,9 @@ ParsedMessage ParseMessage(const binder_uintptr_t start, const binder_size_t len
   binder_uintptr_t ptr = start;
   while (ptr < end) {
     binder_driver_return_protocol returned = *(binder_driver_return_protocol*)ptr;
-    m.returns_.push_back(returned);
+    if (returned != BR_NOOP) {
+      m.returns_.push_back(returned);
+    }
     // `binder_driver_return_protocol` values are defined with `_IOR`/`_IO`
     // macros, encoding their payload size in the command value.
     ptr += sizeof(binder_driver_return_protocol) + _IOC_SIZE(returned);

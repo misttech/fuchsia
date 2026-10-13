@@ -269,18 +269,22 @@ TEST_P(CallPermission, DoCall) {
     payload.write_buffer = (binder_uintptr_t)&transaction_payload;
     payload.write_size = sizeof(TransactionWriteBuffer);
 
-    std::array<uint8_t, kReadBufferSize> read_buffer = {};
-    payload.read_size = sizeof(read_buffer);
-    payload.read_buffer = (binder_uintptr_t)read_buffer.data();
-    payload.read_consumed = 0;
+    std::vector<binder_driver_return_protocol> returns;
+    while (returns.empty() || (returns.back() != BR_REPLY && returns.back() != BR_FAILED_REPLY)) {
+      std::array<uint8_t, kReadBufferSize> read_buffer = {};
+      payload.read_size = sizeof(read_buffer);
+      payload.read_buffer = (binder_uintptr_t)read_buffer.data();
+      payload.read_consumed = 0;
 
-    ASSERT_THAT(ioctl(binder.get(), BINDER_WRITE_READ, &payload), SyscallSucceeds());
-    ParsedMessage message =
-        ParseMessage((binder_uintptr_t)read_buffer.data(), payload.read_consumed);
+      ASSERT_THAT(ioctl(binder.get(), BINDER_WRITE_READ, &payload), SyscallSucceeds());
+      ParsedMessage message =
+          ParseMessage((binder_uintptr_t)read_buffer.data(), payload.read_consumed);
+      returns.insert(returns.end(), message.returns_.begin(), message.returns_.end());
+    }
     if (expect_success) {
-      ASSERT_THAT(message.returns_, ::testing::ElementsAre(BR_NOOP, BR_TRANSACTION_COMPLETE));
+      ASSERT_THAT(returns, ::testing::ElementsAre(BR_TRANSACTION_COMPLETE, BR_REPLY));
     } else {
-      ASSERT_THAT(message.returns_, ::testing::ElementsAre(BR_NOOP, BR_FAILED_REPLY));
+      ASSERT_THAT(returns, ::testing::ElementsAre(BR_FAILED_REPLY));
     }
   }));
 }

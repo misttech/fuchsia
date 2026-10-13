@@ -12,11 +12,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO: https://fxbug.dev/422968534 - Make (SE)Starnix match the (SE)Linux behavior
-                // regarding opening binder.
-                "BinderTest/CallPermission.DoCall/0",
-                "BinderTest/CallPermission.DoCall/1",
-
                 // TODO(https://fxbug.dev/521343708) - Support SELinux context= and rootcontext=
                 // mount options on cgroupfs v2.
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/Context",
