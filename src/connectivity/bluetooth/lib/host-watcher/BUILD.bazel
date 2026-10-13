@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "host-watcher",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    rustc_flags = ["-Dunused_results"],
+    # @bazel2gn:skip
+    test_deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__pkg__",
+        "//src/connectivity/bluetooth/profiles/bt-fastpair-provider:__pkg__",
+    ],
+    # @bazel2gn:skip
+    with_unit_tests = True,
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/lib/async-utils",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "host-watcher-tests",
+    package_name = "host-watcher-tests",
+    unit_tests = [":host-watcher_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)

@@ -15,6 +15,7 @@ test_suite(
         "//src/connectivity/bluetooth/lib/bt-obex/objects:bt-obex-objects-tests",
         "//src/connectivity/bluetooth/lib/bt-rfcomm:bt-rfcomm-lib-tests",
         "//src/connectivity/bluetooth/lib/fuchsia-bluetooth:bluetooth-crate-tests",
+        "//src/connectivity/bluetooth/lib/host-watcher:host-watcher-tests",
         "//src/connectivity/bluetooth/lib/packet-encoding:packet-encoding-tests",
         "//src/connectivity/bluetooth/lib/profile-client:profile-client-tests",
         "//src/connectivity/bluetooth/lib/vigil:vigil-tests",
