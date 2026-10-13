@@ -1046,6 +1046,10 @@ void Dwc3::ConfigureCoreRegisters() {
   auto gsbuscfg0 = GSBUSCFG0::Get().ReadFrom(mmio);
   gsbuscfg0.set_reg_value(gsbuscfg0.reg_value() & ~0xffu).set_INCR4BRSTENA(1).WriteTo(mmio);
 
+  // Enable TRB_SRP bit reporting.
+  auto guctl1 = GUCTL1::Get().ReadFrom(mmio);
+  guctl1.set_DEV_TRB_OUT_SPR_IND(1).WriteTo(mmio);
+
   if (poll_end_xfer_) {
     GUCTL2::Get().ReadFrom(mmio).set_Rst_actbitlater(1).WriteTo(mmio);
   }
@@ -1648,10 +1652,10 @@ void Dwc3::EpServer::GetInfo(GetInfoCompleter::Sync& completer) {
       break;
     }
     case fdescriptor::EndpointType::kBulk:
-      info.bulk(fendpoint::BulkEndpointInfo().supports_scatter_gather(false));
+      info.bulk(fendpoint::BulkEndpointInfo().supports_scatter_gather(true));
       break;
     case fdescriptor::EndpointType::kInterrupt:
-      info.interrupt(fendpoint::InterruptEndpointInfo().supports_scatter_gather(false));
+      info.interrupt(fendpoint::InterruptEndpointInfo().supports_scatter_gather(true));
       break;
     default:
       // In theory, this should never happen unless a new EP type is added to the spec.
@@ -1685,15 +1689,14 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
   for (auto& req : request.req()) {
     usb::FidlRequest freq{std::move(req)};
 
-    if (freq->data()->size() != 1) {
-      fdf::error("scatter-gather not implemented");
-      RequestComplete(ZX_ERR_NOT_SUPPORTED, 0, std::move(freq));
-      continue;
-    }
-
     if (uep_->ep.IsOutput()) {
-      // Dig the length out of the request data block.
-      size_t length = freq->data()->at(0).size().value();
+      // Dig the total length out of the request data blocks.
+      size_t length = 0;
+      if (freq->data().has_value()) {
+        for (const auto& region : *freq->data()) {
+          length += region.size().value_or(0);
+        }
+      }
 
       if (length == 0 || (length % uep_->ep.max_packet_size) != 0) {
         fdf::error("Dwc3: OUT transfers must be multiple of max packet size (len {} mps {})",

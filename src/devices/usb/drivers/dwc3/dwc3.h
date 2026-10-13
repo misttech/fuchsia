@@ -24,6 +24,7 @@
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
+#include <lib/fit/result.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/eventpair.h>
@@ -162,7 +163,7 @@ class Dwc3 : public fdf::DriverBase2,
   class EpServer : public usb::EndpointServer {
    public:
     EpServer(const zx::bti& bti, Dwc3* dwc3, UserEndpoint* uep)
-        : usb::EndpointServer{bti, uep->ep.ep_num, usb::ScatterGatherSupport::kUnsupported},
+        : usb::EndpointServer{bti, uep->ep.ep_num, usb::ScatterGatherSupport::kSupported},
           dwc3_{dwc3},
           uep_{uep} {}
 
@@ -479,8 +480,8 @@ class Dwc3 : public fdf::DriverBase2,
   void EpEnable(Endpoint& ep, bool enable);
   void EpSetConfig(Endpoint& ep, bool enable);
   zx_status_t EpSetStall(Endpoint& ep, bool stall);
-  void EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer, size_t length,
-                       bool zlp = false);
+  void EpStartSingleTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer,
+                             size_t length);
   // This method is safe to call with the core powered down.
   void EpReset(Endpoint& ep);
 
@@ -502,6 +503,14 @@ class Dwc3 : public fdf::DriverBase2,
 
   // Resets only user endpoints without touching EP0 or its state.
   void ResetUserEndpoints(bool force = false);
+
+  enum class QueueRequestError {
+    kEmpty,
+    kError,
+    kNotEnoughSpace,
+  };
+  using QueueRequestResult = fit::result<QueueRequestError, zx_paddr_t>;
+  QueueRequestResult QueueNextRequest(UserEndpoint& uep, bool is_single);
 
   // This method is safe to call with the core powered down.
   void ResetEndpoints(bool force = false);

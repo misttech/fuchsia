@@ -84,8 +84,8 @@ void Dwc3::Ep0QueueSetup() {
     fdf::error("CacheFlushInvalidate failed: {}", status);
     return;
   }
-  EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_SETUP, ep0_.buffer->phys(),
-                  sizeof(fdescriptor::wire::UsbSetup));
+  EpStartSingleTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_SETUP, ep0_.buffer->phys(),
+                        sizeof(fdescriptor::wire::UsbSetup));
   ep0_.state = Ep0::State::Setup;
 }
 
@@ -170,8 +170,8 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
         ep0_.cur_transfer_len =
             fbl::round_up<size_t>(ep0_.cur_setup.w_length, ep0_.out.max_packet_size);
         ZX_DEBUG_ASSERT(ep0_.cur_transfer_len <= ep0_.buffer->size());
-        EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA, ep0_.buffer->phys(),
-                        ep0_.cur_transfer_len);
+        EpStartSingleTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,
+                              ep0_.buffer->phys(), ep0_.cur_transfer_len);
         ep0_.state = Ep0::State::DataOut;
       } else {
         ep0_.state = Ep0::State::DataIn;
@@ -264,7 +264,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
           transferred > 0) {
         ep0_.state = Ep0::State::WaitZlpIn;
         ep0_.cur_transfer_len = 0;
-        EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA, 0, 0);
+        EpStartSingleTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA, 0, 0);
         break;
       }
 
@@ -333,7 +333,7 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
         EpSetStall(ep0_.out, true);
         Ep0QueueSetup();
       } else {
-        EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
+        EpStartSingleTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
         ep0_.state = Ep0::State::Status;
       }
       break;
@@ -353,13 +353,13 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
       break;
     case Ep0::State::WaitNrdyOut:
       if (ep_num == kEp0Out) {
-        EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_STATUS_3, 0, 0);
+        EpStartSingleTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_STATUS_3, 0, 0);
         ep0_.state = Ep0::State::Status;
       }
       break;
     case Ep0::State::WaitNrdyIn:
       if (ep_num == kEp0In) {
-        EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_3, 0, 0);
+        EpStartSingleTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_3, 0, 0);
         ep0_.state = Ep0::State::Status;
       }
       break;
@@ -538,7 +538,7 @@ void Dwc3::DoControlCall(fdescriptor::wire::UsbSetup setup, size_t length) {
             ep0_.state = Ep0::State::WaitHost;
             break;
           case Ep0::State::WaitFidl:
-            EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
+            EpStartSingleTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
             ep0_.state = Ep0::State::Status;
             break;
           case Ep0::State::WaitHost:
@@ -568,8 +568,8 @@ void Dwc3::DoControlCall(fdescriptor::wire::UsbSetup setup, size_t length) {
               fdf::debug("HandleSetup success: actual {}", read_data.size_bytes());
               // queue a write for the data phase
               ep0_.cur_transfer_len = read_data.size_bytes();
-              EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,
-                              ep0_.buffer->phys(), read_data.size_bytes());
+              EpStartSingleTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,
+                                    ep0_.buffer->phys(), read_data.size_bytes());
             }
         }
 

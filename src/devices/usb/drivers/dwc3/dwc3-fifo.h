@@ -45,7 +45,7 @@ class Fifo {
   // power-off, or a complete USB bus reset where hardware endpoint state has
   // been completely reset by the controller.
   void Clear() { read_ = write_; }
-  void Release() {
+  virtual void Release() {
     first_ = write_ = read_ = last_ = nullptr;
     buffer_.reset();
   }

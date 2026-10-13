@@ -2709,7 +2709,7 @@ TEST_F(Dwc3EndpointsTestBase, DISABLED_ImplicitBufferRegionSize) {
 }
 
 // Verifies that multi-region requests combining zero-length and non-zero-length buffer regions
-// are rejected with ZX_ERR_NOT_SUPPORTED.
+// are rejected with ZX_ERR_INVALID_ARGS.
 TEST_F(Dwc3EndpointsTestBase, MixedMultiRegionTransfer) {
   TriggerConnection();
 
@@ -2758,7 +2758,7 @@ TEST_F(Dwc3EndpointsTestBase, MixedMultiRegionTransfer) {
 
   std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
   ASSERT_EQ(completions.size(), 1UL);
-  EXPECT_EQ(completions[0].status, ZX_ERR_NOT_SUPPORTED);
+  EXPECT_STATUS(completions[0].status, ZX_ERR_INVALID_ARGS);
 }
 
 // Verifies that OUT transfers with sizes that are not multiples of the endpoint's maximum
@@ -2805,27 +2805,30 @@ TEST_F(Dwc3EndpointsTestBase, DISABLED_OutOfRangeVmoTransfer) {
   EXPECT_EQ(completions[0].status, ZX_ERR_OUT_OF_RANGE);
 }
 
-// Verifies that scatter-gather requests across multiple non-zero buffer regions return
-// ZX_ERR_NOT_SUPPORTED since multi-region descriptor chaining is currently unsupported.
-TEST_F(Dwc3EndpointsTestBase, ScatterGatherNotImplemented) {
+// Verifies that a scatter-gather request across multiple buffer regions successfully
+// allocates chained TRBs with proper control bits and completes successfully.
+TEST_P(Dwc3EndpointsTest, ScatterGatherBulkTransfer) {
+  const bool enqueue_many = GetParam();
   TriggerConnection();
   const uint8_t ep_address = 0x82;  // IN endpoint
   const uint8_t ep_num = UsbAddressToEpNum(ep_address);
   SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
 
   RegisterVmo(1, 4096);
+  RegisterVmo(2, 4096);
+
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
   dut_.runtime().RunUntilIdle();
 
-  // Queue request with multiple non-zero-length regions.
+  // Queue request with multiple non-zero-length regions (512B each).
   frequest::BufferRegion region1;
   region1.buffer(frequest::Buffer::WithVmoId(1));
   region1.offset(0);
   region1.size(512);
 
   frequest::BufferRegion region2;
-  region2.buffer(frequest::Buffer::WithVmoId(1));
-  region2.offset(512);
+  region2.buffer(frequest::Buffer::WithVmoId(2));
+  region2.offset(0);
   region2.size(512);
 
   std::vector<frequest::BufferRegion> regions;
@@ -2842,16 +2845,811 @@ TEST_F(Dwc3EndpointsTestBase, ScatterGatherNotImplemented) {
   std::vector<frequest::Request> reqs;
   reqs.reserve(1);
   reqs.push_back(std::move(req));
-  // Note: QueueRequests is a one-way FIDL method returning fit::result<fidl::OneWayError>
-  // synchronously.
+
+  fit::result result = ep_client_->QueueRequests({std::move(reqs)});
+  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
+                              << result.error_value().FormatDescription();
+
+  TransferState expected_starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  WaitForState(ep_num, expected_starting_state);
+  WaitForActiveCount(ep_num, 1u);
+
+  // Verify that the FIFO allocated 2 TRBs with proper chained control bits.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
+
+    const std::vector<dwc3_trb_t> trbs = uep.fifo.Read(2);
+    ASSERT_EQ(trbs.size(), 2u);
+
+    // TRB 0 must have TRB_CHN set, and not TRB_IOC.
+    EXPECT_TRUE(trbs[0].control & TRB_HWO);
+    EXPECT_TRUE(trbs[0].control & TRB_CHN);
+    EXPECT_FALSE(trbs[0].control & TRB_IOC);
+    EXPECT_EQ(TRB_BUFSIZ(trbs[0].status), 512u);
+
+    // TRB 1 must have TRB_IOC set, and not TRB_CHN.
+    EXPECT_TRUE(trbs[1].control & TRB_HWO);
+    EXPECT_FALSE(trbs[1].control & TRB_CHN);
+    EXPECT_TRUE(trbs[1].control & TRB_IOC);
+    if (!enqueue_many) {
+      EXPECT_TRUE(trbs[1].control & TRB_LST);
+    }
+    EXPECT_EQ(TRB_BUFSIZ(trbs[1].status), 512u);
+  });
+
+  // Start the transfer.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  TransferState expected_active_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+  WaitForState(ep_num, expected_active_state);
+
+  // Complete the chained TD (TRB 0 + TRB 1) in a single event at the TRB_IOC boundary.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 1024UL);
+}
+
+// Verifies scatter-gather on an interrupt endpoint which always uses single-transfer mode.
+TEST_P(Dwc3EndpointsTest, ScatterGatherInterruptTransfer) {
+  TriggerConnection();
+  const uint8_t ep_address = 0x82;  // IN endpoint
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kInterrupt, 64);
+
+  RegisterVmo(1, 4096);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  frequest::BufferRegion region1;
+  region1.buffer(frequest::Buffer::WithVmoId(1));
+  region1.offset(0);
+  region1.size(64);
+
+  frequest::BufferRegion region2;
+  region2.buffer(frequest::Buffer::WithVmoId(1));
+  region2.offset(64);
+  region2.size(64);
+
+  std::vector<frequest::BufferRegion> regions;
+  regions.reserve(2);
+  regions.push_back(std::move(region1));
+  regions.push_back(std::move(region2));
+
+  frequest::Request req;
+  req.data(std::move(regions));
+  req.defer_completion(false);
+  req.information(frequest::RequestInfo::WithInterrupt(frequest::InterruptRequestInfo{}));
+  req.short_(false);
+
+  std::vector<frequest::Request> reqs;
+  reqs.reserve(1);
+  reqs.push_back(std::move(req));
+
+  fit::result result = ep_client_->QueueRequests({std::move(reqs)});
+  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
+                              << result.error_value().FormatDescription();
+
+  WaitForState(ep_num, TransferState::kStartingSingle);
+  WaitForActiveCount(ep_num, 1u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
+
+    const std::vector<dwc3_trb_t> trbs = uep.fifo.Read(2);
+    ASSERT_EQ(trbs.size(), 2u);
+
+    EXPECT_TRUE(trbs[0].control & TRB_HWO);
+    EXPECT_TRUE(trbs[0].control & TRB_CHN);
+    EXPECT_FALSE(trbs[0].control & TRB_IOC);
+    EXPECT_EQ(TRB_BUFSIZ(trbs[0].status), 64u);
+
+    EXPECT_TRUE(trbs[1].control & TRB_HWO);
+    EXPECT_FALSE(trbs[1].control & TRB_CHN);
+    EXPECT_TRUE(trbs[1].control & TRB_IOC);
+    EXPECT_TRUE(trbs[1].control & TRB_LST);
+    EXPECT_EQ(TRB_BUFSIZ(trbs[1].status), 64u);
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, TransferState::kActiveSingle);
+
+  // Complete the chained TD (TRB 0 + TRB 1) in a single event at the TRB_IOC boundary.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferComplete(drv, ep_num); });
+  WaitForState(ep_num, TransferState::kIdle);
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 128UL);
+}
+
+// Verifies scatter-gather on an IN endpoint requiring a trailing Zero-Length Packet (ZLP).
+TEST_P(Dwc3EndpointsTest, ScatterGatherWithZlp) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+  const uint8_t ep_address = 0x82;  // IN endpoint
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+
+  RegisterVmo(1, 4096);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Total size is 256 + 256 = 512 (multiple of MPS) with short_bit set to true.
+  frequest::BufferRegion region1;
+  region1.buffer(frequest::Buffer::WithVmoId(1));
+  region1.offset(0);
+  region1.size(256);
+
+  frequest::BufferRegion region2;
+  region2.buffer(frequest::Buffer::WithVmoId(1));
+  region2.offset(256);
+  region2.size(256);
+
+  std::vector<frequest::BufferRegion> regions;
+  regions.reserve(2);
+  regions.push_back(std::move(region1));
+  regions.push_back(std::move(region2));
+
+  frequest::Request req;
+  req.data(std::move(regions));
+  req.defer_completion(false);
+  req.information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo{}));
+  req.short_(true);
+
+  std::vector<frequest::Request> reqs;
+  reqs.reserve(1);
+  reqs.push_back(std::move(req));
+
+  fit::result result = ep_client_->QueueRequests({std::move(reqs)});
+  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
+                              << result.error_value().FormatDescription();
+
+  TransferState expected_starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  WaitForState(ep_num, expected_starting_state);
+  WaitForActiveCount(ep_num, 1u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 3u);
+
+    const std::vector<dwc3_trb_t> trbs = uep.fifo.Read(3);
+    ASSERT_EQ(trbs.size(), 3u);
+
+    // TRB 0: first data chunk (chained).
+    EXPECT_TRUE(trbs[0].control & TRB_HWO);
+    EXPECT_TRUE(trbs[0].control & TRB_CHN);
+    EXPECT_FALSE(trbs[0].control & TRB_IOC);
+    EXPECT_EQ(TRB_BUFSIZ(trbs[0].status), 256u);
+
+    // TRB 1: terminal data chunk (unchained before ZLP, with IOC).
+    EXPECT_TRUE(trbs[1].control & TRB_HWO);
+    EXPECT_FALSE(trbs[1].control & TRB_CHN);
+    EXPECT_TRUE(trbs[1].control & TRB_IOC);
+    EXPECT_EQ(TRB_BUFSIZ(trbs[1].status), 256u);
+
+    // TRB 2: ZLP (zero length, with IOC).
+    EXPECT_TRUE(trbs[2].control & TRB_HWO);
+    EXPECT_FALSE(trbs[2].control & TRB_CHN);
+    EXPECT_TRUE(trbs[2].control & TRB_IOC);
+    if (!enqueue_many) {
+      EXPECT_TRUE(trbs[2].control & TRB_LST);
+    }
+    EXPECT_EQ(TRB_BUFSIZ(trbs[2].status), 0u);
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  TransferState expected_active_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+  WaitForState(ep_num, expected_active_state);
+
+  // Complete the chained data TD (TRB 0 + TRB 1).
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  dut_.runtime().RunUntilIdle();
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 1u);
+    EXPECT_EQ(uep.server->active_reqs.size(), 1u);
+  });
+  EXPECT_EQ(event_handler_.completion_count(), 0u);
+
+  // Complete TRB 2 (ZLP).
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 512UL);
+}
+
+// Verifies that if the FIFO does not have enough available slots for a
+// multi-region scatter-gather request, the FIFO is not mutated and the request
+// stays in queued_reqs until space frees up.
+TEST_P(Dwc3EndpointsTest, ScatterGatherRollbackOnFifoFull) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+  const uint8_t ep_address = 0x82;  // IN endpoint
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+
+  RegisterVmo(1, 4096);
+  RegisterVmo(2, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // If enqueue_many is true, start the ongoing transfer first so that
+  // UserEpQueueNextOngoing does not call uep.fifo.Reset() (which only happens
+  // when start_transfer is true).
+  if (enqueue_many) {
+    QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+    WaitForState(ep_num, TransferState::kStartingOngoing);
+    dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+    WaitForState(ep_num, TransferState::kActiveOngoing);
+    dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+    WaitForActiveCount(ep_num, 0u);
+    std::vector<CompletionResult> init_completions = event_handler_.WaitForCompletions(1);
+    ASSERT_EQ(init_completions.size(), 1UL);
+    EXPECT_OK(init_completions[0].status);
+  }
+
+  dwc3_trb_t* remaining_slot = nullptr;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    while (uep.fifo.AvailableSlots() > 1) {
+      uep.fifo.AdvanceWrite();
+    }
+    EXPECT_EQ(uep.fifo.AvailableSlots(), 1u);
+    dwc3_trb_t* fifo_base = uep.fifo.current_read() - uep.fifo.ReadOffset();
+    remaining_slot =
+        fifo_base + ((uep.fifo.ReadOffset() + uep.fifo.GetActiveCount()) % uep.fifo.TotalSlots());
+    remaining_slot->control = 0u;
+  });
+
+  frequest::BufferRegion region1;
+  region1.buffer(frequest::Buffer::WithVmoId(1));
+  region1.offset(0);
+  region1.size(512);
+
+  frequest::BufferRegion region2;
+  region2.buffer(frequest::Buffer::WithVmoId(2));
+  region2.offset(0);
+  region2.size(512);
+
+  std::vector<frequest::BufferRegion> regions;
+  regions.reserve(2);
+  regions.push_back(std::move(region1));
+  regions.push_back(std::move(region2));
+
+  frequest::Request req;
+  req.data(std::move(regions));
+  req.defer_completion(false);
+  req.information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo{}));
+  req.short_(false);
+
+  std::vector<frequest::Request> reqs;
+  reqs.reserve(1);
+  reqs.push_back(std::move(req));
+
+  fit::result result = ep_client_->QueueRequests({std::move(reqs)});
+  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
+                              << result.error_value().FormatDescription();
+  WaitForQueuedCount(ep_num, 1u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.server->queued_reqs.size(), 1u);
+    EXPECT_EQ(uep.server->active_reqs.size(), 0u);
+    EXPECT_EQ(uep.fifo.AvailableSlots(), 1u);
+    EXPECT_EQ(remaining_slot->control, 0u);
+  });
+
+  // Clear dummy TRBs in the FIFO to free up slots and queue the request.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    uep.fifo.Clear();
+    EXPECT_GE(uep.fifo.AvailableSlots(), 2u);
+    Dwc3TestHelper::UserEpQueueNext(drv, uep);
+  });
+
+  if (!enqueue_many) {
+    WaitForState(ep_num, TransferState::kStartingSingle);
+  }
+  WaitForActiveCount(ep_num, 1u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.server->queued_reqs.size(), 0u);
+    EXPECT_EQ(uep.server->active_reqs.size(), 1u);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
+  });
+
+  if (!enqueue_many) {
+    dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+    WaitForState(ep_num, TransferState::kActiveSingle);
+  }
+
+  // Complete the chained TD (TRB 0 + TRB 1) in a single event.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 1024UL);
+}
+
+// Verifies scatter-gather on a Bulk OUT endpoint where individual regions have
+// non-MPS lengths whose total transfer size is a multiple of max_packet_size.
+TEST_P(Dwc3EndpointsTest, ScatterGatherBulkOutTransfer) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+  const uint8_t ep_address = 0x02;  // OUT endpoint
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+
+  RegisterVmo(1, 4096);
+  RegisterVmo(2, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue request with two regions (200B + 312B = 512B total).
+  frequest::BufferRegion region1;
+  region1.buffer(frequest::Buffer::WithVmoId(1));
+  region1.offset(0);
+  region1.size(200);
+
+  frequest::BufferRegion region2;
+  region2.buffer(frequest::Buffer::WithVmoId(2));
+  region2.offset(0);
+  region2.size(312);
+
+  std::vector<frequest::BufferRegion> regions;
+  regions.reserve(2);
+  regions.push_back(std::move(region1));
+  regions.push_back(std::move(region2));
+
+  frequest::Request req;
+  req.data(std::move(regions));
+  req.defer_completion(false);
+  req.information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo{}));
+  req.short_(false);
+
+  std::vector<frequest::Request> reqs;
+  reqs.reserve(1);
+  reqs.push_back(std::move(req));
+
+  fit::result result = ep_client_->QueueRequests({std::move(reqs)});
+  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
+                              << result.error_value().FormatDescription();
+
+  TransferState expected_starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  WaitForState(ep_num, expected_starting_state);
+  WaitForActiveCount(ep_num, 1u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
+
+    const std::vector<dwc3_trb_t> trbs = uep.fifo.Read(2);
+    ASSERT_EQ(trbs.size(), 2u);
+
+    // TRB 0 must have TRB_CHN set, and not TRB_IOC.
+    EXPECT_TRUE(trbs[0].control & TRB_HWO);
+    EXPECT_EQ(static_cast<bool>(trbs[0].control & TRB_CSP), enqueue_many);
+    EXPECT_TRUE(trbs[0].control & TRB_CHN);
+    EXPECT_FALSE(trbs[0].control & TRB_IOC);
+    EXPECT_EQ(TRB_BUFSIZ(trbs[0].status), 200u);
+
+    // TRB 1 must have TRB_IOC set, and not TRB_CHN.
+    EXPECT_TRUE(trbs[1].control & TRB_HWO);
+    EXPECT_EQ(static_cast<bool>(trbs[1].control & TRB_CSP), enqueue_many);
+    EXPECT_FALSE(trbs[1].control & TRB_CHN);
+    EXPECT_TRUE(trbs[1].control & TRB_IOC);
+    if (!enqueue_many) {
+      EXPECT_TRUE(trbs[1].control & TRB_LST);
+    }
+    EXPECT_EQ(TRB_BUFSIZ(trbs[1].status), 312u);
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  TransferState expected_active_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+  WaitForState(ep_num, expected_active_state);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 512UL);
+}
+
+// Verifies that when a Bulk OUT scatter-gather transfer receives an early short
+// packet on an intermediate TRB, UserEpCompleteTransfers fast-forwards the FIFO
+// past trailing TRBs of the request, clears TRB_HWO, and allows subsequent
+// transfers to execute cleanly.
+TEST_P(Dwc3EndpointsTest, ScatterGatherBulkOutShortPacketFastForwardsFifo) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+  const uint8_t ep_address = 0x02;  // OUT endpoint
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+
+  RegisterVmo(1, 4096);
+  RegisterVmo(2, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  frequest::BufferRegion region1;
+  region1.buffer(frequest::Buffer::WithVmoId(1));
+  region1.offset(0);
+  region1.size(512);
+
+  frequest::BufferRegion region2;
+  region2.buffer(frequest::Buffer::WithVmoId(2));
+  region2.offset(0);
+  region2.size(512);
+
+  std::vector<frequest::BufferRegion> regions;
+  regions.reserve(2);
+  regions.push_back(std::move(region1));
+  regions.push_back(std::move(region2));
+
+  frequest::Request req;
+  req.data(std::move(regions));
+  req.defer_completion(false);
+  req.information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo{}));
+  req.short_(false);
+
+  std::vector<frequest::Request> reqs;
+  reqs.reserve(1);
+  reqs.push_back(std::move(req));
+
+  fit::result result = ep_client_->QueueRequests({std::move(reqs)});
+  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
+                              << result.error_value().FormatDescription();
+
+  TransferState expected_starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  WaitForState(ep_num, expected_starting_state);
+  WaitForActiveCount(ep_num, 1u);
+
+  dwc3_trb_t* trb1 = nullptr;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
+    dwc3_trb_t* fifo_base = uep.fifo.current_read() - uep.fifo.ReadOffset();
+    trb1 = fifo_base + ((uep.fifo.ReadOffset() + 1) % uep.fifo.TotalSlots());
+    EXPECT_NE(trb1->control & TRB_HWO, 0u);
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  TransferState expected_active_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+  WaitForState(ep_num, expected_active_state);
+
+  // Simulate a 256-byte short packet on TRB 0 (residual = 512 - 256 = 256).
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num, 256);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num, 256);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions1 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions1.size(), 1UL);
+  EXPECT_OK(completions1[0].status);
+  EXPECT_EQ(completions1[0].transfer_size, 256UL);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+    EXPECT_EQ(trb1->control & TRB_HWO, 0u);
+  });
+
+  // Queue and complete a subsequent 512-byte Bulk OUT request.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  if (!enqueue_many) {
+    WaitForState(ep_num, TransferState::kStartingSingle);
+    dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+    WaitForState(ep_num, TransferState::kActiveSingle);
+  }
+  WaitForActiveCount(ep_num, 1u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions2 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions2.size(), 1UL);
+  EXPECT_OK(completions2[0].status);
+  EXPECT_EQ(completions2[0].transfer_size, 512UL);
+}
+
+// Verifies that when a Bulk OUT scatter-gather transfer receives a short packet
+// whose length aligns with the exact size of an intermediate TRB (residual == 0
+// with TRB_SPR set), UserEpCompleteTransfers still fast-forwards the FIFO past
+// trailing TRBs of the request, clears TRB_HWO, and allows subsequent transfers
+// to execute cleanly.
+TEST_P(Dwc3EndpointsTest, ScatterGatherBulkOutShortPacketOnTrbBoundaryFastForwardsFifo) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+  const uint8_t ep_address = 0x02;  // OUT endpoint
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+
+  RegisterVmo(1, 4096);
+  RegisterVmo(2, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  frequest::BufferRegion region1;
+  region1.buffer(frequest::Buffer::WithVmoId(1));
+  region1.offset(0);
+  region1.size(200);
+
+  frequest::BufferRegion region2;
+  region2.buffer(frequest::Buffer::WithVmoId(2));
+  region2.offset(0);
+  region2.size(312);
+
+  std::vector<frequest::BufferRegion> regions;
+  regions.reserve(2);
+  regions.push_back(std::move(region1));
+  regions.push_back(std::move(region2));
+
+  frequest::Request req;
+  req.data(std::move(regions));
+  req.defer_completion(false);
+  req.information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo{}));
+  req.short_(false);
+
+  std::vector<frequest::Request> reqs;
+  reqs.reserve(1);
+  reqs.push_back(std::move(req));
+
+  fit::result result = ep_client_->QueueRequests({std::move(reqs)});
+  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
+                              << result.error_value().FormatDescription();
+
+  TransferState expected_starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  WaitForState(ep_num, expected_starting_state);
+  WaitForActiveCount(ep_num, 1u);
+
+  dwc3_trb_t* trb1 = nullptr;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
+    dwc3_trb_t* fifo_base = uep.fifo.current_read() - uep.fifo.ReadOffset();
+    trb1 = fifo_base + ((uep.fifo.ReadOffset() + 1) % uep.fifo.TotalSlots());
+    EXPECT_NE(trb1->control & TRB_HWO, 0u);
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  TransferState expected_active_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+  WaitForState(ep_num, expected_active_state);
+
+  // Simulate a 200-byte short packet that fills TRB 0 completely (residual = 0,
+  // TRB_SPR set).
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num, /*residual=*/0, /*spr=*/true);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num, /*residual=*/0, /*spr=*/true);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions1 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions1.size(), 1UL);
+  EXPECT_OK(completions1[0].status);
+  EXPECT_EQ(completions1[0].transfer_size, 200UL);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+    EXPECT_EQ(trb1->control & TRB_HWO, 0u);
+  });
+
+  // Queue and complete a subsequent 512-byte Bulk OUT request.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  if (!enqueue_many) {
+    WaitForState(ep_num, TransferState::kStartingSingle);
+    dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+    WaitForState(ep_num, TransferState::kActiveSingle);
+  }
+  WaitForActiveCount(ep_num, 1u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions2 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions2.size(), 1UL);
+  EXPECT_OK(completions2[0].status);
+  EXPECT_EQ(completions2[0].transfer_size, 512UL);
+}
+
+// Verifies that a scatter-gather request requiring more TRBs than the total
+// FIFO capacity (TotalSlots() - 1 = 254) is immediately rejected with
+// ZX_ERR_OUT_OF_RANGE and popped from queued_reqs without wedging subsequent
+// requests.
+TEST_P(Dwc3EndpointsTest, ScatterGatherRejectsRequestExceedingTotalFifoCapacity) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+  const uint8_t ep_address = 0x82;  // IN endpoint
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue a request with 255 regions (requiring 255 TRBs > TotalSlots() - 1).
+  std::vector<frequest::BufferRegion> regions;
+  regions.reserve(255);
+  for (size_t i = 0; i < 255; ++i) {
+    frequest::BufferRegion region;
+    region.buffer(frequest::Buffer::WithVmoId(1));
+    region.offset(0);
+    region.size(512);
+    regions.push_back(std::move(region));
+  }
+
+  frequest::Request req;
+  req.data(std::move(regions));
+  req.defer_completion(false);
+  req.information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo{}));
+  req.short_(false);
+
+  std::vector<frequest::Request> reqs;
+  reqs.reserve(1);
+  reqs.push_back(std::move(req));
+
   fit::result result = ep_client_->QueueRequests({std::move(reqs)});
   ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
                               << result.error_value().FormatDescription();
   dut_.runtime().RunUntilIdle();
 
-  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
-  ASSERT_EQ(completions.size(), 1UL);
-  EXPECT_EQ(completions[0].status, ZX_ERR_NOT_SUPPORTED);
+  std::vector<CompletionResult> completions1 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions1.size(), 1UL);
+  EXPECT_EQ(completions1[0].status, ZX_ERR_OUT_OF_RANGE);
+  EXPECT_EQ(completions1[0].transfer_size, 0UL);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    UserEndpoint& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_TRUE(uep.server->queued_reqs.empty());
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+  });
+
+  // Verify that the endpoint is not wedged by queueing and completing a valid
+  // 512B request.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  TransferState expected_starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  WaitForState(ep_num, expected_starting_state);
+  WaitForActiveCount(ep_num, 1u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  TransferState expected_active_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+  WaitForState(ep_num, expected_active_state);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions2 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions2.size(), 1UL);
+  EXPECT_OK(completions2[0].status);
+  EXPECT_EQ(completions2[0].transfer_size, 512UL);
 }
 
 // Verifies that zero-length requests on OUT (Host-to-Device) endpoints are rejected with

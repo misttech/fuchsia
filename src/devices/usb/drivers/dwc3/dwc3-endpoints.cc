@@ -58,49 +58,22 @@ zx_status_t Dwc3::EpSetStall(Endpoint& ep, bool stall) {
   return ZX_OK;
 }
 
-void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer,
-                           size_t length, bool zlp) {
-  TRACE_DURATION("dwc3", "Dwc3::EpStartTransfer", "ep_num", ep.ep_num, "type", type, "length",
-                 length, "zlp", zlp);
-  fdf::debug("Dwc3::EpStartTransfer ep {} type {} length {} zlp {}", ep.ep_num, type, length, zlp);
+void Dwc3::EpStartSingleTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer,
+                                 size_t length) {
+  TRACE_DURATION("dwc3", "Dwc3::EpStartSingleTransfer", "ep_num", ep.ep_num, "type", type, "length",
+                 length);
+  fdf::debug("Dwc3::EpStartSingleTransfer ep {} type {} length {}", ep.ep_num, type, length);
 
   dwc3_trb_t* trb = fifo.AdvanceWrite();
   trb->ptr_low = static_cast<uint32_t>(buffer);
   trb->ptr_high = static_cast<uint32_t>(buffer >> 32);
   trb->status = TRB_BUFSIZ(static_cast<uint32_t>(length));
 
-  zx_paddr_t trb_phys;
-  if (zlp) {
-    // NOTE: The DWC3 programming manual states support for a `Normal-ZLP`
-    // transfer type that should be able to handle this. Alas, it doesn't
-    // actually seem to work, so we just enqueue an actual zero length transfer
-    // as a second TRB.
-    // Because the data TRB and ZLP TRB are submitted as separate, unchained Transfer Descriptors
-    // (TDs), both must have TRB_IOC set so the driver receives completion events to finish the
-    // request.
-    trb->control = type | TRB_IOC;
-
-    dwc3_trb_t* trb2 = fifo.AdvanceWrite();
-    trb2->ptr_low = 0;
-    trb2->ptr_high = 0;
-    trb2->status = TRB_BUFSIZ(0);
-    trb2->control = type | TRB_LST | TRB_IOC | TRB_HWO;
-    fifo.Write(trb2, 1);
-
-    // memory_order_release enforces compiler memory ordering for uncached memory, preventing
-    // TRB_HWO from being committed to RAM before the payload.
-    std::atomic_thread_fence(std::memory_order_release);
-
-    trb->control = type | TRB_IOC | TRB_HWO;
-
-    trb_phys = fifo.Write(trb, 1);
-  } else {
-    // memory_order_release enforces compiler memory ordering for uncached memory, preventing
-    // TRB_HWO from being committed to RAM before the payload.
-    std::atomic_thread_fence(std::memory_order_release);
-    trb->control = type | TRB_LST | TRB_IOC | TRB_HWO;
-    trb_phys = fifo.Write(trb, 1);
-  }
+  // std::memory_order_release enforces compiler memory ordering for uncached
+  // memory, preventing TRB_HWO from being committed to RAM before the payload.
+  std::atomic_thread_fence(std::memory_order_release);
+  trb->control = type | TRB_LST | TRB_IOC | TRB_HWO;
+  zx_paddr_t trb_phys = fifo.Write(trb, 1);
 
   ep.transfer_state = Endpoint::TransferState::kStartingSingle;
   CmdEpStartTransfer(ep, trb_phys);
@@ -275,49 +248,160 @@ void Dwc3::UserEpQueueNext(UserEndpoint& uep) {
   }
 }
 
-void Dwc3::UserEpQueueNextSingle(UserEndpoint& uep) {
-  auto& pending_req = uep.server->queued_reqs.front();
-
-  zx::result result = uep.server->get_iter(pending_req, zx_system_get_page_size());
-  if (result.is_error()) {
-    fdf::error("get_iter failed: {}", result.status_string());
-    auto req = std::move(pending_req);
-    uep.server->queued_reqs.pop();
-    uep.server->RequestComplete(result.status_value(), 0, std::move(req));
-    return;
+Dwc3::QueueRequestResult Dwc3::QueueNextRequest(UserEndpoint& uep, bool is_single) {
+  if (uep.server->queued_reqs.empty()) {
+    return fit::error(QueueRequestError::kEmpty);
   }
 
-  // TODO(voydanoff) scatter/gather support
-  zx_paddr_t phys;
-  size_t size;
-  std::tie(phys, size) = *result->at(0).begin();
+  usb::RequestVariant& pending_req = uep.server->queued_reqs.front();
 
-  size_t trb_count = 1;
-  bool needs_zlp = false;
-  if (uep.ep.IsInput()) {
-    auto& req = std::get<usb::FidlRequest>(pending_req);
-    bool short_bit = req->short_().value_or(false);
-    if (short_bit && size > 0 && (size % uep.ep.max_packet_size == 0)) {
-      needs_zlp = true;
-      trb_count = 2;
+  zx::result result = uep.server->get_iter(pending_req, TRB_BUFSIZ(~0u));
+  if (result.is_error()) {
+    fdf::error("get_iter failed: {}", result.status_string());
+    usb::RequestVariant req = std::move(pending_req);
+    uep.server->queued_reqs.pop();
+    uep.server->RequestComplete(result.status_value(), 0, std::move(req));
+    return fit::error(QueueRequestError::kError);
+  }
+
+  size_t total_size = 0;
+  size_t data_trbs = 0;
+  for (dma_buffer::PhysIter& phys_iter : *result) {
+    for (const auto& [paddr, size] : phys_iter) {
+      total_size += size;
+      data_trbs++;
     }
   }
 
-  if (uep.fifo.AvailableSlots() < trb_count) {
-    fdf::debug("Dwc3::UserEpQueueNext ep {} not enough FIFO slots for {}-TRB request",
-               uep.ep.ep_num, trb_count);
-    return;
+  const usb::FidlRequest& req = std::get<usb::FidlRequest>(pending_req);
+  bool needs_zlp = false;
+  if (uep.ep.IsInput()) {
+    bool short_bit = req->short_().value_or(false);
+    if (short_bit && total_size > 0 && (total_size % uep.ep.max_packet_size == 0)) {
+      needs_zlp = true;
+    }
   }
 
-  uep.server->active_reqs.emplace(EpServer::RequestState{
+  const size_t total_trbs = needs_zlp ? data_trbs + 1 : std::max(data_trbs, 1ul);
+  // TODO(https://fxbug.dev/572870946): Fail if we can't ever have enough TRB
+  // entries for the request for now. It may be possible to split this single
+  // request into different transfers with the controller, if we take care to
+  // handle MPS alignment and short packets.
+  if (total_trbs > uep.fifo.MaxAvailableSlots()) {
+    fdf::error("Dwc3::QueueNextRequest ep {} request requires {} TRBs, exceeding max capacity {}",
+               uep.ep.ep_num, total_trbs, uep.fifo.MaxAvailableSlots());
+    usb::RequestVariant req_complete = std::move(pending_req);
+    uep.server->queued_reqs.pop();
+    uep.server->RequestComplete(ZX_ERR_OUT_OF_RANGE, 0, std::move(req_complete));
+    return fit::error(QueueRequestError::kError);
+  }
+
+  if (total_trbs > uep.fifo.AvailableSlots()) {
+    fdf::debug("Dwc3::UserEpQueueNext ep {} not enough FIFO slots for request", uep.ep.ep_num);
+    return fit::error(QueueRequestError::kNotEnoughSpace);
+  }
+
+  dwc3_trb_t* first_trb = nullptr;
+  dwc3_trb_t* second_trb = nullptr;
+  uint32_t first_trb_control = 0;
+  size_t trb_idx = 0;
+
+  auto record_trb = [&](dwc3_trb_t* trb, uint32_t control) {
+    if (trb_idx == 0) {
+      first_trb = trb;
+      first_trb_control = control;
+    } else {
+      if (trb_idx == 1) {
+        second_trb = trb;
+      }
+      trb->control = control;
+    }
+    trb_idx++;
+  };
+
+  for (dma_buffer::PhysIter& phys_iter : *result) {
+    for (const auto& [paddr, size] : phys_iter) {
+      dwc3_trb_t* trb = uep.fifo.AdvanceWrite(static_cast<uint32_t>(size));
+      trb->ptr_low = static_cast<uint32_t>(paddr);
+      trb->ptr_high = static_cast<uint32_t>(paddr >> 32);
+      trb->status = TRB_BUFSIZ(static_cast<uint32_t>(size));
+
+      uint32_t control = TRB_TRBCTL_NORMAL | TRB_HWO;
+      if (uep.ep.IsOutput() && !is_single) {
+        control |= TRB_CSP;
+      }
+      if (trb_idx + 1 < data_trbs) {
+        control |= TRB_CHN;
+      } else {
+        control |= TRB_IOC;
+        if (is_single && !needs_zlp) {
+          control |= TRB_LST;
+        }
+      }
+      record_trb(trb, control);
+    }
+  }
+
+  // NOTE: The DWC3 programming manual states support for a `Normal-ZLP`
+  // transfer type that should be able to handle this. Alas, it doesn't actually
+  // seem to work, so we just enqueue an actual zero length transfer as a second
+  // TRB.
+  //
+  // Because the data TRB and ZLP TRB are submitted as separate, unchained
+  // Transfer Descriptors (TDs), both must have TRB_IOC set so the driver
+  // receives completion events to finish the request.
+  if (data_trbs == 0 || needs_zlp) {
+    dwc3_trb_t* zlp_trb = uep.fifo.AdvanceWrite(0);
+    zlp_trb->ptr_low = 0;
+    zlp_trb->ptr_high = 0;
+    zlp_trb->status = TRB_BUFSIZ(0);
+
+    uint32_t control = TRB_TRBCTL_NORMAL | TRB_IOC | TRB_HWO;
+    if (is_single) {
+      control |= TRB_LST;
+    }
+    record_trb(zlp_trb, control);
+  }
+
+  // Flush all TRBs except the first to RAM before committing HWO on the first
+  // TRB.
+  if (total_trbs > 1) {
+    uep.fifo.Write(second_trb, total_trbs - 1);
+  }
+
+  // Safely grant hardware ownership to the primary TRB spanning the release
+  // fence.
+  std::atomic_thread_fence(std::memory_order_release);
+  first_trb->control = first_trb_control;
+  zx_paddr_t first_trb_phys = uep.fifo.Write(first_trb, 1);
+
+  uep.server->active_reqs.push(EpServer::RequestState{
       .request = std::move(pending_req),
-      .total_trbs = trb_count,
+      .total_trbs = total_trbs,
       .completed_trbs = 0,
       .completed_bytes = 0,
   });
   uep.server->queued_reqs.pop();
 
-  EpStartTransfer(uep.ep, uep.fifo, TRB_TRBCTL_NORMAL, phys, size, needs_zlp);
+  return fit::ok(first_trb_phys);
+}
+
+void Dwc3::UserEpQueueNextSingle(UserEndpoint& uep) {
+  while (true) {
+    fit::result result = QueueNextRequest(uep, /*is_single=*/true);
+    if (result.is_ok()) {
+      uep.ep.transfer_state = Endpoint::TransferState::kStartingSingle;
+      CmdEpStartTransfer(uep.ep, result.value());
+      return;
+    }
+    switch (result.error_value()) {
+      case QueueRequestError::kEmpty:
+      case QueueRequestError::kNotEnoughSpace:
+        return;
+      case QueueRequestError::kError:
+        break;
+    }
+  }
 }
 
 void Dwc3::UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer) {
@@ -351,83 +435,28 @@ void Dwc3::UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer) {
 
   zx_paddr_t first_trb_phys = 0;
   size_t enqueued = 0;
-  while (!uep.server->queued_reqs.empty()) {
-    auto& pending_req = uep.server->queued_reqs.front();
-
-    zx::result result = uep.server->get_iter(pending_req, zx_system_get_page_size());
-    if (result.is_error()) {
-      fdf::error("get_iter failed: {}", result.status_string());
-      auto req = std::move(pending_req);
-      uep.server->queued_reqs.pop();
-      uep.server->RequestComplete(result.status_value(), 0, std::move(req));
+  bool process = true;
+  while (process) {
+    fit::result result = QueueNextRequest(uep, /*is_single=*/false);
+    if (result.is_ok()) {
+      if (first_trb_phys == 0) {
+        first_trb_phys = result.value();
+      }
+      enqueued++;
       continue;
     }
-
-    zx_paddr_t phys;
-    size_t size;
-    std::tie(phys, size) = *result->at(0).begin();
-
-    size_t trb_count = 1;
-    bool need_zlp = false;
-    if (uep.ep.IsInput()) {
-      auto& req = std::get<usb::FidlRequest>(pending_req);
-      bool short_bit = req->short_().value_or(false);
-      if (short_bit && size > 0 && (size % uep.ep.max_packet_size == 0)) {
-        trb_count = 2;
-        need_zlp = true;
-      }
+    switch (result.error_value()) {
+      case QueueRequestError::kEmpty:
+      case QueueRequestError::kNotEnoughSpace:
+        process = false;
+        break;
+      case QueueRequestError::kError:
+        break;
     }
+  }
 
-    if (uep.fifo.AvailableSlots() < trb_count) {
-      fdf::debug("Dwc3::UserEpQueueNext ep {} not enough FIFO slots for {}-TRB request",
-                 uep.ep.ep_num, trb_count);
-      break;
-    }
-
-    dwc3_trb_t* trb = uep.fifo.AdvanceWrite();
-    trb->ptr_low = static_cast<uint32_t>(phys);
-    trb->ptr_high = static_cast<uint32_t>(phys >> 32);
-    trb->status = TRB_BUFSIZ(static_cast<uint32_t>(size));
-
-    uint32_t control = TRB_TRBCTL_NORMAL;
-    if (uep.ep.IsOutput()) {
-      control |= TRB_CSP;
-    }
-
-    // We must set the IOC bit on all unchained TRBs, otherwise the hardware halts without
-    // interrupting.
-    control |= TRB_IOC;
-
-    // 1. Commit all fields without the HWO bit to prevent hardware tearing on active endpoints.
-    trb->control = control;
-
-    if (need_zlp) {
-      dwc3_trb_t* zlp_trb = uep.fifo.AdvanceWrite();
-      zlp_trb->ptr_low = 0;
-      zlp_trb->ptr_high = 0;
-      zlp_trb->status = TRB_BUFSIZ(0);
-      zlp_trb->control = TRB_TRBCTL_NORMAL | TRB_IOC | TRB_HWO;
-      uep.fifo.Write(zlp_trb);
-    }
-
-    // We intentionally leave the ZLP unchained to prevent the hardware from merging the payloads.
-    // 2. Safely grant hardware ownership to the primary TRB spanning the release fence.
-    std::atomic_thread_fence(std::memory_order_release);
-    trb->control = control | TRB_HWO;
-    zx_paddr_t trb_phys = uep.fifo.Write(trb);
-
-    if (first_trb_phys == 0) {
-      first_trb_phys = trb_phys;
-    }
-
-    uep.server->active_reqs.push(EpServer::RequestState{
-        .request = std::move(pending_req),
-        .total_trbs = trb_count,
-        .completed_trbs = 0,
-        .completed_bytes = 0,
-    });
-    uep.server->queued_reqs.pop();
-    enqueued++;
+  if (enqueued == 0) {
+    return;
   }
 
   if (start_transfer) {
@@ -478,7 +507,7 @@ void Dwc3::UserEpCompleteTransfers(UserEndpoint& uep) {
 
   // Complete all finished TRBs.
   while (!uep.server->active_reqs.empty()) {
-    auto trb_res = uep.fifo.ReadOne();
+    zx::result trb_res = uep.fifo.ReadOne();
     if (trb_res.is_error()) {
       fdf::error("ReadOne failed: {}", trb_res.status_string());
       break;
@@ -490,26 +519,27 @@ void Dwc3::UserEpCompleteTransfers(UserEndpoint& uep) {
       break;
     }
 
-    auto& current_req = uep.server->active_reqs.front();
-    auto& req = std::get<usb::FidlRequest>(current_req.request);
-    // Default to 0; if we have more completed TRBs than data regions, we have
-    // completed a ZLP.
-    size_t actual = 0;
-    if (req->data()->size() > current_req.completed_trbs) {
-      const size_t expected = req->data()->at(current_req.completed_trbs).size().value();
-      const size_t remaining = TRB_BUFSIZ(trb.status);
-      if (remaining > expected) {
-        fdf::error("Underflow on endpoint {}: expected {}, remaining {}. Clamping actual to 0",
-                   uep.ep.ep_num, expected, remaining);
-      } else {
-        actual = expected - remaining;
-      }
-    }
+    EpServer::RequestState& current_req = uep.server->active_reqs.front();
+    usb::FidlRequest& req = std::get<usb::FidlRequest>(current_req.request);
+    ZX_ASSERT(current_req.completed_trbs < current_req.total_trbs);
+    uint32_t trb_size = uep.fifo.current_read_size();
+    uint32_t remaining = TRB_BUFSIZ(trb.status);
+    size_t actual = trb_size > remaining ? trb_size - remaining : 0;
     current_req.completed_trbs++;
     current_req.completed_bytes += actual;
     uep.fifo.AdvanceRead();
 
-    if (current_req.completed_trbs != current_req.total_trbs) {
+    if (uep.ep.IsOutput() && (remaining > 0 || (trb.status & TRB_SPR) != 0)) {
+      while (current_req.completed_trbs < current_req.total_trbs) {
+        dwc3_trb_t* trailing_trb = uep.fifo.current_read();
+        trailing_trb->control &= ~TRB_HWO;
+        uep.fifo.Write(trailing_trb, 1);
+        uep.fifo.AdvanceRead();
+        current_req.completed_trbs++;
+      }
+    }
+
+    if (current_req.completed_trbs < current_req.total_trbs) {
       continue;
     }
 

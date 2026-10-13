@@ -656,6 +656,7 @@ template <bool manage_lifetime, typename gtest_base = testing::Test>
 class TestFixture : public gtest_base {
  public:
   using Endpoint = Dwc3::Endpoint;
+  using UserEndpoint = Dwc3::UserEndpoint;
   using TransferState = Dwc3::Endpoint::TransferState;
 
   static Dwc3::UserEndpoint& GetUserEndpoint(Dwc3& drv, uint8_t ep_num) {
@@ -672,15 +673,24 @@ class TestFixture : public gtest_base {
     drv.HandleEpTransferNotReadyEvent(ep_num, stage);
   }
 
-  static void TriggerEpTransferComplete(Dwc3& drv, uint8_t ep_num, uint32_t residual = 0) {
-    auto* uep = drv.get_user_endpoint(ep_num);
+  static void TriggerEpTransferComplete(Dwc3& drv, uint8_t ep_num, uint32_t residual = 0,
+                                        bool spr = false) {
+    Dwc3::UserEndpoint* uep = drv.get_user_endpoint(ep_num);
     ZX_ASSERT(uep != nullptr);
 
     if (uep->fifo.GetActiveCount() > 0) {
       dwc3_trb_t* trb = uep->fifo.read_;
-      trb->control &= ~TRB_HWO;
-      trb->status = TRB_BUFSIZ(residual);
-      uep->fifo.Write(trb, 1);
+      while (trb != uep->fifo.write_ && (trb->control & TRB_HWO) != 0) {
+        trb->control &= ~TRB_HWO;
+        if (residual > 0 || spr || (trb->control & TRB_CHN) == 0) {
+          trb->status = TRB_BUFSIZ(residual) | (spr ? TRB_SPR : 0);
+          uep->fifo.Write(trb, 1);
+          break;
+        }
+        trb->status = 0;
+        uep->fifo.Write(trb, 1);
+        uep->fifo.Advance(trb);
+      }
     }
 
     drv.HandleEpTransferCompleteEvent(ep_num);
@@ -693,15 +703,22 @@ class TestFixture : public gtest_base {
     uep->server->SendCompletions();
   }
 
-  static void TriggerEpTransferInProgress(Dwc3& drv, uint8_t ep_num, uint32_t residual = 0) {
-    auto* uep = drv.get_user_endpoint(ep_num);
+  static void TriggerEpTransferInProgress(Dwc3& drv, uint8_t ep_num, uint32_t residual = 0,
+                                          bool spr = false) {
+    Dwc3::UserEndpoint* uep = drv.get_user_endpoint(ep_num);
     ZX_ASSERT(uep != nullptr);
 
     if (uep->fifo.GetActiveCount() > 0) {
       dwc3_trb_t* trb = uep->fifo.read_;
-      trb->control &= ~TRB_HWO;
-      trb->status = TRB_BUFSIZ(residual);
-      uep->fifo.Write(trb, 1);
+      while (trb != uep->fifo.write_ && (trb->control & TRB_HWO) != 0) {
+        trb->status = TRB_BUFSIZ(residual) | (spr ? TRB_SPR : 0);
+        trb->control &= ~TRB_HWO;
+        uep->fifo.Write(trb, 1);
+        if (residual > 0 || spr || (trb->control & TRB_CHN) == 0) {
+          break;
+        }
+        uep->fifo.Advance(trb);
+      }
     }
 
     drv.HandleEpTransferInProgressEvent(ep_num);
