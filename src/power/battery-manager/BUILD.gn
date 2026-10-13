@@ -16,7 +16,6 @@ fuchsia_structured_config_rust_lib("battery-manager-config") {
 
 battery_manager_deps = [
   ":battery-manager-config",
-  "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
   "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery_rust",
   "//sdk/fidl/fuchsia.hardware.power.charger:fuchsia.hardware.power.charger_rust",
   "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",

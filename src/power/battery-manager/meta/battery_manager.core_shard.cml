@@ -50,11 +50,6 @@
             availability: "optional",
         },
         {
-            protocol: "fuchsia.feedback.CrashReporter",
-            from: "#feedback",
-            to: "#battery_manager",
-        },
-        {
             config: [ "fuchsia.power.SuspendEnabled" ],
             from: "parent",
             to: [ "#battery_manager" ],
