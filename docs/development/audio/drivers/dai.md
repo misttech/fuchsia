@@ -2,9 +2,6 @@
 
 Caution: This page contains information for the deprecated DAI API.
 
-Caution: This page may contain information that is specific to the legacy
-version of the driver framework (DFv1).
-
 The DAI interface is a FIDL protocol exposed by DAI drivers. The DAI interface
 controls the configuration of a DAI link for audio data transfer.
 
@@ -53,10 +50,6 @@ any other driver (see the [Drivers](/docs/concepts/drivers/README.md) section).
 The DAI protocol is defined in FIDL at
 [dai.fidl](/sdk/fidl/fuchsia.hardware.audio/dai.fidl) and
 [dai_format.fidl](/sdk/fidl/fuchsia.hardware.audio/dai_format.fidl).
-
-Because the FDF does not currently provide a way to directly get a FIDL channel
-for communication, we define a way to get a channel through
-Banjo at [fuchsia.hardware.audio](/sdk/banjo/fuchsia.hardware.audio/audio.fidl).
 
 Direct connection to a DAI protocol server is provided by
 [dai_connector.fidl](/sdk/fidl/fuchsia.hardware.audio/dai_connector.fidl).

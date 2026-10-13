@@ -1,8 +1,5 @@
 # GPIO initialization
 
-Caution: This page may contain information that is specific to the legacy
-version of the driver framework (DFv1).
-
 Some drivers depend on a static GPIO pin or pin mux configuration that is
 board-specific. In these cases it is often desirable to keep the GPIO
 configuration details in the board driver to ensure that the dependent drivers
