@@ -178,7 +178,7 @@ fuchsia_test_component("audio_decoder_test_comp") {
 
 fuchsia_test_package("audio_decoder_test") {
   test_components = [ ":audio_decoder_test_comp" ]
-  subpackages = [ "//src/media/codec:codec_factory_test" ]
+  subpackages = [ "//src/media/codec:codec_factory_for_test" ]
   deps = [ ":sbc_file" ]
 }
 
@@ -260,7 +260,7 @@ fuchsia_test_component("audio_encoder_test_comp") {
 
 fuchsia_test_package("audio_encoder_test") {
   test_components = [ ":audio_encoder_test_comp" ]
-  subpackages = [ "//src/media/codec:codec_factory_test" ]
+  subpackages = [ "//src/media/codec:codec_factory_for_test" ]
 }
 
 rustc_library("video_frame_hasher_lib") {
@@ -362,7 +362,7 @@ fuchsia_test_component("audio_roundtrip_test_comp") {
 
 fuchsia_test_package("audio_roundtrip_test") {
   test_components = [ ":audio_roundtrip_test_comp" ]
-  subpackages = [ "//src/media/codec:codec_factory_test" ]
+  subpackages = [ "//src/media/codec:codec_factory_for_test" ]
   deps = [ ":cvsd_file" ]
 }
 
@@ -456,7 +456,7 @@ fuchsia_test_component("h264_decoder_test_comp") {
 
 fuchsia_test_package("h264_decoder_test") {
   test_components = [ ":h264_decoder_test_comp" ]
-  subpackages = [ "//src/media/codec:codec_factory_test" ]
+  subpackages = [ "//src/media/codec:codec_factory_for_test" ]
   deps = [ ":bear_video" ]
   test_specs = {
     environments = basic_envs + [
@@ -507,7 +507,7 @@ fuchsia_test_component("h264_encoder_test_comp") {
 
 fuchsia_test_package("h264_encoder_test") {
   test_components = [ ":h264_encoder_test_comp" ]
-  subpackages = [ "//src/media/codec:codec_factory_test" ]
+  subpackages = [ "//src/media/codec:codec_factory_for_test" ]
   test_specs = {
     environments = [ sherlock_env ]
   }
@@ -549,7 +549,7 @@ fuchsia_test_component("h265-encoder-test") {
 
 fuchsia_test_package("h265-encoder-tests") {
   test_components = [ ":h265-encoder-test" ]
-  subpackages = [ "//src/media/codec:codec_factory_test" ]
+  subpackages = [ "//src/media/codec:codec_factory_for_test" ]
   test_specs = {
     environments = [ sherlock_env ]
   }

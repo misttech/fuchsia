@@ -108,7 +108,7 @@ fuchsia_test_component("test-component") {
 
 fuchsia_test_package("bt-hfp-tests") {
   test_components = [ ":test-component" ]
-  subpackages = [ "//src/media/codec:codec_factory_test" ]
+  subpackages = [ "//src/media/codec:codec_factory_for_test" ]
 }
 
 group("tests") {

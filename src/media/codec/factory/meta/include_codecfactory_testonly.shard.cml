@@ -5,7 +5,7 @@
     children: [
         {
             name: "codec-factory",
-            url: "codec_factory_test#meta/codec_factory.cm",
+            url: "codec_factory_for_test#meta/codec_factory.cm",
         },
     ],
     offer: [

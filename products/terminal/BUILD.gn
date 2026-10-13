@@ -25,6 +25,7 @@ common_bazel_inputs = [
   "//src/testing/fidl/intl_property_manager:intl_property_manager.bazel_input",
   "//src/fonts:fonts_hermetic_for_test.bazel_input",
   "//src/fonts:fonts_configurable_for_test.bazel_input",
+  "//src/media/codec:codec_factory_for_test.bazel_input",
   "//src/ui/testing/test_ui_stack:flatland-scene-manager-test-ui-stack.bazel_input",
   "//src/ui/testing/test_ui_stack:test-ui-stack.bazel_input",
   "//src/tests/fidl/compatibility:fidl-compatibility-array-harness_pkg.bazel_input",

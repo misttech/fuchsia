@@ -120,6 +120,9 @@ _PRODUCT_CACHE_PACKAGES = [
     "//src/fonts:fonts_hermetic_for_test",
     # A font provider without built-in font file assets.
     "//src/fonts:fonts_configurable_for_test",
+    # Codec factory with software codecs for testing (e.g., ffmpeg SW H.264).
+    # This is a package used for testing, not a test itself.
+    "//src/media/codec:codec_factory_for_test",
     # Add Test UI Stack for use in tests.
     # TODO(https://fxbug.dev/42056298): Remove once we migrate client usage to
     # subpackages.

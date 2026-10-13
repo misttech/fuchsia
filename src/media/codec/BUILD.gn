@@ -2,13 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/components.gni")
 
+# Imported so `ffmpeg_profile` remains declared in non-test builds where
+# //src/media/lib/ffmpeg is not in the build graph.
+import("//src/media/lib/ffmpeg/ffmpeg_args.gni")
 group("codec") {
   testonly = true
   deps = [
     ":codec_factory",
-    ":codec_factory_test",
+    ":codec_factory_for_test",
     ":services",
     ":tests",
     "//src/media/codec/codecs",
@@ -61,16 +65,24 @@ fuchsia_package("codec_factory") {
 
 # Codec factory package dedicated for testing.
 # It may contain codec components that are not yet fully released.
-fuchsia_package("codec_factory_test") {
+fuchsia_package("codec_factory_for_test") {
   testonly = true
   deps = [
-    # TODO(https://fxbug.dev/42077655): move to `sw_codecs` when ready for prod
-    # and make available based on product requirements.
+    # TODO(https://fxbug.dev/42077655): move cvsd and lc3 to `sw_codecs` when
+    # ready for prod and make available based on product requirements.
+    # `codec_runner_sw_ffmpeg_comp` is intentionally test-only
+    # (https://fxbug.dev/568150653).
     ":codec_runner_sw_cvsd_comp",
+    ":codec_runner_sw_ffmpeg_comp",
     ":codec_runner_sw_lc3_comp",
     ":sw_codecs",
     "//src/media/codec/factory:codec_factory_component",
   ]
+}
+
+export_fuchsia_package_to_bazel("codec_factory_for_test.bazel_input") {
+  testonly = true
+  package = ":codec_factory_for_test"
 }
 
 group("factory_with_sw_codecs") {
@@ -83,9 +95,15 @@ group("factory_with_sw_codecs") {
 group("sw_codecs") {
   deps = [
     ":codec_runner_sw_aac_comp",
-    ":codec_runner_sw_ffmpeg_comp",
     ":codec_runner_sw_sbc_comp",
   ]
+
+  # TODO(https://fxbug.dev/568150653): Remove once Chromium's
+  # platform_video_codecs.shard.test-cml switches to codec_factory_for_test and
+  # rolls into Fuchsia.
+  if (target_cpu == "x64") {
+    deps += [ ":codec_runner_sw_ffmpeg_comp" ]
+  }
 }
 
 fuchsia_component("codec_runner_sw_sbc_comp") {
