@@ -6,8 +6,8 @@ use crate::subsystems::prelude::*;
 use anyhow::{Context, anyhow};
 use assembly_config_schema::board_config::SerialMode;
 use assembly_config_schema::platform_settings::kernel_config::{
-    MemoryReclamationStrategy, OOMBehavior, OOMRebootTimeout, PagetableEvictionPolicy,
-    PlatformKernelConfig,
+    KernelSerialConfig, MemoryReclamationStrategy, OOMBehavior, OOMRebootTimeout,
+    PagetableEvictionPolicy, PlatformKernelConfig,
 };
 use assembly_constants::{BoardFeature, BootfsDestination, FileEntry, KernelArg};
 use camino::Utf8Path;
@@ -73,21 +73,13 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
         if kernel_config.oom.experimental_expand_memory_stall {
             builder.kernel_arg(KernelArg::OomExperimentalExpandMemoryStall(true));
         }
-        match (&context.board_config.kernel.serial_mode, &context.build_type) {
-            (SerialMode::NoOutput, &BuildType::User) => {
+        match kernel_config.serial {
+            // The product turns the kernel's serial console off, whatever the board and build
+            // type would choose, so that the kernel doesn't own the debug UART.
+            KernelSerialConfig::Disabled => {
                 builder.kernel_arg(KernelArg::Serial("none".to_string()))
             }
-            (SerialMode::Legacy, &BuildType::Eng) => {
-                builder.platform_bundle("kernel_serial_legacy")?
-            }
-            (SerialMode::NoOutput, &BuildType::UserDebug | &BuildType::Eng) => {}
-            (SerialMode::Legacy, &BuildType::UserDebug | &BuildType::User) => {}
-        }
-
-        if let Some(serial) = &context.board_config.kernel.serial
-            && context.build_type == &BuildType::Eng
-        {
-            builder.kernel_arg(KernelArg::Serial(serial.to_string()));
+            KernelSerialConfig::Default => Self::configure_board_serial(context, builder)?,
         }
 
         if kernel_config.lru_memory_compression && !kernel_config.memory_compression {
@@ -272,12 +264,39 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
     }
 }
 
+impl KernelSubsystem {
+    /// Configures the kernel's serial console from the board configuration and the build type.
+    fn configure_board_serial(
+        context: &ConfigurationContext<'_>,
+        builder: &mut dyn ConfigurationBuilder,
+    ) -> anyhow::Result<()> {
+        match (&context.board_config.kernel.serial_mode, &context.build_type) {
+            (SerialMode::NoOutput, &BuildType::User) => {
+                builder.kernel_arg(KernelArg::Serial("none".to_string()))
+            }
+            (SerialMode::Legacy, &BuildType::Eng) => {
+                builder.platform_bundle("kernel_serial_legacy")?
+            }
+            (SerialMode::NoOutput, &BuildType::UserDebug | &BuildType::Eng) => {}
+            (SerialMode::Legacy, &BuildType::UserDebug | &BuildType::User) => {}
+        }
+
+        if let Some(serial) = &context.board_config.kernel.serial
+            && context.build_type == &BuildType::Eng
+        {
+            builder.kernel_arg(KernelArg::Serial(serial.to_string()));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::CompletedConfiguration;
     use crate::subsystems::kernel::KernelSubsystem;
     use crate::subsystems::{ConfigurationBuilderImpl, ConfigurationContext, FeatureSetLevel};
+    use assembly_config_schema::board_config::BoardKernelConfig;
     use assembly_config_schema::{BoardConfig, BoardProvidedConfig, BuildType};
     use camino::Utf8PathBuf;
     use std::fs;
@@ -293,9 +312,17 @@ mod test {
         platform_kernel_config: PlatformKernelConfig,
         board_config: BoardConfig,
     ) -> CompletedConfiguration {
+        build_with_build_type(platform_kernel_config, board_config, &BuildType::Eng)
+    }
+
+    fn build_with_build_type(
+        platform_kernel_config: PlatformKernelConfig,
+        board_config: BoardConfig,
+        build_type: &BuildType,
+    ) -> CompletedConfiguration {
         let context = ConfigurationContext {
             feature_set_level: &FeatureSetLevel::Standard,
-            build_type: &BuildType::Eng,
+            build_type,
             board_config: &board_config,
             gendir: Default::default(),
             resource_dir: Default::default(),
@@ -312,6 +339,107 @@ mod test {
     fn test_define_configuration() {
         let completed_config = build_with_platform_kernel_config(Default::default());
         assert!(completed_config.kernel_args.is_empty());
+    }
+
+    /// Returns the `kernel.serial` arguments, and whether the legacy serial bundle is included,
+    /// for a product with `product_serial` on a board with `serial_mode` and `serial` in a
+    /// `build_type` build.
+    fn serial_config(
+        product_serial: KernelSerialConfig,
+        serial_mode: SerialMode,
+        serial: Option<&str>,
+        build_type: &BuildType,
+    ) -> (Vec<String>, bool) {
+        let board_config = BoardConfig {
+            kernel: BoardKernelConfig {
+                serial_mode,
+                serial: serial.map(str::to_string),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let platform_kernel_config =
+            PlatformKernelConfig { serial: product_serial, ..Default::default() };
+        let completed_config =
+            build_with_build_type(platform_kernel_config, board_config, build_type);
+        let serial_args = completed_config
+            .kernel_args
+            .iter()
+            .filter(|arg| arg.starts_with("kernel.serial="))
+            .cloned()
+            .collect();
+        (serial_args, completed_config.bundles.contains("kernel_serial_legacy"))
+    }
+
+    #[test]
+    fn test_board_kernel_serial() {
+        let none = vec!["kernel.serial=none".to_string()];
+        // User builds turn serial off unless the board asks for legacy serial output.
+        assert_eq!(
+            serial_config(
+                KernelSerialConfig::Default,
+                SerialMode::NoOutput,
+                None,
+                &BuildType::User
+            ),
+            (none.clone(), false)
+        );
+        assert_eq!(
+            serial_config(KernelSerialConfig::Default, SerialMode::Legacy, None, &BuildType::User),
+            (vec![], false)
+        );
+        // Other build types leave the kernel's serial console on.
+        assert_eq!(
+            serial_config(
+                KernelSerialConfig::Default,
+                SerialMode::NoOutput,
+                None,
+                &BuildType::UserDebug
+            ),
+            (vec![], false)
+        );
+        assert_eq!(
+            serial_config(KernelSerialConfig::Default, SerialMode::Legacy, None, &BuildType::Eng),
+            (vec![], true)
+        );
+        // Eng builds use the board's `kernel.serial`, and other build types ignore it.
+        assert_eq!(
+            serial_config(
+                KernelSerialConfig::Default,
+                SerialMode::NoOutput,
+                Some("none"),
+                &BuildType::Eng
+            ),
+            (none, false)
+        );
+        assert_eq!(
+            serial_config(
+                KernelSerialConfig::Default,
+                SerialMode::NoOutput,
+                Some("none"),
+                &BuildType::UserDebug
+            ),
+            (vec![], false)
+        );
+    }
+
+    #[test]
+    fn test_product_disables_kernel_serial() {
+        // The product setting wins over the board's serial configuration on every build type, and
+        // only one `kernel.serial` argument is added.
+        for (serial_mode, serial, build_type) in [
+            (SerialMode::NoOutput, None, &BuildType::User),
+            (SerialMode::Legacy, None, &BuildType::User),
+            (SerialMode::NoOutput, None, &BuildType::UserDebug),
+            (SerialMode::Legacy, None, &BuildType::Eng),
+            (SerialMode::NoOutput, Some("uart"), &BuildType::Eng),
+        ] {
+            assert_eq!(
+                serial_config(KernelSerialConfig::Disabled, serial_mode, serial, build_type),
+                (vec!["kernel.serial=none".to_string()], false),
+                "board serial {serial:?}, build type {build_type:?}"
+            );
+        }
     }
 
     #[test]

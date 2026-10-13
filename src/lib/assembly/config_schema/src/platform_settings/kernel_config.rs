@@ -41,6 +41,21 @@ pub enum MemoryReclamationStrategy {
     Eager,
 }
 
+/// Whether the kernel has a debug serial console.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum KernelSerialConfig {
+    /// The board configuration and the build type decide.
+    #[default]
+    Default,
+    /// The kernel has no debug serial console (`kernel.serial=none`), on every build type.
+    ///
+    /// The kernel then doesn't own its debug UART, so a driver for that UART can drive it as an
+    /// ordinary serial port instead of leaving it to the kernel. A `kernel.serial` argument added
+    /// later, for example by the bootloader, still takes precedence.
+    Disabled,
+}
+
 /// Platform configuration options for the kernel area.
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -150,6 +165,11 @@ pub struct PlatformKernelConfig {
     /// Configurations related to the kernel heap.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub heap: HeapConfig,
+
+    /// Whether the kernel has a debug serial console. Overrides the board's serial
+    /// configuration when set to `disabled`.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub serial: KernelSerialConfig,
 }
 
 /// Options for ktrace behaviors.
