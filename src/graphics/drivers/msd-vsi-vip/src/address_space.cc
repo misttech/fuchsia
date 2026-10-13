@@ -159,9 +159,10 @@ bool AddressSpace::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMapp
   auto page_table_entry =
       root_->GetPageTableEntry(page_directory_index, page_table_index, &valid_count);
 
+  bool writeable = bus_mapping->writeable();
   for (uint64_t i = 0; i < page_count; i++) {
     pte_t pte;
-    if (!pte_encode(bus_addr_array[i], true, true, true, &pte)) {
+    if (!pte_encode(bus_addr_array[i], true, writeable, true, &pte)) {
       MAGMA_LOG(ERROR, "failed to encode pte");
       return false;
     }

@@ -121,7 +121,8 @@ bool Ringbuffer<GpuMapping>::Map(std::shared_ptr<AddressSpace<GpuMapping>> addre
                                  uint64_t* gpu_addr_out) {
   MAGMA_DASSERT(!vaddr_);
 
-  auto gpu_mapping = AddressSpace<GpuMapping>::MapBufferGpu(address_space, buffer_);
+  bool writeable = !address_space->InsertWithBusMapping();
+  auto gpu_mapping = AddressSpace<GpuMapping>::MapBufferGpu(address_space, buffer_, writeable);
   if (!gpu_mapping)
     return MAGMA_DRETF(false, "MapBufferGpu failed");
 
@@ -147,9 +148,10 @@ bool Ringbuffer<GpuMapping>::MultiMap(std::shared_ptr<AddressSpace<GpuMapping>> 
       BufferAccessor<typename GpuMapping::BufferType>::platform_buffer(buffer_.get())->size() /
       magma::page_size();
 
+  bool writeable = !address_space->InsertWithBusMapping();
   std::shared_ptr<GpuMapping> gpu_mapping;
   magma::Status status = AddressSpace<GpuMapping>::MapBufferGpu(
-      address_space, buffer_, gpu_addr, 0 /* page_offset */, page_count, &gpu_mapping);
+      address_space, buffer_, gpu_addr, 0 /* page_offset */, page_count, &gpu_mapping, writeable);
   if (!status.ok()) {
     return MAGMA_DRET_MSG(status.get(), "MapBufferGpu failed");
   }

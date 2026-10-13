@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "src/graphics/drivers/msd-vsi-vip/src/address_space.h"
+#include "src/graphics/drivers/msd-vsi-vip/src/address_space_layout.h"
 
 namespace {
 
@@ -80,8 +81,9 @@ class TestAddressSpace : public ::testing::Test {
       auto* pde = address_space_->root_->entry(page_directory_index);
       EXPECT_NE(*pde, AddressSpace::kInvalidPde);
 
+      bool writeable = bus_mapping->writeable();
       AddressSpace::pte_t expected_pte;
-      EXPECT_TRUE(AddressSpace::pte_encode(bus_addr[i], true, true, true, &expected_pte));
+      EXPECT_TRUE(AddressSpace::pte_encode(bus_addr[i], true, writeable, true, &expected_pte));
       auto* pte = page_table->entry(page_table_index);
       EXPECT_EQ(*pte, expected_pte);
     }
@@ -207,4 +209,13 @@ TEST_F(TestAddressSpace, ReleaseMapping) {
       address_space_, buffer, kGpuAddr, 0 /*page_offset */, kBufferSizeInPages, &mapping);
   EXPECT_TRUE(status.ok());
   EXPECT_TRUE(mapping->Release(nullptr /* bus_mappings_out */));
+}
+
+TEST_F(TestAddressSpace, InsertRingbufferReadOnly) {
+  const uint32_t kGpuAddr = AddressSpaceLayout::system_gpu_addr_base();
+  auto buffer = magma::PlatformBuffer::Create(1 * kPageSize, "test");
+  auto bus_mapping =
+      owner_.GetBusMapper()->MapPageRangeBus(buffer.get(), 0, 1, false /* writeable */);
+  EXPECT_TRUE(address_space_->Insert(kGpuAddr, bus_mapping.get()));
+  CheckPteEntries(bus_mapping.get(), kGpuAddr, 1);
 }

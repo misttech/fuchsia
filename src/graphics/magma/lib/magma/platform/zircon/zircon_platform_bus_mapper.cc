@@ -25,7 +25,7 @@ ZirconPlatformBusMapper::BusMapping::~BusMapping() {
 }
 
 std::unique_ptr<PlatformBusMapper::BusMapping> ZirconPlatformBusMapper::MapPageRangeBus(
-    magma::PlatformBuffer* buffer, uint64_t start_page_index, uint64_t page_count) {
+    magma::PlatformBuffer* buffer, uint64_t start_page_index, uint64_t page_count, bool writeable) {
   TRACE_DURATION("magma", "MapPageRangeBus");
   static_assert(sizeof(zx_paddr_t) == sizeof(uint64_t), "unexpected sizeof(zx_paddr_t)");
 
@@ -38,6 +38,11 @@ std::unique_ptr<PlatformBusMapper::BusMapping> ZirconPlatformBusMapper::MapPageR
 
   std::vector<uint64_t> page_addr(page_count);
   std::vector<zx::pmt> pmt(pmt_count);
+
+  uint32_t pin_flags = ZX_BTI_PERM_READ | ZX_BTI_PERM_EXECUTE;
+  if (writeable) {
+    pin_flags |= ZX_BTI_PERM_WRITE;
+  }
 
   for (uint32_t i = 0; i < pmt_count; i++) {
     uint64_t chunk_page_count = page_count - (i * kMaxPageCount);
@@ -52,8 +57,7 @@ std::unique_ptr<PlatformBusMapper::BusMapping> ZirconPlatformBusMapper::MapPageR
     zx_status_t status;
     {
       TRACE_DURATION("magma", "bti pin", "size", size);
-      status = zx_bti_pin(bus_transaction_initiator_->get(),
-                          ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE | ZX_BTI_PERM_EXECUTE,
+      status = zx_bti_pin(bus_transaction_initiator_->get(), pin_flags,
                           static_cast<ZirconPlatformBuffer*>(buffer)->handle(),
                           (start_page_index + page_offset) * magma::page_size(), size,
                           page_addr.data() + page_offset, chunk_page_count,
@@ -83,8 +87,8 @@ std::unique_ptr<PlatformBusMapper::BusMapping> ZirconPlatformBusMapper::MapPageR
     }
   }
 
-  auto mapping =
-      std::make_unique<BusMapping>(start_page_index, std::move(page_addr), std::move(pmt));
+  auto mapping = std::make_unique<BusMapping>(start_page_index, std::move(page_addr),
+                                              std::move(pmt), writeable);
 
   return mapping;
 }

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MOCK_BUS_MAPPER_H
-#define MOCK_BUS_MAPPER_H
+#ifndef SRC_GRAPHICS_MAGMA_LIB_MAGMA_SERVICE_MOCK_MOCK_BUS_MAPPER_H_
+#define SRC_GRAPHICS_MAGMA_LIB_MAGMA_SERVICE_MOCK_MOCK_BUS_MAPPER_H_
 
 #include <lib/magma/platform/platform_bus_mapper.h>
 #include <lib/magma/util/utils.h>
@@ -15,17 +15,19 @@ class MockConsistentBusMapper;
 
 class MockBusMapping : public magma::PlatformBusMapper::BusMapping {
  public:
-  MockBusMapping(uint64_t page_offset, uint64_t page_count)
-      : page_offset_(page_offset), page_addr_(page_count) {}
+  MockBusMapping(uint64_t page_offset, uint64_t page_count, bool writeable)
+      : page_offset_(page_offset), page_addr_(page_count), writeable_(writeable) {}
 
   uint64_t page_offset() override { return page_offset_; }
   uint64_t page_count() override { return page_addr_.size(); }
 
   std::vector<uint64_t>& Get() override { return page_addr_; }
+  bool writeable() override { return writeable_; }
 
  private:
   uint64_t page_offset_;
   std::vector<uint64_t> page_addr_;
+  bool writeable_;
   friend class MockBusMapper;
   friend class MockConsistentBusMapper;
 };
@@ -36,7 +38,8 @@ class MockBusMapper : public magma::PlatformBusMapper {
       : start_addr_(start_addr), end_addr_(end_addr) {}
 
   std::unique_ptr<magma::PlatformBusMapper::BusMapping> MapPageRangeBus(
-      magma::PlatformBuffer* buffer, uint64_t start_page_index, uint64_t page_count) override {
+      magma::PlatformBuffer* buffer, uint64_t start_page_index, uint64_t page_count,
+      bool writeable) override {
     // Prevent mapping unreasonably large numbers of pages.
     const uint32_t page_size = magma::page_size();
     if (page_count > (1ul << 33) / page_size) {
@@ -47,7 +50,7 @@ class MockBusMapper : public magma::PlatformBusMapper {
       return nullptr;
     }
 
-    auto mapping = std::make_unique<MockBusMapping>(start_page_index, page_count);
+    auto mapping = std::make_unique<MockBusMapping>(start_page_index, page_count, writeable);
     for (auto& addr : mapping->page_addr_) {
       addr = start_addr_;
       start_addr_ += page_size;
@@ -77,12 +80,13 @@ class MockConsistentBusMapper : public magma::PlatformBusMapper {
   MockConsistentBusMapper() {}
 
   std::unique_ptr<magma::PlatformBusMapper::BusMapping> MapPageRangeBus(
-      magma::PlatformBuffer* buffer, uint64_t start_page_index, uint64_t page_count) override {
+      magma::PlatformBuffer* buffer, uint64_t start_page_index, uint64_t page_count,
+      bool writeable) override {
     // Prevent mapping unreasonably large numbers of pages.
     const uint32_t page_size = magma::page_size();
     if (page_count > (1ul << 33) / page_size)
       return nullptr;
-    auto mapping = std::make_unique<MockBusMapping>(start_page_index, page_count);
+    auto mapping = std::make_unique<MockBusMapping>(start_page_index, page_count, writeable);
     for (uint64_t i = 0; i < page_count; ++i) {
       mapping->page_addr_[i] = (buffer->id() << 24) + ((start_page_index + i) * page_size);
     }
@@ -97,4 +101,4 @@ class MockConsistentBusMapper : public magma::PlatformBusMapper {
   }
 };
 
-#endif  // MOCK_BUS_MAPPER_H
+#endif  // SRC_GRAPHICS_MAGMA_LIB_MAGMA_SERVICE_MOCK_MOCK_BUS_MAPPER_H_

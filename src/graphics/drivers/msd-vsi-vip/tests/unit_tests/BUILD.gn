@@ -70,6 +70,7 @@ fuchsia_unittest_package("msd-vsi-vip-nonhardware-tests") {
   manifest = "meta/msd-vsi-vip-nonhardware-tests.cml"
   deps = [ ":nonhardware_tests" ]
   test_specs = {
+    environments = [ vim3_env ]
     log_settings = {
       max_severity = "ERROR"
     }

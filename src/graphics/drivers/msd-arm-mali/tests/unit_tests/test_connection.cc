@@ -104,7 +104,8 @@ class FailBusMapper : public magma::PlatformBusMapper {
   FailBusMapper() {}
 
   std::unique_ptr<magma::PlatformBusMapper::BusMapping> MapPageRangeBus(
-      magma::PlatformBuffer* buffer, uint64_t start_page_index, uint64_t page_count) override {
+      magma::PlatformBuffer* buffer, uint64_t start_page_index, uint64_t page_count,
+      bool writeable) override {
     return nullptr;
   }
   std::unique_ptr<magma::PlatformBuffer> CreateContiguousBuffer(size_t size,

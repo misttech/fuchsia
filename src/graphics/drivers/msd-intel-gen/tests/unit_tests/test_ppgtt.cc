@@ -24,16 +24,18 @@ class TestPerProcessGtt {
  public:
   class MockBusMapping : public magma::PlatformBusMapper::BusMapping {
    public:
-    MockBusMapping(uint64_t page_offset, uint64_t page_count)
-        : page_offset_(page_offset), phys_addr_(page_count) {}
+    MockBusMapping(uint64_t page_offset, uint64_t page_count, bool writeable = true)
+        : page_offset_(page_offset), phys_addr_(page_count), writeable_(writeable) {}
 
     uint64_t page_offset() override { return page_offset_; }
     uint64_t page_count() override { return phys_addr_.size(); }
     std::vector<uint64_t>& Get() override { return phys_addr_; }
+    bool writeable() override { return writeable_; }
 
    private:
     uint64_t page_offset_;
     std::vector<uint64_t> phys_addr_;
+    bool writeable_;
   };
 
   class AddressSpaceOwner : public PerProcessGtt::Owner {

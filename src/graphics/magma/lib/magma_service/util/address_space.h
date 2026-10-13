@@ -48,19 +48,21 @@ class AddressSpace {
   // The address space must support allocation.
   static std::unique_ptr<GpuMapping> MapBufferGpu(std::shared_ptr<AddressSpace> address_space,
                                                   std::shared_ptr<Buffer> buffer, uint64_t offset,
-                                                  uint64_t length);
+                                                  uint64_t length, bool writeable = true);
 
   static std::unique_ptr<GpuMapping> MapBufferGpu(std::shared_ptr<AddressSpace> address_space,
-                                                  std::shared_ptr<Buffer> buffer) {
+                                                  std::shared_ptr<Buffer> buffer,
+                                                  bool writeable = true) {
     return MapBufferGpu(address_space, buffer, 0,
-                        BufferAccessor::platform_buffer(buffer.get())->size());
+                        BufferAccessor::platform_buffer(buffer.get())->size(), writeable);
   }
 
   // Maps the given |buffer| at the given gpu address.
   static magma::Status MapBufferGpu(std::shared_ptr<AddressSpace> address_space,
                                     std::shared_ptr<Buffer> buffer, uint64_t gpu_addr,
                                     uint64_t page_offset, uint64_t page_count,
-                                    std::shared_ptr<GpuMapping>* gpu_mapping_out);
+                                    std::shared_ptr<GpuMapping>* gpu_mapping_out,
+                                    bool writeable = true);
 
   magma::Status GrowMapping(GpuMapping* mapping, uint64_t page_count);
 
@@ -160,7 +162,7 @@ class AddressSpace {
 template <typename GpuMapping>
 std::unique_ptr<GpuMapping> AddressSpace<GpuMapping>::MapBufferGpu(
     std::shared_ptr<AddressSpace> address_space, std::shared_ptr<Buffer> buffer, uint64_t offset,
-    uint64_t length) {
+    uint64_t length, bool writeable) {
   MAGMA_DASSERT(address_space);
   MAGMA_DASSERT(buffer);
 
@@ -204,14 +206,16 @@ std::unique_ptr<GpuMapping> AddressSpace<GpuMapping>::MapBufferGpu(
   std::unique_ptr<magma::PlatformBusMapper::BusMapping> bus_mapping;
 
   if (address_space->InsertWithBusMapping()) {
-    bus_mapping = address_space->owner_->GetBusMapper()->MapPageRangeBus(platform_buffer,
-                                                                         page_offset, page_count);
+    bus_mapping = address_space->owner_->GetBusMapper()->MapPageRangeBus(
+        platform_buffer, page_offset, page_count, writeable);
     if (!bus_mapping)
       return MAGMA_DRETP(nullptr, "failed to bus map the page range");
 
     if (!address_space->Insert(gpu_addr, bus_mapping.get(), guard_page_count))
       return MAGMA_DRETP(nullptr, "failed to insert into address_space");
   } else {
+    // This path assumes writeable PTEs, so check that's what the caller expects.
+    MAGMA_DASSERT(writeable);
     if (!address_space->Insert(gpu_addr, platform_buffer, page_offset, page_count))
       return MAGMA_DRETP(nullptr, "failed to insert into address_space");
   }
@@ -260,7 +264,8 @@ magma::Status AddressSpace<GpuMapping>::MapBufferGpu(std::shared_ptr<AddressSpac
                                                      std::shared_ptr<Buffer> buffer,
                                                      uint64_t gpu_addr, uint64_t page_offset,
                                                      uint64_t page_count,
-                                                     std::shared_ptr<GpuMapping>* gpu_mapping_out) {
+                                                     std::shared_ptr<GpuMapping>* gpu_mapping_out,
+                                                     bool writeable) {
   MAGMA_DASSERT(address_space);
   MAGMA_DASSERT(buffer);
 
@@ -283,14 +288,15 @@ magma::Status AddressSpace<GpuMapping>::MapBufferGpu(std::shared_ptr<AddressSpac
   std::unique_ptr<magma::PlatformBusMapper::BusMapping> bus_mapping;
 
   if (address_space->InsertWithBusMapping()) {
-    bus_mapping = address_space->owner_->GetBusMapper()->MapPageRangeBus(platform_buffer,
-                                                                         page_offset, page_count);
+    bus_mapping = address_space->owner_->GetBusMapper()->MapPageRangeBus(
+        platform_buffer, page_offset, page_count, writeable);
     if (!bus_mapping)
       return MAGMA_DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "failed to map page range to bus");
 
     if (!address_space->Insert(gpu_addr, bus_mapping.get(), guard_page_count))
       return MAGMA_DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "failed to insert into address_space");
   } else {
+    MAGMA_DASSERT(writeable);
     if (!address_space->Insert(gpu_addr, platform_buffer, page_offset, page_count))
       return MAGMA_DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "failed to insert into address_space");
   }
