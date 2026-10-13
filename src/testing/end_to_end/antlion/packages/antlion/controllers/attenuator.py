@@ -22,28 +22,14 @@ _ATTENUATOR_OPEN_RETRIES = 3
 
 
 class Model(enum.StrEnum):
-    AEROFLEX_TELNET = "aeroflex.telnet"
     MINICIRCUITS_HTTP = "minicircuits.http"
-    MINICIRCUITS_TELNET = "minicircuits.telnet"
 
     def create(self, instrument_count: int) -> AttenuatorInstrument:
         match self:
-            case Model.AEROFLEX_TELNET:
-                import antlion.controllers.attenuator_lib.aeroflex.telnet
-
-                return antlion.controllers.attenuator_lib.aeroflex.telnet.AttenuatorInstrument(
-                    instrument_count
-                )
             case Model.MINICIRCUITS_HTTP:
                 import antlion.controllers.attenuator_lib.minicircuits.http
 
                 return antlion.controllers.attenuator_lib.minicircuits.http.AttenuatorInstrument(
-                    instrument_count
-                )
-            case Model.MINICIRCUITS_TELNET:
-                import antlion.controllers.attenuator_lib.minicircuits.telnet
-
-                return antlion.controllers.attenuator_lib.minicircuits.telnet.AttenuatorInstrument(
                     instrument_count
                 )
 
@@ -53,14 +39,14 @@ def create(configs: list[ControllerConfig]) -> list[Attenuator]:
     for config in configs:
         c = MapValidator(config)
         attn_model = c.get(str, "Model")
-        protocol = c.get(str, "Protocol", "telnet")
+        protocol = c.get(str, "Protocol", "http")
         model = Model(f"{attn_model}.{protocol}")
 
         instrument_count = c.get(int, "InstrumentCount")
         attenuator_instrument = model.create(instrument_count)
 
         address = c.get(str, "Address")
-        port = c.get(int, "Port")
+        port = c.get(int, "Port", 80)
 
         for attempt_number in range(1, _ATTENUATOR_OPEN_RETRIES + 1):
             try:
@@ -81,11 +67,6 @@ def create(configs: list[ControllerConfig]) -> list[Attenuator]:
                         )
                     else:
                         logging.error("Able to ping attenuator at %s", address)
-                        job.run(
-                            ["telnet", address, str(port)],
-                            stdin=b"q",
-                            ignore_status=True,
-                        )
                     raise
         for i in range(instrument_count):
             attenuators.append(Attenuator(attenuator_instrument, idx=i))
