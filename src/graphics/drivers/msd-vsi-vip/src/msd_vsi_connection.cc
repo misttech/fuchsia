@@ -85,23 +85,25 @@ void MsdVsiConnection::QueueReleasedMappings(std::vector<std::shared_ptr<GpuMapp
   bool killed = false;
   for (const auto& mapping : mappings) {
     size_t use_count = mapping.use_count();
-    if (use_count == 1) {
-      // Bus mappings are held in the connection and passed through the command stream to
-      // ensure the memory isn't released until the tlbs are invalidated, which happens
-      // when the MappingReleaseBatch completes.
-      std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>> bus_mappings;
-      mapping->Release(&bus_mappings);
-      for (uint32_t i = 0; i < bus_mappings.size(); i++) {
-        mappings_to_release_.emplace_back(std::move(bus_mappings[i]));
-      }
-    } else {
+    if (use_count > 1) {
       // It's an error to release a buffer while it has inflight mappings, as that
-      // can fault the gpu.
+      // can fault the gpu.  Shutdown the connection and also hold the mappings (below).
+      // The inflight commands will run to completion, but the connection destructor ensures
+      // that a MappingReleaseBatch runs afterward to flush the TLBs before the memory is freed.
       MAGMA_LOG(WARNING, "buffer %lu mapping use_count %zd", mapping->BufferId(), use_count);
       if (!killed) {
         SendContextKilled();
         killed = true;
       }
+    }
+
+    // Bus mappings are held in the connection and passed through the command stream to
+    // ensure the memory isn't released until the tlbs are invalidated, which happens
+    // when the MappingReleaseBatch completes.
+    std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>> bus_mappings;
+    mapping->Release(&bus_mappings);
+    for (uint32_t i = 0; i < bus_mappings.size(); i++) {
+      mappings_to_release_.emplace_back(std::move(bus_mappings[i]));
     }
   }
 
@@ -109,6 +111,8 @@ void MsdVsiConnection::QueueReleasedMappings(std::vector<std::shared_ptr<GpuMapp
   for (auto& mapping : address_space_mappings) {
     mappings_to_release_.emplace_back(std::move(mapping));
   }
+
+  address_space_dirty_ = true;
 }
 
 bool MsdVsiConnection::ReleaseMapping(magma::PlatformBuffer* buffer, uint64_t gpu_va) {
@@ -119,7 +123,6 @@ bool MsdVsiConnection::ReleaseMapping(magma::PlatformBuffer* buffer, uint64_t gp
   }
   std::vector<std::shared_ptr<GpuMapping>> mappings = {std::move(mapping)};
   QueueReleasedMappings(std::move(mappings));
-  address_space_dirty_ = true;
 
   return true;
 }

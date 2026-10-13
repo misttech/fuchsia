@@ -123,8 +123,9 @@ TEST_F(TestMsdVsiConnection, ReleaseMapping) {
 
   const std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>>& mappings2 =
       connection_->mappings_to_release();
-  // Still holds the first mapping.
-  EXPECT_EQ(1u, mappings2.size());
+  // With the fix for b/520581490, we now release the mapping and queue its bus mappings even when
+  // use_count > 1.
+  EXPECT_EQ(3u, mappings2.size());
 }
 
 TEST_F(TestMsdVsiConnection, ReleaseBuffer) {
@@ -173,7 +174,9 @@ TEST_F(TestMsdVsiConnection, ReleaseBufferWhileMapped) {
 
   const std::vector<std::unique_ptr<magma::PlatformBusMapper::BusMapping>>& mappings =
       connection_->mappings_to_release();
-  EXPECT_EQ(0u, mappings.size());
+  // With the fix for b/520581490, we now release the mapping and queue its bus mappings even when
+  // use_count > 1.
+  EXPECT_EQ(2u, mappings.size());
 }
 
 TEST_F(TestMsdVsiConnection, AddressSpaceDirty) {
