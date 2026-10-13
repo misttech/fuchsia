@@ -5,7 +5,7 @@
 use crate::verifier::Verifier;
 use anyhow::Error;
 use delivery_blob::compression::{ChunkedArchiveError, DataBuffer};
-use fidl::endpoints::ServerEnd;
+use fidl::endpoints::{ControlHandle as _, RequestStream as _, ServerEnd};
 use fidl_fuchsia_storage_block as fblock;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
@@ -257,6 +257,26 @@ impl Drop for MapperVmoThread {
     }
 }
 
+async fn serve_recording<D: DeliveryHandler>(
+    files: Arc<Files<dyn BlockService, D>>,
+    mut stream: fblock::RecordingRequestStream,
+) {
+    let guard = scopeguard::guard(&files, |files| {
+        files.abort_recording();
+    });
+    while let Ok(Some(request)) = stream.try_next().await {
+        match request {
+            fblock::RecordingRequest::Stop { responder } => {
+                scopeguard::ScopeGuard::into_inner(guard);
+                let res = files.stop_recording().map_err(zx::Status::into_raw);
+                let _ = responder.send(res);
+                return;
+            }
+            fblock::RecordingRequest::_UnknownMethod { .. } => {}
+        }
+    }
+}
+
 async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
     handler: Arc<M>,
     service: Arc<dyn BlockService>,
@@ -268,6 +288,8 @@ async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
     let _mapper_vmo_thread = MapperVmoThread::spawn(&mapping_vmo, files.clone())?;
 
     let scope = fasync::Scope::new();
+    let mut active_recording: Option<(fblock::RecordingControlHandle, fasync::JoinHandle<()>)> =
+        None;
     let mut stream = session.into_stream();
     while let Some(request) = stream.try_next().await? {
         match request {
@@ -323,6 +345,34 @@ async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
                         responder.send(Err(status.into_raw()))?;
                     }
                 }
+            }
+            fblock::MapperSessionRequest::RecordProfile { recording, responder } => {
+                if let Some((control_handle, task)) = active_recording.take() {
+                    // Reject concurrent recordings if the previous recording has neither been
+                    // stopped via `Recording.Stop` nor had its client channel closed. If the
+                    // client dropped its `Recording` channel and immediately sent a new
+                    // `RecordProfile` request before `serve_recording` was polled, aborting
+                    // `task` here runs the cleanup guard before starting the new recording.
+                    if files.is_recording() && !control_handle.is_closed() {
+                        active_recording = Some((control_handle, task));
+                        responder.send(Err(zx::Status::BAD_STATE.into_raw()))?;
+                        continue;
+                    }
+                    drop(control_handle);
+                    let _ = task.abort().await;
+                }
+                if let Err(status) = files.start_recording() {
+                    responder.send(Err(status.into_raw()))?;
+                    continue;
+                }
+                let recording_stream = recording.into_stream();
+                let control_handle = recording_stream.control_handle();
+                let files_clone = files.clone();
+                let task = scope.spawn(async move {
+                    serve_recording(files_clone, recording_stream).await;
+                });
+                active_recording = Some((control_handle, task));
+                responder.send(Ok(()))?;
             }
             fblock::MapperSessionRequest::Close { responder } => {
                 responder.send(Ok(()))?;
@@ -388,6 +438,7 @@ mod tests {
     use mapping::{Extent, Extents, MappingCommand};
     use storage_device::buffer::OwnedBuffer;
     use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
+    use storage_profile::{FileMessage, Message as _};
     use vmo_fifo::SyncSender;
 
     struct FakeHandler;
@@ -589,6 +640,147 @@ mod tests {
         assert_eq!(read_buf, block_data);
 
         proxy.close().await.unwrap().expect("close session");
+        task.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_mapper_session_record_profile() {
+        let read_ahead = mapping::TARGET_READ_AHEAD_SIZE;
+        let file_size = read_ahead * 2;
+        let block_data = vec![0x33u8; file_size as usize];
+        let service = Arc::new(FakeBlockService::new(block_data.clone()));
+        let handler = Arc::new(FakeHandler);
+
+        let (proxy, server) = create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(65536).expect("create mapping_vmo failed");
+
+        let fut = serve_mapper_session(
+            handler,
+            service,
+            server,
+            mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle failed"),
+            None,
+            None,
+        )
+        .expect("serve_mapper_session failed");
+        let task = fasync::Task::spawn(async move {
+            let _ = fut.await;
+        });
+
+        let mut sender = SyncSender::<RawMappingCommand>::new(mapping_vmo, 8, 256)
+            .expect("SyncSender::new failed");
+        let mut map_key = |key: u64| {
+            let extents =
+                vec![Extent::try_new(0..file_size, Some(0)).expect("Extent::try_new failed")];
+            let encoded_extents = Extents::try_new(&extents, 0).expect("Extents::try_new failed");
+            let mut payload = sender.reserve_payload(8).expect("reserve_payload failed");
+            for (mut chunk, val) in
+                payload.data().chunks_mut(8).zip(Extents::encode_extents(&encoded_extents))
+            {
+                chunk.copy_from_slice(&val.to_le_bytes());
+            }
+            let cmd = MappingCommand::Mappings {
+                key,
+                offset: payload.offset() as u32,
+                stored_size: file_size,
+                device_offset: 0,
+                metadata_count: 0,
+                extent_count: 1,
+                encrypted: false,
+            };
+            payload.commit(cmd.into()).expect("payload commit failed");
+        };
+
+        let key1 = 10u64;
+        let key2 = 20u64;
+        let vmo1 = proxy
+            .create_vmo(key1, file_size, fblock::CreateVmoOptions::empty())
+            .await
+            .expect("create_vmo fidl failed")
+            .expect("create_vmo failed");
+        let vmo2 = proxy
+            .create_vmo(key2, file_size, fblock::CreateVmoOptions::empty())
+            .await
+            .expect("create_vmo fidl failed")
+            .expect("create_vmo failed");
+        map_key(key1);
+        map_key(key2);
+
+        // Start recording.
+        let (recording_proxy, recording_server) = create_proxy::<fblock::RecordingMarker>();
+        proxy
+            .record_profile(recording_server)
+            .await
+            .expect("record_profile fidl failed")
+            .expect("record_profile failed");
+
+        // Starting a second recording while one is active must fail with BAD_STATE.
+        let (_dup_proxy, dup_server) = create_proxy::<fblock::RecordingMarker>();
+        let dup_err = proxy
+            .record_profile(dup_server)
+            .await
+            .expect("record_profile fidl failed")
+            .expect_err("concurrent record_profile succeeded");
+        assert_eq!(zx::Status::err_from_raw(dup_err), zx::Status::BAD_STATE);
+
+        // Trigger page faults on vmo1 (first and second readahead windows) and vmo2 (first window).
+        let vmo1_dup = vmo1.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup vmo1 failed");
+        let vmo2_dup = vmo2.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup vmo2 failed");
+        fasync::unblock(move || {
+            let mut buf = [0u8; 4096];
+            vmo1_dup.read(&mut buf, 4096).expect("read vmo1 window 0 failed");
+            vmo2_dup.read(&mut buf, 0).expect("read vmo2 window 0 failed");
+            vmo1_dup.read(&mut buf, read_ahead + 4096).expect("read vmo1 window 1 failed");
+        })
+        .await;
+
+        let profile_vmo = recording_proxy
+            .stop()
+            .await
+            .expect("Recording.Stop fidl failed")
+            .expect("Recording.Stop failed");
+        let entries = FileMessage::decode_from_vmo(&profile_vmo, mapping::BLOCK_SIZE as usize)
+            .expect("decode_from_vmo failed");
+        assert_eq!(
+            entries,
+            vec![
+                FileMessage { id: key1, offset: 0 },
+                FileMessage { id: key2, offset: 0 },
+                FileMessage { id: key1, offset: read_ahead },
+            ]
+        );
+
+        // Dropping a RecordingProxy without calling Stop() and starting a new recording should
+        // succeed and discard any entries from the aborted session.
+        let (aborted_proxy, aborted_server) = create_proxy::<fblock::RecordingMarker>();
+        proxy
+            .record_profile(aborted_server)
+            .await
+            .expect("record_profile fidl failed")
+            .expect("record_profile failed");
+        drop(aborted_proxy);
+
+        let (recording_proxy2, recording_server2) = create_proxy::<fblock::RecordingMarker>();
+        proxy
+            .record_profile(recording_server2)
+            .await
+            .expect("record_profile after drop fidl failed")
+            .expect("record_profile after drop failed");
+        fasync::unblock(move || {
+            let mut buf = [0u8; 4096];
+            vmo2.read(&mut buf, read_ahead).expect("read vmo2 window 1 failed");
+        })
+        .await;
+        let profile_vmo2 = recording_proxy2
+            .stop()
+            .await
+            .expect("Recording.Stop fidl failed")
+            .expect("Recording.Stop failed");
+        let entries2 = FileMessage::decode_from_vmo(&profile_vmo2, mapping::BLOCK_SIZE as usize)
+            .expect("decode_from_vmo failed");
+        assert_eq!(entries2, vec![FileMessage { id: key2, offset: read_ahead }]);
+
+        proxy.close().await.expect("close fidl failed").expect("close session failed");
         task.await;
     }
 }

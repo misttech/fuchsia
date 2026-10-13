@@ -26,6 +26,7 @@ rustc_library("mapping") {
     "//src/storage/fxfs/crypto",
     "//src/storage/lib/blob_metadata",
     "//src/storage/lib/delivery_blob",
+    "//src/storage/lib/profile",
     "//src/storage/lib/ptr_slice",
     "//src/storage/lib/storage_device",
     "//src/storage/lib/vmo-fifo",

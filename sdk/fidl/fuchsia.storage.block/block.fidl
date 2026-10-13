@@ -602,4 +602,18 @@ open protocol MapperSession {
         /// Completed requests are delivered on this queue.
         delivery_queue zx.Handle:<VMO, optional>;
     }) -> () error zx.Status;
+
+    /// Starts recording an access profile for this mapper session.
+    flexible RecordProfile(resource struct {
+        recording server_end:Recording;
+    }) -> () error zx.Status;
+};
+
+/// Represents an active profile recording on a `MapperSession`.
+open protocol Recording {
+    /// Stops the profile recording and returns the recorded profile data in `vmo` (encoding the
+    /// session `key` and readahead-aligned logical byte offset of each read).
+    flexible Stop() -> (resource struct {
+        vmo zx.Handle:VMO;
+    }) error zx.Status;
 };
