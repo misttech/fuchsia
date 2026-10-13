@@ -2,6 +2,8 @@
     "profile_name": "default",
     "rbe_instance": "projects/rbe-fuchsia-prod/instances/default",
     "remote_exec_root": "/b/f/w",
+    "container_image": "docker://gcr.io/cloud-marketplace/google/debian11@sha256:69e2789c9f3d28c6a0f13b25062c240ee7772be1f5e6d41bb4680b63eae6b304",
+    "os_family": "Linux",
     "worker_pools": {
         "default": "Pool=default",
         "large": "Pool=large_worker"

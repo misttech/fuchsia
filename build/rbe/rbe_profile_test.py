@@ -25,8 +25,13 @@ class RbeProfileTest(unittest.TestCase):
         profile = rbe_profile.RbeProfile(
             rbe_instance="projects/fake-project/instances/fake-instance",
             remote_exec_root=Path("/fake/root"),
-            worker_pools={"default": "Pool=default"},
+            container_image="docker://gcr.io/fake/image",
+            worker_pools={
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
             profile_name="fake-profile",
+            os_family="fake-os",
             auth_type="fake-auth",
         )
         self.assertEqual(
@@ -34,19 +39,29 @@ class RbeProfileTest(unittest.TestCase):
             "projects/fake-project/instances/fake-instance",
         )
         self.assertEqual(profile.remote_exec_root, Path("/fake/root"))
-        self.assertEqual(profile.worker_pools, {"default": "Pool=default"})
+        self.assertEqual(profile.container_image, "docker://gcr.io/fake/image")
+        self.assertEqual(
+            profile.worker_pools,
+            {
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
+        )
         self.assertEqual(profile.profile_name, "fake-profile")
+        self.assertEqual(profile.os_family, "fake-os")
         self.assertEqual(profile.auth_type, "fake-auth")
 
     def test_rbe_profile_from_dict_success(self) -> None:
         data = {
             "rbe_instance": "projects/fake-project/instances/default",
             "remote_exec_root": "/fake/root",
+            "container_image": "docker://gcr.io/fake/image",
             "worker_pools": {
-                "default": "Pool=default",
-                "large": "Pool=large",
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
             },
             "profile_name": "default",
+            "os_family": "fake-os",
             "auth_type": "fake-auth",
         }
         profile = rbe_profile.RbeProfile.from_dict(data)
@@ -54,19 +69,26 @@ class RbeProfileTest(unittest.TestCase):
             profile.rbe_instance, "projects/fake-project/instances/default"
         )
         self.assertEqual(profile.remote_exec_root, Path("/fake/root"))
+        self.assertEqual(profile.container_image, "docker://gcr.io/fake/image")
         self.assertEqual(
             profile.worker_pools,
-            {"default": "Pool=default", "large": "Pool=large"},
+            {
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
         )
         self.assertEqual(profile.profile_name, "default")
+        self.assertEqual(profile.os_family, "fake-os")
         self.assertEqual(profile.auth_type, "fake-auth")
 
     def test_rbe_profile_from_dict_missing_fields_raises(self) -> None:
         invalid_data = {
             "rbe_instance": "projects/fake-project/instances/fake-instance",
             "remote_exec_root": "/fake/root",
+            "container_image": "docker://gcr.io/fake/image",
             # "worker_pools" is missing
             "profile_name": "fake-profile",
+            "os_family": "fake-os",
             "auth_type": "fake-auth",
         }
         with self.assertRaises(ValueError) as ctx:
@@ -77,20 +99,113 @@ class RbeProfileTest(unittest.TestCase):
         invalid_data = {
             "rbe_instance": "projects/fake-project/instances/fake-instance",
             "remote_exec_root": "/fake/root",
-            "worker_pools": {"default": "Pool=default"},
+            "container_image": "docker://gcr.io/fake/image",
+            "worker_pools": {
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
             # "profile_name" is missing
+            "os_family": "fake-os",
             "auth_type": "fake-auth",
         }
         with self.assertRaises(ValueError) as ctx:
             rbe_profile.RbeProfile.from_dict(invalid_data)
         self.assertIn("profile_name", str(ctx.exception))
 
+    def test_rbe_profile_from_dict_missing_container_image_raises(self) -> None:
+        invalid_data = {
+            "rbe_instance": "projects/fake-project/instances/fake-instance",
+            "remote_exec_root": "/fake/root",
+            # "container_image" is missing
+            "worker_pools": {
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
+            "profile_name": "fake-profile",
+            "os_family": "fake-os",
+            "auth_type": "fake-auth",
+        }
+        with self.assertRaises(ValueError) as ctx:
+            rbe_profile.RbeProfile.from_dict(invalid_data)
+        self.assertIn("container_image", str(ctx.exception))
+
+    def test_rbe_profile_from_dict_missing_os_family_raises(self) -> None:
+        invalid_data = {
+            "rbe_instance": "projects/fake-project/instances/fake-instance",
+            "remote_exec_root": "/fake/root",
+            "container_image": "docker://gcr.io/fake/image",
+            "worker_pools": {
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
+            "profile_name": "fake-profile",
+            # "os_family" is missing
+            "auth_type": "fake-auth",
+        }
+        with self.assertRaises(ValueError) as ctx:
+            rbe_profile.RbeProfile.from_dict(invalid_data)
+        self.assertIn("os_family", str(ctx.exception))
+
+    def test_rbe_profile_worker_pools_missing_default_raises(self) -> None:
+        invalid_data = {
+            "rbe_instance": "projects/fake-project/instances/fake-instance",
+            "remote_exec_root": "/fake/root",
+            "container_image": "docker://gcr.io/fake/image",
+            "worker_pools": {"large": "Pool=fake-large-pool"},
+            "profile_name": "fake-profile",
+            "os_family": "fake-os",
+            "auth_type": "fake-auth",
+        }
+        with self.assertRaises(ValueError) as ctx:
+            rbe_profile.RbeProfile.from_dict(invalid_data)
+        self.assertIn("must define a 'default' worker pool", str(ctx.exception))
+
+    def test_rbe_profile_worker_pools_missing_large_raises(self) -> None:
+        invalid_data = {
+            "rbe_instance": "projects/fake-project/instances/fake-instance",
+            "remote_exec_root": "/fake/root",
+            "container_image": "docker://gcr.io/fake/image",
+            "worker_pools": {"default": "Pool=fake-default-pool"},
+            "profile_name": "fake-profile",
+            "os_family": "fake-os",
+            "auth_type": "fake-auth",
+        }
+        with self.assertRaises(ValueError) as ctx:
+            rbe_profile.RbeProfile.from_dict(invalid_data)
+        self.assertIn("must define a 'large' worker pool", str(ctx.exception))
+
+    def test_rbe_profile_worker_pools_invalid_platform_variable_raises(
+        self,
+    ) -> None:
+        invalid_data = {
+            "rbe_instance": "projects/fake-project/instances/fake-instance",
+            "remote_exec_root": "/fake/root",
+            "container_image": "docker://gcr.io/fake/image",
+            "worker_pools": {
+                "default": "no_equals_sign",
+                "large": "Pool=fake-large-pool",
+            },
+            "profile_name": "fake-profile",
+            "os_family": "fake-os",
+            "auth_type": "fake-auth",
+        }
+        with self.assertRaises(ValueError) as ctx:
+            rbe_profile.RbeProfile.from_dict(invalid_data)
+        self.assertIn(
+            "must be a 'key=value' platform property string", str(ctx.exception)
+        )
+
     def test_rbe_profile_env_round_trip(self) -> None:
         profile = rbe_profile.RbeProfile(
             rbe_instance="projects/test-project/instances/default",
             remote_exec_root=Path("/test/exec/root"),
-            worker_pools={"default": "Pool=default", "large": "Pool=large"},
+            container_image="docker://gcr.io/fake/image",
+            worker_pools={
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
             profile_name="default",
+            os_family="fake-os",
             auth_type="fake-auth",
         )
         env_dict = profile.to_env_dict()
@@ -99,7 +214,9 @@ class RbeProfileTest(unittest.TestCase):
             {
                 rbe_profile._ENV_RBE_INSTANCE: "projects/test-project/instances/default",
                 rbe_profile._ENV_EXEC_ROOT: "/test/exec/root",
-                rbe_profile._ENV_WORKER_POOLS: '{"default": "Pool=default", "large": "Pool=large"}',
+                rbe_profile._ENV_CONTAINER_IMAGE: "docker://gcr.io/fake/image",
+                rbe_profile._ENV_OS_FAMILY: "fake-os",
+                rbe_profile._ENV_WORKER_POOLS: '{"default": "Pool=fake-default-pool", "large": "Pool=fake-large-pool"}',
                 rbe_profile._ENV_AUTH_TYPE: "fake-auth",
                 rbe_profile._ENV_PROFILE_NAME: "default",
             },
@@ -153,16 +270,27 @@ class RbeProfileTest(unittest.TestCase):
             p.rbe_instance, "projects/fake-project/instances/fake-instance"
         )
         self.assertEqual(p.remote_exec_root, Path("/fake/root"))
-        self.assertEqual(p.worker_pools, {"default": "Pool=default"})
+        self.assertEqual(p.container_image, "docker://gcr.io/fake/image")
+        self.assertEqual(
+            p.worker_pools,
+            {
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
+        )
         self.assertEqual(p.profile_name, "fake-profile")
+        self.assertEqual(p.os_family, "fake-os")
         self.assertEqual(p.auth_type, "fake-auth")
 
         # Overrides
         p_custom = rbe_profile.fake(
-            rbe_instance="custom-inst",
+            rbe_instance="projects/custom-project/instances/custom-inst",
             auth_type="google",
         )
-        self.assertEqual(p_custom.rbe_instance, "custom-inst")
+        self.assertEqual(
+            p_custom.rbe_instance,
+            "projects/custom-project/instances/custom-inst",
+        )
         self.assertEqual(p_custom.auth_type, "google")
 
         # Unknown override raises ValueError

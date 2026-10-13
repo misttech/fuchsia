@@ -25,6 +25,8 @@ from build.scripts import service_profile
 # RBE_instance is read directly by reclient's reproxy tool to select the RBE endpoint.
 _ENV_RBE_INSTANCE = "RBE_instance"
 _ENV_EXEC_ROOT = "FX_BUILD_INTERNAL_RBE_REMOTE_EXEC_ROOT"
+_ENV_CONTAINER_IMAGE = "FX_BUILD_INTERNAL_RBE_CONTAINER_IMAGE"
+_ENV_OS_FAMILY = "FX_BUILD_INTERNAL_RBE_OS_FAMILY"
 _ENV_WORKER_POOLS = "FX_BUILD_INTERNAL_RBE_WORKER_POOLS"
 _ENV_AUTH_TYPE = "FX_BUILD_INTERNAL_RBE_AUTH_TYPE"
 _ENV_PROFILE_NAME = "FX_BUILD_RBE_PROFILE"
@@ -51,22 +53,51 @@ class RbeProfile:
         remote_exec_root: The root path of the execution workspace on remote
             workers (typically `/b/f/w`).
         worker_pools: A dictionary mapping abstract worker pool names (e.g.,
-            "default", "large") to the concrete RBE platform pool constraints
-            (e.g., "Pool=default", "Pool=large_worker") used by this instance.
+            "default", "large") to concrete remote execution platform property
+            strings formatted as "key=value" (e.g., "Pool=default",
+            "Pool=large_worker"). In reclient/rewrapper, these are forwarded via
+            `--platform=key=value`. In Bazel, these are parsed into
+            `exec_properties = {"key": "value"}`. Both the property key (e.g.,
+            "Pool") and property value are derived directly from this string.
         auth_type: Authentication mechanism ("google" or "none").
     """
 
     rbe_instance: str
     remote_exec_root: Path
+    container_image: str
+    # LINT.IfChange(rbe_worker_pools)
     worker_pools: dict[str, str]
+    # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/fuchsia_platform_build.bzl:rbe_worker_pools)
     profile_name: str
+    os_family: str
     auth_type: str = "google"
+
+    def __post_init__(self) -> None:
+        if not self.rbe_instance.startswith("projects/"):
+            raise ValueError(
+                f"rbe_instance must start with 'projects/', got '{self.rbe_instance}'"
+            )
+        if "default" not in self.worker_pools:
+            raise ValueError(
+                "worker_pools must define a 'default' worker pool entry"
+            )
+        if "large" not in self.worker_pools:
+            raise ValueError(
+                "worker_pools must define a 'large' worker pool entry"
+            )
+        for pool_name, pool_spec in self.worker_pools.items():
+            if not isinstance(pool_spec, str) or "=" not in pool_spec:
+                raise ValueError(
+                    f"worker_pools['{pool_name}'] must be a 'key=value' platform property string, got '{pool_spec}'"
+                )
 
     def to_env_dict(self) -> dict[str, str]:
         """Serializes properties to standard environment variables for subprocesses."""
         return {
             _ENV_RBE_INSTANCE: self.rbe_instance,
             _ENV_EXEC_ROOT: str(self.remote_exec_root),
+            _ENV_CONTAINER_IMAGE: self.container_image,
+            _ENV_OS_FAMILY: self.os_family,
             _ENV_WORKER_POOLS: json.dumps(self.worker_pools),
             _ENV_AUTH_TYPE: self.auth_type,
             _ENV_PROFILE_NAME: self.profile_name,
@@ -102,13 +133,23 @@ def load(
             raise ValueError(
                 f"Failed to decode worker pools JSON from environment: {e}"
             )
+        container_image = environ.get(_ENV_CONTAINER_IMAGE)
+        if not container_image:
+            raise ValueError(
+                f"{_ENV_CONTAINER_IMAGE} must be present in environment"
+            )
+        os_family = environ.get(_ENV_OS_FAMILY)
+        if not os_family:
+            raise ValueError(f"{_ENV_OS_FAMILY} must be present in environment")
         auth_type = environ.get(_ENV_AUTH_TYPE, "google")
         profile_name = environ.get(_ENV_PROFILE_NAME, "default")
         return RbeProfile(
             rbe_instance=rbe_instance,
             remote_exec_root=Path(exec_root_str),
+            container_image=container_image,
             worker_pools=worker_pools,
             profile_name=profile_name,
+            os_family=os_family,
             auth_type=auth_type,
         )
 
@@ -123,15 +164,22 @@ def fake(**overrides: Any) -> RbeProfile:
     defaults: dict[str, Any] = {
         "rbe_instance": "projects/fake-project/instances/fake-instance",
         "remote_exec_root": Path("/fake/root"),
-        "worker_pools": {"default": "Pool=default"},
+        "container_image": "docker://gcr.io/fake/image",
+        "worker_pools": {
+            "default": "Pool=fake-default-pool",
+            "large": "Pool=fake-large-pool",
+        },
         "profile_name": "fake-profile",
+        "os_family": "fake-os",
         "auth_type": "fake-auth",
     }
     valid_keys = {
         "rbe_instance",
         "remote_exec_root",
+        "container_image",
         "worker_pools",
         "profile_name",
+        "os_family",
         "auth_type",
     }
     for k in overrides:

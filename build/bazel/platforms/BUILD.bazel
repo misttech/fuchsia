@@ -171,11 +171,7 @@ platform(
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
     ],
-    exec_properties = {
-        "container-image": build_config.rbe_container_image,
-        "OSFamily": "Linux",
-        "Pool": build_config.rbe_pool_name,
-    },
+    exec_properties = build_config.rbe_remote_exec_properties,
     flags = _flags_for_linux_x64,
 )
 

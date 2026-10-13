@@ -92,8 +92,10 @@ def _get_fuchsia_source_path(repo_ctx, relative_path):
         # the Fuchsia source directory anyway.
         result = "%s/%s" % (repo_ctx.workspace_root, relative_path)
 
-    result = str(repo_ctx.path(result).realpath)
-    return result
+    p = repo_ctx.path(result)
+    if p.exists:
+        return str(p.realpath)
+    return str(p)
 
 def _get_ninja_output_dir(repo_ctx):
     """Compute the Ninja output directory used by this workspace.
@@ -149,45 +151,80 @@ def _get_rbe_config(repo_ctx):
     Returns:
       A struct with fields describing RBE-related config information.
     """
-    rewrapper_config_path = _get_fuchsia_source_path(
-        repo_ctx,
-        "build/rbe/fuchsia-rewrapper.cfg",
-    )
-
     reproxy_config_path = _get_fuchsia_source_path(
         repo_ctx,
         "build/rbe/fuchsia-reproxy.cfg",
     )
 
     instance_prefix = "instance="
-    platform_prefix = "platform="
 
-    platform_values = {}
-    for line in repo_ctx.read(rewrapper_config_path).splitlines():
-        line = line.strip()
-        if line.startswith(platform_prefix):
-            # After "platform=", expect comma-separated key=value pairs.
-            platform_values = _cfg_values_to_dict(line.removeprefix(platform_prefix))
+    # LINT.IfChange(service_profile_resolution)
+    # Resolve active RBE profile. Precedence matches service_profile.py:
+    # 1. Environment variable FX_BUILD_RBE_PROFILE (if set, loads build/rbe/profiles/<name>.json)
+    # 2. Sticky active configuration file at .fx/config/rbe_profile.json
+    # 3. Default template file at build/rbe/profiles/default.json
+    profile_path = None
+    env_profile = repo_ctx.os.environ.get("FX_BUILD_RBE_PROFILE")
+    if env_profile:
+        candidate = _get_fuchsia_source_path(repo_ctx, "build/rbe/profiles/" + env_profile + ".json")
+        if repo_ctx.path(candidate).exists:
+            profile_path = candidate
+        else:
+            fail("ERROR: RBE profile '%s' specified by FX_BUILD_RBE_PROFILE does not exist at %s" % (env_profile, candidate))
 
-    container_image = platform_values.get("container-image")
-    pool_name = platform_values.get("Pool")
+    if not profile_path:
+        candidate = _get_fuchsia_source_path(repo_ctx, ".fx/config/rbe_profile.json")
+        if repo_ctx.path(candidate).exists:
+            profile_path = candidate
 
-    instance_name = None
-    for line in repo_ctx.read(reproxy_config_path).splitlines():
-        line = line.strip()
-        if line.startswith(instance_prefix):
-            instance_name = line[len(instance_prefix):]
+    if not profile_path:
+        candidate = _get_fuchsia_source_path(repo_ctx, "build/rbe/profiles/default.json")
+        if repo_ctx.path(candidate).exists:
+            profile_path = candidate
+
+    if not profile_path:
+        fail("ERROR: Could not locate active RBE profile or default template at build/rbe/profiles/default.json")
+
+    # LINT.ThenChange(//build/scripts/service_profile.py:service_profile_resolution)
+
+    # LINT.IfChange(rbe_worker_pools)
+    profile_json = json.decode(repo_ctx.read(profile_path))
+    instance_name = profile_json.get("rbe_instance")
+    if not instance_name and repo_ctx.path(reproxy_config_path).exists:
+        for line in repo_ctx.read(reproxy_config_path).splitlines():
+            line = line.strip()
+            if line.startswith(instance_prefix):
+                instance_name = line[len(instance_prefix):]
+
+    container_image = profile_json.get("container_image")
+    if not container_image:
+        fail("ERROR: Missing 'container_image' in active RBE profile %s" % profile_path)
+
+    os_family = profile_json.get("os_family")
+    if not os_family:
+        fail("ERROR: Missing 'os_family' in active RBE profile %s" % profile_path)
+
+    worker_pools = profile_json.get("worker_pools", {})
+    default_pool_spec = worker_pools.get("default", "")
+    if not default_pool_spec or "=" not in default_pool_spec:
+        fail("ERROR: Missing or invalid 'default' worker pool platform properties (expected 'key=value') in %s" % profile_path)
+    default_exec_properties = _cfg_values_to_dict(default_pool_spec)
+
+    large_pool_spec = worker_pools.get("large", "")
+    if not large_pool_spec or "=" not in large_pool_spec:
+        fail("ERROR: Missing or invalid 'large' worker pool platform properties (expected 'key=value') in %s" % profile_path)
+    large_exec_properties = _cfg_values_to_dict(large_pool_spec)
+    # LINT.ThenChange(//build/rbe/rbe_profile.py:rbe_worker_pools)
 
     if not instance_name:
-        fail("ERROR: Missing instance name from %s" % reproxy_config_path)
-
-    if not container_image:
-        fail("ERROR: Missing container image name from %s" % rewrapper_config_path)
+        fail("ERROR: Missing instance name from %s or active RBE profile" % reproxy_config_path)
 
     return struct(
         instance_name = instance_name,
         container_image = container_image,
-        pool_name = pool_name,
+        os_family = os_family,
+        default_exec_properties = default_exec_properties,
+        large_exec_properties = large_exec_properties,
     )
 
 def _get_formatted_starlark_dict(dict_value, margin):
@@ -223,6 +260,20 @@ def _fuchsia_build_config_repository_impl(repo_ctx):
     ninja_output_dir = _get_ninja_output_dir(repo_ctx)
 
     fuchsia_source_dir = _get_fuchsia_source_dir_relative_to_workspace(repo_ctx)
+
+    # Execution properties for remote Linux RBE workers (used by
+    # //build/bazel/platforms:linux_x64), regardless of the developer's local host OS.
+    remote_exec_properties = {
+        "container-image": rbe_config.container_image,
+        "OSFamily": rbe_config.os_family,
+    }
+    remote_exec_properties.update(rbe_config.default_exec_properties)
+
+    # Execution properties for the local host platform (@fuchsia_build_config//:host).
+    if host_tag == "linux-x64":
+        exec_properties = remote_exec_properties
+    else:
+        exec_properties = {}
 
     defs_content = '''# Auto-generated DO NOT EDIT
 
@@ -260,8 +311,17 @@ build_config = struct(
     # The RBE container image for remote build configuration. Empty if disabled.
     rbe_container_image = "{rbe_container_image}",
 
-    # The RBE default RBE pool for remote build configuration, e.g. "default".
-    rbe_pool_name = "{rbe_pool_name}",
+    # The remote worker operating system family (e.g. "Linux").
+    rbe_os_family = "{rbe_os_family}",
+
+    # Execution platform properties (e.g. {{"Pool": "default"}}) for default RBE workers.
+    rbe_default_exec_properties = {rbe_default_exec_properties_str},
+
+    # Execution platform properties (e.g. {{"Pool": "large_worker"}}) for large RBE workers.
+    rbe_large_exec_properties = {rbe_large_exec_properties_str},
+
+    # Complete execution platform properties for remote RBE workers.
+    rbe_remote_exec_properties = {rbe_remote_exec_properties_str},
 
     # The path to the Ninja output directory, relative to the current
     # workspace root.
@@ -281,24 +341,25 @@ build_config = struct(
         host_cpu_constraint = host_cpu_constraint,
         rbe_instance_name = rbe_config.instance_name,
         rbe_container_image = rbe_config.container_image,
-        rbe_pool_name = rbe_config.pool_name,
+        rbe_os_family = rbe_config.os_family,
+        rbe_default_exec_properties_str = _get_formatted_starlark_dict(
+            rbe_config.default_exec_properties,
+            "    ",
+        ),
+        rbe_large_exec_properties_str = _get_formatted_starlark_dict(
+            rbe_config.large_exec_properties,
+            "    ",
+        ),
+        rbe_remote_exec_properties_str = _get_formatted_starlark_dict(
+            remote_exec_properties,
+            "    ",
+        ),
         ninja_output_dir = ninja_output_dir,
         fuchsia_source_dir = fuchsia_source_dir,
     )
 
     repo_ctx.file("WORKSPACE.bazel", "")
     repo_ctx.file("defs.bzl", defs_content)
-
-    # Generate a BUILD.bazel file that contains a platform definition using the
-    # right rbe_container_image execution property for linux-x64.
-    if host_tag == "linux-x64":
-        exec_properties = {
-            "container-image": rbe_config.container_image,
-            "OSFamily": "Linux",
-            "Pool": rbe_config.pool_name,
-        }
-    else:
-        exec_properties = {}
 
     # Create symlinks used to locate host prebuilts without an explicit
     # fuchsia_host_tag in their path, making the top-level MODULE.bazel easier
@@ -395,6 +456,9 @@ fuchsia_build_config_repository = repository_rule(
                   "current workspace. Must be empty for the in-tree Fuchsia workspace",
         ),
     },
+    environ = [
+        "FX_BUILD_RBE_PROFILE",
+    ],
 )
 
 ### BzlMod support.

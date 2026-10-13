@@ -237,7 +237,6 @@ class ConfigureRemotetoolTests(unittest.TestCase):
         mock_load.return_value = rbe_profile.fake(
             rbe_instance="projects/test-project/instances/default",
             remote_exec_root=Path("/test/root"),
-            worker_pools={},
             auth_type="fake-auth",
         )
         with mock.patch.object(Path, "is_file", return_value=True):

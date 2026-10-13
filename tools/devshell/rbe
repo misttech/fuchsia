@@ -84,15 +84,17 @@ fi
 
 readonly -a reproxy_wrap_cmd=( "${subshell_trace[@]}" "$reproxy_wrap" )
 
-# A single command that tests RBE end-to-end through reclient.
+# Test RBE end-to-end through reclient across both default and large worker pools.
 reclient_auth_test_cmd=(
   env
   --unset=FX_BUILD_RBE_STATS
   FX_REMOTE_BUILD_METRICS=0
   # Let the wrapper use a default --logdir and --tmpdir.
   "${reproxy_wrap_cmd[@]}" --
-  "$python" -S "$remote_action" --
-  echo "greetings from a remote RBE worker"
+  bash -c '
+    "$1" -S "$2" --remote-worker-pool=default -- echo "greetings from default remote RBE worker" &&
+    "$1" -S "$2" --remote-worker-pool=large -- echo "greetings from large remote RBE worker"
+  ' _ "$python" "$remote_action"
 )
 
 function usage() {

@@ -239,6 +239,7 @@ class ServiceProfileManager(Generic[T]):
         profiles_dir = fuchsia_dir / self.spec.profiles_relpath
         config_path = fuchsia_dir / self.spec.config_relpath
 
+        # LINT.IfChange(service_profile_resolution)
         # 1. Environment variable override has highest precedence
         env_override = environ.get(self.spec.env_profile_var)
         if env_override:
@@ -265,6 +266,7 @@ class ServiceProfileManager(Generic[T]):
         else:
             active_name = DEFAULT_PROFILE_NAME
             active_json = profiles_dir / f"{DEFAULT_PROFILE_NAME}.json"
+        # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/fuchsia_platform_build.bzl:service_profile_resolution)
 
         available_json: list[Path] = []
         if profiles_dir.is_dir():

@@ -63,8 +63,11 @@ class RemoteServicesUtilsTest(unittest.TestCase):
   "profile_name": "default",
   "rbe_instance": "projects/test_project_name/instances/test_instance_name",
   "remote_exec_root": "/fake/exec/root",
+  "container_image": "docker://gcr.io/fake/image",
+  "os_family": "fake-os",
   "worker_pools": {
-    "default": "Pool=fake-default-pool"
+    "default": "Pool=fake-default-pool",
+    "large": "Pool=fake-large-pool"
   },
   "auth_type": "google"
 }"""
@@ -109,7 +112,9 @@ class RemoteServicesUtilsTest(unittest.TestCase):
         mock_env = {
             "RBE_instance": "projects/env-project/instances/env-rbe",
             "FX_BUILD_INTERNAL_RBE_REMOTE_EXEC_ROOT": "/env/exec/root",
-            "FX_BUILD_INTERNAL_RBE_WORKER_POOLS": '{"default": "Pool=env-default"}',
+            "FX_BUILD_INTERNAL_RBE_CONTAINER_IMAGE": "docker://gcr.io/fake/image",
+            "FX_BUILD_INTERNAL_RBE_OS_FAMILY": "fake-os",
+            "FX_BUILD_INTERNAL_RBE_WORKER_POOLS": '{"default": "Pool=env-default", "large": "Pool=env-large"}',
             "RS_rs_instance": "projects/env-project/instances/env-rs",
             "RS_cas_instance": "projects/env-project/instances/env-cas",
             "RS_results_url": "http://env-results/",
@@ -266,7 +271,12 @@ my_container_image=docker://gcr.io/test_project/debian11
   "profile_name": "custom_rbe",
   "rbe_instance": "projects/custom-rbe/instances/default",
   "remote_exec_root": "/fake",
-  "worker_pools": {},
+  "container_image": "docker://gcr.io/fake/image",
+  "os_family": "fake-os",
+  "worker_pools": {
+    "default": "Pool=custom-pool",
+    "large": "Pool=custom-large"
+  },
   "auth_type": "google"
 }"""
         )

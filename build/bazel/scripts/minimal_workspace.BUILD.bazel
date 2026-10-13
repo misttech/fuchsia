@@ -4,6 +4,7 @@
 
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@rules_license//rules:license.bzl", "license")
+load("//build/bazel/rbe:rbe.bzl", "RBE_USE_DEFAULT_WORKER", "RBE_USE_LARGE_WORKER")
 
 # These actions can all be run remotely, and do not require any toolchain.
 
@@ -12,6 +13,7 @@ genrule(
     name = "pwd",
     cmd = "pwd > $@",
     outs = ["pwd.txt"],
+    exec_properties = RBE_USE_DEFAULT_WORKER,
 )
 
 # This test will pass only if :pwd was run remotely.
@@ -19,6 +21,21 @@ diff_test(
     name = "remote_pwd_test",
     file1 = "expect_pwd.txt",
     file2 = ":pwd",
+)
+
+# Explicitly test remote execution on the larger worker pool.
+genrule(
+    name = "pwd_large",
+    cmd = "pwd > $@",
+    outs = ["pwd_large.txt"],
+    exec_properties = RBE_USE_LARGE_WORKER,
+)
+
+# This test will pass only if :pwd_large was run remotely on the large worker pool.
+diff_test(
+    name = "remote_pwd_large_test",
+    file1 = "expect_pwd.txt",
+    file2 = ":pwd_large",
 )
 
 license(
