@@ -954,7 +954,7 @@ pub fn ptrace_dispatch(
                 data.ptr().to_ne_bytes().to_vec()
             };
 
-            tracee.mm()?.force_write_memory(addr, &bytes)?;
+            tracee.mm()?.force_write_memory(current_task.kernel(), addr, &bytes)?;
 
             Ok(starnix_syscalls::SUCCESS)
         }

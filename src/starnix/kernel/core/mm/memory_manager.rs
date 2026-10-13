@@ -14,7 +14,9 @@ use crate::mm::{
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
-use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task, TaskContainer};
+use crate::task::{
+    CurrentTask, ExceptionResult, Kernel, PageFaultExceptionReport, Task, TaskContainer,
+};
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::dynamic_file::{
@@ -1815,32 +1817,12 @@ impl MemoryManagerState {
                 num_new_locked_bytes += (range.end - range.start) as u64;
                 let shadow_mapping = match current_task.kernel().features.mlock_pin_flavor {
                     // Pin the memory by mapping the backing memory into the high priority vmar.
-                    MlockPinFlavor::ShadowProcess => {
-                        let shadow_process =
-                            current_task.kernel().expando.get_or_try_init(|| {
-                                memory_pinning::ShadowProcess::new(zx::Name::new_lossy(
-                                    "starnix_mlock_pins",
-                                ))
-                                .map(MlockShadowProcess)
-                                .map_err(|_| errno!(EPERM))
-                            })?;
-
-                        let (vmo, offset) = match self.get_mapping_backing(&mapping) {
-                            MappingBacking::Memory(m) => (
-                                m.memory().as_vmo().ok_or_else(|| errno!(ENOMEM))?,
-                                m.address_to_offset(range.start),
-                            ),
-                            MappingBacking::PrivateAnonymous => (
-                                context
-                                    .private_anonymous
-                                    .backing
-                                    .as_vmo()
-                                    .ok_or_else(|| errno!(ENOMEM))?,
-                                range.start.ptr() as u64,
-                            ),
-                        };
-                        Some(shadow_process.0.pin_pages(vmo, offset, range.end - range.start)?)
-                    }
+                    MlockPinFlavor::ShadowProcess => Some(self.pin_in_mlock_shadow_process(
+                        current_task.kernel(),
+                        context,
+                        &range,
+                        &mapping,
+                    )?),
 
                     // Relying on VMAR-level operations means just flags are set per-mapping.
                     MlockPinFlavor::Noop | MlockPinFlavor::VmarAlwaysNeed => None,
@@ -1868,26 +1850,13 @@ impl MemoryManagerState {
             }
         }
 
-        let op_range_status_to_errno = |e| match e {
-            zx::Status::BAD_STATE | zx::Status::NOT_SUPPORTED => errno!(ENOMEM),
-            zx::Status::INVALID_ARGS | zx::Status::OUT_OF_RANGE => errno!(EINVAL),
-            zx::Status::ACCESS_DENIED => {
-                unreachable!("user vmar should always have needed rights")
-            }
-            zx::Status::BAD_HANDLE => {
-                unreachable!("user vmar should always be a valid handle")
-            }
-            zx::Status::WRONG_TYPE => unreachable!("user vmar handle should be a vmar"),
-            _ => unreachable!("unknown error from op_range on user vmar for mlock: {e}"),
-        };
-
         self.ensure_range_mapped_in_user_vmar(start_addr, Some(end_addr - start_addr), context)?;
 
         if !on_fault && !current_task.kernel().features.mlock_always_onfault {
             context
                 .user_vmar
                 .op_range(zx::VmarOp::PREFETCH, start_addr.ptr(), end_addr - start_addr)
-                .map_err(op_range_status_to_errno)?;
+                .map_err(Self::mlock_op_range_status_to_errno)?;
         }
 
         match current_task.kernel().features.mlock_pin_flavor {
@@ -1895,7 +1864,7 @@ impl MemoryManagerState {
                 context
                     .user_vmar
                     .op_range(zx::VmarOp::ALWAYS_NEED, start_addr.ptr(), end_addr - start_addr)
-                    .map_err(op_range_status_to_errno)?;
+                    .map_err(Self::mlock_op_range_status_to_errno)?;
             }
             // The shadow process doesn't use any vmar-level operations to pin memory.
             MlockPinFlavor::Noop | MlockPinFlavor::ShadowProcess => (),
@@ -1911,6 +1880,86 @@ impl MemoryManagerState {
         }
 
         if failed_to_lock { error!(ENOMEM) } else { Ok(()) }
+    }
+
+    fn mlock_op_range_status_to_errno(e: zx::Status) -> Errno {
+        match e {
+            zx::Status::BAD_STATE | zx::Status::NOT_SUPPORTED => errno!(ENOMEM),
+            zx::Status::INVALID_ARGS | zx::Status::OUT_OF_RANGE => errno!(EINVAL),
+            zx::Status::ACCESS_DENIED => {
+                unreachable!("user vmar should always have needed rights")
+            }
+            zx::Status::BAD_HANDLE => {
+                unreachable!("user vmar should always be a valid handle")
+            }
+            zx::Status::WRONG_TYPE => unreachable!("user vmar handle should be a vmar"),
+            _ => unreachable!("unknown error from op_range on user vmar for mlock: {e}"),
+        }
+    }
+
+    /// Pins the memory backing `range` of `mapping` by mapping it into the mlock shadow process,
+    /// for `MlockPinFlavor::ShadowProcess`.
+    fn pin_in_mlock_shadow_process(
+        &self,
+        kernel: &Kernel,
+        context: &MappingContext,
+        range: &Range<UserAddress>,
+        mapping: &Mapping,
+    ) -> Result<Arc<PinnedMapping>, Errno> {
+        let shadow_process = kernel.expando.get_or_try_init(|| {
+            memory_pinning::ShadowProcess::new(zx::Name::new_lossy("starnix_mlock_pins"))
+                .map(MlockShadowProcess)
+                .map_err(|_| errno!(EPERM))
+        })?;
+
+        let (vmo, offset) = match self.get_mapping_backing(mapping) {
+            MappingBacking::Memory(m) => (
+                m.memory().as_vmo().ok_or_else(|| errno!(ENOMEM))?,
+                m.address_to_offset(range.start),
+            ),
+            MappingBacking::PrivateAnonymous => (
+                context.private_anonymous.backing.as_vmo().ok_or_else(|| errno!(ENOMEM))?,
+                range.start.ptr() as u64,
+            ),
+        };
+        shadow_process.0.pin_pages(vmo, offset, range.end - range.start)
+    }
+
+    /// Re-establishes the mlock pin for the locked `mapping` covering `range` after its backing
+    /// memory has been replaced, e.g. by a copy-on-write child.
+    ///
+    /// Overwriting a VMAR mapping clears `ZX_VMAR_OP_ALWAYS_NEED`, and shadow process pins refer to
+    /// the previous backing memory, so both need to be redone for the new backing.
+    fn repin_locked_mapping(
+        &mut self,
+        kernel: &Kernel,
+        context: &MappingContext,
+        range: &Range<UserAddress>,
+        mapping: &Mapping,
+        released_mappings: &mut ReleasedMappings,
+    ) -> Result<(), Errno> {
+        debug_assert!(mapping.flags().contains(MappingFlags::LOCKED));
+        match kernel.features.mlock_pin_flavor {
+            MlockPinFlavor::ShadowProcess => {
+                let pin = self.pin_in_mlock_shadow_process(kernel, context, range, mapping)?;
+                released_mappings
+                    .extend_pins(self.shadow_mappings_for_mlock.insert(range.clone(), pin));
+            }
+            MlockPinFlavor::VmarAlwaysNeed => {
+                if mapping.mapping_mode() == MappingMode::Eager {
+                    context
+                        .user_vmar
+                        .op_range(
+                            zx::VmarOp::ALWAYS_NEED,
+                            range.start.ptr(),
+                            range.end - range.start,
+                        )
+                        .map_err(Self::mlock_op_range_status_to_errno)?;
+                }
+            }
+            MlockPinFlavor::Noop => (),
+        }
+        Ok(())
     }
 
     fn munlock(
@@ -2443,6 +2492,7 @@ impl MemoryManagerState {
 
     fn force_write_memory(
         &mut self,
+        kernel: &Kernel,
         context: &MappingContext,
         addr: UserAddress,
         bytes: &[u8],
@@ -2551,7 +2601,12 @@ impl MemoryManagerState {
         let mut new_mapping = mapping;
         new_mapping.set_backing_internal(MappingBacking::Memory(Box::new(new_backing)));
 
-        released_mappings.extend(self.mappings.insert(range, new_mapping));
+        released_mappings.extend(self.mappings.insert(range.clone(), new_mapping.clone()));
+
+        // 6. Move any mlock pin onto the new memory.
+        if new_mapping.flags().contains(MappingFlags::LOCKED) {
+            self.repin_locked_mapping(kernel, context, &range, &new_mapping, released_mappings)?;
+        }
 
         Ok(())
     }
@@ -3164,11 +3219,21 @@ impl MemoryManager {
     ///
     /// NOTE: this bypasses userspace's memory protection configuration and should only be called
     /// by codepaths like ptrace which bypass memory protection.
-    pub fn force_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<(), Errno> {
+    pub fn force_write_memory(
+        &self,
+        kernel: &Kernel,
+        addr: UserAddress,
+        bytes: &[u8],
+    ) -> Result<(), Errno> {
         let mut state = self.state.write();
         let mut released_mappings = ReleasedMappings::default();
-        let result =
-            state.force_write_memory(&self.mapping_context, addr, bytes, &mut released_mappings);
+        let result = state.force_write_memory(
+            kernel,
+            &self.mapping_context,
+            addr,
+            bytes,
+            &mut released_mappings,
+        );
         released_mappings.finalize(state);
         result
     }
@@ -5510,11 +5575,14 @@ mod tests {
     use super::*;
     use crate::mm::memory_accessor::{MemoryAccessor, MemoryAccessorExt};
     use crate::mm::syscalls::do_mmap;
+    use crate::task::KernelFeatures;
     use crate::task::syscalls::sys_prctl;
     use crate::testing::*;
-    use crate::vfs::FdNumber;
+    use crate::vfs::{FdFlags, FdNumber, new_memfd};
     use assert_matches::assert_matches;
     use itertools::assert_equal;
+    use starnix_uapi::open_flags::OpenFlags;
+    use starnix_uapi::seal_flags::SealFlags;
     use starnix_uapi::user_address::{UserCString, UserRef};
     use starnix_uapi::{
         MAP_ANONYMOUS, MAP_FIXED, MAP_GROWSDOWN, MAP_PRIVATE, MAP_SHARED, PR_SET_VMA,
@@ -7164,5 +7232,86 @@ mod tests {
         for &entry in slice.iter() {
             assert_eq!(entry, flags);
         }
+    }
+
+    /// Returns the koid of the memory backing the mapping at `addr`.
+    fn mapping_memory_koid(mm: &MemoryManager, addr: UserAddress) -> zx::Koid {
+        let state = mm.state.read();
+        let (_, mapping) = state.mappings.get(addr).expect("address should be mapped");
+        let MappingBacking::Memory(backing) = mapping.get_backing_internal() else {
+            panic!("mapping should have Memory backing");
+        };
+        backing.memory().get_koid()
+    }
+
+    /// Returns the koids of the VMOs pinned by the mlock shadow process.
+    fn mlock_shadow_process_pinned_koids(kernel: &Kernel) -> Vec<zx::Koid> {
+        let shadow_process =
+            kernel.expando.peek::<MlockShadowProcess>().expect("shadow process should exist");
+        shadow_process
+            .0
+            .vmar()
+            .maps_vec()
+            .unwrap()
+            .iter()
+            .filter_map(|map| match map.details() {
+                zx::MapDetails::Mapping(details) => Some(details.vmo_koid),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn mlock_features(flavor: MlockPinFlavor) -> KernelFeatures {
+        let mut features = KernelFeatures::default();
+        features.mlock_pin_flavor = flavor;
+        features
+    }
+
+    #[::fuchsia::test]
+    async fn test_force_write_memory_moves_shadow_process_mlock_pin() {
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let page_size = *PAGE_SIZE as usize;
+                let file = new_memfd(
+                    current_task,
+                    b"test_memfd".into(),
+                    SealFlags::empty(),
+                    OpenFlags::RDWR,
+                )
+                .unwrap();
+                file.node().truncate(current_task, &file.name.mount, *PAGE_SIZE).unwrap();
+                let fd = current_task.add_file(file, FdFlags::empty()).unwrap();
+                let addr = do_mmap(
+                    current_task,
+                    UserAddress::default(),
+                    page_size,
+                    PROT_READ,
+                    MAP_PRIVATE,
+                    fd,
+                    0,
+                )
+                .expect("mmap failed");
+                let mm = current_task.mm().unwrap();
+
+                mm.mlock(current_task, addr, page_size, false).expect("mlock failed");
+                let original_koid = mapping_memory_koid(&mm, addr);
+                assert_eq!(
+                    mlock_shadow_process_pinned_koids(current_task.kernel()),
+                    [original_koid]
+                );
+
+                // The mapping isn't writable, so the write goes to a new copy-on-write child and
+                // the pin must move with it.
+                mm.force_write_memory(current_task.kernel(), addr, b"poke")
+                    .expect("force_write_memory failed");
+                assert_eq!(&current_task.read_memory_to_vec(addr, 4).unwrap(), b"poke");
+
+                let child_koid = mapping_memory_koid(&mm, addr);
+                assert_ne!(child_koid, original_koid);
+                assert_eq!(mlock_shadow_process_pinned_koids(current_task.kernel()), [child_koid]);
+            },
+            mlock_features(MlockPinFlavor::ShadowProcess),
+        )
+        .await;
     }
 }
