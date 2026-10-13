@@ -421,104 +421,6 @@ zx::result<> QualcommExtension::VoteClocks(bool on) {
   return zx::ok();
 }
 
-constexpr uint32_t BandwidthForSpeed(fdescriptor::UsbSpeed speed) {
-  switch (speed) {
-    case fdescriptor::UsbSpeed::kLow:
-    case fdescriptor::UsbSpeed::kFull:
-      return 2'000'000;
-    case fdescriptor::UsbSpeed::kHigh:
-      return 40'000'000;
-    case fdescriptor::UsbSpeed::kSuper:
-      return 400'000'000;
-    case fdescriptor::UsbSpeed::kEnhancedSuper:
-      return 1'000'000'000;
-    case fdescriptor::UsbSpeed::kUndefined:
-    default:
-      return 0;
-  }
-}
-
-class IrisExtension final : public PlatformExtension {
- public:
-  // Default to Undefined (0 bps) when disconnected; OnConnectStatusChanged votes provisional
-  // High-Speed (480 Mbps) upon connection before link speed negotiation completes.
-  static constexpr fdescriptor::UsbSpeed kDefaultSpeed = fdescriptor::UsbSpeed::kUndefined;
-  static constexpr uint32_t kDefaultBandwidthBps = BandwidthForSpeed(kDefaultSpeed);
-
-  static std::unique_ptr<IrisExtension> Create(Dwc3* parent) {
-    auto interconnect_result =
-        parent->incoming()->Connect<fhi::PathService::Path>("usb-interconnect");
-    if (interconnect_result.is_error()) {
-      return nullptr;
-    }
-    fidl::SyncClient<fhi::Path> client(std::move(interconnect_result.value()));
-    // Probe interconnect path to ensure it is actually available before creating IrisExtension.
-    fhi::BandwidthRequest request{{
-        .average_bandwidth_bps = kDefaultBandwidthBps,
-        .peak_bandwidth_bps = kDefaultBandwidthBps,
-        .tag = 'USB ',
-    }};
-    if (auto result = client->SetBandwidth(request); result.is_error()) {
-      fdf::info("Failed to set bandwidth on usb-interconnect, assuming not Iris platform: {}",
-                result.error_value().FormatDescription());
-      return nullptr;
-    }
-    return std::make_unique<IrisExtension>(std::move(client));
-  }
-
-  explicit IrisExtension(fidl::SyncClient<fhi::Path> interconnect_client)
-      : interconnect_client_(std::move(interconnect_client)) {}
-
-  zx::result<> Start() override {
-    TRACE_DURATION("dwc3", "IrisExtension::Start");
-    return VoteBandwidth(BandwidthForSpeed(speed_));
-  }
-
-  zx::result<> Suspend() override {
-    TRACE_DURATION("dwc3", "IrisExtension::Suspend");
-    return VoteBandwidth(0);
-  }
-
-  zx::result<> Resume() override {
-    TRACE_DURATION("dwc3", "IrisExtension::Resume");
-    return VoteBandwidth(BandwidthForSpeed(speed_));
-  }
-
-  zx::result<> SetConnectionSpeed(fdescriptor::UsbSpeed speed) override {
-    TRACE_DURATION("dwc3", "IrisExtension::SetConnectionSpeed", "speed",
-                   static_cast<uint32_t>(speed));
-    speed_ = speed;
-    return VoteBandwidth(BandwidthForSpeed(speed_));
-  }
-
-  bool PowersDownCoreOnDisconnect() const override { return false; }
-
- private:
-  zx::result<> VoteBandwidth(uint32_t bandwidth) {
-    if (!interconnect_client_.is_valid() || current_bandwidth_ == bandwidth) {
-      return zx::ok();
-    }
-    fhi::BandwidthRequest request{{
-        .average_bandwidth_bps = bandwidth,
-        .peak_bandwidth_bps = bandwidth,
-        .tag = 'USB ',
-    }};
-    if (auto result = interconnect_client_->SetBandwidth(request); result.is_error()) {
-      fdf::error("SetBandwidth ({} bps) failed on interconnect: {}", bandwidth,
-                 result.error_value().FormatDescription());
-      return zx::error(result.error_value().is_domain_error()
-                           ? result.error_value().domain_error()
-                           : result.error_value().framework_error().status());
-    }
-    current_bandwidth_ = bandwidth;
-    return zx::ok();
-  }
-
-  fdescriptor::UsbSpeed speed_{kDefaultSpeed};
-  std::optional<uint32_t> current_bandwidth_{kDefaultBandwidthBps};
-  fidl::SyncClient<fhi::Path> interconnect_client_;
-};
-
 }  // namespace
 
 zx::eventpair Dwc3::AcquireWakeLease() {
@@ -600,9 +502,7 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
   if (!config_->bypass_platform_extension()) {
     std::unique_ptr<PlatformExtension> extension =
         QualcommExtension::Create(this, get_mmio()->View(0));
-    if (!extension) {
-      extension = IrisExtension::Create(this);
-    }
+
     if (extension) {
       if (zx::result result = extension->Start(); result.is_error()) {
         fdf::error("Failed platform extension start: {}", result);

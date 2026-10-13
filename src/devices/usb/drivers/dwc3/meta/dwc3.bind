@@ -58,10 +58,6 @@ optional parent "usb-ddr" {
   fuchsia.NAME == "usb-ddr";
 }
 
-optional parent "usb-interconnect" {
-  fuchsia.Service == "fuchsia.hardware.interconnect.PathService";
-  fuchsia.NAME == "usb-interconnect";
-}
 
 optional parent "usb-ipa" {
   fuchsia.Service == "fuchsia.hardware.interconnect.PathService";

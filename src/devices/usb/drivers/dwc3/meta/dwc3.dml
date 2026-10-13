@@ -92,14 +92,6 @@
             },
         },
         {
-            name: "usb-interconnect",
-            service: "fuchsia.hardware.interconnect.PathService",
-            availability: "optional",
-            bind: {
-                rules: { "fuchsia.NAME": "usb-interconnect" },
-            },
-        },
-        {
             name: "core-clk",
             availability: "optional",
             bind: {

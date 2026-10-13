@@ -555,10 +555,6 @@ class Environment : public fdf_testing::Environment {
         directory.AddService<fhi::PathService>(path_.GetInstanceHandler(dispatcher), "ddr-usb");
     EXPECT_TRUE(result.is_ok());
 
-    result = directory.AddService<fhi::PathService>(path_.GetInstanceHandler(dispatcher),
-                                                    "usb-interconnect");
-    EXPECT_TRUE(result.is_ok());
-
     result = directory.AddService<fphy::Service>(usb_phy_.GetUsbPhyInstanceHandler(dispatcher),
                                                  "dwc3-phy");
     EXPECT_TRUE(result.is_ok());
@@ -776,6 +772,15 @@ class TestFixture : public gtest_base {
   // Returns an RAII guard that clears the DCTL callback on scope exit.
   [[nodiscard]] auto DeferClearDctlCallback() {
     return fit::defer([this]() { SetDctlCallback(nullptr); });
+  }
+
+  // Returns an RAII guard that restores the DSTS read callback to Read_DSTS() on scope exit.
+  [[nodiscard]] auto DeferClearDstsCallback() {
+    return fit::defer([this]() {
+      dut_.RunInEnvironmentTypeContext([this](Environment& env) {
+        env.reg_region()[DSTS::Get().addr()].SetReadCallback([this]() { return Read_DSTS(); });
+      });
+    });
   }
 
   std::vector<fuchsia_hardware_usb_request::Request> CreateVmoBuffer(

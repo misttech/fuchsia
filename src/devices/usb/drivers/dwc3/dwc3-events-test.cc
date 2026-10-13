@@ -174,11 +174,7 @@ TEST_F(Dwc3EventsTest, HandleConnectionDoneEvent) {
 
   // Use RAII guard to guarantee register callback cleanup on scope exit regardless of assertions.
   auto cleanup_depcmd = DeferClearDepcmdCallbacks(0);
-  auto cleanup_dsts = fit::defer([this]() {
-    dut_.RunInEnvironmentTypeContext([](Environment& env) {
-      env.reg_region()[DSTS::Get().addr()].SetReadCallback([]() -> uint32_t { return 0; });
-    });
-  });
+  auto cleanup_dsts = DeferClearDstsCallback();
 
   dut_.RunInEnvironmentTypeContext([depcmd_written, depcmd_val](Environment& env) {
     auto& dsts = env.reg_region()[DSTS::Get().addr()];
