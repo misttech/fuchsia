@@ -47,16 +47,6 @@ void rust_page_queues_set_anonymous_zero_fork(const void* storage, vm_page_t* pa
 void rust_page_queues_set_high_priority(const void* storage, vm_page_t* page, VmCowPages* object,
                                         uint64_t page_offset);
 
-void rust_page_queues_move_to_wired(const void* storage, vm_page_t* page);
-void rust_page_queues_move_to_anonymous(const void* storage, vm_page_t* page, bool skip_reclaim);
-void rust_page_queues_move_to_reclaim(const void* storage, vm_page_t* page);
-void rust_page_queues_move_to_reclaim_dont_need(const void* storage, vm_page_t* page);
-void rust_page_queues_move_to_pager_backed_dirty(const void* storage, vm_page_t* page);
-void rust_page_queues_move_to_high_priority(const void* storage, vm_page_t* page);
-void rust_page_queues_move_anonymous_to_anonymous_zero_fork(const void* storage, vm_page_t* page);
-
-void rust_page_queues_compress_failed(const void* storage, vm_page_t* page);
-
 void rust_page_queues_change_object_offset(const void* storage, vm_page_t* page, VmCowPages* object,
                                            uint64_t page_offset);
 void rust_page_queues_change_object_offset_array(const void* storage, vm_page_t** pages,
@@ -69,13 +59,10 @@ void rust_page_queues_remove(const void* storage, vm_page_t* page);
 void rust_page_queues_remove_array_into_list(const void* storage, vm_page_t** pages, size_t count,
                                              VmPageDoublyLinkedList* out_list);
 
-void rust_page_queues_mark_accessed(const void* storage, vm_page_t* page);
-
 void rust_page_queues_get_reclaim_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_get_active_inactive_counts(const void* storage, void* out_counts);
 
-void rust_page_queues_enable_anonymous_reclaim(const void* storage, bool zero_forks);
 bool rust_page_queues_reclaim_is_only_pager_backed(const void* storage);
 bool rust_page_queues_is_page_reclaimable(const vm_page_t* page);
 
@@ -193,34 +180,20 @@ class PageQueues {
   // All Move operations change the queue that a page is considered to be in, but do not change the
   // object or offset backlink information. The page must currently be in a valid page queue.
 
-  FFI_ALWAYS_INLINE void MoveToWired(vm_page_t* page) {
-    rust_page_queues_move_to_wired(this, page);
-  }
+  void MoveToWired(vm_page_t* page);
   // |skip_reclaim| controls whether reclaiming the page should be forcibly skipped regardless of
   // whether anonymous pages are considered reclaimable in general.
-  FFI_ALWAYS_INLINE void MoveToAnonymous(vm_page_t* page, bool skip_reclaim = false) {
-    rust_page_queues_move_to_anonymous(this, page, skip_reclaim);
-  }
-  FFI_ALWAYS_INLINE void MoveToReclaim(vm_page_t* page) {
-    rust_page_queues_move_to_reclaim(this, page);
-  }
-  FFI_ALWAYS_INLINE void MoveToReclaimDontNeed(vm_page_t* page) {
-    rust_page_queues_move_to_reclaim_dont_need(this, page);
-  }
-  FFI_ALWAYS_INLINE void MoveToPagerBackedDirty(vm_page_t* page) {
-    rust_page_queues_move_to_pager_backed_dirty(this, page);
-  }
-  FFI_ALWAYS_INLINE void MoveToHighPriority(vm_page_t* page) {
-    rust_page_queues_move_to_high_priority(this, page);
-  }
+  void MoveToAnonymous(vm_page_t* page, bool skip_reclaim = false);
+  void MoveToReclaim(vm_page_t* page);
+  void MoveToReclaimDontNeed(vm_page_t* page);
+  void MoveToPagerBackedDirty(vm_page_t* page);
+  void MoveToHighPriority(vm_page_t* page);
 
   // If a page is presently in the anonymous (or reclaim queue, depending if anonymous pages are
   // reclaimable) moves it to the appropriate anonymous zero fork queue (exact queue depends on
   // whether zero forks are reclaimable or not). If the page is not in the anonymous queue then it
   // is not modified.
-  FFI_ALWAYS_INLINE void MoveAnonymousToAnonymousZeroFork(vm_page_t* page) {
-    rust_page_queues_move_anonymous_to_anonymous_zero_fork(this, page);
-  }
+  void MoveAnonymousToAnonymousZeroFork(vm_page_t* page);
 
   // Indicates that page has failed a compression attempted, and moves it to a separate queue to
   // prevent it from being considered part of the reclaim set, which makes it neither active nor
@@ -229,9 +202,7 @@ class PageQueues {
   // TODO(https://fxbug.dev/42138396): Determine whether/how pages are moved back into the reclaim
   // pool and either further generalize this to support pager backed, or specialize FailedReclaim to
   // be explicitly only anonymous.
-  FFI_ALWAYS_INLINE void CompressFailed(vm_page_t* page) {
-    rust_page_queues_compress_failed(this, page);
-  }
+  void CompressFailed(vm_page_t* page);
 
   // Changes the backlink information for a page and should only be called by the page owner under
   // its lock (that is the VMO lock). The page must currently be in a valid page queue.
@@ -262,9 +233,7 @@ class PageQueues {
 
   // Tells the page queue this page has been accessed, and it should have its position in the queues
   // updated.
-  FFI_ALWAYS_INLINE void MarkAccessed(vm_page_t* page) {
-    rust_page_queues_mark_accessed(this, page);
-  }
+  void MarkAccessed(vm_page_t* page);
 
   // Provides access to the underlying lock, allowing _Locked variants to be called. Use of this is
   // highly discouraged as the underlying lock is a CriticalMutex which disables preemption.
@@ -558,6 +527,7 @@ class PageQueues {
   // Helpers for adding and removing to the queues. All of the public Set/Move/Remove operations
   // are convenience wrappers around these.
   void MoveToQueueLockedList(vm_page_t* page, PageQueue queue) TA_REQ(list_lock_);
+  void MoveToIsolateLockedList(vm_page_t* page, size_t isolate_queue_index) TA_REQ(list_lock_);
   // Potentially calls |CheckActiveRatioAgingLocked| based on the kActiveInactiveErrorMargin.
   // |pages| indicates how many pages might have changed queue, and hence how much the ratio could
   // have changed by.
@@ -622,6 +592,11 @@ class PageQueues {
     }
     return true;
   }
+
+  // Internal helper for MarkAccessed that handles the case where the page might be in the Isolate
+  // queue. Pages in the isolate queue must actually be moved out of the list, and this requires
+  // taking the lock.
+  void MarkAccessedMaybeIsolate(vm_page_t* page);
 
   // When holding the PageQueue lock, and performing an operation on an arbitrary number of pages,
   // the "operation batch size" controls the number of pages for which the lock will be held before

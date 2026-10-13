@@ -25,6 +25,46 @@ FFI_ALWAYS_INLINE void cpp_page_queues_init(ffi::Uninitialized<PageQueues>* queu
   queues->Initialize();
 }
 
+FFI_ALWAYS_INLINE void cpp_page_queues_move_to_wired(PageQueues* queues, vm_page_t* page) {
+  queues->MoveToWired(page);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_move_to_anonymous(PageQueues* queues, vm_page_t* page,
+                                                         bool skip_reclaim) {
+  queues->MoveToAnonymous(page, skip_reclaim);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_move_to_reclaim(PageQueues* queues, vm_page_t* page) {
+  queues->MoveToReclaim(page);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_move_to_reclaim_dont_need(PageQueues* queues,
+                                                                 vm_page_t* page) {
+  queues->MoveToReclaimDontNeed(page);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_move_to_pager_backed_dirty(PageQueues* queues,
+                                                                  vm_page_t* page) {
+  queues->MoveToPagerBackedDirty(page);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_move_to_high_priority(PageQueues* queues, vm_page_t* page) {
+  queues->MoveToHighPriority(page);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_move_anonymous_to_anonymous_zero_fork(PageQueues* queues,
+                                                                             vm_page_t* page) {
+  queues->MoveAnonymousToAnonymousZeroFork(page);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_compress_failed(PageQueues* queues, vm_page_t* page) {
+  queues->CompressFailed(page);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_mark_accessed(PageQueues* queues, vm_page_t* page) {
+  queues->MarkAccessed(page);
+}
+
 FFI_ALWAYS_INLINE void* cpp_page_queues_get_lock(PageQueues* queues) { return queues->get_lock(); }
 
 FFI_ALWAYS_INLINE const char* cpp_page_queues_string_from_age_reason(int32_t reason) {
@@ -75,6 +115,11 @@ FFI_ALWAYS_INLINE void cpp_page_queues_dump(const PageQueues* queues) { queues->
 
 FFI_ALWAYS_INLINE uint64_t cpp_page_queues_get_lru_pages_compressed(void) {
   return PageQueues::GetLruPagesCompressed();
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_enable_anonymous_reclaim(PageQueues* queues,
+                                                                bool zero_forks) {
+  queues->EnableAnonymousReclaim(zero_forks);
 }
 
 FFI_ALWAYS_INLINE void cpp_page_queues_start_threads(PageQueues* queues,
