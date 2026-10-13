@@ -501,6 +501,7 @@ fn test_ip_layer_packet_metadata_multicast_and_device_conversion<
 
     let gso_info = GsoInfo {
         gso_size: core::num::NonZeroU16::new(1460).unwrap(),
+        gso_segs: core::num::NonZeroU16::new(4).unwrap(),
         ipv4_id_mode: Some(Ipv4IdMode::Fixed),
     };
 
@@ -520,6 +521,9 @@ fn test_ip_layer_packet_metadata_multicast_and_device_conversion<
         device_meta,
         Some(gso_info),
     );
+    // `BindingsPacketMatcher` observes GSO metadata through
+    // `FilterPacketMetadata`.
+    assert_eq!(netstack3_filter::FilterPacketMetadata::gso_info(&rx_meta), Some(gso_info));
     let (_, _, rx_marks, rx_socket_info, rx_gso_info, packet_type) = rx_meta.into_parts();
     assert_eq!(rx_marks, marks);
     assert_eq!(rx_socket_info, None);

@@ -38,6 +38,8 @@ struct test_result {
   uint16_t dst_port;
   uint8_t ip_proto;
   uint8_t _padding[3];
+  uint32_t gso_segs;
+  uint32_t gso_size;
 };
 
 // Struct stored in the `state_array` to pass configuration from the test to
@@ -130,6 +132,8 @@ int skb_test_prog(struct __sk_buff *skb) {
   state->result.ifindex = skb->ifindex;
   state->result.mark = skb->mark;
   state->result.ip_proto = get_ip_proto(skb);
+  state->result.gso_segs = skb->gso_segs;
+  state->result.gso_size = skb->gso_size;
 
   return 1;
 }

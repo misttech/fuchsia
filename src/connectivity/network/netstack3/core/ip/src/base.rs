@@ -453,6 +453,11 @@ impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
         &self.marks
     }
 
+    /// Returns the GSO metadata attached to this packet, if any.
+    pub(crate) fn gso_info(&self) -> Option<GsoInfo> {
+        self.gso_info
+    }
+
     /// Sets the packet type on this metadata.
     pub fn set_packet_type(&mut self, packet_type: PacketType) {
         self.packet_type = packet_type;
@@ -505,6 +510,10 @@ impl<I: packet_formats::ip::IpExt, A, BT: FilterBindingsTypes + TxMetadataBindin
 
     fn packet_type(&self) -> PacketType {
         self.packet_type
+    }
+
+    fn gso_info(&self) -> Option<GsoInfo> {
+        self.gso_info
     }
 }
 
@@ -2763,6 +2772,7 @@ fn dispatch_receive_ipv4_packet<
 
     let marks = packet_metadata.marks;
     let packet_type = packet_metadata.packet_type;
+    let gso_info = packet_metadata.gso_info;
     packet_metadata.acknowledge_drop();
 
     match filter_verdict {
@@ -2819,7 +2829,7 @@ fn dispatch_receive_ipv4_packet<
     let buffer = Buf::new(body, ..);
     let header_info = Ipv4HeaderInfo { prefix, options: options.as_ref() };
     let mut receive_info =
-        LocalDeliveryPacketInfo { meta: receive_meta, header_info, marks, packet_type };
+        LocalDeliveryPacketInfo { meta: receive_meta, header_info, marks, packet_type, gso_info };
 
     core_ctx
         .dispatch_receive_ip_packet(
@@ -2897,6 +2907,7 @@ fn dispatch_receive_ipv6_packet<
 
     let marks = packet_metadata.marks;
     let packet_type = packet_metadata.packet_type;
+    let gso_info = packet_metadata.gso_info;
     packet_metadata.acknowledge_drop();
 
     match filter_verdict {
@@ -2953,7 +2964,8 @@ fn dispatch_receive_ipv6_packet<
     let (fixed, extension, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv6HeaderInfo { fixed, extension };
-    let mut receive_info = LocalDeliveryPacketInfo { meta, header_info, marks, packet_type };
+    let mut receive_info =
+        LocalDeliveryPacketInfo { meta, header_info, marks, packet_type, gso_info };
 
     core_ctx
         .dispatch_receive_ip_packet(

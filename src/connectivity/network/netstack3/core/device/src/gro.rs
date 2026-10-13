@@ -964,7 +964,14 @@ impl<T: Eq> GroFlow<T> {
             self.ip.finalize(&mut view[ip_offset..]);
             let gso_size = self.transport.finalize(&mut view[transport_offset..]);
             let ipv4_id_mode = self.ip.ipv4_id_mode();
-            Some(GsoInfo { gso_size, ipv4_id_mode })
+            // Every coalesced segment carries at least one payload byte and
+            // the frame is at most `MAX_GRO_FRAME_LEN` bytes, so the count
+            // fits in a `u16`.
+            let gso_segs = u16::try_from(self.num_coalesced)
+                .ok()
+                .and_then(NonZeroU16::new)
+                .expect("num_coalesced > 1 and <= MAX_GRO_FRAME_LEN");
+            Some(GsoInfo { gso_size, gso_segs, ipv4_id_mode })
         } else {
             None
         }
@@ -2166,6 +2173,7 @@ mod tests {
             item.gso_info,
             Some(GsoInfo {
                 gso_size: NonZeroU16::new(6).unwrap(),
+                gso_segs: NonZeroU16::new(2).unwrap(),
                 ipv4_id_mode: Some(Ipv4IdMode::Fixed),
             })
         );
@@ -2190,6 +2198,7 @@ mod tests {
             item.gso_info,
             Some(GsoInfo {
                 gso_size: NonZeroU16::new(6).unwrap(),
+                gso_segs: NonZeroU16::new(2).unwrap(),
                 ipv4_id_mode: Some(Ipv4IdMode::Incrementing),
             })
         );
@@ -2206,7 +2215,11 @@ mod tests {
         let item = gro.next().unwrap();
         assert_eq!(
             item.gso_info,
-            Some(GsoInfo { gso_size: NonZeroU16::new(6).unwrap(), ipv4_id_mode: None })
+            Some(GsoInfo {
+                gso_size: NonZeroU16::new(6).unwrap(),
+                gso_segs: NonZeroU16::new(2).unwrap(),
+                ipv4_id_mode: None
+            })
         );
         drop(item);
         assert!(gro.next().is_none());

@@ -968,6 +968,7 @@ fn forward_coalesced_gso_tcp<I: TestIpExt + IpExt>() {
             parsing_context: NetworkParsingContext::default(),
             gso_info: Some(netstack3_base::GsoInfo {
                 gso_size: NonZeroU16::new(GSO_SIZE).unwrap(),
+                gso_segs: NonZeroU16::new(NUM_SEGMENTS).unwrap(),
                 ipv4_id_mode: match I::VERSION {
                     IpVersion::V4 => Some(netstack3_base::Ipv4IdMode::Incrementing),
                     IpVersion::V6 => None,
@@ -995,6 +996,65 @@ fn forward_coalesced_gso_tcp<I: TestIpExt + IpExt>() {
 
     // The packet is forwarded as `NUM_SEGMENTS` discrete segments.
     assert_eq!(ctx.bindings_ctx.take_ethernet_frames().len(), usize::from(NUM_SEGMENTS));
+}
+
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+fn deliver_coalesced_tcp_passes_gso_info_to_socket_ingress_filter<I: TestIpExt + IpExt>() {
+    const GSO_SIZE: u16 = 1000;
+    const NUM_SEGMENTS: u16 = 2;
+    const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(80).unwrap();
+
+    let TestAddrs { subnet: _, local_ip, local_mac, remote_ip, remote_mac } = I::TEST_ADDRS;
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(I::TEST_ADDRS).build();
+    let device_id = assert_matches!(<[_; 1]>::try_from(device_ids), Ok([id]) => id);
+
+    let mut tcp_api = ctx.core_api().tcp::<I>();
+    let listener = tcp_api.create(Default::default());
+    tcp_api.bind(&listener, Some(ZonedAddr::Unzoned(local_ip)), Some(LOCAL_PORT)).unwrap();
+    tcp_api.listen(&listener, NonZeroUsize::new(1).unwrap()).unwrap();
+
+    let payload = vec![0xAB; usize::from(NUM_SEGMENTS * GSO_SIZE)];
+    let frame = Buf::new(payload, ..)
+        .wrap_in(packet_formats::tcp::TcpSegmentBuilder::new(
+            *remote_ip,
+            *local_ip,
+            NonZeroU16::new(1234).unwrap(),
+            LOCAL_PORT,
+            1,
+            Some(1),
+            65535,
+        ))
+        .wrap_in(I::PacketBuilder::new(*remote_ip, *local_ip, 64, IpProto::Tcp.into()))
+        .wrap_in(EthernetFrameBuilder::new(*remote_mac, *local_mac, I::ETHER_TYPE, 0))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap()
+        .unwrap_b();
+
+    let gso_info = netstack3_base::GsoInfo {
+        gso_size: NonZeroU16::new(GSO_SIZE).unwrap(),
+        gso_segs: NonZeroU16::new(NUM_SEGMENTS).unwrap(),
+        ipv4_id_mode: match I::VERSION {
+            IpVersion::V4 => Some(netstack3_base::Ipv4IdMode::Incrementing),
+            IpVersion::V6 => None,
+        },
+    };
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id,
+            parsing_context: NetworkParsingContext::default(),
+            gso_info: Some(gso_info),
+        },
+        frame,
+    );
+
+    let filter_metadata = core::mem::take(&mut ctx.bindings_ctx.state_mut().packet_metadata);
+    assert_matches!(
+        &filter_metadata[..],
+        [(_sock_info, _marks, PacketType::Host, recorded_gso_info)] => {
+            assert_eq!(*recorded_gso_info, Some(gso_info));
+        }
+    );
 }
 
 #[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
@@ -1032,6 +1092,7 @@ fn forward_coalesced_gso_tcp_oversized_segments<I: TestIpExt + IpExt>() {
             parsing_context: NetworkParsingContext::default(),
             gso_info: Some(netstack3_base::GsoInfo {
                 gso_size: NonZeroU16::new(GSO_SIZE).unwrap(),
+                gso_segs: NonZeroU16::new(2).unwrap(),
                 ipv4_id_mode: match I::VERSION {
                     IpVersion::V4 => Some(netstack3_base::Ipv4IdMode::Incrementing),
                     IpVersion::V6 => None,
@@ -1129,6 +1190,7 @@ fn forward_coalesced_not_segmentable_sent_whole<I: TestIpExt + IpExt>() {
             parsing_context: NetworkParsingContext::default(),
             gso_info: Some(netstack3_base::GsoInfo {
                 gso_size: NonZeroU16::new(GSO_SIZE).unwrap(),
+                gso_segs: NonZeroU16::new(2).unwrap(),
                 ipv4_id_mode: match I::VERSION {
                     IpVersion::V4 => Some(netstack3_base::Ipv4IdMode::Incrementing),
                     IpVersion::V6 => None,
@@ -3460,7 +3522,7 @@ fn test_socket_ops_filter_on_ingress_marks<I: IpExt + TestIpExt>() {
 
     let udp_filter_metadata = core::mem::take(&mut ctx.bindings_ctx.state_mut().packet_metadata);
     assert_eq!(udp_filter_metadata.len(), 1);
-    let (_sock_info, marks, packet_type) = &udp_filter_metadata[0];
+    let (_sock_info, marks, packet_type, _gso_info) = &udp_filter_metadata[0];
     // Mark1 (SO_MARK) comes from the packet (kept on egress from sender).
     assert_eq!(marks.get(MarkDomain::Mark1), &Mark(Some(100)));
     // Mark2 (SOCKET_UID) comes from the destination socket (set on ingress from
@@ -3489,19 +3551,20 @@ fn test_socket_ops_filter_on_ingress_marks<I: IpExt + TestIpExt>() {
     assert_eq!(tcp_filter_metadata.len(), 3);
     // 1. SYN arriving at the listener: Mark1 from client (400), Mark2 from
     //    listener (3000).
-    let (_syn_sock_info, syn_marks, syn_packet_type) = &tcp_filter_metadata[0];
+    let (_syn_sock_info, syn_marks, syn_packet_type, _syn_gso_info) = &tcp_filter_metadata[0];
     assert_eq!(syn_marks.get(MarkDomain::Mark1), &Mark(Some(400)));
     assert_eq!(syn_marks.get(MarkDomain::Mark2), &Mark(Some(3000)));
     assert_eq!(*syn_packet_type, PacketType::Host);
     // 2. SYN-ACK arriving at the client: Mark1 from child socket (inherited
     //    from SYN: 400), Mark2 from client (4000).
-    let (_syn_ack_sock_info, syn_ack_marks, syn_ack_packet_type) = &tcp_filter_metadata[1];
+    let (_syn_ack_sock_info, syn_ack_marks, syn_ack_packet_type, _syn_ack_gso_info) =
+        &tcp_filter_metadata[1];
     assert_eq!(syn_ack_marks.get(MarkDomain::Mark1), &Mark(Some(400)));
     assert_eq!(syn_ack_marks.get(MarkDomain::Mark2), &Mark(Some(4000)));
     assert_eq!(*syn_ack_packet_type, PacketType::Host);
     // 3. Final ACK arriving at the listener: Mark1 from client (400), Mark2
     //    from child socket (3000).
-    let (_ack_sock_info, ack_marks, ack_packet_type) = &tcp_filter_metadata[2];
+    let (_ack_sock_info, ack_marks, ack_packet_type, _ack_gso_info) = &tcp_filter_metadata[2];
     assert_eq!(ack_marks.get(MarkDomain::Mark1), &Mark(Some(400)));
     assert_eq!(ack_marks.get(MarkDomain::Mark2), &Mark(Some(3000)));
     assert_eq!(*ack_packet_type, PacketType::Host);
@@ -3566,6 +3629,6 @@ fn test_socket_ops_filter_on_ingress_multicast<I: IpExt + TestIpExt>() {
 
     let mcast_filter_metadata = core::mem::take(&mut ctx.bindings_ctx.state_mut().packet_metadata);
     assert_eq!(mcast_filter_metadata.len(), 1);
-    let (_sock_info, _marks, mcast_packet_type) = &mcast_filter_metadata[0];
+    let (_sock_info, _marks, mcast_packet_type, _gso_info) = &mcast_filter_metadata[0];
     assert_eq!(*mcast_packet_type, PacketType::Multicast);
 }

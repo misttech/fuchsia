@@ -10,7 +10,7 @@ use net_types::ip::{IpVersion, Ipv4, Ipv6};
 pub use netstack3_base::socket::{EitherIpProto, SocketInfo};
 pub use netstack3_base::{FrameDestination, LocalFrameDestination, Marks, PacketType};
 use netstack3_base::{
-    InstantBindingsTypes, InterfaceProperties, IpDeviceAddr, IpDeviceAddressIdContext,
+    GsoInfo, InstantBindingsTypes, InterfaceProperties, IpDeviceAddr, IpDeviceAddressIdContext,
     MatcherBindingsTypes, RngContext, TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes,
 };
 use packet::FragmentedByteSlice;
@@ -152,6 +152,7 @@ pub trait SocketOpsFilter<D> {
         device: &D,
         socket_info: SocketInfo,
         marks: &Marks,
+        gso_info: Option<GsoInfo>,
     ) -> SocketEgressFilterResult;
 
     /// Called on every incoming packet handled by a local socket.
@@ -164,6 +165,7 @@ pub trait SocketOpsFilter<D> {
         socket_info: SocketInfo,
         marks: &Marks,
         packet_type: PacketType,
+        gso_info: Option<GsoInfo>,
     ) -> SocketIngressFilterResult;
 }
 

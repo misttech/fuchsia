@@ -165,7 +165,8 @@ impl DeviceSocketBindingsContext<DeviceId<Self>> for BindingsCtx {
                     frame.body_offset(),
                     default_offset,
                     packet_type,
-                    None,
+                    /*bpf_sock=*/ None,
+                    frame.gso_info(),
                 );
                 let result = program.run(packet);
                 match result {
@@ -295,10 +296,15 @@ impl MessageData {
                 SentFrame::Ethernet(frame) => MessageDataInfo::new_ethernet(frame),
                 SentFrame::Ip(frame) => MessageDataInfo::new_ip(frame),
             },
-            Frame::Received(ReceivedFrame::Ethernet { destination: _, frame, packet_type: _ }) => {
-                MessageDataInfo::new_ethernet(frame)
+            Frame::Received(ReceivedFrame::Ethernet {
+                destination: _,
+                frame,
+                packet_type: _,
+                gso_info: _,
+            }) => MessageDataInfo::new_ethernet(frame),
+            Frame::Received(ReceivedFrame::Ip { frame, gso_info: _ }) => {
+                MessageDataInfo::new_ip(frame)
             }
-            Frame::Received(ReceivedFrame::Ip(frame)) => MessageDataInfo::new_ip(frame),
         };
 
         Self {
@@ -1013,7 +1019,10 @@ mod tests {
             Frame::Sent(SentFrame::Ip(ip_frame.clone())).packet_type(),
             PacketType::Outgoing
         );
-        assert_eq!(Frame::Received(ReceivedFrame::Ip(ip_frame)).packet_type(), PacketType::Host);
+        assert_eq!(
+            Frame::Received(ReceivedFrame::Ip { frame: ip_frame, gso_info: None }).packet_type(),
+            PacketType::Host
+        );
 
         let eth_frame: EthernetFrame<&[u8]> = EthernetFrame {
             src_mac: MAC,
@@ -1031,6 +1040,7 @@ mod tests {
                 destination: FrameDestination::Broadcast,
                 frame: eth_frame.clone(),
                 packet_type: PacketType::Broadcast,
+                gso_info: None,
             })
             .packet_type(),
             PacketType::Broadcast
@@ -1040,6 +1050,7 @@ mod tests {
                 destination: FrameDestination::Multicast,
                 frame: eth_frame.clone(),
                 packet_type: PacketType::Multicast,
+                gso_info: None,
             })
             .packet_type(),
             PacketType::Multicast
@@ -1049,6 +1060,7 @@ mod tests {
                 destination: FrameDestination::Individual { local: true },
                 frame: eth_frame.clone(),
                 packet_type: PacketType::Host,
+                gso_info: None,
             })
             .packet_type(),
             PacketType::Host
@@ -1058,6 +1070,7 @@ mod tests {
                 destination: FrameDestination::Individual { local: false },
                 frame: eth_frame.clone(),
                 packet_type: PacketType::OtherHost,
+                gso_info: None,
             })
             .packet_type(),
             PacketType::OtherHost
@@ -1067,10 +1080,14 @@ mod tests {
                 destination: FrameDestination::Broadcast,
                 frame: eth_frame.clone(),
                 packet_type: PacketType::Loopback,
+                gso_info: None,
             })
             .packet_type(),
             PacketType::Loopback
         );
-        assert_eq!(Frame::Received(ReceivedFrame::Ip(ip_frame)).packet_type(), PacketType::Host);
+        assert_eq!(
+            Frame::Received(ReceivedFrame::Ip { frame: ip_frame, gso_info: None }).packet_type(),
+            PacketType::Host
+        );
     }
 }

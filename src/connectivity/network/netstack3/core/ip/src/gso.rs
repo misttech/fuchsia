@@ -339,7 +339,7 @@ impl SegmentableIpPacketBuilder<Ipv4> for Ipv4PacketBuilder {
     type SegmentBuilder = Self;
 
     fn segment_builder(&self, index: u16, gso_info: GsoInfo) -> Self {
-        let GsoInfo { ipv4_id_mode, gso_size: _ } = gso_info;
+        let GsoInfo { ipv4_id_mode, gso_size: _, gso_segs: _ } = gso_info;
         let mut builder = self.clone();
         match ipv4_id_mode {
             Some(Ipv4IdMode::Fixed) => {}
@@ -633,7 +633,7 @@ where
             gso_info,
             _marker: _,
         } = self;
-        let GsoInfo { gso_size: max_segment_body, ipv4_id_mode: _ } = gso_info;
+        let GsoInfo { gso_size: max_segment_body, gso_segs: _, ipv4_id_mode: _ } = gso_info;
 
         let remaining = *payload_len - *consumed;
         if remaining == 0 {
@@ -822,7 +822,11 @@ mod tests {
             IpVersion::V4 => Some(id_mode),
             IpVersion::V6 => None,
         };
-        GsoInfo { gso_size: GSO_SIZE, ipv4_id_mode }
+        GsoInfo {
+            gso_size: GSO_SIZE,
+            gso_segs: NonZeroU16::new(NUM_SEGMENTS as u16).unwrap(),
+            ipv4_id_mode,
+        }
     }
 
     fn test_payload(len: usize) -> Vec<u8> {

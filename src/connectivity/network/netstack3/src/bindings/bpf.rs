@@ -22,7 +22,6 @@ use fidl_fuchsia_posix as fposix;
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
 use net_types::ip::IpVersion;
-use netstack3_core::NetworkSerializationContext;
 use netstack3_core::device::DeviceId;
 use netstack3_core::filter::{
     BindingsPacketMatcher, EitherIpProto, FilterIpExt, FilterIpPacket, FilterPacketMetadata,
@@ -30,6 +29,7 @@ use netstack3_core::filter::{
     SocketOpsFilter,
 };
 use netstack3_core::ip::{Mark, Marks};
+use netstack3_core::{GsoInfo, NetworkSerializationContext};
 
 use netstack3_core::sync::{Mutex, RwLock};
 use netstack3_core::trace::trace_duration;
@@ -183,11 +183,23 @@ impl<'a, C> SkBuff<'a, C> {
         default_offset: usize,
         pkt_type: PacketType,
         bpf_sock: Option<&'a BpfSock>,
+        gso_info: Option<GsoInfo>,
     ) -> Self {
         // Offsets should be within the data buffer. They may be set to `data.len()`
         // if the packet is empty or it is not serialized.
         assert!(ip_offset <= data.len());
         assert!(default_offset <= data.len());
+
+        // For Linux compatibility, `gso_size` and `gso_segs` are left at 0 for
+        // frames that were not coalesced by GRO: Linux only sets
+        // `skb_shinfo(skb)->gso_size` for GSO/GRO frames and `gso_segs` is only
+        // meaningful when `gso_size` is nonzero (see `skb_is_gso()`).
+        let (gso_segs, gso_size) = match gso_info {
+            Some(GsoInfo { gso_size, gso_segs, ipv4_id_mode: _ }) => {
+                (gso_segs.get().into(), gso_size.get().into())
+            }
+            None => (0, 0),
+        };
 
         let mut result = SkBuff {
             sk_buff: __sk_buff {
@@ -196,6 +208,8 @@ impl<'a, C> SkBuff<'a, C> {
                 mark,
                 protocol: ethertype.unwrap_or(0).to_be().into(),
                 ifindex,
+                gso_segs,
+                gso_size,
 
                 ..__sk_buff::default()
             },
@@ -225,6 +239,7 @@ impl<'a, C> SkBuff<'a, C> {
         marks: &Marks,
         data_buffer: &'a mut SmallVec<[u8; PACKET_BUF_STACK_SIZE]>,
         bpf_sock: Option<&'a BpfSock>,
+        gso_info: Option<GsoInfo>,
     ) -> Self {
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
         let alloc = SmallVecAlloc { buf: data_buffer };
@@ -238,33 +253,18 @@ impl<'a, C> SkBuff<'a, C> {
             }
         };
 
-        let mark = get_linux_packet_mark(marks);
-        let mut result = SkBuff {
-            sk_buff: __sk_buff {
-                len: packet_len.try_into().unwrap_or(0),
-                pkt_type: packet_type_to_raw(pkt_type),
-                mark,
-                protocol: u16::from(I::ETHER_TYPE).to_be().into(),
-                ifindex,
-                ..__sk_buff::default()
-            },
-            data_ptr: packet_data.as_ptr(),
-            // SAFETY: `data_end_ptr` points at the end of the data buffer, but it's never
-            // dereferenced directly.
-            data_end_ptr: unsafe { packet_data.as_ptr().add(packet_data.len()) },
-            data: packet_data,
-            ip_offset: 0,
-            default_offset: 0,
+        Self::new(
+            Some(I::ETHER_TYPE.into()),
+            packet_len,
+            ifindex,
+            get_linux_packet_mark(marks),
+            packet_data,
+            /*ip_offset=*/ 0,
+            /*default_offset=*/ 0,
+            pkt_type,
             bpf_sock,
-            _marker: std::marker::PhantomData,
-        };
-
-        if let Some(bpf_sock) = bpf_sock {
-            result.sk_buff.__bindgen_anon_2.sk =
-                (uaddr { addr: BpfValue::from(bpf_sock).into() }).into();
-        }
-
-        result
+            gso_info,
+        )
     }
 }
 
@@ -510,6 +510,7 @@ where
         let socket_info = packet_metadata.socket_info();
         let pkt_type = packet_metadata.packet_type();
         let bpf_sock = socket_info.and_then(|info| BpfSock::new(info, &marks));
+        let gso_info = packet_metadata.gso_info();
 
         // `ifindex` field is set to either ingress or ingress interface index
         // depending on the context. When executing forwarding hooks we have
@@ -526,6 +527,7 @@ where
             &marks,
             &mut data_buffer,
             bpf_sock.as_ref(),
+            gso_info,
         );
 
         match self.run(sk_buff) {
@@ -882,6 +884,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         device: &D,
         socket_info: SocketInfo,
         marks: &Marks,
+        gso_info: Option<GsoInfo>,
     ) -> SocketEgressFilterResult {
         let state = self.state.read();
         let Some(prog) = state.root_cgroup_egress.as_ref() else {
@@ -899,6 +902,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
             marks,
             &mut data_buffer,
             bpf_sock.as_ref(),
+            gso_info,
         );
 
         let result = prog.run(sk_buff);
@@ -926,6 +930,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         socket_info: SocketInfo,
         marks: &Marks,
         packet_type: PacketType,
+        gso_info: Option<GsoInfo>,
     ) -> SocketIngressFilterResult {
         let state = self.state.read();
         let Some(prog) = state.root_cgroup_ingress.as_ref() else {
@@ -960,6 +965,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
             /*default_offset=*/ 0,
             packet_type,
             bpf_sock.as_ref(),
+            gso_info,
         );
 
         let result = prog.run(skb);
@@ -1025,7 +1031,8 @@ mod tests {
                 Self::BODY_POSITION,
                 default_offset,
                 PacketType::Host,
-                None,
+                /*bpf_sock=*/ None,
+                /*gso_info=*/ None,
             )
         }
     }
@@ -1201,10 +1208,21 @@ mod tests {
         }
     }
 
+    const TEST_GSO_INFO: GsoInfo = GsoInfo {
+        gso_size: NonZeroU16::new(1000).unwrap(),
+        gso_segs: NonZeroU16::new(3).unwrap(),
+        ipv4_id_mode: None,
+    };
+
     #[ip_test(I)]
-    #[test_case(AttachType::CgroupInetEgress; "Egress")]
-    #[test_case(AttachType::CgroupInetIngress; "Ingress")]
-    fn run_skb_prog<I: TestIpExt + FilterIpExt>(attach_type: AttachType) {
+    #[test_case(AttachType::CgroupInetEgress, None; "Egress")]
+    #[test_case(AttachType::CgroupInetEgress, Some(TEST_GSO_INFO); "Egress GSO")]
+    #[test_case(AttachType::CgroupInetIngress, None; "Ingress")]
+    #[test_case(AttachType::CgroupInetIngress, Some(TEST_GSO_INFO); "Ingress GSO")]
+    fn run_skb_prog<I: TestIpExt + FilterIpExt>(
+        attach_type: AttachType,
+        gso_info: Option<GsoInfo>,
+    ) {
         let manager = EbpfManager::default();
         let test_program =
             ebpf_test_util::TestProgramDefinition::load(ProgramType::CgroupSkb).instantiate();
@@ -1260,7 +1278,7 @@ mod tests {
                     IpProto::Udp.into(),
                     &mut udp_packet,
                 );
-                let result = (&manager).on_egress(&packet, &device, socket_info, &marks);
+                let result = (&manager).on_egress(&packet, &device, socket_info, &marks, gso_info);
                 assert!(result == SocketEgressFilterResult::Pass { congestion: false });
             }
             AttachType::CgroupInetIngress => {
@@ -1289,6 +1307,7 @@ mod tests {
                     socket_info,
                     &marks,
                     PacketType::Host,
+                    gso_info,
                 );
 
                 assert!(result == SocketIngressFilterResult::Accept);
@@ -1303,5 +1322,11 @@ mod tests {
         assert_eq!(result.ifindex, TEST_IFINDEX);
         assert_eq!(result.ether_type, u32::from(u16::from(I::ETHER_TYPE)));
         assert_eq!(result.ip_proto, u8::from(IpProto::Udp));
+        let (gso_segs, gso_size) =
+            gso_info.map_or((0, 0), |GsoInfo { gso_size, gso_segs, .. }| {
+                (u32::from(gso_segs.get()), u32::from(gso_size.get()))
+            });
+        assert_eq!(result.gso_segs, gso_segs);
+        assert_eq!(result.gso_size, gso_size);
     }
 }

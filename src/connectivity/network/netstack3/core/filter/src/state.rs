@@ -16,7 +16,7 @@ use core::ops::RangeInclusive;
 use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip};
 use netstack3_base::{
-    CoreTimerContext, Inspectable, InspectableValue, Inspector as _, MarkDomain, Marks,
+    CoreTimerContext, GsoInfo, Inspectable, InspectableValue, Inspector as _, MarkDomain, Marks,
     MatcherBindingsTypes, PacketType, TimerContext,
 };
 use packet_formats::ip::IpExt;
@@ -594,6 +594,8 @@ pub trait FilterPacketMetadata {
     fn marks(&self) -> &Marks;
     /// Packet type.
     fn packet_type(&self) -> PacketType;
+    /// GSO metadata, if the packet was coalesced from multiple segments.
+    fn gso_info(&self) -> Option<GsoInfo>;
 }
 
 /// Testing utilities for filtering state.
@@ -652,6 +654,10 @@ pub mod testutil {
 
         fn packet_type(&self) -> PacketType {
             self.packet_type
+        }
+
+        fn gso_info(&self) -> Option<GsoInfo> {
+            None
         }
     }
 }

@@ -39,6 +39,8 @@ pub struct TestResult {
     pub dst_port: u16,
     pub ip_proto: u8,
     pub _padding: [u8; 3],
+    pub gso_segs: u32,
+    pub gso_size: u32,
 }
 
 #[derive(Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]

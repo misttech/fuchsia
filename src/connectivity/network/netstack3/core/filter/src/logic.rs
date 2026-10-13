@@ -1025,6 +1025,10 @@ mod tests {
         fn packet_type(&self) -> netstack3_base::PacketType {
             netstack3_base::PacketType::Host
         }
+
+        fn gso_info(&self) -> Option<netstack3_base::GsoInfo> {
+            None
+        }
     }
 
     #[test]

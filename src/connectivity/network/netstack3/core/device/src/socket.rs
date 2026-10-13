@@ -15,11 +15,11 @@ use net_types::ip::IpVersion;
 use netstack3_base::socket::SocketCookie;
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
-    AnyDevice, ContextPair, Counter, Device, DeviceIdContext, FrameDestination, Inspectable,
-    Inspector, InspectorDeviceExt, InspectorExt, NetworkSerializer, PacketType, ReferenceNotifiers,
-    ReferenceNotifiersExt as _, RemoveResourceResultWithContext, ResourceCounterContext,
-    SendFrameContext, SendFrameErrorReason, StrongDeviceIdentifier, TxMetadataBindingsTypes,
-    WeakDeviceIdentifier as _,
+    AnyDevice, ContextPair, Counter, Device, DeviceIdContext, FrameDestination, GsoInfo,
+    Inspectable, Inspector, InspectorDeviceExt, InspectorExt, NetworkSerializer, PacketType,
+    ReferenceNotifiers, ReferenceNotifiersExt as _, RemoveResourceResultWithContext,
+    ResourceCounterContext, SendFrameContext, SendFrameErrorReason, StrongDeviceIdentifier,
+    TxMetadataBindingsTypes, WeakDeviceIdentifier as _,
 };
 use netstack3_hashmap::{HashMap, HashSet};
 use netstack3_ip::DeviceIpLayerMetadata;
@@ -693,12 +693,19 @@ pub enum ReceivedFrame<B> {
         frame: EthernetFrame<B>,
         /// The packet type.
         packet_type: PacketType,
+        /// GSO metadata if the frame was coalesced from multiple segments.
+        gso_info: Option<GsoInfo>,
     },
     /// An IP frame received on a device.
     ///
     /// Note that this is not an IP packet within an Ethernet Frame. This is an
     /// IP packet received directly from the device (e.g. a pure IP device).
-    Ip(IpFrame<B>),
+    Ip {
+        /// The IP frame.
+        frame: IpFrame<B>,
+        /// GSO metadata if the frame was coalesced from multiple segments.
+        gso_info: Option<GsoInfo>,
+    },
 }
 
 /// A frame sent on a device.
@@ -799,8 +806,9 @@ impl<'a> ReceivedFrame<&'a [u8]> {
         frame: packet_formats::ethernet::EthernetFrame<&'a [u8]>,
         destination: FrameDestination,
         packet_type: PacketType,
+        gso_info: Option<GsoInfo>,
     ) -> Self {
-        Self::Ethernet { destination, frame: frame.into(), packet_type }
+        Self::Ethernet { destination, frame: frame.into(), packet_type, gso_info }
     }
 }
 
@@ -809,10 +817,13 @@ impl<B> Frame<B> {
     pub fn packet_type(&self) -> PacketType {
         match self {
             Self::Sent(_) => PacketType::Outgoing,
-            Self::Received(ReceivedFrame::Ethernet { destination: _, frame: _, packet_type }) => {
-                *packet_type
-            }
-            Self::Received(ReceivedFrame::Ip(_)) => PURE_IP_PACKET_TYPE,
+            Self::Received(ReceivedFrame::Ethernet {
+                destination: _,
+                frame: _,
+                packet_type,
+                gso_info: _,
+            }) => *packet_type,
+            Self::Received(ReceivedFrame::Ip { frame: _, gso_info: _ }) => PURE_IP_PACKET_TYPE,
         }
     }
 
@@ -820,33 +831,59 @@ impl<B> Frame<B> {
     pub fn protocol(&self) -> Option<u16> {
         let ethertype = match self {
             Self::Sent(SentFrame::Ethernet(frame))
-            | Self::Received(ReceivedFrame::Ethernet { destination: _, frame, packet_type: _ }) => {
-                frame.ethertype
-            }
-            Self::Sent(SentFrame::Ip(frame)) | Self::Received(ReceivedFrame::Ip(frame)) => {
-                Some(frame.ethertype())
-            }
+            | Self::Received(ReceivedFrame::Ethernet {
+                destination: _,
+                frame,
+                packet_type: _,
+                gso_info: _,
+            }) => frame.ethertype,
+            Self::Sent(SentFrame::Ip(frame))
+            | Self::Received(ReceivedFrame::Ip { frame, gso_info: _ }) => Some(frame.ethertype()),
         };
         ethertype.map(Into::into)
+    }
+
+    /// Returns the GSO metadata for the frame, if any.
+    pub fn gso_info(&self) -> Option<GsoInfo> {
+        match self {
+            Self::Sent(_) => None,
+            Self::Received(ReceivedFrame::Ethernet {
+                destination: _,
+                frame: _,
+                packet_type: _,
+                gso_info,
+            })
+            | Self::Received(ReceivedFrame::Ip { frame: _, gso_info }) => *gso_info,
+        }
     }
 
     /// Convenience method for consuming the `Frame` and producing the body.
     pub fn into_body(self) -> B {
         match self {
-            Self::Received(ReceivedFrame::Ethernet { destination: _, frame, packet_type: _ })
+            Self::Received(ReceivedFrame::Ethernet {
+                destination: _,
+                frame,
+                packet_type: _,
+                gso_info: _,
+            })
             | Self::Sent(SentFrame::Ethernet(frame)) => frame.body,
-            Self::Received(ReceivedFrame::Ip(frame)) | Self::Sent(SentFrame::Ip(frame)) => {
-                frame.body
-            }
+            Self::Received(ReceivedFrame::Ip { frame, gso_info: _ })
+            | Self::Sent(SentFrame::Ip(frame)) => frame.body,
         }
     }
 
     /// Returns the offset of the body within the frame.
     pub fn body_offset(&self) -> usize {
         match self {
-            Self::Received(ReceivedFrame::Ethernet { destination: _, frame, packet_type: _ })
+            Self::Received(ReceivedFrame::Ethernet {
+                destination: _,
+                frame,
+                packet_type: _,
+                gso_info: _,
+            })
             | Self::Sent(SentFrame::Ethernet(frame)) => frame.body_offset,
-            Self::Received(ReceivedFrame::Ip(_)) | Self::Sent(SentFrame::Ip(_)) => 0,
+            Self::Received(ReceivedFrame::Ip { frame: _, gso_info: _ })
+            | Self::Sent(SentFrame::Ip(_)) => 0,
         }
     }
 }
@@ -1043,14 +1080,16 @@ mod testutil {
                     destination,
                     frame,
                     packet_type,
+                    gso_info,
                 }) => Frame::Received(super::ReceivedFrame::Ethernet {
                     destination,
                     frame: frame.cloned(),
                     packet_type,
+                    gso_info,
                 }),
                 Self::Sent(SentFrame::Ip(frame)) => Frame::Sent(SentFrame::Ip(frame.cloned())),
-                Self::Received(super::ReceivedFrame::Ip(frame)) => {
-                    Frame::Received(super::ReceivedFrame::Ip(frame.cloned()))
+                Self::Received(super::ReceivedFrame::Ip { frame, gso_info }) => {
+                    Frame::Received(super::ReceivedFrame::Ip { frame: frame.cloned(), gso_info })
                 }
             }
         }
@@ -1772,6 +1811,7 @@ mod tests {
                 TestData::frame(),
                 FrameDestination::Individual { local: true },
                 PacketType::Host,
+                None,
             )
             .into(),
             &mut ctx,
@@ -1895,6 +1935,13 @@ mod tests {
         );
         let FakeCtx { mut core_ctx, mut bindings_ctx } = ctx;
 
+        // Attach GSO metadata to verify it's delivered alongside the frame.
+        const GSO_INFO: GsoInfo = GsoInfo {
+            gso_size: NonZeroU16::new(1000).unwrap(),
+            gso_segs: NonZeroU16::new(3).unwrap(),
+            ipv4_id_mode: None,
+        };
+
         const RECEIVE_COUNT: usize = 10;
         for _ in 0..RECEIVE_COUNT {
             DeviceSocketHandler::handle_frame(
@@ -1905,6 +1952,7 @@ mod tests {
                     TestData::frame(),
                     FrameDestination::Individual { local: true },
                     PacketType::Host,
+                    Some(GSO_INFO),
                 )
                 .into(),
                 TestData::BUFFER,
@@ -1939,6 +1987,7 @@ mod tests {
                             body: Vec::from(TestData::BODY),
                         },
                         packet_type: PacketType::Host,
+                        gso_info: Some(GSO_INFO),
                     }),
                     raw: TestData::BUFFER.into()
                 };
@@ -1978,6 +2027,7 @@ mod tests {
                 TestData::frame(),
                 FrameDestination::Individual { local: true },
                 PacketType::Host,
+                None,
             )
             .into(),
             TestData::BUFFER,

@@ -1075,6 +1075,7 @@ where
             &egress_device,
             socket_info,
             packet_metadata.marks(),
+            packet_metadata.gso_info(),
         );
 
         // TODO(https://fxbug.dev/412426836): Implement congestion signal handling.

@@ -599,8 +599,14 @@ pub struct FakeBindingsCtxState {
     pub rx_available: Vec<LoopbackDeviceId<FakeBindingsCtx>>,
     /// IDs with tx queue signaled available.
     pub tx_available: Vec<DeviceId<FakeBindingsCtx>>,
-    /// Recorded `(SocketInfo, Marks, PacketType)` passed to `SocketOpsFilter::on_ingress`.
-    pub packet_metadata: Vec<(netstack3_base::socket::SocketInfo, Marks, PacketType)>,
+    /// Recorded `(SocketInfo, Marks, PacketType, Option<GsoInfo>)` passed to
+    /// `SocketOpsFilter::on_ingress`.
+    pub packet_metadata: Vec<(
+        netstack3_base::socket::SocketInfo,
+        Marks,
+        PacketType,
+        Option<netstack3_base::GsoInfo>,
+    )>,
     /// Deferred resource removals.
     #[cfg(loom)]
     pub deferred_receivers: Vec<loom_notifiers::LoomReceiver>,
@@ -837,6 +843,7 @@ impl SocketOpsFilter<DeviceId<FakeBindingsCtx>> for FakeSocketOpsFilter<'_> {
         _device: &DeviceId<FakeBindingsCtx>,
         _socket_info: netstack3_base::socket::SocketInfo,
         _marks: &Marks,
+        _gso_info: Option<netstack3_base::GsoInfo>,
     ) -> netstack3_filter::SocketEgressFilterResult {
         netstack3_filter::SocketEgressFilterResult::Pass { congestion: false }
     }
@@ -850,8 +857,9 @@ impl SocketOpsFilter<DeviceId<FakeBindingsCtx>> for FakeSocketOpsFilter<'_> {
         socket_info: netstack3_base::socket::SocketInfo,
         marks: &Marks,
         packet_type: PacketType,
+        gso_info: Option<netstack3_base::GsoInfo>,
     ) -> netstack3_filter::SocketIngressFilterResult {
-        self.0.0.lock().state.packet_metadata.push((socket_info, *marks, packet_type));
+        self.0.0.lock().state.packet_metadata.push((socket_info, *marks, packet_type, gso_info));
         netstack3_filter::SocketIngressFilterResult::Accept
     }
 }

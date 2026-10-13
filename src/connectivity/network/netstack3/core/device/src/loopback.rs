@@ -330,7 +330,7 @@ where
             self,
             bindings_ctx,
             &target_device,
-            ReceivedFrame::from_ethernet(frame, frame_dest, packet_type).into(),
+            ReceivedFrame::from_ethernet(frame, frame_dest, packet_type, /*gso_info=*/ None).into(),
             whole_body,
         );
 

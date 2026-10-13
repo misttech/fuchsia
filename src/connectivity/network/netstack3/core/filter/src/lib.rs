@@ -93,6 +93,7 @@ pub mod testutil {
             _device: &D,
             _socket_info: SocketInfo,
             _marks: &Marks,
+            _gso_info: Option<netstack3_base::GsoInfo>,
         ) -> SocketEgressFilterResult {
             SocketEgressFilterResult::Pass { congestion: false }
         }
@@ -106,6 +107,7 @@ pub mod testutil {
             _socket_info: SocketInfo,
             _marks: &Marks,
             _packet_type: PacketType,
+            _gso_info: Option<netstack3_base::GsoInfo>,
         ) -> SocketIngressFilterResult {
             SocketIngressFilterResult::Accept
         }

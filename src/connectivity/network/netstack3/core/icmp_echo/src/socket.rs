@@ -1156,7 +1156,8 @@ impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundSt
         info: &mut LocalDeliveryPacketInfo<I, H>,
         _early_demux_socket: Option<!>,
     ) -> Result<(), (B, I::IcmpError)> {
-        let LocalDeliveryPacketInfo { meta, header_info: _, marks: _, packet_type: _ } = info;
+        let LocalDeliveryPacketInfo { meta, header_info: _, marks: _, packet_type: _, gso_info: _ } =
+            info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;
         if let Some(delivery) = transparent_override.as_ref() {
             unreachable!(

@@ -30,11 +30,11 @@ use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged};
 use netstack3_base::sync::{RwLock, StrongRc};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, CounterContext,
-    DeviceIdContext, Inspector, InspectorDeviceExt, InstantContext, IpSocketPropertiesMatcher,
-    LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes, NetworkParsingContext,
-    PacketType, PortAllocImpl, ReferenceNotifiers, RemoveResourceResultWithContext,
-    ResourceCounterContext, RngContext, SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier,
-    ZonedAddressError,
+    DeviceIdContext, GsoInfo, Inspector, InspectorDeviceExt, InstantContext,
+    IpSocketPropertiesMatcher, LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes,
+    NetworkParsingContext, PacketType, PortAllocImpl, ReferenceNotifiers,
+    RemoveResourceResultWithContext, ResourceCounterContext, RngContext, SocketError,
+    StrongDeviceIdentifier, WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_datagram::{
     self as datagram, BoundDatagramSocketMap, BoundSocketState as DatagramBoundSocketState,
@@ -1483,7 +1483,7 @@ fn receive_ip_packet<
     info: &mut LocalDeliveryPacketInfo<I, H>,
     early_demux_socket: Option<DualStackUdpSocketId<I, CC::WeakDeviceId, BC>>,
 ) -> Result<(), (B, I::IcmpError)> {
-    let LocalDeliveryPacketInfo { meta, header_info, marks, packet_type } = info;
+    let LocalDeliveryPacketInfo { meta, header_info, marks, packet_type, gso_info } = info;
     let ReceiveIpPacketMeta { broadcast, transparent_override, parsing_context } = meta;
 
     trace_duration!("udp::receive_ip_packet");
@@ -1595,6 +1595,7 @@ fn receive_ip_packet<
             &meta,
             marks,
             *packet_type,
+            *gso_info,
             require_transparent,
             header_info,
             packet.clone(),
@@ -1628,6 +1629,7 @@ fn try_deliver<
     meta: UdpPacketMeta<I>,
     packet_marks: &Marks,
     packet_type: PacketType,
+    gso_info: Option<GsoInfo>,
     require_transparent: bool,
     header_info: &H,
     packet: UdpPacket<&[u8]>,
@@ -1680,6 +1682,7 @@ fn try_deliver<
             id.socket_info(),
             &marks,
             packet_type,
+            gso_info,
         );
 
         match filter_result {
@@ -1722,6 +1725,7 @@ fn try_dual_stack_deliver<
     meta: &UdpPacketMeta<I>,
     packet_marks: &Marks,
     packet_type: PacketType,
+    gso_info: Option<GsoInfo>,
     require_transparent: bool,
     header_info: &H,
     packet: UdpPacket<&[u8]>,
@@ -1769,6 +1773,7 @@ fn try_dual_stack_deliver<
             meta,
             packet_marks,
             packet_type,
+            gso_info,
             require_transparent,
             header_info,
             packet,
@@ -1781,6 +1786,7 @@ fn try_dual_stack_deliver<
             meta,
             packet_marks,
             packet_type,
+            gso_info,
             require_transparent,
             header_info,
             packet,

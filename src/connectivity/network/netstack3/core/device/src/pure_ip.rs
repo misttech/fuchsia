@@ -222,7 +222,10 @@ where
         core_ctx.handle_frame(
             bindings_ctx,
             &device_id,
-            Frame::Received(ReceivedFrame::Ip(IpFrame { ip_version, body: buffer.as_ref() })),
+            Frame::Received(ReceivedFrame::Ip {
+                frame: IpFrame { ip_version, body: buffer.as_ref() },
+                gso_info,
+            }),
             buffer.as_ref(),
         );
 

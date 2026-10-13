@@ -8,7 +8,7 @@ use core::num::NonZeroU16;
 
 use net_types::SpecifiedAddr;
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
-use netstack3_base::{IpExt, Marks, NetworkParsingContext, PacketType};
+use netstack3_base::{GsoInfo, IpExt, Marks, NetworkParsingContext, PacketType};
 use packet_formats::ip::DscpAndEcn;
 use packet_formats::ipv4::Ipv4Header as _;
 use packet_formats::ipv4::options::Ipv4Option;
@@ -53,6 +53,8 @@ pub struct LocalDeliveryPacketInfo<I: IpExt, H: IpHeaderInfo<I>> {
     pub marks: Marks,
     /// The packet type.
     pub packet_type: PacketType,
+    /// GSO metadata if the packet was coalesced from multiple segments by GRO.
+    pub gso_info: Option<GsoInfo>,
 }
 
 /// Abstracts extracting information from IP headers for upper layers.
@@ -162,6 +164,7 @@ pub(crate) mod testutil {
                 header_info: Default::default(),
                 marks: Default::default(),
                 packet_type: PacketType::Host,
+                gso_info: None,
             }
         }
     }

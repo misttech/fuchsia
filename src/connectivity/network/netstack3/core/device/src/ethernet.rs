@@ -564,7 +564,7 @@ where
         core_ctx.handle_frame(
             bindings_ctx,
             &device_id,
-            ReceivedFrame::from_ethernet(ethernet, frame_dst, packet_type).into(),
+            ReceivedFrame::from_ethernet(ethernet, frame_dst, packet_type, gso_info).into(),
             whole_frame,
         );
 

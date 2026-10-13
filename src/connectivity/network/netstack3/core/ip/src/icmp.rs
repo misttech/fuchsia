@@ -971,7 +971,8 @@ impl<
         info: &mut LocalDeliveryPacketInfo<Ipv4, H>,
         _early_demux_socket: Option<!>,
     ) -> Result<(), (B, Icmpv4Error)> {
-        let LocalDeliveryPacketInfo { meta, header_info: _, marks, packet_type: _ } = info;
+        let LocalDeliveryPacketInfo { meta, header_info: _, marks, packet_type: _, gso_info: _ } =
+            info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;
         if let Some(delivery) = transparent_override {
             unreachable!(
@@ -1982,7 +1983,8 @@ impl<
         info: &mut LocalDeliveryPacketInfo<Ipv6, H>,
         _early_demux_socket: Option<!>,
     ) -> Result<(), (B, Icmpv6Error)> {
-        let LocalDeliveryPacketInfo { meta, header_info, marks, packet_type: _ } = info;
+        let LocalDeliveryPacketInfo { meta, header_info, marks, packet_type: _, gso_info: _ } =
+            info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;
         if let Some(delivery) = transparent_override {
             unreachable!(
