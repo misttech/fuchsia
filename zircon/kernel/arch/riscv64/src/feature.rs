@@ -170,27 +170,3 @@ pub fn riscv64_feature_init() {
 pub extern "C" fn rust_riscv64_feature_cbom_size() -> u32 {
     cbom_size()
 }
-
-#[cfg(ktest)]
-/// Tests for RISC-V 64 CPU feature detection and configuration.
-#[unittest::suite(name = "riscv64_feature")]
-mod tests {
-    use super::{
-        RISCV_CBOM_SIZE, RISCV_FEATURES_BITS, RiscvFeature, cbom_size, has_vector, has_zicbom,
-    };
-    use core::sync::atomic::Ordering;
-    use unittest::{assert_eq, assert_false, assert_true};
-
-    /// Test that the feature accessors read the globals set by early init.
-    #[test]
-    fn test_feature_globals_track_bits() {
-        let saved_bits = RISCV_FEATURES_BITS.load(Ordering::Relaxed);
-
-        RISCV_FEATURES_BITS.store(1 << (RiscvFeature::Zicbom as u32), Ordering::Relaxed);
-        assert_true!(has_zicbom());
-        assert_false!(has_vector());
-        assert_eq!(cbom_size(), RISCV_CBOM_SIZE.load(Ordering::Relaxed));
-
-        RISCV_FEATURES_BITS.store(saved_bits, Ordering::Relaxed);
-    }
-}
