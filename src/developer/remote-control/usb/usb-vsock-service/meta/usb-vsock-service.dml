@@ -1,0 +1,27 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    name: "usb-vsock-service",
+    include: [ "driver_component/driver.shard.cml" ],
+    program: {
+        colocate: "true",
+        bind: { service: "fuchsia.hardware.vsockbridge.UsbService" },
+    },
+    capabilities: [
+        { service: "fuchsia.hardware.vsock.Service" },
+    ],
+    use: [
+        {
+            name: "default",
+            service: "fuchsia.hardware.vsockbridge.UsbService",
+            generate_bind_rule: false,
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.vsock.Service",
+            from: "self",
+        },
+    ],
+}

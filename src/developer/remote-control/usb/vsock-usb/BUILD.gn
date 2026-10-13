@@ -7,8 +7,13 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("vsock-usb-dml") {
+  dml = "meta/vsock-usb.dml"
+  driver_name = "vsock-usb"
+}
+
 driver_bind_rules("vsock_usb_bind") {
-  rules = "meta/vsock-usb.bind"
+  dml_label = ":vsock-usb-dml"
   bind_output = "vsock-usb.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -63,7 +68,7 @@ fuchsia_driver_component("vsock-usb") {
   component_name = "vsock-usb"
   deps = [ ":vsock-usb-driver" ]
   info = "meta/vsock-usb-info.json"
-  manifest = "meta/vsock-usb.cml"
+  dml_label = ":vsock-usb-dml"
 }
 
 test("vsock-usb-test-bin") {

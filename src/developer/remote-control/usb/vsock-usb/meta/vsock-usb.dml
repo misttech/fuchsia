@@ -1,0 +1,36 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    name: "vsock-usb",
+    include: [ "driver_component/driver.shard.cml" ],
+    program: {
+        default_dispatcher_opts: [ "allow_sync_calls" ],
+        colocate: "true",
+        bind: {
+            protocol: "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
+            rules: {
+                "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
+                "fuchsia.BIND_USB_SUBCLASS": "fuchsia.google.platform.usb.BIND_USB_SUBCLASS.VSOCK_BRIDGE",
+                "fuchsia.BIND_USB_PROTOCOL": "fuchsia.google.platform.usb.BIND_USB_PROTOCOL.VSOCK_BRIDGE",
+            },
+        },
+    },
+    capabilities: [
+        { service: "fuchsia.hardware.vsockbridge.UsbService" },
+    ],
+    use: [
+        {
+            name: "default",
+            service: "fuchsia.hardware.usb.function.UsbFunctionService",
+            generate_bind_rule: false,
+        },
+        { protocol: "fuchsia.hardware.usb.endpoint.Endpoint" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.vsockbridge.UsbService",
+            from: "self",
+        },
+    ],
+}
