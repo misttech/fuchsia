@@ -17,7 +17,10 @@ fuchsia_package_resource(
 
 fuchsia_package_resource_group(
     name = "assets",
-    srcs = glob(["assets/**/*"]),
+    srcs = [
+        "assets/foo/bar.json",
+        "assets/foo/foo.json",
+    ],
     dest = "data",
     strip_prefix = "assets",
     visibility = ["//examples/hello_world_cpp:__subpackages__"],

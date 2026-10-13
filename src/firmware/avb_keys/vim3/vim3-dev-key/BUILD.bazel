@@ -4,8 +4,14 @@
 
 package(default_applicable_licenses = ["//:license"])
 
-exports_files(
-    glob(
-        ["*"],
-    ),
-)
+exports_files([
+    "dev_atx_pik_certificate.bin",
+    "devkey_atx_pik.pem",
+    "devkey_atx_prk.pem",
+    "vim3_dev_atx_metadata.bin",
+    "vim3_dev_atx_permanent_attributes.bin",
+    "vim3_dev_atx_psk_certificate.bin",
+    "vim3_dev_product_id.bin",
+    "vim3_devkey_atx_psk.pem",
+    "vim3_devkey_atx_puk.pem",
+])

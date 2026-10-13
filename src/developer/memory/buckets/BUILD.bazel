@@ -4,4 +4,13 @@
 
 package(default_applicable_licenses = ["//:license"])
 
-exports_files(glob(["*.json5"]))
+exports_files([
+    "blobfs_buckets.json5",
+    "buckets.json5",
+    "camera_buckets.json5",
+    "fxfs_buckets.json5",
+    "minfs_buckets.json5",
+    "setui_buckets.json5",
+    "starnix.json5",
+    "thread_lowpan_buckets.json5",
+])

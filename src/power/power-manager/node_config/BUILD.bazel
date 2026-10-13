@@ -4,8 +4,10 @@
 
 package(default_applicable_licenses = ["//:license"])
 
-exports_files(
-    glob(
-        ["*"],
-    ),
-)
+exports_files([
+    "astro_node_config.json5",
+    "base_node_config.json5",
+    "nelson_node_config.json5",
+    "sherlock_node_config.json5",
+    "vim3_devicetree_node_config.json5",
+])

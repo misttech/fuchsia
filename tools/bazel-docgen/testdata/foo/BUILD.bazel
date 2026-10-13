@@ -8,6 +8,6 @@ package(default_applicable_licenses = ["//:license"])
 
 bzl_library(
     name = "bzl_lib",
-    srcs = glob(["*.bzl"]),
+    srcs = ["foo_internal.bzl"],
     visibility = ["//visibility:public"],
 )

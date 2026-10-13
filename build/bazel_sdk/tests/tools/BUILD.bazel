@@ -15,5 +15,6 @@ py_binary(
 )
 
 exports_files(
-    glob(["*"]),
+    ["dtc"],
+    visibility = ["//:__pkg__"],
 )

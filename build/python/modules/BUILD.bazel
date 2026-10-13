@@ -11,19 +11,32 @@ package(
 
 py_library(
     name = "serialization",
-    srcs = glob(["serialization/*.py"]),
+    srcs = [
+        "serialization/__init__.py",
+        "serialization/serialization.py",
+    ],
     imports = ["."],
 )
 
 py_library(
     name = "depfile",
-    srcs = glob(["depfile/*.py"]),
+    srcs = [
+        "depfile/__init__.py",
+        "depfile/depfile.py",
+    ],
     imports = ["."],
 )
 
 py_library(
     name = "assembly",
-    srcs = glob(["assembly/*.py"]),
+    srcs = [
+        "assembly/__init__.py",
+        "assembly/assembly_input_bundle.py",
+        "assembly/common.py",
+        "assembly/image_assembly_config.py",
+        "assembly/package_copier.py",
+        "assembly/package_manifest.py",
+    ],
     imports = ["."],
     deps = [
         ":depfile",
@@ -33,7 +46,11 @@ py_library(
 
 py_library(
     name = "elf",
-    srcs = glob(["elf/*.py"]),
+    srcs = [
+        "elf/__init__.py",
+        "elf/elfinfo.py",
+        "elf/verify_manifest_elf_binaries.py",
+    ],
     imports = ["."],
     visibility = [
         "//build/bazel/debug_symbols/tests:__pkg__",

@@ -25,7 +25,18 @@ fuchsia_licenses_review(
 py_test(
     name = "review_test",
     srcs = ["review_test.py"],
-    data = [":review.zip"] + glob(["goldens/**/*"]),
+    data = [
+        "goldens/classification.json",
+        "goldens/detailed.csv",
+        "goldens/extra_files/extra_review_file.txt",
+        "goldens/extra_files/extra_review_file_2.txt",
+        "goldens/extracted_licenses/LicenseRef-X.txt",
+        "goldens/extracted_licenses/LicenseRef-Y.txt",
+        "goldens/extracted_licenses/LicenseRef-Z.txt",
+        "goldens/licenses.spdx.json",
+        "goldens/summary.csv",
+        ":review.zip",
+    ],
     # b/319458863: py_test() does not support our custom Python
     # toolchain with remote builds!
     tags = ["no-remote"],

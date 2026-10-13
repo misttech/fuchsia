@@ -1,6 +1,5 @@
 {
     "allowed_paths": [
-        "build/bazel/examples/hello_python/BUILD.bazel",
         "build/bazel/icu/repository_rules.bzl",
         "build/bazel/toolchains/clang/prebuilt_clang.BUILD.bazel",
         "build/bazel/toolchains/clang/prebuilt_llvm.BUILD.bazel",
@@ -36,24 +35,9 @@
         "build/bazel_sdk/fuchsia_rules_common/components/BUILD.bazel",
         "build/bazel_sdk/fuchsia_rules_common/debug_symbols/BUILD.bazel",
         "build/bazel_sdk/fuchsia_rules_common/packages/BUILD.bazel",
-        "build/bazel_sdk/tests/examples/hello_world_cpp/resources/BUILD.bazel",
         "build/bazel_sdk/tests/fuchsia/assembly/BUILD.bazel",
-        "build/bazel_sdk/tests/fuchsia/licenses/review/BUILD.bazel",
-        "build/bazel_sdk/tests/tools/BUILD.bazel",
-        "build/python/modules/BUILD.bazel",
-        "scripts/BUILD.bazel",
-        "scripts/shac/BUILD.bazel",
         "sdk/history/",
         "src/connectivity/bluetooth/sunstone/",
-        "src/developer/memory/buckets/BUILD.bazel",
-        "src/firmware/avb_keys/BUILD.bazel",
-        "src/firmware/avb_keys/vim3/vim3-dev-key/BUILD.bazel",
-        "src/lib/fuchsia-cprng/BUILD.bazel",
-        "src/power/cpu-manager/node_config/BUILD.bazel",
-        "src/power/power-manager/node_config/BUILD.bazel",
-        "src/sys/pkg/bin/system-updater/keys/BUILD.bazel",
-        "tools/bazel-docgen/testdata/foo/BUILD.bazel",
-        "tools/devshell/lib/BUILD.bazel",
-        "tools/testing/resultdb/BUILD.bazel"
+        "src/lib/fuchsia-cprng/BUILD.bazel"
     ]
 }

@@ -5,5 +5,5 @@
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
-    glob(["*.pem"]),
+    ["manifest_dev_key.pem"],
 )
