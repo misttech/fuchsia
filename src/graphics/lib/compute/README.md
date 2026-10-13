@@ -2,15 +2,6 @@
 
 The Vulkan benchmarks include:
 
-## Spinel SVG viewer: `spinel-vk-bench`
-
-A benchmark that exercises the Vulkan API, the Vulkan device's display, and user
-input.
-
-It is GPU compute-bound or memory-bound with the CPU nearly idle.
-
-For now, only basic SVGs are supported by the parser.
-
 ## Vulkan radix sorting library: `radix-sort-vk-bench`
 
 A sorting benchmark that submits a number of intensive compute shaders onto the
@@ -49,7 +40,6 @@ This benchmark quantifies the overhead and latency of Magma/FIDL.
 $ ls pkg/bin
 bench-vk
 radix-sort-vk-bench
-spinel-vk-bench
 ```
 
 # Run `bench-vk`:
@@ -64,21 +54,4 @@ $ bench-vk
 ```
 (host)$ ffx component explore -l namespace /core/compute-benchmarks
 $ radix-sort-vk-bench 8086:591C pkg/data/targets/radix_sort_vk_intel_gen8_u32_resource.ar direct 16384 1048576
-```
-
-# Run `spinel-vk-bench`:
-
-There are three steps:
-
-1. Get an example SVG file.
-1. Copy it to the `/core/compute-benchmarks` instance.
-1. Run `spinel-vk-bench` for 20 seconds while rotating around (100,100) and
-   scaled by 2.0.  The Vulkan Validation layers are disabled with `-Q`.
-
-```
-(host)$ wget -P /tmp https://upload.wikimedia.org/wikipedia/en/f/ff/UAB_Blazers_logo.svg
-(host)$ ffx component copy /tmp/UAB_Blazers_logo.svg /core/compute-benchmarks::/cache
-(host)$ ffx component explore -l namespace /core/compute-benchmarks
-$ spinel-vk-bench -f /cache/UAB_Blazers_logo.svg -Q -t 20 -r -c 100,100:2
-$ <Esc on device or Ctrl-C on host to exit>
 ```

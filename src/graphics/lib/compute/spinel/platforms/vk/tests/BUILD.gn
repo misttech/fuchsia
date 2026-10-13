@@ -4,8 +4,5 @@
 
 group("tests") {
   testonly = true
-  public_deps = [
-    "spinel_vk_bench",
-    "spinel_vk_tests",
-  ]
+  public_deps = [ "spinel_vk_tests" ]
 }

@@ -161,7 +161,6 @@ hlcpp_visibility = [
   "//src/graphics/bin/agis:*",
   "//src/graphics/drivers/msd-arm-mali/tests/unit_tests:*",
   "//src/graphics/examples/vkproto/transaction-elimination-test:*",
-  "//src/graphics/lib/compute/spinel/platforms/vk/tests/spinel_vk_bench/surface:*",
   "//src/graphics/tests/libvulkan:*",
   "//src/graphics/tests/vkext:*",
   "//src/intl/example:*",

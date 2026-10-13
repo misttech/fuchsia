@@ -61,7 +61,6 @@ fuchsia_package("compute-benchmarks") {
   deps = [
     ":compute-benchmarks-cmp",
     "radix_sort/platforms/vk/tests/radix_sort_vk_bench",
-    "spinel/platforms/vk/tests/spinel_vk_bench",
     "tools/bench/platforms/vk:bench-vk",
   ]
 }
