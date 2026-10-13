@@ -130,9 +130,7 @@ pub const DEFAULT_HOP_LIMITS: HopLimits =
     HopLimits { unicast: DEFAULT_TTL, multicast: NonZeroU8::new(1).unwrap() };
 
 /// The IPv6 subnet that contains all addresses; `::/0`.
-// Safe because 0 is less than the number of IPv6 address bits.
-pub const IPV6_DEFAULT_SUBNET: Subnet<Ipv6Addr> =
-    unsafe { Subnet::new_unchecked(Ipv6::UNSPECIFIED_ADDRESS, 0) };
+pub const IPV6_DEFAULT_SUBNET: Subnet<Ipv6Addr> = Ipv6::ALL_ADDRS_SUBNET;
 
 /// Sidecar metadata passed along with the packet.
 ///

@@ -18,7 +18,7 @@ use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use log::{debug, error, info, warn};
-use net_declare::fidl_ip_v6;
+use net_declare::net_subnet_v6;
 use net_types::ip::IpAddress;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::convert::TryFrom as _;
@@ -687,20 +687,8 @@ struct Policy {
 }
 
 macro_rules! decl_policy {
-    ($ip:tt/$prefix:expr => $precedence:expr, $label:expr) => {
-        Policy {
-            // Unsafe allows us to declare constant subnets.
-            // We make sure no invalid subnets are created in
-            // test_valid_policy_table.
-            prefix: unsafe {
-                net_types::ip::Subnet::new_unchecked(
-                    net_types::ip::Ipv6Addr::from_bytes(fidl_ip_v6!($ip).addr),
-                    $prefix,
-                )
-            },
-            precedence: $precedence,
-            label: $label,
-        }
+    ($subnet:literal => $precedence:expr, $label:expr) => {
+        Policy { prefix: net_subnet_v6!($subnet), precedence: $precedence, label: $label }
     };
 }
 
@@ -725,12 +713,12 @@ macro_rules! decl_policy {
 /// The table is sorted by prefix length so longest-prefix match can be easily
 /// achieved.
 const POLICY_TABLE: [Policy; 6] = [
-    decl_policy!("::1"/128 => 50, 0),
-    decl_policy!("::ffff:0:0"/96 => 35, 4),
-    decl_policy!("2001::"/32 => 5, 5),
-    decl_policy!("2002::"/16 => 30, 2),
-    decl_policy!("fc00::"/7 => 3, 13),
-    decl_policy!("::"/0 => 40, 1),
+    decl_policy!("::1/128" => 50, 0),
+    decl_policy!("::ffff:0:0/96" => 35, 4),
+    decl_policy!("2001::/32" => 5, 5),
+    decl_policy!("2002::/16" => 30, 2),
+    decl_policy!("fc00::/7" => 3, 13),
+    decl_policy!("::/0" => 40, 1),
 ];
 
 fn policy_lookup(addr: &net_types::ip::Ipv6Addr) -> &'static Policy {

@@ -60,12 +60,8 @@ const NON_EXISTENT_INTERFACE_NAME: &'static str = "non_existent";
 
 const DEFAULT_IPV4_MULTICAST_ADDRESS: fnet::Ipv4Address = fidl_ip_v4!("224.1.2.3");
 const DEFAULT_IPV6_MULTICAST_ADDRESS: fnet::Ipv6Address = fidl_ip_v6!("ff02::3");
-const SOLICITED_NODE_MULTICAST_ADDRESS_PREFIX: net_types::ip::Subnet<net_types::ip::Ipv6Addr> = unsafe {
-    net_types::ip::Subnet::new_unchecked(
-        net_types::ip::Ipv6Addr::new([0xff02, 0, 0, 0, 0, 0x0001, 0xff00, 0]),
-        104,
-    )
-};
+const SOLICITED_NODE_MULTICAST_ADDRESS_PREFIX: net_types::ip::Subnet<net_types::ip::Ipv6Addr> =
+    net_declare::net_subnet_v6!("ff02::1:ff00:0/104");
 const DEFAULT_INTERFACE_ID: u64 = 77;
 
 /// Creates a `netemul::TestRealm` with a Netstack3 instance and the Network

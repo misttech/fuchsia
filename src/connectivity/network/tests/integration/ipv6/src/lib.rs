@@ -780,12 +780,8 @@ async fn check_route_table(
 #[test_case("host", false ; "host")]
 #[test_case("router", true ; "router")]
 async fn on_and_off_link_route_discovery(test_name: &str, sub_test_name: &str, forwarding: bool) {
-    pub const SUBNET_WITH_MORE_SPECIFIC_ROUTE: net_types_ip::Subnet<net_types_ip::Ipv6Addr> = unsafe {
-        net_types_ip::Subnet::new_unchecked(
-            net_types_ip::Ipv6Addr::new([0xa001, 0xf1f0, 0x4060, 0x0001, 0, 0, 0, 0]),
-            64,
-        )
-    };
+    pub const SUBNET_WITH_MORE_SPECIFIC_ROUTE: net_types_ip::Subnet<net_types_ip::Ipv6Addr> =
+        net_subnet_v6!("a001:f1f0:4060:1::/64");
 
     let name = format!("{}_{}", test_name, sub_test_name);
     let name = name.as_str();
