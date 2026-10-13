@@ -178,6 +178,7 @@ class AddressSpace : public magma::AddressSpace<GpuMapping> {
   };
 
   bool Init();
+  bool ClearLocked(uint64_t addr, uint64_t page_count);
 
   Owner* owner_;
   std::unique_ptr<PageDirectory> root_;
@@ -193,4 +194,4 @@ class AddressSpace : public magma::AddressSpace<GpuMapping> {
   void operator=(const AddressSpace&) = delete;
 };
 
-#endif
+#endif  // SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_ADDRESS_SPACE_H_

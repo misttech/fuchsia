@@ -23,6 +23,8 @@ class TestAddressSpace : public ::testing::Test {
   }
 
  protected:
+  AddressSpace::PageDirectory* root() { return address_space_->root_.get(); }
+
   class MockAddressSpaceOwner : public AddressSpace::Owner {
    public:
     // Put bus addresses close to the 40 bit limit
@@ -218,4 +220,42 @@ TEST_F(TestAddressSpace, InsertRingbufferReadOnly) {
       owner_.GetBusMapper()->MapPageRangeBus(buffer.get(), 0, 1, false /* writeable */);
   EXPECT_TRUE(address_space_->Insert(kGpuAddr, bus_mapping.get()));
   CheckPteEntries(bus_mapping.get(), kGpuAddr, 1);
+}
+
+TEST_F(TestAddressSpace, RollbackOnPteEncodeFailure) {
+  constexpr uint32_t kGpuAddr = 0x1000;
+  constexpr uint32_t kPageCount = 10;
+
+  auto buffer = magma::PlatformBuffer::Create(kPageCount * kPageSize, "test");
+  auto bus_mapping = owner_.GetBusMapper()->MapPageRangeBus(buffer.get(), 0, kPageCount);
+
+  // Make the 5th page have an invalid bus address (fails to fit in 40 bits).
+  bus_mapping->Get()[4] = 1ul << 42;
+
+  // Insert should fail.
+  EXPECT_FALSE(address_space_->Insert(kGpuAddr, bus_mapping.get()));
+
+  // Verify that the first 4 pages were rolled back and cleared.
+  // Since all inserted pages were cleared, the page table valid count should go back to 0,
+  // causing it to be garbage collected.
+  EXPECT_EQ(nullptr, root()->GetPageTable(0, false));
+}
+
+TEST_F(TestAddressSpace, RollbackAcrossPageTableBoundary) {
+  constexpr uint32_t kGpuAddr = 0x1000;
+  constexpr uint32_t kPageCount =
+      1025;  // 1024 entries per page table, so this crosses the boundary
+
+  auto buffer = magma::PlatformBuffer::Create(kPageCount * kPageSize, "test");
+  auto bus_mapping = owner_.GetBusMapper()->MapPageRangeBus(buffer.get(), 0, kPageCount);
+
+  // Make the 1025th page have an invalid bus address (fails to fit in 40 bits).
+  bus_mapping->Get()[1024] = 1ul << 42;
+
+  // Insert should fail.
+  EXPECT_FALSE(address_space_->Insert(kGpuAddr, bus_mapping.get()));
+
+  // Verify that the first 1024 pages were rolled back and cleared.
+  // The first page table (index 0) should be garbage collected.
+  EXPECT_EQ(nullptr, root()->GetPageTable(0, false));
 }

@@ -141,6 +141,8 @@ bool AddressSpace::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMapp
   DASSERT(magma::is_page_aligned(addr));
   DASSERT(guard_page_count == 0);
 
+  uint64_t start_addr = addr;
+
   auto& bus_addr_array = bus_mapping->Get();
   uint64_t page_count = bus_addr_array.size();
 
@@ -164,11 +166,17 @@ bool AddressSpace::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMapp
     pte_t pte;
     if (!pte_encode(bus_addr_array[i], true, writeable, true, &pte)) {
       MAGMA_LOG(ERROR, "failed to encode pte");
+      if (i > 0) {
+        ClearLocked(start_addr, i);
+      }
       return false;
     }
 
     if (!page_table_entry) {
       MAGMA_LOG(ERROR, "couldn't get page table entry");
+      if (i > 0) {
+        ClearLocked(start_addr, i);
+      }
       return false;
     }
 
@@ -196,8 +204,11 @@ bool AddressSpace::InsertLocked(uint64_t addr, magma::PlatformBusMapper::BusMapp
 }
 
 bool AddressSpace::ClearLocked(uint64_t addr, magma::PlatformBusMapper::BusMapping* bus_mapping) {
+  return ClearLocked(addr, bus_mapping->page_count());
+}
+
+bool AddressSpace::ClearLocked(uint64_t addr, uint64_t page_count) {
   DASSERT(magma::is_page_aligned(addr));
-  uint64_t page_count = bus_mapping->page_count();
 
   const size_t page_shift = PageShift();
   if ((addr >> page_shift) + page_count > (1l << (kVirtualAddressBits - page_shift))) {
@@ -221,8 +232,10 @@ bool AddressSpace::ClearLocked(uint64_t addr, magma::PlatformBusMapper::BusMappi
     }
 
     if (*page_table_entry != kInvalidPte) {
-      DASSERT(valid_count > 0);
-      valid_count--;
+      // If rolling back a partial insert, valid_count won't be set.
+      if (valid_count > 0) {
+        valid_count--;
+      }
       *page_table_entry = kInvalidPte;
     }
     page_table_entry++;
