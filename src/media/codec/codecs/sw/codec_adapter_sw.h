@@ -69,9 +69,9 @@ class CodecAdapterSW : public CodecAdapter {
           "ordinal.");
       return;
     }
-    // Will always be 0 for now.
-    input_format_details_version_ordinal_ =
+    initial_input_format_details_version_ordinal_ =
         initial_input_format_details.format_details_version_ordinal();
+    input_format_details_version_ordinal_ = initial_input_format_details_version_ordinal_;
     zx_status_t result =
         input_processing_loop_.StartThread("input_processing_thread_", &input_processing_thread_);
     if (result != ZX_OK) {
@@ -112,6 +112,7 @@ class CodecAdapterSW : public CodecAdapter {
       std::lock_guard<std::mutex> lock(lock_);
       stream_active_ = true;
     }
+    input_format_details_version_ordinal_ = initial_input_format_details_version_ordinal_;
     // It's ok for RecycleInputPacket to make a packet free anywhere in this
     // sequence. Nothing else ought to be happening during CoreCodecStartStream
     // (in this or any other thread).
@@ -338,6 +339,9 @@ class CodecAdapterSW : public CodecAdapter {
   bool output_reconfig_pending_ FXL_GUARDED_BY(lock_) = false;
   bool stream_active_ FXL_GUARDED_BY(lock_) = false;
   std::condition_variable reconfig_cond_;
+
+ private:
+  uint64_t initial_input_format_details_version_ordinal_;
 };
 
 #endif  // SRC_MEDIA_CODEC_CODECS_SW_CODEC_ADAPTER_SW_H_

@@ -688,6 +688,7 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
     bool input_end_of_stream_ = false;
     bool output_end_of_stream_ = false;
     bool failure_seen_ = false;
+    bool input_format_details_same_version_different_content_complained_ = false;
 
     // This defaults to _true_, so that we send OnOutputFormat() before the
     // first OnOutputFormat() of a stream.  We also set this back to true any

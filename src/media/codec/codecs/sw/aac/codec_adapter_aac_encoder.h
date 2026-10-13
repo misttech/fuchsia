@@ -94,16 +94,16 @@ class CodecAdapterAacEncoder : public CodecAdapter {
   struct Stream {
     Stream(size_t chunk_size, TimestampExtrapolator&& timestamp_extrapolator,
            ChunkInputStream::InputBlockProcessor&& input_block_processor, Encoder in_encoder,
-           uint64_t in_format_details_version_ordinal, size_t in_output_buffer_size)
+           fuchsia::media::FormatDetails in_format_details, size_t in_output_buffer_size)
         : encoder(std::move(in_encoder)),
           chunk_input_stream(chunk_size, std::move(timestamp_extrapolator),
                              std::move(input_block_processor)),
-          format_details_version_ordinal(in_format_details_version_ordinal),
+          format_details(std::move(in_format_details)),
           output_buffer_size(in_output_buffer_size) {}
 
     Encoder encoder;
     ChunkInputStream chunk_input_stream;
-    uint64_t format_details_version_ordinal;
+    fuchsia::media::FormatDetails format_details;
     size_t output_buffer_size;
   };
 

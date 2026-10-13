@@ -200,6 +200,12 @@ class CodecImplFailures : public gtest::RealLoopFixture {
 
   void TearDown() override { token_request_ = nullptr; }
 
+  virtual std::unique_ptr<FakeCodecAdapter> CreateCodecAdapter() {
+    auto codec_adapter = std::make_unique<FakeCodecAdapter>(codec_impl_->lock(), codec_impl_.get());
+    codec_adapter_ = codec_adapter.get();
+    return codec_adapter;
+  }
+
   void Create(fidl::InterfaceRequest<fuchsia::media::StreamProcessor> request,
               fit::function<void(FakeCodecAdapter*)> configure_adapter = nullptr) {
     fidl::InterfaceHandle<fuchsia::sysmem2::Allocator> sysmem;
@@ -209,8 +215,7 @@ class CodecImplFailures : public gtest::RealLoopFixture {
         fidl::ClientEnd<fuchsia_sysmem2::Allocator>(sysmem.TakeChannel()), nullptr, dispatcher(),
         thrd_current(), CreateDecoderParams(), std::move(request));
 
-    auto codec_adapter = std::make_unique<FakeCodecAdapter>(codec_impl_->lock(), codec_impl_.get());
-    codec_adapter_ = codec_adapter.get();
+    auto codec_adapter = CreateCodecAdapter();
     if (configure_adapter) {
       configure_adapter(codec_adapter_);
     }
@@ -218,6 +223,7 @@ class CodecImplFailures : public gtest::RealLoopFixture {
 
     codec_impl_->BindAsync([this] {
       error_handler_ran_ = true;
+      codec_adapter_ = nullptr;
       codec_impl_ = nullptr;
     });
   }
@@ -1552,6 +1558,182 @@ TEST_F(CodecImplFailures, QueueInputPacketOutOfBoundsFailsAndShutsDownCleanly) {
 
   ASSERT_TRUE(RunLoopWithTimeoutOrUntil([this] { return error_handler_ran_; }, kWaitTimeout));
   ASSERT_TRUE(RunLoopWithTimeoutOrUntil([this] { return !codec_impl_; }, kWaitTimeout));
+}
+
+class FakeCodecAdapterWithFormatTracking : public FakeCodecAdapter {
+ public:
+  using FakeCodecAdapter::FakeCodecAdapter;
+
+  void CoreCodecQueueInputFormatDetails(
+      const fuchsia::media::FormatDetails& per_stream_override_format_details) override {
+    last_format_details_ = fidl::Clone(per_stream_override_format_details);
+    call_count_++;
+  }
+
+  bool IsCoreCodecRequiringOutputConfigForFormatDetection() override { return false; }
+
+  std::optional<fuchsia::media::FormatDetails> last_format_details_;
+  std::atomic<int> call_count_{0};
+};
+
+class CodecImplFormatTrackingFailures : public CodecImplFailures {
+ public:
+  std::unique_ptr<FakeCodecAdapter> CreateCodecAdapter() override {
+    auto codec_adapter = std::make_unique<FakeCodecAdapterWithFormatTracking>(codec_impl_->lock(),
+                                                                              codec_impl_.get());
+    codec_adapter_ = codec_adapter.get();
+    return codec_adapter;
+  }
+
+  void ConfigureInputBuffers(StreamProcessorPtr& processor) {
+    processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
+      fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+      token_request_ = token.NewRequest();
+
+      auto buffer_collection_constraints = CreateValidInputBufferCollectionConstraints();
+      codec_adapter_->SetBufferCollectionConstraints(kInputPort,
+                                                     std::move(buffer_collection_constraints));
+
+      processor->SetInputBufferPartialSettings(
+          CreateStreamBufferPartialSettings(1, input_constraints, std::move(token)));
+    };
+
+    processor.events().OnFreeInputPacket = [this](fuchsia::media::PacketHeader free_input_packet) {
+      free_input_packet_count_++;
+    };
+
+    Create(processor.NewRequest());
+
+    allocator_ = std::make_unique<TestAllocator>();
+    ASSERT_TRUE(sysmem_request_.has_value());
+    allocator_->Bind(std::move(sysmem_request_.value()));
+    sysmem_request_ = nullptr;
+
+    WaitForAndCompleteCollectionAllocation(*allocator_, 0, kInputMinBufferCountForCamping,
+                                           kInputBufferSize);
+  }
+
+  static void QueueInputPacket(StreamProcessorPtr& processor,
+                               uint64_t stream_lifetime_ordinal = 1) {
+    auto packet = CreateInputPacket();
+    packet.set_stream_lifetime_ordinal(stream_lifetime_ordinal);
+    processor->QueueInputPacket(std::move(packet));
+  }
+
+  int free_input_packet_count() const { return free_input_packet_count_; }
+
+ private:
+  std::unique_ptr<TestAllocator> allocator_;
+  int free_input_packet_count_ = 0;
+};
+
+TEST_F(CodecImplFormatTrackingFailures, IdenticalFormatDetailsSucceeds) {
+  StreamProcessorPtr processor;
+  ConfigureInputBuffers(processor);
+
+  // Call QueueInputFormatDetails with version ordinal 0 and same content (empty).
+  fuchsia::media::FormatDetails details;
+  details.set_format_details_version_ordinal(0);
+
+  processor->QueueInputFormatDetails(1, std::move(details));
+  QueueInputPacket(processor);
+
+  auto* tracking_adapter = static_cast<FakeCodecAdapterWithFormatTracking*>(codec_adapter_);
+  ASSERT_TRUE(RunLoopWithTimeoutOrUntil(
+      [this] { return error_handler_ran_ || free_input_packet_count() == 1; }, kWaitTimeout));
+
+  ASSERT_FALSE(error_handler_ran_);
+  ASSERT_EQ(tracking_adapter->call_count_.load(), 1);
+  ASSERT_TRUE(tracking_adapter->last_format_details_.has_value());
+  ASSERT_EQ(tracking_adapter->last_format_details_->format_details_version_ordinal(), 0u);
+
+  // Call QueueInputFormatDetails with version ordinal 1 (greater than 0).
+  fuchsia::media::FormatDetails details2;
+  details2.set_format_details_version_ordinal(1);
+  details2.set_mime_type("video/h264");
+
+  processor->QueueInputFormatDetails(1, std::move(details2));
+  QueueInputPacket(processor);
+  ASSERT_TRUE(RunLoopWithTimeoutOrUntil(
+      [this] { return error_handler_ran_ || free_input_packet_count() == 2; }, kWaitTimeout));
+
+  ASSERT_FALSE(error_handler_ran_);
+  ASSERT_EQ(tracking_adapter->call_count_.load(), 2);
+  ASSERT_TRUE(tracking_adapter->last_format_details_.has_value());
+  ASSERT_EQ(tracking_adapter->last_format_details_->format_details_version_ordinal(), 1u);
+  ASSERT_EQ(tracking_adapter->last_format_details_->mime_type(), "video/h264");
+
+  // Call QueueInputFormatDetails with version ordinal 1 and identical content.
+  fuchsia::media::FormatDetails details3;
+  details3.set_format_details_version_ordinal(1);
+  details3.set_mime_type("video/h264");
+
+  processor->QueueInputFormatDetails(1, std::move(details3));
+  QueueInputPacket(processor);
+  ASSERT_TRUE(RunLoopWithTimeoutOrUntil(
+      [this] { return error_handler_ran_ || free_input_packet_count() == 3; }, kWaitTimeout));
+
+  ASSERT_FALSE(error_handler_ran_);
+  ASSERT_EQ(tracking_adapter->call_count_.load(), 3);
+
+  // Call QueueInputFormatDetails with version ordinal 1 but different content (mime type).
+  // Currently CodecImpl logs an ERROR without failing the channel and still forwards the updated
+  // format details.
+  fuchsia::media::FormatDetails details4;
+  details4.set_format_details_version_ordinal(1);
+  details4.set_mime_type("video/vp9");
+
+  processor->QueueInputFormatDetails(1, std::move(details4));
+  QueueInputPacket(processor);
+  ASSERT_TRUE(RunLoopWithTimeoutOrUntil(
+      [this] { return error_handler_ran_ || free_input_packet_count() == 4; }, kWaitTimeout));
+
+  ASSERT_FALSE(error_handler_ran_);
+  ASSERT_EQ(tracking_adapter->call_count_.load(), 4);
+  ASSERT_TRUE(tracking_adapter->last_format_details_.has_value());
+  ASSERT_EQ(tracking_adapter->last_format_details_->format_details_version_ordinal(), 1u);
+  ASSERT_EQ(tracking_adapter->last_format_details_->mime_type(), "video/vp9");
+
+  // Start a new stream (stream_lifetime_ordinal 3) with version ordinal 0 (dropping back to the
+  // initial ordinal across a stream switch).
+  fuchsia::media::FormatDetails details5;
+  details5.set_format_details_version_ordinal(0);
+
+  processor->QueueInputFormatDetails(3, std::move(details5));
+  QueueInputPacket(processor, 3);
+  ASSERT_TRUE(RunLoopWithTimeoutOrUntil(
+      [this] { return error_handler_ran_ || free_input_packet_count() == 5; }, kWaitTimeout));
+
+  ASSERT_FALSE(error_handler_ran_);
+  ASSERT_EQ(tracking_adapter->call_count_.load(), 5);
+  ASSERT_TRUE(tracking_adapter->last_format_details_.has_value());
+  ASSERT_EQ(tracking_adapter->last_format_details_->format_details_version_ordinal(), 0u);
+  ASSERT_FALSE(tracking_adapter->last_format_details_->has_mime_type());
+}
+
+TEST_F(CodecImplFormatTrackingFailures, DecreasingFormatDetailsVersionFails) {
+  StreamProcessorPtr processor;
+  ConfigureInputBuffers(processor);
+
+  // First call with version 1 (greater than 0)
+  fuchsia::media::FormatDetails details1;
+  details1.set_format_details_version_ordinal(1);
+  processor->QueueInputFormatDetails(1, std::move(details1));
+  QueueInputPacket(processor);
+
+  auto* tracking_adapter = static_cast<FakeCodecAdapterWithFormatTracking*>(codec_adapter_);
+  ASSERT_TRUE(RunLoopWithTimeoutOrUntil(
+      [this] { return error_handler_ran_ || free_input_packet_count() == 1; }, kWaitTimeout));
+  ASSERT_FALSE(error_handler_ran_);
+  ASSERT_EQ(tracking_adapter->call_count_.load(), 1);
+
+  // Second call with version 0 (less than 1)
+  fuchsia::media::FormatDetails details2;
+  details2.set_format_details_version_ordinal(0);
+  processor->QueueInputFormatDetails(1, std::move(details2));
+
+  ASSERT_TRUE(RunLoopWithTimeoutOrUntil([this] { return error_handler_ran_; }, kWaitTimeout));
+  ASSERT_TRUE(error_handler_ran_);
 }
 
 }  // namespace

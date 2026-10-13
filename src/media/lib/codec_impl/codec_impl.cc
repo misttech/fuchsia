@@ -8,6 +8,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/closure-queue/closure_queue.h>
 #include <lib/fidl/cpp/clone.h>
+#include <lib/fidl/cpp/comparison.h>
 #include <lib/fit/defer.h>
 #include <lib/media/codec_impl/codec_impl.h>
 #include <lib/media/codec_impl/codec_vmo_range.h>
@@ -133,6 +134,16 @@ std::optional<CodecPort> CodecPortFromFidlPort(fuchsia::media::Port port) {
   }
 }
 
+CodecImpl::StreamProcessorParams EnsureInitialInputFormatDetailsVersionOrdinal(
+    CodecImpl::StreamProcessorParams params) {
+  fuchsia::media::FormatDetails* input_details =
+      std::visit([](auto& p) { return p.mutable_input_details(); }, params);
+  if (!input_details->has_format_details_version_ordinal()) {
+    input_details->set_format_details_version_ordinal(0);
+  }
+  return params;
+}
+
 }  // namespace
 
 // std::unique_lock<> doesn't have thread annotations, but the "owns_lock()" call is useful, and
@@ -188,7 +199,7 @@ CodecImpl::CodecImpl(fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem,
       shared_fidl_dispatcher_(shared_fidl_dispatcher),
       shared_fidl_queue_(shared_fidl_dispatcher),
       checker_fidl_(shared_fidl_dispatcher),
-      params_(std::move(params)),
+      params_(EnsureInitialInputFormatDetailsVersionOrdinal(std::move(params))),
       tmp_sysmem_(std::move(sysmem)),
       tmp_interface_request_(std::move(request)),
       binding_(this) {
@@ -1116,8 +1127,7 @@ void CodecImpl::QueueInputFormatDetails_StreamControl(
 
   if (!is_supports_dynamic_buffers()) {
     if (!CheckWaitEnsureInputConfigured(lock)) {
-      stream_->AssertHeld(this);
-      ZX_DEBUG_ASSERT(IsStoppingLocked() || !stream_ || stream_->future_discarded());
+      ZX_DEBUG_ASSERT(IsStoppingLocked());
       return;
     }
   }
@@ -1139,6 +1149,35 @@ void CodecImpl::QueueInputFormatDetails_StreamControl(
     // No reason to handle since the stream is future-discarded (or failed).
     return;
   }
+  const fuchsia::media::FormatDetails* current_format = stream_->input_format_details()
+                                                            ? stream_->input_format_details()
+                                                            : initial_input_format_details_;
+  ZX_DEBUG_ASSERT(current_format && current_format->has_format_details_version_ordinal());
+  uint64_t new_ordinal = format_details.format_details_version_ordinal();
+  uint64_t last_ordinal = current_format->format_details_version_ordinal();
+  if (new_ordinal < last_ordinal) {
+    LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_ClientProtocolError);
+    FailLocked(
+        "client QueueInputFormatDetails(): version ordinal %lu is less than "
+        "previous version ordinal %lu.",
+        new_ordinal, last_ordinal);
+    return;
+  }
+  if (new_ordinal == last_ordinal && !fidl::Equals(format_details, *current_format)) {
+    // TODO(b/568171550): Switch to FailLocked(...) once clients are updated.
+    // Complain (at most once per stream) if the input format changes without increasing
+    // input_format_details_version_ordinal. We may switch this to strict enforcement in future.
+    if (!stream_->input_format_details_same_version_different_content_complained_) {
+      stream_->input_format_details_same_version_different_content_complained_ = true;
+      LogEvent(
+          media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_ClientProtocolError);
+      LOG(ERROR,
+          "client QueueInputFormatDetails(): version ordinal %lu is the same as "
+          "previous version ordinal %lu, but the content is different.",
+          new_ordinal, last_ordinal);
+    }
+  }
+
   stream_->SetInputFormatDetails(
       std::make_unique<fuchsia::media::FormatDetails>(std::move(format_details)));
   // SetOobConfigPending(true) to ensure oob_config_pending() is true.
@@ -1301,11 +1340,7 @@ void CodecImpl::QueueInputPacket_StreamControl(fuchsia::media::Packet packet) {
         });
 
     if (!CheckWaitEnsureInputConfigured(lock)) {
-      if (IsStoppingLocked()) {
-        return;
-      }
-      stream_->AssertHeld(this);
-      ZX_DEBUG_ASSERT(stream_ && stream_->future_discarded());
+      ZX_DEBUG_ASSERT(IsStoppingLocked());
       return;
     }
     ZX_DEBUG_ASSERT(is_dynamic_buffers_[kInputPort].has_value());
@@ -2450,13 +2485,7 @@ void CodecImpl::QueueInputEndOfStream_StreamControl(uint64_t stream_lifetime_ord
 
     if (!is_supports_dynamic_buffers()) {
       if (!CheckWaitEnsureInputConfigured(lock)) {
-        if (IsStoppingLocked()) {
-          return;
-        }
-        if (stream_) {
-          stream_->AssertHeld(this);
-          ZX_ASSERT(stream_->future_discarded());
-        }
+        ZX_DEBUG_ASSERT(IsStoppingLocked());
         return;
       }
     }

@@ -5,6 +5,7 @@
 #include "codec_adapter_aac_encoder.h"
 
 #include <lib/async/cpp/task.h>
+#include <lib/fidl/cpp/comparison.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
@@ -287,8 +288,10 @@ void CodecAdapterAacEncoder::ProcessInput(CodecInputItem input_item) {
 
   if (input_item.is_format_details()) {
     if (stream_) {
-      if (!(stream_->format_details_version_ordinal ==
-            input_item.format_details().format_details_version_ordinal())) {
+      // TODO(https://fxbug.dev/568171550): Compare only format_details_version_ordinal once
+      // CodecImpl calls FailLocked() instead of LOG(ERROR, ...) when FormatDetails changes without
+      // increasing format_details_version_ordinal.
+      if (!fidl::Equals(stream_->format_details, input_item.format_details())) {
         {
           std::lock_guard<std::mutex> lock(lock_);
           stream_active_ = false;
@@ -413,8 +416,7 @@ CodecAdapterAacEncoder::BuildStreamFromFormatDetails(
   const size_t pcm_frames_per_aac_frame = enc_info.frameLength;
   const size_t chunk_input_size = pcm_frame_size * pcm_frames_per_aac_frame;
   stream_.emplace(chunk_input_size, std::move(extrapolator), std::move(input_block_processor),
-                  std::move(encoder), format_details.format_details_version_ordinal(),
-                  max_output_size);
+                  std::move(encoder), fidl::Clone(format_details), max_output_size);
 
   return fpromise::ok();
 }

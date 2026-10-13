@@ -733,9 +733,31 @@ type CodecProfile = flexible enum : uint32 {
 //
 // Most decoders can have FormatDetails.domain null.
 type FormatDetails = table {
-    // Particular instances of FormatDetails will set this field to make it
-    // easier for a receiver to determine if any part of the format has changed
-    // vs. the last FormatDetails received for the same context.
+    /// Particular instances of FormatDetails will set this field to make it
+    /// easier for a receiver to determine if any part of the format has changed
+    /// vs. the last FormatDetails received for the same context.
+    ///
+    /// For StreamProcessor input: At StreamProcessor creation time, initial
+    /// input FormatDetails are provided with an initial
+    /// format_details_version_ordinal (typically 0, and defaulting to 0 in
+    /// CodecImpl if omitted, though clients should set it). Within a given
+    /// stream, each QueueInputFormatDetails must have
+    /// format_details_version_ordinal >= the previous input
+    /// format_details_version_ordinal for that stream, and must strictly
+    /// increase format_details_version_ordinal if any part of FormatDetails
+    /// changes vs. the previous input FormatDetails for that stream. When
+    /// starting a new stream, the stream's initial input FormatDetails (and its
+    /// format_details_version_ordinal) defaults back to the initial
+    /// FormatDetails specified at StreamProcessor creation time, so the ordinal
+    /// can drop to a lower number across a stream switch.
+    ///
+    /// For StreamProcessor output: Within a given stream, OnOutputFormat's
+    /// format_details_version_ordinal increases whenever the output
+    /// FormatDetails changes. Across a stream switch, a server (such as
+    /// CodecImpl) may continue increasing output format_details_version_ordinal
+    /// rather than resetting it per stream, which is a permitted sequence, or
+    /// may drop to a lower number across a stream switch (an OnOutputFormat is
+    /// always sent before the first output packet of a new stream).
     1: format_details_version_ordinal uint64;
 
     // See also `DetailedCodecDescription.mime_type`.

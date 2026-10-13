@@ -35,7 +35,6 @@ void CodecAdapterVaApiEncoder::CoreCodecInit(
         "ordinal.");
     return;
   }
-  // Will always be 0 for now.
   input_format_details_version_ordinal_ =
       initial_input_format_details.format_details_version_ordinal();
   vaapi_wrapper_ = std::make_shared<media::VaapiWrapper>();
