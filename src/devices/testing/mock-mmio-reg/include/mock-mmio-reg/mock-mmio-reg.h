@@ -202,41 +202,41 @@ class MockMmioRegRegion {
   }
 
  private:
-  static uint8_t Read8(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+  static uint8_t Read8(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
     auto& reg_region = *reinterpret_cast<MockMmioRegRegion*>(const_cast<void*>(ctx));
-    return static_cast<uint8_t>(reg_region[offs + mmio.offset].Read());
+    return static_cast<uint8_t>(reg_region[offs + mmio.get_offset()].Read());
   }
 
-  static uint16_t Read16(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+  static uint16_t Read16(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
     auto& reg_region = *reinterpret_cast<MockMmioRegRegion*>(const_cast<void*>(ctx));
-    return static_cast<uint16_t>(reg_region[offs + mmio.offset].Read());
+    return static_cast<uint16_t>(reg_region[offs + mmio.get_offset()].Read());
   }
 
-  static uint32_t Read32(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+  static uint32_t Read32(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
     auto& reg_region = *reinterpret_cast<MockMmioRegRegion*>(const_cast<void*>(ctx));
-    return static_cast<uint32_t>(reg_region[offs + mmio.offset].Read());
+    return static_cast<uint32_t>(reg_region[offs + mmio.get_offset()].Read());
   }
 
-  static uint64_t Read64(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+  static uint64_t Read64(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
     auto& reg_region = *reinterpret_cast<MockMmioRegRegion*>(const_cast<void*>(ctx));
-    return reg_region[offs + mmio.offset].Read();
+    return reg_region[offs + mmio.get_offset()].Read();
   }
 
-  static void Write8(const void* ctx, const mmio_buffer_t& mmio, uint8_t val, zx_off_t offs) {
+  static void Write8(const void* ctx, const fdf::MmioBuffer& mmio, uint8_t val, zx_off_t offs) {
     Write64(ctx, mmio, val, offs);
   }
 
-  static void Write16(const void* ctx, const mmio_buffer_t& mmio, uint16_t val, zx_off_t offs) {
+  static void Write16(const void* ctx, const fdf::MmioBuffer& mmio, uint16_t val, zx_off_t offs) {
     Write64(ctx, mmio, val, offs);
   }
 
-  static void Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t val, zx_off_t offs) {
+  static void Write32(const void* ctx, const fdf::MmioBuffer& mmio, uint32_t val, zx_off_t offs) {
     Write64(ctx, mmio, val, offs);
   }
 
-  static void Write64(const void* ctx, const mmio_buffer_t& mmio, uint64_t val, zx_off_t offs) {
+  static void Write64(const void* ctx, const fdf::MmioBuffer& mmio, uint64_t val, zx_off_t offs) {
     auto& reg_region = *reinterpret_cast<MockMmioRegRegion*>(const_cast<void*>(ctx));
-    reg_region[offs + mmio.offset].Write(val);
+    reg_region[offs + mmio.get_offset()].Write(val);
   }
 
   static constexpr fdf::MmioBufferOps kMockMmioOps = {

@@ -104,31 +104,31 @@ class GloballyOrderedRegion {
 
  private:
   // MmioBufferOps implementation.
-  static uint8_t Read8(const void* ctx, const mmio_buffer_t&, zx_off_t offset) {
+  static uint8_t Read8(const void* ctx, const fdf::MmioBuffer&, zx_off_t offset) {
     return static_cast<uint8_t>(
         static_cast<const GloballyOrderedRegion*>(ctx)->Read(offset, Size::k8));
   }
-  static uint16_t Read16(const void* ctx, const mmio_buffer_t&, zx_off_t offset) {
+  static uint16_t Read16(const void* ctx, const fdf::MmioBuffer&, zx_off_t offset) {
     return static_cast<uint16_t>(
         static_cast<const GloballyOrderedRegion*>(ctx)->Read(offset, Size::k16));
   }
-  static uint32_t Read32(const void* ctx, const mmio_buffer_t&, zx_off_t offset) {
+  static uint32_t Read32(const void* ctx, const fdf::MmioBuffer&, zx_off_t offset) {
     return static_cast<uint32_t>(
         static_cast<const GloballyOrderedRegion*>(ctx)->Read(offset, Size::k32));
   }
-  static uint64_t Read64(const void* ctx, const mmio_buffer_t&, zx_off_t offset) {
+  static uint64_t Read64(const void* ctx, const fdf::MmioBuffer&, zx_off_t offset) {
     return static_cast<const GloballyOrderedRegion*>(ctx)->Read(offset, Size::k64);
   }
-  static void Write8(const void* ctx, const mmio_buffer_t&, uint8_t value, zx_off_t offset) {
+  static void Write8(const void* ctx, const fdf::MmioBuffer&, uint8_t value, zx_off_t offset) {
     static_cast<const GloballyOrderedRegion*>(ctx)->Write(offset, value, Size::k8);
   }
-  static void Write16(const void* ctx, const mmio_buffer_t&, uint16_t value, zx_off_t offset) {
+  static void Write16(const void* ctx, const fdf::MmioBuffer&, uint16_t value, zx_off_t offset) {
     static_cast<const GloballyOrderedRegion*>(ctx)->Write(offset, value, Size::k16);
   }
-  static void Write32(const void* ctx, const mmio_buffer_t&, uint32_t value, zx_off_t offset) {
+  static void Write32(const void* ctx, const fdf::MmioBuffer&, uint32_t value, zx_off_t offset) {
     static_cast<const GloballyOrderedRegion*>(ctx)->Write(offset, value, Size::k32);
   }
-  static void Write64(const void* ctx, const mmio_buffer_t&, uint64_t value, zx_off_t offset) {
+  static void Write64(const void* ctx, const fdf::MmioBuffer&, uint64_t value, zx_off_t offset) {
     static_cast<const GloballyOrderedRegion*>(ctx)->Write(offset, value, Size::k64);
   }
 

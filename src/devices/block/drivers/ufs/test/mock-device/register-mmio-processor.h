@@ -76,13 +76,13 @@ class RegisterMmioProcessor {
   void MmioWrite(uint32_t value, zx_off_t offset);
   uint32_t MmioRead(zx_off_t offset);
 
-#define STUB_IO_OP(bits)                                                                        \
-  static void Write##bits(const void* ctx, const mmio_buffer_t& mmio, uint##bits##_t value,     \
-                          zx_off_t offs) {                                                      \
-    ZX_ASSERT(false);                                                                           \
-  }                                                                                             \
-  static uint##bits##_t Read##bits(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) { \
-    ZX_ASSERT(false);                                                                           \
+#define STUB_IO_OP(bits)                                                                          \
+  static void Write##bits(const void* ctx, const fdf::MmioBuffer& mmio, uint##bits##_t value,     \
+                          zx_off_t offs) {                                                        \
+    ZX_ASSERT(false);                                                                             \
+  }                                                                                               \
+  static uint##bits##_t Read##bits(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) { \
+    ZX_ASSERT(false);                                                                             \
   }
 
   STUB_IO_OP(64)
@@ -90,8 +90,9 @@ class RegisterMmioProcessor {
   STUB_IO_OP(8)
 #undef STUB_IO_OP
 
-  static void Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t value, zx_off_t offset);
-  static uint32_t Read32(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs);
+  static void Write32(const void* ctx, const fdf::MmioBuffer& mmio, uint32_t value,
+                      zx_off_t offset);
+  static uint32_t Read32(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs);
 
   static constexpr fdf::MmioBufferOps kMmioOps = {
       .Read8 = Read8,

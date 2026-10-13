@@ -289,7 +289,7 @@ TEST(MmioBuffer, SetMmioBufferOps) {
 
   bool read_called = false;
   static constexpr fdf::MmioBufferOps kCustomOps = {
-      .Read8 = [](const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) -> uint8_t {
+      .Read8 = [](const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) -> uint8_t {
         *static_cast<bool*>(const_cast<void*>(ctx)) = true;
         return 0x42;
       },

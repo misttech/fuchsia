@@ -11,14 +11,14 @@
 namespace ufs {
 namespace ufs_mock_device {
 
-void RegisterMmioProcessor::Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t value,
+void RegisterMmioProcessor::Write32(const void* ctx, const fdf::MmioBuffer& mmio, uint32_t value,
                                     zx_off_t offset) {
   const_cast<UfsMockDevice*>(static_cast<const UfsMockDevice*>(ctx))
       ->GetRegisterMmioProcessor()
       .MmioWrite(value, static_cast<uint32_t>(offset));
 }
 
-uint32_t RegisterMmioProcessor::Read32(const void* ctx, const mmio_buffer_t& mmio,
+uint32_t RegisterMmioProcessor::Read32(const void* ctx, const fdf::MmioBuffer& mmio,
                                        zx_off_t offset) {
   return const_cast<UfsMockDevice*>(static_cast<const UfsMockDevice*>(ctx))
       ->GetRegisterMmioProcessor()

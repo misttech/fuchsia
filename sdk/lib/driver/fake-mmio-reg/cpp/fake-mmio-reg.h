@@ -86,15 +86,15 @@ class FakeMmioRegRegion {
   fdf::MmioBuffer GetMmioBuffer();
 
  private:
-  static uint8_t Read8(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs);
-  static uint16_t Read16(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs);
-  static uint32_t Read32(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs);
-  static uint64_t Read64(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs);
+  static uint8_t Read8(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs);
+  static uint16_t Read16(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs);
+  static uint32_t Read32(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs);
+  static uint64_t Read64(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs);
 
-  static void Write8(const void* ctx, const mmio_buffer_t& mmio, uint8_t val, zx_off_t offs);
-  static void Write16(const void* ctx, const mmio_buffer_t& mmio, uint16_t val, zx_off_t offs);
-  static void Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t val, zx_off_t offs);
-  static void Write64(const void* ctx, const mmio_buffer_t& mmio, uint64_t val, zx_off_t offs);
+  static void Write8(const void* ctx, const fdf::MmioBuffer& mmio, uint8_t val, zx_off_t offs);
+  static void Write16(const void* ctx, const fdf::MmioBuffer& mmio, uint16_t val, zx_off_t offs);
+  static void Write32(const void* ctx, const fdf::MmioBuffer& mmio, uint32_t val, zx_off_t offs);
+  static void Write64(const void* ctx, const fdf::MmioBuffer& mmio, uint64_t val, zx_off_t offs);
 
   std::vector<FakeMmioReg> regs_;
   const size_t reg_size_;

@@ -5,7 +5,7 @@
 #ifndef LIB_DRIVER_MMIO_CPP_MMIO_PINNED_BUFFER_H_
 #define LIB_DRIVER_MMIO_CPP_MMIO_PINNED_BUFFER_H_
 
-#include <lib/driver/mmio/cpp/mmio-internal.h>
+#include <lib/driver/mmio/cpp/mmio-ops.h>
 #include <zircon/assert.h>
 #include <zircon/process.h>
 

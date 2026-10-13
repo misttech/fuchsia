@@ -39,7 +39,7 @@ class QueuePairTest : public ::testing::Test {
   std::function<void(bool, size_t, uint16_t)> doorbell_ring_;
 
  private:
-  static void Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t val, zx_off_t offs) {
+  static void Write32(const void* ctx, const fdf::MmioBuffer& mmio, uint32_t val, zx_off_t offs) {
     offs -= NVME_REG_DOORBELL_BASE;
     offs /= 4;
     bool completion_doorbell = (offs & 1);
@@ -48,18 +48,18 @@ class QueuePairTest : public ::testing::Test {
                                                            val & 0xffff);
   }
 
-  static uint32_t Read32(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+  static uint32_t Read32(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
     ZX_ASSERT(false);
   }
 
 // Define read/write for |bits| that just crashes.
-#define STUB_IO_OP(bits)                                                                        \
-  static void Write##bits(const void* ctx, const mmio_buffer_t& mmio, uint##bits##_t val,       \
-                          zx_off_t offs) {                                                      \
-    ZX_ASSERT(false);                                                                           \
-  }                                                                                             \
-  static uint##bits##_t Read##bits(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) { \
-    ZX_ASSERT(false);                                                                           \
+#define STUB_IO_OP(bits)                                                                          \
+  static void Write##bits(const void* ctx, const fdf::MmioBuffer& mmio, uint##bits##_t val,       \
+                          zx_off_t offs) {                                                        \
+    ZX_ASSERT(false);                                                                             \
+  }                                                                                               \
+  static uint##bits##_t Read##bits(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) { \
+    ZX_ASSERT(false);                                                                             \
   }
 
   STUB_IO_OP(64)

@@ -26,45 +26,45 @@ fdf::MmioBuffer FakeMmioRegRegion::GetMmioBuffer() {
   return fdf::MmioBuffer(mmio, &kFakeMmioOps, this);
 }
 
-uint8_t FakeMmioRegRegion::Read8(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+uint8_t FakeMmioRegRegion::Read8(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
   auto& reg_region = *reinterpret_cast<FakeMmioRegRegion*>(const_cast<void*>(ctx));
-  return static_cast<uint8_t>(reg_region[offs + mmio.offset].Read());
+  return static_cast<uint8_t>(reg_region[offs + mmio.get_offset()].Read());
 }
 
-uint16_t FakeMmioRegRegion::Read16(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+uint16_t FakeMmioRegRegion::Read16(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
   auto& reg_region = *reinterpret_cast<FakeMmioRegRegion*>(const_cast<void*>(ctx));
-  return static_cast<uint16_t>(reg_region[offs + mmio.offset].Read());
+  return static_cast<uint16_t>(reg_region[offs + mmio.get_offset()].Read());
 }
 
-uint32_t FakeMmioRegRegion::Read32(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+uint32_t FakeMmioRegRegion::Read32(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
   auto& reg_region = *reinterpret_cast<FakeMmioRegRegion*>(const_cast<void*>(ctx));
-  return static_cast<uint32_t>(reg_region[offs + mmio.offset].Read());
+  return static_cast<uint32_t>(reg_region[offs + mmio.get_offset()].Read());
 }
 
-uint64_t FakeMmioRegRegion::Read64(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+uint64_t FakeMmioRegRegion::Read64(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
   auto& reg_region = *reinterpret_cast<FakeMmioRegRegion*>(const_cast<void*>(ctx));
-  return reg_region[offs + mmio.offset].Read();
+  return reg_region[offs + mmio.get_offset()].Read();
 }
 
-void FakeMmioRegRegion::Write8(const void* ctx, const mmio_buffer_t& mmio, uint8_t val,
+void FakeMmioRegRegion::Write8(const void* ctx, const fdf::MmioBuffer& mmio, uint8_t val,
                                zx_off_t offs) {
   Write64(ctx, mmio, val, offs);
 }
 
-void FakeMmioRegRegion::Write16(const void* ctx, const mmio_buffer_t& mmio, uint16_t val,
+void FakeMmioRegRegion::Write16(const void* ctx, const fdf::MmioBuffer& mmio, uint16_t val,
                                 zx_off_t offs) {
   Write64(ctx, mmio, val, offs);
 }
 
-void FakeMmioRegRegion::Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t val,
+void FakeMmioRegRegion::Write32(const void* ctx, const fdf::MmioBuffer& mmio, uint32_t val,
                                 zx_off_t offs) {
   Write64(ctx, mmio, val, offs);
 }
 
-void FakeMmioRegRegion::Write64(const void* ctx, const mmio_buffer_t& mmio, uint64_t val,
+void FakeMmioRegRegion::Write64(const void* ctx, const fdf::MmioBuffer& mmio, uint64_t val,
                                 zx_off_t offs) {
   auto& reg_region = *reinterpret_cast<FakeMmioRegRegion*>(const_cast<void*>(ctx));
-  reg_region[offs + mmio.offset].Write(val);
+  reg_region[offs + mmio.get_offset()].Write(val);
 }
 
 }  // namespace fake_mmio

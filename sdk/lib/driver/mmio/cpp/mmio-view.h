@@ -6,7 +6,6 @@
 #define LIB_DRIVER_MMIO_CPP_MMIO_VIEW_H_
 
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
-#include <lib/driver/mmio/cpp/mmio-internal.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
 #include <zircon/assert.h>
 

@@ -65,32 +65,32 @@ class FakeRegisters {
   std::unordered_map<size_t, nvme::DoorbellReg> submission_doorbells_ TA_GUARDED(doorbells_lock_);
 
   // Define read/write for |bits| that just crashes.
-#define STUB_IO_OP(bits)                                                                        \
-  static void Write##bits(const void* ctx, const mmio_buffer_t& mmio, uint##bits##_t val,       \
-                          zx_off_t offs) {                                                      \
-    ZX_ASSERT(false);                                                                           \
-  }                                                                                             \
-  static uint##bits##_t Read##bits(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) { \
-    ZX_ASSERT(false);                                                                           \
+#define STUB_IO_OP(bits)                                                                          \
+  static void Write##bits(const void* ctx, const fdf::MmioBuffer& mmio, uint##bits##_t val,       \
+                          zx_off_t offs) {                                                        \
+    ZX_ASSERT(false);                                                                             \
+  }                                                                                               \
+  static uint##bits##_t Read##bits(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) { \
+    ZX_ASSERT(false);                                                                             \
   }
 
   STUB_IO_OP(16)
   STUB_IO_OP(8)
 #undef STUB_IO_OP
 
-  static void Write64(const void* ctx, const mmio_buffer_t& mmio, uint64_t val, zx_off_t offs) {
+  static void Write64(const void* ctx, const fdf::MmioBuffer& mmio, uint64_t val, zx_off_t offs) {
     const_cast<FakeRegisters*>(static_cast<const FakeRegisters*>(ctx))->Write64(val, offs);
   }
-  static uint64_t Read64(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+  static uint64_t Read64(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
     return const_cast<FakeRegisters*>(static_cast<const FakeRegisters*>(ctx))->Read64(offs);
   }
   void Write64(uint64_t val, zx_off_t offs);
   uint64_t Read64(zx_off_t offs);
 
-  static void Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t val, zx_off_t offs) {
+  static void Write32(const void* ctx, const fdf::MmioBuffer& mmio, uint32_t val, zx_off_t offs) {
     const_cast<FakeRegisters*>(static_cast<const FakeRegisters*>(ctx))->Write32(val, offs);
   }
-  static uint32_t Read32(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+  static uint32_t Read32(const void* ctx, const fdf::MmioBuffer& mmio, zx_off_t offs) {
     return const_cast<FakeRegisters*>(static_cast<const FakeRegisters*>(ctx))->Read32(offs);
   }
   void Write32(uint32_t val, zx_off_t offs);

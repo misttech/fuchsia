@@ -17,6 +17,7 @@
 #include <fidl/fuchsia.hardware.network.driver/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <gtest/gtest.h>
@@ -195,12 +196,12 @@ class IgcInterfaceTest : public ::testing::Test {
 
     // Override the write32 operator in the MMIO buffer so that we can trigger on certain calls.
     // These calls will write to a specific offset in the MMIO buffer on completion.
-    override_ops_.Write32 = [](const void* ctx, const mmio_buffer_t& mmio, uint32_t val,
+    override_ops_.Write32 = [](const void* ctx, const fdf::MmioBuffer& mmio, uint32_t val,
                                zx_off_t offs) {
       // Double casting because ctx is const, but we know it's safe to use as non-const here.
       auto test = const_cast<IgcInterfaceTest*>(static_cast<const IgcInterfaceTest*>(ctx));
       //  Forward the call to the actual write operation.
-      fdf::internal::kDefaultOps.Write32(ctx, mmio, val, offs);
+      fdf::MmioBuffer::GetDefaultOps()->Write32(ctx, mmio, val, offs);
       if (offs == static_cast<zx_off_t>(IGC_TDT(0))) {
         // This is the offset used for QueueTx.
         std::lock_guard lock(test->tx_tail_mutex_);
@@ -217,9 +218,9 @@ class IgcInterfaceTest : public ::testing::Test {
     // Install the new operations in the MMIO buffer.
     driver_test().RunInDriverContext([&](ei::IgcDriver& driver) {
       auto adapter = driver.Adapter();
-      // Release and re-use the same mmio_buffer, the only thing that should change is the ops.
-      mmio_buffer_t buffer = adapter->osdep.mmio_buffer->release();
-      adapter->osdep.mmio_buffer = fdf::MmioBuffer(buffer, &override_ops_, this);
+      // Keep the existing mapping and swap in ops with the test Write32.
+      adapter->osdep.mmio_buffer =
+          fdf::SetMmioBufferOps(std::move(*adapter->osdep.mmio_buffer), &override_ops_, this);
     });
   }
 
@@ -261,7 +262,7 @@ class IgcInterfaceTest : public ::testing::Test {
   fdf::WireSharedClient<netdriver::NetworkPort> port_client_;
 
   // Used for MMIO buffer overrides and event triggering.
-  fdf::MmioBufferOps override_ops_ = fdf::internal::kDefaultOps;
+  fdf::MmioBufferOps override_ops_ = *fdf::MmioBuffer::GetDefaultOps();
 
   std::condition_variable tx_tail_updated_;
   size_t num_tx_tail_updates_ = 0;

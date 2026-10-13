@@ -5,6 +5,7 @@
 #ifndef LIB_DRIVER_MMIO_CPP_MMIO_INTERNAL_H_
 #define LIB_DRIVER_MMIO_CPP_MMIO_INTERNAL_H_
 
+// This header is included by mmio-buffer.h and is not meant to be included directly.
 #include <lib/mmio-ptr/mmio-ptr.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -27,59 +28,59 @@
 namespace fdf::internal {
 
 template <typename T>
-static MMIO_PTR volatile T* GetAddr(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs,
+static MMIO_PTR volatile T* GetAddr(const void* ctx, const MmioBuffer& mmio, zx_off_t offs,
                                     size_t access_size = sizeof(T)) {
-  ZX_DEBUG_ASSERT(offs <= mmio.size && access_size <= mmio.size - offs);
-  const uintptr_t ptr = reinterpret_cast<uintptr_t>(mmio.vaddr);
+  ZX_DEBUG_ASSERT(offs <= mmio.get_size() && access_size <= mmio.get_size() - offs);
+  const uintptr_t ptr = reinterpret_cast<uintptr_t>(mmio.get());
   ZX_DEBUG_ASSERT(ptr);
   return reinterpret_cast<MMIO_PTR T*>(ptr + offs);
 }
 
-static uint8_t Read8(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+static uint8_t Read8(const void* ctx, const MmioBuffer& mmio, zx_off_t offs) {
   return MmioRead8(GetAddr<uint8_t>(ctx, mmio, offs));
 }
 
-static uint16_t Read16(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+static uint16_t Read16(const void* ctx, const MmioBuffer& mmio, zx_off_t offs) {
   return MmioRead16(GetAddr<uint16_t>(ctx, mmio, offs));
 }
 
-static uint32_t Read32(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+static uint32_t Read32(const void* ctx, const MmioBuffer& mmio, zx_off_t offs) {
   return MmioRead32(GetAddr<uint32_t>(ctx, mmio, offs));
 }
 
-static uint64_t Read64(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs) {
+static uint64_t Read64(const void* ctx, const MmioBuffer& mmio, zx_off_t offs) {
   return MmioRead64(GetAddr<uint64_t>(ctx, mmio, offs));
 }
 
-static void ReadBuffer(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs, void* buffer,
+static void ReadBuffer(const void* ctx, const MmioBuffer& mmio, zx_off_t offs, void* buffer,
                        size_t size) {
-  ZX_DEBUG_ASSERT(offs <= mmio.size && size <= mmio.size - offs);
+  ZX_DEBUG_ASSERT(offs <= mmio.get_size() && size <= mmio.get_size() - offs);
   MmioReadBuffer(buffer, GetAddr<uint8_t>(ctx, mmio, offs, size), size);
 }
 
-static void Write8(const void* ctx, const mmio_buffer_t& mmio, uint8_t val, zx_off_t offs) {
+static void Write8(const void* ctx, const MmioBuffer& mmio, uint8_t val, zx_off_t offs) {
   MmioWrite8(val, GetAddr<uint8_t>(ctx, mmio, offs));
   mmio_hw_mb();
 }
 
-static void Write16(const void* ctx, const mmio_buffer_t& mmio, uint16_t val, zx_off_t offs) {
+static void Write16(const void* ctx, const MmioBuffer& mmio, uint16_t val, zx_off_t offs) {
   MmioWrite16(val, GetAddr<uint16_t>(ctx, mmio, offs));
   mmio_hw_mb();
 }
 
-static void Write32(const void* ctx, const mmio_buffer_t& mmio, uint32_t val, zx_off_t offs) {
+static void Write32(const void* ctx, const MmioBuffer& mmio, uint32_t val, zx_off_t offs) {
   MmioWrite32(val, GetAddr<uint32_t>(ctx, mmio, offs));
   mmio_hw_mb();
 }
 
-static void Write64(const void* ctx, const mmio_buffer_t& mmio, uint64_t val, zx_off_t offs) {
+static void Write64(const void* ctx, const MmioBuffer& mmio, uint64_t val, zx_off_t offs) {
   MmioWrite64(val, GetAddr<uint64_t>(ctx, mmio, offs));
   mmio_hw_mb();
 }
 
-static void WriteBuffer(const void* ctx, const mmio_buffer_t& mmio, zx_off_t offs,
-                        const void* buffer, size_t size) {
-  ZX_DEBUG_ASSERT(offs <= mmio.size && size <= mmio.size - offs);
+static void WriteBuffer(const void* ctx, const MmioBuffer& mmio, zx_off_t offs, const void* buffer,
+                        size_t size) {
+  ZX_DEBUG_ASSERT(offs <= mmio.get_size() && size <= mmio.get_size() - offs);
   MmioWriteBuffer(GetAddr<uint8_t>(ctx, mmio, offs, size), buffer, size);
   mmio_hw_mb();
 }
@@ -100,6 +101,10 @@ static constexpr MmioBufferOps kDefaultOps = {
 #undef mmio_hw_mb
 
 }  // namespace fdf::internal
+
+namespace fdf {
+inline const MmioBufferOps* MmioBuffer::GetDefaultOps() { return &internal::kDefaultOps; }
+}  // namespace fdf
 
 #endif
 

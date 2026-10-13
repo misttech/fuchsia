@@ -5,7 +5,6 @@
 #ifndef LIB_DRIVER_MMIO_CPP_MMIO_BUFFER_H_
 #define LIB_DRIVER_MMIO_CPP_MMIO_BUFFER_H_
 
-#include <lib/driver/mmio/cpp/mmio-internal.h>
 #include <lib/driver/mmio/cpp/mmio-ops.h>
 #include <lib/driver/mmio/cpp/mmio-pinned-buffer.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
@@ -152,7 +151,7 @@ class MmioBuffer {
   MmioBuffer(const MmioBuffer&) = delete;
   MmioBuffer& operator=(const MmioBuffer&) = delete;
 
-  static const MmioBufferOps* GetDefaultOps() { return &internal::kDefaultOps; }
+  static const MmioBufferOps* GetDefaultOps();
 
   MmioBuffer(mmio_buffer_t mmio, const MmioBufferOps* ops = GetDefaultOps(),
              const void* ctx = nullptr)
@@ -338,28 +337,28 @@ class MmioBuffer {
     ModifyBit<T>(false, shift, offs);
   }
 
-  uint8_t Read8(zx_off_t offs) const { return ops_->Read8(ctx_, mmio_, offs); }
-  uint16_t Read16(zx_off_t offs) const { return ops_->Read16(ctx_, mmio_, offs); }
-  uint32_t Read32(zx_off_t offs) const { return ops_->Read32(ctx_, mmio_, offs); }
-  uint64_t Read64(zx_off_t offs) const { return ops_->Read64(ctx_, mmio_, offs); }
+  uint8_t Read8(zx_off_t offs) const { return ops_->Read8(ctx_, *this, offs); }
+  uint16_t Read16(zx_off_t offs) const { return ops_->Read16(ctx_, *this, offs); }
+  uint32_t Read32(zx_off_t offs) const { return ops_->Read32(ctx_, *this, offs); }
+  uint64_t Read64(zx_off_t offs) const { return ops_->Read64(ctx_, *this, offs); }
 
   // Read `size` bytes from the MmioBuffer into `buffer`. There are no access width guarantees
   // when using this operation and must only be used with devices where arbitrary access widths are
   // supported.
   void ReadBuffer(zx_off_t offs, void* buffer, size_t size) const {
-    ops_->ReadBuffer(ctx_, mmio_, offs, buffer, size);
+    ops_->ReadBuffer(ctx_, *this, offs, buffer, size);
   }
 
-  void Write8(uint8_t val, zx_off_t offs) const { ops_->Write8(ctx_, mmio_, val, offs); }
-  void Write16(uint16_t val, zx_off_t offs) const { ops_->Write16(ctx_, mmio_, val, offs); }
-  void Write32(uint32_t val, zx_off_t offs) const { ops_->Write32(ctx_, mmio_, val, offs); }
-  void Write64(uint64_t val, zx_off_t offs) const { ops_->Write64(ctx_, mmio_, val, offs); }
+  void Write8(uint8_t val, zx_off_t offs) const { ops_->Write8(ctx_, *this, val, offs); }
+  void Write16(uint16_t val, zx_off_t offs) const { ops_->Write16(ctx_, *this, val, offs); }
+  void Write32(uint32_t val, zx_off_t offs) const { ops_->Write32(ctx_, *this, val, offs); }
+  void Write64(uint64_t val, zx_off_t offs) const { ops_->Write64(ctx_, *this, val, offs); }
 
   // Write `size` bytes from `buffer` into the MmioBuffer. There are no access width guarantees
   // when using this operation and must only be used with devices where arbitrary access widths are
   // supported.
   void WriteBuffer(zx_off_t offs, const void* buffer, size_t size) const {
-    ops_->WriteBuffer(ctx_, mmio_, offs, buffer, size);
+    ops_->WriteBuffer(ctx_, *this, offs, buffer, size);
   }
 
  protected:
@@ -389,6 +388,8 @@ inline MmioBuffer SetMmioBufferOps(MmioBuffer&& buffer,
 }
 
 }  // namespace fdf
+
+#include <lib/driver/mmio/cpp/mmio-internal.h>
 
 #endif
 
