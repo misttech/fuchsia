@@ -1912,11 +1912,11 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("rustls") {
-  public_deps = [ ":rustls-v0_23_42" ]
+  public_deps = [ ":rustls-v0_23_45" ]
 }
 
-group("rustls-0.23.42") {
-  public_deps = [ ":rustls-v0_23_42" ]
+group("rustls-0.23.45") {
+  public_deps = [ ":rustls-v0_23_45" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -12051,7 +12051,7 @@ rustc_library("hyper-rustls-v0_27_9") {
   deps += [ ":hyper-util-v0_1_20" ]
   deps += [ ":hyper-v1_11_1" ]
   deps += [ ":rustls-native-certs-v0_8_4" ]
-  deps += [ ":rustls-v0_23_42" ]
+  deps += [ ":rustls-v0_23_45" ]
   deps += [ ":tokio-rustls-v0_26_4" ]
   deps += [ ":tower-service-v0_3_3" ]
 
@@ -19355,21 +19355,21 @@ rustc_library("ring-v0_17_14") {
   visibility += [ ":hickory-proto-v0_26_3.actual.rust_compilation_deps" ]
   visibility += [ ":ring" ]
   visibility += [ ":ring-0.17.14" ]
-  visibility += [ ":rustls-v0_23_42.actual" ]
-  visibility += [ ":rustls-v0_23_42.rustdoc" ]
-  visibility += [ ":rustls-v0_23_42.aux.deps.deps" ]
-  visibility += [ ":rustls-v0_23_42.aux.deps.transdeps" ]
-  visibility += [ ":rustls-v0_23_42.actual.rust_compilation_deps" ]
+  visibility += [ ":rustls-v0_23_45.actual" ]
+  visibility += [ ":rustls-v0_23_45.rustdoc" ]
+  visibility += [ ":rustls-v0_23_45.aux.deps.deps" ]
+  visibility += [ ":rustls-v0_23_45.aux.deps.transdeps" ]
+  visibility += [ ":rustls-v0_23_45.actual.rust_compilation_deps" ]
   visibility += [ ":rustls-webpki-v0_102_8.actual" ]
   visibility += [ ":rustls-webpki-v0_102_8.rustdoc" ]
   visibility += [ ":rustls-webpki-v0_102_8.aux.deps.deps" ]
   visibility += [ ":rustls-webpki-v0_102_8.aux.deps.transdeps" ]
   visibility += [ ":rustls-webpki-v0_102_8.actual.rust_compilation_deps" ]
-  visibility += [ ":rustls-webpki-v0_103_13.actual" ]
-  visibility += [ ":rustls-webpki-v0_103_13.rustdoc" ]
-  visibility += [ ":rustls-webpki-v0_103_13.aux.deps.deps" ]
-  visibility += [ ":rustls-webpki-v0_103_13.aux.deps.transdeps" ]
-  visibility += [ ":rustls-webpki-v0_103_13.actual.rust_compilation_deps" ]
+  visibility += [ ":rustls-webpki-v0_103_15.actual" ]
+  visibility += [ ":rustls-webpki-v0_103_15.rustdoc" ]
+  visibility += [ ":rustls-webpki-v0_103_15.aux.deps.deps" ]
+  visibility += [ ":rustls-webpki-v0_103_15.aux.deps.transdeps" ]
+  visibility += [ ":rustls-webpki-v0_103_15.actual.rust_compilation_deps" ]
   visibility += [ ":tuf-v0_3_0-beta14.actual" ]
   visibility += [ ":tuf-v0_3_0-beta14.rustdoc" ]
   visibility += [ ":tuf-v0_3_0-beta14.aux.deps.deps" ]
@@ -20079,19 +20079,19 @@ rustc_library("rustix-v1_1_4") {
   applicable_licenses = [ ":rustix-v1_1_4.license" ]
 }
 
-license("rustls-v0_23_42.license") {
+license("rustls-v0_23_45.license") {
   public_package_name = "rustls"
   license_files = [
-    "//third_party/rust_crates/vendor/rustls-0.23.42/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rustls-0.23.42/LICENSE-ISC",
-    "//third_party/rust_crates/vendor/rustls-0.23.42/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rustls-0.23.45/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustls-0.23.45/LICENSE-ISC",
+    "//third_party/rust_crates/vendor/rustls-0.23.45/LICENSE-MIT",
   ]
 }
 
-rustc_library("rustls-v0_23_42") {
+rustc_library("rustls-v0_23_45") {
   crate_name = "rustls"
-  source_root = "//third_party/rust_crates/vendor/rustls-0.23.42/src/lib.rs"
-  output_name = "rustls-9d5664445026fc4f"
+  source_root = "//third_party/rust_crates/vendor/rustls-0.23.45/src/lib.rs"
+  output_name = "rustls-67000af76276dab1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20103,15 +20103,15 @@ rustc_library("rustls-v0_23_42") {
   deps += [ ":once_cell-v1_21_4" ]
   deps += [ ":ring-v0_17_14" ]
   deps += [ ":rustls-pki-types-v1_15_1" ]
-  deps += [ ":rustls-webpki-v0_103_13" ]
+  deps += [ ":rustls-webpki-v0_103_15" ]
   deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9d5664445026fc4f",
-    "-Cextra-filename=-9d5664445026fc4f",
+    "-Cmetadata=67000af76276dab1",
+    "-Cextra-filename=-67000af76276dab1",
     "--cfg=feature=\"log\"",
     "--cfg=feature=\"logging\"",
     "--cfg=feature=\"ring\"",
@@ -20121,11 +20121,11 @@ rustc_library("rustls-v0_23_42") {
 
   aliased_deps = {
     pki_types = ":rustls-pki-types-v1_15_1.actual"
-    webpki = ":rustls-webpki-v0_103_13.actual"
+    webpki = ":rustls-webpki-v0_103_15.actual"
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustls-v0_23_42.license" ]
+  applicable_licenses = [ ":rustls-v0_23_45.license" ]
 }
 
 license("rustls-native-certs-v0_8_4.license") {
@@ -24346,7 +24346,7 @@ rustc_library("tokio-rustls-v0_26_4") {
 
   deps = []
   deps += [ ":tokio-v1_53_1" ]
-  deps += [ ":rustls-v0_23_42" ]
+  deps += [ ":rustls-v0_23_45" ]
 
   rustenv = []
 
@@ -26632,17 +26632,17 @@ rustc_library("rustls-webpki-v0_102_8") {
   applicable_licenses = [ ":rustls-webpki-v0_102_8.license" ]
 }
 
-license("rustls-webpki-v0_103_13.license") {
+license("rustls-webpki-v0_103_15.license") {
   public_package_name = "webpki"
   license_files =
-      [ "//third_party/rust_crates/vendor/rustls-webpki-0.103.13/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rustls-webpki-0.103.15/LICENSE" ]
 }
 
-rustc_library("rustls-webpki-v0_103_13") {
+rustc_library("rustls-webpki-v0_103_15") {
   crate_name = "webpki"
   source_root =
-      "//third_party/rust_crates/vendor/rustls-webpki-0.103.13/src/lib.rs"
-  output_name = "webpki-5670558c97419088"
+      "//third_party/rust_crates/vendor/rustls-webpki-0.103.15/src/lib.rs"
+  output_name = "webpki-b518ef048079e6cc"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -26657,8 +26657,8 @@ rustc_library("rustls-webpki-v0_103_13") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5670558c97419088",
-    "-Cextra-filename=-5670558c97419088",
+    "-Cmetadata=b518ef048079e6cc",
+    "-Cextra-filename=-b518ef048079e6cc",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"ring\"",
     "--cfg=feature=\"std\"",
@@ -26669,7 +26669,7 @@ rustc_library("rustls-webpki-v0_103_13") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustls-webpki-v0_103_13.license" ]
+  applicable_licenses = [ ":rustls-webpki-v0_103_15.license" ]
 }
 
 license("which-v8_0_4.license") {
