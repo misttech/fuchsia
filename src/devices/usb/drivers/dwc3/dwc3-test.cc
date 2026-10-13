@@ -1673,4 +1673,40 @@ TEST_F(UnmanagedTestFixture, StartPeripheralModeRestoresCoreRegistersAfterExtern
   TearDownAndPowerOffDriver();
 }
 
+TEST_F(UnmanagedTestFixture, ResetHwRestoresPrtcapdirDevice) {
+  auto gctl_val = std::make_shared<std::atomic<uint32_t>>(0);
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GCTL::Get().addr()].SetReadCallback([]() -> uint64_t { return 0; });
+      env.reg_region()[GCTL::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([gctl_val](Environment& env) {
+    // Simulate register state where GCTL.PRTCAPDIR is 0 (hardware default after CSFTRST).
+    auto& gctl_reg = env.reg_region()[GCTL::Get().addr()];
+    gctl_reg.SetReadCallback([gctl_val]() -> uint64_t { return gctl_val->load(); });
+    gctl_reg.SetWriteCallback(
+        [gctl_val](uint64_t val) { gctl_val->store(static_cast<uint32_t>(val)); });
+    gctl_val->store(GCTL::Get().FromValue(0).reg_value());
+  });
+
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_ok());
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    auto gctl =
+        GCTL::Get().FromValue(static_cast<uint32_t>(env.reg_region()[GCTL::Get().addr()].Read()));
+    EXPECT_EQ(gctl.PRTCAPDIR(), GCTL::PRTCAPDIR_DEVICE);
+  });
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
 }  // namespace dwc3
