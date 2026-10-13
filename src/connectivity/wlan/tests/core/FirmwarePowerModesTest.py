@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import asyncio
 import logging
 
 import fidl_fuchsia_wlan_common as fidl_common
@@ -10,6 +9,7 @@ import fidl_fuchsia_wlan_device_service as fidl_device_svc
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
 from antlion import utils
+from honeydew.affordances.connectivity.netstack.types import PortClass
 from legacy_access_point.access_point import AccessPoint, setup_ap
 from legacy_access_point.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
@@ -22,7 +22,7 @@ from legacy_access_point.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
 from mobly import signals, test_runner
-from mobly.asserts import fail
+from mobly.asserts import assert_equal, fail
 from openwrt_access_point import AddrType as OpenWrtAddrType
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
 from openwrt_access_point.lib.access_point_config import (
@@ -103,17 +103,12 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         await iface.scan_and_connect(ssid=ssid)
 
-        # TODO(http://b/371574733#comment6): Calling honeydew
-        # methods results in a RuntimeError because an event loop already
-        # exists. Otherwise, instead of sleeping, this test would call
-        # these methods to check for an IP address:
-        #    self.dut.update_wlan_interfaces()
-        #    iface_name = self.dut.wlan_client_test_interface_name
-        #    assert iface_name is not None, "Failed to get WLAN interface name"
-        #    self.dut.wait_for_ipv4_addr(iface_name)
-        # For now, wait for the DHCP server to assign the DUT an IP address.
-        # This should take no more than 5 seconds, typically.
-        await asyncio.sleep(10)
+        netstack_iface = await self.dut.netstack.wait_for_interface(
+            PortClass.WLAN_CLIENT
+        )
+        dut_mac = await iface.get_mac_address()
+        assert_equal(netstack_iface.mac, dut_mac)
+        await self.dut.netstack.wait_for_ipv4_addr(netstack_iface.id_)
 
         if self.openwrt_ap:
             ap_address = self.openwrt_ap.get_addr(
