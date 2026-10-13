@@ -352,23 +352,18 @@ mod device_mapper_test {
         (parameter_string, target_spec, target_vec)
     }
 
-    // TODO(https://fxbug.dev/317285180) panic if this fails once running as root for baseline
-    fn open_dm_control() -> Option<std::fs::File> {
-        match OpenOptions::new().read(true).write(true).open("/dev/mapper/control") {
-            Ok(file) => Some(file),
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => None,
-                _ => panic!("open /dev/mapper/control failed with {:?}", e),
-            },
-        }
+    fn open_dm_control() -> std::fs::File {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/mapper/control")
+            .expect("open /dev/mapper/control failed")
     }
 
     #[test]
     #[serial]
     fn create_dm_device() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device").unwrap();
@@ -421,9 +416,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn create_dm_device_no_name() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
 
         let uuid = std::ffi::CString::new(vec![b'a'; 37]).unwrap();
@@ -445,9 +438,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn create_dm_device_no_version() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device").unwrap();
@@ -476,9 +467,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn dm_dev_status() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device").unwrap();
@@ -580,9 +569,7 @@ mod device_mapper_test {
             VerityTargetState,
         ) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
     ) {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -688,9 +675,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn remove_dm_device_in_scope() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -763,9 +748,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn remove_dm_device_cached_handle_in_scope() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -848,9 +831,7 @@ mod device_mapper_test {
             VerityTargetState,
         ) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
     ) {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -925,9 +906,7 @@ mod device_mapper_test {
             VerityTargetState,
         ) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
     ) {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-invalid-root").unwrap();
@@ -986,9 +965,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn read_dm_device_no_active_table() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -1061,9 +1038,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn suspend_and_resume_dm_device() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -1180,9 +1155,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn list_devices_buffer_full() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -1239,9 +1212,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn dm_list_devices() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         let name = std::ffi::CString::new("test-device-1").unwrap();
         let name_slice_1 = name
@@ -1376,9 +1347,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn list_versions_buffer_full() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, vec![]);
@@ -1406,9 +1375,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn dm_list_versions() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
 
         let mut observed_devs: HashSet<(String, [u32; 3])> = HashSet::new();
 
@@ -1471,9 +1438,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn dm_table_status_buffer_full() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -1558,9 +1523,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn dm_table_status_no_active_table() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -1642,9 +1605,7 @@ mod device_mapper_test {
             VerityTargetState,
         ) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
     ) {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -1787,9 +1748,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn dm_table_status_valid() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
@@ -1922,9 +1881,7 @@ mod device_mapper_test {
     #[test]
     #[serial]
     fn dm_table_status_flag() {
-        let Some(dm_control) = open_dm_control() else {
-            return;
-        };
+        let dm_control = open_dm_control();
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
 
         let name = std::ffi::CString::new("test-device-1").unwrap();
