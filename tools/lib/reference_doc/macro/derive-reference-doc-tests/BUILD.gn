@@ -3,21 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/rust/rustc_test.gni")
 import("//build/testing/golden_files.gni")
-
-rustc_test("derive-reference-doc_test") {
-  name = "derive-reference-doc"
-  version = "0.1.0"
-  edition = "2024"
-
-  deps = [
-    "//third_party/rust_crates:pretty_assertions",
-    "//tools/lib/reference_doc",
-  ]
-
-  sources = [ "src/lib.rs" ]
-}
 
 golden_files("cml-refdoc-golden_test") {
   testonly = true
@@ -34,8 +20,5 @@ golden_files("cml-refdoc-golden_test") {
 
 group("derive-reference-doc-tests") {
   testonly = true
-  deps = [
-    ":cml-refdoc-golden_test",
-    ":derive-reference-doc_test",
-  ]
+  deps = [ ":cml-refdoc-golden_test" ]
 }

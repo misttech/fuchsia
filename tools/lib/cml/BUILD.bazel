@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
@@ -34,12 +36,6 @@ rustc_library(
     proc_macro_deps = [
         "//tools/lib/cml/macro",
     ],
-    test_deps = [
-        "//third_party/rust_crates/vendor:anyhow",
-        "//third_party/rust_crates/vendor:assert_matches",
-        "//third_party/rust_crates/vendor:difference",
-        "//third_party/rust_crates/vendor:test-case",
-    ],
     visibility = [
         "//src/lib/assembly:__subpackages__",
         "//src/security/lib/scrutiny/frontend:__pkg__",
@@ -50,7 +46,6 @@ rustc_library(
         "//tools/testgen:__pkg__",
         "//vendor/google:__subpackages__",
     ],
-    with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
         "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
@@ -70,5 +65,19 @@ rustc_library(
         "//third_party/rust_crates/vendor:sha2",
         "//tools/lib/config_value_file",
         "//tools/lib/reference_doc",
+    ],
+)
+
+host_rustc_test(
+    name = "cml_test",
+    crate = ":cml",
+    edition = "2024",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:difference",
+        "//third_party/rust_crates/vendor:test-case",
     ],
 )

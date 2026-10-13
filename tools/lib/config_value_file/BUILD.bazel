@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -13,9 +15,6 @@ rustc_library(
         "src/lib.rs",
     ],
     edition = "2024",
-    test_deps = [
-        "//src/sys/lib/fidl_fuchsia_component_config_ext",
-    ],
     visibility = [
         "//src/lib/assembly/structured_config:__pkg__",
         "//src/security/lib/scrutiny/frontend:__pkg__",
@@ -23,10 +22,32 @@ rustc_library(
         "//tools/configc:__pkg__",
         "//tools/lib/cml:__pkg__",
     ],
-    with_unit_tests = True,
     deps = [
         "//src/sys/lib/cm_rust",
         "//third_party/rust_crates/vendor:serde_json",
         "//third_party/rust_crates/vendor:thiserror",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "config_value_file_test",
+    crate = ":config_value_file",
+    edition = "2024",
+    deps = [
+        "//src/sys/lib/fidl_fuchsia_component_config_ext",
+    ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "config_value_file_host_test",
+    binary_name = "config_value_file_test",
+    visibility = ["//tools:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "config_value_file_tests",
+    package_name = "config_value_file_tests",
+    unit_tests = [":config_value_file_test"],
 )
