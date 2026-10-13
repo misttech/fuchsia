@@ -171,15 +171,49 @@ foreach(test_def, rust_syscall_tests) {
   }
 }
 
+# Fake power stats provider serving fuchsia.hardware.power.stats.Service, for
+# power_residency_test.
+rustc_binary("fake_power_stats_bin") {
+  testonly = true
+  edition = "2024"
+  output_name = "fake_power_stats"
+  source_root = "src/fake_power_stats.rs"
+  sources = [ "src/fake_power_stats.rs" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.power.stats:fuchsia.hardware.power.stats_rust",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+  ]
+}
+
+fuchsia_component("fake_power_stats") {
+  testonly = true
+  manifest = "meta/fake_power_stats.cml"
+  deps = [ ":fake_power_stats_bin" ]
+}
+
+# Only instantiated for the Starnix kernel, as it tests a Starnix-specific
+# device.
+rust_syscall_test("power_residency_test") {
+  includes = [
+    "//src/starnix/tests/syscalls/rust/meta/power_residency_test.shard.cml",
+  ]
+}
+
 # Package for running on Starnix kernel
 fuchsia_test_package("starnix_syscalls_rust_tests") {
-  test_components = []
+  test_components = [ ":power_residency_test" ]
   foreach(test_name, all_test_names) {
     test_components += [ ":${test_name}" ]
   }
   subpackages = starnix_test_subpackages
   subpackages += [ "//src/starnix/containers/debian:debian_package" ]
-  deps = [ "//src/lib/testing/expectation:expectation_comparer" ]
+  deps = [
+    ":fake_power_stats",
+    "//src/lib/testing/expectation:expectation_comparer",
+  ]
   test_specs = {
     log_settings = {
       # Tests exercise failure cases, so ERROR logs are expected.

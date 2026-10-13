@@ -4,6 +4,7 @@
 
 use crate::fs::sysfs::build_device_directory;
 use crate::task::{CurrentTask, Kernel};
+use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use anyhow::Context as _;
 use fidl_fuchsia_hardware_power_stats as fpowerstats;
@@ -17,18 +18,45 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::sync::{Arc, Weak};
 
-/// Power entities whose names start with this prefix are served as files of the same name.
-const RESIDENCY_FILE_PREFIX: &str = "lpcm_";
+/// Power entities whose names start with this prefix are served as performance state residency
+/// files of the same name.
+const PERF_STATE_FILE_PREFIX: &str = "lpcm_";
+
+/// Power entity served as the platform power state residency file.
+const PLATFORM_POWER_ENTITY: &str = "soc_power_state";
+
+/// Name of the file [`PLATFORM_POWER_ENTITY`] is served as.
+const PLATFORM_POWER_FILE: &str = "platform_power_residency";
 
 /// Name of the platform device under which the residency files are served.
 const RESIDENCY_DEVICE_NAME: &str = "powerdashboard";
 
-/// Serves one file per power entity reported over `fuchsia.hardware.power.stats.Service` whose
-/// name starts with [`RESIDENCY_FILE_PREFIX`], under the [`RESIDENCY_DEVICE_NAME`] platform
-/// device.
+/// How long reading a residency file waits for the power stats provider before failing.
+const PROVIDER_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(1);
+
+/// Ticks per millisecond of the counter that some residency files report timestamps in.
+///
+/// Those files report raw values of the platform timer counter, which is expected to run at
+/// 38.4 MHz, so the provider's millisecond timestamps are converted at 38,400 ticks per
+/// millisecond.
+const TIMESTAMP_TICKS_PER_MS: u64 = 38_400;
+
+/// Creates the node serving a residency file, reading from the given power stats provider.
+type CreateResidencyNode =
+    Box<dyn FnOnce(Arc<fpowerstats::DeviceSynchronousProxy>) -> Box<dyn FsNodeOps> + Send>;
+
+/// How a power entity is served.
+struct ResidencyFileSpec {
+    /// Name of the file within the device directory.
+    file: String,
+    create_node: CreateResidencyNode,
+}
+
+/// Serves a file for each power entity reported over `fuchsia.hardware.power.stats.Service` that
+/// [`residency_file_spec`] maps to one, under the [`RESIDENCY_DEVICE_NAME`] platform device.
 ///
 /// The entities are only known once a provider has started, so the device is added in the
-/// background, once a provider reports at least one such entity.
+/// background, once a provider reports at least one served entity.
 pub fn init_power_residency_device(kernel: &Kernel) {
     let weak_kernel = kernel.weak_self.clone();
     kernel.kthreads.spawn_future(
@@ -45,8 +73,8 @@ pub fn init_power_residency_device(kernel: &Kernel) {
     );
 }
 
-/// Watches `service` for power stats providers and adds the device, with a file for each prefixed
-/// entity, for the first provider that reports any. Prefixed entities from other providers are
+/// Watches `service` for power stats providers and adds the device, with a file for each served
+/// entity, for the first provider that reports any. Served entities from other providers are
 /// ignored.
 async fn add_residency_device(
     kernel: Weak<Kernel>,
@@ -67,8 +95,9 @@ async fn add_residency_device(
                 continue;
             }
         };
-        let names = residency_file_names(entities.into_iter().map(|entity| entity.name));
-        if names.is_empty() {
+        let files: Vec<_> =
+            entities.iter().filter_map(|entity| residency_file_spec(&entity.name)).collect();
+        if files.is_empty() {
             continue;
         }
         if device_added {
@@ -92,14 +121,10 @@ async fn add_residency_device(
             registry.objects.platform_bus(),
             |device, dir| {
                 build_device_directory(device, dir);
-                for name in names {
-                    let path = name.clone();
+                for spec in files {
                     dir.entry(
-                        &path,
-                        BytesFile::new_node(PowerResidencyFile {
-                            name,
-                            provider: provider.clone(),
-                        }),
+                        &spec.file,
+                        (spec.create_node)(provider.clone()),
                         mode!(IFREG, 0o444),
                     );
                 }
@@ -110,43 +135,84 @@ async fn add_residency_device(
     Ok(())
 }
 
-/// Returns the names of the entities to serve as files: those with the prefix whose names are
-/// safe to use as file names.
-fn residency_file_names(names: impl IntoIterator<Item = String>) -> Vec<String> {
-    names
-        .into_iter()
-        .filter(|name| {
-            name.len() > RESIDENCY_FILE_PREFIX.len()
-                && name.starts_with(RESIDENCY_FILE_PREFIX)
-                && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+/// Returns how to serve the power entity named `entity`, or [`None`] if it is not served.
+/// Prefixed entities are only served if their names are safe to use as file names.
+fn residency_file_spec(entity: &str) -> Option<ResidencyFileSpec> {
+    let prefixed = |prefix: &str| {
+        entity.len() > prefix.len()
+            && entity.starts_with(prefix)
+            && entity.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    };
+    if prefixed(PERF_STATE_FILE_PREFIX) {
+        let file = entity.to_string();
+        let entity = entity.to_string();
+        Some(ResidencyFileSpec {
+            file,
+            create_node: Box::new(move |provider| -> Box<dyn FsNodeOps> {
+                Box::new(BytesFile::new_node(PerformanceStatesFile { entity, provider }))
+            }),
         })
-        .collect()
-}
-
-struct PowerResidencyFile {
-    name: String,
-    provider: Arc<fpowerstats::DeviceSynchronousProxy>,
-}
-
-impl BytesFileOps for PowerResidencyFile {
-    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let reports = self.provider.get_stats(zx::MonotonicInstant::INFINITE).map_err(|e| {
-            log_warn!("Failed to read power stats for {}: {e}", self.name);
-            errno!(EIO)
-        })?;
-        let Some(stats) = reports.iter().find(|stats| stats.entity == self.name) else {
-            log_warn!("Power stats provider no longer reports {}", self.name);
-            return error!(EIO);
-        };
-        Ok(format_residency(stats).into_bytes().into())
+    } else if entity == PLATFORM_POWER_ENTITY {
+        Some(ResidencyFileSpec {
+            file: PLATFORM_POWER_FILE.to_string(),
+            create_node: Box::new(|provider| -> Box<dyn FsNodeOps> {
+                Box::new(BytesFile::new_node(PlatformPowerStatesFile { provider }))
+            }),
+        })
+    } else {
+        None
     }
 }
 
-/// Formats the residency of a single power entity.
+/// Returns the residency that `provider` reports for `entity`.
+fn read_entity_stats(
+    provider: &fpowerstats::DeviceSynchronousProxy,
+    entity: &str,
+) -> Result<fpowerstats::Stats, Errno> {
+    let deadline = zx::MonotonicInstant::after(PROVIDER_TIMEOUT);
+    let reports = provider.get_stats(deadline).map_err(|e| {
+        log_warn!("Failed to read power stats for {entity}: {e}");
+        errno!(EIO)
+    })?;
+    let Some(stats) = reports.into_iter().find(|stats| stats.entity == entity) else {
+        log_warn!("Power stats provider no longer reports {entity}");
+        return error!(EIO);
+    };
+    Ok(stats)
+}
+
+/// Serves the time a single component, such as a memory controller, spent at each of its
+/// performance (DVFS) levels.
+struct PerformanceStatesFile {
+    entity: String,
+    provider: Arc<fpowerstats::DeviceSynchronousProxy>,
+}
+
+impl BytesFileOps for PerformanceStatesFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let stats = read_entity_stats(&self.provider, &self.entity)?;
+        Ok(format_performance_states(&stats).into_bytes().into())
+    }
+}
+
+/// Serves the time the platform as a whole spent in each of its power states, such as active or
+/// idle.
+struct PlatformPowerStatesFile {
+    provider: Arc<fpowerstats::DeviceSynchronousProxy>,
+}
+
+impl BytesFileOps for PlatformPowerStatesFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let stats = read_entity_stats(&self.provider, PLATFORM_POWER_ENTITY)?;
+        Ok(format_platform_power_states(&stats).into_bytes().into())
+    }
+}
+
+/// Formats `stats` as a `num_pf_states` line followed by `pf_*` lines for each performance level.
 ///
-/// The power stats API does not report which state is current, so there is no `current_pf_state`
-/// line.
-fn format_residency(stats: &fpowerstats::Stats) -> String {
+/// The power stats API does not report times with sub-millisecond precision, so times are whole
+/// milliseconds converted to microseconds.
+fn format_performance_states(stats: &fpowerstats::Stats) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "num_pf_states: {}", stats.state_residency_data.len());
     for state in &stats.state_residency_data {
@@ -154,6 +220,31 @@ fn format_residency(stats: &fpowerstats::Stats) -> String {
         let _ = writeln!(out, "pf_state: {}", state.id);
         let _ = writeln!(out, "pf_entry_count: {}", state.entry_count);
         let _ = writeln!(out, "pf_time_in_state: {time_in_state_us} (us)\n");
+    }
+    out
+}
+
+/// Formats `stats` as a `power_state` line followed by counts and timestamps for each power
+/// state.
+///
+/// States whose names contain control characters, such as newlines, are left out, as their names
+/// would break the line-based layout.
+///
+/// The power stats API does not report which state is current or when a state was last exited,
+/// so there are no current state lines and last exit timestamps are 0.
+fn format_platform_power_states(stats: &fpowerstats::Stats) -> String {
+    let mut out = String::new();
+    for state in &stats.state_residency_data {
+        if state.name.chars().any(char::is_control) {
+            log_warn!("Leaving out {} state {} with an unsafe name", stats.entity, state.id);
+            continue;
+        }
+        let last_entry_ticks = state.last_entry_timestamp_ms.saturating_mul(TIMESTAMP_TICKS_PER_MS);
+        let _ = writeln!(out, "power_state: {}", state.name);
+        let _ = writeln!(out, "entry_count: {}", state.entry_count);
+        let _ = writeln!(out, "time_in_state_ms: {}", state.total_time_ms);
+        let _ = writeln!(out, "last_entry_timestamp_ticks: {last_entry_ticks}");
+        let _ = writeln!(out, "last_exit_timestamp_ticks: 0\n");
     }
     out
 }
@@ -272,34 +363,7 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    async fn device_is_added_with_prefixed_entities() {
-        spawn_kernel_and_run(async |current_task| {
-            let kernel = current_task.kernel();
-            let p = RESIDENCY_FILE_PREFIX;
-            let (service, _) = serve_service(vec![(
-                "default",
-                vec![
-                    stats(&format!("{p}a"), vec![]),
-                    stats(&format!("{p}b"), vec![]),
-                    stats("other", vec![]),
-                ],
-            )]);
-            let mut watcher = pin!(add_residency_device(kernel.weak_self.clone(), service).fuse());
-
-            let device = format!("devices/platform/{RESIDENCY_DEVICE_NAME}");
-            run_until(&mut watcher, || exists(kernel, &device)).await;
-
-            assert!(exists(kernel, &format!("bus/platform/devices/{RESIDENCY_DEVICE_NAME}")));
-            assert!(exists(kernel, &format!("{device}/uevent")));
-            assert!(exists(kernel, &format!("{device}/{p}a")));
-            assert!(exists(kernel, &format!("{device}/{p}b")));
-            assert!(!exists(kernel, &format!("{device}/other")));
-        })
-        .await;
-    }
-
-    #[::fuchsia::test]
-    async fn no_device_without_prefixed_entities() {
+    async fn no_device_without_served_entities() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let (service, get_entities_calls) =
@@ -317,10 +381,10 @@ mod tests {
     async fn only_first_provider_is_served() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            let p = RESIDENCY_FILE_PREFIX;
+            let prefix = PERF_STATE_FILE_PREFIX;
             let (service, get_entities_calls) = serve_service(vec![
-                ("first", vec![stats(&format!("{p}a"), vec![])]),
-                ("second", vec![stats(&format!("{p}b"), vec![])]),
+                ("first", vec![stats(&format!("{prefix}a"), vec![])]),
+                ("second", vec![stats(&format!("{prefix}b"), vec![])]),
             ]);
             let mut watcher = pin!(add_residency_device(kernel.weak_self.clone(), service).fuse());
 
@@ -330,37 +394,28 @@ mod tests {
             })
             .await;
 
-            let served_a = exists(kernel, &format!("{device}/{p}a"));
-            let served_b = exists(kernel, &format!("{device}/{p}b"));
+            let served_a = exists(kernel, &format!("{device}/{prefix}a"));
+            let served_b = exists(kernel, &format!("{device}/{prefix}b"));
             assert!(served_a != served_b, "expected files from exactly one provider");
         })
         .await;
     }
 
-    /// Returns a residency file for `name` backed by a fake provider reporting `reports`.
-    fn residency_file(name: &str, reports: Vec<fpowerstats::Stats>) -> PowerResidencyFile {
-        let (provider, server) = create_sync_proxy::<fpowerstats::DeviceMarker>();
-        spawn_server(move || serve_provider(server.into_stream(), reports, Default::default()));
-        PowerResidencyFile { name: name.to_string(), provider: Arc::new(provider) }
-    }
-
-    #[::fuchsia::test]
-    async fn read_returns_formatted_residency() {
-        spawn_kernel_and_run(async |current_task| {
-            let entity = stats("a", vec![state(0, 11, 2200)]);
-            let file = residency_file("a", vec![stats("b", vec![]), entity.clone()]);
-
-            let contents = file.read(current_task).expect("read");
-
-            assert_eq!(&*contents, format_residency(&entity).as_bytes());
-        })
-        .await;
+    /// Returns a performance states file for `entity` backed by `provider`.
+    fn performance_states_file(
+        entity: &str,
+        provider: fpowerstats::DeviceSynchronousProxy,
+    ) -> PerformanceStatesFile {
+        PerformanceStatesFile { entity: entity.to_string(), provider: Arc::new(provider) }
     }
 
     #[::fuchsia::test]
     async fn read_fails_when_entity_is_no_longer_reported() {
         spawn_kernel_and_run(async |current_task| {
-            let file = residency_file("a", vec![stats("b", vec![])]);
+            let (provider, server) = create_sync_proxy::<fpowerstats::DeviceMarker>();
+            let reports = vec![stats("b", vec![])];
+            spawn_server(move || serve_provider(server.into_stream(), reports, Default::default()));
+            let file = performance_states_file("a", provider);
 
             assert_eq!(file.read(current_task).map(|_| ()), error!(EIO));
         })
@@ -372,7 +427,7 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let (provider, server) = create_sync_proxy::<fpowerstats::DeviceMarker>();
             drop::<ServerEnd<_>>(server);
-            let file = PowerResidencyFile { name: "a".to_string(), provider: Arc::new(provider) };
+            let file = performance_states_file("a", provider);
 
             assert_eq!(file.read(current_task).map(|_| ()), error!(EIO));
         })
@@ -380,14 +435,26 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    fn residency_is_formatted_per_state() {
-        let stats = fpowerstats::Stats {
-            entity: "a".to_string(),
-            state_residency_data: vec![state(0, 11, 2200), state(1, 4, 7)],
-        };
+    async fn read_fails_when_provider_does_not_respond() {
+        spawn_kernel_and_run(async |current_task| {
+            let (provider, server) = create_sync_proxy::<fpowerstats::DeviceMarker>();
+            // Hold on to the requests without responding to them.
+            spawn_server(move || async move {
+                let _requests: Vec<_> = server.into_stream().collect().await;
+            });
+            let file = performance_states_file("a", provider);
+
+            assert_eq!(file.read(current_task).map(|_| ()), error!(EIO));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    fn performance_states_are_formatted_per_state() {
+        let stats = stats("a", vec![state(0, 11, 2200), state(1, 4, 7)]);
 
         assert_eq!(
-            format_residency(&stats),
+            format_performance_states(&stats),
             "num_pf_states: 2\n\
              pf_state: 0\npf_entry_count: 11\npf_time_in_state: 2200000 (us)\n\n\
              pf_state: 1\npf_entry_count: 4\npf_time_in_state: 7000 (us)\n\n"
@@ -395,26 +462,67 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    fn residency_with_no_states() {
-        let stats = fpowerstats::Stats { entity: "a".to_string(), state_residency_data: vec![] };
+    fn platform_power_states_are_formatted_per_state() {
+        let active = fpowerstats::StateResidency {
+            name: "ACTIVE".to_string(),
+            last_entry_timestamp_ms: 2,
+            ..state(0, 3, 100)
+        };
+        let stats = stats("a", vec![active, state(1, 0, 0)]);
 
-        assert_eq!(format_residency(&stats), "num_pf_states: 0\n");
+        assert_eq!(
+            format_platform_power_states(&stats),
+            "power_state: ACTIVE\nentry_count: 3\ntime_in_state_ms: 100\n\
+             last_entry_timestamp_ticks: 76800\nlast_exit_timestamp_ticks: 0\n\n\
+             power_state: 1\nentry_count: 0\ntime_in_state_ms: 0\n\
+             last_entry_timestamp_ticks: 0\nlast_exit_timestamp_ticks: 0\n\n"
+        );
     }
 
     #[::fuchsia::test]
-    fn only_prefixed_entities_with_safe_names_are_served() {
-        let p = RESIDENCY_FILE_PREFIX;
+    fn residency_with_no_states() {
+        let stats = stats("a", vec![]);
+
+        assert_eq!(format_performance_states(&stats), "num_pf_states: 0\n");
+        assert_eq!(format_platform_power_states(&stats), "");
+    }
+
+    #[::fuchsia::test]
+    fn platform_power_states_with_unsafe_names_are_left_out() {
+        let unsafe_state =
+            fpowerstats::StateResidency { name: "A\nentry_count: 9".to_string(), ..state(0, 1, 1) };
+        let stats = stats("a", vec![unsafe_state, state(1, 2, 2)]);
+
+        assert_eq!(
+            format_platform_power_states(&stats),
+            "power_state: 1\nentry_count: 2\ntime_in_state_ms: 2\n\
+             last_entry_timestamp_ticks: 0\nlast_exit_timestamp_ticks: 0\n\n"
+        );
+    }
+
+    #[::fuchsia::test]
+    fn only_served_entities_with_safe_names_are_mapped_to_files() {
+        let prefix = PERF_STATE_FILE_PREFIX;
         let names = [
-            format!("{p}a"),
-            format!("{p}b_1"),
+            format!("{prefix}a"),
+            format!("{prefix}b_1"),
+            PLATFORM_POWER_ENTITY.to_string(),
             "other".to_string(),
-            p.to_string(),
-            format!("{p}../x"),
-            format!("{p}a/b"),
-            p.to_uppercase() + "A",
-            format!("x{p}a"),
+            prefix.to_string(),
+            format!("{prefix}../x"),
+            format!("{prefix}a/b"),
+            prefix.to_uppercase() + "A",
+            format!("x{prefix}a"),
+            format!("{PLATFORM_POWER_ENTITY}_x"),
         ];
 
-        assert_eq!(residency_file_names(names), vec![format!("{p}a"), format!("{p}b_1")]);
+        let served: Vec<_> = names
+            .into_iter()
+            .filter_map(|name| residency_file_spec(&name).map(|spec| spec.file))
+            .collect();
+        assert_eq!(
+            served,
+            vec![format!("{prefix}a"), format!("{prefix}b_1"), PLATFORM_POWER_FILE.to_string()]
+        );
     }
 }
