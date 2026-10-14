@@ -141,6 +141,14 @@ zx_status_t ScsiCommandProcessor::HandleScsiCommand(
                lun, static_cast<uint8_t>(opcode));
     return ZX_ERR_INVALID_ARGS;
   }
+  if (!(lun & kUfsWellKnownlunId) &&
+      (lun >= kMaxLunCount || !mock_device_.GetLogicalUnit(lun).IsEnable())) {
+    // A regular LU that has not been enabled (see UfsMockDevice::AddLun) does not exist from the
+    // initiator's point of view; answer like a real device does for a non-existent LU so that
+    // the driver skips it when scanning.
+    BuildSenseData(response_upiu, scsi::SenseKey::ILLEGAL_REQUEST);
+    return ZX_ERR_NOT_FOUND;
+  }
 
   if (auto it = handlers_.find(opcode); it != handlers_.end()) {
     if (auto result = (it->second)(mock_device_, command_upiu, response_upiu, prdt_upius);

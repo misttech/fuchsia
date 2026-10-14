@@ -41,9 +41,13 @@ zx::result<> DeviceManager::SendLinkStartUp() {
     DmeLinkStartUpUicCommand link_startup_command(controller_);
     auto result = link_startup_command.SendCommand();
     if (result.is_ok()) {
-      std::lock_guard<std::mutex> lock(power_lock_);
-      current_link_state_ = LinkState::kActive;
-      return zx::ok();
+      {
+        std::lock_guard<std::mutex> lock(power_lock_);
+        current_link_state_ = LinkState::kActive;
+      }
+      // Delivered here rather than from the UIC command's post-processing so that the callback
+      // runs with uic_lock() released and may itself issue DME commands.
+      return controller_.Notify(NotifyEvent::kPostLinkStartup, 0);
     }
     fdf::warn("UFS link startup attempt {}/{} failed: {}", attempt, kMaxLinkStartUpAttempts,
               result.status_string());
@@ -269,6 +273,14 @@ zx::result<> DeviceManager::PostExceptionEventsTask() {
 }
 
 void DeviceManager::HandleExceptionEvents() {
+  // An EVENT_ALERT can arrive on the very response (e.g. START STOP UNIT) that a suspend is
+  // processing, and this task runs on its own dispatcher. While a power transition is in progress
+  // the device is either about to be powered down or still being re-initialized, and SuspendPower()
+  // / ResumePower() own the background-operation and exception-event state; skip the event
+  // (ResumePower() re-enables background operations anyway).
+  if (controller_.IsHardwarePoweredOff() || !IsResumed()) {
+    return;
+  }
   zx::result<ExceptionEventStatus> ee_status = GetExceptionEventStatus();
   if (ee_status.is_error()) {
     fdf::error("Failed to get Exception Event Status");
@@ -403,7 +415,14 @@ zx::result<> DeviceManager::ConfigureWriteBooster(inspect::Node &wb_node) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  if (zx::result<> result = EnableWriteBooster(wb_node); result.is_error()) {
+  properties_.is_write_booster_enabled =
+      wb_node.CreateBool("is_write_booster_enabled", is_write_booster_enabled_);
+  properties_.writebooster_buffer_flush_during_hibernate =
+      wb_node.CreateBool("writebooster_buffer_flush_during_hibernate", false);
+  properties_.writebooster_buffer_flush_enabled =
+      wb_node.CreateBool("writebooster_buffer_flush_enabled", is_write_booster_flush_enabled_);
+
+  if (zx::result<> result = EnableWriteBooster(); result.is_error()) {
     fdf::error("Failed to enable WriteBooster: {}", result);
     return result.take_error();
   }
@@ -501,21 +520,19 @@ zx::result<bool> DeviceManager::IsWriteBoosterBufferLifeTimeLeft() {
   return zx::ok(true);
 }
 
-zx::result<> DeviceManager::EnableWriteBooster(inspect::Node &wb_node) {
+zx::result<> DeviceManager::EnableWriteBooster() {
   // Enable WriteBooster.
   if (zx::result<> result = SetFlag(Flags::fWriteBoosterEn); result.is_error()) {
     return result.take_error();
   }
   is_write_booster_enabled_ = true;
-  properties_.is_write_booster_enabled =
-      wb_node.CreateBool("is_write_booster_enabled", is_write_booster_enabled_);
+  properties_.is_write_booster_enabled.Set(is_write_booster_enabled_);
 
   // Enable WriteBooster buffer flush during hibernate.
   if (zx::result<> result = SetFlag(Flags::fWBBufferFlushDuringHibernate); result.is_error()) {
     return result.take_error();
   }
-  properties_.writebooster_buffer_flush_during_hibernate =
-      wb_node.CreateBool("writebooster_buffer_flush_during_hibernate", true);
+  properties_.writebooster_buffer_flush_during_hibernate.Set(true);
 
   // Enable WriteBooster buffer flush.
   // TODO(https://fxbug.dev/42075643): For Samsung Exynos, ignore this flush behaviour due to the
@@ -524,8 +541,7 @@ zx::result<> DeviceManager::EnableWriteBooster(inspect::Node &wb_node) {
     return result.take_error();
   }
   is_write_booster_flush_enabled_ = true;
-  properties_.writebooster_buffer_flush_enabled =
-      wb_node.CreateBool("writebooster_buffer_flush_enabled", is_write_booster_flush_enabled_);
+  properties_.writebooster_buffer_flush_enabled.Set(is_write_booster_flush_enabled_);
 
   return zx::ok();
 }
@@ -556,56 +572,12 @@ zx::result<> DeviceManager::DisableWriteBooster() {
   return zx::ok();
 }
 
-zx::result<bool> DeviceManager::NeedWriteBoosterBufferFlush() {
-  if (!is_write_booster_enabled_) {
-    return zx::ok(false);
-  }
-
-  auto result = IsWriteBoosterBufferLifeTimeLeft();
-  if (result.is_error()) {
-    return result.take_error();
-  }
-  if (!result.value()) {
-    if (auto result = DisableWriteBooster(); result.is_error()) {
-      fdf::error("Failed to disable WriteBooster: {}", result);
-      return result.take_error();
-    }
-    return zx::ok(false);
-  }
-
-  uint8_t buffer_lun = write_booster_buffer_type_ == WriteBoosterBufferType::kLuDedicatedBuffer
-                           ? write_booster_dedicated_lu_
-                           : 0;
-  auto available_buffer_size = ReadAttribute(Attributes::bAvailableWBBufferSize, buffer_lun);
-  if (available_buffer_size.is_error()) {
-    return available_buffer_size.take_error();
-  }
-
-  switch (user_space_configuration_option_) {
-    case UserSpaceConfigurationOption::kUserSpaceReduction: {
-      // In kUserSpaceReduction mode, flush should be performed when 10% or less of the buffer is
-      // left.
-      constexpr uint32_t k10PercentBufferRemains = 0x01;
-      return zx::ok(available_buffer_size.value() <= k10PercentBufferRemains);
-    }
-    case UserSpaceConfigurationOption::kPreserveUserSpace: {
-      // In kPreserveUserSpace mode, flush should be performed when the current buffer is greater
-      // than 0 and the available buffer below write_booster_flush_threshold_ is left.
-      auto current_buffer_size = ReadAttribute(Attributes::dCurrentWBBufferSize, buffer_lun);
-      if (current_buffer_size.is_error()) {
-        return current_buffer_size.take_error();
-      }
-      if (!current_buffer_size.value()) {
-        return zx::ok(false);
-      }
-      return zx::ok(available_buffer_size.value() < write_booster_flush_threshold_);
-    }
-    default:
-      return zx::error(ZX_ERR_INVALID_ARGS);
-  }
+zx::result<> DeviceManager::InitReferenceClock(inspect::Node &controller_node) {
+  properties_.reference_clock = controller_node.CreateString("reference_clock", "");
+  return ConfigureReferenceClock();
 }
 
-zx::result<> DeviceManager::InitReferenceClock(inspect::Node &controller_node) {
+zx::result<> DeviceManager::ConfigureReferenceClock() {
   // Intel UFSHCI reference clock = 19.2MHz
   const AttributeReferenceClock reference_clock = controller_.intel_quirk()
                                                       ? AttributeReferenceClock::k19_2MHz
@@ -631,13 +603,22 @@ zx::result<> DeviceManager::InitReferenceClock(inspect::Node &controller_node) {
     default:
       return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  properties_.reference_clock =
-      controller_node.CreateString("reference_clock", reference_clock_string);
+  properties_.reference_clock.Set(reference_clock_string);
 
   return zx::ok();
 }
 
 zx::result<> DeviceManager::InitUniproAttributes(inspect::Node &unipro_node) {
+  properties_.remote_version = unipro_node.CreateUint("remote_version", 0);
+  properties_.local_version = unipro_node.CreateUint("local_version", 0);
+  properties_.host_t_activate = unipro_node.CreateUint("host_t_activate", 0);
+  properties_.device_t_activate = unipro_node.CreateUint("device_t_activate", 0);
+  properties_.host_granularity = unipro_node.CreateUint("host_granularity", 0);
+  properties_.device_granularity = unipro_node.CreateUint("device_granularity", 0);
+  return ConfigureUniproAttributes();
+}
+
+zx::result<> DeviceManager::ConfigureUniproAttributes() {
   // UniPro Version
   // 7~15 = Above 2.0, 6 = 2.0, 5 = 1.8, 4 = 1.61, 3 = 1.6, 2 = 1.41, 1 = 1.40, 0 = Reserved
   zx::result<uint32_t> remote_version = DmeGet(PA_RemoteVerInfo);
@@ -679,20 +660,30 @@ zx::result<> DeviceManager::InitUniproAttributes(inspect::Node &unipro_node) {
     return device_granularity.take_error();
   }
 
-  properties_.remote_version = unipro_node.CreateUint("remote_version", remote_version.value());
-  properties_.local_version = unipro_node.CreateUint("local_version", local_version.value());
-  properties_.host_t_activate = unipro_node.CreateUint("host_t_activate", host_t_activate.value());
-  properties_.device_t_activate =
-      unipro_node.CreateUint("device_t_activate", device_t_activate.value());
-  properties_.host_granularity =
-      unipro_node.CreateUint("host_granularity", host_granularity.value());
-  properties_.device_granularity =
-      unipro_node.CreateUint("device_granularity", device_granularity.value());
+  properties_.remote_version.Set(remote_version.value());
+  properties_.local_version.Set(local_version.value());
+  properties_.host_t_activate.Set(host_t_activate.value());
+  properties_.device_t_activate.Set(device_t_activate.value());
+  properties_.host_granularity.Set(host_granularity.value());
+  properties_.device_granularity.Set(device_granularity.value());
 
   return zx::ok();
 }
 
 zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
+  properties_.pa_active_tx_data_lanes = unipro_node.CreateUint("PA_ActiveTxDataLanes", 0);
+  properties_.pa_active_rx_data_lanes = unipro_node.CreateUint("PA_ActiveRxDataLanes", 0);
+  properties_.pa_max_rx_hs_gear = unipro_node.CreateUint("PA_MaxRxHSGear", 0);
+  properties_.pa_tx_gear = unipro_node.CreateUint("PA_TxGear", 0);
+  properties_.pa_rx_gear = unipro_node.CreateUint("PA_RxGear", 0);
+  properties_.tx_termination = unipro_node.CreateBool("tx_termination", false);
+  properties_.rx_termination = unipro_node.CreateBool("rx_termination", false);
+  properties_.pa_hs_series = unipro_node.CreateUint("PA_HSSeries", 0);
+  properties_.power_mode = unipro_node.CreateUint("power_mode", 0);
+  return ConfigureUicPowerMode();
+}
+
+zx::result<> DeviceManager::ConfigureUicPowerMode() {
   if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
       result.is_error()) {
     return result.take_error();
@@ -740,10 +731,27 @@ zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
     return result.take_error();
   }
 
-  // Set HSSerise (A = 1, B = 2)
+  // Set HSSeries (A = 1, B = 2)
   constexpr uint32_t kHsSeries = 2;
   if (zx::result<> result = DmeSet(PA_HSSeries, kHsSeries); result.is_error()) {
     return result.take_error();
+  }
+
+  // Set TX HS Adapt Type (INITIAL = 1 for HS-G4+, NO_ADAPT = 3 for HS-G1..G3), matching the gear
+  // rule in ufshcd_dme_configure_adapt(). PA_TxHsAdaptType only exists from UniPro 1.8 (HS-G4);
+  // for lower gears NO_ADAPT is the hardware default, so (unlike Linux) a rejected DME_SET is
+  // tolerated there.
+  constexpr uint32_t kPaInitialAdapt = 1;
+  constexpr uint32_t kPaNoAdapt = 3;
+  constexpr uint32_t kMinAdaptGear = 4;
+  const bool needs_adapt = max_rx_hs_gear.value() >= kMinAdaptGear;
+  const uint32_t adapt_type = needs_adapt ? kPaInitialAdapt : kPaNoAdapt;
+  if (zx::result<> result = DmeSet(PA_TxHsAdaptType, adapt_type); result.is_error()) {
+    if (needs_adapt) {
+      return result.take_error();
+    }
+    fdf::warn("Failed to set PA_TxHsAdaptType = NO_ADAPT for HS-G{}; continuing: {}",
+              max_rx_hs_gear.value(), result);
   }
 
   // Set Timeout values.
@@ -835,17 +843,65 @@ zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
     }
   }
 
-  properties_.pa_active_tx_data_lanes =
-      unipro_node.CreateUint("PA_ActiveTxDataLanes", tx_lanes.value());
-  properties_.pa_active_rx_data_lanes =
-      unipro_node.CreateUint("PA_ActiveRxDataLanes", rx_lanes.value());
-  properties_.pa_max_rx_hs_gear = unipro_node.CreateUint("PA_MaxRxHSGear", max_rx_hs_gear.value());
-  properties_.pa_tx_gear = unipro_node.CreateUint("PA_TxGear", max_rx_hs_gear.value());
-  properties_.pa_rx_gear = unipro_node.CreateUint("PA_RxGear", max_rx_hs_gear.value());
-  properties_.tx_termination = unipro_node.CreateBool("tx_termination", true);
-  properties_.rx_termination = unipro_node.CreateBool("rx_termination", true);
-  properties_.pa_hs_series = unipro_node.CreateUint("PA_HSSeries", kHsSeries);
-  properties_.power_mode = unipro_node.CreateUint("power_mode", kPwrMode);
+  properties_.pa_active_tx_data_lanes.Set(tx_lanes.value());
+  properties_.pa_active_rx_data_lanes.Set(rx_lanes.value());
+  properties_.pa_max_rx_hs_gear.Set(max_rx_hs_gear.value());
+  properties_.pa_tx_gear.Set(max_rx_hs_gear.value());
+  properties_.pa_rx_gear.Set(max_rx_hs_gear.value());
+  properties_.tx_termination.Set(true);
+  properties_.rx_termination.Set(true);
+  properties_.pa_hs_series.Set(kHsSeries);
+  properties_.power_mode.Set(kPwrMode);
+
+  return zx::ok();
+}
+
+zx::result<> DeviceManager::RestoreDeviceAndLinkConfig() {
+  // exception_event_control_ caches the device's wExceptionEventControl attribute (which exception
+  // events, e.g. urgent background operations, the device flags in response UPIUs) so that
+  // SetExceptionEventControl() can skip writes that would not change it. The power cycle reset the
+  // attribute to its default (0), so drop the cached value; otherwise a later
+  // SetExceptionEventControl() that computes the same bits we last wrote would skip the write and
+  // leave the device with those events disabled.
+  exception_event_control_ = ExceptionEventControl{0};
+
+  if (zx::result<> result = ConfigureReferenceClock(); result.is_error()) {
+    return result.take_error();
+  }
+
+  if (!controller_.qemu_quirk()) {
+    if (zx::result<> result = ConfigureUniproAttributes(); result.is_error()) {
+      return result.take_error();
+    }
+    if (zx::result<> result = ConfigureUicPowerMode(); result.is_error()) {
+      return result.take_error();
+    }
+    if (zx::result<> result = WriteAttribute(Attributes::bActiveIccLevel, kHighestActiveIcclevel);
+        result.is_error()) {
+      return result.take_error();
+    }
+  }
+
+  if (is_write_booster_enabled_) {
+    if (zx::result<> result = EnableWriteBooster(); result.is_error()) {
+      fdf::warn("Failed to re-enable WriteBooster on resume: {}", result);
+    }
+  }
+
+  // A PowerDown suspend removes VCC/VCCQ, which resets fPowerOnWPEn (JESD220). SuspendPower() does
+  // not enter PowerDown while a power-on write-protected LU is present, but re-read the flag so the
+  // cached state and inspect never silently disagree with the device.
+  if (zx::result<uint8_t> flag = ReadFlag(Flags::fPowerOnWPEn); flag.is_ok()) {
+    const bool enabled = flag.value() != 0;
+    if (enabled != is_power_on_write_protect_enabled_) {
+      fdf::warn("fPowerOnWPEn changed across PowerDown suspend: {} -> {}",
+                is_power_on_write_protect_enabled_, enabled);
+      is_power_on_write_protect_enabled_ = enabled;
+      properties_.is_power_on_write_protect_enabled.Set(enabled);
+    }
+  } else {
+    fdf::warn("Failed to re-read fPowerOnWPEn on resume: {}", flag);
+  }
 
   return zx::ok();
 }
@@ -860,9 +916,22 @@ zx::result<> DeviceManager::SetPowerCondition(scsi::PowerCondition target_power_
     return scsi_lun.take_error();
   }
 
-  // Send START STOP UNIT to change power mode
-  zx_status_t status = controller_.StartStopUnit(kPlaceholderTarget, scsi_lun.value(),
-                                                 /*immed*/ false, target_power_condition);
+  // Send START STOP UNIT to change power mode. Like ufshcd_execute_start_stop(), retry when the
+  // device answers with UNIT ATTENTION / NOT READY (ZX_ERR_UNAVAILABLE), e.g. the POWER ON unit
+  // attention that follows a PowerDown suspend.
+  zx_status_t status = ZX_ERR_INTERNAL;
+  for (int retry = 0; retry < kMaxRetries; ++retry) {
+    status = controller_.StartStopUnit(kPlaceholderTarget, scsi_lun.value(),
+                                       /*immed*/ false, target_power_condition);
+    if (status != ZX_ERR_UNAVAILABLE) {
+      break;
+    }
+    // A UNIT ATTENTION is cleared by the report itself, so retry immediately once; only back off
+    // if the device is still not ready ("becoming ready") after that.
+    if (retry > 0) {
+      zx::nanosleep(zx::deadline_after(kUnavailableRetryDelay));
+    }
+  }
   if (status != ZX_OK) {
     fdf::error("Failed to send START STOP UNIT SCSI command: {}", zx_status_get_string(status));
     return zx::error(status);
@@ -873,54 +942,126 @@ zx::result<> DeviceManager::SetPowerCondition(scsi::PowerCondition target_power_
 }
 
 zx::result<> DeviceManager::SuspendPower() {
-  const UfsPowerMode target_power_mode = UfsPowerMode::kSleep;
+  // PowerDown removes VCC/VCCQ from the device, which clears fPowerOnWPEn (JESD220) and would
+  // silently turn a power-on write-protected LU writable. Linux keeps VCC when
+  // dev_info.is_lu_power_on_wp is set; we achieve the same by staying in Sleep (device Idle, link
+  // Hibern8) instead, which only drops the link.
+  const bool power_down =
+      controller_.SupportsPowerDownSuspend() && !IsLogicalLunPowerOnWriteProtect();
+  if (controller_.SupportsPowerDownSuspend() && !power_down && !power_down_blocked_) {
+    fdf::info("A power-on write-protected LU is present; using Sleep instead of PowerDown suspend");
+    power_down_blocked_ = true;
+  }
+  const UfsPowerMode target_power_mode =
+      power_down ? UfsPowerMode::kPowerDown : UfsPowerMode::kSleep;
   const scsi::PowerCondition target_power_condition =
       GetPowerModeInfo(target_power_mode).power_condition;
   const LinkState target_link_state = GetPowerModeInfo(target_power_mode).link_state;
 
+  {
+    std::lock_guard<std::mutex> lock(power_lock_);
+
+    if (current_power_mode_ == target_power_mode &&
+        current_power_condition_ == target_power_condition &&
+        current_link_state_ == target_link_state) {
+      return zx::ok();
+    }
+
+    if (current_power_mode_ != UfsPowerMode::kActive ||
+        current_power_condition_ != scsi::PowerCondition::kActive ||
+        current_link_state_ != LinkState::kActive) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+
+    // From here on IsResumed() reports false, which keeps the I/O worker and the exception-event
+    // handler quiet while the device is being reconfigured below.
+    suspend_in_progress_ = true;
+  }
+
+  // Stop new I/O from reaching the controller and wait for the in-flight I/O to complete before
+  // issuing START STOP UNIT / stopping the host controller (ufshcd blocks SCSI requests and waits
+  // for outstanding ones for the same reason). The gate and the drain share the request
+  // processor's slot lock, so once this returns nothing but admin UPIUs can be submitted until
+  // ResumePower() re-opens it. This must happen outside power_lock_ because the I/O worker, which
+  // completes the in-flight commands, may be blocked in IsResumed().
+  zx::result<> result = req_processor_.BlockSlotAllocation(kSuspendIoDrainTimeout);
+
   std::lock_guard<std::mutex> lock(power_lock_);
-
-  if (current_power_mode_ == target_power_mode &&
-      current_power_condition_ == target_power_condition &&
-      current_link_state_ == target_link_state) {
-    return zx::ok();
+  SuspendProgress progress;
+  if (result.is_error()) {
+    fdf::error("Refusing to suspend with in-flight I/O: {}", result);
+  } else {
+    result = SuspendPowerLocked(power_down, target_power_mode, progress);
   }
 
-  if (current_power_mode_ != UfsPowerMode::kActive ||
-      current_power_condition_ != scsi::PowerCondition::kActive ||
-      current_link_state_ != LinkState::kActive) {
-    return zx::error(ZX_ERR_BAD_STATE);
+  // Finish the attempt in the same lock scope. If it failed before the new power state was recorded
+  // the device is still Active, so undo the device-side preparation (background ops /
+  // auto-hibernate off; ResumePower() would otherwise return early without re-enabling them) and
+  // re-open the I/O path. Doing all of this before suspend_in_progress_ is cleared means nobody
+  // observes IsResumed() == true until the device is back in its pre-suspend configuration. On
+  // success the slot gate stays closed until ResumePower().
+  if (!progress.suspended) {
+    if (progress.auto_hibernate_disabled) {
+      if (zx::result<> ah8 = controller_.ConfigureAutoHibernate(); ah8.is_error()) {
+        fdf::warn("Failed to re-enable auto-hibernate after failed suspend: {}", ah8);
+      }
+    }
+    if (progress.background_op_disabled) {
+      if (zx::result<> bkops = EnableBackgroundOp(); bkops.is_error()) {
+        fdf::warn("Failed to re-enable background operations after failed suspend: {}", bkops);
+      }
+    }
   }
+  suspend_in_progress_ = false;
+  if (!progress.suspended) {
+    req_processor_.UnblockSlotAllocation();
+    // Only posts to the I/O worker; it re-checks IsResumed() once this lock is released.
+    controller_.TriggerIoWork();
+  }
+  return result;
+}
 
-  // TODO(b/42075643): We need to wait for the in flight I/O.
+// Device/link side of the suspend, run with power_lock_ held once the I/O path is closed. Reports
+// through |progress| what has been done so that SuspendPower() can undo it if this fails before
+// the new power state is recorded.
+zx::result<> DeviceManager::SuspendPowerLocked(bool power_down, UfsPowerMode target_power_mode,
+                                               SuspendProgress &progress) {
+  const scsi::PowerCondition target_power_condition =
+      GetPowerModeInfo(target_power_mode).power_condition;
+  const LinkState target_link_state = GetPowerModeInfo(target_power_mode).link_state;
 
-  // TODO(b/42075643): If we turn off the power(vcc off) while LogicalLunPowerOnWriteProtect is
-  // enabled, we will lose write protection. To avoid this, power should be maintained when write
-  // protect is enabled. This requires more fine-grained power control(VCC, VCCQ, VCCQ2).
-
-  // TODO(b/42075643): In the case of power suspended state, we can apply a policy to perform
-  // background operations in the suspended state. Currently, background operations are not
-  // performed when suspend.
+  // Disable background operations before the device leaves Active, as Linux does for both runtime
+  // and system suspend (__ufshcd_wl_suspend() -> ufshcd_disable_auto_bkops(); the link may not be
+  // turned off while auto-BKOPS is enabled since that would power the device off mid-operation).
+  // Linux's only exception - keeping the device Active with VCC on so urgent BKOPS or a
+  // WriteBooster flush can finish (UFSHCD_CAP_AUTO_BKOPS_SUSPEND / b_rpm_dev_flush_capable) -
+  // applies to runtime suspend into Hibern8 only, which this driver does not do. For the same
+  // reason a pending WriteBooster flush does not hold off a system suspend: the WriteBooster
+  // buffer is non-volatile, so nothing is lost by powering the device down, and the flush simply
+  // continues once the device is Active again.
+  // TODO(b/42075643): On resume Linux only re-enables BKOPS when bBackgroundOpStatus is at least
+  // "performance impact" (ufshcd_bkops_ctrl()) and otherwise relies on the URGENT_BKOPS exception
+  // event; ResumePower() re-enables unconditionally, matching our Active-state policy in
+  // ConfigureBackgroundOp().
   if (zx::result<> result = DisableBackgroundOp(); result.is_error()) {
     return result.take_error();
   }
+  progress.background_op_disabled = true;
 
-  // We should check if WriteBooster Flush is needed. If so, we should postpone changing the power
-  // mode.
-  zx::result<bool> result = NeedWriteBoosterBufferFlush();
-  if (result.is_error()) {
+  if (zx::result<> result = controller_.Notify(NotifyEvent::kPreSuspend, 0); result.is_error()) {
     return result.take_error();
   }
-  if (result.value()) {
-    // TODO(b/42075643): We need to keep the power mode active until the
-    // Writebooster flush is complete.
-    fdf::warn("WriteBooster buffer flush is needed");
-    return zx::ok();
-  }
 
-  if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
-      result.is_error()) {
+  if (zx::result<> result = controller_.DisableAutoHibernate(); result.is_error()) {
     return result.take_error();
+  }
+  progress.auto_hibernate_disabled = true;
+
+  if (!power_down) {
+    if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
+        result.is_error()) {
+      return result.take_error();
+    }
   }
 
   if (zx::result<> result = SetPowerCondition(target_power_condition); result.is_error()) {
@@ -930,19 +1071,53 @@ zx::result<> DeviceManager::SuspendPower() {
   DmeHibernateEnterCommand dme_hibernate_enter_command(controller_);
   if (auto result = dme_hibernate_enter_command.SendCommand(); result.is_error()) {
     // TODO(b/42075643): Link has a problem and needs to perform error recovery.
+    // The device already left Active; bring it back (ufshcd's set_dev_active) so the state we
+    // leave behind matches what the I/O path assumes when it is re-opened. If that fails too, the
+    // recorded state (Active mode/link, non-Active condition) is repaired by the next
+    // ResumePower(), which re-issues START STOP UNIT without touching the link.
+    if (zx::result<> active = SetPowerCondition(scsi::PowerCondition::kActive); active.is_error()) {
+      fdf::error("Failed to restore Active power condition after hibernate-enter failure: {}",
+                 active);
+    }
     return result.take_error();
   }
 
-  if (zx::result<> result = controller_.Notify(NotifyEvent::kPostPowerModeChange, 0);
-      result.is_error()) {
-    return result.take_error();
+  zx_status_t power_down_status = ZX_OK;
+  if (!power_down) {
+    if (zx::result<> result = controller_.Notify(NotifyEvent::kPostPowerModeChange, 0);
+        result.is_error()) {
+      return result.take_error();
+    }
+  } else {
+    // Block new admin UPIUs (RPMB, fuchsia.hardware.ufs, exception-event worker) for the rest of
+    // the sequence; TransferRequestProcessor::SendRequestUpiu() checks IsHardwarePoweredOff()
+    // under this lock, so once it is set below nothing can reach the registers.
+    std::lock_guard<std::mutex> admin_lock(
+        controller_.GetTransferRequestProcessor().admin_slot_lock());
+
+    // Stop the host controller and mark the register space as powered off (under uic_lock(), so
+    // that any UIC command / key-slot write already in progress completes first).
+    power_down_status = controller_.StopHostControllerForPowerDown();
+    if (zx::result<> result = controller_.Notify(NotifyEvent::kPostSuspend, 0); result.is_error()) {
+      fdf::error("PHY power-down failed after stopping the host controller: {}", result);
+      if (power_down_status == ZX_OK) {
+        power_down_status = result.status_value();
+      }
+    }
   }
 
+  // Once the host controller has been stopped there is no way back short of a full
+  // re-initialization, so a PowerDown failure is still recorded as PowerDown (and reported to Power
+  // Broker); the next "on" then takes the ReinitAfterPowerDown() path.
   current_link_state_ = target_link_state;
   current_power_mode_ = target_power_mode;
   current_power_condition_ = target_power_condition;
   properties_.power_suspended.Set(true);
+  progress.suspended = true;
 
+  if (power_down_status != ZX_OK) {
+    return zx::error(power_down_status);
+  }
   fdf::info("Power suspended.");
   return zx::ok();
 }
@@ -953,33 +1128,109 @@ zx::result<> DeviceManager::ResumePower() {
       GetPowerModeInfo(target_power_mode).power_condition;
   const LinkState target_link_state = GetPowerModeInfo(target_power_mode).link_state;
 
+  bool from_power_down = false;
+  bool device_only = false;
+  {
+    std::lock_guard<std::mutex> lock(power_lock_);
+
+    if (current_power_mode_ == target_power_mode &&
+        current_power_condition_ == target_power_condition &&
+        current_link_state_ == target_link_state) {
+      return zx::ok();
+    }
+
+    from_power_down =
+        (current_power_mode_ == UfsPowerMode::kPowerDown && current_link_state_ == LinkState::kOff);
+    const bool from_sleep = (current_power_mode_ == UfsPowerMode::kSleep &&
+                             current_power_condition_ == scsi::PowerCondition::kIdle &&
+                             current_link_state_ == LinkState::kHibernate);
+    // Left behind by SuspendPower() when hibernate-enter failed and the device could not be
+    // brought back to Active either: the link is still up, only START STOP UNIT needs re-issuing.
+    device_only = (current_power_mode_ == UfsPowerMode::kActive &&
+                   current_link_state_ == LinkState::kActive &&
+                   current_power_condition_ != target_power_condition);
+    if (!from_power_down && !from_sleep && !device_only) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+  }
+
+  if (from_power_down) {
+    // Mirror ufshcd_reset_and_restore(): a failed link startup / device init after PowerDown is
+    // retried with a full PHY + device power cycle in between, rather than leaving storage
+    // unusable until reboot.
+    zx::result<> reinit_result = zx::ok();
+    for (int attempt = 1; attempt <= kMaxPowerDownResumeAttempts; ++attempt) {
+      if (zx::result<> result = controller_.Notify(NotifyEvent::kPreResume, 0); result.is_error()) {
+        fdf::error("PHY resume failed (attempt {}/{}): {}", attempt, kMaxPowerDownResumeAttempts,
+                   result);
+        reinit_result = result;
+      } else {
+        // The UFSHCI power domains/clocks are back; registers may be accessed again.
+        controller_.SetHardwarePoweredOff(false);
+        // Execute ReinitAfterPowerDown() outside power_lock_ because SendLinkStartUp() acquires
+        // power_lock_ and admin UPIUs trigger ProcessIo() on the IO worker thread.
+        // current_power_mode_ remains kPowerDown until reinit completes, so IsResumed() stays
+        // false.
+        reinit_result = controller_.ReinitAfterPowerDown();
+        if (reinit_result.is_ok()) {
+          // The device comes out of a power cycle in the Active power condition, but issue START
+          // STOP UNIT explicitly (as ufshcd does) so that the device state is known rather than
+          // assumed.
+          std::lock_guard<std::mutex> lock(power_lock_);
+          reinit_result = SetPowerCondition(target_power_condition);
+        }
+        if (reinit_result.is_ok()) {
+          break;
+        }
+        fdf::error("Re-initialization after PowerDown failed (attempt {}/{}): {}", attempt,
+                   kMaxPowerDownResumeAttempts, reinit_result);
+        // Stop the host controller (as SuspendPower() does, under admin_slot_lock() so that no
+        // admin UPIU slips in between the IsHardwarePoweredOff() check and the doorbell write) and
+        // make sure nothing touches it while the PHY is powered down again.
+        std::lock_guard<std::mutex> admin_lock(
+            controller_.GetTransferRequestProcessor().admin_slot_lock());
+        controller_.StopHostControllerForPowerDown();
+      }
+      // Power the PHY and device back down so that their state matches the PowerDown state we
+      // keep recording (whether we retry or give up). Errors are logged by the PHY driver.
+      if (zx::result<> result = controller_.Notify(NotifyEvent::kPostSuspend, 0);
+          result.is_error()) {
+        fdf::warn("PHY power-down after failed resume attempt failed: {}", result);
+      }
+      // SendLinkStartUp() records LinkState::kActive as soon as DME_LINKSTARTUP succeeds. The link
+      // is down again now that the PHY is off, so restore the PowerDown state; otherwise the next
+      // ResumePower() would not recognise the PowerDown state and fail with ZX_ERR_BAD_STATE.
+      std::lock_guard<std::mutex> lock(power_lock_);
+      current_link_state_ = LinkState::kOff;
+      current_power_mode_ = UfsPowerMode::kPowerDown;
+      current_power_condition_ = GetPowerModeInfo(UfsPowerMode::kPowerDown).power_condition;
+    }
+    if (reinit_result.is_error()) {
+      // current_* describe PowerDown again; the next "on" retries from kPreResume.
+      return reinit_result.take_error();
+    }
+  }
+
   std::lock_guard<std::mutex> lock(power_lock_);
+  const bool link_in_hibernate = !from_power_down && !device_only;
+  if (link_in_hibernate) {
+    if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
+        result.is_error()) {
+      return result.take_error();
+    }
 
-  if (current_power_mode_ == target_power_mode &&
-      current_power_condition_ == target_power_condition &&
-      current_link_state_ == target_link_state) {
-    return zx::ok();
+    DmeHibernateExitCommand dme_hibernate_exit_command(controller_);
+    if (auto result = dme_hibernate_exit_command.SendCommand(); result.is_error()) {
+      // TODO(https://fxbug.dev/42075643): Link has a problem and needs to perform error recovery.
+      return result.take_error();
+    }
   }
 
-  if (current_power_mode_ != UfsPowerMode::kSleep ||
-      current_power_condition_ != scsi::PowerCondition::kIdle ||
-      current_link_state_ != LinkState::kHibernate) {
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-
-  if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
-      result.is_error()) {
-    return result.take_error();
-  }
-
-  DmeHibernateExitCommand dme_hibernate_exit_command(controller_);
-  if (auto result = dme_hibernate_exit_command.SendCommand(); result.is_error()) {
-    // TODO(https://fxbug.dev/42075643): Link has a problem and needs to perform error recovery.
-    return result.take_error();
-  }
-
-  if (zx::result<> result = SetPowerCondition(target_power_condition); result.is_error()) {
-    return result.take_error();
+  // (The PowerDown path already issued START STOP UNIT inside its retry loop.)
+  if (!from_power_down) {
+    if (zx::result<> result = SetPowerCondition(target_power_condition); result.is_error()) {
+      return result.take_error();
+    }
   }
 
   current_link_state_ = target_link_state;
@@ -987,14 +1238,30 @@ zx::result<> DeviceManager::ResumePower() {
   current_power_condition_ = target_power_condition;
   properties_.power_suspended.Set(false);
 
-  if (zx::result<> result = controller_.Notify(NotifyEvent::kPostPowerModeChange, 0);
-      result.is_error()) {
-    return result.take_error();
+  if (link_in_hibernate) {
+    if (zx::result<> result = controller_.Notify(NotifyEvent::kPostPowerModeChange, 0);
+        result.is_error()) {
+      return result.take_error();
+    }
+  }
+
+  // From here on the device is Active and usable for I/O, so re-open the slot gate closed by
+  // SuspendPower() (the caller posts TriggerIoWork() once we return); the remaining steps are
+  // optimisations (platform hook, background ops, auto-hibernate) whose failure should not be
+  // reported as a failed resume.
+  req_processor_.UnblockSlotAllocation();
+
+  if (zx::result<> result = controller_.Notify(NotifyEvent::kPostResume, 0); result.is_error()) {
+    fdf::warn("PostResume callback failed: {}", result);
   }
 
   // TODO(b/42075643): We should only perform background operations in the power suspended state.
   if (zx::result<> result = EnableBackgroundOp(); result.is_error()) {
-    return result.take_error();
+    fdf::warn("Failed to re-enable background operations after resume: {}", result);
+  }
+
+  if (zx::result<> result = controller_.ConfigureAutoHibernate(); result.is_error()) {
+    fdf::warn("Failed to re-enable auto-hibernate after resume: {}", result);
   }
 
   fdf::info("Power resumed.");

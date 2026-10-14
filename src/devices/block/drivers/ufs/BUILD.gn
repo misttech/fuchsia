@@ -56,7 +56,6 @@ _common_deps = [
   "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_cpp",
   "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
   "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
-  "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
   "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_cpp",
   "//sdk/fidl/fuchsia.hardware.scsi:fuchsia.hardware.scsi_cpp",
   "//sdk/fidl/fuchsia.hardware.ufs:fuchsia.hardware.ufs_cpp",

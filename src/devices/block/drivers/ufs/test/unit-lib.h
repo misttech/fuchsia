@@ -5,7 +5,6 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_TEST_UNIT_LIB_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_TEST_UNIT_LIB_H_
 
-#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/test_base.h>
@@ -128,20 +127,12 @@ class FakePci : public fidl::WireServer<fuchsia_hardware_pci::Device> {
 class FakeCpuElementManager
     : public fidl::testing::TestBase<fuchsia_power_system::CpuElementManager> {
  public:
-  FakeCpuElementManager() { zx::event::create(0, &cpu_dep_token_); }
-
   fidl::ProtocolHandler<fuchsia_power_system::CpuElementManager> CreateHandler() {
     return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                    fidl::kIgnoreBindingClosure);
   }
 
   bool execution_state_dependency_added() const { return dependency_token_.is_valid(); }
-
-  void GetCpuDependencyToken(GetCpuDependencyTokenCompleter::Sync& completer) override {
-    zx::event copy;
-    cpu_dep_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy);
-    completer.Reply({{std::move(copy)}});
-  }
 
   void AddExecutionStateDependency(AddExecutionStateDependencyRequest& request,
                                    AddExecutionStateDependencyCompleter::Sync& completer) override {
@@ -171,7 +162,6 @@ class FakeCpuElementManager
 
  private:
   fidl::ServerBindingGroup<fuchsia_power_system::CpuElementManager> bindings_;
-  zx::event cpu_dep_token_;
   zx::event dependency_token_;
 };
 
@@ -208,34 +198,27 @@ class PowerElement {
   fidl::ServerBindingRef<fuchsia_power_broker::Lessor> lessor_;
 };
 
-class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
+// Stands in for Power Broker on the far side of the power element that driver_manager creates for
+// the node and passes to the driver through DriverStartArgs.power_element_args: it serves the
+// ElementControl/Lessor ends and keeps the ElementRunner client so tests can issue SetLevel().
+class FakePowerBroker {
  public:
-  fidl::ProtocolHandler<fuchsia_power_broker::Topology> CreateHandler() {
-    return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                   fidl::kIgnoreBindingClosure);
-  }
-
-  void AddElement(fuchsia_power_broker::ElementSchema& req,
-                  AddElementCompleter::Sync& completer) override {
-    // Get channels from request.
-    ASSERT_TRUE(req.element_runner().has_value());
-    fidl::ServerEnd<fuchsia_power_broker::Lessor>& lessor_server_end = req.lessor_channel().value();
-
+  void AddHardwarePowerElement(
+      fidl::ServerEnd<fuchsia_power_broker::ElementControl> element_control_server_end,
+      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> element_runner_client_end,
+      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor_server_end) {
     // Instantiate (fake) element control implementation.
-    ASSERT_TRUE(req.element_control().has_value());
     auto element_control_impl = std::make_unique<FakeElementControl>();
     fidl::ServerBindingRef<fuchsia_power_broker::ElementControl> element_control_binding =
         fidl::BindServer<fuchsia_power_broker::ElementControl>(
-            fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(*req.element_control()),
-            std::move(element_control_impl));
+            fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+            std::move(element_control_server_end), std::move(element_control_impl),
+            [](FakeElementControl* impl, fidl::UnbindInfo info,
+               fidl::ServerEnd<fuchsia_power_broker::ElementControl> server_end) mutable {});
 
     // Instantiate (fake) lessor implementation.
     auto lessor_impl = std::make_unique<FakeLessor>();
-    if (req.element_name() == Ufs::kHardwarePowerElementName) {
-      hardware_power_lessor_ = lessor_impl.get();
-    } else {
-      ZX_ASSERT_MSG(0, "Unexpected power element.");
-    }
+    hardware_power_lessor_ = lessor_impl.get();
     fidl::ServerBindingRef<fuchsia_power_broker::Lessor> lessor_binding =
         fidl::BindServer<fuchsia_power_broker::Lessor>(
             fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(lessor_server_end),
@@ -243,37 +226,27 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
             [](FakeLessor* impl, fidl::UnbindInfo info,
                fidl::ServerEnd<fuchsia_power_broker::Lessor> server_end) mutable {});
 
-    // Make (fake) call to ElementRunner::SetLevel
-    if (req.element_name() == Ufs::kHardwarePowerElementName) {
-      fidl::Client<fuchsia_power_broker::ElementRunner> element_runner_client(
-          std::move(*req.element_runner()), fdf::Dispatcher::GetCurrent()->async_dispatcher());
-      element_runner_client->SetLevel(Ufs::kPowerLevelOff)
-          .ThenExactlyOnce(
-              [&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel>& result) mutable {
-                if (!result.is_ok()) {
-                  ADD_FAILURE() << "SetLevel failed: " << result.error_value();
-                }
-              });
-      hardware_power_element_runner_client_ = std::move(element_runner_client);
-    }
+    hardware_power_element_runner_client_ = fidl::Client<fuchsia_power_broker::ElementRunner>(
+        std::move(element_runner_client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+    // Power Broker issues SetLevel(off) as soon as the element exists because no lease is held
+    // yet. fdf_power::Suspendable acknowledges it without calling Ufs::Suspend() (the first "off"
+    // before any "on" is ignored); the tests verify that the hardware stays active.
+    hardware_power_element_runner_client_->SetLevel(Ufs::kPowerLevelOff)
+        .ThenExactlyOnce(
+            [](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel>& result) mutable {
+              if (!result.is_ok()) {
+                ADD_FAILURE() << "SetLevel failed: " << result.error_value();
+              }
+            });
+
     servers_.emplace_back(std::move(element_control_binding), std::move(lessor_binding));
-
-    completer.Reply(fit::success());
   }
-
-  void Lease(LeaseRequest& req, LeaseCompleter::Sync& completer) override {
-    completer.Reply(fit::success());
-  }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> md,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   FakeLessor* hardware_power_lessor_ = nullptr;
   fidl::Client<fuchsia_power_broker::ElementRunner> hardware_power_element_runner_client_;
 
  private:
-  fidl::ServerBindingGroup<fuchsia_power_broker::Topology> bindings_;
-
   std::vector<PowerElement> servers_;
 };
 
@@ -283,6 +256,12 @@ class TestUfs : public UfsPci {
   ~TestUfs() override = default;
 
   inspect::ComponentInspector& GetInspector() { return *component_inspector_; }
+
+  bool SupportsPowerDownSuspend() const override { return supports_power_down_suspend_; }
+
+  static void SetSupportsPowerDownSuspend(bool supports) {
+    supports_power_down_suspend_ = supports;
+  }
 
   static void SetMockDevice(ufs_mock_device::UfsMockDevice* mock_device) {
     TestUfs::mock_device_ = mock_device;
@@ -295,6 +274,7 @@ class TestUfs : public UfsPci {
   // TODO(https://fxbug.dev/42075643): We can avoid the static pointer by moving the
   // RegisterMmioProcessor to the TestUfs class.
   static ufs_mock_device::UfsMockDevice* mock_device_;
+  static bool supports_power_down_suspend_;
 };
 
 class Environment : public fdf_testing::Environment {
@@ -315,15 +295,11 @@ class Environment : public fdf_testing::Environment {
             cpu_element_manager_.CreateHandler());
     EXPECT_EQ(ZX_OK, result_cpu_manager.status_value());
 
-    // Serve (fake) power_broker.
-    auto result_pb = to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
-        power_broker_.CreateHandler());
-    EXPECT_EQ(ZX_OK, result_pb.status_value());
-
     return zx::ok();
   }
 
   FakePci& pci_server() { return pci_server_; }
+  FakeCpuElementManager& cpu_element_manager() { return cpu_element_manager_; }
   FakePowerBroker& power_broker() { return power_broker_; }
 
  private:
@@ -381,6 +357,21 @@ class UfsTest : public ::testing::Test {
   zx::result<uint8_t> ReserveAdminSlot() {
     std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().admin_slot_lock_);
     return dut_->GetTransferRequestProcessor().ReserveAdminSlot();
+  }
+
+  // Releases a transfer request slot reserved with ReserveSlot<TransferRequestProcessor>().
+  zx::result<> ClearSlot(uint8_t slot_num) {
+    TransferRequestProcessor& processor = dut_->GetTransferRequestProcessor();
+    std::lock_guard<std::mutex> lock(processor.GetSlotLock());
+    return processor.ClearSlotLocked(processor.GetRequestListLocked().GetSlot(slot_num));
+  }
+
+  // Marks a reserved transfer request slot as timed out, as RequestCompletion() does when a
+  // command's deadline passes while the controller still owns the slot.
+  void SetSlotTimedOut(uint8_t slot_num) {
+    TransferRequestProcessor& processor = dut_->GetTransferRequestProcessor();
+    std::lock_guard<std::mutex> lock(processor.GetSlotLock());
+    processor.GetRequestListLocked().GetSlot(slot_num).state = SlotState::kTimeout;
   }
 
   ufs_mock_device::UfsMockDevice mock_device_;

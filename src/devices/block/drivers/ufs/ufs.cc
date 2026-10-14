@@ -4,18 +4,17 @@
 
 #include "ufs.h"
 
-#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/wire_types.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/driver/power/cpp/element-description-builder.h>
-#include <lib/driver/power/cpp/power-support.h>
 #include <lib/fit/defer.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/trace/event.h>
 #include <zircon/errors.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <mutex>
@@ -29,91 +28,10 @@
 namespace ufs {
 namespace {
 
-// TODO(b/329588116): Relocate this power config.
-// This power element represents the SDMMC controller hardware.
-//
-// The "boot" level is an implementation detail, allowing the driver to keep the hardware powered on
-// during initialization. The external system depends on the higher "on" level, so the driver can
-// observe when the element is required on due to external factors and then drop its self-lease on
-// the "boot" level.
-fuchsia_hardware_power::PowerElementConfiguration GetHardwarePowerConfig() {
-  auto transitions_from_off =
-      std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
-          .target_level = Ufs::kPowerLevelOn,
-          // TODO(b/42075643): Fill it in later with appropriate numbers.
-          .latency_us = 0,
-      }}};
-  auto transitions_from_boot =
-      std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
-          .target_level = Ufs::kPowerLevelOn,
-          // TODO(b/42075643): Fill it in later with appropriate numbers.
-          .latency_us = 0,
-      }}};
-  auto transitions_from_on =
-      std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
-          .target_level = Ufs::kPowerLevelOff,
-          // TODO(b/42075643): Fill it in later with appropriate numbers.
-          .latency_us = 0,
-      }}};
-
-  fuchsia_hardware_power::PowerLevel off = {
-      {.level = Ufs::kPowerLevelOff, .name = "off", .transitions = transitions_from_off}};
-  fuchsia_hardware_power::PowerLevel boot = {
-      {.level = Ufs::kPowerLevelBoot, .name = "boot", .transitions = transitions_from_boot}};
-  fuchsia_hardware_power::PowerLevel on = {
-      {.level = Ufs::kPowerLevelOn, .name = "on", .transitions = transitions_from_on}};
-
-  fuchsia_hardware_power::PowerElement hardware_power = {{
-      .name = Ufs::kHardwarePowerElementName,
-      .levels = {{off, boot, on}},
-  }};
-
-  fuchsia_hardware_power::LevelTuple on_to_cpu = {{
-      .child_level = Ufs::kPowerLevelOn,
-      .parent_level = static_cast<uint8_t>(fuchsia_power_system::ExecutionStateLevel::kSuspending),
-  }};
-  fuchsia_hardware_power::PowerDependency on_to_cpu_dependency = {{
-      .child = Ufs::kHardwarePowerElementName,
-      .parent = fuchsia_hardware_power::ParentElement::WithCpuControl(
-          fuchsia_hardware_power::CpuPowerElement::kCpu),
-      .level_deps = {{on_to_cpu}},
-  }};
-
-  fuchsia_hardware_power::PowerElementConfiguration hardware_power_config = {
-      {.element = hardware_power, .dependencies = {{on_to_cpu_dependency}}}};
-  return hardware_power_config;
-}
-
-// TODO(b/329588116): Relocate this power config.
-std::vector<fuchsia_hardware_power::PowerElementConfiguration> GetAllPowerConfigs() {
-  return std::vector<fuchsia_hardware_power::PowerElementConfiguration>{GetHardwarePowerConfig()};
-}
-
 constexpr std::string_view kIrqDispatcherRole = "fuchsia.devices.storage.ufs.irq";
 constexpr std::string_view kIoDispatcherRole = "fuchsia.devices.storage.ufs.worker";
 
 }  // namespace
-
-zx::result<fuchsia_power_broker::LeaseToken> Ufs::AcquireInitLease(
-    const fidl::WireSyncClient<fuchsia_power_broker::Topology>& topology_client) {
-  fuchsia_power_broker::LeaseToken lease_token_local, lease_token_broker;
-  zx_status_t status = zx::eventpair::create(0, &lease_token_local, &lease_token_broker);
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-
-  zx::event dependency_token;
-  ZX_ASSERT(hardware_power_assertive_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dependency_token) ==
-            ZX_OK);
-  auto result = fdf_power::AcquireLease(topology_client.client_end().borrow(),
-                                        std::move(dependency_token), Ufs::kPowerLevelBoot,
-                                        "ufs-init", true, std::move(lease_token_broker));
-  if (result.is_error()) {
-    fdf::error("Failed to acquire lease: {}", fdf_power::ErrorToString(result.error_value()));
-    return fdf_power::ErrorToZxError(result.error_value());
-  }
-  return zx::ok(std::move(lease_token_local));
-}
 
 zx::result<> Ufs::NotifyEventCallback(NotifyEvent event, uint64_t data) {
   switch (event) {
@@ -128,6 +46,10 @@ zx::result<> Ufs::NotifyEventCallback(NotifyEvent event, uint64_t data) {
     case NotifyEvent::kSetupTaskManagementRequestList:
     case NotifyEvent::kPrePowerModeChange:
     case NotifyEvent::kPostPowerModeChange:
+    case NotifyEvent::kPreSuspend:
+    case NotifyEvent::kPostSuspend:
+    case NotifyEvent::kPreResume:
+    case NotifyEvent::kPostResume:
       return zx::ok();
     default:
       return zx::error(ZX_ERR_INVALID_ARGS);
@@ -264,7 +186,10 @@ void Ufs::ProcessIoSubmissions() {
 
     zx::result<uint8_t> slot = transfer_request_processor_->ReserveSlot();
     if (slot.is_error()) {
-      if (slot.error_value() == ZX_ERR_NO_RESOURCES) {
+      // ZX_ERR_NO_RESOURCES: the request list is full. ZX_ERR_BAD_STATE: slot allocation is
+      // blocked for a power transition (see RequestProcessor::BlockSlotAllocation()). Either way
+      // the command stays queued and is retried on the next TriggerIoWork().
+      if (slot.error_value() == ZX_ERR_NO_RESOURCES || slot.error_value() == ZX_ERR_BAD_STATE) {
         std::lock_guard<std::mutex> lock(lock_);
         if (shutdown_) {
           io_cmd.request.Complete(ZX_ERR_IO_NOT_PRESENT);
@@ -311,6 +236,16 @@ void Ufs::ProcessErrors() {
 }
 
 zx::result<> Ufs::Isr() {
+  if (IsHardwarePoweredOff()) {
+    // The UFSHCI power domains/clocks are gated, so the register space must not be accessed. This
+    // can only be a late delivery of an interrupt that was already pending when IE was cleared in
+    // StopHostControllerForPowerDown(), and there is nothing to stash: in-flight I/O was drained
+    // before the controller was stopped, HCE = 0 reset the controller (doorbells, IS and UIC state
+    // included), and ReinitAfterPowerDown() re-initializes it from scratch, so whatever this
+    // interrupt reported no longer exists.
+    return zx::ok();
+  }
+
   const fdf::MmioBuffer& mmio = mmio_.value();
   auto interrupt_status = InterruptStatusReg::Get().ReadFrom(&mmio);
 
@@ -441,10 +376,8 @@ void Ufs::ProcessIo() {
     }
   }
 
-  // TODO(https://fxbug.dev/42075643): We need to perform a I/O completion on the in-flight I/O
-  // before the device is suspended.
-  // Always process in-flight completions before checking power state so
-  // pending query/init UPIUs can complete even during power transitions.
+  // Always process in-flight completions before checking power state so pending query/init UPIUs
+  // can complete even during power transitions.
   ProcessIoCompletions();
 
   {
@@ -472,6 +405,58 @@ void Ufs::ScheduleTimeoutTask() {
   }
 
   timeout_task_.PostForTime(io_worker_dispatcher_.async_dispatcher(), zx::time(deadline));
+}
+
+void Ufs::SetHardwarePoweredOff(bool powered_off) {
+  hardware_powered_off_.store(powered_off, std::memory_order_release);
+  if (!powered_off) {
+    return;
+  }
+  // Interrupts are already masked (IE = 0), but an ISR that started just before may still be
+  // running on the IRQ worker, and an admin completion task that already passed its
+  // IsHardwarePoweredOff() check may still be about to read the doorbell register on the admin
+  // worker. Wait for both to drain before the PHY driver gates power/clocks. The I/O worker must
+  // NOT be barriered here: it may be parked in IsResumed() on power_lock_, which the caller holds.
+  // It stays off the registers because no I/O slot is allocated (SuspendPower() blocked slot
+  // allocation and drained the request list before stopping the controller), so neither the
+  // completion path nor ReserveSlot() reads the doorbell.
+  for (fdf::Dispatcher* worker : {&irq_worker_dispatcher_, &admin_worker_dispatcher_}) {
+    if (!worker->get()) {
+      continue;
+    }
+    libsync::Completion barrier;
+    zx_status_t status =
+        async::PostTask(worker->async_dispatcher(), [&barrier]() { barrier.Signal(); });
+    if (status == ZX_OK) {
+      barrier.Wait();
+    } else {
+      fdf::warn("Failed to post power-down worker barrier: {}", zx_status_get_string(status));
+    }
+  }
+}
+
+zx_status_t Ufs::StopHostControllerForPowerDown() {
+  // RequestProcessor::BlockSlotAllocation() must have run: the I/O completion path only stays away
+  // from the registers because no I/O slot is allocated once the controller is powered off.
+  ZX_DEBUG_ASSERT(transfer_request_processor_->GetInflightIoCount() == 0);
+
+  // Serialise against UIC commands / key-slot writes that are already past their
+  // IsHardwarePoweredOff() check (see uic_lock()).
+  std::lock_guard<std::mutex> lock(uic_lock_);
+
+  // Mask interrupts and disable the host controller before powering down the PHY and clocks
+  // (matching ufshcd_hba_stop in Linux ufshcd) so that link-loss events during PHY power-down do
+  // not trigger interrupt handling while UFSHCI clocks/power domains are off.
+  InterruptEnableReg::Get().FromValue(0).WriteTo(&GetMmio());
+  zx_status_t status = DisableHostController();
+  if (status != ZX_OK) {
+    fdf::error("Failed to disable host controller before PowerDown: {}",
+               zx_status_get_string(status));
+  }
+  // From here on the ISR / I/O paths must not touch UFSHCI registers: the PHY driver is about to
+  // gate the UFSHCI power domains and clocks.
+  SetHardwarePoweredOff(true);
+  return status;
 }
 
 void Ufs::ExecuteCommandsAsync(uint8_t target, uint16_t lun, std::span<scsi::ScsiRequest> batch) {
@@ -580,15 +565,20 @@ zx_status_t Ufs::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, boo
   if (scsi_status != static_cast<uint8_t>(scsi::StatusCode::GOOD)) {
     auto* sense_data =
         reinterpret_cast<scsi::FixedFormatSenseDataHeader*>(response.value()->GetSenseData());
+    // UNIT ATTENTION (e.g. POWER ON after a PowerDown suspend) and NOT READY are transient and
+    // retried by the callers, so they are not worth an error log.
+    const bool retryable = scsi_status == static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION) &&
+                           (sense_data->sense_key() == scsi::SenseKey::UNIT_ATTENTION ||
+                            sense_data->sense_key() == scsi::SenseKey::NOT_READY);
+    if (retryable) {
+      fdf::debug("ExecuteCommandSync scsi_status=0x{:x}, sense_key=0x{:x}, asc=0x{:x}, ascq=0x{:x}",
+                 scsi_status, static_cast<uint8_t>(sense_data->sense_key()),
+                 sense_data->additional_sense_code, sense_data->additional_sense_code_qualifier);
+      return ZX_ERR_UNAVAILABLE;
+    }
     fdf::error("ExecuteCommandSync scsi_status=0x{:x}, sense_key=0x{:x}, asc=0x{:x}, ascq=0x{:x}",
                scsi_status, static_cast<uint8_t>(sense_data->sense_key()),
                sense_data->additional_sense_code, sense_data->additional_sense_code_qualifier);
-    if (scsi_status == static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION)) {
-      if (sense_data->sense_key() == scsi::SenseKey::UNIT_ATTENTION ||
-          sense_data->sense_key() == scsi::SenseKey::NOT_READY) {
-        return ZX_ERR_UNAVAILABLE;
-      }
-    }
     return ZX_ERR_BAD_STATE;
   }
 
@@ -654,7 +644,7 @@ zx::result<> Ufs::InitMmioBuffer() {
   return zx::ok();
 }
 
-Ufs::Ufs() : fdf::DriverBase2(kDriverName), hardware_power_element_runner_server_(*this) {}
+Ufs::Ufs() : fdf::DriverBase2(kDriverName) {}
 
 zx_status_t Ufs::Init() {
   if (zx::result<> result = InitMmioBuffer(); result.is_error()) {
@@ -991,6 +981,8 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
     }
   }
   properties_.power_suspended = inspect_node_.CreateBool("power_suspended", false);
+  properties_.suspend_failures = inspect_node_.CreateUint("suspend_failures", 0);
+  properties_.resume_failures = inspect_node_.CreateUint("resume_failures", 0);
 
   zx::result<uint32_t> result = device_manager_->GetBootLunEnabled();
   if (result.is_error()) {
@@ -1000,7 +992,7 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
   properties_.b_boot_lun_en = attributes_node.CreateUint("bBootLunEn", result.value());
 
   // Configure Auto-Hibernate (AH8) if supported by the host controller.
-  if (zx::result<> result = MaybeConfigureAutoHibernate(); result.is_error()) {
+  if (zx::result<> result = ConfigureAutoHibernate(); result.is_error()) {
     fdf::error("Failed to configure Auto-Hibernate: {}", result);
     return result.take_error();
   }
@@ -1015,7 +1007,7 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
   return zx::ok();
 }
 
-zx::result<> Ufs::MaybeConfigureAutoHibernate() {
+zx::result<> Ufs::ConfigureAutoHibernate() {
   if (qemu_quirk_) {
     return zx::ok();
   }
@@ -1035,6 +1027,183 @@ zx::result<> Ufs::MaybeConfigureAutoHibernate() {
   ahit_reg.WriteTo(&mmio);
   fdf::info("UFS Auto-Hibernate enabled (scale: {}, value: {})",
             static_cast<uint32_t>(ahit_reg.timer_scale()), ahit_reg.timer_value());
+  return zx::ok();
+}
+
+zx::result<> Ufs::DisableAutoHibernate() {
+  if (qemu_quirk_) {
+    return zx::ok();
+  }
+  const fdf::MmioBuffer& mmio = mmio_.value();
+  if (!CapabilityReg::Get().ReadFrom(&mmio).auto_hibernation_support()) {
+    return zx::ok();
+  }
+  AutoHibernateIdleTimerReg::Get().FromValue(0).WriteTo(&mmio);
+  return zx::ok();
+}
+
+zx::result<> Ufs::ReinitAfterPowerDown() {
+  const fdf::MmioBuffer& mmio = mmio_.value();
+  InterruptEnableReg::Get().FromValue(0).WriteTo(&mmio);
+
+  if (zx::result<> result = Notify(NotifyEvent::kReset, 0); result.is_error()) {
+    return result.take_error();
+  }
+  if (HostControllerEnableReg::Get().ReadFrom(&mmio).host_controller_enable()) {
+    DisableHostController();
+  }
+  if (zx_status_t status = EnableHostController(); status != ZX_OK) {
+    fdf::error("Failed to re-enable host controller: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+  if (crypto_supported_) {
+    // TODO(https://fxbug.dev/568465123): Only the global enable is restored here. The per-slot
+    // CRYPTOCFG entries programmed by ProgramKeySlot() are lost with the controller's power, so
+    // keys programmed before the suspend must be re-established (via the PHY/KDN restore path)
+    // before encrypted I/O can resume.
+    HostControllerEnableReg::Get().ReadFrom(&mmio).set_crypto_general_enable(true).WriteTo(&mmio);
+  }
+  if (zx::result<> result = Notify(NotifyEvent::kInit, 0); result.is_error()) {
+    return result.take_error();
+  }
+
+  if (zx::result<> result = device_manager_->SendLinkStartUp(); result.is_error()) {
+    fdf::error("Failed to send Link Startup UIC command on resume: {}", result);
+    return result.take_error();
+  }
+  if (!HostControllerStatusReg::Get().ReadFrom(&mmio).device_present()) {
+    fdf::error("UFS device not found on resume");
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  InterruptStatusReg::Get().FromValue(0).set_uic_error(true).WriteTo(&mmio);
+  InterruptEnableReg::Get()
+      .FromValue(0)
+      .set_crypto_engine_fatal_error_enable(true)
+      .set_system_bus_fatal_error_enable(true)
+      .set_host_controller_fatal_error_enable(true)
+      .set_utp_error_enable(true)
+      .set_device_fatal_error_enable(true)
+      .set_uic_command_completion_enable(false)
+      .set_utp_task_management_request_completion_enable(true)
+      .set_uic_link_startup_status_enable(false)
+      .set_uic_link_lost_status_enable(true)
+      .set_uic_hibernate_enter_status_enable(false)
+      .set_uic_hibernate_exit_status_enable(false)
+      .set_uic_power_mode_status_enable(false)
+      .set_uic_test_mode_status_enable(true)
+      .set_uic_error_enable(true)
+      .set_uic_dme_endpointreset(true)
+      .set_utp_transfer_request_completion_enable(true)
+      .WriteTo(&mmio);
+
+  if (zx::result<> result = task_management_request_processor_->Init(); result.is_error()) {
+    fdf::error("Failed to re-initialize task management request processor: {}", result);
+    return result.take_error();
+  }
+  if (zx::result<> result = transfer_request_processor_->Init(); result.is_error()) {
+    fdf::error("Failed to re-initialize transfer request processor: {}", result);
+    return result.take_error();
+  }
+
+  NopOutUpiu nop_upiu;
+  auto nop_response = transfer_request_processor_->SendRequestUpiu<NopOutUpiu, NopInUpiu>(nop_upiu);
+  if (nop_response.is_error()) {
+    fdf::error("Failed to send NopOutUpiu on resume: {}", nop_response);
+    return nop_response.take_error();
+  }
+
+  if (zx::result<> result = device_manager_->DeviceInit(); result.is_error()) {
+    fdf::error("Failed to re-initialize device on resume: {}", result);
+    return result.take_error();
+  }
+  if (zx::result<> result = Notify(NotifyEvent::kDeviceInitDone, 0); result.is_error()) {
+    return result.take_error();
+  }
+
+  if (zx::result<> result = device_manager_->RestoreDeviceAndLinkConfig(); result.is_error()) {
+    fdf::error("Failed to restore device and link configuration on resume: {}", result);
+    return result.take_error();
+  }
+
+  if (zx::result<> result = ClearUnitAttentions(); result.is_error()) {
+    return result.take_error();
+  }
+
+  return zx::ok();
+}
+
+zx::result<> Ufs::ClearUnitAttentions() {
+  // Well-known LUs use the extended addressing produced by TranslateUfsLunToScsiLun(). The UFS
+  // device W-LUN is cleared first because ResumePower() sends START STOP UNIT to it next, and it
+  // is the only LU whose readiness is required for the resume to proceed.
+  zx::result<uint16_t> device_wlun =
+      TranslateUfsLunToScsiLun(static_cast<uint8_t>(WellKnownLuns::kUfsDevice));
+  if (device_wlun.is_error()) {
+    return device_wlun.take_error();
+  }
+
+  std::vector<uint16_t> luns;
+  for (WellKnownLuns wlun :
+       {WellKnownLuns::kRpmb, WellKnownLuns::kBoot, WellKnownLuns::kReportLuns}) {
+    if (!HasWellKnownLun(wlun)) {
+      continue;
+    }
+    zx::result<uint16_t> scsi_lun = TranslateUfsLunToScsiLun(static_cast<uint8_t>(wlun));
+    if (scsi_lun.is_error()) {
+      return scsi_lun.take_error();
+    }
+    luns.push_back(scsi_lun.value());
+  }
+  // Regular LUs are whichever LUNs ScanAndBindLogicalUnits() bound; they are not necessarily
+  // contiguous (a disabled LU leaves a gap), so iterate the bound set rather than
+  // 0..logical_unit_count_-1.
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    auto target_it = block_devs().find(kPlaceholderTarget);
+    if (target_it != block_devs().end()) {
+      std::vector<uint16_t> regular_luns;
+      for (const auto& [lun, block_device] : target_it->second) {
+        if (block_device) {
+          regular_luns.push_back(lun);
+        }
+      }
+      std::sort(regular_luns.begin(), regular_luns.end());
+      luns.insert(luns.end(), regular_luns.begin(), regular_luns.end());
+    }
+  }
+
+  auto clear = [this](uint16_t lun) -> zx_status_t {
+    zx_status_t status = ZX_ERR_INTERNAL;
+    for (int retry = 0; retry < kMaxRetries; ++retry) {
+      // UFS devices return autosense in the response UPIU, so the TEST UNIT READY that reports the
+      // UNIT ATTENTION also clears it; an immediate retry confirms the LU is ready. Only back off
+      // if the LU is still NOT READY after that.
+      status = TestUnitReady(kPlaceholderTarget, lun);
+      if (status != ZX_ERR_UNAVAILABLE) {
+        break;
+      }
+      if (retry > 0) {
+        zx::nanosleep(zx::deadline_after(kUnavailableRetryDelay));
+      }
+    }
+    return status;
+  };
+
+  if (HasWellKnownLun(WellKnownLuns::kUfsDevice)) {
+    if (zx_status_t status = clear(device_wlun.value()); status != ZX_OK) {
+      fdf::error("UFS device W-LUN not ready after resume: {}", zx_status_get_string(status));
+      return zx::error(status);
+    }
+  }
+  for (uint16_t lun : luns) {
+    // Best effort: if a LU is still not ready here, its first command will report the condition
+    // to the caller; failing the whole resume instead would cost a full PHY power cycle per
+    // attempt without making the LU any more likely to recover.
+    if (zx_status_t status = clear(lun); status != ZX_OK) {
+      fdf::warn("LUN 0x{:x} not ready after resume: {}", lun, zx_status_get_string(status));
+    }
+  }
   return zx::ok();
 }
 
@@ -1216,65 +1385,18 @@ zx_status_t Ufs::DisableHostController() {
 }
 
 zx::result<> Ufs::ConfigurePowerManagement() {
-  fidl::Arena<> arena;
-  const auto power_configs = fidl::ToWire(arena, GetAllPowerConfigs());
-  if (power_configs.size() == 0) {
-    fdf::info("No power configs found.");
+  // driver_manager creates a power element for this node (levels off/on, "on" depending on the CPU
+  // element and on the parent nodes' elements) and hands us its ElementRunner and dependency
+  // token through DriverStartArgs.power_element_args. Bind the runner so that Power Broker can
+  // drive Suspend()/Resume().
+  if (!power_element_token_.is_valid()) {
+    fdf::error("No power element was provided by the driver framework");
     return zx::error(ZX_ERR_NOT_FOUND);
   }
-
-  auto power_broker = driver_incoming()->Connect<fuchsia_power_broker::Topology>();
-  if (power_broker.is_error() || !power_broker->is_valid()) {
-    fdf::error("Failed to connect to power broker: {}", power_broker);
-    return power_broker.take_error();
-  }
-
-  // Register power configs with the Power Broker.
-  for (const auto& wire_config : power_configs) {
-    fdf_power::PowerElementConfiguration config;
-    {
-      fuchsia_hardware_power::PowerElementConfiguration natural_config =
-          fidl::ToNatural(wire_config);
-      zx::result result = fdf_power::PowerElementConfiguration::FromFidl(natural_config);
-      if (result.is_error()) {
-        fdf::error("Failed to convert power element config from fidl.: {}", result);
-        return result.take_error();
-      }
-      config = std::move(result.value());
-    }
-
-    auto tokens = fdf_power::GetDependencyTokens(*driver_incoming(), config);
-    if (tokens.is_error()) {
-      fdf::error("Failed to get power dependency tokens: {}.",
-                 fdf_power::ErrorToString(tokens.error_value()));
-      return zx::error(ZX_ERR_INTERNAL);
-    }
-
-    fidl::Endpoints<fuchsia_power_broker::ElementRunner> element_runner =
-        fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
-    fdf_power::ElementDesc description =
-        fdf_power::ElementDescBuilder(config, std::move(tokens.value()))
-            .SetElementRunner(std::move(element_runner.client))
-            .Build();
-    auto result = fdf_power::AddElement(power_broker.value(), description);
-    if (result.is_error()) {
-      fdf::error("Failed to add power element: {}", fdf_power::ErrorToString(result.error_value()));
-      return zx::error(ZX_ERR_INTERNAL);
-    }
-
-    hardware_power_assertive_token_ = std::move(description.assertive_token);
-
-    if (config.element.name == kHardwarePowerElementName) {
-      hardware_power_element_control_client_ =
-          fidl::WireSyncClient<fuchsia_power_broker::ElementControl>(
-              std::move(description.element_control_client.value()));
-      hardware_power_element_runner_server_binding_.emplace(
-          fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(element_runner.server),
-          &this->hardware_power_element_runner_server_, fidl::kIgnoreBindingClosure);
-    } else {
-      fdf::error("Unexpected power element: {}", std::string(config.element.name).c_str());
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
+  if (zx::result<> result = InitializeSuspend(dispatcher(), *driver_incoming(), name());
+      result.is_error()) {
+    fdf::error("Failed to initialize suspend: {}", result);
+    return result.take_error();
   }
 
   // Register Execution State's dependency on our power element.
@@ -1289,10 +1411,14 @@ zx::result<> Ufs::ConfigurePowerManagement() {
   fidl::SyncClient<fuchsia_power_system::CpuElementManager> cpu_element_manager(
       std::move(connect_to_cpu_element_manager.value()));
   zx::event clone;
-  ZX_ASSERT(hardware_power_assertive_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK);
+  if (zx_status_t status = power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+      status != ZX_OK) {
+    fdf::error("Failed to duplicate power element token: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
   fidl::Result<fuchsia_power_system::CpuElementManager::AddExecutionStateDependency> result =
       cpu_element_manager->AddExecutionStateDependency(
-          {{.dependency_token = std::move(clone), .power_level = 1}});
+          {{.dependency_token = std::move(clone), .power_level = kPowerLevelOn}});
   if (result.is_error()) {
     fdf::error("CpuElementManager token registration failed: {}",
                result.error_value().FormatDescription().c_str());
@@ -1310,88 +1436,135 @@ zx::result<> Ufs::ConfigurePowerManagement() {
     }
   }
 
-  // The lease request on the hardware power element remains until we register
-  // our power element token with the CpuElementManager protocol
-  fidl::WireSyncClient<fuchsia_power_broker::Topology> topology_client(
-      std::move(power_broker.value()));
-  zx::result lease_control_client_end = AcquireInitLease(topology_client);
-  if (!lease_control_client_end.is_ok()) {
-    fdf::error("Failed to acquire lease on hardware power: {}",
-               zx_status_get_string(lease_control_client_end.status_value()));
-    return lease_control_client_end.take_error();
-  }
-  hardware_power_lease_control_token_ = std::move(lease_control_client_end.value());
-
   return zx::success();
 }
 
-void Ufs::HardwareElementRunner::SetLevel(
-    fuchsia_power_broker::ElementRunnerSetLevelRequest& request,
-    SetLevelCompleter::Sync& set_level_completer) {
-  const fuchsia_power_broker::PowerLevel required_level = request.level();
-  switch (required_level) {
-    case kPowerLevelBoot: {
-      // The hardware is already powered on at boot, just acknowledge it.
-      set_level_completer.Reply();
-      break;
-    }
-    case kPowerLevelOn: {
-      const zx::time start = zx::clock::get_monotonic();
+// Power Broker treats a closed ElementRunner channel as "this element can never transition
+// again": it logs the error and stops driving the element, so storage would stay unusable until
+// reboot. A failed transition is therefore never answered by dropping the completer.
+//
+// A failed "off" is logged and acknowledged: SuspendPower() has already rolled the device back or
+// recorded PowerDown, and the element genuinely no longer needs its dependencies. A failed "on" is
+// different: the completer is the signal that the level was reached, and Execution State depends
+// on it (ConfigurePowerManagement()), so acknowledging it early would let the rest of the system
+// come up and then stall on page faults against a device that is still down. Instead the completer
+// is held (pending_resume_completer_) while the driver keeps retrying ResumePower() in the
+// background (RetryResume()); Power Broker's watchdog reports the stuck element every 10 s, which
+// points at the real culprit. Power Broker does not send another SetLevel() while one is pending,
+// so the retry loop is the only path back to "on". DeviceManager keeps the truthful hardware state,
+// so every retry continues from where the failed attempt left off (see the comments in
+// SuspendPower()/ResumePower()).
+//
+// The very first "off" that Power Broker issues when the element is created without a lease is
+// swallowed by fdf_power::Suspendable (first_activation_occurred_) and never reaches Suspend(), so
+// the hardware initialized by Init() stays active until the first "on" has been observed.
+void Ufs::Resume(fdf_power::ResumeCompleter completer) {
+  if (stopping_) {
+    completer();
+    return;
+  }
+  const zx::time start = zx::clock::get_monotonic();
+  power_level_on_required_ = true;
+  resume_retry_task_.Cancel();
+  resume_retry_delay_ = kResumeRetryInitialDelay;
 
-      // If we're rising above the boot power level, it must because an
-      // external lease raised our power level. This means we can drop
-      // our self-lease and allow the external entity to drive our power
-      // state.
-      parent_.hardware_power_lease_control_token_.reset();
+  // Actually raise the hardware's power level.
+  zx::result result = device_manager_->ResumePower();
+  const zx::duration duration = zx::clock::get_monotonic() - start;
+  if (result.is_error()) {
+    // The device stays in its suspended state and IsResumed() keeps reporting false, so I/O
+    // remains queued until a retry succeeds. The SetLevel() stays unanswered until then.
+    fdf::error("Failed to resume power after {} us: {}; retrying in {} ms", duration.to_usecs(),
+               result, resume_retry_delay_.to_msecs());
+    properties_.resume_failures.Add(1);
+    pending_resume_completer_.emplace(std::move(completer));
+    ScheduleResumeRetry();
+    return;
+  }
+  properties_.wake_latency_us.Insert(duration.to_usecs());
 
-      // Actually raise the hardware's power level.
-      zx::result result = parent_.device_manager_->ResumePower();
-      if (result.is_error()) {
-        const zx::duration duration = zx::clock::get_monotonic() - start;
-        fdf::error("Failed to resume power after {} us: {}", duration.to_usecs(), result);
-        set_level_completer.Close(ZX_ERR_INTERNAL);
-        return;
-      }
+  // Communicate to Power Broker that the hardware power level has been raised.
+  completer();
+  TriggerIoWork();
+}
 
-      // Communicate to Power Broker that the hardware power level has been raised.
-      set_level_completer.Reply();
+void Ufs::Suspend(fdf_power::SuspendCompleter completer) {
+  power_level_on_required_ = false;
+  resume_retry_task_.Cancel();
+  // Power Broker does not issue a new SetLevel() while one is unanswered, so no resume can still be
+  // pending here; answer it anyway rather than leave it dangling if that ever changes.
+  CompletePendingResume();
+  if (stopping_) {
+    completer();
+    return;
+  }
 
-      const zx::duration duration = zx::clock::get_monotonic() - start;
-      parent_.properties_.wake_latency_us.Insert(duration.to_usecs());
+  // Actually lower the hardware's power level.
+  zx::result result = device_manager_->SuspendPower();
+  if (result.is_error()) {
+    // There is nothing further to do here: SuspendPower() has already either rolled the device
+    // back to fully Active (the failure happened before the host controller was stopped, and the
+    // I/O path has been re-opened) or recorded it as PowerDown (the controller was already
+    // stopped, so the next ResumePower() reinitializes it). In both cases the element no longer
+    // requires power from its dependencies, so the level is acknowledged regardless; refusing to
+    // would leave Power Broker's SetLevel() pending and block the system suspend, and closing the
+    // channel would disable the element for good (see above). The failure is counted in inspect.
+    fdf::error("Failed to suspend power: {}", result);
+    properties_.suspend_failures.Add(1);
+  }
 
-      parent_.TriggerIoWork();
-      break;
-    }
-    case kPowerLevelOff: {
-      // Actually lower the hardware's power level.
-      zx::result result = parent_.device_manager_->SuspendPower();
-      if (result.is_error()) {
-        fdf::error("Failed to suspend power: {}", result);
-        set_level_completer.Close(ZX_ERR_INTERNAL);
-        return;
-      }
+  // Communicate to Power Broker that the hardware power level has been lowered.
+  completer();
+}
 
-      // Communicate to Power Broker that the hardware power level has been lowered.
-      set_level_completer.Reply();
-      break;
-    }
-    default:
-      fdf::error("Unexpected power level for hardware power element: {}", required_level);
-      set_level_completer.Close(ZX_ERR_INVALID_ARGS);
-      return;
+void Ufs::ScheduleResumeRetry() {
+  if (zx_status_t status = resume_retry_task_.PostDelayed(dispatcher(), resume_retry_delay_);
+      status != ZX_OK) {
+    fdf::error("Failed to schedule resume retry: {}", zx_status_get_string(status));
   }
 }
 
-void Ufs::HardwareElementRunner::handle_unknown_method(
-    fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-    fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::error("ElementRunner received unknown method {}", metadata.method_ordinal);
+void Ufs::CompletePendingResume() {
+  if (pending_resume_completer_.has_value()) {
+    (*pending_resume_completer_)();
+    pending_resume_completer_.reset();
+  }
+}
+
+// Runs on the default dispatcher, like Suspend()/Resume(), so they never overlap: Suspend() cancels
+// a pending retry and clears power_level_on_required_.
+void Ufs::RetryResume(async_dispatcher_t* dispatcher, async::TaskBase* task, zx_status_t status) {
+  if (status != ZX_OK || !power_level_on_required_) {
+    return;
+  }
+  const zx::time start = zx::clock::get_monotonic();
+  zx::result result = device_manager_->ResumePower();
+  const zx::duration duration = zx::clock::get_monotonic() - start;
+  if (result.is_error()) {
+    resume_retry_delay_ = std::min(resume_retry_delay_ * 2, kResumeRetryMaxDelay);
+    fdf::error("Resume retry failed after {} us: {}; retrying in {} ms", duration.to_usecs(),
+               result, resume_retry_delay_.to_msecs());
+    properties_.resume_failures.Add(1);
+    ScheduleResumeRetry();
+    return;
+  }
+  fdf::info("Resume retry succeeded after {} us", duration.to_usecs());
+  properties_.wake_latency_us.Insert(duration.to_usecs());
+  resume_retry_delay_ = kResumeRetryInitialDelay;
+  // Now that the device is actually back, tell Power Broker the level was reached.
+  CompletePendingResume();
+  TriggerIoWork();
 }
 
 zx::result<> Ufs::Start(fdf::DriverContext context) {
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   node_name_ = context.node_name();
   config_ = context.take_config<ufs_config::Config>();
+  // Power element created by the driver framework (see ConfigurePowerManagement()).
+  if (std::optional token = context.power_element_token(); token.has_value()) {
+    power_element_token_ = std::move(token.value());
+  }
+  power_element_runner_ = context.take_power_element_runner();
 
   if (zx::result<> status = InitResources(); status.is_error()) {
     return status.take_error();
@@ -1436,7 +1609,7 @@ zx::result<> Ufs::Start(fdf::DriverContext context) {
     return zx::error(status);
   }
 
-  if (config().enable_suspend() && config().storage_power_management_enabled()) {
+  if (SuspendEnabled()) {
     if (zx::result<> status = ConfigurePowerManagement(); status.is_error()) {
       return status.take_error();
     }
@@ -1494,9 +1667,17 @@ zx::result<uint8_t> Ufs::ProgramKeySlot(fidl::VectorView<uint8_t> wrapped_key,
   constexpr uint32_t kCryptoCfgEnable = 1U << 31;
   const uint32_t dusize_flag = du / kMinCryptoDataUnitSize;
   const uint32_t cfg_offset = kCryptoCfgBase + slot * kCryptoCfgStride;
-  GetMmio().Write32(0, cfg_offset + kCryptoCfgDword16Offset);
-  GetMmio().Write32(0, cfg_offset + kCryptoCfgDword17Offset);
-  GetMmio().Write32(kCryptoCfgEnable | (dusize_flag & 0xffU), cfg_offset + kCryptoCfgDword16Offset);
+  {
+    // CRYPTOCFG lives in the UFSHCI register space, which is gated during a PowerDown suspend.
+    std::lock_guard<std::mutex> lock(uic_lock_);
+    if (IsHardwarePoweredOff()) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+    GetMmio().Write32(0, cfg_offset + kCryptoCfgDword16Offset);
+    GetMmio().Write32(0, cfg_offset + kCryptoCfgDword17Offset);
+    GetMmio().Write32(kCryptoCfgEnable | (dusize_flag & 0xffU),
+                      cfg_offset + kCryptoCfgDword16Offset);
+  }
 
   return zx::ok(slot);
 }
@@ -1577,6 +1758,16 @@ void Ufs::FinishStop(fdf::StopCompleter completer) {
 }
 
 void Ufs::Stop(fdf::StopCompleter completer) {
+  // Stop acting on power-level transitions: a SetLevel(on) arriving mid-teardown would otherwise
+  // start a full ResumePower()/re-initialization against dispatchers that are shutting down. The
+  // ElementRunner binding is owned by fdf_power::Suspendable and stays open until the driver is
+  // destroyed, so Suspend()/Resume() check stopping_ and just acknowledge the level.
+  stopping_ = true;
+  resume_retry_task_.Cancel();
+  power_level_on_required_ = false;
+  // A resume that was still being retried will never complete now; answer Power Broker so the
+  // completer is not destroyed unanswered.
+  CompletePendingResume();
   std::deque<IoCommand> pending;
   std::vector<scsi::BlockDevice*> devs;
   {
@@ -1628,6 +1819,8 @@ void Ufs::Serve(fidl::ServerEnd<fuchsia_hardware_ufs::Ufs> server_end) {
 }
 
 Ufs::~Ufs() {
+  resume_retry_task_.Cancel();
+  CompletePendingResume();
   irq_handler_.Cancel();
   if (irq_.is_valid()) {
     irq_.destroy();

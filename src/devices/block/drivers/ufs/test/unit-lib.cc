@@ -13,8 +13,10 @@
 namespace ufs {
 
 ufs_mock_device::UfsMockDevice *TestUfs::mock_device_;
+bool TestUfs::supports_power_down_suspend_ = false;
 
 void UfsTest::InitMockDevice() {
+  TestUfs::SetSupportsPowerDownSuspend(false);
   std::unique_ptr<zx::interrupt> irq = std::make_unique<zx::interrupt>();
   ZX_ASSERT(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, irq.get()) == ZX_OK);
 
@@ -31,6 +33,35 @@ void UfsTest::StartDriver(bool supply_power_framework) {
 
   TestUfs::SetMockDevice(&mock_device_);
 
+  // Emulate the power element that driver_manager creates for a node whose manifest sets
+  // `suspend_enabled`: the driver gets the ElementRunner server end and the dependency token
+  // through DriverStartArgs.power_element_args; the fake Power Broker keeps the other ends.
+  std::optional<fuchsia_driver_framework::PowerElementArgs> power_args;
+  if (supply_power_framework) {
+    auto [element_control_client, element_control_server] =
+        fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+    auto [element_runner_client, element_runner_server] =
+        fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
+    auto [lessor_client, lessor_server] = fidl::Endpoints<fuchsia_power_broker::Lessor>::Create();
+    fuchsia_power_broker::DependencyToken element_token;
+    ASSERT_OK(zx::event::create(0, &element_token));
+
+    fuchsia_driver_framework::PowerElementArgs local_power_args;
+    local_power_args.control_client() = std::move(element_control_client);
+    local_power_args.runner_server() = std::move(element_runner_server);
+    local_power_args.lessor_client() = std::move(lessor_client);
+    local_power_args.token() = std::move(element_token);
+    power_args = std::move(local_power_args);
+
+    driver_test().RunInEnvironmentTypeContext(
+        [control_server = std::move(element_control_server),
+         runner_client = std::move(element_runner_client),
+         lessor_server = std::move(lessor_server)](Environment &env) mutable {
+          env.power_broker().AddHardwarePowerElement(
+              std::move(control_server), std::move(runner_client), std::move(lessor_server));
+        });
+  }
+
   zx::result result = driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs &args) {
     ufs_config::Config fake_config;
     fake_config.enable_suspend() = supply_power_framework;
@@ -38,8 +69,19 @@ void UfsTest::StartDriver(bool supply_power_framework) {
     fake_config.enable_auto_hibernate() = true;
     fake_config.auto_hibernate_timer_us() = 1000;
     args.config(fake_config.ToVmo());
+    if (power_args.has_value()) {
+      args.power_element_args(std::move(power_args.value()));
+    }
   });
   ASSERT_OK(result);
+
+  if (supply_power_framework) {
+    // The driver must have registered the Execution State's dependency on the framework element
+    // (at level "on") with CpuElementManager.
+    driver_test().RunInEnvironmentTypeContext([&](Environment &env) {
+      EXPECT_TRUE(env.cpu_element_manager().execution_state_dependency_added());
+    });
+  }
 
   dut_ = driver_test().driver();
 }
@@ -56,6 +98,7 @@ void UfsTest::TearDown() {
     zx::result<> result = driver_test().StopDriver();
     ASSERT_OK(result);
   }
+  TestUfs::SetSupportsPowerDownSuspend(false);
   mock_device_.GetRegisterMmioProcessor().Reset();
   mock_device_.GetUicCmdProcessor().Reset();
   mock_device_.GetTransferRequestProcessor().Reset();

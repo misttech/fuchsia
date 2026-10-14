@@ -18,6 +18,8 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
  public:
   using Ufs::Ufs;
 
+  bool SupportsPowerDownSuspend() const override { return supports_power_down_suspend_; }
+
  protected:
   zx::result<> InitResources() override;
   zx_status_t StopResources() override;
@@ -27,6 +29,12 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
   zx::result<> PdevNotifyEventCallback(NotifyEvent event, uint64_t data);
   zx::result<> PreLinkStartup();
   zx::result<> PrePowerModeChange();
+  zx::result<> PostSuspend();
+  zx::result<> PreResume();
+  zx::result<> SetBandwidthVote(bool enable);
+
+  // Asks the connected PHY driver (UfsPhy.GetProperties) whether it implements Suspend()/Resume().
+  bool QueryPowerDownSuspendSupport();
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> StartUfshciServer();
   void StopUfshciServer();
@@ -42,6 +50,8 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
  private:
   fidl::WireSyncClient<fuchsia_hardware_ufs_phy::UfsPhy> ufs_phy_;
   fidl::WireSyncClient<fuchsia_hardware_interconnect::Path> interconnect_client_;
+  // Set by QueryPowerDownSuspendSupport() during InitResources().
+  bool supports_power_down_suspend_ = false;
 
   fdf::Dispatcher ufshci_dispatcher_;
   libsync::Completion ufshci_dispatcher_shutdown_completion_;

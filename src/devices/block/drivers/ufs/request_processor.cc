@@ -7,6 +7,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <bit>
+#include <chrono>
 
 #include "src/devices/block/drivers/ufs/ufs.h"
 
@@ -54,6 +55,11 @@ void RequestProcessor::ReclaimTimedOutSlotsLocked() {
 
 zx::result<uint8_t> RequestProcessor::ReserveSlot() {
   std::lock_guard<std::mutex> lock(slot_lock_);
+  if (slot_allocation_blocked_) {
+    // Checked before ReclaimTimedOutSlotsLocked(), which reads the doorbell register: the
+    // controller is about to be, or already is, powered down.
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
   ReclaimTimedOutSlotsLocked();
 
   std::optional<uint8_t> admin_slot_num = GetAdminCommandSlotNumber();
@@ -84,12 +90,52 @@ zx::result<> RequestProcessor::ClearSlotLocked(RequestSlot &request_slot) {
   uint8_t slot_num = slots_.GetSlotNum(request_slot);
   request_slot.Reset(SlotState::kFree);
   allocated_slots_mask_ &= ~(1u << slot_num);
+  if (slot_allocation_blocked_) {
+    slot_released_.notify_all();
+  }
   return zx::ok();
 }
 
 zx::result<> RequestProcessor::ClearSlot(RequestSlot &request_slot) {
   std::lock_guard<std::mutex> lock(slot_lock_);
   return ClearSlotLocked(request_slot);
+}
+
+zx::result<> RequestProcessor::BlockSlotAllocation(zx::duration drain_timeout) {
+  std::lock_guard<std::mutex> lock(slot_lock_);
+  slot_allocation_blocked_ = true;
+
+  std::optional<uint8_t> admin_slot_num = GetAdminCommandSlotNumber();
+  const uint32_t admin_mask = admin_slot_num.has_value() ? (1u << *admin_slot_num) : 0;
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::nanoseconds(drain_timeout.to_nsecs());
+  const auto pending = [&]() TA_REQ(slot_lock_) {
+    return (allocated_slots_mask_ & ~admin_mask) != 0;
+  };
+  // Slots whose request timed out are only reclaimed from ReserveSlot(), which the gate above now
+  // short-circuits, so do it here: once (while the controller is still enabled) before waiting,
+  // and again before giving up, so that a request that timed out earlier does not hold the drain
+  // for the full timeout. The in-flight slots are released on the worker dispatchers as their
+  // requests complete, so the wait drops slot_lock_ while blocked (condition_variable_any
+  // unlocks/relocks the mutex itself); the condition is re-checked under the lock after every
+  // wakeup.
+  ReclaimTimedOutSlotsLocked();
+  while (pending()) {
+    if (slot_released_.wait_until(slot_lock_, deadline) == std::cv_status::timeout) {
+      ReclaimTimedOutSlotsLocked();
+      if (pending()) {
+        fdf::error("Timed out waiting for {} in-flight request(s) to complete",
+                   std::popcount(allocated_slots_mask_ & ~admin_mask));
+        return zx::error(ZX_ERR_TIMED_OUT);
+      }
+    }
+  }
+  return zx::ok();
+}
+
+void RequestProcessor::UnblockSlotAllocation() {
+  std::lock_guard<std::mutex> lock(slot_lock_);
+  slot_allocation_blocked_ = false;
 }
 
 void RequestProcessor::RingRequestDoorbellLocked(uint8_t slot_num) {

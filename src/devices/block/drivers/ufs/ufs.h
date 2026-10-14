@@ -15,12 +15,14 @@
 #include <lib/async/cpp/wait.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/power/cpp/suspend.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/scsi/block-device.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
+#include <atomic>
 #include <deque>
 #include <span>
 #include <unordered_set>
@@ -48,6 +50,10 @@ constexpr uint32_t kHostControllerTimeoutUs = 1000;
 constexpr int kMaxRetries = 3;
 constexpr uint32_t kMaxTransferSize1MiB = 1024 * 1024;
 constexpr uint8_t kPlaceholderTarget = 0;
+// Backoff for the driver-side retry of a failed resume (see Ufs::Resume): starts at
+// kResumeRetryInitialDelay and doubles up to kResumeRetryMaxDelay.
+constexpr zx::duration kResumeRetryInitialDelay = zx::sec(1);
+constexpr zx::duration kResumeRetryMaxDelay = zx::sec(30);
 
 constexpr uint32_t kBlockSize = 4096;
 constexpr uint32_t kSectorSize = 512;
@@ -75,6 +81,10 @@ enum NotifyEvent {
   kDeviceInitDone,
   kPrePowerModeChange,
   kPostPowerModeChange,
+  kPreSuspend,
+  kPostSuspend,
+  kPreResume,
+  kPostResume,
 };
 
 // struct representing a pending block request for a logical unit
@@ -87,6 +97,8 @@ struct IoCommand {
 struct InspectProperties {
   inspect::BoolProperty power_suspended;              // Updated whenever power state changes.
   inspect::ExponentialUintHistogram wake_latency_us;  // Updated whenever the controller powers on.
+  inspect::UintProperty suspend_failures;             // Incremented whenever SuspendPower() fails.
+  inspect::UintProperty resume_failures;              // Incremented whenever ResumePower() fails.
   // Controller
   inspect::UintProperty max_transfer_bytes;  // Set once by the init thread.
   inspect::UintProperty logical_unit_count;  // Set once by the init thread.
@@ -150,14 +162,13 @@ using HostControllerCallback = fit::function<zx::result<>(NotifyEvent, uint64_t 
 //
 // This class is the parent class for both UfsPci and UfsPdev drivers, which bind the UFS
 // controller via PCI and PDev respectively.
-class Ufs : public fdf::DriverBase2, public scsi::Controller {
+class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public scsi::Controller {
  public:
   static constexpr char kDriverName[] = "ufs";
-  static constexpr char kHardwarePowerElementName[] = "ufs-hardware";
+  // Levels of the framework-provided power element (fuchsia.hardware.power/FrameworkElementLevels).
   // TODO(https://fxbug.dev/42075643): We need to add sleep(low-power) level
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOff = 0;
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOn = 1;
-  static constexpr fuchsia_power_broker::PowerLevel kPowerLevelBoot = 2;
 
   explicit Ufs();
   ~Ufs() override;
@@ -165,6 +176,21 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   zx::result<> Start(fdf::DriverContext context) override;
 
   void Stop(fdf::StopCompleter completer) override;
+
+  // fdf_power::Suspendable. Suspend()/Resume() are driven by Power Broker through the
+  // framework-provided ElementRunner (level "off" -> Suspend, "on" -> Resume). The mixin
+  // acknowledges the first "off" before any "on" on its own (first_activation_occurred_), so the
+  // hardware initialized by Init() is not powered down just because the element is created without
+  // a lease; Power Broker raises us to "on" as soon as the Execution State dependency is
+  // registered.
+  void Suspend(fdf_power::SuspendCompleter completer) override;
+  void Resume(fdf_power::ResumeCompleter completer) override;
+  bool SuspendEnabled() override {
+    return config().enable_suspend() && config().storage_power_management_enabled();
+  }
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> take_power_element_runner() {
+    return std::move(power_element_runner_);
+  }
 
   // scsi::Controller
   fidl::WireSyncClient<fuchsia_driver_framework::Node> &root_node() override { return root_node_; }
@@ -250,7 +276,55 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
     return well_known_lun_set_.find(lun) != well_known_lun_set_.end();
   }
 
+  // Host-controller quirks detected from the PCI vendor/device ID (see UfsPci::InitQuirk()).
+  //
+  // Intel (Lakefield) UFSHCI: uses a 19.2 MHz reference clock instead of 38.4 MHz, needs the
+  // peer's PA_TActivate raised by 200 us, and needs a 1250 us settle followed by a DME_PEER_GET to
+  // clear a spurious DME error after a UIC power mode change.
   bool intel_quirk() const { return intel_quirk_; }
+  // QEMU's UFS host controller model does not implement UniPro attributes, UIC power mode
+  // changes or Auto-Hibernate, so those steps are skipped and the link is assumed Active.
+  bool qemu_quirk() const { return qemu_quirk_; }
+
+  virtual bool SupportsPowerDownSuspend() const { return false; }
+
+  // Host-controller side of the power sequence, driven by DeviceManager::SuspendPower() /
+  // ResumePower() (the device/link side lives in DeviceManager).
+
+  zx::result<> ReinitAfterPowerDown();
+  // After the device has been power-cycled (PowerDown suspend), every LU and well-known LU
+  // reports a UNIT ATTENTION (POWER ON / RESET) on its first SCSI command. Clear them with
+  // TEST UNIT READY so that the START STOP UNIT issued by ResumePower() and the first I/O to each
+  // LU do not fail with ZX_ERR_UNAVAILABLE.
+  zx::result<> ClearUnitAttentions();
+  zx::result<> ConfigureAutoHibernate();
+  zx::result<> DisableAutoHibernate();
+
+  // Marks the UFSHCI register space as inaccessible (power domains/clocks gated). While set, the
+  // interrupt handler and I/O paths must not touch controller registers. Setting it also waits for
+  // any in-progress interrupt handling to finish.
+  void SetHardwarePoweredOff(bool powered_off);
+  bool IsHardwarePoweredOff() const {
+    return hardware_powered_off_.load(std::memory_order_acquire);
+  }
+
+  // Masks interrupts, disables the host controller and marks the register space as powered off,
+  // ahead of the PHY driver gating the UFSHCI power domains/clocks. Requires that no I/O slot is
+  // allocated (RequestProcessor::BlockSlotAllocation() has run). Holds uic_lock() so that a UIC
+  // command or key-slot write that has already passed its IsHardwarePoweredOff() check finishes
+  // before the controller is stopped. Returns the status of the host controller disable; the
+  // register space is marked powered off regardless.
+  zx_status_t StopHostControllerForPowerDown();
+
+  // Serialises register accesses that happen outside the I/O worker / ISR paths (UIC commands,
+  // whether issued by this driver, by the PHY driver through fuchsia.hardware.ufs.phy/Ufshci, or
+  // through fuchsia.hardware.ufs, and inline-crypto key-slot programming) against
+  // StopHostControllerForPowerDown(). Must be acquired after DeviceManager::power_lock_ when both
+  // are held, and must never be held across a Notify() callback into the PHY driver (its
+  // Ufshci::DmeSet/DmeGet calls take this lock).
+  std::mutex &uic_lock() TA_RET_CAP(uic_lock_) { return uic_lock_; }
+
+  void TriggerIoWork();
 
   bool IsResumed() const { return device_manager_->IsResumed(); }
 
@@ -272,7 +346,6 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
                  const zx_packet_interrupt_t *interrupt);
   void HandleTimeout(async_dispatcher_t *dispatcher, async::TaskBase *task, zx_status_t status);
   void TriggerAdminWork();
-  void TriggerIoWork();
   // ProcessIo() cannot process SCSI commands when the UFS device is suspended. The SCSI
   // StartStopUnit admin command is required to resume UFS device, so ProcessAdminCompletions() is
   // required to handle the completion of the admin command even in a suspended state.
@@ -304,7 +377,6 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   zx::result<> InitMmioBuffer();
   zx::result<> InitController();
   zx::result<> InitDeviceInterface(inspect::Node &controller_node);
-  zx::result<> MaybeConfigureAutoHibernate();
   zx::result<> GetControllerDescriptor();
   zx::result<uint32_t> AddLogicalUnits();
 
@@ -313,36 +385,11 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
 
   zx::result<> AllocatePages(zx::vmo &vmo, fzl::VmoMapper &mapper, size_t size);
 
-  // TODO(b/309152899): Once fuchsia.power.SuspendEnabled config cap is available, have this method
-  // return failure if power management could not be configured. Use fuchsia.power.SuspendEnabled to
-  // ignore this failure when expected.
-  // Register power configs from the board driver with Power Broker, and begin the continuous
-  // power level adjustment of hardware. For boards/products that don't support the Power Framework,
-  // this method simply returns success.
+  // Binds the framework-provided power element runner (fdf_power::Suspendable::InitializeSuspend)
+  // and registers the Execution State's dependency on that element with CpuElementManager so that
+  // the system cannot suspend while the UFS device is still active. Fails if the driver framework
+  // did not hand us a power element (not a suspend-enabled platform).
   zx::result<> ConfigurePowerManagement();
-
-  // Acquires a lease during initialization that holds the power element at its "boot" level until
-  // an external dependency pulls it to "on".
-  zx::result<fuchsia_power_broker::LeaseToken> AcquireInitLease(
-      const fidl::WireSyncClient<fuchsia_power_broker::Topology> &topology_client);
-
-  // Adjusts the hardware power level in response to SetLevel calls from the Power Broker.
-  class HardwareElementRunner : public fidl::Server<fuchsia_power_broker::ElementRunner> {
-   public:
-    explicit HardwareElementRunner(Ufs &p) : parent_(p) {}
-    void SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest &request,
-                  SetLevelCompleter::Sync &completer) override;
-    void handle_unknown_method(
-        fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-        fidl::UnknownMethodCompleter::Sync &completer) override;
-
-   private:
-    Ufs &parent_;
-  };
-
-  HardwareElementRunner hardware_power_element_runner_server_;
-  std::optional<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>
-      hardware_power_element_runner_server_binding_;
 
   void Serve(fidl::ServerEnd<fuchsia_hardware_ufs::Ufs> server_end);
 
@@ -409,9 +456,43 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   fidl::WireSyncClient<fuchsia_driver_framework::Node> root_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
 
-  fidl::WireSyncClient<fuchsia_power_broker::ElementControl> hardware_power_element_control_client_;
-  zx::event hardware_power_assertive_token_;
-  fuchsia_power_broker::LeaseToken hardware_power_lease_control_token_;
+  // Power element created by the driver framework for this node
+  // (DriverStartArgs.power_element_args, see `suspend_enabled` in the component manifest). The
+  // token identifies the element to Power Broker; the runner is handed to fdf_power::Suspendable by
+  // take_power_element_runner().
+  zx::event power_element_token_;
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> power_element_runner_;
+  // The level Power Broker currently requires. Power Broker only calls SetLevel() when the
+  // required level changes, so a failed ResumePower() is retried by the driver itself
+  // (resume_retry_task_) for as long as "on" is still required.
+  bool power_level_on_required_ = false;
+  // The SetLevel(on) acknowledgement, held while ResumePower() is being retried: Power Broker
+  // (and, through the Execution State dependency, everything that depends on storage) is only
+  // told that the level was reached once the device is actually back. Completed by RetryResume()
+  // on success, or by Stop() if the driver goes away first.
+  std::optional<fdf_power::ResumeCompleter> pending_resume_completer_;
+  // Set by Stop(): power-level transitions that arrive mid-teardown are acknowledged without
+  // touching the hardware (the fdf_power::Suspendable binding lives until the driver is destroyed).
+  bool stopping_ = false;
+  void RetryResume(async_dispatcher_t *dispatcher, async::TaskBase *task, zx_status_t status);
+  void ScheduleResumeRetry();
+  void CompletePendingResume();
+  async::TaskMethod<Ufs, &Ufs::RetryResume> resume_retry_task_{this};
+  zx::duration resume_retry_delay_ = kResumeRetryInitialDelay;
+  // True while the UFSHCI power domains/clocks are gated: set by StopHostControllerForPowerDown()
+  // before kPostSuspend, cleared after a successful kPreResume.
+  //
+  // This is a publication flag rather than a mutex-guarded bool because it is read lock-free on
+  // the IRQ worker (Isr()) and the completion paths, which must not block behind the writer:
+  // StopHostControllerForPowerDown() holds uic_lock() (and is called under admin_slot_lock())
+  // while it stops the controller. Readers that go on to touch registers are made safe by holding
+  // one of those locks across the access (UIC commands, key-slot writes, admin UPIU submission),
+  // by having no I/O slot allocated (completion paths), or by the worker barriers in
+  // SetHardwarePoweredOff() (ISR / admin completion). The release/acquire pairing orders the
+  // PHY power-up that precedes clearing the flag before the register accesses that follow a read.
+  std::atomic<bool> hardware_powered_off_{false};
+  // See uic_lock().
+  std::mutex uic_lock_;
 
   bool crypto_supported_ = false;
   fidl::WireSyncClient<fuchsia_hardware_inlineencryption::Controller> inline_encryption_client_;

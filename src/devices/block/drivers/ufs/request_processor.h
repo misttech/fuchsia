@@ -8,6 +8,8 @@
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
+#include <condition_variable>
+
 #include "request_list.h"
 
 namespace ufs {
@@ -50,6 +52,16 @@ class RequestProcessor {
   void DisableCompletion() { disable_completion_.store(true, std::memory_order_release); }
   void EnableCompletion() { disable_completion_.store(false, std::memory_order_release); }
 
+  // Stops ReserveSlot() from handing out any further slots and waits until the slots that are
+  // already allocated have been released, i.e. their requests have completed. The flag and the
+  // wait are both under slot_lock_, so once this returns ZX_OK no request can reach the hardware
+  // through this processor until UnblockSlotAllocation() is called. The admin slot
+  // (TransferRequestProcessor::ReserveAdminSlot()) is not gated: the power sequence itself needs
+  // admin UPIUs. Returns ZX_ERR_TIMED_OUT if the allocated slots do not drain within
+  // |drain_timeout|; allocation stays blocked in that case as well.
+  zx::result<> BlockSlotAllocation(zx::duration drain_timeout) TA_EXCL(slot_lock_);
+  void UnblockSlotAllocation() TA_EXCL(slot_lock_);
+
  protected:
   zx::unowned_bti &GetBti() { return bti_; }
 
@@ -82,6 +94,11 @@ class RequestProcessor {
   mutable std::mutex slot_lock_;
   uint32_t allocated_slots_mask_ TA_GUARDED(slot_lock_) = 0;
   RequestList slots_ TA_GUARDED(slot_lock_);
+  // See BlockSlotAllocation(). ClearSlotLocked() signals |slot_released_| while this is set so the
+  // drain wait can make progress. condition_variable_any so that the wait can take slot_lock_
+  // itself and the caller keeps a plain lock_guard (which the thread-safety analysis understands).
+  bool slot_allocation_blocked_ TA_GUARDED(slot_lock_) = false;
+  std::condition_variable_any slot_released_;
 
   Ufs &controller_;
   const fdf::MmioView register_;

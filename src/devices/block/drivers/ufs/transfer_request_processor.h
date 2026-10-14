@@ -59,6 +59,11 @@ class TransferRequestProcessor : public RequestProcessor {
   uint32_t ProcessCompletionOfAdminRequests();
   uint32_t ProcessCompletionOfIoRequests() override;
 
+  // Serializes admin UPIU submission. DeviceManager::SuspendPower() holds it while it stops the
+  // host controller and gates the power domain so that no admin command can slip in between the
+  // last SSU and Ufs::SetHardwarePoweredOff(true).
+  std::mutex &admin_slot_lock() TA_RET_CAP(admin_slot_lock_) { return admin_slot_lock_; }
+
   bool CheckAdminCommandCompleted(uint32_t doorbell) TA_EXCL(slot_lock_) {
     std::lock_guard<std::mutex> lock(slot_lock_);
     return slots_.GetSlot(kAdminCommandSlotNumber).state == SlotState::kScheduled &&

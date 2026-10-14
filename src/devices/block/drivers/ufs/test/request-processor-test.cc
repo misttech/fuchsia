@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <thread>
 
 #include "src/devices/block/drivers/ufs/transfer_request_descriptor.h"
 #include "src/devices/block/drivers/ufs/upiu/descriptors.h"
@@ -455,6 +456,70 @@ TEST_F(RequestProcessorTest, SendAdminScsiCmdWithSlotIsFull) {
   // Admin command should succeed even if all I/O slots are full.
   auto response = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, kTestLun);
   ASSERT_OK(response);
+}
+
+TEST_F(RequestProcessorTest, BlockSlotAllocationGatesIoSlotsOnly) {
+  constexpr uint8_t kTestLun = 0;
+  ufs::TransferRequestProcessor &processor = dut_->GetTransferRequestProcessor();
+
+  // With an I/O slot held the drain cannot complete...
+  zx::result<uint8_t> slot = ReserveSlot<ufs::TransferRequestProcessor>();
+  ASSERT_OK(slot);
+  ASSERT_EQ(processor.BlockSlotAllocation(zx::msec(10)).status_value(), ZX_ERR_TIMED_OUT);
+
+  // ...but allocation is blocked regardless of the outcome.
+  ASSERT_EQ(ReserveSlot<ufs::TransferRequestProcessor>().status_value(), ZX_ERR_BAD_STATE);
+
+  // Admin UPIUs are not gated: the power sequence itself needs them.
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
+  ASSERT_OK(processor.SendAdminScsiCmd(upiu, kTestLun));
+
+  // Once the held slot is released the drain completes.
+  ASSERT_OK(ClearSlot(slot.value()));
+  ASSERT_OK(processor.BlockSlotAllocation(zx::msec(10)));
+  ASSERT_EQ(ReserveSlot<ufs::TransferRequestProcessor>().status_value(), ZX_ERR_BAD_STATE);
+
+  processor.UnblockSlotAllocation();
+  ASSERT_OK(ReserveSlot<ufs::TransferRequestProcessor>());
+}
+
+TEST_F(RequestProcessorTest, BlockSlotAllocationWaitsForHeldSlots) {
+  ufs::TransferRequestProcessor &processor = dut_->GetTransferRequestProcessor();
+  zx::result<uint8_t> slot = ReserveSlot<ufs::TransferRequestProcessor>();
+  ASSERT_OK(slot);
+
+  // Release the slot from another thread while BlockSlotAllocation() is waiting for it, as the
+  // I/O worker does when the in-flight command completes.
+  std::thread releaser([&]() {
+    zx::nanosleep(zx::deadline_after(zx::msec(50)));
+    EXPECT_OK(ClearSlot(slot.value()));
+  });
+  EXPECT_OK(processor.BlockSlotAllocation(zx::sec(10)));
+  releaser.join();
+  EXPECT_EQ(processor.GetInflightIoCount(), 0u);
+  processor.UnblockSlotAllocation();
+}
+
+TEST_F(RequestProcessorTest, BlockSlotAllocationReclaimsTimedOutSlots) {
+  ufs::TransferRequestProcessor &processor = dut_->GetTransferRequestProcessor();
+
+  // A request that timed out while the controller still owned its slot is normally reclaimed by
+  // the next ReserveSlot() once the doorbell has cleared. The gate short-circuits ReserveSlot(),
+  // so the drain has to reclaim such a slot itself instead of waiting for the full timeout.
+  zx::result<uint8_t> slot = ReserveSlot<ufs::TransferRequestProcessor>();
+  ASSERT_OK(slot);
+  SetSlotTimedOut(slot.value());
+  ASSERT_EQ(GetSlotStateCount(SlotState::kTimeout), 1u);
+
+  const zx::time start = zx::clock::get_monotonic();
+  EXPECT_OK(processor.BlockSlotAllocation(zx::sec(10)));
+  EXPECT_LT(zx::clock::get_monotonic() - start, zx::sec(5));
+  EXPECT_EQ(GetSlotStateCount(SlotState::kTimeout), 0u);
+  EXPECT_EQ(processor.GetInflightIoCount(), 0u);
+  processor.UnblockSlotAllocation();
 }
 
 TEST_F(RequestProcessorTest, SendIoScsiCmdFailureCallsCallback) {

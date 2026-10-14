@@ -160,6 +160,12 @@ zx::result<std::unique_ptr<ResponseType>> TransferRequestProcessor::SendRequestU
   }
 
   std::lock_guard<std::mutex> lock(admin_slot_lock_);
+  // SuspendPower() holds admin_slot_lock_ while it stops the host controller and marks the
+  // hardware powered off, so checking here (under the lock) guarantees no admin UPIU is submitted
+  // to a controller whose power domain is gated.
+  if (controller_.IsHardwarePoweredOff()) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
   zx::result<uint8_t> slot = ReserveAdminSlot();
   if (slot.is_error()) {
     return zx::error(ZX_ERR_NO_RESOURCES);
@@ -183,7 +189,11 @@ zx::result<std::unique_ptr<ResponseType>> TransferRequestProcessor::SendRequestU
     std::lock_guard<std::mutex> lock(slot_lock_);
     RequestSlot &request_slot = slots_.GetSlot(slot_num);
     request_slot.completion_cb = nullptr;
-    uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+    // admin_slot_lock_ is held for the whole wait and StopHostControllerForPowerDown() runs under
+    // it, so the controller cannot have lost power here; the check is purely defensive.
+    uint32_t doorbell = controller_.IsHardwarePoweredOff()
+                            ? 0
+                            : UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
     if (doorbell & (1u << slot_num)) {
       SetSlotStateLocked(slot_num, SlotState::kTimeout);
     } else {
@@ -522,7 +532,7 @@ bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num, uint32_t 
 }
 
 uint32_t TransferRequestProcessor::ProcessCompletionOfAdminRequests() {
-  if (disable_completion_.load(std::memory_order_acquire)) {
+  if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff()) {
     return 0;
   }
   const uint32_t doorbell = ReadDoorBellRegister();
@@ -540,7 +550,11 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfAdminRequests() {
 }
 
 uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
-  if (disable_completion_.load(std::memory_order_acquire)) {
+  // While powered off no I/O slot can be allocated (BlockSlotAllocation() closed the gate and
+  // drained the list before the controller was stopped), so this is normally unreachable with
+  // active slots; the check keeps the doorbell read below from ever hitting a gated register space
+  // regardless.
+  if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff()) {
     return 0;
   }
 

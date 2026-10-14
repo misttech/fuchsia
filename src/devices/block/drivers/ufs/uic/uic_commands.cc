@@ -12,6 +12,16 @@
 namespace ufs {
 
 zx::result<std::optional<uint32_t>> UicCommand::SendCommand() {
+  // UIC commands are polled through UFSHCI registers, which must not be touched while the PHY
+  // driver has the UFSHCI power domain gated (PowerDown suspend). Hold uic_lock() for the whole
+  // command so that StopHostControllerForPowerDown() cannot gate the registers underneath us, and
+  // so that UIC commands issued by this driver, by the PHY driver (Ufshci::DmeSet/DmeGet) and by
+  // fuchsia.hardware.ufs clients do not interleave on the single UIC command register set.
+  std::lock_guard<std::mutex> lock(GetController().uic_lock());
+  if (GetController().IsHardwarePoweredOff()) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+
   if (auto result = UicPreProcess(); result.is_error()) {
     return result.take_error();
   }
@@ -137,14 +147,6 @@ std::tuple<uint32_t, uint32_t, uint32_t> DmePeerSetUicCommand::Arguments() const
           .reg_value(),
       UicCommandArgument2Reg::Get().FromValue(0).set_attr_set_type(attr_set_type_).reg_value(),
       value_);
-}
-
-zx::result<> DmeLinkStartUpUicCommand::UicPostProcess() {
-  if (auto result = UicCommand::UicPostProcess(); result.is_error()) {
-    return result.take_error();
-  }
-
-  return GetController().Notify(NotifyEvent::kPostLinkStartup, 0);
 }
 
 zx::result<> DmeHibernateCommand::UicPostProcess() {

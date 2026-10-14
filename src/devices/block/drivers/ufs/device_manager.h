@@ -8,6 +8,7 @@
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/trace/event.h>
 #include <lib/zx/result.h>
+#include <lib/zx/time.h>
 
 #include "src/devices/block/drivers/ufs/transfer_request_processor.h"
 #include "src/devices/block/drivers/ufs/upiu/attributes.h"
@@ -28,6 +29,16 @@ enum class UfsPowerMode : uint8_t {
 
 constexpr uint8_t kLowestActiveIcclevel = 0x00;
 constexpr uint8_t kHighestActiveIcclevel = 0x0f;
+
+// How long SuspendPower() waits for in-flight I/O to drain before giving up on the suspend.
+constexpr zx::duration kSuspendIoDrainTimeout = zx::sec(5);
+// Number of PHY/device power cycles attempted synchronously when resuming from PowerDown fails.
+// ufshcd_reset_and_restore() uses MAX_HOST_RESET_RETRIES = 5; we stop at 3 because each attempt
+// can take several seconds of UIC/UPIU timeouts while Power Broker's SetLevel is outstanding, and
+// the driver keeps retrying in the background afterwards (see Ufs::RetryResume()).
+constexpr int kMaxPowerDownResumeAttempts = 3;
+// Pause between retries of a SCSI command that was answered with UNIT ATTENTION / NOT READY.
+constexpr zx::duration kUnavailableRetryDelay = zx::msec(10);
 
 enum class LinkState : uint8_t {
   kOff = 0,     // Power down / Disable
@@ -58,6 +69,8 @@ constexpr PowerModeInfo GetPowerModeInfo(UfsPowerMode mode) {
       return {scsi::PowerCondition::kActive, LinkState::kActive};
     case UfsPowerMode::kSleep:
       return {scsi::PowerCondition::kIdle, LinkState::kHibernate};
+    case UfsPowerMode::kPowerDown:
+      return {scsi::PowerCondition::kStandby, LinkState::kOff};
     default:
       return {scsi::PowerCondition::kIdle, LinkState::kOff};
   }
@@ -119,13 +132,14 @@ class DeviceManager {
   zx::result<> InitUicPowerMode(inspect::Node &unipro_node);
   zx::result<> InitUfsPowerMode(inspect::Node &controller_node, inspect::Node &attributes_node)
       TA_EXCL(power_lock_);
+  zx::result<> RestoreDeviceAndLinkConfig();
 
   zx::result<> SuspendPower() TA_EXCL(power_lock_);
   zx::result<> ResumePower() TA_EXCL(power_lock_);
 
   bool IsResumed() TA_EXCL(power_lock_) {
     std::lock_guard<std::mutex> lock(power_lock_);
-    return current_power_mode_ == UfsPowerMode::kActive &&
+    return !suspend_in_progress_ && current_power_mode_ == UfsPowerMode::kActive &&
            current_power_condition_ == scsi::PowerCondition::kActive &&
            current_link_state_ == LinkState::kActive;
   }
@@ -173,7 +187,24 @@ class DeviceManager {
   zx::result<> SetFlag(Flags type);
   zx::result<> ClearFlag(Flags type);
 
+  zx::result<> ConfigureReferenceClock();
+  zx::result<> ConfigureUniproAttributes();
+  zx::result<> ConfigureUicPowerMode();
+
   zx::result<> SetPowerCondition(scsi::PowerCondition power_condition) TA_REQ(power_lock_);
+
+  // What a suspend attempt has done so far; SuspendPowerLocked() fills it in and SuspendPower()
+  // uses it to undo a failed attempt.
+  struct SuspendProgress {
+    bool background_op_disabled = false;
+    bool auto_hibernate_disabled = false;
+    // Set once the new power state has been recorded. From then on the attempt is not rolled back:
+    // a PowerDown failure after the host controller was stopped is still recorded as PowerDown and
+    // recovered by the next ResumePower().
+    bool suspended = false;
+  };
+  zx::result<> SuspendPowerLocked(bool power_down, UfsPowerMode target_power_mode,
+                                  SuspendProgress &progress) TA_REQ(power_lock_);
 
   zx::result<> SetExceptionEventControl(ExceptionEventControl control);
   zx::result<ExceptionEventStatus> GetExceptionEventStatus();
@@ -182,9 +213,8 @@ class DeviceManager {
   zx::result<BackgroundOpStatus> GetBackgroundOpStatus();
 
   zx::result<bool> IsWriteBoosterBufferLifeTimeLeft();
-  zx::result<> EnableWriteBooster(inspect::Node &wb_node);
+  zx::result<> EnableWriteBooster();
   zx::result<> DisableWriteBooster();
-  zx::result<bool> NeedWriteBoosterBufferFlush();
 
   Ufs &controller_;
   TransferRequestProcessor &req_processor_;
@@ -212,14 +242,28 @@ class DeviceManager {
   uint8_t write_booster_dedicated_lu_;
   WriteBoosterBufferType write_booster_buffer_type_;
   UserSpaceConfigurationOption user_space_configuration_option_;
-  uint32_t write_booster_flush_threshold_ = 4;  // 40% of the available buffer size.
 
-  // Power management
+  // Power management.
+  //
+  // Lock order: power_lock_ is acquired before TransferRequestProcessor::admin_slot_lock_ (and
+  // its slot_lock_) and before Ufs::uic_lock_; SetPowerCondition() and the PowerDown branch of
+  // SuspendPowerLocked() take them in that order. Nothing that holds admin_slot_lock_ or uic_lock_
+  // takes power_lock_: admin UPIUs complete on the admin worker without it, and the
+  // exception-event handler reads IsResumed() (which takes and releases power_lock_) before, not
+  // while, it issues its admin UPIUs.
   std::mutex power_lock_;
   UfsPowerMode current_power_mode_ TA_GUARDED(power_lock_) = UfsPowerMode::kPowerDown;
   scsi::PowerCondition current_power_condition_ TA_GUARDED(power_lock_) =
       scsi::PowerCondition::kIdle;
   LinkState current_link_state_ TA_GUARDED(power_lock_) = LinkState::kOff;
+  // Set for the duration of SuspendPower() so that IsResumed() reports false before the
+  // device/link state is actually changed: the I/O worker then skips submission attempts and the
+  // exception-event handler leaves the background-operation state to SuspendPower(). Keeping I/O
+  // off the hardware does not depend on it; that is RequestProcessor::BlockSlotAllocation().
+  bool suspend_in_progress_ TA_GUARDED(power_lock_) = false;
+  // Set once PowerDown has been downgraded to Sleep because of a power-on write-protected LU, so
+  // the downgrade is only logged once.
+  bool power_down_blocked_ = false;
 };
 
 }  // namespace ufs

@@ -15,6 +15,7 @@
             "fuchsia.devices.storage.ufs.irq",
             "fuchsia.devices.storage.ufs.worker",
         ],
+        suspend_enabled: "true",
     },
     capabilities: [
         { service: "fuchsia.hardware.block.volume.Service" },
@@ -36,10 +37,8 @@
         },
         { service: "fuchsia.hardware.ufs.phy.Service" },
         { service: "fuchsia.hardware.interconnect.PathService" },
-        { protocol: "fuchsia.power.broker.Topology" },
         {
             protocol: [
-                "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.CpuElementManager",
                 "fuchsia.scheduler.RoleManager",
             ],

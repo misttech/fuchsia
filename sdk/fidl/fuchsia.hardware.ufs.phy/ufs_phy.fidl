@@ -39,6 +39,35 @@ open protocol UfsPhy {
 
     /// Perform PHY calibration and configuration prior to power mode / gear change.
     flexible PrePowerModeChange() -> () error zx.Status;
+
+    /// Returns the PHY driver's static capabilities. The controller driver calls this once at
+    /// initialization to decide which power-management features it may use. A PHY driver that
+    /// does not implement this method is treated as supporting none of the optional features.
+    flexible GetProperties() -> (table {
+        /// Whether `Suspend` and `Resume` are implemented, i.e. the PHY can power down the UFS
+        /// device, PHY and host controller power domains and bring them back up. When unset or
+        /// false the controller driver only uses link hibernation for system suspend.
+        1: supports_suspend_resume bool;
+    });
+
+    /// Powers down the UFS device rails, PHY reset, regulators, clocks, and power domains.
+    ///
+    /// The caller must have stopped the host controller (HCE = 0) before calling this; after it
+    /// returns the UFSHCI register space must not be accessed until `Resume` has succeeded.
+    /// Calling `Suspend` while already suspended is a no-op. On failure the PHY is still
+    /// considered suspended (every step is attempted and the first error reported), so the caller
+    /// must go through `Resume` to bring it back. Only resources that are actually held are
+    /// released, so `Suspend` is also safe to call after a failed `Resume` (which has already
+    /// released what it acquired). The host controller is stopped for the whole duration of
+    /// `Suspend` and `Resume`, so `Ufshci` calls made from within them fail with ZX_ERR_BAD_STATE.
+    flexible Suspend() -> () error zx.Status;
+
+    /// Powers up the UFS power domains and clocks prior to host controller enable and link startup.
+    ///
+    /// Calling `Resume` while not suspended is a no-op that returns success. On failure the PHY
+    /// must release anything it acquired during the attempt and remain suspended, so that the
+    /// caller may either call `Suspend` or retry `Resume`.
+    flexible Resume() -> () error zx.Status;
 };
 
 service Service {
