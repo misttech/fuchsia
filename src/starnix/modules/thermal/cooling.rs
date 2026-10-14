@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, anyhow, format_err};
-use fidl::endpoints::SynchronousProxy;
 use fidl_fuchsia_power_battery as fbattery;
 use starnix_core::device::kobject::Device;
+use starnix_core::device::service_watcher::watch_fidl_service;
 use starnix_core::fs::sysfs::{CpuFreqDomain, build_device_directory, get_cpu_freq_domains};
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FsNodeOps;
@@ -16,9 +16,8 @@ use starnix_sync::{LockDepMutex, ThermalChargeLevelLock};
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::sync::Arc;
-
-const BATTERY_CHARGER_SERVICE_DIRECTORY: &str = "/svc/fuchsia.power.battery.ChargerService";
 
 trait CoolingOps: Send + Sync + 'static {
     fn get_max_state(&self) -> u32;
@@ -109,19 +108,27 @@ impl CoolingDeviceRegistrar {
 
     /// Register a device in the thermal class.
     fn register<T: CoolingOps>(&mut self, kernel: &Kernel, device_type: String, ops: T) -> Device {
-        let device_registry = &kernel.device_registry;
-        let device_class = device_registry.objects.thermal_class();
-
-        let cooling_device =
-            Arc::new(CoolingDevice::<T> { device_id: self.get_next_id(), device_type, ops });
-
-        device_registry.add_numberless_device(
-            cooling_device.get_device_name().as_str().into(),
-            /* parent = */ None,
-            device_class,
-            |device, dir| cooling_device.build_device_dir(device, dir),
-        )
+        register_cooling_device(kernel, self.get_next_id(), device_type, ops)
     }
+}
+
+fn register_cooling_device<T: CoolingOps>(
+    kernel: &Kernel,
+    device_id: u32,
+    device_type: String,
+    ops: T,
+) -> Device {
+    let device_registry = &kernel.device_registry;
+    let device_class = device_registry.objects.thermal_class();
+
+    let cooling_device = Arc::new(CoolingDevice::<T> { device_id, device_type, ops });
+
+    device_registry.add_numberless_device(
+        cooling_device.get_device_name().as_str().into(),
+        /* parent = */ None,
+        device_class,
+        |device, dir| cooling_device.build_device_dir(device, dir),
+    )
 }
 
 const COOLING_DEVICE_VOTER: &str = "cooling_device";
@@ -273,32 +280,32 @@ fn register_fcc_device(
     registrar: &mut CoolingDeviceRegistrar,
     param: &str,
 ) -> Result<(), Error> {
-    let proxy = connect_to_battery_charger().context("Failed to connect to battery Charger")?;
     let max_charge_level: u32 = param.parse().context("Invalid max_charge_level")?;
-    let ops = FccCoolingOps::new(proxy, max_charge_level, 0);
-
-    registrar.register(kernel, "fcc".to_string(), ops);
+    let device_id = registrar.get_next_id();
+    let device_added = Cell::new(false);
+    watch_fidl_service(
+        kernel,
+        fbattery::ChargerServiceMarker,
+        "fcc_cooling_device",
+        async move |weak_kernel, instance| {
+            let Some(kernel) = weak_kernel.upgrade() else {
+                return;
+            };
+            if device_added.get() {
+                log_warn!("Ignoring additional ChargerService instance");
+                return;
+            }
+            let proxy = match instance.connect_to_device_sync() {
+                Ok(proxy) => proxy,
+                Err(e) => {
+                    log_error!("Failed to connect to battery Charger: {e:?}");
+                    return;
+                }
+            };
+            device_added.set(true);
+            let ops = FccCoolingOps::new(proxy, max_charge_level, 0);
+            register_cooling_device(&kernel, device_id, "fcc".to_string(), ops);
+        },
+    );
     Ok(())
-}
-
-fn connect_to_battery_charger() -> Result<fbattery::ChargerSynchronousProxy, Error> {
-    // Attempt to manually locate the charger service instance. The instance name is not static, so
-    // we connect to the first one routed into the namespace.
-    // TODO(b/460242910): Simplify this process.
-    let mut dir = std::fs::read_dir(BATTERY_CHARGER_SERVICE_DIRECTORY)
-        .context("Failed to read ChargerService directory")?;
-    let entry = dir
-        .next()
-        .ok_or_else(|| anyhow::format_err!("Missing ChargerService instance"))?
-        .context("Unable to read ChargerService instance")?;
-    let path = entry
-        .path()
-        .join("device")
-        .into_os_string()
-        .into_string()
-        .map_err(|_| anyhow::format_err!("Failed to get device path"))?;
-
-    let (client_end, server_end) = zx::Channel::create();
-    fdio::service_connect(&path, server_end)?;
-    Ok(fbattery::ChargerSynchronousProxy::from_channel(client_end))
 }
