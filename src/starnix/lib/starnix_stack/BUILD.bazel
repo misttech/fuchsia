@@ -12,7 +12,7 @@ rustc_library(
     crate_name = "starnix_stack",
     edition = "2024",
     test_deps = ["//src/lib/fuchsia"],
-    visibility = ["//src/starnix/kernel/core:__pkg__"],
+    visibility = ["//src/starnix/lib/starnix_sync:__pkg__"],
     with_unit_tests = True,
     deps = [
         "//sdk/rust/zx",

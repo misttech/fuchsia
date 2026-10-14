@@ -45,13 +45,16 @@ pub struct InterruptibleEvent {
     /// Retains the PI owner assigned via `assign_new_owner` for the duration of the wait cycle.
     ///
     /// Keeping an `Arc<zx::Thread>` reference here (rather than only passing the handle once to
-    /// `zx_futex_requeue`) is required for two reasons:
-    ///  1. If `assign_new_owner` is called after `begin_wait` but before the waiting thread enters
-    ///     `zx_futex_wait` in the kernel (or if a spurious or intermediate wakeup occurs),
-    ///     `zx_futex_requeue` moves 0 kernel waiters, and a subsequent
-    ///     `requeue_target.wait(WAITING, None, ...)` would overwrite `requeue_target`'s kernel
-    ///     owner with `None`.
-    ///  2. Holding an `Arc<zx::Thread>` guarantees the underlying `zx_handle_t` stays open until
+    /// `zx_futex_requeue`) is required for three reasons:
+    ///  1. When `block_until` wakes at the intermediate `clean_deadline` to call `clean_stack()`,
+    ///     Zircon's `FutexWait` (`ResetOwnerIfNoWaiters`) clears `requeue_target`'s kernel owner
+    ///     before returning `ZX_ERR_TIMED_OUT`; re-waiting on `requeue_target` must pass the owner
+    ///     handle again to preserve PI for the rest of the wait.
+    ///  2. If `assign_new_owner` is called after `begin_wait` but before the waiting thread enters
+    ///     `zx_futex_wait` in the kernel (or if a spurious wakeup occurs), `zx_futex_requeue` moves
+    ///     0 kernel waiters, and a subsequent `requeue_target.wait(WAITING, None, ...)` would
+    ///     overwrite `requeue_target`'s kernel owner with `None`.
+    ///  3. Holding an `Arc<zx::Thread>` guarantees the underlying `zx_handle_t` stays open until
     ///     `reset()`, avoiding `zx_handle_duplicate` syscalls and `ZX_POL_BAD_HANDLE` policy
     ///     exceptions if the worker thread exits during the wait.
     requeue_owner: fuchsia_sync::Mutex<Option<Arc<zx::Thread>>>,
@@ -107,7 +110,17 @@ impl<'a> EventWaitGuard<'a> {
         new_owner: Option<&zx::Thread>,
         deadline: zx::MonotonicInstant,
     ) -> Result<(), WakeReason> {
-        self.event.block_until(new_owner, deadline)
+        self.event.block_until_with_clean_delay(new_owner, deadline, crate::STACK_CLEAN_DELAY)
+    }
+
+    #[cfg(test)]
+    fn block_until_with_clean_delay(
+        self,
+        new_owner: Option<&zx::Thread>,
+        deadline: zx::MonotonicInstant,
+        clean_delay: zx::MonotonicDuration,
+    ) -> Result<(), WakeReason> {
+        self.event.block_until_with_clean_delay(new_owner, deadline, clean_delay)
     }
 }
 
@@ -220,13 +233,15 @@ impl InterruptibleEvent {
         self.futex.store(READY, Ordering::Release);
     }
 
-    fn block_until(
+    fn block_until_with_clean_delay(
         &self,
         new_owner: Option<&zx::Thread>,
         deadline: zx::MonotonicInstant,
+        clean_delay: zx::MonotonicDuration,
     ) -> Result<(), WakeReason> {
         // We need to loop around the call to zx_futex_wait because we can receive spurious
-        // wakeups.
+        // wakeups. Clean the stack once if the wait remains blocked for `clean_delay`.
+        let mut clean_deadline = crate::initial_clean_deadline(deadline, clean_delay);
         loop {
             let futex_val = self.futex.load(Ordering::Acquire);
             let is_requeued = futex_val == REQUEUED;
@@ -237,11 +252,20 @@ impl InterruptibleEvent {
                 (&self.futex, new_owner)
             };
 
-            match target_futex.wait(WAITING, effective_owner, deadline) {
+            match target_futex.wait(WAITING, effective_owner, clean_deadline) {
                 // The deadline expired while we were sleeping.
                 Err(zx::Status::TIMED_OUT) => {
-                    self.reset();
-                    return Err(WakeReason::DeadlineExpired);
+                    if clean_deadline < deadline {
+                        starnix_stack::clean_stack();
+                        clean_deadline = deadline;
+                        // Continue immediately so we re-read `self.futex` and `requeue_owner` in
+                        // case `assign_new_owner` requeued us during the initial `clean_delay`
+                        // sleep.
+                        continue;
+                    } else {
+                        self.reset();
+                        return Err(WakeReason::DeadlineExpired);
+                    }
                 }
                 // The value changed before we went to sleep. Note: If `assign_new_owner()` set
                 // `futex = REQUEUED` before `requeue_target` was initialized to `WAITING`,
@@ -557,6 +581,97 @@ mod test {
         while event.get_owner() != Some(root_thread_koid) {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+
+        event.notify();
+        blocked_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_wait_clean_stack_then_notify() {
+        let event = InterruptibleEvent::new();
+        let guard = event.begin_wait();
+
+        let other_event = Arc::clone(&event);
+        let thread = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            other_event.notify();
+        });
+
+        guard
+            .block_until_with_clean_delay(
+                None,
+                zx::MonotonicInstant::INFINITE,
+                zx::MonotonicDuration::from_millis(10),
+            )
+            .expect("failed to be notified after clean_stack");
+        thread.join().expect("failed to join thread");
+    }
+
+    #[test]
+    fn test_wait_clean_stack_then_timeout() {
+        let event = InterruptibleEvent::new();
+        let guard = event.begin_wait();
+        let deadline = zx::MonotonicInstant::after(zx::MonotonicDuration::from_millis(30));
+
+        let result = guard.block_until_with_clean_delay(
+            None,
+            deadline,
+            zx::MonotonicDuration::from_millis(10),
+        );
+        assert_eq!(result, Err(WakeReason::DeadlineExpired));
+        assert!(zx::MonotonicInstant::get() >= deadline);
+    }
+
+    #[test]
+    fn futex_requeue_owner_is_preserved_across_clean_stack() {
+        let event = InterruptibleEvent::new();
+
+        let (root_thread_handle, root_thread_koid) = fuchsia_runtime::with_thread_self(|thread| {
+            (
+                Arc::new(thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                thread.koid().unwrap(),
+            )
+        });
+
+        let event_for_blocked_thread = Arc::clone(&event);
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel();
+        let blocked_thread = std::thread::spawn(move || {
+            let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
+                thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
+            });
+            let guard = event_for_blocked_thread.begin_wait();
+            ready_tx.send(thread_handle).unwrap();
+            go_rx.recv().unwrap();
+            guard
+                .block_until_with_clean_delay(
+                    None,
+                    zx::MonotonicInstant::INFINITE,
+                    zx::MonotonicDuration::from_millis(25),
+                )
+                .unwrap();
+        });
+
+        // Assign PI ownership after `begin_wait()` before `blocked_thread` enters
+        // `block_until_with_clean_delay`, so the 25ms `clean_deadline` cannot expire before
+        // `assign_new_owner` runs even on a loaded bot.
+        let blocked_thread_handle = ready_rx.recv().unwrap();
+        event.assign_new_owner(&root_thread_handle).unwrap();
+        go_tx.send(()).unwrap();
+
+        while event.get_owner() != Some(root_thread_koid) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        // Sleep past the 25ms clean_deadline so the blocked thread wakes, calls `clean_stack()`,
+        // and re-waits on `requeue_target`.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        while blocked_thread_handle.info().unwrap().state
+            != zx::ThreadState::Blocked(zx::ThreadBlockType::Futex)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(event.get_owner(), Some(root_thread_koid));
 
         event.notify();
         blocked_thread.join().unwrap();

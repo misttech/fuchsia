@@ -46,6 +46,7 @@ rustc_library(
         "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
         "//src/lib/fuchsia-rcu",
         "//src/lib/fuchsia-sync",
+        "//src/starnix/lib/starnix_stack",
         "//third_party/rust_crates/vendor:lock_api",
         "//third_party/rust_crates/vendor:scopeguard",
     ],
@@ -84,6 +85,7 @@ rustc_test(
         "//src/lib/fuchsia-rcu",
         "//src/lib/fuchsia-runtime",
         "//src/lib/fuchsia-sync",
+        "//src/starnix/lib/starnix_stack",
         "//third_party/rust_crates/vendor:lock_api",
         "//third_party/rust_crates/vendor:scopeguard",
         "//third_party/rust_crates/vendor:test-case",

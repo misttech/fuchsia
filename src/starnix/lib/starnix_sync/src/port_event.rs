@@ -96,18 +96,41 @@ impl PortEvent {
 
     /// Wait for an event to occur, or the deadline has been reached.
     pub fn wait(&self, deadline: zx::MonotonicInstant) -> PortWaitResult {
+        self.wait_with_clean_delay(deadline, crate::STACK_CLEAN_DELAY)
+    }
+
+    fn wait_with_clean_delay(
+        &self,
+        deadline: zx::MonotonicInstant,
+        clean_delay: zx::MonotonicDuration,
+    ) -> PortWaitResult {
+        let mut clean_deadline: Option<zx::MonotonicInstant> = None;
         let mut state = self.futex.load(ORDERING_FOR_ATOMICS_BETWEEN_NOTIFIER_AND_NOTIFEE);
         loop {
             match state {
-                FUTEX_WAITING => match self.futex.wait(FUTEX_WAITING, None, deadline) {
-                    Ok(()) | Err(zx::Status::BAD_STATE) => {
-                        state = self.futex.load(ORDERING_FOR_ATOMICS_BETWEEN_NOTIFIER_AND_NOTIFEE);
+                FUTEX_WAITING => {
+                    let wait_deadline = *clean_deadline.get_or_insert_with(|| {
+                        crate::initial_clean_deadline(deadline, clean_delay)
+                    });
+                    match self.futex.wait(FUTEX_WAITING, None, wait_deadline) {
+                        Ok(()) | Err(zx::Status::BAD_STATE) => {
+                            state =
+                                self.futex.load(ORDERING_FOR_ATOMICS_BETWEEN_NOTIFIER_AND_NOTIFEE);
+                        }
+                        Err(zx::Status::TIMED_OUT) => {
+                            if wait_deadline < deadline {
+                                starnix_stack::clean_stack();
+                                clean_deadline = Some(deadline);
+                                state = self
+                                    .futex
+                                    .load(ORDERING_FOR_ATOMICS_BETWEEN_NOTIFIER_AND_NOTIFEE);
+                            } else {
+                                return PortWaitResult::TimedOut;
+                            }
+                        }
+                        Err(e) => panic!("Unexpected error from zx_futex_wait: {e}"),
                     }
-                    Err(zx::Status::TIMED_OUT) => {
-                        return PortWaitResult::TimedOut;
-                    }
-                    Err(e) => panic!("Unexpected error from zx_futex_wait: {e}"),
-                },
+                }
                 FUTEX_NOTIFIED | FUTEX_INTERRUPTED => {
                     match self.futex.compare_exchange(
                         state,
@@ -136,7 +159,19 @@ impl PortEvent {
             }
         }
 
-        match self.port.wait(deadline) {
+        let mut clean_deadline =
+            clean_deadline.unwrap_or_else(|| crate::initial_clean_deadline(deadline, clean_delay));
+        let packet = loop {
+            match self.port.wait(clean_deadline) {
+                Ok(packet) => break Ok(packet),
+                Err(zx::Status::TIMED_OUT) if clean_deadline < deadline => {
+                    starnix_stack::clean_stack();
+                    clean_deadline = deadline;
+                }
+                Err(e) => break Err(e),
+            }
+        };
+        match packet {
             Ok(packet) => match packet.status() {
                 zx::sys::ZX_OK => {
                     match packet.contents() {
@@ -412,5 +447,67 @@ mod test {
             );
         }
         assert_eq!(event.wait(deadline), PortWaitResult::TimedOut);
+    }
+
+    #[test_case(true; "with object")]
+    #[test_case(false; "without object")]
+    fn test_wait_clean_stack_then_notify(with_object: bool) {
+        const KEY: u64 = 7;
+
+        let event = Arc::new(PortEvent::new());
+        let object = zx::Event::create();
+        if with_object {
+            assert_eq!(
+                event.object_wait_async(
+                    &object,
+                    KEY,
+                    zx::Signals::USER_6,
+                    zx::WaitAsyncOpts::empty()
+                ),
+                Ok(())
+            );
+        }
+
+        let event_clone = Arc::clone(&event);
+        let thread = std::thread::spawn(move || {
+            assert_eq!(
+                event_clone.wait_with_clean_delay(
+                    zx::MonotonicInstant::INFINITE,
+                    zx::MonotonicDuration::from_millis(10),
+                ),
+                PortWaitResult::NOTIFY_REGULAR
+            );
+        });
+
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        event.notify(NotifyKind::Regular);
+        thread.join().expect("join thread");
+    }
+
+    #[test_case(true; "with object")]
+    #[test_case(false; "without object")]
+    fn test_wait_clean_stack_then_timeout(with_object: bool) {
+        const KEY: u64 = 8;
+
+        let event = PortEvent::new();
+        let object = zx::Event::create();
+        if with_object {
+            assert_eq!(
+                event.object_wait_async(
+                    &object,
+                    KEY,
+                    zx::Signals::USER_7,
+                    zx::WaitAsyncOpts::empty()
+                ),
+                Ok(())
+            );
+        }
+
+        let deadline = zx::MonotonicInstant::after(zx::MonotonicDuration::from_millis(30));
+        assert_eq!(
+            event.wait_with_clean_delay(deadline, zx::MonotonicDuration::from_millis(10)),
+            PortWaitResult::TimedOut
+        );
+        assert!(zx::MonotonicInstant::get() >= deadline);
     }
 }

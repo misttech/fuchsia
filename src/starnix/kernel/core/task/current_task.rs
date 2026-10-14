@@ -26,7 +26,6 @@ use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{CATEGORY_STARNIX, log_error, log_warn, track_file_not_found, track_stub};
 use starnix_registers::{HeapRegs, RegisterStorageEnum};
-use starnix_stack::clean_stack;
 use starnix_sync::{EventWaitGuard, UninterruptibleLock, WakeReason, assert_lock_level};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::Syscall;
@@ -539,9 +538,6 @@ impl CurrentTask {
 
         // Check we do not hold any uninterruptible lock
         assert_lock_level::<UninterruptibleLock>();
-        // As an optimization, decommit unused pages of the stack to reduce memory pressure while
-        // the thread is blocked.
-        clean_stack();
 
         {
             let mut state = self.write();

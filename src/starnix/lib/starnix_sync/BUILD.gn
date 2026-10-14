@@ -79,6 +79,7 @@ rustc_library("starnix_sync") {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-rcu",
     "//src/lib/fuchsia-sync",
+    "//src/starnix/lib/starnix_stack",
     "//third_party/rust_crates:lock_api",
     "//third_party/rust_crates:scopeguard",
   ]
@@ -112,6 +113,7 @@ rustc_test("starnix_sync_lib_test") {
     "//src/lib/fuchsia-rcu",
     "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
+    "//src/starnix/lib/starnix_stack",
     "//third_party/rust_crates:lock_api",
     "//third_party/rust_crates:scopeguard",
     "//third_party/rust_crates:test-case",

@@ -30,3 +30,24 @@ pub use thread_affinity::*;
 // This allows lock_ordering! macro to use paths within this crate
 // by referring to them by the external crate name.
 extern crate self as starnix_sync;
+
+/// The duration a blocking wait must sleep before `clean_stack()` is called to decommit unused
+/// stack pages.
+pub(crate) const STACK_CLEAN_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
+
+/// Computes the initial deadline for a blocking wait so that waits longer than `clean_delay` wake
+/// once after `clean_delay` to call `starnix_stack::clean_stack()` before sleeping until
+/// `deadline`.
+#[inline]
+pub(crate) fn initial_clean_deadline(
+    deadline: zx::MonotonicInstant,
+    clean_delay: zx::MonotonicDuration,
+) -> zx::MonotonicInstant {
+    // Avoid querying the monotonic clock when the deadline is already in the past (e.g.
+    // `INFINITE_PAST` or `ZERO` on non-blocking polls).
+    if deadline > zx::MonotonicInstant::ZERO {
+        std::cmp::min(deadline, zx::MonotonicInstant::after(clean_delay))
+    } else {
+        deadline
+    }
+}
