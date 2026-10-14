@@ -775,7 +775,23 @@ impl EbpfMapCache {
         };
 
         let inner = match inner {
-            Some(inner) => inner,
+            Some(inner) => {
+                // The VMO is already mapped. Verify that the schema passed by
+                // the client matches the cached one. Otherwise the program
+                // would be linked against a map with a schema different from
+                // the one it was verified against.
+                let fidl_schema = fidl_map.schema.ok_or(MapError::InvalidParam)?;
+                let schema = ebpf_api::map_schema_from_fidl(fidl_schema);
+                let cached_schema = inner.map.schema();
+                if schema != *cached_schema {
+                    error!(
+                        "eBPF map schema mismatch: expected {:?}, got {:?}",
+                        cached_schema, schema
+                    );
+                    return Err(MapError::InvalidParam);
+                }
+                inner
+            }
             None => {
                 let map = Map::new_shared(fidl_map)?;
                 let inner = Arc::new(CachedMapRefInner { map, id, cache: Arc::downgrade(self) });
@@ -1198,6 +1214,44 @@ mod tests {
 
         std::mem::drop(cache_ref1_dup);
         assert_eq!(num_cached(), 0);
+    }
+
+    #[test]
+    fn maps_cache_rejects_schema_mismatch() {
+        let schema = MapSchema {
+            map_type: ebpf_api::BPF_MAP_TYPE_HASH,
+            key_size: 4,
+            value_size: 4096,
+            max_entries: 1,
+            flags: MapFlags::empty(),
+        };
+
+        let cache = Arc::new(EbpfMapCache::default());
+
+        let map = Map::new(schema, "test").unwrap();
+        let cache_ref = cache.init_map(map.share().unwrap()).unwrap();
+
+        let init_map_err = |fidl_map| cache.init_map(fidl_map).map(|_| ()).unwrap_err();
+
+        // Importing the same VMO with a different schema must be rejected
+        // instead of silently returning the cached map.
+        let mut fidl_map = map.share().unwrap();
+        fidl_map.schema.as_mut().unwrap().value_size = 8;
+        assert_eq!(init_map_err(fidl_map), MapError::InvalidParam);
+
+        let mut fidl_map = map.share().unwrap();
+        fidl_map.schema.as_mut().unwrap().type_ = febpf::MapType::Array;
+        assert_eq!(init_map_err(fidl_map), MapError::InvalidParam);
+
+        // A missing schema is also rejected.
+        let mut fidl_map = map.share().unwrap();
+        fidl_map.schema = None;
+        assert_eq!(init_map_err(fidl_map), MapError::InvalidParam);
+
+        // The matching schema is still accepted.
+        let cache_ref_dup = cache.init_map(map.share().unwrap()).unwrap();
+        assert_eq!(cache_ref.as_bpf_value().as_u64(), cache_ref_dup.as_bpf_value().as_u64());
+        assert_eq!(cache.maps.lock().len(), 1);
     }
 
     const TEST_IFINDEX: u32 = 2;

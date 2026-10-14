@@ -225,6 +225,17 @@ const BASE_MAP_RIGHTS: zx::Rights = zx::Rights::READ
 // Rights for the VMO handle when sharing a map.
 const SHARED_MAP_RIGHTS: zx::Rights = BASE_MAP_RIGHTS.union(zx::Rights::TRANSFER);
 
+/// Converts a `fuchsia.ebpf/MapSchema` to a `MapSchema`.
+pub fn map_schema_from_fidl(fidl_schema: febpf::MapSchema) -> MapSchema {
+    MapSchema {
+        map_type: fidl_map_type_to_bpf_map_type(fidl_schema.type_),
+        key_size: fidl_schema.key_size,
+        value_size: fidl_schema.value_size,
+        max_entries: fidl_schema.max_entries,
+        flags: map_flags_from_fidl(fidl_schema.flags),
+    }
+}
+
 impl Map {
     pub fn new(schema: MapSchema, name: &str) -> Result<PinnedMap, MapError> {
         validate_map_flags(&schema)?;
@@ -243,13 +254,7 @@ impl Map {
             return Err(MapError::InvalidVmo);
         }
 
-        let schema = MapSchema {
-            map_type: fidl_map_type_to_bpf_map_type(fidl_schema.type_),
-            key_size: fidl_schema.key_size,
-            value_size: fidl_schema.value_size,
-            max_entries: fidl_schema.max_entries,
-            flags: map_flags_from_fidl(fidl_schema.flags),
-        };
+        let schema = map_schema_from_fidl(fidl_schema);
 
         let map_impl = create_map_impl(&schema, vmo)?;
         Ok(PinnedMap(Arc::pin(Self { schema, map_impl })))
