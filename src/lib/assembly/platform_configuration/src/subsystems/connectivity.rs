@@ -180,7 +180,8 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
             builder.platform_bundle(maybe_gub_bundle("netstack3_packages").as_ref())?;
 
             // Define netstack3 configuration capabilities.
-            // Non-configurable fields (debug_logs, opaque_iids, tcp_gro_enabled) use their .cml
+            //
+            // Non-configurable fields (debug_logs, opaque_iids) use their .cml
             // defaults.
             builder.set_config_capability(
                 "fuchsia.netstack3.NumThreads",
@@ -206,6 +207,13 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 Config::new(
                     ConfigValueType::Bool,
                     connectivity_config.network.netstack_multi_vmo.into(),
+                ),
+            )?;
+            builder.set_config_capability(
+                "fuchsia.netstack3.TcpGroEnabled",
+                Config::new(
+                    ConfigValueType::Bool,
+                    connectivity_config.network.netstack_tcp_gro_enabled.into(),
                 ),
             )?;
             if let Some(buffer_size) = connectivity_config.network.max_rolling_capture_buffer_size {

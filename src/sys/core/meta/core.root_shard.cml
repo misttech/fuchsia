@@ -48,6 +48,7 @@
                 "fuchsia.netstack3.MultiVmo",
                 "fuchsia.netstack3.NumThreads",
                 "fuchsia.netstack3.SampledStatsEnabled",
+                "fuchsia.netstack3.TcpGroEnabled",
             ],
             from: "#config",
             to: "self/netstack3-config",

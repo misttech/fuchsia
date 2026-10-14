@@ -98,6 +98,11 @@ pub struct PlatformNetworkConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub netstack_multi_vmo: bool,
 
+    /// Whether to enable TCP Generic Receive Offload (GRO) in Netstack3.
+    // TODO(https://fxbug.dev/573166201): Remove this flag.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub netstack_tcp_gro_enabled: bool,
+
     /// Maximum size of the rolling packet capture buffer in bytes.
     ///
     /// Platform default (16MB) will be used if unspecified.

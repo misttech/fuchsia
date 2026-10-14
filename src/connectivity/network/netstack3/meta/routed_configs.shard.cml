@@ -78,10 +78,10 @@
             // TODO(https://fxbug.dev/452980285): Remove this flag when enabled by
             // default.
             config: "fuchsia.netstack3.TcpGroEnabled",
-            from: "parent",
+            from: "parent/netstack3-config",
             key: "tcp_gro_enabled",
             type: "bool",
-            availability: "optional",
+            availability: "transitional",
             default: false,
         },
         {
