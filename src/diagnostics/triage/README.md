@@ -13,7 +13,7 @@ the `fx set` invocation.
 For example:
 
 ```
-fx set core.chromebook-x64 --with //src/diagnostics/triage
+fx set core.x64 --with //src/diagnostics/triage
 ```
 
 ## Running
