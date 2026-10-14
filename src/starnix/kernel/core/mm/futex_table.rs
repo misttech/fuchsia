@@ -81,6 +81,10 @@ impl<Key: FutexKey> FutexTable<Key> {
         }
 
         let key = Key::get(current_task, addr)?;
+        // Linux futex_wait(): an already-expired timer returns ETIMEDOUT without sleeping.
+        if deadline != zx::BootInstant::INFINITE && deadline <= zx::BootInstant::get() {
+            return error!(ETIMEDOUT);
+        }
         let waiter = Arc::new(Waiter::new());
         let timer = zx::BootTimer::create();
         let signal_handler = SignalHandler {
@@ -134,6 +138,10 @@ impl<Key: FutexKey> FutexTable<Key> {
         }
 
         let key = Key::get(current_task, addr)?;
+        // Linux futex_wait(): an already-expired timer returns ETIMEDOUT without sleeping.
+        if deadline != zx::MonotonicInstant::INFINITE && deadline <= zx::MonotonicInstant::get() {
+            return error!(ETIMEDOUT);
+        }
         let event = InterruptibleEvent::new();
         let guard = event.begin_wait();
         state.get_waiters_or_default(key.clone()).add(FutexWaiter {
@@ -1341,6 +1349,99 @@ mod tests {
             );
 
             pager_thread.join().unwrap();
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_wait_expired_deadline_returns_etimedout_without_queuing() {
+        use crate::mm::memory::MemoryObject;
+        use crate::mm::{DesiredAddress, MappingName, MappingOptions, PAGE_SIZE, ProtectionFlags};
+        use crate::testing::spawn_kernel_and_run;
+
+        spawn_kernel_and_run(async move |current_task| {
+            let mm = current_task.mm().unwrap();
+            let addr = mm
+                .map_memory(
+                    DesiredAddress::Any,
+                    Arc::new(MemoryObject::from(zx::Vmo::create(*PAGE_SIZE).unwrap())),
+                    0,
+                    *PAGE_SIZE as usize,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE,
+                    MappingOptions::empty(),
+                    MappingName::None,
+                )
+                .expect("map failed");
+
+            let futex_table = FutexTable::<PrivateFutexKey>::default();
+
+            assert_eq!(
+                futex_table.wait(
+                    current_task,
+                    addr,
+                    0,
+                    FUTEX_BITSET_MATCH_ANY,
+                    zx::MonotonicInstant::ZERO,
+                ),
+                error!(ETIMEDOUT)
+            );
+            assert_eq!(
+                futex_table.wait(
+                    current_task,
+                    addr,
+                    0,
+                    FUTEX_BITSET_MATCH_ANY,
+                    zx::MonotonicInstant::get(),
+                ),
+                error!(ETIMEDOUT)
+            );
+            assert_eq!(
+                futex_table.wait_boot(
+                    current_task,
+                    addr,
+                    0,
+                    FUTEX_BITSET_MATCH_ANY,
+                    zx::BootInstant::ZERO,
+                    zx::BootDuration::ZERO,
+                ),
+                error!(ETIMEDOUT)
+            );
+            assert_eq!(
+                futex_table.wait_boot(
+                    current_task,
+                    addr,
+                    0,
+                    FUTEX_BITSET_MATCH_ANY,
+                    zx::BootInstant::get(),
+                    zx::BootDuration::ZERO,
+                ),
+                error!(ETIMEDOUT)
+            );
+            assert!(futex_table.state.lock().waiters.is_empty());
+
+            // A mismatched value must still report EAGAIN ahead of an expired deadline.
+            assert_eq!(
+                futex_table.wait(
+                    current_task,
+                    addr,
+                    1,
+                    FUTEX_BITSET_MATCH_ANY,
+                    zx::MonotonicInstant::ZERO,
+                ),
+                error!(EAGAIN)
+            );
+            assert_eq!(
+                futex_table.wait_boot(
+                    current_task,
+                    addr,
+                    1,
+                    FUTEX_BITSET_MATCH_ANY,
+                    zx::BootInstant::ZERO,
+                    zx::BootDuration::ZERO,
+                ),
+                error!(EAGAIN)
+            );
+            assert!(futex_table.state.lock().waiters.is_empty());
         })
         .await;
     }
