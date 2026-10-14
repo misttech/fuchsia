@@ -141,15 +141,23 @@ impl DataBuffer for Buffer {
     }
 
     fn commit(&mut self, size: usize) -> Result<(), ChunkedArchiveError> {
+        const VERIFICATION_FLUSH_THRESHOLD: usize = 96 * 1024;
+
         self.committed_len += size;
 
-        // Deliver complete `read_alignment` chunks to the verifier queue as data is committed.
-        while self.committed_len - self.delivered_len >= self.read_alignment {
-            self.deliver_chunk(self.read_alignment)?;
-        }
-
-        // Deliver any trailing remainder once the entire prepared range has been committed.
-        if self.committed_len == self.data.len() && self.delivered_len < self.committed_len {
+        if self.committed_len < self.data.len() {
+            // Once at least `VERIFICATION_FLUSH_THRESHOLD` (96 KiB, rounded to a multiple of
+            // `read_alignment`) has been committed, deliver complete `read_alignment` chunks so
+            // verification overlaps with decompressing the remainder of the readahead window.
+            let flush_threshold =
+                (VERIFICATION_FLUSH_THRESHOLD / self.read_alignment).max(1) * self.read_alignment;
+            if self.committed_len - self.delivered_len >= flush_threshold {
+                let to_deliver = ((self.committed_len - self.delivered_len) / self.read_alignment)
+                    * self.read_alignment;
+                self.deliver_chunk(to_deliver)?;
+            }
+        } else if self.delivered_len < self.committed_len {
+            // Deliver any remaining bytes once the entire prepared range has been committed.
             self.deliver_chunk(self.committed_len - self.delivered_len)?;
         }
 
@@ -398,5 +406,51 @@ mod tests {
         assert_eq!(&buf[..32], &[0xABu8; 32]);
         assert_eq!(&buf[32..], &[0xCDu8; 32]);
         msg.pop().expect("pop msg failed");
+    }
+
+    #[fuchsia::test]
+    fn test_verifier_buffer_96k_overlap() {
+        let total_size = 128 * 1024;
+        let chunk_size = 32 * 1024;
+        let delivery_queue = zx::Vmo::create(total_size as u64 * 2 + 65536).unwrap();
+        let mut receiver = vmo_fifo::Receiver::<RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
+
+        let verifier = Arc::new(Verifier::new(delivery_queue));
+        let key = 45u64;
+
+        let mut request = verifier.get_page_request(key, 0..total_size as u64);
+        request.prepare(0..total_size as u64, chunk_size).expect("prepare");
+
+        let chunk = vec![0x55u8; chunk_size];
+
+        // First two 32 KiB chunks (64 KiB total) should not flush yet.
+        for _ in 0..2 {
+            request.mut_ptr_slice().subslice_mut(0..chunk_size).copy_from_slice(&chunk);
+            request.commit(chunk_size).expect("commit");
+        }
+        assert!(receiver.is_empty());
+
+        // Third 32 KiB chunk reaches 96 KiB and flushes 96 KiB so verification overlaps with
+        // decompressing the final 32 KiB.
+        request.mut_ptr_slice().subslice_mut(0..chunk_size).copy_from_slice(&chunk);
+        request.commit(chunk_size).expect("commit");
+
+        let msg1 = receiver.peek().expect("msg1");
+        assert_eq!(msg1.target_offset, 0);
+        assert_eq!(msg1.length, 96 * 1024);
+        msg1.pop().expect("pop msg1");
+
+        // Fourth 32 KiB chunk completes the 128 KiB window and flushes the remaining 32 KiB.
+        request.mut_ptr_slice().subslice_mut(0..chunk_size).copy_from_slice(&chunk);
+        request.commit(chunk_size).expect("commit");
+
+        let msg2 = receiver.peek().expect("msg2");
+        assert_eq!(msg2.target_offset, 96 * 1024);
+        assert_eq!(msg2.length, 32 * 1024);
+        msg2.pop().expect("pop msg2");
     }
 }
