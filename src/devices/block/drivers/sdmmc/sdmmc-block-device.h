@@ -330,6 +330,14 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
   struct InspectProperties {
     inspect::UintProperty io_errors_;                    // Only updated from the worker thread.
     inspect::UintProperty io_retries_;                   // Only updated from the worker thread.
+    inspect::UintProperty read_ops_;                     // Only updated from the worker thread.
+    inspect::UintProperty write_ops_;                    // Only updated from the worker thread.
+    inspect::UintProperty flush_ops_;                    // Only updated from the worker thread.
+    inspect::UintProperty trim_ops_;                     // Only updated from the worker thread.
+    inspect::UintProperty read_bytes_;                   // Only updated from the worker thread.
+    inspect::UintProperty write_bytes_;                  // Only updated from the worker thread.
+    inspect::UintProperty flush_bytes_;                  // Only updated from the worker thread.
+    inspect::UintProperty trim_bytes_;                   // Only updated from the worker thread.
     inspect::UintProperty serial_number_;                // Set once by the init thread.
     inspect::UintProperty clock_rate_;                   // Set once by the init thread.
     inspect::UintProperty bus_width_bits_;               // Set once by the init thread.

@@ -87,6 +87,14 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
   root_ = parent_->driver_inspector().root().CreateChild("sdmmc_core");
   properties_.io_errors_ = root_.CreateUint("io_errors", 0);
   properties_.io_retries_ = root_.CreateUint("io_retries", 0);
+  properties_.read_ops_ = root_.CreateUint("block.read.count", 0);
+  properties_.write_ops_ = root_.CreateUint("block.write.count", 0);
+  properties_.flush_ops_ = root_.CreateUint("block.flush.count", 0);
+  properties_.trim_ops_ = root_.CreateUint("block.trim.count", 0);
+  properties_.read_bytes_ = root_.CreateUint("block.read.bytes", 0);
+  properties_.write_bytes_ = root_.CreateUint("block.write.bytes", 0);
+  properties_.flush_bytes_ = root_.CreateUint("block.flush.bytes", 0);
+  properties_.trim_bytes_ = root_.CreateUint("block.trim.bytes", 0);
 
   fbl::AutoLock worker_lock(&worker_lock_);
   fbl::AutoLock lock(&queue_lock_);
@@ -1443,9 +1451,15 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
     }
     switch (request.operation.tag) {
       case block_server::Operation::Tag::Read:
+        properties_.read_ops_.Add(1);
+        properties_.read_bytes_.Add(uint64_t{request.operation.read.block_count} *
+                                    block_info_.block_size);
         read_packer.Push(request);
         break;
       case block_server::Operation::Tag::Write:
+        properties_.write_ops_.Add(1);
+        properties_.write_bytes_.Add(uint64_t{request.operation.write.block_count} *
+                                     block_info_.block_size);
         if (request.operation.write.options.flags.is_pre_barrier()) {
           TRACE_DURATION_BEGIN("sdmmc", "barrier");
 
@@ -1464,6 +1478,7 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
 
       case block_server::Operation::Tag::Flush:
         TRACE_DURATION_BEGIN("sdmmc", "flush");
+        properties_.flush_ops_.Add(1);
 
         // Technically, we might not need to do this, because there's no guarantee regarding the
         // ordering of requests, but it's arguably safer for us to flush preceding write requests
@@ -1481,6 +1496,9 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
 
       case block_server::Operation::Tag::Trim:
         TRACE_DURATION_BEGIN("sdmmc", "trim");
+        properties_.trim_ops_.Add(1);
+        properties_.trim_bytes_.Add(uint64_t{request.operation.trim.block_count} *
+                                    block_info_.block_size);
 
         status = Trim(request.operation.trim.device_block_offset,
                       request.operation.trim.block_count, partition.partition());
