@@ -16,6 +16,7 @@ rustc_library("consent_sync") {
     "//src/starnix/lib/starnix_uapi",
   ]
   sources = [ "src/lib.rs" ]
+  visibility = [ "//src/starnix/modules/*" ]
 }
 
 group("tests") {

@@ -9,7 +9,6 @@ use fidl_fuchsia_ui_input as fuiinput;
 use fidl_fuchsia_ui_input3 as fuiinput3;
 use fidl_fuchsia_ui_policy as fuipolicy;
 use fidl_fuchsia_ui_views as fuiviews;
-use starnix_consent_sync::init as consent_sync_init;
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::block::add_mmc_block_device;
 use starnix_core::mm::MlockPinFlavor;
@@ -17,25 +16,14 @@ use starnix_core::task::{Kernel, KernelFeatures, SystemLimits, ThreadLockupDetec
 use starnix_core::vfs::FsString;
 use starnix_features::Feature;
 use starnix_logging::log_error;
-use starnix_modules_android_usb::usb_device_init;
-use starnix_modules_ashmem::ashmem_device_init;
-use starnix_modules_boot::booted_device_init;
-use starnix_modules_fastrpc::fastrpc_device_init;
-use starnix_modules_framebuffer::{AspectRatio, Framebuffer};
-use starnix_modules_gpu::gpu_device_init;
-use starnix_modules_gralloc::gralloc_device_init;
-use starnix_modules_hvdcp_opti::hvdcp_opti_init;
-use starnix_modules_input::uinput::register_uinput_device;
-use starnix_modules_input::{EventProxyMode, StartRelaysArgs, new_input_relay};
-use starnix_modules_kgsl::kgsl_device_init;
-use starnix_modules_magma::magma_device_init;
-use starnix_modules_nanohub::nanohub_device_init;
-use starnix_modules_nmfs::nmfs_init;
-use starnix_modules_odpm::odpm_device_init;
-use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
-use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
-use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
-use starnix_modules_wakeup_test::register_wakeup_test_device;
+use starnix_modules::{
+    AspectRatio, EventProxyMode, Framebuffer, StartRelaysArgs, TouchPowerPolicyDevice,
+    ashmem_device_init, booted_device_init, consent_sync_init, cooling_device_init,
+    fastrpc_device_init, gpu_device_init, gralloc_device_init, hvdcp_opti_init, kgsl_device_init,
+    magma_device_init, nanohub_device_init, new_input_relay, nmfs_init, odpm_device_init,
+    register_uinput_device, register_wakeup_test_device, start_perfetto_consumer_thread,
+    thermal_device_init, usb_device_init,
+};
 use std::sync::Arc;
 
 use starnix_uapi::error;

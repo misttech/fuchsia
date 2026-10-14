@@ -19,6 +19,11 @@ rustc_library("iouring") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [
+    "//src/starnix/kernel/syscall_loop/*",
+    "//src/starnix/modules/*",
+  ]
+
   deps = [
     "//sdk/rust/zx",
     "//src/starnix/kernel/core",

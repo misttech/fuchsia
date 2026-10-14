@@ -14,6 +14,8 @@ rustc_library("debugfs") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",

@@ -45,6 +45,8 @@ rustc_library("kgsl") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",

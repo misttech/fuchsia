@@ -29,6 +29,8 @@ rustc_library("perfetto_consumer") {
     "hwasan",
   ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/rust/zx",
     "//src/lib/trace/rust:trace",

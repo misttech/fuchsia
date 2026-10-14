@@ -30,6 +30,8 @@ rustc_library("ext4") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.starnix.runner:fuchsia.starnix.runner_rust",
     "//sdk/rust/zx",

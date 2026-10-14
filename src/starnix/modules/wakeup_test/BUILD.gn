@@ -14,6 +14,7 @@ rustc_library("wakeup_test") {
     "src/lib.rs",
     "src/tracing.rs",
   ]
+  visibility = [ "//src/starnix/modules/*" ]
   deps = [
     "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
     "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_rust",

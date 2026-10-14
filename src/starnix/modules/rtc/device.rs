@@ -4,7 +4,7 @@
 
 use super::file::RtcFile;
 use starnix_core::device::DeviceOps;
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, NamespaceNode};
 use starnix_logging::log_debug;
 
@@ -30,16 +30,10 @@ impl DeviceOps for RtcDevice {
 /// Initialize a RTC device.
 ///
 /// It will be available at `/dev/rtc0`.
-pub fn rtc_device_init(current_task: &CurrentTask) -> Result<(), Errno> {
-    let kernel = current_task.kernel();
+pub fn rtc_device_init(kernel: &Kernel) -> Result<(), Errno> {
     let registry = &kernel.device_registry;
     registry
-        .register_dyn_device(
-            current_task.kernel(),
-            "rtc0".into(),
-            registry.objects.rtc_class(),
-            RtcDevice,
-        )
+        .register_dyn_device(kernel, "rtc0".into(), registry.objects.rtc_class(), RtcDevice)
         .inspect(|dev| log_debug!("registered RTC device: {dev:?}"))
         .map(|_| ())
 }

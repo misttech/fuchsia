@@ -14,6 +14,8 @@ rustc_library("zram") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/rust/zx",

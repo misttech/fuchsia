@@ -39,6 +39,8 @@ rustc_library("nanohub") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_rust",
     "//sdk/fidl/fuchsia.hardware.google.nanohub:fuchsia.hardware.google.nanohub_rust",

@@ -36,6 +36,8 @@ rustc_library("cgroupfs") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/rust/zx",
     "//src/starnix/kernel/core",

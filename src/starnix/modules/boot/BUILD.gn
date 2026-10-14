@@ -14,6 +14,8 @@ rustc_library("boot") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.power.cpu.manager:fuchsia.power.cpu.manager_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",

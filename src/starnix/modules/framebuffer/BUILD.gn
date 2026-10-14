@@ -17,6 +17,8 @@ rustc_library("framebuffer") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
     "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",

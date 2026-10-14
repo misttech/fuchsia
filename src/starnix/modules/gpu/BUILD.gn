@@ -18,6 +18,8 @@ rustc_library("gpu") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     ":gfxstream_stubs",
     "//src/starnix/kernel/core",

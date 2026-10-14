@@ -13,6 +13,8 @@ rustc_library("device_mapper") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//src/lib/mundane",
     "//src/starnix/kernel/core",

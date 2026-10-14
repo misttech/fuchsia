@@ -43,6 +43,8 @@ rustc_library("binderfs") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust",
     "//sdk/fidl/fuchsia.starnix.binder:fuchsia.starnix.binder_rust",

@@ -5,6 +5,7 @@
 // Increase recursion limit because LTO causes overflow.
 #![recursion_limit = "256"]
 
+pub use starnix_consent_sync::init as consent_sync_init;
 use starnix_core::bpf::fs::BpfFs;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::mem::{DevRandom, mem_device_init};
@@ -16,22 +17,45 @@ use starnix_core::fs::tmpfs::tmp_fs;
 use starnix_core::task::Kernel;
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pipe::register_pipe_fs;
+pub use starnix_modules_android_usb::usb_device_init;
+pub use starnix_modules_ashmem::ashmem_device_init;
 use starnix_modules_binderfs::BinderFs;
+pub use starnix_modules_boot::booted_device_init;
 use starnix_modules_cgroupfs::{CgroupV1Fs, cgroup2_fs};
 use starnix_modules_debugfs::debug_fs;
 use starnix_modules_device_mapper::{create_device_mapper, device_mapper_init};
+pub use starnix_modules_devpts::create_main_and_replica;
 use starnix_modules_devpts::{dev_pts_fs, tty_device_init};
 use starnix_modules_ext4::ExtFilesystem;
+pub use starnix_modules_fastrpc::fastrpc_device_init;
+pub use starnix_modules_framebuffer::{AspectRatio, Framebuffer};
 use starnix_modules_functionfs::FunctionFs;
 use starnix_modules_fuse::{new_fuse_fs, new_fusectl_fs, open_fuse_device};
+pub use starnix_modules_gpu::gpu_device_init;
+pub use starnix_modules_gralloc::gralloc_device_init;
+pub use starnix_modules_hvdcp_opti::hvdcp_opti_init;
 use starnix_modules_inotify::inotify::inotify_init;
+pub use starnix_modules_input::uinput::register_uinput_device;
+pub use starnix_modules_input::{EventProxyMode, StartRelaysArgs, new_input_relay};
+pub use starnix_modules_kgsl::kgsl_device_init;
+pub use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_loop::{create_loop_control_device, loop_device_init};
+pub use starnix_modules_magma::{get_magma_params, magma_device_init};
+pub use starnix_modules_nanohub::nanohub_device_init;
+pub use starnix_modules_nmfs::nmfs_init;
+pub use starnix_modules_odpm::odpm_device_init;
+pub use starnix_modules_overlayfs::OverlayStack;
 use starnix_modules_overlayfs::new_overlay_fs;
+pub use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
 use starnix_modules_procfs::proc_fs;
 use starnix_modules_pstore::pstore_fs;
+use starnix_modules_rtc::rtc_device_init;
 use starnix_modules_selinuxfs::selinux_fs;
+pub use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
+pub use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
 use starnix_modules_tracefs::trace_fs;
 use starnix_modules_tun::DevTun;
+pub use starnix_modules_wakeup_test::register_wakeup_test_device;
 use starnix_modules_zram::zram_device_init;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -85,6 +109,7 @@ fn misc_device_init(kernel: &Kernel) -> Result<(), Errno> {
 /// not create an initial task, so this function should be triggered after a `CurrentTask` has been
 /// initialized.
 pub fn init_common_devices(kernel: &Kernel) -> Result<(), Errno> {
+    rtc_device_init(kernel)?;
     misc_device_init(kernel)?;
     mem_device_init(kernel)?;
     tty_device_init(kernel)?;

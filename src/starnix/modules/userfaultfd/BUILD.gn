@@ -19,6 +19,11 @@ rustc_library("userfaultfd") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [
+    "//src/starnix/kernel/syscall_loop/*",
+    "//src/starnix/modules/*",
+  ]
+
   deps = [
     "//src/starnix/kernel/core",
     "//src/starnix/lib/linux_uapi",

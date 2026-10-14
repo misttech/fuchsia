@@ -19,6 +19,8 @@ rustc_library("gralloc") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.starnix.gralloc:fuchsia.starnix.gralloc_rust",
     "//sdk/rust/zx",

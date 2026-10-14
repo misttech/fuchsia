@@ -22,6 +22,8 @@ rustc_library("odpm") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.hardware.google.odpm:fuchsia.hardware.google.odpm_rust",
     "//sdk/rust/zx",

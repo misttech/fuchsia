@@ -27,6 +27,8 @@ rustc_library("functionfs") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.hardware.adb:fuchsia.hardware.adb_rust",
     "//sdk/rust/zx",

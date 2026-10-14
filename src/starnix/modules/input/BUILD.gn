@@ -36,6 +36,8 @@ rustc_library("input") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
     "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",

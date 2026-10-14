@@ -30,6 +30,8 @@ rustc_library("fastrpc") {
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
+  visibility = [ "//src/starnix/modules/*" ]
+
   deps = [
     "//sdk/fidl/fuchsia.hardware.qualcomm.fastrpc:fuchsia.hardware.qualcomm.fastrpc_rust",
     "//sdk/rust/zx",
