@@ -12,6 +12,7 @@ pub const ZX_VM_FEATURE_CAN_MAP_XOM: u32 = 1 << 0;
 unsafe extern "C" {
     fn arch_zero_page(va: *mut core::ffi::c_void);
     fn cpp_arch_vm_features() -> u32;
+    fn cpp_arch_num_spinlocks_held() -> u32;
 }
 
 /// Arch optimized version of a page zero routine against a page aligned buffer.
@@ -32,4 +33,11 @@ pub unsafe fn zero_page(va: VAddr) {
 pub fn arch_vm_features() -> u32 {
     // SAFETY: `cpp_arch_vm_features` is a pure query of architectural VM features.
     unsafe { cpp_arch_vm_features() }
+}
+
+/// Returns the number of spinlocks currently held on the calling CPU.
+#[inline(always)]
+pub fn num_spinlocks_held() -> u32 {
+    // SAFETY: `cpp_arch_num_spinlocks_held` is a pure query of per-CPU spinlock state.
+    unsafe { cpp_arch_num_spinlocks_held() }
 }
