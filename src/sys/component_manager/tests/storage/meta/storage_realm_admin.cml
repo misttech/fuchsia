@@ -30,6 +30,7 @@
         {
             storage: "data",
             from: "#memfs",
+            subdir: "persistent",
             backing_dir: "memfs",
             storage_id: "static_instance_id",
         },

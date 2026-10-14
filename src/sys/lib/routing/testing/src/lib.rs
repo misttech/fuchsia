@@ -165,15 +165,16 @@ pub fn generate_storage_path(
     moniker: &Moniker,
     instance_id: Option<&InstanceId>,
 ) -> PathBuf {
-    if let Some(id) = instance_id {
-        return id.to_string().into();
-    }
-    let path = moniker.path();
-    let mut path = path.iter();
     let mut dir_path = vec![];
     if let Some(subdir) = subdir {
         dir_path.push(subdir);
     }
+    if let Some(id) = instance_id {
+        dir_path.push(id.to_string());
+        return dir_path.into_iter().collect();
+    }
+    let path = moniker.path();
+    let mut path = path.iter();
     if let Some(p) = path.next() {
         dir_path.push(format!("{p}:0"));
     }

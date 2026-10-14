@@ -418,6 +418,11 @@ async fn instance_id_from_index() {
     CommonStorageTest::<RoutingTestBuilder>::new().test_instance_id_from_index().await
 }
 
+#[fuchsia::test]
+async fn instance_id_from_index_with_subdir() {
+    CommonStorageTest::<RoutingTestBuilder>::new().test_instance_id_from_index_with_subdir().await
+}
+
 ///   component manager's namespace
 ///    |
 ///   provider (provides storage capability, restricted to component ID index)

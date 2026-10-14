@@ -1295,4 +1295,120 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
             generate_storage_path(None, &storage_relation, None).to_str().unwrap().to_string();
         model.check_test_dir_tree_contains(expected_storage_path).await;
     }
+
+    ///   component manager's namespace
+    ///    |
+    ///    a
+    ///    |
+    ///    b
+    ///    |
+    ///    c
+    ///
+    /// Instance IDs defined only for `b` in the component ID index, and the storage capability
+    /// specifies a `subdir`.
+    /// Check that the correct storage layout (including `subdir`) is used in the backing directory
+    /// when a component has an instance ID.
+    pub async fn test_instance_id_from_index_with_subdir(&self) {
+        let b_instance_id = InstanceId::new_random(&mut rand::rng());
+        let component_id_index = {
+            let mut index = component_id_index::Index::default();
+            index
+                .insert(component_id_index::IndexEntry {
+                    moniker: Moniker::parse_str("/b").unwrap(),
+                    instance_id: b_instance_id.clone(),
+                    ignore_duplicate_id: false,
+                })
+                .unwrap();
+            index
+        };
+        let component_id_index_path = make_index_file(component_id_index).unwrap();
+        let components = vec![
+            (
+                "a",
+                ComponentDeclBuilder::new()
+                    .capability(
+                        CapabilityBuilder::directory()
+                            .name("minfs")
+                            .path("/data")
+                            .rights(fio::RW_STAR_DIR),
+                    )
+                    .offer(
+                        OfferBuilder::storage()
+                            .name("data")
+                            .source(OfferSource::Self_)
+                            .target_static_child("b"),
+                    )
+                    .child_default("b")
+                    .capability(
+                        CapabilityBuilder::storage()
+                            .name("data")
+                            .backing_dir("minfs")
+                            .source(StorageDirectorySource::Self_)
+                            .subdir("persistent"),
+                    )
+                    .build(),
+            ),
+            (
+                "b",
+                ComponentDeclBuilder::new()
+                    .use_(UseBuilder::storage().name("data").path("/storage"))
+                    .offer(
+                        OfferBuilder::storage()
+                            .name("data")
+                            .source(OfferSource::Parent)
+                            .target_static_child("c"),
+                    )
+                    .child_default("c")
+                    .build(),
+            ),
+            (
+                "c",
+                ComponentDeclBuilder::new()
+                    .use_(UseBuilder::storage().name("data").path("/storage"))
+                    .build(),
+            ),
+        ];
+        let mut builder = T::new("a", components);
+        builder.set_component_id_index_path(
+            component_id_index_path.path().to_owned().try_into().unwrap(),
+        );
+        let model = builder.build().await;
+
+        // instance `b` uses instance-id based paths under `subdir`.
+        model
+            .check_use(
+                ["b"].try_into().unwrap(),
+                CheckUse::Storage {
+                    path: "/storage".parse().unwrap(),
+                    storage_relation: Some(Moniker::try_from(["b"]).unwrap()),
+                    from_cm_namespace: false,
+                    storage_subdir: Some("persistent".to_string()),
+                    expected_res: ExpectedResult::Ok,
+                },
+            )
+            .await;
+        model.check_test_subdir_contains("persistent", b_instance_id.to_string()).await;
+
+        // instance `c` uses moniker-based paths under `subdir`.
+        let storage_relation = Moniker::try_from(["b", "c"]).unwrap();
+        model
+            .check_use(
+                ["b", "c"].try_into().unwrap(),
+                CheckUse::Storage {
+                    path: "/storage".parse().unwrap(),
+                    storage_relation: Some(storage_relation.clone()),
+                    from_cm_namespace: false,
+                    storage_subdir: Some("persistent".to_string()),
+                    expected_res: ExpectedResult::Ok,
+                },
+            )
+            .await;
+
+        let expected_storage_path =
+            generate_storage_path(Some("persistent".to_string()), &storage_relation, None)
+                .to_str()
+                .unwrap()
+                .to_string();
+        model.check_test_dir_tree_contains(expected_storage_path).await;
+    }
 }
