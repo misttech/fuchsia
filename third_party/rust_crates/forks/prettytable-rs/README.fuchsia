@@ -9,9 +9,10 @@ Creating pretty tables for printing to console.
 No.
 
 * What differs from upstream? Include a changelog if feasible.
-It avoids pulling in the `is-terminal` crate and instead directly 
-calls the rust std lib call for this functionality as recommended
-by the authors of `is-terminal`.
+- It avoids pulling in the `is-terminal` crate and instead directly
+  calls the rust std lib call for this functionality as recommended
+  by the authors of `is-terminal`.
+- Updated `term` dependency from `0.7` to `1.2.1`.
 
 * Are there any restrictions to how it should be rolled?
 No.

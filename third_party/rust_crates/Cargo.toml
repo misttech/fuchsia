@@ -435,7 +435,6 @@ core-foundation-sys = { path = "empty/core-foundation-sys" }
 # TODO(https://fxbug.dev/42084779): Remove when hickory-proto is upgraded to >= 0.26.4.
 critical-section = { path = "empty/critical-section" }
 crossterm_winapi = { path = "empty/crossterm_winapi" }
-dirs-next = { path = "empty/dirs-next-2.0.0" }
 hermit-abi = { path = "empty/hermit-abi" }
 iana-time-zone-haiku = { path = "empty/iana-time-zone-haiku" }
 jni = { path = "empty/jni" }
