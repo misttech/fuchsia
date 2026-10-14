@@ -77,8 +77,7 @@ async fn gpt_num_partitions(fixture: &TestFixture) -> usize {
 async fn initialized_gpt() {
     let mut builder = new_builder();
     builder.with_disk().format_volumes(volumes_spec()).with_gpt().format_data(data_fs_spec());
-    // TODO(https://fxbug.dev/399197713): re-enable extra disk once flake is fixed
-    // builder.with_extra_disk().set_uninitialized();
+    builder.with_extra_disk().set_uninitialized();
     let fixture = builder.build().await;
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
@@ -95,8 +94,7 @@ async fn initialized_gpt() {
 async fn uninitialized_gpt() {
     let mut builder = new_builder().with_uninitialized_disk();
     builder.fshost().set_config_value("ramdisk_image", true);
-    // TODO(https://fxbug.dev/399197713): re-enable extra disk once flake is fixed
-    // builder.with_extra_disk().set_uninitialized();
+    builder.with_extra_disk().set_uninitialized();
     let fixture = builder.build().await;
 
     assert_eq!(gpt_num_partitions(&fixture).await, 0);
@@ -108,8 +106,7 @@ async fn uninitialized_gpt() {
 async fn reset_uninitialized_gpt() {
     let mut builder = new_builder().with_uninitialized_disk();
     builder.fshost().set_config_value("ramdisk_image", true);
-    // TODO(https://fxbug.dev/399197713): re-enable extra disk once flake is fixed
-    // builder.with_extra_disk().set_uninitialized();
+    builder.with_extra_disk().set_uninitialized();
     let fixture = builder.build().await;
 
     assert_eq!(gpt_num_partitions(&fixture).await, 0);
@@ -138,8 +135,7 @@ async fn reset_initialized_gpt() {
     let mut builder = new_builder();
     builder.with_disk().format_volumes(volumes_spec()).with_gpt().format_data(data_fs_spec());
     builder.fshost().set_config_value("ramdisk_image", true);
-    // TODO(https://fxbug.dev/399197713): re-enable extra disk once flake is fixed
-    // builder.with_extra_disk().set_uninitialized();
+    builder.with_extra_disk().set_uninitialized();
     let fixture = builder.build().await;
 
     assert_eq!(gpt_num_partitions(&fixture).await, 1);
@@ -223,8 +219,6 @@ async fn debug_block_directory() {
     fixture.tear_down().await;
 }
 
-// TODO(https://fxbug.dev/399197713): Enable this test when extra disks don't flake
-#[ignore]
 #[fuchsia::test]
 async fn expose_unmanaged_block_devices() {
     let mut builder = new_builder();
