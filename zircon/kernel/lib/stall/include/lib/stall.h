@@ -6,7 +6,6 @@
 #ifndef ZIRCON_KERNEL_LIB_STALL_INCLUDE_LIB_STALL_H_
 #define ZIRCON_KERNEL_LIB_STALL_INCLUDE_LIB_STALL_H_
 
-#include <lib/zx/result.h>
 #include <zircon/types.h>
 
 #include <kernel/spinlock.h>
@@ -80,37 +79,11 @@ void rust_stall_accumulator_update(StallAccumulator *accumulator, int op_contrib
                                    int op_contributors_stalling);
 }
 
-// A stall observer that keeps a circular queue with the last N samples (where N corresponds to the
-// number of samples covering the requested time window).
-//
-// Every time a new sample is pushed into it, it tests if the sum of all the stored samples is
-// greater than or equal to the given threshold value and then notifies its callback function
-// accordingly.
-//
-// Instances live in Rust (see ../../src/mod.rs); this is an opaque handle to one, so C++ only ever
-// holds pointers. Removing an observer from the StallAggregator is what guarantees the sampling
-// thread is not part way through a callback, so always unregister before destroying.
-class StallObserver {
- public:
-  class EventReceiver {
-   public:
-    virtual void OnAboveThreshold() = 0;
-    virtual void OnBelowThreshold() = 0;
-  };
-
-  StallObserver() = delete;
-
-  static zx::result<StallObserver *> Create(zx_duration_mono_t threshold, zx_duration_mono_t window,
-                                            EventReceiver *event_receiver);
-
-  static void Destroy(StallObserver *observer);
-};
-
 // Maintains system-wide stall stats by periodically aggregating measurements from per-CPU
 // `StallAccumulator`s.
 //
-// The implementation and the singleton instance live in Rust (see ../../src/mod.rs); these are
-// forwarders to it.
+// The implementation, the singleton instance and the observers that watch it all live in Rust
+// (see ../../src/mod.rs); this is the forwarder the C++ diagnostics use.
 class StallAggregator {
  public:
   struct Stats {
@@ -123,29 +96,10 @@ class StallAggregator {
 
   // Returns the values of the aggregated stats.
   static Stats ReadStats();
-
-  static void AddObserverSome(StallObserver *observer);
-  static void RemoveObserverSome(StallObserver *observer);
-
-  static void AddObserverFull(StallObserver *observer);
-  static void RemoveObserverFull(StallObserver *observer);
 };
 
 extern "C" {
-
-zx_status_t rust_stall_observer_create(zx_duration_mono_t threshold, zx_duration_mono_t window,
-                                       StallObserver::EventReceiver *event_receiver,
-                                       StallObserver **out_observer);
-
-void rust_stall_observer_destroy(StallObserver *observer);
-
 void rust_stall_aggregator_read_stats(StallAggregator::Stats *out_stats);
-
-void rust_stall_aggregator_add_observer_some(StallObserver *observer);
-void rust_stall_aggregator_remove_observer_some(StallObserver *observer);
-
-void rust_stall_aggregator_add_observer_full(StallObserver *observer);
-void rust_stall_aggregator_remove_observer_full(StallObserver *observer);
 }
 
 #endif  // ZIRCON_KERNEL_LIB_STALL_INCLUDE_LIB_STALL_H_

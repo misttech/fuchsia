@@ -28,9 +28,7 @@ zx_status_t rust_event_dispatcher_create(
 void cpp_event_dispatcher_get_mem_pressure_event(uint32_t kind,
                                                  fbl::RefPtr<EventDispatcher>* out_event);
 zx_status_t cpp_memory_stall_event_dispatcher_create(
-    uint32_t kind, zx_duration_mono_t threshold, zx_duration_mono_t window,
-    ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle,
-    ffi::Uninitialized<zx_rights_t>* out_rights);
+    uint32_t kind, ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle);
 zx_status_t cpp_event_dispatcher_user_signal_self(EventDispatcher* event, uint32_t clear_mask,
                                                   uint32_t set_mask);
 }
@@ -68,37 +66,22 @@ class EventDispatcher : public Dispatcher {
   OpaqueStorage<kEventDispatcherStateSize, kEventDispatcherStateAlign> opaque_storage_;
 };
 
-class MemoryStallEventDispatcher final : public EventDispatcher,
-                                         private StallObserver::EventReceiver {
+// An EventDispatcher that is signalled while the system's memory stall time is above a threshold.
+//
+// Its state - the kind of stall being watched and the StallObserver that watches it - lives in
+// Rust, which is also where the observer's callbacks land. See //zircon/kernel/object/
+// event_dispatcher.rs and //zircon/kernel/lib/stall/src/mod.rs.
+class MemoryStallEventDispatcher final : public EventDispatcher {
  public:
-  static zx_status_t Create(zx_system_memory_stall_type_t kind, zx_duration_mono_t threshold,
-                            zx_duration_mono_t window, KernelHandle<EventDispatcher>* handle,
-                            zx_rights_t* rights);
-
   ~MemoryStallEventDispatcher() final;
 
  private:
-  explicit MemoryStallEventDispatcher(zx_system_memory_stall_type_t kind);
+  friend zx_status_t cpp_memory_stall_event_dispatcher_create(
+      uint32_t kind, ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle);
+  explicit MemoryStallEventDispatcher(uint32_t kind);
 
-  void OnAboveThreshold() override;
-  void OnBelowThreshold() override;
-
-  // The StallObserver that decides if we are currently above or below the
-  // threshold and notifies us through the EventReceiver interface. There is a
-  // 1:1 correspondence between instances of StallObserver and
-  // MemoryStallEventDispatcher.
-  //
-  // The observer lives in Rust, so this is an owning raw pointer that our
-  // destructor releases with StallObserver::Destroy.
-  //
-  // This would ideally be const (once set, the pointer never changes), but it
-  // cannot be because the StallObserver is created after our constructor has
-  // already been executed.
-  StallObserver* observer_ = nullptr;
-
-  // The kind of memory stall that the observer_ has been registered to (used by
-  // our destructor to unregister it).
-  const zx_system_memory_stall_type_t kind_;
+  OpaqueStorage<kMemoryStallEventDispatcherStateSize, kMemoryStallEventDispatcherStateAlign>
+      opaque_storage_;
 };
 
 fbl::RefPtr<EventDispatcher> GetMemPressureEvent(uint32_t kind);

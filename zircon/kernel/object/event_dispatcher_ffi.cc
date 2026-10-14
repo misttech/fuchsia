@@ -28,18 +28,14 @@ FFI_ALWAYS_INLINE void cpp_event_dispatcher_get_mem_pressure_event(
 }
 
 zx_status_t cpp_memory_stall_event_dispatcher_create(
-    uint32_t kind, zx_duration_mono_t threshold, zx_duration_mono_t window,
-    ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle,
-    ffi::Uninitialized<zx_rights_t>* out_rights) {
-  KernelHandle<EventDispatcher> handle;
-  zx_rights_t rights;
-  zx_status_t status = MemoryStallEventDispatcher::Create(
-      static_cast<zx_system_memory_stall_type_t>(kind), threshold, window, &handle, &rights);
-  if (status != ZX_OK) {
-    return status;
+    uint32_t kind, ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle) {
+  fbl::AllocChecker ac;
+  auto disp = fbl::AdoptRef(new (&ac) MemoryStallEventDispatcher(kind));
+  if (!ac.check()) {
+    return ZX_ERR_NO_MEMORY;
   }
-  out_handle->Initialize(ktl::move(handle));
-  out_rights->Initialize(rights);
+
+  out_handle->Initialize(ktl::move(disp));
   return ZX_OK;
 }
 

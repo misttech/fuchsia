@@ -10,12 +10,12 @@
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <fbl/alloc_checker.h>
-
 extern "C" {
 void rust_event_dispatcher_state_init(void* state, void* disp);
 void rust_event_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_event_dispatcher_state_get_lock(const void* state);
+void rust_memory_stall_event_dispatcher_state_init(void* state, uint32_t kind);
+void rust_memory_stall_event_dispatcher_state_destroy(void* state);
 }  // extern "C"
 
 EventDispatcher::EventDispatcher(uint32_t options) : Dispatcher(0u) {
@@ -30,69 +30,11 @@ zx_status_t EventDispatcher::user_signal_self(uint32_t clear_mask, uint32_t set_
   return UserSignalSelfSolo(this, clear_mask, set_mask, ZX_EVENT_SIGNALED);
 }
 
-zx_status_t MemoryStallEventDispatcher::Create(zx_system_memory_stall_type_t kind,
-                                               zx_duration_mono_t threshold,
-                                               zx_duration_mono_t window,
-                                               KernelHandle<EventDispatcher>* handle,
-                                               zx_rights_t* rights) {
-  // Validate `kind` before allocating anything, so that there is nothing to clean up if it is
-  // unrecognized.
-  if (kind != ZX_SYSTEM_MEMORY_STALL_SOME && kind != ZX_SYSTEM_MEMORY_STALL_FULL) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  fbl::AllocChecker ac;
-  KernelHandle dispatcher(fbl::AdoptRef(new (&ac) MemoryStallEventDispatcher(kind)));
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  zx::result<StallObserver*> observer =
-      StallObserver::Create(threshold, window, dispatcher.dispatcher().get());
-  if (observer.is_error()) {
-    return observer.error_value();
-  }
-
-  switch (kind) {
-    case ZX_SYSTEM_MEMORY_STALL_SOME:
-      StallAggregator::AddObserverSome(*observer);
-      break;
-    case ZX_SYSTEM_MEMORY_STALL_FULL:
-      StallAggregator::AddObserverFull(*observer);
-      break;
-  }
-
-  dispatcher.dispatcher()->observer_ = *observer;
-
-  *rights = ZX_DEFAULT_SYSTEM_MEMORY_STALL_EVENT_RIGHTS;
-  *handle = ktl::move(dispatcher);
-  return ZX_OK;
+MemoryStallEventDispatcher::MemoryStallEventDispatcher(uint32_t kind) : EventDispatcher(0) {
+  DISPATCHER_VERIFY_OFFSET(MemoryStallEventDispatcher, kMemoryStallEventDispatcherStateOffset);
+  rust_memory_stall_event_dispatcher_state_init(&opaque_storage_, kind);
 }
 
 MemoryStallEventDispatcher::~MemoryStallEventDispatcher() {
-  if (!observer_) {
-    return;
-  }
-
-  // Unregistering has to happen before the observer is destroyed: it is what guarantees that the
-  // sampling thread is not part way through one of our callbacks.
-  switch (kind_) {
-    case ZX_SYSTEM_MEMORY_STALL_SOME:
-      StallAggregator::RemoveObserverSome(observer_);
-      break;
-    case ZX_SYSTEM_MEMORY_STALL_FULL:
-      StallAggregator::RemoveObserverFull(observer_);
-      break;
-    default:
-      ZX_PANIC("Impossible stall kind value");
-  }
-
-  StallObserver::Destroy(observer_);
+  rust_memory_stall_event_dispatcher_state_destroy(&opaque_storage_);
 }
-
-MemoryStallEventDispatcher::MemoryStallEventDispatcher(zx_system_memory_stall_type_t kind)
-    : EventDispatcher(0), kind_(kind) {}
-
-void MemoryStallEventDispatcher::OnAboveThreshold() { UpdateState(0, ZX_EVENT_SIGNALED); }
-
-void MemoryStallEventDispatcher::OnBelowThreshold() { UpdateState(ZX_EVENT_SIGNALED, 0); }

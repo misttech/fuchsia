@@ -94,6 +94,13 @@ constexpr size_t kIommuDispatcherStateSize = 48 + kLockClassIdSize;
 constexpr size_t kIommuDispatcherStateAlign = 8;
 constexpr size_t kIommuDispatcherStateOffset = 48;
 
+// Size, alignment, and offset for MemoryStallEventDispatcherState. Unlike the others this state
+// sits inside a subclass, after the EventDispatcher state its base class holds.
+constexpr size_t kMemoryStallEventDispatcherStateSize = 8;
+constexpr size_t kMemoryStallEventDispatcherStateAlign = 4;
+constexpr size_t kMemoryStallEventDispatcherStateOffset =
+    kEventDispatcherStateOffset + kEventDispatcherStateSize;
+
 // Size, alignment, and offset for MsiDispatcherState.
 constexpr size_t kMsiDispatcherStateSize = 64;
 constexpr size_t kMsiDispatcherStateAlign = 8;

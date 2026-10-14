@@ -4,10 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::event_dispatcher::{EventDispatcher, EventDispatcherState};
+use super::event_dispatcher::{
+    EventDispatcher, EventDispatcherState, MemoryStallEventDispatcherState, MemoryStallKind,
+};
 use super::handle::KernelHandle;
 use core::mem::MaybeUninit;
-use zx_types::{zx_duration_mono_t, zx_rights_t, zx_status_t};
+use zx_types::zx_status_t;
 
 // C++ FFI declarations
 unsafe extern "C" {
@@ -32,18 +34,17 @@ unsafe extern "C" {
         out_event: *mut fbl::RefPtr<EventDispatcher>,
     );
 
-    /// Calls into C++ implementation to create a memory stall event dispatcher.
+    /// Calls into C++ to allocate a memory stall event dispatcher watching `kind`.
     ///
     /// # Safety
     ///
-    /// `out_handle` must point to uninitialized memory for a `KernelHandle<EventDispatcher>`.
-    /// `out_rights` must point to writable memory.
+    /// The caller must ensure that `out_handle` is non-null, properly aligned, and points to
+    /// writable uninitialized memory for a `KernelHandle<EventDispatcher>`, and that `kind` is a
+    /// valid [`MemoryStallKind`] discriminant. On `ZX_OK`, `*out_handle` is initialized to a
+    /// `KernelHandle<EventDispatcher>` owning a live `MemoryStallEventDispatcher`.
     pub(crate) fn cpp_memory_stall_event_dispatcher_create(
         kind: u32,
-        threshold: zx_duration_mono_t,
-        window: zx_duration_mono_t,
         out_handle: *mut MaybeUninit<KernelHandle<EventDispatcher>>,
-        out_rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 
     /// Calls into C++ implementation to signal an event dispatcher.
@@ -61,6 +62,57 @@ unsafe extern "C" {
 // FFI trampolines for C++ calling into Rust EventDispatcherState
 
 crate::object::dispatcher::impl_dispatcher_state_init!(EventDispatcher, EventDispatcherState);
+
+/// Destroys a `MemoryStallEventDispatcherState` in place.
+///
+/// # Safety
+///
+/// The caller must ensure that `state` is non-null, properly aligned, and points to a valid,
+/// initialized `MemoryStallEventDispatcherState` embedded at
+/// `kMemoryStallEventDispatcherStateOffset` inside a `MemoryStallEventDispatcher` whose base
+/// `EventDispatcher` is still alive, and that `*state` is never accessed again after this call.
+// SAFETY: Symbol name is globally unique and matches the `extern "C"` declaration in
+// `zircon/kernel/object/event_dispatcher.cc`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_memory_stall_event_dispatcher_state_destroy(
+    state: *mut MemoryStallEventDispatcherState,
+) {
+    // SAFETY: By caller precondition, `state` is non-null, aligned, and points to a valid,
+    // initialized `MemoryStallEventDispatcherState` that will not be used again; `PinnedDrop`
+    // unregisters any observer under `observers_lock` before dropping the `Canary`.
+    unsafe { core::ptr::drop_in_place(state) };
+}
+
+/// Initializes a `MemoryStallEventDispatcherState` in place.
+///
+/// # Safety
+///
+/// The caller must ensure that `ptr` is non-null, properly aligned, and points to writable
+/// uninitialized storage for a `MemoryStallEventDispatcherState` at byte offset
+/// `kMemoryStallEventDispatcherStateOffset` inside a live `MemoryStallEventDispatcher`, and that
+/// the storage remains pinned until destroyed by
+/// [`rust_memory_stall_event_dispatcher_state_destroy`].
+///
+/// # Panics
+///
+/// Panics if `kind` names neither stall kind. `EventDispatcher::create_memory_stall` is the only
+/// thing that reaches the constructor this runs in, and it rejects such a `kind` before
+/// allocating.
+// SAFETY: Symbol name is globally unique and matches the `extern "C"` declaration in
+// `zircon/kernel/object/event_dispatcher.cc`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_memory_stall_event_dispatcher_state_init(
+    ptr: *mut MemoryStallEventDispatcherState,
+    kind: u32,
+) {
+    let kind = MemoryStallKind::from_raw(kind).expect("Impossible stall kind value");
+    // SAFETY: By caller precondition, `ptr` is non-null, aligned, writable uninitialized storage
+    // at `kMemoryStallEventDispatcherStateOffset` inside a live `MemoryStallEventDispatcher` and
+    // remains pinned until dropped in place.
+    unsafe {
+        let _ = pin_init::PinInit::__pinned_init(MemoryStallEventDispatcherState::init(kind), ptr);
+    }
+}
 
 /// FFI trampoline for creating an EventDispatcher from C++.
 ///
