@@ -295,7 +295,7 @@ impl MessageParser {
                 }
             }
             if let Some(count) = rolled_out {
-                let metadata =
+                let mut metadata =
                     self.tag_map.get(&base_tag).cloned().unwrap_or_else(|| ExtendedMetadata {
                         moniker: diagnostics_data::ExtendedMoniker::ComponentInstance(
                             moniker::Moniker::parse_str("/UNKNOWN").unwrap(),
@@ -303,6 +303,7 @@ impl MessageParser {
                         url: flyweights::FlyStr::new(ARCHIVIST_URL),
                         rolled_out_logs: count,
                     });
+                metadata.rolled_out_logs = count;
                 let data = formatter.format(&input, Some(metadata))?;
                 return Ok((Some(data), remaining));
             }

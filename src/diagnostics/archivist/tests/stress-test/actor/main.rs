@@ -48,7 +48,9 @@ fn reader(data: &mut WorkerData, _: SmallRng) -> BoxFuture<'_, Result<()>> {
     async move {
         let log: Data<Logs> =
             data.subscription.next().await.context("No next log")?.context("Error getting log")?;
-        log.msg().context("Log doesn't have message")?;
+        if log.rolled_out_logs().is_none() {
+            log.msg().context("Log doesn't have message")?;
+        }
 
         // TODO(https://fxbug.dev/42162667): Add log verification
 

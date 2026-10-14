@@ -655,3 +655,53 @@ fn from_extended_record_out_of_bounds() {
 
     assert_matches!(crate::from_extended_record(&extended).unwrap_err(), MessageError::OutOfBounds);
 }
+
+#[fuchsia::test]
+fn parse_next_rolled_out_with_populated_tag_zero() {
+    let mut parser = MessageParser::default();
+
+    let control_record = Record {
+        timestamp: zx::BootInstant::from_nanos(72),
+        severity: StreamSeverity::Info.into_primitive(),
+        arguments: vec![
+            Argument::new("moniker", "test/moniker"),
+            Argument::new("url", "fuchsia-pkg://test"),
+        ],
+    };
+
+    let mut buffer = Cursor::new(vec![0u8; 1024]);
+    let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+    encoder.write_record(control_record).unwrap();
+    let len = buffer.position() as usize;
+    let mut bytes = buffer.into_inner();
+    bytes.truncate(len);
+
+    let mut header = Header(u64::from_le_bytes(bytes[0..8].try_into().unwrap()));
+    header.set_tag(LOG_CONTROL_BIT);
+    bytes[0..8].copy_from_slice(&header.0.to_le_bytes());
+
+    let (log, _) = parser.parse_next(&bytes, RustMessageFormatter).unwrap();
+    assert!(log.is_none());
+
+    let rolled_out_record = Record {
+        timestamp: zx::BootInstant::from_nanos(73),
+        severity: StreamSeverity::Info.into_primitive(),
+        arguments: vec![Argument::new("rolled_out", 5u64)],
+    };
+
+    let mut buffer2 = Cursor::new(vec![0u8; 1024]);
+    let mut encoder2 = Encoder::new(&mut buffer2, EncoderOpts::default());
+    encoder2.write_record(rolled_out_record).unwrap();
+    let len2 = buffer2.position() as usize;
+    let mut bytes2 = buffer2.into_inner();
+    bytes2.truncate(len2);
+
+    let mut header2 = Header(u64::from_le_bytes(bytes2[0..8].try_into().unwrap()));
+    header2.set_tag(LOG_CONTROL_BIT);
+    bytes2[0..8].copy_from_slice(&header2.0.to_le_bytes());
+
+    let (log2, _) = parser.parse_next(&bytes2, RustMessageFormatter).unwrap();
+    let log2 = log2.expect("rolled_out record should yield LogsData");
+    assert_eq!(log2.rolled_out_logs(), Some(5));
+    assert_eq!(log2.msg(), None);
+}
