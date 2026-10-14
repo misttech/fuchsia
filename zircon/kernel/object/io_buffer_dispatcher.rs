@@ -836,8 +836,13 @@ impl IoBufferDispatcher {
             // peer_mapped_regions.
             ksync::lock!(let mut guard = self.state().peered.lock());
             if let Some(peer) = guard.peer().clone() {
-                *peer.state().guard_mu_mut(guard.as_mut().token_mut()).peer_mapped_regions_mut() +=
-                    1;
+                // SAFETY: `peer` shares the same `PeerHolder` mutex held by `guard`.
+                unsafe {
+                    *peer
+                        .state()
+                        .guard_mu_mut(guard.as_mut().token_mut())
+                        .peer_mapped_regions_mut() += 1;
+                }
             }
         }
         child_reference.set_user_id(vmo.user_id());
@@ -879,7 +884,8 @@ impl IoBufferDispatcher {
         self.state().canary.assert();
         ksync::lock!(let mut guard = self.state().peered.lock());
         let (is_zero, peer_zero_handles) = {
-            let mut state = self.state().guard_mu_mut(guard.as_mut().token_mut());
+            // SAFETY: `guard` holds the `PeerHolder` mutex synchronizing `self.state()`.
+            let mut state = unsafe { self.state().guard_mu_mut(guard.as_mut().token_mut()) };
             let peer_mapped_regions = state.peer_mapped_regions_mut();
             // OnZeroChildren gets called every time the number of children is equal to zero. Due to
             // races, by the time this method is called we could already have children again. This
@@ -903,7 +909,8 @@ impl IoBufferDispatcher {
     ) {
         self.state().canary.assert();
         let is_zero = {
-            let mut state = self.state().guard_mu_mut(token);
+            // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+            let mut state = unsafe { self.state().guard_mu_mut(token) };
             *state.peer_zero_handles_mut() = true;
             *state.peer_mapped_regions() == 0
         };

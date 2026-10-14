@@ -114,7 +114,8 @@ impl ResourceStorage {
     #[cfg(ktest)]
     pub fn resource_count(&self) -> usize {
         lock!(let mut guard = ResourcesLock::lock());
-        let storage_guard = self.guard_mu(guard.as_mut().token_mut());
+        // SAFETY: `ResourcesLock` is the singleton lock synchronizing `ResourceStorage`.
+        let storage_guard = unsafe { self.guard_mu(guard.as_mut().token_mut()) };
         storage_guard.resource_list().iter().count()
     }
 }
@@ -353,7 +354,8 @@ impl ResourceDispatcher {
         let req_range = from_offset_len(base, size as u64).ok_or(Status::INVALID_ARGS)?;
 
         let exclusive_region = {
-            let storage_guard = storage.guard_mu(token);
+            // SAFETY: `ResourcesLock` is the singleton lock synchronizing `ResourceStorage`.
+            let storage_guard = unsafe { storage.guard_mu(token) };
             let allocator = &storage_guard.rallocs()[kind as usize];
             if !allocator.has_region_pool() {
                 return Err(Status::BAD_STATE);
@@ -409,7 +411,8 @@ impl ResourceDispatcher {
             return Err(Status::INVALID_ARGS);
         }
 
-        if !storage.guard_mu(token).rallocs()[kind as usize].has_region_pool() {
+        // SAFETY: `ResourcesLock` is the singleton lock synchronizing `ResourceStorage`.
+        if !unsafe { storage.guard_mu(token) }.rallocs()[kind as usize].has_region_pool() {
             return Err(Status::BAD_STATE);
         }
 
@@ -497,7 +500,8 @@ impl ResourceDispatcher {
             return Err(Status::INVALID_ARGS);
         }
 
-        let storage_guard = storage.guard_mu(token);
+        // SAFETY: `ResourcesLock` is the singleton lock synchronizing `ResourceStorage`.
+        let storage_guard = unsafe { storage.guard_mu(token) };
         let allocator = &storage_guard.rallocs()[kind as usize];
 
         allocator.set_region_pool(pool)?;
@@ -561,7 +565,8 @@ fn for_each_resource_locked<F>(
 where
     F: FnMut(&ResourceDispatcher) -> Result<(), Status>,
 {
-    let storage_guard = storage.guard_mu(token);
+    // SAFETY: `ResourcesLock` is the singleton lock synchronizing `ResourceStorage`.
+    let storage_guard = unsafe { storage.guard_mu(token) };
     for disp in storage_guard.resource_list().iter() {
         callback(disp)?;
     }
@@ -656,7 +661,8 @@ pub fn dump_allocators() {
         "        -------------------------------------------------------------------------------------------"
     );
 
-    let storage_guard = storage.guard_mu(token);
+    // SAFETY: `ResourcesLock` is the singleton lock synchronizing `ResourceStorage`.
+    let storage_guard = unsafe { storage.guard_mu(token) };
     for &kind in &[ZX_RSRC_KIND_MMIO, ZX_RSRC_KIND_IRQ, ZX_RSRC_KIND_IOPORT] {
         storage_guard.rallocs()[kind as usize].walk_available_regions(|region| {
             if kind == ZX_RSRC_KIND_MMIO {
