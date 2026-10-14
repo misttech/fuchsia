@@ -2,8 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_power_battery::ChargeStatus;
+use fidl_fuchsia_power_battery::{self as fpower, ChargeStatus};
 use fuchsia_async as fasync;
+use fuchsia_inspect::{
+    self as inspect, BoolProperty, DoubleProperty, ExponentialHistogramParams, HistogramProperty,
+    IntProperty, Node, NumericProperty, Property, StringProperty, UintExponentialHistogramProperty,
+    UintProperty,
+};
 use log::{error, warn};
 use state_recorder::{
     EnumStateRecorder, NumericStateRecorder, PersistenceOptions, RecordableEnum,
@@ -337,11 +342,46 @@ pub struct BatteryInfoRecorders {
     present_current: RefCell<NumericStateRecorder<i32>>,
     average_current: RefCell<NumericStateRecorder<i32>>,
     time_to_full: RefCell<NumericStateRecorder<u64>>,
+    temperature_mc: RefCell<NumericStateRecorder<i32>>,
+    previous_temperature_mc: RefCell<Option<i32>>,
+    full_capacity: RefCell<NumericStateRecorder<i32>>,
+    previous_full_capacity: RefCell<Option<i32>>,
+    state_of_health_percent: RefCell<NumericStateRecorder<f64>>,
+    previous_state_of_health_percent: RefCell<Option<f64>>,
     health: RefCell<EnumStateRecorder<BatteryHealth>>,
     previous_health: RefCell<Option<BatteryHealth>>,
     charge_status: RefCell<EnumStateRecorder<BatteryChargeStatus>>,
     previous_charge_status: RefCell<Option<BatteryChargeStatus>>,
     fault_detector: Rc<FaultDetector>,
+
+    // Diagnostics Inspect node for transport/FIDL reliability counters, wake-lease state,
+    // state-vs-reality anomaly counters, and update processing latency histogram.
+    _diagnostics_root: Node,
+    _fidl_errors_node: Node,
+    battery_watch_errors: UintProperty,
+    battery_refresh_errors: UintProperty,
+    charger_watch_errors: UintProperty,
+    sag_lease_errors: UintProperty,
+    watcher_send_errors: UintProperty,
+    _disconnects_node: Node,
+    battery_disconnect_count: UintProperty,
+    charger_disconnect_count: UintProperty,
+    _state_node: Node,
+    latest_temperature_mc: IntProperty,
+    latest_full_capacity_uah: IntProperty,
+    latest_design_capacity_uah: IntProperty,
+    latest_state_of_health_percent: DoubleProperty,
+    charging_wake_lease_active: BoolProperty,
+    wake_lease_acquisitions: UintProperty,
+    last_update_timestamp_ns: IntProperty,
+    _anomalies_node: Node,
+    charging_zero_or_negative_current_count: UintProperty,
+    premature_charge_done_count: UintProperty,
+    thermal_health_degraded_count: UintProperty,
+    overvoltage_count: UintProperty,
+    last_anomaly_timestamp_ns: IntProperty,
+    last_anomaly_reason: StringProperty,
+    update_processing_latency_us: UintExponentialHistogramProperty,
 }
 
 impl BatteryInfoRecorders {
@@ -353,6 +393,10 @@ impl BatteryInfoRecorders {
         let mut present_current_opts = PersistenceOptions::new("charge_current".to_string());
         let mut average_current_opts = PersistenceOptions::new("average_current".to_string());
         let mut time_to_full_opts = PersistenceOptions::new("time_to_full".to_string());
+        let mut temperature_mc_opts = PersistenceOptions::new("temperature_mc".to_string());
+        let mut full_capacity_opts = PersistenceOptions::new("full_capacity".to_string());
+        let mut state_of_health_opts =
+            PersistenceOptions::new("state_of_health_percent".to_string());
         let mut health_opts = PersistenceOptions::new("health".to_string());
         let mut charge_status_opts = PersistenceOptions::new("charge_status".to_string());
 
@@ -375,6 +419,12 @@ impl BatteryInfoRecorders {
                 average_current_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             time_to_full_opts =
                 time_to_full_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            temperature_mc_opts =
+                temperature_mc_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            full_capacity_opts =
+                full_capacity_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            state_of_health_opts =
+                state_of_health_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             health_opts = health_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             charge_status_opts =
                 charge_status_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
@@ -424,12 +474,75 @@ impl BatteryInfoRecorders {
             MAX_POWER_CONSUMPTION_MEASUREMENTS,
             time_to_full_opts,
         );
+        let temperature_mc_recorder = Self::create_recorder(
+            "temperature_mc",
+            units!(Milli, Celsius),
+            MAX_HEALTH_MEASUREMENTS,
+            temperature_mc_opts,
+        );
+        let full_capacity_recorder = Self::create_recorder(
+            "full_capacity",
+            units!(Micro, AmpHours),
+            MAX_HEALTH_MEASUREMENTS,
+            full_capacity_opts,
+        );
+        let state_of_health_recorder = Self::create_recorder(
+            "state_of_health_percent",
+            units!(Percent),
+            MAX_HEALTH_MEASUREMENTS,
+            state_of_health_opts,
+        );
         let health_recorder =
             Self::create_enum_recorder("health", MAX_HEALTH_MEASUREMENTS, health_opts);
         let charge_status_recorder = Self::create_enum_recorder(
             "charge_status",
             MAX_CHARGE_STATUS_MEASUREMENTS,
             charge_status_opts,
+        );
+
+        let diagnostics_root = inspect::component::inspector().root().create_child("diagnostics");
+
+        let fidl_errors_node = diagnostics_root.create_child("fidl_errors");
+        let battery_watch_errors = fidl_errors_node.create_uint("battery_watch_errors", 0);
+        let battery_refresh_errors = fidl_errors_node.create_uint("battery_refresh_errors", 0);
+        let charger_watch_errors = fidl_errors_node.create_uint("charger_watch_errors", 0);
+        let sag_lease_errors = fidl_errors_node.create_uint("sag_lease_errors", 0);
+        let watcher_send_errors = fidl_errors_node.create_uint("watcher_send_errors", 0);
+
+        let disconnects_node = diagnostics_root.create_child("disconnects");
+        let battery_disconnect_count = disconnects_node.create_uint("battery_disconnect_count", 0);
+        let charger_disconnect_count = disconnects_node.create_uint("charger_disconnect_count", 0);
+
+        let state_node = diagnostics_root.create_child("state");
+        let latest_temperature_mc = state_node.create_int("temperature_mc", 0);
+        let latest_full_capacity_uah = state_node.create_int("full_capacity_uah", 0);
+        let latest_design_capacity_uah = state_node.create_int("design_capacity_uah", 0);
+        let latest_state_of_health_percent =
+            state_node.create_double("state_of_health_percent", 0.0);
+        let charging_wake_lease_active =
+            state_node.create_bool("charging_wake_lease_active", false);
+        let wake_lease_acquisitions = state_node.create_uint("wake_lease_acquisitions", 0);
+        let last_update_timestamp_ns = state_node.create_int("last_update_timestamp_ns", 0);
+
+        let anomalies_node = diagnostics_root.create_child("anomalies");
+        let charging_zero_or_negative_current_count =
+            anomalies_node.create_uint("charging_zero_or_negative_current_count", 0);
+        let premature_charge_done_count =
+            anomalies_node.create_uint("premature_charge_done_count", 0);
+        let thermal_health_degraded_count =
+            anomalies_node.create_uint("thermal_health_degraded_count", 0);
+        let overvoltage_count = anomalies_node.create_uint("overvoltage_count", 0);
+        let last_anomaly_timestamp_ns = anomalies_node.create_int("last_anomaly_timestamp_ns", 0);
+        let last_anomaly_reason = anomalies_node.create_string("last_anomaly_reason", "none");
+
+        let update_processing_latency_us = diagnostics_root.create_uint_exponential_histogram(
+            "update_processing_latency_us",
+            ExponentialHistogramParams {
+                floor: 10,
+                initial_step: 10,
+                step_multiplier: 2,
+                buckets: 12,
+            },
         );
 
         Self {
@@ -442,11 +555,43 @@ impl BatteryInfoRecorders {
             present_current: RefCell::new(present_current_recorder),
             average_current: RefCell::new(average_current_recorder),
             time_to_full: RefCell::new(time_to_full_recorder),
+            temperature_mc: RefCell::new(temperature_mc_recorder),
+            previous_temperature_mc: RefCell::new(None),
+            full_capacity: RefCell::new(full_capacity_recorder),
+            previous_full_capacity: RefCell::new(None),
+            state_of_health_percent: RefCell::new(state_of_health_recorder),
+            previous_state_of_health_percent: RefCell::new(None),
             health: RefCell::new(health_recorder),
             previous_health: RefCell::new(None),
             charge_status: RefCell::new(charge_status_recorder),
             previous_charge_status: RefCell::new(None),
             fault_detector,
+            _diagnostics_root: diagnostics_root,
+            _fidl_errors_node: fidl_errors_node,
+            battery_watch_errors,
+            battery_refresh_errors,
+            charger_watch_errors,
+            sag_lease_errors,
+            watcher_send_errors,
+            _disconnects_node: disconnects_node,
+            battery_disconnect_count,
+            charger_disconnect_count,
+            _state_node: state_node,
+            latest_temperature_mc,
+            latest_full_capacity_uah,
+            latest_design_capacity_uah,
+            latest_state_of_health_percent,
+            charging_wake_lease_active,
+            wake_lease_acquisitions,
+            last_update_timestamp_ns,
+            _anomalies_node: anomalies_node,
+            charging_zero_or_negative_current_count,
+            premature_charge_done_count,
+            thermal_health_degraded_count,
+            overvoltage_count,
+            last_anomaly_timestamp_ns,
+            last_anomaly_reason,
+            update_processing_latency_us,
         }
     }
 
@@ -516,6 +661,43 @@ impl BatteryInfoRecorders {
         }
     }
 
+    pub fn record_temperature_on_change(&self, temp_mc: Option<i32>) {
+        if let Some(temp_mc) = temp_mc {
+            self.latest_temperature_mc.set(temp_mc as i64);
+            let mut previous_temp = self.previous_temperature_mc.borrow_mut();
+            if Some(temp_mc) != *previous_temp {
+                *previous_temp = Some(temp_mc);
+                self.temperature_mc.borrow_mut().record(temp_mc);
+            }
+        }
+    }
+
+    pub fn record_capacity_and_soh_on_change(&self, info: &fpower::BatteryInfo) {
+        if let Some(full_uah) = info.full_capacity_uah {
+            self.latest_full_capacity_uah.set(full_uah as i64);
+            let mut previous_full = self.previous_full_capacity.borrow_mut();
+            if Some(full_uah) != *previous_full {
+                *previous_full = Some(full_uah);
+                self.full_capacity.borrow_mut().record(full_uah);
+            }
+        }
+        let design_uah = info.battery_spec.as_ref().and_then(|s| s.design_capacity_uah);
+        if let Some(design_uah) = design_uah {
+            self.latest_design_capacity_uah.set(design_uah as i64);
+        }
+        if let (Some(full_uah), Some(design_uah)) = (info.full_capacity_uah, design_uah) {
+            if design_uah > 0 {
+                let soh = ((full_uah as f64 / design_uah as f64) * 10000.0).round() / 100.0;
+                self.latest_state_of_health_percent.set(soh);
+                let mut previous_soh = self.previous_state_of_health_percent.borrow_mut();
+                if Some(soh) != *previous_soh {
+                    *previous_soh = Some(soh);
+                    self.state_of_health_percent.borrow_mut().record(soh);
+                }
+            }
+        }
+    }
+
     pub fn record_health_on_change(
         &self,
         health: Option<fidl_fuchsia_power_battery::HealthStatus>,
@@ -542,6 +724,91 @@ impl BatteryInfoRecorders {
                 self.charge_status.borrow_mut().record(battery_status);
             }
         }
+    }
+
+    /// Publishes polished battery telemetry to both the `state_recorder` time-series histories
+    /// and the `diagnostics` Inspect node.
+    pub fn record_battery_update(&self, info: &fpower::BatteryInfo, premature_charge_done: bool) {
+        self.record_level_on_change(info);
+        self.record_present_current(info.present_charging_current_ua);
+        self.record_average_current(info.average_charging_current_ua);
+        self.record_temperature_on_change(info.temperature_mc);
+        self.record_capacity_and_soh_on_change(info);
+        self.record_health_on_change(info.health);
+        self.record_charge_status_on_change(info.charge_status);
+
+        let timestamp_ns = info.timestamp.unwrap_or(0);
+        self.last_update_timestamp_ns.set(timestamp_ns);
+
+        if premature_charge_done {
+            self.premature_charge_done_count.add(1);
+            self.last_anomaly_timestamp_ns.set(timestamp_ns);
+            self.last_anomaly_reason.set("premature_charge_done_below_95_percent");
+        }
+
+        if info.charge_status == Some(fpower::ChargeStatus::Charging) {
+            if let Some(current_ua) = info.present_charging_current_ua {
+                if current_ua <= 0 {
+                    self.charging_zero_or_negative_current_count.add(1);
+                    self.last_anomaly_timestamp_ns.set(timestamp_ns);
+                    self.last_anomaly_reason.set("charging_with_non_positive_current");
+                }
+            }
+        }
+
+        match info.health {
+            Some(
+                fpower::HealthStatus::Cold
+                | fpower::HealthStatus::Warm
+                | fpower::HealthStatus::Hot
+                | fpower::HealthStatus::Overheat,
+            ) => {
+                self.thermal_health_degraded_count.add(1);
+                self.last_anomaly_timestamp_ns.set(timestamp_ns);
+                self.last_anomaly_reason.set("thermal_health_degraded");
+            }
+            Some(fpower::HealthStatus::OverVoltage) => {
+                self.overvoltage_count.add(1);
+                self.last_anomaly_timestamp_ns.set(timestamp_ns);
+                self.last_anomaly_reason.set("overvoltage");
+            }
+            _ => {}
+        }
+    }
+
+    pub fn record_battery_watch_error(&self) {
+        self.battery_watch_errors.add(1);
+    }
+
+    pub fn record_battery_refresh_error(&self) {
+        self.battery_refresh_errors.add(1);
+    }
+
+    pub fn record_charger_watch_error(&self) {
+        self.charger_watch_errors.add(1);
+    }
+
+    pub fn record_sag_lease_error(&self) {
+        self.sag_lease_errors.add(1);
+    }
+
+    pub fn record_watcher_send_error(&self) {
+        self.watcher_send_errors.add(1);
+    }
+
+    pub fn record_charger_disconnect(&self) {
+        self.charger_disconnect_count.add(1);
+    }
+
+    pub fn record_wake_lease_state(&self, active: bool, newly_acquired: bool) {
+        self.charging_wake_lease_active.set(active);
+        if newly_acquired {
+            self.wake_lease_acquisitions.add(1);
+        }
+    }
+
+    pub fn record_update_latency_us(&self, latency_us: u64) {
+        self.update_processing_latency_us.insert(latency_us);
     }
 
     fn create_recorder<T>(
@@ -600,6 +867,7 @@ impl BatteryInfoRecorders {
     }
 
     pub fn record_disconnected(&self) -> FaultRecoveryEvent {
+        self.battery_disconnect_count.add(1);
         self.fault_detector.record_disconnected()
     }
 }
@@ -930,5 +1198,119 @@ mod tests {
 
         detector.record_disconnected();
         assert_eq!(get_fault_state(&detector), FaultState::DriverDisconnected);
+    }
+
+    #[fuchsia::test]
+    async fn test_recorders_diagnostics_and_state_recorder_histories() {
+        use diagnostics_assertions::{AnyProperty, assert_data_tree};
+
+        let dir = tempdir().unwrap();
+        let storage_path = dir.path().join("storage");
+        let volatile_path = dir.path().join("volatile");
+        fs::create_dir(&storage_path).unwrap();
+        fs::create_dir(&volatile_path).unwrap();
+
+        let config = RecorderConfig {
+            persistence_dirs: Some(PersistenceDirs {
+                storage_dir: storage_path.to_str().unwrap().to_string(),
+                volatile_dir: volatile_path.to_str().unwrap().to_string(),
+            }),
+        };
+
+        let recorders = BatteryInfoRecorders::new(config);
+
+        recorders.record_battery_watch_error();
+        recorders.record_battery_watch_error();
+        recorders.record_battery_refresh_error();
+        recorders.record_charger_watch_error();
+        recorders.record_sag_lease_error();
+        recorders.record_watcher_send_error();
+        recorders.record_disconnected();
+        recorders.record_charger_disconnect();
+        recorders.record_wake_lease_state(true, true);
+
+        let info = fpower::BatteryInfo {
+            status: Some(fpower::BatteryStatus::Ok),
+            charge_status: Some(fpower::ChargeStatus::Charging),
+            level_percent: Some(80.0),
+            present_voltage_mv: Some(4650),
+            present_charging_current_ua: Some(-50_000),
+            temperature_mc: Some(48_000),
+            full_capacity_uah: Some(4_500_000),
+            battery_spec: Some(fpower::BatterySpec {
+                design_capacity_uah: Some(5_000_000),
+                ..Default::default()
+            }),
+            health: Some(fpower::HealthStatus::Warm),
+            timestamp: Some(123_456_789),
+            ..Default::default()
+        };
+
+        recorders.record_battery_update(&info, true);
+        recorders.record_update_latency_us(45);
+
+        let global_inspector = inspect::component::inspector();
+        assert_data_tree!(global_inspector, root: contains {
+            diagnostics: {
+                fidl_errors: {
+                    battery_watch_errors: 2u64,
+                    battery_refresh_errors: 1u64,
+                    charger_watch_errors: 1u64,
+                    sag_lease_errors: 1u64,
+                    watcher_send_errors: 1u64,
+                },
+                disconnects: {
+                    battery_disconnect_count: 1u64,
+                    charger_disconnect_count: 1u64,
+                },
+                state: {
+                    temperature_mc: 48_000i64,
+                    full_capacity_uah: 4_500_000i64,
+                    design_capacity_uah: 5_000_000i64,
+                    state_of_health_percent: 90.0f64,
+                    charging_wake_lease_active: true,
+                    wake_lease_acquisitions: 1u64,
+                    last_update_timestamp_ns: 123_456_789i64,
+                },
+                anomalies: {
+                    charging_zero_or_negative_current_count: 1u64,
+                    premature_charge_done_count: 1u64,
+                    thermal_health_degraded_count: 1u64,
+                    overvoltage_count: 0u64,
+                    last_anomaly_timestamp_ns: 123_456_789i64,
+                    last_anomaly_reason: "thermal_health_degraded",
+                },
+                update_processing_latency_us: AnyProperty,
+            },
+            power_observability_state_recorders: contains {
+                temperature_mc: contains {
+                    history: contains {
+                        shards: contains {
+                            "0": contains {
+                                values: vec![48_000i64],
+                            }
+                        }
+                    }
+                },
+                full_capacity: contains {
+                    history: contains {
+                        shards: contains {
+                            "0": contains {
+                                values: vec![4_500_000i64],
+                            }
+                        }
+                    }
+                },
+                state_of_health_percent: contains {
+                    history: contains {
+                        shards: contains {
+                            "0": contains {
+                                values: vec![90.0f64],
+                            }
+                        }
+                    }
+                },
+            }
+        });
     }
 }

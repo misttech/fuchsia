@@ -425,6 +425,7 @@ impl BatteryManager {
     ) {
         debug!("::manager:: update watchers...");
         if let Err(e) = self.update_sender.clone().try_send((info, wake_lease)) {
+            self.info_recorders.record_watcher_send_error();
             log::error!("Failed to send watcher update: {:?}", e);
         }
     }
@@ -459,11 +460,14 @@ impl BatteryManager {
                 Ok(Ok(token)) => {
                     info!("Acquired wake lock to block suspension while charging.");
                     *self.charge_wake_lease.borrow_mut() = Some(token);
+                    self.info_recorders.record_wake_lease_state(true, true);
                 }
                 Ok(Err(e)) => {
+                    self.info_recorders.record_sag_lease_error();
                     error!("Can't block suspension due to error: {:?}", e);
                 }
                 Err(e) => {
+                    self.info_recorders.record_sag_lease_error();
                     error!("Can't block suspension due to FIDL error {:?}", e);
                 }
             }
@@ -471,6 +475,7 @@ impl BatteryManager {
 
         if !is_charging && self.charge_wake_lease.borrow().is_some() {
             *self.charge_wake_lease.borrow_mut() = None;
+            self.info_recorders.record_wake_lease_state(false, false);
             info!("Dropped wake lease token, allowing suspension.");
         }
     }
@@ -480,10 +485,32 @@ impl BatteryManager {
         info: fpower::BatteryInfo,
         sag: Option<fsystem::ActivityGovernorProxy>,
     ) -> fpower::BatteryInfo {
+        let start_time_ns = get_current_time();
         let raw_level = info.level_percent;
         let new_charge_status = info.charge_status;
         let recovery_event = self.info_recorders.update(raw_level, new_charge_status);
         self.info_recorders.record_raw_level_on_change(&info);
+
+        // Detect when the charger reports charge termination (`ChargePhase::Done`) while online
+        // and in an active charging mode (not discharging, OTG, or passthrough), but the raw fuel
+        // gauge SOC is still below `FULL_CHARGE_MIN_LEVEL_PERCENT` (95%). `resolve_charger_state`
+        // maps this condition to `ChargeStatus::NotCharging` to prevent `Polisher` from splicing
+        // the UI level to 100%, so we inspect `cached_charger_status` directly to record the
+        // premature termination in Inspect diagnostics.
+        let premature_charge_done =
+            self.cached_charger_status.borrow().as_ref().is_some_and(|charger| {
+                charger.online.unwrap_or(false)
+                    && !matches!(
+                        charger.operating_mode,
+                        Some(
+                            fcharger::OperatingMode::Discharging
+                                | fcharger::OperatingMode::Otg
+                                | fcharger::OperatingMode::Passthrough
+                        )
+                    )
+                    && charger.charge_phase == Some(fcharger::ChargePhase::Done)
+                    && raw_level.is_some_and(|level| level < FULL_CHARGE_MIN_LEVEL_PERCENT)
+            });
 
         let old_is_plugged_in = Polisher::is_plugged_in(&self.cached_battery_info.borrow());
         let new_is_plugged_in = Polisher::is_plugged_in(&info);
@@ -505,7 +532,11 @@ impl BatteryManager {
             info.timestamp = Some(get_current_time());
         }
 
-        self.publish_to_inspect(&info);
+        self.publish_to_inspect(&info, premature_charge_done);
+
+        let elapsed_ns = (get_current_time() - start_time_ns).max(0) as u64;
+        self.info_recorders.record_update_latency_us(elapsed_ns / 1_000);
+
         info
     }
 
@@ -573,6 +604,7 @@ impl BatteryManager {
             DriverUpdate::ChargerGone => {
                 *self.cached_charger_status.borrow_mut() = None;
                 *self.cached_charger_spec.borrow_mut() = None;
+                self.info_recorders.record_charger_disconnect();
                 None
             }
         };
@@ -599,17 +631,19 @@ impl BatteryManager {
         };
         match proxy.get_status().await {
             Ok(Ok(status)) => *self.cached_battery_status.borrow_mut() = Some(status),
-            Ok(Err(e)) => warn!("Failed to refresh battery status on charger update: {:?}", e),
-            Err(e) => warn!("FIDL error querying battery status on charger update: {:?}", e),
+            Ok(Err(e)) => {
+                self.info_recorders.record_battery_refresh_error();
+                warn!("Failed to refresh battery status on charger update: {:?}", e);
+            }
+            Err(e) => {
+                self.info_recorders.record_battery_refresh_error();
+                warn!("FIDL error querying battery status on charger update: {:?}", e);
+            }
         }
     }
 
-    fn publish_to_inspect(&self, info: &fpower::BatteryInfo) {
-        self.info_recorders.record_level_on_change(info);
-        self.info_recorders.record_present_current(info.present_charging_current_ua);
-        self.info_recorders.record_average_current(info.average_charging_current_ua);
-        self.info_recorders.record_health_on_change(info.health);
-        self.info_recorders.record_charge_status_on_change(info.charge_status);
+    fn publish_to_inspect(&self, info: &fpower::BatteryInfo, premature_charge_done: bool) {
+        self.info_recorders.record_battery_update(info, premature_charge_done);
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {
@@ -742,9 +776,11 @@ impl BatteryManager {
         match proxy.configure_watch(&options).await {
             Ok(Ok(_effective_options)) => {}
             Ok(Err(status)) => {
+                self.info_recorders.record_battery_watch_error();
                 warn!("Battery driver returned error configuring watch triggers: {:?}", status);
             }
             Err(e) => {
+                self.info_recorders.record_battery_watch_error();
                 warn!("Failed to configure watch triggers on battery driver: {:?}", e);
             }
         }
@@ -756,10 +792,12 @@ impl BatteryManager {
                     Some(token)
                 }
                 Ok(Err(e)) => {
+                    self.info_recorders.record_sag_lease_error();
                     warn!("Can't acquire wake lock due to error: {:?}", e);
                     None
                 }
                 Err(e) => {
+                    self.info_recorders.record_sag_lease_error();
                     warn!("Can't acquire wake lock due to FIDL error {:?}", e);
                     None
                 }
@@ -782,9 +820,11 @@ impl BatteryManager {
                     });
                 }
                 Ok(Err(e)) => {
+                    self.info_recorders.record_battery_watch_error();
                     return Err(anyhow::anyhow!("Battery driver error: {:?}", e));
                 }
                 Err(e) => {
+                    self.info_recorders.record_battery_watch_error();
                     return Err(anyhow::Error::from(e).context("Error in Watch"));
                 }
             }
@@ -803,10 +843,12 @@ impl BatteryManager {
         let charger_spec = match proxy.get_spec().await {
             Ok(Ok(s)) => Some(s),
             Ok(Err(status)) => {
+                self.info_recorders.record_charger_watch_error();
                 warn!("Charger driver failed to return spec: {:?}", status);
                 None
             }
             Err(e) => {
+                self.info_recorders.record_charger_watch_error();
                 warn!("FIDL error querying charger spec: {:?}", e);
                 None
             }
@@ -832,9 +874,11 @@ impl BatteryManager {
                 debug!("Configured charger watch options");
             }
             Ok(Err(status)) => {
+                self.info_recorders.record_charger_watch_error();
                 warn!("Charger driver rejected watch options: {:?}", status);
             }
             Err(e) => {
+                self.info_recorders.record_charger_watch_error();
                 warn!("FIDL error configuring charger watch options: {:?}", e);
             }
         }
@@ -846,10 +890,12 @@ impl BatteryManager {
                     Some(token)
                 }
                 Ok(Err(e)) => {
+                    self.info_recorders.record_sag_lease_error();
                     warn!("Can't acquire charger wake lock due to error: {:?}", e);
                     None
                 }
                 Err(e) => {
+                    self.info_recorders.record_sag_lease_error();
                     warn!("Can't acquire charger wake lock due to FIDL error {:?}", e);
                     None
                 }
@@ -869,9 +915,11 @@ impl BatteryManager {
                     });
                 }
                 Ok(Err(e)) => {
+                    self.info_recorders.record_charger_watch_error();
                     return Err(anyhow::anyhow!("Charger error: {:?}", e));
                 }
                 Err(e) => {
+                    self.info_recorders.record_charger_watch_error();
                     return Err(anyhow::Error::from(e).context("Error in WatchCharger"));
                 }
             }
@@ -886,10 +934,16 @@ impl BatteryManager {
         info!("Waiting on updates from fuchsia.power.battery service");
         let (client_end, server_end) =
             fidl::endpoints::create_endpoints::<fpower::BatteryInfoWatcherMarker>();
-        proxy.watch(client_end)?;
+        if let Err(e) = proxy.watch(client_end) {
+            self.info_recorders.record_battery_watch_error();
+            return Err(e.into());
+        }
 
         info!("Waiting on updates from driver");
         let res = self.wait_on_updates(server_end, updates).await;
+        if res.is_err() {
+            self.info_recorders.record_battery_watch_error();
+        }
         warn!("Driver disconnected");
 
         self.info_recorders.record_disconnected();
@@ -1508,7 +1562,7 @@ mod tests {
 
         // Verify recordings in Inspect
         let global_inspector = inspect::component::inspector();
-        assert_data_tree!(global_inspector, root: {
+        assert_data_tree!(global_inspector, root: contains {
             power_observability_state_recorders: contains {
                 raw_level_percent: contains {
                     history: contains {
@@ -2003,5 +2057,109 @@ mod tests {
             resolve_charger_state(&online_phase_none, None),
             (fpower::ChargeSource::Usb, fpower::ChargeStatus::NotCharging)
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_battery_manager_inspect_diagnostics_end_to_end() {
+        use diagnostics_assertions::assert_data_tree;
+
+        let (_dir, battery_manager) = create_manager();
+
+        let battery_spec =
+            fbattery::Spec { design_capacity_uah: Some(5_000_000), ..Default::default() };
+        let (battery_proxy, _battery_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fbattery::BatteryMarker>();
+        assert!(
+            !battery_manager
+                .apply_update(
+                    DriverUpdate::BatteryConnected {
+                        spec: Some(battery_spec),
+                        proxy: battery_proxy,
+                    },
+                    None,
+                )
+                .await
+        );
+
+        // Charger reports Done while battery is at 88% (< 95% threshold) -> premature charge done
+        let charger_status = fcharger::Status {
+            online: Some(true),
+            source_type: Some(fcharger::SourceType::Usb),
+            operating_mode: Some(fcharger::OperatingMode::Charging),
+            charge_phase: Some(fcharger::ChargePhase::Done),
+            ..Default::default()
+        };
+        *battery_manager.cached_charger_status.borrow_mut() = Some(charger_status);
+
+        let battery_status = fbattery::Status {
+            present: Some(true),
+            level_percent: Some(88.0),
+            voltage_uv: Some(4_300_000),
+            current_ua: Some(500),
+            full_charge_capacity_uah: Some(4_500_000),
+            temp_celsius: Some(30.0),
+            health: Some(fbattery::HealthStatus::Good),
+            ..Default::default()
+        };
+        assert!(
+            battery_manager
+                .apply_update(
+                    DriverUpdate::BatteryStatus { status: battery_status, wake_lease: None },
+                    None,
+                )
+                .await
+        );
+
+        assert!(battery_manager.apply_update(DriverUpdate::ChargerGone, None).await);
+        assert!(battery_manager.apply_update(DriverUpdate::BatteryGone, None).await);
+
+        let global_inspector = inspect::component::inspector();
+        assert_data_tree!(global_inspector, root: contains {
+            diagnostics: contains {
+                disconnects: {
+                    battery_disconnect_count: 1u64,
+                    charger_disconnect_count: 1u64,
+                },
+                state: contains {
+                    temperature_mc: 30_000i64,
+                    full_capacity_uah: 4_500_000i64,
+                    design_capacity_uah: 5_000_000i64,
+                    state_of_health_percent: 90.0f64,
+                },
+                anomalies: contains {
+                    premature_charge_done_count: 1u64,
+                    last_anomaly_reason: "premature_charge_done_below_95_percent",
+                },
+            },
+            power_observability_state_recorders: contains {
+                temperature_mc: contains {
+                    history: contains {
+                        shards: contains {
+                            "0": contains {
+                                values: vec![30_000i64],
+                            }
+                        }
+                    }
+                },
+                full_capacity: contains {
+                    history: contains {
+                        shards: contains {
+                            "0": contains {
+                                values: vec![4_500_000i64],
+                            }
+                        }
+                    }
+                },
+                state_of_health_percent: contains {
+                    history: contains {
+                        shards: contains {
+                            "0": contains {
+                                values: vec![90.0f64],
+                            }
+                        }
+                    }
+                },
+            }
+        });
     }
 }
