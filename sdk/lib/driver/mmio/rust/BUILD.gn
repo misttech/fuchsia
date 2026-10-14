@@ -24,6 +24,7 @@ rustc_library("mmio") {
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:zerocopy",
   ]
   test_deps = [
     "//src/lib/fuchsia-sync",

@@ -8,6 +8,7 @@ use crate::register::{
 };
 use core::fmt::{Debug, Display};
 use core::ops::{BitAnd, BitOr, Not};
+use zerocopy::byteorder::{ByteOrder, U16, U32, U64};
 
 /// An error which may be encountered when performing operations on an MMIO region.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, thiserror::Error)]
@@ -276,7 +277,8 @@ pub trait MmioSplit: Mmio + Sized {
 
 /// Implemented for the fundamental types supported by all [Mmio] implementations.
 ///
-/// This is a sealed trait, implemented for the types: u8, u16, u32, u64.
+/// This is a sealed trait, implemented for the primitive types `u8`, `u16`, `u32`, `u64`, and the
+/// byte-order-aware [`zerocopy::byteorder`] types [`U16`], [`U32`], and [`U64`].
 pub trait MmioOperand:
     BitAnd<Output = Self>
     + BitOr<Output = Self>
@@ -308,6 +310,8 @@ pub trait MmioOperand:
 }
 
 mod sealed {
+    use zerocopy::byteorder::{ByteOrder, U16, U32, U64};
+
     /// Internal sealed MmioOperand trait as the types implementing this must match the types in
     /// the loadn/storen trait methods.
     pub trait MmioOperand {}
@@ -316,6 +320,9 @@ mod sealed {
     impl MmioOperand for u16 {}
     impl MmioOperand for u32 {}
     impl MmioOperand for u64 {}
+    impl<O: ByteOrder> MmioOperand for U16<O> {}
+    impl<O: ByteOrder> MmioOperand for U32<O> {}
+    impl<O: ByteOrder> MmioOperand for U64<O> {}
 }
 
 impl MmioOperand for u8 {
@@ -371,6 +378,48 @@ impl MmioOperand for u64 {
         value: Self,
     ) -> Result<(), MmioError> {
         mmio.try_store64(offset, value)
+    }
+}
+
+impl<O: ByteOrder> MmioOperand for U16<O> {
+    fn try_load<M: Mmio + ?Sized>(mmio: &M, offset: usize) -> Result<Self, MmioError> {
+        mmio.try_load16(offset).map(|v| Self::from_bytes(v.to_ne_bytes()))
+    }
+
+    fn try_store<M: Mmio + ?Sized>(
+        mmio: &mut M,
+        offset: usize,
+        value: Self,
+    ) -> Result<(), MmioError> {
+        mmio.try_store16(offset, u16::from_ne_bytes(value.to_bytes()))
+    }
+}
+
+impl<O: ByteOrder> MmioOperand for U32<O> {
+    fn try_load<M: Mmio + ?Sized>(mmio: &M, offset: usize) -> Result<Self, MmioError> {
+        mmio.try_load32(offset).map(|v| Self::from_bytes(v.to_ne_bytes()))
+    }
+
+    fn try_store<M: Mmio + ?Sized>(
+        mmio: &mut M,
+        offset: usize,
+        value: Self,
+    ) -> Result<(), MmioError> {
+        mmio.try_store32(offset, u32::from_ne_bytes(value.to_bytes()))
+    }
+}
+
+impl<O: ByteOrder> MmioOperand for U64<O> {
+    fn try_load<M: Mmio + ?Sized>(mmio: &M, offset: usize) -> Result<Self, MmioError> {
+        mmio.try_load64(offset).map(|v| Self::from_bytes(v.to_ne_bytes()))
+    }
+
+    fn try_store<M: Mmio + ?Sized>(
+        mmio: &mut M,
+        offset: usize,
+        value: Self,
+    ) -> Result<(), MmioError> {
+        mmio.try_store64(offset, u64::from_ne_bytes(value.to_bytes()))
     }
 }
 
@@ -585,3 +634,45 @@ pub trait MmioExt: Mmio {
 }
 
 impl<M: Mmio + ?Sized> MmioExt for M {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::Memory;
+    use core::mem::MaybeUninit;
+    use zerocopy::byteorder::{big_endian as be, little_endian as le};
+
+    #[test]
+    fn test_byteorder_operands() {
+        let mut mem = MaybeUninit::<[u64; 4]>::zeroed();
+        let mut mmio = Memory::borrow_uninit(&mut mem);
+
+        mmio.store(0, be::U16::new(0x1234));
+        assert_eq!(mmio.load16(0), u16::from_be(0x1234));
+        assert_eq!(mmio.load::<be::U16>(0).get(), 0x1234);
+
+        mmio.store(2, le::U16::new(0x5678));
+        assert_eq!(mmio.load16(2), u16::from_le(0x5678));
+        assert_eq!(mmio.load::<le::U16>(2).get(), 0x5678);
+
+        mmio.store(4, be::U32::new(0x1234_5678));
+        assert_eq!(mmio.load32(4), u32::from_be(0x1234_5678));
+        assert_eq!(mmio.load::<be::U32>(4).get(), 0x1234_5678);
+
+        mmio.store(8, le::U32::new(0x9abc_def0));
+        assert_eq!(mmio.load32(8), u32::from_le(0x9abc_def0));
+        assert_eq!(mmio.load::<le::U32>(8).get(), 0x9abc_def0);
+
+        mmio.store(16, be::U64::new(0x0123_4567_89ab_cdef));
+        assert_eq!(mmio.load64(16), u64::from_be(0x0123_4567_89ab_cdef));
+        assert_eq!(mmio.load::<be::U64>(16).get(), 0x0123_4567_89ab_cdef);
+
+        mmio.store(24, le::U64::new(0xfedc_ba98_7654_3210));
+        assert_eq!(mmio.load64(24), u64::from_le(0xfedc_ba98_7654_3210));
+        assert_eq!(mmio.load::<le::U64>(24).get(), 0xfedc_ba98_7654_3210);
+
+        assert_eq!(mmio.masked_load(4, be::U32::new(0x00ff_ff00)).get(), 0x0034_5600);
+        mmio.masked_modify(4, be::U32::new(0x00ff_0000), be::U32::new(0x00aa_0000));
+        assert_eq!(mmio.load::<be::U32>(4).get(), 0x12aa_5678);
+    }
+}
