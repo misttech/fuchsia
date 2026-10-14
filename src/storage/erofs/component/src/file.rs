@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::pager::ErofsPacketReceiver;
 use crate::volume::ErofsVolume;
 use erofs::FileNode;
 use fidl_fuchsia_io as fio;
@@ -20,7 +19,13 @@ pub struct ErofsFile {
     volume: Arc<ErofsVolume>,
     node: FileNode,
     vmo: zx::Vmo,
-    registration: fasync::ReceiverRegistration<ErofsPacketReceiver>,
+    registration_key: u64,
+}
+
+impl Drop for ErofsFile {
+    fn drop(&mut self) {
+        self.volume.pager().unregister(self.registration_key);
+    }
 }
 
 impl ErofsFile {
@@ -29,11 +34,11 @@ impl ErofsFile {
     /// kept alive dynamically when being used by clients, and cleaned up when no longer in use.
     pub fn new(volume: Arc<ErofsVolume>, node: FileNode) -> Result<Arc<Self>, zx::Status> {
         let file = Arc::new_cyclic(|weak| {
-            let (vmo, registration) = volume
+            let (vmo, registration_key) = volume
                 .pager()
                 .create_vmo(weak.clone(), node.size())
                 .expect("Failed to create pager VMO");
-            Self { volume, node, vmo, registration }
+            Self { volume, node, vmo, registration_key }
         });
         Ok(file)
     }
@@ -53,7 +58,7 @@ impl ErofsFile {
     pub(crate) fn register_zero_children_wait(&self) -> Result<(), zx::Status> {
         self.vmo.wait_async(
             fasync::EHandle::local().port(),
-            self.registration.key(),
+            self.registration_key,
             zx::Signals::VMO_ZERO_CHILDREN,
             zx::WaitAsyncOpts::empty(),
         )
@@ -66,19 +71,7 @@ impl ErofsFile {
     /// mappings, and registers the signal wait on the VMO. Returns `Ok(true)` if a transition to
     /// `Strong` occurred.
     pub fn watch_for_zero_children(&self) -> Result<bool, zx::Status> {
-        let mut file_holder = self.registration.receiver().file.lock().unwrap();
-        match &*file_holder {
-            crate::pager::FileHolder::Weak(weak) => {
-                let strong = weak.upgrade().ok_or(zx::Status::BAD_STATE)?;
-
-                // Start watching for VMO_ZERO_CHILDREN
-                self.register_zero_children_wait()?;
-
-                *file_holder = crate::pager::FileHolder::Strong(strong);
-                Ok(true)
-            }
-            crate::pager::FileHolder::Strong(_) => Ok(false),
-        }
+        self.volume.pager().watch_for_zero_children(self.registration_key, &self.vmo)
     }
 }
 

@@ -157,12 +157,13 @@ impl FxblobInstance {
                 );
                 erofs_component::ErofsVolume::serve(
                     backing_vmo,
-                    erofs_pager,
+                    erofs_pager.clone(),
                     fio::PERM_READABLE,
                     root_server,
                 )
                 .expect("failed to serve ErofsVolume");
                 let _ = shutdown_rx.await;
+                erofs_pager.unregister_all();
             });
         });
 
