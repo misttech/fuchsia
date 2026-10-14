@@ -61,7 +61,22 @@ FUNCTION(restore_extended_pstate)
     ldp q30, q31, [x1, #(15 * 32)]
     ldr w2, [x1, #(FPCR_OFFSET)]
     ldr w3, [x1, #(FPSR_OFFSET)]
+    // From the ARM Software Optimization Guide:
+    //
+    // 4.10 FPCR self-synchronization
+    // Programmers and compiler writers should note that writes to the FPCR register are
+    // self-synchronizing, i.e. its effect on subsequent instructions can be relied upon without an
+    // intervening context synchronizing operation.
+    //
+    // Writing to fpcr triggers a flush, even if the value hasn't changed, and most programs don't
+    // change fpcr. Reading doesn't trigger a flush, so we check first before writing.
+    mrs x4, fpcr
+    cmp w4, w2
+    b.eq .Lskip_fpcr64
     msr fpcr, x2
+.Lskip_fpcr64:
+    // FPSR holds cumulative exception flags rather than execution control bits and does
+    // not trigger an arithmetic pipeline flush.
     msr fpsr, x3
     ret
 END_FUNCTION(restore_extended_pstate)
@@ -97,7 +112,12 @@ FUNCTION(restore_extended_aarch32_pstate)
     ldp q14, q15, [x1, #( 7 * 32)]
     ldr w2, [x1, #(FPCR_OFFSET_32)]
     ldr w3, [x1, #(FPSR_OFFSET_32)]
+    // See the comment about fpcr flushing in `restore_extended_pstate`.
+    mrs x4, fpcr
+    cmp w4, w2
+    b.eq .Lskip_fpcr32
     msr fpcr, x2
+.Lskip_fpcr32:
     msr fpsr, x3
     ret
 END_FUNCTION(restore_extended_aarch32_pstate)
