@@ -167,17 +167,17 @@ zx::result<> QemuRiscv64Pciroot::CreateInterrupts() {
         .interrupt = interrupt.release(),
         .vector = kVirtPcieIrqBase + vector_offset,
     });
+  }
 
-    // All QEMU devices are plugged into the root port and use a pre-defined pin swizzle.
-    for (uint8_t device_id = 0; device_id < DEVICES_PER_BUS; device_id++) {
-      pci_irq_routing_entry_t entry = {.port_device_id = PCI_IRQ_ROUTING_NO_PARENT,
-                                       .port_function_id = PCI_IRQ_ROUTING_NO_PARENT,
-                                       .device_id = device_id};
-      for (uint32_t pin = 0; pin < PINS_PER_FUNCTION; pin++) {
-        entry.pins[pin] = kVirtPcieIrqBase + ((pin + device_id) % PINS_PER_FUNCTION);
-      }
-      irq_routing_entries_.push_back(entry);
+  // All QEMU devices are plugged into the root port and use a pre-defined pin swizzle.
+  for (uint8_t device_id = 0; device_id < DEVICES_PER_BUS; device_id++) {
+    pci_irq_routing_entry_t entry = {.port_device_id = PCI_IRQ_ROUTING_NO_PARENT,
+                                     .port_function_id = PCI_IRQ_ROUTING_NO_PARENT,
+                                     .device_id = device_id};
+    for (uint32_t pin = 0; pin < PINS_PER_FUNCTION; pin++) {
+      entry.pins[pin] = kVirtPcieIrqBase + ((pin + device_id) % PINS_PER_FUNCTION);
     }
+    irq_routing_entries_.push_back(entry);
   }
 
   return zx::ok();
