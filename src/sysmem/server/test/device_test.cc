@@ -399,6 +399,7 @@ TEST_F(FakeDdkSysmem, BufferCountOverflow_MultiParticipant_Failure) {
   duplicate_request.rights_attenuation_mask() = ZX_RIGHT_SAME_RIGHTS;
   duplicate_request.token_request() = std::move(token_server_2);
   EXPECT_TRUE(token_1->Duplicate(std::move(duplicate_request)).is_ok());
+  EXPECT_TRUE(token_1->Sync().is_ok());
 
   auto [collection_client_1, collection_server_1] =
       fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
