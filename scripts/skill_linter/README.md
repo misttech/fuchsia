@@ -36,6 +36,20 @@ PYTHONPATH=third_party/pyyaml/src/lib python3 \
     scripts/skill_linter/skill_linter.py --suggest-fix-in-json /path/to/skill/dir
 ```
 
+To run with an explicit blocked words policy:
+
+```bash
+PYTHONPATH=third_party/pyyaml/src/lib python3 \
+    scripts/skill_linter/skill_linter.py --blocked-words-file path/to/policy.json /path/to/skill/dir
+```
+
+To disable blocked words scanning:
+
+```bash
+PYTHONPATH=third_party/pyyaml/src/lib python3 \
+    scripts/skill_linter/skill_linter.py --no-blocked-words /path/to/skill/dir
+```
+
 ### Running Unit Tests
 
 Unit tests for the linter are written using the standard Python `unittest`
@@ -52,6 +66,21 @@ To run the tests directly with Python (useful for fast iteration):
 ```bash
 python3 scripts/skill_linter/skill_linter_test.py
 ```
+
+### Code Formatting for Developers and AI Agents
+
+When making changes to the Python code of this tool (`skill_linter.py`,
+`skill_linter_test.py`, etc.), always run `fx format-code` before committing
+or uploading changes:
+
+```bash
+fx format-code
+```
+
+This runs SHAC to format all modified Python files according to Fuchsia's
+style and formatting rules (`autoflake`, `isort`, `black`). Running
+`fx format-code` is necessary when modifying Python code in this tool to ensure
+code consistency and prevent CQ Dry Run or presubmit builder failures.
 
 ### Integration
 
@@ -113,6 +142,29 @@ ensure consistency across all skills:
 
 - **Whitespace Hygiene**: Trailing whitespace is removed, and consecutive
   empty lines are collapsed into single breaks.
+
+### Restricted Terms & Policy Validation
+
+The linter optionally scans skills for restricted or blocked terminology (e.g.,
+unannounced project codenames, experimental board identifiers, or sensitive terms):
+
+- **Policy Discovery**: When available, the linter automatically loads terms
+  from the canonical Google3 Gerrit Code Review banned words configuration
+  (`/google/src/files/head/depot/google3/devtools/gerritcodereview/banned_words/fuchsia/common.gcl`)
+  or local vendor policy files. An explicit policy file (`.gcl`, `.json`, or
+  `.yaml`) can also be specified using `--blocked-words-file <path>`, or the
+  check can be bypassed with `--no-blocked-words`. In open-source environments
+  where Google3 and vendor policy files are absent, the check is silently skipped.
+
+- **Scope & Exclusions**: Policy rules can specify scoping (e.g. `public_only`,
+  enforcing checks on open-source files while permitting internal references in
+  vendor checkouts) and path allowlists.
+
+- **Diagnostics**: Violations identify the exact term, location (frontmatter
+  field or Markdown body line number and context), reason, and suggested
+  replacements. Because terminology replacements require developer judgment,
+  blocked terms cannot be resolved automatically via `--fixit` and are
+  reported as blocking errors.
 
 ## Execution Modes
 
@@ -208,3 +260,7 @@ following patterns:
 - **Manual Verification**: Test new flags by creating a scratch directory
   with a `SKILL.md` and running the linter with the various modes described
   in the [Execution Modes](#execution-modes) section.
+- **Mandatory Code Formatting (`fx format-code`)**: When making changes to the
+  Python code of `skill_linter` (`skill_linter.py`, `skill_linter_test.py`, etc.),
+  always run `fx format-code` before committing or uploading changes to ensure
+  compliance with project code formatting standards (`autoflake`, `isort`, `black`).
