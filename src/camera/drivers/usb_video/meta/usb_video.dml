@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 {
     name: "usb_video",
-    include: [ "//sdk/lib/driver/compat/compat.shard.cml" ],
+    include: [],
     program: {
+        binary: "driver/usb_video.so",
         colocate: "true",
-        compat: "driver/usb_video.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         bind: {
             protocol: "fuchsia.usb.BIND_PROTOCOL.INTERFACE_ASSOCIATION",
@@ -17,5 +17,20 @@
             },
         },
     },
-    use: [],
+    capabilities: [
+        { service: "fuchsia.hardware.camera.Service" },
+    ],
+    use: [
+        {
+            name: "default",
+            service: "fuchsia.driver.compat.Service",
+            generate_bind_rule: false,
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.camera.Service",
+            from: "self",
+        },
+    ],
 }

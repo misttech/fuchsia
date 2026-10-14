@@ -5,10 +5,11 @@
 #include "src/camera/drivers/usb_video/usb_video_stream.h"
 
 #include <fidl/fuchsia.sysmem2/cpp/hlcpp_conversion.h>
-#include <inttypes.h>
+#include <fuchsia/hardware/usb/cpp/banjo.h>
 #include <lib/async/cpp/task.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fidl/cpp/binding.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/fit/defer.h>
@@ -51,11 +52,10 @@ void RequestTask::AsyncTaskHandler(async_dispatcher_t* dispatcher, async_task_t*
   request_task->context_->HandleRequest(request_task);
 }
 
-UsbVideoStream::UsbVideoStream(zx_device_t* parent, usb_protocol_t usb, StreamingSetting settings)
-    : UsbVideoStreamBase(parent),
+UsbVideoStream::UsbVideoStream()
+    : fdf::DriverBase2(kDriverName),
       unbind_task_(this),
       control_binding_(this),
-      usb_state_(usb, std::move(settings)),
       stream_binding_(this) {
   fidl_dispatch_loop_ = std::make_unique<async::Loop>(&kAsyncLoopConfigNoAttachToCurrentThread);
   fidl_dispatch_loop_->StartThread();
@@ -67,66 +67,76 @@ UsbVideoStream::~UsbVideoStream() {
   }
 }
 
-zx_status_t UsbVideoStream::Bind(void* ctx, zx_device_t* device) {
-  usb_protocol_t usb;
-  zx_status_t status = device_get_protocol(device, ZX_PROTOCOL_USB, &usb);
-  if (status != ZX_OK) {
-    return status;
+zx::result<> UsbVideoStream::Start(fdf::DriverContext context) {
+  std::shared_ptr<fdf::Namespace> incoming = context.take_incoming();
+  zx::result<ddk::UsbProtocolClient> usb_client =
+      compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming);
+  if (usb_client.is_error()) {
+    fdf::error("Failed to connect to usb banjo protocol: {}", usb_client);
+    return usb_client.take_error();
   }
+  usb_protocol_t usb;
+  usb_client->GetProto(&usb);
 
   usb_desc_iter_t iter;
-  status = usb_desc_iter_init(&usb, &iter);
-  if (status != ZX_OK) {
-    return status;
+  if (zx_status_t status = usb_desc_iter_init(&usb, &iter); status != ZX_OK) {
+    return zx::error(status);
   }
 
   auto streams_or = LoadStreamingSettings(&iter);
   // Release iterator regardless of whether parsing succeeded.
   usb_desc_iter_release(&iter);
   if (streams_or.is_error()) {
-    zxlogf(ERROR, "Failed to load stream settings.");
-    return streams_or.error_value();
+    fdf::error("Failed to load stream settings.");
+    return streams_or.take_error();
   }
   // Parsed all descriptors successfully.
-  auto dev = std::make_unique<UsbVideoStream>(device, usb, std::move(*streams_or));
+  usb_state_.emplace(usb, std::move(*streams_or));
 
   fuchsia_hardware_camera::Service::InstanceHandler handler({
       .device =
-          [dev_ptr = dev.get(), dispatcher = dev->fidl_dispatch_loop_->dispatcher()](
+          [this, dispatcher = fidl_dispatch_loop_->dispatcher()](
               fidl::ServerEnd<fuchsia_hardware_camera::Device> server_end) {
             async::PostTask(dispatcher,
-                            [dev_ptr, dispatcher, server_end = std::move(server_end)]() mutable {
-                              dev_ptr->bindings_.AddBinding(dispatcher, std::move(server_end),
-                                                            dev_ptr, fidl::kIgnoreBindingClosure);
+                            [this, dispatcher, server_end = std::move(server_end)]() mutable {
+                              bindings_.AddBinding(dispatcher, std::move(server_end), this,
+                                                   fidl::kIgnoreBindingClosure);
                             });
           },
   });
-  zx::result add_result = dev->DdkAddService<fuchsia_hardware_camera::Service>(std::move(handler));
+  zx::result add_result =
+      outgoing()->AddService<fuchsia_hardware_camera::Service>(std::move(handler));
   if (add_result.is_error()) {
-    zxlogf(ERROR, "Failed to advertise camera service");
-    return add_result.error_value();
+    fdf::error("Failed to advertise camera service");
+    return add_result.take_error();
   }
 
-  zxlogf(INFO, "Adding UsbVideoStream");
-  status = dev->DdkAdd("usb-video-source");
-  if (status == ZX_OK) {
-    // devmgr is now in charge of the memory for dev
-    [[maybe_unused]] auto ptr = dev.release();
+  fdf::info("Adding UsbVideoStream");
+  return zx::ok();
+}
+
+void UsbVideoStream::Stop(fdf::StopCompleter completer) {
+  fbl::AutoLock lock(&lock_);
+  if (!usb_state_.has_value()) {
+    // Start never completed, so there is nothing to unwind.
+    completer(zx::ok());
+    return;
   }
-  return status;
+  unbind_callback_ = [completer = std::move(completer)]() mutable { completer(zx::ok()); };
+  unbind_task_.Post(fidl_dispatch_loop_->dispatcher());
 }
 
 void UsbVideoStream::GetChannel(GetChannelRequestView request,
                                 GetChannelCompleter::Sync& completer) {
   fbl::AutoLock lock(&lock_);
-  zxlogf(DEBUG, "Getting Channel");
-  if (unbind_txn_.has_value()) {
-    zxlogf(ERROR, "Request for camera control after Unbind has been called.");
+  fdf::debug("Getting Channel");
+  if (unbind_callback_.has_value()) {
+    fdf::error("Request for camera control after Unbind has been called.");
     completer.Close(ZX_ERR_ACCESS_DENIED);
     return;
   }
   if (control_binding_.is_bound()) {
-    zxlogf(ERROR, "Camera Control already running");
+    fdf::error("Camera Control already running");
     completer.Close(ZX_ERR_ACCESS_DENIED);
     return;
   }
@@ -134,10 +144,10 @@ void UsbVideoStream::GetChannel(GetChannelRequestView request,
 }
 
 void UsbVideoStream::GetDeviceInfo(GetDeviceInfoCallback callback) {
-  zxlogf(DEBUG, "Received GetDeviceInfo call");
+  fdf::debug("Received GetDeviceInfo call");
   // This is just a conversion from the format internal to the device driver
   // to the FIDL DeviceInfo struct.
-  const auto& usb_device_info = usb_state_.GetDeviceInfo();
+  const auto& usb_device_info = usb_state_->GetDeviceInfo();
   fuchsia::camera::DeviceInfo camera_device_info;
   camera_device_info.vendor_name = usb_device_info.manufacturer;
   camera_device_info.vendor_id = usb_device_info.vendor_id;
@@ -150,7 +160,7 @@ void UsbVideoStream::GetDeviceInfo(GetDeviceInfoCallback callback) {
 }
 
 void UsbVideoStream::GetFormats(uint32_t index, GetFormatsCallback callback) {
-  auto uvc_formats = usb_state_.GetUvcFormats();
+  auto uvc_formats = usb_state_->GetUvcFormats();
   std::vector<fuchsia::camera::VideoFormat> formats;
   while ((index < uvc_formats.size()) &&
          (formats.size() < fuchsia::camera::MAX_FORMATS_PER_RESPONSE)) {
@@ -169,7 +179,7 @@ void UsbVideoStream::CreateStream(fuchsia::sysmem::BufferCollectionInfo buffer_c
   fbl::AutoLock lock(&lock_);
   // Check the current state:
   if (stream_binding_.is_bound()) {
-    zxlogf(ERROR, "CreateStream called while currently streaming!");
+    fdf::error("CreateStream called while currently streaming!");
     return;
   }
   // messages on the stream channel will not be processed until this function completes.
@@ -191,14 +201,14 @@ zx_status_t UsbVideoStream::CreateStream(fuchsia::sysmem::BufferCollectionInfo b
                                             .rate = frame_rate};
 
   // Try setting the format on the device.
-  if (zx_status_t status = usb_state_.SetFormat(video_format); status != ZX_OK) {
-    zxlogf(ERROR, "setting format failed, err: %d", status);
+  if (zx_status_t status = usb_state_->SetFormat(video_format); status != ZX_OK) {
+    fdf::error("setting format failed, err: {}", zx_status_get_string(status));
     return status;
   }
 
-  if (usb_state_.MaxFrameSize() > buffer_collection.vmo_size) {
-    zxlogf(ERROR, "buffer provided %" PRIu64 " is less than max size %" PRIu32 ".",
-           buffer_collection.vmo_size, usb_state_.MaxFrameSize());
+  if (usb_state_->MaxFrameSize() > buffer_collection.vmo_size) {
+    fdf::error("buffer provided {} is less than max size {}.", buffer_collection.vmo_size,
+               usb_state_->MaxFrameSize());
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -213,33 +223,33 @@ zx_status_t UsbVideoStream::CreateStream(fuchsia::sysmem::BufferCollectionInfo b
     }
     if (zx_status_t status = buffers_.Init(cpp20::span(vmos, buffer_collection.buffer_count));
         status != ZX_OK) {
-      zxlogf(ERROR, "Failed to initialize VmoPool, err: %d", status);
+      fdf::error("Failed to initialize VmoPool, err: {}", zx_status_get_string(status));
       return status;
     }
     for (uint32_t i = 0; i < buffers_.total_buffers(); ++i) {
-      if (buffers_.buffer_size(i) < usb_state_.MaxFrameSize()) {
-        zxlogf(ERROR, "VMO %" PRIu32 " physical size %zu is less than max frame size %" PRIu32, i,
-               buffers_.buffer_size(i), usb_state_.MaxFrameSize());
+      if (buffers_.buffer_size(i) < usb_state_->MaxFrameSize()) {
+        fdf::error("VMO {} physical size {} is less than max frame size {}", i,
+                   buffers_.buffer_size(i), usb_state_->MaxFrameSize());
         return ZX_ERR_INVALID_ARGS;
       }
     }
   }
   if (zx_status_t status = buffers_.MapVmos(); status != ZX_OK) {
-    zxlogf(ERROR, "Failed to map vmos, err: %d", status);
+    fdf::error("Failed to map vmos, err: {}", zx_status_get_string(status));
     return status;
   }
 
   // Now tell the usb state to start streaming, but set the "pause" mode
   // so we won't send any frames.
   is_streaming_ = false;
-  return usb_state_.StartStreaming(
+  return usb_state_->StartStreaming(
       fit::bind_member(this, &UsbVideoStream::PostRequestCompleteTask));
 }
 
 void UsbVideoStream::CloseStreamOnError(zx_status_t status, const char* call) {
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to %s: status %s. Closing stream channel.", call,
-           zx_status_get_string(status));
+    fdf::error("Failed to {}: status {}. Closing stream channel.", call,
+               zx_status_get_string(status));
     SetStreaming(false);
     stream_binding_.Unbind();
     OnStreamingShutdown();
@@ -250,8 +260,8 @@ zx_status_t UsbVideoStream::SetStreaming(bool stream) {
   // This cannot be called unless our state is either STREAMING or READY.
   ZX_ASSERT(stream_binding_.is_bound());
   if (stream == is_streaming_) {
-    zxlogf(ERROR, "%s streaming was called when streaming was already %s!",
-           stream ? "Start" : "Stop", stream ? "started" : "stopped");
+    fdf::error("{} streaming was called when streaming was already {}!", stream ? "Start" : "Stop",
+               stream ? "started" : "stopped");
     return ZX_ERR_BAD_STATE;
   }
   is_streaming_ = stream;
@@ -260,15 +270,20 @@ zx_status_t UsbVideoStream::SetStreaming(bool stream) {
 
 void UsbVideoStream::HandleUnbind(async_dispatcher_t* dispatcher, async::TaskBase* task,
                                   zx_status_t status) {
-  fbl::AutoLock lock(&lock_);
-  if (control_binding_.is_bound()) {
-    control_binding_.Unbind();
+  fit::callback<void()> callback;
+  {
+    fbl::AutoLock lock(&lock_);
+    if (control_binding_.is_bound()) {
+      control_binding_.Unbind();
+    }
+    if (stream_binding_.is_bound()) {
+      stream_binding_.Unbind();
+    }
+    OnStreamingShutdown();
+    callback = std::move(*unbind_callback_);
   }
-  if (stream_binding_.is_bound()) {
-    stream_binding_.Unbind();
-  }
-  OnStreamingShutdown();
-  unbind_txn_->Reply();
+  // This may destroy |this|, so nothing below may touch any member.
+  callback();
 }
 
 zx_status_t UsbVideoStream::FrameRelease(uint32_t buffer_id) {
@@ -282,12 +297,12 @@ void UsbVideoStream::CheckCurrentFrame() {
   if (!current_frame_) {
     std::optional<fzl::VmoPool::Buffer> buffer = buffers_.LockBufferForWrite();
     if (!buffer) {
-      zxlogf(ERROR, "no available buffers to store image data!");
+      fdf::error("no available buffers to store image data!");
       // If no buffers, we still need to track the data stream from the camera.
       // Initialize current_frame_ with an invalid buffer.
       buffer = fzl::VmoPool::Buffer();
     }
-    current_frame_ = std::make_unique<VideoFrame>(std::move(*buffer), usb_state_, frame_number_++);
+    current_frame_ = std::make_unique<VideoFrame>(std::move(*buffer), *usb_state_, frame_number_++);
   }
 }
 
@@ -314,7 +329,7 @@ void UsbVideoStream::PostRequestCompleteTask(usb_request_t* req) {
 void UsbVideoStream::RequestComplete(usb_request_t* req) {
   // Check the current state:
   if (!stream_binding_.is_bound()) {
-    zxlogf(ERROR, "Received usb request but we are no longer streaming!");
+    fdf::error("Received usb request but we are no longer streaming!");
     return;
   }
 
@@ -322,15 +337,15 @@ void UsbVideoStream::RequestComplete(usb_request_t* req) {
   auto status = current_frame_->ProcessPayload(req);
   // ZX_ERR_STOP and ZX_ERR_NEXT both indicate that the current frame is complete.
   if (status == ZX_ERR_STOP || status == ZX_ERR_NEXT) {
-    zxlogf(DEBUG, "Process payload returned %s, the the frame is complete.",
-           zx_status_get_string(status));
+    fdf::debug("Process payload returned {}, the the frame is complete.",
+               zx_status_get_string(status));
     // VideoFrame::Release handles the case of frame errors, or if we didn't have a buffer.
     // The only reason result would not be valid is if there was a logical issue with the frame,
     // in which case we should not send it.
     auto result = current_frame_->Release();
     if (result.is_ok()) {
       if (is_streaming_) {
-        zxlogf(DEBUG, "Sending frame %u", current_frame_->FrameNumber());
+        fdf::debug("Sending frame {}", current_frame_->FrameNumber());
         stream_binding_.events().OnFrameAvailable(result.value());
       } else {
         // If we are in the READY (paused) state, just don't send the message.
@@ -345,7 +360,7 @@ void UsbVideoStream::RequestComplete(usb_request_t* req) {
     // If we received ZX_ERR_NEXT, this request actually contains the first bit of data
     // for the next frame.
     if (status == ZX_ERR_NEXT) {
-      zxlogf(DEBUG, "reprocess request, because new frame.");
+      fdf::debug("reprocess request, because new frame.");
       // make another VideoFrame to populate current_frame_:
       CheckCurrentFrame();
       // need to re-process request:
@@ -362,13 +377,4 @@ void UsbVideoStream::RequestComplete(usb_request_t* req) {
 
 }  // namespace camera::usb_video
 
-static zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = camera::usb_video::UsbVideoStream::Bind;
-  return ops;
-}();
-
-// clang-format off
-ZIRCON_DRIVER(usb_video, driver_ops, "zircon", "0.1");
-// clang-format on
+FUCHSIA_DRIVER_EXPORT2(camera::usb_video::UsbVideoStream);

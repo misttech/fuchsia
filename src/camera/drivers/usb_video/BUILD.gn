@@ -46,10 +46,9 @@ source_set("lib") {
     "video_frame.h",
   ]
   deps = [
-    ":usb_video_bind",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//src/devices/lib/driver",
+    "//sdk/lib/driver/logging/cpp",
     "//src/lib/listnode",
     "//zircon/system/ulib/affine",
     "//zircon/system/ulib/zircon-internal",
@@ -58,17 +57,16 @@ source_set("lib") {
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
     "//sdk/fidl/fuchsia.camera:fuchsia.camera_hlcpp",
     "//sdk/fidl/fuchsia.hardware.camera:fuchsia.hardware.camera_cpp",
-    "//src/devices/usb/lib/usb",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//src/devices/usb/lib/usb:video",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sysmem-version",
   ]
 }
 
 fuchsia_cc_driver("fuchsia_driver") {
-  legacy = true
   output_name = "usb_video"
   deps = [ ":lib" ]
 }
@@ -92,9 +90,10 @@ cc_test_executable("usb_video_test_bin") {
   sources = [ "usb_video_test.cc" ]
   deps = [
     ":lib",
-    "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp_mock",
-    "//src/devices/testing/mock-ddk",
-    "//zircon/system/ulib/zxtest",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/testing/cpp",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
   ]
 }
 

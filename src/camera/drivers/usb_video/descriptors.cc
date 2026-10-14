@@ -7,7 +7,7 @@
 #include <endian.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/affine/ratio.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <stdlib.h>
 
 #include <map>
@@ -155,8 +155,8 @@ zx::result<T> GetStruct(usb_desc_iter_t* iter, uint8_t required_type = 0) {
   }
   // Optionally match the descriptor type:
   if (required_type != 0 && *type_or != required_type) {
-    zxlogf(DEBUG, "Expected %s descriptor type, got %s", DType2String(required_type).c_str(),
-           DType2String(*type_or).c_str());
+    fdf::debug("Expected {} descriptor type, got {}", DType2String(required_type),
+               DType2String(*type_or));
     return zx::error(ZX_ERR_NEXT);
   }
 
@@ -237,7 +237,7 @@ zx::result<const usb_video_format_header*> VerifyFormat(usb_desc_iter_t* iter) {
     return cs_descrip_or.take_error();
   }
   if (kFormatSubtypes.count(cs_descrip_or->b_descriptor_sub_type) == 0) {
-    zxlogf(DEBUG, "Descriptor subtype 0x%x is not a format!", cs_descrip_or->b_descriptor_sub_type);
+    fdf::debug("Descriptor subtype 0x{:x} is not a format!", cs_descrip_or->b_descriptor_sub_type);
     return zx::error(ZX_ERR_WRONG_TYPE);
   }
   auto header = reinterpret_cast<usb_video_format_header*>(
@@ -259,7 +259,7 @@ zx::result<const usb_video_frame_header*> VerifyFrame(usb_desc_iter_t* iter) {
     return cs_descrip_or.take_error();
   }
   if (kFrameSubtypes.count(cs_descrip_or->b_descriptor_sub_type) == 0) {
-    zxlogf(DEBUG, "Descriptor subtype 0x%x is not a frame!", cs_descrip_or->b_descriptor_sub_type);
+    fdf::debug("Descriptor subtype 0x{:x} is not a frame!", cs_descrip_or->b_descriptor_sub_type);
     return zx::error(ZX_ERR_WRONG_TYPE);
   }
   auto header = reinterpret_cast<usb_video_frame_header*>(
@@ -290,12 +290,12 @@ zx::result<UvcFormat> ParseUvcFormat(const usb_video_format_header* format,
   // make sure the format type and frame type match:
   auto iter = kAllowedFrames.find(format->bDescriptorSubType);
   if (iter == kAllowedFrames.end()) {
-    zxlogf(ERROR, "Unsupported frame type");
+    fdf::error("Unsupported frame type");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   if (iter->second != frame->bDescriptorSubType) {
-    zxlogf(ERROR, "Mismatched format and frame types");
+    fdf::error("Mismatched format and frame types");
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -309,7 +309,7 @@ zx::result<UvcFormat> ParseUvcFormat(const usb_video_format_header* format,
       auto frame_desc = reinterpret_cast<const usb_video_vs_frame_desc*>(frame);
       // Prevent divide by zero error from bad data:
       if (frame_desc->wHeight == 0) {
-        zxlogf(ERROR, "Frame description claims image height == 0!");
+        fdf::error("Frame description claims image height == 0!");
         return zx::error(ZX_ERR_BAD_STATE);
       }
       return zx::ok(UvcFormat{.format_index = format_desc->bFormatIndex,
@@ -331,7 +331,7 @@ zx::result<UvcFormat> ParseUvcFormat(const usb_video_format_header* format,
       auto frame_desc = reinterpret_cast<const usb_video_vs_frame_desc*>(frame);
       // Prevent divide by zero error from bad data:
       if (frame_desc->wHeight == 0) {
-        zxlogf(ERROR, "Frame description claims image height == 0!");
+        fdf::error("Frame description claims image height == 0!");
         return zx::error(ZX_ERR_BAD_STATE);
       }
       return zx::ok(UvcFormat{.format_index = format_desc->bFormatIndex,
@@ -363,7 +363,7 @@ zx::result<UvcFormat> ParseUvcFormat(const usb_video_format_header* format,
                               .default_frame_index = format_desc->bDefaultFrameIndex});
     }
     default:
-      zxlogf(ERROR, "unsupported format bDescriptorSubtype %u", format->bDescriptorSubType);
+      fdf::error("unsupported format bDescriptorSubtype {}", format->bDescriptorSubType);
   }
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
@@ -438,7 +438,7 @@ zx::result<StreamingEndpointSetting> GetAlternateSetting(usb_desc_iter_t* iter) 
   // The VideoStreaming Standard Interface indicates the beginning of the streaming settings.
   auto vs_interface_or = GetStruct<usb_interface_info_descriptor_t>(iter);
   if (vs_interface_or.is_error()) {
-    zxlogf(ERROR, "Failed to copy out streaming interface");
+    fdf::error("Failed to copy out streaming interface");
     return vs_interface_or.take_error();
   }
   usb_desc_iter_advance(iter);
@@ -461,7 +461,7 @@ zx::result<StreamingSetting> LoadStreamingSettings(usb_desc_iter_t* iter) {
   StreamingSetting settings;
   // Skip past the first few headers
   while (VerifyDescriptor(iter).is_ok() && !IsVideoControlInterface(iter)) {
-    zxlogf(DEBUG, "Skipping interface to get to Control");
+    fdf::debug("Skipping interface to get to Control");
     usb_desc_iter_advance(iter);
   }
   // Check if we quit the while loop because of a bad iterator:
@@ -490,7 +490,7 @@ zx::result<StreamingSetting> LoadStreamingSettings(usb_desc_iter_t* iter) {
   // which follow that. We're going to skip all the way to the VideoStreaming Standard Interface
   // descriptor.
   while (VerifyDescriptor(iter).is_ok() && !IsVideoStreamingInterface(iter)) {
-    zxlogf(DEBUG, "Skipping interface to get to Streaming interface");
+    fdf::debug("Skipping interface to get to Streaming interface");
     usb_desc_iter_advance(iter);
   }
   // Check if we quit the while loop because of a bad iterator:
@@ -500,7 +500,7 @@ zx::result<StreamingSetting> LoadStreamingSettings(usb_desc_iter_t* iter) {
   // The VideoStreaming Standard Interface indicates the beginning of the streaming settings.
   auto vs_interface_or = GetStruct<usb_interface_info_descriptor_t>(iter);
   if (vs_interface_or.is_error()) {
-    zxlogf(ERROR, "Failed to copy out streaming interface");
+    fdf::error("Failed to copy out streaming interface");
     return vs_interface_or.take_error();
   }
   settings.vs_interface = *vs_interface_or;
@@ -535,12 +535,12 @@ zx::result<StreamingSetting> LoadStreamingSettings(usb_desc_iter_t* iter) {
   }
   // Now check the full set of alternate settings:
   if (settings.endpoint_settings.size() == 0) {
-    zxlogf(ERROR, "No alternate settings given");
+    fdf::error("No alternate settings given");
     return zx::error(ZX_ERR_BAD_STATE);
   }
   if (settings.endpoint_settings[0].ep_type == fdescriptor::EndpointType::kBulk) {
     if (settings.endpoint_settings.size() > 1 || settings.endpoint_settings[0].alt_setting != 0) {
-      zxlogf(ERROR, "bulk endpoint shall support only alternate setting zero.");
+      fdf::error("bulk endpoint shall support only alternate setting zero.");
       return zx::error(ZX_ERR_BAD_STATE);
     }
   } else {
@@ -549,7 +549,7 @@ zx::result<StreamingSetting> LoadStreamingSettings(usb_desc_iter_t* iter) {
       // The streaming settings should all be of the same type,
       // in this case all isochronous (`EndpointType::kIsochronous`).
       if (setting.ep_type != fdescriptor::EndpointType::kIsochronous) {
-        zxlogf(ERROR, "expected isochronous endpoint, got %u", fidl::ToUnderlying(setting.ep_type));
+        fdf::error("expected isochronous endpoint, got {}", fidl::ToUnderlying(setting.ep_type));
         return zx::error(ZX_ERR_BAD_STATE);
       }
     }

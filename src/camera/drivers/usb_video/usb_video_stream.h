@@ -10,15 +10,15 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/fidl/cpp/binding.h>
 #include <lib/fit/function.h>
 #include <lib/fzl/vmo-pool.h>
 #include <lib/zx/vmo.h>
 
+#include <deque>
 #include <memory>
 
-#include <ddktl/device.h>
-#include <ddktl/protocol/empty-protocol.h>
 #include <fbl/mutex.h>
 #include <usb/usb.h>
 
@@ -68,12 +68,12 @@ class RequestTask : public async_task {
 // Stop          |     N/A      |      N/A    |    Error!    |  READY
 // stream close  |     N/A      |      N/A    |    STOPPED   |  STOPPED
 // control close |     N/A      | DISCONNECTED| DISCONNECTED | DISCONNECTED
-// DdkUnbind     |  UNBOUND     |   UNBOUND   |   UNBOUND    |   UNBOUND
+// Unbind        |  UNBOUND     |   UNBOUND   |   UNBOUND    |   UNBOUND
 //
 // The Unbind action closes all channels, and disallows any further state transitions.
 //
 // The state can be determined as follows:
-// if (unbind txn set)    -> UNBOUND
+// if (unbind callback set) -> UNBOUND
 // if (!control channel)  -> DISCONNECTED
 // elif (!stream channel) -> STOPPED
 // elif (!is_streaming_)   -> READY
@@ -95,33 +95,29 @@ class RequestTask : public async_task {
 //
 // Unless specified otherwise, all methods of this class are assumed to be called
 // on the single threaded dispatcher owned by this class.
-class UsbVideoStream;
-using UsbVideoStreamBase = ::ddk::Device<UsbVideoStream, ::ddk::Unbindable>;
-
-class UsbVideoStream : public UsbVideoStreamBase,
+class UsbVideoStream : public fdf::DriverBase2,
                        public fuchsia::camera::Control,
                        public fuchsia::camera::Stream,
                        public fidl::WireServer<fuchsia_hardware_camera::Device> {
  public:
-  // Constructor is assumed to be called only through Bind, or suitable testing rig.
-  // This method will not be called on the fidl_dispatch_loop_.
-  UsbVideoStream(zx_device_t* parent, usb_protocol_t usb, StreamingSetting settings);
+  static constexpr std::string_view kDriverName = "usb_video";
 
-  // DDK device implementation
-  // DdkUnbind posts an async task on the fidl_dispatch_loop_.
-  void DdkUnbind(::ddk::UnbindTxn txn) __TA_EXCLUDES(lock_) {
-    fbl::AutoLock lock(&lock_);
-    unbind_txn_ = std::move(txn);
-    unbind_task_.Post(fidl_dispatch_loop_->dispatcher());
-  }
-  // Release is guaranteed to only be called after receiving the async reply
-  // to DdkUnbind.
-  // This method will not be called on the fidl_dispatch_loop_.
-  void DdkRelease() { delete this; }
+  // The constructor will not be called on the fidl_dispatch_loop_.
+  UsbVideoStream();
+
   ~UsbVideoStream() override;
 
-  // This method will not be called on the fidl_dispatch_loop_.
-  static zx_status_t Bind(void* ctx, zx_device_t* device);
+  // fdf::DriverBase2 implementation.
+  // These methods will not be called on the fidl_dispatch_loop_.
+  //
+  // Start connects to the usb banjo protocol of the parent device, parses the video
+  // streaming descriptors and advertises fuchsia_hardware_camera::Service.
+  zx::result<> Start(fdf::DriverContext context) override;
+  // Stop posts an async task on the fidl_dispatch_loop_, and completes once all
+  // channels have been closed.
+  void Stop(fdf::StopCompleter completer) override __TA_EXCLUDES(lock_);
+
+  using fdf::DriverBase2::Start;
 
  private:
   // Fuchsia Hardware Camera FIDL implementation.
@@ -193,7 +189,7 @@ class UsbVideoStream : public UsbVideoStreamBase,
   // Called when the stream channel is closed.
   // We assume this happens in the same dispatcher as any calls to CreateStream
   void OnStreamingShutdown() {
-    usb_state_.StopStreaming();
+    usb_state_->StopStreaming();
     current_frame_ = nullptr;
     frame_number_ = 0;
     is_streaming_ = false;
@@ -226,22 +222,22 @@ class UsbVideoStream : public UsbVideoStreamBase,
 
   // Threading concerns:
   // There are 3 dispatchers that may call into this class.
-  // 1) Driver Host, which may call:
-  //    -> Unbind/Remove
+  // 1) The driver dispatcher, which may call:
+  //    -> Stop
   //    -> GetChannel
   // 2) Our dispatch loop, which may call
   //    -> All control and stream channel calls
   // 3) The banjo interface, which may call
   //    -> PostRequestCompleteTask
   //
-  // To handle conflicts with DdkUnbind and GetChannel, DdkUnbind posts a task
+  // To handle conflicts with Stop and GetChannel, Stop posts a task
   // to the fidl_dispatch_loop_ to handle unbinding.
-  // GetChannel only accesses the control binding and the unbind reply transaction.
-  // The async task, the unbind reply transaction and the control binding
+  // GetChannel only accesses the control binding and the unbind callback.
+  // The async task, the unbind callback and the control binding
   // are all guarded by a lock to prevent concurrent access:
   fbl::Mutex lock_;
   async::TaskMethod<UsbVideoStream, &UsbVideoStream::HandleUnbind> unbind_task_ __TA_GUARDED(lock_);
-  std::optional<::ddk::UnbindTxn> unbind_txn_ __TA_GUARDED(lock_) = std::nullopt;
+  std::optional<fit::callback<void()>> unbind_callback_ __TA_GUARDED(lock_) = std::nullopt;
   fidl::Binding<Control> control_binding_ __TA_GUARDED(lock_);
   // To avoid issues with the latter two threads, calls to PostRequestCompleteTask
   // are limited to posting a task to be run on the dispatch loop.
@@ -261,7 +257,8 @@ class UsbVideoStream : public UsbVideoStreamBase,
   // the driver to call OnFrameAvailable
   bool is_streaming_ = false;
 
-  UsbState usb_state_;
+  // Only valid once Start has succeeded.
+  std::optional<UsbState> usb_state_;
 
   // Loop used to run the FIDL server
   std::unique_ptr<async::Loop> fidl_dispatch_loop_;

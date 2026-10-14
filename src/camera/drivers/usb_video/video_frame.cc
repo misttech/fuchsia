@@ -4,8 +4,7 @@
 
 #include "src/camera/drivers/usb_video/video_frame.h"
 
-#include <inttypes.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/function.h>
 #include <lib/fzl/vmo-pool.h>
 
@@ -25,7 +24,7 @@ static constexpr uint16_t USB_SOF_MASK = 0x7FF;
 
 zx::result<fuchsia::camera::FrameAvailableEvent> VideoFrame::Release() {
   if (bytes_ == 0) {
-    zxlogf(WARNING, "VideoFrame::Release: bytes == 0");
+    fdf::warn("VideoFrame::Release: bytes == 0");
     return zx::error(ZX_ERR_BAD_STATE);
   }
   fuchsia::camera::FrameAvailableEvent event;
@@ -33,11 +32,11 @@ zx::result<fuchsia::camera::FrameAvailableEvent> VideoFrame::Release() {
 
   if (!buffer_.valid()) {
     event.frame_status = fuchsia::camera::FrameStatus::ERROR_BUFFER_FULL;
-    zxlogf(WARNING, "VideoFrame::Release: !buffer_.valid()");
+    fdf::warn("VideoFrame::Release: !buffer_.valid()");
     return zx::ok(event);
   }
   event.buffer_id = buffer_.ReleaseWriteLockAndGetIndex();
-  zxlogf(DEBUG, "buffer_.ReleaseWriteLockAndGetIndex got %u", event.buffer_id);
+  fdf::debug("buffer_.ReleaseWriteLockAndGetIndex got {}", event.buffer_id);
   // If we were writing to a buffer (we have to complete it)
   // If we had a writing error:
   if (error_) {
@@ -51,16 +50,16 @@ zx::result<VideoFrame::PayloadHeader> VideoFrame::PayloadHeader::ParseHeader(usb
   if (req->response.status != ZX_OK) {
     failure_count_++;
     if (failure_count_ == 1 || (failure_count_) % 10 == 0) {
-      zxlogf(ERROR, "usb request failed %" PRIu64 " times: %d", failure_count_.load(),
-             req->response.status);
+      fdf::error("usb request failed {} times: {}", failure_count_.load(),
+                 zx_status_get_string(req->response.status));
     }
     return zx::error(req->response.status);
   }
   usb_video_vs_payload_header pheader;
   size_t len = usb_request_copy_from(req, &pheader, sizeof(pheader), 0);
   if (len != sizeof(usb_video_vs_payload_header) || pheader.bHeaderLength > req->response.actual) {
-    zxlogf(ERROR, "got invalid header bHeaderLength %u data length %" PRIu64, pheader.bHeaderLength,
-           req->response.actual);
+    fdf::error("got invalid header bHeaderLength {} data length {}", pheader.bHeaderLength,
+               req->response.actual);
     return zx::error(ZX_ERR_INTERNAL);
   }
   return zx::ok(PayloadHeader{.header = pheader});
@@ -93,14 +92,14 @@ zx_status_t VideoFrame::ProcessPayload(usb_request_t* req) {
   if (HasPayloadHeader()) {
     auto header_result = PayloadHeader::ParseHeader(req);
     if (header_result.is_error()) {
-      zxlogf(ERROR, "payload header has error");
+      fdf::error("payload header has error");
       return ZX_ERR_INTERNAL;
     }
     if (header_result->error()) {
       // Only print the error message for the first erroneous payload of the
       // frame.
       if (!error_) {
-        zxlogf(ERROR, "payload of frame had an error bit set");
+        fdf::error("payload of frame had an error bit set");
         error_ = true;
       }
     }
@@ -110,7 +109,7 @@ zx_status_t VideoFrame::ProcessPayload(usb_request_t* req) {
     // we are detecting the eof flag correctly.
     // if fid == -1, that just means this is the first payload of the frame.
     if (fid_ != -1 && fid_ != header_result->fid()) {
-      zxlogf(DEBUG, "new frame detected");
+      fdf::debug("new frame detected");
       return ZX_ERR_NEXT;
     }
     fid_ = header_result->fid();  // set fid, if it is the first payload.
@@ -140,8 +139,8 @@ zx_status_t VideoFrame::CopyData(usb_request_t* req, uint32_t data_offset) {
   // Copy the data into the video buffer.
   uint32_t data_size = static_cast<uint32_t>(req->response.actual) - data_offset;
   if (bytes_ + data_size > usb_state_.MaxFrameSize()) {
-    zxlogf(ERROR, "invalid data size %" PRIu32 ", cur frame bytes %" PRIu32 ", frame size %" PRIu32,
-           data_size, bytes_, usb_state_.MaxFrameSize());
+    fdf::error("invalid data size {}, cur frame bytes {}, frame size {}", data_size, bytes_,
+               usb_state_.MaxFrameSize());
     error_ = true;
     return ZX_ERR_IO_INVALID;
   }
@@ -149,10 +148,8 @@ zx_status_t VideoFrame::CopyData(usb_request_t* req, uint32_t data_offset) {
   // Append the data to the end of the current frame.
   uint64_t avail = buffer_.size() - bytes_;
   if (avail < data_size) {
-    zxlogf(ERROR,
-           "VMO size (%zu) is too small to contain frame data (offset %" PRIu32
-           ", data size %" PRIu32 ")",
-           buffer_.size(), bytes_, data_size);
+    fdf::error("VMO size ({}) is too small to contain frame data (offset {}, data size {})",
+               buffer_.size(), bytes_, data_size);
     error_ = true;
     return ZX_ERR_BUFFER_TOO_SMALL;
   }
@@ -184,8 +181,7 @@ void VideoFrame::ParseHeaderTimestamps(usb_request_t* req) {
     if (pts_ == 0) {
       pts_ = new_pts;
     } else if (new_pts != pts_) {
-      zxlogf(ERROR, "#%u: PTS changed between payloads, from %u to %u", frame_number_, pts_,
-             new_pts);
+      fdf::error("#{}: PTS changed between payloads, from {} to {}", frame_number_, pts_, new_pts);
     }
   }
 

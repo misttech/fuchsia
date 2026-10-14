@@ -4,7 +4,7 @@
 
 #include "src/camera/drivers/usb_video/usb_state.h"
 
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/zircon-internal/align.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,12 +51,14 @@ std::string FetchString(const usb_protocol_t& usb_proto, uint8_t description_ind
 }
 
 void print_controls(const usb_video_vc_probe_and_commit_controls& proposal) {
-  zxlogf(DEBUG, "bmHint 0x%x", proposal.bmHint);
-  zxlogf(DEBUG, "bFormatIndex: %u", proposal.bFormatIndex);
-  zxlogf(DEBUG, "bFrameIndex: %u", proposal.bFrameIndex);
-  zxlogf(DEBUG, "dwFrameInterval: %u", proposal.dwFrameInterval);
-  zxlogf(DEBUG, "dwMaxVideoFrameSize: %u", proposal.dwMaxVideoFrameSize);
-  zxlogf(DEBUG, "dwMaxPayloadTransferSize: %u", proposal.dwMaxPayloadTransferSize);
+  // `proposal` is a packed struct, and the fdf:: logging functions take their arguments by
+  // reference, so multi-byte fields must be copied out before being logged.
+  fdf::debug("bmHint 0x{:x}", uint16_t{proposal.bmHint});
+  fdf::debug("bFormatIndex: {}", proposal.bFormatIndex);
+  fdf::debug("bFrameIndex: {}", proposal.bFrameIndex);
+  fdf::debug("dwFrameInterval: {}", uint32_t{proposal.dwFrameInterval});
+  fdf::debug("dwMaxVideoFrameSize: {}", uint32_t{proposal.dwMaxVideoFrameSize});
+  fdf::debug("dwMaxPayloadTransferSize: {}", uint32_t{proposal.dwMaxPayloadTransferSize});
 }
 
 zx::result<usb_video_vc_probe_and_commit_controls> ClearIfIoErrors(zx_status_t status,
@@ -64,7 +66,7 @@ zx::result<usb_video_vc_probe_and_commit_controls> ClearIfIoErrors(zx_status_t s
   if (status == ZX_ERR_IO_REFUSED || status == ZX_ERR_IO_INVALID) {
     usb_reset_endpoint(usb, 0);
   }
-  zxlogf(ERROR, "usb_video_negotiate_probe failed: %d", status);
+  fdf::error("usb_video_negotiate_probe failed: {}", zx_status_get_string(status));
   return zx::error(status);
 }
 
@@ -85,7 +87,7 @@ zx::result<usb_video_vc_probe_and_commit_controls> ProbeAndCommit(usb_protocol_t
 
   zx_status_t status;
 
-  zxlogf(DEBUG, "usb_video_negotiate_probe: PROBE_CONTROL SET_CUR");
+  fdf::debug("usb_video_negotiate_probe: PROBE_CONTROL SET_CUR");
   print_controls(proposal);
   // The wValue field (the fourth parameter) specifies the Control Selector
   // (in this case VideoVsControlSelector::kProbeControl) in the high byte,
@@ -103,7 +105,7 @@ zx::result<usb_video_vc_probe_and_commit_controls> ProbeAndCommit(usb_protocol_t
   usb_video_vc_probe_and_commit_controls result;
   memset(&result, 0, sizeof(usb_video_vc_probe_and_commit_controls));
 
-  zxlogf(DEBUG, "usb_video_negotiate_probe: PROBE_CONTROL GET_CUR");
+  fdf::debug("usb_video_negotiate_probe: PROBE_CONTROL GET_CUR");
   size_t out_length;
   status =
       usb_control_in(usb, kClassInterfaceIn, fidl::ToUnderlying(fdescriptor::VideoRequest::kGetCur),
@@ -131,7 +133,7 @@ zx::result<usb_video_vc_probe_and_commit_controls> ProbeAndCommit(usb_protocol_t
       // clear the stall/error
       usb_reset_endpoint(usb, 0);
     }
-    zxlogf(ERROR, "usb_video_negotiate_commit failed: %d", status);
+    fdf::error("usb_video_negotiate_commit failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   ZX_DEBUG_ASSERT(result.dwMaxPayloadTransferSize == dwMaxPayloadTransferSize);
@@ -165,7 +167,7 @@ zx::result<UsbRequest> UsbRequest::Create(usb_protocol_t* usb, uint8_t ep_addr, 
   usb_request_t* req;
   auto status = usb_request_alloc(&req, size, ep_addr, parent_req_size);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "usb_request_alloc failed: %d", status);
+    fdf::error("usb_request_alloc failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok(UsbRequest(req));
@@ -222,15 +224,15 @@ zx_status_t UsbState::StartStreaming(fit::function<void(usb_request_t*)> req_cal
   // We consider it an error to call StartStreaming while already streaming.
   if (streaming_state_ != StreamingState::READY) {
     if (streaming_state_ == StreamingState::STOPPED) {
-      zxlogf(ERROR, "SetFormat must be called before streaming can start.");
+      fdf::error("SetFormat must be called before streaming can start.");
     } else {
-      zxlogf(ERROR,
-             "StartStreaming is only allowed while UsbState is in READY state. Current state: %s",
-             State2String(streaming_state_).c_str());
+      fdf::error(
+          "StartStreaming is only allowed while UsbState is in READY state. Current state: {}",
+          State2String(streaming_state_));
     }
     return ZX_ERR_BAD_STATE;
   }
-  zxlogf(DEBUG, "UsbVideoStream::usb_set_interface");
+  fdf::debug("UsbVideoStream::usb_set_interface");
   zx_status_t status = usb_set_interface(&usb_, iface_num_, alt_setting_);
   if (status != ZX_OK) {
     return status;
@@ -250,11 +252,11 @@ zx_status_t UsbState::StopStreaming() {
     fbl::AutoLock lock(&lock_);
     if (streaming_state_ != StreamingState::STREAMING) {
       if (streaming_state_ == StreamingState::STOPPING) {
-        zxlogf(ERROR, "Detected temporary STOPPING state while calling StopStreaming.");
+        fdf::error("Detected temporary STOPPING state while calling StopStreaming.");
       } else {
         // streaming_state_ == STOPPED or READY
-        zxlogf(ERROR, "Called StopStreaming, but stream was in state:%s.",
-               State2String(streaming_state_).c_str());
+        fdf::error("Called StopStreaming, but stream was in state:{}.",
+                   State2String(streaming_state_));
       }
       return ZX_ERR_BAD_STATE;
     }
@@ -271,12 +273,12 @@ zx_status_t UsbState::StopStreaming() {
                 "StopStreaming()");
   zx_status_t status = ZX_OK;
   if (free_requests_.size() != allocated_requests_.size()) {
-    zxlogf(ERROR, "Canceling the stream did not drain all the remaining requests.");
+    fdf::error("Canceling the stream did not drain all the remaining requests.");
     // Not much to do at this point.  Perhaps reset the usb in a more drastic manner?
     // At the very least, return an error to indicate something went wrong.
     status = ZX_ERR_INTERNAL;
   } else {
-    zxlogf(DEBUG, "setting video buffer as stopped");
+    fdf::debug("setting video buffer as stopped");
   }
 
   streaming_state_ = StreamingState::READY;
@@ -288,7 +290,7 @@ UsbState::~UsbState() {}
 
 zx_status_t UsbState::Allocate(uint64_t size, fdescriptor::EndpointType ep_type) {
   if (streaming_state_ != StreamingState::STOPPED && streaming_state_ != StreamingState::READY) {
-    zxlogf(ERROR, "Failed to allocate usb requests because state != STOPPED or READY");
+    fdf::error("Failed to allocate usb requests because state != STOPPED or READY");
     return ZX_ERR_BAD_STATE;
   }
   if (size == 0) {
@@ -296,7 +298,7 @@ zx_status_t UsbState::Allocate(uint64_t size, fdescriptor::EndpointType ep_type)
   }
   send_req_size_ = size;
   if (size <= allocated_req_size_) {
-    zxlogf(DEBUG, "reusing allocated usb requests. had %lu, needed %lu", allocated_req_size_, size);
+    fdf::debug("reusing allocated usb requests. had {}, needed {}", allocated_req_size_, size);
     // Can reuse existing usb requests.  Update the length field to the current size:
     for (UsbRequest& req : allocated_requests_) {
       req.req()->header.length = send_req_size_;
@@ -324,18 +326,18 @@ zx_status_t UsbState::Allocate(uint64_t size, fdescriptor::EndpointType ep_type)
     }
   }
 
-  zxlogf(DEBUG, "allocating %d usb requests of size %lu", MAX_OUTSTANDING_REQS, size);
+  fdf::debug("allocating {} usb requests of size {}", MAX_OUTSTANDING_REQS, size);
 
   for (uint32_t i = 0; i < MAX_OUTSTANDING_REQS; i++) {
     zx::result<UsbRequest> req_or = UsbRequest::Create(&usb_, usb_ep_addr_, size);
     if (req_or.is_error()) {
-      zxlogf(ERROR, "usb_request_alloc failed: %d", req_or.error_value());
+      fdf::error("usb_request_alloc failed: {}", req_or);
       allocated_requests_.clear();
       return req_or.error_value();
     }
     allocated_requests_.push_back(std::move(*req_or));
     free_requests_.push_back(allocated_requests_.back().req());
-    zxlogf(DEBUG, "adding allocated requests... %lu ", allocated_requests_.size());
+    fdf::debug("adding allocated requests... {} ", allocated_requests_.size());
   }
   allocated_req_size_ = size;
   return ZX_OK;
@@ -345,12 +347,12 @@ zx_status_t UsbState::SetFormat(fuchsia::camera::VideoFormat video_format) {
   fbl::AutoLock lock(&lock_);
   // We should never receive commands while in the STOPPING state.
   if (streaming_state_ == StreamingState::STOPPING) {
-    zxlogf(ERROR, "SetFormat called while while UsbState is in temporary Stopping state.");
+    fdf::error("SetFormat called while while UsbState is in temporary Stopping state.");
     return ZX_ERR_BAD_STATE;
   }
   // We do not allow changing formats while streaming.
   if (streaming_state_ == StreamingState::STREAMING) {
-    zxlogf(ERROR, "cannot set video format while streaming is not stopped");
+    fdf::error("cannot set video format while streaming is not stopped");
     return ZX_ERR_BAD_STATE;
   }
   // Convert from the client's video format proto to the device driver format
@@ -358,12 +360,12 @@ zx_status_t UsbState::SetFormat(fuchsia::camera::VideoFormat video_format) {
   auto match = std::find_if(streaming_settings_.formats.begin(), streaming_settings_.formats.end(),
                             [video_format](const UvcFormat& f) { return f == video_format; });
   if (match == streaming_settings_.formats.end()) {
-    zxlogf(ERROR, "could not find a mapping for the requested format");
+    fdf::error("could not find a mapping for the requested format");
     return ZX_ERR_NOT_FOUND;
   }
 
   // Now push the settings to the usb device:
-  zxlogf(DEBUG, "trying format %u, frame desc %u", match->format_index, match->frame_index);
+  fdf::debug("trying format {}, frame desc {}", match->format_index, match->frame_index);
   auto negotiation_result = ProbeAndCommit(&usb_, iface_num_, match->format_index,
                                            match->frame_index, match->default_frame_interval);
   if (negotiation_result.is_error()) {
@@ -386,7 +388,7 @@ zx_status_t UsbState::SetFormat(fuchsia::camera::VideoFormat video_format) {
     }
   }
   if (!best_setting) {
-    zxlogf(ERROR, "could not find a setting with bandwidth >= %u", required_bandwidth);
+    fdf::error("could not find a setting with bandwidth >= {}", required_bandwidth);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -419,10 +421,9 @@ void UsbState::RequestComplete(usb_request_t* req) {
   // Check if we are in the stopping state.  If so, do not send updates or re-queue
   // the requests.
   if (streaming_state_ == StreamingState::STOPPING) {
-    zxlogf(DEBUG, "RequestComplete: status: %s", zx_status_get_string(req->response.status));
+    fdf::debug("RequestComplete: status: {}", zx_status_get_string(req->response.status));
     free_requests_.push_back(req);
-    zxlogf(DEBUG, "Draining requests: %lu / %lu", free_requests_.size(),
-           allocated_requests_.size());
+    fdf::debug("Draining requests: {} / {}", free_requests_.size(), allocated_requests_.size());
   } else {
     // The only other legal state is to be currently streaming.
     ZX_ASSERT_MSG(streaming_state_ == StreamingState::STREAMING,
