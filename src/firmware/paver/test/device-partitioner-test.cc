@@ -1303,6 +1303,10 @@ TEST_F(IrisPartitionerTests, FindPartition) {
 
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "dtbo")));
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderB, "dtbo")));
+  EXPECT_OK(
+      partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "recovery_zbi")));
+  EXPECT_OK(
+      partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderB, "recovery_zbi")));
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconA)));
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconB)));
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaA)));
@@ -1373,6 +1377,10 @@ TEST_F(IrisPartitionerTests, SupportsPartition) {
       partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "dtbo")));
   EXPECT_TRUE(
       partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderB, "dtbo")));
+  EXPECT_TRUE(partitioner->SupportsPartition(
+      PartitionSpec(paver::Partition::kBootloaderA, "recovery_zbi")));
+  EXPECT_TRUE(partitioner->SupportsPartition(
+      PartitionSpec(paver::Partition::kBootloaderB, "recovery_zbi")));
   EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA)));
   EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconB)));
   EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaA)));

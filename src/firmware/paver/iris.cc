@@ -213,8 +213,7 @@ zx::result<std::unique_ptr<DevicePartitioner>> IrisPartitioner::Initialize(
 
 bool IrisPartitioner::SupportsPartition(const PartitionSpec& spec) const {
   if (spec.partition == Partition::kBootloaderA || spec.partition == Partition::kBootloaderB) {
-    // TODO(b/515134439): Support recover_zbi once recovery image is supported.
-    return !spec.content_type.empty() && spec.content_type != "recovery_zbi";
+    return !spec.content_type.empty();
   }
 
   constexpr PartitionSpec non_bootloader_specs[] = {
@@ -246,7 +245,13 @@ zx::result<std::unique_ptr<PartitionClient>> IrisPartitioner::FindPartition(
   switch (spec.partition) {
     case Partition::kBootloaderA:
     case Partition::kBootloaderB:
-      part_name = spec.content_type;
+      // Normally the `content_type` is the partition name, but we also use "recovery_zbi" to map
+      // to the "vendor_boot" partition.
+      if (spec.content_type == "recovery_zbi") {
+        part_name = "vendor_boot";
+      } else {
+        part_name = spec.content_type;
+      }
       part_name += spec.partition == Partition::kBootloaderA ? "_a" : "_b";
       break;
     case Partition::kZirconA:
