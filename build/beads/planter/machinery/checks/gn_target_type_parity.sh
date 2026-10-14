@@ -411,8 +411,26 @@ for pkg in sorted(candidate_dirs):
                 and new_types == {"group"}
                 and old_types <= GN_BAZEL_INPUT_TEMPLATES | {"group"}
             )
+            # Check whether a rustc_library_with_features template expanded into explicit
+            # rustc_library targets for the base target and all feature_sets variants.
+            is_feature_set_expansion = False
+            if old_types == {"rustc_library_with_features"} and new_types == {"rustc_library"}:
+                code_before = blank_comments(before)
+                pat = re.compile(r'\brustc_library_with_features\(\s*"' + re.escape(name) + r'"\s*\)\s*\{')
+                variant_names = set()
+                for fm in pat.finditer(code_before):
+                    fbody = code_before[fm.end() - 1 : call_end(code_before, fm.end() - 1)]
+                    for vm in re.finditer(r'\btarget_name\s*=\s*"([^"$]+)"', fbody):
+                        if vm.group(1):
+                            variant_names.add(vm.group(1))
+                is_feature_set_expansion = all(
+                    "rustc_library" in new.get(v, (set(), 0))[0] for v in variant_names
+                )
             if new_types != old_types and not (
-                is_test_suite_conversion or is_host_tool_conversion or is_bazel_input_transition
+                is_test_suite_conversion
+                or is_host_tool_conversion
+                or is_bazel_input_transition
+                or is_feature_set_expansion
             ):
                 findings.append(type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types))
         elif name in cc_libs:

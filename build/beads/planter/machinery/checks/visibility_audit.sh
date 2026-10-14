@@ -733,7 +733,8 @@ for rel_path in sorted(candidate_files):
             if val in preexisting_vis:
                 continue
             if val == "//visibility:public":
-                if not rel_path.startswith("build/bazel_sdk/"):
+                is_exported_test = func_name in ("fx_test", "fx_unittest_package") or func_name.startswith("wrap_host_")
+                if not rel_path.startswith("build/bazel_sdk/") and not is_exported_test:
                     if len(target_rdeps) == 0 and not has_macro_injected_rdeps:
                         rem = f"Omit 'visibility' on '{target_name}' (default private) as no external packages depend on it, and re-run fx bazel2gn."
                     elif is_globally_used or has_macro_injected_rdeps:

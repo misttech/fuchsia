@@ -897,15 +897,68 @@ if skip_build:
     sys.exit(0)
 
 FROM_TARGET = re.compile(r"\(from target (?:@@?[\w.~+-]*)?(//[^\s)]+)\)")
+NINJA_STEP_TARGET = re.compile(r"^\[[0-9]+/[0-9]+\]\s+\S+\s+(//([A-Za-z0-9_./+-]+):([^\s(]+))")
+# Extract the transitive dependency manifest path from clippy or rustc Ninja command lines.
+TRANSDEPS_ARG = re.compile(r"(?:--transdeps\s+|--rust-compilation-deps-path=|@shell:)(\S+)")
+
+
+# Check whether a native Ninja failure in `fx build` is in an unrelated GN target
+# outside the changed packages and their reverse dependencies.
+def unrelated_gn_ninja_failure(output):
+    if not bazel_dirs or any(p.endswith((".gni", ".bzl", "MODULE.bazel")) for p in changed):
+        return None
+    if re.search(r"ninja: error:|ERROR at //", output):
+        return None
+    for m in LOCATION.finditer(output):
+        loc_path = m.group(1).replace("../../", "", 1)
+        if any(loc_path == d or loc_path.startswith(d + "/") for d in dirs):
+            return None
+    rdep_pkgs = {os.path.dirname(f) for f in rdep_build_files()}
+    build_dir = (read(".fx-build-dir") or "").strip()
+    lines = output.splitlines()
+    failed_targets = []
+    for i, l in enumerate(lines):
+        if not l.startswith("FAILED:"):
+            continue
+        if i == 0:
+            return None
+        sm = NINJA_STEP_TARGET.match(lines[i - 1].strip())
+        if not sm:
+            return None
+        full_lbl, pkg = sm.group(1), sm.group(2).strip("/")
+        if any(pkg == d or pkg.startswith(d + "/") or d.startswith(pkg + "/") for d in dirs):
+            return None
+        if pkg in rdep_pkgs or git_lines(["diff", "--name-only", change_base, "--", pkg]):
+            return None
+        cmd_line = lines[i + 1] if i + 1 < len(lines) else ""
+        tm = TRANSDEPS_ARG.search(cmd_line)
+        if tm and build_dir:
+            t_content = read(os.path.join(build_dir, tm.group(1)))
+            if t_content is None or any(f"/{d}/" in t_content for d in dirs):
+                return None
+        else:
+            return None
+        if full_lbl not in failed_targets:
+            failed_targets.append(full_lbl)
+    if not failed_targets:
+        return None
+    return (
+        f"the failing GN targets ({' '.join(failed_targets)}) are outside the changed packages "
+        "and have no dependency path to any changed package, so the failure predates the change "
+        "(pre-existing upstream build failure). Do not edit them; the changed packages and their "
+        "GN dependents are still verified by the remaining steps."
+    )
 
 
 def unrelated_bazel_failure(output):
     """Returns a note when `fx build` failed only in Bazel actions of targets that live in another git
     repository than the change and have no Bazel dependency path to any changed package (typically a
-    checkout whose repositories are out of sync), else None. Any native Ninja failure, unparsable
-    output, change to shared .bzl/MODULE.bazel files, or query error keeps the failure an ERROR."""
+    checkout whose repositories are out of sync), or in native GN/Ninja actions whose transitive deps
+    do not include any changed package, else None."""
     targets = sorted(set(FROM_TARGET.findall(output)))
-    if not targets or not bazel_dirs:
+    if not targets:
+        return unrelated_gn_ninja_failure(output)
+    if not bazel_dirs:
         return None
     if any(p.endswith((".bzl", "MODULE.bazel")) for p in changed):
         return None

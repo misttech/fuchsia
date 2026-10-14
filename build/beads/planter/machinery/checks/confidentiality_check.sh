@@ -160,8 +160,10 @@ for rel in sorted(changed):
     if added_lines:
         scan_text(rel, "\n".join(added_lines))
 
+head_rev = git_output(["rev-parse", "--verify", "HEAD"])
+base_rev = git_output(["rev-parse", "--verify", change_base])
 commit_msg = git_output(["log", "-1", "--format=%B", "HEAD"]).rstrip("\n")
-if commit_msg and change_base != "HEAD":
+if commit_msg and head_rev and base_rev and head_rev != base_rev:
     scan_text("COMMIT_MSG", commit_msg)
     msg_lines = commit_msg.splitlines()
     if msg_lines:
