@@ -70,7 +70,7 @@ _generate_dml_cc_sources = rule(
     implementation = _generate_dml_cc_sources_impl,
     attrs = _DML_ATTRS | {
         "_dmlc": attr.label(
-            default = "@gn_targets//toolchain_host_x64/src/devices/tools/dmlc:dmlc",
+            default = "//src/devices/tools/dmlc:dmlc",
             executable = True,
             cfg = "exec",
         ),
