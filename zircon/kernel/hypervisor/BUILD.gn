@@ -6,19 +6,20 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 source_set("hypervisor") {
   public_deps = [ ":headers" ]
 
   sources = [
     "aspace.cc",
-    "cpu.cc",
     "guest_ffi.cc",
     "ktrace.cc",
     "trap_map.cc",
     "vcpu_ffi.cc",
   ]
   deps = [
+    ":hypervisor-rs",
     "//zircon/kernel/arch/$zircon_cpu/hypervisor",
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/ktl",
@@ -26,6 +27,15 @@ source_set("hypervisor") {
     "//zircon/kernel/lib/page",
     "//zircon/system/ulib/bitmap",
   ]
+}
+
+kernel_rust_mod("hypervisor-rs") {
+  sources = [
+    "cpu.rs",
+    "cpu_ffi.rs",
+    "mod.rs",
+  ]
+  deps = [ "//sdk/rust/zx-status" ]
 }
 
 library_headers("headers") {

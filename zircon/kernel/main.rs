@@ -37,6 +37,9 @@ pub mod pdev_watchdog;
 #[path = "dev/pdev/power/power.rs"]
 pub mod pdev_power;
 
+#[path = "hypervisor/mod.rs"]
+pub mod hypervisor;
+
 #[path = "kernel/mod.rs"]
 pub mod kernel;
 
