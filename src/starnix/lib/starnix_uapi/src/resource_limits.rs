@@ -4,9 +4,9 @@
 
 use crate::errors::{Errno, error};
 use crate::{
-    RLIM_INFINITY, RLIMIT_AS, RLIMIT_CORE, RLIMIT_CPU, RLIMIT_DATA, RLIMIT_FSIZE, RLIMIT_LOCKS,
-    RLIMIT_MEMLOCK, RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_NOFILE, RLIMIT_NPROC, RLIMIT_RSS,
-    RLIMIT_RTPRIO, RLIMIT_RTTIME, RLIMIT_SIGPENDING, RLIMIT_STACK, rlimit, uapi,
+    FUTEX_TID_MASK, RLIM_INFINITY, RLIMIT_AS, RLIMIT_CORE, RLIMIT_CPU, RLIMIT_DATA, RLIMIT_FSIZE,
+    RLIMIT_LOCKS, RLIMIT_MEMLOCK, RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_NOFILE, RLIMIT_NPROC,
+    RLIMIT_RSS, RLIMIT_RTPRIO, RLIMIT_RTTIME, RLIMIT_SIGPENDING, RLIMIT_STACK, rlimit, uapi,
 };
 use std::collections::HashMap;
 
@@ -144,28 +144,38 @@ pub struct ResourceLimits {
 const INFINITE_LIMIT: rlimit =
     rlimit { rlim_cur: RLIM_INFINITY as u64, rlim_max: RLIM_INFINITY as u64 };
 
-// Most default limit values are the same that are used in GVisor, see
-// https://github.com/google/gvisor/blob/master/pkg/abi/linux/limits.go .
+/// Default hard limit for [`RLIMIT_NOFILE`] (rather than [`uapi::INR_OPEN_MAX`]).
+const DEFAULT_NOFILE_MAX: u64 = 524288;
 
-const NPROC_LIMIT: u64 = 0x1FFFFFFF;
+/// Calculates system default for `/proc/sys/kernel/threads-max` from total RAM in bytes.
+///
+/// Per `proc_sys_kernel(5)`, `/proc/sys/kernel/threads-max`:
+///   "This file specifies the system-wide limit on the number of threads (tasks)
+///   that can be created on the system."
+///   ...
+///   "If the thread structures would occupy too much (more than 1/8th) of the
+///   available RAM pages, threads-max is reduced accordingly."
+///
+/// Align with Linux, which budgets 16 KiB per thread stack regardless of the
+/// system page size, limiting total thread stacks to 1/8th of available RAM and
+/// clamping `threads-max` to `[20, `[`FUTEX_TID_MASK`]`]`.
+pub fn default_threads_max(total_ram_bytes: u64) -> u64 {
+    const MIN_THREADS: u64 = 20;
+    const THREAD_STACK_SIZE: u64 = 16384;
+    (total_ram_bytes / (8 * THREAD_STACK_SIZE)).clamp(MIN_THREADS, FUTEX_TID_MASK as u64)
+}
 
-// GVisor sets defaults for `SIGPENDING` to 0, but that's incorrect since it would block all
-// real-time signals. Set it to `max_threads / 2` (same as `NPROC_LIMIT`).
-const SIGPENDING_LIMIT: u64 = 0x1FFFFFFF;
-
-const DEFAULT_LIMITS: [(Resource, rlimit); 9] = [
+const DEFAULT_LIMITS: [(Resource, rlimit); 7] = [
     (Resource::STACK, rlimit { rlim_cur: uapi::_STK_LIM as u64, rlim_max: RLIM_INFINITY as u64 }),
-    (Resource::CORE, rlimit { rlim_cur: 0, rlim_max: uapi::RLIM_INFINITY as u64 }),
-    (Resource::NPROC, rlimit { rlim_cur: NPROC_LIMIT, rlim_max: NPROC_LIMIT }),
+    (Resource::CORE, rlimit { rlim_cur: 0, rlim_max: RLIM_INFINITY as u64 }),
     (
         Resource::NOFILE,
-        rlimit { rlim_cur: uapi::INR_OPEN_CUR as u64, rlim_max: uapi::INR_OPEN_MAX as u64 },
+        rlimit { rlim_cur: uapi::INR_OPEN_CUR as u64, rlim_max: DEFAULT_NOFILE_MAX },
     ),
     (
         Resource::MEMLOCK,
         rlimit { rlim_cur: uapi::MLOCK_LIMIT as u64, rlim_max: uapi::MLOCK_LIMIT as u64 },
     ),
-    (Resource::SIGPENDING, rlimit { rlim_cur: SIGPENDING_LIMIT, rlim_max: SIGPENDING_LIMIT }),
     (
         Resource::MSGQUEUE,
         rlimit { rlim_cur: uapi::MQ_BYTES_MAX as u64, rlim_max: uapi::MQ_BYTES_MAX as u64 },
@@ -174,19 +184,22 @@ const DEFAULT_LIMITS: [(Resource, rlimit); 9] = [
     (Resource::RTPRIO, rlimit { rlim_cur: 0, rlim_max: 0 }),
 ];
 
-impl Default for ResourceLimits {
-    fn default() -> Self {
-        let mut limits = Self { values: Default::default() };
-        for (resource, value) in DEFAULT_LIMITS.iter() {
-            limits.set(*resource, *value);
-        }
-        limits
-    }
-}
-
 // NB: ResourceLimits objects are accessed using a lock.  To avoid the risk of
 // deadlock, we try to avoid lock acquisition in ResourceLimits.
 impl ResourceLimits {
+    /// Initializes default resource limits, scaling [`RLIMIT_NPROC`] and [`RLIMIT_SIGPENDING`]
+    /// to half of [`default_threads_max`] for `total_ram_bytes`.
+    pub fn from_total_ram(total_ram_bytes: u64) -> Self {
+        let mut limits = Self { values: Default::default() };
+        for (resource, value) in DEFAULT_LIMITS {
+            limits.set(resource, value);
+        }
+        let scaled_limit = default_threads_max(total_ram_bytes) / 2;
+        limits.set(Resource::NPROC, rlimit { rlim_cur: scaled_limit, rlim_max: scaled_limit });
+        limits.set(Resource::SIGPENDING, rlimit { rlim_cur: scaled_limit, rlim_max: scaled_limit });
+        limits
+    }
+
     pub fn get(&self, resource: Resource) -> rlimit {
         *self.values.get(&resource).unwrap_or(&INFINITE_LIMIT)
     }
@@ -209,5 +222,41 @@ mod tests {
         assert!("".parse::<Resource>().is_err());
         assert!("RLIMIT_NOFILE".parse::<Resource>().is_err());
         assert!("UNKNOWN".parse::<Resource>().is_err());
+    }
+
+    #[::fuchsia::test]
+    fn test_threads_max_and_scaled_limits() {
+        // 4 GiB RAM / (8 * 16 KiB per thread) = 32,768 threads-max.
+        // nproc / sigpending = 32,768 / 2 = 16,384.
+        let ram_4gb = 4 * 1024 * 1024 * 1024;
+        assert_eq!(default_threads_max(ram_4gb), 32768);
+
+        let limits = ResourceLimits::from_total_ram(ram_4gb);
+        let nproc = limits.get(Resource::NPROC);
+        assert_eq!(nproc.rlim_cur, 16384);
+        assert_eq!(nproc.rlim_max, 16384);
+
+        let sigpending = limits.get(Resource::SIGPENDING);
+        assert_eq!(sigpending.rlim_cur, 16384);
+        assert_eq!(sigpending.rlim_max, 16384);
+
+        let nofile = limits.get(Resource::NOFILE);
+        assert_eq!(nofile.rlim_cur, 1024);
+        assert_eq!(nofile.rlim_max, 524288);
+
+        let memlock = limits.get(Resource::MEMLOCK);
+        assert_eq!(memlock.rlim_cur, 8 * 1024 * 1024);
+        assert_eq!(memlock.rlim_max, 8 * 1024 * 1024);
+
+        let stack = limits.get(Resource::STACK);
+        assert_eq!(stack.rlim_cur, 8 * 1024 * 1024);
+        assert_eq!(stack.rlim_max, RLIM_INFINITY as u64);
+    }
+
+    #[::fuchsia::test]
+    fn test_threads_max_clamping() {
+        assert_eq!(default_threads_max(0), 20);
+        assert_eq!(default_threads_max(1024), 20);
+        assert_eq!(default_threads_max(u64::MAX), FUTEX_TID_MASK as u64);
     }
 }

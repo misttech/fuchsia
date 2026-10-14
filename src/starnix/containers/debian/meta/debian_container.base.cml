@@ -21,7 +21,6 @@
 
             // keep-sorted end
         ],
-        rlimits: [ "RLIMIT_NOFILE=131072" ],
         name: "debian",
         startup_file_path: "",
         kernel_cmdline: "test",

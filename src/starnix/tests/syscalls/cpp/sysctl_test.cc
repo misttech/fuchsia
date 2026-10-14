@@ -530,6 +530,7 @@ const SysctlNodeParam kSysctlNodePaths[] = {
     {"kernel/seccomp/actions_logged"},
     {"kernel/sysrq"},
     {"kernel/tainted"},
+    {"kernel/threads-max"},
     {"kernel/unprivileged_bpf_disabled"},
     {"kernel/yama/ptrace_scope"},
     {"lsm/image_init"},

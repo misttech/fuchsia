@@ -586,11 +586,13 @@ impl ThreadGroup {
                 drop_notifier: Default::default(),
                 // A child process created via fork(2) inherits its parent's
                 // resource limits.  Resource limits are preserved across execve(2).
+                // Root tasks without a parent (such as `init` and `kthreadd`) start
+                // with the system default resource limits, with `RLIMIT_NPROC` and
+                // `RLIMIT_SIGPENDING` scaled from the system's total physical memory.
                 limits: LockDepMutex::new(
-                    parent
-                        .as_ref()
-                        .map(|p| p.base.limits.lock().clone())
-                        .unwrap_or(Default::default()),
+                    parent.as_ref().map(|p| p.base.limits.lock().clone()).unwrap_or_else(|| {
+                        ResourceLimits::from_total_ram(zx::system_get_physmem())
+                    }),
                 ),
                 next_seccomp_filter_id: Default::default(),
                 ptracees: Default::default(),

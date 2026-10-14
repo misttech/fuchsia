@@ -446,6 +446,12 @@ template("gvisor_test_package") {
       if (defined(invoker.program_extra)) {
         forward_variables_from(invoker.program_extra, "*")
       }
+
+      # gVisor tests assume that the test harness increases RLIMIT_NOFILE to a
+      # large value before running them, so configure the component to match.
+      if (!defined(rlimits)) {
+        rlimits = [ "RLIMIT_NOFILE=131072" ]
+      }
     }
 
     if (defined(invoker.run_as_root) && invoker.run_as_root) {

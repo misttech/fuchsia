@@ -181,6 +181,8 @@
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_overflowgid",
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_overflowuid",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_overflowuid",
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_threads_max",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_threads_max",
 
                 // modules_disabled is a StubBytesFile instead of a strict security toggle and therefore
                 // quietly succeeds on writes instead of issuing EINVAL.
@@ -191,10 +193,8 @@
                 // DirEntryHandle in InotifyState::watches.
                 "InotifyTest.UnlinkWatchedHardLinkFirstEmitsDeleteSelfOnLastUnlink",
 
-                // TODO(https://fxbug.dev/397371605): Align RLIMIT_* defaults with Linux.
-                "KernelDefaults/RLimitDefaultTest.CurAndMaxDefaults/NOFILE",
+                // TODO(https://fxbug.dev/322874791): Integrate RLIMIT_STACK with ResourceLimits.
                 "KernelDefaults/RLimitDefaultTest.CurAndMaxDefaults/STACK",
-                "RLimitScaledDefaultTest.NProcAndSigpending",
             ],
         },
     ],

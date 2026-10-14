@@ -17,6 +17,7 @@ use starnix_logging::{bug_ref, track_stub};
 use starnix_uapi::auth::{CAP_LAST_CAP, CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Capabilities};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
+use starnix_uapi::resource_limits::default_threads_max;
 use starnix_uapi::version::{KERNEL_RELEASE, KERNEL_VERSION};
 use starnix_uapi::{errno, error, uapi};
 use std::borrow::Cow;
@@ -202,6 +203,13 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         dir.entry("overflowgid", BytesFile::new_node(b"65534".to_vec()), mode);
         dir.entry("printk", BytesFile::new_node(b"4\t4\t1\t7\n".to_vec()), mode);
         dir.entry("pid_max", BytesFile::new_node(b"4194304".to_vec()), mode);
+        dir.entry(
+            "threads-max",
+            BytesFile::new_node(
+                format!("{}\n", default_threads_max(zx::system_get_physmem())).into_bytes(),
+            ),
+            mode,
+        );
         dir.subdir("random", 0o555, |dir| {
             // Generate random UUID
             let boot_id = Uuid::new_v4().hyphenated().to_string();
