@@ -196,6 +196,11 @@ impl NodeInner {
         self.inode_offset
     }
 
+    /// Returns the data layout of this node.
+    pub fn data_layout(&self) -> InodeDataLayout {
+        self.format.data_layout
+    }
+
     /// Interpret the u field as a block address. This is only a valid interpretation on FlatPlain,
     /// or on FlatInline if the size is larger than a block.
     fn blkaddr(&self, block_size: u64) -> Option<u64> {
