@@ -178,8 +178,8 @@ type SynchronousResponder<T> = Box<dyn FnOnce(Result<T, Errno>) -> Result<(), fi
 #[derive(Derivative)]
 #[derivative(Debug)]
 enum TaskRequest {
-    /// Set the associated vmo for the binder connection. See the SetVmo method in the Binder FIDL
-    /// protocol.
+    /// Set the associated vmo for the binder connection. See the SetVmo and MapVmo methods in the
+    /// Binder FIDL protocol.
     SetVmo {
         #[derivative(Debug = "ignore")]
         remote_binder_connection: Arc<RemoteBinderConnection>,
@@ -563,6 +563,27 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                             control_handle.shutdown();
                         }
                         Ok(())
+                    });
+                self.enqueue_taskless_request(
+                    Some(&remote_binder_connection),
+                    TaskRequest::SetVmo {
+                        remote_binder_connection: remote_binder_connection.clone(),
+                        vmo,
+                        mapped_address,
+                        responder,
+                    },
+                );
+                waiter.await;
+            }
+            fbinder::BinderRequest::MapVmo { vmo, mapped_address, responder } => {
+                // Respond once the VMO is mapped, so that the client can wait for it before
+                // sending ioctls, which the driver handles concurrently with this request.
+                let (responder, waiter) =
+                    Self::make_synchronous_responder(responder, |responder, result| {
+                        responder.send(result.map_err(|e| {
+                            fposix::Errno::from_primitive(e.code.error_code() as i32)
+                                .unwrap_or(fposix::Errno::Einval)
+                        }))
                     });
                 self.enqueue_taskless_request(
                     Some(&remote_binder_connection),
@@ -1379,6 +1400,34 @@ mod tests {
             // SAFETY: This is safe, because version is repr(C)
             let version = unsafe { std::ptr::read_volatile(version_ref) };
             assert_eq!(version.protocol_version, uapi::BINDER_CURRENT_PROTOCOL_VERSION as i32);
+            binder
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn map_vmo_responds_once_mapped() {
+        run_remote_binder_test(|binder| async move {
+            const VMO_SIZE: usize = 10 * 1024 * 1024;
+            let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("Vmo::create");
+            let addr = fuchsia_runtime::vmar_root_self()
+                .map(0, &vmo, 0, VMO_SIZE, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
+                .expect("map");
+            scopeguard::defer! {
+              // SAFETY: No Rust reference points into the mapping. The test only gives its address
+              // to the binder driver, which accesses the memory through the VMO.
+              unsafe { fuchsia_runtime::vmar_root_self().unmap(addr, VMO_SIZE).expect("unmap"); }
+            }
+
+            let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle");
+            binder.map_vmo(dup, addr as u64).await.expect("map_vmo").expect("map_vmo");
+
+            // The VMO is mapped once `map_vmo` responds, so the driver rejects another one, and
+            // returns the error to the client.
+            assert_eq!(
+                binder.map_vmo(vmo, addr as u64).await.expect("map_vmo"),
+                Err(fposix::Errno::Einval)
+            );
             binder
         })
         .await;

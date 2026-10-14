@@ -278,10 +278,25 @@ open protocol Binder {
     /// Set the VMO to used as a share resource between the driver and the
     /// client. `mapped_address` is the address where the vmo is mapped in the
     /// client address space.
+    ///
+    /// The driver handles the other requests of the client concurrently, so it
+    /// can handle an ioctl before the VMO is mapped. Clients should use
+    /// `MapVmo` instead.
     flexible SetVmo(resource struct {
         vmo zx.Handle:VMO;
         mapped_address uint64;
     });
+    /// Maps the VMO used as a shared resource between the driver and the
+    /// client. `mapped_address` is the address where the VMO is mapped in the
+    /// client address space.
+    ///
+    /// Responds once the VMO is mapped. The driver handles the other requests
+    /// of the client concurrently, so the client must wait for the response
+    /// before sending any ioctl that needs the VMO.
+    flexible MapVmo(resource struct {
+        vmo zx.Handle:VMO;
+        mapped_address uint64;
+    }) -> () error fuchsia.posix.Errno;
     /// Processes a Binder ioctl. This message returns writes for the calling thread
     /// that must be processed to correctly handle the ioctl.
     flexible Ioctl(resource struct {
