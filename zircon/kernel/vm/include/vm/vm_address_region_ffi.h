@@ -16,9 +16,9 @@
 __BEGIN_CDECLS
 
 void cpp_vm_address_region_free(VmAddressRegion* vmar);
+void* cpp_vm_address_region_state(VmAddressRegion* vmar);
 void* cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping* region_or_mapping);
 zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar);
-const char* cpp_vm_address_region_name(VmAddressRegion* vmar);
 bool cpp_vm_address_region_has_parent(VmAddressRegion* vmar);
 zx_status_t cpp_vm_address_region_set_memory_priority(VmAddressRegion* vmar,
                                                       VmAddressRegion::MemoryPriority priority);

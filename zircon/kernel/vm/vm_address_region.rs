@@ -13,7 +13,7 @@ use super::vm_object::{VmObject, VmObjectLockClass};
 use crate::kernel::types::VAddr;
 use crate::user_copy::UserInOutPtr;
 use core::cell::UnsafeCell;
-use core::ffi::CStr;
+use core::ffi::{CStr, c_char};
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ptr::NonNull;
@@ -408,6 +408,24 @@ pub struct VmAddressRegion {
     raw: Opaque<bindings::VmAddressRegion>,
 }
 
+#[repr(C)]
+pub struct VmAddressRegionState {
+    canary: Canary<{ fbl::magic(b"VMAR") }>,
+    name: [u8; ZX_MAX_NAME_LEN],
+}
+
+::zr::static_assert_size_and_align!(
+    VmAddressRegionState,
+    constants::kVmAddressRegionStateSize,
+    constants::kVmAddressRegionStateAlign,
+);
+
+impl VmAddressRegionState {
+    fn new(name: &CStr) -> Self {
+        Self { canary: Canary::new(), name: name_to_c_buf(name.to_bytes()) }
+    }
+}
+
 impl HasRefCount for VmAddressRegion {
     #[inline]
     fn ref_count(&self) -> &RefCounted {
@@ -442,6 +460,11 @@ unsafe impl Sync for VmAddressRegion {}
 impl VmAddressRegion {
     fn as_ffi_ptr(&self) -> *mut bindings::VmAddressRegion {
         self.raw.get()
+    }
+
+    fn state(&self) -> &VmAddressRegionState {
+        // SAFETY: `self` points to a live `VmAddressRegion`, whose state is initialized.
+        unsafe { &*bindings::cpp_vm_address_region_state(self.as_ffi_ptr()).cast() }
     }
 
     /// Creates a subregion of this region.
@@ -521,8 +544,7 @@ impl VmAddressRegion {
 
     /// Returns the name of this region.
     pub fn name(&self) -> &CStr {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
-        unsafe { CStr::from_ptr(bindings::cpp_vm_address_region_name(self.as_ffi_ptr())) }
+        CStr::from_bytes_until_nul(&self.state().name).expect("name is null-terminated")
     }
 
     /// Returns true if this region has a parent region.
@@ -798,4 +820,38 @@ pub unsafe extern "C" fn rust_vm_address_region_or_mapping_set_parent_locked(
     // SAFETY: The aspace lock is held by the caller.
     let mut token = unsafe { LockToken::new() };
     this.set_parent_locked(&mut token, parent);
+}
+
+/// # Safety
+///
+/// `name` points to a null-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_state_init(
+    storage: &mut MaybeUninit<VmAddressRegionState>,
+    name: *const c_char,
+) {
+    // SAFETY: `name` points to a null-terminated string.
+    let name = unsafe { CStr::from_ptr(name) };
+    storage.write(VmAddressRegionState::new(name));
+}
+
+/// # Safety
+///
+/// `storage` is initialized and is not used afterwards.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_destruct(
+    storage: &mut MaybeUninit<VmAddressRegionState>,
+) {
+    // SAFETY: `storage` is initialized and valid for drop.
+    unsafe { storage.assume_init_drop() }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_address_region_name(this: &VmAddressRegion) -> *const c_char {
+    this.state().name.as_ptr().cast()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_address_region_assert_canary(this: &VmAddressRegion) {
+    this.state().canary.assert();
 }

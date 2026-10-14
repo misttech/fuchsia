@@ -52,15 +52,15 @@ VmAddressRegion::VmAddressRegion(VmAspace& aspace, vaddr_t base, size_t size, ui
   // We add in CAN_RWX_FLAGS above, since an address space can't usefully
   // contain a process without all of these.
 
-  strlcpy(const_cast<char*>(name_), "root", sizeof(name_));
-  LTRACEF("%p '%s'\n", this, name_);
+  rust_vm_address_region_state_init(&opaque_storage_, "root");
+  LTRACEF("%p '%s'\n", this, name());
 }
 
 VmAddressRegion::VmAddressRegion(VmAddressRegion& parent, vaddr_t base, size_t size,
                                  uint32_t vmar_flags, const char* name)
     : VmAddressRegionOrMapping(base, size, vmar_flags, parent.aspace().get(), &parent, false) {
-  strlcpy(const_cast<char*>(name_), name, sizeof(name_));
-  LTRACEF("%p '%s'\n", this, name_);
+  rust_vm_address_region_state_init(&opaque_storage_, name);
+  LTRACEF("%p '%s'\n", this, this->name());
 }
 
 VmAddressRegion::VmAddressRegion(VmAspace& kernel_aspace)
@@ -69,6 +69,8 @@ VmAddressRegion::VmAddressRegion(VmAspace& kernel_aspace)
   // Activate the kernel root aspace immediately
   set_state_locked(LifeCycleState::ALIVE);
 }
+
+VmAddressRegion::~VmAddressRegion() { rust_vm_address_region_destruct(&opaque_storage_); }
 
 zx_status_t VmAddressRegion::CreateRootLocked(VmAspace& aspace, uint32_t vmar_flags,
                                               fbl::RefPtr<VmAddressRegion>* out) {
@@ -372,7 +374,7 @@ zx::result<VmAddressRegion::MapResult> VmAddressRegion::CreateVmMapping(
 zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
     vaddr_t base, size_t size, uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
     arch_mmu_flags_t arch_mmu_flags, fbl::RefPtr<VmAddressRegionOrMapping>* out) {
-  canary_.Assert();
+  AssertCanary();
   DEBUG_ASSERT(vmo);
 
   fbl::AllocChecker ac;
@@ -409,8 +411,8 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
 }
 
 zx_status_t VmAddressRegion::DestroyLockedImpl() {
-  canary_.Assert();
-  LTRACEF("%p '%s'\n", this, name_);
+  AssertCanary();
+  LTRACEF("%p '%s'\n", this, name());
 
   // Remove any applied memory priority.
   zx_status_t status = SetMemoryPriorityLocked(MemoryPriority::DEFAULT);
@@ -480,7 +482,7 @@ fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegionLocked(vaddr_t 
 }
 
 VmObject::AttributionCounts VmAddressRegion::GetAttributedMemory() const {
-  canary_.Assert();
+  AssertCanary();
 
   Guard<CriticalMutex> guard{aspace()->lock()};
   if (!IsAliveLocked()) {
@@ -509,7 +511,7 @@ VmObject::AttributionCounts VmAddressRegion::GetAttributedMemory() const {
 }
 
 VmMapping* VmAddressRegion::FindMappingLocked(vaddr_t va) {
-  canary_.Assert();
+  AssertCanary();
 
   const VmAddressRegion* vmar = this;
   AssertHeld(vmar->lock_ref());
@@ -592,7 +594,7 @@ ktl::optional<vaddr_t> VmAddressRegion::CheckGapLockedRegion(const VmAddressRegi
 }
 
 zx_status_t VmAddressRegion::EnumerateChildren(VmEnumerator* ve) {
-  canary_.Assert();
+  AssertCanary();
   DEBUG_ASSERT(ve != nullptr);
   Guard<CriticalMutex> guard{lock()};
   if (state_locked() != LifeCycleState::ALIVE) {
@@ -637,13 +639,13 @@ bool VmAddressRegion::has_parent() const {
 }
 
 void VmAddressRegion::DumpLockedImpl(uint depth, bool verbose) const {
-  canary_.Assert();
+  AssertCanary();
   for (uint i = 0; i < depth; ++i) {
     printf("  ");
   }
   printf("vmar %p [%#" PRIxPTR " %#" PRIxPTR "] sz %#zx ref %d state %d '%s' subregions %zu\n",
-         this, base(), base() + (size() - 1), size(), ref_count_debug(), (int)state_locked(), name_,
-         subregions_.size_slow());
+         this, base(), base() + (size() - 1), size(), ref_count_debug(), (int)state_locked(),
+         name(), subregions_.size_slow());
   for (const auto& child : subregions_) {
     AssertHeld(child.second->lock_ref());
     AssertHeld(child.second->region_lock_ref());
@@ -680,7 +682,7 @@ zx_status_t VmAddressRegion::ActivateImpl() {
 zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
                                      VmAddressRegionOpChildren op_children,
                                      user_inout_ptr<void> buffer, size_t buffer_size) {
-  canary_.Assert();
+  AssertCanary();
   if (buffer || buffer_size) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -860,7 +862,7 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
 
 zx_status_t VmAddressRegion::Unmap(vaddr_t base, size_t size,
                                    VmAddressRegionOpChildren op_children) {
-  canary_.Assert();
+  AssertCanary();
 
   size = RoundUpPageSize(size);
   if (size == 0 || !IsPageRounded(base)) {
@@ -959,7 +961,7 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
 
 zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, arch_mmu_flags_t new_arch_mmu_flags,
                                      VmAddressRegionOpChildren op_children) {
-  canary_.Assert();
+  AssertCanary();
 
   size = RoundUpPageSize(size);
   if (size == 0 || !IsPageRounded(base)) {
@@ -1087,7 +1089,7 @@ zx_status_t VmAddressRegion::AllocSpotLockedRegion(size_t size, uint8_t align_po
                                                    vaddr_t upper_limit) {
   LTRACEF("size=%zu align_pow2=%u arch_mmu_flags=%x upper_limit=%zx\n", size, align_pow2,
           arch_mmu_flags, upper_limit);
-  canary_.Assert();
+  AssertCanary();
   DEBUG_ASSERT(size > 0 && IsPageRounded(size));
   DEBUG_ASSERT(spot);
 
@@ -1144,7 +1146,7 @@ using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
 
 zx_status_t VmAddressRegion::ReserveSpace(const char* name, vaddr_t base, size_t size,
                                           arch_mmu_flags_t arch_mmu_flags) {
-  canary_.Assert();
+  AssertCanary();
   if (!is_in_range(base, size)) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -1206,7 +1208,7 @@ zx_status_t VmAddressRegion::ReserveSpace(const char* name, vaddr_t base, size_t
 }
 
 zx_status_t VmAddressRegion::SetMemoryPriority(MemoryPriority priority) {
-  canary_.Assert();
+  AssertCanary();
   bool have_children = false;
   {
     Guard<CriticalMutex> guard{lock()};
@@ -1260,7 +1262,7 @@ zx_status_t VmAddressRegion::SetMemoryPriorityLocked(MemoryPriority priority) {
 }
 
 void VmAddressRegion::CommitHighMemoryPriorityImpl() {
-  canary_.Assert();
+  AssertCanary();
 
   Guard<CriticalMutex> guard{lock()};
   // Capture the validation that we need to do whenever the lock is acquired.

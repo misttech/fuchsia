@@ -88,6 +88,7 @@ class VmAddressRegionEnumerator;
 
 extern "C" {
 void* cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping* region_or_mapping);
+void* cpp_vm_address_region_state(VmAddressRegion* vmar);
 }
 
 class MultiPageRequest;
@@ -731,6 +732,10 @@ class RegionList final {
   ChildList regions_;
 };
 
+extern "C" {
+void cpp_vm_address_region_free(VmAddressRegion* vmar);
+}
+
 // A representation of a contiguous range of virtual address space
 class VmAddressRegion final : public VmAddressRegionOrMapping {
  public:
@@ -797,7 +802,7 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   zx_status_t ReserveSpace(const char* name, size_t base, size_t size,
                            arch_mmu_flags_t arch_mmu_flags);
 
-  const char* name() const { return name_; }
+  const char* name() const;
   bool has_parent() const;
 
   // Recursively traverses the regions for a given virtual address and returns a raw pointer to a
@@ -842,10 +847,16 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   template <VmAddressRegionEnumeratorType, typename>
   friend class VmAddressRegionEnumerator;
 
+  ~VmAddressRegion();
+  friend fbl::RefPtr<VmAddressRegion>;
+  friend void ::cpp_vm_address_region_free(VmAddressRegion*);
+  friend void* ::cpp_vm_address_region_state(VmAddressRegion*);
+
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmAddressRegion);
 
-  fbl::Canary<fbl::magic("VMAR")> canary_;
+  void AssertCanary() const;
+  OpaqueStorage<kVmAddressRegionStateSize, kVmAddressRegionStateAlign> opaque_storage_;
 
   void DumpLockedImpl(uint depth, bool verbose) const TA_REQ(region_lock()) TA_REQ(lock());
   void CommitHighMemoryPriorityImpl() TA_EXCL(lock());
@@ -905,9 +916,17 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   }
 
   RegionList<VmAddressRegionOrMapping> subregions_ TA_GUARDED(lock()) TA_GUARDED(region_lock());
-
-  const char name_[ZX_MAX_NAME_LEN] = {};
 };
+
+extern "C" {
+void rust_vm_address_region_state_init(void* storage, const char* name);
+void rust_vm_address_region_destruct(void* storage);
+const char* rust_vm_address_region_name(const VmAddressRegion* vmar);
+void rust_vm_address_region_assert_canary(const VmAddressRegion* vmar);
+}
+
+inline const char* VmAddressRegion::name() const { return rust_vm_address_region_name(this); }
+inline void VmAddressRegion::AssertCanary() const { rust_vm_address_region_assert_canary(this); }
 
 extern "C" {
 void cpp_vm_mapping_free(VmMapping* mapping);

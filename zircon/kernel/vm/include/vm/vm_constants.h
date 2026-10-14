@@ -52,6 +52,10 @@ constexpr size_t kVmAddressRegionOrMappingStateAlign = 8;
 // fbl::RefCounted in VmAddressRegionOrMapping's state must make the same choice.
 constexpr bool kRefCountedAdoptionValidator = ZX_DEBUG_ASSERT_IMPLEMENTED;
 
+// Size and alignment for VmAddressRegion state stored in C++ OpaqueStorage.
+constexpr size_t kVmAddressRegionStateSize = 36;
+constexpr size_t kVmAddressRegionStateAlign = 4;
+
 // Size and alignment for VmDebugCompressor state stored in C++ OpaqueStorage.
 #if WITH_LOCK_DEP
 constexpr size_t kVmDebugCompressorStorageSize = 144;
