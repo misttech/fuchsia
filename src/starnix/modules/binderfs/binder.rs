@@ -135,13 +135,6 @@ impl BinderConnection {
         self.device.find_process(self.identifier)
     }
 
-    pub fn interrupt(&self) {
-        log_trace!("interrupting BinderConnection id={}", self.identifier);
-        if let Some(binder_process) = self.device.procs.read().get(&self.identifier) {
-            binder_process.interrupt();
-        }
-    }
-
     fn close(&self, kernel: &Kernel) {
         log_trace!("closing BinderConnection id={}", self.identifier);
         if let Some(binder_process) = self.device.procs.write().remove(&self.identifier) {
@@ -344,10 +337,6 @@ impl RemoteBinderConnection {
             )?;
             Ok(remote_ioctl.ioctl_writes.take())
         })
-    }
-
-    pub fn interrupt(&self) {
-        self.binder_connection.interrupt();
     }
 
     pub fn close(&self, kernel: &Kernel) {
@@ -1735,18 +1724,13 @@ impl BinderDriver {
             let (mut waiter, guard) = SimpleWaiter::new(&event);
             thread_state.command_queue.wait_async_simple(&mut waiter);
 
-            // Ensure the file descriptor has not been closed or interrupted, after registering
-            // for the waiters but before waiting. If some commands have already been written
-            // (e.g. the BR_TRANSACTION_COMPLETE of a two-way transaction whose reply is being
-            // waited for), return them rather than an error: they have already been dequeued, and
-            // on error `read_consumed` is not updated, so userspace would never see them.
+            // Ensure the file descriptor has not been closed, after registering for the waiters
+            // but before waiting. If some commands have already been written (e.g. the
+            // BR_TRANSACTION_COMPLETE of a two-way transaction whose reply is being waited for),
+            // return them rather than an error: they have already been dequeued, and on error
+            // `read_consumed` is not updated, so userspace would never see them.
             if proc_state.closed {
                 return if bytes_read > 0 { Ok(bytes_read) } else { error!(EBADF) };
-            }
-
-            if proc_state.interrupted {
-                proc_state.interrupted = false;
-                return if bytes_read > 0 { Ok(bytes_read) } else { error!(EINTR) };
             }
 
             // Drop locks before sleeping. Order matters: thread_state first, then proc_state

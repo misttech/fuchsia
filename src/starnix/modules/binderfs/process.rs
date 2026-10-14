@@ -68,10 +68,6 @@ pub struct BinderProcessState {
     /// Whether the binder connection for this process is closed. Once closed, any blocking
     /// operation will be aborted and return an EBADF error.
     pub closed: bool,
-    /// Whether the binder connection for this process is interrupted. A process that is
-    /// interrupted either just before or while waiting must abort the operation and return a EINTR
-    /// error.
-    pub interrupted: bool,
     /// Pending commands.
     pub command_queue: VecDeque<QueuedCommand>,
     /// Freeze notifications that have been dispatched to userspace (via BR_FROZEN_BINDER)
@@ -437,16 +433,6 @@ impl BinderProcess {
         let mut state = self.lock();
         if !state.closed {
             state.closed = true;
-            state.thread_pool.notify_all();
-            self.process_waiters.notify_all();
-        }
-    }
-
-    pub fn interrupt(&self) {
-        log_trace!("interrupting BinderProcess id={}", self.identifier);
-        let mut state = self.lock();
-        if !state.interrupted {
-            state.interrupted = true;
             state.thread_pool.notify_all();
             self.process_waiters.notify_all();
         }
