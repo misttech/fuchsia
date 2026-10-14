@@ -2,9 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/rust/rustc_library.gni")
 import("//build/testing/boot_tests/boot_test.gni")
 import("//build/testing/boot_tests/kernel_zbi_test.gni")
-import("//build/testing/boot_tests/zbi_test_executable.gni")
+import(
+    "//zircon/kernel/lib/userabi/userboot/tests/rust_zbi_test_executable.gni")
 import("//zircon/kernel/params.gni")
 
 group("boot_tests") {
@@ -17,31 +19,37 @@ group("boot_tests") {
 }
 
 if (is_fuchsia) {
-  source_set("helper") {
+  static_library("fdio_stub") {
+    testonly = true
+    output_name = "fdio"
+    output_dir = "$target_out_dir/fdio_stub"
+    deps = [ "//sdk/lib/c/stubs" ]
+  }
+
+  rustc_library("helper") {
     testonly = true
     visibility = [ ":*" ]
-    defines = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
-
-    sources = [ "helper.cc" ]
-    public = [ "helper.h" ]
+    edition = "2024"
+    source_root = "helper.rs"
+    sources = [ "helper.rs" ]
     deps = [
-      "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
-      "//sdk/lib/async-loop:async-loop-cpp",
-      "//sdk/lib/fit",
-      "//src/zircon/testing/standalone-test:headers",
-      "//zircon/system/ulib/zx",
-      "//zircon/system/ulib/zxtest",
+      "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust_next",
+      "//sdk/fidl/fuchsia.debugdata:fuchsia.debugdata_rust_next",
+      "//sdk/lib/c/rust",
+      "//sdk/rust/zx",
+      "//src/lib/fidl/rust_next/fidl_next",
+      "//src/lib/fuchsia-runtime",
     ]
   }
 
   # Verify that the '/svc' and svc stash handle work correctly.
-  zbi_test_executable("early-boot-single-process-test-bin") {
-    sources = [ "svc-test.cc" ]
+  rust_zbi_test_executable("early-boot-single-process-test-bin") {
+    source_root = "svc_test.rs"
+    sources = [ "svc_test.rs" ]
     deps = [
       ":helper",
-      "//src/zircon/testing/standalone-test",
-      "//zircon/system/ulib/zx",
-      "//zircon/system/ulib/zxtest",
+      "//sdk/lib/c/rust",
+      "//sdk/rust/zx",
     ]
 
     # This test needs to run as a 'boot' program, such that it is handed the
@@ -51,14 +59,14 @@ if (is_fuchsia) {
   }
 
   # Verify that the '/svc' and svc stash handle work correctly.
-  zbi_test_executable("early-boot-multiple-process-test-bin") {
-    sources = [ "multiple-svc-test.cc" ]
+  rust_zbi_test_executable("early-boot-multiple-process-test-bin") {
+    source_root = "multiple_svc_test.rs"
+    sources = [ "multiple_svc_test.rs" ]
     deps = [
       ":helper",
       "data-publisher:published-data",
-      "//src/zircon/testing/standalone-test",
-      "//zircon/system/ulib/zx",
-      "//zircon/system/ulib/zxtest",
+      "//sdk/lib/c/rust",
+      "//sdk/rust/zx",
     ]
 
     # This test needs to run as a 'boot' program, such that it is handed the
@@ -67,15 +75,14 @@ if (is_fuchsia) {
     userboot_next_is_test = true
   }
 
-  zbi_test_executable("early-boot-bootfs-entries-test-bin") {
-    sources = [ "bootfs-entries-test.cc" ]
+  rust_zbi_test_executable("early-boot-bootfs-entries-test-bin") {
+    source_root = "bootfs_entries_test.rs"
+    sources = [ "bootfs_entries_test.rs" ]
     deps = [
       ":helper",
-      "data-publisher:published-data",
-      "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
-      "//src/zircon/testing/standalone-test",
-      "//zircon/system/ulib/zx",
-      "//zircon/system/ulib/zxtest",
+      "//sdk/rust/zx",
+      "//src/lib/fuchsia-runtime",
+      "//third_party/rust_crates:libc",
     ]
 
     # This test needs to run as a 'boot' program, such that it is handed the
