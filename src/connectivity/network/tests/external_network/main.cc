@@ -45,16 +45,13 @@ TEST(ExternalNetworkTest, ConnectToNonRoutableINET) {
 
   // The host env (linux) may have a route to the remote (e.g. default route),
   // resulting in a TCP handshake being attempted and errno being set to
-  // EINPROGRESS. In a fuchsia environment, errno will never be set to
-  // EINPROGRESS because a TCP handshake will never be performed (the test is
-  // run without network configurations that make the remote routable).
-  //
-  // TODO(https://fxbug.dev/42123494, https://gvisor.dev/issues/1988): Set errno to the
-  // same value as linux when a remote is unroutable.
+  // EINPROGRESS. In a fuchsia environment, a TCP handshake will never be
+  // performed because the test is run without network configurations that make
+  // the remote routable, so errno is set to ENETUNREACH (as on linux).
   if (!kIsFuchsia) {
     ASSERT_TRUE(errno == EINPROGRESS || errno == ENETUNREACH) << strerror(errno);
   } else {
-    ASSERT_EQ(errno, EHOSTUNREACH) << strerror(errno);
+    ASSERT_EQ(errno, ENETUNREACH) << strerror(errno);
   }
 
   ASSERT_EQ(close(fd.release()), 0) << strerror(errno);
@@ -79,16 +76,13 @@ TEST(ExternalNetworkTest, ConnectToNonRoutableINET6) {
 
   // The host env (linux) may have a route to the remote (e.g. default route),
   // resulting in a TCP handshake being attempted and errno being set to
-  // EINPROGRESS. In a fuchsia environment, errno will never be set to
-  // EINPROGRESS because a TCP handshake will never be performed (the test is
-  // run without network configurations that make the remote routable).
-  //
-  // TODO(https://fxbug.dev/42123494): Set errno to the same value as linux when a
-  // remote is unroutable.
+  // EINPROGRESS. In a fuchsia environment, a TCP handshake will never be
+  // performed because the test is run without network configurations that make
+  // the remote routable, so errno is set to ENETUNREACH (as on linux).
   if (!kIsFuchsia) {
     ASSERT_TRUE(errno == EINPROGRESS || errno == ENETUNREACH) << strerror(errno);
   } else {
-    ASSERT_EQ(errno, EHOSTUNREACH) << strerror(errno);
+    ASSERT_EQ(errno, ENETUNREACH) << strerror(errno);
   }
 
   ASSERT_EQ(close(fd.release()), 0) << strerror(errno);

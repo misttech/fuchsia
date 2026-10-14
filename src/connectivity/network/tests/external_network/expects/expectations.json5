@@ -10,19 +10,12 @@
             ],
         },
         {
-            type: "expect_failure",
-            matchers: [
-                "ExternalNetworkTest.ConnectToNonRoutableINET",
-                "ExternalNetworkTest.ConnectToNonRoutableINET6",
-            ],
-        },
-        {
             type: "skip",
             matchers: [
-                // Fails slowly (>60s)
-                "ExternalNetworkTest.ConnectToRoutableNonexistentINET",
-
-                // Flaky
+                // Flaky: Netstack3 returns interfaces from
+                // fuchsia.posix.socket/Provider.GetInterfaceAddresses in
+                // arbitrary (hash map iteration) order, but this test expects
+                // them ordered by interface ID (as Linux does).
                 "ExternalNetworkTest.IoctlGetInterfaceAddresses",
             ],
         },
