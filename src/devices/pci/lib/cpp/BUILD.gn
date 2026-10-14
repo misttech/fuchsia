@@ -5,9 +5,15 @@
 import("//build/cpp/library_headers.gni")
 
 library_headers("headers") {
-  headers = [
-    "lib/pci/constants.h",
-    "lib/pci/hw.h",
+  public = [
+    "config.h",
+    "include/lib/pci/constants.h",
+    "include/lib/pci/hw.h",
+  ]
+  public_deps = [
+    "//sdk/lib/driver/mmio/cpp",
+    "//zircon/system/ulib/hwreg",
+    "//zircon/system/ulib/zx",
   ]
 }
 

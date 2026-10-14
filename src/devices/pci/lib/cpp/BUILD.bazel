@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_library(
+    name = "cpp",
+    hdrs = [
+        "config.h",
+        "include/lib/pci/constants.h",
+        "include/lib/pci/hw.h",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@fuchsia_sdk//pkg/driver_mmio_cpp",
+        "@fuchsia_sdk//pkg/hwreg",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)
+
+alias(
+    name = "headers",
+    actual = ":cpp",
+    visibility = ["//visibility:public"],
+)

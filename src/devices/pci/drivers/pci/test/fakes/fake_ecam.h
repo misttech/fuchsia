@@ -14,7 +14,7 @@
 
 #include <hwreg/bitfields.h>
 
-#include "src/devices/pci/drivers/pci/config.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 struct IoBaseAddress {
   uint32_t value;

@@ -10,8 +10,8 @@
 
 #include <cstdint>
 
-#include "src/devices/pci/drivers/pci/config.h"
 #include "src/devices/pci/drivers/pci/test/fakes/test_device.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 

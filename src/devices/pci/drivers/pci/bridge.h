@@ -14,10 +14,10 @@
 #include <region-alloc/region-alloc.h>
 
 #include "src/devices/pci/drivers/pci/allocation.h"
-#include "src/devices/pci/drivers/pci/config.h"
 #include "src/devices/pci/drivers/pci/device.h"
 #include "src/devices/pci/drivers/pci/ref_counted.h"
 #include "src/devices/pci/drivers/pci/upstream_node.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 

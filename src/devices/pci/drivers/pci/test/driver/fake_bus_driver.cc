@@ -9,11 +9,11 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/fit/defer.h>
 
-#include "src/devices/pci/drivers/pci/config.h"
 #include "src/devices/pci/drivers/pci/device.h"
 #include "src/devices/pci/drivers/pci/test/driver/driver_tests.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_config.h"
 #include "src/devices/pci/drivers/pci/test/fakes/test_device.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 

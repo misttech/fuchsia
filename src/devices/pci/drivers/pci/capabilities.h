@@ -5,11 +5,12 @@
 #define SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_H_
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <hwreg/bitfields.h>
 
-#include "src/devices/pci/drivers/pci/config.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 
@@ -60,7 +61,7 @@ class Capability {
   const char* addr_;
 };
 using CapabilityList = std::vector<std::unique_ptr<Capability>>;
-static_assert(static_cast<uint8_t>(Capability::Id::kFlatteningPortalBridge) == 0x15);
+static_assert(std::to_underlying(Capability::Id::kFlatteningPortalBridge) == 0x15);
 
 // General PCIe Extended capability classes. Final calculated address
 // for capability register corresponds to cfg's base plus cap's base along with
@@ -71,7 +72,8 @@ class ExtCapability {
   using RegType = uint16_t;
 
   // PCI Code and ID Assignment Specification Revision 1.9 section 3.
-  enum class Id : RegType {
+  // Extended capability IDs are a 16-bit field in the extended capability header.
+  enum class Id : RegType {  // NOLINT(performance-enum-size)
     /* 0x00 */ kNull = 0,
     /* 0x01 */ kAdvancedErrorReporting,
     /* 0x02 */ kVirtualChannelNoMFVC,
@@ -132,7 +134,7 @@ class ExtCapability {
   uint8_t version_;
 };
 using ExtCapabilityList = std::vector<std::unique_ptr<ExtCapability>>;
-static_assert(static_cast<uint16_t>(ExtCapability::Id::kSystemFirmwareIntermediary) == 0x2c);
+static_assert(std::to_underlying(ExtCapability::Id::kSystemFirmwareIntermediary) == 0x2c);
 
 }  // namespace pci
 

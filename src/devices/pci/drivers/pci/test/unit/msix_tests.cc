@@ -17,9 +17,9 @@
 #include <gtest/gtest.h>
 
 #include "src/devices/pci/drivers/pci/capabilities/msix.h"
-#include "src/devices/pci/drivers/pci/config.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_allocator.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_config.h"
+#include "src/devices/pci/lib/cpp/config.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace pci {

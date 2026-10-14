@@ -16,7 +16,7 @@
 
 #include "src/devices/pci/drivers/pci/bar_info.h"
 #include "src/devices/pci/drivers/pci/capabilities.h"
-#include "src/devices/pci/drivers/pci/config.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 

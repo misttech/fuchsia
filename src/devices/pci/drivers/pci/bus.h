@@ -33,9 +33,9 @@
 #include <ddktl/protocol/empty-protocol.h>
 
 #include "src/devices/pci/drivers/pci/bus_device_interface.h"
-#include "src/devices/pci/drivers/pci/config.h"
 #include "src/devices/pci/drivers/pci/device.h"
 #include "src/devices/pci/drivers/pci/root.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 // An entry corresponding to a place in the topology to scan. Use to allow for

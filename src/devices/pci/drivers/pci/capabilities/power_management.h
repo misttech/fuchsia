@@ -6,10 +6,12 @@
 
 #include <lib/zx/result.h>
 
+#include <utility>
+
 #include <hwreg/bitfields.h>
 
 #include "src/devices/pci/drivers/pci/capabilities.h"
-#include "src/devices/pci/drivers/pci/config.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 
@@ -92,7 +94,7 @@ class PowerManagementCapability : public Capability {
   };
 
   PowerManagementCapability(const Config& cfg, uint8_t base)
-      : Capability(static_cast<uint8_t>(Capability::Id::kPciPowerManagement), base),
+      : Capability(std::to_underlying(Capability::Id::kPciPowerManagement), base),
         pmc_(PciReg16(static_cast<uint16_t>(base + 0x2))),
         pmcsr_(PciReg16(static_cast<uint16_t>(base + 0x4))),
         data_(PciReg8(static_cast<uint16_t>(base + 0x7))) {}

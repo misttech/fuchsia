@@ -18,8 +18,8 @@
 
 #include "src/devices/pci/drivers/pci/allocation.h"
 #include "src/devices/pci/drivers/pci/bus.h"
-#include "src/devices/pci/drivers/pci/config.h"
 #include "src/devices/pci/drivers/pci/device.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 

@@ -7,7 +7,7 @@
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
 
-#include "src/devices/pci/drivers/pci/config.h"
+#include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {
 
