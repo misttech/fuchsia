@@ -585,6 +585,27 @@ async fn get_serial_number() -> Result<String, Error> {
         .map_err(|status| anyhow!("Failed to get serial number: {:?}", status))
 }
 
+const ANDROID_HARDWARE_DDR_BOOTLOADER_FILE: &str = "androidboot.hardware.ddr";
+
+async fn get_bootloader_file_hardware_ddr() -> Result<Option<String>, Error> {
+    let items =
+        connect_to_protocol::<fboot::ItemsMarker>().context("Failed to connect to boot items")?;
+
+    let Some(vmo) = items
+        .get_bootloader_file(ANDROID_HARDWARE_DDR_BOOTLOADER_FILE)
+        .await
+        .context("FIDL: Failed to get bootloader file")?
+    else {
+        return Ok(None);
+    };
+
+    // `fuchsia.boot.Items` sets ZX_PROP_VMO_CONTENT_SIZE to the file's content size.
+    let size = vmo.get_content_size().context("Failed to get bootloader file content size")?;
+    let bytes = vmo.read_to_vec(0, size).context("Failed to read bootloader file vmo")?;
+
+    Ok(Some(String::from_utf8(bytes).context("Bootloader file is not valid UTF-8")?))
+}
+
 async fn create_container(
     start_info: &mut ContainerStartInfo,
     kernel_extra_features: &[String],
@@ -617,6 +638,7 @@ async fn create_container(
 
     let mut bootargs_has_serialno = false;
     let mut bootargs_has_verifiedbootstate = false;
+    let mut bootargs_has_hardware_ddr = false;
     // TODO(https://fxbug.dev/526770691): Newer versions of Android replace the 'androidboot.*'
     // kernel parameters with 'bootconfig'. We should expose this to the container to avoid having
     // to manage 'androidboot.*' parameters here.
@@ -634,6 +656,9 @@ async fn create_container(
                         }
                         if item.starts_with("androidboot.verifiedbootstate") {
                             bootargs_has_verifiedbootstate = true;
+                        }
+                        if item.starts_with("androidboot.hardware.ddr") {
+                            bootargs_has_hardware_ddr = true;
                         }
                         if item.starts_with("androidboot.bootreason") && features.android_bootreason
                         {
@@ -670,6 +695,18 @@ async fn create_container(
         }
         if !bootargs_has_verifiedbootstate {
             kernel_cmdline.extend(b" androidboot.verifiedbootstate=orange");
+        }
+        if !bootargs_has_hardware_ddr {
+            match get_bootloader_file_hardware_ddr().await {
+                Ok(Some(ddr)) => {
+                    kernel_cmdline.extend(b" androidboot.hardware.ddr=");
+                    kernel_cmdline.extend(ddr.bytes());
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    log_warn!("Could not get androidboot.hardware.ddr boot item: {err:?}");
+                }
+            }
         }
     }
     if features.android_bootreason {
