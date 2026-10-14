@@ -23,11 +23,15 @@ use storage_profile::{FileMessage, Message as _};
 use vmo_fifo::Message;
 use zx::sys::zx_page_request_command_t::ZX_PAGER_VMO_READ;
 
-/// Target readahead and Merkle verification size (128 KiB), matching Fxfs.
+/// Target readahead size (128 KiB), matching Fxfs.
 ///
 /// Uncompressed and encrypted files always use this size. For compressed files, the effective size
 /// is adjusted so that each readahead window aligns to a whole number of compression chunks.
 pub const TARGET_READ_AHEAD_SIZE: u64 = 128 * 1024;
+
+/// Default Merkle verification alignment (32 KiB) for uncompressed blobs, matching standard
+/// compressed blob chunk sizes.
+pub const DEFAULT_VERIFICATION_ALIGNMENT: u64 = 32 * 1024;
 
 /// Calculates the readahead size for a given `compression_chunk_size`, rounding down
 /// `target_read_ahead_size` to a multiple of `compression_chunk_size`, or returning
@@ -135,14 +139,22 @@ impl File {
         }
     }
 
-    /// Returns the read-ahead window size in bytes for this file, which also serves as the
-    /// fixed read size for Merkle verification of blobs.
+    /// Returns the read-ahead window size in bytes for this file.
     pub fn read_ahead_size(&self) -> u64 {
         match &self.transform {
             Transform::Compressed(info) => {
                 read_ahead_size_for_chunk_size(info.chunk_size(), TARGET_READ_AHEAD_SIZE)
             }
             Transform::None | Transform::Encrypted(_) => TARGET_READ_AHEAD_SIZE,
+        }
+    }
+
+    /// Returns the Merkle verification alignment in bytes for this file (`chunk_size` for
+    /// compressed files, or [`DEFAULT_VERIFICATION_ALIGNMENT`] for uncompressed/encrypted files).
+    pub fn verification_alignment(&self) -> u64 {
+        match &self.transform {
+            Transform::Compressed(info) => info.chunk_size(),
+            Transform::None | Transform::Encrypted(_) => DEFAULT_VERIFICATION_ALIGNMENT,
         }
     }
 
@@ -179,8 +191,8 @@ impl File {
                 original_range.end.next_multiple_of(read_ahead_size),
                 page_aligned_size,
             );
-
-        if page_request.prepare(read_range.clone(), read_ahead_size as usize).is_err() {
+        if page_request.prepare(read_range.clone(), self.verification_alignment() as usize).is_err()
+        {
             return;
         }
 
@@ -920,7 +932,7 @@ pub fn process_mapping_command<S: BlockService + ?Sized + 'static, D: DeliveryHa
                 if let Err(error) = files_clone.register_blob(
                     key,
                     &metadata.merkle_leaves,
-                    file.read_ahead_size() as usize,
+                    file.verification_alignment() as usize,
                 ) {
                     log::error!(error:?; "Failed to register blob {key}");
                     return;
@@ -1732,7 +1744,7 @@ mod tests {
             registered.lock().unwrap().take().expect("registered callback called");
         assert_eq!(reg_key, 42);
         assert_eq!(reg_leaves, vec![leaf1, leaf2]);
-        assert_eq!(reg_read_alignment, TARGET_READ_AHEAD_SIZE as usize);
+        assert_eq!(reg_read_alignment, DEFAULT_VERIFICATION_ALIGNMENT as usize);
     }
 
     #[fuchsia::test]
