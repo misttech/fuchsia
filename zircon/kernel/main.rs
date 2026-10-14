@@ -71,6 +71,9 @@ pub mod mmu_rcu;
 #[path = "lib/page_cache/page_cache.rs"]
 pub mod page_cache;
 
+#[path = "lib/percpu_writer/allocator.rs"]
+pub mod percpu_writer;
+
 #[path = "lib/persistent-debuglog/persistent_debuglog.rs"]
 pub mod persistent_debuglog_rs;
 

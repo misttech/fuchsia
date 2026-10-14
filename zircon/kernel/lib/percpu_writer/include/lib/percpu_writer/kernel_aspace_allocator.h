@@ -11,6 +11,12 @@
 
 #include <ktl/byte.h>
 
+extern "C" {
+ktl::byte* rust_percpu_writer_kernel_aspace_allocator_allocate(uint32_t size,
+                                                               const char* buffer_name);
+void rust_percpu_writer_kernel_aspace_allocator_free(ktl::byte* ptr);
+}
+
 namespace percpu_writer {
 
 // SpscBuffer requires us to specify how the underlying memory is managed -- it abstracts over a
@@ -18,8 +24,10 @@ namespace percpu_writer {
 // provide an allocator backed by a VmAspace.
 class KernelAspaceAllocator {
  public:
-  static ktl::byte* Allocate(uint32_t size, const char* buffer_name);
-  static void Free(ktl::byte* ptr);
+  static ktl::byte* Allocate(uint32_t size, const char* buffer_name) {
+    return rust_percpu_writer_kernel_aspace_allocator_allocate(size, buffer_name);
+  }
+  static void Free(ktl::byte* ptr) { rust_percpu_writer_kernel_aspace_allocator_free(ptr); }
 };
 }  // namespace percpu_writer
 

@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
   headers = [
@@ -14,15 +15,16 @@ library_headers("headers") {
   public_deps = [ "//zircon/kernel/lib/ktl" ]
 }
 
-source_set("percpu_writer") {
-  sources = [ "allocator.cc" ]
-  deps = [
-    "//zircon/kernel/lib/init",
-    "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/syscalls:headers",
-    "//zircon/kernel/object:headers",
-    "//zircon/system/ulib/zircon-internal",
+kernel_rust_mod("percpu_writer-rs") {
+  sources = [
+    "allocator.rs",
+    "allocator_ffi.rs",
   ]
+  deps = [ "//zircon/kernel/lib/page:page-rs" ]
+}
+
+source_set("percpu_writer") {
+  deps = [ ":percpu_writer-rs" ]
 
   public_deps = [
     ":headers",
