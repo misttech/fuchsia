@@ -120,7 +120,9 @@ python_library("honeydew_no_testonly") {
     "affordances/power/__init__.py",
     "affordances/power/system_power_state_controller/__init__.py",
     "affordances/power/system_power_state_controller/system_power_state_controller.py",
+    "affordances/power/system_power_state_controller/system_power_state_controller_common.py",
     "affordances/power/system_power_state_controller/system_power_state_controller_using_starnix.py",
+    "affordances/power/system_power_state_controller/system_power_state_controller_using_usb_cli.py",
     "affordances/rtc/__init__.py",
     "affordances/rtc/errors.py",
     "affordances/rtc/rtc.py",
@@ -168,6 +170,7 @@ python_library("honeydew_no_testonly") {
     "device_classes/__init__.py",
     "device_classes/android_device.py",
     "device_classes/smart_display.py",
+    "device_classes/workbench.py",
 
     # LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/__init__.py)
     "errors.py",

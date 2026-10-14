@@ -19,9 +19,13 @@ class SystemPowerStateControllerAffordanceTests(
 
     async def test_idle_suspend_timer_based_resume(self) -> None:
         """Test case for SystemPowerStateController.idle_suspend_timer_based_resume()"""
-        if self.user_params["is_starnix_supported"]:
+        if self.user_params.get(
+            "is_power_state_controller_supported",
+            self.user_params.get("is_starnix_supported", False),
+        ):
             await self.dut.system_power_state_controller.idle_suspend_timer_based_resume(
-                duration=3
+                duration=self.user_params.get("duration", 3),
+                verify_duration=self.user_params.get("verify_duration", True),
             )
         else:
             with asserts.assert_raises(errors.NotSupportedError):

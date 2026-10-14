@@ -17,6 +17,7 @@ from honeydew import device_classes, errors
 from honeydew.device_classes import (
     android_device,
     smart_display,
+    workbench,
 )
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import config as ffx_config
@@ -335,6 +336,22 @@ class InitTests(unittest.TestCase):
                 {
                     "label": "sorrel_recovery_fallback_to_fuchsia_device",
                     "product_type": "sorrel_recovery",
+                    "registered_dict": None,
+                    "expected_class": FuchsiaDevice,
+                },
+            ),
+            (
+                {
+                    "label": "regex_match_workbench_eng",
+                    "product_type": "workbench_eng",
+                    "registered_dict": None,
+                    "expected_class": workbench.Workbench,
+                },
+            ),
+            (
+                {
+                    "label": "workbench_recovery_fallback_to_fuchsia_device",
+                    "product_type": "workbench_recovery",
                     "registered_dict": None,
                     "expected_class": FuchsiaDevice,
                 },

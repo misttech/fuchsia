@@ -3,9 +3,14 @@
 # found in the LICENSE file.
 
 import logging
+import math
 from datetime import timedelta
 
 import fuchsia_base_test
+from honeydew import errors
+from honeydew.affordances.power.system_power_state_controller import (
+    system_power_state_controller as system_power_state_controller_interface,
+)
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
@@ -15,8 +20,14 @@ from mobly.asserts import assert_equal, assert_less
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-# Timeout for automated suspend/resume runs (e.g. with DMC in infra).
+# Timeout for automated suspend/resume runs (e.g. with DMC in infra or usb-cli).
 _SUSPEND_RESUME_TIMEOUT: timedelta = timedelta(minutes=1)
+
+# Initial duration for on-device USB disconnect via `usb-cli cable-breaker`.
+# Doubled on every retry up to `power.SUSPEND_RESUME_MAX_IDLE_DURATION`. Must
+# leave enough time for the host to notice that the device went offline before
+# the wake alarm reconnects USB.
+_USB_CLI_BASE_IDLE_DURATION: timedelta = timedelta(seconds=15)
 
 # More forgiving timeouts for manual at-desk testing where a user physically
 # unplugs and replugs the USB cable.
@@ -27,9 +38,9 @@ _MANUAL_BASE_IDLE_DURATION: timedelta = timedelta(seconds=10)
 class _ManualUsbPowerHub(usb_power_hub.UsbPowerHub):
     """Prompts the user to manually unplug and replug the USB cable.
 
-    Used during local at-desk testing when no infra-provided USB disconnector
-    (such as DMC, a programmable USB power hub, or a virtual USB hub) is
-    available.
+    Used during local at-desk testing when neither an infra-provided USB
+    disconnector (such as DMC, a programmable USB power hub, or a virtual USB
+    hub) nor on-device `usb-cli` disconnect support is available.
     """
 
     def __init__(self, device_name: str) -> None:
@@ -100,33 +111,81 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
         except Exception as e:  # pylint: disable=broad-except
             _LOGGER.warning("Failed to %s /core/battery_manager: %s", action, e)
 
-    def _ensure_usb_power_hub(self, device: FuchsiaDevice) -> bool:
-        """Ensures a USB power hub is configured on the device.
+    async def _suspend_resume_with_controller(
+        self,
+        controller: system_power_state_controller_interface.SystemPowerStateController,
+        deadline: Deadline,
+    ) -> None:
+        """Suspends and resumes the device using SystemPowerStateController with retries."""
+        attempt = -1
+        while True:
+            attempt += 1
+            if deadline.is_due():
+                raise power.DeviceDidNotSuspendError(
+                    "SAG did not suspend during idle."
+                )
 
-        If no infra-provided USB disconnector (e.g. DMC) is configured, falls
-        back to `_ManualUsbPowerHub` which logs instructions for the user to
-        unplug and replug the USB cable by hand.
-
-        Args:
-            device: Fuchsia device object.
-
-        Returns:
-            True if using manual USB unplug/replug, False if using an automated
-            USB power hub.
-        """
-        if device.usb_power_hub is None:
-            _LOGGER.info(
-                "No USB disconnector (e.g. DMC) is configured for %s; "
-                "falling back to manual USB cable unplug/replug.",
-                device.device_name,
+            idle_duration = min(
+                _USB_CLI_BASE_IDLE_DURATION * (2**attempt),
+                power.SUSPEND_RESUME_MAX_IDLE_DURATION,
             )
-            device.set_usb_power_hub(_ManualUsbPowerHub(device.device_name))
-            return True
-        return isinstance(device.usb_power_hub, _ManualUsbPowerHub)
+            duration_sec = math.ceil(idle_duration.total_seconds())
+            _LOGGER.info(
+                "Suspension attempt %s using system_power_state_controller "
+                "(duration=%ss)...",
+                attempt + 1,
+                duration_sec,
+            )
+            try:
+                await controller.idle_suspend_timer_based_resume(
+                    duration=duration_sec,
+                    verify_duration=False,
+                )
+                return
+            except (
+                system_power_state_controller_interface.SystemPowerStateControllerError
+            ) as err:
+                if "Based on SAG inspect data" in str(err):
+                    _LOGGER.warning(
+                        "SAG did not suspend during idle (%s). Retrying...",
+                        err,
+                    )
+                    continue
+                raise
 
     async def test_suspend_resume(self) -> None:
         """Must run on workbench products."""
-        is_manual_usb = self._ensure_usb_power_hub(self.dut)
+        # TODO(https://fxbug.dev/573221590): Move the external USB power hub and
+        # manual USB suspend/resume flows into SystemPowerStateController
+        # implementations so this test can uniformly call
+        # `self.dut.system_power_state_controller`.
+        if self.dut.usb_power_hub is None:
+            try:
+                controller = self.dut.system_power_state_controller
+            except errors.NotSupportedError:
+                _LOGGER.info(
+                    "No USB disconnector (e.g. DMC) or usb-cli support is "
+                    "available on %s; falling back to manual USB cable "
+                    "unplug/replug.",
+                    self.dut.device_name,
+                )
+                self.dut.set_usb_power_hub(
+                    _ManualUsbPowerHub(self.dut.device_name)
+                )
+            else:
+                _LOGGER.info(
+                    "No external USB power hub (e.g. DMC) is configured for %s; "
+                    "using system_power_state_controller (usb-cli) to "
+                    "disconnect and reconnect USB on-device.",
+                    self.dut.device_name,
+                )
+                await self._suspend_resume_with_controller(
+                    controller=controller,
+                    deadline=Deadline.from_timeout(_SUSPEND_RESUME_TIMEOUT),
+                )
+                return
+
+        is_manual_usb = isinstance(self.dut.usb_power_hub, _ManualUsbPowerHub)
         timeout = (
             _MANUAL_SUSPEND_RESUME_TIMEOUT
             if is_manual_usb

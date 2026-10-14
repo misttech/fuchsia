@@ -12,6 +12,7 @@ from honeydew import affordances_capable, errors
 from honeydew.device_classes import (
     android_device,
     smart_display,
+    workbench,
 )
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -33,6 +34,7 @@ _DEFAULT_PRODUCT_TO_DEVICE_CLASS_DICT: dict[
 ] = {
     r"^(?!.*recovery).*(sorrel|iris|starnix)": android_device.AndroidDevice,
     r"^(?!.*recovery).*smart_display": smart_display.SmartDisplay,
+    r"^(?!.*recovery).*workbench": workbench.Workbench,
 }
 # LINT.ThenChange(//src/testing/end_to_end/honeydew/BUILD.gn)
 _REGISTERED_PRODUCT_TO_DEVICE_CLASS_DICT: dict[
