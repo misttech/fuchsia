@@ -5,19 +5,25 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/botanist"
 	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
+	"go.fuchsia.dev/fuchsia/tools/lib/color"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"go.fuchsia.dev/fuchsia/tools/net/sshutil"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 	testrunnerconstants "go.fuchsia.dev/fuchsia/tools/testing/testrunner/constants"
@@ -25,7 +31,11 @@ import (
 )
 
 type MockTarget struct {
-	ffx *targets.FFXInstance
+	mu               sync.Mutex
+	ffx              *targets.FFXInstance
+	serialSocketPath string
+	sshClientFunc    func(attempt int) (*sshutil.Client, error)
+	sshClientCalls   int
 }
 
 func (m *MockTarget) TestConfig(expectsSSH bool) (any, error) { return nil, nil }
@@ -49,13 +59,27 @@ func (m *MockTarget) IPv6() (*net.IPAddr, error) {
 func (m *MockTarget) IPv4() (net.IP, error) {
 	return net.ParseIP("127.0.0.1"), nil
 }
-func (m *MockTarget) Nodename() string                    { return "mock-target" }
-func (m *MockTarget) Serial() io.ReadWriteCloser          { return nil }
-func (m *MockTarget) SerialSocketPath() string            { return "" }
-func (m *MockTarget) SetConnectionTimeout(time.Duration)  {}
-func (m *MockTarget) ResolveIP() error                    { return nil }
-func (m *MockTarget) SSHClient() (*sshutil.Client, error) { return nil, nil }
-func (m *MockTarget) SSHControlMasterPath() string        { return "" }
+func (m *MockTarget) Nodename() string           { return "mock-target" }
+func (m *MockTarget) Serial() io.ReadWriteCloser { return nil }
+func (m *MockTarget) SerialSocketPath() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.serialSocketPath
+}
+func (m *MockTarget) SetConnectionTimeout(time.Duration) {}
+func (m *MockTarget) ResolveIP() error                   { return nil }
+func (m *MockTarget) SSHClient() (*sshutil.Client, error) {
+	m.mu.Lock()
+	m.sshClientCalls++
+	attempt := m.sshClientCalls
+	fn := m.sshClientFunc
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(attempt)
+	}
+	return nil, nil
+}
+func (m *MockTarget) SSHControlMasterPath() string { return "" }
 func (m *MockTarget) SetupSSHControlMaster(ctx context.Context, sshKey, addr string) (func(), error) {
 	return func() {}, nil
 }
@@ -236,4 +260,267 @@ func TestGetBootTimeout(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConnectToSSHRetryOnTimeout(t *testing.T) {
+	timeoutErr := sshutil.ConnectionError{
+		Err: fmt.Errorf("timed out trying to connect to ssh after 2m0s: %w", context.DeadlineExceeded),
+	}
+
+	t.Run("recovers via serial reboot on timeout", func(t *testing.T) {
+		t.Setenv(testrunnerconstants.DMCPathEnvKey, "")
+
+		socketPath := targets.CreateSocketPath("serial")
+		t.Cleanup(func() {
+			os.Remove(socketPath)
+		})
+		listener, err := net.Listen("unix", socketPath)
+		if err != nil {
+			t.Fatalf("net.Listen(unix, %q) failed: %v", socketPath, err)
+		}
+		t.Cleanup(func() {
+			listener.Close()
+		})
+
+		serialCmdCh := make(chan string, 1)
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				_, _ = conn.Write([]byte("$ "))
+				var received strings.Builder
+				buf := make([]byte, 256)
+				for {
+					n, readErr := conn.Read(buf)
+					if n > 0 {
+						received.Write(buf[:n])
+						if strings.Contains(received.String(), "dm reboot") {
+							serialCmdCh <- received.String()
+							break
+						}
+					}
+					if readErr != nil {
+						serialCmdCh <- received.String()
+						break
+					}
+				}
+				conn.Close()
+			}
+		}()
+
+		target := &MockTarget{
+			serialSocketPath: socketPath,
+			sshClientFunc: func(attempt int) (*sshutil.Client, error) {
+				if attempt == 1 {
+					return nil, timeoutErr
+				}
+				return nil, nil
+			},
+		}
+
+		cmd := &RunCommand{}
+		if _, err := cmd.connectToSSH(context.Background(), target); err != nil {
+			t.Fatalf("expected connectToSSH to succeed after serial reboot, got: %v", err)
+		}
+
+		target.mu.Lock()
+		sshCalls := target.sshClientCalls
+		target.mu.Unlock()
+		if sshCalls != 2 {
+			t.Fatalf("expected 2 SSHClient attempts, got %d", sshCalls)
+		}
+
+		select {
+		case gotRebootCmd := <-serialCmdCh:
+			if !strings.Contains(gotRebootCmd, "dm reboot") {
+				t.Errorf("expected serial reboot command 'dm reboot', got %q", gotRebootCmd)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for serial reboot command")
+		}
+	})
+
+	t.Run("falls back to dmc power cycle when serial reboot fails", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dmcArgsFile := filepath.Join(tmpDir, "dmc_args.txt")
+		dmcPath := filepath.Join(tmpDir, "dmc")
+		dmcScript := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %q\n", dmcArgsFile)
+		if err := os.WriteFile(dmcPath, []byte(dmcScript), 0o755); err != nil {
+			t.Fatalf("failed to write mock dmc script: %v", err)
+		}
+		t.Setenv(testrunnerconstants.DMCPathEnvKey, dmcPath)
+
+		target := &MockTarget{
+			serialSocketPath: "/tmp/nonexistent-%s.sock",
+			sshClientFunc: func(attempt int) (*sshutil.Client, error) {
+				if attempt == 1 {
+					return nil, timeoutErr
+				}
+				return nil, nil
+			},
+		}
+
+		var logBuf bytes.Buffer
+		logCtx := logger.WithLogger(context.Background(), logger.NewLogger(logger.WarningLevel, color.NewColor(color.ColorNever), &logBuf, &logBuf, ""))
+
+		cmd := &RunCommand{}
+		if _, err := cmd.connectToSSH(logCtx, target); err != nil {
+			t.Fatalf("expected connectToSSH to succeed after dmc recovery, got: %v", err)
+		}
+		if strings.Contains(logBuf.String(), "failed to open serial socket connection") || strings.Contains(logBuf.String(), "failed to find cursor") {
+			t.Errorf("expected serial socket failure not to be logged when dmc recovery succeeds, got: %s", logBuf.String())
+		}
+
+		target.mu.Lock()
+		sshCalls := target.sshClientCalls
+		target.mu.Unlock()
+		if sshCalls != 2 {
+			t.Fatalf("expected 2 SSHClient attempts, got %d", sshCalls)
+		}
+
+		dmcArgsBytes, err := os.ReadFile(dmcArgsFile)
+		if err != nil {
+			t.Fatalf("expected dmc to be invoked, failed to read %s: %v", dmcArgsFile, err)
+		}
+		wantDMCArgs := "set-power-state --nodename mock-target --state cycle"
+		if got := strings.TrimSpace(string(dmcArgsBytes)); got != wantDMCArgs {
+			t.Errorf("dmc args = %q, want %q", got, wantDMCArgs)
+		}
+	})
+
+	t.Run("aborts when all recovery mechanisms fail", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dmcPath := filepath.Join(tmpDir, "dmc")
+		if err := os.WriteFile(dmcPath, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+			t.Fatalf("failed to write failing dmc script: %v", err)
+		}
+		t.Setenv(testrunnerconstants.DMCPathEnvKey, dmcPath)
+
+		target := &MockTarget{
+			serialSocketPath: "/tmp/nonexistent-%s.sock",
+			sshClientFunc: func(attempt int) (*sshutil.Client, error) {
+				return nil, timeoutErr
+			},
+		}
+
+		var logBuf bytes.Buffer
+		logCtx := logger.WithLogger(context.Background(), logger.NewLogger(logger.WarningLevel, color.NewColor(color.ColorNever), &logBuf, &logBuf, ""))
+
+		cmd := &RunCommand{}
+		_, err := cmd.connectToSSH(logCtx, target)
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected context.DeadlineExceeded when recovery fails, got: %v", err)
+		}
+		if strings.Contains(logBuf.String(), "%!s(MISSING)") {
+			t.Errorf("expected warning log to format %% safely without %%!s(MISSING), got: %s", logBuf.String())
+		}
+
+		target.mu.Lock()
+		sshCalls := target.sshClientCalls
+		target.mu.Unlock()
+		if sshCalls != 1 {
+			t.Fatalf("expected 1 SSHClient attempt when recovery fails, got %d", sshCalls)
+		}
+	})
+
+	t.Run("aborts when no recovery mechanism is available", func(t *testing.T) {
+		t.Setenv(testrunnerconstants.DMCPathEnvKey, "")
+
+		target := &MockTarget{
+			sshClientFunc: func(attempt int) (*sshutil.Client, error) {
+				return nil, timeoutErr
+			},
+		}
+
+		cmd := &RunCommand{}
+		_, err := cmd.connectToSSH(context.Background(), target)
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected context.DeadlineExceeded when no recovery mechanism is available, got: %v", err)
+		}
+
+		target.mu.Lock()
+		sshCalls := target.sshClientCalls
+		target.mu.Unlock()
+		if sshCalls != 1 {
+			t.Fatalf("expected 1 SSHClient attempt when no recovery mechanism is available, got %d", sshCalls)
+		}
+	})
+
+	t.Run("aborts after second timeout without further retries", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dmcPath := filepath.Join(tmpDir, "dmc")
+		if err := os.WriteFile(dmcPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatalf("failed to write mock dmc script: %v", err)
+		}
+		t.Setenv(testrunnerconstants.DMCPathEnvKey, dmcPath)
+
+		target := &MockTarget{
+			sshClientFunc: func(attempt int) (*sshutil.Client, error) {
+				return nil, timeoutErr
+			},
+		}
+
+		cmd := &RunCommand{}
+		_, err := cmd.connectToSSH(context.Background(), target)
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("expected context.DeadlineExceeded error after retry failure, got %v", err)
+		}
+
+		target.mu.Lock()
+		sshCalls := target.sshClientCalls
+		target.mu.Unlock()
+		if sshCalls != 2 {
+			t.Fatalf("expected exactly 2 SSHClient attempts, got %d", sshCalls)
+		}
+	})
+
+	t.Run("does not retry on non-timeout error", func(t *testing.T) {
+		t.Setenv(testrunnerconstants.DMCPathEnvKey, "")
+
+		nonTimeoutErr := errors.New("SSHClient() failed; no ssh keys provided")
+		target := &MockTarget{
+			sshClientFunc: func(attempt int) (*sshutil.Client, error) {
+				return nil, nonTimeoutErr
+			},
+		}
+
+		cmd := &RunCommand{}
+		_, err := cmd.connectToSSH(context.Background(), target)
+		if !errors.Is(err, nonTimeoutErr) {
+			t.Errorf("expected error %v, got %v", nonTimeoutErr, err)
+		}
+
+		target.mu.Lock()
+		sshCalls := target.sshClientCalls
+		target.mu.Unlock()
+		if sshCalls != 1 {
+			t.Errorf("expected 1 SSHClient attempt for non-timeout error, got %d", sshCalls)
+		}
+	})
+
+	t.Run("does not retry when parent context is canceled", func(t *testing.T) {
+		t.Setenv(testrunnerconstants.DMCPathEnvKey, "")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		target := &MockTarget{
+			sshClientFunc: func(attempt int) (*sshutil.Client, error) {
+				cancel()
+				return nil, timeoutErr
+			},
+		}
+
+		cmd := &RunCommand{}
+		_, _ = cmd.connectToSSH(ctx, target)
+
+		target.mu.Lock()
+		sshCalls := target.sshClientCalls
+		target.mu.Unlock()
+		if sshCalls != 1 {
+			t.Errorf("expected 1 SSHClient attempt when parent context is canceled, got %d", sshCalls)
+		}
+	})
 }
