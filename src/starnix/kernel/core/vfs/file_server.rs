@@ -1319,7 +1319,6 @@ mod tests {
                     "test".into(),
                     FileMode::from_bits(0o600) | FileMode::IFREG,
                     DeviceId::NONE,
-                    OpenFlags::empty(),
                 )
                 .expect("open_create_node failed");
 
@@ -1380,7 +1379,6 @@ mod tests {
                         name.as_str().into(),
                         FileMode::from_bits(0o600) | FileMode::IFREG,
                         DeviceId::NONE,
-                        OpenFlags::empty(),
                     )
                     .expect("open_create_node failed");
                 expected_files.push(name.into_bytes());

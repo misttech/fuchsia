@@ -14,10 +14,10 @@ use crate::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileS
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::socket::{SocketAddress, SocketHandle, UnixSocket};
 use crate::vfs::{
-    AccessCheck, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOptions, FileWriteGuardMode, FsContext, FsNode, FsNodeHandle,
-    FsNodeOps, FsStr, FsString, OpenAccessCheck, PathBuilder, RenameFlags, SymlinkTarget,
-    UnlinkKind, fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek,
+    AccessCheck, CreationStatus, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps,
+    FileSystem, FileSystemHandle, FileSystemOptions, FileWriteGuardMode, FsContext, FsNode,
+    FsNodeHandle, FsNodeOps, FsStr, FsString, OpenAccessCheck, PathBuilder, RenameFlags,
+    SymlinkTarget, UnlinkKind, fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek,
     fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use fuchsia_rcu::{RcuArc, RcuBox, RcuReadScope};
@@ -1422,26 +1422,25 @@ impl NamespaceNode {
     ///
     /// Works for any type of node other than a symlink.
     ///
-    /// Will return an existing node unless `flags` contains `OpenFlags::EXCL`.
+    /// Returns the existing node if there is one, and whether the node was created. The existence
+    /// check and the creation happen atomically with respect to other VFS operations on this
+    /// directory.
     pub fn open_create_node(
         &self,
         current_task: &CurrentTask,
         name: &FsStr,
         mode: FileMode,
         dev: DeviceId,
-        flags: OpenFlags,
-    ) -> Result<NamespaceNode, Errno> {
+    ) -> Result<(NamespaceNode, CreationStatus), Errno> {
         let owner = current_task.current_fscred();
         let mode = current_task.fs().apply_umask(mode);
-        let create_fn = |dir: &FsNodeHandle, mount: &MountInfo, name: &_| {
-            dir.create_node(current_task, mount, name, mode, dev, owner)
-        };
-        let entry = if flags.contains(OpenFlags::EXCL) {
-            self.entry.create_entry(current_task, &self.mount, name, create_fn)
-        } else {
-            self.entry.get_or_create_entry(current_task, &self.mount, name, create_fn)
-        }?;
-        Ok(self.with_new_entry(entry))
+        let (entry, status) = self.entry.get_or_create_entry(
+            current_task,
+            &self.mount,
+            name,
+            |dir, mount, name| dir.create_node(current_task, mount, name, mode, dev, owner),
+        )?;
+        Ok((self.with_new_entry(entry), status))
     }
 
     pub fn into_active(self) -> ActiveNamespaceNode {
@@ -1635,6 +1634,27 @@ impl NamespaceNode {
         self.lookup_children(current_task, context, &[basename])
     }
 
+    /// Traverse down to `child`, a child of this node that was already looked up, e.g. with
+    /// `DirEntry::component_lookup` or `open_create_node`.
+    ///
+    /// Follows a symlink and enters mounts as requested by `context`, and enforces
+    /// `ResolveFlags::NO_XDEV` and `DirectoryMode::MustBeDirectory`.
+    pub fn resolve_child(
+        &self,
+        current_task: &CurrentTask,
+        context: &mut LookupContext,
+        child: NamespaceNode,
+    ) -> Result<NamespaceNode, Errno> {
+        let child = child.resolve(current_task, context)?;
+        if context.resolve_flags.contains(ResolveFlags::NO_XDEV) && child.mount != self.mount {
+            return error!(EXDEV);
+        }
+        if context.directory_mode == DirectoryMode::MustBeDirectory && !child.entry.node.is_dir() {
+            return error!(ENOTDIR);
+        }
+        Ok(child)
+    }
+
     /// Traverse down a parent-to-child link in the namespace.
     pub fn lookup_children(
         &self,
@@ -1703,28 +1723,15 @@ impl NamespaceNode {
             if basenames.len() == 1
                 || !current_namespace_node.entry.node.ops().has_lookup_pipelined()
             {
-                current_namespace_node = current_namespace_node.with_new_entry(
+                let child = current_namespace_node.with_new_entry(
                     current_namespace_node.entry.component_lookup(
                         current_task,
                         &current_namespace_node.mount,
                         basename,
                     )?,
                 );
-
-                current_namespace_node = current_namespace_node.resolve(current_task, context)?;
-
-                if context.resolve_flags.contains(ResolveFlags::NO_XDEV)
-                    && current_namespace_node.mount != self.mount
-                {
-                    return error!(EXDEV);
-                }
-
-                if context.directory_mode == DirectoryMode::MustBeDirectory
-                    && !current_namespace_node.entry.node.is_dir()
-                {
-                    return error!(ENOTDIR);
-                }
-
+                current_namespace_node =
+                    current_namespace_node.resolve_child(current_task, context, child)?;
                 basenames = &basenames[1..];
                 continue;
             }
@@ -1744,21 +1751,8 @@ impl NamespaceNode {
             for entry in precomputed_entries {
                 basenames = &basenames[1..];
                 let child = current_namespace_node.with_new_entry(entry?);
-
-                current_namespace_node = child.clone().resolve(current_task, context)?;
-
-                if context.resolve_flags.contains(ResolveFlags::NO_XDEV)
-                    && current_namespace_node.mount != self.mount
-                {
-                    return error!(EXDEV);
-                }
-
-                if context.directory_mode == DirectoryMode::MustBeDirectory
-                    && !current_namespace_node.entry.node.is_dir()
-                {
-                    return error!(ENOTDIR);
-                }
-
+                current_namespace_node =
+                    current_namespace_node.resolve_child(current_task, context, child.clone())?;
                 if current_namespace_node != child {
                     break;
                 }

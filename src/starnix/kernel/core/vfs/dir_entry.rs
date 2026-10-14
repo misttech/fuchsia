@@ -417,17 +417,15 @@ impl DirEntry {
     }
 
     /// Creates a new DirEntry. Works just like create_entry, except if the entry already exists,
-    /// it is returned.
+    /// it is returned. Also returns whether the entry was created.
     pub fn get_or_create_entry(
         self: &DirEntryHandle,
         current_task: &CurrentTask,
         mount: &MountInfo,
         name: &FsStr,
         create_node_fn: impl FnOnce(&FsNodeHandle, &MountInfo, &FsStr) -> Result<FsNodeHandle, Errno>,
-    ) -> Result<DirEntryHandle, Errno> {
-        let (entry, _status) =
-            self.create_entry_internal(current_task, mount, name, create_node_fn)?;
-        Ok(entry)
+    ) -> Result<(DirEntryHandle, CreationStatus), Errno> {
+        self.create_entry_internal(current_task, mount, name, create_node_fn)
     }
 
     fn create_entry_internal(
@@ -1261,10 +1259,10 @@ struct DirEntryLockedChildren<'a> {
     children: LockDepWriteGuard<'a, DirEntryChildren>,
 }
 
-/// Represents whether a node returned by `create_fn` was freshly created
-/// or already existed on the underlying filesystem.
+/// Represents whether a node was freshly created or already existed on the underlying
+/// filesystem.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CreationStatus {
+pub enum CreationStatus {
     /// The node was newly created. Updates directory ctime/mtime.
     Created,
     /// The node already existed (e.g., found in the cache, or resolved via lookup or pipelined
@@ -1595,8 +1593,21 @@ impl Drop for DirEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::spawn_kernel_and_run;
+    use crate::testing::{PanickingFile, spawn_kernel_and_run};
     use crate::vfs::pseudo::simple_directory::SimpleDirectory;
+    use crate::vfs::{
+        CacheConfig, CacheMode, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
+        FileSystemOptions, FsNode, FsNodeInfo, FsNodeOps, MemoryDirectoryFile, Namespace,
+        SymlinkNode, WhatToMount, fs_node_impl_not_dir,
+    };
+    use starnix_sync::Mutex;
+    use starnix_types::vfs::default_statfs;
+    use starnix_uapi::device_id::DeviceId;
+    use starnix_uapi::file_mode::mode;
+    use starnix_uapi::mount_flags::MountpointFlags;
+    use starnix_uapi::vfs::ResolveFlags;
+    use starnix_uapi::{errno, statfs};
+    use std::sync::atomic::AtomicUsize;
 
     #[fuchsia::test]
     async fn test_dir_entry_debug() {
@@ -1689,5 +1700,254 @@ mod tests {
         assert!(children.is_empty());
         children.set_casefold(true);
         assert!(children.is_casefold());
+    }
+
+    #[derive(Default)]
+    struct CountingTestFs {
+        /// The nodes that lookups find. Tests add nodes here to simulate files that exist in the
+        /// filesystem but are not in the dcache.
+        existing_nodes: Mutex<BTreeMap<FsString, FsNodeHandle>>,
+
+        /// The number of times that the entry of a `CountingFileNode` was revalidated.
+        revalidate_count: AtomicUsize,
+    }
+
+    impl FileSystemOps for CountingTestFs {
+        fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
+            Ok(default_statfs(0))
+        }
+
+        fn name(&self) -> &'static FsStr {
+            "counting_test_fs".into()
+        }
+    }
+
+    /// Returns the `CountingTestFs` of `fs`.
+    fn counting_fs(fs: &FileSystem) -> &CountingTestFs {
+        fs.downcast_ops::<CountingTestFs>().expect("not a CountingTestFs")
+    }
+
+    struct CountingDirNode {
+        lookup_count: Arc<AtomicUsize>,
+    }
+
+    impl FsNodeOps for CountingDirNode {
+        fn create_file_ops(
+            &self,
+            _node: &FsNode,
+            _current_task: &CurrentTask,
+            _flags: OpenFlags,
+        ) -> Result<Box<dyn FileOps>, Errno> {
+            Ok(Box::new(MemoryDirectoryFile::new()))
+        }
+
+        fn lookup(
+            &self,
+            entry: &DirEntry,
+            _current_task: &CurrentTask,
+            name: &FsStr,
+        ) -> Result<FsNodeHandle, Errno> {
+            self.lookup_count.fetch_add(1, Ordering::SeqCst);
+            let fs = entry.node.fs();
+            let node = counting_fs(&fs).existing_nodes.lock().get(name).cloned();
+            node.ok_or_else(|| errno!(ENOENT))
+        }
+
+        fn mknod(
+            &self,
+            node: &FsNode,
+            _current_task: &CurrentTask,
+            _name: &FsStr,
+            mode: FileMode,
+            dev: DeviceId,
+            owner: FsCred,
+        ) -> Result<FsNodeHandle, Errno> {
+            let mut info = FsNodeInfo::new(mode, owner);
+            info.rdev = dev;
+            Ok(node.fs().create_node_and_allocate_node_id(CountingFileNode, info))
+        }
+
+        fn mkdir(
+            &self,
+            node: &FsNode,
+            _current_task: &CurrentTask,
+            _name: &FsStr,
+            mode: FileMode,
+            owner: FsCred,
+        ) -> Result<FsNodeHandle, Errno> {
+            Ok(node.fs().create_node_and_allocate_node_id(
+                CountingDirNode { lookup_count: self.lookup_count.clone() },
+                FsNodeInfo::new(mode, owner),
+            ))
+        }
+
+        fn unlink(
+            &self,
+            _node: &FsNode,
+            _current_task: &CurrentTask,
+            _name: &FsStr,
+            _child: &FsNodeHandle,
+        ) -> Result<(), Errno> {
+            Ok(())
+        }
+
+        fn create_symlink(
+            &self,
+            _node: &FsNode,
+            _current_task: &CurrentTask,
+            _name: &FsStr,
+            _target: &FsStr,
+            _owner: FsCred,
+        ) -> Result<FsNodeHandle, Errno> {
+            error!(ENOTSUP)
+        }
+    }
+
+    struct CountingFileNode;
+    impl FsNodeOps for CountingFileNode {
+        fs_node_impl_not_dir!();
+
+        fn create_file_ops(
+            &self,
+            _node: &FsNode,
+            _current_task: &CurrentTask,
+            _flags: OpenFlags,
+        ) -> Result<Box<dyn FileOps>, Errno> {
+            Ok(Box::new(PanickingFile))
+        }
+
+        fn create_dir_entry_ops(&self) -> Box<dyn DirEntryOps> {
+            Box::new(CountingDirEntryOps)
+        }
+    }
+
+    struct CountingDirEntryOps;
+    impl DirEntryOps for CountingDirEntryOps {
+        fn revalidate(&self, _current_task: &CurrentTask, entry: &DirEntry) -> Result<bool, Errno> {
+            counting_fs(&entry.node.fs()).revalidate_count.fetch_add(1, Ordering::SeqCst);
+            Ok(true)
+        }
+    }
+
+    fn create_counting_fs(current_task: &CurrentTask) -> (FileSystemHandle, Arc<AtomicUsize>) {
+        let lookup_count = Arc::new(AtomicUsize::new(0));
+        let fs = FileSystem::new(
+            current_task.kernel(),
+            CacheMode::Cached(CacheConfig { capacity: 16 }),
+            CountingTestFs::default(),
+            FileSystemOptions::default(),
+        )
+        .expect("create filesystem");
+        let root_ino = fs.allocate_ino();
+        fs.create_root(root_ino, CountingDirNode { lookup_count: lookup_count.clone() });
+        (fs, lookup_count)
+    }
+
+    #[fuchsia::test]
+    async fn test_open_create_looks_up_once() {
+        spawn_kernel_and_run(async |current_task| {
+            let (fs, lookup_count) = create_counting_fs(&current_task);
+            let dir = Namespace::new(fs.clone()).root();
+            let open = |name: &str, flags: OpenFlags| {
+                current_task.open_namespace_node_at(
+                    dir.clone(),
+                    name.into(),
+                    flags,
+                    mode!(IFREG, 0o644),
+                    ResolveFlags::empty(),
+                )
+            };
+
+            // Creating a new file looks up the name only once before creating it.
+            let created = open("file", OpenFlags::CREAT | OpenFlags::RDWR).expect("create file");
+            assert_eq!(lookup_count.load(Ordering::SeqCst), 1);
+
+            // Opening the existing file with O_CREAT is served from the cache, and revalidates the
+            // cached entry only once.
+            let opened = open("file", OpenFlags::CREAT | OpenFlags::RDWR).expect("open file");
+            assert!(Arc::ptr_eq(&created.name.entry, &opened.name.entry));
+            assert_eq!(lookup_count.load(Ordering::SeqCst), 1);
+            assert_eq!(counting_fs(&fs).revalidate_count.load(Ordering::SeqCst), 1);
+
+            // O_EXCL still fails for an existing file.
+            assert_eq!(
+                open("file", OpenFlags::CREAT | OpenFlags::EXCL | OpenFlags::RDWR).unwrap_err(),
+                errno!(EEXIST)
+            );
+            assert_eq!(lookup_count.load(Ordering::SeqCst), 1);
+
+            // Creating a new file with O_EXCL also looks up the name only once.
+            open("excl", OpenFlags::CREAT | OpenFlags::EXCL | OpenFlags::RDWR)
+                .expect("create excl");
+            assert_eq!(lookup_count.load(Ordering::SeqCst), 2);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_open_create_existing() {
+        spawn_kernel_and_run(async |current_task| {
+            let (fs, lookup_count) = create_counting_fs(&current_task);
+            let ns = Namespace::new(fs.clone());
+            let dir = ns.root();
+            let open = |name: &str, resolve_flags: ResolveFlags| {
+                current_task.open_namespace_node_at(
+                    dir.clone(),
+                    name.into(),
+                    OpenFlags::CREAT | OpenFlags::RDWR,
+                    mode!(IFREG, 0o644),
+                    resolve_flags,
+                )
+            };
+            let add_existing_node = |name: &str, node: FsNodeHandle| {
+                counting_fs(&fs).existing_nodes.lock().insert(name.into(), node);
+            };
+
+            // Opening a file that exists but is not in the dcache with O_CREAT looks it up only
+            // once, and does not revalidate the entry that was just looked up.
+            let file = fs.create_node_and_allocate_node_id(
+                CountingFileNode,
+                FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+            );
+            add_existing_node("file", file.clone());
+            let opened = open("file", ResolveFlags::empty()).expect("open file");
+            assert!(Arc::ptr_eq(&opened.name.entry.node, &file));
+            assert_eq!(lookup_count.load(Ordering::SeqCst), 1);
+            assert_eq!(counting_fs(&fs).revalidate_count.load(Ordering::SeqCst), 0);
+
+            // Opening a symlink with O_CREAT opens its target.
+            let (link, info) = SymlinkNode::new("file".into(), FsCred::root());
+            add_existing_node("link", fs.create_node_and_allocate_node_id(link, info));
+            let via_link = open("link", ResolveFlags::empty()).expect("open link");
+            assert!(Arc::ptr_eq(&via_link.name.entry, &opened.name.entry));
+            assert_eq!(lookup_count.load(Ordering::SeqCst), 2);
+
+            // Opening a mount point with O_CREAT opens the root of the mount, unless the path must
+            // not cross mount points.
+            let mounted = open("mounted", ResolveFlags::empty()).expect("create mounted");
+            opened
+                .name
+                .mount(WhatToMount::Bind(mounted.name.to_passive()), MountpointFlags::empty())
+                .expect("bind mount");
+            let over_mount = open("file", ResolveFlags::empty()).expect("open mount point");
+            assert!(Arc::ptr_eq(&over_mount.name.entry, &mounted.name.entry));
+            assert_eq!(open("file", ResolveFlags::NO_XDEV).unwrap_err(), errno!(EXDEV));
+
+            // With O_EXCL, opening a mount point fails with EEXIST, but only after the mount has
+            // been entered, so a path that must not cross mount points fails with EXDEV instead,
+            // as in Linux.
+            let open_excl = |name: &str, resolve_flags: ResolveFlags| {
+                current_task.open_namespace_node_at(
+                    dir.clone(),
+                    name.into(),
+                    OpenFlags::CREAT | OpenFlags::EXCL | OpenFlags::RDWR,
+                    mode!(IFREG, 0o644),
+                    resolve_flags,
+                )
+            };
+            assert_eq!(open_excl("file", ResolveFlags::empty()).unwrap_err(), errno!(EEXIST));
+            assert_eq!(open_excl("file", ResolveFlags::NO_XDEV).unwrap_err(), errno!(EXDEV));
+        })
+        .await;
     }
 }

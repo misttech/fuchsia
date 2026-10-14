@@ -3560,14 +3560,13 @@ mod test {
                 .expect("new_fs failed");
 
                 let ns = Namespace::new_with_flags(fs, MountpointFlags::RELATIME);
-                let child = ns
+                let (child, _status) = ns
                     .root()
                     .open_create_node(
                         &current_task,
                         TEST_FILE.into(),
                         FileMode::ALLOW_ALL.with_type(FileMode::IFREG),
                         DeviceId::NONE,
-                        OpenFlags::empty(),
                     )
                     .expect("create_node failed");
 

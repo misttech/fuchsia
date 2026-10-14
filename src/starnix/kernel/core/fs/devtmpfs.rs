@@ -128,7 +128,7 @@ pub fn devtmpfs_get_or_create_directory_at(
     parent_dir: DirEntryHandle,
     dir_name: &FsStr,
 ) -> Result<DirEntryHandle, Errno> {
-    parent_dir.get_or_create_entry(
+    let (entry, _status) = parent_dir.get_or_create_entry(
         current_task,
         &MountInfo::detached(),
         dir_name,
@@ -142,7 +142,8 @@ pub fn devtmpfs_get_or_create_directory_at(
                 FsCred::root(),
             )
         },
-    )
+    )?;
+    Ok(entry)
 }
 
 fn devtmpfs_create_device_node(

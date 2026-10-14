@@ -17,9 +17,10 @@ use crate::task::{
     TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
-    AccessCheck, DirectoryMode, FdFlags, FdNumber, FdTable, FileHandle, FileMapping,
-    FileWriteGuardMode, FsContext, FsStr, LookupContext, LookupVec, MAX_SYMLINK_FOLLOWS,
-    NamespaceNode, OpenAccessCheck, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
+    AccessCheck, CreationStatus, DirEntry, DirectoryMode, FdFlags, FdNumber, FdTable, FileHandle,
+    FileMapping, FileWriteGuardMode, FsContext, FsStr, LookupContext, LookupVec,
+    MAX_SYMLINK_FOLLOWS, NamespaceNode, OpenAccessCheck, ResolveBase, SymlinkMode, SymlinkTarget,
+    new_pidfd,
 };
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
@@ -755,7 +756,32 @@ impl CurrentTask {
         // Lookup the child, without following a symlink or expecting it to be a directory.
         let mut child_context = context.with(SymlinkMode::NoFollow, DirectoryMode::AllowAny);
 
-        match parent.lookup_child(self, &mut child_context, basename) {
+        let child = if flags.contains(OpenFlags::CREAT)
+            && context.directory_mode != DirectoryMode::MustBeDirectory
+            && !DirEntry::is_reserved_name(basename)
+        {
+            // When creating, look up and create the child in a single step under the parent's
+            // children lock, like Linux's lookup_open(). A separate lookup first would just be
+            // repeated under the lock, which costs an extra round trip on remote filesystems.
+            let (child, status) = parent.open_create_node(
+                self,
+                basename,
+                mode.with_type(FileMode::IFREG),
+                DeviceId::NONE,
+            )?;
+            if status == CreationStatus::Created {
+                return Ok((child, true));
+            }
+            // The child already exists. Resolve the node that was found rather than looking it
+            // up again, which would revalidate it a second time. O_EXCL is only checked below,
+            // after mounts have been entered, so that RESOLVE_NO_XDEV takes precedence over
+            // EEXIST, as in Linux.
+            parent.resolve_child(self, &mut child_context, child)
+        } else {
+            parent.lookup_child(self, &mut child_context, basename)
+        };
+
+        match child {
             Ok(name) => {
                 if name.entry.node.is_lnk() {
                     if flags.contains(OpenFlags::PATH)
@@ -816,20 +842,14 @@ impl CurrentTask {
                     Ok((name, false))
                 }
             }
-            Err(e) if e == errno!(ENOENT) && flags.contains(OpenFlags::CREAT) => {
-                if context.directory_mode == DirectoryMode::MustBeDirectory {
-                    return error!(EISDIR);
-                }
-                Ok((
-                    parent.open_create_node(
-                        self,
-                        basename,
-                        mode.with_type(FileMode::IFREG),
-                        DeviceId::NONE,
-                        flags,
-                    )?,
-                    true,
-                ))
+            Err(e)
+                if e == errno!(ENOENT)
+                    && flags.contains(OpenFlags::CREAT)
+                    && context.directory_mode == DirectoryMode::MustBeDirectory =>
+            {
+                // A path that must be a directory is not created. Other children that did not
+                // exist were created above.
+                error!(EISDIR)
             }
             Err(e) => Err(e),
         }
