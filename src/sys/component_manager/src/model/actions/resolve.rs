@@ -270,17 +270,17 @@ pub mod tests {
         let with_collection = test.look_up(["with_collection"].try_into().unwrap()).await;
         let executable = test.look_up(["executable"].try_into().unwrap()).await;
 
-        // Non-executable realms without collections or structured config drop their decl on resolve.
+        // Non-executable realms without structured config drop their decl on resolve, even if they
+        // declare collections.
         {
             let resolved_state = realm.lock_resolved_state().await.unwrap();
             assert!(resolved_state.decl().is_none());
             assert!(resolved_state.elided_decl);
         }
-        // Components with collections retain their decl for dynamic child validation.
         {
             let resolved_state = with_collection.lock_resolved_state().await.unwrap();
-            assert!(resolved_state.decl().is_some());
-            assert!(!resolved_state.elided_decl);
+            assert!(resolved_state.decl().is_none());
+            assert!(resolved_state.elided_decl);
         }
         // Executable components retain their decl until StartAction.
         {

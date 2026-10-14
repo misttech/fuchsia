@@ -45,10 +45,10 @@ use capability_source::{
 use clonable_error::ClonableError;
 use cm_fidl_validator::error::{DeclType, Error as ValidatorError};
 use cm_graph::DependencyNode;
-use cm_rust::offer::{OfferDecl, OfferDeclCommon, OfferSource};
+use cm_rust::offer::{OfferDecl, OfferDeclCommon, OfferSource, OfferTarget};
 use cm_rust::{
     CapabilityDecl, CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl, DeliveryType,
-    FidlIntoNative, NativeIntoFidl, UseDecl, UseProtocolDecl,
+    DependencyType, FidlIntoNative, NativeIntoFidl, UseDecl, UseProtocolDecl, UseSource,
 };
 use cm_types::{AllowedOffers, Name, Path, RelativePath};
 use config_encoder::ConfigFields;
@@ -452,6 +452,11 @@ pub struct ResolvedInstanceState {
     /// retain the complete decl.
     pub offer_decls: Vec<OfferDecl>,
 
+    /// The declarations of capabilities of this component instance.
+    /// We store them here as a memory optimization so that we do not need to
+    /// retain the complete decl.
+    pub capability_decls: Vec<CapabilityDecl>,
+
     /// The declaration of the logger capability used by this component.
     pub logger_decl: Option<UseProtocolDecl>,
 
@@ -575,14 +580,31 @@ impl ResolvedInstanceState {
             })
             .collect::<Vec<_>>();
 
-        let offer_decls =
-            match decl.collections.iter().find_map(|collection| match collection.allowed_offers {
-                AllowedOffers::StaticAndDynamic => Some(()),
-                AllowedOffers::StaticOnly => None,
-            }) {
-                Some(()) => decl.offers.iter().cloned().collect::<Vec<_>>(),
-                None => vec![],
-            };
+        let has_dynamic_offers = decl
+            .collections
+            .iter()
+            .any(|collection| collection.allowed_offers == AllowedOffers::StaticAndDynamic);
+        let offer_decls = if has_dynamic_offers {
+            decl.offers.to_vec()
+        } else if !decl.collections.is_empty() {
+            // Even when dynamic offers are not allowed (`has_dynamic_offers` is false) and
+            // `cm_fidl_validator::validate_dynamic_offers` is skipped on `add_child`, we still
+            // need static offers whose source or target is a collection so that
+            // `validate_and_convert_dynamic_component` can populate `dependencies` with edges for
+            // newly created dynamic children (used by `ShutdownJob` for shutdown ordering).
+            decl.offers
+                .iter()
+                .filter(|offer| {
+                    matches!(offer.source(), OfferSource::Collection(_))
+                        || matches!(offer.target(), OfferTarget::Collection(_))
+                })
+                .cloned()
+                .collect()
+        } else {
+            vec![]
+        };
+        let capability_decls = if has_dynamic_offers { decl.capabilities.to_vec() } else { vec![] };
+
         let logger_decl = decl.uses.iter().find_map(|use_| match use_ {
             cm_rust::UseDecl::Protocol(decl) => (decl.source_name
                 == fidl_fuchsia_logger::LogSinkMarker::PROTOCOL_NAME)
@@ -608,6 +630,7 @@ impl ResolvedInstanceState {
             collection_decls,
             storage_service_use_decls,
             offer_decls,
+            capability_decls,
             logger_decl,
             restarts_disabled: false,
             elided_decl: false,
@@ -694,12 +717,16 @@ impl ResolvedInstanceState {
 
         state.sandbox = component_sandbox;
         state.populate_child_inputs(&state.sandbox.child_inputs).await;
-        // Non-executable components without collections or structured configuration do not need
-        // their declaration retained after resolution: `StartAction` does not launch a program or
-        // encode configuration for them, and dynamic child validation will never run on them.
-        if state.resolved_component.decl.as_ref().is_some_and(|d| {
-            d.get_runner().is_none() && d.collections.is_empty() && d.config.is_none()
-        }) {
+        // Non-executable components without structured configuration do not need their declaration
+        // retained after resolution: `StartAction` does not launch a program or encode
+        // configuration for them, and dynamic child validation uses the fields cached on
+        // `ResolvedInstanceState`.
+        if state
+            .resolved_component
+            .decl
+            .as_ref()
+            .is_some_and(|d| d.get_runner().is_none() && d.config.is_none())
+        {
             state.resolved_component.decl = None;
             state.elided_decl = true;
         }
@@ -1282,12 +1309,24 @@ impl ResolvedInstanceState {
         all_dynamic_children: Vec<(&str, &str)>,
         new_dynamic_offers: Vec<fdecl::Offer>,
     ) -> Result<(), AddChildError> {
+        let static_children = self.children().filter_map(|(n, _)| {
+            if n.collection().is_none() { Some(n.name().as_str()) } else { None }
+        });
+        let collections = self.collection_decls.iter().map(|c| c.name.as_str());
+        let capabilities: Vec<fdecl::Capability> =
+            self.capability_decls.iter().cloned().map(NativeIntoFidl::native_into_fidl).collect();
+        let static_offers: Vec<fdecl::Offer> =
+            self.offer_decls.iter().cloned().map(NativeIntoFidl::native_into_fidl).collect();
+
         // Validate!
         cm_fidl_validator::validate_dynamic_offers(
             all_dynamic_children,
+            static_children,
+            collections,
+            &capabilities,
+            &static_offers,
             dependencies,
             &new_dynamic_offers,
-            &self.resolved_component.decl.as_ref().unwrap().as_ref().clone().native_into_fidl(),
         )
         .map_err(|err| {
             if err.errs.iter().all(|e| matches!(e, ValidatorError::DependencyCycle(_))) {
@@ -1302,14 +1341,53 @@ impl ResolvedInstanceState {
         let dynamic_offers: Vec<OfferDecl> =
             new_dynamic_offers.into_iter().map(FidlIntoNative::fidl_into_native).collect();
         for offer in &dynamic_offers {
-            if !self
-                .try_offer_source_exists(offer.source())
-                .expect("component decl already dropped on instantiation code path")
-            {
+            if !self.offer_source_exists(offer.source()) {
                 return Err(DynamicCapabilityError::SourceNotFound { offer: offer.clone() }.into());
             }
         }
         Ok(())
+    }
+
+    fn add_dynamic_child_collection_dependencies(
+        &self,
+        dependencies: &mut DirectedGraph<DependencyNode>,
+        all_dynamic_children: &[(&str, &str)],
+    ) {
+        for collection in &self.collection_decls {
+            if let Some(env) = &collection.environment {
+                let source = DependencyNode::Environment(env.as_str().into());
+                let coll_name: FlyStr = collection.name.as_str().into();
+                dependencies
+                    .add_edge(source.clone(), DependencyNode::Collection(coll_name.clone()));
+                for (child_name, c) in all_dynamic_children {
+                    if *c == collection.name.as_str() {
+                        dependencies.add_edge(
+                            source.clone(),
+                            DependencyNode::Child((*child_name).into(), Some(coll_name.clone())),
+                        );
+                    }
+                }
+            }
+        }
+        for use_ in &self.storage_service_use_decls {
+            if let UseDecl::Service(u) = use_ {
+                if u.dependency_type == DependencyType::Strong {
+                    if let UseSource::Collection(coll_name) = &u.source {
+                        for (child_name, c) in all_dynamic_children {
+                            if *c == coll_name.as_str() {
+                                dependencies.add_edge(
+                                    DependencyNode::Child(
+                                        (*child_name).into(),
+                                        Some(coll_name.as_str().into()),
+                                    ),
+                                    DependencyNode::Self_,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn validate_and_convert_dynamic_component(
@@ -1325,6 +1403,7 @@ impl ResolvedInstanceState {
         let collection = collection.unwrap();
         let dynamic_offers =
             Self::add_target_dynamic_offers(dynamic_offers.unwrap_or_default(), child, collection)?;
+
         // TODO: This shifting around of the DirectedGraph is here to work around a lifetime
         // error, but it's slightly awkward. See if there's a better way -- can we decouple
         // `validate_dynamic_component` from having to depend on `self`?
@@ -1342,11 +1421,27 @@ impl ResolvedInstanceState {
             })
             .collect();
         all_dynamic_children.push((child.name.as_str(), collection.name.as_str()));
-        self.validate_dynamic_component(
-            Arc::make_mut(&mut dependencies),
-            all_dynamic_children,
-            dynamic_offers.clone(),
-        )?;
+
+        let deps = Arc::make_mut(&mut dependencies);
+        self.add_dynamic_child_collection_dependencies(deps, &all_dynamic_children);
+
+        if dynamic_offers.is_empty() {
+            for offer in &self.offer_decls {
+                if matches!(offer.source(), OfferSource::Collection(_))
+                    || matches!(offer.target(), OfferTarget::Collection(_))
+                {
+                    cm_graph::add_dependencies_from_offer(
+                        deps,
+                        &offer.clone().native_into_fidl(),
+                        &all_dynamic_children,
+                    );
+                }
+            }
+            _ = mem::replace(&mut self.resolved_component.dependencies, dependencies);
+            return Ok(vec![]);
+        }
+
+        self.validate_dynamic_component(deps, all_dynamic_children, dynamic_offers.clone())?;
 
         _ = mem::replace(&mut self.resolved_component.dependencies, dependencies);
         Ok(dynamic_offers.into_iter().map(|o| o.fidl_into_native()).collect())
@@ -1400,9 +1495,8 @@ impl ResolvedInstanceState {
         self.children.iter().map(|(name, child)| (name.clone(), child.component_output())).collect()
     }
 
-    fn try_offer_source_exists(&self, source: &OfferSource) -> Option<bool> {
-        let decl = self.resolved_component.decl.as_ref()?;
-        Some(match source {
+    fn offer_source_exists(&self, source: &OfferSource) -> bool {
+        match source {
             OfferSource::Framework | OfferSource::Parent | OfferSource::Void => true,
             OfferSource::Child(child) => {
                 let child_name = match ChildName::try_new(
@@ -1410,18 +1504,18 @@ impl ResolvedInstanceState {
                     child.collection.as_ref().map(|c| c.as_str()),
                 ) {
                     Ok(child_name) => child_name,
-                    Err(_) => return Some(false),
+                    Err(_) => return false,
                 };
                 self.get_child(&child_name).is_some()
             }
             OfferSource::Self_ => true,
             OfferSource::Capability(capability_name) => {
-                decl.capabilities.iter().any(|capability| capability.name() == capability_name)
+                self.capability_decls.iter().any(|capability| capability.name() == capability_name)
             }
             OfferSource::Collection(collection_name) => {
-                decl.collections.iter().any(|collection| &collection.name == collection_name)
+                self.collection_decls.iter().any(|collection| &collection.name == collection_name)
             }
-        })
+        }
     }
 
     pub async fn address(&self) -> Result<ComponentAddress, ResolverError> {

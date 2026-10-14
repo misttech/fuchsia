@@ -511,18 +511,7 @@ async fn start_component(
             #[cfg(not(test))]
             InstanceState::Resolved(mut resolved) => {
                 // Drop the decl now that it's no longer needed.
-                let decl = resolved.resolved_component.decl.take();
-                match decl {
-                    Some(d) => {
-                        // Put the decl back if it has collections, so that
-                        // dynamic children can have their manifest validated
-                        // against their parent (this component).
-                        if d.collections.len() > 0 {
-                            resolved.resolved_component.decl = Some(d);
-                        }
-                    }
-                    None => (),
-                }
+                resolved.resolved_component.decl = None;
                 InstanceState::Started(resolved, started)
             }
             #[cfg(test)]

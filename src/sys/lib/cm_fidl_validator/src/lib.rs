@@ -148,7 +148,7 @@ pub fn validate<'a>(
     dependencies: &'a mut DirectedGraph<DependencyNode>,
 ) -> Result<(), ErrorList> {
     let ctx = ValidationContext::new(dependencies);
-    ctx.validate(decl, &[]).map_err(|errs| ErrorList::new(errs))
+    ctx.validate(decl).map_err(|errs| ErrorList::new(errs))
 }
 
 /// Validates a list of namespace or builtin Capabilities.
@@ -233,13 +233,23 @@ fn validate_child(
 /// output of the previous [`validate`] or [`validate_dynamic_offers`].
 pub fn validate_dynamic_offers<'a>(
     dynamic_children: Vec<(&'a str, &'a str)>,
-    dependencies: &mut DirectedGraph<DependencyNode>,
+    static_children: impl IntoIterator<Item = &'a str>,
+    collections: impl IntoIterator<Item = &'a str>,
+    capabilities: &'a [fdecl::Capability],
+    static_offers: &'a [fdecl::Offer],
+    dependencies: &'a mut DirectedGraph<DependencyNode>,
     new_dynamic_offers: &'a [fdecl::Offer],
-    decl: &'a fdecl::Component,
 ) -> Result<(), ErrorList> {
     let mut ctx = ValidationContext::new(dependencies);
     ctx.dynamic_children = dynamic_children;
-    ctx.validate(decl, new_dynamic_offers).map_err(|errs| ErrorList::new(errs))
+    ctx.validate_dynamic_offers(
+        static_children,
+        collections,
+        capabilities,
+        static_offers,
+        new_dynamic_offers,
+    )
+    .map_err(|errs| ErrorList::new(errs))
 }
 
 fn check_offer_name(
@@ -257,7 +267,7 @@ fn check_offer_name(
 }
 
 struct ValidationContext<'a> {
-    all_children: HashMap<&'a str, &'a fdecl::Child>,
+    all_children: HashSet<&'a str>,
     all_collections: HashSet<&'a str>,
     all_capability_ids: HashSet<&'a str>,
     all_storages: HashMap<&'a str, Option<&'a fdecl::Ref>>,
@@ -322,11 +332,7 @@ impl<'a> ValidationContext<'a> {
         }
     }
 
-    fn validate(
-        mut self,
-        decl: &'a fdecl::Component,
-        new_dynamic_offers: &'a [fdecl::Offer],
-    ) -> Result<(), Vec<Error>> {
+    fn validate(mut self, decl: &'a fdecl::Component) -> Result<(), Vec<Error>> {
         // Collect all environment names first, so that references to them can be checked.
         if let Some(envs) = &decl.environments {
             self.collect_environment_names(&envs);
@@ -391,16 +397,6 @@ impl<'a> ValidationContext<'a> {
             self.validate_offer_group(&offers, OfferType::Static);
         }
 
-        for dynamic_offer in new_dynamic_offers {
-            self.validate_offer_decl(dynamic_offer, OfferType::Dynamic);
-            cm_graph::add_dependencies_from_offer(
-                &mut self.strong_dependencies,
-                dynamic_offer,
-                &self.dynamic_children,
-            );
-        }
-        self.validate_offer_group(new_dynamic_offers, OfferType::Dynamic);
-
         // Validate "environments" after all other declarations are processed.
         if let Some(environment) = decl.environments.as_ref() {
             for environment in environment {
@@ -417,6 +413,50 @@ impl<'a> ValidationContext<'a> {
             &decl,
             &self.dynamic_children,
         );
+        if let Err(e) = self.strong_dependencies.topological_sort() {
+            self.errors.push(Error::dependency_cycle(e.format_cycle()));
+        }
+
+        if self.errors.is_empty() { Ok(()) } else { Err(self.errors) }
+    }
+
+    fn validate_dynamic_offers(
+        mut self,
+        static_children: impl IntoIterator<Item = &'a str>,
+        collections: impl IntoIterator<Item = &'a str>,
+        capabilities: &'a [fdecl::Capability],
+        static_offers: &'a [fdecl::Offer],
+        new_dynamic_offers: &'a [fdecl::Offer],
+    ) -> Result<(), Vec<Error>> {
+        self.all_children.extend(static_children);
+        self.all_collections.extend(collections);
+
+        self.load_dictionary_names(capabilities.iter().filter_map(|capability| match capability {
+            fdecl::Capability::Dictionary(dictionary_decl) => Some(dictionary_decl),
+            _ => None,
+        }));
+        self.validate_capability_decls(capabilities, false);
+
+        for offer in static_offers.iter() {
+            self.validate_offer_decl(offer, OfferType::Static);
+            cm_graph::add_dependencies_from_offer(
+                &mut self.strong_dependencies,
+                offer,
+                &self.dynamic_children,
+            );
+        }
+        self.validate_offer_group(static_offers, OfferType::Static);
+
+        for dynamic_offer in new_dynamic_offers {
+            self.validate_offer_decl(dynamic_offer, OfferType::Dynamic);
+            cm_graph::add_dependencies_from_offer(
+                &mut self.strong_dependencies,
+                dynamic_offer,
+                &self.dynamic_children,
+            );
+        }
+        self.validate_offer_group(new_dynamic_offers, OfferType::Dynamic);
+
         if let Err(e) = self.strong_dependencies.topological_sort() {
             self.errors.push(Error::dependency_cycle(e.format_cycle()));
         }
@@ -1149,7 +1189,7 @@ impl<'a> ValidationContext<'a> {
         }
         if let Some(name) = child.name.as_ref() {
             let name: &str = name;
-            if self.all_children.insert(name, child).is_some() {
+            if !self.all_children.insert(name) {
                 self.errors.push(Error::duplicate_field(DeclType::Child, "name", name));
             }
         }
@@ -2411,7 +2451,7 @@ impl<'a> ValidationContext<'a> {
 
         // Ensure the child exists.
         let name: &str = &child.name;
-        if !self.all_children.contains_key(name) {
+        if !self.all_children.contains(name) {
             self.errors.push(Error::invalid_child(decl, field_name, name));
             return false;
         }
@@ -2667,10 +2707,10 @@ impl<'a> ValidationContext<'a> {
 mod tests {
     use super::*;
     use cm_types::MAX_LONG_NAME_LENGTH;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_data as fdata;
+    use fidl_fuchsia_io as fio;
     use test_case::test_case;
-    use {
-        fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
-    };
 
     macro_rules! test_validate {
         (
@@ -10448,12 +10488,7 @@ mod tests {
     #[test]
     fn test_validate_dynamic_offers_empty() {
         assert_eq!(
-            validate_dynamic_offers(
-                vec![],
-                &mut DirectedGraph::new(),
-                &vec![],
-                &fdecl::Component::default()
-            ),
+            validate_dynamic_offers(vec![], [], [], &[], &[], &mut DirectedGraph::new(), &vec![]),
             Ok(())
         );
     }
@@ -10463,6 +10498,14 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                [],
+                [],
+                &[fdecl::Capability::Protocol(fdecl::Protocol {
+                    name: Some("thing".to_string()),
+                    source_path: Some("/svc/foo".into()),
+                    ..Default::default()
+                })],
+                &[],
                 &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol {
@@ -10528,14 +10571,6 @@ mod tests {
                         ..Default::default()
                     }),
                 ],
-                &fdecl::Component {
-                    capabilities: Some(vec![fdecl::Capability::Protocol(fdecl::Protocol {
-                        name: Some("thing".to_string()),
-                        source_path: Some("/svc/foo".into()),
-                        ..Default::default()
-                    }),]),
-                    ..Default::default()
-                }
             ),
             Ok(())
         );
@@ -10546,6 +10581,10 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                ["child_a", "child_b", "child_c"],
+                [],
+                &[],
+                &[],
                 &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
@@ -10577,44 +10616,6 @@ mod tests {
                         ..Default::default()
                     })
                 ],
-                &fdecl::Component {
-                    children: Some(vec![
-                        fdecl::Child {
-                            name: Some("child_a".to_string()),
-                            url: Some(
-                                "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
-                                    .to_string()
-                            ),
-                            startup: Some(fdecl::StartupMode::Lazy),
-                            on_terminate: None,
-                            environment: None,
-                            ..Default::default()
-                        },
-                        fdecl::Child {
-                            name: Some("child_b".to_string()),
-                            url: Some(
-                                "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
-                                    .to_string()
-                            ),
-                            startup: Some(fdecl::StartupMode::Lazy),
-                            on_terminate: None,
-                            environment: None,
-                            ..Default::default()
-                        },
-                        fdecl::Child {
-                            name: Some("child_c".to_string()),
-                            url: Some(
-                                "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
-                                    .to_string()
-                            ),
-                            startup: Some(fdecl::StartupMode::Lazy),
-                            on_terminate: None,
-                            environment: None,
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                }
             ),
             Ok(())
         );
@@ -10625,6 +10626,10 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                ["child_a", "child_b", "child_c"],
+                [],
+                &[],
+                &[],
                 &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
@@ -10656,38 +10661,6 @@ mod tests {
                         ..Default::default()
                     }),
                 ],
-                &fdecl::Component {
-                    children: Some(vec![
-                        fdecl::Child {
-                            name: Some("child_a".to_string()),
-                            url: Some(
-                                "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
-                                    .to_string()
-                            ),
-                            startup: Some(fdecl::StartupMode::Lazy),
-                            ..Default::default()
-                        },
-                        fdecl::Child {
-                            name: Some("child_b".to_string()),
-                            url: Some(
-                                "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
-                                    .to_string()
-                            ),
-                            startup: Some(fdecl::StartupMode::Lazy),
-                            ..Default::default()
-                        },
-                        fdecl::Child {
-                            name: Some("child_c".to_string()),
-                            url: Some(
-                                "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
-                                    .to_string()
-                            ),
-                            startup: Some(fdecl::StartupMode::Lazy),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                },
             ),
             Err(ErrorList::new(vec![Error::invalid_aggregate_offer(
                 "source_instance_filter must be set for dynamic aggregate service offers"
@@ -10700,6 +10673,14 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                [],
+                [],
+                &[fdecl::Capability::Protocol(fdecl::Protocol {
+                    name: Some("thing".to_string()),
+                    source_path: Some("/svc/foo".into()),
+                    ..Default::default()
+                })],
+                &[],
                 &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol {
@@ -10741,14 +10722,6 @@ mod tests {
                         ..Default::default()
                     }),
                 ],
-                &fdecl::Component {
-                    capabilities: Some(vec![fdecl::Capability::Protocol(fdecl::Protocol {
-                        name: Some("thing".to_string()),
-                        source_path: Some("/svc/foo".into()),
-                        ..Default::default()
-                    }),]),
-                    ..Default::default()
-                }
             ),
             Err(ErrorList::new(vec![
                 Error::missing_field(DeclType::OfferProtocol, "target"),
@@ -10766,6 +10739,19 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                [],
+                ["coll"],
+                &[],
+                &[fdecl::Offer::Protocol(fdecl::OfferProtocol {
+                    dependency_type: Some(fdecl::DependencyType::Strong),
+                    source: Some(fdecl::Ref::Parent(fdecl::ParentRef)),
+                    source_name: Some("thing".to_string()),
+                    target_name: Some("thing".to_string()),
+                    target: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                        name: "coll".into()
+                    })),
+                    ..Default::default()
+                })],
                 &mut DirectedGraph::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     dependency_type: Some(fdecl::DependencyType::Strong),
@@ -10778,24 +10764,6 @@ mod tests {
                     })),
                     ..Default::default()
                 }),],
-                &fdecl::Component {
-                    offers: Some(vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
-                        dependency_type: Some(fdecl::DependencyType::Strong),
-                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef)),
-                        source_name: Some("thing".to_string()),
-                        target_name: Some("thing".to_string()),
-                        target: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
-                            name: "coll".into()
-                        })),
-                        ..Default::default()
-                    }),]),
-                    collections: Some(vec![fdecl::Collection {
-                        name: Some("coll".to_string()),
-                        durability: Some(fdecl::Durability::Transient),
-                        ..Default::default()
-                    },]),
-                    ..Default::default()
-                }
             ),
             Err(ErrorList::new(vec![Error::duplicate_field(
                 DeclType::OfferProtocol,
@@ -10810,6 +10778,21 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll")],
+                ["static_child"],
+                ["coll"],
+                &[],
+                &[fdecl::Offer::Service(fdecl::OfferService {
+                    source_name: Some("foo".to_string()),
+                    target_name: Some("foo".to_string()),
+                    source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                        name: "coll".into(),
+                    })),
+                    target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                        name: "static_child".into(),
+                        collection: None,
+                    })),
+                    ..Default::default()
+                })],
                 &mut DirectedGraph::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     source_name: Some("bar".to_string()),
@@ -10825,32 +10808,6 @@ mod tests {
                     dependency_type: Some(fdecl::DependencyType::Strong),
                     ..Default::default()
                 }),],
-                &fdecl::Component {
-                    offers: Some(vec![fdecl::Offer::Service(fdecl::OfferService {
-                        source_name: Some("foo".to_string()),
-                        target_name: Some("foo".to_string()),
-                        source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
-                            name: "coll".into(),
-                        })),
-                        target: Some(fdecl::Ref::Child(fdecl::ChildRef {
-                            name: "static_child".into(),
-                            collection: None,
-                        })),
-                        ..Default::default()
-                    })]),
-                    children: Some(vec![fdecl::Child {
-                        name: Some("static_child".into()),
-                        url: Some("url#child.cm".into()),
-                        startup: Some(fdecl::StartupMode::Lazy),
-                        ..Default::default()
-                    }]),
-                    collections: Some(vec![fdecl::Collection {
-                        name: Some("coll".into()),
-                        durability: Some(fdecl::Durability::Transient),
-                        ..Default::default()
-                    }]),
-                    ..Default::default()
-                }
             ),
             Err(ErrorList::new(vec![Error::dependency_cycle(
                 "{{child coll:dyn -> collection coll -> child static_child -> child coll:dyn}}"
@@ -10863,6 +10820,10 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll1"), ("dyn", "coll2")],
+                [],
+                ["coll1", "coll2"],
+                &[],
+                &[],
                 &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Service(fdecl::OfferService {
@@ -10892,21 +10853,6 @@ mod tests {
                         ..Default::default()
                     }),
                 ],
-                &fdecl::Component {
-                    collections: Some(vec![
-                        fdecl::Collection {
-                            name: Some("coll1".into()),
-                            durability: Some(fdecl::Durability::Transient),
-                            ..Default::default()
-                        },
-                        fdecl::Collection {
-                            name: Some("coll2".into()),
-                            durability: Some(fdecl::Durability::Transient),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                }
             ),
             Err(ErrorList::new(vec![Error::dependency_cycle(
                 "{{child coll1:dyn -> child coll2:dyn -> collection coll2 -> child coll1:dyn}}"
@@ -10919,6 +10865,10 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll1"), ("dyn", "coll2")],
+                [],
+                ["coll1", "coll2"],
+                &[],
+                &[],
                 &mut DirectedGraph::from([(
                     DependencyNode::Child("dyn".into(), Some("coll1".into())),
                     DependencyNode::Child("dyn".into(), Some("coll2".into())),
@@ -10935,21 +10885,6 @@ mod tests {
                     })),
                     ..Default::default()
                 }),],
-                &fdecl::Component {
-                    collections: Some(vec![
-                        fdecl::Collection {
-                            name: Some("coll1".into()),
-                            durability: Some(fdecl::Durability::Transient),
-                            ..Default::default()
-                        },
-                        fdecl::Collection {
-                            name: Some("coll2".into()),
-                            durability: Some(fdecl::Durability::Transient),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                }
             ),
             Err(ErrorList::new(vec![Error::dependency_cycle(
                 "{{child coll1:dyn -> child coll2:dyn -> collection coll2 -> child coll1:dyn}}"
@@ -10962,6 +10897,20 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![("dyn", "coll1"), ("dyn", "coll2")],
+                [],
+                ["coll1", "coll2"],
+                &[],
+                &[fdecl::Offer::Service(fdecl::OfferService {
+                    source_name: Some("foo".to_string()),
+                    target_name: Some("foo".to_string()),
+                    source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                        name: "coll1".into(),
+                    })),
+                    target: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                        name: "coll2".into(),
+                    })),
+                    ..Default::default()
+                })],
                 &mut DirectedGraph::new(),
                 &vec![fdecl::Offer::Protocol(fdecl::OfferProtocol {
                     source_name: Some("bar".to_string()),
@@ -10977,32 +10926,6 @@ mod tests {
                     dependency_type: Some(fdecl::DependencyType::Strong),
                     ..Default::default()
                 }),],
-                &fdecl::Component {
-                    offers: Some(vec![fdecl::Offer::Service(fdecl::OfferService {
-                        source_name: Some("foo".to_string()),
-                        target_name: Some("foo".to_string()),
-                        source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
-                            name: "coll1".into(),
-                        })),
-                        target: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
-                            name: "coll2".into(),
-                        })),
-                        ..Default::default()
-                    })]),
-                    collections: Some(vec![
-                        fdecl::Collection {
-                            name: Some("coll1".into()),
-                            durability: Some(fdecl::Durability::Transient),
-                            ..Default::default()
-                        },
-                        fdecl::Collection {
-                            name: Some("coll2".into()),
-                            durability: Some(fdecl::Durability::Transient),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                }
             ),
             Err(ErrorList::new(vec![Error::dependency_cycle(
                 "{{child coll1:dyn -> collection coll1 -> child coll2:dyn -> child coll1:dyn}}",
@@ -11045,6 +10968,10 @@ mod tests {
         assert_eq!(
             validate_dynamic_offers(
                 vec![],
+                [],
+                [],
+                &[],
+                &[],
                 &mut DirectedGraph::new(),
                 &vec![
                     fdecl::Offer::Protocol(fdecl::OfferProtocol::default()),
@@ -11054,7 +10981,6 @@ mod tests {
                     fdecl::Offer::Runner(fdecl::OfferRunner::default()),
                     fdecl::Offer::Resolver(fdecl::OfferResolver::default()),
                 ],
-                &fdecl::Component::default()
             ),
             Err(ErrorList::new(vec![
                 Error::missing_field(DeclType::OfferProtocol, "source"),
