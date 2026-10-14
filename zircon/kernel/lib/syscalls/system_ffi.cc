@@ -13,7 +13,6 @@
 #include <lib/instrumentation/asan.h>
 #include <lib/page/size.h>
 #include <lib/syscalls/forward.h>
-#include <lib/wake-vector.h>
 #include <lib/zbi-format/kernel.h>
 #include <lib/zbi-format/zbi.h>
 #include <lib/zbitl/checking.h>
@@ -45,7 +44,6 @@
 #include <fbl/ref_ptr.h>
 #include <kernel/cpu.h>
 #include <kernel/ffi.h>
-#include <kernel/idle_power_thread.h>
 #include <kernel/mp.h>
 #include <kernel/percpu.h>
 #include <kernel/range_check.h>
@@ -157,23 +155,3 @@ cpp_system_powerctl_x86_set_pkg_pl1(const zx_system_powerctl_arg_t* arg) {
   return arch_system_powerctl(ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1, arg, &msr);
 }
 #endif
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE void cpp_wake_vector_discard_wake_event_report() {
-  wake_vector::WakeEvent::DiscardWakeEventReport();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE zx_instant_boot_t
-cpp_idle_power_thread_transition_all_active_to_suspend(zx_instant_boot_t resume_deadline) {
-  return IdlePowerThread::TransitionAllActiveToSuspend(resume_deadline);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_wake_vector_generate_wake_event_report(
-    zx_instant_boot_t start_time, zx_wake_source_report_header_t* out_header,
-    zx_wake_source_report_entry_t* out_entries, uint32_t num_entries, uint32_t* actual_entries) {
-  return wake_vector::WakeEvent::GenerateWakeEventReport(
-      start_time, make_user_out_ptr(out_header), make_user_out_ptr(out_entries), num_entries,
-      make_user_out_ptr(actual_entries));
-}

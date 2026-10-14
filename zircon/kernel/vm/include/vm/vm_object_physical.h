@@ -18,8 +18,8 @@
 #include <fbl/macros.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <kernel/mutex.h>
-#include <object/opaque_storage.h>
 #include <vm/vm.h>
 #include <vm/vm_constants.h>
 #include <vm/vm_object.h>

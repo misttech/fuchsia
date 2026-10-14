@@ -449,6 +449,7 @@ mod ksync_tests {
 
     ksync::declare_singleton_mutex!(TestKernelSingletonMutex);
     ksync::declare_singleton_critical_mutex!(TestKernelSingletonCriticalMutex);
+    ksync::declare_singleton_spinlock!(TestKernelSingletonSpinlock);
 
     /// test Rust declare_singleton_mutex and declare_singleton_critical_mutex
     #[test]
@@ -466,6 +467,10 @@ mod ksync_tests {
             expect_true!(cpp_verify_critical_mutex_id(
                 TestKernelSingletonCriticalMutex::Get() as *const _ as *const core::ffi::c_void,
                 <TestKernelSingletonCriticalMutex as ksync::LockClass>::ID,
+            ));
+            expect_true!(cpp_verify_spinlock_id(
+                TestKernelSingletonSpinlock::Get() as *const _ as *const core::ffi::c_void,
+                <TestKernelSingletonSpinlock as ksync::LockClass>::ID,
             ));
         }
 
@@ -509,6 +514,17 @@ mod ksync_tests {
 
         {
             ksync::lock!(let _guard = TestKernelSingletonCriticalMutex::Get().lock());
+        }
+
+        // Verify that a singleton spinlock registers LOCK_FLAGS_IRQ_SAFE so it can be acquired
+        // while holding another IRQ-safe spinlock without triggering a lockdep violation.
+        stack_pin_init!(let outer = pin_init!(GuardedSpinlockObj {
+            mu <- ksync::KMutex::init(),
+            value: 0.into(),
+        }));
+        {
+            ksync::lock!(let _outer_guard = outer.lock_mu());
+            ksync::lock!(let _inner_guard = TestKernelSingletonSpinlock::lock());
         }
     }
 

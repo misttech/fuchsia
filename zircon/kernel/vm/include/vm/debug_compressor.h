@@ -9,7 +9,7 @@
 
 #include <zircon/types.h>
 
-#include <object/opaque_storage.h>
+#include <kernel/ffi.h>
 #include <vm/vm_constants.h>
 
 struct vm_page;

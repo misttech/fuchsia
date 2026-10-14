@@ -13,11 +13,11 @@
 #include <zircon/time.h>
 
 #include <kernel/event.h>
+#include <kernel/ffi.h>
 #include <kernel/mutex.h>
 #include <kernel/spinlock.h>
 #include <ktl/atomic.h>
 #include <ktl/optional.h>
-#include <object/opaque_storage.h>
 #include <vm/page.h>
 
 class PmmNode;
