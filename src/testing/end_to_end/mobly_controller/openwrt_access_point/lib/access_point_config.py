@@ -372,7 +372,7 @@ class BssChannel:
     phy_mode: PhyMode
 
 
-DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, HtMode(bw=40, extension="+"))
+DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, HtMode(bw=20))
 DEFAULT_5G_CHANNEL = BssChannel(Band.BAND_5G, 36, VhtMode(bw=80))
 
 # see http://go/openwrt-one-dfs-bypass
