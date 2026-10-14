@@ -92,6 +92,12 @@ MUST also read the following before reviewing their code:
 - docs/development/languages/c-cpp/cxx.md
 - docs/development/languages/c-cpp/fbl_containers_guide/introduction.md
 
+If the user provided you with code that touches a driver (for example, under
+`//src/devices`, `//sdk/lib/driver`, or a `drivers/` directory), you MUST also
+read the following before reviewing their code:
+
+- docs/development/drivers/developer_guide/cpp-rubric.md
+
 ### Read the provided code
 
 If the user has provided you with source references or a diff, refer to that.

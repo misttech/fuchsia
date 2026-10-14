@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Devicetree visitor C++ implementation and guidelines.
+conditional_capability_groups {
+  path_expression: "....cc"
+  path_expression: "....h"
+  review_capability_skills: ".agents/skills/fuchsia-cpp-guidelines/SKILL.md"
+  review_capability_skills: "src/devices/skills/devicetree_visitor/SKILL.md"
+}
+
+# Devicetree binding schemas (YAML) and devicetree sources.
+conditional_capability_groups {
+  path_expression: "....yaml"
+  path_expression: "....dts"
+  path_expression: "....dtsi"
+  path_expression: "....dts.S"
+  review_capability_skills: "src/devices/skills/devicetree_schema/SKILL.md"
+}
