@@ -30,6 +30,10 @@ optional parent "gpio-init-1" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
+optional parent "interrupt-controller-0" {
+  fuchsia.NAME == "interrupt-controller-0";
+}
+
 optional parent "pin-states-0" {
   fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
   fuchsia.NAME == "pin-states-0";

@@ -37,3 +37,9 @@ optional parent "pin-states-0" {
   fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
   fuchsia.NAME == "pin-states-0";
 }
+
+// The interrupt controller providing the interrupt. Binding to this parent node guarantees
+// correct suspend/resume order relative to the controller of the interrupt.
+optional parent "interrupt-controller-0" {
+  fuchsia.NAME == "interrupt-controller-0";
+}

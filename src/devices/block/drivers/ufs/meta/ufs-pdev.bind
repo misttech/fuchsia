@@ -18,3 +18,9 @@ optional parent "ufs-interconnect" {
   fuchsia.Service == "fuchsia.hardware.interconnect.PathService";
   fuchsia.NAME == "ufs-interconnect";
 }
+
+// The interrupt controller providing the interrupt. Binding to this parent node guarantees
+// correct suspend/resume order relative to the controller of the interrupt.
+optional parent "interrupt-controller-0" {
+  fuchsia.NAME == "interrupt-controller-0";
+}

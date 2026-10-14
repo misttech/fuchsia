@@ -22,5 +22,17 @@
                 }
             }
         ]
+    },
+    {
+        "parent": "interrupt-controller-0",
+        "tests": [
+            {
+                "name": "Match interrupt controller",
+                "expected": "match",
+                "device": {
+                    "fuchsia.NAME": "\"interrupt-controller-0\""
+                }
+            }
+        ]
     }
 ]

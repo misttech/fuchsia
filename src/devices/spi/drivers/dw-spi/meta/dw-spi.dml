@@ -64,6 +64,16 @@
             service: "fuchsia.gpio.Init",
             availability: "optional",
         },
+
+        // The interrupt controller providing the interrupt. Binding to this parent node
+        // guarantees correct suspend/resume order relative to the controller of the interrupt.
+        {
+            name: "interrupt-controller-0",
+            availability: "optional",
+            bind: {
+                rules: { "fuchsia.NAME": "interrupt-controller-0" },
+            },
+        },
         {
             name: "pin-states-0",
             service: "fuchsia.hardware.pin.PinStatesService",
