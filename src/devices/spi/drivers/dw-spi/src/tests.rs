@@ -219,12 +219,10 @@ async fn test_exchange_vector() {
     };
 
     // Verify register values after the first interrupt (TX empty) is handled:
-    // - SER: Set to 1 after pre-filling the TX FIFO.
     // - TXFTLR: Remains at the default 128.
     // - RXFTLR: Set to 4 (calculated as rx_remaining (5) - 1).
     // - IMR: Only RXFIFO interrupt remains unmasked (and error interrupts). TX FIFO empty interrupt
     //        is masked since TX is done.
-    assert_eq!(read_u32(0x10), 1);
     assert_eq!(read_u32(0x18), 128);
     assert_eq!(read_u32(0x1c), 4);
     assert_eq!(read_u32(0x2c), 0x1e);
@@ -241,12 +239,10 @@ async fn test_exchange_vector() {
     assert!(response.is_ok());
 
     // Verify register values after the transfer is complete:
-    // - SER: Cleared to 0 to deselect the target.
     // - TXFTLR: Remains at the default 128.
     // - RXFTLR: Set to 0 (calculated as rx_remaining.max(1) - 1, which is 1 - 1 = 0 when
     //           rx_remaining is 0).
     // - IMR: All interrupts are masked.
-    assert_eq!(read_u32(0x10), 0);
     assert_eq!(read_u32(0x18), 128);
     assert_eq!(read_u32(0x1c), 0);
     assert_eq!(read_u32(0x2c), 0);
@@ -867,7 +863,6 @@ async fn test_loopback_mode() {
     let reset = FakeReset::new();
 
     let gpio = FakeGpio::default();
-    let pin_states_0 = FakePinStates::default();
 
     let mut harness = TestHarness::<DwSpiDriver>::new()
         .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
@@ -876,7 +871,6 @@ async fn test_loopback_mode() {
         .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
         .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
         .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
-        .add_offer(pin_states_0.serve(&mut service_fs, scope.to_handle(), "pin-states-0"))
         .set_driver_incoming(service_fs);
 
     let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
@@ -889,46 +883,14 @@ async fn test_loopback_mode() {
     spi_service.device(server_end).unwrap();
     let client = client_end.spawn_on(&dispatcher);
 
-    // 1. Normal transfer (CS 0): uses "default" hardware CS, GPIO untouched (Input)
-    perform_transfer(
-        &client,
-        &irq_dup,
-        &gpio,
-        &pin_states_0,
-        &mapping,
-        0,
-        "default",
-        fgpio::BufferMode::Input,
-    )
-    .await;
+    // 1. Normal transfer (CS 0)
+    perform_transfer(&client, &irq_dup, &gpio, &mapping, 0).await;
 
-    // 2. Loopback transfer (CS LOOPBACK_CHIP_SELECT): switches pin state to "gpio_cs" (which
-    // configures the pin as output-high in devicetree) so SER = 1 does not assert the physical CS0
-    // pin on the bus, without toggling cs_gpio directly.
-    perform_transfer(
-        &client,
-        &irq_dup,
-        &gpio,
-        &pin_states_0,
-        &mapping,
-        fspiimpl::LOOPBACK_CHIP_SELECT,
-        "gpio_cs",
-        fgpio::BufferMode::Input,
-    )
-    .await;
+    // 2. Loopback transfer (CS LOOPBACK_CHIP_SELECT)
+    perform_transfer(&client, &irq_dup, &gpio, &mapping, fspiimpl::LOOPBACK_CHIP_SELECT).await;
 
-    // 3. Normal transfer (CS 0): switches back to "default" hardware CS
-    perform_transfer(
-        &client,
-        &irq_dup,
-        &gpio,
-        &pin_states_0,
-        &mapping,
-        0,
-        "default",
-        fgpio::BufferMode::Input,
-    )
-    .await;
+    // 3. Normal transfer (CS 0)
+    perform_transfer(&client, &irq_dup, &gpio, &mapping, 0).await;
 
     started_driver.stop_driver().await;
 }
@@ -937,11 +899,8 @@ async fn perform_transfer(
     client: &fidl_next::Client<fspiimpl::SpiImpl, fdf_fidl::DriverChannel>,
     irq_dup: &zx::VirtualInterrupt,
     gpio: &FakeGpio,
-    pin_states: &FakePinStates,
     mapping: &mapped_vmo::Mapping,
     cs: u32,
-    expected_pin_state: &str,
-    expected_buffer_mode: fgpio::BufferMode,
 ) {
     let write_u32 = |offset: usize, value: u32| {
         mapping.write_at(offset, &value.to_le_bytes());
@@ -974,11 +933,18 @@ async fn perform_transfer(
         }
     };
 
+    // During transfer:
+    // - SRL should be 1 if loopback, 0 otherwise
+    // - CS should be High (deasserted) if loopback, Low (asserted) otherwise
     let ctrlr0 = read_u32(0x0);
     let expected_srl = cs == fspiimpl::LOOPBACK_CHIP_SELECT;
     assert_eq!(registers::CtrlR0::from_raw(ctrlr0).srl(), expected_srl);
-    assert_eq!(read_u32(0x10), 1);
-    assert_eq!(pin_states.current_state(), expected_pin_state);
+
+    let expected_buffer_mode = if cs == fspiimpl::LOOPBACK_CHIP_SELECT {
+        fgpio::BufferMode::OutputHigh
+    } else {
+        fgpio::BufferMode::OutputLow
+    };
     assert_eq!(gpio.buffer_mode(), expected_buffer_mode);
 
     write_u32(0x24, 0x5);
@@ -987,249 +953,12 @@ async fn perform_transfer(
 
     let _ = exchange_future.await.expect("exchange_vector failed");
 
+    // After transfer:
+    // - SRL should be the same as before
+    // - CS should be High (deasserted)
     let ctrlr0 = read_u32(0x0);
     assert_eq!(registers::CtrlR0::from_raw(ctrlr0).srl(), expected_srl);
-    assert_eq!(read_u32(0x10), 0);
-    assert_eq!(pin_states.current_state(), expected_pin_state);
-    assert_eq!(gpio.buffer_mode(), expected_buffer_mode);
-}
-
-#[fuchsia::test]
-async fn test_conditional_software_cs() {
-    let mut service_fs = ServiceFs::new();
-    let scope = fasync::Scope::new_with_name("test");
-
-    let pdev = FakePDev::new();
-
-    let vmo = Vmo::create(0x100).expect("Failed to create VMO");
-    vmo.set_cache_policy(zx::CachePolicy::UnCachedDevice).expect("Failed to set cache policy");
-    let mapping = mapped_vmo::Mapping::create_from_vmo(
-        &vmo,
-        0x100,
-        zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
-    )
-    .expect("Failed to map VMO");
-
-    let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate VMO");
-    let irq = zx::VirtualInterrupt::create_virtual().expect("Failed to create virtual interrupt");
-    let irq_dup =
-        irq.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate interrupt");
-
-    let mut pdev_config: fake_pdev::Config = Default::default();
-    let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
-    pdev_config.mmios.insert(0, mmio);
-    pdev_config.irqs.insert(0, zx::Interrupt::from(irq.into_handle()));
-    pdev.set_config(pdev_config);
-
-    let powerdomain = FakePowerDomain::new();
-    let clock_bus = FakeClock::new();
-    let clock_regs = FakeClock::new();
-    let reset = FakeReset::new();
-    let pin_states_0 = FakePinStates::new();
-    let pin_states_1 = FakePinStates::new();
-    let gpio = FakeGpio::default();
-
-    let mut harness = TestHarness::<DwSpiDriver>::new()
-        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
-        .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
-        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "bus"))
-        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "registers"))
-        .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
-        .add_offer(pin_states_0.serve(&mut service_fs, scope.to_handle(), "pin-states-0"))
-        .add_offer(pin_states_1.serve(&mut service_fs, scope.to_handle(), "pin-states-1"))
-        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "cs-0"))
-        .set_driver_incoming(service_fs);
-
-    let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
-    let started_driver = harness.start_driver().await.expect("Failed to start driver");
-
-    let spi_service: fdf_component::ServiceInstance<fspiimpl::Service> =
-        started_driver.driver_outgoing().service().connect_next().unwrap();
-
-    let (client_end, server_end) = fdf_fidl::create_channel();
-    spi_service.device(server_end).unwrap();
-    let client = client_end.spawn_on(&dispatcher);
-
-    let write_u32 = |offset: usize, value: u32| {
-        mapping.write_at(offset, &value.to_le_bytes());
-    };
-    let read_u32 = |offset: usize| -> u32 {
-        let mut bytes = [0u8; 4];
-        mapping.read_at(offset, &mut bytes);
-        u32::from_le_bytes(bytes)
-    };
-
-    // 1. Exact FIFO_SIZE (256 bytes) transfer on CS 0:
-    // Should pre-fill all 256 bytes in a single batch and use hardware CS (pin state stays
-    // "default", software CS GPIO stays Input).
-    write_u32(0x24, 0x0);
-    write_u32(0x20, 0x0);
-    write_u32(0x30, 0x01);
-    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
-
-    let tx_256 = vec![0xA5u8; 256];
-    let exchange_future = client.exchange_vector(0, &tx_256);
-    let exchange_future = std::pin::pin!(exchange_future);
-
-    let untriggered_future =
-        fasync::OnSignals::new(&irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
-    let untriggered_future = std::pin::pin!(untriggered_future);
-
-    let exchange_future = match future::select(exchange_future, untriggered_future).await {
-        Either::Left((res, _)) => panic!("exchange_vector completed prematurely: {:?}", res),
-        Either::Right((res, remaining)) => {
-            res.expect("Failed to wait for untriggered signal");
-            remaining
-        }
-    };
-
-    // All 256 bytes were pre-filled before SER = 1, so TXEIM is masked (IMR = 0x1e), RXFTLR = 255,
-    // pin state remains "default", and software CS GPIO was not used.
-    assert_eq!(read_u32(0x10), 1);
-    assert_eq!(read_u32(0x1c), 255);
-    assert_eq!(read_u32(0x2c), 0x1e);
-    assert_eq!(pin_states_0.current_state(), "default");
-    assert_eq!(pin_states_1.current_state(), "default");
-    assert_eq!(gpio.buffer_mode(), fgpio::BufferMode::Input);
-
-    write_u32(0x24, 256);
-    write_u32(0x30, 0x10);
-    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
-
-    let response =
-        exchange_future.await.expect("FIDL call failed").expect("exchange_vector failed");
-    assert_eq!(response.rxdata.len(), 256);
-    assert_eq!(read_u32(0x10), 0);
-    assert_eq!(pin_states_0.current_state(), "default");
-    assert_eq!(gpio.buffer_mode(), fgpio::BufferMode::Input);
-
-    // 2. Multi-FIFO (512 bytes > FIFO_SIZE) transfer on CS 0:
-    // Should switch pin state to "gpio_cs", assert software CS low (OutputLow), pre-fill 256 bytes
-    // on iteration 1 (!ser_enabled) and 255 bytes on iteration 2 (ser_enabled, which runs
-    // immediately when interrupt.wait() consumes the pre-triggered irq_dup), then write the final
-    // byte on the next interrupt, de-assert software CS high (OutputHigh), and restore "default"
-    // pin state.
-    write_u32(0x24, 0x0);
-    write_u32(0x20, 0x0);
-    write_u32(0x30, 0x01);
-    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
-
-    let mut tx_512 = vec![1u8; 256];
-    tx_512.extend(vec![2u8; 255]);
-    tx_512.push(3u8);
-    assert_eq!(tx_512.len(), 512);
-
-    let exchange_future = client.exchange_vector(0, &tx_512);
-    let exchange_future = std::pin::pin!(exchange_future);
-
-    let untriggered_future =
-        fasync::OnSignals::new(&irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
-    let untriggered_future = std::pin::pin!(untriggered_future);
-
-    let exchange_future = match future::select(exchange_future, untriggered_future).await {
-        Either::Left((res, _)) => panic!("exchange_vector completed prematurely: {:?}", res),
-        Either::Right((res, remaining)) => {
-            res.expect("Failed to wait for untriggered signal");
-            remaining
-        }
-    };
-
-    // After iteration 1 (256 bytes of 1) and iteration 2 (255 bytes of 2):
-    // - pin state is "gpio_cs", software CS is OutputLow, SER = 1
-    // - Last byte written to DR0 (0x60) is 2, with 1 TX byte (value 3) still remaining
-    // - RXFTLR = 127 (FIFO_SIZE / 2 - 1), and IMR = 0x1f (both TXEIM and RXFIM enabled)
-    assert_eq!(pin_states_0.current_state(), "gpio_cs");
-    assert_eq!(pin_states_1.current_state(), "gpio_cs");
-    assert_eq!(gpio.buffer_mode(), fgpio::BufferMode::OutputLow);
-    assert_eq!(read_u32(0x10), 1);
-    assert_eq!(read_u32(0x60), 2);
-    assert_eq!(read_u32(0x1c), 127);
-    assert_eq!(read_u32(0x2c), 0x1f);
-
-    // Next interrupt: 256 RX bytes available, TX FIFO drained to 0, so the final 1 TX byte (3)
-    // is written and 256 RX bytes remain.
-    write_u32(0x20, 0x0);
-    write_u32(0x24, 256);
-    write_u32(0x30, 0x11);
-    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
-
-    let untriggered_future =
-        fasync::OnSignals::new(&irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
-    let untriggered_future = std::pin::pin!(untriggered_future);
-
-    let exchange_future = match future::select(exchange_future, untriggered_future).await {
-        Either::Left((res, _)) => panic!("exchange_vector completed prematurely: {:?}", res),
-        Either::Right((res, remaining)) => {
-            res.expect("Failed to wait for untriggered signal");
-            remaining
-        }
-    };
-
-    // Still in transfer: final TX byte (3) was written, TX is now finished (IMR = 0x1e), and
-    // 256 RX bytes remain (RXFTLR = 255).
-    assert_eq!(pin_states_0.current_state(), "gpio_cs");
-    assert_eq!(gpio.buffer_mode(), fgpio::BufferMode::OutputLow);
-    assert_eq!(read_u32(0x60), 3);
-    assert_eq!(read_u32(0x1c), 255);
-    assert_eq!(read_u32(0x2c), 0x1e);
-
-    // Final interrupt: remaining 256 RX bytes arrive.
-    write_u32(0x24, 256);
-    write_u32(0x30, 0x10);
-    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
-
-    let response =
-        exchange_future.await.expect("FIDL call failed").expect("exchange_vector failed");
-    assert_eq!(response.rxdata.len(), 512);
-
-    // After transfer: SER = 0, software CS is de-asserted (OutputHigh), and pin state remains
-    // cached as "gpio_cs".
-    assert_eq!(read_u32(0x10), 0);
     assert_eq!(gpio.buffer_mode(), fgpio::BufferMode::OutputHigh);
-    assert_eq!(pin_states_0.current_state(), "gpio_cs");
-    assert_eq!(pin_states_1.current_state(), "gpio_cs");
-
-    // 3. Subsequent small transfer (4 bytes <= FIFO_SIZE) on CS 0:
-    // Should switch pin state back to "default" and use hardware CS without toggling cs_gpio.
-    write_u32(0x24, 0x0);
-    write_u32(0x20, 0x0);
-    write_u32(0x30, 0x01);
-    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
-
-    let tx_4 = vec![0x5Au8; 4];
-    let exchange_future = client.exchange_vector(0, &tx_4);
-    let exchange_future = std::pin::pin!(exchange_future);
-
-    let untriggered_future =
-        fasync::OnSignals::new(&irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
-    let untriggered_future = std::pin::pin!(untriggered_future);
-
-    let exchange_future = match future::select(exchange_future, untriggered_future).await {
-        Either::Left((res, _)) => panic!("exchange_vector completed prematurely: {:?}", res),
-        Either::Right((res, remaining)) => {
-            res.expect("Failed to wait for untriggered signal");
-            remaining
-        }
-    };
-
-    assert_eq!(pin_states_0.current_state(), "default");
-    assert_eq!(pin_states_1.current_state(), "default");
-    assert_eq!(gpio.buffer_mode(), fgpio::BufferMode::OutputHigh);
-    assert_eq!(read_u32(0x10), 1);
-
-    write_u32(0x24, 4);
-    write_u32(0x30, 0x10);
-    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
-
-    let response =
-        exchange_future.await.expect("FIDL call failed").expect("exchange_vector failed");
-    assert_eq!(response.rxdata.len(), 4);
-    assert_eq!(read_u32(0x10), 0);
-    assert_eq!(pin_states_0.current_state(), "default");
-    assert_eq!(pin_states_1.current_state(), "default");
-    assert_eq!(gpio.buffer_mode(), fgpio::BufferMode::OutputHigh);
-
-    started_driver.stop_driver().await;
 }
 
 #[fuchsia::test]
@@ -1366,17 +1095,7 @@ async fn test_suspend_and_resume() {
     spi_service.device(server_end).unwrap();
     let client = client_end.spawn_on(&dispatcher);
 
-    perform_transfer(
-        &client,
-        &irq_dup,
-        &gpio,
-        &pin_states,
-        &mapping,
-        0,
-        "default",
-        fgpio::BufferMode::Input,
-    )
-    .await;
+    perform_transfer(&client, &irq_dup, &gpio, &mapping, 0).await;
 
     started_driver.stop_driver().await;
 }
