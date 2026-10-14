@@ -88,8 +88,12 @@ class TestPlatformBusMapperCases {
 
   static inline void Contiguous(magma::PlatformBusMapper* mapper) {
     constexpr uint32_t kPageCount = 5;
+    // Specify an invalid alignment_log2 (< page shift) to trigger an error.
     std::unique_ptr<magma::PlatformBuffer> buffer =
-        mapper->CreateContiguousBuffer(kPageCount * magma::page_size(), 12u, "test");
+        mapper->CreateContiguousBuffer(kPageCount * magma::page_size(), 1u, "test");
+    EXPECT_FALSE(buffer);
+
+    buffer = mapper->CreateContiguousBuffer(kPageCount * magma::page_size(), 12u, "test");
     ASSERT_TRUE(buffer);
 
     auto bus_mapping = mapper->MapPageRangeBus(buffer.get(), 0, kPageCount);
