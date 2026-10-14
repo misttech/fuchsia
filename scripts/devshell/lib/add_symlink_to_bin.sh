@@ -6,7 +6,6 @@
 devshell_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 FUCHSIA_DIR="$(dirname $(dirname $(dirname "${devshell_lib_dir}")))"
 
-# LINT.IfChange
 if [[ -d "${FUCHSIA_DIR}/.jiri_root/bin" ]]; then
   rm -f "${FUCHSIA_DIR}/.jiri_root/bin/fx"
   ln -s "../../scripts/fx" "${FUCHSIA_DIR}/.jiri_root/bin/fx"
@@ -20,7 +19,6 @@ if [[ -d "${FUCHSIA_DIR}/.jiri_root/bin" ]]; then
   rm -f "${FUCHSIA_DIR}/.jiri_root/bin/fuchsia-vendored-python"
   ln -s "../../scripts/fuchsia-vendored-python" "${FUCHSIA_DIR}/.jiri_root/bin/fuchsia-vendored-python"
 fi
-# LINT.ThenChange(//scripts/cog/prebuilts.py)
 
 # In infrastructure checkouts (or checkouts initialized with an external jiri),
 # jiri is provisioned outside .jiri_root/bin, so .jiri_root/bin/jiri is not
@@ -28,11 +26,10 @@ fi
 # PATH) into .jiri_root/bin/jiri so build actions running inside nsjail can
 # invoke it.
 if [[ -d "${FUCHSIA_DIR}/.jiri_root/bin" ]]; then
-  # Skip when .jiri_root/bin/jiri is already a valid symlink (e.g. Cog/CartFS
-  # workspaces in //scripts/cog/workspace.py, which invoke this hook via Python
-  # rather than jiri). For regular files or missing/dangling paths, check
-  # whether .jiri_root/bin/jiri needs to be populated or synced with an
-  # external jiri that self-updated in place.
+  # Skip when .jiri_root/bin/jiri is already a valid symlink (e.g. CartFS
+  # workspaces which invoke this hook via Python rather than jiri). For regular
+  # files or missing/dangling paths, check whether .jiri_root/bin/jiri needs to
+  # be populated or synced with an external jiri that self-updated in place.
   if [[ ! -L "${FUCHSIA_DIR}/.jiri_root/bin/jiri" || ! -f "${FUCHSIA_DIR}/.jiri_root/bin/jiri" || -n "${INFRA_RECIPES:-}" ]]; then
     jiri_bin=""
     # jiri executes hooks as direct child processes (${PPID}), and is not on

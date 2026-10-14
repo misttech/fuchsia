@@ -1005,7 +1005,7 @@ function __send-analytics-batch {
   \"ninja_persistent\":{\"value\":\"$(_get_ninja_persistent_mode)\"},\
   \"other_uuid\":{\"value\":\"${OTHER_TOOLS_ANALYTICS_UUID}\"},\
   \"internal\":{\"value\":${internal}},\
-  \"is_cog\":{\"value\":$(_is_cog)},\
+  \"is_cog\":{\"value\":$(_is_workspace)},\
   \"metrics_level\":{\"value\":${METRICS_LEVEL}},\
   \"metrics_version\":{\"value\":${_METRICS_VERSION}},\
   \"nproc\":{\"value\":$(_get_nproc)}\
@@ -1183,8 +1183,8 @@ function _get_nproc {
   fi
 }
 
-function _is_cog {
-  if [[ "${PWD}" =~ ^/google/cog/cloud/ || "${PWD}" =~ ^/google/cartfs/mount/ ]]; then
+function _is_workspace {
+  if [[ "${PWD}" =~ ^/google/cartfs/mount/ ]]; then
     echo 1
   else
     echo 0

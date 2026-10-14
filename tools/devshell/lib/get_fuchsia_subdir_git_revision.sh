@@ -4,8 +4,8 @@
 # found in the LICENSE file.
 
 # This script retrieves the git revision (commit hash) for a specific
-# subdirectory within a Fuchsia checkout. It supports both standard git
-# repositories and Cog workspaces.
+# subdirectory within a Fuchsia checkout. It supports standard git
+# repositories.
 #
 # Arguments:
 #   $1: The path to the root of the Fuchsia checkout (e.g., ~/fuchsia).
@@ -15,5 +15,4 @@ set -o errexit
 fuchsia_dir="$1"
 repo_root="$2"
 
-# This code is now handled by the //scripts/cog/git-polyfill tool.
 git --no-optional-locks -C "${fuchsia_dir}/${repo_root}" rev-parse HEAD
