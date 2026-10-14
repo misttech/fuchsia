@@ -915,7 +915,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -9601,16 +9601,6 @@ Enable verbose logging in virtmagma-related code
 **Current value (from the default):** `false`
 
 From //src/graphics/lib/magma/include/virtio/virtmagma_debug.gni:7
-
-### virtual_alloc_host_size_shift
-
-Set the page size shift of the host. This is used when running the allocator
-in a host environment where page size constants may not exist. If this does
-not much the actual host page size then a run time error will occur.
-
-**Current value (from the default):** `12`
-
-From //zircon/kernel/lib/virtual_alloc/BUILD.gn:13
 
 ### vm_tracing_level
 
