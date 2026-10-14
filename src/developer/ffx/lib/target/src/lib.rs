@@ -36,8 +36,8 @@ mod resolve;
 mod target_connector;
 
 pub use cache::{
-    create_target_cache, get_discovery_cache_dir, get_discovery_cache_file,
-    get_discovery_cache_recheck_time, remove_target_cache,
+    RegisteredTarget, create_target_cache, get_discovery_cache_dir, get_discovery_cache_file,
+    get_discovery_cache_recheck_time, register_targets, remove_target_cache, targets_file_path,
 };
 pub use connection::{Connection, ConnectionError};
 pub use discovery::desc::{Description, FastbootInterface};

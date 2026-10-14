@@ -75,6 +75,10 @@ pub enum ListError {
     #[user]
     #[error("Required argument `-c ssh.priv=` not specified. Unable to verify RCS state.")]
     MissingSshPrivKey,
+
+    #[user]
+    #[error("The `--register` flag is only supported in strict mode (`ffx --strict`).")]
+    RegisterRequiresStrict,
 }
 
 #[derive(FfxTool)]
@@ -109,10 +113,24 @@ impl ListTool {
     }
 
     async fn main_impl(self, mut writer: <Self as FfxMain>::Writer) -> Result<(), ListError> {
+        if self.cmd.register && !self.context.is_strict() {
+            return Err(ListError::RegisterRequiresStrict);
+        }
+
         let list_query = TargetInfoQuery::try_from(self.cmd.nodename.clone())
             .map_err(|e| ListError::QueryParse(e.to_string()))?;
 
         let mut infos = self.list_targets_direct(list_query).await?;
+
+        if self.cmd.register {
+            let filtered = target_formatter::filter_targets_by_address_types(
+                infos.clone(),
+                self.cmd.address_types(),
+            );
+            let path = ffx_target::register_targets(&self.context, &filtered)
+                .map_err(ListError::ListTargets)?;
+            log::info!("Registered targets written to {}", path.display());
+        }
 
         let spec = ffx_target::get_target_specifier(&self.context)
             .map_err(ListError::GetDefaultTargetSpecifier)?;
@@ -459,6 +477,13 @@ mod test {
             fho_err3.to_string(),
             "Required argument `-c ssh.priv=` not specified. Unable to verify RCS state."
         );
+
+        let err4 = ListError::RegisterRequiresStrict;
+        let fho_err4 = fho::Error::from(err4);
+        assert_eq!(
+            fho_err4.to_string(),
+            "The `--register` flag is only supported in strict mode (`ffx --strict`)."
+        );
     }
 
     #[fuchsia::test]
@@ -561,5 +586,58 @@ mod test {
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].addresses, vec!["127.0.0.1:8022".parse::<TargetAddr>().unwrap()]);
         assert_eq!(res[0].rcs_state, RemoteControlState::Unknown);
+    }
+
+    #[fuchsia::test]
+    async fn test_list_register_writes_targets_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let runtime_args = ffx_config::runtime::populate_runtime(
+            &[format!("shared_data={}", temp_dir.path().display())],
+            None,
+        )
+        .unwrap();
+        let context = EnvironmentContext::strict(ExecutableKind::Test, runtime_args).unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&context, &ffx_cmd_line);
+
+        let list_cmd = ListCommand {
+            nodename: Some("127.0.0.1:8022".to_string()),
+            no_probe: true,
+            register: true,
+            ..Default::default()
+        };
+        let tool = ListTool { cmd: list_cmd, fho_env, context: context.clone() };
+        let test_buffers = TestBuffers::default();
+        let writer = VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
+
+        tool.main_impl(writer).await.unwrap();
+
+        let targets_file = ffx_target::targets_file_path(&context).unwrap();
+        assert!(targets_file.exists());
+        let stdout = test_buffers.into_stdout_str();
+        let json_targets: Vec<JsonTarget> = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(json_targets.len(), 1);
+        let content = std::fs::read_to_string(&targets_file).unwrap();
+        let registered: Vec<ffx_target::RegisteredTarget> = serde_json::from_str(&content).unwrap();
+        assert_eq!(registered.len(), 1);
+        assert_eq!(registered[0].address, "127.0.0.1:8022".parse::<TargetAddr>().unwrap());
+    }
+
+    #[fuchsia::test]
+    async fn test_list_register_non_strict_fails() {
+        let env = ffx_config::test_init().unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
+
+        let list_cmd = ListCommand { register: true, ..Default::default() };
+        let tool = build_list_tool(list_cmd, &env, fho_env).await;
+        let test_buffers = TestBuffers::default();
+        let writer = VerifiedMachineWriter::new_test(None, &test_buffers);
+
+        let res = tool.main_impl(writer).await;
+        match res {
+            Err(ListError::RegisterRequiresStrict) => {}
+            other => panic!("expected RegisterRequiresStrict, got {other:?}"),
+        }
     }
 }

@@ -88,6 +88,14 @@
       "short": null,
       "description": "do not do USB discovery (direct mode only)",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--register",
+      "short": null,
+      "description": "register discovered targets in $SHARED_DATA/targets.json (strict mode only)",
+      "hidden": false
     }
   ],
   "notes": [

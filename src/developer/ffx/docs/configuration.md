@@ -268,6 +268,9 @@ ffx config env get
     |                                         | target (currently, only in `ffx    |
     |                                         | target list`). Defaults to `10`    |
     |                                         | seconds.                           |
+    | `target.registered_targets`             | File containing registered targets |
+    |                                         | for strict mode. Defaults to       |
+    |                                         | `"$SHARED_DATA/targets.json"`.     |
     | `target.stateless_default_configuration`| Experimental flag to limit targets |
     |                                         | to those explicitly specified via  |
     |                                         | `--target` or via env variables.   |

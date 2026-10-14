@@ -63,7 +63,8 @@
             "$FUCHSIA_DEVICE_ADDR",
             "$FUCHSIA_NODENAME"
         ],
-        "discovery_cache_dir": "$CACHE/discovery"
+        "discovery_cache_dir": "$CACHE/discovery",
+        "registered_targets": "$SHARED_DATA/targets.json"
     },
     "metrics": {
         "upload_timeout": 2.0

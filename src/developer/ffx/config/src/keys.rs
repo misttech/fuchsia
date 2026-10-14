@@ -70,6 +70,9 @@ pub const SSH_PRIVATE_KEY: &str = "ssh.priv";
 /// The path to the discovery cache directory
 pub const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
 
+/// The path to the registered targets file used for strict-mode target resolution.
+pub const REGISTERED_TARGETS_CONFIG: &str = "target.registered_targets";
+
 /// Whether or not to enable colored output for log commands.
 pub const LOG_CMD_COLOR: &str = "log_cmd.color";
 

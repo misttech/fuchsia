@@ -108,6 +108,12 @@ pub struct ListCommand {
 
     #[argh(switch, description = "do not do USB discovery (direct mode only)")]
     pub no_usb: bool,
+
+    #[argh(
+        switch,
+        description = "register discovered targets in $SHARED_DATA/targets.json (strict mode only)"
+    )]
+    pub register: bool,
 }
 
 impl ListCommand {
@@ -138,6 +144,7 @@ impl Default for ListCommand {
             no_probe: false,
             no_mdns: false,
             no_usb: false,
+            register: false,
         }
     }
 }

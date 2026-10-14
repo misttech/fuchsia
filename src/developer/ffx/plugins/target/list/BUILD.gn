@@ -30,6 +30,8 @@ ffx_plugin("ffx_list") {
     "//src/developer/ffx/lib/addr:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fuchsia",
+    "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:tempfile",
   ]
 
   args_sources = [ "src/args.rs" ]
