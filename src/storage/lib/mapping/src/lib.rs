@@ -9,7 +9,7 @@ pub mod protocol;
 pub mod reader;
 pub mod testing;
 
-pub use extents::{Extent, Extents, ExtentsIterator};
+pub use extents::{DeviceExtent, Extent, Extents, ExtentsIterator};
 pub use file::{
     DEFAULT_VERIFICATION_ALIGNMENT, DecodedBlobMetadata, DeliveryHandler, File, Files,
     NoopDeliveryHandler, PagerThread, TARGET_READ_AHEAD_SIZE, Transform, process_mapping_command,
