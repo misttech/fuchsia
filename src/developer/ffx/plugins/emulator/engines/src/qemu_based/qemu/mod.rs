@@ -74,14 +74,6 @@ impl EmulatorEngine for QemuEngine {
     }
 
     async fn stage(&mut self) -> Result<()> {
-        // QEMU 9+ does not support auto-assignment of host port
-        // when forwarding guest ports mapped via user networking.
-        // So we need to assign any missing host ports now, before
-        // continuing to stage the instance.
-        if self.emu_config().host.networking == NetworkingMode::User {
-            crate::finalize_port_mapping(self.emu_config_mut())?;
-        }
-
         if let Some(vsock) = &mut self.emu_config_mut().device.vsock {
             // The default CID value of 0 indicates that selection should be
             // left to ffx.
@@ -126,6 +118,25 @@ impl EmulatorEngine for QemuEngine {
         } else {
             self.validate_configuration()
         };
+        // QEMU 9+ does not support auto-assignment of host ports
+        // for the guest ports which are forwarded with user-mode
+        // networking, so the host ports which are still unassigned
+        // are picked here, and the ones which were asked for
+        // explicitly are checked to be free. This is done in
+        // configure() rather than stage() because an instance
+        // which is reused is not staged again, but is configured
+        // again with the port map of the new invocation. That map
+        // replaces the saved one, so the host ports of the previous
+        // run are not kept: unassigned ports are picked afresh, and
+        // a port which another process has taken since is either
+        // avoided or reported as in use.
+        let result = result.and_then(|()| {
+            if self.emu_config().host.networking == NetworkingMode::User {
+                crate::finalize_port_mapping(self.emu_config_mut())
+            } else {
+                Ok(())
+            }
+        });
         if result.is_ok() {
             self.data.set_engine_state(EngineState::Configured);
         } else {
@@ -349,10 +360,32 @@ mod tests {
     use super::*;
     use crate::EngineBuilder;
     use crate::qemu_based::tests::make_fake_sdk;
-    use emulator_instance::NetworkingMode;
+    use emulator_instance::{NetworkingMode, PortMapping};
     use std::ffi::OsStr;
     use std::fs;
     use tempfile::tempdir;
+
+    #[fuchsia::test]
+    fn test_configure_assigns_host_ports() {
+        let env = ffx_config::test_init().unwrap();
+        let mut cfg = EmulatorConfiguration::default();
+        cfg.host.networking = NetworkingMode::User;
+        cfg.host.port_map.insert("ssh".to_string(), PortMapping { guest: 22, host: None });
+        // Skip the validation of the image files, which don't exist in this test.
+        cfg.runtime.config_override = true;
+        let data = EmulatorInstanceData::new(cfg, EngineType::Qemu, EngineState::Staged);
+        let mut engine =
+            QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+
+        // QEMU needs a host port for every port which is forwarded to the guest. An instance
+        // which is reused is configured, but not staged, so they have to be assigned here.
+        engine.configure().expect("configure engine");
+
+        let ssh = engine.emu_config().host.port_map.get("ssh").expect("ssh port mapping");
+        assert_eq!(ssh.guest, 22);
+        assert!(ssh.host.is_some_and(|port| port != 0), "no host port assigned: {ssh:?}");
+        assert_eq!(engine.engine_state(), EngineState::Configured);
+    }
 
     #[fuchsia::test]
     fn test_build_emulator_cmd() {
