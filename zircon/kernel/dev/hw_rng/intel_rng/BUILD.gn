@@ -4,11 +4,22 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-source_set("intel_rng") {
-  sources = [ "intel-rng.cc" ]
+import("//zircon/kernel/kernel_rust_mod.gni")
+
+kernel_rust_mod("intel_rng-rs") {
+  output_name = "intel_rng"
+  source_root = "intel_rng.rs"
+  sources = [ "intel_rng.rs" ]
   deps = [
+    "//sdk/rust/zx-status",
+    "//src/lib/zr",
+    "//zircon/kernel/lib/init:init_rust",
+  ]
+}
+
+group("intel_rng") {
+  deps = [
+    ":intel_rng-rs",
     "//zircon/kernel/dev/hw_rng",
-    "//zircon/kernel/lib/arch",
-    "//zircon/kernel/lib/init",
   ]
 }
