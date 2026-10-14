@@ -5,6 +5,7 @@
 pub mod fxt_blob;
 mod fxt_parse;
 mod parse;
+pub mod perfetto;
 pub mod pprof;
 pub mod symbolize;
 pub mod unwinder;

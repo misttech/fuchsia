@@ -14,6 +14,7 @@ rustc_library("profiler") {
   with_unit_tests = true
 
   deps = [
+    ":perfetto_trace_rust_proto",
     ":profile_rust_proto",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/symbol-index",
@@ -38,6 +39,7 @@ rustc_library("profiler") {
     "src/fxt_parse.rs",
     "src/lib.rs",
     "src/parse.rs",
+    "src/perfetto.rs",
     "src/pprof.rs",
     "src/symbolize.rs",
     "src/unwinder.rs",
@@ -49,6 +51,13 @@ rustc_library("profiler") {
 rust_proto_library("profile_rust_proto") {
   sources = [ "//third_party/perfetto/protos/third_party/pprof/profile.proto" ]
   packages = [ "perfetto.third_party.perftools.profiles" ]
+}
+
+rust_proto_library("perfetto_trace_rust_proto") {
+  sources =
+      [ "//third_party/perfetto/protos/perfetto/trace/perfetto_trace.proto" ]
+  packages = [ "perfetto.protos" ]
+  include_dirs = [ "//third_party/perfetto" ]
 }
 
 group("tests") {
