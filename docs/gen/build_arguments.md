@@ -110,12 +110,6 @@ build.
 
 From //src/media/drivers/amlogic_decoder/BUILD.gn:13
 
-### archivist_max_cached_logs_bytes
-
-**Current value (from the default):** `4194304`
-
-From //src/diagnostics/archivist/configs.gni:6
-
 ### arm_sdk_tools
 
 If true, then the arm64 host tools are included in the SDK.
@@ -340,14 +334,6 @@ Supported options:
 **Current value (from the default):** `"remote"`
 
 From //build/bazel/remote_services.gni:25
-
-### blobfs_num_pager_threads
-
-The number of pager threads to spawn for blobfs.
-
-**Current value (from the default):** `2`
-
-From //src/storage/blobfs/bin/BUILD.gn:20
 
 ### blobfs_page_in_metrics_recording
 
@@ -924,12 +910,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1684,7 +1670,7 @@ Makes clippy targets fail to build when any "deny" lints are found
 
 **Current value (from the default):** `true`
 
-From //build/rust/config.gni:78
+From //build/rust/config.gni:85
 
 ### clippy_force_warn_all
 
@@ -1694,7 +1680,7 @@ should only be used to collect stats about clippy lints in our source tree.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:75
+From //build/rust/config.gni:82
 
 ### clippy_ignore_rustc
 
@@ -1707,7 +1693,7 @@ clippy lints, they just wont show up in ninja's stderr
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:95
+From //build/rust/config.gni:102
 
 ### clippy_warn_all
 
@@ -1716,7 +1702,7 @@ Note: setting lint levels in source takes precedence over this.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:70
+From //build/rust/config.gni:77
 
 ### cobalt_environment
 
@@ -3890,12 +3876,6 @@ From //third_party/perfetto/gn/perfetto.gni:390
 
 From //third_party/perfetto/gn/perfetto.gni:404
 
-### enable_power_manager_debug
-
-**Current value (from the default):** `false`
-
-From //src/power/power-manager/BUILD.gn:130
-
 ### enable_sestarnix_userspace_tests_on_linux
 
 Enable SEStarnix userspace tests on Linux. On CI/CQ this requires internal
@@ -4111,7 +4091,7 @@ From //build/config/lto/config.gni:14
 
 **Current value (from the default):** `"default"`
 
-From //src/media/lib/ffmpeg/BUILD.gn:53
+From //src/media/lib/ffmpeg/ffmpeg_args.gni:37
 
 ### ffx_build_dual_mode_plugins_as_subtools
 
@@ -8423,7 +8403,7 @@ LINT.IfChange
 
 **Current value (from the default):** `"deny"`
 
-From //build/rust/config.gni:64
+From //build/rust/config.gni:71
 
 ### rust_debug_assertions
 
@@ -8431,7 +8411,7 @@ Enable debug assertions, e.g. for overflow checking.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:26
+From //build/rust/config.gni:24
 
 ### rust_incremental
 
@@ -8448,7 +8428,7 @@ Sets the default LTO type for rustc builds.
 
 **Current value (from the default):** `""`
 
-From //build/rust/config.gni:59
+From //build/rust/config.gni:66
 
 ### rust_one_rlib_per_dir
 
@@ -8467,7 +8447,7 @@ Enable the rust parallel front-end with N threads
 
 **Current value (from the default):** `false`
 
-From //build/config/rust/BUILD.gn:29
+From //build/rust/config.gni:27
 
 ### rust_rbe_check
 
@@ -8556,7 +8536,7 @@ Controls whether the rust compiler uses v0 symbol mangling scheme
 
 **Current value (from the default):** `true`
 
-From //build/config/rust/BUILD.gn:26
+From //build/rust/config.gni:31
 
 ### rust_virtio_net
 
@@ -8606,7 +8586,7 @@ e.g., clang_version_description = read_file("$_rustc_lib_dir/VERSION")
 
 **Current value (from the default):** `""`
 
-From //build/rust/config.gni:56
+From //build/rust/config.gni:63
 
 ### rustc_version_string
 
@@ -8619,13 +8599,13 @@ prebuilt is used.
 
 **Current value (from the default):** `"Oo_9vtP3i6NZ5emkZ3pdJ8jhPZxIIiQ794sWpXrLIl8C"`
 
-From //build/rust/config.gni:50
+From //build/rust/config.gni:57
 
 ### rustdoc_extern_html_root_url_base
 
 **Current value (from the default):** `"https://fuchsia-docs.firebaseapp.com/rust"`
 
-From //build/rust/config.gni:87
+From //build/rust/config.gni:94
 
 ### scenic_enable_vulkan_validation
 
@@ -9488,7 +9468,7 @@ git clone https://chromium.googlesource.com/chromium/third_party/ffmpeg third_pa
 
 **Current value (from the default):** `true`
 
-From //src/media/lib/ffmpeg/BUILD.gn:33
+From //src/media/lib/ffmpeg/ffmpeg_args.gni:31
 
 ### use_spinel_for_carnelian_examples
 
