@@ -35,6 +35,7 @@ source_set("lib") {
     "efi_variables.h",
     "fastboot.cc",
     "fastboot.h",
+    "gbl_protocols/gbl_efi_avb_protocol.cc",
     "gbl_protocols/gbl_efi_boot_control_protocol.cc",
     "gbl_protocols/gbl_efi_fastboot_protocol.cc",
     "gpt.cc",

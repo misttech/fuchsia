@@ -61,6 +61,13 @@ efi_status InstallGblProtocols() {
     return res;
   }
 
+  printf("Installing GBL_EFI_AVB_PROTOCOL...\n");
+  res = InstallGblEfiAvbProtocol();
+  if (res != EFI_SUCCESS) {
+    printf("Failed to install GBL_EFI_AVB_PROTOCOL: %s\n", EfiStatusToString(res));
+    return res;
+  }
+
   return EFI_SUCCESS;
 }
 

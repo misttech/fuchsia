@@ -13,6 +13,7 @@ namespace gigaboot {
 
 extern RebootMode g_reboot_mode;
 
+efi_status InstallGblEfiAvbProtocol();
 efi_status InstallGblEfiBootControlProtocol();
 efi_status InstallGblEfiFastbootProtocol();
 
