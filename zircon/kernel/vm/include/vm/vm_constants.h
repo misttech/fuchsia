@@ -56,6 +56,10 @@ constexpr bool kRefCountedAdoptionValidator = ZX_DEBUG_ASSERT_IMPLEMENTED;
 constexpr size_t kVmAddressRegionStateSize = 36;
 constexpr size_t kVmAddressRegionStateAlign = 4;
 
+// Size and alignment for VmMapping state stored in C++ OpaqueStorage.
+constexpr size_t kVmMappingStateSize = 32;
+constexpr size_t kVmMappingStateAlign = 8;
+
 // Size and alignment for VmDebugCompressor state stored in C++ OpaqueStorage.
 #if WITH_LOCK_DEP
 constexpr size_t kVmDebugCompressorStorageSize = 144;

@@ -44,8 +44,8 @@ VmMapping* cpp_vm_address_region_create_vm_mapping(
     const char* name, vaddr_t* out_base, zx_status_t* out_status);
 
 void cpp_vm_mapping_free(VmMapping* mapping);
+void* cpp_vm_mapping_state(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping);
-uint64_t cpp_vm_mapping_object_offset(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_decommit_range(VmMapping* mapping, size_t offset, size_t len);
 zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,
                                      bool ignore_existing);

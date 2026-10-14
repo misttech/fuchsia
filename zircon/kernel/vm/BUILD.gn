@@ -227,6 +227,7 @@ kernel_bindgen_crate("vm-constants-rs") {
     "kVmAddressRegionOrMappingState.*",
     "kRefCountedAdoptionValidator",
     "kVmAddressRegionState.*",
+    "kVmMappingState.*",
     "kVmDebugCompressor.*",
     "kPhysicalPageProviderState.*",
     "kVmPageList.*",
@@ -872,7 +873,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_mapping_free",
     "cpp_vm_mapping_map_range",
     "cpp_vm_mapping_mark_mergeable",
-    "cpp_vm_mapping_object_offset",
+    "cpp_vm_mapping_state",
     "cpp_vm_mapping_vmo",
   ]
   type_allowlist = [

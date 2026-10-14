@@ -52,9 +52,9 @@ KCOUNTER(vm_mappings_state_dead, "vm.aspace.mapping.state.dead")
 class VmMapping::CurrentlyFaulting {
  public:
   CurrentlyFaulting(VmMapping* mapping, uint64_t object_offset, uint64_t len)
-      TA_REQ(mapping->object_->lock())
+      TA_REQ(mapping->object_locked()->lock())
       : mapping_(mapping), object_offset_(object_offset), len_(len) {
-    DEBUG_ASSERT(mapping->currently_faulting_ == nullptr);
+    DEBUG_ASSERT(mapping->currently_faulting() == nullptr);
     // CurrentlyFaulting is typically allocated on the stack and GCCs diagnostics can get confused
     // and fail to realize that the destructor will clear the pointing, causing GCC to believe that
     // there might be a dangling pointer.
@@ -62,7 +62,7 @@ class VmMapping::CurrentlyFaulting {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdangling-pointer"
 #endif
-    mapping->currently_faulting_ = this;
+    mapping->set_currently_faulting(this);
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
@@ -81,7 +81,7 @@ class VmMapping::CurrentlyFaulting {
           base, new_len / kPageSize, mapping_->aspace()->EnlargeArchUnmap());
       ASSERT(status == ZX_OK);
     }
-    mapping_->currently_faulting_ = nullptr;
+    mapping_->set_currently_faulting(nullptr);
   }
 
   // Called to say that the given range needs to be unmapped. This returns true if updating the
@@ -121,12 +121,9 @@ VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, 
                      arch_mmu_flags_t first_mmu_flags,
                      btree::BTree<vaddr_t, arch_mmu_flags_t>&& ranges, Mergeable mergeable)
     : VmAddressRegionOrMapping(base, size, vmar_flags, parent.aspace().get(), &parent, true),
-      mergeable_(mergeable),
-      private_clone_(private_clone),
-      first_region_arch_mmu_flags_(first_mmu_flags),
-      rest_protection_ranges_(ktl::move(ranges)),
-      object_(ktl::move(vmo)),
-      object_offset_(vmo_offset) {
+      rest_protection_ranges_(ktl::move(ranges)) {
+  rust_vm_mapping_state_init(&opaque_storage_, fbl::ExportToRawPtr(&vmo), vmo_offset,
+                             first_mmu_flags, private_clone, mergeable);
   LTRACEF("%p aspace %p base %#" PRIxPTR " size %#zx offset %#" PRIx64 "\n", this, aspace().get(),
           this->base(), this->size(), vmo_offset);
 }
@@ -138,10 +135,11 @@ VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, 
                 btree::BTree<vaddr_t, arch_mmu_flags_t>(), mergeable) {}
 
 VmMapping::~VmMapping() {
-  canary_.Assert();
+  AssertCanary();
   LTRACEF("%p aspace %p base %#" PRIxPTR " size %#zx\n", this, aspace().get(), this->base(),
           this->size());
   vm_mappings_state_dead.Add(-1);
+  rust_vm_mapping_destruct(&opaque_storage_);
 }
 
 fbl::RefPtr<VmObject> VmMapping::vmo() const {
@@ -151,7 +149,7 @@ fbl::RefPtr<VmObject> VmMapping::vmo() const {
 
 VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked(
     Guard<CriticalMutex>& guard) const {
-  canary_.Assert();
+  AssertCanary();
 
   if (!IsAliveLocked()) {
     return AttributionCounts{};
@@ -159,8 +157,8 @@ VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked(
 
   vm_mapping_attribution_queries.Add(1);
 
-  fbl::RefPtr<VmObject> vmo = object_;
-  const uint64_t object_offset = object_offset_;
+  fbl::RefPtr<VmObject> vmo = object_locked();
+  const uint64_t object_offset = this->object_offset();
   VmMapping::AttributionCounts page_counts;
   guard.CallUnlocked(
       [&]() { page_counts = vmo->GetAttributedMemoryInRange(object_offset, size()); });
@@ -168,22 +166,22 @@ VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked(
 }
 
 VmMapping::AttributionCounts VmMapping::GetAttributedMemory() const {
-  canary_.Assert();
+  AssertCanary();
 
   Guard<CriticalMutex> guard{lock()};
   return GetAttributedMemoryLocked(guard);
 }
 
 void VmMapping::DumpLockedImpl(uint depth, bool verbose) const {
-  canary_.Assert();
+  AssertCanary();
   for (uint i = 0; i < depth; ++i) {
     printf("  ");
   }
   char vmo_name[32];
-  object_->get_name(vmo_name, sizeof(vmo_name));
+  object_locked()->get_name(vmo_name, sizeof(vmo_name));
   printf("map %p [%#" PRIxPTR " %#" PRIxPTR "] sz %#zx state %d mergeable %s\n", this, base(),
          base() + size() - 1, size(), (int)state_locked(),
-         mergeable_ == Mergeable::YES ? "true" : "false");
+         mergeable_locked() == Mergeable::YES ? "true" : "false");
   EnumerateProtectionRangesLocked(
       base(), size(), [depth](vaddr_t base, size_t len, arch_mmu_flags_t mmu_flags) {
         for (uint i = 0; i < depth + 1; ++i) {
@@ -195,12 +193,12 @@ void VmMapping::DumpLockedImpl(uint depth, bool verbose) const {
   for (uint i = 0; i < depth + 1; ++i) {
     printf("  ");
   }
-  AttributionCounts counts = object_->GetAttributedMemoryInRange(object_offset_, size());
-  printf("vmo %p/k%" PRIu64 " off %#" PRIx64 " bytes (%zu/%zu) ref %d '%s'\n", object_.get(),
-         object_->user_id(), object_offset_, counts.uncompressed_bytes, counts.compressed_bytes,
-         ref_count_debug(), vmo_name);
+  AttributionCounts counts = object_locked()->GetAttributedMemoryInRange(object_offset(), size());
+  printf("vmo %p/k%" PRIu64 " off %#" PRIx64 " bytes (%zu/%zu) ref %d '%s'\n",
+         object_locked().get(), object_locked()->user_id(), object_offset(),
+         counts.uncompressed_bytes, counts.compressed_bytes, ref_count_debug(), vmo_name);
   if (verbose) {
-    object_->Dump(depth + 1, false);
+    object_locked()->Dump(depth + 1, false);
   }
 }
 
@@ -253,9 +251,10 @@ zx_status_t VmMapping::MergeProtectionRangesLocked(const VmMapping& right) {
   // Lookup the flags for the end of the range.
   auto it = rest_protection_ranges_.end();
   it--;
-  arch_mmu_flags_t last_flags = it ? (*it).second : first_region_arch_mmu_flags_;
-  if (last_flags != right.first_region_arch_mmu_flags_) {
-    it = rest_protection_ranges_.insert(it, right.base(), right.first_region_arch_mmu_flags_);
+  arch_mmu_flags_t last_flags = it ? (*it).second : first_region_arch_mmu_flags_locked();
+  if (last_flags != right.first_region_arch_mmu_flags_locked()) {
+    it = rest_protection_ranges_.insert(it, right.base(),
+                                        right.first_region_arch_mmu_flags_locked());
     if (!it) {
       return ZX_ERR_NO_MEMORY;
     }
@@ -277,7 +276,7 @@ void VmMapping::ClearProtectionRangeTransitionsLocked(vaddr_t base, vaddr_t end)
 }
 
 arch_mmu_flags_t VmMapping::RemoveAfterSplitLocked(vaddr_t split_addr) {
-  arch_mmu_flags_t flags = first_region_arch_mmu_flags_;
+  arch_mmu_flags_t flags = first_region_arch_mmu_flags_locked();
   auto it = rest_protection_ranges_.begin();
   while (it.IsValid() && (*it).first <= split_addr) {
     flags = (*it).second;
@@ -293,13 +292,13 @@ zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size,
   DEBUG_ASSERT(!(new_arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK));
   DEBUG_ASSERT(is_valid_mapping_flags(new_arch_mmu_flags));
 
-  DEBUG_ASSERT(object_);
+  DEBUG_ASSERT(object_locked());
   // grab the lock for the vmo
-  Guard<CriticalMutex> guard{object_->lock()};
+  Guard<CriticalMutex> guard{object_locked()->lock()};
 
   // Persist our current caching mode. Every protect region will have the same caching mode so we
   // can acquire this from any region.
-  new_arch_mmu_flags |= (first_region_arch_mmu_flags_ & ARCH_MMU_FLAG_CACHE_MASK);
+  new_arch_mmu_flags |= (first_region_arch_mmu_flags_locked() & ARCH_MMU_FLAG_CACHE_MASK);
 
   // This will get called by UpdateProtectionRange below for every existing unique protection range
   // that gets changed and allows us to fine tune the protect action based on the previous flags.
@@ -344,8 +343,8 @@ zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size,
 
   // Efficiently calculate the flags before, at, and after the requested range using
   // minimal BTree searches.
-  arch_mmu_flags_t flags_before = first_region_arch_mmu_flags_;
-  arch_mmu_flags_t flags_at_base = first_region_arch_mmu_flags_;
+  arch_mmu_flags_t flags_before = first_region_arch_mmu_flags_locked();
+  arch_mmu_flags_t flags_at_base = first_region_arch_mmu_flags_locked();
   bool base_exists = false;
 
   auto it_base = rest_protection_ranges_.upper_bound(base);
@@ -366,7 +365,7 @@ zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size,
     }
   }
 
-  arch_mmu_flags_t flags_end = first_region_arch_mmu_flags_;
+  arch_mmu_flags_t flags_end = first_region_arch_mmu_flags_locked();
   bool end_exists = false;
 
   auto it_end = rest_protection_ranges_.upper_bound(base + size);
@@ -417,7 +416,7 @@ zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size,
 
   // Update the protection flags for the start of the range.
   if (base == this->base()) {
-    first_region_arch_mmu_flags_ = new_arch_mmu_flags;
+    set_first_region_arch_mmu_flags_locked(new_arch_mmu_flags);
   } else if (need_base) {
     rest_protection_ranges_.update(rest_protection_ranges_.find(base), new_arch_mmu_flags);
   } else {
@@ -444,7 +443,7 @@ zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size,
 }
 
 zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
-  canary_.Assert();
+  AssertCanary();
   DEBUG_ASSERT(size != 0 && IsPageRounded(size) && IsPageRounded(base));
   DEBUG_ASSERT(base >= this->base() && base - this->base() < this->size());
   DEBUG_ASSERT(this->size() - (base - this->base()) >= size);
@@ -472,9 +471,10 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     // Insert empty protection ranges for now as we will transform the existing protection_ranges_
     // tree into the target.
     fbl::AllocChecker ac;
-    left = fbl::AdoptRef(new (&ac) VmMapping(
-        *parent_locked(), private_clone_, this->base(), base - this->base(), flags(), object_,
-        object_offset_, 0, btree::BTree<vaddr_t, arch_mmu_flags_t>(), Mergeable::YES));
+    left = fbl::AdoptRef(
+        new (&ac) VmMapping(*parent_locked(), private_clone(), this->base(), base - this->base(),
+                            flags(), object_locked(), object_offset(), 0,
+                            btree::BTree<vaddr_t, arch_mmu_flags_t>(), Mergeable::YES));
     if (!ac.check()) {
       return ZX_ERR_NO_MEMORY;
       AssertHeld(parent_locked()->region_lock_ref());
@@ -495,10 +495,10 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
       }
     }
     fbl::AllocChecker ac;
-    right = fbl::AdoptRef(
-        new (&ac) VmMapping(*parent_locked(), private_clone_, this->base() + offset,
-                            this->size() - offset, flags(), object_, object_offset_ + offset,
-                            right_first_mmu_flags, ktl::move(right_prot_ranges), Mergeable::YES));
+    right = fbl::AdoptRef(new (&ac) VmMapping(
+        *parent_locked(), private_clone(), this->base() + offset, this->size() - offset, flags(),
+        object_locked(), object_offset() + offset, right_first_mmu_flags,
+        ktl::move(right_prot_ranges), Mergeable::YES));
     if (!ac.check()) {
       return ZX_ERR_NO_MEMORY;
     }
@@ -506,8 +506,8 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
 
   // Grab the lock for the vmo. This is acquired here so that it is held continuously over both the
   // architectural unmap and removing the current mapping from the VMO.
-  DEBUG_ASSERT(object_);
-  Guard<CriticalMutex> guard{object_->lock()};
+  DEBUG_ASSERT(object_locked());
+  Guard<CriticalMutex> guard{object_locked()->lock()};
 
   // With the object allocations done the last action that could fail is insertion into the
   // subregions_ list and object mapping list. Notionally we want to remove the old mapping, then
@@ -525,17 +525,17 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     if (status != ZX_OK) {
       return status;
     }
-    status = object_->AddMappingLocked(right.get());
+    status = object_locked()->AddMappingLocked(right.get());
     if (status != ZX_OK) {
       parent_locked()->subregions_.RemoveRegion(right.get());
       return status;
     }
   }
   if (left) {
-    zx_status_t status = object_->AddMappingLocked(left.get());
+    zx_status_t status = object_locked()->AddMappingLocked(left.get());
     if (status != ZX_OK) {
       if (right) {
-        object_->RemoveMappingLocked(right.get());
+        object_locked()->RemoveMappingLocked(right.get());
         parent_locked()->subregions_.RemoveRegion(right.get());
       }
       return status;
@@ -553,7 +553,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
 
   const MemoryPriority old_priority = memory_priority_locked();
   auto set_priority =
-      [old_priority](VmMapping& self) TA_REQ(self.lock()) TA_REQ(self.object_->lock()) {
+      [old_priority](VmMapping& self) TA_REQ(self.lock()) TA_REQ(self.object_locked()->lock()) {
         if (old_priority == VmAddressRegion::MemoryPriority::HIGH) {
           self.SetMemoryPriorityHighAlreadyPositiveLockedObject</*SplitOnUnmap=*/true>();
         } else {
@@ -566,7 +566,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
   // the mapping construction as this step is destructive and hard to rollback.
   //
   // Need to set memory priorities before we call DestroyLockedObject. If we have
-  // MemoryPriority::HIGH, then we need to pass that on to left and right before object_ and
+  // MemoryPriority::HIGH, then we need to pass that on to left and right before the object and
   // the aspace suffer any dynamic reclamation.
   if (right) {
     AssertHeld(right->lock_ref());
@@ -575,7 +575,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     // created the right mapping, for the other case we need to erase the unneeded parts of our
     // protection_ranges_ and move it over.
     if (!left) {
-      right->first_region_arch_mmu_flags_ = RemoveAfterSplitLocked(base + size);
+      right->set_first_region_arch_mmu_flags_locked(RemoveAfterSplitLocked(base + size));
       right->rest_protection_ranges_ = ktl::move(rest_protection_ranges_);
     }
     set_priority(*right);
@@ -585,7 +585,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     AssertHeld(left->object_lock_ref());
     // Erase the top part of protection_ranges_ and then move it to the left mapping.
     ClearProtectionRangeTransitionsLocked(base, this->base() + this->size());
-    left->first_region_arch_mmu_flags_ = first_region_arch_mmu_flags_;
+    left->set_first_region_arch_mmu_flags_locked(first_region_arch_mmu_flags_locked());
     left->rest_protection_ranges_ = ktl::move(rest_protection_ranges_);
     set_priority(*left);
   }
@@ -625,19 +625,19 @@ bool VmMapping::ObjectRangeToVaddrRange(uint64_t offset, uint64_t len, vaddr_t* 
 
   // compute the intersection of the passed in vmo range and our mapping
   uint64_t offset_new;
-  if (!GetIntersect(object_offset_, static_cast<uint64_t>(size()), offset, len, &offset_new,
+  if (!GetIntersect(object_offset(), static_cast<uint64_t>(size()), offset, len, &offset_new,
                     virtual_len)) {
     return false;
   }
 
   DEBUG_ASSERT(*virtual_len > 0 && *virtual_len <= SIZE_MAX);
-  DEBUG_ASSERT(offset_new >= object_offset_);
+  DEBUG_ASSERT(offset_new >= object_offset());
 
   LTRACEF("intersection offset %#" PRIx64 ", len %#" PRIx64 "\n", offset_new, *virtual_len);
 
   // make sure the base + offset is within our address space
   // should be, according to the range stored in base() + size()
-  bool overflowed = add_overflow(this->base(), offset_new - object_offset_, base);
+  bool overflowed = add_overflow(this->base(), offset_new - object_offset(), base);
   ASSERT(!overflowed);
 
   // make sure we're only operating within our window
@@ -648,7 +648,7 @@ bool VmMapping::ObjectRangeToVaddrRange(uint64_t offset, uint64_t len, vaddr_t* 
 }
 
 void VmMapping::AspaceUnmapLockedObject(uint64_t offset, uint64_t len, UnmapOptions options) const {
-  canary_.Assert();
+  AssertCanary();
 
   // NOTE: must be acquired with the vmo lock held, but doesn't need to take
   // the address space lock, since it will not manipulate its location in the
@@ -659,24 +659,24 @@ void VmMapping::AspaceUnmapLockedObject(uint64_t offset, uint64_t len, UnmapOpti
   // VMO cant call back to us once we're out of their list.
   DEBUG_ASSERT(get_state_locked_object() == LifeCycleState::ALIVE);
 
-  // |object_| itself is not accessed in this method, and we do not hold the correct lock for it,
-  // but we know the object_->lock() is held and so therefore object_ is valid and will not be
-  // modified. Therefore it's correct to read object_ here for the purposes of an assert, but cannot
+  // The object pointer itself is not accessed in this method, and we do not hold the correct lock
+  // for it, but we know the object lock is held and so therefore the pointer is valid and will not
+  // be modified. Therefore it's correct to read it here for the purposes of an assert, but cannot
   // be expressed nicely with regular annotations.
-  [&]() TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(object_); }();
+  [&]() TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(object_locked()); }();
 
   // In the case of unmapping known instances of the zero page check if this range intersects with
   // an in progress fault. If it does we can skip the unmap with the knowledge that the mapping will
   // be updated later. This is safe since the zero page is, by definition, only mapped read only,
   // and is never modified so delaying the update of the mapping cannot cause either any users to
   // see incorrect data, or users to be able to modify an old mapping.
-  if ((options & UnmapOptions::OnlyHasZeroPages) && currently_faulting_ &&
-      currently_faulting_->UnmapRange(offset, len)) {
+  if ((options & UnmapOptions::OnlyHasZeroPages) && currently_faulting() &&
+      currently_faulting()->UnmapRange(offset, len)) {
     return;
   }
 
   LTRACEF("region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64 "\n",
-          this, object_offset_, size(), offset, len);
+          this, object_offset(), size(), offset, len);
 
   // See if there's an intersect.
   vaddr_t base;
@@ -702,9 +702,9 @@ void VmMapping::AspaceUnmapLockedObject(uint64_t offset, uint64_t len, UnmapOpti
 void VmMapping::AspaceRemoveWriteLockedObject(uint64_t offset,
                                               uint64_t len) const TA_NO_THREAD_SAFETY_ANALYSIS {
   LTRACEF("region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64 "\n",
-          this, object_offset_, size(), offset, len);
+          this, object_offset(), size(), offset, len);
 
-  canary_.Assert();
+  AssertCanary();
 
   // NOTE: must be acquired with the vmo lock held, but doesn't need to take
   // the address space lock, since it will not manipulate its location in the
@@ -715,11 +715,11 @@ void VmMapping::AspaceRemoveWriteLockedObject(uint64_t offset,
   // VMO cant call back to us once we're out of their list.
   DEBUG_ASSERT(get_state_locked_object() == LifeCycleState::ALIVE);
 
-  // |object_| itself is not accessed in this method, and we do not hold the correct lock for it,
-  // but we know the object_->lock() is held and so therefore object_ is valid and will not be
-  // modified. Therefore it's correct to read object_ here for the purposes of an assert, but cannot
+  // The object pointer itself is not accessed in this method, and we do not hold the correct lock
+  // for it, but we know the object lock is held and so therefore the pointer is valid and will not
+  // be modified. Therefore it's correct to read it here for the purposes of an assert, but cannot
   // be expressed nicely with regular annotations.
-  [&]() TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(object_); }();
+  [&]() TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(object_locked()); }();
 
   // If this doesn't support writing then nothing to be done, as we know we have no write mappings.
   if (!(flags() & VMAR_FLAG_CAN_MAP_WRITE)) {
@@ -739,7 +739,7 @@ void VmMapping::AspaceRemoveWriteLockedObject(uint64_t offset,
                        flags() & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING,
                    "region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64
                    "\n",
-                   this, object_offset_, size(), offset, len);
+                   this, object_offset(), size(), offset, len);
 
   zx_status_t status = EnumerateProtectionRangesLockedObject(
       base, new_len, [this](vaddr_t region_base, size_t region_len, arch_mmu_flags_t mmu_flags) {
@@ -762,9 +762,9 @@ void VmMapping::AspaceRemoveWriteLockedObject(uint64_t offset,
 
 void VmMapping::AspaceDebugUnpinLockedObject(uint64_t offset, uint64_t len) const {
   LTRACEF("region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64 "\n",
-          this, object_offset_, size(), offset, len);
+          this, object_offset(), size(), offset, len);
 
-  canary_.Assert();
+  AssertCanary();
 
   // NOTE: must be acquired with the vmo lock held, but doesn't need to take
   // the address space lock, since it will not manipulate its location in the
@@ -932,7 +932,7 @@ zx_status_t VmMappingCoalescer<NumPages>::Flush() {
 
 zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ignore_existing) {
   Guard<CriticalMutex> aspace_guard{lock()};
-  canary_.Assert();
+  AssertCanary();
 
   len = RoundUpPageSize(len);
   if (len == 0) {
@@ -945,7 +945,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
 
   LTRACEF("region %p, offset %#zx, size %#zx, commit %d\n", this, offset, len, commit);
 
-  DEBUG_ASSERT(object_);
+  DEBUG_ASSERT(object_locked());
   if (!IsPageRounded(offset) || !is_in_range(base() + offset, len)) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -955,10 +955,10 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
   // opted out of this debug check due to it performing its own dynamic management.
   DEBUG_ASSERT(aspace()->is_user() || aspace()->is_guest_physical() ||
                (flags() & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING) ||
-               object_->DebugIsRangePinned(object_offset_ + offset, len));
+               object_locked()->DebugIsRangePinned(object_offset() + offset, len));
 
   // Cache whether the object is dirty tracked, we need to know this when computing mmu flags later.
-  const bool dirty_tracked = object_->is_dirty_tracked();
+  const bool dirty_tracked = object_locked()->is_dirty_tracked();
 
   // The region to map could have multiple different current arch mmu flags, so we need to iterate
   // over them to ensure we install mappings with the correct permissions.
@@ -994,12 +994,13 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
         __UNINITIALIZED MultiPageRequest page_request;
 
         const uint64_t map_offset = base - this->base();
-        const uint64_t vmo_offset = object_offset_ + map_offset;
-        if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); likely(paged)) {
+        const uint64_t vmo_offset = object_offset() + map_offset;
+        if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get());
+            likely(paged)) {
           // grab the lock for the vmo
           __UNINITIALIZED VmCowPages::DeferredOps deferred(paged->MakeDeferredOps());
-          Guard<CriticalMutex> guard{AssertOrderedAliasedLock, paged->lock(), object_->lock(),
-                                     paged->lock_order()};
+          Guard<CriticalMutex> guard{AssertOrderedAliasedLock, paged->lock(),
+                                     object_locked()->lock(), paged->lock_order()};
 
           // Trim our range to the current VMO size. Our mapping might exceed the VMO in the case
           // where the VMO is resizable, and this should not be considered an error.
@@ -1062,10 +1063,11 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
           }
           zx_status_t status = coalescer.Flush();
           return status == ZX_OK ? ZX_ERR_NEXT : status;
-        } else if (VmObjectPhysical* phys = DownCastVmObject<VmObjectPhysical>(object_.get());
+        } else if (VmObjectPhysical* phys =
+                       DownCastVmObject<VmObjectPhysical>(object_locked().get());
                    phys) {
           // grab the lock for the vmo
-          Guard<CriticalMutex> object_guard{AliasedLock, phys->lock(), object_->lock()};
+          Guard<CriticalMutex> object_guard{AliasedLock, phys->lock(), object_locked()->lock()};
           // Physical VMOs are never resizable, so do not need to worry about trimming the range.
           DEBUG_ASSERT(!phys->is_resizable());
           VmMappingCoalescer<16> coalescer(this, base, mmu_flags,
@@ -1094,7 +1096,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
 }
 
 zx_status_t VmMapping::DecommitRange(size_t offset, size_t len) {
-  canary_.Assert();
+  AssertCanary();
   LTRACEF("%p [%#zx+%#zx], offset %#zx, len %#zx\n", this, base(), size(), offset, len);
 
   Guard<CriticalMutex> guard{lock()};
@@ -1106,14 +1108,14 @@ zx_status_t VmMapping::DecommitRange(size_t offset, size_t len) {
   }
   // VmObject::DecommitRange will typically call back into our instance's
   // VmMapping::AspaceUnmapLockedObject.
-  return object_->DecommitRange(object_offset_ + offset, len);
+  return object_locked()->DecommitRange(object_offset() + offset, len);
 }
 
 zx_status_t VmMapping::DestroyLockedImpl() {
-  canary_.Assert();
-  // Keep a refptr to the object_ so we know our lock remains valid.
-  fbl::RefPtr<VmObject> object(object_);
-  Guard<CriticalMutex> guard{object_->lock()};
+  AssertCanary();
+  // Keep a refptr to the object so we know our lock remains valid.
+  fbl::RefPtr<VmObject> object(object_locked());
+  Guard<CriticalMutex> guard{object_locked()->lock()};
   return DestroyLockedObject(DestroyUnmap::Yes, DestroyRemoveFromParent::Yes);
 }
 
@@ -1152,7 +1154,7 @@ zx_status_t VmMapping::DestroyLockedObject(DestroyUnmap unmap,
   SetMemoryPriorityDefaultLockedObject();
 
   rest_protection_ranges_.clear();
-  object_->RemoveMappingLocked(this);
+  object_locked()->RemoveMappingLocked(this);
 
   // Detach the region from the parent.
   if (parent_locked() && remove_region == DestroyRemoveFromParent::Yes) {
@@ -1163,8 +1165,7 @@ zx_status_t VmMapping::DestroyLockedObject(DestroyUnmap unmap,
 
   // detach from any object we have mapped. Note that we are holding the aspace()->lock() so we
   // will not race with other threads calling vmo()
-  object_.reset();
-  object_reset_ = true;
+  reset_object_locked();
 
   // mark ourself as dead
   set_parent_locked(nullptr);
@@ -1189,7 +1190,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLockedObject(vaddr_t va, ui
   static constexpr uint64_t kBatchPages = 16;
   static constexpr uint64_t coalescer_size = ktl::max(kPageFaultMaxOptimisticPages, kBatchPages);
 
-  const uint64_t vmo_offset = va - base() + object_offset_;
+  const uint64_t vmo_offset = va - base() + object_offset();
 
   [[maybe_unused]] char pf_string[5];
   LTRACEF("%p va %#" PRIxPTR " vmo_offset %#" PRIx64 ", pf_flags %#x (%s)\n", this, va, vmo_offset,
@@ -1382,30 +1383,30 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFault(vaddr_t va, const uint pf_
                                                       MultiPageRequest* page_request) {
   VM_KTRACE_DURATION(2, "VmMapping::PageFault", ("user_id", object->user_id()),
                      ("va", ktrace::Pointer{va}));
-  canary_.Assert();
+  AssertCanary();
 
   DEBUG_ASSERT(IsPageRounded(va));
 
   if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object); likely(paged)) {
     __UNINITIALIZED VmCowPages::DeferredOps deferred(paged->MakeDeferredOps());
     Guard<CriticalMutex> guard{AssertOrderedLock, paged->lock(), paged->lock_order()};
-    if (object_reset_) {
+    if (object_reset()) {
       return {ZX_ERR_UNAVAILABLE, 0};
     }
-    // The caller was obliged pass us the value of |object_| in as |object|, whose lock we now
-    // hold. Since we know that object_ can only hold one of two values, |object| or |nullptr| then
-    // if object_reset_ is false, i.e. |object_| is still equal to |object|, then we know that:
-    //  * Our read of object_reset_ did not race, since it is written under object_->lock(), which
+    // The caller was obliged pass us our object in as |object|, whose lock we now hold. Since we
+    // know that our object can only be one of two values, |object| or |nullptr| then if the reset
+    // flag is false, i.e. our object is still |object|, then we know that:
+    //  * Our read of the reset flag did not race, since it is written under the object lock, which
     //    we presently hold
-    //  * object_ == object since it's not null
-    //  * object_ cannot transition to null since we hold its lock.
+    //  * our object == object since it's not null
+    //  * our object cannot transition to null since we hold its lock.
     assert_object_lock();
     return PageFaultLockedObject(va, pf_flags, additional_pages, paged, &deferred, page_request);
   }
   VmObjectPhysical* phys = DownCastVmObject<VmObjectPhysical>(object);
   ASSERT(phys);
   Guard<CriticalMutex> guard{phys->lock()};
-  if (object_reset_) {
+  if (object_reset()) {
     return {ZX_ERR_UNAVAILABLE, 0};
   }
   // See comment in paged case for explanation.
@@ -1416,10 +1417,10 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFault(vaddr_t va, const uint pf_
 ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, const uint pf_flags,
                                                             const size_t additional_pages,
                                                             MultiPageRequest* page_request) {
-  // As the aspace lock is held we can safely just use the direct raw value of object_, knowing that
-  // it cannot be destructed, and call the regular PageFault method. This is explicitly safe to call
-  // with the aspace lock held.
-  return PageFault(va, pf_flags, additional_pages, object_.get(), page_request);
+  // As the aspace lock is held we can safely just use the direct raw value of the object, knowing
+  // that it cannot be destructed, and call the regular PageFault method. This is explicitly safe to
+  // call with the aspace lock held.
+  return PageFault(va, pf_flags, additional_pages, object_locked().get(), page_request);
 }
 
 zx_status_t VmMapping::ActivateLocked(ActivateInsertRegions insert_region) {
@@ -1435,7 +1436,7 @@ zx_status_t VmMapping::ActivateLocked(ActivateInsertRegions insert_region) {
     if (status != ZX_OK) {
       return status;
     }
-    status = object_->AddMappingLocked(this);
+    status = object_locked()->AddMappingLocked(this);
     if (status != ZX_OK) {
       parent_locked()->subregions_.RemoveRegion(this);
       return status;
@@ -1446,8 +1447,8 @@ zx_status_t VmMapping::ActivateLocked(ActivateInsertRegions insert_region) {
 
   // Now that we have added a mapping to the VMO it's cache policy becomes fixed, and we can read it
   // and augment our arch_mmu_flags.
-  arch_mmu_flags_t cache_policy = object_->GetMappingCachePolicyLocked();
-  arch_mmu_flags_t arch_mmu_flags = first_region_arch_mmu_flags_;
+  arch_mmu_flags_t cache_policy = object_locked()->GetMappingCachePolicyLocked();
+  arch_mmu_flags_t arch_mmu_flags = first_region_arch_mmu_flags_locked();
   if ((arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK) != cache_policy) {
     // Warn in the event that we somehow receive a VMO that has a cache
     // policy set while also holding cache policy flags within the arch
@@ -1466,13 +1467,13 @@ zx_status_t VmMapping::ActivateLocked(ActivateInsertRegions insert_region) {
     // region we know there cannot yet be any protection ranges.
     DEBUG_ASSERT(rest_protection_ranges_.is_empty());
     arch_mmu_flags |= cache_policy;
-    first_region_arch_mmu_flags_ = arch_mmu_flags;
+    set_first_region_arch_mmu_flags_locked(arch_mmu_flags);
   }
   return ZX_OK;
 }
 
 zx_status_t VmMapping::ActivateImpl() {
-  Guard<CriticalMutex> guard{object_->lock()};
+  Guard<CriticalMutex> guard{object_locked()->lock()};
   return ActivateLocked(ActivateInsertRegions::Yes);
 }
 
@@ -1497,17 +1498,17 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
   // for mergeability, which we commonly expect to succeed and not fail, is done last.
 
   // Need to refer to the same object.
-  if (object_.get() != right_candidate->object_.get()) {
+  if (object_locked().get() != right_candidate->object_locked().get()) {
     return nullptr;
   }
-  DEBUG_ASSERT(private_clone_ == right_candidate->private_clone_);
+  DEBUG_ASSERT(private_clone() == right_candidate->private_clone());
   // Aspace and VMO ranges need to be contiguous. Validate that the right candidate is actually to
   // the right in addition to checking that base+size lines up for single scenario where
   // base()+size() can overflow and becomes zero.
   if (base() + size() != right_candidate->base() || right_candidate->base() < base()) {
     return nullptr;
   }
-  if (object_offset_ + size() != right_candidate->object_offset_) {
+  if (object_offset() + size() != right_candidate->object_offset()) {
     return nullptr;
   }
   // All flags need to be consistent.
@@ -1520,8 +1521,8 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
   // each of the mappings. Note that this check is technically redundant, since a VMO can only have
   // one kind of cacheability and we already know this is the same VMO, but some extra paranoia here
   // does not hurt.
-  if ((first_region_arch_mmu_flags_ & ARCH_MMU_FLAG_CACHE_MASK) !=
-      (right_candidate->first_region_arch_mmu_flags_ & ARCH_MMU_FLAG_CACHE_MASK)) {
+  if ((first_region_arch_mmu_flags_locked() & ARCH_MMU_FLAG_CACHE_MASK) !=
+      (right_candidate->first_region_arch_mmu_flags_locked() & ARCH_MMU_FLAG_CACHE_MASK)) {
     return nullptr;
   }
 
@@ -1531,14 +1532,15 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
     return nullptr;
   }
   // Both need to be mergeable.
-  if (mergeable_ == Mergeable::NO || right_candidate->mergeable_ == Mergeable::NO) {
+  if (mergeable_locked() == Mergeable::NO || right_candidate->mergeable_locked() == Mergeable::NO) {
     return nullptr;
   }
 
   fbl::AllocChecker ac;
   fbl::RefPtr<VmMapping> new_mapping = fbl::AdoptRef(new (&ac) VmMapping(
-      *parent_locked(), private_clone_, base(), size() + right_candidate->size(), flags(), object_,
-      object_offset_, 0, btree::BTree<vaddr_t, arch_mmu_flags_t>(), Mergeable::YES));
+      *parent_locked(), private_clone(), base(), size() + right_candidate->size(), flags(),
+      object_locked(), object_offset(), 0, btree::BTree<vaddr_t, arch_mmu_flags_t>(),
+      Mergeable::YES));
   if (!ac.check()) {
     return nullptr;
   }
@@ -1551,10 +1553,11 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
                            new_mapping->lock()) {
     // Although it was safe to read size() without holding the object lock, we need to acquire it
     // to perform changes.
-    Guard<CriticalMutex> guard{AliasedLock, object_->lock(), right_candidate->object_->lock()};
+    Guard<CriticalMutex> guard{AliasedLock, object_locked()->lock(),
+                               right_candidate->object_locked()->lock()};
 
     AssertHeld(new_mapping->object_lock_ref());
-    zx_status_t status = new_mapping->object_->AddMappingLocked(new_mapping.get());
+    zx_status_t status = new_mapping->object_locked()->AddMappingLocked(new_mapping.get());
     if (status != ZX_OK) {
       return true;
     }
@@ -1562,13 +1565,13 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
     // Attempt to copy all the protection ranges first as this might fail due to an allocation.
     // If it fails we can still abort with a fairly minor roll-back procedure.
     if (MergeProtectionRangesLocked(*right_candidate) != ZX_OK) {
-      new_mapping->object_->RemoveMappingLocked(new_mapping.get());
+      new_mapping->object_locked()->RemoveMappingLocked(new_mapping.get());
       return true;
     }
 
     AssertHeld(region_lock_ref());
 
-    new_mapping->first_region_arch_mmu_flags_ = first_region_arch_mmu_flags_;
+    new_mapping->set_first_region_arch_mmu_flags_locked(first_region_arch_mmu_flags_locked());
     new_mapping->rest_protection_ranges_ = ktl::move(rest_protection_ranges_);
 
     AssertHeld(right_candidate->region_lock_ref());
@@ -1603,10 +1606,10 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
 }
 
 void VmMapping::TryMergeNeighborsLocked() {
-  canary_.Assert();
+  AssertCanary();
 
   // Check that this mapping is mergeable and is currently in the correct lifecycle state.
-  if (mergeable_ == Mergeable::NO || state_locked() != LifeCycleState::ALIVE) {
+  if (mergeable_locked() == Mergeable::NO || state_locked() != LifeCycleState::ALIVE) {
     return;
   }
   // As a VmMapping if we we are alive we by definition have a parent.
@@ -1656,15 +1659,15 @@ void VmMapping::MarkMergeable(fbl::RefPtr<VmMapping> mapping) {
   if (mapping->aspace()->vdso_code_mapping_ == mapping) {
     return;
   }
-  mapping->mergeable_ = Mergeable::YES;
+  mapping->set_mergeable_locked(Mergeable::YES);
   mapping->TryMergeNeighborsLocked();
 }
 
 template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) {
   if constexpr (SplitOnUnmap) {
-    // all that's required to set our priority is to have object_ and aspace() set up
-    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_ && aspace());
+    // all that's required to set our priority is to have the object and aspace() set up
+    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_locked() && aspace());
   } else {
     DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
   }
@@ -1675,12 +1678,12 @@ void VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority
   }
   set_memory_priority_locked(priority);
   aspace()->ChangeHighPriorityCountLocked(delta);
-  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); paged) {
+  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get()); paged) {
     PriorityChanger pc = paged->MakePriorityChanger(delta);
     if (priority == VmAddressRegion::MemoryPriority::HIGH) {
       pc.PrepareMayNotAlreadyBeHighPriority();
     }
-    Guard<CriticalMutex> guard{AliasedLock, object_->lock(), pc.lock()};
+    Guard<CriticalMutex> guard{AliasedLock, object_locked()->lock(), pc.lock()};
     pc.ChangeHighPriorityCountLocked();
   }
 }
@@ -1688,8 +1691,8 @@ void VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority
 template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityDefaultLockedObject() {
   if constexpr (SplitOnUnmap) {
-    // all that's required to set our priority is to have object_ and aspace() set up
-    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_ && aspace());
+    // all that's required to set our priority is to have the object and aspace() set up
+    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_locked() && aspace());
   } else {
     DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
   }
@@ -1698,7 +1701,7 @@ void VmMapping::SetMemoryPriorityDefaultLockedObject() {
   }
   set_memory_priority_locked(VmAddressRegion::MemoryPriority::DEFAULT);
   aspace()->ChangeHighPriorityCountLocked(-1);
-  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); paged) {
+  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get()); paged) {
     PriorityChanger pc = paged->MakePriorityChanger(-1);
     AssertHeld(pc.lock_ref());  // we have the object lock
     pc.ChangeHighPriorityCountLocked();
@@ -1708,8 +1711,8 @@ void VmMapping::SetMemoryPriorityDefaultLockedObject() {
 template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject() {
   if constexpr (SplitOnUnmap) {
-    // all that's required to set our priority is to have object_ and aspace() set up
-    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_ && aspace());
+    // all that's required to set our priority is to have the object and aspace() set up
+    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_locked() && aspace());
   } else {
     DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
   }
@@ -1718,7 +1721,7 @@ void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject() {
   }
   set_memory_priority_locked(VmAddressRegion::MemoryPriority::HIGH);
   aspace()->ChangeHighPriorityCountLocked(1);
-  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get()); paged) {
+  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get()); paged) {
     PriorityChanger pc = paged->MakePriorityChanger(1);
     AssertHeld(pc.lock_ref());  // we have the object lock
     pc.PrepareIsAlreadyHighPriorityLocked();
@@ -1736,8 +1739,8 @@ void VmMapping::CommitHighMemoryPriorityImpl() {
         memory_priority_locked() != MemoryPriority::HIGH) {
       return;
     }
-    vmo = object_;
-    offset = object_offset_;
+    vmo = object_locked();
+    offset = object_offset();
     len = size();
   }
   DEBUG_ASSERT(vmo);
@@ -1747,7 +1750,7 @@ void VmMapping::CommitHighMemoryPriorityImpl() {
 }
 
 zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
-  canary_.Assert();
+  AssertCanary();
   // Take a ref to ourselves in case we drop the last one when removing from our parent.
   fbl::RefPtr<VmMapping> self(this);
   Guard<CriticalMutex> region_guard{region_lock()};
@@ -1755,7 +1758,7 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
   if (state_locked() != LifeCycleState::ALIVE) {
     return zx::error{ZX_ERR_BAD_STATE};
   }
-  DEBUG_ASSERT(object_);
+  DEBUG_ASSERT(object_locked());
   DEBUG_ASSERT(parent_locked());
 
   // Never allow writes to the vdso.
@@ -1763,7 +1766,7 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
   // If we have already re-directed to a private clone then there is no need to do so again.
-  if (private_clone_) {
+  if (private_clone()) {
     return zx::ok(ktl::move(self));
   }
   // If the mapping is already possible to write to (even if disabled by current protections), then
@@ -1772,7 +1775,7 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
     return zx::ok(ktl::move(self));
   }
   // A physical VMO cannot be cloned and so we cannot make this safe, just allow the write.
-  if (!object_->is_paged()) {
+  if (!object_locked()->is_paged()) {
     return zx::ok(ktl::move(self));
   }
 
@@ -1780,13 +1783,13 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
   fbl::RefPtr<VmMapping> writable;
   {
     fbl::RefPtr<VmObject> clone;
-    zx_status_t status = object_->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite,
-                                              object_offset_, size(), true, &clone);
+    zx_status_t status = object_locked()->CreateClone(
+        Resizability::NonResizable, SnapshotType::OnWrite, object_offset(), size(), true, &clone);
     if (status != ZX_OK) {
       return zx::error(status);
     }
     if (flags() & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
-      VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get());
+      VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get());
       DEBUG_ASSERT(paged);
       uint64_t original_stream_size;
       {
@@ -1796,7 +1799,7 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
         original_stream_size = *stream_size;
       }
       const uint64_t stream_size_over_offset =
-          ktl::max(original_stream_size, object_offset_) - object_offset_;
+          ktl::max(original_stream_size, object_offset()) - object_offset();
       const uint64_t stream_size_limited_by_map_size = ktl::min(stream_size_over_offset, size());
       zx::result<fbl::RefPtr<StreamSizeManager>> result =
           StreamSizeManager::Create(stream_size_limited_by_map_size);
@@ -1815,11 +1818,11 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
     }
 
     fbl::AllocChecker ac;
-    // We created the clone starting at object_offset_ in the old object, so that makes the
-    // equivalent start object_offset_ be 0 in the clone.
+    // We created the clone starting at our object offset in the old object, so that makes the
+    // equivalent start offset be 0 in the clone.
     writable = fbl::AdoptRef(new (&ac) VmMapping(
         *parent_locked(), true, base(), size(), flags(), ktl::move(clone), 0,
-        first_region_arch_mmu_flags_locked(), ktl::move(protection_ranges), mergeable_));
+        first_region_arch_mmu_flags_locked(), ktl::move(protection_ranges), mergeable_locked()));
     if (!ac.check()) {
       return zx::error(ZX_ERR_NO_MEMORY);
     }
@@ -1830,7 +1833,7 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
     writable->SetMemoryPriorityLocked</*SplitOnUnmap=*/true>(memory_priority_locked());
 
     Guard<CriticalMutex> object_guard{writable->object_lock()};
-    status = writable->object_->AddMappingLocked(writable.get());
+    status = writable->object_locked()->AddMappingLocked(writable.get());
     if (status != ZX_OK) {
       writable->SetMemoryPriorityDefaultLockedObject</*SplitOnUnmap=*/true>();
       return zx::error(status);
@@ -1844,8 +1847,8 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
   }
   // Now acquire the original object lock and destroy ourself.
   {
-    // Keep a refptr to the object_ so we know our lock remains valid.
-    fbl::RefPtr<VmObject> object(object_);
+    // Keep a refptr to the object so we know our lock remains valid.
+    fbl::RefPtr<VmObject> object(object_locked());
     Guard<CriticalMutex> object_guard{object_lock()};
     zx_status_t status = DestroyLockedObject(DestroyUnmap::Yes, DestroyRemoveFromParent::No);
     ASSERT(status == ZX_OK);
@@ -1854,9 +1857,9 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
 }
 
 uint64_t VmMapping::TrimmedObjectRangeLocked(uint64_t offset, uint64_t len) const TA_REQ(lock())
-    TA_REQ(object_->lock()) {
-  const uint64_t vmo_offset = object_offset_ + offset;
-  const uint64_t vmo_size = object_->size_locked();
+    TA_REQ(object_locked()->lock()) {
+  const uint64_t vmo_offset = object_offset() + offset;
+  const uint64_t vmo_size = object_locked()->size_locked();
   if (vmo_offset >= vmo_size) {
     return 0;
   }
@@ -1864,7 +1867,7 @@ uint64_t VmMapping::TrimmedObjectRangeLocked(uint64_t offset, uint64_t len) cons
   uint64_t trim_len = vmo_size - vmo_offset;
 
   if (flags() & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
-    VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get());
+    VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get());
     DEBUG_ASSERT(paged);
     AssertHeld(paged->lock_ref());
     auto stream_size_res = paged->saturating_stream_size_locked();

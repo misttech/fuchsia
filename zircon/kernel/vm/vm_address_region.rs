@@ -164,8 +164,6 @@ pub type UnmapOptions = bindings::VmMapping_UnmapOptions;
 pub type DestroyUnmap = bindings::VmMapping_DestroyUnmap;
 pub type DestroyRemoveFromParent = bindings::VmMapping_DestroyRemoveFromParent;
 
-pub type Mergeable = bindings::VmMapping_Mergeable;
-
 /// Fully locked version of Activate that can additionally control whether the region is installed
 /// into the parent subregion list and vmo mapping list or not. This control exists to facilitate
 /// the fine grained control needed for splitting, merging and replacing of mappings as when set to
