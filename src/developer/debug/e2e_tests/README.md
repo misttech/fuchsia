@@ -1,94 +1,156 @@
-# ZXDB E2E Tests
+<!--* freshness: { reviewed: '2026-10-12' } *-->
 
-This directory contains the test cases and supporting infrastructure for ZXDB's end-to-end tests.
+# ZXDB E2E Tests (`e2e_tests`)
 
-The test cases are dynamically registered from the `.script` files found in the `scripts` directory,
-and executed with the script runneer in `script_test.cc`. The script runner feeds the commands from
-the script to the zxdb console, and matches the output with the expectations in the script file to
-determine success or failure.
+This directory contains the test cases and supporting infrastructure for `zxdb`
+end-to-end (E2E) tests.
+
+`ScriptTest` registers test cases dynamically from `.script` files in the
+`scripts/` directory and runs them via `script_test.cc`. The script runner feeds
+commands from each `.script` file to the `zxdb` console and matches the console
+output against expected patterns.
 
 ## Prerequisites
 
-The tests rely on environment variables to determine several test parameters that are exposed as
-C macros to the test framework. The following macros are currently set by the `BUILD.gn` file in
-this directory:
+The test harness reads build-time configuration from environment variables that
+`BUILD.gn` exposes as C preprocessor macros:
 
-  * `ZXDB_E2E_TESTS_BUILD_TYPE`: This allows the script runner to determine at runtime which build
-    configuration is being used, and allows scripts to skip themselves for particular builds. This
-    variable is optional, but expect test failures when using an unsupported build type.
-  * `ZXDB_E2E_TESTS_SYMBOL_DIR`:  **Required** for all tests to find symbol data for the inferior
-    programs. The symbols are hard linked to this directory from `root_out_dir` using the
-    `symbols_dir_test_data` template which is executed at build time.
-  * `ZXDB_E2E_TESTS_SCRIPTS_DIR`: **Required** to locate the script files under `root_out_dir`.
-  * `ZXDB_E2E_TESTS_FFX_TEST_DATA`: **Required** when `ffx debug` has been compiled as an FFX
-    subtool. If `ffx debug` has been compiled directly into FFX, then this is unused.
+- `ZXDB_E2E_TESTS_BUILD_TYPE`: Identifies the active build configuration at
+  runtime so scripts can skip unsupported build types.
+- `ZXDB_E2E_TESTS_SYMBOL_DIR`: **Required** directory containing hard-linked
+  DWARF symbols (`symbols_dir_test_data`) for target inferior programs.
+- `ZXDB_E2E_TESTS_SCRIPTS_DIR`: **Required** path to the `.script` files under
+  `root_out_dir`.
+- `ZXDB_E2E_TESTS_FFX_TEST_DATA`: **Required** when `ffx debug` builds as a
+  separate subtool. Unused when `ffx debug` compiles directly into `ffx`.
 
 ### FFX Isolate
 
-The test framework does additional work before registering the tests with Gtest. Zxdb has a
-dependency on FFX to bridge the FIDL <-> Unix socket, which is currently managed in
-`ffx_debug_agent_bridge.cc`. This class manages an [FFX Isolate][ffx-isolate] which connects to the
-target and provides a Unix socket for zxdb to connect to in order to initiate the connection with
-`debug_agent`. Note that this is the inverse of how users typically interact with zxdb, where the
-`ffx debug` plugin creates the pipe to the target using FFX libraries and spawns and manages a child
-zxdb process.
+Before registering GoogleTest cases, `FfxDebugAgentBridge`
+(`ffx_debug_agent_bridge.cc`) creates an [FFX Isolate][ffx-isolate]. The isolate
+connects to the target and exposes a local Unix socket that `zxdb` uses to
+connect to `debug_agent` (bridging FIDL and Unix sockets). In normal user
+sessions, `ffx debug` creates the target pipe and spawns `zxdb` as a child
+process instead.
 
-The FFX Isolate depends on severeal environment variables to be set in order to properly and
-completely connect to a target. These should be considered requirements for running these tests
-except when noted otherwise.
+The FFX Isolate reads these environment variables to connect to the target:
 
-  * `FUCHSIA_DEVICE_ADDR`: The IPv4 or IPv6 address of the target. This will be set by `fx` when
-    running the tests locally, and will be present in the environment in infra. Alternatively, if
-    you execute the tests manually (i.e. `$(fx get-build-dir)/host_x64/zxdb_e2e_tests`), you will
-    need to provide this environment variable manually. You can get the values from
-    `ffx target list`.
-  * `FUCHSIA_SSH_PORT`: The port on the target listening for ssh connections. This will be set by
-    `fx` when running test locally and will be present in the environment in infra. Similarly to
-    `FUCSHIA_DEVICE_ADDR` this will need to be set manually if running the test executable directly.
-  * `FUCHSIA_SSH_KEY`: The ssh key that is authorized to connect via ssh to the target. This is not
-    required to run the tests locally if you have your Fuchsia ssh keys placed in the default
-    location `$HOME/.ssh/fuchsia_ed25519`. This will be set in the environment in infra.
-  * `FUCHSIA_TEST_OUTDIR`: Not required to run tests locally, but is important that it is used in
-    the infra environment so the ffx logs are discoverable.
+- `FUCHSIA_DEVICE_ADDR`: The IPv4 or IPv6 address of the target. `fx test` and
+  CI set this variable automatically. When running the test binary directly,
+  read this address from `ffx target list`.
+- `FUCHSIA_SSH_PORT`: The target SSH port. `fx test` and CI set this variable
+  automatically, or you must provide it when running the binary directly.
+- `FUCHSIA_SSH_KEY`: Path to the authorized target SSH private key. Optional for
+  local runs when `$HOME/.ssh/fuchsia_ed25519` exists.
+- `FUCHSIA_TEST_OUTDIR`: Output directory for `ffx` logs in CI environments.
+  Optional for local runs.
 
-After the environment has been read and the configuration is set, the FFX isolate is initialized in
-a temp directory and the target is added. From there, `ffx debug connect --agent-only` is spawned as
-a child process until all test cases have completed. Once the tests are finished, the isolate
-directory is removed and the isolate daemon is stopped (as a result of removing the isolate
-directory).
+`FfxDebugAgentBridge` reads these variables, initializes the FFX isolate in a
+temporary directory, and adds the target device. Next, it spawns `ffx debug
+connect --agent-only` as a child process while all test cases run. After the
+test suite finishes, `FfxDebugAgentBridge` deletes the isolate directory and
+stops the isolate daemon.
 
 ### Subdirectories
 
-  * `inferiors`: test programs that are compiled to a component and added to the Fuchsia Package
-    `zxdb_e2e_inferiors`
-  * `scripts`: scripts run by the script runner (see `script_test.cc`) these simulate a user
-    interacting with the zxdb console
+This directory contains these subdirectories:
 
-## How to disable a specific test
+- `inferiors/`: Target test programs compiled into the `zxdb_e2e_inferiors`
+  Fuchsia package.
+- `scripts/`: `.script` files replayed by `ScriptTest` (`script_test.cc`) to
+  test `zxdb` console workflows.
+- `dap_integration_tests/`: Python end-to-end and framework test suites for the
+  `zxdb` Debug Adapter Protocol (DAP) server.
 
-Specific tests may be individually disabled by prepending the file name with `DISABLED_`. For
-example, to disable the `inline_frames.script` test, rename the file to
-`DISABLED_inline_frames.script` with `git mv`. This is often preferable to disabling the entire test
-suite to maintain maximal coverage while individual failures are resolved.
+## Authoring Rules & Pitfalls
 
+Follow [scripting.md][scripting.md] and the rules below when writing or triaging
+`.script` tests.
 
-## Pitfalls
+### Disabling a Single `.script` Test
 
-This section lists common pitfalls when writing an e2e test using the `.script` files
-For general scripting rules, see [scripting.md][scripting.md]
+Prepend `DISABLED_` to a `.script` filename (for example,
+`DISABLED_inline_frames.script`) and link a `https://fxbug.dev/<id>` issue.
+Disabling one script preserves test coverage across the rest of the suite while
+you fix the failure.
 
-### Don't use line number in your command
-Tip: Try breaking on a function instead.
+### Breaking on Functions Instead of Line Numbers
 
-The following script works on a local machine, but fails in a CQ run:
+Always set breakpoints on function names rather than source line numbers in
+`scripts/*.script` unless the test specifically checks `source-map` settings. A
+line-number command such as `until 9` passes locally but fails on CQ builders
+when source files are absent:
 
 ```zxdb
 [zxdb] until 9
-▶  9
-Source file ./../../src/developer/debug/e2e_tests/inferiors/async_rust_multithreaded.rs not found. You might want to adjust the source file remap setting. See "get source-map".
+> 9
+Source file .../e2e_tests/inferiors/async_rust_multithreaded.rs not found.
+You might want to adjust the source file remap setting. See "get source-map".
 ```
 
-This is because the source file provider relies on the source file to display line-related information.
+The source file provider requires local source files to resolve line-number
+display information.
+
+## Interface
+
+Public headers and test directories expose these harnesses:
+
+- `zxdb::ScriptTest`: End-to-end test harness (`script_test.h`,
+  `script_test.cc`) that replays `.script` files against a live `zxdb` `Console`
+  and `Session`.
+- `zxdb::FfxDebugAgentBridge`: Manages an isolated `ffx` environment
+  (`FFXIsolate`) and bridges the `debug_agent` Unix socket for E2E tests
+  (`ffx_debug_agent_bridge.h`).
+- `dap_integration_tests/`: Python test suites (`dap_e2e_tests`,
+  `dap_framework_test`) that test the `zxdb` DAP server over an isolated `ffx`
+  environment.
+
+## Invariants
+
+Test authors and `BUILD.gn` definitions must preserve these invariants:
+
+- In `scripts/*.script`, break on function names instead of line numbers unless
+  testing `source-map`, and wildcard volatile addresses, registers, and KOIDs
+  with `??`.
+- To disable a failing `.script` test without disabling the suite, rename the
+  file with a `DISABLED_` prefix and cite a `https://fxbug.dev/<id>` bug.
+- In `BUILD.gn`, place pure host tests (such as `dap_framework_test`) in `tests`
+  gated only on `is_host` (`$host_toolchain`) so they run without a board. Gate
+  tests on `has_board` only when they require target inferiors or target symbol
+  generation (`ZXDB_E2E_TESTS_SYMBOL_DIR` or `DAP_E2E_TESTS_SYMBOL_DIR`).
+- When declaring `host_test_data` targets in `BUILD.gn`, list `sources`
+  explicitly so CQ sandboxes receive required host binaries such as `zxdb`.
+- Keep E2E and integration tests enabled on both `arm64` and `x64`. If a
+  platform bug requires an exclusion, document it in `BUILD.gn` with a
+  `https://fxbug.dev/<id>` link.
+- When testing crash or trap generation (`__builtin_trap()`), do not require
+  `ZX_EXCP_SW_BREAKPOINT` (`ud2` on `x86_64` raises
+  `ZX_EXCP_UNDEFINED_INSTRUCTION`). Assert that an exception occurred without
+  over-constraining the architectural exception code unless testing a specific
+  instruction.
+- In `dap_integration_tests/`, target Python 3.11+ and never land commented-out
+  assertions. Use `await asyncio.wait([prev_task])` to await FIFO predecessor
+  tasks without propagating `asyncio.CancelledError`.
+
+## Side Effects
+
+Running the E2E suite produces these host and target side effects:
+
+- Creates and deletes a temporary `ffx` isolate directory, and spawns `ffx debug
+  connect --agent-only` as a child process.
+- Starts target inferior components from `zxdb_e2e_inferiors` and talks to a
+  live Fuchsia device or emulator over SSH.
+
+## Verification
+
+Run these commands to build and run the E2E test suites:
+
+- Build: `fx build //src/developer/debug/e2e_tests:tests`
+- Test (all `.script` E2E tests): `fx test --e2e zxdb_e2e_tests`
+- Test (single `.script` test): `fx test --e2e zxdb_e2e_tests --
+  --gtest_filter="ScriptTest.<script_stem>"`
+- Test (DAP suites): `fx test dap_framework_test` and `fx test --e2e
+  dap_e2e_tests`
 
 [ffx-isolate]: /docs/development/tools/ffx/development/integration_testing.md
-[scripting.md]:/docs/development/debugger/scripting.md
+[scripting.md]: /docs/development/debugger/scripting.md
