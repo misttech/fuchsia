@@ -17,11 +17,6 @@
 static_assert(sizeof(VmPageListNode) == 64);
 static_assert(alignof(VmPageListNode) == 4);
 
-// `cpp_vm_page_splice_list_pop` move-constructs a VmPageOrMarker into storage owned by Rust, so
-// the two representations must agree on size and alignment.
-static_assert(sizeof(VmPageOrMarker) == 4);
-static_assert(alignof(VmPageOrMarker) == 4);
-
 namespace {
 
 template <typename EntryType, typename Iterator>
@@ -37,28 +32,6 @@ inline EntryType unwrap_entry(const Iterator& iter) {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
-
-FFI_ALWAYS_INLINE void cpp_vm_page_splice_list_construct(VmPageSpliceList* list) {
-  ktl::construct_at(list);
-}
-
-FFI_ALWAYS_INLINE void cpp_vm_page_splice_list_destroy(VmPageSpliceList* list) {
-  ktl::destroy_at(list);
-}
-
-FFI_ALWAYS_INLINE bool cpp_vm_page_splice_list_is_processed(const VmPageSpliceList* list) {
-  return list->IsProcessed();
-}
-
-FFI_ALWAYS_INLINE zx_status_t cpp_vm_page_splice_list_create_from_page_list(
-    uint64_t length, VmPageDoublyLinkedList* pages, VmPageSpliceList* splice_list) {
-  return VmPageSpliceList::CreateFromPageList(length, pages, splice_list);
-}
-
-FFI_ALWAYS_INLINE void cpp_vm_page_splice_list_pop(
-    VmPageSpliceList* splice_list, ffi::Uninitialized<VmPageOrMarker>* out_content) {
-  out_content->Initialize(splice_list->Pop());
-}
 
 FFI_ALWAYS_INLINE void cpp_vm_page_list_btree_init(ffi::Uninitialized<VmPageListBtree>* tree) {
   tree->Initialize();

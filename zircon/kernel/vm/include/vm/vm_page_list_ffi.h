@@ -47,21 +47,6 @@ struct VmPageListBtreeConstCursor {
 
 __BEGIN_CDECLS
 
-void cpp_vm_page_splice_list_construct(VmPageSpliceList* list);
-void cpp_vm_page_splice_list_destroy(VmPageSpliceList* list);
-bool cpp_vm_page_splice_list_is_processed(const VmPageSpliceList* list);
-
-// For use by PhysicalPageProvider.  The user-pager path doesn't use this. This returns a
-// finalized list.
-zx_status_t cpp_vm_page_splice_list_create_from_page_list(uint64_t length,
-                                                          VmPageDoublyLinkedList* pages,
-                                                          VmPageSpliceList* splice_list);
-
-// Pops the next page off of the splice list, move-constructing it into `out_content`. It is
-// invalid to pop a page from a non-finalized splice list.
-void cpp_vm_page_splice_list_pop(VmPageSpliceList* splice_list,
-                                 ffi::Uninitialized<VmPageOrMarker>* out_content);
-
 // Constructs the VmPageListBtree container in-place at `tree`.
 void cpp_vm_page_list_btree_init(ffi::Uninitialized<VmPageListBtree>* tree);
 

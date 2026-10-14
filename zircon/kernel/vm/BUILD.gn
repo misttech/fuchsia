@@ -1071,11 +1071,6 @@ kernel_bindgen_crate("vm-page-list-bindings") {
     "cpp_vm_page_list_btree_insert",
     "cpp_vm_page_list_btree_is_empty",
     "cpp_vm_page_list_btree_lower_bound",
-    "cpp_vm_page_splice_list_construct",
-    "cpp_vm_page_splice_list_create_from_page_list",
-    "cpp_vm_page_splice_list_destroy",
-    "cpp_vm_page_splice_list_is_processed",
-    "cpp_vm_page_splice_list_pop",
   ]
   type_allowlist = [
     "VmPageListBtree",
@@ -1086,10 +1081,6 @@ kernel_bindgen_crate("vm-page-list-bindings") {
     "VmPageListBtreeUtilization",
     "VmPageSpliceList",
   ]
-  type_blocklist = [
-    "VmPageDoublyLinkedList",
-    "zx_status_t",
-  ]
   opaque_types = [
     "VmPageListBtree",
     "VmPageListBtreeConstCursor",
@@ -1098,16 +1089,7 @@ kernel_bindgen_crate("vm-page-list-bindings") {
   ]
   function_blocklist = [ "VmPageSpliceList_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  deps = [ "//sdk/rust/zx-types" ]
-  raw_lines = [
-    "#![no_std]",
-    "pub use zx_types::zx_status_t;",
-
-    # The Rust facade in page.rs models VmPageDoublyLinkedList as a native fbl
-    # `DoublyLinkedList` with a matching layout, so it is kept opaque here and
-    # the facade casts.
-    "pub type VmPageDoublyLinkedList = core::ffi::c_void;",
-  ]
+  raw_lines = [ "#![no_std]" ]
   expect_lints = [
     "non_camel_case_types",
     "non_upper_case_globals",

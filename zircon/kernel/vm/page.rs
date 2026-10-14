@@ -553,6 +553,24 @@ impl VmPage {
         unsafe { (*(*self.state_union.get()).object).pin_count() }
     }
 
+    /// Sets the pin count.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `object` is the currently active union variant, and that it has
+    /// ownership of this subfield or holds the page queue lock to modify it safely without data
+    /// races.
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug mode if `count > object::MAX_PIN_COUNT`.
+    #[inline]
+    pub unsafe fn set_pin_count(&self, count: u8) {
+        // SAFETY: Dereferencing UnsafeCell to mutate the object flags in the active union variant.
+        // The caller guarantees ownership of this subfield or holding the page queue lock.
+        unsafe { (*(*self.state_union.get()).object).set_pin_count(count) };
+    }
+
     /// Returns whether the page is marked as always needed.
     ///
     /// # Safety
@@ -873,6 +891,18 @@ impl VmPagePtr {
     pub unsafe fn get_pin_count(self) -> u8 {
         // SAFETY: Safety deferred to caller per function safety preconditions.
         unsafe { self.as_ref().get_pin_count() }
+    }
+
+    /// Sets the pin count of the page when attached to a VM object.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the page is attached to a VM object (`state_union` is in `object` variant)
+    /// and that it has ownership of this subfield or holds the page queue lock.
+    #[inline]
+    pub unsafe fn set_pin_count(self, count: u8) {
+        // SAFETY: Safety deferred to caller per function safety preconditions.
+        unsafe { self.as_ref().set_pin_count(count) }
     }
 
     /// Returns whether the page is marked as always needed.

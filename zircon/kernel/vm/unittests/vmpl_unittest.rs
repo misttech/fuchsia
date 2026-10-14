@@ -9,14 +9,17 @@
 #[unittest::suite]
 mod vmpl_rs {
     use crate::vm::page::VmPagePtr;
+    use crate::vm::page_state::{VmPageState, bindings as page_bindings};
     use crate::vm::pmm;
     use crate::vm::vm_page_list::{
         BatchInserter, IntervalHandling, ReferenceValue, VmPageList, VmPageListNode,
-        VmPageOrMarker, ZeroRangeDirtyState,
+        VmPageOrMarker, VmPageSpliceList, ZeroRangeDirtyState,
     };
     use page::SIZE as PAGE_SIZE_USIZE;
+    use pin_init::stack_pin_init;
     use unittest::{
-        expect_eq, expect_err, expect_false, expect_gt, expect_ok, expect_true, unwrap_ok,
+        assert_ne, expect_eq, expect_err, expect_false, expect_gt, expect_ok, expect_true,
+        unwrap_ok,
     };
     use zx_status::Status;
 
@@ -3549,5 +3552,239 @@ mod vmpl_rs {
         expect_ok!(res);
 
         list.remove_all_content(|_| {});
+    }
+
+    /// Moves the content of `src` into `dst`.
+    fn migrate_content(src: &mut VmPageOrMarker, dst: &mut VmPageOrMarker, _offset: u64) {
+        *dst = src.swap(VmPageOrMarker::empty());
+    }
+
+    /// Tests taking a page from the start of a VmPageListNode.
+    #[test]
+    fn vmpl_take_single_page_even_test() {
+        let mut pl = VmPageList::new();
+
+        let (test_page, _) = unwrap_ok!(pmm::alloc_page(0));
+        let (test_page2, _) = unwrap_ok!(pmm::alloc_page(0));
+
+        expect_true!(add_page(&mut pl, test_page, 0));
+        expect_true!(add_page(&mut pl, test_page2, PAGE_SIZE));
+
+        stack_pin_init!(let splice = VmPageSpliceList::with_length(PAGE_SIZE));
+        expect_ok!(splice.as_mut().add_pages_from(migrate_content, &mut pl, 0));
+
+        expect_true!(splice.is_finalized());
+        let mut popped = splice.as_mut().pop();
+        expect_true!(popped.release_page() == test_page, "wrong page");
+        expect_true!(splice.is_processed(), "extra page");
+        expect_true!(pl.lookup(0).is_none_or(|p| p.is_empty()), "duplicate page");
+
+        expect_true!(pl.remove_content(PAGE_SIZE).release_page() == test_page2, "remove failure");
+
+        free_pages([test_page, test_page2]);
+    }
+
+    /// Tests taking a page from the middle of a VmPageListNode.
+    #[test]
+    fn vmpl_take_single_page_odd_test() {
+        let mut pl = VmPageList::new();
+
+        let (test_page, _) = unwrap_ok!(pmm::alloc_page(0));
+        let (test_page2, _) = unwrap_ok!(pmm::alloc_page(0));
+
+        expect_true!(add_page(&mut pl, test_page, 0));
+        expect_true!(add_page(&mut pl, test_page2, PAGE_SIZE));
+
+        stack_pin_init!(let splice = VmPageSpliceList::with_length(PAGE_SIZE));
+        expect_ok!(splice.as_mut().add_pages_from(migrate_content, &mut pl, PAGE_SIZE));
+
+        expect_true!(splice.is_finalized());
+        let mut popped = splice.as_mut().pop();
+        expect_true!(popped.release_page() == test_page2, "wrong page");
+        expect_true!(splice.is_processed(), "extra page");
+        expect_true!(pl.lookup(PAGE_SIZE).is_none_or(|p| p.is_empty()), "duplicate page");
+
+        expect_true!(pl.remove_content(0).release_page() == test_page, "remove failure");
+
+        free_pages([test_page, test_page2]);
+    }
+
+    /// Tests taking all the pages from a range of VmPageListNodes.
+    #[test]
+    fn vmpl_take_all_pages_test() {
+        let mut pl = VmPageList::new();
+        const COUNT: usize = 3 * VmPageListNode::PAGE_FAN_OUT;
+        let test_pages = get_pages::<COUNT>();
+
+        for (i, page) in test_pages.iter().enumerate() {
+            expect_true!(add_page(&mut pl, *page, (i as u64) * 2 * PAGE_SIZE));
+            expect_true!(add_marker(&mut pl, ((i as u64) * 2 + 1) * PAGE_SIZE));
+        }
+
+        stack_pin_init!(let splice =
+            VmPageSpliceList::with_length((COUNT as u64) * 2 * PAGE_SIZE));
+        expect_ok!(splice.as_mut().add_pages_from(migrate_content, &mut pl, 0));
+        expect_true!(splice.is_finalized());
+        expect_true!(pl.is_empty(), "non-empty list");
+
+        for page in test_pages.iter() {
+            let mut popped = splice.as_mut().pop();
+            expect_true!(popped.release_page() == *page, "wrong page");
+            expect_true!(splice.as_mut().pop().is_marker(), "expected marker");
+        }
+        expect_true!(splice.is_processed(), "extra pages");
+
+        free_pages(test_pages);
+    }
+
+    /// Tests taking the middle pages from a range of VmPageListNodes.
+    #[test]
+    fn vmpl_take_middle_pages_test() {
+        let mut pl = VmPageList::new();
+        const COUNT: usize = 3 * VmPageListNode::PAGE_FAN_OUT;
+        let test_pages = get_pages::<COUNT>();
+
+        for (i, page) in test_pages.iter().enumerate() {
+            expect_true!(add_page(&mut pl, *page, (i as u64) * PAGE_SIZE));
+        }
+
+        const TAKE_OFFSET: usize = VmPageListNode::PAGE_FAN_OUT - 1;
+        const TAKE_COUNT: usize = VmPageListNode::PAGE_FAN_OUT + 2;
+        stack_pin_init!(let splice =
+            VmPageSpliceList::with_length((TAKE_COUNT as u64) * PAGE_SIZE));
+        expect_ok!(splice.as_mut().add_pages_from(
+            migrate_content,
+            &mut pl,
+            (TAKE_OFFSET as u64) * PAGE_SIZE
+        ));
+
+        expect_true!(splice.is_finalized());
+        expect_false!(pl.is_empty(), "non-empty list");
+
+        for (i, page) in test_pages.iter().enumerate() {
+            if (TAKE_OFFSET..TAKE_OFFSET + TAKE_COUNT).contains(&i) {
+                let mut popped = splice.as_mut().pop();
+                expect_true!(popped.release_page() == *page, "wrong page");
+            } else {
+                expect_true!(
+                    pl.remove_content((i as u64) * PAGE_SIZE).release_page() == *page,
+                    "remove failure"
+                );
+            }
+        }
+        expect_true!(splice.is_processed(), "extra pages");
+
+        free_pages(test_pages);
+    }
+
+    /// Tests that gaps are preserved in the list.
+    #[test]
+    fn vmpl_take_gap_test() {
+        let mut pl = VmPageList::new();
+        const COUNT: usize = VmPageListNode::PAGE_FAN_OUT;
+        const GAP_SIZE: u64 = 2;
+
+        let test_pages = get_pages::<COUNT>();
+
+        for (i, page) in test_pages.iter().enumerate() {
+            let offset = (i as u64) * (GAP_SIZE + 1) * PAGE_SIZE;
+            expect_true!(add_page(&mut pl, *page, offset));
+        }
+
+        const LIST_START: u64 = PAGE_SIZE;
+        const LIST_LEN: u64 = ((COUNT as u64) * (GAP_SIZE + 1) - 2) * PAGE_SIZE;
+        stack_pin_init!(let splice = VmPageSpliceList::with_length(LIST_LEN));
+        expect_ok!(splice.as_mut().add_pages_from(migrate_content, &mut pl, LIST_START));
+
+        expect_true!(splice.is_finalized());
+        expect_true!(pl.remove_content(0).release_page() == test_pages[0], "wrong page");
+        expect_true!(pl.lookup(LIST_LEN).is_none_or(|p| p.is_empty()), "wrong page");
+
+        let mut offset = LIST_START;
+        while offset < LIST_START + LIST_LEN {
+            let page_idx = offset / PAGE_SIZE;
+            if page_idx.is_multiple_of(GAP_SIZE + 1) {
+                let mut popped = splice.as_mut().pop();
+                expect_true!(
+                    popped.release_page() == test_pages[(page_idx / (GAP_SIZE + 1)) as usize],
+                    "wrong page"
+                );
+            } else {
+                expect_true!(splice.as_mut().pop().is_empty(), "wrong page");
+            }
+            offset += PAGE_SIZE;
+        }
+        expect_true!(splice.is_processed(), "extra pages");
+
+        free_pages(test_pages);
+    }
+
+    /// Tests that an empty page splice list can be created.
+    #[test]
+    fn vmpl_take_empty_test() {
+        let mut pl = VmPageList::new();
+
+        stack_pin_init!(let splice = VmPageSpliceList::with_length(PAGE_SIZE));
+        expect_ok!(splice.as_mut().add_pages_from(migrate_content, &mut pl, PAGE_SIZE));
+
+        expect_true!(splice.is_finalized());
+        expect_false!(splice.is_processed());
+        expect_true!(splice.as_mut().pop().is_empty());
+        expect_true!(splice.is_processed());
+    }
+
+    /// Tests that appending to a splice list works.
+    #[test]
+    fn vmpl_append_to_splice_list_test() {
+        const NUM_PAGES: usize = 5;
+        stack_pin_init!(let splice =
+            VmPageSpliceList::with_length((NUM_PAGES as u64) * PAGE_SIZE));
+
+        // Append NUM_PAGES to the splice list.
+        let mut pages: [Option<VmPagePtr>; NUM_PAGES] = [None; NUM_PAGES];
+        for (i, slot) in pages.iter_mut().enumerate() {
+            let (page, _pa) = unwrap_ok!(pmm::alloc_page(0));
+            *slot = Some(page);
+            expect_ok!(
+                splice.as_mut().insert((i as u64) * PAGE_SIZE, VmPageOrMarker::from_page(page))
+            );
+        }
+
+        // Finalize the splice list and verify that it worked.
+        splice.as_mut().finalize();
+        expect_true!(splice.is_finalized());
+
+        // Pop all of the pages out of the splice list and validate that it contains the expected
+        // pages.
+        for page in pages {
+            let page = page.expect("page allocated above");
+            let mut popped = splice.as_mut().pop();
+            expect_true!(popped.page() == page);
+            let p = popped.release_page();
+            // SAFETY: `p` was allocated above and is owned here.
+            unsafe { pmm::free_page(p) };
+        }
+    }
+
+    /// Tests that cleaning up a splice list doesn't blow up.
+    #[test]
+    fn vmpl_take_cleanup_test() {
+        let (page, pa) = unwrap_ok!(pmm::alloc_page(0), "pmm_alloc single page");
+        assert_ne!(0, pa.0, "pmm_alloc single page");
+
+        // SAFETY: The page was just allocated and is exclusively owned by this test.
+        unsafe {
+            page.set_state(VmPageState(page_bindings::vm_page_state::OBJECT));
+            page.set_pin_count(0);
+        }
+
+        let mut pl = VmPageList::new();
+        expect_true!(add_page(&mut pl, page, 0));
+
+        stack_pin_init!(let splice = VmPageSpliceList::with_length(PAGE_SIZE));
+        expect_ok!(splice.as_mut().add_pages_from(migrate_content, &mut pl, 0));
+
+        expect_true!(splice.is_finalized());
+        expect_false!(splice.is_processed(), "missing page");
     }
 }

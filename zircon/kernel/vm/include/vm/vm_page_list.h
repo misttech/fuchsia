@@ -1799,17 +1799,17 @@ class VmPageList final {
 // 5. Pages are then `Pop`d from the list. Once all the pages are popped, the list is considered
 //    "processed".
 // 6. The list is then considered `Processed` and can be destroyed.
+//
+// NOTE: The Rust `VmPageSpliceList` in vm_page_list.rs is a `#[repr(C)]` mirror of this class. The
+// non-template members forward to it, and the inline template members below operate directly on
+// instances created on either side, so the order and types of the data members, and the values of
+// the `State` enumerators, must be kept in sync between the two.
 class VmPageSpliceList final {
  public:
   VmPageSpliceList() = default;
   // Convenience constructor that calls Initialize.
   explicit VmPageSpliceList(uint64_t length) { Initialize(length); }
   ~VmPageSpliceList();
-
-  // For use by PhysicalPageProvider.  The user-pager path doesn't use this. This returns a
-  // finalized list.
-  static zx_status_t CreateFromPageList(uint64_t length, VmPageDoublyLinkedList* pages,
-                                        VmPageSpliceList* splice);
 
   // Initialize the list with the given range. Can only be done once, and must be done before
   // providing pages.
@@ -1930,8 +1930,6 @@ class VmPageSpliceList final {
   DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(VmPageSpliceList);
 
  private:
-  void FreeAllPages();
-
   uint64_t length_ = 0;
   uint64_t pos_ = 0;
 

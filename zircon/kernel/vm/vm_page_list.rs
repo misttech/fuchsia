@@ -4,9 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::pmm::node as pmm_node;
+use super::pmm::{self, node as pmm_node};
 use crate::kernel::types::PAddr;
-use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::pin::Pin;
 use debug::{ltracef, ltracef_level};
@@ -18,7 +17,7 @@ use vm_constants_rs::{
     kVmPageListTypeBits, kVmPageListZeroMarkerType,
 };
 use vm_page_list_bindings as bindings;
-use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
+use zr::Opaque;
 use zx_status::Status;
 
 use crate::vm::page::{VmPageDoublyLinkedList, VmPagePtr};
@@ -63,11 +62,6 @@ const LOCAL_TRACE: u32 = 0;
 pub struct VmPageOrMarker {
     raw: u32,
 }
-
-// `VmPageSpliceList::pop` has C++ move-construct a `VmPageOrMarker` directly into Rust-owned
-// storage, so the two representations must agree on size and alignment.
-zr::static_assert!(core::mem::size_of::<VmPageOrMarker>() == 4);
-zr::static_assert!(core::mem::align_of::<VmPageOrMarker>() == 4);
 
 /// The types of sparse page interval types that are supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1286,6 +1280,14 @@ const fn round_down(val: u64, align: u64) -> u64 {
 enum PageOrGap<'a> {
     /// A page/ref/marker or interval sentinel, and its offset.
     Page(&'a VmPageOrMarker, u64),
+    /// A gap (unpopulated range), as `(gap_start, gap_end)`.
+    Gap(u64, u64),
+}
+
+/// An entry visited by `VmPageList::for_every_page_and_gap_in_range_internal_mut`.
+enum PageOrGapMut<'a> {
+    /// A page/ref/marker or interval sentinel, and its offset.
+    Page(&'a mut VmPageOrMarker, u64),
     /// A gap (unpopulated range), as `(gap_start, gap_end)`.
     Gap(u64, u64),
 }
@@ -3297,35 +3299,37 @@ impl VmPageList {
         start_offset: u64,
         end_offset: u64,
         mut per_page_func: PageFunc,
-        per_gap_func: GapFunc,
+        mut per_gap_func: GapFunc,
     ) -> Result<(), Status>
     where
         PageFunc: FnMut(VmPageOrMarkerRef<'_>, u64) -> Status,
         GapFunc: FnMut(u64, u64) -> Status,
     {
-        self.for_every_page_and_gap_in_range_internal_mut::<SkipNodeCheck, _, _>(
+        self.for_every_page_and_gap_in_range_internal_mut::<SkipNodeCheck, _>(
             start_offset,
             end_offset,
-            |slot, off| per_page_func(VmPageOrMarkerRef::new(slot), off),
-            per_gap_func,
+            |e| match e {
+                PageOrGapMut::Page(slot, off) => per_page_func(VmPageOrMarkerRef::new(slot), off),
+                PageOrGapMut::Gap(gap_start, gap_end) => per_gap_func(gap_start, gap_end),
+            },
         )
     }
 
-    /// Mutable version of `for_every_page_and_gap_in_range`, which calls `per_page_func` with a
-    /// `&mut VmPageOrMarker`.
+    /// Mutable version of `for_every_page_and_gap_in_range_internal`, which calls `func` with a
+    /// `PageOrGapMut::Page(&mut VmPageOrMarker, offset)` for every page and
+    /// `PageOrGapMut::Gap(gap_start, gap_end)` for every gap. A single closure allows a caller to
+    /// track state across both pages and gaps.
     ///
-    /// If `N::CLEANUP_EMPTY` is true, then it is assumed the `per_page_func` may remove pages and
-    /// page nodes will be checked to see if they are empty and can be cleaned up.
-    fn for_every_page_and_gap_in_range_internal_mut<N: NodeCheck, PageFunc, GapFunc>(
+    /// If `N::CLEANUP_EMPTY` is true, then it is assumed `func` may remove pages and page nodes
+    /// will be checked to see if they are empty and can be cleaned up.
+    fn for_every_page_and_gap_in_range_internal_mut<N: NodeCheck, F>(
         &mut self,
         start_offset: u64,
         end_offset: u64,
-        mut per_page_func: PageFunc,
-        mut per_gap_func: GapFunc,
+        mut func: F,
     ) -> Result<(), Status>
     where
-        PageFunc: FnMut(&mut VmPageOrMarker, u64) -> Status,
-        GapFunc: FnMut(u64, u64) -> Status,
+        F: FnMut(PageOrGapMut<'_>) -> Status,
     {
         let page_size = page::SIZE as u64;
         let mut expected_next_off = start_offset;
@@ -3361,13 +3365,13 @@ impl VmPageList {
                 let mut status = Status::NEXT;
                 // We can move ahead of expected_next_off in the case of an interval too, which
                 // represents a run of pages. Make sure this is not an interval before calling the
-                // per_gap_func.
+                // gap callback.
                 if expected_next_off != off && !p.is_interval_end() {
-                    status = per_gap_func(expected_next_off, off);
+                    status = func(PageOrGapMut::Gap(expected_next_off, off));
                 }
                 expected_next_off = off + page_size;
                 if status == Status::NEXT {
-                    status = per_page_func(p, off);
+                    status = func(PageOrGapMut::Page(p, off));
                 }
                 status
             },
@@ -3401,7 +3405,7 @@ impl VmPageList {
             let ended_in_interval = in_interval
                 || (expected_next_off == start_offset && self.is_offset_in_interval(start_offset));
             if !ended_in_interval {
-                let status = per_gap_func(expected_next_off, end_offset);
+                let status = func(PageOrGapMut::Gap(expected_next_off, end_offset));
                 if status != Status::NEXT && status != Status::STOP {
                     return Err(status);
                 }
@@ -3850,18 +3854,36 @@ impl VmPageList {
         &mut self,
         start_offset: u64,
         end_offset: u64,
-        per_page_fn: PageFunc,
-        per_gap_fn: GapFunc,
+        mut per_page_fn: PageFunc,
+        mut per_gap_fn: GapFunc,
     ) -> Result<(), Status>
     where
         PageFunc: FnMut(&mut VmPageOrMarker, u64) -> Status,
         GapFunc: FnMut(u64, u64) -> Status,
     {
-        self.for_every_page_and_gap_in_range_internal_mut::<CleanupEmptyNodeCheck, _, _>(
+        self.remove_pages_and_iterate_gaps_internal(start_offset, end_offset, |e| match e {
+            PageOrGapMut::Page(slot, off) => per_page_fn(slot, off),
+            PageOrGapMut::Gap(gap_start, gap_end) => per_gap_fn(gap_start, gap_end),
+        })
+    }
+
+    /// Internal version of `remove_pages_and_iterate_gaps` that calls a single `func` for both
+    /// pages and gaps, in the same order that `remove_pages_and_iterate_gaps` calls `per_page_fn`
+    /// and `per_gap_fn`. This allows a caller to track state across both pages and gaps in a single
+    /// closure.
+    fn remove_pages_and_iterate_gaps_internal<F>(
+        &mut self,
+        start_offset: u64,
+        end_offset: u64,
+        func: F,
+    ) -> Result<(), Status>
+    where
+        F: FnMut(PageOrGapMut<'_>) -> Status,
+    {
+        self.for_every_page_and_gap_in_range_internal_mut::<CleanupEmptyNodeCheck, _>(
             start_offset,
             end_offset,
-            per_page_fn,
-            per_gap_fn,
+            func,
         )
     }
 
@@ -4098,86 +4120,383 @@ impl core::fmt::Debug for VmPageList {
     }
 }
 
-/// Class which holds the list of vm_page structs removed from a VmPageList
-/// by AddPagesFrom. The list include information about uncommitted pages and markers.
-/// Every splice list is expected to go through the following series of states:
+/// States used to represent the life cycle of the `VmPageSpliceList`, as per the comment at the
+/// declaration.
+///
+/// The discriminants match the C++ `VmPageSpliceList::State` enum (asserted below), since both
+/// languages operate on the same object. C++ only ever stores these four values, so reading `state`
+/// from an instance that C++ has mutated is sound.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum State {
+    Constructed = 0,
+    Initialized = 1,
+    Finalized = 2,
+    Processed = 3,
+}
+
+zr::static_assert!(
+    core::mem::size_of::<State>() == core::mem::size_of::<bindings::VmPageSpliceList_State>()
+);
+zr::static_assert!(State::Constructed as u8 == bindings::VmPageSpliceList_State_Constructed);
+zr::static_assert!(State::Initialized as u8 == bindings::VmPageSpliceList_State_Initialized);
+zr::static_assert!(State::Finalized as u8 == bindings::VmPageSpliceList_State_Finalized);
+zr::static_assert!(State::Processed as u8 == bindings::VmPageSpliceList_State_Processed);
+
+/// Class which holds the list of vm_page structs removed from a VmPageList by `add_pages_from`. The
+/// list includes information about uncommitted pages and markers. Every splice list is expected to
+/// go through the following series of states:
 /// 1. The splice list is created.
 /// 2. List is Initialized with the desired range.
 /// 3. Pages are added to the splice list.
-/// 4. The list is `Finalize`d, meaning that it can no longer be modified by `Append`.
-/// 5. Pages are then `Pop`d from the list. Once all the pages are popped, the list is considered
+/// 4. The list is `finalize`d, meaning that it can no longer be modified by `insert`.
+/// 5. Pages are then `pop`ped from the list. Once all the pages are popped, the list is considered
 ///    "processed".
 /// 6. The list is then considered `Processed` and can be destroyed.
+///
+/// The field layout must match the C++ `VmPageSpliceList` exactly: the C++ non-template members
+/// forward to this implementation, and C++ operates on instances created here through the pointer
+/// handed out by `as_raw`.
 #[pin_data(PinnedDrop)]
+#[repr(C)]
 pub struct VmPageSpliceList {
+    length: u64,
+    pos: u64,
+    state: State,
+    page_list: VmPageList,
     #[pin]
-    opaque: Opaque<bindings::VmPageSpliceList>,
+    _pinned: core::marker::PhantomPinned,
 }
 
-unsafe_pinned_drop_ffi!(VmPageSpliceList, bindings::cpp_vm_page_splice_list_destroy);
+zr::static_assert!(
+    core::mem::size_of::<VmPageSpliceList>() == core::mem::size_of::<bindings::VmPageSpliceList>()
+);
+zr::static_assert!(
+    core::mem::align_of::<VmPageSpliceList>()
+        == core::mem::align_of::<bindings::VmPageSpliceList>()
+);
 
 impl VmPageSpliceList {
     /// Returns an in-place initializer for stack-pinning a `VmPageSpliceList`.
     pub fn new() -> impl pin_init::PinInit<Self> {
-        unsafe fn init_shim(ptr: *mut core::ffi::c_void) {
-            let list_ptr: *mut bindings::VmPageSpliceList = ptr.cast();
-            // SAFETY: `ptr` is guaranteed by `pin_init_ffi!` to point to valid `VmPageSpliceList`
-            // storage.
-            unsafe { bindings::cpp_vm_page_splice_list_construct(list_ptr) }
-        }
-        pin_init_ffi!(init_shim)
+        pin_init::pin_init!(Self {
+            length: 0,
+            pos: 0,
+            state: State::Constructed,
+            page_list: VmPageList::new(),
+            _pinned: core::marker::PhantomPinned,
+        })
     }
 
-    /// Returns true after the whole collection has been processed by Pop.
-    pub fn is_processed(&self) -> bool {
-        // SAFETY: `self.opaque` holds a valid `VmPageSpliceList`.
-        unsafe { bindings::cpp_vm_page_splice_list_is_processed(self.opaque.get()) }
+    /// Convenience initializer equivalent to `new` followed by `initialize(length)`.
+    pub fn with_length(length: u64) -> impl pin_init::PinInit<Self> {
+        pin_init::pin_init!(Self {
+            length,
+            pos: 0,
+            state: State::Initialized,
+            page_list: VmPageList::new(),
+            _pinned: core::marker::PhantomPinned,
+        })
     }
 
-    /// Creates a splice list from `pages`, returning it already finalized.
-    ///
-    /// The pages are moved out of `pages`, which is left empty on success. May return
-    /// `ZX_ERR_NO_MEMORY`, in which case an unspecified number of pages will have been moved into
-    /// this splice list.
-    pub fn create_from_page_list(
-        self: Pin<&mut Self>,
-        length: u64,
-        pages: Pin<&mut VmPageDoublyLinkedList>,
-    ) -> Result<(), Status> {
-        // SAFETY: `DoublyLinkedList` is `repr(C)` and mirrors `VmPageDoublyLinkedList` -- a bare
-        // head pointer with the same sentinel encoding -- so C++ can drain it in place. Neither
-        // `pages` nor `self` is moved by taking a raw pointer to them.
-        let status = unsafe {
-            bindings::cpp_vm_page_splice_list_create_from_page_list(
-                length,
-                (pages.get_unchecked_mut() as *mut VmPageDoublyLinkedList).cast(),
-                self.as_raw(),
-            )
-        };
-        Status::ok(status)
+    /// Initialize the list with the given range. Can only be done once, and must be done before
+    /// providing pages.
+    pub fn initialize(self: Pin<&mut Self>, length: u64) {
+        debug_assert!(self.is_empty() && self.state == State::Constructed);
+        let this = self.project();
+        *this.length = length;
+        *this.state = State::Initialized;
     }
 
     /// Pops the next page off of the splice list. It is invalid to pop a page from a non-finalized
     /// splice list.
     pub fn pop(self: Pin<&mut Self>) -> VmPageOrMarker {
-        let mut content = MaybeUninit::<VmPageOrMarker>::uninit();
-        // SAFETY: `as_raw` yields a valid `VmPageSpliceList`, and `content` is properly aligned,
-        // writable storage of exactly the size of a `VmPageOrMarker` (asserted above), which C++
-        // move-constructs the popped content into. Ownership of any contained page or reference
-        // transfers to the returned `VmPageOrMarker`.
-        unsafe {
-            bindings::cpp_vm_page_splice_list_pop(self.as_raw(), content.as_mut_ptr().cast());
-            content.assume_init()
+        if !self.is_finalized() {
+            debug_assert!(false, "attempted to Pop from a non-finalized splice list");
+            return VmPageOrMarker::empty();
+        }
+
+        let this = self.project();
+        let res = this.page_list.remove_content(*this.pos);
+        *this.pos += page::SIZE as u64;
+        if *this.pos >= *this.length {
+            *this.state = State::Processed;
+        }
+        res
+    }
+
+    /// Takes the content out of `source` and places them in this splice list, which must have
+    /// already been initialized but still be empty. The range to be taken is determined by the
+    /// provided `offset` and the length of this splice list. May return `Status::NO_MEMORY`, in
+    /// which case an unspecified number of pages will have been moved into this splice list.
+    ///
+    /// Takes a function with the signature
+    /// `fn(src: &mut VmPageOrMarker, dst: &mut VmPageOrMarker, offset: u64)`, which is expected to
+    /// move content from `src` to `dst`.
+    pub fn add_pages_from<F>(
+        mut self: Pin<&mut Self>,
+        merge_func: F,
+        source: &mut VmPageList,
+        offset: u64,
+    ) -> Result<(), Status>
+    where
+        F: FnMut(&mut VmPageOrMarker, &mut VmPageOrMarker, u64),
+    {
+        let this = self.as_mut().project();
+        let end = offset + *this.length;
+        let result = source.merge_range_onto(merge_func, this.page_list, offset, end);
+        self.finalize();
+        if result { Ok(()) } else { Err(Status::NO_MEMORY) }
+    }
+
+    /// Iterates all pages in this splice list without taking ownership. Pages are not considered
+    /// processed and can not be removed using this iterator. The callback is expected to have the
+    /// signature: `fn page_func(slot: VmPageOrMarkerRef<'_>, offset: u64) -> Status`.
+    /// The iterator will start at `start_offset` and iterate until the end of the
+    /// `VmPageSpliceList`. `start_offset` must be page aligned and less than the length of the
+    /// list.
+    pub fn mutate_pages<F>(
+        self: Pin<&mut Self>,
+        page_func: F,
+        start_offset: u64,
+    ) -> Result<(), Status>
+    where
+        F: FnMut(VmPageOrMarkerRef<'_>, u64) -> Status,
+    {
+        debug_assert!(self.is_finalized());
+        debug_assert!(start_offset < self.length);
+        debug_assert!(start_offset.is_multiple_of(page::SIZE as u64));
+        let this = self.project();
+        this.page_list.for_every_page_in_range_ref(start_offset, *this.length, page_func)
+    }
+
+    /// Iterates all the pages and gaps in this splice list. `page_func` is given ownership of each
+    /// page. It is invalid to process a non-finalized splice list. The two callbacks are expected
+    /// to have the signatures:
+    /// `fn page_func(slot: VmPageOrMarker, splice_offset: u64) -> Status`
+    /// `fn gap_func(gap_start: u64, gap_end: u64) -> Status`
+    ///
+    /// Because `page_func` always takes ownership of the content, if it returns any kind of error,
+    /// either a graceful request to stop iteration via `Status::STOP` or an explicit error, then
+    /// that offset is considered processed and will not be repeated in future calls. In contrast,
+    /// if iteration is stopped during `gap_func`, that gap will not be considered processed and can
+    /// be returned in future calls.
+    pub fn remove_pages_and_iterate_gaps<PageFunc, GapFunc>(
+        self: Pin<&mut Self>,
+        mut page_func: PageFunc,
+        mut gap_func: GapFunc,
+    ) -> Result<(), Status>
+    where
+        PageFunc: FnMut(VmPageOrMarker, u64) -> Status,
+        GapFunc: FnMut(u64, u64) -> Status,
+    {
+        debug_assert!(self.is_finalized());
+        let this = self.project();
+        let length = *this.length;
+        // Assume we will successfully process the whole range. This will get trimmed should any of
+        // the callbacks terminate early.
+        let mut processed = length;
+        let status =
+            this.page_list.remove_pages_and_iterate_gaps_internal(*this.pos, length, |e| match e {
+                PageOrGapMut::Page(slot, src_offset) => {
+                    // Move the content out of the slot before passing it to `page_func` to ensure
+                    // it *must* deal with it and it cannot be left in the slot.
+                    let content = slot.swap(VmPageOrMarker::empty());
+                    let status = page_func(content, src_offset);
+                    if status != Status::NEXT {
+                        processed = src_offset + page::SIZE as u64;
+                    }
+                    status
+                }
+                PageOrGapMut::Gap(gap_start, gap_end) => {
+                    let status = gap_func(gap_start, gap_end);
+                    if status != Status::NEXT {
+                        processed = gap_start;
+                    }
+                    status
+                }
+            });
+        *this.pos = processed;
+        if *this.pos == length {
+            debug_assert!(this.page_list.is_empty());
+            *this.state = State::Processed;
+        }
+        status
+    }
+
+    /// Inserts `content` into the splice list at the specified `offset`. The splice list takes
+    /// ownership of `content` after this call. It is invalid to append to a finalized splice list.
+    pub fn insert(
+        self: Pin<&mut Self>,
+        offset: u64,
+        mut content: VmPageOrMarker,
+    ) -> Result<(), Status> {
+        assert!(offset < self.length);
+        assert!(self.is_initialized());
+        assert!(!content.is_interval());
+
+        let this = self.project();
+        let (slot, _) = this.page_list.lookup_or_allocate(offset, IntervalHandling::NoIntervals);
+        let Some(slot) = slot else {
+            // If the allocation failed, we need to free content.
+            Self::free_content(&mut content);
+            return Err(Status::NO_MEMORY);
+        };
+        *slot = content;
+        Ok(())
+    }
+
+    /// Returns true after the whole collection has been processed by Pop.
+    pub fn is_processed(&self) -> bool {
+        self.state == State::Processed
+    }
+
+    /// Returns true if the collection has been Initialized.
+    pub fn is_initialized(&self) -> bool {
+        self.state == State::Initialized
+    }
+
+    /// Returns true if this list is empty.
+    pub fn is_empty(&self) -> bool {
+        self.page_list.is_empty()
+    }
+
+    /// Marks the list as finalized.
+    ///
+    /// See the comment at `VmPageSpliceList`'s declaration for more info on what this means and
+    /// when to call it. Note that it is invalid to call `finalize` twice on the same list.
+    pub fn finalize(self: Pin<&mut Self>) {
+        debug_assert!(self.is_initialized());
+        *self.project().state = State::Finalized;
+    }
+
+    /// Returns true if the splice list is finalized.
+    ///
+    /// See the comment at [`VmPageSpliceList`]'s declaration for more info on what this means.
+    pub fn is_finalized(&self) -> bool {
+        self.state == State::Finalized
+    }
+
+    /// Returns the current position in the list.
+    pub fn position(&self) -> u64 {
+        self.pos
+    }
+
+    /// For use by PhysicalPageProvider. The user-pager path doesn't use this. This returns a
+    /// finalized list.
+    pub fn create_from_page_list(
+        length: u64,
+        mut pages: Pin<&mut VmPageDoublyLinkedList>,
+        mut splice: Pin<&mut Self>,
+    ) -> Result<(), Status> {
+        // TODO(https://fxbug.dev/42170136): This method needs coverage in vmpl_unittests.
+        debug_assert!(pages.iter().count() as u64 == length / page::SIZE as u64);
+        splice.as_mut().initialize(length);
+        let mut offset = 0;
+        while let Some(page) = pages.as_mut().pop_front() {
+            splice.as_mut().insert(offset, VmPageOrMarker::from_page(VmPagePtr::new(page)))?;
+            offset += page::SIZE as u64;
+        }
+        splice.finalize();
+        Ok(())
+    }
+
+    /// Frees the page or reference held by `content`, leaving it empty.
+    fn free_content(content: &mut VmPageOrMarker) {
+        if content.is_page() {
+            let page = content.release_page();
+            // SAFETY: The splice list owns this page, so nothing else can be concurrently linking
+            // it into or out of a list.
+            debug_assert!(!unsafe { (*page.as_ref().queue_node.get()).in_container() });
+            // SAFETY: The splice list owns this page and is giving up ownership of it.
+            unsafe { pmm::free_page(page) };
+        } else if content.is_reference() {
+            let compression = pmm_node()
+                .get_page_compression()
+                .expect("a reference cannot exist without a compression instance");
+            // SAFETY: The reference was produced by the global compression instance, the splice
+            // list owns it and is relinquishing ownership, and it is not a temporary reference so
+            // no VMO lock is required.
+            unsafe { compression.free(content.release_reference()) };
         }
     }
 
-    /// Returns a raw pointer to the underlying C++ `VmPageSpliceList`.
+    /// Frees every page and reference still owned by the splice list.
+    fn free_all_pages(self: Pin<&mut Self>) {
+        let this = self.project();
+        // Free any pages owned by the splice list.
+        this.page_list.remove_all_content(|mut content| Self::free_content(&mut content));
+        *this.state = State::Processed;
+    }
+
+    /// Returns a raw pointer to the underlying `VmPageSpliceList`.
     ///
     /// Callers must not use the returned raw pointer to move the object in memory.
     pub fn as_raw(self: Pin<&mut Self>) -> *mut bindings::VmPageSpliceList {
-        // SAFETY: Obtaining a raw pointer to `opaque` does not move the pinned object.
-        unsafe { self.get_unchecked_mut().opaque.get() }
+        // SAFETY: Obtaining a raw pointer does not move the pinned object. The layout of this type
+        // matches the C++ `VmPageSpliceList`, as asserted above.
+        unsafe { core::ptr::from_mut(self.get_unchecked_mut()).cast() }
     }
+
+    /// Frees any pages still owned by the list, as appropriate for its current state.
+    ///
+    /// This is the body of the destructor, shared between the Rust `PinnedDrop` and the C++
+    /// `~VmPageSpliceList()`. It deliberately does not drop `page_list`: for a Rust-owned list the
+    /// field drop glue runs after `PinnedDrop`, and for a C++-owned list the C++ member destructor
+    /// runs after the trampoline returns.
+    fn destroy(mut self: Pin<&mut Self>) {
+        match self.state {
+            State::Constructed => {}
+            State::Initialized => {
+                // Finalize the list so any remaining pages can be freed, then fall through to
+                // freeing them.
+                *self.as_mut().project().state = State::Finalized;
+                self.free_all_pages();
+            }
+            State::Finalized => self.free_all_pages(),
+            State::Processed => {}
+        }
+    }
+}
+
+#[pin_init::pinned_drop]
+impl PinnedDrop for VmPageSpliceList {
+    fn drop(self: Pin<&mut Self>) {
+        self.destroy();
+    }
+}
+
+// FFI trampolines for C++ calling into the Rust `VmPageSpliceList`.
+//
+// The C++ `VmPageSpliceList` has the same layout as this one, so C++ passes its `this` pointer
+// straight through. C++ owns the object and does not move it for the duration of the call, so it is
+// pinned here.
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_splice_list_destroy(list: &mut VmPageSpliceList) {
+    // SAFETY: C++ owns `list` and does not move it.
+    unsafe { Pin::new_unchecked(list) }.destroy();
+}
+
+/// `out` must refer to an empty `VmPageOrMarker` that is not part of the list; the popped content
+/// is moved into it.
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_splice_list_pop(list: &mut VmPageSpliceList, out: &mut VmPageOrMarker) {
+    // SAFETY: C++ owns `list` and does not move it.
+    *out = unsafe { Pin::new_unchecked(list) }.pop();
+}
+
+/// `content` is C++'s by-value parameter; ownership of its contents is taken and it is left empty
+/// for the C++ destructor.
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_splice_list_insert(
+    list: &mut VmPageSpliceList,
+    offset: u64,
+    content: &mut VmPageOrMarker,
+) -> Result<(), Status> {
+    let content = content.swap(VmPageOrMarker::empty());
+    // SAFETY: C++ owns `list` and does not move it.
+    unsafe { Pin::new_unchecked(list) }.insert(offset, content)
 }
 
 #[cfg(ktest)]

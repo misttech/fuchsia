@@ -689,9 +689,11 @@ impl PhysicalPageProvider {
                 };
 
                 let ReclaimUnprocessedGuard { splice_list, contiguous_pages, .. } = &mut guard;
-                let status = splice_list
-                    .as_mut()
-                    .create_from_page_list(supply_length, contiguous_pages.as_mut());
+                let status = VmPageSpliceList::create_from_page_list(
+                    supply_length,
+                    contiguous_pages.as_mut(),
+                    splice_list.as_mut(),
+                );
                 if let Err(status) = status {
                     // Only possible error is out of memory.
                     assert_eq!(status, Status::NO_MEMORY);

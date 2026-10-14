@@ -15,9 +15,7 @@
 #include <fbl/alloc_checker.h>
 #include <ktl/memory.h>
 #include <ktl/utility.h>
-#include <vm/compression.h>
 #include <vm/page_slab_allocator.h>
-#include <vm/pmm.h>
 #include <vm/vm.h>
 #include <vm/vm_object_paged.h>
 
@@ -1280,88 +1278,24 @@ zx_status_t VmPageList::ClipIntervalEnd(uint64_t interval_end, uint64_t len) {
   return ZX_OK;
 }
 
-VmPageSpliceList::~VmPageSpliceList() {
-  switch (state_) {
-    case State::Constructed:
-      break;
-    case State::Initialized:
-      Finalize();
-      __FALLTHROUGH;
-    case State::Finalized:
-      FreeAllPages();
-      break;
-    case State::Processed:
-      break;
-  }
-}
+// Trampolines into the Rust VmPageSpliceList implementation, which likewise shares the layout of
+// the C++ class, so `this` is passed through directly. The contracts of these functions are
+// documented at their definitions in vm_page_list.rs.
+extern "C" {
+void rust_vm_page_splice_list_destroy(VmPageSpliceList* list);
+zx_status_t rust_vm_page_splice_list_insert(VmPageSpliceList* list, uint64_t offset,
+                                            VmPageOrMarker* content);
+void rust_vm_page_splice_list_pop(VmPageSpliceList* list, VmPageOrMarker* out);
+}  // extern "C"
 
-// static
-zx_status_t VmPageSpliceList::CreateFromPageList(uint64_t length, VmPageDoublyLinkedList* pages,
-                                                 VmPageSpliceList* splice) {
-  // TODO(https://fxbug.dev/42170136): This method needs coverage in vmpl_unittests.
-  DEBUG_ASSERT(pages);
-  DEBUG_ASSERT(pages->size_slow() == length / kPageSize);
-  splice->Initialize(length);
-  uint64_t offset = 0;
-  while (vm_page_t* page = pages->pop_front()) {
-    zx_status_t status = splice->Insert(offset, VmPageOrMarker::Page(page));
-    if (status != ZX_OK) {
-      return status;
-    }
-    offset += kPageSize;
-  }
-  splice->Finalize();
-  return ZX_OK;
-}
-
-void VmPageSpliceList::FreeAllPages() {
-  // Free any pages owned by the splice list.
-  page_list_.RemoveAllContent([](VmPageOrMarker&& page) {
-    if (page.IsPage()) {
-      pmm_free_page(page.ReleasePage());
-    } else if (page.IsReference()) {
-      auto compression = Pmm::Node().GetPageCompression();
-      DEBUG_ASSERT(compression);
-      compression->Free(page.ReleaseReference());
-    }
-  });
-  state_ = State::Processed;
-}
+VmPageSpliceList::~VmPageSpliceList() { rust_vm_page_splice_list_destroy(this); }
 
 zx_status_t VmPageSpliceList::Insert(uint64_t offset, VmPageOrMarker content) {
-  ASSERT(offset < length_);
-  ASSERT(IsInitialized());
-  ASSERT(!content.IsInterval());
-
-  auto [slot, interval] =
-      page_list_.LookupOrAllocate(offset, VmPageList::IntervalHandling::NoIntervals);
-  if (!slot) {
-    // If the allocation failed, we need to free content.
-    if (content.IsPage()) {
-      vm_page_t* page = content.ReleasePage();
-      DEBUG_ASSERT(!page->queue_node.InContainer());
-      pmm_free_page(page);
-    } else if (content.IsReference()) {
-      VmCompression* compression = Pmm::Node().GetPageCompression();
-      DEBUG_ASSERT(compression);
-      compression->Free(content.ReleaseReference());
-    }
-    return ZX_ERR_NO_MEMORY;
-  }
-  *slot = ktl::move(content);
-  return ZX_OK;
+  return rust_vm_page_splice_list_insert(this, offset, &content);
 }
 
 VmPageOrMarker VmPageSpliceList::Pop() {
-  if (!IsFinalized()) {
-    DEBUG_ASSERT_MSG(false, "attempted to Pop from a non-finalized splice list\n");
-    return VmPageOrMarker::Empty();
-  }
-
-  VmPageOrMarker res = page_list_.RemoveContent(pos_);
-  pos_ += kPageSize;
-  if (pos_ >= length_) {
-    state_ = State::Processed;
-  }
+  VmPageOrMarker res;
+  rust_vm_page_splice_list_pop(this, &res);
   return res;
 }
