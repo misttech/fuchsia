@@ -9,6 +9,7 @@ load(
     "_bazel_default_applicable_licenses",
     "_bazel_disallowed_workspace_root_package_labels",
     "_bazel_no_glob",
+    "_bazel_no_recursive_glob",
     "_bazel_no_repo_rules_canonical_names",
 )
 
@@ -225,4 +226,66 @@ def test_no_glob_stale_allowlist():
                 "deleted/BUILD.bazel doesn't exist; remove it from the allowlist.",
             ),
         ],
+    )
+
+def _recursive_glob_allowlist(*files):
+    return testing.file(
+        content = json.indent(json.encode({"allowed_paths": list(files)}), indent = "    ") + "\n",
+        affected = False,
+    )
+
+def test_no_recursive_glob():
+    res = testing.run(_bazel_no_recursive_glob, files = {
+        "build/bazel/shac/recursive_glob_allowlist.json": _recursive_glob_allowlist(),
+        "foo/BUILD.bazel": """filegroup(srcs = glob(["*.txt"]))
+filegroup(srcs = glob(["a/**/*.txt"]))
+""",
+        # Patterns outside glob() calls and in single quotes are caught too.
+        "foo/defs.bzl": """def f(root):
+    return ['{}/**'.format(root)]
+""",
+    })
+    asserts.eq(
+        [(f.filepath, f.level, f.line, f.col, f.end_col) for f in res.findings],
+        [("foo/BUILD.bazel", "error", 2, 24, 36), ("foo/defs.bzl", "error", 2, 13, 20)],
+    )
+
+def test_no_recursive_glob_allowed():
+    res = testing.run(_bazel_no_recursive_glob, files = {
+        "build/bazel/shac/recursive_glob_allowlist.json": _recursive_glob_allowlist(
+            "allowed/BUILD.bazel",
+            "allowed_dir/",
+        ),
+        "allowed/BUILD.bazel": "filegroup(srcs = glob([\"**\"]))\n",
+        "allowed_dir/new/BUILD.bazel": "filegroup(srcs = glob([\"**\"]))\n",
+        # kwargs unpacking, Markdown bold text, and comments aren't recursive
+        # globs, even next to other strings.
+        "foo/defs.bzl": """def f(**kwargs):
+    g(name = "a", **kwargs, tags = ["b"])
+    x = "it's" + y(**kwargs) + 'z'
+    doc = "**Deprecated**: use bar."  # Not glob(["**"]).
+""",
+        "third_party/foo/BUILD.bazel": "filegroup(srcs = glob([\"**\"]))\n",
+    })
+    asserts.eq(res.findings, ())
+
+def test_no_recursive_glob_stale_allowlist():
+    res = testing.run(_bazel_no_recursive_glob, files = {
+        "build/bazel/shac/recursive_glob_allowlist.json": _recursive_glob_allowlist(
+            "clean/BUILD.bazel",
+            "unaffected/BUILD.bazel",
+        ),
+        "clean/BUILD.bazel": "filegroup(srcs = glob([\"*\"]))\n",
+        "unaffected/BUILD.bazel": testing.file(
+            content = "filegroup(srcs = glob([\"**\"]))\n",
+            affected = False,
+        ),
+    })
+    asserts.eq(
+        [(f.filepath, f.line, f.message) for f in res.findings],
+        [(
+            "build/bazel/shac/recursive_glob_allowlist.json",
+            3,
+            "clean/BUILD.bazel no longer uses recursive glob patterns; remove it from the allowlist.",
+        )],
     )

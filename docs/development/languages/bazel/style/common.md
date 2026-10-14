@@ -45,8 +45,9 @@ directories is not checked.
 
 ### Never use recursive globs {:#never-use-recursive-globs}
 
-Recursive globs (`**`) should not be used in any Bazel code, whether or not
-Ninja is involved. The official Bazel style guide
+Do NOT use recursive globs (`**`)
+_\[<span style="color:red">SHAC error</span>\]_ in any Bazel code, whether or
+not Ninja is involved. The official Bazel style guide
 [forbids recursive globs for source files][bazel-official-build-style-recursive-globs]{:.external}.
 They skip subdirectories that contain their own `BUILD.bazel` file, so it's
 hard to tell which files they match. They also cache and parallelize worse than
@@ -55,7 +56,8 @@ a `BUILD.bazel` file in each directory.
 The only exceptions are specific cases for third-party libraries and other
 repositories, such as `//vendor/...` repositories, where it isn't practical to
 list every path. Outside `third_party/` directories, these still need an
-allowlist entry.
+entry in `build/bazel/shac/recursive_glob_allowlist.json`, which is separate from
+the `glob()` allowlist.
 
 ## Visibility
 

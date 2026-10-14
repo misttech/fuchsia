@@ -1,0 +1,25 @@
+{
+    "allowed_paths": [
+        "build/bazel/icu/repository_rules.bzl",
+        "build/bazel/toolchains/clang/prebuilt_clang.BUILD.bazel",
+        "build/bazel/toolchains/clang/prebuilt_llvm.BUILD.bazel",
+        "build/bazel/toolchains/linux_sysroot.bzl",
+        "build/bazel/toplevel.BUILD.bazel",
+        "build/bazel_sdk/bazel_rules_fuchsia/common/BUILD.bazel",
+        "build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/clang_utils.bzl",
+        "build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/repository_utils.bzl",
+        "build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl",
+        "build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/python/template.BUILD.bazel",
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/private/assembly/fuchsia_package_directory.bzl",
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/private/assembly/fuchsia_product_configuration.bzl",
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/private/assembly/goldens/BUILD.bazel",
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/clang_templates/BUILD.bazel",
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/clang_templates/fuchsia_clang.BUILD.bazel",
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/python_runtime_repository.bzl",
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/sdk_templates/fuchsia_sdk.BUILD.bazel",
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/sdk_templates/generate_sdk_build_rules.bzl",
+        "build/bazel_sdk/tests/fuchsia/assembly/BUILD.bazel",
+        "src/connectivity/bluetooth/sunstone/",
+        "src/lib/fuchsia-cprng/BUILD.bazel"
+    ]
+}

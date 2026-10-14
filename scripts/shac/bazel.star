@@ -153,11 +153,110 @@ def _bazel_no_repo_rules_canonical_names(ctx):
                 )
 
 _GLOB_ALLOWLIST_PATH = "build/bazel/shac/glob_allowlist.json"
+_RECURSIVE_GLOB_ALLOWLIST_PATH = "build/bazel/shac/recursive_glob_allowlist.json"
+
+def _code(line):
+    # Mentions in comments are fine.
+    return line.split("#", 1)[0]
 
 def _glob_calls(ctx, line):
-    # Mentions of glob() in comments are fine.
-    code = line.split("#", 1)[0]
-    return ctx.re.allmatches(r"\bglob\s*\(", code)
+    return ctx.re.allmatches(r"\bglob\s*\(", _code(line))
+
+def _recursive_glob_patterns(ctx, line):
+    # Patterns are often built up in variables or passed through macros, so
+    # look for any string literal containing "**" rather than only literals
+    # inside glob() calls. glob() only accepts "**" as a whole path segment,
+    # so requiring it to sit between quotes or slashes avoids matching kwargs
+    # unpacking or Markdown bold text in docs.
+    return ctx.re.allmatches(
+        r"(\"(?:[^\"]*/)?\*\*(?:/[^\"]*)?\"|'(?:[^']*/)?\*\*(?:/[^']*)?')",
+        _code(line),
+    )
+
+def _check_allowlisted_matches(ctx, allowlist_path, find_func, message, description):
+    """Reports matches of `find_func` in Bazel files that aren't allowlisted.
+
+    The allowlist at `allowlist_path` is a JSON object whose "allowed_paths"
+    key lists files, or directories if the entry ends in "/", that may contain
+    matches. The allowlist is meant to only shrink, so entries that no longer
+    cover any match are errors too. Upstream third-party code is excluded.
+
+    Args:
+      ctx: A ctx instance.
+      allowlist_path: Path to the allowlist, relative to the shac root.
+      find_func: Function taking (ctx, line) and returning ctx.re.allmatches()
+        results for the disallowed pattern.
+      message: Message for findings in Bazel files.
+      description: Short description of a match, for stale allowlist
+        findings.
+    """
+    allowlist_contents = str(ctx.io.read_file(allowlist_path))
+    allowlist = json.decode(allowlist_contents)["allowed_paths"]
+    allowed_files = set([e for e in allowlist if not e.endswith("/")])
+    allowed_dirs = [e for e in allowlist if e.endswith("/")]
+
+    def is_allowed(path):
+        if path in allowed_files:
+            return True
+        return any([path.startswith(d) for d in allowed_dirs])
+
+    def has_match(path):
+        return any([
+            find_func(ctx, line)
+            for line in str(ctx.io.read_file(path)).splitlines()
+        ])
+
+    files = ctx.scm.affected_files(glob = [
+        "*.bazel",
+        "*.bzl",
+        "!**/third_party/**",
+    ])
+    for path, meta in files.items():
+        if is_allowed(path):
+            continue
+        for num, line in meta.new_lines():
+            for match in find_func(ctx, line):
+                ctx.emit.finding(
+                    level = "error",
+                    message = message,
+                    filepath = path,
+                    line = num,
+                    col = match.offset + 1,
+                    end_col = match.offset + 1 + len(match.groups[0]),
+                )
+
+    # Every entry is checked on every run, not just affected files, so a change
+    # that removes the last match an entry covers fails until it also trims
+    # the allowlist. The allowlisted files are few and small, so reading them
+    # is cheap.
+    all_files = set(ctx.scm.all_files())
+    allowlist_lines = allowlist_contents.splitlines()
+    for entry in allowlist:
+        if entry.endswith("/"):
+            if any([
+                has_match(f)
+                for f in all_files
+                if f.startswith(entry) and (f.endswith(".bazel") or f.endswith(".bzl"))
+            ]):
+                continue
+            reason = "contains no Bazel files that use %s" % description
+        elif entry not in all_files:
+            reason = "doesn't exist"
+        elif has_match(entry):
+            continue
+        else:
+            reason = "no longer uses %s" % description
+        line = [
+            i + 1
+            for i, text in enumerate(allowlist_lines)
+            if json.encode(entry) in text
+        ][0]
+        ctx.emit.finding(
+            level = "error",
+            message = "%s %s; remove it from the allowlist." % (entry, reason),
+            filepath = allowlist_path,
+            line = line,
+        )
 
 def _bazel_no_glob(ctx):
     """Rejects uses of `glob()` in Bazel files.
@@ -172,92 +271,59 @@ def _bazel_no_glob(ctx):
     This is only a problem because Ninja drives Bazel. Once the GN-to-Bazel
     migration is done and Bazel builds directly, Bazel's own tracking of glob
     results makes `glob()` safe again, so this check could be reconsidered.
-    Even then, it should keep enforcing the glob rules in the Bazel style guide
-    (https://bazel.build/build/style-guide#globs): no globs that match nothing
-    and no recursive globs for source files.
+    Even then, bazel_no_recursive_glob keeps enforcing the Bazel style guide's
+    ban on recursive globs.
 
     Files that already used `glob()` when this check was added are listed in
     build/bazel/shac/glob_allowlist.json. Entries ending in "/" allow every
     file under that directory, for directories like sdk/history where new
-    files that use `glob()` show up regularly. The allowlist is meant to only
-    shrink, so entries that no longer match any file using `glob()` are errors
-    too. Upstream third-party code is excluded.
+    files that use `glob()` show up regularly.
     """
-    allowlist_contents = str(ctx.io.read_file(_GLOB_ALLOWLIST_PATH))
-    allowlist = json.decode(allowlist_contents)["allowed_paths"]
-    allowed_files = set([e for e in allowlist if not e.endswith("/")])
-    allowed_dirs = [e for e in allowlist if e.endswith("/")]
+    _check_allowlisted_matches(
+        ctx,
+        _GLOB_ALLOWLIST_PATH,
+        _glob_calls,
+        message = (
+            "Don't use `glob()`; list files explicitly instead. " +
+            "Ninja doesn't notice when a file that a `glob()` " +
+            "would match is added, so incremental `fx build` " +
+            "and `fx test` runs can silently use a stale file " +
+            "list."
+        ),
+        description = "`glob()`",
+    )
 
-    def is_allowed(path):
-        if path in allowed_files:
-            return True
-        return any([path.startswith(d) for d in allowed_dirs])
+def _bazel_no_recursive_glob(ctx):
+    """Rejects recursive glob patterns (containing `**`) in Bazel files.
 
-    def uses_glob(path):
-        return any([
-            _glob_calls(ctx, line)
-            for line in str(ctx.io.read_file(path)).splitlines()
-        ])
+    The Bazel style guide forbids recursive globs for source files
+    (https://bazel.build/build/style-guide#recursive): they skip
+    subdirectories that have their own BUILD file, which makes it hard to tell
+    what they match, and they cache and parallelize worse than a BUILD file per
+    directory. Fuchsia's Bazel style guide extends this to all files. Unlike
+    bazel_no_glob, this applies regardless of whether Ninja drives Bazel.
 
-    files = ctx.scm.affected_files(glob = [
-        "*.bazel",
-        "*.bzl",
-        "!**/third_party/**",
-    ])
-    for path, meta in files.items():
-        if is_allowed(path):
-            continue
-        for num, line in meta.new_lines():
-            for match in _glob_calls(ctx, line):
-                ctx.emit.finding(
-                    level = "error",
-                    message = (
-                        "Don't use `glob()`; list files explicitly instead. " +
-                        "Ninja doesn't notice when a file that a `glob()` " +
-                        "would match is added, so incremental `fx build` " +
-                        "and `fx test` runs can silently use a stale file " +
-                        "list."
-                    ),
-                    filepath = path,
-                    line = num,
-                    col = match.offset + 1,
-                    end_col = match.offset + 1 + len(match.groups[0]),
-                )
+    Existing uses, mostly templates for external repositories and generated
+    files, are listed in build/bazel/shac/recursive_glob_allowlist.json.
 
-    # Every entry is checked on every run, not just affected files, so a change
-    # that removes the last glob() an entry covers fails until it also trims
-    # the allowlist. Reading the ~100 small files involved is cheap.
-    all_files = set(ctx.scm.all_files())
-    allowlist_lines = allowlist_contents.splitlines()
-    for entry in allowlist:
-        if entry.endswith("/"):
-            if any([
-                uses_glob(f)
-                for f in all_files
-                if f.startswith(entry) and (f.endswith(".bazel") or f.endswith(".bzl"))
-            ]):
-                continue
-            reason = "contains no Bazel files that use `glob()`"
-        elif entry not in all_files:
-            reason = "doesn't exist"
-        elif uses_glob(entry):
-            continue
-        else:
-            reason = "no longer uses `glob()`"
-        line = [
-            i + 1
-            for i, text in enumerate(allowlist_lines)
-            if json.encode(entry) in text
-        ][0]
-        ctx.emit.finding(
-            level = "error",
-            message = "%s %s; remove it from the allowlist." % (entry, reason),
-            filepath = _GLOB_ALLOWLIST_PATH,
-            line = line,
-        )
+    Files are scanned line by line, so patterns in docstrings and other
+    multi-line strings count too.
+    """
+    _check_allowlisted_matches(
+        ctx,
+        _RECURSIVE_GLOB_ALLOWLIST_PATH,
+        _recursive_glob_patterns,
+        message = (
+            "Don't use recursive glob patterns (`**`). List files " +
+            "explicitly, or add a BUILD.bazel file to each subdirectory. " +
+            "See https://bazel.build/build/style-guide#recursive."
+        ),
+        description = "recursive glob patterns",
+    )
 
 def register_bazel_checks():
     shac.register_check(shac.check(_bazel_default_applicable_licenses, formatter = False))
     shac.register_check(shac.check(_bazel_disallowed_workspace_root_package_labels, formatter = False))
     shac.register_check(shac.check(_bazel_no_glob, formatter = False))
+    shac.register_check(shac.check(_bazel_no_recursive_glob, formatter = False))
     shac.register_check(shac.check(_bazel_no_repo_rules_canonical_names, formatter = False))
