@@ -101,6 +101,13 @@ class LocalSingleCodecFactory : public fuchsia::mediacodec::CodecFactory {
     // its purpose. Otherwise the error handler could tear down the loop before the codec was
     // finished being added.
     binding_.set_error_handler([](auto) {});
+
+    // `TryAddCodec` runs asynchronously and cannot be cancelled, while `binding_` remains bound in
+    // the meantime. Pipelined client messages (e.g. a second `CreateDecoder`/`CreateEncoder`, or
+    // exceeding the `AttachLifetimeTracking` limit) can trigger `factory_done_callback_` and
+    // destroy `this` before a pending `TryAddCodec` callback runs. Routing `callback` through
+    // `closure_queue_` (stopped in `~LocalSingleCodecFactory()`) ensures it is dropped rather than
+    // invoked with a dangling `this` pointer.
     auto callback = [this, params = std::move(params), codec_request = std::move(codec_request),
                      lifetime_tracking_eventpair = std::move(lifetime_tracking_eventpair)](
                         std::unique_ptr<CodecAdmission> codec_admission) mutable {
