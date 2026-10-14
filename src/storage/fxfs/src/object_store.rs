@@ -2022,26 +2022,64 @@ impl ObjectStore {
             LockState::Unlocking => panic!("Store is being unlocked"),
         }
 
-        // --- PHASE 1: Do everything that uses the crypt service outside of the flush lock ---
+        // --- PHASE 1: Take the flush lock to read StoreInfo and encrypted mutations ---
 
-        let mut last_num_flushes = self.counters.lock().num_flushes;
+        let fs = self.filesystem();
+        let guard =
+            fs.lock_manager().write_lock(lock_keys![LockKey::flush(self.store_object_id())]).await;
+
+        let last_num_flushes = self.counters.lock().num_flushes;
         let mut store_info = self.load_store_info().await?;
-        let crypt_fields = CryptFields::from(&store_info);
 
-        let mut update_store_info = async |store_info: &mut StoreInfo| -> Result<(), Error> {
-            let new_num_flushes = self.counters.lock().num_flushes;
-            if last_num_flushes == new_num_flushes {
-                return Ok(());
-            }
-            last_num_flushes = new_num_flushes;
-            *store_info = self.load_store_info().await?;
-            if crypt_fields != CryptFields::from(&*store_info) {
-                return Err(
-                    anyhow!(FxfsError::Inconsistent).context("Crypt fields changed during unlock")
+        // Read mutations.
+        let mut mutations = {
+            if store_info.encrypted_mutations_object_id == INVALID_OBJECT_ID {
+                EncryptedMutations::default()
+            } else {
+                let parent_store = self.parent_store.as_ref().unwrap();
+                let handle = ObjectStore::open_object(
+                    &parent_store,
+                    store_info.encrypted_mutations_object_id,
+                    HandleOptions::default(),
+                    None,
+                )
+                .await?;
+                let mut cursor = std::io::Cursor::new(
+                    handle
+                        .contents(MAX_ENCRYPTED_MUTATIONS_SIZE)
+                        .await
+                        .context(FxfsError::Inconsistent)?,
                 );
+                let mut mutations = EncryptedMutations::deserialize_with_version(&mut cursor)
+                    .context("Failed to deserialize EncryptedMutations")?
+                    .0;
+                let len = cursor.get_ref().len() as u64;
+                while cursor.position() < len {
+                    mutations.extend(
+                        &EncryptedMutations::deserialize_with_version(&mut cursor)
+                            .context("Failed to deserialize EncryptedMutations")?
+                            .0,
+                    );
+                }
+                mutations
             }
-            Ok(())
         };
+
+        // This assumes that the journal has no buffered mutations for this store (see Self::lock).
+        let journaled = EncryptedMutations::from_replayed_mutations(
+            self.store_object_id,
+            fs.journal()
+                .read_transactions_for_object(self.store_object_id)
+                .await
+                .context("Failed to read encrypted mutations from journal")?,
+        );
+        mutations.extend(&journaled);
+
+        // Drop the lock before we do any crypt operations (opening layers, unwrapping/creating
+        // keys, and decrypting mutations).
+        std::mem::drop(guard);
+
+        // --- PHASE 2: Perform all crypt operations and decrypt mutations outside of the lock ---
 
         // Open layers (uses crypt).
         let (layers, _) = open_layers(
@@ -2096,70 +2134,6 @@ impl ObjectStore {
             }
         }
 
-        // --- PHASE 2: Take the flush lock to read mutations ---
-
-        let do_not_use_crypt = crypt;
-
-        let fs = self.filesystem();
-        let guard =
-            fs.lock_manager().write_lock(lock_keys![LockKey::flush(self.store_object_id())]).await;
-
-        update_store_info(&mut store_info).await?;
-
-        // Read mutations.
-        let mut mutations = {
-            if store_info.encrypted_mutations_object_id == INVALID_OBJECT_ID {
-                EncryptedMutations::default()
-            } else {
-                let parent_store = self.parent_store.as_ref().unwrap();
-                let handle = ObjectStore::open_object(
-                    &parent_store,
-                    store_info.encrypted_mutations_object_id,
-                    HandleOptions::default(),
-                    None,
-                )
-                .await?;
-                let mut cursor = std::io::Cursor::new(
-                    handle
-                        .contents(MAX_ENCRYPTED_MUTATIONS_SIZE)
-                        .await
-                        .context(FxfsError::Inconsistent)?,
-                );
-                let mut mutations = EncryptedMutations::deserialize_with_version(&mut cursor)
-                    .context("Failed to deserialize EncryptedMutations")?
-                    .0;
-                let len = cursor.get_ref().len() as u64;
-                while cursor.position() < len {
-                    mutations.extend(
-                        &EncryptedMutations::deserialize_with_version(&mut cursor)
-                            .context("Failed to deserialize EncryptedMutations")?
-                            .0,
-                    );
-                }
-                mutations
-            }
-        };
-
-        // This assumes that the journal has no buffered mutations for this store (see Self::lock).
-        let journaled = EncryptedMutations::from_replayed_mutations(
-            self.store_object_id,
-            fs.journal()
-                .read_transactions_for_object(self.store_object_id)
-                .await
-                .context("Failed to read encrypted mutations from journal")?,
-        );
-        mutations.extend(&journaled);
-
-        // Drop the lock before we do any crypt operations (decryption/unwrapping).
-        std::mem::drop(guard);
-
-        // It's safe to use the crypt service now because we're not holding the flush lock.
-        let crypt = do_not_use_crypt;
-
-        self.filesystem().hooks().on_unlock_resources_acquired();
-
-        // --- PHASE 3: Decrypt mutations (outside of lock) ---
-
         let EncryptedMutations { transactions, mut data, mutations_key_roll } = mutations;
 
         let mut unwrapped_key_rolls = Vec::with_capacity(mutations_key_roll.len());
@@ -2170,6 +2144,8 @@ impl ObjectStore {
                 .context("Failed to unwrap mutations keys")?;
             unwrapped_key_rolls.push((offset, unwrapped));
         }
+
+        self.filesystem().hooks().on_unlock_resources_acquired();
 
         let mut mutations_to_apply = Vec::new();
 
@@ -2226,14 +2202,29 @@ impl ObjectStore {
             cipher_sequence_number = cipher.current_tweak();
         }
 
-        // --- PHASE 4: Re-acquire the flush lock and apply changes ---
+        // --- PHASE 3: Re-acquire the flush lock and apply changes ---
 
         let do_not_use_crypt = crypt;
 
         let guard =
             fs.lock_manager().write_lock(lock_keys![LockKey::flush(self.store_object_id())]).await;
 
-        update_store_info(&mut store_info).await?;
+        // While the flush lock was dropped in Phase 2, a concurrent `flush_locked` may have run.
+        // Because the store is `Locked`, no new transactions can be committed to it; `flush_locked`
+        // only takes the journaled encrypted mutations we already read in Phase 1 and appends them
+        // to the encrypted mutations file, advancing the store's journal checkpoint and potentially
+        // updating `store_info.encrypted_mutations_object_id`. The `mutations` read in Phase 1 are
+        // therefore still complete and identical, and we only need to reload `store_info` to pick
+        // up any updated `encrypted_mutations_object_id` (and verify no other fields changed).
+        if self.counters.lock().num_flushes != last_num_flushes {
+            let new_store_info = self.load_store_info().await?;
+            if CryptFields::from(&store_info) != CryptFields::from(&new_store_info) {
+                return Err(
+                    anyhow!(FxfsError::Inconsistent).context("Crypt fields changed during unlock")
+                );
+            }
+            store_info = new_store_info;
+        }
 
         let _ = std::mem::replace(&mut *self.lock_state.lock(), LockState::Unlocking);
 
@@ -3457,7 +3448,7 @@ mod tests {
     };
     use fxfs_insecure_crypto::new_insecure_crypt;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -6580,5 +6571,103 @@ mod tests {
                 ObjectValue::inline_extended_attribute(vec![0u8; MAX_INLINE_XATTR_SIZE])
             );
         }
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_unlock_concurrent_with_locked_flush() {
+        let (mut hooks, fs_hooks) = Hooks::new();
+        let fs = test_filesystem_with_hooks(fs_hooks).await;
+        let crypt = Arc::new(new_insecure_crypt());
+        let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        // Advance the root store's last_object_id past 250 so that any newly allocated
+        // encrypted_mutations_object_id uses a 3-byte varint encoding in bincode (instead of 1 byte
+        // for INVALID_OBJECT_ID = 0), growing the serialized StoreInfo size during `flush_locked`.
+        fs.root_store().update_last_object_id(256);
+
+        let root_store_id = fs.root_store().store_object_id();
+        let target_store_id = Arc::new(AtomicU64::new(0));
+        let target_store_id_clone = target_store_id.clone();
+        let is_end_flush = Arc::new(AtomicBool::new(false));
+        let is_end_flush_clone = is_end_flush.clone();
+        hooks.set_pre_commit(move |txn| {
+            let store_id = target_store_id_clone.load(Ordering::SeqCst);
+            if store_id != 0
+                && txn
+                    .get_object_mutation(
+                        root_store_id,
+                        ObjectKey::attribute(store_id, AttributeId::DATA, AttributeKey::Attribute),
+                    )
+                    .is_some()
+            {
+                is_end_flush_clone.store(true, Ordering::SeqCst);
+            }
+            Ok(())
+        });
+
+        let ready = Arc::new(AtomicBool::new(false));
+        let go = Arc::new(AtomicBool::new(false));
+        let ready_clone = ready.clone();
+        let go_clone = go.clone();
+        let is_end_flush_clone = is_end_flush.clone();
+        hooks.set_before_commit(move || {
+            if is_end_flush_clone.swap(false, Ordering::SeqCst) {
+                ready_clone.store(true, Ordering::SeqCst);
+                while !go_clone.load(Ordering::SeqCst) {
+                    std::hint::spin_loop();
+                }
+            }
+        });
+
+        for i in 0..50 {
+            let store = root_vol
+                .new_volume(
+                    &format!("vol_{i}"),
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(crypt.clone()),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_volume failed");
+            let root_dir =
+                Directory::open(&store, store.root_directory_object_id()).await.expect("open");
+            let mut txn = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir.create_child_file(&mut txn, "f").await.expect("create_child_file failed");
+            txn.commit().await.expect("commit failed");
+
+            store.lock().await.expect("lock failed");
+            is_end_flush.store(false, Ordering::SeqCst);
+            ready.store(false, Ordering::SeqCst);
+            go.store(false, Ordering::SeqCst);
+            target_store_id.store(store.store_object_id(), Ordering::SeqCst);
+
+            let store_clone = store.clone();
+            let flush_task = fasync::Task::spawn(async move {
+                store_clone.flush().await.expect("flush failed");
+            });
+
+            while !ready.load(Ordering::SeqCst) {
+                fasync::yield_now().await;
+            }
+            go.store(true, Ordering::SeqCst);
+            for _ in 0..(i * 100) {
+                std::hint::spin_loop();
+            }
+            store.unlock_read_only(crypt.clone()).await.expect("unlock_read_only failed");
+            store.lock_read_only();
+            flush_task.await;
+            target_store_id.store(0, Ordering::SeqCst);
+        }
+        fs.close().await.expect("close failed");
     }
 }
