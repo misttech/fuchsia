@@ -807,6 +807,14 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
         # The git tree of the whole working tree (tracked edits and untracked, non-ignored files),
         # so committing the change after a run does not change the fingerprint. Uses a copy of
         # the index so the real one is untouched and its stat cache keeps this fast.
+        subprocess.run(["git", "-C", workdir, "update-index", "-q", "--refresh"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        dirty = sorted(set(
+            git_lines(["diff", "--name-only", "--ignore-submodules=all", "HEAD"])
+            + git_lines(["ls-files", "--others", "--exclude-standard"])
+        ))
+        if not dirty:
+            return _git_bytes(["rev-parse", "HEAD^{tree}"])
         git_dir = _git_bytes(["rev-parse", "--absolute-git-dir"]).decode().strip()
         fd, index = tempfile.mkstemp(dir=git_dir, prefix=".planter-build-verification-index.")
         os.close(fd)
@@ -816,7 +824,7 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
             except OSError:
                 os.unlink(index)
             env = dict(os.environ, GIT_INDEX_FILE=index)
-            subprocess.run(["git", "-C", workdir, "add", "-A", "."], env=env, stdout=subprocess.DEVNULL,
+            subprocess.run(["git", "-C", workdir, "add", "-A", "--"] + dirty, env=env, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, check=True)
             return subprocess.run(["git", "-C", workdir, "write-tree"], env=env, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, check=True).stdout
