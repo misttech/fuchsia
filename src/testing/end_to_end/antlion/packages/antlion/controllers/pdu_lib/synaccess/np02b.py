@@ -233,31 +233,9 @@ class SetCommand(Command):
         return [str(self.port), str(self.state)]
 
 
-class RebootCommand(Command):
-    def __init__(self, port: int) -> None:
-        self.port = port
-
-    def code(self) -> str:
-        return "$A4"
-
-    def args(self) -> list[str]:
-        return [str(self.port)]
-
-
 class StatusCommand(Command):
     def code(self) -> str:
         return "$A5"
 
     def args(self) -> list[str]:
         return []
-
-
-class SetAllCommand(Command):
-    def __init__(self, state: pdu.PowerState) -> None:
-        self.state = state
-
-    def code(self) -> str:
-        return "$A7"
-
-    def args(self) -> list[str]:
-        return [str(self.state)]

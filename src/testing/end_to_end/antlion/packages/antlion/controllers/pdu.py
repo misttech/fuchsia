@@ -23,11 +23,6 @@ DEFAULT_REBOOT_DELAY_SEC = 5.0
 
 class PduType(enum.StrEnum):
     NP02B = "synaccess.np02b"
-    WEBPOWERSWITCH = "digital_loggers.webpowerswitch"
-
-
-class PduError(Exception):
-    """An exception for use within PduDevice implementations"""
 
 
 def create(configs: list[ControllerConfig]) -> list[PduDevice]:
@@ -61,12 +56,6 @@ def create(configs: list[ControllerConfig]) -> list[PduDevice]:
                 )
 
                 pdus.append(NP02B(host, username, password))
-            case PduType.WEBPOWERSWITCH:
-                from antlion.controllers.pdu_lib.digital_loggers.webpowerswitch import (
-                    PduDevice as WebPowerSwitch,
-                )
-
-                pdus.append(WebPowerSwitch(host, username, password))
     return pdus
 
 

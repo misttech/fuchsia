@@ -75,8 +75,6 @@ python_library("antlion") {
     "controllers/packet_capture.py",
     "controllers/pdu.py",
     "controllers/pdu_lib/__init__.py",
-    "controllers/pdu_lib/digital_loggers/__init__.py",
-    "controllers/pdu_lib/digital_loggers/webpowerswitch.py",
     "controllers/pdu_lib/synaccess/__init__.py",
     "controllers/pdu_lib/synaccess/np02b.py",
     "decorators.py",
