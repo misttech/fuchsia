@@ -10,11 +10,14 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_runtime;
 use futures::StreamExt;
 use futures::channel::mpsc as future_mpsc;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, mpsc as sync_mpsc};
 use zerocopy::{Immutable, IntoBytes};
+#[cfg(target_arch = "aarch64")]
+use zx::sys::zx_restricted_state_t;
 
 use fxt::TraceRecord;
 use fxt::profiler::ProfilerRecord;
@@ -81,6 +84,22 @@ const AARCH64_REG_LR: usize = 30;
 const AARCH32_REG_PC: usize = 15; // R15
 const AARCH32_REG_LR: usize = 14; // R14
 const AARCH32_REG_SP: usize = 13; // R13
+// Size of the 33 u64 general registers (r0-r29, lr, sp, pc) at the start of
+// both the profiler's register block and `zx_restricted_state_t`.
+const REGS_BYTES: usize = 33 * 8;
+#[cfg(target_arch = "aarch64")]
+const GUEST_ASPACE_BASE: u64 = starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_BASE as u64;
+const GUEST_ASPACE_END: u64 = RESTRICTED_ASPACE_HIGHEST_ADDRESS as u64;
+#[cfg(target_arch = "aarch64")]
+const RESTRICTED_STATE_SIZE: usize = std::mem::size_of::<zx_restricted_state_t>();
+#[cfg(target_arch = "aarch64")]
+const RESTRICTED_STATE_CPSR_OFFSET: usize = std::mem::offset_of!(zx_restricted_state_t, cpsr);
+#[cfg(target_arch = "aarch64")]
+const _: () = {
+    assert!(std::mem::offset_of!(zx_restricted_state_t, sp) == AARCH64_REG_SP * 8);
+    assert!(std::mem::offset_of!(zx_restricted_state_t, pc) == AARCH64_REG_PC * 8);
+    assert!(REGS_BYTES <= RESTRICTED_STATE_CPSR_OFFSET);
+};
 
 mod event;
 pub use event::{TraceEvent, TraceEventQueue, TraceEventQueueList};
@@ -584,7 +603,6 @@ fn write_record_to_vmo(
         // guest execution (< GUEST_ASPACE_END) belongs in PERF_CONTEXT_USER.
         // Both sections are always emitted; readers that unwind user stacks
         // themselves (DWARF) stop at the PERF_CONTEXT_USER marker.
-        const GUEST_ASPACE_END: u64 = RESTRICTED_ASPACE_HIGHEST_ADDRESS as u64;
 
         // Reserve nr, then fill it in once the markers and ips are written.
         let nr_offset = sample.len();
@@ -848,6 +866,54 @@ async fn set_up_profiler(
     }
 }
 
+// Returns true if `cpsr` indicates AArch32 execution.
+#[cfg(target_arch = "aarch64")]
+fn cpsr_is_aarch32(cpsr: u64) -> bool {
+    (cpsr & zx::sys::ZX_REG_CPSR_ARCH_32_MASK) == zx::sys::ZX_REG_CPSR_ARCH_32_MASK
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn cpsr_is_aarch32(_cpsr: u64) -> bool {
+    false
+}
+
+// Searches `chunks` for the thread's `zx_restricted_state_t` capture and
+// returns the saved guest registers (`x0..x30, sp, pc`) and `cpsr`.
+//
+// A chunk matches if it is page-aligned in the Starnix address space, has
+// the size of `zx_restricted_state_t`, and holds a guest PC and SP within
+// the restricted address space.
+#[cfg(target_arch = "aarch64")]
+fn guest_regs_from_restricted_state<'a>(chunks: &[(u64, &'a [u8])]) -> Option<(&'a [u8], u64)> {
+    chunks.iter().find_map(|&(base, data)| {
+        if base < GUEST_ASPACE_END || base % *PAGE_SIZE != 0 || data.len() != RESTRICTED_STATE_SIZE
+        {
+            return None;
+        }
+        let read_reg =
+            |index: usize| u64::from_ne_bytes(data[index * 8..index * 8 + 8].try_into().unwrap());
+        let cpsr = u32::from_ne_bytes(
+            data[RESTRICTED_STATE_CPSR_OFFSET..RESTRICTED_STATE_CPSR_OFFSET + 4]
+                .try_into()
+                .unwrap(),
+        );
+        let cpsr = u64::from(cpsr);
+        // AArch32 execution keeps its stack pointer in R13 (x13).
+        let sp =
+            if cpsr_is_aarch32(cpsr) { read_reg(AARCH32_REG_SP) } else { read_reg(AARCH64_REG_SP) };
+        let pc = read_reg(AARCH64_REG_PC);
+        if !(GUEST_ASPACE_BASE..GUEST_ASPACE_END).contains(&pc) || sp >= GUEST_ASPACE_END {
+            return None;
+        }
+        Some((&data[..REGS_BYTES], cpsr))
+    })
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn guest_regs_from_restricted_state<'a>(_chunks: &[(u64, &'a [u8])]) -> Option<(&'a [u8], u64)> {
+    None
+}
+
 // Converts one FXT record from the profiler into a PERF_RECORD_SAMPLE in
 // the ring buffer and publishes the new data_head. Non-sample records are
 // ignored.
@@ -941,21 +1007,14 @@ fn process_fxt_record(
             // Register state of other widths (e.g. an x86_64
             // thread state) is not supported and skipped by this
             // size check.
-            const REGS_BYTES: usize = 33 * 8;
             if regs_size < REGS_BYTES + 8 {
                 return;
             }
-            #[cfg(target_arch = "aarch64")]
-            let is_32bit = {
-                let cpsr = u64::from_ne_bytes(
-                    bytes[offset + REGS_BYTES..offset + REGS_BYTES + 8].try_into().unwrap(),
-                );
-                (cpsr & zx::sys::ZX_REG_CPSR_ARCH_32_MASK) == zx::sys::ZX_REG_CPSR_ARCH_32_MASK
-            };
-            #[cfg(not(target_arch = "aarch64"))]
-            let is_32bit = false;
-
-            let mut blob_regs = bytes[offset..offset + REGS_BYTES].to_vec();
+            // The size check above guarantees the 8 cpsr bytes are present.
+            let thread_cpsr = u64::from_ne_bytes(
+                bytes[offset + REGS_BYTES..offset + REGS_BYTES + 8].try_into().unwrap(),
+            );
+            let thread_regs = &bytes[offset..offset + REGS_BYTES];
             offset += regs_size;
 
             // The memory captures that follow the registers: the
@@ -975,7 +1034,25 @@ fn process_fxt_record(
                 offset += chunk_size as usize;
             }
 
+            // If the thread was sampled in Starnix (e.g. during a syscall),
+            // report the guest registers saved in its restricted state rather
+            // than Starnix's own registers. If no valid restricted-state
+            // chunk is present, fall back to the thread registers.
+            let pc_offset = AARCH64_REG_PC * 8;
+            let thread_pc =
+                u64::from_ne_bytes(thread_regs[pc_offset..pc_offset + 8].try_into().unwrap());
+            let in_starnix = thread_pc >= GUEST_ASPACE_END;
+            let guest_state =
+                if in_starnix { guest_regs_from_restricted_state(&chunks) } else { None };
+            let reports_guest_state = guest_state.is_some();
+            let (regs, cpsr) = guest_state.unwrap_or((thread_regs, thread_cpsr));
+            let is_32bit = cpsr_is_aarch32(cpsr);
+
+            // Borrow the register bytes directly; only AArch32 needs a
+            // mutable copy to populate the sp/lr/r15 slots below.
+            let mut blob_regs = Cow::Borrowed(regs);
             if is_32bit {
+                let blob_regs = blob_regs.to_mut();
                 // Zircon reports the AArch32 PC in the pc slot
                 // (index 32). 64-bit readers take it from there,
                 // per the Linux compat layout (AArch32 R0-R14
@@ -983,7 +1060,6 @@ fn process_fxt_record(
                 // slot (index 15) too for 32-bit readers, which
                 // only consume indices 0-15 -- x15 carries no
                 // meaningful value for AArch32 state.
-                let pc_offset = AARCH64_REG_PC * 8;
                 let r15_offset = AARCH32_REG_PC * 8;
                 blob_regs.copy_within(pc_offset..pc_offset + 8, r15_offset);
                 // Likewise, AArch32 execution keeps its stack pointer
@@ -999,16 +1075,16 @@ fn process_fxt_record(
                 blob_regs.copy_within(r14_offset..r14_offset + 8, lr_offset);
             }
 
+            let read_reg = |index: usize| {
+                u64::from_ne_bytes(blob_regs[index * 8..index * 8 + 8].try_into().unwrap())
+            };
             let sp = if is_32bit {
                 // The arm32 stack pointer is R13.
-                let r13_offset = AARCH32_REG_SP * 8;
-                u64::from_ne_bytes(blob_regs[r13_offset..r13_offset + 8].try_into().unwrap())
+                read_reg(AARCH32_REG_SP)
             } else {
-                let sp_offset = AARCH64_REG_SP * 8;
-                u64::from_ne_bytes(blob_regs[sp_offset..sp_offset + 8].try_into().unwrap())
+                read_reg(AARCH64_REG_SP)
             };
-            let pc_offset = AARCH64_REG_PC * 8;
-            let pc = u64::from_ne_bytes(blob_regs[pc_offset..pc_offset + 8].try_into().unwrap());
+            let pc = read_reg(AARCH64_REG_PC);
 
             // Select the memory chunk that contains the sampled
             // stack pointer and trim it to start exactly there:
@@ -1017,7 +1093,8 @@ fn process_fxt_record(
             // captures (the thread-state stack, the
             // restricted-state struct, and a restricted-SP
             // stack); selecting by SP keeps the registers and the
-            // stack bytes coherent.
+            // stack bytes coherent. If no chunk covers the SP, emit
+            // the sample with an empty stack.
             let stack: &[u8] = chunks
                 .iter()
                 .find_map(|&(chunk_base, data)| {
@@ -1025,11 +1102,6 @@ fn process_fxt_record(
                         .then(|| &data[(sp - chunk_base) as usize..])
                 })
                 .unwrap_or(&[]);
-            if stack.is_empty() {
-                // No capture covers the sampled SP; the sample
-                // cannot be unwound.
-                return;
-            }
 
             let Some(LinuxIdentity::Thread { pid, tid }) = koid_session.and_then(|s| {
                 s.resolve_koids(
@@ -1049,7 +1121,9 @@ fn process_fxt_record(
                 pid: Some(pid as u32),
                 tid: Some(tid as u32),
                 time,
-                ips: vec![pc],
+                // The Starnix PC (if any) goes to the kernel section
+                // of the callchain, the user PC to the user section.
+                ips: if reports_guest_state { vec![thread_pc, pc] } else { vec![pc] },
                 regs: &blob_regs,
                 stack,
                 regs_abi,
@@ -1869,7 +1943,8 @@ mod tests {
     // Stack-sample (DWARF) blobs, laid out as the profiler's StackSampler
     // emits them: [u64 regs_size][thread-state regs][{u64 base, u64 size,
     // bytes}...].
-    const GUEST_ASPACE_END: u64 = RESTRICTED_ASPACE_HIGHEST_ADDRESS as u64;
+    const STARNIX_PC: u64 = GUEST_ASPACE_END + 0x2222_0558;
+    const STARNIX_SP: u64 = GUEST_ASPACE_END + 0x4000_1000;
     const RESTRICTED_STATE_ADDR: u64 = GUEST_ASPACE_END + 0x5000_0000;
     const GUEST_PC: u64 = 0x7a00_1234;
     const GUEST_SP: u64 = 0x7f00_1000;
@@ -1928,6 +2003,8 @@ mod tests {
 
     struct ParsedStackSample {
         ip: u64,
+        pid: u32,
+        tid: u32,
         callchain: Vec<u64>,
         abi: u64,
         regs: Vec<u64>,
@@ -1996,7 +2073,8 @@ mod tests {
 
         let mut pos = 8;
         let ip = read_u64(&record, &mut pos);
-        // pid and tid.
+        let pid = u32::from_ne_bytes(record[pos..pos + 4].try_into().unwrap());
+        let tid = u32::from_ne_bytes(record[pos + 4..pos + 8].try_into().unwrap());
         pos += 8;
         let nr = read_u64(&record, &mut pos);
         let callchain = (0..nr).map(|_| read_u64(&record, &mut pos)).collect();
@@ -2012,7 +2090,120 @@ mod tests {
         pos += stack_size;
         let dyn_size = read_u64(&record, &mut pos) as usize;
         assert_eq!(pos, record.len());
-        ParsedStackSample { ip, callchain, abi, regs, stack: stack_region[..dyn_size].to_vec() }
+        ParsedStackSample {
+            ip,
+            pid,
+            tid,
+            callchain,
+            abi,
+            regs,
+            stack: stack_region[..dyn_size].to_vec(),
+        }
+    }
+
+    // Checks that `sample` fell back to reporting the Starnix thread registers
+    // and stack.
+    fn assert_reports_thread_state(sample: &ParsedStackSample, stack: &[u8]) {
+        assert_eq!((sample.pid, sample.tid), (42, 43));
+        assert_eq!(sample.ip, STARNIX_PC);
+        assert_eq!(
+            sample.callchain,
+            vec![
+                perf_callchain_context_PERF_CONTEXT_KERNEL,
+                STARNIX_PC,
+                perf_callchain_context_PERF_CONTEXT_USER,
+            ]
+        );
+        assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64);
+        assert_eq!(sample.regs, thread_state_regs(STARNIX_PC, STARNIX_SP, 0)[..33].to_vec());
+        assert_eq!(sample.stack, stack);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_starnix_reports_guest_regs_and_stack() {
+        let starnix_stack = stack_bytes(0x10, 64);
+        let guest_x: [u64; 31] = std::array::from_fn(|i| 0xb000 + i as u64);
+        let restricted_state = restricted_state_bytes(&guest_x, GUEST_SP, GUEST_PC, 0);
+        let guest_stack = stack_bytes(0x80, 48);
+        let blob = stack_sample_blob(
+            &thread_state_regs(STARNIX_PC, STARNIX_SP, 0),
+            &[
+                (STARNIX_SP, &starnix_stack),
+                (RESTRICTED_STATE_ADDR, &restricted_state),
+                (GUEST_SP, &guest_stack),
+            ],
+        );
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_eq!((sample.pid, sample.tid), (42, 43));
+        // The Starnix PC is only reported as kernel execution; the user
+        // section starts at the guest PC.
+        assert_eq!(sample.ip, STARNIX_PC);
+        assert_eq!(
+            sample.callchain,
+            vec![
+                perf_callchain_context_PERF_CONTEXT_KERNEL,
+                STARNIX_PC,
+                perf_callchain_context_PERF_CONTEXT_USER,
+                GUEST_PC,
+            ]
+        );
+        assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64);
+        let mut expected_regs = guest_x.to_vec();
+        expected_regs.extend([GUEST_SP, GUEST_PC]);
+        assert_eq!(sample.regs, expected_regs);
+        assert_eq!(sample.stack, guest_stack);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_starnix_reports_aarch32_guest_regs() {
+        const GUEST_PC32: u64 = 0x0040_1234;
+        const GUEST_SP32: u64 = 0xff80_1000;
+        let starnix_stack = stack_bytes(0x10, 64);
+        let mut guest_x: [u64; 31] = std::array::from_fn(|i| 0xc000 + i as u64);
+        guest_x[AARCH32_REG_SP] = GUEST_SP32;
+        // AArch32 execution does not update the sp field; it holds a stale
+        // value that no capture covers.
+        let restricted_state = restricted_state_bytes(
+            &guest_x,
+            0xdead_0000,
+            GUEST_PC32,
+            zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32,
+        );
+        let guest_stack = stack_bytes(0x40, 32);
+        let blob = stack_sample_blob(
+            &thread_state_regs(STARNIX_PC, STARNIX_SP, 0),
+            &[
+                (STARNIX_SP, &starnix_stack),
+                (RESTRICTED_STATE_ADDR, &restricted_state),
+                (GUEST_SP32, &guest_stack),
+            ],
+        );
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32 as u64);
+        assert_eq!(
+            sample.callchain,
+            vec![
+                perf_callchain_context_PERF_CONTEXT_KERNEL,
+                STARNIX_PC,
+                perf_callchain_context_PERF_CONTEXT_USER,
+                GUEST_PC32,
+            ]
+        );
+        assert_eq!(sample.regs.len(), 33);
+        assert_eq!(sample.regs[AARCH32_REG_SP], GUEST_SP32);
+        assert_eq!(sample.regs[AARCH32_REG_PC], GUEST_PC32);
+        assert_eq!(sample.regs[AARCH64_REG_PC], GUEST_PC32);
+        // The sp and lr slots carry R13 and R14.
+        assert_eq!(sample.regs[AARCH64_REG_SP], GUEST_SP32);
+        assert_eq!(sample.regs[AARCH64_REG_LR], guest_x[AARCH32_REG_LR]);
+        assert_eq!(sample.regs[0], 0xc000);
+        assert_eq!(sample.stack, guest_stack);
     }
 
     #[::fuchsia::test]
@@ -2095,5 +2286,156 @@ mod tests {
         assert_eq!(sample.regs[0], 0xa000);
         // The stack is selected by R13, not by the stale sp slot.
         assert_eq!(sample.stack, guest_stack);
+    }
+
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_starnix_without_restricted_state_reports_thread_regs() {
+        let starnix_stack = stack_bytes(0x10, 64);
+        let thread_regs = thread_state_regs(STARNIX_PC, STARNIX_SP, 0);
+        let blob = stack_sample_blob(&thread_regs, &[(STARNIX_SP, &starnix_stack)]);
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_reports_thread_state(&sample, &starnix_stack);
+    }
+
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_starnix_without_captures_is_reported() {
+        let thread_regs = thread_state_regs(STARNIX_PC, STARNIX_SP, 0);
+        let blob = stack_sample_blob(&thread_regs, &[]);
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_reports_thread_state(&sample, &[]);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_starnix_ignores_unusable_restricted_state() {
+        let starnix_stack = stack_bytes(0x10, 64);
+        let guest_stack = stack_bytes(0x80, 48);
+        let guest_x: [u64; 31] = std::array::from_fn(|i| 0xb000 + i as u64);
+        let valid_state = restricted_state_bytes(&guest_x, GUEST_SP, GUEST_PC, 0);
+        let cases: [(&str, u64, Vec<u8>); 6] = [
+            (
+                "pc above the guest address space",
+                RESTRICTED_STATE_ADDR,
+                restricted_state_bytes(&guest_x, GUEST_SP, STARNIX_PC, 0),
+            ),
+            (
+                "pc below the guest address space",
+                RESTRICTED_STATE_ADDR,
+                restricted_state_bytes(&guest_x, GUEST_SP, 0x1000, 0),
+            ),
+            (
+                "sp above the guest address space",
+                RESTRICTED_STATE_ADDR,
+                restricted_state_bytes(&guest_x, STARNIX_SP, GUEST_PC, 0),
+            ),
+            ("not yet written", RESTRICTED_STATE_ADDR, restricted_state_bytes(&[0; 31], 0, 0, 0)),
+            ("not page-aligned", RESTRICTED_STATE_ADDR + 8, valid_state.clone()),
+            ("short read", RESTRICTED_STATE_ADDR, valid_state[..valid_state.len() - 8].to_vec()),
+        ];
+        for (name, state_addr, state) in cases {
+            let blob = stack_sample_blob(
+                &thread_state_regs(STARNIX_PC, STARNIX_SP, 0),
+                &[(STARNIX_SP, &starnix_stack), (state_addr, &state), (GUEST_SP, &guest_stack)],
+            );
+
+            let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+            println!("case: {name}");
+            assert_reports_thread_state(&sample, &starnix_stack);
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_starnix_without_guest_stack_reports_guest_regs() {
+        // Even if the guest stack chunk is missing (e.g. the guest SP was
+        // unmapped when sampled), guest registers are still reported with an
+        // empty stack.
+        let starnix_stack = stack_bytes(0x10, 64);
+        let guest_x: [u64; 31] = std::array::from_fn(|i| 0xb000 + i as u64);
+        let restricted_state = restricted_state_bytes(&guest_x, GUEST_SP, GUEST_PC, 0);
+        let thread_regs = thread_state_regs(STARNIX_PC, STARNIX_SP, 0);
+        let blob = stack_sample_blob(
+            &thread_regs,
+            &[(STARNIX_SP, &starnix_stack), (RESTRICTED_STATE_ADDR, &restricted_state)],
+        );
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_eq!((sample.pid, sample.tid), (42, 43));
+        assert_eq!(sample.ip, STARNIX_PC);
+        assert_eq!(
+            sample.callchain,
+            vec![
+                perf_callchain_context_PERF_CONTEXT_KERNEL,
+                STARNIX_PC,
+                perf_callchain_context_PERF_CONTEXT_USER,
+                GUEST_PC,
+            ]
+        );
+        assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64);
+        let mut expected_regs = guest_x.to_vec();
+        expected_regs.extend([GUEST_SP, GUEST_PC]);
+        assert_eq!(sample.regs, expected_regs);
+        assert!(sample.stack.is_empty());
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_starnix_with_uncovered_guest_sp_reports_guest_regs() {
+        // If no chunk covers the guest SP, report guest registers with an
+        // empty stack rather than picking the Starnix stack.
+        let starnix_stack = stack_bytes(0x10, 64);
+        let other_stack = stack_bytes(0x80, 48);
+        let guest_x: [u64; 31] = std::array::from_fn(|i| 0xb000 + i as u64);
+        let restricted_state = restricted_state_bytes(&guest_x, GUEST_SP + 0x10000, GUEST_PC, 0);
+        let blob = stack_sample_blob(
+            &thread_state_regs(STARNIX_PC, STARNIX_SP, 0),
+            &[
+                (STARNIX_SP, &starnix_stack),
+                (RESTRICTED_STATE_ADDR, &restricted_state),
+                (GUEST_SP, &other_stack),
+            ],
+        );
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64);
+        assert_eq!(sample.regs[AARCH64_REG_SP], GUEST_SP + 0x10000);
+        assert_eq!(sample.regs[AARCH64_REG_PC], GUEST_PC);
+        assert!(sample.stack.is_empty());
+        assert_eq!(
+            sample.callchain,
+            vec![
+                perf_callchain_context_PERF_CONTEXT_KERNEL,
+                STARNIX_PC,
+                perf_callchain_context_PERF_CONTEXT_USER,
+                GUEST_PC,
+            ]
+        );
+    }
+
+    #[::fuchsia::test]
+    async fn test_stack_sample_in_guest_without_stack_capture_is_reported() {
+        let thread_regs = thread_state_regs(GUEST_PC, GUEST_SP, 0);
+        let blob = stack_sample_blob(&thread_regs, &[]);
+
+        let sample = process_stack_sample(blob, ALL_REGS_MASK);
+
+        assert_eq!(
+            sample.callchain,
+            vec![
+                perf_callchain_context_PERF_CONTEXT_KERNEL,
+                perf_callchain_context_PERF_CONTEXT_USER,
+                GUEST_PC,
+            ]
+        );
+        assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64);
+        assert_eq!(sample.regs, thread_regs[..33].to_vec());
+        assert!(sample.stack.is_empty());
     }
 }
