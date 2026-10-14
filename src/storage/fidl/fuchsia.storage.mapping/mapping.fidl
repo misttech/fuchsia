@@ -36,4 +36,18 @@ open protocol MappingSession {
     flexible Close(struct {
         key uint64;
     }) -> () error zx.Status;
+
+    /// Reads the named profile from the volume into a VMO, or returns `ZX_ERR_NOT_FOUND` if the
+    /// profile does not exist.
+    flexible GetProfile(struct {
+        name string:MAX;
+    }) -> (resource struct {
+        profile_vmo zx.Handle:VMO;
+    }) error zx.Status;
+
+    /// Writes `profile_vmo` as the named profile on the volume.
+    flexible WriteProfile(resource struct {
+        name string:MAX;
+        profile_vmo zx.Handle:VMO;
+    }) -> () error zx.Status;
 };

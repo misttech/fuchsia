@@ -739,8 +739,10 @@ mod tests {
             .await
             .expect("Recording.Stop fidl failed")
             .expect("Recording.Stop failed");
-        let entries = FileMessage::decode_from_vmo(&profile_vmo, mapping::BLOCK_SIZE as usize)
-            .expect("decode_from_vmo failed");
+        let entries: Vec<_> =
+            FileMessage::decode_from_vmo(profile_vmo, mapping::BLOCK_SIZE as usize)
+                .expect("decode_from_vmo failed")
+                .collect();
         assert_eq!(
             entries,
             vec![
@@ -776,8 +778,10 @@ mod tests {
             .await
             .expect("Recording.Stop fidl failed")
             .expect("Recording.Stop failed");
-        let entries2 = FileMessage::decode_from_vmo(&profile_vmo2, mapping::BLOCK_SIZE as usize)
-            .expect("decode_from_vmo failed");
+        let entries2: Vec<_> =
+            FileMessage::decode_from_vmo(profile_vmo2, mapping::BLOCK_SIZE as usize)
+                .expect("decode_from_vmo failed")
+                .collect();
         assert_eq!(entries2, vec![FileMessage { id: key2, offset: read_ahead }]);
 
         proxy.close().await.expect("close fidl failed").expect("close session failed");

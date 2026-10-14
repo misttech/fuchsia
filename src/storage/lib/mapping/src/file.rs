@@ -2660,8 +2660,9 @@ mod tests {
         files.handle_page_request(10, 0..total_size);
 
         let vmo = files.stop_recording().expect("stop_recording failed");
-        let entries = FileMessage::decode_from_vmo(&vmo, BLOCK_SIZE as usize)
-            .expect("decode_from_vmo failed");
+        let entries: Vec<_> = FileMessage::decode_from_vmo(vmo, BLOCK_SIZE as usize)
+            .expect("decode_from_vmo failed")
+            .collect();
         assert_eq!(
             entries,
             vec![
@@ -2678,8 +2679,9 @@ mod tests {
         files.start_recording().expect("second start_recording failed");
         let empty_vmo = files.stop_recording().expect("second stop_recording failed");
         assert_eq!(
-            FileMessage::decode_from_vmo(&empty_vmo, BLOCK_SIZE as usize)
-                .expect("decode_from_vmo failed"),
+            FileMessage::decode_from_vmo(empty_vmo, BLOCK_SIZE as usize)
+                .expect("decode_from_vmo failed")
+                .collect::<Vec<_>>(),
             Vec::<FileMessage>::new()
         );
     }
@@ -2715,8 +2717,9 @@ mod tests {
         assert_eq!(rx.wait_for_commits(1), vec![(0, total_size as usize)]);
 
         let vmo = files.stop_recording().expect("stop_recording failed");
-        let entries = FileMessage::decode_from_vmo(&vmo, BLOCK_SIZE as usize)
-            .expect("decode_from_vmo failed");
+        let entries: Vec<_> = FileMessage::decode_from_vmo(vmo, BLOCK_SIZE as usize)
+            .expect("decode_from_vmo failed")
+            .collect();
         assert_eq!(entries, vec![FileMessage { id: 55, offset: 0 }]);
     }
 }

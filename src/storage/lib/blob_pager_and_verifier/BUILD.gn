@@ -17,24 +17,27 @@ rustc_library("blob_pager_and_verifier") {
     "//src/lib/fuchsia-sync",
     "//src/storage/fidl/fuchsia.storage.mapping:fuchsia.storage.mapping_rust",
     "//src/storage/lib/mapping",
+    "//src/storage/lib/profile",
     "//src/storage/lib/ptr_slice",
     "//src/storage/lib/vmo-fifo",
     "//src/sys/pkg/lib/fuchsia-hash",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:async-channel",
     "//third_party/rust_crates:event-listener",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
   test_deps = [
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
-    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:test-case",
   ]
 
   sources = [
     "src/delivery.rs",
     "src/lib.rs",
+    "src/profile.rs",
   ]
 }
 

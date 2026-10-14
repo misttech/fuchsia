@@ -191,6 +191,18 @@ impl BlobMappingSession {
                         |error| warn!(error:?; "Failed to send mapping session response"),
                     );
                 }
+                fmapping::MappingSessionRequest::GetProfile { responder, .. } => {
+                    // TODO(https://fxbug.dev/535492018): Implement GetProfile.
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(
+                        |error| warn!(error:?; "Failed to send mapping session response"),
+                    );
+                }
+                fmapping::MappingSessionRequest::WriteProfile { responder, .. } => {
+                    // TODO(https://fxbug.dev/535492018): Implement WriteProfile.
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(
+                        |error| warn!(error:?; "Failed to send mapping session response"),
+                    );
+                }
                 fmapping::MappingSessionRequest::_UnknownMethod { ordinal, .. } => {
                     warn!(ordinal; "Unknown MappingSession method");
                 }

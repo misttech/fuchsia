@@ -37,10 +37,12 @@
 //!    driver extent tracking and kernel pager resources.
 
 mod delivery;
+mod profile;
 
 pub use delivery::{
     DeliveryQueueProcessor, DeliveryQueueProvider, TestVmoProvider, UnverifiedPages,
 };
+pub use profile::ProfileRecording;
 
 use anyhow::{Context, Error, anyhow, bail};
 use event_listener as _;
@@ -50,7 +52,7 @@ use fuchsia_async as fasync;
 use fuchsia_hash::{HASH_SIZE, Hash};
 use fuchsia_merkle::{MerkleVerifier, ReadSizedMerkleVerifier};
 use fuchsia_sync::Mutex;
-use std::collections::{HashMap, hash_map};
+use std::collections::{HashMap, HashSet, hash_map};
 use std::ops::Range;
 use std::sync::{Arc, OnceLock, Weak};
 use storage_ptr_slice::PtrByteSlice;
@@ -144,11 +146,25 @@ enum BlobState {
     Ready(Arc<CachedBlob>),
 }
 
+pub(crate) struct ActiveRecording {
+    // Blobs opened by external clients during the active recording window.
+    pub(crate) opened_hashes: HashSet<Hash>,
+    // Maps session key to Merkle root hash for all blobs opened or accessed during the recording
+    // window, retained until recording stops even if a blob is evicted before then. When all child
+    // VMO handles are dropped (`ZX_VMO_ZERO_CHILDREN`), `Cache` evicts the blob and closes its
+    // session key; if the same blob is later opened again during the same recording window, `Cache`
+    // allocates a new monotonically increasing session key for it. Retaining every key to `Hash`
+    // mapping ensures page requests recorded by the driver under any of those keys resolve back to
+    // the blob's `Hash` when recording stops.
+    pub(crate) hash_by_key: HashMap<u64, Hash>,
+}
+
 struct CacheState {
     next_key: u64,
     // Maps blob Merkle root hash to the client-allocated mapping session key.
     keys_by_hash: HashMap<[u8; 32], u64>,
     blob_states_by_key: HashMap<u64, BlobState>,
+    recording: Option<ActiveRecording>,
 }
 
 impl Default for CacheState {
@@ -157,6 +173,7 @@ impl Default for CacheState {
             next_key: 1,
             keys_by_hash: HashMap::default(),
             blob_states_by_key: HashMap::default(),
+            recording: None,
         }
     }
 }
@@ -225,6 +242,9 @@ impl PendingEntry {
                 .expect("Failed to bind CachedBlob to ZeroChildrenReceiver: already initialized");
 
             state.blob_states_by_key.insert(self.key, BlobState::Ready(cached.clone()));
+            if let Some(recording) = state.recording.as_mut() {
+                recording.hash_by_key.insert(self.key, Hash::from(root_hash));
+            }
 
             (cached, event)
         };
@@ -291,18 +311,20 @@ enum CacheLookup {
 }
 
 // Coordinates the concurrent creation, caching, and verification of pager-backed blobs.
-struct Cache {
+pub(crate) struct Cache {
     state: Mutex<CacheState>,
-    mapping_session: fmapping::MappingSessionProxy,
+    pub(crate) mapping_session: fmapping::MappingSessionProxy,
     pager: Arc<zx::Pager>,
+    port: zx::Port,
     delivery_vmo: zx::Vmo,
-    scope: fasync::ScopeHandle,
+    pub(crate) scope: fasync::ScopeHandle,
 }
 
 impl Cache {
     fn new(
         mapping_session: fmapping::MappingSessionProxy,
         pager: Arc<zx::Pager>,
+        port: zx::Port,
         delivery_vmo: zx::Vmo,
         scope: fasync::ScopeHandle,
     ) -> Self {
@@ -310,6 +332,7 @@ impl Cache {
             state: Mutex::new(CacheState::default()),
             mapping_session,
             pager,
+            port,
             delivery_vmo,
             scope,
         }
@@ -335,6 +358,32 @@ impl Cache {
             Some(BlobState::Ready(blob)) => blob.merkle_verifier.get().is_some(),
             None => false,
         }
+    }
+
+    pub(crate) fn start_recording(&self) -> Result<(), zx::Status> {
+        let mut state = self.state.lock();
+        if state.recording.is_some() {
+            return Err(zx::Status::BAD_STATE);
+        }
+        let hash_by_key =
+            state.keys_by_hash.iter().map(|(&hash, &key)| (key, Hash::from(hash))).collect();
+        state.recording = Some(ActiveRecording { opened_hashes: HashSet::new(), hash_by_key });
+        Ok(())
+    }
+
+    fn record_open(&self, identifier: &[u8; 32]) {
+        let mut state = self.state.lock();
+        if let Some(recording) = state.recording.as_mut() {
+            recording.opened_hashes.insert(Hash::from(*identifier));
+        }
+    }
+
+    pub(crate) fn take_recording(&self) -> Option<ActiveRecording> {
+        self.state.lock().recording.take()
+    }
+
+    pub(crate) fn abort_recording(&self) {
+        self.state.lock().recording = None;
     }
 
     /// Looks up the blob in the cache and returns its current [`CacheLookup`] state:
@@ -368,6 +417,52 @@ impl Cache {
             .blob_states_by_key
             .insert(key, BlobState::Opening { root_hash: *identifier, event, verifier: None });
         Ok(CacheLookup::Missing(PendingEntry { cache: self.clone(), key }))
+    }
+
+    pub(crate) async fn open_vmo(
+        self: &Arc<Self>,
+        identifier: &[u8; 32],
+    ) -> Result<zx::Vmo, Error> {
+        loop {
+            let entry = match self.lookup(identifier)? {
+                CacheLookup::Ready(child) => return Ok(child),
+                CacheLookup::Pending(listener) => {
+                    listener.await;
+                    continue; // Re-evaluate cache now that the blocking event triggered
+                }
+                CacheLookup::Missing(entry) => entry,
+            };
+
+            let key = entry.key();
+
+            // Ask Fxfs to register the blob and write its extent mappings into the shared mapping
+            // VMO, using the client-allocated key.
+            let size = self
+                .mapping_session
+                .open(key, identifier)
+                .await
+                .context("FIDL error calling MappingSession.Open")?
+                .map_err(|e| {
+                    Error::from(zx::Status::err_from_raw(e))
+                        .context("MappingSession.Open failed for blob")
+                })?;
+
+            let vmo = self.pager.create_vmo(zx::VmoOptions::empty(), &self.port, key, size)?;
+            let vmo_name = format!("blob-{}", &Hash::from(*identifier).to_string()[..8]);
+            if let Ok(name) = zx::Name::new(&vmo_name) {
+                let _ = vmo.set_name(&name);
+            }
+
+            // Create the initial child. We vend children of this VMO to clients so we can track
+            // when all children are dropped to evict the blob from cache.
+            let first_child = vmo
+                .create_child(zx::VmoChildOptions::REFERENCE | zx::VmoChildOptions::NO_WRITE, 0, 0)
+                .map_err(|s| anyhow!("Failed to create child VMO: {}", s))?;
+
+            entry.commit(vmo, size);
+
+            return Ok(first_child);
+        }
     }
 
     fn on_zero_children(&self, blob: &Arc<CachedBlob>) {
@@ -582,12 +677,9 @@ impl delivery::DeliveryQueueProvider for Cache {
 pub struct BlobPagerAndVerifier {
     // Ties the lifetime of the background delivery thread to the `BlobPagerAndVerifier`.
     _delivery_processor: delivery::DeliveryQueueProcessor,
-    // Ties the lifetime of the block driver's mapper session to the `BlobPagerAndVerifier`.
-    _mapper_session: fblock::MapperSessionProxy,
-    port: zx::Port,
-    pager: Arc<zx::Pager>,
+    mapper_session: fblock::MapperSessionProxy,
     cache: Arc<Cache>,
-    _scope: fasync::Scope,
+    scope: fasync::Scope,
 }
 
 impl BlobPagerAndVerifier {
@@ -647,68 +739,56 @@ impl BlobPagerAndVerifier {
             .map_err(|e| anyhow!("Mapper.OpenSession failed: {e:?}"))?;
 
         let scope = fasync::Scope::new();
+        let scope_handle = scope.to_handle();
         let cache = Arc::new(Cache::new(
             mapping_session,
-            pager.clone(),
+            pager,
+            port,
             delivery_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
-            scope.to_handle(),
+            scope_handle,
         ));
         let _delivery_processor =
             delivery::DeliveryQueueProcessor::spawn(receiver, cache.clone(), delivery_vmo)?;
 
-        Ok(Self {
-            _delivery_processor,
-            _mapper_session: mapper_session,
-            port,
-            pager,
-            cache,
-            _scope: scope,
-        })
+        Ok(Self { _delivery_processor, mapper_session, cache, scope })
+    }
+
+    /// Starts recording a profile for `name` and replaying any existing profile of the same name.
+    pub async fn start_profile(
+        &self,
+        name: impl Into<String>,
+    ) -> Result<ProfileRecording, zx::Status> {
+        ProfileRecording::start(self.cache.clone(), &self.mapper_session, name.into()).await
+    }
+
+    /// Starts recording and replaying the named profile, stopping and committing the profile in the
+    /// background after `duration` elapses.
+    pub async fn record_and_replay_profile(
+        &self,
+        name: impl Into<String>,
+        duration: zx::MonotonicDuration,
+    ) {
+        let name = name.into();
+        let recording = match self.start_profile(name.clone()).await {
+            Ok(recording) => recording,
+            Err(status) => {
+                log::warn!(status:?, name = name.as_str(); "Failed to start profile recording");
+                return;
+            }
+        };
+        self.scope.spawn(async move {
+            fasync::Timer::new(duration).await;
+            if let Err(status) = recording.stop().await {
+                log::warn!(status:?, name = name.as_str(); "Failed to stop profile recording");
+            }
+        });
     }
 
     /// Create pager owned VMO for the blob identified by its Merkle Root Hash.
     pub async fn create_vmo(&self, identifier: &[u8; 32]) -> Result<zx::Vmo, Error> {
-        loop {
-            let entry = match self.cache.lookup(identifier)? {
-                CacheLookup::Ready(child) => return Ok(child),
-                CacheLookup::Pending(listener) => {
-                    listener.await;
-                    continue; // Re-evaluate cache now that the blocking event triggered
-                }
-                CacheLookup::Missing(entry) => entry,
-            };
-
-            let key = entry.key();
-
-            // Ask Fxfs to register the blob and write its extent mappings into the shared mapping
-            // VMO, using the client-allocated key.
-            let size = self
-                .cache
-                .mapping_session
-                .open(key, identifier)
-                .await
-                .context("FIDL error calling MappingSession.Open")?
-                .map_err(|e| {
-                    Error::from(zx::Status::err_from_raw(e))
-                        .context("MappingSession.Open failed for blob")
-                })?;
-
-            let vmo = self.pager.create_vmo(zx::VmoOptions::empty(), &self.port, key, size)?;
-            let vmo_name = format!("blob-{}", &Hash::from(*identifier).to_string()[..8]);
-            if let Ok(name) = zx::Name::new(&vmo_name) {
-                let _ = vmo.set_name(&name);
-            }
-
-            // Create the initial child. We vend children of this VMO to clients so we can track
-            // when all children are dropped to evict the blob from cache.
-            let first_child = vmo
-                .create_child(zx::VmoChildOptions::REFERENCE | zx::VmoChildOptions::NO_WRITE, 0, 0)
-                .map_err(|s| anyhow!("Failed to create child VMO: {}", s))?;
-
-            entry.commit(vmo, size);
-
-            return Ok(first_child);
-        }
+        let vmo = self.cache.open_vmo(identifier).await?;
+        self.cache.record_open(identifier);
+        Ok(vmo)
     }
 }
 
