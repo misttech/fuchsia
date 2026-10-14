@@ -38,11 +38,6 @@ load(
     _get_fuchsia_api_levels = "get_fuchsia_api_levels",
 )
 load(
-    "//fuchsia/private:fuchsia_archivist_pipeline_test.bzl",
-    _fuchsia_archivist_pipeline_test = "fuchsia_archivist_pipeline_test",
-    _fuchsia_archivist_pipeline_test_manifest = "fuchsia_archivist_pipeline_test_manifest",
-)
-load(
     "//fuchsia/private:fuchsia_bind_cc_library.bzl",
     _fuchsia_bind_cc_library = "fuchsia_bind_cc_library",
 )
@@ -168,8 +163,6 @@ load(
 
 # keep-sorted start
 clangd_compilation_database = _clangd_compilation_database
-fuchsia_archivist_pipeline_test = _fuchsia_archivist_pipeline_test
-fuchsia_archivist_pipeline_test_manifest = _fuchsia_archivist_pipeline_test_manifest
 fuchsia_bind_cc_library = _fuchsia_bind_cc_library
 fuchsia_bind_library = _fuchsia_bind_library
 fuchsia_cc_binary = _fuchsia_cc_binary

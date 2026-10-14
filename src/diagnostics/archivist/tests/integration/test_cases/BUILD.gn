@@ -6,7 +6,6 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 import("//sdk/ctf/build/ctf.gni")
-import("//src/diagnostics/archivist/build/pipeline.gni")
 
 rustc_test("bin") {
   output_name = "archivist_integration_test_cases"

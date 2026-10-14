@@ -497,7 +497,6 @@ group("non_hermetic_deps") {
     "//src/connectivity/bluetooth/hci/virtual:virtual.package",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg.package",
-    "//src/diagnostics/archivist/tests/pipeline_test:*",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0.package",
     "//src/ui/backlight/drivers:chromebook-keyboard-backlight",

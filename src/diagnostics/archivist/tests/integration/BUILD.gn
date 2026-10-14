@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//src/diagnostics/archivist/build/pipeline.gni")
 
 fuchsia_test_component("test_root") {
   manifest = "meta/test_root.cml"

@@ -303,7 +303,6 @@ group("tests") {
   deps = [
     ":archivist-fuzzers",
     ":archivist-tests",
-    "build/scripts:tests",
     "tests",
   ]
 }
