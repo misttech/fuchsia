@@ -64,6 +64,8 @@ if (is_kernel) {
 
 foreach(lib_type, lib_types) {
   # LINT.IfChange(crypto_targets)
+  # Bazel's header-only crypto-headers has no GN equivalent: GN dependents get
+  # the headers from :boringssl_config.
   target("${lib_type}_library", "crypto-${lib_type}") {
     if (default_library_type == "${lib_type}_library") {
       output_name = "crypto"
@@ -97,6 +99,8 @@ foreach(lib_type, lib_types) {
   # LINT.ThenChange(BUILD.bazel:crypto_targets)
 
   # LINT.IfChange(ssl_targets)
+  # Bazel's header-only ssl-headers has no GN equivalent: GN dependents get the
+  # headers from :boringssl_config.
   target("${lib_type}_library", "ssl-${lib_type}") {
     if (default_library_type == "${lib_type}_library") {
       output_name = "ssl"

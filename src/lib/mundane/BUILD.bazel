@@ -43,10 +43,10 @@ rustc_library(
     with_host_unit_tests = True,
     deps = select({
         "@platforms//os:fuchsia": [
-            "//third_party/rust_crates/intree/bssl-sys:bssl_sys",  # @bazel2gn:path_overwrite://third_party/boringssl/rust:bssl-sys.shared-no-ssl
+            "//third_party/boringssl/rust:bssl-sys.shared-no-ssl",
         ],
         "//conditions:default": [
-            "//third_party/rust_crates/intree/bssl-sys:bssl_sys",  # @bazel2gn:path_overwrite://third_party/boringssl/rust:bssl-sys.static
+            "//third_party/boringssl/rust:bssl-sys.static",
         ],
     }),
 )

@@ -30,6 +30,24 @@ license(
 
 exports_files(["src/LICENSE"])
 
+# Sources of the Rust crates in src/rust, built by //third_party/boringssl/rust.
+exports_files(
+    [
+        "src/rust/bssl-crypto/src/lib.rs",
+        "src/rust/bssl-macros/src/lib.rs",
+        "src/rust/bssl-sys/wrapper.h",
+    ],
+    visibility = ["//third_party/boringssl/rust:__pkg__"],
+)
+
+# Globbed, like GN's `enforce_source_listing = false`, so that boringssl rolls
+# that add or remove files need no BUILD file changes.
+filegroup(
+    name = "bssl-crypto-srcs",
+    srcs = glob(["src/rust/bssl-crypto/src/**/*.rs"]),
+    visibility = ["//third_party/boringssl/rust:__pkg__"],
+)
+
 # LINT.IfChange(boringssl_config)
 # Cannot be migrated to build_flags() because build_flags() does not support
 # public_configs-style propagation of include directories to dependents;
@@ -144,11 +162,14 @@ _CRYPTO_DEPS = select({
 # Header-only target used by cc_import() so downstream consumers receive the
 # public headers and include directories without hitting Bazel 8's
 # cc_import(includes) package-prefix bug (https://fxbug.dev/478970857).
+#
+# Also used by //third_party/boringssl/rust:rust-wrapper, whose dependents pick
+# the boringssl link flavor.
 cc_library(
-    name = "_crypto_headers",
+    name = "crypto-headers",
     hdrs = _CRYPTO_HDRS,
     includes = _BORINGSSL_INCLUDES,
-    visibility = ["//visibility:private"],
+    visibility = ["//third_party/boringssl/rust:__pkg__"],
 )
 
 cc_library(
@@ -194,7 +215,7 @@ cc_import(
     hdrs = _CRYPTO_HDRS,
     shared_library = ":_crypto_shared_lib",
     visibility = ["//:__subpackages__"],
-    deps = [":_crypto_headers"],
+    deps = [":crypto-headers"],
 )
 # LINT.ThenChange(BUILD.gn:crypto_targets)
 
@@ -216,11 +237,12 @@ _SSL_COPTS = _BORINGSSL_COPTS + select({
     "//conditions:default": [],
 })
 
+# Header-only, like crypto-headers above.
 cc_library(
-    name = "_ssl_headers",
+    name = "ssl-headers",
     hdrs = ssl_headers,
     includes = _BORINGSSL_INCLUDES,
-    visibility = ["//visibility:private"],
+    visibility = ["//third_party/boringssl/rust:__pkg__"],
 )
 
 cc_library(
@@ -265,7 +287,7 @@ cc_import(
     shared_library = ":_ssl_shared_lib",
     visibility = ["//:__subpackages__"],
     deps = [
-        ":_ssl_headers",
+        ":ssl-headers",
         ":crypto-shared",
     ],
 )
