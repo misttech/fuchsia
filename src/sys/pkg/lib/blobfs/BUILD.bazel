@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:blobfs_test` and `:blobfs-lib-tests`) stay in BUILD.gn
+# because `blobfs-lib-tests` packages `//src/storage/fxfs:fxfs_component` and
+# `//src/storage/testing:storage_driver_test_realm`, and `:blobfs_test` depends
+# on `//src/sys/pkg/testing/blobfs-ramdisk` (which depends back on `:blobfs`).
+rustc_library(
+    name = "blobfs",
+    srcs = [
+        "src/lib.rs",
+        "src/mock.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/storage/benchmarks/fuchsia/pkgdir-component:__pkg__",
+        "//src/sys/pkg:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//src/storage/lib/vmo-blob",
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
