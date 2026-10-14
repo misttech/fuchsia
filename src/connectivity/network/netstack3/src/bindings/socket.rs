@@ -218,8 +218,11 @@ pub(crate) fn create_request_stream<T: fidl::endpoints::ProtocolMarker>()
 
 fn get_interface_addresses(ctx: &mut Ctx) -> Vec<psocket::InterfaceAddresses> {
     // Snapshot devices out so we don't hold any locks while calling into core.
-    let devices =
+    let mut devices =
         ctx.bindings_ctx().devices.with_devices(|devices| devices.cloned().collect::<Vec<_>>());
+    // Report interfaces in a stable order, sorted by interface ID, to match
+    // Linux.
+    devices.sort_by_key(|d| d.bindings_id().id);
     devices
         .into_iter()
         .map(|d| {

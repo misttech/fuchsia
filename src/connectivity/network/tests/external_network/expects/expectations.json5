@@ -9,15 +9,5 @@
                 "*",
             ],
         },
-        {
-            type: "skip",
-            matchers: [
-                // Flaky: Netstack3 returns interfaces from
-                // fuchsia.posix.socket/Provider.GetInterfaceAddresses in
-                // arbitrary (hash map iteration) order, but this test expects
-                // them ordered by interface ID (as Linux does).
-                "ExternalNetworkTest.IoctlGetInterfaceAddresses",
-            ],
-        },
     ],
 }
