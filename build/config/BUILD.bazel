@@ -4,7 +4,11 @@
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
-load("//build/bazel/config/derived:fuchsia_cxx_version.bzl", "fuchsia_cxx_version")
+load(
+    "//build/bazel/config/derived:fuchsia_cxx_version.bzl",
+    "fuchsia_cxx_version",
+    "fuchsia_sdk_cxx_supported_versions",
+)
 load(":compress_debuginfo.bzl", "compress_debuginfo_build_flags")
 load(":dwarf_version.bzl", "dwarf_version_build_flags")
 
@@ -58,6 +62,26 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(//build/config/BUILD.gn:language)
+
+# LINT.IfChange(cxx_versions)
+# These configs can be used to override the C++ version for a particular
+# target.  This is used primarily for tests to specifically validate building
+# under supported modes other than $fuchsia_cxx_version.
+[
+    build_flags(
+        name = "c++{}".format(cxx_version),
+        cflags_cc = ["-std=c++{}".format(cxx_version)],
+
+        # TODO(https://fxbug.dev/42064981): libc++ now marks the C++20
+        # synchronization primitives as deprecated in older C++ standards which
+        # affects Fuchsia since we use these primitives across the codebase. We
+        # temporarily suppress these warnings until C++20 becomes the default.
+        defines = ["_LIBCPP_DISABLE_DEPRECATION_WARNINGS"] if cxx_version < 20 else [],
+        visibility = ["//visibility:public"],
+    )
+    for cxx_version in fuchsia_sdk_cxx_supported_versions
+]
+# LINT.ThenChange(BUILD.gn:cxx_versions)
 
 # LINT.IfChange(icf)
 compiler_build_flags(

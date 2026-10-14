@@ -154,18 +154,12 @@ if (_is_compilation_mode_dbg) {
 }
 
 # Forward GN C/C++ compiler optimization configuration to Bazel
-# If the c++ version is 20, we overwrite the copts to use
-# c++20 in Bazel too.
+# TODO(https://fxbug.dev/565437401): Remove this once
+# //build/config:default_warnings is ported to Bazel.
 if (fuchsia_cxx_version == 20) {
-  _build_args += [
-    "--cxxopt=-std=c++20",
-    "--cxxopt=-Wno-deprecated-this-capture",
-  ]
+  _build_args += [ "--cxxopt=-Wno-deprecated-this-capture" ]
 } else if (fuchsia_cxx_version == 23) {
-  _build_args += [
-    "--cxxopt=-std=c++23",
-    "--cxxopt=-Wno-deprecated-this-capture",
-  ]
+  _build_args += [ "--cxxopt=-Wno-deprecated-this-capture" ]
 }
 
 # LINT.IfChange(bazel_args_json_schema)

@@ -41,8 +41,6 @@ fuchsia_sdk_cxx_supported_versions = [
 if (experimental_cxx_version != false) {
   fuchsia_cxx_version = experimental_cxx_version
 
-  # LINT.ThenChange(//build/bazel/config/derived/fuchsia_cxx_version.bzl:fuchsia_cxx_version)
-
   assert(
       _available_cxx_versions + [ experimental_cxx_version ] -
           [ experimental_cxx_version ] != _available_cxx_versions,
@@ -54,3 +52,4 @@ if (experimental_cxx_version != false) {
   fuchsia_sdk_cxx_supported_versions -= [ experimental_cxx_version ]
   fuchsia_sdk_cxx_supported_versions += [ experimental_cxx_version ]
 }
+# LINT.ThenChange(//build/bazel/config/derived/fuchsia_cxx_version.bzl:fuchsia_cxx_version)

@@ -49,6 +49,7 @@ config("language") {
 
 # LINT.ThenChange(//build/config/BUILD.bazel:language)
 
+# LINT.IfChange(cxx_versions)
 # These configs can be used to override the C++ version for a particular
 # target.  This is used primarily for tests to specifically validate building
 # under supported modes other than $fuchsia_cxx_version.
@@ -68,6 +69,8 @@ foreach(cxx_version, fuchsia_sdk_cxx_supported_versions) {
     }
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:cxx_versions)
 
 compiler_config("color_diagnostics") {
   # GCC correctly defaults this from the terminal, so leave it alone.
