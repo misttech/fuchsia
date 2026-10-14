@@ -32,6 +32,7 @@ from openwrt_access_point.lib.access_point_config import (
     RadioConfig,
     SecurityOpen,
 )
+from wlan_test_utils import odpm_utils
 
 logger = logging.getLogger(__name__)
 
@@ -125,12 +126,17 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 "No access point configured for this test."
             )
 
-        try:
-            ping_result = await self.dut.netstack.ping(ap_address)
-            logger.info(f"Ping succeeded: {ping_result.raw_output}")
-        except Exception as e:
-            logger.error(f"{e}")
-            fail(f"Ping failed.")
+        async with odpm_utils.record_odpm_metrics(
+            self.dut.tracing,
+            test_case_path=self.test_case_path,
+            test_name=self.current_test_info.name,
+        ):
+            try:
+                ping_result = await self.dut.netstack.ping(ap_address)
+                logger.info(f"Ping succeeded: {ping_result.raw_output}")
+            except Exception as e:
+                logger.error(f"{e}")
+                fail(f"Ping failed.")
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ from openwrt_access_point.lib.access_point_config import (
     RadioConfig,
     SecurityOpen,
 )
+from wlan_test_utils import odpm_utils
 
 logger = logging.getLogger()
 
@@ -76,36 +77,41 @@ class WlanScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         name = self.dut.device_name
 
-        logger.info('[%s] Scanning for ssid "%s"', name, ssid)
-        scan_results = await iface.passive_scan()
-        asserts.assert_in(
-            ssid, scan_results, f'Scan results did not include "{ssid}"'
-        )
-        target_bss = scan_results[ssid]
-        asserts.assert_equal(
-            len(target_bss),
-            1,
-            f'Expected 1 BSS for "{ssid}", got {len(target_bss)}',
-        )
+        async with odpm_utils.record_odpm_metrics(
+            self.dut.tracing,
+            test_case_path=self.test_case_path,
+            test_name=self.current_test_info.name,
+        ):
+            logger.info('[%s] Scanning for ssid "%s"', name, ssid)
+            scan_results = await iface.passive_scan()
+            asserts.assert_in(
+                ssid, scan_results, f'Scan results did not include "{ssid}"'
+            )
+            target_bss = scan_results[ssid]
+            asserts.assert_equal(
+                len(target_bss),
+                1,
+                f'Expected 1 BSS for "{ssid}", got {len(target_bss)}',
+            )
 
-        logger.info('[%s] Connecting to ssid "%s"', name, ssid)
-        await iface.connect(
-            ssid=ssid,
-            bss_desc=target_bss[0],
-            authentication=authentication,
-        )
+            logger.info('[%s] Connecting to ssid "%s"', name, ssid)
+            await iface.connect(
+                ssid=ssid,
+                bss_desc=target_bss[0],
+                authentication=authentication,
+            )
 
-        logger.info('[%s] Scanning while connected to "%s"', name, ssid)
-        start_time = datetime.now()
-        scan_results = await iface.passive_scan()
-        logger.info("Scan contained %d results", len(scan_results))
-        logger.debug("Scan results: %s", scan_results)
-        total_time_ms = (datetime.now() - start_time).total_seconds() * 1000
-        logger.info(f"Scan time: {total_time_ms:.2f} ms")
+            logger.info('[%s] Scanning while connected to "%s"', name, ssid)
+            start_time = datetime.now()
+            scan_results = await iface.passive_scan()
+            logger.info("Scan contained %d results", len(scan_results))
+            logger.debug("Scan results: %s", scan_results)
+            total_time_ms = (datetime.now() - start_time).total_seconds() * 1000
+            logger.info(f"Scan time: {total_time_ms:.2f} ms")
 
-        asserts.assert_in(
-            ssid, scan_results, f'Scan results did not include "{ssid}"'
-        )
+            asserts.assert_in(
+                ssid, scan_results, f'Scan results did not include "{ssid}"'
+            )
 
 
 if __name__ == "__main__":

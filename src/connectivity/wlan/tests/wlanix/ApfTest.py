@@ -16,6 +16,7 @@ from mobly.asserts import (
     assert_is_not_none,
     assert_true,
 )
+from wlan_test_utils import odpm_utils
 from wlanix_testing import base_test
 
 
@@ -109,46 +110,55 @@ class ApfTest(base_test.ConnectionBaseTestClass):
         ).unwrap()
         assert_false(response.enabled, "APF should not be enabled")
 
-        # Enable suspend mode
-        (
+        async with odpm_utils.record_odpm_metrics(
+            self.dut.tracing,
+            test_case_path=self.test_case_path,
+            test_name=self.current_test_info.name,
+        ):
+            # Enable suspend mode
             (
-                await self.supplicant_sta_iface_proxy.set_suspend_mode_enabled(
-                    enable=True
+                (
+                    await self.supplicant_sta_iface_proxy.set_suspend_mode_enabled(
+                        enable=True
+                    )
                 )
-            )
-        ).unwrap()
+            ).unwrap()
 
-        # Check if APF is enabled using the SME APIs
-        response = (
-            (await self.client_sme.get_apf_packet_filter_enabled())
-        ).unwrap()
-        assert_true(response.enabled, "APF should be enabled")
+            # Check if APF is enabled using the SME APIs
+            response = (
+                (await self.client_sme.get_apf_packet_filter_enabled())
+            ).unwrap()
+            assert_true(response.enabled, "APF should be enabled")
 
-        # Disable suspend mode
-        (
+            # Disable suspend mode
             (
-                await self.supplicant_sta_iface_proxy.set_suspend_mode_enabled(
-                    enable=False
+                (
+                    await self.supplicant_sta_iface_proxy.set_suspend_mode_enabled(
+                        enable=False
+                    )
                 )
-            )
-        ).unwrap()
+            ).unwrap()
 
-        # Check that the filter is no longer enabled
-        response = (
-            (await self.client_sme.get_apf_packet_filter_enabled())
-        ).unwrap()
-        assert_false(response.enabled, "APF should not be enabled")
+            # Check that the filter is no longer enabled
+            response = (
+                (await self.client_sme.get_apf_packet_filter_enabled())
+            ).unwrap()
+            assert_false(response.enabled, "APF should not be enabled")
 
-        # Ensure other power save modes don't result in APF enablement
-        (
-            (await self.supplicant_sta_iface_proxy.set_power_save(enable=True))
-        ).unwrap()
+            # Ensure other power save modes don't result in APF enablement
+            (
+                (
+                    await self.supplicant_sta_iface_proxy.set_power_save(
+                        enable=True
+                    )
+                )
+            ).unwrap()
 
-        # Check that the filter is still not enabled
-        response = (
-            (await self.client_sme.get_apf_packet_filter_enabled())
-        ).unwrap()
-        assert_false(response.enabled, "APF should not be enabled")
+            # Check that the filter is still not enabled
+            response = (
+                (await self.client_sme.get_apf_packet_filter_enabled())
+            ).unwrap()
+            assert_false(response.enabled, "APF should not be enabled")
 
 
 if __name__ == "__main__":

@@ -44,6 +44,7 @@ from openwrt_access_point.lib.access_point_config import (
     RadioConfig,
     SecurityOpen,
 )
+from wlan_test_utils import odpm_utils
 
 logger = logging.getLogger(__name__)
 
@@ -552,12 +553,17 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
             freqs_attr=freqs_attr,
         )
 
-        await self._trigger_and_verify_sched_scan(
-            iface_index=iface_index,
-            payload=payload,
-            expected_ssids=[],
-            timeout_seconds=12,
-        )
+        async with odpm_utils.record_odpm_metrics(
+            self.dut.tracing,
+            test_case_path=self.test_case_path,
+            test_name=self.current_test_info.name,
+        ):
+            await self._trigger_and_verify_sched_scan(
+                iface_index=iface_index,
+                payload=payload,
+                expected_ssids=[],
+                timeout_seconds=12,
+            )
 
     async def test_start_sched_scan_with_multiple_ssids(self) -> None:
         ssid_a = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
@@ -710,73 +716,80 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
         )
 
         client, server = self.dut.fuchsia_controller.channel_create()
-        async with Nl80211MulticastServer(client, server) as ctx:
-            scan_queue = ctx.message_queue
-            self.nl80211_proxy.get_multicast(
-                group="scan", multicast=ctx.callback_channel.take()
-            )
-            start_time = time.time()
+        async with odpm_utils.record_odpm_metrics(
+            self.dut.tracing,
+            test_case_path=self.test_case_path,
+            test_name=self.current_test_info.name,
+        ):
+            async with Nl80211MulticastServer(client, server) as ctx:
+                scan_queue = ctx.message_queue
+                self.nl80211_proxy.get_multicast(
+                    group="scan", multicast=ctx.callback_channel.take()
+                )
+                start_time = time.time()
 
-            response_list = (
-                (
-                    await self.nl80211_proxy.message(
-                        message=fidl_wlanix.Nl80211Message(
-                            message=fidl_wlanix.Message(payload=payload)
+                response_list = (
+                    (
+                        await self.nl80211_proxy.message(
+                            message=fidl_wlanix.Nl80211Message(
+                                message=fidl_wlanix.Message(payload=payload)
+                            )
                         )
                     )
+                    .unwrap()
+                    .responses
                 )
-                .unwrap()
-                .responses
-            )
-            assert_true(
-                response_list and response_list[0].ack is not None,
-                "Response should be an ack",
-            )
-
-            plan_1_duration_sec = plan_1_interval_sec * plan_1_iterations
-            sleep_duration_sec = plan_1_duration_sec + 2
-            logger.info(
-                "Sent scheduled scan request. Ensuring AP is OFF for the first %d seconds.",
-                sleep_duration_sec,
-            )
-            await asyncio.sleep(sleep_duration_sec)
-
-            expected_discovery_time_sec = (
-                plan_1_interval_sec * (plan_1_iterations - 1)
-                + plan_2_interval_sec
-            )
-            logger.info(
-                "Bringing UP the AP. If the firmware is now on the %d-second interval, it should discover it roughly ~%d seconds after the start time.",
-                plan_2_interval_sec,
-                expected_discovery_time_sec,
-            )
-            self._setup_ap(preset_ssid=ssid)
-            ap_ready_elapsed = time.time() - start_time
-            logger.info(
-                f"AP setup completed at {ap_ready_elapsed:.2f} seconds after PNO start."
-            )
-
-            event_received = False
-            elapsed_at_match = 0.0
-            while True:
-                msg = await asyncio.wait_for(
-                    scan_queue.get(), timeout=plan_2_interval_sec + 5.0
+                assert_true(
+                    response_list and response_list[0].ack is not None,
+                    "Response should be an ack",
                 )
-                if msg.message and msg.message.payload:
-                    cmd = msg.message.payload[0]
-                    if cmd == NL80211_CMD_SCHED_SCAN_RESULTS:
-                        event_received = True
-                        elapsed_at_match = time.time() - start_time
-                        break
 
-            assert_true(event_received, "Failed to receive scan match event")
-            logger.info(
-                f"Match received at {elapsed_at_match:.2f} seconds after PNO start."
-            )
-            assert_true(
-                16.0 < elapsed_at_match < 25.0,
-                f"Elapsed time {elapsed_at_match:.2f}s implies the firmware didn't respect the multi-tier scan plans!",
-            )
+                plan_1_duration_sec = plan_1_interval_sec * plan_1_iterations
+                sleep_duration_sec = plan_1_duration_sec + 2
+                logger.info(
+                    "Sent scheduled scan request. Ensuring AP is OFF for the first %d seconds.",
+                    sleep_duration_sec,
+                )
+                await asyncio.sleep(sleep_duration_sec)
+
+                expected_discovery_time_sec = (
+                    plan_1_interval_sec * (plan_1_iterations - 1)
+                    + plan_2_interval_sec
+                )
+                logger.info(
+                    "Bringing UP the AP. If the firmware is now on the %d-second interval, it should discover it roughly ~%d seconds after the start time.",
+                    plan_2_interval_sec,
+                    expected_discovery_time_sec,
+                )
+                self._setup_ap(preset_ssid=ssid)
+                ap_ready_elapsed = time.time() - start_time
+                logger.info(
+                    f"AP setup completed at {ap_ready_elapsed:.2f} seconds after PNO start."
+                )
+
+                event_received = False
+                elapsed_at_match = 0.0
+                while True:
+                    msg = await asyncio.wait_for(
+                        scan_queue.get(), timeout=plan_2_interval_sec + 5.0
+                    )
+                    if msg.message and msg.message.payload:
+                        cmd = msg.message.payload[0]
+                        if cmd == NL80211_CMD_SCHED_SCAN_RESULTS:
+                            event_received = True
+                            elapsed_at_match = time.time() - start_time
+                            break
+
+                assert_true(
+                    event_received, "Failed to receive scan match event"
+                )
+                logger.info(
+                    f"Match received at {elapsed_at_match:.2f} seconds after PNO start."
+                )
+                assert_true(
+                    16.0 < elapsed_at_match < 25.0,
+                    f"Elapsed time {elapsed_at_match:.2f}s implies the firmware didn't respect the multi-tier scan plans!",
+                )
 
     async def test_pno_multiple_ssids_match(self) -> None:
         """Verify that discovering a newly matched SSID triggers a scheduled scan event."""

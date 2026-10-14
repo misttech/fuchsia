@@ -45,6 +45,7 @@ from openwrt_access_point.lib.access_point_config import (
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
+from wlan_test_utils import odpm_utils
 
 logger = logging.getLogger(__name__)
 
@@ -425,6 +426,7 @@ class TestParams:
     band: Band
     channel: int
     channel_bandwidth: Literal[20, 40, 80, 160]
+    record_odpm: bool = False
 
 
 class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
@@ -457,26 +459,32 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             return f"test_{sec_name}_channel_{test.channel}_{test.channel_bandwidth}mhz"
 
         channels_and_bandwidths: list[
-            tuple[Band, int, Literal[20, 40, 80, 160]]
+            tuple[Band, int, Literal[20, 40, 80, 160], bool]
         ] = [
             # 20MHz is the only realistic BW in 2.4GHz
-            (Band.BAND_2G, 1, 20),
+            (Band.BAND_2G, 1, 20, True),
             # Highest US channel, 20MHz to compare to 2.4GHz
-            (Band.BAND_5G, 165, 20),
+            (Band.BAND_5G, 165, 20, False),
             # Widest possible bandwidth in 5GHz supported by Whirlwind APs.
             # Once we move to OpenWRT One, we can raise this to 160MHz.
-            (Band.BAND_5G, 36, 80),
+            (Band.BAND_5G, 36, 80, True),
         ]
         security_modes: list[Security] = [
             SecurityWpa2(),
         ]
         for security_mode in security_modes:
-            for band, channel, bandwidth in channels_and_bandwidths:
+            for (
+                band,
+                channel,
+                bandwidth,
+                record_odpm,
+            ) in channels_and_bandwidths:
                 test = TestParams(
                     security_mode=security_mode,
                     band=band,
                     channel=channel,
                     channel_bandwidth=bandwidth,
+                    record_odpm=record_odpm,
                 )
                 tests.append((test,))
 
@@ -858,7 +866,73 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test.channel_bandwidth,
         )
 
-        udp_bandwidth = self.get_target_udp_bandwidth(test.channel_bandwidth)
+        if test.record_odpm:
+            async with odpm_utils.record_odpm_metrics(
+                self.dut.tracing,
+                test_case_path=self.test_case_path,
+                test_name=self.current_test_info.name,
+            ):
+                measurements = await self._run_iperf_measurements(
+                    iperf_server_address=iperf_server_address,
+                    iface=iface,
+                    dut_mac=dut_mac,
+                    band=band,
+                    channel_bandwidth=test.channel_bandwidth,
+                    max_phy_mbps=max_phy_mbps,
+                )
+        else:
+            measurements = await self._run_iperf_measurements(
+                iperf_server_address=iperf_server_address,
+                iface=iface,
+                dut_mac=dut_mac,
+                band=band,
+                channel_bandwidth=test.channel_bandwidth,
+                max_phy_mbps=max_phy_mbps,
+            )
+
+        test_case_record = self._build_test_case_record(test, measurements)
+        self.test_cases.append(test_case_record)
+        self._write_json_report()
+
+        target_mbps = phy_rate_target_mbps(max_phy_mbps)
+        failures: list[str] = []
+        for label, record in [
+            ("TCP TX", measurements["tcp_tx"]),
+            ("TCP RX", measurements["tcp_rx"]),
+            ("UDP TX", measurements["udp_tx"]),
+            ("UDP RX", measurements["udp_rx"]),
+        ]:
+            if self._is_phy_rate_below_target(record):
+                # `direction` is relative to the DUT, and the DUT does not
+                # report RX PHY rates. Check the AP's rate in the data-carrying
+                # direction: AP RX rate when the DUT is transmitting ("tx"),
+                # and AP TX rate when the DUT is receiving ("rx").
+                metric_key: LinkMetricKey = (
+                    "ap_rx_rate_mbps"
+                    if record["direction"] == "tx"
+                    else "ap_tx_rate_mbps"
+                )
+                avg_rate = record["link_metrics"][metric_key]["avg"]
+                pct = self._compute_phy_avg_pct(record)
+                failures.append(
+                    f"{label}: avg PHY {avg_rate} Mbps ({pct}%) "
+                    f"< {target_mbps} Mbps ({PHY_RATE_TARGET_RATIO:.0%} of {max_phy_mbps} Mbps for {self.dut_board})"
+                )
+        if failures:
+            raise signals.TestFailure(
+                "PHY rate below target:\n" + "\n".join(failures)
+            )
+
+    async def _run_iperf_measurements(
+        self,
+        iperf_server_address: str,
+        iface: wlan_core.ClientIface,
+        dut_mac: MacAddress,
+        band: Band,
+        channel_bandwidth: Literal[20, 40, 80, 160],
+        max_phy_mbps: float,
+    ) -> MeasurementsByDirection:
+        udp_bandwidth = self.get_target_udp_bandwidth(channel_bandwidth)
         tcp_tx, tcp_tx_metrics = await self.get_iperf_throughput_bps(
             iperf_server_address,
             reverse=False,
@@ -935,44 +1009,12 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             max_phy_mbps,
         )
 
-        measurements: MeasurementsByDirection = {
+        return {
             "tcp_tx": tcp_tx_record,
             "tcp_rx": tcp_rx_record,
             "udp_tx": udp_tx_record,
             "udp_rx": udp_rx_record,
         }
-        test_case_record = self._build_test_case_record(test, measurements)
-        self.test_cases.append(test_case_record)
-        self._write_json_report()
-
-        target_mbps = phy_rate_target_mbps(max_phy_mbps)
-        failures: list[str] = []
-        for label, record in [
-            ("TCP TX", tcp_tx_record),
-            ("TCP RX", tcp_rx_record),
-            ("UDP TX", udp_tx_record),
-            ("UDP RX", udp_rx_record),
-        ]:
-            if self._is_phy_rate_below_target(record):
-                # `direction` is relative to the DUT, and the DUT does not
-                # report RX PHY rates. Check the AP's rate in the data-carrying
-                # direction: AP RX rate when the DUT is transmitting ("tx"),
-                # and AP TX rate when the DUT is receiving ("rx").
-                metric_key: LinkMetricKey = (
-                    "ap_rx_rate_mbps"
-                    if record["direction"] == "tx"
-                    else "ap_tx_rate_mbps"
-                )
-                avg_rate = record["link_metrics"][metric_key]["avg"]
-                pct = self._compute_phy_avg_pct(record)
-                failures.append(
-                    f"{label}: avg PHY {avg_rate} Mbps ({pct}%) "
-                    f"< {target_mbps} Mbps ({PHY_RATE_TARGET_RATIO:.0%} of {max_phy_mbps} Mbps for {self.dut_board})"
-                )
-        if failures:
-            raise signals.TestFailure(
-                "PHY rate below target:\n" + "\n".join(failures)
-            )
 
     @staticmethod
     def _format_band(band: Band) -> str:
