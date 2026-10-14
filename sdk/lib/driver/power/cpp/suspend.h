@@ -73,12 +73,15 @@ class ResumeCompleter final : public Completer {
 //   * Call `InitializeSuspend` in their start method, after
 //     `take_power_element_runner()` can return a valid value.
 //
-// `InitializeSuspend` does one of two things
+// `InitializeSuspend` does one of two things:
 //   1) If suspend is not enabled based on `SuspendEnabled`, it returns
 //      `zx::ok` immediately.
-//   2) If `Driver::take_power_element_runner` returns a value it uses calls
-//      to `SetLevel` to levels 0 and 1 to drive calls to `BeforeSuspend` and
-//      `AfterResume`, respectively. Otherwise it returns ZX_ERR_UNAVAILABLE.
+//   2) If `Driver::take_power_element_runner` returns a valid channel, it
+//      binds an `ElementRunner` server that translates `SetLevel(0)` into
+//      `Suspend()` and `SetLevel(1)` into `Resume()`, and returns `zx::ok`.
+//      The initial `SetLevel(1)` at driver startup is skipped without
+//      calling `Resume()`. If `take_power_element_runner` returns
+//      `std::nullopt`, it returns `ZX_ERR_UNAVAILABLE`.
 // The typical implementation for `take_power_element_runner()` returns the
 // value from `DriverContext::take_power_element_runner()` from the
 // `DriverContext` instance passed to the driver's `Start` hook. The driver
@@ -138,9 +141,13 @@ class Suspendable {
           fdf::warn("Level {} mapped to 1 since that is the maximum level.", request.level());
         }
 
-        first_activation_occurred_ = true;
-        parent_->Resume(
-            ResumeCompleter([completer = completer.ToAsync()]() mutable { completer.Reply(); }));
+        if (first_activation_occurred_) {
+          parent_->Resume(
+              ResumeCompleter([completer = completer.ToAsync()]() mutable { completer.Reply(); }));
+        } else {
+          first_activation_occurred_ = true;
+          completer.Reply();
+        }
       } else {
         if (first_activation_occurred_) {
           parent_->Suspend(
@@ -159,7 +166,7 @@ class Suspendable {
     // Whether or not the power element has been set to a non-zero level for the first time. This
     // is necessary mostly because currently there is no way to create a power element at level
     // other than zero. We use this to avoid spurious transitions to level zero when the element
-    // is created.
+    // is created, and to avoid calling `Resume` on initial activation at startup.
     bool first_activation_occurred_ = false;
   };
 
