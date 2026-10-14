@@ -225,19 +225,12 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
                 )
             )
 
-        # TODO(https://fxbug.dev/555204260): factor this properly; it's
-        # untoward to be calling one MetricsProcessor from within the
-        # implementation of another.
-        (
-            breakdown,
-            unused_total_time,
-        ) = cpu.CpuMetricsProcessor().process_metrics_and_get_total_time(model)
-        total_management_time = 0.0
-        for metric in breakdown:
-            if metric.get("thread_name") in _MEMORY_MANAGEMENT_THREAD_NAMES:
-                duration = metric.get("duration")
-                assert isinstance(duration, (int, float))
-                total_management_time += float(duration)
+        breakdown, _ = cpu.process_metrics_and_get_total_time(model)
+        total_management_time = sum(
+            metric["duration"]
+            for metric in breakdown
+            if metric["thread_name"] in _MEMORY_MANAGEMENT_THREAD_NAMES
+        )
         results.append(
             metrics.TestCaseResult(
                 label=_MANAGEMENT_STRUCTURED_METRIC_NAME.structured_name,
