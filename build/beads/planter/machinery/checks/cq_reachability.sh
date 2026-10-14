@@ -454,7 +454,7 @@ for rel_p in sorted(changed_files):
 if origin_main and head_sha and head_sha != origin_main:
     merge_base = git_out(["merge-base", origin_main, head_sha])
     if merge_base and merge_base != origin_main:
-        dirty_tracked = git_lines(["status", "--porcelain", "--untracked-files=no"])
+        dirty_tracked = git_lines(["diff", "--name-only", "--ignore-submodules=all", "HEAD"])
         untracked_td = []
         for td in target_dirs:
             if os.path.isdir(os.path.join(workdir, td)):
@@ -474,10 +474,11 @@ if origin_main and head_sha and head_sha != origin_main:
                     else:
                         os.unlink(tmp_idx)
                     env = dict(os.environ, GIT_INDEX_FILE=tmp_idx)
-                    subprocess.run(
-                        ["git", "-C", workdir, "add", "-u"],
-                        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-                    )
+                    if dirty_tracked:
+                        subprocess.run(
+                            ["git", "-C", workdir, "add", "-A", "--"] + dirty_tracked,
+                            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                        )
                     for td in target_dirs:
                         if os.path.exists(os.path.join(workdir, td)):
                             subprocess.run(
