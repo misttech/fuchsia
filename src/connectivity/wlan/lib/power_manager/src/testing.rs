@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use fidl_fuchsia_power_system as fsystem;
 use fuchsia_sync::Mutex;
 use std::sync::Arc;
-use wlan_power_manager::{PowerManager, WakeLease};
+use wlan_power_manager::{PowerManager, SyncPowerManager, WakeLease};
 
 pub struct TestPowerManager {
     pub calls: Arc<Mutex<Vec<String>>>,
@@ -78,5 +78,41 @@ impl PowerManager for TestPowerManager {
         let (local_token, token) = fsystem::LeaseToken::create();
         self.active_leases.lock().push((name.to_string(), local_token));
         Ok(WakeLease::from_token_for_test(token))
+    }
+}
+
+#[derive(Debug)]
+pub struct FakeSyncPowerManager {
+    pub calls: Arc<Mutex<Vec<String>>>,
+    pub active_leases: Arc<Mutex<Vec<(String, fsystem::LeaseToken)>>>,
+}
+
+impl FakeSyncPowerManager {
+    pub fn new() -> Self {
+        Self { calls: Arc::new(Mutex::new(vec![])), active_leases: Arc::new(Mutex::new(vec![])) }
+    }
+
+    pub fn is_lease_dropped(&self, name: &str) -> bool {
+        let leases = self.active_leases.lock();
+        if let Some((_, token)) = leases.iter().rev().find(|(n, _)| n == name) {
+            #[allow(clippy::match_like_matches_macro)]
+            match token
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+            {
+                zx::WaitResult::TimedOut(_) => false,
+                _ => true,
+            }
+        } else {
+            true
+        }
+    }
+}
+
+impl SyncPowerManager for FakeSyncPowerManager {
+    fn take_wake_lease(&self, name: &str) -> Option<WakeLease> {
+        self.calls.lock().push(name.to_string());
+        let (local_token, token) = fsystem::LeaseToken::create();
+        self.active_leases.lock().push((name.to_string(), local_token));
+        Some(WakeLease::from_token(token))
     }
 }

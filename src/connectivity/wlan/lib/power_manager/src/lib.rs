@@ -12,17 +12,62 @@ pub const POWER_LEVEL_OFF: u8 = 0;
 pub const POWER_LEVEL_SUSPEND: u8 = 1;
 pub const POWER_LEVEL_ACTIVE: u8 = 2;
 
-#[cfg_attr(test, derive(Debug))]
+#[derive(Debug)]
 pub struct WakeLease {
     _token: fsystem::LeaseToken,
 }
 
 impl WakeLease {
+    pub fn from_token(token: fsystem::LeaseToken) -> Self {
+        Self { _token: token }
+    }
+
     /// Constructs a WakeLease from an underlying token.
     /// This is intended strictly for use in test environments.
     #[doc(hidden)]
     pub fn from_token_for_test(token: fsystem::LeaseToken) -> Self {
         Self { _token: token }
+    }
+}
+
+pub trait SyncPowerManager: Send + Sync + std::fmt::Debug {
+    fn take_wake_lease(&self, name: &str) -> Option<WakeLease>;
+}
+
+impl SyncPowerManager for () {
+    fn take_wake_lease(&self, _name: &str) -> Option<WakeLease> {
+        None
+    }
+}
+
+const ACQUIRE_WAKE_LEASE_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
+
+#[derive(Debug)]
+pub struct DeviceSyncPowerManager {
+    proxy: Option<fsystem::ActivityGovernorSynchronousProxy>,
+}
+
+impl DeviceSyncPowerManager {
+    pub fn new(proxy: Option<fsystem::ActivityGovernorSynchronousProxy>) -> Self {
+        Self { proxy }
+    }
+}
+
+impl SyncPowerManager for DeviceSyncPowerManager {
+    fn take_wake_lease(&self, name: &str) -> Option<WakeLease> {
+        let activity_governor = self.proxy.as_ref()?;
+        let deadline = zx::MonotonicInstant::after(ACQUIRE_WAKE_LEASE_TIMEOUT);
+        match activity_governor.acquire_wake_lease(name, deadline) {
+            Ok(Ok(token)) => Some(WakeLease { _token: token }),
+            Ok(Err(e)) => {
+                warn!("Failed to acquire wake lease {}: {:?}", name, e);
+                None
+            }
+            Err(e) => {
+                warn!("FIDL error when acquiring wake lease {}: {:?}", name, e);
+                None
+            }
+        }
     }
 }
 
@@ -312,5 +357,70 @@ mod tests {
             assert_matches!(lease, Err(_));
         };
         futures::join!(server_fut, client_fut);
+    }
+
+    #[test]
+    fn test_sync_power_manager_disabled_take_wake_lease() {
+        let pm = DeviceSyncPowerManager::new(None);
+        assert!(pm.take_wake_lease("test-lease").is_none());
+        let unit_pm = ();
+        assert!(unit_pm.take_wake_lease("test-lease").is_none());
+    }
+
+    #[test]
+    fn test_sync_power_manager_take_wake_lease_success() {
+        let (client_end, server_end) =
+            fidl::endpoints::create_endpoints::<fsystem::ActivityGovernorMarker>();
+        let proxy = client_end.into_sync_proxy();
+        let pm = DeviceSyncPowerManager::new(Some(proxy));
+
+        let thread_handle = std::thread::spawn(move || {
+            let mut exec = fasync::LocalExecutor::default();
+            let mut stream = server_end.into_stream();
+            exec.run_singlethreaded(async move {
+                if let Some(Ok(req)) = stream.next().await {
+                    match req {
+                        fsystem::ActivityGovernorRequest::AcquireWakeLease { name, responder } => {
+                            assert_eq!(name, "test-sync-wake-lease");
+                            let (_server_token, client_token) = fsystem::LeaseToken::create();
+                            let _ = responder.send(Ok(client_token));
+                        }
+                        other => panic!("Unexpected request: {:?}", other),
+                    }
+                }
+            });
+        });
+
+        let lease = pm.take_wake_lease("test-sync-wake-lease");
+        assert!(lease.is_some());
+        thread_handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_sync_power_manager_take_wake_lease_error() {
+        let (client_end, server_end) =
+            fidl::endpoints::create_endpoints::<fsystem::ActivityGovernorMarker>();
+        let proxy = client_end.into_sync_proxy();
+        let pm = DeviceSyncPowerManager::new(Some(proxy));
+
+        let thread_handle = std::thread::spawn(move || {
+            let mut exec = fasync::LocalExecutor::default();
+            let mut stream = server_end.into_stream();
+            exec.run_singlethreaded(async move {
+                if let Some(Ok(req)) = stream.next().await {
+                    match req {
+                        fsystem::ActivityGovernorRequest::AcquireWakeLease { name, responder } => {
+                            assert_eq!(name, "test-sync-wake-lease");
+                            let _ = responder.send(Err(fsystem::AcquireWakeLeaseError::Internal));
+                        }
+                        other => panic!("Unexpected request: {:?}", other),
+                    }
+                }
+            });
+        });
+
+        let lease = pm.take_wake_lease("test-sync-wake-lease");
+        assert!(lease.is_none());
+        thread_handle.join().unwrap();
     }
 }
