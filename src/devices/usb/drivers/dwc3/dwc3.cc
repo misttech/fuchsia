@@ -522,11 +522,9 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
         std::move(watcher_result.value()), dispatcher());
   }
 
-  // Start the hanging-get call loop.
-  if (connection_watcher_.is_valid()) {
-    connection_watcher_->WatchConnectStatusChanged({AcquireWakeLease()})
-        .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
-  }
+  // Start the hanging-get call loop. Every later call is issued by RearmConnectionWatcher() once
+  // the previous status has been fully applied.
+  RearmConnectionWatcher(AcquireWakeLease());
 
   if (zx_status_t status = Init(); status != ZX_OK) {
     return zx::error(status);
@@ -1298,7 +1296,11 @@ void Dwc3::HandleDisconnectedEvent() {
     }
   }
 
-  NotifyPhyConnectStatus(false);
+  // Deliberately no NotifyPhyConnectStatus(false) here: the PHY treats a disconnect report as
+  // permission to remove the core's clocks, resets and power, which is only safe once
+  // ApplyConnectStatusChanged(false) has quiesced the core and the DCI disconnect has drained
+  // (PowerDownCore()). On platforms where the PHY drives VBUS valid, this event is merely the
+  // core observing the PHY's own disconnect.
 }
 
 Dwc3::~Dwc3() {
@@ -1322,13 +1324,20 @@ Dwc3::~Dwc3() {
 void Dwc3::Stop(fdf::StopCompleter completer) {
   TRACE_DURATION("dwc3", "Dwc3::Stop");
   fdf::info("Dwc3::Stop called");
+  stopping_ = true;
+  const bool complete_deferred_power_down = std::exchange(disconnect_in_flight_, false);
   if (platform_extension_) {
     platform_extension_->Stop();
   }
   dwc3_root_ = {};
   phy_ = {};
+  connection_watcher_ = {};
+  dci_intf_ = {};
   dci_bindings_.RemoveAll();
   policy_bindings_.RemoveAll();
+  if (complete_deferred_power_down) {
+    PowerDownCore();
+  }
   completer(zx::ok());
 }
 
@@ -1390,6 +1399,39 @@ void Dwc3::NotifyPhyConnectStatus(bool connected) {
           });
 }
 
+void Dwc3::NotifyDciDisconnectedThen(fit::callback<void()> on_done) {
+  TRACE_DURATION("dwc3", "Dwc3::NotifyDciDisconnectedThen");
+  if (!dci_intf_.is_valid()) {
+    on_done();
+    return;
+  }
+
+  disconnect_in_flight_ = true;
+  fidl::Arena arena;
+  const zx_time_t start_time = zx_clock_get_boot();
+  dci_intf_.buffer(arena)->SetConnected(false).Then(
+      [this, start_time, on_done = std::move(on_done)](
+          fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
+              result) mutable {
+        const zx_duration_t duration = zx_clock_get_boot() - start_time;
+        metrics_.RecordDciDisconnectDuration(duration);
+        if (!result.ok()) {
+          if (!result.is_canceled() && !result.is_dispatcher_shutdown()) {
+            fdf::error("(framework) SetConnected(false): {}", result.FormatDescription());
+          }
+        } else if (result->is_error()) {
+          fdf::error("SetConnected(false): {}", zx_status_get_string(result->error_value()));
+        }
+        disconnect_in_flight_ = false;
+        if (stopping_) {
+          return;
+        }
+        if (on_done) {
+          on_done();
+        }
+      });
+}
+
 void Dwc3::ConnectToEndpoint(ConnectToEndpointRequest& request,
                              ConnectToEndpointCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::ConnectToEndpoint");
@@ -1425,6 +1467,10 @@ void Dwc3::StartController(StartControllerCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::StartController");
   controller_started_ = true;
 
+  // While a disconnect drain is in flight (`is_active() == false`) the core is still powered only
+  // so function drivers can disable their endpoints; it is about to be powered down and must not be
+  // restarted here. A connect that arrives later restarts it through
+  // ApplyConnectStatusChanged(true).
   if (is_active()) {
     StartPeripheralMode();
   }
@@ -1438,7 +1484,7 @@ void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
   ResetEndpoints(/*force=*/true);
   controller_started_ = false;
 
-  if (power_on_) {
+  if (power_on_ && !disconnect_in_flight_) {
     StopEvents();
 
     zx_status_t status = ResetHw();
@@ -1456,7 +1502,7 @@ void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
 void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
                              ConfigureEndpointCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::ConfigureEndpoint");
-  if (!power_on_) {
+  if (!power_on_ || disconnect_in_flight_) {
     completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
     return;
   }
@@ -1523,7 +1569,7 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
   const uint64_t config_gen = ++uep->configure_generation;
   WaitForEndpointIdle(*uep, [this, uep, ep_type, max_packet_size, b_interval, b_endpoint_address,
                              config_gen, async_completer = completer.ToAsync()](bool idle) mutable {
-    if (!idle || !power_on_ || uep->configure_generation != config_gen) {
+    if (!idle || !power_on_ || disconnect_in_flight_ || uep->configure_generation != config_gen) {
       async_completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
       return;
     }
@@ -1579,8 +1625,12 @@ void Dwc3::DisableEndpoint(DisableEndpointRequest& request,
     return;
   }
 
-  EpSetStall(uep->ep, false);
-  EpSetConfig(uep->ep, false);
+  if (!disconnect_in_flight_) {
+    EpSetStall(uep->ep, false);
+    EpSetConfig(uep->ep, false);
+  } else {
+    uep->ep.enabled = false;
+  }
   uep->ep.stalled = false;
 
   completer.Reply(zx::ok());
@@ -1589,7 +1639,7 @@ void Dwc3::DisableEndpoint(DisableEndpointRequest& request,
 void Dwc3::EndpointSetStall(EndpointSetStallRequest& request,
                             EndpointSetStallCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::EndpointSetStall");
-  if (!power_on_) {
+  if (!power_on_ || disconnect_in_flight_) {
     completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
     return;
   }
@@ -1612,7 +1662,7 @@ void Dwc3::EndpointSetStall(EndpointSetStallRequest& request,
 void Dwc3::EndpointClearStall(EndpointClearStallRequest& request,
                               EndpointClearStallCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::EndpointClearStall");
-  if (!power_on_) {
+  if (!power_on_ || disconnect_in_flight_) {
     completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
     return;
   }
@@ -1852,44 +1902,45 @@ void Dwc3::ResetEndpoints(bool force) {
   ResetUserEndpoints(force);
 }
 
+void Dwc3::RearmConnectionWatcher(zx::eventpair setup_wake_lease) {
+  TRACE_DURATION("dwc3", "WatchConnectStatusChanged");
+  if (!connection_watcher_.is_valid()) {
+    return;
+  }
+  connection_watcher_->WatchConnectStatusChanged({std::move(setup_wake_lease)})
+      .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
+}
+
 void Dwc3::OnConnectStatusChanged(
     fidl::Result<fuchsia_hardware_usb_phy::ConnectionWatcher::WatchConnectStatusChanged>& result) {
   TRACE_DURATION("dwc3", "Dwc3::OnConnectStatusChanged");
 
-  if (result.is_error() && result.error_value().is_framework_error()) {
-    // Something happened to the FIDL connection, so don't make repeated calls.
-    return;
-  }
-
-  zx::eventpair wake_lease{};
-  auto next_call = fit::defer([&]() {
-    TRACE_DURATION("dwc3", "WatchConnectStatusChanged");
-    connection_watcher_->WatchConnectStatusChanged({std::move(wake_lease)})
-        .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
-  });
-
-  if (result.is_ok()) {
-    // TODO: b/550476536 to revert this workaround
-    // Workaround: max77779 PMIC does not yet provide wake lease via USB PHY driver on connection
-    // This hack comments the assert message to bypass the same.
-    // ZX_DEBUG_ASSERT_MSG(!config_->enable_suspend() || result->wake_lease().is_valid(),
-    //                    "USB phy driver did not provide a wake lease");
-    wake_lease = std::move(result->wake_lease());
-    // TODO: b/550476536 to revert this workaround
-    // Workaround: max77779 PMIC does not yet provide wake lease via USB PHY driver on connection
-    // This hack forces Dwc3 to generate its own lease to prevent suspends while plugged in.
-    if (result->connected() && !wake_lease.is_valid()) {
-      wake_lease = AcquireWakeLease();
+  if (result.is_error()) {
+    if (result.error_value().is_framework_error()) {
+      // Something happened to the FIDL connection, so don't make repeated calls.
+      return;
     }
-  } else {
     fdf::error("WatchConnectStatusChanged returned {}",
                zx_status_get_string(result.error_value().domain_error()));
     // Best-effort error recovery for domain errors.
-    wake_lease = AcquireWakeLease();
+    RearmConnectionWatcher(AcquireWakeLease());
     return;
   }
 
+  // TODO: b/550476536 to revert this workaround
+  // Workaround: max77779 PMIC does not yet provide wake lease via USB PHY driver on connection
+  // This hack comments the assert message to bypass the same.
+  // ZX_DEBUG_ASSERT_MSG(!config_->enable_suspend() || result->wake_lease().is_valid(),
+  //                    "USB phy driver did not provide a wake lease");
+  zx::eventpair wake_lease = std::move(result->wake_lease());
   const bool connected = result->connected();
+  // TODO: b/550476536 to revert this workaround
+  // Workaround: max77779 PMIC does not yet provide wake lease via USB PHY driver on connection
+  // This hack forces Dwc3 to generate its own lease to prevent suspends while plugged in.
+  if (connected && !wake_lease.is_valid()) {
+    wake_lease = AcquireWakeLease();
+  }
+
   if (connected && wake_lease.is_valid()) {
     zx_status_t status = wake_lease.duplicate(ZX_RIGHT_SAME_RIGHTS, &connection_lease_);
     if (status != ZX_OK) {
@@ -1897,11 +1948,21 @@ void Dwc3::OnConnectStatusChanged(
     }
   }
 
-  ApplyConnectStatusChanged(connected);
+  // Re-arm the hanging get only once this status has been fully applied. For a disconnect that is
+  // after the DCI disconnect has drained and the core has been powered down, so the PHY can take
+  // the next WatchConnectStatusChanged call as the point from which DWC3 no longer touches the
+  // core (and may remove its clocks, resets and power). `wake_lease` keeps the system awake until
+  // then; it is handed back to the PHY as the setup lease of the next call.
+  ApplyConnectStatusChanged(connected, [this, wake_lease = std::move(wake_lease)]() mutable {
+    RearmConnectionWatcher(std::move(wake_lease));
+  });
 }
 
 void Dwc3::ApplyConnectStatusChanged(bool connected, fit::callback<void()> on_done) {
   TRACE_DURATION("dwc3", "Dwc3::ApplyConnectStatusChanged");
+  // Statuses are applied one at a time (see OnConnectStatusChanged()), so a disconnect drain can
+  // never still be in flight when the next status arrives.
+  ZX_DEBUG_ASSERT(!disconnect_in_flight_);
   link_connected_ = connected;
 
   if (connected) {
@@ -1923,18 +1984,20 @@ void Dwc3::ApplyConnectStatusChanged(bool connected, fit::callback<void()> on_do
         metrics_.RecordPlatformExtensionError();
       }
     }
-    if (!power_on_) {
-      if (!platform_extension_ || !platform_extension_->PowersDownCoreOnDisconnect()) {
-        if (zx_status_t status = ResetHw(); status != ZX_OK) {
-          fdf::error("Failed to reset hardware on connect: {}", zx_status_get_string(status));
-          link_connected_ = false;
-          power_on_ = true;
-          PowerDownCore();
-          if (on_done) {
-            on_done();
-          }
-          return;
+    // Unless an external reset controller power-cycled the core on disconnect, the core (and its
+    // register state) survived the disconnect and needs a software reset before restarting.
+    const bool core_stayed_powered =
+        !power_on_ && (!platform_extension_ || !platform_extension_->PowersDownCoreOnDisconnect());
+    if (core_stayed_powered) {
+      if (zx_status_t status = ResetHw(); status != ZX_OK) {
+        fdf::error("Failed to reset hardware on connect: {}", zx_status_get_string(status));
+        link_connected_ = false;
+        power_on_ = true;
+        PowerDownCore();
+        if (on_done) {
+          on_done();
         }
+        return;
       }
     }
     power_on_ = true;
@@ -1946,71 +2009,64 @@ void Dwc3::ApplyConnectStatusChanged(bool connected, fit::callback<void()> on_do
     if (is_active()) {
       StartPeripheralMode();
     }
-  } else {
-    fdf::debug("ApplyConnectStatusChanged: now disconnected");
-    QuiesceCore();
 
-    if (power_on_ && (!platform_extension_ || !platform_extension_->PowersDownCoreOnDisconnect())) {
-      // For platforms that do not power down the core via external reset controller,
-      // perform a software core reset on disconnect while still powered to safely halt
-      // active DMA transfers and deassert level-triggered interrupts.
-      if (zx_status_t status = ResetHw(); status != ZX_OK) {
-        fdf::warn("Failed to reset hardware on disconnect: {}", zx_status_get_string(status));
-      }
-      // As defensive cleanup, ensure event queue is stopped and masked even if
-      // ResetHw() hit an error or timeout before masking GEVNTSIZ.
-      StopEvents();
+    if (dci_intf_.is_valid()) {
+      fidl::Arena arena;
+      dci_intf_.buffer(arena)->SetConnected(true).Then(
+          [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
+                 result) {
+            if (!result.ok()) {
+              fdf::error("(framework) SetConnected(true): {}", result.FormatDescription());
+            } else if (result->is_error()) {
+              fdf::error("SetConnected(true): {}", zx_status_get_string(result->error_value()));
+            }
+          });
     }
-
-    connection_speed_ = fdescriptor::UsbSpeed::kUndefined;
-    if (platform_extension_) {
-      if (zx::result result = platform_extension_->SetConnectionSpeed(connection_speed_);
-          result.is_error()) {
-        fdf::warn("Failed to set connection speed on disconnect: {}", result.status_string());
-        metrics_.RecordPlatformExtensionError();
-      }
+    NotifyPhyConnectStatus(true);
+    if (on_done) {
+      on_done();
     }
-
-    if (power_on_) {
-      if (platform_extension_) {
-        if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
-          fdf::error("platform_extension_->Suspend() failed: {}", result.status_string());
-          metrics_.RecordPlatformExtensionError();
-        }
-      }
-      power_on_ = false;
-      metrics_.RecordEvent("Power Off / Suspend (PHY Suspended)");
-      metrics_.RecordCorePowerDown();
-    }
-
-    SetDeviceState(fpolicy::DeviceState::kNotAttached, 0);
+    return;
   }
 
-  const uint64_t connect_status_generation = ++connect_status_generation_;
-  if (dci_intf_.is_valid()) {
-    fidl::Arena arena;
-    dci_intf_.buffer(arena)->SetConnected(connected).Then(
-        [this, connected, connect_status_generation](
-            fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
-                set_connected_result) {
-          if (!set_connected_result.ok()) {
-            fdf::error("(framework) SetConnected() (ApplyConnectStatusChanged): {}",
-                       set_connected_result.FormatDescription());
-          } else if (set_connected_result->is_error()) {
-            fdf::error("SetConnected(): {}",
-                       zx_status_get_string(set_connected_result->error_value()));
-          }
-          if (!connected && !power_on_ && connect_status_generation == connect_status_generation_) {
-            connection_lease_.reset();
-          }
-        });
-  } else if (!power_on_) {
-    connection_lease_.reset();
+  fdf::debug("ApplyConnectStatusChanged: now disconnected");
+  QuiesceCore();
+
+  if (power_on_ && (!platform_extension_ || !platform_extension_->PowersDownCoreOnDisconnect())) {
+    // For platforms that do not power down the core via external reset controller,
+    // perform a software core reset on disconnect while still powered to safely halt
+    // active DMA transfers and deassert level-triggered interrupts.
+    if (zx_status_t status = ResetHw(); status != ZX_OK) {
+      fdf::warn("Failed to reset hardware on disconnect: {}", zx_status_get_string(status));
+    }
+    // As defensive cleanup, ensure event queue is stopped and masked even if
+    // ResetHw() hit an error or timeout before masking GEVNTSIZ.
+    StopEvents();
   }
-  NotifyPhyConnectStatus(connected);
-  if (on_done) {
-    on_done();
+
+  connection_speed_ = fdescriptor::UsbSpeed::kUndefined;
+  if (platform_extension_) {
+    if (zx::result result = platform_extension_->SetConnectionSpeed(connection_speed_);
+        result.is_error()) {
+      fdf::warn("Failed to set connection speed on disconnect: {}", result.status_string());
+      metrics_.RecordPlatformExtensionError();
+    }
   }
+
+  SetDeviceState(fpolicy::DeviceState::kNotAttached, 0);
+
+  // Keep the core powered until usb-peripheral has unconfigured the function drivers: their
+  // DisableEndpoint calls would otherwise fail with ZX_ERR_IO_NOT_PRESENT against a powered-down
+  // core. Once SetConnected(false) finishes, PowerDownCore() powers off the core and releases the
+  // connection lease; only then is the PHY told the core is disconnected and (via on_done) the
+  // hanging get re-armed, so neither signal can reach the PHY while the core is still in use.
+  NotifyDciDisconnectedThen([this, on_done = std::move(on_done)]() mutable {
+    PowerDownCore();
+    NotifyPhyConnectStatus(false);
+    if (on_done) {
+      on_done();
+    }
+  });
 }
 
 void Dwc3::WatchDeviceState(WatchDeviceStateCompleter::Sync& completer) {

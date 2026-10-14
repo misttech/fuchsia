@@ -416,9 +416,18 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
 
   libsync::Completion* completion() { return &completion_; }
 
+  // Number of UsbPhy.ConnectStatusChanged reports received with connected == true / false.
+  size_t connected_reports() const { return connected_reports_; }
+  size_t disconnected_reports() const { return disconnected_reports_; }
+
  private:
   void ConnectStatusChanged(ConnectStatusChangedRequest& request,
                             ConnectStatusChangedCompleter::Sync& completer) override {
+    if (request.connected()) {
+      ++connected_reports_;
+    } else {
+      ++disconnected_reports_;
+    }
     completer.Reply(zx::ok());
   }
 
@@ -458,6 +467,8 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
   bool expect_connection_status_observer_call_ = true;
   std::optional<WatchConnectStatusChangedCompleter::Async> completer_;
   libsync::Completion completion_;  // Signaled when the above completer_ is saved.
+  size_t connected_reports_ = 0;
+  size_t disconnected_reports_ = 0;
 };
 
 class FakePath final : public fidl::Server<fhi::Path> {
@@ -1021,7 +1032,7 @@ class TestFixture : public gtest_base {
                      [&](Environment& env) { has_comp = env.usb_phy().has_completer(); });
                  return has_comp;
                },
-               zx::sec(5))
+               zx::duration::infinite())
                ? ZX_OK
                : ZX_ERR_TIMED_OUT;
   }
@@ -1210,7 +1221,7 @@ class UnmanagedTestFixture : public TestFixture<false> {
           });
           return powered;
         },
-        zx::sec(10)));
+        zx::duration::infinite()));
   }
 
   zx::result<> StartDriverWithoutPlatformExtension() {

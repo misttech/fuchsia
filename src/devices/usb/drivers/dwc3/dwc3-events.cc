@@ -204,11 +204,12 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
                      const zx_packet_interrupt_t* interrupt) {
   TRACE_DURATION("dwc3", "Dwc3::HandleIrq", "status", status);
 
-  if (!controller_started_ || !power_on_) {
-    // Ack but otherwise ignore interrupts that arrive while client has stopped us or the core is
-    // powered down. If the core is still powered on, ensure event interrupts are masked to
-    // prevent level-triggered interrupts from continuously re-triggering. If power_on_ is false,
-    // MMIO cannot be safely accessed because the core's power domain/clocks may be disabled.
+  if (!controller_started_ || !power_on_ || disconnect_in_flight_) {
+    // Ack but otherwise ignore interrupts that arrive while client has stopped us, while a
+    // disconnect drain is in flight, or while the core is powered down. If the core is still
+    // powered on, ensure event interrupts are masked to prevent level-triggered interrupts from
+    // continuously re-triggering. If power_on_ is false, MMIO cannot be safely accessed because
+    // the core's power domain/clocks may be disabled.
     if (power_on_) {
       auto* mmio = get_mmio();
       GEVNTSIZ::Get(0).ReadFrom(mmio).set_EVNTINTRPTMASK(1).WriteTo(mmio);

@@ -533,7 +533,21 @@ class Dwc3 : public fdf::DriverBase2,
 
   void QuiesceCore();
   void PowerDownCore();
+  // Reports the core state to the PHY over fuchsia.hardware.usb.phy/UsbPhy.ConnectStatusChanged.
+  // `connected = true`: core powered and running (sent at power-up and at SET_CONFIGURATION).
+  // `connected = false`: core quiesced, DCI disconnect drained and powered down (`power_on_` is
+  // false); the PHY may remove the core's clocks, resets and power after this. Only
+  // ApplyConnectStatusChanged() may send `false`.
   void NotifyPhyConnectStatus(bool connected);
+  // Sends UsbDciInterface.SetConnected(false) and invokes `on_done` once usb-peripheral has
+  // replied (synchronously if no DCI interface is bound). `disconnect_in_flight_` is true in
+  // between.
+  void NotifyDciDisconnectedThen(fit::callback<void()> on_done);
+  // Applies a connect status handed over by the PHY: powers the core up/down, (re)starts
+  // peripheral mode and tells the PHY and usb-peripheral about it. For a disconnect this spans the
+  // asynchronous DCI drain; `on_done` runs once the status is fully applied and the PHY has been
+  // informed. Statuses are applied strictly one at a time: OnConnectStatusChanged() does not
+  // re-arm the hanging get until `on_done` runs.
   void ApplyConnectStatusChanged(bool connected, fit::callback<void()> on_done = {});
 
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
@@ -542,6 +556,11 @@ class Dwc3 : public fdf::DriverBase2,
   // OnConnectStatusChanged() is how the phy notifies the dwc3 driver of plug/unplug changes.
   void OnConnectStatusChanged(
       fidl::Result<fuchsia_hardware_usb_phy::ConnectionWatcher::WatchConnectStatusChanged>& result);
+  // Issues the next ConnectionWatcher.WatchConnectStatusChanged hanging get. Only called once the
+  // previously returned status has been fully applied (see ApplyConnectStatusChanged()), so the PHY
+  // may treat a parked hanging get that follows a disconnect as "DWC3 no longer touches the core".
+  // `setup_wake_lease` is handed back to the PHY to keep the system awake across the hand-over.
+  void RearmConnectionWatcher(zx::eventpair setup_wake_lease);
 
   fdf::PDev pdev_;
 
@@ -562,8 +581,9 @@ class Dwc3 : public fdf::DriverBase2,
   bool power_on_{true};
   bool link_connected_{false};
 
-  // Returns true if PHY power is on and the controller has been started by the client.
-  bool is_active() const { return power_on_ && controller_started_; }
+  // Returns true if PHY power is on, the controller has been started by the client, and no
+  // disconnect drain is in flight.
+  bool is_active() const { return power_on_ && controller_started_ && !disconnect_in_flight_; }
   fuchsia_hardware_usb_descriptor::UsbSpeed connection_speed() const { return connection_speed_; }
 
   // True if the EndTransfer core command can be polled via CmdAct instead of waiting on a
@@ -583,7 +603,10 @@ class Dwc3 : public fdf::DriverBase2,
   fidl::Client<fuchsia_hardware_usb_phy::UsbPhy> phy_;
   fidl::Client<fuchsia_hardware_usb_phy::ConnectionWatcher> connection_watcher_;
   zx::eventpair connection_lease_;
-  uint64_t connect_status_generation_{0};
+  // True while UsbDciInterface.SetConnected(false) is being drained by usb-peripheral: the core is
+  // kept powered only so function drivers can disable their endpoints.
+  bool disconnect_in_flight_{false};
+  bool stopping_{false};
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> dci_bindings_;
   fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;
