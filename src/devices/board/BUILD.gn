@@ -9,7 +9,6 @@ group("drivers") {
     "drivers/astro/post-init",
     "drivers/crosvm:package",
     "drivers/integration-test",
-    "drivers/machina",
     "drivers/nelson",
     "drivers/nelson/post-init",
     "drivers/qemu-arm64",
