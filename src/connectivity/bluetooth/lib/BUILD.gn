@@ -36,7 +36,6 @@ group("tests") {
     "battery-client:tests",
     "bt-a2dp:tests",
     "bt-avdtp:tests",
-    "bt-avrcp-vol-control:tests",
     "bt-fidl-mocks:tests",
     "bt-gatt-fuchsia:tests",
     "bt-hfp:tests",
