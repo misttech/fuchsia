@@ -275,19 +275,14 @@ unsafe extern "C" {
         process: *const ProcessDispatcher,
     ) -> usize;
 
-    /// Grows the futex state pool of `process`.
+    /// Returns a pointer to the `FutexContext` of `process`.
     ///
     /// # Safety
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
-    pub(crate) fn cpp_process_futex_grow_pool(process: *const ProcessDispatcher) -> zx_status_t;
-
-    /// Shrinks the futex state pool of `process`.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher`.
-    pub(crate) fn cpp_process_futex_shrink_pool(process: *const ProcessDispatcher) -> zx_status_t;
+    pub(crate) fn cpp_process_dispatcher_futex_context(
+        process: *const ProcessDispatcher,
+    ) -> *mut core::ffi::c_void;
 
     /// Attaches the normal address space of `process` to `core_thread`.
     ///

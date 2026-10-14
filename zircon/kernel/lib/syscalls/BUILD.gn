@@ -34,7 +34,6 @@ source_set("impl") {
   visibility = [ ":*" ]
   sources = [
     "driver.cc",
-    "futex.cc",
     "handle_ops.cc",
     "membarrier_ffi.cc",
     "object.cc",
@@ -123,6 +122,7 @@ kernel_rust_mod("syscalls-rs") {
     "event.rs",
     "exceptions.rs",
     "fifo.rs",
+    "futex.rs",
     "guest.rs",
     "interrupt.rs",
     "iob.rs",

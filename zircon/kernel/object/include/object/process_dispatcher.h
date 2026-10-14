@@ -94,8 +94,7 @@ uintptr_t cpp_process_dispatcher_vdso_base_address(const ProcessDispatcher* proc
 #if ARCH_X86
 uintptr_t cpp_process_dispatcher_hw_trace_context_id(const ProcessDispatcher* process);
 #endif
-zx_status_t cpp_process_futex_grow_pool(ProcessDispatcher* process);
-zx_status_t cpp_process_futex_shrink_pool(ProcessDispatcher* process);
+void* cpp_process_dispatcher_futex_context(const ProcessDispatcher* process);
 zx_status_t cpp_process_attach_aspace_to_thread(ProcessDispatcher* process, Thread* core_thread);
 zx_koid_t cpp_process_get_job_koid(const ProcessDispatcher* process);
 zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process, ThreadDispatcher* thread,

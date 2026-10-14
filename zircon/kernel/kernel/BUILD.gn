@@ -361,6 +361,7 @@ kernel_rust_mod("kernel-rs") {
     "idle_power_thread.rs",
     "interrupt.rs",
     "koid.rs",
+    "lock_trace.rs",
     "mod.rs",
     "mp.rs",
     "owned_wait_queue.rs",

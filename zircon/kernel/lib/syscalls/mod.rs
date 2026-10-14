@@ -18,6 +18,7 @@ mod debuglog;
 mod event;
 mod exceptions;
 mod fifo;
+mod futex;
 mod guest;
 mod interrupt;
 mod iob;

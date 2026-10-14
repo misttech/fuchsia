@@ -305,6 +305,9 @@ variant("kernel_config") {
   if (lock_name_tracing_enabled) {
     rustflags += [ "--cfg=lock_name_tracing_enabled" ]
   }
+  if (futex_block_tracing_enabled) {
+    rustflags += [ "--cfg=futex_block_tracing_enabled" ]
+  }
 
   if (kernel_extra_defines + [
         "ENABLE_ENTROPY_COLLECTOR_TEST=1",

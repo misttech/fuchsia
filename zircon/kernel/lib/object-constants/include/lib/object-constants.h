@@ -209,4 +209,8 @@ constexpr size_t kInterruptDispatcherStateOffset = 56;
 constexpr size_t kPortInterruptPacketSize = 32;
 constexpr size_t kPortInterruptPacketAlign = 8;
 
+// Size and alignment for FutexContext (Rust state).
+constexpr size_t kFutexContextStorageSize = 56;
+constexpr size_t kFutexContextStorageAlign = 8;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

@@ -15,8 +15,9 @@ use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_aspace_at, cpp_process_dispatcher_create,
     cpp_process_dispatcher_create_shared, cpp_process_dispatcher_current,
     cpp_process_dispatcher_enforce_basic_policy, cpp_process_dispatcher_exit_current,
-    cpp_process_dispatcher_get_debug_addr, cpp_process_dispatcher_get_dyn_break_on_load,
-    cpp_process_dispatcher_get_info, cpp_process_dispatcher_get_timer_slack_policy,
+    cpp_process_dispatcher_futex_context, cpp_process_dispatcher_get_debug_addr,
+    cpp_process_dispatcher_get_dyn_break_on_load, cpp_process_dispatcher_get_info,
+    cpp_process_dispatcher_get_timer_slack_policy,
     cpp_process_dispatcher_get_timer_slack_policy_amount, cpp_process_dispatcher_handle_table,
     cpp_process_dispatcher_is_current, cpp_process_dispatcher_job, cpp_process_dispatcher_kill,
     cpp_process_dispatcher_make_and_add_handle,
@@ -24,8 +25,7 @@ use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_set_critical_to_job, cpp_process_dispatcher_set_debug_addr,
     cpp_process_dispatcher_set_dyn_break_on_load, cpp_process_dispatcher_start,
     cpp_process_dispatcher_suspend, cpp_process_dispatcher_vdso_base_address,
-    cpp_process_futex_grow_pool, cpp_process_futex_shrink_pool, cpp_process_get_job_koid,
-    cpp_process_remove_thread,
+    cpp_process_get_job_koid, cpp_process_remove_thread,
 };
 use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
@@ -454,18 +454,25 @@ impl ProcessDispatcher {
         self.as_ffi() as *mut Self
     }
 
+    /// Returns a reference to the [`FutexContext`](super::futex_context::FutexContext) for this
+    /// process.
+    #[inline]
+    pub fn futex_context(&self) -> &super::futex_context::FutexContext {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference, and
+        // `cpp_process_dispatcher_futex_context` returns a pointer to the initialized
+        // `FutexContext` storage owned by `shareable_state_`.
+        unsafe { &*cpp_process_dispatcher_futex_context(self.as_ffi()).cast() }
+    }
+
     /// Grows the futex state pool for this process.
     pub fn futex_context_grow_pool(&self) -> Result<(), Status> {
-        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
-        let status = unsafe { cpp_process_futex_grow_pool(self.as_ffi()) };
-        Status::ok(status)
+        self.futex_context().grow_futex_state_pool()
     }
 
     /// Shrinks the futex state pool for this process.
     pub fn futex_context_shrink_pool(&self) -> Result<(), Status> {
-        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
-        let status = unsafe { cpp_process_futex_shrink_pool(self.as_ffi()) };
-        Status::ok(status)
+        self.futex_context().shrink_futex_state_pool();
+        Ok(())
     }
 
     /// Attaches the normal address space of this process to `core_thread`.

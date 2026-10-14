@@ -10,6 +10,19 @@ use arch_arm64_vm_bindings as vm_bindings;
 pub(crate) const USER_BIT_MASK: usize = 0x0080_0000_0000_0000;
 zr::static_assert!(USER_BIT_MASK == vm_bindings::kUserBitMask as usize);
 
+/// Mask of the top byte of a virtual address, which is ignored by the MMU (Top Byte Ignore).
+pub(crate) const TBI_MASK: usize = 0xff00_0000_0000_0000;
+zr::static_assert!(TBI_MASK == vm_bindings::kTbiMask as usize);
+
+/// Removes the tag (top byte) from a possibly tagged pointer value.
+///
+/// As per RFC 143 (Userspace Top-Byte-Ignore), tagged user pointers are treated the same as their
+/// untagged equivalents.
+#[inline]
+pub const fn detag_ptr(ptr: usize) -> usize {
+    ptr & !TBI_MASK
+}
+
 /// Check if a virtual address is accessible to user space on aarch64.
 ///
 /// [arm/v8]: D5.2.6 Virtual address splits / TTBR0_EL1 selection bit (VA[55] == 0).

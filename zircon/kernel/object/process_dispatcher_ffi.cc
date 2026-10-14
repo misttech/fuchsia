@@ -146,14 +146,8 @@ FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_set_critical_to_job(Process
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_process_futex_grow_pool(ProcessDispatcher* process) {
-  return process->futex_context().GrowFutexStatePool();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_process_futex_shrink_pool(ProcessDispatcher* process) {
-  process->futex_context().ShrinkFutexStatePool();
-  return ZX_OK;
+FFI_ALWAYS_INLINE void* cpp_process_dispatcher_futex_context(const ProcessDispatcher* process) {
+  return const_cast<ProcessDispatcher*>(process)->futex_context().get();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

@@ -11,6 +11,7 @@ pub mod event;
 pub mod idle_power_thread;
 pub mod interrupt;
 pub mod koid;
+pub mod lock_trace;
 pub mod mp;
 pub mod owned_wait_queue;
 pub mod percpu;
