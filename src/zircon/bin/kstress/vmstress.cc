@@ -1605,6 +1605,7 @@ class MultiVmoTestInstance : public TestInstance {
           }
           if (uniform_rand(4, rng)) {
             options |= ZX_VMO_CHILD_NO_WRITE;
+            child_reliable_mappings = false;
           }
           zx::vmo child;
           if (vmo.create_child(options, op_off, op_size, &child) == ZX_OK) {
@@ -1618,13 +1619,20 @@ class MultiVmoTestInstance : public TestInstance {
         case 61 ... 70: {  // vmar_map/unmap
           Printf("V");
           if (!mapping.has_value() || uniform_rand(2, rng) == 0) {
-            uint32_t options = ZX_VM_PERM_READ | ZX_VM_PERM_WRITE;
+            zx_info_vmo_t info;
+            ZX_ASSERT(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr) == ZX_OK);
+
+            uint32_t options = ZX_VM_PERM_READ;
+            if ((info.handle_rights & ZX_RIGHT_WRITE) &&
+                (reliable_mappings || uniform_rand(2, rng) == 0)) {
+              options |= ZX_VM_PERM_WRITE;
+            } else {
+              reliable_mappings = false;
+            }
             if (uniform_rand(2, rng) == 0) {
               options |= ZX_VM_MAP_RANGE;
             }
 
-            zx_info_vmo_t info;
-            ZX_ASSERT(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr) == ZX_OK);
             if (info.flags & ZX_INFO_VMO_PAGER_BACKED && !(info.flags & ZX_INFO_VMO_CONTIGUOUS) &&
                 uniform_rand(12, rng) == 0) {
               options |= ZX_VM_FAULT_BEYOND_STREAM_SIZE;
@@ -1751,14 +1759,47 @@ class MultiVmoTestInstance : public TestInstance {
           }
           break;
         }
-        case 161 ... 170: {  // set_stream_size
+        case 161 ... 170: {  // stream_size and object info queries
           Printf("s");
           if (!is_contiguous_) {
-            size_t vmo_size;
-            vmo.get_size(&vmo_size);
-            // Trim VMO size to kMaxVmoSize, in case VMO is unbounded.
-            vmo_size = (vmo_size <= kMaxVmoSize) ? vmo_size : kMaxVmoSize;
-            vmo.set_stream_size(uniform_rand(vmo_size, rng));
+            size_t curr_size = 0;
+            if (vmo.get_size(&curr_size) == ZX_OK) {
+              // Trim VMO size to kMaxVmoSize, in case VMO is unbounded.
+              curr_size = (curr_size <= kMaxVmoSize) ? curr_size : kMaxVmoSize;
+              if (uniform_rand(2, rng) == 0) {
+                vmo.set_stream_size(uniform_rand(curr_size, rng));
+              } else {
+                uint64_t stream_size = 0;
+                vmo.get_stream_size(&stream_size);
+              }
+            }
+          }
+          // Also exercise concurrent object info and attribution queries.
+          switch (uniform_rand(4, rng)) {
+            case 0: {
+              zx_info_vmo_t info;
+              vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr);
+              break;
+            }
+            case 1: {
+              zx_info_vmar_t vmar_info;
+              zx::vmar::root_self()->get_info(ZX_INFO_VMAR, &vmar_info, sizeof(vmar_info), nullptr,
+                                              nullptr);
+              break;
+            }
+            case 2: {
+              zx_info_maps_t maps[16];
+              size_t actual = 0, avail = 0;
+              zx::vmar::root_self()->get_info(ZX_INFO_VMAR_MAPS, maps, sizeof(maps), &actual,
+                                              &avail);
+              break;
+            }
+            case 3: {
+              zx_info_task_stats_t task_stats;
+              zx::process::self()->get_info(ZX_INFO_TASK_STATS, &task_stats, sizeof(task_stats),
+                                            nullptr, nullptr);
+              break;
+            }
           }
           break;
         }
