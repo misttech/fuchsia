@@ -59,6 +59,7 @@ inline std::ostream& operator<<(std::ostream& os, const UsbPeripheral::DeviceSta
 namespace usb_peripheral::test {
 
 using inspect::testing::BoolIs;
+using inspect::testing::IntIs;
 using inspect::testing::NameMatches;
 using inspect::testing::NodeMatches;
 using inspect::testing::PropertyList;

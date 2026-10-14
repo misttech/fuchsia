@@ -62,7 +62,7 @@ void EndpointInspect::Init(inspect::Node& parent, const std::string& name, size_
   max_bytes_per_second_ = 0;
   cancelled_ = false;
 
-  last_total_bytes_val_ = 0;
+  last_total_bytes_val_.store(0, std::memory_order_relaxed);
 
   // Create the pure lazy node!
   lazy_node_ = parent.CreateLazyNode(name, [this]() {
@@ -80,10 +80,10 @@ void EndpointInspect::Init(inspect::Node& parent, const std::string& name, size_
     root.CreateUint("rx_pending_processing", rx_pending_processing_, &inspector);
     root.CreateUint("total_bytes_tx", cur_tx, &inspector);
     root.CreateUint("total_bytes_rx", cur_rx, &inspector);
-    if (uint64_t failed_tx = failed_bytes_tx_; failed_tx > 0) {
+    if (uint64_t failed_tx = failed_bytes_tx_.load(std::memory_order_relaxed); failed_tx > 0) {
       root.CreateUint("failed_bytes_tx", failed_tx, &inspector);
     }
-    if (uint64_t failed_rx = failed_bytes_rx_; failed_rx > 0) {
+    if (uint64_t failed_rx = failed_bytes_rx_.load(std::memory_order_relaxed); failed_rx > 0) {
       root.CreateUint("failed_bytes_rx", failed_rx, &inspector);
     }
     root.CreateUint("max_bytes_per_second", cur_max_rate, &inspector);
@@ -128,18 +128,18 @@ void EndpointInspect::Init(inspect::Node& parent, const std::string& name, size_
 }
 
 void EndpointInspect::MeasureThroughput(zx::duration elapsed) {
-  uint64_t total_bytes = total_bytes_tx_ + total_bytes_rx_;
-  uint64_t last_val = last_total_bytes_val_;
-  uint64_t delta = total_bytes - last_val;
-  last_total_bytes_val_ = total_bytes;
+  uint64_t total_bytes = total_bytes_tx_.load(std::memory_order_relaxed) +
+                         total_bytes_rx_.load(std::memory_order_relaxed);
+  uint64_t last_val = last_total_bytes_val_.exchange(total_bytes, std::memory_order_relaxed);
+  uint64_t delta = total_bytes >= last_val ? total_bytes - last_val : 0;
 
   int64_t elapsed_ns = elapsed.to_nsecs();
   if (elapsed_ns > 0) {
     uint64_t rate =
         static_cast<uint64_t>((static_cast<unsigned __int128>(delta) * 1'000'000'000) / elapsed_ns);
-    uint64_t max_rate = max_bytes_per_second_;
-    if (rate > max_rate) {
-      max_bytes_per_second_ = rate;
+    uint64_t max_rate = max_bytes_per_second_.load(std::memory_order_relaxed);
+    while (rate > max_rate && !max_bytes_per_second_.compare_exchange_weak(
+                                  max_rate, rate, std::memory_order_relaxed)) {
     }
   }
 }
@@ -212,6 +212,11 @@ void DciInspect::Init(inspect::Node& parent, const std::string& name, size_t ctr
     connected_ = false;
     speed_ = "undefined";
     usb_mode_ = "unknown";
+    connect_count_ = 0;
+    disconnect_count_ = 0;
+    set_configuration_count_ = 0;
+    last_connect_time_ns_ = 0;
+    last_disconnect_time_ns_ = 0;
   }
 
   // Create the pure lazy node!
@@ -224,6 +229,11 @@ void DciInspect::Init(inspect::Node& parent, const std::string& name, size_t ctr
     root.CreateBool("connected", connected_, &inspector);
     root.CreateString("speed", speed_, &inspector);
     root.CreateString("usb_mode", usb_mode_, &inspector);
+    root.CreateUint("connect_count", connect_count_, &inspector);
+    root.CreateUint("disconnect_count", disconnect_count_, &inspector);
+    root.CreateUint("set_configuration_count", set_configuration_count_, &inspector);
+    root.CreateInt("last_connect_time_ns", last_connect_time_ns_, &inspector);
+    root.CreateInt("last_disconnect_time_ns", last_disconnect_time_ns_, &inspector);
 
     if (!event_history_.empty()) {
       auto event_node = root.CreateChild("event_history");
@@ -264,10 +274,35 @@ void DciInspect::UpdateState(const std::string& state) {
   state_ = state;
 }
 
+void DciInspect::UpdateSpeed(usb_speed_t speed) {
+  std::lock_guard<std::mutex> _(lock_);
+  speed_ = SpeedToString(speed);
+}
+
 void DciInspect::UpdateConnectionStatus(bool connected, usb_speed_t speed) {
   std::lock_guard<std::mutex> _(lock_);
+  if (connected && !connected_) {
+    connect_count_++;
+    last_connect_time_ns_ = zx_clock_get_boot();
+  } else if (!connected && connected_) {
+    disconnect_count_++;
+    last_disconnect_time_ns_ = zx_clock_get_boot();
+  }
   connected_ = connected;
   speed_ = SpeedToString(speed);
+}
+
+void DciInspect::RecordSetConfiguration(uint8_t config) {
+  const std::string event = std::format("configuration set: {}", config);
+  std::lock_guard<std::mutex> _(lock_);
+  set_configuration_count_++;
+  if (event_history_capacity_ > 0) {
+    if (event_history_.size() >= event_history_capacity_) {
+      event_history_.pop_front();
+    }
+    event_history_.push_back(EventLogEntry{zx_clock_get_boot(), event});
+    event_history_index_++;
+  }
 }
 
 void DciInspect::UpdateUsbMode(UsbMode usb_mode) {
@@ -330,6 +365,7 @@ void FunctionInspect::Init(inspect::Node& parent, const std::string& name, uint8
     interface_class_ = 0;
     interface_subclass_ = 0;
     interface_protocol_ = 0;
+    descriptors_.clear();
   }
 
   lazy_node_ = parent.CreateLazyNode(name, [this]() {

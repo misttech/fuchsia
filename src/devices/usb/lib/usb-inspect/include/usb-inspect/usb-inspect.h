@@ -154,9 +154,9 @@ class DciInspect {
   // headroom over the 20 control transfers generated during a typical host enumeration
   // and USB function initialization sequence.
   static constexpr size_t kDefaultControlTransferCapacity = 30;
-  // Default capacity for event log history. Set to 40, which is enough to hold ~4
-  // complete cable plug/unplug and endpoint configuration cycles (~10 events per cycle).
-  static constexpr size_t kDefaultEventCapacity = 40;
+  // Default capacity for event log history. Set to 128 to capture multiple
+  // complete cable plug/unplug and endpoint configuration cycles without eviction.
+  static constexpr size_t kDefaultEventCapacity = 128;
 
   DciInspect() = default;
 
@@ -177,11 +177,34 @@ class DciInspect {
             size_t event_capacity = kDefaultEventCapacity);
 
   void UpdateState(const std::string& state);
+  void UpdateSpeed(usb_speed_t speed);
   void UpdateConnectionStatus(bool connected, usb_speed_t speed);
   void UpdateUsbMode(UsbMode usb_mode);
 
   void RecordEvent(const std::string& event_name);
+  void RecordSetConfiguration(uint8_t config);
   void RecordControlTransfer(const ControlTransferInfo& info);
+
+  uint64_t connect_count() const __TA_EXCLUDES(lock_) {
+    std::scoped_lock _(lock_);
+    return connect_count_;
+  }
+  uint64_t disconnect_count() const __TA_EXCLUDES(lock_) {
+    std::scoped_lock _(lock_);
+    return disconnect_count_;
+  }
+  uint64_t set_configuration_count() const __TA_EXCLUDES(lock_) {
+    std::scoped_lock _(lock_);
+    return set_configuration_count_;
+  }
+  int64_t last_connect_time_ns() const __TA_EXCLUDES(lock_) {
+    std::scoped_lock _(lock_);
+    return last_connect_time_ns_;
+  }
+  int64_t last_disconnect_time_ns() const __TA_EXCLUDES(lock_) {
+    std::scoped_lock _(lock_);
+    return last_disconnect_time_ns_;
+  }
 
  private:
   struct EventLogEntry {
@@ -206,6 +229,12 @@ class DciInspect {
   bool connected_ __TA_GUARDED(lock_) = false;
   std::string speed_ __TA_GUARDED(lock_) = "undefined";
   std::string usb_mode_ __TA_GUARDED(lock_) = "unknown";
+
+  uint64_t connect_count_ __TA_GUARDED(lock_) = 0;
+  uint64_t disconnect_count_ __TA_GUARDED(lock_) = 0;
+  uint64_t set_configuration_count_ __TA_GUARDED(lock_) = 0;
+  int64_t last_connect_time_ns_ __TA_GUARDED(lock_) = 0;
+  int64_t last_disconnect_time_ns_ __TA_GUARDED(lock_) = 0;
 
   std::deque<EventLogEntry> event_history_ __TA_GUARDED(lock_);
   size_t event_history_capacity_ = kDefaultEventCapacity;
@@ -243,7 +272,6 @@ class FunctionInspect {
   };
 
   mutable std::mutex lock_;
-
   uint8_t index_ __TA_GUARDED(lock_) = 0;
   uint8_t configuration_ __TA_GUARDED(lock_) = 0;
   bool configured_ __TA_GUARDED(lock_) = false;

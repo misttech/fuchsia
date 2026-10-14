@@ -74,17 +74,23 @@ TEST_F(UsbInspectTest, TestDciInspect) {
   dci.Init(inspector.GetRoot(), "dci_test");
   dci.UpdateState("kPeripheralReady");
   dci.UpdateConnectionStatus(true, USB_SPEED_SUPER);
+  dci.UpdateSpeed(USB_SPEED_HIGH);
   dci.UpdateUsbMode(UsbMode::kPeripheral);
+
+  dci.RecordSetConfiguration(1);
 
   auto hierarchy = ReadInspect(inspector);
 
   auto* dci_node = hierarchy.GetByPath({"dci_test"});
   ASSERT_THAT(dci_node, ::testing::NotNull());
 
-  EXPECT_THAT(dci_node->node(),
-              PropertyList(::testing::UnorderedElementsAre(
-                  StringIs("state", "kPeripheralReady"), BoolIs("connected", true),
-                  StringIs("speed", "super"), StringIs("usb_mode", "PERIPHERAL"))));
+  EXPECT_THAT(
+      dci_node->node(),
+      PropertyList(::testing::UnorderedElementsAre(
+          StringIs("state", "kPeripheralReady"), BoolIs("connected", true),
+          StringIs("speed", "high"), StringIs("usb_mode", "PERIPHERAL"), UintIs("connect_count", 1),
+          UintIs("disconnect_count", 0), UintIs("set_configuration_count", 1),
+          IntIs("last_connect_time_ns", ::testing::_), IntIs("last_disconnect_time_ns", 0))));
 }
 
 TEST_F(UsbInspectTest, TestFunctionInspect) {

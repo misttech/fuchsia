@@ -67,11 +67,7 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
     // Which also means that we need to close our connection with the function
     // interface to make sure that resources are not used after they've been
     // released.
-    if (self->function_intf_.is_valid()) {
-      self->function_intf_.AsyncTeardown();
-      self->function_intf_ = {};
-    }
-
+    self->CloseFunctionInterface();
     self->peripheral_->ReleaseResources(self->index_);
   });
 
@@ -185,6 +181,7 @@ UsbFunction::~UsbFunction() {
     }
   }
   function_intf_ = {};
+  registered_.store(false, std::memory_order_relaxed);
   CompletePendingUnconfigures(ZX_OK);
 }
 
@@ -404,7 +401,7 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
   }
 
   memcpy(descriptors, request.configuration().data(), length);
-  num_interfaces_ = 0;
+  num_interfaces_.store(0, std::memory_order_relaxed);
 
   zx::result validate_result = peripheral_->ValidateFunction(index_, descriptors, length);
   if (validate_result.is_error()) {
@@ -413,12 +410,13 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
     completer.Reply(fit::as_error(validate_result.error_value()));
     return;
   }
-  num_interfaces_ = validate_result.value();
+  num_interfaces_.store(validate_result.value(), std::memory_order_relaxed);
 
   SetDescriptors(descriptors, length);
   const uint64_t bind_gen = ++bind_generation_;
   function_intf_.Bind(std::move(request.iface()), dispatcher_,
                       std::make_unique<FunctionEventHandler>(this, bind_gen));
+  registered_.store(true, std::memory_order_relaxed);
   state_ = FunctionState::kBound;
   zx_status_t status = peripheral_->FunctionRegistered();
 
@@ -426,6 +424,7 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
     completer.Reply(fit::as_error(status));
     fdf::error("FunctionRegistered failed: {}", zx_status_get_string(status));
     function_intf_ = {};
+    registered_.store(false, std::memory_order_relaxed);
     state_ = FunctionState::kWaitingForBind;
     ClearDescriptors();
     return;
@@ -451,19 +450,14 @@ void UsbFunction::Deconfigure(DeconfigureCompleter::Sync& completer) {
 }
 
 void UsbFunction::FunctionEventHandler::on_fidl_error(fidl::UnbindInfo info) {
-  switch (info.status()) {
-    case ZX_ERR_PEER_CLOSED:
-    case ZX_OK:
-    case ZX_ERR_CANCELED:
-      if (std::shared_ptr parent = parent_.lock();
-          parent && parent->bind_generation_ == bind_generation_) {
-        parent->CloseFunctionInterface();
-      }
-      break;
-    default:
-      fdf::error("Unexpected FIDL error on function interface: {}",
-                 zx_status_get_string(info.status()));
-      return;
+  if (info.status() != ZX_ERR_PEER_CLOSED && info.status() != ZX_OK &&
+      info.status() != ZX_ERR_CANCELED) {
+    fdf::error("Unexpected FIDL error on function interface: {}",
+               zx_status_get_string(info.status()));
+  }
+  if (std::shared_ptr parent = parent_.lock();
+      parent && parent->bind_generation_ == bind_generation_) {
+    parent->CloseFunctionInterface();
   }
 }
 
@@ -481,6 +475,18 @@ UsbFunction::FunctionEventHandler::~FunctionEventHandler() {
 
 void UsbFunction::CompletePendingUnconfigures(zx_status_t status) {
   ++rpc_generation_;
+  configured_.store(false, std::memory_order_relaxed);
+  if (unconfigure_in_flight_.exchange(false, std::memory_order_relaxed)) {
+    const zx_time_t start =
+        unconfigure_start_time_.exchange(ZX_TIME_INFINITE_PAST, std::memory_order_relaxed);
+    if (start != ZX_TIME_INFINITE_PAST) {
+      zx::duration duration = zx::clock::get_boot() - zx::time_boot(start);
+      last_unconfigure_duration_ns_.store(duration.to_nsecs(), std::memory_order_relaxed);
+    }
+    if (status != ZX_OK) {
+      unconfigure_error_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
   if (state_ != FunctionState::kCleared) {
     state_ =
         function_intf_.is_valid() ? FunctionState::kUnconfigured : FunctionState::kWaitingForBind;
@@ -520,6 +526,8 @@ void UsbFunction::CloseFunctionInterface() {
   }
   ++bind_generation_;
   function_intf_ = {};
+  registered_.store(false, std::memory_order_relaxed);
+  configured_.store(false, std::memory_order_relaxed);
   ClearDescriptors();
   inspect_.UpdateConfiguration(0, false);
   CompletePendingUnconfigures(ZX_OK);
@@ -573,6 +581,9 @@ void UsbFunction::OnNodeControllerUnbound(fidl::UnbindInfo info) {
 }
 
 void UsbFunction::StartUnconfigure(fdescriptor::wire::UsbSpeed fspeed) {
+  configured_.store(false, std::memory_order_relaxed);
+  unconfigure_start_time_.store(zx::clock::get_boot().get(), std::memory_order_relaxed);
+  unconfigure_in_flight_.store(true, std::memory_order_relaxed);
   state_ = FunctionState::kUnconfiguring;
   const uint64_t generation = ++rpc_generation_;
   fit::callback<void(zx_status_t)> canceled_active_configure =
@@ -635,6 +646,7 @@ void UsbFunction::SendSetConfiguredTrue(fdescriptor::wire::UsbSpeed fspeed,
         if (!result.ok()) {
           fdf::error("UsbFunctionInterface.SetConfigured FIDL call failed: {}",
                      result.FormatDescription());
+          self->configured_.store(false, std::memory_order_relaxed);
           self->state_ = self->function_intf_.is_valid() ? FunctionState::kUnconfigured
                                                          : FunctionState::kWaitingForBind;
           if (completer) {
@@ -645,6 +657,7 @@ void UsbFunction::SendSetConfiguredTrue(fdescriptor::wire::UsbSpeed fspeed,
         if (result->is_error()) {
           fdf::error("UsbFunctionInterface.SetConfigured error: {}",
                      zx_status_get_string(result->error_value()));
+          self->configured_.store(false, std::memory_order_relaxed);
           self->state_ = self->function_intf_.is_valid() ? FunctionState::kUnconfigured
                                                          : FunctionState::kWaitingForBind;
           if (completer) {
@@ -652,6 +665,7 @@ void UsbFunction::SendSetConfiguredTrue(fdescriptor::wire::UsbSpeed fspeed,
           }
           return;
         }
+        self->configured_.store(true, std::memory_order_relaxed);
         self->state_ = FunctionState::kConfigured;
         self->inspect_.UpdateConfiguration(self->configuration_ + 1, true);
         if (completer) {
@@ -849,6 +863,7 @@ void UsbFunction::SetDescriptors(uint8_t* descriptors, size_t length) {
 
 void UsbFunction::ClearDescriptors() {
   descriptors_.reset();
+  num_interfaces_.store(0, std::memory_order_relaxed);
   inspect_.SetDescriptors({});
 }
 

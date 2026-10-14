@@ -14,6 +14,7 @@
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/trace/event.h>
 
+#include <atomic>
 #include <format>
 
 #include <fbl/array.h>
@@ -110,7 +111,9 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
     return function_descriptor_;
   }
 
-  inline uint8_t GetNumInterfaces() const { return num_interfaces_; }
+  inline uint8_t GetNumInterfaces() const {
+    return num_interfaces_.load(std::memory_order_relaxed);
+  }
 
   // Returns all endpoint addresses associated with the given interface and alternate setting
   // by parsing the function's descriptors. Returns std::nullopt if the function has no descriptors
@@ -138,6 +141,21 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
                         const std::shared_ptr<fdf::Namespace>& incoming,
                         const std::shared_ptr<fdf::OutgoingDirectory>& outgoing);
   bool registered() const { return function_intf_.is_valid(); }
+  bool is_registered_for_inspect() const { return registered_.load(std::memory_order_relaxed); }
+  uint8_t num_interfaces() const { return num_interfaces_.load(std::memory_order_relaxed); }
+  bool is_configured() const {
+    return configured_.load(std::memory_order_relaxed) &&
+           !unconfigure_in_flight_.load(std::memory_order_relaxed);
+  }
+  bool is_unconfigure_in_flight() const {
+    return unconfigure_in_flight_.load(std::memory_order_relaxed);
+  }
+  int64_t last_unconfigure_duration_ns() const {
+    return last_unconfigure_duration_ns_.load(std::memory_order_relaxed);
+  }
+  uint64_t unconfigure_error_count() const {
+    return unconfigure_error_count_.load(std::memory_order_relaxed);
+  }
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbFunction);
@@ -231,7 +249,7 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
   fidl::WireSharedClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_intf_;
   const fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor function_descriptor_;
 
-  uint8_t num_interfaces_ = 0;
+  std::atomic<uint8_t> num_interfaces_{0};
   fbl::Array<uint8_t> descriptors_;
 
   async_dispatcher_t* dispatcher_;
@@ -244,8 +262,16 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
       serial_number_metadata_server_;
   std::optional<DeconfigureCompleter::Async> deconfigure_completer_;
   std::shared_ptr<fdf::OutgoingDirectory> outgoing_;
-  usb_inspect::FunctionInspect inspect_;
   std::string name_;
+
+  std::atomic<bool> registered_{false};
+  std::atomic<bool> configured_{false};
+  std::atomic<bool> unconfigure_in_flight_{false};
+  std::atomic<zx_time_t> unconfigure_start_time_{ZX_TIME_INFINITE_PAST};
+  std::atomic<int64_t> last_unconfigure_duration_ns_{0};
+  std::atomic<uint64_t> unconfigure_error_count_{0};
+
+  usb_inspect::FunctionInspect inspect_;
 };
 
 }  // namespace usb_peripheral

@@ -388,7 +388,8 @@ class UsbPeripheral : public fdf::DriverBase2,
   }
 
   // Returns the index of the function that was added.
-  zx::result<size_t> AddFunction(UsbConfiguration& config, FunctionDescriptor desc);
+  zx::result<size_t> AddFunction(UsbConfiguration& config, FunctionDescriptor desc)
+      __TA_REQUIRES(lock_);
   // Begins the process of clearing the functions. If provided, `callback` is invoked once all
   // function child nodes have been removed and `functions_` is empty. If `stopping_driver` is true,
   // transitions to `kStoppingDriver` atomically under `lock_`.
@@ -473,7 +474,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   // bound as a FIDL server which requires that the instance always be at the
   // same memory address and so we can generate weak pointers for lambda
   // captures for the function FIDL client.
-  std::vector<std::shared_ptr<UsbFunction>> functions_;
+  std::vector<std::shared_ptr<UsbFunction>> functions_ __TA_GUARDED(lock_);
 
   fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci_;
   struct DciSupportedEndpointInfo {
@@ -485,8 +486,8 @@ class UsbPeripheral : public fdf::DriverBase2,
     uint8_t ep_address = 0;
     std::vector<DciSupportedEndpointInfo> supported_types;
   };
-  bool supports_dynamic_ep_sizing_ = false;
-  std::vector<DciEndpointInfo> dci_endpoints_;
+  bool supports_dynamic_ep_sizing_ __TA_GUARDED(lock_) = false;
+  std::vector<DciEndpointInfo> dci_endpoints_ __TA_GUARDED(lock_);
   bool has_dci_hardware_info_ = false;
   // USB device descriptor set via SetConfiguration()
   usb_device_descriptor_t device_desc_ = {};
@@ -495,7 +496,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   // Strings for USB string descriptors.
   std::vector<StringDescriptor> strings_ __TA_GUARDED(lock_);
   // List of usb_function_t.
-  std::vector<UsbConfiguration> configurations_;
+  std::vector<UsbConfiguration> configurations_ __TA_GUARDED(lock_);
   // mutex for protecting our state
   // mutable to allow locking in const methods (e.g. state())
   mutable fbl::Mutex lock_;
@@ -564,6 +565,8 @@ class UsbPeripheral : public fdf::DriverBase2,
   // `on_complete` (which replies to the held `SetConnected(false)` FIDL completer).
   void OnDisconnectUnconfigureComplete(fit::callback<void()> on_complete) __TA_EXCLUDES(lock_);
 
+  void InitInspect();
+
   std::vector<UnlockedCallback> on_all_functions_cleared_ __TA_GUARDED(lock_);
   std::set<uint8_t> stalled_eps_ __TA_GUARDED(lock_);
 
@@ -573,18 +576,10 @@ class UsbPeripheral : public fdf::DriverBase2,
   fdf::OwnedChildNode child_;
   std::shared_ptr<fdf::Namespace> incoming_;
 
-  struct InspectEndpoint {
-    inspect::Node node;
-    inspect::UintProperty max_packet_size_limit;
-    inspect::StringProperty supported_types;
-  };
-
-  std::optional<inspect::ComponentInspector> inspector_;
-  inspect::Node usb_peripheral_node_;
-  usb_inspect::DciInspect dci_inspect_;
-  inspect::Node hardware_info_node_;
-  inspect::BoolProperty supports_dynamic_ep_sizing_property_;
-  std::vector<InspectEndpoint> inspect_endpoints_;
+  uint64_t unconfigure_all_count_ __TA_GUARDED(lock_) = 0;
+  uint64_t unconfigure_all_error_count_ __TA_GUARDED(lock_) = 0;
+  int64_t last_unconfigure_all_duration_ns_ __TA_GUARDED(lock_) = 0;
+  int64_t max_unconfigure_all_duration_ns_ __TA_GUARDED(lock_) = 0;
 
   size_t active_functions_count_ __TA_GUARDED(lock_) = 0;
   uint64_t config_generation_ __TA_GUARDED(lock_) = 0;
@@ -608,6 +603,15 @@ class UsbPeripheral : public fdf::DriverBase2,
   };
   std::optional<PendingSetConfiguration> pending_set_configuration_ __TA_GUARDED(lock_);
   bool clear_in_progress_ __TA_GUARDED(lock_) = false;
+
+  // Declare Inspect members after all driver state fields so lazy callbacks unregister during
+  // destruction before any state member or mutex is destroyed.
+  std::optional<inspect::ComponentInspector> inspector_;
+  inspect::Node usb_peripheral_node_;
+  usb_inspect::DciInspect dci_inspect_;
+  inspect::LazyNode hardware_info_node_;
+  inspect::LazyNode peripheral_state_node_;
+  inspect::LazyNode functions_node_;
 
   // Must be declared last so that `scope_` and `executor_` are destroyed first, abandoning any
   // in-flight promises (and their `fit::defer` cleanups) while all other members remain valid.

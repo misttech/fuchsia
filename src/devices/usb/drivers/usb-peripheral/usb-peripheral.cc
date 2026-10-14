@@ -173,6 +173,7 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   executor_ = std::make_unique<async::Executor>(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   usb_peripheral_node_ = inspector_->root().CreateChild("usb-peripheral");
   dci_inspect_.Init(usb_peripheral_node_, "dci_metrics");
+  InitInspect();
   {
     fbl::AutoLock lock(&lock_);
     dci_inspect_.UpdateState(std::format("{}", state_));
@@ -698,10 +699,22 @@ void UsbPeripheral::ScheduleUnconfigureBatch(
     return;
   }
 
-  auto finish_all = fit::defer([this] {
+  const zx::time_boot unconfigure_start = zx::clock::get_boot();
+  auto has_error = std::make_shared<std::atomic<bool>>(false);
+
+  auto finish_all = fit::defer([this, unconfigure_start, has_error] {
     std::vector<fit::callback<void()>> callbacks;
     {
       fbl::AutoLock lock(&lock_);
+      const zx::duration duration = zx::clock::get_boot() - unconfigure_start;
+      last_unconfigure_all_duration_ns_ = duration.to_nsecs();
+      if (last_unconfigure_all_duration_ns_ > max_unconfigure_all_duration_ns_) {
+        max_unconfigure_all_duration_ns_ = last_unconfigure_all_duration_ns_;
+      }
+      unconfigure_all_count_++;
+      if (has_error->load(std::memory_order_relaxed)) {
+        unconfigure_all_error_count_++;
+      }
       unconfiguring_functions_ = false;
       callbacks = TakePendingUnconfigureCallbacksLocked();
     }
@@ -713,16 +726,17 @@ void UsbPeripheral::ScheduleUnconfigureBatch(
   });
 
   auto start_batch = [this, functions_to_unconfigure = std::move(functions_to_unconfigure),
-                      finish_all = std::move(finish_all)]() mutable {
+                      has_error, finish_all = std::move(finish_all)]() mutable {
     std::vector<fpromise::promise<void, zx_status_t>> promises;
     promises.reserve(functions_to_unconfigure.size());
     for (const std::shared_ptr<UsbFunction>& function : functions_to_unconfigure) {
       // fpromise::bridge's completer and consumer share a ref-counted heap state, so moving them
       // out before `bridge` goes out of scope at the end of the loop iteration is safe.
       fpromise::bridge<void, zx_status_t> bridge;
-      function->Unconfigure([completer = std::move(bridge.completer),
-                             name = function->name()](zx_status_t status) mutable {
+      function->Unconfigure([completer = std::move(bridge.completer), name = function->name(),
+                             has_error](zx_status_t status) mutable {
         if (status != ZX_OK) {
+          has_error->store(true, std::memory_order_relaxed);
           fdf::error("Unconfigure failed for {}: {}", name, zx_status_get_string(status));
         }
         completer.complete_ok();
@@ -1230,6 +1244,115 @@ zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
   return zx::ok(std::move(allocations));
 }
 
+void UsbPeripheral::InitInspect() {
+  peripheral_state_node_ = usb_peripheral_node_.CreateLazyNode("peripheral_state", [this]() {
+    inspect::Inspector inspector;
+    auto& root = inspector.GetRoot();
+
+    bool unconfiguring_functions = false;
+    bool clear_in_progress = false;
+    bool enumerating = false;
+    uint64_t config_generation = 0;
+    uint64_t unconfigure_all_count = 0;
+    uint64_t unconfigure_all_error_count = 0;
+    int64_t last_unconfigure_all_duration_ns = 0;
+    int64_t max_unconfigure_all_duration_ns = 0;
+    std::string device_state;
+    size_t active_functions_count = 0;
+
+    {
+      fbl::AutoLock lock(&lock_);
+      unconfiguring_functions = unconfiguring_functions_;
+      clear_in_progress = clear_in_progress_;
+      enumerating = connected_ && state_ != DeviceState::kHostConnected;
+      config_generation = config_generation_;
+      unconfigure_all_count = unconfigure_all_count_;
+      unconfigure_all_error_count = unconfigure_all_error_count_;
+      last_unconfigure_all_duration_ns = last_unconfigure_all_duration_ns_;
+      max_unconfigure_all_duration_ns = max_unconfigure_all_duration_ns_;
+      device_state = std::format("{}", state_);
+      active_functions_count = active_functions_count_;
+    }
+
+    const uint64_t host_connect_count = dci_inspect_.connect_count();
+    const uint64_t host_disconnect_count = dci_inspect_.disconnect_count();
+
+    root.CreateBool("unconfiguring_functions", unconfiguring_functions, &inspector);
+    root.CreateBool("clear_in_progress", clear_in_progress, &inspector);
+    root.CreateBool("enumerating", enumerating, &inspector);
+    root.CreateUint("config_generation", config_generation, &inspector);
+    root.CreateUint("host_connect_count", host_connect_count, &inspector);
+    root.CreateUint("host_disconnect_count", host_disconnect_count, &inspector);
+    root.CreateUint("unconfigure_all_count", unconfigure_all_count, &inspector);
+    root.CreateUint("unconfigure_all_error_count", unconfigure_all_error_count, &inspector);
+    root.CreateInt("last_unconfigure_all_duration_ns", last_unconfigure_all_duration_ns,
+                   &inspector);
+    root.CreateInt("max_unconfigure_all_duration_ns", max_unconfigure_all_duration_ns, &inspector);
+    root.CreateString("device_state", device_state, &inspector);
+    root.CreateUint("active_functions_count", active_functions_count, &inspector);
+
+    return fpromise::make_ok_promise(std::move(inspector));
+  });
+
+  functions_node_ = usb_peripheral_node_.CreateLazyNode("functions", [this]() {
+    inspect::Inspector inspector;
+    auto& root = inspector.GetRoot();
+
+    struct FunctionInfo {
+      std::string name;
+      uint32_t interface_mask = 0;
+      uint32_t num_interfaces = 0;
+      bool registered = false;
+      bool configured = false;
+      bool unconfigure_in_flight = false;
+      int64_t last_unconfigure_duration_ns = 0;
+      uint64_t unconfigure_error_count = 0;
+    };
+
+    std::vector<FunctionInfo> function_infos;
+    {
+      fbl::AutoLock lock(&lock_);
+      for (const auto& func : functions_) {
+        if (!func) {
+          continue;
+        }
+        FunctionInfo info;
+        info.name = func->name();
+        info.num_interfaces = func->num_interfaces();
+        info.registered = func->is_registered_for_inspect();
+        info.configured = func->is_configured();
+        info.unconfigure_in_flight = func->is_unconfigure_in_flight();
+        info.last_unconfigure_duration_ns = func->last_unconfigure_duration_ns();
+        info.unconfigure_error_count = func->unconfigure_error_count();
+
+        for (const auto& config : configurations_) {
+          for (size_t i = 0; i < std::size(config.interface_map); i++) {
+            if (config.interface_map[i] == func->function_index() && i < 32) {
+              info.interface_mask |= (1u << i);
+            }
+          }
+        }
+        function_infos.push_back(std::move(info));
+      }
+    }
+
+    for (const auto& func : function_infos) {
+      auto fn_node = root.CreateChild(func.name);
+      fn_node.CreateUint("interface_mask", func.interface_mask, &inspector);
+      fn_node.CreateUint("num_interfaces", func.num_interfaces, &inspector);
+      fn_node.CreateBool("registered", func.registered, &inspector);
+      fn_node.CreateBool("configured", func.configured, &inspector);
+      fn_node.CreateBool("unconfigure_in_flight", func.unconfigure_in_flight, &inspector);
+      fn_node.CreateInt("last_unconfigure_duration_ns", func.last_unconfigure_duration_ns,
+                        &inspector);
+      fn_node.CreateUint("unconfigure_error_count", func.unconfigure_error_count, &inspector);
+      inspector.emplace(std::move(fn_node));
+    }
+
+    return fpromise::make_ok_promise(std::move(inspector));
+  });
+}
+
 zx_status_t UsbPeripheral::InitializeDci(
     fidl::ClientEnd<fuchsia_hardware_usb_dci::UsbDci> dci_client_end) {
   dci_ = fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci>(std::move(dci_client_end));
@@ -1254,68 +1377,74 @@ zx_status_t UsbPeripheral::InitializeDci(
   }
 
   const auto& info = result->value()->info;
-  has_dci_hardware_info_ = true;
+  const bool has_dynamic_ep_sizing = info.has_supports_dynamic_ep_sizing();
+  {
+    fbl::AutoLock lock(&lock_);
+    has_dci_hardware_info_ = true;
 
-  hardware_info_node_ = usb_peripheral_node_.CreateChild("hardware_info");
-  if (info.has_supports_dynamic_ep_sizing()) {
-    supports_dynamic_ep_sizing_ = info.supports_dynamic_ep_sizing();
-    supports_dynamic_ep_sizing_property_ =
-        hardware_info_node_.CreateBool("supports_dynamic_ep_sizing", supports_dynamic_ep_sizing_);
-  }
-
-  if (!info.has_endpoints() || info.endpoints().empty()) {
-    return ZX_OK;
-  }
-
-  for (const auto& ep : info.endpoints()) {
-    DciEndpointInfo local_ep;
-    if (!ep.has_ep_address()) {
-      fdf::error("DCI endpoint info missing address, ignoring");
-      continue;
+    if (has_dynamic_ep_sizing) {
+      supports_dynamic_ep_sizing_ = info.supports_dynamic_ep_sizing();
     }
-    uint8_t ep_addr = ep.ep_address();
-    uint8_t ep_index = EpAddressToIndex(ep_addr);
-    if (ep_index == 0 || ep_index == 16 || ep_index >= USB_MAX_EPS) {
-      fdf::error("DCI reported invalid endpoint address {:#x}, ignoring", ep_addr);
-      continue;
-    }
-    local_ep.ep_address = ep_addr;
-    uint32_t max_packet_limit_overall = 0;
-    std::string types_str = "";
-    if (ep.has_supported_types()) {
-      for (const auto& type_info : ep.supported_types()) {
-        if (!type_info.has_endpoint_type() || !type_info.has_max_packet_size_limit()) {
+
+    if (info.has_endpoints() && !info.endpoints().empty()) {
+      for (const auto& ep : info.endpoints()) {
+        DciEndpointInfo local_ep;
+        if (!ep.has_ep_address()) {
+          fdf::error("DCI endpoint info missing address, ignoring");
           continue;
         }
-        DciSupportedEndpointInfo st{
-            .endpoint_type = type_info.endpoint_type(),
-            .max_packet_size_limit = type_info.max_packet_size_limit(),
-            .min_lead_time = type_info.has_min_lead_time() ? type_info.min_lead_time() : 0,
-        };
-        local_ep.supported_types.push_back(st);
-        if (st.max_packet_size_limit > max_packet_limit_overall) {
-          max_packet_limit_overall = st.max_packet_size_limit;
+        uint8_t ep_addr = ep.ep_address();
+        uint8_t ep_index = EpAddressToIndex(ep_addr);
+        if (ep_index == 0 || ep_index == 16 || ep_index >= USB_MAX_EPS) {
+          fdf::error("DCI reported invalid endpoint address {:#x}, ignoring", ep_addr);
+          continue;
         }
-        if (!types_str.empty()) {
-          types_str += ", ";
+        local_ep.ep_address = ep_addr;
+        if (ep.has_supported_types()) {
+          for (const auto& type_info : ep.supported_types()) {
+            if (!type_info.has_endpoint_type() || !type_info.has_max_packet_size_limit()) {
+              continue;
+            }
+            DciSupportedEndpointInfo st{
+                .endpoint_type = type_info.endpoint_type(),
+                .max_packet_size_limit = type_info.max_packet_size_limit(),
+                .min_lead_time = type_info.has_min_lead_time() ? type_info.min_lead_time() : 0,
+            };
+            local_ep.supported_types.push_back(st);
+          }
         }
-        types_str += EndpointTypeToString(st.endpoint_type);
+        dci_endpoints_.push_back(local_ep);
       }
     }
-    dci_endpoints_.push_back(local_ep);
-
-    // Add to inspect
-    std::string ep_name = std::format("ep_{:#04x}", ep_addr);
-    auto ep_node = hardware_info_node_.CreateChild(ep_name);
-    auto max_limit_prop = ep_node.CreateUint("max_packet_size_limit", max_packet_limit_overall);
-    auto types_prop = ep_node.CreateString("supported_types", types_str);
-
-    inspect_endpoints_.push_back(InspectEndpoint{
-        .node = std::move(ep_node),
-        .max_packet_size_limit = std::move(max_limit_prop),
-        .supported_types = std::move(types_prop),
-    });
   }
+
+  hardware_info_node_ =
+      usb_peripheral_node_.CreateLazyNode("hardware_info", [this, has_dynamic_ep_sizing]() {
+        inspect::Inspector inspector;
+        auto& root = inspector.GetRoot();
+        fbl::AutoLock lock(&lock_);
+        if (has_dynamic_ep_sizing) {
+          root.CreateBool("supports_dynamic_ep_sizing", supports_dynamic_ep_sizing_, &inspector);
+        }
+        for (const auto& ep : dci_endpoints_) {
+          uint32_t max_packet_limit_overall = 0;
+          std::string types_str;
+          for (const auto& st : ep.supported_types) {
+            if (st.max_packet_size_limit > max_packet_limit_overall) {
+              max_packet_limit_overall = st.max_packet_size_limit;
+            }
+            if (!types_str.empty()) {
+              types_str += ", ";
+            }
+            types_str += EndpointTypeToString(st.endpoint_type);
+          }
+          auto ep_node = root.CreateChild(std::format("ep_{:#04x}", ep.ep_address));
+          ep_node.CreateUint("max_packet_size_limit", max_packet_limit_overall, &inspector);
+          ep_node.CreateString("supported_types", types_str, &inspector);
+          inspector.emplace(std::move(ep_node));
+        }
+        return fpromise::make_ok_promise(std::move(inspector));
+      });
 
   return ZX_OK;
 }
@@ -1584,6 +1713,7 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
                 } else {
                   if (final_status == ZX_OK) {
                     configuration_ = configuration;
+                    dci_inspect_.RecordSetConfiguration(configuration);
 
                     // USB 2.0 § 9.4.7: SetConfiguration resets the halt status and data toggle of
                     // each endpoint to not halted. Collect both active function endpoints and
@@ -1749,7 +1879,6 @@ void UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting,
 
 zx::result<size_t> UsbPeripheral::AddFunction(UsbConfiguration& config, FunctionDescriptor desc) {
   TRACE_DURATION("usb-peripheral", __func__);
-  fbl::AutoLock lock(&lock_);
   ZX_ASSERT(state_ == DeviceState::kNoConfiguration);
 
   auto function_index = functions_.size();
@@ -2485,26 +2614,26 @@ void UsbPeripheral::SetConfiguration(SetConfigurationRequestView request,
     return;
   }
 
-  uint8_t index = 0;
-  for (auto& func_descs : request->config_descriptors) {
-    auto& descriptor = configurations_.emplace_back(index);
-    if (func_descs.size() == 0) {
-      fdf::error("Cannot set configuration with no functions");
-      completer.ReplyError(ZX_ERR_INVALID_ARGS);
-      return;
-    }
-
-    for (auto func_desc : func_descs) {
-      auto result = AddFunction(descriptor, func_desc);
-      if (result.is_error()) {
-        fdf::error("Failed to add function: {}", result);
-      }
-    }
-    index++;
-  }
-
   {
-    fbl::AutoLock _(&lock_);
+    fbl::AutoLock lock(&lock_);
+    uint8_t index = 0;
+    for (auto& func_descs : request->config_descriptors) {
+      auto& descriptor = configurations_.emplace_back(index);
+      if (func_descs.size() == 0) {
+        fdf::error("Cannot set configuration with no functions");
+        completer.ReplyError(ZX_ERR_INVALID_ARGS);
+        return;
+      }
+
+      for (auto func_desc : func_descs) {
+        auto result = AddFunction(descriptor, func_desc);
+        if (result.is_error()) {
+          fdf::error("Failed to add function: {}", result);
+        }
+      }
+      index++;
+    }
+
     if (zx_status_t status = AddFunctionDevices(); status != ZX_OK) {
       completer.ReplyError(status);
       return;
@@ -2660,37 +2789,34 @@ zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& fun
   TRACE_DURATION("usb-peripheral", __func__);
 
   {
-    fbl::AutoLock _(&lock_);
+    fbl::AutoLock lock(&lock_);
     if (IsStoppingOrClearingLocked()) {
       return ZX_ERR_BAD_STATE;
     }
     if (state_ != DeviceState::kNoConfiguration) {
       return ZX_ERR_ALREADY_BOUND;
     }
-  }
 
-  auto& descriptor = configurations_.emplace_back(static_cast<uint8_t>(0));
-  device_desc_.b_length = sizeof(usb_device_descriptor_t),
-  device_desc_.b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kDevice);
-  device_desc_.bcd_usb = htole16(USB_2_0);
-  device_desc_.b_device_class = 0;
-  device_desc_.b_device_sub_class = 0;
-  device_desc_.b_device_protocol = 0;
-  device_desc_.b_max_packet_size0 = 64;
-  device_desc_.bcd_device = htole16(0x0100);
-  device_desc_.b_num_configurations = 1;
+    auto& descriptor = configurations_.emplace_back(static_cast<uint8_t>(0));
+    device_desc_.b_length = sizeof(usb_device_descriptor_t),
+    device_desc_.b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kDevice);
+    device_desc_.bcd_usb = htole16(USB_2_0);
+    device_desc_.b_device_class = 0;
+    device_desc_.b_device_sub_class = 0;
+    device_desc_.b_device_protocol = 0;
+    device_desc_.b_max_packet_size0 = 64;
+    device_desc_.bcd_device = htole16(0x0100);
+    device_desc_.b_num_configurations = 1;
 
-  for (auto function : functions) {
-    auto result = AddFunction(descriptor, function);
-    if (result.is_error()) {
-      fdf::error("Failed to add function: ({}:{}:{}) status: {}", function.interface_class,
-                 function.interface_subclass, function.interface_protocol, result);
-      return result.status_value();
+    for (auto function : functions) {
+      auto result = AddFunction(descriptor, function);
+      if (result.is_error()) {
+        fdf::error("Failed to add function: ({}:{}:{}) status: {}", function.interface_class,
+                   function.interface_subclass, function.interface_protocol, result);
+        return result.status_value();
+      }
     }
-  }
 
-  {
-    fbl::AutoLock _(&lock_);
     if (zx_status_t status = AddFunctionDevices(); status != ZX_OK) {
       return status;
     }

@@ -76,13 +76,11 @@ void UsbDciInterfaceServer::SetSpeed(SetSpeedRequestView req, SetSpeedCompleter:
   TRACE_DURATION("usb-peripheral", __func__);
   auto new_speed = static_cast<usb_speed_t>(req->speed);
   const char* speed_str = usb_inspect::SpeedToString(new_speed);
-  bool connected;
   {
     fbl::AutoLock lock(&drv_->lock_);
     drv_->speed_ = new_speed;
-    connected = drv_->state_ == UsbPeripheral::DeviceState::kHostConnected;
+    drv_->dci_inspect().UpdateSpeed(new_speed);
   }
-  drv_->dci_inspect().UpdateConnectionStatus(connected, new_speed);
   drv_->dci_inspect().RecordEvent(std::format("speed set to: {}", speed_str));
   completer.ReplySuccess();
 }
