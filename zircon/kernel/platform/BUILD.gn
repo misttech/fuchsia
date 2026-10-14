@@ -21,7 +21,6 @@ source_set("platform") {
     "efi_crashlog.cc",
     "mapped_crashlog.cc",
     "mexec.cc",
-    "power.cc",
     "power_ffi.cc",
     "timer_ffi.cc",
   ]
@@ -138,6 +137,8 @@ kernel_rust_mod("platform-rs") {
     "//src/lib/kprint",
     "//src/lib/ksync",
     "//src/lib/zr",
+    "//zircon/kernel/lib/boot-options",
+    "//zircon/kernel/lib/debug",
     "//zircon/system/ulib/affine/rust:affine",
   ]
 }

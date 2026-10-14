@@ -52,7 +52,13 @@ void platform_init();
  *
  * There is no returning from this function.
  */
-void platform_halt(platform_halt_action suggested_action, zircon_crash_reason_t reason) __NO_RETURN;
+extern "C" void rust_platform_halt(platform_halt_action suggested_action,
+                                   zircon_crash_reason_t reason) __NO_RETURN;
+
+__NO_RETURN inline void platform_halt(platform_halt_action suggested_action,
+                                      zircon_crash_reason_t reason) {
+  rust_platform_halt(suggested_action, reason);
+}
 
 /* The platform specific actions to be taken in a halt situation.  This is a
  * weak symbol meant to be overloaded by platform specific implementations and
@@ -63,9 +69,13 @@ void platform_halt(platform_halt_action suggested_action, zircon_crash_reason_t 
  */
 void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_reason_t reason,
                             bool halt_on_panic) __NO_RETURN;
+extern "C" void cpp_platform_specific_halt(platform_halt_action suggested_action,
+                                           zircon_crash_reason_t reason,
+                                           bool halt_on_panic) __NO_RETURN;
 
 /* optionally stop the current cpu in a way the platform finds appropriate */
 void platform_halt_cpu();
+extern "C" void cpp_platform_halt_cpu();
 
 // Returns true iff this platform supports |platform_suspend_cpu|.
 bool platform_supports_suspend_cpu();
@@ -163,6 +173,7 @@ void platform_serial_wakeup_from_suspend();
 // to safely ensure that the panic message will be visible to the user.
 enum class PanicStartHaltOtherCpus { No = 0, Yes };
 void platform_panic_start(PanicStartHaltOtherCpus option = PanicStartHaltOtherCpus::Yes);
+extern "C" void cpp_platform_panic_start();
 
 // Start the given cpu in a way the platform finds appropriate.
 // 'context' contains an opaque value passed through to the new cpu for the

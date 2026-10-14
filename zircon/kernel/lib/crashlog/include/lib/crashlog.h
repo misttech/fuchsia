@@ -53,6 +53,7 @@ extern "C" {
 // `fprintf(&stdout_panic_buffer, ...)` does from C++. This lets the Rust panic
 // handler stream its formatted output piecewise, with no intermediate buffer.
 void cpp_crashlog_panic_write(const char* data, size_t len);
+size_t cpp_crashlog_to_string(char* target_ptr, size_t target_len, zircon_crash_reason_t reason);
 
 }  // extern "C"
 

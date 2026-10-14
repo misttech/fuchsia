@@ -159,6 +159,7 @@ extern "C" {
 // FFI wrappers for Rust callers.  Defined unconditionally: they forward to the
 // functions above, which are no-ops when JTRACE is compiled out.
 void cpp_jtrace_set_location(void* ptr, size_t len);
+void cpp_jtrace_invalidate();
 void cpp_jtrace_dump_current();
 
 }  // extern "C"

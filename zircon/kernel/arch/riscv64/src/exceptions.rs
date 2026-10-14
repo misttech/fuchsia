@@ -209,7 +209,6 @@ pub unsafe extern "C" fn rust_riscv64_print_frame(
 
 // C++ kernel runtime hooks called from Rust exception handlers.
 unsafe extern "C" {
-    fn cpp_platform_halt(action: u32, reason: u32) -> !;
     fn cpp_set_crashlog_regs(iframe: *const Iframe, cause: i64, tval: u64);
     // Declared `extern "C"` in <arch/exception.h>; no shim needed.
     fn dispatch_user_exception(

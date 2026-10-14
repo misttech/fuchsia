@@ -317,6 +317,9 @@ FFI_ALWAYS_INLINE void cpp_jtrace_set_location(void* ptr, size_t len) {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_jtrace_invalidate() { jtrace_invalidate(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_jtrace_dump_current() { jtrace_dump(jtrace::TraceBufferType::Current); }
 
 }  // extern "C"
