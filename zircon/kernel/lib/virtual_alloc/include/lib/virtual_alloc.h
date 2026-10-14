@@ -11,18 +11,25 @@
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 
-#include <bitmap/raw-bitmap.h>
-#include <fbl/canary.h>
-#ifdef _KERNEL
-// for vm_page_state and vm_page_t
+#include <fbl/macros.h>
+#include <kernel/ffi.h>
 #include <vm/page.h>
-#else
-// vm_page_state is an enum that only has meaning when running in kernel mode. We invent a type for
-// this just to avoid excessive #ifdef'ing of the constructor.
-using vm_page_state = uint32_t;
-// vaddr_t is normally defined by the internal kernel headers.
-using vaddr_t = uintptr_t;
-#endif
+
+class VirtualAlloc;
+
+extern "C" {
+void rust_virtual_alloc_new(VirtualAlloc* alloc, vm_page_state allocated_page_state);
+void rust_virtual_alloc_drop(VirtualAlloc* alloc);
+zx_status_t rust_virtual_alloc_init(VirtualAlloc* alloc, vaddr_t base, size_t size,
+                                    size_t alloc_guard, size_t align_log2);
+zx_status_t rust_virtual_alloc_alloc_pages(VirtualAlloc* alloc, size_t pages, vaddr_t* out_vaddr);
+void rust_virtual_alloc_free_pages(VirtualAlloc* alloc, vaddr_t vaddr, size_t pages);
+bool rust_virtual_alloc_can_attempt_contiguous_mappings(const VirtualAlloc* alloc);
+size_t rust_virtual_alloc_debug_bitmap_pages(const VirtualAlloc* alloc);
+void rust_virtual_alloc_debug_free_all_allocations(VirtualAlloc* alloc);
+void rust_virtual_alloc_debug_allocate_vaddr_range(VirtualAlloc* alloc, vaddr_t vaddr,
+                                                   size_t pages);
+}
 
 // VirtualAlloc is a page granule allocator that manages a given virtual region and provides
 // virtually contiguous allocations inside that region. This allocator explicitly has no dependency
@@ -32,12 +39,16 @@ using vaddr_t = uintptr_t;
 // page tables.
 //
 // This class is thread-unsafe.
+//
+// The implementation lives in Rust (`//zircon/kernel/lib/virtual_alloc/virtual_alloc.rs`).
 class VirtualAlloc {
  public:
   // Allocator needs to be told what state to set any allocated pages to. This allows for using the
   // allocator as a heap or generic allocator for an object.
-  explicit VirtualAlloc(vm_page_state allocated_page_state);
-  ~VirtualAlloc();
+  explicit VirtualAlloc(vm_page_state allocated_page_state) {
+    rust_virtual_alloc_new(this, allocated_page_state);
+  }
+  ~VirtualAlloc() { rust_virtual_alloc_drop(this); }
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VirtualAlloc);
 
@@ -47,92 +58,55 @@ class VirtualAlloc {
   // |alloc_guard| is the minimum number of virtual pages to place between two allocations and
   // serve as guard pages. Any reads or writes that over or under run an allocation into the padding
   // will trigger an immediate hardware page fault.
-  zx_status_t Init(vaddr_t base, size_t size, size_t alloc_guard, size_t align_log2);
+  zx_status_t Init(vaddr_t base, size_t size, size_t alloc_guard, size_t align_log2) {
+    return rust_virtual_alloc_init(this, base, size, alloc_guard, align_log2);
+  }
 
   // AllocPages can only be called after after a successful Init call, otherwise it will return an
   // error. Number of pages requested must be non zero.
-  zx::result<vaddr_t> AllocPages(size_t pages);
+  zx::result<vaddr_t> AllocPages(size_t pages) {
+    vaddr_t vaddr = 0;
+    zx_status_t status = rust_virtual_alloc_alloc_pages(this, pages, &vaddr);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok(vaddr);
+  }
 
   // Returns a non-zero number of pages at the given virtual address. Partial frees are supported
   // such that if 2 pages were allocated at X it is allowed to FreePages(X, 1) and separately
   // FreePages(X + kPageSize, 1).
-  void FreePages(vaddr_t vaddr, size_t pages);
+  void FreePages(vaddr_t vaddr, size_t pages) { rust_virtual_alloc_free_pages(this, vaddr, pages); }
 
   // Returns whether or not the allocator will attempt to optimize large allocations with
   // contiguous allocations and mappings that can get promoted to large pages. It does not guarantee
   // that it will succeed at doing this though.
-  bool CanAttemptContiguousMappings() const;
+  bool CanAttemptContiguousMappings() const {
+    return rust_virtual_alloc_can_attempt_contiguous_mappings(this);
+  }
 
   // Returns the number of pages allocated to provide the bitmap for tracking allocations. Exposed
   // as a debug named function as there is no promise that it has to be a bitmap for tracking and
   // this interface is likely to change and should only be used for debugging.
-  size_t DebugBitmapPages() const { return BitmapPages(); }
+  size_t DebugBitmapPages() const { return rust_virtual_alloc_debug_bitmap_pages(this); }
 
   // Frees any allocated pages as if FreePages had been called on every outstanding allocation. This
   // is exposed for testing for circumstances where externally tracking every allocations is
   // burdensome and not the goal of the test.
-  void DebugFreeAllAllocations();
+  void DebugFreeAllAllocations() { rust_virtual_alloc_debug_free_all_allocations(this); }
 
   // Force allocates the given range, overriding any padding or alignment requirements. This is used
   // for testing to more precisely control available allocation regions. Panics if range is invalid
   // or already allocated.
-  void DebugAllocateVaddrRange(vaddr_t vaddr, size_t pages);
+  void DebugAllocateVaddrRange(vaddr_t vaddr, size_t pages) {
+    rust_virtual_alloc_debug_allocate_vaddr_range(this, vaddr, pages);
+  }
 
  private:
-  // Custom storage for the bitmap class that provides for a statically sized storage that can be
-  // initialized after construction.
-  class BitmapStorage {
-   public:
-    BitmapStorage() = default;
-    ~BitmapStorage() = default;
-
-    void Init(void* base, size_t size) {
-      base_ = base;
-      size_ = size;
-    }
-
-    zx_status_t Allocate(size_t size) {
-      if (size > size_) {
-        return ZX_ERR_NO_MEMORY;
-      }
-      return ZX_OK;
-    }
-    void* GetData() { return base_; }
-    const void* GetData() const { return base_; }
-    size_t GetSize() const { return size_; }
-
-   private:
-    void* base_ = nullptr;
-    size_t size_ = 0;
-  };
-
-  zx_status_t AllocMapPages(vaddr_t vaddr, size_t num_pages);
-  void UnmapFreePages(vaddr_t vaddr, size_t num_pages);
-  void Destroy();
-  zx::result<size_t> BitmapAlloc(size_t num_pages);
-  zx::result<size_t> BitmapAllocRange(size_t num_pages, size_t start, size_t end);
-  void BitmapFree(size_t start, size_t num_pages);
-  size_t BitmapPages() const;
-
-  fbl::Canary<fbl::magic("VALC")> canary_;
-
-  // Page state to set allocated pages to.
-  const vm_page_state allocated_page_state_;
-
-  // Record of that padding to be applied to every allocation.
-  size_t alloc_guard_ = 0;
-
-  // The virtual address of the start of the range managed by bitmap_.
-  vaddr_t alloc_base_ = 0;
-
-  // Heuristic used to attempt to begin searching for a free run in bitmap_ at an optimal point.
-  size_t next_search_start_ = 0;
-
-  size_t align_log2_ = 0;
-
-  // Bitmap representing allocated pages in the virtual range being managed. This is fully
-  // preallocated and reserves for itself a portion of the Init virtual address range.
-  bitmap::RawBitmapGeneric<BitmapStorage> bitmap_;
+  [[maybe_unused]] OpaqueStorage<64, 8> storage_{};
 };
+
+static_assert(sizeof(VirtualAlloc) == 64);
+static_assert(alignof(VirtualAlloc) == 8);
 
 #endif  // ZIRCON_KERNEL_LIB_VIRTUAL_ALLOC_INCLUDE_LIB_VIRTUAL_ALLOC_H_

@@ -65,7 +65,10 @@ kernel_bindgen_crate("heap-bindings") {
 
 kernel_rust_mod("heap-rs") {
   sources = [ "heap.rs" ]
-  deps = [ ":heap-bindings" ]
+  deps = [
+    ":heap-bindings",
+    "//zircon/kernel/lib/virtual_alloc:virtual_alloc-rs",
+  ]
 }
 
 group("tests") {

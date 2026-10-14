@@ -89,6 +89,9 @@ pub mod user_copy;
 #[path = "lib/userabi/userabi.rs"]
 pub mod userabi;
 
+#[path = "lib/virtual_alloc/virtual_alloc.rs"]
+pub mod virtual_alloc;
+
 #[path = "lib/wake-vector/wake_vector.rs"]
 pub mod wake_vector;
 
