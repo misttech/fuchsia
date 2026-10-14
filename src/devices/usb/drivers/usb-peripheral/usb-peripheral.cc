@@ -1772,9 +1772,9 @@ void UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting,
   uint8_t target_config = 0;
   {
     fbl::AutoLock lock(&lock_);
-    if (IsStoppingOrClearingLocked()) {
-      fdf::warn("SetInterface called while peripheral is stopping (state={})", state_);
-      completer(ZX_ERR_BAD_STATE);
+    if (IsStoppingOrClearingLocked() || unconfiguring_functions_) {
+      fdf::debug("SetInterface rejected during teardown (state={})", state_);
+      completer(ZX_ERR_NOT_SUPPORTED);
       return;
     }
     if (configuration_ == 0) {
@@ -2278,7 +2278,9 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       {
         fbl::AutoLock lock(&lock_);
         if (configuration_ == 0) {
-          dev_error = ZX_ERR_BAD_STATE;
+          dev_error = (IsStoppingOrClearingLocked() || unconfiguring_functions_)
+                          ? ZX_ERR_NOT_SUPPORTED
+                          : ZX_ERR_BAD_STATE;
         } else if (configuration_ > configurations_.size()) {
           fdf::error("CommonControl: invalid configuration_ {}", configuration_);
           dev_error = ZX_ERR_BAD_STATE;
@@ -2322,8 +2324,13 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       {
         fbl::AutoLock lock(&lock_);
         if (configuration_ == 0) {
-          fdf::error("Control request received for interface before configuration");
-          error_status = ZX_ERR_BAD_STATE;
+          if (IsStoppingOrClearingLocked() || unconfiguring_functions_) {
+            fdf::debug("Control request received for interface during teardown (state={})", state_);
+            error_status = ZX_ERR_NOT_SUPPORTED;
+          } else {
+            fdf::error("Control request received for interface before configuration");
+            error_status = ZX_ERR_BAD_STATE;
+          }
         } else if (configuration_ > configurations_.size()) {
           fdf::error("CommonControl: invalid configuration_ {}", configuration_);
           error_status = ZX_ERR_BAD_STATE;
@@ -2376,13 +2383,17 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       uint8_t ep_addr = static_cast<uint8_t>(index);
       bool is_ep0 = (ep_addr & fdescriptor::kEndpointNumberMask) == 0;
       if (!is_ep0) {
-        bool unconfigured = false;
+        zx_status_t unconfigured_status = ZX_OK;
         {
           fbl::AutoLock lock(&lock_);
-          unconfigured = (configuration_ == 0);
+          if (configuration_ == 0) {
+            unconfigured_status = (IsStoppingOrClearingLocked() || unconfiguring_functions_)
+                                      ? ZX_ERR_NOT_SUPPORTED
+                                      : ZX_ERR_BAD_STATE;
+          }
         }
-        if (unconfigured) {
-          completer(zx::error(ZX_ERR_BAD_STATE));
+        if (unconfigured_status != ZX_OK) {
+          completer(zx::error(unconfigured_status));
           return;
         }
       }

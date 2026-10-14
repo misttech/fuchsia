@@ -2564,5 +2564,223 @@ TEST_F(UnmanagedUsbPeripheralTest, InspectPeripheralStateAndFunctions) {
   });
 }
 
+class UsbPeripheralDualFunctionTest : public UsbPeripheralFunctionTest {
+ public:
+  usb_peripheral_config::Config GetDriverConfig() override {
+    usb_peripheral_config::Config config;
+    config.functions() = {"test", "cdc"};
+    return config;
+  }
+};
+
+TEST_F(UsbPeripheralDualFunctionTest, ControlRequestsBeforeConfigVsDuringTeardown) {
+  zx::result fn0_client_res = ConnectFunction("function-000");
+  ASSERT_OK(fn0_client_res);
+  fidl::WireSyncClient<ffunction::UsbFunction> fn0_client = std::move(fn0_client_res.value());
+
+  zx::result fn1_client_res = ConnectFunction("function-001");
+  ASSERT_OK(fn1_client_res);
+  fidl::WireSyncClient<ffunction::UsbFunction> fn1_client = std::move(fn1_client_res.value());
+
+  zx::result fake0_res = BindFakeFunction();
+  ASSERT_OK(fake0_res);
+  auto [fake0, fake0_ep] = std::move(fake0_res.value());
+
+  zx::result fake1_res = BindFakeFunction();
+  ASSERT_OK(fake1_res);
+  auto [fake1, fake1_ep] = std::move(fake1_res.value());
+
+  std::mutex completer_lock;
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> held_unconfigure;
+  fake0->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          std::lock_guard lock(completer_lock);
+          held_unconfigure = std::move(completer);
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  fidl::Arena arena;
+  auto ep0_res = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  auto ep0_ch = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  ep0_res[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  ep0_res[0].ep_info = BulkEpInfo(arena);
+  ep0_res[0].max_packet_size = 512;
+  ep0_res[0].endpoint = std::move(ep0_ch.server);
+
+  auto alloc0 = fn0_client->AllocResources(1, ep0_res, {});
+  ASSERT_TRUE(alloc0.ok());
+  ASSERT_OK(alloc0.value());
+  uint8_t intf0 = alloc0->value()->interface_nums[0];
+  uint8_t ep_addr = alloc0->value()->endpoint_addrs[0];
+
+  auto alloc1 = fn1_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc1.ok());
+  ASSERT_OK(alloc1.value());
+  uint8_t intf1 = alloc1->value()->interface_nums[0];
+
+  usb_interface_descriptor_t desc0 = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
+      .b_interface_number = intf0,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 1,
+      .b_interface_class = 2,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 0,
+      .i_interface = 0,
+  };
+  std::vector<uint8_t> desc0_bytes(sizeof(desc0));
+  memcpy(desc0_bytes.data(), &desc0, sizeof(desc0));
+  ASSERT_OK(fn0_client
+                ->Configure(
+                    fidl::VectorView<uint8_t>::FromExternal(desc0_bytes.data(), desc0_bytes.size()),
+                    std::move(fake0_ep))
+                .value());
+
+  usb_interface_descriptor_t desc1 = desc0;
+  desc1.b_interface_number = intf1;
+  desc1.b_num_endpoints = 0;
+  std::vector<uint8_t> desc1_bytes(sizeof(desc1));
+  memcpy(desc1_bytes.data(), &desc1, sizeof(desc1));
+  ASSERT_OK(fn1_client
+                ->Configure(
+                    fidl::VectorView<uint8_t>::FromExternal(desc1_bytes.data(), desc1_bytes.size()),
+                    std::move(fake1_ep))
+                .value());
+
+  ExpectControllerStarted(true);
+  ASSERT_OK(dci()->SetConnected(true).status());
+  std::vector<uint8_t> unused;
+
+  // 1. Before SET_CONFIGURATION (state_ == kHostConnected, configuration_ == 0, not tearing down):
+  // Non-standard Device-recipient and Interface class control requests are genuine protocol
+  // violations -> return ZX_ERR_BAD_STATE.
+  fdescriptor::wire::UsbSetup dev_setup = {
+      .bm_request_type = fdescriptor::EndpointDirection::kOut |
+                         fdescriptor::RequestRecipient::kDevice | fdescriptor::RequestType::kVendor,
+      .b_request = 0x01,
+      .w_value = 0,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto pre_cfg_dev_res =
+      dci().buffer(arena)->Control(dev_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(pre_cfg_dev_res.ok());
+  ASSERT_TRUE(pre_cfg_dev_res->is_error());
+  EXPECT_STATUS(pre_cfg_dev_res->error_value(), ZX_ERR_BAD_STATE);
+
+  fdescriptor::wire::UsbSetup intf_setup = {
+      .bm_request_type = fdescriptor::EndpointDirection::kOut |
+                         fdescriptor::RequestRecipient::kInterface |
+                         fdescriptor::RequestType::kClass,
+      .b_request = 0x43,
+      .w_value = 0x000e,
+      .w_index = intf0,
+      .w_length = 0,
+  };
+  auto pre_cfg_res =
+      dci().buffer(arena)->Control(intf_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(pre_cfg_res.ok());
+  ASSERT_TRUE(pre_cfg_res->is_error());
+  EXPECT_STATUS(pre_cfg_res->error_value(), ZX_ERR_BAD_STATE);
+
+  // 2. Configure the peripheral (SET_CONFIGURATION(1)).
+  fdescriptor::wire::UsbSetup set_cfg = {
+      .bm_request_type = fdescriptor::EndpointDirection::kOut |
+                         fdescriptor::RequestRecipient::kDevice |
+                         fdescriptor::RequestType::kStandard,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  ASSERT_OK(dci()
+                .buffer(arena)
+                ->Control(set_cfg, fidl::VectorView<uint8_t>::FromExternal(unused))
+                .value());
+
+  // 3. Trigger Deconfigure() on fn1 while holding fn0's SetConfigured(false) completer open so
+  // UsbPeripheral sits inside the async kUnregisteringFunction drain window before
+  // StopController().
+  auto cleanup = fit::defer([&]() {
+    fake0->set_on_set_configured_async(nullptr);
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> to_reply;
+    {
+      std::lock_guard lock(completer_lock);
+      to_reply = std::move(held_unconfigure);
+      held_unconfigure.reset();
+    }
+    if (to_reply.has_value()) {
+      to_reply->ReplySuccess();
+    }
+  });
+
+  fidl::WireSharedClient<ffunction::UsbFunction> fn1_async(
+      fn1_client.TakeClientEnd(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  bool deconfigure_completed = false;
+  fn1_async->Deconfigure().ThenExactlyOnce([&](auto& res) {
+    ASSERT_TRUE(res.ok());
+    ASSERT_OK(res.value());
+    deconfigure_completed = true;
+  });
+
+  dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completer_lock);
+    return held_unconfigure.has_value();
+  });
+  WaitUntilState(UsbPeripheral::DeviceState::kUnregisteringFunction);
+
+  // Device, Interface, SetInterface, and Endpoint requests arriving during teardown must return
+  // ZX_ERR_NOT_SUPPORTED (stalling EP0 cleanly without logging false ERROR diagnostics).
+  auto teardown_dev_res =
+      dci().buffer(arena)->Control(dev_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(teardown_dev_res.ok());
+  ASSERT_TRUE(teardown_dev_res->is_error());
+  EXPECT_STATUS(teardown_dev_res->error_value(), ZX_ERR_NOT_SUPPORTED);
+
+  auto teardown_intf_res =
+      dci().buffer(arena)->Control(intf_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(teardown_intf_res.ok());
+  ASSERT_TRUE(teardown_intf_res->is_error());
+  EXPECT_STATUS(teardown_intf_res->error_value(), ZX_ERR_NOT_SUPPORTED);
+
+  fdescriptor::wire::UsbSetup set_intf = {
+      .bm_request_type = fdescriptor::EndpointDirection::kOut |
+                         fdescriptor::RequestRecipient::kInterface |
+                         fdescriptor::RequestType::kStandard,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetInterface),
+      .w_value = 0,
+      .w_index = intf0,
+      .w_length = 0,
+  };
+  auto teardown_set_intf_res =
+      dci().buffer(arena)->Control(set_intf, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(teardown_set_intf_res.ok());
+  ASSERT_TRUE(teardown_set_intf_res->is_error());
+  EXPECT_STATUS(teardown_set_intf_res->error_value(), ZX_ERR_NOT_SUPPORTED);
+
+  fdescriptor::wire::UsbSetup ep_setup = {
+      .bm_request_type = fdescriptor::EndpointDirection::kIn |
+                         fdescriptor::RequestRecipient::kEndpoint |
+                         fdescriptor::RequestType::kStandard,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kGetStatus),
+      .w_value = 0,
+      .w_index = ep_addr,
+      .w_length = 2,
+  };
+  auto teardown_ep_res =
+      dci().buffer(arena)->Control(ep_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(teardown_ep_res.ok());
+  ASSERT_TRUE(teardown_ep_res->is_error());
+  EXPECT_STATUS(teardown_ep_res->error_value(), ZX_ERR_NOT_SUPPORTED);
+
+  cleanup.call();
+  dut().runtime().RunUntil([&]() { return deconfigure_completed; });
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+}
+
 }  // namespace
 }  // namespace usb_peripheral::test
