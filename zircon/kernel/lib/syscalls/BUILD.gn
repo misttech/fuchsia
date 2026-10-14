@@ -72,7 +72,6 @@ source_set("impl") {
     "//zircon/kernel/lib/thread_sampler",
     "//zircon/kernel/lib/user_copy",
     "//zircon/kernel/lib/userabi:headers",
-    "//zircon/kernel/lib/wake-vector",
     "//zircon/kernel/object",
     "//zircon/kernel/platform:headers",
     "//zircon/system/ulib/explicit-memory",
@@ -169,6 +168,7 @@ kernel_rust_mod("syscalls-rs") {
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/page:page-rs",
+    "//zircon/kernel/lib/wake-vector:wake-vector-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
     "//zircon/vdso:private",
   ]

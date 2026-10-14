@@ -362,6 +362,11 @@ multiconst!(u64, [
     ZX_SYSTEM_SUSPEND_OPTION_DEEP        = 1 << 2;
 ]);
 
+multiconst!(u32, [
+    ZX_SYSTEM_WAKE_REPORT_ENTRY_FLAG_SIGNALED            = 1 << 0;
+    ZX_SYSTEM_WAKE_REPORT_ENTRY_FLAG_PREVIOUSLY_REPORTED = 1 << 1;
+]);
+
 // LINT.IfChange(zx_status_t)
 // matches ///zircon/system/public/zircon/errors.h
 multiconst!(zx_status_t, [
@@ -3450,6 +3455,8 @@ pub union zx_iob_region_extension_t {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Default)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable))]
 pub struct zx_wake_source_report_entry_t {
     pub koid: zx_koid_t,
     pub name: [u8; ZX_MAX_NAME_LEN],
@@ -3461,6 +3468,8 @@ pub struct zx_wake_source_report_entry_t {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Default)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable))]
 pub struct zx_wake_source_report_header_t {
     pub report_time: zx_instant_boot_t,
     pub suspend_start_time: zx_instant_boot_t,

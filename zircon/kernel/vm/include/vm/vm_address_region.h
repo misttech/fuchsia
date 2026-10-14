@@ -22,9 +22,9 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <ffl/saturating_arithmetic.h>
+#include <kernel/ffi.h>
 #include <ktl/limits.h>
 #include <ktl/optional.h>
-#include <object/opaque_storage.h>
 #include <vm/vm_address_region_observer.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_constants.h>

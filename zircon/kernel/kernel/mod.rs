@@ -8,6 +8,7 @@ pub mod align;
 pub mod bits;
 pub mod deadline;
 pub mod event;
+pub mod idle_power_thread;
 pub mod interrupt;
 pub mod koid;
 pub mod mp;

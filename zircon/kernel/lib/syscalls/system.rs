@@ -61,17 +61,6 @@ unsafe extern "C" {
     fn cpp_mp_unplug_cpu_mask_all_but_primary() -> zx_status_t;
     #[cfg(target_arch = "x86_64")]
     fn cpp_system_powerctl_x86_set_pkg_pl1(arg: &zx_system_powerctl_arg_t) -> zx_status_t;
-    fn cpp_wake_vector_discard_wake_event_report();
-    fn cpp_idle_power_thread_transition_all_active_to_suspend(
-        resume_deadline: zx_instant_boot_t,
-    ) -> zx_instant_boot_t;
-    fn cpp_wake_vector_generate_wake_event_report(
-        start_time: zx_instant_boot_t,
-        out_header: *mut zx_wake_source_report_header_t,
-        out_entries: *mut zx_wake_source_report_entry_t,
-        num_entries: u32,
-        actual_entries: *mut u32,
-    ) -> zx_status_t;
 }
 
 #[syscall]
@@ -433,8 +422,7 @@ pub fn sys_system_suspend_enter(
     // If the user has asked us to discard wake entries for wake vectors which are
     // currently ack'ed, do so now.
     if options & ZX_SYSTEM_SUSPEND_OPTION_DISCARD != 0 {
-        // SAFETY: Call C++ discard wake event report helper.
-        unsafe { cpp_wake_vector_discard_wake_event_report() };
+        crate::wake_vector::WakeEvent::discard_wake_event_report();
     }
 
     // If the user has asked us to only generate a report (but not actually try to
@@ -444,38 +432,31 @@ pub fn sys_system_suspend_enter(
         if !wants_report {
             return Err(Status::INVALID_ARGS);
         }
-        // SAFETY: Pass user pointers to C++ report generator after validating pointer consistency.
-        let status = unsafe {
-            cpp_wake_vector_generate_wake_event_report(
-                ZX_TIME_INFINITE,
-                out_header.as_ptr(),
-                out_entries.as_ptr(),
-                num_entries,
-                actual_entries.as_ptr(),
-            )
-        };
-        Status::ok(status)?;
+        crate::wake_vector::WakeEvent::generate_wake_event_report(
+            ZX_TIME_INFINITE,
+            out_header,
+            out_entries,
+            num_entries,
+            actual_entries,
+        )?;
         return Ok(());
     }
 
     // Finally, attempt to drop into suspend.  Then, if the user asked for a wake
     // event report, generate one for them.
-    // SAFETY: Call C++ transition to suspend helper.
     let suspend_start_time =
-        unsafe { cpp_idle_power_thread_transition_all_active_to_suspend(resume_deadline) };
+        crate::kernel::idle_power_thread::IdlePowerThread::transition_all_active_to_suspend(
+            resume_deadline,
+        );
 
     if wants_report {
-        // SAFETY: Pass user pointers to C++ report generator after validating pointer consistency.
-        let status = unsafe {
-            cpp_wake_vector_generate_wake_event_report(
-                suspend_start_time,
-                out_header.as_ptr(),
-                out_entries.as_ptr(),
-                num_entries,
-                actual_entries.as_ptr(),
-            )
-        };
-        Status::ok(status)?;
+        crate::wake_vector::WakeEvent::generate_wake_event_report(
+            suspend_start_time,
+            out_header,
+            out_entries,
+            num_entries,
+            actual_entries,
+        )?;
     }
 
     Ok(())

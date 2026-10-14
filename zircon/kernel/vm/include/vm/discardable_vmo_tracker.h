@@ -12,8 +12,8 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <ktl/utility.h>
-#include <object/opaque_storage.h>
 #include <vm/vm_cow_pages.h>
 
 class DiscardableVmoTracker;

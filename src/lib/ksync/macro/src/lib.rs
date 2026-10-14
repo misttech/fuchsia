@@ -1904,7 +1904,8 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
             static #reg_ident: ::ksync::LockClassRegistration =
                 ::ksync::LockClassRegistration::with_flags(
                     &#string_reg_ident,
-                    ::ksync::LOCK_FLAGS_SINGLETON_LOCK,
+                    <#raw_lock as ::ksync::RawLock>::LOCK_FLAGS
+                        | ::ksync::LOCK_FLAGS_SINGLETON_LOCK,
                 );
 
             impl ::ksync::LockClass for #name {

@@ -15,7 +15,7 @@
 
 #include <arch/riscv64/aspace-constants.h>
 #include <arch/riscv64/mmu.h>
-#include <object/opaque_storage.h>
+#include <kernel/ffi.h>
 #include <vm/arch_vm_aspace.h>
 
 enum class Riscv64AspaceType : uint8_t {
