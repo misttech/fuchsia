@@ -12,6 +12,15 @@ config("board_name") {
   cflags = [ "-DBOARD_NAME=\"${board_name}\"" ]
 }
 
+config("includes") {
+  include_dirs = [
+    ".",
+    "../include",
+    "../third_party/include",
+    "../third_party/include/gbl",
+  ]
+}
+
 source_set("lib") {
   sources = [
     "acpi.cc",
@@ -26,6 +35,7 @@ source_set("lib") {
     "efi_variables.h",
     "fastboot.cc",
     "fastboot.h",
+    "gbl_protocols/gbl_efi_fastboot_protocol.cc",
     "gpt.cc",
     "gpt.h",
     "input.cc",
@@ -64,25 +74,21 @@ source_set("lib") {
     "//zircon/third_party/ulib/cksum",
   ]
 
-  include_dirs = []
-  include_dirs += [
-    ".",
-    "../include",
-    "../third_party/include/gbl",
-  ]
-
   if (is_kernel) {
     public_deps += [
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/libc",
     ]
 
-    include_dirs += [ "//" ]  # utf_conversion isn't a proper library.
+    include_dirs = [ "//" ]  # utf_conversion isn't a proper library.
   }
 
   # UEFI does not require aligned access
   defines = [ "FUCHSIA_FIRMWARE_STORAGE_BUFFER_ALIGNMENT=1" ]
-  public_configs = [ ":board_name" ]
+  public_configs = [
+    ":board_name",
+    ":includes",
+  ]
 }
 
 # Some dependency does not exist in non efi toolchain, which will cause gn
@@ -165,7 +171,6 @@ template("gigaboot_esp") {
       "gbl_loader.cc",
       "gbl_loader.h",
       "gbl_protocols/gbl_efi_boot_control_protocol.cc",
-      "gbl_protocols/gbl_efi_fastboot_protocol.cc",
       "main.cc",
       "malloc.cc",
       "sysdeps.cc",
@@ -187,11 +192,6 @@ template("gigaboot_esp") {
     ]
 
     cflags = [ "-DAVB_COMPILATION" ]
-    include_dirs = [
-      ".",
-      "../include",
-      "../third_party/include",
-    ]
 
     _stop_in_fastboot =
         defined(invoker.stop_in_fastboot) && invoker.stop_in_fastboot

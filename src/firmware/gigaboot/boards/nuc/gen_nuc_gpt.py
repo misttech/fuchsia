@@ -21,7 +21,7 @@ _FIRST = 34  # MBR + GPT header + GPT entries
 
 # Partition information taken mostly from src/firmware/paver/x64.cc
 PARTITIONS = [
-    ("bootloader", "5ECE94FE-4C86-11E8-A15B-480FCF35F8E6", 128 * _SZ_MB),
+    ("bootloader", "5ECE94FE-4C86-11E8-A15B-480FCF35F8E6", 16 * _SZ_MB),
     ("zircon_a", "9B37FFF6-2E58-466A-983A-F7926D0B04E0", 128 * _SZ_MB),
     ("zircon_b", "9B37FFF6-2E58-466A-983A-F7926D0B04E0", 128 * _SZ_MB),
     ("zircon_r", "9B37FFF6-2E58-466A-983A-F7926D0B04E0", 196 * _SZ_MB),

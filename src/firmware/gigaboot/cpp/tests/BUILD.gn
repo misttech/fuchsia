@@ -10,6 +10,7 @@ test("gigaboot_unittests") {
     "cmdline_tests.cc",
     "efi_variables_test.cc",
     "fastboot_test.cc",
+    "gbl_efi_fastboot_protocol_test.cc",
     "gpt_tests.cc",
     "input_test.cc",
     "mock_boot_service.cc",
@@ -39,8 +40,6 @@ test("gigaboot_unittests") {
     "//zircon/system/ulib/fbl",
     "//zircon/third_party/ulib/cksum",
   ]
-
-  include_dirs = [ ".." ]
 }
 
 group("tests") {
