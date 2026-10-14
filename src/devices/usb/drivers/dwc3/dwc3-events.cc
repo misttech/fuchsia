@@ -305,15 +305,17 @@ void Dwc3::StopEvents() {
   uint32_t event_bytes;
   while ((event_bytes = GEVNTCOUNT::Get(0).ReadFrom(mmio).EVNTCOUNT()) > 0) {
     uint32_t event_count = event_bytes / sizeof(uint32_t);
-    for (uint32_t event : event_fifo_.Read(event_count)) {
-      if (!(event & DEPEVT_NON_EP) && DEPEVT_TYPE(event) == DEPEVT_CMD_CMPLT &&
-          DEPEVT_CMD_CMPLT_CMD_TYPE(event) == DEPCMD::DEPSTRTXFER && DEPEVT_STATUS(event) == 0) {
-        Endpoint stale_ep(DEPEVT_PHYS_EP(event));
-        stale_ep.rsrc_id = DEPEVT_CMD_CMPLT_RSRC_ID(event);
-        CmdEpEndTransfer(stale_ep, /*cmd_ioc=*/false);
+    if (event_fifo_.TotalSlots() > 0) {
+      for (uint32_t event : event_fifo_.Read(event_count)) {
+        if (!(event & DEPEVT_NON_EP) && DEPEVT_TYPE(event) == DEPEVT_CMD_CMPLT &&
+            DEPEVT_CMD_CMPLT_CMD_TYPE(event) == DEPCMD::DEPSTRTXFER && DEPEVT_STATUS(event) == 0) {
+          Endpoint stale_ep(DEPEVT_PHYS_EP(event));
+          stale_ep.rsrc_id = DEPEVT_CMD_CMPLT_RSRC_ID(event);
+          CmdEpEndTransfer(stale_ep, /*cmd_ioc=*/false);
+        }
       }
+      event_fifo_.Advance(event_count);
     }
-    event_fifo_.Advance(event_count);
     GEVNTCOUNT::Get(0)
         .FromValue(0)
         .set_EVNT_HANDLER_BUSY(1)

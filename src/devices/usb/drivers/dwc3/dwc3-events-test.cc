@@ -67,6 +67,9 @@ TEST_F(Dwc3EventsTest, HandleDisconnectEvent) {
     if (!uep) {
       return;
     }
+    ASSERT_OK(Dwc3TestHelper::InitFifo(drv, 2, false));
+    auto* trb = uep->fifo.AdvanceWrite();
+    trb->control = TRB_HWO;
     auto& ep = uep->ep;
     ep.transfer_state = Endpoint::TransferState::kActiveOngoing;
     Dwc3TestHelper::SetControllerStarted(drv, true);

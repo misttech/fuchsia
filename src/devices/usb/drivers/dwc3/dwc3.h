@@ -17,6 +17,7 @@
 #include <fidl/fuchsia.hardware.usb.policy/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/async/cpp/irq.h>
+#include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/component/cpp/driver_base2.h>
@@ -168,7 +169,17 @@ class Dwc3 : public fdf::DriverBase2,
           dwc3_{dwc3},
           uep_{uep} {}
 
-    void CancelAll(zx_status_t reason, bool force = false);
+    // Cancels every request on the endpoint. While the core is running, the active transfer is
+    // ended with DEPENDXFER (CMDIOC=1) and the requests are completed from the resulting
+    // DEPEVT_CMD_CMPLT. With the core stopped there is nothing left to end and the requests are
+    // completed immediately.
+    void CancelAll(zx_status_t reason);
+    // Teardown counterpart of CancelAll(): ends the active transfer synchronously (DEPENDXFER
+    // with CMDIOC=0, waiting for DEPCMD.CMDACT to clear) and completes every active and queued
+    // request right away. Only for the moment the core is about to be stopped, reset or powered
+    // down and no further endpoint event will be delivered; function drivers are expected to have
+    // disabled their endpoints through CancelAll() before.
+    void RemoveRequests(zx_status_t reason);
 
     std::queue<usb::RequestVariant> queued_reqs;  // requests waiting to be processed
     struct RequestState {
@@ -488,11 +499,10 @@ class Dwc3 : public fdf::DriverBase2,
 
   // Methods specific to user endpoints
   // This method is safe to call with the core powered down.
-  // When `force` is false (default, used when the event FIFO remains active such as USB bus reset),
-  // active transfers enter `kCanceling` (`CMDIOC=1`) and defer `DALEPENA` clearing until
-  // `DEPEVT_CMD_CMPL` arrives. When `force` is true (used prior to `StopEvents()` / power-off),
-  // active transfers are ended synchronously (`CMDIOC=0`) so `DALEPENA` is cleared immediately.
-  void UserEpReset(UserEndpoint& uep, bool force = false);
+  // Cancels the endpoint's requests gracefully (see EpServer::CancelAll()) and unconfigures it;
+  // used while the event ring stays live (USB bus reset, SET_CONFIGURATION), where `kCanceling`
+  // completes from DEPEVT_CMD_CMPLT and `DALEPENA` is cleared once the transfer has ended.
+  void UserEpReset(UserEndpoint& uep);
   void UserEpQueueNext(UserEndpoint& uep);
   void UserEpQueueNextSingle(UserEndpoint& uep);
   void UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer);
@@ -503,7 +513,7 @@ class Dwc3 : public fdf::DriverBase2,
   void CancelAllEndpointIdleCallbacks();
 
   // Resets only user endpoints without touching EP0 or its state.
-  void ResetUserEndpoints(bool force = false);
+  void ResetUserEndpoints();
 
   enum class QueueRequestError {
     kEmpty,
@@ -514,7 +524,13 @@ class Dwc3 : public fdf::DriverBase2,
   QueueRequestResult QueueNextRequest(UserEndpoint& uep, bool is_single);
 
   // This method is safe to call with the core powered down.
-  void ResetEndpoints(bool force = false);
+  void ResetEndpoints();
+
+  // The last step before the core stops delivering endpoint events: ends whatever transfer a
+  // function driver left running synchronously (EpServer::RemoveRequests()), returns the requests,
+  // unconfigures the user endpoints and finally EP0. Nothing here waits for an event; in a graceful
+  // teardown the function drivers have already disabled their endpoints and this finds them idle.
+  void StopActiveTransfers();
 
   // Commands
   bool CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id_base);
@@ -607,6 +623,15 @@ class Dwc3 : public fdf::DriverBase2,
   // kept powered only so function drivers can disable their endpoints.
   bool disconnect_in_flight_{false};
   bool stopping_{false};
+
+  // A DCI disconnect drain (SetConnected(false)) completes once every function driver has answered
+  // SetConfigured(false), normally within milliseconds. Nothing bounds that wait: a function driver
+  // that never answers leaves the core powered, the connection wake lease held, the PHY untold and
+  // the connection watcher disarmed until the driver is stopped. There is no recovery for that yet;
+  // the watchdog only makes it visible in the logs and in Inspect.
+  static inline constexpr zx::duration kDciDisconnectDrainStallDelay{zx::sec(5)};
+  zx::duration dci_disconnect_drain_stall_delay_{kDciDisconnectDrainStallDelay};
+  async::TaskClosure dci_disconnect_drain_watchdog_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> dci_bindings_;
   fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;

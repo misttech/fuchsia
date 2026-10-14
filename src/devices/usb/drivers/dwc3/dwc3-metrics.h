@@ -69,6 +69,7 @@ class Dwc3Metrics {
     }
   }
   void RecordDciDisconnectSuperseded() { dci_disconnect_superseded_count_++; }
+  void RecordDciDisconnectStall() { dci_disconnect_stall_count_++; }
   void RecordHaltTimeout() { halt_controller_timeouts_++; }
   void RecordResetTimeout() { hw_reset_timeouts_++; }
   void RecordCmdActTimeout() { cmd_act_timeouts_++; }
@@ -77,6 +78,7 @@ class Dwc3Metrics {
 
   uint64_t phy_rpc_errors() const { return phy_rpc_errors_; }
   uint64_t hw_reset_timeouts() const { return hw_reset_timeouts_; }
+  uint64_t dci_disconnect_stall_count() const { return dci_disconnect_stall_count_; }
 
   void UpdateMaxEventBatch(uint32_t batch_size) {
     if (batch_size > max_event_batch_size_) {
@@ -98,6 +100,7 @@ class Dwc3Metrics {
   zx_duration_t last_dci_disconnect_duration_ns_{0};
   zx_duration_t max_dci_disconnect_duration_ns_{0};
   uint64_t dci_disconnect_superseded_count_{0};
+  uint64_t dci_disconnect_stall_count_{0};
   uint64_t halt_controller_timeouts_{0};
   uint64_t hw_reset_timeouts_{0};
   uint64_t cmd_act_timeouts_{0};

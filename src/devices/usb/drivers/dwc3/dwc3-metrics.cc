@@ -36,6 +36,7 @@ void Dwc3Metrics::Init() {
   last_dci_disconnect_duration_ns_ = 0;
   max_dci_disconnect_duration_ns_ = 0;
   dci_disconnect_superseded_count_ = 0;
+  dci_disconnect_stall_count_ = 0;
   halt_controller_timeouts_ = 0;
   hw_reset_timeouts_ = 0;
   cmd_act_timeouts_ = 0;
@@ -166,6 +167,7 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
     runtime_node.RecordInt("last_dci_disconnect_duration_ns", last_dci_disconnect_duration_ns_);
     runtime_node.RecordInt("max_dci_disconnect_duration_ns", max_dci_disconnect_duration_ns_);
     runtime_node.RecordUint("dci_disconnect_superseded_count", dci_disconnect_superseded_count_);
+    runtime_node.RecordUint("dci_disconnect_stall_count", dci_disconnect_stall_count_);
     runtime_node.RecordUint("halt_controller_timeouts", halt_controller_timeouts_);
     runtime_node.RecordUint("hw_reset_timeouts", hw_reset_timeouts_);
     runtime_node.RecordUint("cmd_act_timeouts", cmd_act_timeouts_);

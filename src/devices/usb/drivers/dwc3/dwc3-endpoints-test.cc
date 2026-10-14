@@ -92,6 +92,24 @@ class Dwc3EndpointsTestBase : public TestFixture<true> {
 
   void SetupEndpoint(uint8_t ep_address, fdescriptor::EndpointType ep_type,
                      uint16_t max_packet_size) {
+    ASSERT_NO_FATAL_FAILURE(ConfigureEndpoint(ep_address, ep_type, max_packet_size));
+
+    zx::result endpoints = fidl::CreateEndpoints<fendpoint::Endpoint>();
+    ASSERT_OK(endpoints);
+    auto [client_end, server_end] = std::move(*endpoints);
+
+    fidl::WireResult conn_res = dci_->ConnectToEndpoint(ep_address, std::move(server_end));
+    ASSERT_OK(conn_res.status());
+    ASSERT_TRUE(conn_res.value().is_ok()) << "ConnectToEndpoint protocol failed: "
+                                          << zx_status_get_string(conn_res.value().error_value());
+
+    ep_client_.Bind(std::move(client_end), client_loop_.dispatcher(), &event_handler_);
+  }
+
+  // Configures (or, after a bus reset disabled it, re-configures) the endpoint over the DCI
+  // protocol without touching the Endpoint channel bound by SetupEndpoint().
+  void ConfigureEndpoint(uint8_t ep_address, fdescriptor::EndpointType ep_type,
+                         uint16_t max_packet_size) {
     fdescriptor::wire::UsbEndpointDescriptor ep_desc{
         .b_length = sizeof(fdescriptor::wire::UsbEndpointDescriptor),
         .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
@@ -113,17 +131,6 @@ class Dwc3EndpointsTestBase : public TestFixture<true> {
     ASSERT_TRUE(config_res.value().is_ok())
         << "ConfigureEndpoint protocol failed: "
         << zx_status_get_string(config_res.value().error_value());
-
-    zx::result endpoints = fidl::CreateEndpoints<fendpoint::Endpoint>();
-    ASSERT_OK(endpoints);
-    auto [client_end, server_end] = std::move(*endpoints);
-
-    fidl::WireResult conn_res = dci_->ConnectToEndpoint(ep_address, std::move(server_end));
-    ASSERT_OK(conn_res.status());
-    ASSERT_TRUE(conn_res.value().is_ok()) << "ConnectToEndpoint protocol failed: "
-                                          << zx_status_get_string(conn_res.value().error_value());
-
-    ep_client_.Bind(std::move(client_end), client_loop_.dispatcher(), &event_handler_);
   }
 
   void RegisterVmo(uint8_t vmo_id, uint64_t size) {
@@ -850,6 +857,7 @@ TEST_F(Dwc3EndpointsTestBase, RingBufferWraparoundZlp) {
   QueueRequest(1, 512, 512, fdescriptor::EndpointType::kBulk, true);
   WaitForActiveCount(ep_num, 1);
 
+  const dwc3_trb_t* initial_read = nullptr;
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);
     EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
@@ -857,15 +865,25 @@ TEST_F(Dwc3EndpointsTestBase, RingBufferWraparoundZlp) {
 
     // Note: RingBufferWraparoundZlp is only ever executed with enqueue_many == true
     AssertZlpUnchainedControlBits(trbs, true);
+    initial_read = uep.fifo.current_read();
 
-    // Explicitly verify pointer addresses to prove wrap
-    auto* initial_read = uep.fifo.current_read();
-    uep.fifo.AdvanceRead();
-    auto* wrapped_read = uep.fifo.current_read();
+    // Complete first (data) TRB to advance read_ across the Link TRB boundary to slot 0.
+    TriggerEpTransferInProgress(drv, ep_num);
+    const auto* wrapped_read = uep.fifo.current_read();
 
     // Distance should not be linear, proving it wrapped.
     EXPECT_LT(wrapped_read, initial_read);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 1u);
+
+    // Complete second (ZLP) TRB so all queued TRBs are retired cleanly.
+    TriggerEpTransferInProgress(drv, ep_num);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
   });
+  WaitForActiveCount(ep_num, 0u);
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 512UL);
 }
 
 TEST_P(Dwc3EndpointsTest, InputEndpointMultiPacketZlpComplete) {
@@ -982,13 +1000,15 @@ TEST_F(Dwc3EndpointsTestBase, OutEndpointRingBufferWraparound) {
     auto& uep = GetUserEndpoint(drv, ep_num);
     EXPECT_EQ(uep.fifo.GetActiveCount(), 1u);
 
-    auto* initial_read = uep.fifo.current_read();
-    uep.fifo.AdvanceRead();
-    auto* wrapped_read = uep.fifo.current_read();
+    const auto* initial_read = uep.fifo.current_read();
+    TriggerEpTransferInProgress(drv, ep_num);
+    const auto* wrapped_read = uep.fifo.current_read();
 
     // Verify wraparound across slot 255 Link TRB back to index 0
     EXPECT_LT(wrapped_read, initial_read);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
   });
+  WaitForActiveCount(ep_num, 0u);
 }
 
 TEST_F(Dwc3EndpointsTestBase, EndpointStallAndClear) {
@@ -4364,7 +4384,7 @@ TEST_P(Dwc3EndpointsTest, ConfigureEndpointWhileCancelingWaitsForTransferEnded) 
   });
 }
 
-TEST_P(Dwc3EndpointsTest, ForceResetWhileCancelingDrainsAndIgnoresStaleTransferEnded) {
+TEST_P(Dwc3EndpointsTest, RemoveRequestsWhileCancelingDrainsAndIgnoresStaleTransferEnded) {
   const bool enqueue_many = GetParam();
   TriggerConnection();
 
@@ -4389,11 +4409,13 @@ TEST_P(Dwc3EndpointsTest, ForceResetWhileCancelingDrainsAndIgnoresStaleTransferE
   ASSERT_TRUE(disable_res.value().is_ok());
   WaitForState(ep_num, TransferState::kCanceling);
 
-  // Force-reset the endpoint before DEPEVT_CMD_CMPLT arrives; this drains the request in software
-  // and increments stale_cancels_to_ignore.
+  // Teardown (RemoveRequests, as run by StopActiveTransfers()) reaches the endpoint before
+  // DEPEVT_CMD_CMPLT arrives; this returns the request immediately and increments
+  // stale_cancels_to_ignore.
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);
-    Dwc3TestHelper::UserEpReset(drv, uep, /*force=*/true);
+    Dwc3TestHelper::RemoveRequests(drv, uep, ZX_ERR_IO_NOT_PRESENT);
+    Dwc3TestHelper::EpReset(drv, uep.ep);
   });
 
   std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
@@ -4575,7 +4597,10 @@ TEST_P(Dwc3EndpointsTest, HandleResetEventWhenEndTransferTimesOutDrainsActiveReq
   EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
 }
 
-TEST_P(Dwc3EndpointsTest, DisconnectDuringActiveTransferSynchronousEndTransferAndClearsDalepena) {
+// No UsbDciInterface is bound here, so there is no usb-peripheral to unconfigure the function
+// owning ep_num: the disconnect must fall back to ending the transfer synchronously
+// (StopActiveTransfers()) before the core is reset, and must still return the request.
+TEST_P(Dwc3EndpointsTest, DisconnectWithoutDciEndsLeftoverTransferSynchronouslyAndClearsDalepena) {
   const bool enqueue_many = GetParam();
   TriggerConnection();
 
@@ -4650,6 +4675,786 @@ TEST_P(Dwc3EndpointsTest, DisconnectDuringActiveTransferSynchronousEndTransferAn
   std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
   ASSERT_EQ(completions.size(), 1u);
   EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
+}
+
+// Cable unplug with usb-peripheral bound while the function driver's endpoint is still
+// transferring. The link is already gone, so dwc3 ends the transfer synchronously (DEPENDXFER with
+// CMDIOC=0), returns the request and resets the core *before* asking usb-peripheral to disconnect.
+// The core stays powered for that drain but is_active() is false, so the function driver's
+// CancelAll and DisableEndpoint complete immediately against the idle endpoint instead of waiting
+// for an event the dead link can no longer deliver. Only once SetConnected(false) completes is the
+// core powered down, the PHY told and the connection watcher re-armed.
+TEST_P(Dwc3EndpointsTest, DisconnectEndsTransferBeforeDciDrainAndCancelAllRepliesImmediately) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle);
+
+  // Stand in for usb-peripheral: hold SetConnected(false) until the test releases it.
+  FakeUsbDciInterface fake_dci;
+  fake_dci.SetDeferSetConnectedFalse(true);
+  libsync::Completion set_connected_false_received;
+  fake_dci.SetSetConnectedCallback([&](bool connected) {
+    if (!connected) {
+      set_connected_false_received.Signal();
+    }
+  });
+  std::optional<fidl::ServerBindingRef<fdci::UsbDciInterface>> dci_binding;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto [client_end, server_end] = fidl::Endpoints<fdci::UsbDciInterface>::Create();
+    dci_binding = fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                   std::move(server_end), &fake_dci);
+    Dwc3TestHelper::BindDciInterface(drv, std::move(client_end));
+  });
+  auto unbind_dci = fit::defer([&]() {
+    dut_.RunInDriverContext([&](Dwc3& drv) { dci_binding->Unbind(); });
+    dut_.runtime().RunUntilIdle();
+  });
+
+  // Observe DEPENDXFER commands on ep_num and core soft resets.
+  auto end_transfer_writes = std::make_shared<std::atomic<uint32_t>>(0);
+  auto end_transfer_last_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto reset_count = std::make_shared<std::atomic<uint32_t>>(0);
+  dut_.RunInEnvironmentTypeContext(
+      [this, ep_num, end_transfer_writes, end_transfer_last_val, reset_count](Environment& env) {
+        auto& depcmd = env.reg_region()[DEPCMD::Get(ep_num).addr()];
+        depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+        depcmd.SetWriteCallback([ep_num, end_transfer_writes, end_transfer_last_val](uint64_t val) {
+          if (DEPCMD::Get(ep_num).FromValue(static_cast<uint32_t>(val)).CMDTYP() ==
+              DEPCMD::DEPENDXFER) {
+            end_transfer_writes->fetch_add(1);
+            end_transfer_last_val->store(static_cast<uint32_t>(val));
+          }
+        });
+        env.reg_region()[DCTL::Get().addr()].SetWriteCallback([this, reset_count](uint64_t val) {
+          if (DCTL::Get().FromValue(static_cast<uint32_t>(val)).CSFTRST() == 1) {
+            reset_count->fetch_add(1);
+          }
+          Write_DCTL(static_cast<uint32_t>(val));
+        });
+      });
+  auto restore_regs = fit::defer([this, ep_num]() {
+    dut_.RunInEnvironmentTypeContext([this, ep_num](Environment& env) {
+      auto& depcmd = env.reg_region()[DEPCMD::Get(ep_num).addr()];
+      depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+      depcmd.SetWriteCallback([](uint64_t) {});
+      env.reg_region()[DCTL::Get().addr()].SetWriteCallback(
+          [this](uint64_t val) { Write_DCTL(static_cast<uint32_t>(val)); });
+    });
+  });
+
+  size_t disconnected_reports_before = 0;
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    disconnected_reports_before = env.usb_phy().disconnected_reports();
+    env.usb_phy().completion()->Reset();
+  });
+
+  // Unplug: the PHY reports disconnected.
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().TriggerConnection(false); });
+  dut_.runtime().RunUntilIdle();
+  ASSERT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() { return set_connected_false_received.signaled(); }, zx::duration::infinite()));
+  dut_.runtime().RunUntilIdle();
+  ASSERT_TRUE(fake_dci.has_deferred_set_connected());
+
+  // Before usb-peripheral was even asked, the transfer was ended synchronously (CMDIOC=0), the
+  // request returned and -- without an external reset controller -- the core soft-reset. The core
+  // stays powered for the drain, but is_active() is false; the PHY has not been told and the
+  // watcher has not been re-armed.
+  EXPECT_EQ(end_transfer_writes->load(), 1u);
+  EXPECT_EQ(DEPCMD::Get(ep_num).FromValue(end_transfer_last_val->load()).CMDIOC(), 0u);
+  EXPECT_EQ(reset_count->load(), 1u);
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1u);
+  EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(Dwc3TestHelper::GetPowerOn(drv));
+    EXPECT_FALSE(Dwc3TestHelper::IsActive(drv));
+    EXPECT_TRUE(Dwc3TestHelper::IsXferIdle(drv, ep_num));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, ep_num));
+  });
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    EXPECT_EQ(env.usb_phy().disconnected_reports(), disconnected_reports_before);
+    EXPECT_FALSE(env.usb_phy().has_completer());
+  });
+
+  // The function driver unconfigures during the drain: CancelAll replies at once instead of
+  // parking in cancel_completers, DisableEndpoint succeeds, and no further DEPENDXFER is issued.
+  auto cancel_replied = std::make_shared<std::atomic<bool>>(false);
+  auto cancel_ok = std::make_shared<std::atomic<bool>>(false);
+  ep_client_->CancelAll().Then(
+      [cancel_replied, cancel_ok](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+        cancel_ok->store(res.is_ok());
+        cancel_replied->store(true);
+      });
+  ASSERT_TRUE(dut_.runtime().RunWithTimeoutOrUntil([&]() { return cancel_replied->load(); },
+                                                   zx::duration::infinite()));
+  EXPECT_TRUE(cancel_ok->load());
+  fidl::WireResult disable_res = dci_->DisableEndpoint(ep_address);
+  ASSERT_OK(disable_res.status());
+  EXPECT_TRUE(disable_res.value().is_ok());
+  EXPECT_EQ(end_transfer_writes->load(), 1u);
+  EXPECT_EQ(reset_count->load(), 1u);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_TRUE(uep.server.has_value());
+    EXPECT_TRUE(uep.server->cancel_completers.empty());
+  });
+
+  // usb-peripheral is done: the core is powered down, the connection lease released, and only
+  // then is the PHY told and the hanging get re-armed.
+  dut_.RunInDriverContext([&](Dwc3& drv) { fake_dci.CompleteDeferredSetConnected(ZX_OK); });
+  dut_.runtime().RunUntilIdle();
+  ASSERT_OK(WaitForPhy());
+
+  EXPECT_EQ(end_transfer_writes->load(), 1u);
+  EXPECT_EQ(reset_count->load(), 1u);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_FALSE(Dwc3TestHelper::GetPowerOn(drv));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, ep_num));
+    EXPECT_TRUE(Dwc3TestHelper::IsXferIdle(drv, ep_num));
+  });
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t reports = 0;
+        dut_.RunInEnvironmentTypeContext(
+            [&](Environment& env) { reports = env.usb_phy().disconnected_reports(); });
+        return reports == disconnected_reports_before + 1;
+      },
+      zx::duration::infinite()));
+}
+
+// Cable unplug while a DEPSTRTXFER is still in flight (kStartingSingle / kStartingOngoing, no
+// resource id yet). There is nothing to end in hardware: the request is returned right away and
+// the stale start is recorded, then cleared again by StopEvents() since the event ring is stopped
+// and the core reset before the start event could ever be consumed. The function driver's
+// CancelAll / DisableEndpoint during the drain still reply immediately, and -- the part that would
+// hang if the stale count leaked -- the endpoint can be configured again on the next connection.
+TEST_P(Dwc3EndpointsTest, DisconnectWhileStartingReturnsRequestAndClearsStaleStartForReconnect) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue a request but never deliver DEPEVT_XFER_STARTED: the endpoint stays in kStarting*.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  WaitForState(ep_num,
+               enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle);
+
+  FakeUsbDciInterface fake_dci;
+  fake_dci.SetDeferSetConnectedFalse(true);
+  libsync::Completion set_connected_false_received;
+  fake_dci.SetSetConnectedCallback([&](bool connected) {
+    if (!connected) {
+      set_connected_false_received.Signal();
+    }
+  });
+  std::optional<fidl::ServerBindingRef<fdci::UsbDciInterface>> dci_binding;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto [client_end, server_end] = fidl::Endpoints<fdci::UsbDciInterface>::Create();
+    dci_binding = fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                   std::move(server_end), &fake_dci);
+    Dwc3TestHelper::BindDciInterface(drv, std::move(client_end));
+  });
+  auto unbind_dci = fit::defer([&]() {
+    dut_.RunInDriverContext([&](Dwc3& drv) { dci_binding->Unbind(); });
+    dut_.runtime().RunUntilIdle();
+  });
+
+  auto end_transfer_writes = std::make_shared<std::atomic<uint32_t>>(0);
+  dut_.RunInEnvironmentTypeContext([ep_num, end_transfer_writes](Environment& env) {
+    auto& depcmd = env.reg_region()[DEPCMD::Get(ep_num).addr()];
+    depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+    depcmd.SetWriteCallback([ep_num, end_transfer_writes](uint64_t val) {
+      if (DEPCMD::Get(ep_num).FromValue(static_cast<uint32_t>(val)).CMDTYP() ==
+          DEPCMD::DEPENDXFER) {
+        end_transfer_writes->fetch_add(1);
+      }
+    });
+  });
+  auto restore_regs = fit::defer([this, ep_num]() {
+    dut_.RunInEnvironmentTypeContext([ep_num](Environment& env) {
+      auto& depcmd = env.reg_region()[DEPCMD::Get(ep_num).addr()];
+      depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+      depcmd.SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().TriggerConnection(false); });
+  dut_.runtime().RunUntilIdle();
+  ASSERT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() { return set_connected_false_received.signaled(); }, zx::duration::infinite()));
+  dut_.runtime().RunUntilIdle();
+  ASSERT_TRUE(fake_dci.has_deferred_set_connected());
+
+  // No resource id, so no DEPENDXFER: the request is simply returned, the endpoint is idle and
+  // disabled, and the stale start recorded by RemoveRequests() has already been cleared by
+  // StopEvents().
+  EXPECT_EQ(end_transfer_writes->load(), 0u);
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1u);
+  EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(Dwc3TestHelper::GetPowerOn(drv));
+    EXPECT_FALSE(Dwc3TestHelper::IsActive(drv));
+    EXPECT_TRUE(Dwc3TestHelper::IsXferIdle(drv, ep_num));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, ep_num));
+    EXPECT_EQ(GetUserEndpoint(drv, ep_num).ep.stale_starts_to_end, 0u);
+  });
+
+  // The function driver unconfigures during the drain without waiting for any event.
+  auto cancel_replied = std::make_shared<std::atomic<bool>>(false);
+  auto cancel_ok = std::make_shared<std::atomic<bool>>(false);
+  ep_client_->CancelAll().Then(
+      [cancel_replied, cancel_ok](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+        cancel_ok->store(res.is_ok());
+        cancel_replied->store(true);
+      });
+  ASSERT_TRUE(dut_.runtime().RunWithTimeoutOrUntil([&]() { return cancel_replied->load(); },
+                                                   zx::duration::infinite()));
+  EXPECT_TRUE(cancel_ok->load());
+  fidl::WireResult disable_res = dci_->DisableEndpoint(ep_address);
+  ASSERT_OK(disable_res.status());
+  EXPECT_TRUE(disable_res.value().is_ok());
+  EXPECT_EQ(end_transfer_writes->load(), 0u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { fake_dci.CompleteDeferredSetConnected(ZX_OK); });
+  dut_.runtime().RunUntilIdle();
+  ASSERT_OK(WaitForPhy());
+  dut_.RunInDriverContext([&](Dwc3& drv) { EXPECT_FALSE(Dwc3TestHelper::GetPowerOn(drv)); });
+
+  // Plug back in: the endpoint must be configurable again, i.e. WaitForEndpointIdle() must not
+  // be left waiting on a start event that was discarded with the previous connection.
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(Dwc3TestHelper::IsActive(drv));
+    EXPECT_EQ(GetUserEndpoint(drv, ep_num).ep.stale_starts_to_end, 0u);
+  });
+  fdescriptor::wire::UsbEndpointDescriptor ep_desc{
+      .b_length = sizeof(fdescriptor::wire::UsbEndpointDescriptor),
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+      .b_endpoint_address = ep_address,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
+      .w_max_packet_size = 512,
+      .b_interval = 0,
+  };
+  fdescriptor::wire::UsbSsEpCompDescriptor ss_comp_desc{
+      .b_length = sizeof(fdescriptor::wire::UsbSsEpCompDescriptor),
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kSsEpCompanion),
+      .b_max_burst = 0,
+      .bm_attributes = 0,
+      .w_bytes_per_interval = 0,
+  };
+  fidl::WireResult config_res = dci_->ConfigureEndpoint(ep_desc, ss_comp_desc);
+  ASSERT_OK(config_res.status());
+  ASSERT_TRUE(config_res.value().is_ok()) << "ConfigureEndpoint after reconnect failed: "
+                                          << zx_status_get_string(config_res.value().error_value());
+  dut_.RunInDriverContext(
+      [&](Dwc3& drv) { EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, ep_num)); });
+}
+
+// DEVT_USB_RESET while a DEPSTRTXFER is still in flight on a user endpoint (kStarting*, no
+// resource id yet). The graceful cancel can only be issued once the start event delivers the
+// resource id, so the endpoint goes kStarting* -> kPendingCancel -> (DEPEVT_XFER_STARTED ->
+// DEPENDXFER) -> kCanceling -> (DEPEVT_CMD_CMPLT) -> kIdle, and Ep0Start() must stay parked behind
+// the idle barrier across both events.
+TEST_P(Dwc3EndpointsTest, HandleResetEventWhileStartingWaitsForStartAndEndBeforeEp0Start) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue a request but do not deliver DEPEVT_XFER_STARTED yet.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  WaitForState(ep_num,
+               enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle);
+
+  // Count DEPENDXFER on ep_num and DEPSTRTXFER on EP0 OUT (issued by Ep0Start() -> Ep0QueueSetup())
+  // from here on.
+  auto end_transfer_writes = std::make_shared<std::atomic<uint32_t>>(0);
+  auto end_transfer_last_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto ep0_start_transfer_writes = std::make_shared<std::atomic<uint32_t>>(0);
+  auto cleanup_ep_depcmd = DeferClearDepcmdCallbacks(ep_num);
+  auto cleanup_ep0_depcmd = DeferClearDepcmdCallbacks(0);
+  dut_.RunInEnvironmentTypeContext([ep_num, end_transfer_writes, end_transfer_last_val,
+                                    ep0_start_transfer_writes](Environment& env) {
+    auto& ep_depcmd = env.reg_region()[DEPCMD::Get(ep_num).addr()];
+    ep_depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+    ep_depcmd.SetWriteCallback([ep_num, end_transfer_writes, end_transfer_last_val](uint64_t val) {
+      if (DEPCMD::Get(ep_num).FromValue(static_cast<uint32_t>(val)).CMDTYP() ==
+          DEPCMD::DEPENDXFER) {
+        end_transfer_writes->fetch_add(1);
+        end_transfer_last_val->store(static_cast<uint32_t>(val));
+      }
+    });
+    auto& ep0_depcmd = env.reg_region()[DEPCMD::Get(0).addr()];
+    ep0_depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+    ep0_depcmd.SetWriteCallback([ep0_start_transfer_writes](uint64_t val) {
+      if (DEPCMD::Get(0).FromValue(static_cast<uint32_t>(val)).CMDTYP() == DEPCMD::DEPSTRTXFER) {
+        ep0_start_transfer_writes->fetch_add(1);
+      }
+    });
+  });
+
+  // Bus reset: there is no resource id to end yet, so the cancel is deferred to the start event
+  // and Ep0Start() parks behind the idle barrier.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::HandleResetEvent(drv);
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kPendingCancel);
+    EXPECT_EQ(uep.on_idle_callbacks.size(), 1u);
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+  });
+  EXPECT_EQ(end_transfer_writes->load(), 0u);
+  EXPECT_EQ(ep0_start_transfer_writes->load(), 0u);
+  EXPECT_EQ(event_handler_.completion_count(), 0u);
+
+  // The start event finally delivers the resource id: the deferred cancel is issued (DEPENDXFER
+  // with CMDIOC=1) and the endpoint moves to kCanceling, but EP0 still waits for DEPEVT_CMD_CMPLT.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    TriggerEpTransferStarted(drv, ep_num, kResourceId);
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kCanceling);
+    EXPECT_EQ(uep.ep.rsrc_id, kResourceId);
+    EXPECT_EQ(uep.on_idle_callbacks.size(), 1u);
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+  });
+  EXPECT_EQ(end_transfer_writes->load(), 1u);
+  EXPECT_EQ(DEPCMD::Get(ep_num).FromValue(end_transfer_last_val->load()).CMDIOC(), 1u);
+  EXPECT_EQ(ep0_start_transfer_writes->load(), 0u);
+  EXPECT_EQ(event_handler_.completion_count(), 0u);
+
+  // DEPEVT_CMD_CMPLT for the cancel: the request is returned, the endpoint is idle and only now
+  // does the barrier release Ep0Start().
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    TriggerEpTransferEnded(drv, ep_num);
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_TRUE(Dwc3TestHelper::IsXferIdle(drv, ep_num));
+    EXPECT_TRUE(uep.on_idle_callbacks.empty());
+    EXPECT_EQ(uep.ep.stale_starts_to_end, 0u);
+    EXPECT_EQ(uep.ep.stale_cancels_to_ignore, 0u);
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+  });
+  EXPECT_EQ(end_transfer_writes->load(), 1u);
+  EXPECT_EQ(ep0_start_transfer_writes->load(), 1u);
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1u);
+  EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
+}
+
+// DEVT_CONNECTION_DONE arriving while a user endpoint is still canceling after DEVT_USB_RESET.
+// Both handlers park behind the same idle barrier; when DEPEVT_CMD_CMPLT finally arrives the
+// reset's callback starts EP0 exactly once and the connection-done callback only applies the
+// negotiated EP0 max packet size on top, instead of starting EP0 a second time.
+TEST_P(Dwc3EndpointsTest, HandleConnectionDoneEventWhileCancelingWaitsForIdleAndStartsEp0Once) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle);
+
+  // Count DEPSTRTXFER on EP0 OUT (one per Ep0Start()) from here on, and have DSTS report a
+  // high-speed connection so the connection-done callback has a visible effect: it must shrink the
+  // EP0 max packet size from kEp0MaxPacketSize (512) to 64.
+  auto ep0_start_transfer_writes = std::make_shared<std::atomic<uint32_t>>(0);
+  auto cleanup_ep0_depcmd = DeferClearDepcmdCallbacks(0);
+  auto restore_dsts = DeferClearDstsCallback();
+  dut_.RunInEnvironmentTypeContext([ep0_start_transfer_writes](Environment& env) {
+    auto& ep0_depcmd = env.reg_region()[DEPCMD::Get(0).addr()];
+    ep0_depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+    ep0_depcmd.SetWriteCallback([ep0_start_transfer_writes](uint64_t val) {
+      if (DEPCMD::Get(0).FromValue(static_cast<uint32_t>(val)).CMDTYP() == DEPCMD::DEPSTRTXFER) {
+        ep0_start_transfer_writes->fetch_add(1);
+      }
+    });
+    env.reg_region()[DSTS::Get().addr()].SetReadCallback([]() -> uint32_t {
+      return DSTS::Get().FromValue(0).set_CONNECTSPD(DSTS::CONNECTSPD_HIGH).reg_value();
+    });
+  });
+
+  // Bus reset: the endpoint starts canceling and Ep0Start() parks behind the idle barrier.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::HandleResetEvent(drv);
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kCanceling);
+    EXPECT_EQ(uep.on_idle_callbacks.size(), 1u);
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+  });
+
+  // Connection done before the cancel completes: it parks behind the same barrier, so EP0 is still
+  // neither started nor reconfigured.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    TriggerConnectionDone(drv);
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kCanceling);
+    EXPECT_EQ(uep.on_idle_callbacks.size(), 2u);
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0OutMaxPacketSize(drv), uint16_t{512});
+  });
+  EXPECT_EQ(ep0_start_transfer_writes->load(), 0u);
+  EXPECT_EQ(event_handler_.completion_count(), 0u);
+
+  // DEPEVT_CMD_CMPLT releases both callbacks in order: EP0 is started once and then resized for
+  // the high-speed connection.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    TriggerEpTransferEnded(drv, ep_num);
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_TRUE(Dwc3TestHelper::IsXferIdle(drv, ep_num));
+    EXPECT_TRUE(uep.on_idle_callbacks.empty());
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0OutMaxPacketSize(drv), uint16_t{64});
+  });
+  EXPECT_EQ(ep0_start_transfer_writes->load(), 1u);
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1u);
+  EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
+}
+
+// Cable unplug while Ep0Start() is still parked behind the idle barrier left by DEVT_USB_RESET.
+// QuiesceCore() -> StopActiveTransfers() must abort the barrier (idle == false) before it drains
+// the canceling endpoint, so reaching kIdle during the drain does not start EP0 on a dead link, and
+// the canceling endpoint is drained without a second DEPENDXFER.
+TEST_P(Dwc3EndpointsTest, DisconnectWhileIdleBarrierPendingAbortsBarrierWithoutStartingEp0) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle);
+
+  auto end_transfer_writes = std::make_shared<std::atomic<uint32_t>>(0);
+  auto ep0_start_transfer_writes = std::make_shared<std::atomic<uint32_t>>(0);
+  auto cleanup_ep_depcmd = DeferClearDepcmdCallbacks(ep_num);
+  auto cleanup_ep0_depcmd = DeferClearDepcmdCallbacks(0);
+  dut_.RunInEnvironmentTypeContext([ep_num, end_transfer_writes,
+                                    ep0_start_transfer_writes](Environment& env) {
+    auto& ep_depcmd = env.reg_region()[DEPCMD::Get(ep_num).addr()];
+    ep_depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+    ep_depcmd.SetWriteCallback([ep_num, end_transfer_writes](uint64_t val) {
+      if (DEPCMD::Get(ep_num).FromValue(static_cast<uint32_t>(val)).CMDTYP() ==
+          DEPCMD::DEPENDXFER) {
+        end_transfer_writes->fetch_add(1);
+      }
+    });
+    auto& ep0_depcmd = env.reg_region()[DEPCMD::Get(0).addr()];
+    ep0_depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+    ep0_depcmd.SetWriteCallback([ep0_start_transfer_writes](uint64_t val) {
+      if (DEPCMD::Get(0).FromValue(static_cast<uint32_t>(val)).CMDTYP() == DEPCMD::DEPSTRTXFER) {
+        ep0_start_transfer_writes->fetch_add(1);
+      }
+    });
+  });
+
+  // Bus reset: graceful cancel (DEPENDXFER with CMDIOC=1), Ep0Start() parked. Park a probe behind
+  // the same barrier to observe how it is released.
+  auto probe_calls = std::make_shared<std::atomic<uint32_t>>(0);
+  auto probe_idle = std::make_shared<std::atomic<bool>>(true);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::HandleResetEvent(drv);
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kCanceling);
+    EXPECT_EQ(uep.on_idle_callbacks.size(), 1u);
+    Dwc3TestHelper::WaitForAllUserEndpointsIdle(drv, [probe_calls, probe_idle](bool idle) {
+      probe_calls->fetch_add(1);
+      probe_idle->store(idle);
+    });
+    EXPECT_EQ(uep.on_idle_callbacks.size(), 2u);
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+  });
+  EXPECT_EQ(end_transfer_writes->load(), 1u);
+  EXPECT_EQ(probe_calls->load(), 0u);
+
+  // Unplug before DEPEVT_CMD_CMPLT arrives. No UsbDciInterface is bound, so the disconnect runs to
+  // completion (core reset and powered down) without a DCI drain.
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().TriggerConnection(false); });
+  dut_.runtime().RunUntilIdle();
+  ASSERT_OK(WaitForPhy());
+
+  // The barrier was aborted (idle == false) exactly once, EP0 was never started, the canceling
+  // endpoint was drained in software (no second DEPENDXFER) and the stale cancel it recorded was
+  // cleared again when events were stopped.
+  EXPECT_EQ(probe_calls->load(), 1u);
+  EXPECT_FALSE(probe_idle->load());
+  EXPECT_EQ(ep0_start_transfer_writes->load(), 0u);
+  EXPECT_EQ(end_transfer_writes->load(), 1u);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_FALSE(Dwc3TestHelper::GetPowerOn(drv));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+    EXPECT_TRUE(Dwc3TestHelper::IsXferIdle(drv, ep_num));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, ep_num));
+    EXPECT_TRUE(uep.on_idle_callbacks.empty());
+    EXPECT_EQ(uep.ep.stale_cancels_to_ignore, 0u);
+    EXPECT_EQ(uep.ep.stale_starts_to_end, 0u);
+    ASSERT_TRUE(uep.server.has_value());
+    EXPECT_TRUE(uep.server->cancel_completers.empty());
+  });
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1u);
+  EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
+}
+
+// A DEPENDXFER that times out (DEPCMD.CMDACT stuck) during DEVT_USB_RESET owes no DEPEVT_CMD_CMPLT,
+// so it must not be recorded as a stale cancel. Otherwise the next real cancel on the endpoint
+// would have its completion swallowed, leaving it stuck in kCanceling with the function driver's
+// CancelAll parked forever. Re-configure the endpoint after the reset, run a second transfer and
+// cancel it over the Endpoint protocol: its DEPEVT_CMD_CMPLT must retire the transfer and reply.
+TEST_P(Dwc3EndpointsTest, CancelAllAfterEndTransferTimeoutDoesNotSwallowNextCancelCompletion) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle);
+
+  // Make DEPCMD(ep_num) read back whatever was last written, so CMDACT stays set and
+  // WaitForCmdAct() times out on the DEPENDXFER issued by the reset.
+  auto end_transfer_writes = std::make_shared<std::atomic<uint32_t>>(0);
+  auto end_transfer_last_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto ep_depcmd_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto cleanup_ep_depcmd = DeferClearDepcmdCallbacks(ep_num);
+  auto install_depcmd = [&](bool cmdact_stuck) {
+    dut_.RunInEnvironmentTypeContext([ep_num, cmdact_stuck, end_transfer_writes,
+                                      end_transfer_last_val, ep_depcmd_val](Environment& env) {
+      auto& ep_depcmd = env.reg_region()[DEPCMD::Get(ep_num).addr()];
+      if (cmdact_stuck) {
+        ep_depcmd.SetReadCallback([ep_depcmd_val]() -> uint64_t { return ep_depcmd_val->load(); });
+      } else {
+        ep_depcmd.SetReadCallback([]() -> uint64_t { return 0; });
+      }
+      ep_depcmd.SetWriteCallback(
+          [ep_num, end_transfer_writes, end_transfer_last_val, ep_depcmd_val](uint64_t val) {
+            ep_depcmd_val->store(static_cast<uint32_t>(val));
+            if (DEPCMD::Get(ep_num).FromValue(static_cast<uint32_t>(val)).CMDTYP() ==
+                DEPCMD::DEPENDXFER) {
+              end_transfer_writes->fetch_add(1);
+              end_transfer_last_val->store(static_cast<uint32_t>(val));
+            }
+          });
+    });
+  };
+  install_depcmd(/*cmdact_stuck=*/true);
+
+  // Bus reset: the DEPENDXFER times out, the endpoint is drained in software, no stale cancel is
+  // recorded and EP0 starts right away.
+  dut_.RunInDriverContext([](Dwc3& drv) { Dwc3TestHelper::HandleResetEvent(drv); });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(end_transfer_writes->load(), 1u);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_TRUE(Dwc3TestHelper::IsXferIdle(drv, ep_num));
+    EXPECT_FALSE(Dwc3TestHelper::IsEpEnabled(drv, ep_num));
+    EXPECT_EQ(uep.ep.stale_cancels_to_ignore, 0u);
+    EXPECT_EQ(uep.ep.stale_starts_to_end, 0u);
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+  });
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1u);
+  EXPECT_EQ(completions[0].status, ZX_ERR_IO_NOT_PRESENT);
+
+  // Commands complete normally again; the function driver re-configures the endpoint after the
+  // reset and queues a new transfer.
+  install_depcmd(/*cmdact_stuck=*/false);
+  ASSERT_NO_FATAL_FAILURE(ConfigureEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512));
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, ep_num));
+    TriggerEpTransferNotReady(drv, ep_num, 0);
+  });
+  dut_.runtime().RunUntilIdle();
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle);
+
+  // A real cancel over the Endpoint protocol: DEPENDXFER with CMDIOC=1, reply parked until the
+  // completion event.
+  auto cancel_replied = std::make_shared<std::atomic<bool>>(false);
+  auto cancel_ok = std::make_shared<std::atomic<bool>>(false);
+  ep_client_->CancelAll().Then(
+      [cancel_replied, cancel_ok](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+        cancel_ok->store(res.is_ok());
+        cancel_replied->store(true);
+      });
+  WaitForState(ep_num, TransferState::kCanceling);
+  EXPECT_EQ(end_transfer_writes->load(), 2u);
+  EXPECT_EQ(DEPCMD::Get(ep_num).FromValue(end_transfer_last_val->load()).CMDIOC(), 1u);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_TRUE(uep.server.has_value());
+    EXPECT_EQ(uep.server->cancel_completers.size(), 1u);
+  });
+  EXPECT_FALSE(cancel_replied->load());
+
+  // Its DEPEVT_CMD_CMPLT must be consumed as the real cancel completion, not ignored as a stale one
+  // leaked by the earlier timeout: the endpoint goes idle, the request is returned and the parked
+  // CancelAll replies.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    TriggerEpTransferEnded(drv, ep_num);
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_TRUE(Dwc3TestHelper::IsXferIdle(drv, ep_num));
+    EXPECT_TRUE(uep.server->cancel_completers.empty());
+    EXPECT_EQ(uep.ep.stale_cancels_to_ignore, 0u);
+  });
+  ASSERT_TRUE(dut_.runtime().RunWithTimeoutOrUntil([&]() { return cancel_replied->load(); },
+                                                   zx::duration::infinite()));
+  EXPECT_TRUE(cancel_ok->load());
+  completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1u);
+  EXPECT_EQ(completions[0].status, ZX_ERR_CANCELED);
+}
+
+// usb-peripheral does not answer SetConnected(false) for longer than the drain watchdog allows.
+// Nothing recovers from that yet: the stall is only reported (log + Inspect counter) while the
+// drain keeps holding the core powered, the PHY untold and the watcher disarmed. Once the late
+// reply does arrive the normal power-down still happens and the stall is not reported again.
+TEST_F(Dwc3EndpointsTestBase, DisconnectDrainStallIsReportedAndLateReplyStillPowersDown) {
+  TriggerConnection();
+
+  FakeUsbDciInterface fake_dci;
+  fake_dci.SetDeferSetConnectedFalse(true);
+  libsync::Completion set_connected_false_received;
+  fake_dci.SetSetConnectedCallback([&](bool connected) {
+    if (!connected) {
+      set_connected_false_received.Signal();
+    }
+  });
+  std::optional<fidl::ServerBindingRef<fdci::UsbDciInterface>> dci_binding;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto [client_end, server_end] = fidl::Endpoints<fdci::UsbDciInterface>::Create();
+    dci_binding = fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                   std::move(server_end), &fake_dci);
+    Dwc3TestHelper::BindDciInterface(drv, std::move(client_end));
+    // Make the watchdog fire almost immediately instead of after the production delay.
+    Dwc3TestHelper::SetDciDisconnectDrainStallDelay(drv, zx::msec(1));
+    EXPECT_EQ(Dwc3TestHelper::GetDciDisconnectStallCount(drv), 0u);
+  });
+  auto unbind_dci = fit::defer([&]() {
+    dut_.RunInDriverContext([&](Dwc3& drv) { dci_binding->Unbind(); });
+    dut_.runtime().RunUntilIdle();
+  });
+
+  size_t disconnected_reports_before = 0;
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    disconnected_reports_before = env.usb_phy().disconnected_reports();
+    env.usb_phy().completion()->Reset();
+  });
+
+  // Unplug; usb-peripheral holds the reply.
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().TriggerConnection(false); });
+  dut_.runtime().RunUntilIdle();
+  ASSERT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() { return set_connected_false_received.signaled(); }, zx::duration::infinite()));
+  dut_.runtime().RunUntilIdle();
+  ASSERT_TRUE(fake_dci.has_deferred_set_connected());
+
+  // The watchdog reports the stall exactly once while the drain is still held.
+  ASSERT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        return dut_.RunInDriverContext<bool>(
+            [](Dwc3& drv) { return Dwc3TestHelper::GetDciDisconnectStallCount(drv) == 1; });
+      },
+      zx::duration::infinite()));
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(Dwc3TestHelper::GetPowerOn(drv));
+    EXPECT_FALSE(Dwc3TestHelper::IsActive(drv));
+  });
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    EXPECT_EQ(env.usb_phy().disconnected_reports(), disconnected_reports_before);
+    EXPECT_FALSE(env.usb_phy().has_completer());
+  });
+
+  // The late reply still completes the drain: core powered down, PHY told, watcher re-armed, and
+  // the stall is not counted a second time.
+  dut_.RunInDriverContext([&](Dwc3& drv) { fake_dci.CompleteDeferredSetConnected(ZX_OK); });
+  dut_.runtime().RunUntilIdle();
+  ASSERT_OK(WaitForPhy());
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_FALSE(Dwc3TestHelper::GetPowerOn(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetDciDisconnectStallCount(drv), 1u);
+  });
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t reports = 0;
+        dut_.RunInEnvironmentTypeContext(
+            [&](Environment& env) { reports = env.usb_phy().disconnected_reports(); });
+        return reports == disconnected_reports_before + 1;
+      },
+      zx::duration::infinite()));
 }
 
 TEST_F(Dwc3EndpointsTestBase, Ep0ResetWhileStartingSingleEndsStaleStartAndActivatesNewSetup) {

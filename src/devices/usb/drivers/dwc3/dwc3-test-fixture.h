@@ -74,7 +74,23 @@ class Dwc3TestHelper {
     drv.ep0_.cur_speed = speed;
   }
   static uint64_t GetEp0SetupGeneration(const Dwc3& drv) { return drv.ep0_.setup_generation; }
-  static void ResetUserEndpoints(Dwc3& drv, bool force = false) { drv.ResetUserEndpoints(force); }
+  static void ResetUserEndpoints(Dwc3& drv) { drv.ResetUserEndpoints(); }
+  static void StopActiveTransfers(Dwc3& drv) { drv.StopActiveTransfers(); }
+  // Parks `callback` behind the user-endpoint idle barrier exactly like HandleResetEvent() /
+  // HandleConnectionDoneEvent() do, so a test can observe whether the barrier is released with
+  // idle == true (NotifyEndpointIdle) or aborted with idle == false
+  // (CancelAllEndpointIdleCallbacks).
+  static void WaitForAllUserEndpointsIdle(Dwc3& drv, fit::callback<void(bool)> callback) {
+    drv.WaitForAllUserEndpointsIdle(std::move(callback));
+  }
+  // Shortens the DCI disconnect drain watchdog so a test can observe a stalled drain without
+  // waiting for the production delay.
+  static void SetDciDisconnectDrainStallDelay(Dwc3& drv, zx::duration delay) {
+    drv.dci_disconnect_drain_stall_delay_ = delay;
+  }
+  static uint64_t GetDciDisconnectStallCount(const Dwc3& drv) {
+    return drv.metrics_.dci_disconnect_stall_count();
+  }
   static void EnableEp0(Dwc3& drv) {
     drv.EpEnable(drv.ep0_.out, true);
     drv.EpEnable(drv.ep0_.in, true);
@@ -169,8 +185,9 @@ class Dwc3TestHelper {
     return drv.EpSetStall(ep, stall);
   }
   static void UserEpQueueNext(Dwc3& drv, Dwc3::UserEndpoint& uep) { drv.UserEpQueueNext(uep); }
-  static void UserEpReset(Dwc3& drv, Dwc3::UserEndpoint& uep, bool force = false) {
-    drv.UserEpReset(uep, force);
+  static void UserEpReset(Dwc3& drv, Dwc3::UserEndpoint& uep) { drv.UserEpReset(uep); }
+  static void RemoveRequests(Dwc3& drv, Dwc3::UserEndpoint& uep, zx_status_t reason) {
+    uep.server->RemoveRequests(reason);
   }
   static void SetDeviceAddress(Dwc3& drv, uint32_t address) { drv.SetDeviceAddress(address); }
   static bool IsFifoEmpty(Dwc3& drv) { return drv.ep0_.shared_fifo.IsEmpty(); }
@@ -305,6 +322,7 @@ class Dwc3TestHelper {
     drv.ep0_.out.max_packet_size = max_packet_size;
     drv.ep0_.in.max_packet_size = max_packet_size;
   }
+  static uint16_t GetEp0OutMaxPacketSize(const Dwc3& drv) { return drv.ep0_.out.max_packet_size; }
   static uint64_t GetEp0OutTotalBytes(const Dwc3& drv) { return drv.ep0_.out.total_bytes; }
   static uint64_t GetEp0InTotalBytes(const Dwc3& drv) { return drv.ep0_.in.total_bytes; }
   static dwc3_trb_t* GetCurrentReadTrb(Dwc3& drv) { return drv.ep0_.shared_fifo.current_read(); }

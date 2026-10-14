@@ -439,8 +439,8 @@ TEST_F(UnmanagedTestFixture, DISABLED_DisableEndpointDuringTransfer) {
     Dwc3TestHelper::EpSetConfig(drv, uep->ep, false);
   });
 
-  // StopDriver calls Stop() which calls ResetEndpoints()
-  // ResetEndpoints should call CmdEpEndTransfer on EP2 because transfer_state is active!
+  // StopDriver calls Stop() which runs QuiesceCore() -> StopActiveTransfers().
+  // RemoveRequests should call CmdEpEndTransfer on EP2 because transfer_state is active!
   // And since rsrc_id is invalid, it should crash!
   TearDownAndPowerOffDriver();
 }

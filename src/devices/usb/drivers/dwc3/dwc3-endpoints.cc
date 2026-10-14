@@ -19,12 +19,13 @@ void Dwc3::EpEnable(Endpoint& ep, bool enable) {
     DALEPENA::Get().ReadFrom(mmio).EnableEp(ep.ep_num).WriteTo(mmio);
   } else if (power_on_ && ep.transfer_state != Endpoint::TransferState::kPendingCancel &&
              ep.transfer_state != Endpoint::TransferState::kCanceling &&
-             ep.stale_starts_to_end == 0 && !DEPCMD::Get(ep.ep_num).ReadFrom(mmio).CMDACT()) {
+             ep.stale_starts_to_end == 0 && ep.stale_cancels_to_ignore == 0 &&
+             !DEPCMD::Get(ep.ep_num).ReadFrom(mmio).CMDACT()) {
     // Do not clear DALEPENA while a transfer command (DEPSTRTXFER / DEPENDXFER)
     // is active or pending cancel on the endpoint. If transfer_state is
-    // kPendingCancel or kCanceling (or a stale DEPSTRTXFER event is still in
-    // flight), HandleEpTransferStartedEvent / HandleEpTransferEndedEvent (or
-    // CancelAll's force fallback) will clear DALEPENA once the transfer ends.
+    // kPendingCancel or kCanceling, or a stale DEPSTRTXFER / DEPENDXFER completion
+    // is still in flight, HandleEpTransferStartedEvent / HandleEpTransferEndedEvent
+    // (or StopEvents()) will clear DALEPENA once the transfer has ended.
     DALEPENA::Get().ReadFrom(mmio).DisableEp(ep.ep_num).WriteTo(mmio);
   }
 }
@@ -90,94 +91,108 @@ void Dwc3::EpServer::FlushCancelCompleters(zx_status_t status) {
   }
 }
 
-void Dwc3::EpServer::CancelAll(zx_status_t reason, bool force) {
+void Dwc3::EpServer::RemoveRequests(zx_status_t reason) {
+  TRACE_DURATION("dwc3", "Dwc3::EpServer::RemoveRequests", "ep_num", uep_->ep.ep_num, "reason",
+                 reason);
+  if (!active_reqs.empty() || !queued_reqs.empty()) {
+    if (dwc3_->is_active() && !dwc3_->link_connected_) {
+      // Physical unplug: the link is already gone and usb-peripheral has not been told yet, so a
+      // busy endpoint is the normal case. End the transfer synchronously and return the requests;
+      // the function driver's CancelAll / DisableEndpoint that follow during the DCI drain then
+      // find the endpoint idle.
+      fdf::debug(
+          "Dwc3::EpServer::RemoveRequests ep {}: link gone with endpoint busy (state={}); "
+          "ending transfer and returning {} active and {} queued requests",
+          uep_->ep.ep_num, uep_->ep.transfer_state, active_reqs.size(), queued_reqs.size());
+    } else if (dwc3_->is_active()) {
+      // The core is still running with the link up (StopController() or driver stop), so a
+      // function driver left this endpoint busy instead of disabling it before the controller was
+      // stopped. End the transfer synchronously and return the requests.
+      fdf::info(
+          "Dwc3::EpServer::RemoveRequests ep {}: endpoint still busy at teardown (state={}); "
+          "ending transfer and returning {} active and {} queued requests",
+          uep_->ep.ep_num, uep_->ep.transfer_state, active_reqs.size(), queued_reqs.size());
+    } else if (dwc3_->disconnect_in_flight_ || dwc3_->stopping_) {
+      // Normal disconnect or stop teardown while the core is unpowered or inactive.
+      // Log at info rather than warn so expected teardown does not emit spurious warnings.
+      fdf::info(
+          "Dwc3::EpServer::RemoveRequests ep {}: core inactive during teardown (power_on={}, "
+          "controller_started={}, disconnect_in_flight={}, stopping={}, state={}); returning {} active and {} queued requests",
+          uep_->ep.ep_num, dwc3_->power_on_, dwc3_->controller_started_,
+          dwc3_->disconnect_in_flight_, dwc3_->stopping_, uep_->ep.transfer_state,
+          active_reqs.size(), queued_reqs.size());
+    } else {
+      // Requests were still outstanding when the core stopped or lost power outside of normal
+      // teardown: keep this at WARN so an unexpected teardown order remains visible.
+      fdf::warn(
+          "Dwc3::EpServer::RemoveRequests ep {}: core inactive (power_on={}, "
+          "controller_started={}, state={}); returning {} active and {} queued requests",
+          uep_->ep.ep_num, dwc3_->power_on_, dwc3_->controller_started_, uep_->ep.transfer_state,
+          active_reqs.size(), queued_reqs.size());
+    }
+  }
+
+  if (dwc3_->is_active()) {
+    if (uep_->ep.TransferStateIsActive() && uep_->ep.rsrc_id != Endpoint::kInvalidResourceId) {
+      // TransferStateIsActive() is only true for kActiveSingle/kActiveOngoing (it excludes
+      // kCanceling, where DEPENDXFER was already issued and DEPCMD.CMDACT was already polled).
+      // Halt DMA synchronously without generating a DEPEVT_CMD_CMPLT (CMDIOC=0): the event ring is
+      // about to be stopped, so no event could be consumed anyway.
+      dwc3_->CmdEpEndTransfer(uep_->ep, /*cmd_ioc=*/false);
+    } else if (uep_->ep.transfer_state == Endpoint::TransferState::kStartingSingle ||
+               uep_->ep.transfer_state == Endpoint::TransferState::kStartingOngoing ||
+               uep_->ep.transfer_state == Endpoint::TransferState::kPendingCancel) {
+      // DEPSTRTXFER was issued and its DEPEVT_XFER_STARTED event with rsrc_id is still in flight.
+      // Record that the upcoming start event must immediately end that rsrc_id with CMDIOC=0.
+      uep_->ep.stale_starts_to_end++;
+    } else if (uep_->ep.transfer_state == Endpoint::TransferState::kCanceling) {
+      // DEPENDXFER (with CMDIOC=1) was already issued and its DEPEVT_CMD_CMPLT event is still
+      // in flight. Record that the upcoming end event must be ignored so it is not mistaken for
+      // a subsequent cancellation on this endpoint.
+      uep_->ep.stale_cancels_to_ignore++;
+    }
+  }
+
+  size_t pending_trbs = 0;
+  while (!active_reqs.empty()) {
+    auto& request_state = active_reqs.front();
+    pending_trbs += request_state.total_trbs - request_state.completed_trbs;
+    RequestComplete(reason, 0, std::move(request_state.request), /*send_now=*/false);
+    active_reqs.pop();
+  }
+  while (!queued_reqs.empty()) {
+    RequestComplete(reason, 0, std::move(queued_reqs.front()), /*send_now=*/false);
+    queued_reqs.pop();
+  }
+
+  size_t active_count = uep_->fifo.GetActiveCount();
+  ZX_DEBUG_ASSERT_MSG(active_count == pending_trbs, "%zu == %zu", active_count, pending_trbs);
+
+  if (uep_->fifo.TotalSlots() > 0) {
+    uep_->fifo.Reset();
+  }
+  pending_cancel_reason.reset();
+  uep_->ep.transfer_state = Endpoint::TransferState::kIdle;
+  uep_->ep.rsrc_id = Endpoint::kInvalidResourceId;
+  if (!uep_->ep.enabled) {
+    dwc3_->EpEnable(uep_->ep, false);
+  }
+  SendCompletions();
+  FlushCancelCompleters(ZX_OK);
+  dwc3_->NotifyEndpointIdle(*uep_);
+}
+
+void Dwc3::EpServer::CancelAll(zx_status_t reason) {
   TRACE_DURATION("dwc3", "Dwc3::EpServer::CancelAll", "ep_num", uep_->ep.ep_num, "reason", reason);
   fdf::debug(
-      "Dwc3::EpServer::CancelAll ep {} reason {} reqs = ({}, {}), controller={}, power_on={}, force={}",
-      uep_->ep.ep_num, zx_status_get_string(reason), uep_->server->active_reqs.size(),
-      uep_->server->queued_reqs.size(), dwc3_->controller_started_, dwc3_->power_on_, force);
+      "Dwc3::EpServer::CancelAll ep {} reason {} reqs = ({}, {}), controller={}, power_on={}",
+      uep_->ep.ep_num, zx_status_get_string(reason), active_reqs.size(), queued_reqs.size(),
+      dwc3_->controller_started_, dwc3_->power_on_);
 
-  // Emergency safety net fallback: if the controller is inactive/unpowered or force-draining
-  // prior to stopping events or powering down, drain active and queued requests directly in
-  // software to prevent upper layers from deadlocking or stranding TRBs.
-  if (force || !dwc3_->is_active()) {
-    if (!active_reqs.empty() || !queued_reqs.empty()) {
-      if (!dwc3_->is_active()) {
-        // Reaching CancelAll with pending requests while the controller is already
-        // stopped/unpowered means upper layers did not finish unconfiguring and draining endpoints
-        // before StopController() or disconnect completion. Keep this at WARN (even if the endpoint
-        // was already in kCanceling) so ungraceful top-down teardown ordering remains visible.
-        fdf::warn(
-            "Dwc3::EpServer::CancelAll ep {}: Controller inactive (power_on={}, controller_started={}, force={}, state={}); "
-            "draining {} active and {} queued requests in software",
-            uep_->ep.ep_num, dwc3_->power_on_, dwc3_->controller_started_, force,
-            uep_->ep.transfer_state, active_reqs.size(), queued_reqs.size());
-      } else {
-        // When the controller is active and force=true (invoked by UserEpReset prior to
-        // StopEvents() on a bottom-up physical cable disconnect or StopController), both endpoint
-        // directions can legitimately have pending requests (or an in-flight kCanceling transfer):
-        //   - OUT (RX) endpoints always keep pre-queued buffers parked waiting for host packets.
-        //   - IN (TX) endpoints may have in-flight TRBs queued in the FIFO awaiting host IN tokens
-        //     if a physical cable unplug occurs during active traffic.
-        // Note: Hardware command failures (CmdEpEndTransfer returning false) are logged explicitly
-        // at ERROR before falling back to CancelAll(..., /*force=*/true), and top-down teardown
-        // order violations (!dwc3_->is_active()) are logged at WARN above. Thus, reaching this
-        // branch is strictly an expected synchronous reset/disconnect drain, so log at DEBUG.
-        fdf::debug(
-            "Dwc3::EpServer::CancelAll ep {}: Synchronous reset drain (force=true, state={}); "
-            "halting DMA and reclaiming {} active and {} queued requests",
-            uep_->ep.ep_num, uep_->ep.transfer_state, active_reqs.size(), queued_reqs.size());
-      }
-    }
-
-    if (dwc3_->is_active()) {
-      if (uep_->ep.TransferStateIsActive() && uep_->ep.rsrc_id != Endpoint::kInvalidResourceId) {
-        // TransferStateIsActive() is only true for kActiveSingle/kActiveOngoing (it excludes
-        // kCanceling, where DEPENDXFER was already issued and CMDACT was already polled).
-        // Synchronously halt hardware DMA via WaitForCmdAct without generating an asynchronous
-        // DEPEVT_CMD_CMPLT event (CMDIOC=0) that could arrive after endpoint reconfiguration.
-        dwc3_->CmdEpEndTransfer(uep_->ep, /*cmd_ioc=*/false);
-      } else if (uep_->ep.transfer_state == Endpoint::TransferState::kStartingSingle ||
-                 uep_->ep.transfer_state == Endpoint::TransferState::kStartingOngoing ||
-                 uep_->ep.transfer_state == Endpoint::TransferState::kPendingCancel) {
-        // DEPSTRTXFER was issued and its DEPEVT_XFER_STARTED event with rsrc_id is still in flight.
-        // Record that the upcoming start event must immediately end that rsrc_id with CMDIOC=0.
-        uep_->ep.stale_starts_to_end++;
-      } else if (uep_->ep.transfer_state == Endpoint::TransferState::kCanceling) {
-        // DEPENDXFER (with CMDIOC=1) was already issued and its DEPEVT_CMD_CMPLT event is still
-        // in flight. Record that the upcoming end event must be ignored so it is not mistaken for
-        // a subsequent cancellation on this endpoint.
-        uep_->ep.stale_cancels_to_ignore++;
-      }
-    }
-
-    size_t pending_trbs = 0;
-    while (!active_reqs.empty()) {
-      auto& request_state = active_reqs.front();
-      pending_trbs += request_state.total_trbs - request_state.completed_trbs;
-      RequestComplete(reason, 0, std::move(request_state.request), /*send_now=*/false);
-      active_reqs.pop();
-    }
-    while (!queued_reqs.empty()) {
-      RequestComplete(reason, 0, std::move(queued_reqs.front()), /*send_now=*/false);
-      queued_reqs.pop();
-    }
-
-    size_t active_count = uep_->fifo.GetActiveCount();
-    ZX_DEBUG_ASSERT_MSG(active_count == pending_trbs, "%zu == %zu", active_count, pending_trbs);
-
-    if (uep_->fifo.TotalSlots() > 0) {
-      uep_->fifo.Reset();
-    }
-    pending_cancel_reason.reset();
-    uep_->ep.transfer_state = Endpoint::TransferState::kIdle;
-    uep_->ep.rsrc_id = Endpoint::kInvalidResourceId;
-    if (!uep_->ep.enabled) {
-      dwc3_->EpEnable(uep_->ep, false);
-    }
-    SendCompletions();
-    FlushCancelCompleters(ZX_OK);
-    dwc3_->NotifyEndpointIdle(*uep_);
+  if (!dwc3_->is_active()) {
+    // With the core stopped or unpowered no transfer can be ended and no event can arrive; just
+    // return the requests.
+    RemoveRequests(reason);
     return;
   }
 
@@ -198,9 +213,13 @@ void Dwc3::EpServer::CancelAll(zx_status_t reason, bool force) {
       uep_->ep.transfer_state = Endpoint::TransferState::kCanceling;
       if (!dwc3_->CmdEpEndTransfer(uep_->ep)) {
         fdf::error(
-            "Dwc3::EpServer::CancelAll ep {}: CmdEpEndTransfer failed; forcefully draining {} active and {} queued requests",
+            "Dwc3::EpServer::CancelAll ep {}: CmdEpEndTransfer failed; returning {} active and {} queued requests",
             uep_->ep.ep_num, active_reqs.size(), queued_reqs.size());
-        CancelAll(reason, /*force=*/true);
+        // The command never completed, so no DEPEVT_CMD_CMPLT is owed: leave kCanceling before
+        // RemoveRequests() so it does not record a stale cancel that would swallow the next real
+        // cancel completion on this endpoint.
+        uep_->ep.transfer_state = Endpoint::TransferState::kIdle;
+        RemoveRequests(reason);
         return;
       }
       break;
@@ -627,10 +646,12 @@ void Dwc3::HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id) {
       uep->ep.transfer_state = Endpoint::TransferState::kCanceling;
       if (!CmdEpEndTransfer(uep->ep) && uep->server.has_value()) {
         fdf::error(
-            "Dwc3::HandleEpTransferStartedEvent ep {}: CmdEpEndTransfer failed; forcefully draining {} active and {} queued requests",
+            "Dwc3::HandleEpTransferStartedEvent ep {}: CmdEpEndTransfer failed; returning {} active and {} queued requests",
             ep_num, uep->server->active_reqs.size(), uep->server->queued_reqs.size());
-        uep->server->CancelAll(uep->server->pending_cancel_reason.value_or(ZX_ERR_CANCELED),
-                               /*force=*/true);
+        // As in CancelAll(): the failed command owes no completion, so do not record a stale
+        // cancel for it.
+        uep->ep.transfer_state = Endpoint::TransferState::kIdle;
+        uep->server->RemoveRequests(uep->server->pending_cancel_reason.value_or(ZX_ERR_CANCELED));
         return;
       }
       break;

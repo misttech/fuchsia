@@ -922,6 +922,10 @@ void Dwc3::ReleaseResources() {
   // If we managed to get our registers mapped, place the device into reset so
   // we are certain that there is no DMA going on in the background.
   if (mmio_.has_value() && power_on_) {
+    // While the core can still execute commands, end whatever is still running and return the
+    // requests; nothing may rely on an endpoint event once the core is in reset.
+    StopActiveTransfers();
+
     if (zx_status_t status = ResetHw(); status != ZX_OK) {
       // Deliberately panic and terminate this driver if we fail to place the
       // hardware into reset at this point and we have any pinned memory..  We do this
@@ -938,8 +942,6 @@ void Dwc3::ReleaseResources() {
         ZX_ASSERT(false);
       }
     }
-
-    ResetEndpoints();
   }
 
   // Now go ahead and release any buffers we may have pinned.
@@ -1134,7 +1136,7 @@ void Dwc3::StartPeripheralMode() {
 
 void Dwc3::ResetConfiguration() {
   TRACE_DURATION("dwc3", "Dwc3::ResetConfiguration");
-  ResetUserEndpoints(false);
+  ResetUserEndpoints();
 
   if (dci_intf_.is_valid()) {
     fidl::Arena arena;
@@ -1325,43 +1327,66 @@ void Dwc3::Stop(fdf::StopCompleter completer) {
   TRACE_DURATION("dwc3", "Dwc3::Stop");
   fdf::info("Dwc3::Stop called");
   stopping_ = true;
-  const bool complete_deferred_power_down = std::exchange(disconnect_in_flight_, false);
+  // A DCI disconnect drain still in flight is abandoned: dropping dci_intf_ below discards its
+  // SetConnected(false) callback, so the power-down it deferred happens here instead.
+  disconnect_in_flight_ = false;
+  dci_disconnect_drain_watchdog_.Cancel();
+
+  // Bring the core down while the driver dispatcher and the PHY are still up. Requests are returned
+  // to the function drivers here, before dispatcher shutdown unbinds their endpoint channels and
+  // unpins their VMOs, and the core is reset and powered down before the PHY channels below are
+  // dropped, after which the PHY may remove clocks and power.
+  if (mmio_.has_value() && power_on_) {
+    QuiesceCore();
+    if (zx_status_t status = ResetHw(); status != ZX_OK && has_pinned_memory_) {
+      fdf::error(
+          "Failed to place HW into reset during stop ({}), self-terminating in order to ensure "
+          "quarantine",
+          zx_status_get_string(status));
+      ZX_ASSERT(false);
+    }
+  }
+  controller_started_ = false;
   if (platform_extension_) {
     platform_extension_->Stop();
   }
+  PowerDownCore();
+
   dwc3_root_ = {};
   phy_ = {};
   connection_watcher_ = {};
   dci_intf_ = {};
   dci_bindings_.RemoveAll();
   policy_bindings_.RemoveAll();
-  if (complete_deferred_power_down) {
-    PowerDownCore();
-  }
   completer(zx::ok());
 }
 
 void Dwc3::QuiesceCore() {
   TRACE_DURATION("dwc3", "Dwc3::QuiesceCore");
+  // Last step before the core stops delivering endpoint events: on a soft disconnect
+  // (StopController()) usb-peripheral has already unconfigured the function drivers over the live
+  // event ring, so this normally finds the endpoints idle. On a physical unplug
+  // (ApplyConnectStatusChanged(false)) the link is already gone: whatever is still running is ended
+  // synchronously here, before usb-peripheral is told, so that the function drivers' CancelAll /
+  // DisableEndpoint calls during the DCI drain complete immediately against idle endpoints instead
+  // of waiting for an event the dead link can no longer deliver.
+  StopActiveTransfers();
+  StopEvents();
+}
+
+void Dwc3::StopActiveTransfers() {
+  TRACE_DURATION("dwc3", "Dwc3::StopActiveTransfers");
   CancelAllEndpointIdleCallbacks();
-
-  // Because `StopEvents()` (and power-off after DCI unconfigure) follows, an asynchronous
-  // `DEPEVT_CMD_CMPL` (`CMDIOC=1`, `TransferState::kCanceling`) would never be delivered on the
-  // event FIFO. Pass `force=true` (`CMDIOC=0`) so active endpoints synchronously wait for
-  // `DEPCMD.CMDACT` to clear, transition to `kIdle`, and immediately clear `DALEPENA` in
-  // `EpReset()` while the controller and PHY clocks are still active.
-  ResetEndpoints(/*force=*/true);
-
-  if (controller_started_) {
-    StopEvents();
-  } else {
-    ep0_.out.stale_starts_to_end = 0;
-    ep0_.in.stale_starts_to_end = 0;
-    for (UserEndpoint& uep : user_endpoints_) {
-      uep.ep.stale_starts_to_end = 0;
-      uep.ep.stale_cancels_to_ignore = 0;
+  // User endpoints first and EP0 last: per the Synopsys databook, a DEPENDXFER on another endpoint
+  // is only guaranteed to complete while EP0 still has its SETUP TRB armed.
+  for (UserEndpoint& uep : user_endpoints_) {
+    ++uep.configure_generation;
+    if (uep.server.has_value()) {
+      uep.server->RemoveRequests(ZX_ERR_IO_NOT_PRESENT);
     }
+    EpReset(uep.ep);
   }
+  Ep0Reset();
 }
 
 void Dwc3::PowerDownCore() {
@@ -1409,12 +1434,31 @@ void Dwc3::NotifyDciDisconnectedThen(fit::callback<void()> on_done) {
   disconnect_in_flight_ = true;
   fidl::Arena arena;
   const zx_time_t start_time = zx_clock_get_boot();
+  // Diagnostic only: usb-peripheral replies once every function driver has answered
+  // SetConfigured(false), and nothing bounds that. Make a stalled drain visible rather than
+  // leaving the core powered and the connection watcher disarmed in silence.
+  dci_disconnect_drain_watchdog_.set_handler([this, start_time]() {
+    const zx_duration_t elapsed = zx_clock_get_boot() - start_time;
+    fdf::error(
+        "DCI disconnect drain still in flight after {} ms: usb-peripheral has not replied to "
+        "SetConnected(false), so a function driver has not finished SetConfigured(false). Until it "
+        "does the core stays powered, the connection wake lease is held, the PHY is not told the "
+        "core is disconnected and the connection watcher is not re-armed.",
+        elapsed / ZX_MSEC(1));
+    metrics_.RecordDciDisconnectStall();
+    metrics_.RecordEvent("DCI disconnect drain stalled");
+  });
+  dci_disconnect_drain_watchdog_.PostDelayed(dispatcher(), dci_disconnect_drain_stall_delay_);
   dci_intf_.buffer(arena)->SetConnected(false).Then(
       [this, start_time, on_done = std::move(on_done)](
           fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
               result) mutable {
+        dci_disconnect_drain_watchdog_.Cancel();
         const zx_duration_t duration = zx_clock_get_boot() - start_time;
         metrics_.RecordDciDisconnectDuration(duration);
+        if (duration >= dci_disconnect_drain_stall_delay_.get()) {
+          fdf::warn("DCI disconnect drain completed after {} ms", duration / ZX_MSEC(1));
+        }
         if (!result.ok()) {
           if (!result.is_canceled() && !result.is_dispatcher_shutdown()) {
             fdf::error("(framework) SetConnected(false): {}", result.FormatDescription());
@@ -1480,13 +1524,12 @@ void Dwc3::StartController(StartControllerCompleter::Sync& completer) {
 
 void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::StopController");
-  CancelAllEndpointIdleCallbacks();
-  ResetEndpoints(/*force=*/true);
+  // Device-initiated disconnect: usb-peripheral has unconfigured its functions; end anything left,
+  // stop events and reset.
+  QuiesceCore();
   controller_started_ = false;
 
   if (power_on_ && !disconnect_in_flight_) {
-    StopEvents();
-
     zx_status_t status = ResetHw();
     if (status != ZX_OK) {
       fdf::error("Failed to reset hardware {}", zx_status_get_string(status));
@@ -1561,7 +1604,7 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
   }
 
   if (uep->server.has_value() && (!uep->server->active_reqs.empty() || !IsEndpointIdle(*uep))) {
-    uep->server->CancelAll(ZX_ERR_CANCELED, /*force=*/false);
+    uep->server->CancelAll(ZX_ERR_CANCELED);
   }
 
   const uint8_t b_interval = request.ep_descriptor().b_interval();
@@ -1795,11 +1838,11 @@ void Dwc3::EpReset(Endpoint& ep) {
   ep.got_not_ready = false;
 }
 
-void Dwc3::UserEpReset(UserEndpoint& uep, bool force) {
+void Dwc3::UserEpReset(UserEndpoint& uep) {
   TRACE_DURATION("dwc3", "Dwc3::UserEpReset", "ep_num", uep.ep.ep_num);
   ++uep.configure_generation;
   if (uep.server.has_value()) {
-    uep.server->CancelAll(ZX_ERR_IO_NOT_PRESENT, force);
+    uep.server->CancelAll(ZX_ERR_IO_NOT_PRESENT);
   }
   EpReset(uep.ep);
 }
@@ -1888,18 +1931,18 @@ void Dwc3::CancelAllEndpointIdleCallbacks() {
   }
 }
 
-void Dwc3::ResetUserEndpoints(bool force) {
+void Dwc3::ResetUserEndpoints() {
   TRACE_DURATION("dwc3", "Dwc3::ResetUserEndpoints");
   CancelAllEndpointIdleCallbacks();
   for (UserEndpoint& uep : user_endpoints_) {
-    UserEpReset(uep, force);
+    UserEpReset(uep);
   }
 }
 
-void Dwc3::ResetEndpoints(bool force) {
+void Dwc3::ResetEndpoints() {
   TRACE_DURATION("dwc3", "Dwc3::ResetEndpoints");
+  ResetUserEndpoints();
   Ep0Reset();
-  ResetUserEndpoints(force);
 }
 
 void Dwc3::RearmConnectionWatcher(zx::eventpair setup_wake_lease) {
