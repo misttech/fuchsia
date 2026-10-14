@@ -73,6 +73,11 @@ impl vfs::node::Node for ErofsDirectory {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
+        storage_trace::duration!(
+            "storage",
+            "ErofsDirectory::get_attributes",
+            "nid" => self.node.nid()
+        );
         let mtime = self.node.mtime_ns();
         let selinux_context = self
             .volume
@@ -135,6 +140,7 @@ impl Directory for ErofsDirectory {
         flags: fio::Flags,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), zx::Status> {
+        storage_trace::duration!("storage", "ErofsDirectory::open", "nid" => self.node.nid());
         let (name, _) = match path.next_with_ref() {
             (path_ref, Some(name)) => (name, path_ref),
             (_, None) => {
@@ -195,6 +201,11 @@ impl Directory for ErofsDirectory {
         pos: &TraversalPosition,
         sink: Box<dyn dirents_sink::Sink>,
     ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), zx::Status> {
+        storage_trace::duration!(
+            "storage",
+            "ErofsDirectory::read_dirents",
+            "nid" => self.node.nid()
+        );
         let mut entry_offset = match pos {
             TraversalPosition::Start => 0,
             TraversalPosition::Index(index) => *index,

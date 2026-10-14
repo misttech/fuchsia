@@ -7,6 +7,7 @@ use erofs::FileNode;
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
 use std::sync::Arc;
+use storage_trace::TraceFutureExt as _;
 use vfs::ObjectRequestRef;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
@@ -92,6 +93,7 @@ impl Node for ErofsFile {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
+        storage_trace::duration!("storage", "ErofsFile::get_attributes", "nid" => self.node.nid());
         let mtime = self.node.mtime_ns();
         let content_size = self.node.size();
         let storage_size = self.node.storage_size(self.volume.fs().block_size());
@@ -185,6 +187,11 @@ impl File for ErofsFile {
     }
 
     async fn get_backing_memory(&self, flags: fio::VmoFlags) -> Result<zx::Vmo, zx::Status> {
+        storage_trace::duration!(
+            "storage",
+            "ErofsFile::get_backing_memory",
+            "nid" => self.node.nid()
+        );
         let mut vmo_rights = vmo_flags_to_rights(flags)
             | zx::Rights::BASIC
             | zx::Rights::MAP
@@ -223,10 +230,24 @@ impl FileLike for ErofsFile {
     ) -> Result<(), zx::Status> {
         let request = object_request.take();
         let scope_clone = scope.clone();
-        scope.spawn(request.handle_async(async move |object_request_ref| {
-            vfs::file::StreamIoConnection::create(scope_clone, self, options, object_request_ref)
-                .await
-        }));
+        let nid = self.node.nid();
+        scope.spawn(
+            request
+                .handle_async(async move |object_request_ref| {
+                    vfs::file::StreamIoConnection::create(
+                        scope_clone,
+                        self,
+                        options,
+                        object_request_ref,
+                    )
+                    .await
+                })
+                .trace(storage_trace::trace_future_args!(
+                    "storage",
+                    "ErofsFile::open",
+                    "nid" => nid
+                )),
+        );
         Ok(())
     }
 }

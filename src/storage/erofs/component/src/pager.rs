@@ -43,6 +43,7 @@ impl ErofsPager {
         file: Weak<ErofsFile>,
         initial_size: u64,
     ) -> Result<(zx::Vmo, u64), zx::Status> {
+        storage_trace::duration!("storage", "ErofsPager::create_vmo", "size" => initial_size);
         let receiver = ErofsPacketReceiver {
             file: Mutex::new(FileHolder::Weak(file)),
             pager: self.pager.clone(),
@@ -126,6 +127,13 @@ impl ErofsPacketReceiver {
 
     fn page_in(&self, range: Range<u64>) -> Result<(), zx::Status> {
         let file = self.get_file()?;
+        storage_trace::duration!(
+            "storage",
+            "ErofsPager::page_in",
+            "nid" => file.node().nid(),
+            "offset" => range.start,
+            "len" => range.end - range.start
+        );
 
         // Align the read to 128 KiB slots (readahead).
         let readahead_start = (range.start / READAHEAD_ALIGNMENT) * READAHEAD_ALIGNMENT;
@@ -169,6 +177,7 @@ impl ErofsPacketReceiver {
     /// was created between the signal being emitted and us handling it, we re-register the
     /// watcher so it will trigger again.
     fn receive_signal_packet(&self, signals: zx::SignalPacket) {
+        storage_trace::duration!("storage", "ErofsPager::signal_zero_children");
         assert!(signals.observed().contains(zx::Signals::VMO_ZERO_CHILDREN));
 
         let mut file_holder = self.file.lock().unwrap();
@@ -198,6 +207,7 @@ impl ErofsPacketReceiver {
     fn receive_pager_packet(&self, contents: zx::PagerPacket) {
         let command = contents.command();
         if command == ZX_PAGER_VMO_COMPLETE {
+            storage_trace::duration!("storage", "ErofsPager::vmo_complete");
             return;
         }
 

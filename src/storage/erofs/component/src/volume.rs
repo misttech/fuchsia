@@ -44,6 +44,7 @@ impl ErofsVolume {
         flags: fio::Flags,
         root: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
     ) -> Result<(), anyhow::Error> {
+        storage_trace::duration!("storage", "ErofsVolume::serve");
         let scope = ExecutionScope::new();
         let volume = Arc::new(Self::new(backing_vmo, pager)?);
         let root_node = volume.fs().root_node();

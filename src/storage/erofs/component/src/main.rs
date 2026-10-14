@@ -26,6 +26,7 @@ fn map_to_status(error: anyhow::Error) -> zx::Status {
 
 #[fuchsia::main]
 async fn main() -> Result<(), anyhow::Error> {
+    fuchsia_trace_provider::trace_provider_create_with_fdio();
     log::info!("Starting EROFS component");
 
     let outgoing =

@@ -45,6 +45,11 @@ impl Node for ErofsSymlink {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
+        storage_trace::duration!(
+            "storage",
+            "ErofsSymlink::get_attributes",
+            "nid" => self.node.nid()
+        );
         let mtime = self.node.mtime_ns();
         let content_size = self.target.len() as u64;
         let selinux_context = self
