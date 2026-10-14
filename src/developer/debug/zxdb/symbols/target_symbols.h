@@ -52,6 +52,11 @@ class TargetSymbols {
   // Returns |modules_| to the caller and clears |module_|.
   std::vector<fxl::RefPtr<ModuleSymbols>> TakeModules();
 
+  // Drops all references to module symbols held by this target, including the recently used ones
+  // that are normally kept alive across process restarts. This is used when the symbols are about
+  // to be force-reloaded so the old copies can be freed before the new ones are loaded.
+  void ReleaseAllModules();
+
   // Returns the symbol information for all the modules known for this target.
   std::vector<const ModuleSymbols*> GetModuleSymbols() const;
 

@@ -47,7 +47,9 @@ class ProcessObserver {
   // |DidLoadModuleSymbols| notifications have been dispatched.
   virtual void DidLoadAllModuleSymbols(Process* process) {}
 
-  // Notification that the given module with symbols is about to be removed.
+  // Notification that the given module with symbols is about to be removed. During a forced
+  // symbol reload (see ProcessSymbols::SetModules) this is sent for every module before
+  // WillLoadModuleSymbols(), rather than after it as in the regular module update path.
   virtual void WillUnloadModuleSymbols(Process* process, LoadedModuleSymbols* module) {}
 
   // Called when symbols for a loaded binary could not be loaded.

@@ -46,6 +46,11 @@ std::vector<fxl::RefPtr<ModuleSymbols>> TargetSymbols::TakeModules() {
   return output;
 }
 
+void TargetSymbols::ReleaseAllModules() {
+  modules_.clear();
+  recent_modules_.clear();
+}
+
 std::vector<const ModuleSymbols*> TargetSymbols::GetModuleSymbols() const {
   std::vector<const ModuleSymbols*> result;
   for (const auto& module : modules_)

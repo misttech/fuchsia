@@ -37,8 +37,16 @@ fxl::WeakPtr<const ProcessSymbols> ProcessSymbols::GetWeakPtr() const {
 
 void ProcessSymbols::SetModules(const std::vector<debug_ipc::Module>& modules,
                                 bool force_reload_symbols) {
-  if (force_reload_symbols)
+  if (force_reload_symbols) {
+    // Drop every reference to the current symbols before loading anything. The TargetSymbols also
+    // holds references, so clearing only |modules_| would keep the old copies alive until
+    // DoRefreshTargetSymbols() below, and both the old and new copies of every module would be in
+    // memory at the same time while loading. For large modules this doubles the peak memory usage.
+    for (auto& [base, info] : modules_)
+      notifications_->WillUnloadModuleSymbols(info.symbols.get());
     modules_.clear();
+    target_symbols_->ReleaseAllModules();
+  }
 
   // Map from load address to index into |modules| argument.
   std::map<uint64_t, size_t> new_module_address_to_index;

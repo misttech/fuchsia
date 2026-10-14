@@ -673,8 +673,8 @@ void Session::DispatchNotifyException(const debug_ipc::NotifyException& notify, 
 
   // If we were weakly attached, we may not have symbols yet. Check now if we need to load them,
   // then dispatch the exception to be handled.
-  thread->process()->GetModules(true, [weak_this = GetWeakPtr(), notify, settings, thread](
-                                          const Err& err, const std::vector<debug_ipc::Module>&) {
+  thread->process()->GetModules(false, [weak_this = GetWeakPtr(), notify, settings, thread](
+                                           const Err& err, const std::vector<debug_ipc::Module>&) {
     if (err.has_error())
       LOGS(Warn) << err.msg();
 
@@ -745,7 +745,7 @@ void Session::DispatchNotifyProcessStarting(const debug_ipc::NotifyProcessStarti
   // If the notification is coming from a weak filter, defer fetching modules until later.
   if (have_any_matching_filter &&
       !debug_ipc::AttachConfig::ShouldDeferModules(notify.attach_config)) {
-    found_target->process()->GetModules(true, [](const Err&, std::vector<debug_ipc::Module>) {});
+    found_target->process()->GetModules(false, [](const Err&, std::vector<debug_ipc::Module>) {});
   }
 }
 

@@ -4,6 +4,8 @@
 
 #include "src/developer/debug/zxdb/symbols/process_symbols.h"
 
+#include <optional>
+
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/ipc/records.h"
@@ -156,6 +158,69 @@ TEST(ProcessSymbols, SetModules) {
   // Should have one unload and no load.
   EXPECT_TRUE(notifications.HaveOneUnloadFor(base2));
   EXPECT_EQ(0u, notifications.loaded().size());
+}
+
+// A forced reload must release the old symbols before loading the new ones. Otherwise both copies
+// of every module are alive at the same time, which doubles the peak memory usage for large
+// modules.
+TEST(ProcessSymbols, SetModules_ForceReloadReleasesOldSymbolsFirst) {
+  std::string fake_build_id = "12345";
+  std::string test_file_name = TestSymbolModule::GetTestFileName();
+  SystemSymbols system(nullptr);
+  system.build_id_index().AddBuildIDMappingForTest(fake_build_id, test_file_name);
+
+  TargetSymbols target(&system);
+
+  // Records whether the old symbols are still alive at the point where loading is about to start.
+  class ReloadNotifications : public NotificationsImpl {
+   public:
+    fxl::WeakPtr<ModuleSymbols> old_symbols;
+    std::optional<bool> old_alive_at_load_start;
+
+    void WillLoadModuleSymbols(int num_modules) override {
+      if (old_alive_at_load_start.has_value())
+        old_alive_at_load_start = !!old_symbols;
+    }
+  };
+  ReloadNotifications notifications;
+  ProcessSymbols process(&notifications, &target);
+
+  constexpr uint64_t base = 0x1234567890;
+  std::vector<debug_ipc::Module> ipc;
+  debug_ipc::Module ipc_module;
+  ipc_module.base = base;
+  ipc_module.build_id = fake_build_id;
+  ipc_module.name = "module1.so";
+  ipc.push_back(ipc_module);
+  process.SetModules(ipc, false);
+
+  ASSERT_EQ(1u, notifications.loaded().size());
+  fxl::RefPtr<ModuleSymbols> old_ref = notifications.loaded()[0]->module_symbols_ref();
+  ASSERT_TRUE(old_ref);
+  notifications.old_symbols = old_ref->GetWeakPtr();
+  old_ref = nullptr;  // The process and target now hold the only references.
+  ASSERT_TRUE(notifications.old_symbols);
+
+  // Also populate the recent-modules cache that normally keeps symbols alive across process
+  // restarts, so the test covers ReleaseAllModules() dropping that reference too.
+  target.WillDestroyProcess();
+
+  // Force reload the same module list. Arm the check with the failing value so a missing
+  // WillLoadModuleSymbols() call is detected rather than passing vacuously.
+  notifications.Clear();
+  notifications.old_alive_at_load_start = true;
+  process.SetModules(ipc, true);
+  EXPECT_EQ(0, notifications.err_count());
+
+  // The old module should have been reported as unloaded and destroyed before the new load
+  // started, and a new module should have been loaded. Note that the new ModuleSymbols may be
+  // allocated at the same address as the old one since the old one is freed first, so pointer
+  // identity can't be compared.
+  EXPECT_TRUE(notifications.HaveOneUnloadFor(base));
+  ASSERT_TRUE(notifications.old_alive_at_load_start.has_value());
+  EXPECT_FALSE(*notifications.old_alive_at_load_start);
+  EXPECT_FALSE(notifications.old_symbols);
+  EXPECT_TRUE(notifications.HaveOneLoadFor(base, test_file_name));
 }
 
 TEST(ProcessSymbols, ModuleLength) {
