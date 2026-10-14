@@ -8,7 +8,6 @@ load(
     "//build/bazel/rules/components:fx_component.bzl",
     "fx_component",
     "fx_component_manifest",
-    "fx_test_component",
 )
 load(
     "//build/bazel/rules/packages:fx_package.bzl",
@@ -19,8 +18,8 @@ load(
     "fx_packaged_binary",
 )
 load(
-    "//build/bazel/rules/testing:fx_test.bzl",
-    "fx_test",
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
 )
 
 package(default_applicable_licenses = ["//:license"])
@@ -115,47 +114,10 @@ fx_cc_binary(
     ],
 )
 
-fx_packaged_binary(
-    name = "build_info_unittest_packaged_bin",
-    testonly = True,
-    binary = ":build_info_unittest_bin",
-    binary_name = "build_info_unittest",
-)
-
-fx_component_manifest(
-    name = "build-info-unittest-manifest",
-    testonly = True,
-    component_name = "build-info-unittest",
-    includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
-        "//src/sys/test_runners/gtest:default.shard.cml",
-    ],
-    manifest = "meta/build_info_unittest.cml",
-)
-
-fx_test_component(
-    name = "build-info-unittest-component",
-    compiled_manifest = ":build-info-unittest-manifest",
-    component_name = "build-info-unittest",
-    deps = [
-        ":build_info_unittest_packaged_bin",
-    ],
-)
-
-fx_package(
-    name = "build-info-unittest-package",
-    package_name = "build-info-unittest",
-    test_components = [
-        ":build-info-unittest-component",
-    ],
-)
-
-fx_test(
+fx_unittest_package(
     name = "build-info-unittest",
     # Tests may produce ERROR logs when validating behavior in scenarios where
     # build-info is not present (e.g. not allowlisted).
     max_log_severity = "ERROR",
-    package = ":build-info-unittest-package",
+    unit_tests = [":build_info_unittest_bin"],
 )

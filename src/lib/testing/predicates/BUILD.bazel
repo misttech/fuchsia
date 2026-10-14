@@ -4,17 +4,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
-load(
-    "//build/bazel/rules/components:fx_component.bzl",
-    "fx_component_manifest",
-    "fx_test_component",
-)
-load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
-load(
-    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
-    "fx_packaged_binary",
-)
-load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -38,9 +28,6 @@ cc_library(
     ],
 )
 
-# TODO(b/564574581): Replace the targets below with `fx_unittest_package()`
-# once https://fuchsia-review.googlesource.com/c/fuchsia/+/1864237 lands, so
-# the manifest and packaging boilerplate goes away.
 fx_cc_binary(
     name = "predicates-lib-unittests",
     testonly = True,
@@ -49,41 +36,8 @@ fx_cc_binary(
     deps = [":predicates"],
 )
 
-fx_packaged_binary(
-    name = "predicates-lib-unittests_packaged_bin",
-    testonly = True,
-    binary = ":predicates-lib-unittests",
-    binary_name = "predicates-lib-unittests",
-)
-
-fx_component_manifest(
-    name = "predicates-lib-test-manifest",
-    testonly = True,
-    component_name = "predicates-lib-test",
-    includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
-        "//src/sys/test_runners/gtest:default.shard.cml",
-    ],
-    manifest = "meta/predicates_lib_test.cml",
-)
-
-fx_test_component(
-    name = "predicates-lib-test-component",
-    compiled_manifest = ":predicates-lib-test-manifest",
-    component_name = "predicates-lib-test",
-    deps = [":predicates-lib-unittests_packaged_bin"],
-)
-
-fx_package(
-    name = "predicates-lib-test-package",
-    package_name = "predicates-lib-test",
-    test_components = [":predicates-lib-test-component"],
-)
-
-fx_test(
+fx_unittest_package(
     name = "predicates-lib-test",
     environments = ["//build/testing/environments:emu_env"],
-    package = ":predicates-lib-test-package",
+    unit_tests = [":predicates-lib-unittests"],
 )

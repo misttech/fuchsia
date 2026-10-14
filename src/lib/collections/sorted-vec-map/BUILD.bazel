@@ -2,16 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load(
-    "//build/bazel/rules/components:fx_component.bzl",
-    "fx_component_manifest",
-    "fx_test_component",
-)
 load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
-load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
-load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
-load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -67,38 +60,7 @@ wrap_host_rust_test(
     binary_name = "sorted_vec_map_lib_test",
 )
 
-fx_packaged_binary(
-    name = "sorted_vec_map_lib_test_packaged_bin",
-    testonly = True,
-    binary = ":sorted_vec_map_lib_test",
-    binary_name = "sorted_vec_map_lib_test",
-)
-
-fx_component_manifest(
-    name = "sorted-vec-map-tests-manifest",
-    testonly = True,
-    component_name = "sorted-vec-map-tests",
-    includes = [
-        "//sdk/lib/syslog:use.shard.cml",
-        "//src/sys/test_runners/rust:default.shard.cml",
-    ],
-    manifest = "meta/sorted_vec_map_tests.cml",
-)
-
-fx_test_component(
-    name = "sorted-vec-map-tests-component",
-    compiled_manifest = ":sorted-vec-map-tests-manifest",
-    component_name = "sorted-vec-map-tests",
-    deps = [":sorted_vec_map_lib_test_packaged_bin"],
-)
-
-fx_package(
-    name = "sorted-vec-map-tests-package",
-    package_name = "sorted-vec-map-tests",
-    test_components = [":sorted-vec-map-tests-component"],
-)
-
-fx_test(
+fx_unittest_package(
     name = "sorted-vec-map-tests",
-    package = ":sorted-vec-map-tests-package",
+    unit_tests = [":sorted_vec_map_lib_test"],
 )

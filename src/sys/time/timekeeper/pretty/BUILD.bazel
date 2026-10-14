@@ -2,18 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load(
-    "//build/bazel/rules/components:fx_component.bzl",
-    "fx_component_manifest",
-    "fx_test_component",
-)
-load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
-load(
-    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
-    "fx_packaged_binary",
-)
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
-load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -38,47 +28,8 @@ rustc_test(
 )
 
 # @bazel2gn:skip
-fx_packaged_binary(
-    name = "time_pretty_test_packaged_bin",
-    testonly = True,
-    binary = ":time_pretty_test",
-    binary_name = "time_pretty_lib_test",
-    visibility = ["//visibility:private"],
-)
-
-# @bazel2gn:skip
-fx_component_manifest(
-    name = "time_pretty_test_package-manifest",
-    testonly = True,
-    component_name = "time_pretty_test_package",
-    includes = [
-        "//sdk/lib/syslog:use.shard.cml",
-        "//src/sys/test_runners/rust:default.shard.cml",
-    ],
-    manifest = "meta/time_pretty_test_package.cml",
-    visibility = ["//visibility:private"],
-)
-
-# @bazel2gn:skip
-fx_test_component(
-    name = "time_pretty_test_package-component",
-    compiled_manifest = ":time_pretty_test_package-manifest",
-    component_name = "time_pretty_test_package",
-    visibility = ["//visibility:private"],
-    deps = [":time_pretty_test_packaged_bin"],
-)
-
-# @bazel2gn:skip
-fx_package(
-    name = "time_pretty_test_package-package",
-    package_name = "time_pretty_test_package",
-    test_components = [":time_pretty_test_package-component"],
-    visibility = ["//visibility:private"],
-)
-
-# @bazel2gn:skip
-fx_test(
+fx_unittest_package(
     name = "time_pretty_test_package",
-    package = ":time_pretty_test_package-package",
+    unit_tests = [":time_pretty_test"],
     visibility = ["//visibility:public"],
 )

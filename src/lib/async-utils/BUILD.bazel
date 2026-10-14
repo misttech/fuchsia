@@ -2,15 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load(
-    "//build/bazel/rules/components:fx_component.bzl",
-    "fx_component_manifest",
-    "fx_test_component",
-)
-load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
-load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
-load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -64,42 +57,7 @@ rustc_library(
 )
 
 # @bazel2gn:skip
-fx_packaged_binary(
-    name = "async-utils_test_packaged_bin",
-    testonly = True,
-    binary = ":async-utils_test",
-    binary_name = "async_utils_lib_test",
-)
-
-# @bazel2gn:skip
-fx_component_manifest(
-    name = "async-utils-tests-manifest",
-    testonly = True,
-    component_name = "async-utils-tests",
-    includes = [
-        "//sdk/lib/syslog:use.shard.cml",
-        "//src/sys/test_runners/rust:default.shard.cml",
-    ],
-    manifest = "meta/async_utils_tests.cml",
-)
-
-# @bazel2gn:skip
-fx_test_component(
-    name = "async-utils-tests-component",
-    compiled_manifest = ":async-utils-tests-manifest",
-    component_name = "async-utils-tests",
-    deps = [":async-utils_test_packaged_bin"],
-)
-
-# @bazel2gn:skip
-fx_package(
-    name = "async-utils-tests-package",
-    package_name = "async-utils-tests",
-    test_components = [":async-utils-tests-component"],
-)
-
-# @bazel2gn:skip
-fx_test(
+fx_unittest_package(
     name = "async-utils-tests",
-    package = ":async-utils-tests-package",
+    unit_tests = [":async-utils_test"],
 )

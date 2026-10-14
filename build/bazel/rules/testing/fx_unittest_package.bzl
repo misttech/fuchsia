@@ -15,6 +15,7 @@ def _fx_unittest_package_impl(
         name,
         package_name,
         unit_tests,
+        resources,
         testonly,
         visibility,
         tags,
@@ -41,6 +42,7 @@ def _fx_unittest_package_impl(
         name = package_target_name,
         package_name = package_name,
         test_components = test_components,
+        resources = resources,
         tags = tags + ["manual"],
     )
 
@@ -80,6 +82,10 @@ fx_unittest_package = macro(
             """,
             # Otherwise an unset value reaches the impl as an always-truthy
             # select(), and the `name` fallback never applies.
+            configurable = False,
+        ),
+        "resources": attr.label_list(
+            doc = "Additional package resource targets to include in the package.",
             configurable = False,
         ),
         "unit_tests": attr.label_list(

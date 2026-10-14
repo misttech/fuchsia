@@ -6,15 +6,8 @@ load(
     "@fuchsia_rules_common//packages:resources.bzl",
     "fuchsia_package_resource_group",
 )
-load(
-    "//build/bazel/rules/components:fx_component.bzl",
-    "fx_component_manifest",
-    "fx_test_component",
-)
-load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
-load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
-load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -70,46 +63,9 @@ fuchsia_package_resource_group(
 )
 
 # @bazel2gn:skip
-fx_packaged_binary(
-    name = "objects_test_packaged_bin",
-    testonly = True,
-    binary = ":objects_test",
-    binary_name = "objects_lib_test",
-)
-
-# @bazel2gn:skip
-fx_component_manifest(
-    name = "bt-obex-objects-tests-manifest",
-    testonly = True,
-    component_name = "bt-obex-objects-tests",
-    includes = [
-        "//sdk/lib/syslog:use.shard.cml",
-        "//src/sys/test_runners/rust:default.shard.cml",
-    ],
-    manifest = "meta/bt_obex_objects_tests.cml",
-)
-
-# @bazel2gn:skip
-fx_test_component(
-    name = "bt-obex-objects-tests-component",
-    compiled_manifest = ":bt-obex-objects-tests-manifest",
-    component_name = "bt-obex-objects-tests",
-    deps = [
-        ":objects-test-files",
-        ":objects_test_packaged_bin",
-    ],
-)
-
-# @bazel2gn:skip
-fx_package(
-    name = "bt-obex-objects-tests-package",
-    package_name = "bt-obex-objects-tests",
-    test_components = [":bt-obex-objects-tests-component"],
-)
-
-# @bazel2gn:skip
-fx_test(
+fx_unittest_package(
     name = "bt-obex-objects-tests",
-    package = ":bt-obex-objects-tests-package",
+    resources = [":objects-test-files"],
+    unit_tests = [":objects_test"],
     visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )
