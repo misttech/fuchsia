@@ -154,7 +154,7 @@ pub mod route {
     use crate::rules::{RuleRequest, RuleRequestArgs};
     use crate::{SysctlError, SysctlInterfaceSelector, interfaces, neighbors, routes};
 
-    use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
+    use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_EXCL, NLM_F_REPLACE, NetlinkHeader};
 
     /// An implementation of the Netlink Route protocol family.
     pub(crate) enum NetlinkRoute {}
@@ -799,6 +799,7 @@ pub mod route {
 
             let is_dump = req_header.flags & NLM_F_DUMP == NLM_F_DUMP;
             let is_replace = req_header.flags & NLM_F_REPLACE == NLM_F_REPLACE;
+            let is_excl = req_header.flags & NLM_F_EXCL == NLM_F_EXCL;
             let expects_ack = req_header.flags & NLM_F_ACK == NLM_F_ACK;
 
             use RouteNetlinkMessage::*;
@@ -977,6 +978,7 @@ pub mod route {
                                         interfaces::NewAddressArgs {
                                             address_and_interface_id,
                                             add_subnet_route,
+                                            replace: is_replace && !is_excl,
                                         },
                                     ),
                                 ),
@@ -1797,7 +1799,9 @@ mod test {
         SubnetEither,
     };
     use net_types::{SpecifiedAddr, Witness as _};
-    use netlink_packet_core::{NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
+    use netlink_packet_core::{
+        NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_EXCL, NLM_F_REPLACE, NetlinkHeader,
+    };
 
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
     use netlink_packet_route::link::{InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkMessage};
@@ -2470,7 +2474,7 @@ mod test {
     }
 
     enum AddressRequestKind {
-        New { add_subnet_route: bool },
+        New { add_subnet_route: bool, replace: bool },
         Del,
     }
 
@@ -2543,7 +2547,7 @@ mod test {
         response: Result<(), interfaces::RequestError>,
     ) -> TestAddrCase {
         valid_new_del_addr_request(
-            AddressRequestKind::New { add_subnet_route: true },
+            AddressRequestKind::New { add_subnet_route: true, replace: false },
             ack,
             addr,
             extra_nlas,
@@ -2622,14 +2626,14 @@ mod test {
     // Add address tests cases.
     #[test_case(
         new_del_addr_request_from_subnet(
-            AddressRequestKind::New { add_subnet_route: true },
+            AddressRequestKind::New { add_subnet_route: true, replace: false },
             true,
             net_subnet_v4!("0.0.0.0/0").into(),
             interfaces::testutil::PPP_INTERFACE_ID,
         ); "new_v4_unspecified_address_zero_prefix_ok_ack")]
     #[test_case(
         new_del_addr_request_from_subnet(
-            AddressRequestKind::New { add_subnet_route: true },
+            AddressRequestKind::New { add_subnet_route: true, replace: false },
             false,
             net_subnet_v4!("0.0.0.0/24").into(),
             interfaces::testutil::PPP_INTERFACE_ID,
@@ -2638,7 +2642,7 @@ mod test {
         TestAddrCase {
             expected_response: Some(ExpectedResponse::Error(Errno::EADDRNOTAVAIL)),
             ..new_del_addr_request_from_subnet(
-                AddressRequestKind::New { add_subnet_route: true },
+                AddressRequestKind::New { add_subnet_route: true, replace: false },
                 true,
                 net_subnet_v6!("::/0").into(),
                 interfaces::testutil::ETH_INTERFACE_ID,
@@ -2648,7 +2652,7 @@ mod test {
         TestAddrCase {
             expected_response: Some(ExpectedResponse::Error(Errno::EADDRNOTAVAIL)),
             ..new_del_addr_request_from_subnet(
-                AddressRequestKind::New { add_subnet_route: true },
+                AddressRequestKind::New { add_subnet_route: true, replace: false },
                 false,
                 net_subnet_v6!("::/64").into(),
                 interfaces::testutil::ETH_INTERFACE_ID,
@@ -2717,7 +2721,7 @@ mod test {
         }; "new_v6_same_local_and_address_nla_ok_no_ack")]
     #[test_case(
         TestAddrCase {
-            kind: AddressRequestKind::New { add_subnet_route: true },
+            kind: AddressRequestKind::New { add_subnet_route: true, replace: false },
             ..valid_new_addr_request_with_extra_nlas(
                 false,
                 interfaces::testutil::test_addr_subnet_v4(),
@@ -2728,7 +2732,7 @@ mod test {
         }; "new_v4_with_route_ok_no_ack")]
     #[test_case(
         TestAddrCase {
-            kind: AddressRequestKind::New { add_subnet_route: false },
+            kind: AddressRequestKind::New { add_subnet_route: false, replace: false },
             ..valid_new_addr_request_with_extra_nlas(
                 true,
                 interfaces::testutil::test_addr_subnet_v6(),
@@ -2737,6 +2741,39 @@ mod test {
                 Ok(()),
             )
         }; "new_v6_without_route_ok_ack")]
+    #[test_case(
+        TestAddrCase {
+            flags: NLM_F_REPLACE | NLM_F_ACK,
+            kind: AddressRequestKind::New { add_subnet_route: true, replace: true },
+            ..valid_new_addr_request(
+                true,
+                interfaces::testutil::test_addr_subnet_v4(),
+                interfaces::testutil::ETH_INTERFACE_ID,
+                Ok(()),
+            )
+        }; "new_v4_replace_ack")]
+    #[test_case(
+        TestAddrCase {
+            flags: NLM_F_REPLACE,
+            kind: AddressRequestKind::New { add_subnet_route: true, replace: true },
+            ..valid_new_addr_request(
+                false,
+                interfaces::testutil::test_addr_subnet_v6(),
+                interfaces::testutil::ETH_INTERFACE_ID,
+                Ok(()),
+            )
+        }; "new_v6_replace_no_ack")]
+    #[test_case(
+        TestAddrCase {
+            flags: NLM_F_REPLACE | NLM_F_EXCL | NLM_F_ACK,
+            kind: AddressRequestKind::New { add_subnet_route: true, replace: false },
+            ..valid_new_addr_request(
+                true,
+                interfaces::testutil::test_addr_subnet_v4(),
+                interfaces::testutil::ETH_INTERFACE_ID,
+                Ok(()),
+            )
+        }; "new_v4_replace_excl_ack")]
     #[test_case(
         TestAddrCase {
             expected_response: Some(ExpectedResponse::Error(Errno::EINVAL)),
@@ -2840,7 +2877,7 @@ mod test {
     #[test_case(
         TestAddrCase {
             prefix_len: 0,
-            kind: AddressRequestKind::New { add_subnet_route: false },
+            kind: AddressRequestKind::New { add_subnet_route: false, replace: false },
             ..valid_new_addr_request(
                 true,
                 net_addr_subnet!("192.0.2.123/0"),
@@ -3145,7 +3182,7 @@ mod test {
         };
 
         let (message, request) = match kind {
-            AddressRequestKind::New { add_subnet_route } => (
+            AddressRequestKind::New { add_subnet_route, replace } => (
                 RouteNetlinkMessage::NewAddress(address_message),
                 expected_request_args.map(|RequestAndResponse { request, response }| {
                     RequestAndResponse {
@@ -3153,6 +3190,7 @@ mod test {
                             interfaces::AddressRequestArgs::New(interfaces::NewAddressArgs {
                                 address_and_interface_id: request,
                                 add_subnet_route,
+                                replace,
                             }),
                         ),
                         response,

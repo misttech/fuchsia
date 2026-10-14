@@ -126,6 +126,8 @@ pub(crate) struct NewAddressArgs {
     /// Indicates whether or not an on-link route should be added for the
     /// address's subnet.
     pub add_subnet_route: bool,
+    /// Indicates whether or not an existing address should be replaced.
+    pub replace: bool,
 }
 
 /// Arguments for an RTM_DELADDR [`Request`].
@@ -934,6 +936,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
             address_and_interface_id:
                 address_and_interface_id @ AddressAndInterfaceArgs { address, interface_id },
             add_subnet_route,
+            replace,
         }: NewAddressArgs,
     ) -> Result<Option<AddressAndInterfaceArgs>, RequestError> {
         let control = self
@@ -979,6 +982,24 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
             Ok(()) => {
                 log_debug!("{} added on interface ({})", address, interface_id);
                 Ok(Some(address_and_interface_id))
+            }
+            // Note: In Linux (`inet_rtm_newaddr` / `inet6_rtm_newaddr`),
+            // `RTM_NEWADDR` always adds the address if it is absent (ignoring
+            // whether `NLM_F_CREATE` or `NLM_F_REPLACE` is set), and only
+            // checks `NLM_F_REPLACE` (and `!NLM_F_EXCL`) when the address is
+            // already assigned.
+            Err(AddressStateProviderError::AddressRemoved(
+                AddressRemovalReason::AlreadyAssigned,
+            )) if replace => {
+                // TODO(https://fxbug.dev/573643839): Retain `AddressStateProvider`
+                // and call `UpdateAddressProperties` to update address lifetimes
+                // when replacing an existing address.
+                log_debug!(
+                    "ignoring AlreadyAssigned for {} on interface ({}) with replace flag",
+                    address,
+                    interface_id,
+                );
+                Ok(None)
             }
             Err(e) => {
                 log_warn!(
@@ -2993,6 +3014,7 @@ mod tests {
                     RequestArgs::Address(AddressRequestArgs::New(NewAddressArgs {
                         address_and_interface_id,
                         add_subnet_route: false,
+                        replace: false,
                     }))
                 } else {
                     RequestArgs::Address(AddressRequestArgs::Del(DelAddressArgs {
@@ -3036,7 +3058,7 @@ mod tests {
     }
 
     enum AddressRequestKind {
-        New { add_subnet_route: bool },
+        New { add_subnet_route: bool, replace: bool },
         Del,
     }
 
@@ -3044,10 +3066,10 @@ mod tests {
     /// fails with an unrecognized interface error.
     #[test_case(
         add_test_addr_subnet_v4(),
-        AddressRequestKind::New { add_subnet_route: false }; "v4_new")]
+        AddressRequestKind::New { add_subnet_route: false, replace: false }; "v4_new")]
     #[test_case(
         add_test_addr_subnet_v6(),
-        AddressRequestKind::New { add_subnet_route: false }; "v6_new")]
+        AddressRequestKind::New { add_subnet_route: false, replace: false }; "v6_new")]
     #[test_case(add_test_addr_subnet_v4(), AddressRequestKind::Del; "v4_del")]
     #[test_case(add_test_addr_subnet_v6(), AddressRequestKind::Del; "v6_del")]
     #[fuchsia::test(logging = false)]
@@ -3057,10 +3079,11 @@ mod tests {
         pretty_assertions::assert_eq!(
             test_request(
                 [match kind {
-                    AddressRequestKind::New { add_subnet_route } => {
+                    AddressRequestKind::New { add_subnet_route, replace } => {
                         RequestArgs::Address(AddressRequestArgs::New(NewAddressArgs {
                             address_and_interface_id,
                             add_subnet_route,
+                            replace,
                         }))
                     }
                     AddressRequestKind::Del => {
@@ -3090,10 +3113,11 @@ mod tests {
             let Self { address, kind, control_request_handler } = self;
             let address_and_interface_id = AddressAndInterfaceArgs { address, interface_id };
             let args = match kind {
-                AddressRequestKind::New { add_subnet_route } => {
+                AddressRequestKind::New { add_subnet_route, replace } => {
                     RequestArgs::Address(AddressRequestArgs::New(NewAddressArgs {
                         address_and_interface_id,
                         add_subnet_route,
+                        replace,
                     }))
                 }
                 AddressRequestKind::Del => {
@@ -3183,17 +3207,19 @@ mod tests {
 
     /// An RTM_NEWADDR test helper that calls the callback with a stream of ASP
     /// requests.
-    async fn test_new_addr_asp_helper<
-        St: Stream<Item = fnet_interfaces::Event>,
-        F: Fn(fnet_interfaces_admin::AddressStateProviderRequestStream) -> St,
-    >(
+    async fn test_new_addr_asp_helper<St, F>(
         address: AddrSubnetEither,
         add_subnet_route: bool,
+        replace: bool,
         asp_handler: F,
-    ) -> TestRequestResult {
+    ) -> TestRequestResult
+    where
+        St: Stream<Item = fnet_interfaces::Event>,
+        F: Fn(fnet_interfaces_admin::AddressStateProviderRequestStream) -> St,
+    {
         test_interface_request(TestInterfaceRequestCase {
             address,
-            kind: AddressRequestKind::New { add_subnet_route },
+            kind: AddressRequestKind::New { add_subnet_route, replace },
             control_request_handler: |req| match req {
                 fnet_interfaces_admin::ControlRequest::AddAddress {
                     address: got_address,
@@ -3224,7 +3250,7 @@ mod tests {
     #[fuchsia::test(logging = false)]
     async fn test_new_addr_drop_asp_immediately(address: AddrSubnetEither) {
         pretty_assertions::assert_eq!(
-            test_new_addr_asp_helper(address, false, |_asp_request_stream| {
+            test_new_addr_asp_helper(address, false, false, |_asp_request_stream| {
                 futures::stream::empty()
             })
             .await,
@@ -3241,7 +3267,7 @@ mod tests {
         address: AddrSubnetEither,
         reason: AddressRemovalReason,
     ) -> TestRequestResult {
-        test_new_addr_asp_helper(address, true, |asp_request_stream| {
+        test_new_addr_asp_helper(address, true, false, |asp_request_stream| {
             asp_request_stream.control_handle().send_on_address_removed(reason).unwrap();
             futures::stream::empty()
         })
@@ -3306,6 +3332,29 @@ mod tests {
         )
     }
 
+    /// Tests RTM_NEWADDR when replace is true and address is already assigned.
+    #[test_case(test_addr_subnet_v4(); "v4")]
+    #[test_case(test_addr_subnet_v6(); "v6")]
+    #[fuchsia::test(logging = false)]
+    async fn test_new_addr_replace_already_assigned(address: AddrSubnetEither) {
+        pretty_assertions::assert_eq!(
+            test_new_addr_asp_helper(
+                address,
+                /* add_subnet_route */ true,
+                /* replace */ true,
+                |asp_request_stream| {
+                    asp_request_stream
+                        .control_handle()
+                        .send_on_address_removed(AddressRemovalReason::AlreadyAssigned)
+                        .unwrap();
+                    futures::stream::empty()
+                },
+            )
+            .await,
+            TestRequestResult { messages: Vec::new(), waiter_results: vec![Ok(())] },
+        )
+    }
+
     /// An RTM_NEWADDR test helper that calls the callback with a stream of ASP
     /// requests after the Detach request is handled.
     async fn test_new_addr_asp_detach_handled_helper<
@@ -3316,7 +3365,7 @@ mod tests {
         add_subnet_route: bool,
         asp_handler: F,
     ) -> TestRequestResult {
-        test_new_addr_asp_helper(address, add_subnet_route, |asp_request_stream| {
+        test_new_addr_asp_helper(address, add_subnet_route, false, |asp_request_stream| {
             asp_request_stream
                 .into_future()
                 .map(|(asp_request, asp_request_stream)| {

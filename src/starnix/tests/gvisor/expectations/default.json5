@@ -839,10 +839,6 @@
                 "NetlinkRouteTest.ListMembershipsSizeProbe",
                 "NetlinkRouteTest.ListMembershipsLargeBuffer",
                 "NetlinkRouteTest.ListMembershipsTruncated",
-
-                // TODO(https://issuetracker.google.com/290605547): support
-                // replacing addresses.
-                "NetlinkRouteTest.AddAndRemoveAddr",
                 "NetlinkRouteTest.SpliceFromPipe",
                 "NetlinkRouteTest.GetLinkByIndex",
                 "NetlinkRouteTest.GetLinkByName",
