@@ -10,15 +10,19 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_logging::log_error;
 
 use starnix_uapi::errors::Errno;
+use starnix_uapi::{errno, error};
 
-use fidl_fuchsia_usb_policy::PolicyProviderMarker;
-use fuchsia_component::client::connect_to_protocol;
+use fidl_fuchsia_usb_policy::{
+    ConfigurationMarker, ConfigurationSynchronousProxy, PolicyProviderMarker,
+};
+use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_sync};
 use starnix_core::device::kobject::{Device, UEventAction};
 use starnix_core::device::mem::DevNull;
 use starnix_core::device::simple_device_ops;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_core::vfs::{FsStr, FsString};
+use starnix_sync::{AndroidUsbCcToggleEnableLock, LockDepMutex};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
 
@@ -87,6 +91,83 @@ impl BytesFileOps for UsbStateSysfsFile {
     }
 }
 
+struct CcToggleEnableState {
+    /// Last value successfully applied via `fuchsia.usb.policy.Configuration`.
+    enabled: bool,
+    /// Lazily connected `fuchsia.usb.policy.Configuration` proxy, reused across writes so all
+    /// requests are serialized on a single channel.
+    config_proxy: Option<ConfigurationSynchronousProxy>,
+}
+
+struct CcToggleEnableSysfsFile {
+    /// Guards both the FIDL call and the `enabled` update so concurrent writers can't apply
+    /// `DisconnectCable`/`ConnectCable` in one order and record `enabled` in another.
+    state: LockDepMutex<CcToggleEnableState, AndroidUsbCcToggleEnableLock>,
+}
+
+impl CcToggleEnableSysfsFile {
+    fn new() -> Self {
+        Self { state: CcToggleEnableState { enabled: true, config_proxy: None }.into() }
+    }
+
+    #[cfg(test)]
+    fn new_with_proxy(config_proxy: ConfigurationSynchronousProxy) -> Self {
+        Self {
+            state: CcToggleEnableState { enabled: true, config_proxy: Some(config_proxy) }.into(),
+        }
+    }
+}
+
+impl BytesFileOps for CcToggleEnableSysfsFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let content: &[u8] = if self.state.lock().enabled { b"1\n" } else { b"0\n" };
+        Ok(Cow::Borrowed(content))
+    }
+
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let input = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
+        let enable = match input.trim_matches(|c: char| c.is_whitespace() || c == '\0') {
+            "0" => false,
+            "1" => true,
+            _ => return error!(EINVAL),
+        };
+
+        let mut state = self.state.lock();
+        if state.config_proxy.is_none() {
+            state.config_proxy =
+                Some(connect_to_protocol_sync::<ConfigurationMarker>().map_err(|e| {
+                    log_error!("Failed to connect to fuchsia.usb.policy.Configuration: {:?}", e);
+                    errno!(EIO)
+                })?);
+        }
+        let Some(proxy) = state.config_proxy.as_ref() else {
+            return error!(EIO);
+        };
+
+        let (method, result) = if enable {
+            ("ConnectCable", proxy.connect_cable(zx::MonotonicInstant::INFINITE))
+        } else {
+            ("DisconnectCable", proxy.disconnect_cable(0, zx::MonotonicInstant::INFINITE))
+        };
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(status)) => {
+                log_error!("{method} returned error: {:?}", zx::Status::err_from_raw(status));
+                return error!(EIO);
+            }
+            Err(e) => {
+                log_error!("{method} FIDL error: {:?}", e);
+                // Drop the proxy so the next write reconnects (e.g. if usb-policy restarted).
+                state.config_proxy = None;
+                return error!(EIO);
+            }
+        }
+
+        state.enabled = enable;
+        Ok(())
+    }
+}
+
 pub fn usb_device_init(kernel: &Arc<Kernel>) -> Result<Device, Errno> {
     let registry = &kernel.device_registry;
 
@@ -109,6 +190,35 @@ pub fn usb_device_init(kernel: &Arc<Kernel>) -> Result<Device, Errno> {
         },
         simple_device_ops::<DevNull>,
     )?;
+
+    // Register `/sys/devices/platform/10d50000.hsi2c/i2c-6/i2c-max77759tcpc/cc_toggle_enable` so
+    // Android's `cable_breaker` tool can simulate Type-C cable disconnects and reconnects via
+    // `fuchsia.usb.policy.Configuration`.
+    // TODO(https://fxbug.dev/452096300): Drive the hardcoded `10d50000.hsi2c/i2c-6/i2c-max77759tcpc`
+    // topology from board configuration rather than registering it for all `android_usb`
+    // containers.
+    let platform_bus = registry.objects.platform_bus();
+    let i2c_bus = registry.objects.get_or_create_bus("i2c".into());
+    let hsi2c = registry.add_bus_device(
+        "10d50000.hsi2c".into(),
+        Some(registry.objects.platform_device()),
+        platform_bus,
+        build_device_directory,
+    );
+    let i2c_6 = registry.add_bus_device(
+        "i2c-6".into(),
+        Some(hsi2c),
+        i2c_bus.clone(),
+        build_device_directory,
+    );
+    registry.add_bus_device("i2c-max77759tcpc".into(), Some(i2c_6), i2c_bus, |device, dir| {
+        build_device_directory(device, dir);
+        dir.entry(
+            "cc_toggle_enable",
+            BytesFile::new_node(CcToggleEnableSysfsFile::new()),
+            mode!(IFREG, 0o644),
+        );
+    });
 
     let kernel_clone = Arc::clone(kernel);
     let device_clone = device.clone();
@@ -189,6 +299,8 @@ async fn monitor_usb_device_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_fuchsia_usb_policy::ConfigurationRequest;
+    use futures::StreamExt;
     use starnix_core::testing::spawn_kernel_and_run;
     use starnix_rcu::RcuReadScope;
 
@@ -274,6 +386,15 @@ mod tests {
             assert_eq!(device.name(), "android0");
             let metadata = device.metadata().expect("metadata not found");
             assert_eq!(metadata.devname.as_slice(), b"android0");
+
+            let root = &current_task.kernel().device_registry.objects.root;
+            assert!(
+                root.lookup(
+                    "devices/platform/10d50000.hsi2c/i2c-6/i2c-max77759tcpc/cc_toggle_enable"
+                        .into()
+                )
+                .is_some()
+            );
         })
         .await;
     }
@@ -303,5 +424,96 @@ mod tests {
             assert_eq!(value.as_slice(), b"CONNECTED");
         })
         .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_cc_toggle_enable_sysfs_read_and_write() {
+        let (config_proxy, mut config_stream) =
+            fidl::endpoints::create_sync_proxy_and_stream::<ConfigurationMarker>();
+
+        let server_task = fuchsia_async::Task::spawn(async move {
+            let mut requests = Vec::new();
+            while let Some(Ok(req)) = config_stream.next().await {
+                match req {
+                    ConfigurationRequest::DisconnectCable { duration, responder } => {
+                        requests.push((false, duration));
+                        let _ = responder.send(Ok(()));
+                    }
+                    ConfigurationRequest::ConnectCable { responder } => {
+                        requests.push((true, 0));
+                        let _ = responder.send(Ok(()));
+                    }
+                    _ => panic!("unexpected request: {:?}", req),
+                }
+                if requests.len() == 4 {
+                    break;
+                }
+            }
+            requests
+        });
+
+        spawn_kernel_and_run(async move |current_task| {
+            let sysfs_file = CcToggleEnableSysfsFile::new_with_proxy(config_proxy);
+            assert_eq!(sysfs_file.read(current_task).expect("read failed").as_ref(), b"1\n");
+
+            sysfs_file.write(current_task, b"0\n".to_vec()).expect("write 0 failed");
+            assert_eq!(sysfs_file.read(current_task).expect("read failed").as_ref(), b"0\n");
+
+            sysfs_file.write(current_task, b"1".to_vec()).expect("write 1 failed");
+            assert_eq!(sysfs_file.read(current_task).expect("read failed").as_ref(), b"1\n");
+
+            sysfs_file.write(current_task, b"0\0".to_vec()).expect("write 0\\0 failed");
+            assert_eq!(sysfs_file.read(current_task).expect("read failed").as_ref(), b"0\n");
+
+            sysfs_file.write(current_task, b"1\n\0".to_vec()).expect("write 1\\n\\0 failed");
+            assert_eq!(sysfs_file.read(current_task).expect("read failed").as_ref(), b"1\n");
+
+            assert_eq!(sysfs_file.write(current_task, b"invalid".to_vec()), error!(EINVAL));
+        })
+        .await;
+
+        assert_eq!(server_task.await, vec![(false, 0), (true, 0), (false, 0), (true, 0)]);
+    }
+
+    #[::fuchsia::test]
+    async fn test_cc_toggle_enable_sysfs_write_error_keeps_state() {
+        let (config_proxy, mut config_stream) =
+            fidl::endpoints::create_sync_proxy_and_stream::<ConfigurationMarker>();
+
+        let server_task = fuchsia_async::Task::spawn(async move {
+            let mut num_requests = 0;
+            while let Some(Ok(req)) = config_stream.next().await {
+                match req {
+                    ConfigurationRequest::DisconnectCable { responder, .. } => {
+                        let _ = responder.send(Err(zx::Status::UNAVAILABLE.into_raw()));
+                    }
+                    ConfigurationRequest::ConnectCable { responder } => {
+                        let _ = responder.send(Err(zx::Status::INTERNAL.into_raw()));
+                    }
+                    _ => panic!("unexpected request: {:?}", req),
+                }
+                num_requests += 1;
+                if num_requests == 2 {
+                    break;
+                }
+            }
+            num_requests
+        });
+
+        spawn_kernel_and_run(async move |current_task| {
+            let sysfs_file = CcToggleEnableSysfsFile::new_with_proxy(config_proxy);
+
+            // A failed DisconnectCable must return EIO and leave `enabled` set.
+            assert_eq!(sysfs_file.write(current_task, b"0".to_vec()), error!(EIO));
+            assert_eq!(sysfs_file.read(current_task).expect("read failed").as_ref(), b"1\n");
+
+            // Force `enabled` to false, then verify a failed ConnectCable leaves it unset.
+            sysfs_file.state.lock().enabled = false;
+            assert_eq!(sysfs_file.write(current_task, b"1".to_vec()), error!(EIO));
+            assert_eq!(sysfs_file.read(current_task).expect("read failed").as_ref(), b"0\n");
+        })
+        .await;
+
+        assert_eq!(server_task.await, 2);
     }
 }

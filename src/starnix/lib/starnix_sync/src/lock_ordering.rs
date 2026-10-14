@@ -274,6 +274,7 @@ lock_ordering! {
     // Can be used for any locks that is never acquired before any other lock.
     // keep-sorted start
     Terminal(AioEventsLock),
+    Terminal(AndroidUsbCcToggleEnableLock),
     Terminal(AuditDenyCountsLock),
     Terminal(AuditNetlinkClientAuditResponseLock),
     Terminal(AuditQueueLock),

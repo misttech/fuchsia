@@ -4,7 +4,10 @@
 {
     offer: [
         {
-            protocol: "fuchsia.usb.policy.PolicyProvider",
+            protocol: [
+                "fuchsia.usb.policy.Configuration",
+                "fuchsia.usb.policy.PolicyProvider",
+            ],
             from: "#usb-policy",
             to: "#starnix_runner",
             source_availability: "unknown",

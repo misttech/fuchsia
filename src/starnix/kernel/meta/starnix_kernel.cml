@@ -102,7 +102,10 @@
             from: "parent",
         },
         {
-            protocol: "fuchsia.usb.policy.PolicyProvider",
+            protocol: [
+                "fuchsia.usb.policy.Configuration",
+                "fuchsia.usb.policy.PolicyProvider",
+            ],
             from: "parent",
             availability: "optional",
         },

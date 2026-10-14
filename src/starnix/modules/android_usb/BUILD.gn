@@ -27,15 +27,20 @@ rustc_library("android_usb") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_rust",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_rust",
+    "//sdk/rust/zx",
     "//src/lib/fuchsia-component",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
+    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
   ]
 
   test_deps = [
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
     "//src/starnix/lib/starnix_rcu",
+    "//third_party/rust_crates:futures",
   ]
 }
 
