@@ -123,8 +123,19 @@ zx::result<> QemuRiscv64::PcirootInit() {
   zx::unowned_resource mmio_resource(get_mmio_resource(parent()));
 
   pci_root_host_.mcfgs().push_back(kVirtPcieMcfg);
-  pci_root_host_.Io().AddRegion(kVirtPciePio);
-  pci_root_host_.Mmio64().AddRegion(kVirtPcieMmio);
+
+  if (zx_status_t status = pci_root_host_.Io().AddRegion(kVirtPciePio); status != ZX_OK) {
+    zxlogf(ERROR, "Failed to add IO region { %#lx - %#lx } to the PCI root allocator: %s",
+           kVirtPciePio.base, kVirtPciePio.base + kVirtPciePio.size, zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  if (zx::result<> result = pci_root_host_.AddMmioRange(kVirtPcieMmio.base, kVirtPcieMmio.size);
+      result.is_error()) {
+    zxlogf(ERROR, "Failed to add MMIO region { %#lx - %#lx } to PCI root allocator: %s",
+           kVirtPcieMmio.base, kVirtPcieMmio.base + kVirtPcieMmio.size, result.status_string());
+    return result.take_error();
+  }
 
   QemuRiscv64Pciroot::Context context{};
   const size_t vmo_size = fbl::round_up<size_t>(kVirtPcieEcam.size, zx_system_get_page_size());
