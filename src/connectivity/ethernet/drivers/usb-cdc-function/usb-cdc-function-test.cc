@@ -29,6 +29,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <usb-inspect/usb-inspect-test-helper.h>
+#include <usb/descriptors.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 #include "src/lib/testing/predicates/status.h"
@@ -49,6 +50,22 @@ class UsbCdcTestHelper {
   [[maybe_unused]] static bool IsRxEndpointDead(const UsbCdcFunction& /*driver*/) { return false; }
   [[maybe_unused]] static bool IsTxEndpointDead(const UsbCdcFunction& /*driver*/) { return false; }
   [[maybe_unused]] static size_t ActiveRxVmoIdsSize(const UsbCdcFunction& /*driver*/) { return 0; }
+
+  // Simulates request recycling where all requests in the interrupt endpoint's free request
+  // pool have a stale size of 8 bytes (matching network_notification).
+  static void PrepareRecycledInterruptRequestsForTesting(UsbCdcFunction& driver) {
+    std::vector<usb::FidlRequest> reqs;
+    while (auto req = driver.intr_ep_.GetRequest()) {
+      reqs.push_back(std::move(*req));
+    }
+    ZX_ASSERT_MSG(reqs.size() >= 2, "intr_ep_ must have at least 2 requests allocated");
+    for (auto& req : reqs) {
+      ZX_ASSERT_MSG(req->data().has_value() && !req->data()->empty(),
+                    "request must have initialized buffer regions");
+      req->data()->at(0).size(sizeof(usb_cdc_notification_t));
+      driver.intr_ep_.PutRequest(std::move(req));
+    }
+  }
 };
 
 namespace {
@@ -2449,6 +2466,88 @@ TEST_F(UsbCdcTest, SetConfiguredFalseClearsPendingNotification) {
   driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
     EXPECT_EQ(env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count(), 0u);
   });
+}
+// Validates that speed_notification in CdcSendNotifications correctly clears request buffers
+// before CachedCopyTo. When interrupt requests are recycled through CancelAll or out-of-order
+// completions, a request that previously held an 8-byte network_notification may be assigned
+// to speed_notification (which requires 16 bytes). Without clear_buffers(), CachedCopyTo
+// caps the write at 8 bytes, causing an incomplete copy error.
+TEST_F(UsbCdcTest, SpeedNotificationCopiesSuccessfullyWhenRequestRecycled) {
+  StartNetworkDevice();
+
+  // Prepare requests in intr_ep_ with a stale size of 8 (simulating recycling requests
+  // previously used for network_notification).
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {
+    UsbCdcTestHelper::PrepareRecycledInterruptRequestsForTesting(driver);
+  });
+
+  // SetConfigured(true) calls CdcSendNotifications(), which pops:
+  // - req (network_notification) which resets size to 0 via req->clear_buffers()
+  // - req2 (speed_notification) which resets size to 0 via req2->clear_buffers()
+  fidl::Result result = function_client_->SetConfigured({{
+      .configured = true,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+
+  // Verify that CdcSendNotifications succeeded in copying the full 16 bytes and queued
+  // both notifications to the endpoint.
+  // Without req2->clear_buffers(), CachedCopyTo only copies 8 bytes and drops the notifications.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInEnvironmentTypeContext([&ready](Environment& env) {
+          ready = (env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count() == 2);
+        });
+        return ready;
+      },
+      zx::sec(5)));
+
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    auto& fake_ep = env.fake_usb_fidl_.fake_endpoint(kIntrEp);
+    ASSERT_EQ(fake_ep.pending_request_count(), 2u);
+
+    // Read and complete first request (network_notification, 8 bytes).
+    auto net_data = fake_ep.ReadPendingRequestData();
+    ASSERT_OK(net_data.status_value());
+    ASSERT_EQ(net_data->size(), sizeof(usb_cdc_notification_t));
+    usb_cdc_notification_t net_notif;
+    std::memcpy(&net_notif, net_data->data(), sizeof(net_notif));
+    EXPECT_EQ(net_notif.bmRequestType, kClassInterfaceIn);
+    EXPECT_EQ(net_notif.bNotification,
+              fidl::ToUnderlying(fdescriptor::CdcNotification::kNetworkConnection));
+    EXPECT_EQ(le16toh(net_notif.wValue), 0u);
+    EXPECT_EQ(le16toh(net_notif.wIndex), kDataInterface);
+    EXPECT_EQ(le16toh(net_notif.wLength), 0u);
+    fake_ep.RequestComplete(ZX_OK, sizeof(usb_cdc_notification_t));
+
+    // Read and complete second request (speed_notification, 16 bytes).
+    auto speed_data = fake_ep.ReadPendingRequestData();
+    ASSERT_OK(speed_data.status_value());
+    ASSERT_EQ(speed_data->size(), sizeof(usb_cdc_speed_change_notification_t));
+    usb_cdc_speed_change_notification_t notif;
+    std::memcpy(&notif, speed_data->data(), sizeof(notif));
+    EXPECT_EQ(notif.notification.bmRequestType, kClassInterfaceIn);
+    EXPECT_EQ(notif.notification.bNotification,
+              fidl::ToUnderlying(fdescriptor::CdcNotification::kConnectionSpeedChange));
+    EXPECT_EQ(le16toh(notif.notification.wValue), 0u);
+    EXPECT_EQ(le16toh(notif.notification.wIndex), kDataInterface);
+    EXPECT_EQ(le16toh(notif.notification.wLength), 2 * sizeof(uint32_t));
+    EXPECT_EQ(le32toh(notif.downlink_br), 0u);
+    EXPECT_EQ(le32toh(notif.uplink_br), 0u);
+    fake_ep.RequestComplete(ZX_OK, sizeof(usb_cdc_speed_change_notification_t));
+  });
+
+  // Verify that both completed requests returned to intr_ep_ and 0 remain in flight.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInDriverContext([&ready](UsbCdcFunction& driver) {
+          ready = (driver.GetInFlightInterruptCountForTesting() == 0u);
+        });
+        return ready;
+      },
+      zx::sec(5)));
 }
 
 // Validates that when NetworkDeviceImpl::Stop() discards pending TX buffers while a USB TX request

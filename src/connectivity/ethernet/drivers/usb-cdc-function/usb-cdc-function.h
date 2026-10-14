@@ -154,6 +154,7 @@ class UsbCdcFunction : public fdf::DriverBase2,
   usb_inspect::ThroughputTracker &GetThroughputTrackerForTesting() { return *throughput_tracker_; }
 
  private:
+  friend class UsbCdcTestHelper;
   struct SetConfiguredSharedState;
   struct SetInterfaceSharedState;
   void CancelSetInterface();

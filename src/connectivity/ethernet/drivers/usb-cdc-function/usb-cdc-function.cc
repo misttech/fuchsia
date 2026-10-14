@@ -281,8 +281,13 @@ void UsbCdcFunction::CdcSendNotifications() {
     return;
   }
 
+  // Requests popped from `intr_ep_` are recycled across 8-byte network notifications and 16-byte
+  // speed notifications and retain the `BufferRegion::size` assigned by their prior send; clear
+  // stale buffer bounds so `CachedCopyTo()` can copy the full 16-byte speed payload.
+  req2->clear_buffers();
   actual =
       req2->CachedCopyTo(0, &speed_notification, sizeof(speed_notification), intr_ep_.GetMapped());
+
   if (actual.is_error()) {
     fdf::error("CdcSendNotifications: CachedCopyTo failed: {}", actual.status_string());
     intr_ep_.PutRequest(std::move(req.value()));
