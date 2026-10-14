@@ -66,7 +66,7 @@ FETCH_TTL_SECS = 600
 
 findings = []
 
-DEVICE_TEST_RULES = {"fx_test"}
+DEVICE_TEST_RULES = {"fx_test", "fx_unittest_package"}
 HOST_TEST_RULES = {"host_rustc_test", "host_go_test", "host_py_test", "host_test", "wrap_host_rust_test"}
 # Tests move to Bazel and bazel2gn does not translate them (migration_sanity enforces the
 # `# @bazel2gn:skip`), so no Bazel host test has a GN twin that runs it instead.
@@ -664,9 +664,13 @@ for td in target_dirs:
             all_tests.append(t_name + "_test")
         if rule_name == "rustc_test" or (rule_name in RUST_TEST_OWNERS and "fuchsia" in unit_test_envs(kws)):
             device_bin = t_name if rule_name == "rustc_test" else t_name + "_test"
-            if FX_TEST_AVAILABLE and not re.search(
+            packaged_in_bin = re.search(
                 r'\bbinary\s*=\s*"(?://' + re.escape(td) + r')?:' + re.escape(device_bin) + r'"', bazel_src
-            ):
+            )
+            packaged_in_unit_tests = re.search(
+                r'\bunit_tests\s*=\s*\[[^\]]*"(?://' + re.escape(td) + r')?:' + re.escape(device_bin) + r'"', bazel_src
+            )
+            if FX_TEST_AVAILABLE and not (packaged_in_bin or packaged_in_unit_tests):
                 findings.append({
                     "source": "cq_reachability",
                     "category": "unpackaged_rust_device_test",
@@ -675,10 +679,11 @@ for td in target_dirs:
                     "line": lineno,
                     "message": (
                         f"Rust device test binary ':{device_bin}' ({rule_name}) in '{bazel_rel}' is not packaged by any "
-                        "`fx_packaged_binary`, so no `fx_test` runs it and it is missing from tests.json."
+                        "`fx_packaged_binary` or `fx_unittest_package`, so no `fx_test` runs it and it is missing from tests.json."
                     ),
                     "remediation": (
-                        f"Add `fx_packaged_binary(testonly = True, binary = \":{device_bin}\", binary_name = ...)` "
+                        f"Add `fx_unittest_package(name = ..., unit_tests = [\":{device_bin}\"])` or "
+                        f"`fx_packaged_binary(testonly = True, binary = \":{device_bin}\", binary_name = ...)` "
                         "(GN's output name, e.g. `<crate>_lib_test`), a `meta/<component>.cml` including "
                         "`//src/sys/test_runners/rust/default.shard.cml` and `syslog/use.shard.cml` with "
                         "`program.binary` = `bin/<binary_name>`, `fx_component_manifest`, `fx_test_component`, "

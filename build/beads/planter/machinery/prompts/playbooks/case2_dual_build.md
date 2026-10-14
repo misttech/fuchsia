@@ -10,8 +10,9 @@ working).
   migrate to `fx_package`/`fx_component`/`fx_component_manifest`/`fx_packaged_binary` in
   BUILD.bazel and are deleted from BUILD.gn (`bazel2gn` does not convert them; omit the sentinel
   if BUILD.bazel only defines `fx_*` targets).
-- Tests follow "Migrating Tests" in the coder prompt: they live only in BUILD.bazel (explicit
-  `meta/<component>.cml`, `fx_packaged_binary` + `fx_component_manifest` + `fx_test_component` +
+- Tests follow "Migrating Tests" in the coder prompt: they live only in BUILD.bazel
+  (`fx_unittest_package`, `fx_unittest_component`, explicit `meta/<component>.cml` +
+  `fx_packaged_binary` + `fx_component_manifest` + `fx_test_component` +
   `fx_package(test_components = ...)` + `fx_test`, or a host test rule), every test target except
   `host_*_test` rules (which bazel2gn always skips) and the `with_unit_tests`/`test_deps`
   attributes carry `# @bazel2gn:skip` so bazel2gn generates no test into BUILD.gn, and a hand-written `bazel_test_suite` above the sentinel that

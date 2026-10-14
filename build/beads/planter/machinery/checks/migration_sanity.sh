@@ -191,6 +191,7 @@ def parse_bazel_targets(bazel_path):
         binary_ref = None
         pkg_name = None
         unit_tests = False
+        unit_tests_refs = []
         host_only = False
         unskipped_test_attrs = []
         for kw in call.keywords:
@@ -211,6 +212,13 @@ def parse_bazel_targets(bazel_path):
                 binary_ref = kw.value.value.lstrip(":")
             elif kw.arg == "package_name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 pkg_name = kw.value.value
+            elif kw.arg == "unit_tests":
+                if isinstance(kw.value, ast.List):
+                    for elt in kw.value.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            unit_tests_refs.append(elt.value.lstrip(":"))
+                elif isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    unit_tests_refs.append(kw.value.value.lstrip(":"))
             elif kw.arg in ("with_unit_tests", "with_host_unit_tests") and isinstance(kw.value, ast.Constant):
                 unit_tests = unit_tests or kw.value.value is True or kw.value.value in ("fuchsia", "host", "both")
         if not tname:
@@ -237,6 +245,7 @@ def parse_bazel_targets(bazel_path):
             "binary_ref": binary_ref,
             "package_name": pkg_name or tname,
             "unit_tests": unit_tests,
+            "unit_tests_refs": unit_tests_refs,
             "host_only": host_only,
             "unskipped_test_attrs": unskipped_test_attrs,
         })
@@ -322,9 +331,14 @@ for pkg_dir in sorted(candidate_dirs):
     bazel_targets = parse_bazel_targets(bazel_abs)
     gn_info = parse_gn_file(gn_abs) if os.path.isfile(gn_abs) else None
     packaged_binaries = {
-        t["binary_ref"] for t in bazel_targets if t["rule"] == "fx_packaged_binary" and t.get("binary_ref")
+        t["binary_ref"]
+        for t in bazel_targets
+        if t["rule"] in ("fx_packaged_binary", "fx_unittest_component") and t.get("binary_ref")
     }
-    fx_pkgs = [t for t in bazel_targets if t["rule"] in ("fx_package", "fuchsia_package")]
+    for t in bazel_targets:
+        if t["rule"] == "fx_unittest_package":
+            packaged_binaries.update(t.get("unit_tests_refs", []))
+    fx_pkgs = [t for t in bazel_targets if t["rule"] in ("fx_package", "fuchsia_package", "fx_unittest_package")]
 
     if gn_info and gn_info["has_sentinel"]:
         bazel_names = {t["name"] for t in bazel_targets}
@@ -1101,7 +1115,7 @@ for pkg_dir in sorted(candidate_dirs):
                     ),
                 })
     device_tests = [t for t in rust_tests if not t[2]]
-    if device_tests and "fx_test" not in rules_used:
+    if device_tests and not ({"fx_test", "fx_unittest_package"} & rules_used):
         tname, tline, _ = device_tests[0]
         findings.append({
             "source": "migration_sanity",
@@ -1177,18 +1191,18 @@ for pkg_dir in sorted(candidate_dirs):
         return str_list(kws.get("visibility")) if "visibility" in kws else None
 
     for tname, (rule, kws, line) in calls.items():
-        exported = rule == "fx_test" or rule.startswith("wrap_host_")
-        plumbing = (rule in ("rustc_test", "fx_test_component")
+        exported = rule in ("fx_test", "fx_unittest_package") or rule.startswith("wrap_host_")
+        plumbing = (rule in ("rustc_test", "fx_test_component", "fx_unittest_component")
                     or (rule in ("fx_packaged_binary", "fx_component_manifest") and is_true(kws.get("testonly")))
                     or (rule == "fx_package" and "test_components" in kws))
         if exported:
             if vis_of(kws) != ["//visibility:public"]:
                 hygiene(line, f"GN-exported test entry point `{rule}(name = \"{tname}\")` lacks public visibility.",
-                        "Set `visibility = [\"//visibility:public\"]` on the fx_test and the wrap_host_* host "
+                        "Set `visibility = [\"//visibility:public\"]` on the fx_test, fx_unittest_package, and the wrap_host_* host "
                         "test (the only test targets GN and fx test reference).")
         elif plumbing and vis_of(kws) not in ([":__pkg__"], ["//visibility:private"]):
             hygiene(line, f"Test target `{rule}(name = \"{tname}\")` is not restricted to its package.",
-                    "Set `visibility = [\"//visibility:private\"]`: only the fx_test and wrap_host_* targets are public.")
+                    "Set `visibility = [\"//visibility:private\"]`: only the fx_test, fx_unittest_package, and wrap_host_* targets are public.")
         if rule.startswith("wrap_host_"):
             bn = kws.get("binary_name")
             test = bn.value if isinstance(bn, ast.Constant) and isinstance(bn.value, str) else None

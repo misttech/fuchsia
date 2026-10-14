@@ -51,7 +51,9 @@ BAZEL_NON_GN_SYNCED_RULES = {
     "fx_component_manifest",
     "fx_packaged_binary",
     "fx_test_component",
+    "fx_unittest_component",
     "fx_test",
+    "fx_unittest_package",
     "test_suite",
     "rustc_test",
     "host_rustc_test",
@@ -82,7 +84,7 @@ if os.path.isfile(bazel_file):
                         actual = kw.value.value
                 if tname:
                     bazel_targets.append(tname)
-                    if func in ("fx_package", "fuchsia_package"):
+                    if func in ("fx_package", "fuchsia_package", "fx_unittest_package"):
                         package_targets.add(tname)
                     if func in BAZEL_NON_GN_SYNCED_RULES:
                         non_gn_synced_targets.add(tname)

@@ -139,7 +139,7 @@ if head and base_rev and head != base_rev:
             with open(f"{workdir}/{d}/BUILD.bazel") as fh:
                 own = fh.read()
             has_tests |= bool(re.search(r'with_host_unit_tests\s*=\s*True|with_unit_tests\s*=\s*"(host|both|fuchsia)"'
-                                        r'|^\s*(host_\w*test|rustc_test|fx_test|test_suite)\(', own, re.M))
+                                        r'|^\s*(host_\w*test|rustc_test|fx_test|fx_unittest_package|test_suite)\(', own, re.M))
         except OSError:
             pass
         parts = d.split("/")
@@ -235,7 +235,8 @@ if head and base_rev and head != base_rev:
     migrated_targets = []
     excluded_bmt = {}
     helper_rules = {"package", "exports_files", "alias", "config_setting",
-                    "fx_packaged_binary", "fx_component_manifest", "fx_test_component"}
+                    "fx_packaged_binary", "fx_component_manifest", "fx_test_component",
+                    "fx_unittest_component"}
     ut_re = r'^\s*(with_unit_tests\s*=\s*"(host|both|fuchsia)"|with_unit_tests\s*=\s*True|with_host_unit_tests\s*=\s*True)'
     for d in dirs:
         try:
@@ -266,10 +267,16 @@ if head and base_rev and head != base_rev:
                 p = re.search(r'^\s*package\s*=\s*":([^"]+)"', blk, re.M)
                 if p:
                     test_wrapped_pkgs.add(p.group(1))
-            if rule in ("host_test", "fx_packaged_binary"):
+            if rule in ("host_test", "fx_packaged_binary", "fx_unittest_component"):
                 b = re.search(r'^\s*binary\s*=\s*":([^"]+)"', blk, re.M)
                 if b and b.group(1) not in base_gn_names:
                     wrapped_bins.add(b.group(1))
+            if rule == "fx_unittest_package":
+                u = re.search(r'unit_tests\s*=\s*\[(.*?)\]', blk, re.S)
+                if u:
+                    for b in re.findall(r'":([^"]+)"', u.group(1)):
+                        if b not in base_gn_names:
+                            wrapped_bins.add(b)
         all_dir_targets, new_dir_targets = [], []
         for m in blocks:
             rule, blk = m.group(1), m.group(2)
