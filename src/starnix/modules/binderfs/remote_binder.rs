@@ -221,11 +221,11 @@ enum TaskRequest {
     Return { spawn_thread: bool },
 }
 
-/// A `TaskRequest` that is associated with a given thread koid. Each thread koid must be
-/// associated 1 to 1 with a Starnix task and only that task must handle the request.
+/// A `TaskRequest` that is executed by a dedicated worker task. When `koid` is `Some`, the thread
+/// koid is associated 1 to 1 with a Starnix task and only that task must handle requests for it.
 #[derive(Debug)]
 struct BoundTaskRequest {
-    koid: u64,
+    koid: Option<u64>,
     request: TaskRequest,
 }
 
@@ -359,10 +359,13 @@ impl RemoteBinderHandleState {
         NotificationType::All
     }
 
-    /// Enqueue a request for the task associated with `koid`.
+    /// Enqueue a request for a worker task.
     fn enqueue_task_request(&mut self, request: BoundTaskRequest) -> NotificationType {
-        debug_assert!(self.unassigned_requests.iter().all(|r| r.koid != request.koid));
-        if let Some(tid) = self.koid_to_task.get(&request.koid).cloned() {
+        debug_assert!(
+            request.koid.is_none()
+                || self.unassigned_requests.iter().all(|r| r.koid != request.koid)
+        );
+        if let Some(tid) = request.koid.and_then(|koid| self.koid_to_task.get(&koid).cloned()) {
             // Find the task associated with the given koid. If one exists, we enqueue the request
             // for the task. The task should never already have a task enqueued, as otherwise, it
             // should be blocked on a syscall, and should not be able to send another one.
@@ -375,9 +378,11 @@ impl RemoteBinderHandleState {
             NotificationType::Task(tid)
         } else if let Some(tid) = self.unassigned_tasks.iter().next().cloned() {
             // There was no task associated with the koid, but there exists an unassigned task.
-            // Associate the task with the koid, and insert the pending request.
+            // Associate the task with the koid (if any), and insert the pending request.
             self.unassigned_tasks.remove(&tid);
-            self.koid_to_task.insert(request.koid, tid.clone());
+            if let Some(koid) = request.koid {
+                self.koid_to_task.insert(koid, tid.clone());
+            }
             if PendingRequest::is_pending(
                 self.pending_requests.insert(tid.clone(), PendingRequest::Some(request)),
             ) {
@@ -409,7 +414,9 @@ impl RemoteBinderHandleState {
         // This is the first time the task is seen.
         if let Some(request) = self.unassigned_requests.pop_front() {
             // There is an unassigned request. Associate it to the task.
-            self.koid_to_task.insert(request.koid, tid.clone());
+            if let Some(koid) = request.koid {
+                self.koid_to_task.insert(koid, tid.clone());
+            }
             self.pending_requests.insert(tid.clone(), PendingRequest::Some(request));
         } else {
             // Otherwise, mark the task as unassigned and available.
@@ -608,7 +615,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                             },
                         );
                     self.enqueue_task_request(BoundTaskRequest {
-                        koid: tid,
+                        koid: Some(tid),
                         request: TaskRequest::Ioctl {
                             remote_binder_connection: remote_binder_connection.clone(),
                             request,
@@ -623,6 +630,10 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     waiter
                 };
                 waiter.await;
+            }
+            fbinder::BinderRequest::RegisterThreadChannel { responder, .. } => {
+                // Not supported yet. Clients fall back to the `Ioctl` method of this protocol.
+                let _ = responder.send(Err(fposix::Errno::Eopnotsupp));
             }
             fbinder::BinderRequest::_UnknownMethod { ordinal, .. } => {
                 log_warn!("Unknown Binder ordinal: {}", ordinal);

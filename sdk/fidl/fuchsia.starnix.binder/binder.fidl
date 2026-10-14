@@ -315,6 +315,30 @@ open protocol Binder {
     }) -> (struct {
         ioctl_writes vector<IoctlReadWrite>:MAX_IOCTL_WRITE_COUNT;
     }) error fuchsia.posix.Errno;
+
+    /// Registers a dedicated 1:1 channel for synchronous Binder transactions.
+    flexible RegisterThreadChannel(resource struct {
+        server_end server_end:BinderThread;
+    }) -> () error fuchsia.posix.Errno;
+};
+
+/// Dedicated per-thread Binder channel for synchronous 1:1 IPC.
+open protocol BinderThread {
+    /// Processes a Binder ioctl on a dedicated worker thread.
+    flexible Ioctl(resource struct {
+        /// The ioctl being called.
+        request uint32;
+        /// Optional argument for the ioctl.
+        arg uint64;
+        /// The VMO to return writes for this ioctl through.
+        vmo zx.Handle:VMO;
+        /// The reads gathered for the ioctl.
+        ioctl_reads vector<IoctlReadWrite>:MAX_IOCTL_READ_COUNT;
+        /// The files being transferred by the ioctl.
+        files vector<FileHandle>:MAX_FILE_COUNT;
+    }) -> (struct {
+        ioctl_writes vector<IoctlReadWrite>:MAX_IOCTL_WRITE_COUNT;
+    }) error fuchsia.posix.Errno;
 };
 
 /// The flags when reading from an unix domain socket
