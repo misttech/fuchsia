@@ -11,7 +11,6 @@ from datetime import timedelta
 
 from honeydew import errors
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
-from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows
 from honeydew.utils.deadline import Deadline
 
@@ -118,10 +117,8 @@ async def suspend_resume(
     if deadline is None:
         deadline = Deadline.from_timeout(SUSPEND_RESUME_DEFAULT_TIMEOUT)
 
-    # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
     device.ffx.run(
         ["session", "drop-power-lease", "--allow-missing"],
-        machine=ffx_types.MachineFormat.RAW,
     )
 
     attempt = -1

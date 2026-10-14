@@ -12,7 +12,6 @@ from unittest import mock
 import fuchsia_inspect
 from honeydew import errors
 from honeydew.fuchsia_device import fuchsia_device
-from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows, power
 from honeydew.utils.deadline import Deadline
 
@@ -143,8 +142,6 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
         self.mock_device.resume.assert_called_once()
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
-            machine=ffx_types.MachineFormat.RAW,
         )
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
@@ -184,8 +181,6 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
-            machine=ffx_types.MachineFormat.RAW,
         )
         self.mock_device.suspend.assert_called_once()
         mock_sleep.assert_called_once_with(
@@ -240,8 +235,6 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
-            machine=ffx_types.MachineFormat.RAW,
         )
         self.assertEqual(self.mock_device.suspend.call_count, 2)
         self.assertEqual(mock_sleep.call_count, 2)
@@ -341,8 +334,6 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
-            machine=ffx_types.MachineFormat.RAW,
         )
         self.mock_device.suspend.assert_called_once()
         mock_sleep.assert_called_once()
@@ -369,8 +360,6 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
-            machine=ffx_types.MachineFormat.RAW,
         )
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
@@ -402,8 +391,6 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
-            machine=ffx_types.MachineFormat.RAW,
         )
 
 
