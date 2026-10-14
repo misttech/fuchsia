@@ -1,6 +1,6 @@
 # `inspect_fetcher`
 
-Last Reviewed: 2021-03-25
+Last Reviewed: 2026-10-14
 
 `inspect_fetcher` is a library for fetching Inspect data from Archivist
 according to supplied selectors.
@@ -11,7 +11,7 @@ This project should be automatically included in builds.
 
 ## Using
 
-`fuchsia_inspect` can be used by depending on the
+`inspect_fetcher` can be used by depending on the
 `//src/diagnostics/lib/inspect-fetcher` gn target and then using
 the `inspect_fetcher` crate in a rust project.
 
