@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "static_linking",
+    edition = "2024",
+    link_deps = [":static"],
+    version = "0.1.0",
+    with_unit_tests = True,
+)
+
+fx_cc_library(
+    name = "static",
+    srcs = ["static.c"],
+)
+
+fx_unittest_package(
+    name = "static_linking_tests",
+    package_name = "static_linking_tests",
+    unit_tests = [":lib_test"],
+    visibility = ["//examples:__pkg__"],
+)

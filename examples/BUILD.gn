@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
+
 group("examples") {
   testonly = true
   deps = [
@@ -37,6 +39,7 @@ if (is_fuchsia) {
   group("hermetic_tests") {
     testonly = true
     deps = [
+      ":bazel_tests",
       "components:hermetic_tests",
       "cpp:hermetic_tests",
       "diagnostics:hermetic_tests",
@@ -50,6 +53,10 @@ if (is_fuchsia) {
       "testing:hermetic_tests",
     ]
   }
+}
+
+bazel_test_suite("bazel_tests") {
+  target_tests = [ "//examples:target_tests" ]
 }
 
 if (is_host) {

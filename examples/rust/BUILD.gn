@@ -15,7 +15,6 @@ group("hermetic_tests") {
     ":rust-examples",
     "cdylib:hermetic_tests",
     "dylib:hermetic_tests",
-    "rust_static_linking:hermetic_tests",
     "staticlib:hermetic_tests",
   ]
 }
