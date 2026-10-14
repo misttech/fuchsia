@@ -8,10 +8,10 @@ set -euo pipefail
 # Deterministic check auditing BUILD.bazel files for visibility scoping and rdeps anti-patterns:
 # 1. Package-level default_visibility in package(...)
 # 2. Missing target-level visibility when a target has external callers
-# 3. Overly narrow sprawling visibility lists (> 15 entries across >= 6 areas) on globally-used platform libraries/test utilities (should use target-level visibility = ["//visibility:public"] or <= 15 2-3 level area rollups)
-# 4. Unjustified target-level '//visibility:public' on narrow/subsystem-local targets (<= 3 areas and <= 10 narrow entries)
+# 3. Overly narrow sprawling visibility lists (> 15 entries) on widely-used libraries/utilities (should use 2-3 level subsystem/top-level area rollups or ["//:__subpackages__"] for foundational tree-wide libraries)
+# 4. Disallowed target-level '//visibility:public' when migrating GN targets to Bazel (per determining_bazel_visibility/SKILL.md)
 # 5. Redundant ':__pkg__' (or '//<current_pkg>:__pkg__') in target visibility lists
-# 6. Disguised repository-wide visibility ('//:__subpackages__') and banned top-level roots ('//src:__subpackages__', '//sdk:__subpackages__', etc.)
+# 6. Overbroad repository-wide visibility ('//:__subpackages__') and top-level roots ('//src:__subpackages__', '//sdk:__subpackages__', etc.) on non-globally-used targets
 # 7. Multi-domain catch-all umbrella wildcards ('//src/lib:__subpackages__', '//sdk/lib:__subpackages__', '//src/testing:__subpackages__', '//src/tests:__subpackages__')
 # 8. Cross-area depth-2 wildcards ('//src/<area>:__subpackages__') on non-global targets outside //src/<area>
 # 9. Overbroad depth >= 3 ':__subpackages__' wildcards wider than the Lowest Common Ancestor (LCA) of actual callers on non-global targets
@@ -218,10 +218,11 @@ def is_globally_used_target(rdep_pkgs, pkg_path):
 def recommend_visibility(rdep_pkgs, pkg_path):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
     narrow = recommend_narrow_visibility(pkgs, pkg_path)
-    if is_globally_used_target(pkgs, pkg_path):
-        return ["//visibility:public"]
-    if len(narrow) > 15:
-        return recommend_area_rollup_visibility(pkgs, pkg_path)
+    if is_globally_used_target(pkgs, pkg_path) or len(narrow) > 8:
+        rollup = recommend_area_rollup_visibility(pkgs, pkg_path)
+        if len(rollup) <= 15:
+            return rollup
+        return ["//:__subpackages__"]
     return narrow
 
 def get_preexisting_vis_info(rel_path):
@@ -451,6 +452,13 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
             combined = per_target_rdeps[alias_name] | per_target_rdeps[actual_name]
             per_target_rdeps[alias_name] = set(combined)
             per_target_rdeps[actual_name] = set(combined)
+
+    for t in bazel_targets:
+        for sub_t in bazel_targets:
+            if sub_t != t and sub_t.startswith(t + "_"):
+                combined = per_target_rdeps[t] | per_target_rdeps[sub_t]
+                per_target_rdeps[t] = set(combined)
+                per_target_rdeps[sub_t] = set(combined)
 
     visibility_only_packages -= true_rdep_packages
     gn_only_ref_packages -= true_rdep_packages
@@ -688,14 +696,15 @@ for rel_path in sorted(candidate_files):
                     "file": rel_path,
                     "line": vis_kw.lineno,
                     "message": (
-                        f"Target '{target_name}' is globally used across {len(distinct_areas)} distinct areas "
+                        f"Target '{target_name}' is widely used across {len(distinct_areas)} distinct areas "
                         f"({len(target_rdeps)} reverse-dependency packages) but enumerates {len(entries)} narrow "
                         f"visibility entries ('too narrow' for a widely-used platform library/test utility)."
                     ),
                     "remediation": (
                         f"Replace the sprawling {len(entries)}-entry visibility list on '{target_name}' with "
-                        f"visibility = [\"//visibility:public\"] (or a concise 2-3 level area rollup of <= 15 entries) "
-                        f"and re-run fx bazel2gn."
+                        f"subsystem/top-level rollup visibility {json.dumps(rec_target_vis)} (or "
+                        f"visibility = [\"//:__subpackages__\"] for foundational tree-wide libraries), per "
+                        f"determining_bazel_visibility/SKILL.md, and re-run fx bazel2gn."
                     ),
                 })
             else:
@@ -716,22 +725,28 @@ for rel_path in sorted(candidate_files):
                 })
             continue
 
-        allow_broad_rollup = (is_globally_used or len(narrow_vis) > 15) and len(entries) <= 15
+        allow_broad_rollup = (is_globally_used or len(narrow_vis) > 5 or len(distinct_areas) >= 3) and len(entries) <= 15
         top_level_subpkgs = []
         for val, lineno in entries:
             if val in preexisting_vis:
                 continue
             if val == "//visibility:public":
-                rule_id = node.func.id if isinstance(node.func, ast.Name) else ""
-                if (
-                    not is_globally_used
-                    and rule_id != "fx_test"
-                    and not rule_id.startswith("wrap_host_")
-                    and len(target_rdeps) > 0
-                    and len(distinct_areas) <= 3
-                    and len(narrow_vis) <= 10
-                    and not has_macro_injected_rdeps
-                ):
+                if not rel_path.startswith("build/bazel_sdk/"):
+                    if len(target_rdeps) == 0 and not has_macro_injected_rdeps:
+                        rem = f"Omit 'visibility' on '{target_name}' (default private) as no external packages depend on it, and re-run fx bazel2gn."
+                    elif is_globally_used or has_macro_injected_rdeps:
+                        rem = (
+                            f"Never use '//visibility:public' when migrating GN targets to Bazel (per "
+                            f"determining_bazel_visibility/SKILL.md). Replace '//visibility:public' with "
+                            f"subsystem-scoped visibility {json.dumps(rec_target_vis)} (or "
+                            f"[\"//:__subpackages__\"] for foundational tree-wide libraries) and re-run fx bazel2gn."
+                        )
+                    else:
+                        rem = (
+                            f"Never use '//visibility:public' when migrating GN targets to Bazel (per "
+                            f"determining_bazel_visibility/SKILL.md). Replace '//visibility:public' with "
+                            f"tightly-scoped caller visibility: {json.dumps(rec_target_vis)} and re-run fx bazel2gn."
+                        )
                     findings.append({
                         "source": "visibility_audit",
                         "category": "overbroad_public_visibility",
@@ -739,10 +754,11 @@ for rel_path in sorted(candidate_files):
                         "file": rel_path,
                         "line": lineno,
                         "message": (
-                            f"Target '{target_name}' uses '//visibility:public', but only {len(target_rdeps)} "
-                            f"package(s) across {len(distinct_areas)} area(s) depend on '{target_name}'."
+                            f"Target '{target_name}' uses '//visibility:public', which is disallowed outside "
+                            f"//build/bazel_sdk/... ({len(target_rdeps)} package(s) across {len(distinct_areas)} "
+                            f"area(s) depend on '{target_name}')."
                         ),
-                        "remediation": f"Replace '//visibility:public' with tightly-scoped caller visibility: {json.dumps(rec_target_vis)}."
+                        "remediation": rem,
                     })
                 continue
             if val in (":__pkg__", f"//{pkg_path}:__pkg__"):
@@ -756,15 +772,20 @@ for rel_path in sorted(candidate_files):
                     "remediation": f"Remove '{val}' from visibility."
                 })
             elif val == "//:__subpackages__":
-                findings.append({
-                    "source": "visibility_audit",
-                    "category": "disguised_public_visibility",
-                    "severity": "error",
-                    "file": rel_path,
-                    "line": lineno,
-                    "message": f"Target '{target_name}' uses '//:__subpackages__' in visibility, which is a disguised repository-wide wildcard.",
-                    "remediation": f"Replace '//:__subpackages__' with {json.dumps(rec_target_vis)}."
-                })
+                if not is_globally_used and not has_macro_injected_rdeps:
+                    findings.append({
+                        "source": "visibility_audit",
+                        "category": "disguised_public_visibility",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": lineno,
+                        "message": (
+                            f"Target '{target_name}' uses '//:__subpackages__' in visibility, but only "
+                            f"{len(target_rdeps)} package(s) across {len(distinct_areas)} area(s) depend on '{target_name}'. "
+                            f"Reserve '//:__subpackages__' for foundational libraries with widespread tree-wide usage."
+                        ),
+                        "remediation": f"Replace '//:__subpackages__' with {json.dumps(rec_target_vis)} and re-run fx bazel2gn."
+                    })
             else:
                 if val.startswith("//" + VG_ROOT + "/"):
                     findings.append({
@@ -812,22 +833,18 @@ for rel_path in sorted(candidate_files):
 
                     if depth == 1:
                         top_level_subpkgs.append((val, lineno))
-                        if prefix in BANNED_TOP_LEVEL_SUBPKGS:
+                        if prefix in BANNED_TOP_LEVEL_SUBPKGS and not is_globally_used and not allow_broad_rollup:
                             findings.append({
                                 "source": "visibility_audit",
                                 "category": "overbroad_top_level_subpackages_visibility",
                                 "severity": "error",
                                 "file": rel_path,
                                 "line": lineno,
-                                "message": f"Target '{target_name}' grants top-level wildcard '{val}' in visibility ('All of //{prefix} seems too wide'). Never use '//{prefix}:__subpackages__'.",
+                                "message": f"Target '{target_name}' grants top-level wildcard '{val}' in visibility ('All of //{prefix} seems too wide').",
                                 "remediation": (
-                                    f"Replace '{val}' with {json.dumps(rec_target_vis)}."
-                                    if is_globally_used
-                                    else (
-                                        f"Replace '{val}' with tightly-scoped package/subsystem entries: {json.dumps(replacement)}."
-                                        if replacement
-                                        else f"Remove '{val}' from visibility (no true reverse dependencies exist under '//{prefix}')."
-                                    )
+                                    f"Replace '{val}' with tightly-scoped package/subsystem entries: {json.dumps(replacement)}."
+                                    if replacement
+                                    else f"Remove '{val}' from visibility (no true reverse dependencies exist under '//{prefix}')."
                                 ),
                             })
                             continue

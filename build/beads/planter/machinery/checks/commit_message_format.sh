@@ -20,7 +20,7 @@ TARGET_DIR="${PLANTER_TARGET_DIR:-}"
 BASE="${PLANTER_CHANGE_BASE:-HEAD}"
 
 python3 - "$WORKDIR" "$TARGET_DIR" "$BASE" <<'PYEOF'
-import collections, json, re, subprocess, sys
+import collections, json, os, re, subprocess, sys
 
 workdir, target_dir, base = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -172,7 +172,7 @@ if head and base_rev and head != base_rev:
             "invent one: say in the summary that the developer must choose or define the `test_suite()` (possibly "
             "consulting the Build team).", severity="info")
     # Body: changes not specific to the migrated targets must be described.
-    body = "\n".join(l for l in lines[1:] if not re.match(r"^(Test|Bug|Fixed|Bazel-Migration-Target|TAG|Change-Id|Multiply|Cq-[\w-]+):", l))
+    body = "\n".join(l for l in lines[1:] if not re.match(r"^(Test|Bug|Fixed|Bazel-Migration-Target|Skip-Readme-Check|TAG|Change-Id|Multiply|Cq-[\w-]+):", l))
     in_dirs = lambda f: any(f == d or f.startswith(d + "/") for d in dirs)
     for f in changed:
         if in_dirs(f) or not (f.endswith(".bzl") or f.rsplit("/", 1)[-1] == "MODULE.bazel"):
@@ -297,38 +297,83 @@ if head and base_rev and head != base_rev:
         else:
             migrated_targets.extend(all_dir_targets)
     if not is_empty:
+        migrated_targets = list(dict.fromkeys(
+            t if len(f"Bazel-Migration-Target: {t}") <= 72 else t.split(":", 1)[0]
+            for t in migrated_targets
+            if len(f"Bazel-Migration-Target: {t.split(':', 1)[0]}") <= 72
+        ))
         footer_ln = test_lines[-1][0] if test_lines else max(1, len(lines))
-        example_bmt = ", ".join(f"`Bazel-Migration-Target: {t}`" for t in (migrated_targets or [f"//{first}:<target>"]))
+        example_bmt = ", ".join(f"`Bazel-Migration-Target: {t}`" for t in (migrated_targets or [f"//{first}"]))
         if not bmt_lines:
             add("missing_bazel_migration_target_footer", footer_ln,
                 "Commit message is missing `Bazel-Migration-Target:` footer(s) recording the migrated target label(s).",
-                "Add one `Bazel-Migration-Target: //<dir>:<target>` footer line per migrated target in the single "
+                "Add `Bazel-Migration-Target:` footer line(s) (each line <= 72 chars total; use `//<dir>` when `//<dir>:<target>` would exceed 72 chars) in the single "
                 "contiguous footer block at the bottom of the commit message (after `Test:` and before `TAG:`/"
                 f"`Change-Id:`, with no blank lines between footers and no line wrapping), e.g. {example_bmt}.")
         for ln, l in bmt_lines:
             val = l.split(":", 1)[1].strip()
             canon_val = val if ":" in val else f"{val}:{val.rsplit('/', 1)[-1]}"
             wrapped = ln < len(lines) and bool(lines[ln].strip()) and not re.match(r"^[A-Za-z0-9\-]+\s*:", lines[ln])
-            if not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val) or wrapped:
+            if len(l) > 72:
+                short_pkg = val.split(":", 1)[0]
+                add("bazel_migration_target_line_too_long", ln,
+                    f"`Bazel-Migration-Target:` footer `{l}` is {len(l)} characters, exceeding the 72-character upload limit.",
+                    f"Replace `{l}` with `Bazel-Migration-Target: {short_pkg}` (or omit it if another `Bazel-Migration-Target:` line <= 72 chars is already present) so every `Bazel-Migration-Target:` line is <= 72 characters.",
+                    severity="error")
+            elif not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val) or wrapped:
                 add("bazel_migration_target_footer_format", ln,
                     f"`Bazel-Migration-Target:` footer `{l}` must specify a single canonical `//<dir>:<target>` "
                     "label on one unwrapped line (without a leading `@`).",
-                    f"Write one unwrapped line per migrated target, e.g. {example_bmt}.")
-            elif canon_val in excluded_bmt:
+                    f"Write one unwrapped line (<= 72 chars) per migrated target, e.g. {example_bmt}.")
+            elif ":" in val and canon_val in excluded_bmt:
                 add("bazel_migration_target_not_migrated", ln,
                     f"`Bazel-Migration-Target:` footer `{l}` names `{val}`, which {excluded_bmt[canon_val]}.",
                     f"List only targets migrated from GN in this commit, e.g. {example_bmt}.")
+        skip_readme_lines = [(i + 1, l) for i, l in enumerate(lines) if re.match(r"^Skip-Readme-Check\s*:", l)]
+        has_valid_skip_readme = False
+        for ln, l in skip_readme_lines:
+            if len(l) > 72:
+                add("skip_readme_check_line_too_long", ln,
+                    f"`Skip-Readme-Check:` footer `{l}` is {len(l)} characters, exceeding the 72-character upload limit.",
+                    "Shorten it to `Skip-Readme-Check: No version change, Bazel build files only.` (<= 72 characters).",
+                    severity="error")
+            elif l.split(":", 1)[1].strip():
+                has_valid_skip_readme = True
+            else:
+                add("skip_readme_check_empty_reason", ln,
+                    "The `Skip-Readme-Check:` footer must be followed by a non-empty reason.",
+                    "Write `Skip-Readme-Check: No version change, Bazel build files only.` in the contiguous footer block at the bottom of the commit message.",
+                    severity="error")
+        all_changed = set(changed) | {f for f in git("diff", "--name-only", base_rev).splitlines() if f}
+        missing_readmes = set()
+        for f in sorted(all_changed):
+            if not f.startswith("third_party/") or f.startswith("third_party/rust_crates/"):
+                continue
+            parts = f.split("/")
+            for depth in range(len(parts) - 1, 1, -1):
+                cand = "/".join(parts[:depth])
+                readme = f"{cand}/README.fuchsia"
+                if os.path.isfile(f"{workdir}/{readme}"):
+                    if f != readme and readme not in all_changed:
+                        missing_readmes.add((cand, readme))
+                    break
+        if missing_readmes and not has_valid_skip_readme:
+            cand, readme = sorted(missing_readmes)[0]
+            add("missing_skip_readme_check_footer", footer_ln,
+                f"Files under `{cand}` were modified without modifying `{readme}`, which fails the CQ `third_party_readme_update` shac check unless waived by a `Skip-Readme-Check:` footer.",
+                "Because GN-to-Bazel migrations must not modify `README.fuchsia` (`build_only_scope`), add `Skip-Readme-Check: No version change, Bazel build files only.` to the contiguous footer block at the bottom of the commit message (before `TAG:`/`Change-Id:`).",
+                severity="error")
         nonempty_idxs = [i for i, l in enumerate(lines) if l.strip()]
         if nonempty_idxs:
             final_start = nonempty_idxs[-1]
             while final_start > 0 and lines[final_start - 1].strip():
                 final_start -= 1
-            for ln, l in bmt_lines + test_lines:
+            for ln, l in bmt_lines + test_lines + skip_readme_lines:
                 if ln - 1 < final_start:
                     add("footer_block_not_contiguous", ln,
                         f"Footer `{l}` is separated from the final footer block by a blank line, so Gerrit will not "
                         "index it as a commit footer (breaking `hasfooter:Bazel-Migration-Target` queries).",
-                        "Group all footers (`Bug:`/`Fixed:`, `Test:`, `Bazel-Migration-Target:`, `TAG:`, "
+                        "Group all footers (`Bug:`/`Fixed:`, `Skip-Readme-Check:`, `Test:`, `Bazel-Migration-Target:`, `TAG:`, "
                         "`Change-Id:`) into a single contiguous block at the very bottom of the commit message with "
                         "no blank lines between them.")
                     break

@@ -59,6 +59,16 @@ target_dir = sys.argv[2].strip().strip("/")
 change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
 
 GN_TARGET = re.compile(r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{')
+GN_TEMPLATE = re.compile(r'\btemplate\(\s*"([^"$]+)"\s*\)\s*\{')
+GN_INNER_TARGET = re.compile(r'\b([A-Za-z_]\w*)\(\s*([^)]+?)\s*\)\s*\{')
+TARGET_NAME_ARGS = {
+    "target_name",
+    '"$target_name"',
+    '"${target_name}"',
+    "invoker.target_name",
+    '"$invoker.target_name"',
+    '"${invoker.target_name}"',
+}
 NOT_TARGETS = {"template", "declare_args", "foreach", "forward_variables_from", "if", "config"}
 CC_RULE = re.compile(r'(?<![\w.])(cc_library|fx_cc_library)\s*\(')
 BAZEL_NAME = re.compile(r'\bname\s*=\s*"([^"]+)"')
@@ -166,31 +176,8 @@ def line_of(code, offset):
     return code.count("\n", 0, offset) + 1
 
 
-def gn_types(text):
-    """Maps each GN target name to the set of templates defining it (several under if/else) and a line."""
-    code = blank_comments(text)
-    local_tmpls = {}
-    for m in re.finditer(r'\btemplate\(\s*"([^"$]+)"\s*\)\s*\{', code):
-        body = code[m.end() : call_end(code, m.end() - 1) - 1]
-        tvars = {"target_name"} | {
-            vm.group(1) for vm in re.finditer(r"\b([A-Za-z_]\w*)\s*=\s*target_name\b", body)
-        }
-        for im in re.finditer(r"\b([A-Za-z_]\w*)\(\s*([A-Za-z_]\w*|\$\{?target_name\}?)\s*\)\s*\{", body):
-            if im.group(1) not in NOT_TARGETS and (im.group(2) in tvars or "target_name" in im.group(2)):
-                local_tmpls.setdefault(m.group(1), set()).add(im.group(1))
-    out = {}
-    for m in GN_TARGET.finditer(code):
-        tmpl, name = m.group(1), m.group(2)
-        if tmpl in NOT_TARGETS:
-            continue
-        types, line = out.get(name, (set(), line_of(code, m.start())))
-        types.update(local_tmpls.get(tmpl, {tmpl}))
-        out[name] = (types, line)
-    return out
-
-
 def call_end(code, open_paren):
-    """Index just past the `)` closing the `(` at code[open_paren] (comments are already blank)."""
+    """Index just past the `)` or `}` closing the `(` or `{` at code[open_paren] (comments are already blank)."""
     depth, quote, i = 0, None, open_paren
     while i < len(code):
         c = code[i]
@@ -210,6 +197,46 @@ def call_end(code, open_paren):
                 return i + 1
         i += 1
     return len(code)
+
+
+def gn_types(text):
+    """Maps each GN target name to the set of templates defining it (resolving file-local single-target templates)."""
+    code = blank_comments(text)
+    local_templates = {}
+    tmpl_spans = []
+    for m in GN_TEMPLATE.finditer(code):
+        end = call_end(code, m.end() - 1)
+        tmpl_spans.append((m.start(), end))
+        body = code[m.end() : end - 1]
+        target_name_tmpls = set()
+        has_non_test_side_target = False
+        for im in GN_INNER_TARGET.finditer(body):
+            inner_tmpl, arg = im.group(1), im.group(2).strip()
+            if inner_tmpl in NOT_TARGETS:
+                continue
+            if arg in TARGET_NAME_ARGS:
+                target_name_tmpls.add(inner_tmpl)
+            elif inner_tmpl not in GN_TEST_TEMPLATES:
+                has_non_test_side_target = True
+        if target_name_tmpls and not has_non_test_side_target:
+            local_templates[m.group(1)] = target_name_tmpls
+    for _ in range(len(local_templates)):
+        for k, vals in list(local_templates.items()):
+            expanded = set()
+            for v in vals:
+                expanded |= local_templates.get(v, {v})
+            local_templates[k] = expanded
+    out = {}
+    for m in GN_TARGET.finditer(code):
+        if any(s <= m.start() < e for s, e in tmpl_spans):
+            continue
+        tmpl, name = m.group(1), m.group(2)
+        if tmpl in NOT_TARGETS:
+            continue
+        types, line = out.get(name, (set(), line_of(code, m.start())))
+        types |= local_templates.get(tmpl, {tmpl})
+        out[name] = (types, line)
+    return out
 
 
 def bazel_cc_libraries(text):

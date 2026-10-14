@@ -13,8 +13,8 @@ set -euo pipefail
 # Also detects relative GN label references from ancestor BUILD.gn files and computes deterministic,
 # tiered Bazel visibility lists per target:
 # - Tier 1 (Narrow / Subsystem-Scoped, <= 15 entries): exact :__pkg__ and depth >= 3 LCA :__subpackages__
-# - Tier 2 (Multi-Subsystem Broad Usage, > 15 narrow entries across < 6 areas): 2-3 level area rollups
-# - Tier 3 (Globally-Used Platform Library / Test Utility, > 15 narrow entries across >= 6 areas): ["//visibility:public"]
+# - Tier 2 (Multi-Subsystem Broad Usage, > 15 narrow entries): 2-3 level subsystem area rollups (<= 15 entries)
+# - Tier 3 (Foundational Tree-Wide Library, > 15 subsystem area rollup entries): ["//:__subpackages__"]
 
 export PATH="${PATH:-}:${HOME:-}/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
 
@@ -414,10 +414,11 @@ def is_globally_used_target(rdep_pkgs):
 def recommend_visibility(rdep_pkgs):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
     narrow = recommend_narrow_visibility(pkgs)
-    if is_globally_used_target(pkgs):
-        return ["//visibility:public"]
-    if len(narrow) > 15:
-        return recommend_area_rollup_visibility(pkgs)
+    if is_globally_used_target(pkgs) or len(narrow) > 8:
+        rollup = recommend_area_rollup_visibility(pkgs)
+        if len(rollup) <= 15:
+            return rollup
+        return ["//:__subpackages__"]
     return narrow
 
 print(json.dumps({
