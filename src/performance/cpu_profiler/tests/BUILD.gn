@@ -57,6 +57,7 @@ executable("cpu_profiler_unittest_bin") {
   sources = [
     "fxt_writer_test.cc",
     "process_watcher_test.cc",
+    "sampler_test.cc",
     "targets_test.cc",
   ]
   deps = [

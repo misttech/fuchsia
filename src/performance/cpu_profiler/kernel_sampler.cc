@@ -136,15 +136,30 @@ zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
   sample_buffer_.resize((max_size + sizeof(uint64_t) - 1) / sizeof(uint64_t));
 
   FX_LOGS(DEBUG) << "Attaching to known tasks and watching for new ones.";
+  // Watch the target jobs first, so that we're told about any process that starts from here on, and
+  // then pick up the processes that started while the session was being configured.
+  zx::result watch_result =
+      targets_.ForEachJob([this](const JobTarget& target) { return WatchTarget(target); });
+  if (watch_result.is_error()) {
+    return watch_result;
+  }
+  AddProcessesStartedSinceConfigure();
+
   zx::result known_threads_res = targets_.ForEachProcess(
       [this](std::span<const zx_koid_t> job_path, const ProcessTarget& p) -> zx::result<> {
         TRACE_DURATION("cpu_profiler", "KernelSampler::Start/ForEachProcess");
 
-        // Before we start sampling the thread, make sure we've recorded information about its
-        // process
-        CacheModules(p);
-
         std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
+
+        // Before we start sampling the thread, make sure we've recorded information about its
+        // process. Reuse the modules found while configuring the session if we have them: looking
+        // them up again for every process can take many seconds for large targets.
+        if (!p.modules.empty()) {
+          contexts_.try_emplace(p.pid, p.modules);
+        } else {
+          ScheduleCacheModules(saved_path, p.pid);
+        }
+
         auto process_watcher = std::make_unique<ProcessWatcher>(
             p.handle.borrow(),
             [saved_path, this](zx_koid_t pid, zx_koid_t tid, zx::thread t) {
@@ -168,6 +183,7 @@ zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
             }
           }
         }
+        AddThreadsStartedSinceConfigure(job_path, p);
         return zx::ok();
       });
   if (known_threads_res.is_error()) {
@@ -175,12 +191,6 @@ zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
     return known_threads_res;
   }
 
-  // If a watched job launches a new process, we want to add it to the set
-  zx::result watch_result =
-      targets_.ForEachJob([this](const JobTarget& target) { return WatchTarget(target); });
-  if (watch_result.is_error()) {
-    return watch_result;
-  }
   zx::result<> res = session_->Start();
   if (res.is_ok()) {
     ServiceBuffers();
@@ -318,7 +328,7 @@ void profiler::KernelSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid
   if (zx::result res = targets_.AddThread(
           job_path, pid,
           ThreadTarget{.handle = std::move(t), .tid = tid, .name = std::move(thread_name)});
-      res.is_error()) {
+      res.is_error() && res.error_value() != ZX_ERR_ALREADY_EXISTS) {
     FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread to session: " << tid;
   }
 }

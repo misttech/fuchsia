@@ -176,36 +176,29 @@ std::optional<std::string_view> profiler::JobTarget::GetThreadName(zx_koid_t tid
   return std::nullopt;
 }
 
-zx::result<std::vector<zx_koid_t>> GetChildrenTids(const zx::process& process) {
+zx::result<std::vector<zx_koid_t>> profiler::GetChildrenTids(const zx::process& process) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
-  size_t num_threads;
-  zx_status_t status = process.get_info(ZX_INFO_PROCESS_THREADS, nullptr, 0, nullptr, &num_threads);
-  if (status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "failed to get process thread info (#threads)";
-    return zx::error(status);
+  std::vector<zx_koid_t> tids(64);
+  size_t actual = 0;
+  size_t avail = 0;
+  zx_status_t status;
+  for (;;) {
+    status = process.get_info(ZX_INFO_PROCESS_THREADS, tids.data(), tids.size() * sizeof(zx_koid_t),
+                              &actual, &avail);
+    if (status != ZX_OK || actual == avail) {
+      break;
+    }
+    tids.resize(avail + 16);
   }
-  if (num_threads < 1) {
-    // A job or process in early initialization may not have threads yet.
-    // That's okay, we'll attach to them when they are created.
-    return zx::ok(std::vector<zx_koid_t>{});
-  }
-
-  auto threads = std::make_unique<zx_koid_t[]>(num_threads);
-  size_t records_read;
-  status = process.get_info(ZX_INFO_PROCESS_THREADS, threads.get(), num_threads * sizeof(zx_koid_t),
-                            &records_read, nullptr);
-
   if (status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "failed to get process thread info";
     return zx::error(status);
   }
-
-  std::vector<zx_koid_t> children{threads.get(), threads.get() + records_read};
-  return zx::ok(children);
+  tids.resize(actual);
+  return zx::ok(std::move(tids));
 }
 
-zx::result<profiler::ProcessTarget> profiler::MakeProcessTarget(zx::process process,
-                                                                elf_search::Searcher& searcher) {
+zx::result<profiler::ProcessTarget> profiler::MakeProcessTargetWithoutModules(zx::process process) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   zx_info_handle_basic_t handle_info;
   zx_status_t res =
@@ -239,20 +232,31 @@ zx::result<profiler::ProcessTarget> profiler::MakeProcessTarget(zx::process proc
                                                           .tid = child_tid,
                                                           .name = std::move(thread_name)});
   }
-  profiler::ProcessTarget process_target{std::move(process), handle_info.koid, std::string(name),
-                                         std::move(threads)};
+  return zx::ok(profiler::ProcessTarget{std::move(process), handle_info.koid, std::string(name),
+                                        std::move(threads)});
+}
+
+zx::result<profiler::ProcessTarget> profiler::MakeProcessTarget(zx::process process,
+                                                                elf_search::Searcher& searcher) {
+  TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
+  zx::result<profiler::ProcessTarget> process_target =
+      MakeProcessTargetWithoutModules(std::move(process));
+  if (process_target.is_error()) {
+    return process_target.take_error();
+  }
 
   zx::result<std::map<std::vector<std::byte>, profiler::Module>> modules =
-      GetProcessModules(*zx::unowned_process{process_target.handle}, searcher);
+      GetProcessModules(*zx::unowned_process{process_target->handle}, searcher);
   if (modules.is_error()) {
     return zx::error(modules.error_value());
   }
   for (const auto& [build_id, module] : *modules) {
-    process_target.unwinder_data->modules.emplace_back(module.vaddr,
-                                                       &process_target.unwinder_data->cached_memory,
-                                                       unwinder::Module::AddressMode::kProcess);
+    process_target->unwinder_data->modules.emplace_back(
+        module.vaddr, &process_target->unwinder_data->cached_memory,
+        unwinder::Module::AddressMode::kProcess);
   }
-  return zx::ok(std::move(process_target));
+  process_target->modules = std::move(*modules);
+  return process_target;
 }
 
 zx::result<profiler::JobTarget> profiler::MakeJobTarget(zx::job job,

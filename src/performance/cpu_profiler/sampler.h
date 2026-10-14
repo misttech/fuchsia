@@ -96,6 +96,18 @@ class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
   // thread start/exit queued behind it, proceed without waiting on the module scan.
   void ScheduleCacheModules(std::vector<zx_koid_t> job_path, zx_koid_t pid);
 
+  // The target tree is populated when the session is configured, which can take a long time for
+  // large targets (e.g. the whole system), and processes and threads keep starting in the meantime.
+  // These add the ones that started since then, so that they aren't silently left out of the
+  // session.
+  //
+  // Call AddProcessesStartedSinceConfigure after watching the target jobs, and
+  // AddThreadsStartedSinceConfigure after watching `process`, so that anything starting later is
+  // reported by the watchers instead.
+  void AddProcessesStartedSinceConfigure();
+  void AddThreadsStartedSinceConfigure(std::span<const zx_koid_t> job_path,
+                                       const ProcessTarget& process);
+
   async_dispatcher_t* dispatcher_;
   TargetTree targets_;
   std::vector<fuchsia_cpu_profiler::SamplingConfig> sample_specs_;

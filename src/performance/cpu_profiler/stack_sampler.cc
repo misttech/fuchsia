@@ -46,10 +46,29 @@ zx::result<> StackSampler::Start(size_t buffer_size_mb) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
 
   // TODO(https://fxbug.dev/468419097): Deduplicate watcher code.
+  // Watch the target jobs first, so that we're told about any process that starts from here on, and
+  // then pick up the processes that started while the session was being configured.
+  if (auto res = targets_.ForEachJob([this](const JobTarget& target) {
+        if (zx::result res = WatchTarget(target); res.is_error()) {
+          FX_PLOGS(WARNING, res.status_value())
+              << "Failed to watch job [" << target.job_id << "] and its children";
+        }
+        return zx::ok();
+      });
+      res.is_error()) {
+    return res;
+  }
+  AddProcessesStartedSinceConfigure();
+
   zx::result<> res = targets_.ForEachProcess([this](std::span<const zx_koid_t> job_path,
                                                     const ProcessTarget& p) -> zx::result<> {
     TRACE_DURATION("cpu_profiler", "StackSampler::Start/ForEachProcess");
     std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
+    if (!p.modules.empty()) {
+      contexts_.try_emplace(p.pid, p.modules);
+    } else {
+      ScheduleCacheModules(saved_path, p.pid);
+    }
     (void)RefreshMappings(p);
 
     auto process_watcher = std::make_unique<ProcessWatcher>(
@@ -65,21 +84,11 @@ zx::result<> StackSampler::Start(size_t buffer_size_mb) {
         FX_PLOGS(WARNING, watch_result.status_value()) << "Failed to watch process: " << p.pid;
       }
     }
+    AddThreadsStartedSinceConfigure(job_path, p);
     return zx::ok();
   });
 
   if (res.is_error()) {
-    return res;
-  }
-
-  if (auto res = targets_.ForEachJob([this](const JobTarget& target) {
-        if (zx::result res = WatchTarget(target); res.is_error()) {
-          FX_PLOGS(WARNING, res.status_value())
-              << "Failed to watch job [" << target.job_id << "] and its children";
-        }
-        return zx::ok();
-      });
-      res.is_error()) {
     return res;
   }
 
@@ -94,12 +103,17 @@ zx::result<> StackSampler::Stop() {
 void StackSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid,
                              zx::thread t) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
+  if (!contexts_.contains(pid)) {
+    ScheduleCacheModules(job_path, pid);
+  }
   std::string thread_name = profiler::GetThreadName(t);
   zx::result res = targets_.AddThread(
       job_path, pid,
       ThreadTarget{.handle = std::move(t), .tid = tid, .name = std::move(thread_name)});
   if (res.is_error()) {
-    FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread to session: " << tid;
+    if (res.error_value() != ZX_ERR_ALREADY_EXISTS) {
+      FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread to session: " << tid;
+    }
   } else {
     zx::result<ProcessTarget*> process_target = targets_.GetProcess(job_path, pid);
     if (process_target.is_ok() && process_target.value() != nullptr) {

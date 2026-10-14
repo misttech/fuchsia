@@ -14,6 +14,7 @@
 #include <lib/zx/thread.h>
 #include <zircon/types.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -84,14 +85,22 @@ struct ProcessTarget {
   std::unordered_map<zx_koid_t, ThreadTarget> threads;
   std::unique_ptr<UnwinderData> unwinder_data;
   mutable std::vector<zx_info_maps_t> cached_mappings;
+  // The modules found in the process when the target was created, if they were looked up.
+  std::map<std::vector<std::byte>, profiler::Module> modules;
 };
 
 zx::result<std::map<std::vector<std::byte>, profiler::Module>> GetProcessModules(
     const zx::process&, elf_search::Searcher& searcher);
 
+// Return the koids of the threads currently in `process`.
+zx::result<std::vector<zx_koid_t>> GetChildrenTids(const zx::process& process);
+
 // Given a process, create a process target containing it and all its threads
 zx::result<profiler::ProcessTarget> MakeProcessTarget(zx::process process,
                                                       elf_search::Searcher& searcher);
+
+// Like MakeProcessTarget, but without looking up the process's modules, which can be slow.
+zx::result<profiler::ProcessTarget> MakeProcessTargetWithoutModules(zx::process process);
 
 struct JobTarget {
   explicit JobTarget(zx::job job, zx_koid_t job_id, std::span<const zx_koid_t> ancestry)

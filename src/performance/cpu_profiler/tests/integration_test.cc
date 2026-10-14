@@ -1077,3 +1077,130 @@ TEST(ProfilerIntegrationTest, StackSampling) {
 
   ASSERT_TRUE(client->Reset().is_ok());
 }
+
+// A subjob and process created between Configure and Start, as well as a process created in that
+// subjob after Start, must be profiled and have their module mappings collected.
+TEST(ProfilerIntegrationTest, ProcessAndSubjobStartedBetweenConfigureAndStart) {
+  zx::result client_end = component::Connect<fprofiler::Session>();
+  ASSERT_TRUE(client_end.is_ok());
+  const fidl::SyncClient client{std::move(*client_end)};
+
+  zx::socket in_socket, outgoing_socket;
+  ASSERT_EQ(zx::socket::create(0u, &in_socket, &outgoing_socket), ZX_OK);
+  zx::unowned_job self = zx::job::default_job();
+
+  zx_info_handle_basic_t info;
+  ASSERT_EQ(ZX_OK, self->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+  fprofiler::TargetConfig target_config =
+      fprofiler::TargetConfig::WithTasks(std::vector{fprofiler::Task::WithJob(info.koid)});
+  fprofiler::Config config{{
+      .configs = default_sample_configs(),
+      .target = std::move(target_config),
+  }};
+
+  ASSERT_TRUE(client
+                  ->Configure({{
+                      .output = std::move(outgoing_socket),
+                      .config = std::move(config),
+                  }})
+                  .is_ok());
+
+  // Between Configure and Start, create a nested subjob hierarchy and launch a process inside it.
+  zx::job child_job, grandchild_job;
+  ASSERT_EQ(ZX_OK, zx::job::create(*self, 0, &child_job));
+  ASSERT_EQ(ZX_OK, zx::job::create(child_job, 0, &grandchild_job));
+
+  const char* kArgs[] = {"/pkg/bin/demo_target", nullptr};
+  zx::process process_between;
+  ASSERT_EQ(ZX_OK, fdio_spawn(grandchild_job.get(), FDIO_SPAWN_CLONE_ALL, "/pkg/bin/demo_target",
+                              kArgs, process_between.reset_and_get_address()));
+
+  SocketReader reader(std::move(in_socket));
+  ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
+
+  std::thread t1{MakeWork};
+  t1.detach();
+
+  // After Start, launch another process in the same grandchild job to verify that
+  // AddProcessesStartedSinceConfigure also installed a JobWatcher on the new subjobs.
+  zx::process process_after;
+  ASSERT_EQ(ZX_OK, fdio_spawn(grandchild_job.get(), FDIO_SPAWN_CLONE_ALL, "/pkg/bin/demo_target",
+                              kArgs, process_after.reset_and_get_address()));
+
+  reader.ReadUntilRecordCount(11, 3, 1);
+
+  auto stop_response = client->Stop();
+  ASSERT_TRUE(stop_response.is_ok());
+  ASSERT_TRUE(stop_response.value().samples_collected().has_value());
+  EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
+  EXPECT_EQ(stop_response->missing_process_mappings()->size(), size_t{0});
+
+  ASSERT_TRUE(client->Reset().is_ok());
+
+  zx_info_handle_basic_t pid_info;
+  ASSERT_EQ(ZX_OK, zx::process::self()->get_info(ZX_INFO_HANDLE_BASIC, &pid_info, sizeof(pid_info),
+                                                 nullptr, nullptr));
+  zx_koid_t our_pid = pid_info.koid;
+  ASSERT_EQ(ZX_OK, process_between.get_info(ZX_INFO_HANDLE_BASIC, &pid_info, sizeof(pid_info),
+                                            nullptr, nullptr));
+  zx_koid_t between_pid = pid_info.koid;
+  ASSERT_EQ(ZX_OK, process_after.get_info(ZX_INFO_HANDLE_BASIC, &pid_info, sizeof(pid_info),
+                                          nullptr, nullptr));
+  zx_koid_t after_pid = pid_info.koid;
+
+  EXPECT_TRUE(reader.pids().contains(our_pid));
+  EXPECT_TRUE(reader.pids().contains(between_pid));
+  EXPECT_TRUE(reader.pids().contains(after_pid));
+
+  process_between.kill();
+  process_after.kill();
+}
+
+// StackSampler must retain module mappings for a profiled process that exits before Stop().
+TEST(ProfilerIntegrationTest, StackSamplingExitedProcess) {
+  auto lifecycle_client_end = component::Connect<fuchsia_sys2::LifecycleController>();
+  ASSERT_TRUE(lifecycle_client_end.is_ok());
+  const fidl::SyncClient lifecycle_client{std::move(*lifecycle_client_end)};
+
+  zx::result client_end = component::Connect<fprofiler::Session>();
+  ASSERT_TRUE(client_end.is_ok());
+  const fidl::SyncClient client{std::move(*client_end)};
+
+  zx::socket in_socket, outgoing_socket;
+  ASSERT_EQ(zx::socket::create(0u, &in_socket, &outgoing_socket), ZX_OK);
+
+  const std::string name = "demo_target";
+  const std::string url = "demo_target#meta/demo_target.cm";
+  const std::string moniker = "./launchpad:demo_target";
+
+  ASSERT_TRUE(RunInstance(lifecycle_client, name, url, moniker).is_ok());
+
+  fprofiler::TargetConfig target_config = fprofiler::TargetConfig::WithComponent(
+      fprofiler::AttachConfig::WithAttachToComponentMoniker(moniker));
+
+  ASSERT_TRUE(client
+                  ->Configure({{.output = std::move(outgoing_socket),
+                                .config = fprofiler::Config{{
+                                    .configs = dwarf_sample_configs(),
+                                    .target = std::move(target_config),
+                                }}}})
+                  .is_ok());
+
+  SocketReader reader(std::move(in_socket));
+  ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
+
+  reader.ReadUntilRecordCount(11, 1, 1);
+
+  ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
+
+  auto stop_response = client->Stop();
+  ASSERT_TRUE(stop_response.is_ok());
+  ASSERT_TRUE(stop_response.value().samples_collected().has_value());
+  EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
+  EXPECT_EQ(reader.tids().size(), size_t{1});
+  EXPECT_EQ(reader.pids().size(), size_t{1});
+  EXPECT_EQ(stop_response->missing_process_mappings()->size(), size_t{0});
+
+  ASSERT_TRUE(client->Reset().is_ok());
+}
