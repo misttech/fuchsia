@@ -75,6 +75,9 @@ template("cipd_prebuilt") {
                                "testonly",
                                "visibility",
                              ])
+      if (defined(visibility)) {
+        visibility += [ ":$target_name" ]
+      }
 
       script = "//build/prebuilt/fetch_cipd_prebuilt.sh"
       mnemonic = "FETCH"

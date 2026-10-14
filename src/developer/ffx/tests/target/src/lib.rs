@@ -47,7 +47,7 @@ static ROOT_BUILD_DIR: std::sync::LazyLock<PathBuf> = std::sync::LazyLock::new(|
 
 // Matches `out_dir` var in `BUILD.gn`
 static OUT_DIR: std::sync::LazyLock<PathBuf> =
-    std::sync::LazyLock::new(|| ROOT_OUT_DIR.join("src/developer/ffx/testing"));
+    std::sync::LazyLock::new(|| ROOT_OUT_DIR.join("src/developer/ffx/tests/target"));
 
 static TEMP_DIR: std::sync::LazyLock<TempDir> =
     std::sync::LazyLock::new(|| TempDir::new().expect("could not create test harness temp dir"));

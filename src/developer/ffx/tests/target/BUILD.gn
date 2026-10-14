@@ -2,14 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components/fuchsia_package.gni")
-import("//build/config/compiler.gni")
 import("//build/host.gni")
+import("//build/prebuilt/cipd_prebuilt.gni")
 import("//build/rust/rustc_binary.gni")
+import("//build/rust/rustc_library.gni")
+import("//build/testing/host_test_data.gni")
+import("//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni")
 
 test_deps = []
 
 if (is_host && target_cpu == "x64") {
+  _emu_dir = "${cipd_prebuilt_root}/prebuilt/third_party/qemu/${host_platform}"
+  _pb_label = ":product_bundle($default_toolchain)"
+  _product_bundle = get_label_info(_pb_label, "target_out_dir") + "/" +
+                    get_label_info(_pb_label, "name")
+  _bootloader = "${_product_bundle}/partitions/bootloader_partitions/0/image/fuchsia.esp.blk"
+  _run_zircon = "//zircon/scripts/run-zircon"
+
   rustc_test("ffx_target_test") {
     testonly = true
     edition = "2024"
@@ -18,9 +27,9 @@ if (is_host && target_cpu == "x64") {
     sources = [ "src/tests.rs" ]
 
     deps = [
+      ":ffx_testing",
       "//src/developer/ffx/lib/isolate:lib",
       "//src/developer/ffx/lib/netext:lib",
-      "//src/developer/ffx/testing:ffx_testing",
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-async",
       "//src/lib/testing/fixture",
@@ -32,10 +41,66 @@ if (is_host && target_cpu == "x64") {
     args = [ "--test-threads=1" ]
   }
 
+  rustc_library("ffx_testing") {
+    edition = "2024"
+    with_unit_tests = false
+    testonly = true
+
+    deps = [
+      "//src/developer/ffx/config:lib",
+      "//src/developer/ffx/lib/isolate:lib",
+      "//src/lib/fuchsia-async",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:futures",
+      "//third_party/rust_crates:tempfile",
+      "//third_party/rust_crates:tokio",
+      "//tools/make-fuchsia-vol:lib",
+    ]
+
+    non_rust_deps = [
+      ":test_data",
+      "//build/prebuilt/third_party/edk2:host_test_data",
+      "//build/prebuilt/third_party/qemu:host_test_data",
+      "//src/developer/ffx:test_data",
+    ]
+
+    sources = [
+      "src/emu.rs",
+      "src/lib.rs",
+    ]
+
+    rustenv = [
+      "QEMU_PATH=" + rebase_path(_emu_dir, root_build_dir),
+      "PRODUCT_BUNDLE=" + rebase_path(_product_bundle, root_build_dir),
+      "BOOTLOADER=" + rebase_path(_bootloader, root_build_dir),
+      "RUN_ZIRCON=" + rebase_path(_run_zircon, root_build_dir),
+    ]
+  }
+
+  host_test_data("test_data") {
+    deps = [
+      "//src/firmware/gigaboot/cpp:fuchsia",
+      _pb_label,
+    ]
+    sources = [
+      _product_bundle,
+      _run_zircon,
+    ]
+  }
+
   test_deps += [ ":ffx_target_test($host_toolchain)" ]
 }
 
+ffx_e2e_product_bundle("product_bundle") {
+  name = "ffx-target-test"
+  product_configuration = {
+    platform = {
+      build_type = "eng"
+    }
+  }
+}
+
 group("tests") {
-  deps = test_deps
   testonly = true
+  deps = test_deps
 }

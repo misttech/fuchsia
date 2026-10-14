@@ -1,71 +1,126 @@
-# Testing utility library
+# Testing utility library (`ffx_e2e_emu`)
 
-This library implements helpers for writing e2e tests for ffx subtools.
+The [`ffx_e2e_emu`](/src/developer/ffx/lib/e2e_emu) library
+(`//src/developer/ffx/lib/e2e_emu`) implements helpers for writing end-to-end
+(e2e) tests for `ffx` subtools and libraries.
 
 It includes:
 
-* A testing fixture to reduce setup boilerplate
-* A hermetic execution environment for ffx ([via `ffx_isolate`](/docs/development/tools/ffx/development/integration_testing/README.md))
-* Low-level emulator spawning utilities (for flash and OTA testing)
-
-And is planned to include:
-
-* Matchers for ffx command output (b/293217132)
-* `ffx emu` integration by merging with `ffx_e2e_emu` (b/295230484)
+* An isolated emulator (`IsolatedEmulator`) started with a Fuchsia system image
+  via `ffx emu`
+* A hermetic execution environment for `ffx`
+  ([via `ffx_isolate`](/docs/development/tools/ffx/development/integration_testing/README.md))
+* Automatic system log streaming and package repository server setup
+* Helper methods for executing `ffx` and `ssh` commands against the isolated
+  emulator
+* GN templates (`ffx_e2e_test`, `ffx_e2e_product_bundle`, and
+  `ffx_e2e_package_repository`) in
+  `//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni`
 
 ## Usage
 
-Subtool e2e tests typically live in `src/developer/ffx/tests`. This is akin to
-`ffx self-test` but using `rustc_test` to execute tests instead of a subtool.
+Subtool and library e2e tests are defined with the `ffx_e2e_test` GN template
+and are typically added to a `host_tests` group in the subtool or library's
+`BUILD.gn`.
 
 In `BUILD.gn`:
 
 ```gn
 import("//build/host.gni")
-import("//build/rust/rustc_binary.gni")
+import("//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni")
 
 if (is_host) {
-  rustc_test("ffx_<something>_test") {
-    testonly = true
+  ffx_e2e_test("ffx_<something>_e2e_tests") {
     edition = "2024"
-    source_root = "src/tests.rs"
-
-    sources = [ "src/tests.rs" ]
+    source_root = "tests/e2e.rs"
+    sources = [ source_root ]
 
     deps = [
-      "//src/developer/ffx/testing:ffx_testing",
       "//src/lib/fuchsia",
-      "//src/lib/testing/fixture",
+      "//third_party/rust_crates:anyhow",
     ]
+  }
 
-    # If using ffx_testing::Emu: Only one emulator can be spawned at a time.
-    # These lower level emulators use TAP networking, which is required for IPv6
-    # support.
-    # args = [ "--test-threads=1" ]
+  group("host_tests") {
+    testonly = true
+    deps = [ ":ffx_<something>_e2e_tests($host_toolchain)" ]
   }
 }
 ```
 
-In `src/tests.rs`:
+In `tests/e2e.rs`:
 
 ```rust
-use ffx_testing::{base_fixture, TestContext};
-use fixture::fixture;
+use anyhow::Result;
+use ffx_e2e_emu::IsolatedEmulator;
 
-// base_fixture sets up the test environment this test
-#[fixture(base_fixture)]
-#[fuchsia::test]
-async fn my_test(ctx: TestContext) {
-  let output = ctx.isolate().ffx(&["version"]).await.expect("version");
-  assert!(output.status.success());
+#[fuchsia::test(logging = true)]
+async fn my_test() -> Result<()> {
+  let emu = IsolatedEmulator::start("my-test").await?;
+  let output = emu.ffx_output(&["version"]).await?;
+  assert!(!output.is_empty());
+  Ok(())
 }
 ```
 
-## Low Level Emulators
+> Note: Starting an `IsolatedEmulator` spins up a full Fuchsia instance and can
+> take 20+ seconds. When testing multiple behaviors against the same
+> configuration, prefer sharing a single `IsolatedEmulator` instance within a
+> test function where practical.
 
-A low-level emulator can be brought up with `Emu::start`. It can be controlled
-via serial and talked to by ffx. For a test that uses the emulator, see
-[ffx_target_test](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/ffx/tests/target/src/tests.rs).
+### Customizing the system image and package repository
+
+By default, `ffx_e2e_test` uses a minimal default product bundle and an empty
+package repository.
+
+* **Custom Product Bundle**: If your test requires specific platform
+  configuration or base packages, define a custom bundle with
+  `ffx_e2e_product_bundle` and pass `product_bundle = ":<label>"` to
+  `ffx_e2e_test`:
+
+  ```gn
+  ffx_e2e_product_bundle("product_bundle") {
+    name = "my_custom_test_product"
+    product_configuration = {
+      platform = {
+        build_type = "eng"
+      }
+      base_packages = [
+        {
+          package_target = "//path/to/my:package"
+        },
+      ]
+    }
+  }
+  ```
+
+* **Custom Package Repository**: If your test needs to resolve packages from a
+  repository server at runtime rather than including them in base, define a
+  repository with `ffx_e2e_package_repository` and pass
+  `package_repository = ":<label>($target_toolchain)"` to `ffx_e2e_test`:
+
+  ```gn
+  if (is_fuchsia) {
+    ffx_e2e_package_repository("package_repo") {
+      packages = [
+        {
+          label = "//path/to/my:package"
+        },
+      ]
+    }
+  }
+  ```
+
+## Low-Level Emulators
+
+For tests that specifically need a low-level emulator brought up with an empty
+disk (for example, testing bootloader and fastboot flashing via Gigaboot before
+a Fuchsia image is installed), `//src/developer/ffx/tests/target:ffx_testing`
+provides `ffx_testing::Emu`.
+
+`Emu::start` spawns QEMU directly via `run-zircon` with an empty UEFI disk and
+exposes the emulator serial stream. For an example, see
+[`ffx_target_test`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/ffx/tests/target/src/tests.rs).
 
 **/!\ This emulator is brought up with an empty disk /!\\**
 

@@ -52,7 +52,6 @@ rustc_library("lib") {
     "//src/developer/ffx/frontends/*",
     "//src/developer/ffx/playground/*",
     "//src/developer/ffx/plugins/*",
-    "//src/developer/ffx/testing",
     "//src/developer/ffx/tests/*",
     "//src/developer/ffx/tools/*",
   ]

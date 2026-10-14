@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/prebuilt/cipd_prebuilt.gni")
+import("//build/testing/host_test_data.gni")
+
+cipd_prebuilt("edk2") {
+  visibility = [ ":host_test_data" ]
+  paths = [
+    "//prebuilt/third_party/edk2/qemu-x64/OVMF_CODE.fd",
+    "//prebuilt/third_party/edk2/qemu-x64/OVMF_VARS.fd",
+  ]
+}
+
+if (is_host) {
+  host_test_data("host_test_data") {
+    visibility = [ "//src/developer/ffx/tests/target:*" ]
+    deps = [ ":edk2" ]
+    sources = [
+      "${cipd_prebuilt_root}/prebuilt/third_party/edk2/qemu-x64/OVMF_CODE.fd",
+      "${cipd_prebuilt_root}/prebuilt/third_party/edk2/qemu-x64/OVMF_VARS.fd",
+    ]
+  }
+}

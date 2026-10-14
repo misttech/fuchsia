@@ -291,6 +291,7 @@ group("non_hermetic_deps") {
     "//src/developer/ffx/plugins/profile/heapdump:*",
     "//src/developer/ffx/plugins/profile/stacktrack:*",
     "//src/developer/ffx/plugins/target/package/explore/tests:*",
+    "//src/developer/ffx/tests/target:*",
     "//src/devices/block/drivers/ufs/test/e2e/*",
     "//src/lib/elfldltl/test/*",
     "//src/security/lib/scrutiny/collector/*",

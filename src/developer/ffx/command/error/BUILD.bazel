@@ -27,7 +27,6 @@ rustc_library(
         "assert_no_deps=//src/developer/ffx/frontends/*",
         "assert_no_deps=//src/developer/ffx/playground/*",
         "assert_no_deps=//src/developer/ffx/plugins/*",
-        "assert_no_deps=//src/developer/ffx/testing",
         "assert_no_deps=//src/developer/ffx/tests/*",
         "assert_no_deps=//src/developer/ffx/tools/*",
     ],
