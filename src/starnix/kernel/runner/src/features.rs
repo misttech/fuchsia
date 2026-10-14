@@ -655,7 +655,7 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
         cooling_device_init(kernel, devices.clone())?;
     }
     if features.hvdcp_opti {
-        hvdcp_opti_init(kernel)?;
+        hvdcp_opti_init(kernel);
     }
     if features.fastrpc {
         fastrpc_device_init(kernel);

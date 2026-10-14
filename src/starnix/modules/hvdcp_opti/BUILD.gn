@@ -27,7 +27,6 @@ rustc_library("hvdcp_opti_module") {
     "//sdk/fidl/fuchsia.hardware.qcom.hvdcpopti:fuchsia.hardware.qcom.hvdcpopti_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/rust/zx",
-    "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",

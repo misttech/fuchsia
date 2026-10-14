@@ -8,27 +8,9 @@ use starnix_core::vfs::{
     FileOps, FsNodeOps, fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_sync::{LockDepMutex, ReadWriteBytesFileLock};
+use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, error};
 use std::borrow::Cow;
-
-const HVDCP_OPTI_DIRECTORY: &str = "/svc/fuchsia.hardware.qcom.hvdcpopti.Service";
-
-// TODO(b/415333931): Change the connection logic to not eagerly connect upon module initialization
-// or panic if the server is not available.
-
-pub fn connect_to_device_channel(name: &str) -> Result<zx::Channel, Errno> {
-    let mut dir = std::fs::read_dir(HVDCP_OPTI_DIRECTORY).map_err(|_| errno!(EINVAL))?;
-    let Some(Ok(entry)) = dir.next() else {
-        return error!(EBUSY);
-    };
-    let path =
-        entry.path().join(name).into_os_string().into_string().map_err(|_| errno!(EINVAL))?;
-
-    let (client_channel, server_channel) = zx::Channel::create();
-    fdio::service_connect(&path, server_channel).map_err(|_| errno!(EINVAL))?;
-    Ok(client_channel)
-}
 
 // Current QBG context dump size is 2448 bytes (612 u32 members).
 // Use greater buffer to accommodate future additions to QBG context.

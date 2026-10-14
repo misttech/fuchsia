@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::utils::connect_to_device_channel;
 use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use fidl_fuchsia_power_system as fpower;
 use futures::channel::oneshot;
@@ -12,15 +11,13 @@ use starnix_core::power::{ContainerWakingStream, create_proxy_for_wake_events_co
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::{
-    FileObject, FileObjectState, FileOps, InputBuffer, NamespaceNode, OutputBuffer, VecInputBuffer,
+    FileObject, FileObjectState, FileOps, InputBuffer, OutputBuffer, VecInputBuffer,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{LockDepMutex, QbgReadQueueLock, QbgShutdownLock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error};
@@ -33,12 +30,9 @@ pub const QBGIOCXEPW: u32 = 0xC0304203;
 pub const QBGIOCXSTEPCHGCFG: u32 = 0xC0F74204;
 
 pub fn create_qbg_device(
-    _current_task: &CurrentTask,
-    _id: DeviceId,
-    _node: &NamespaceNode,
-    _flags: OpenFlags,
+    service_proxy: &fhvdcpopti::ServiceProxy,
 ) -> Result<Box<dyn FileOps>, Errno> {
-    Ok(Box::new(QbgDeviceFile::new()))
+    Ok(Box::new(QbgDeviceFile::new(service_proxy)?))
 }
 
 struct QbgDeviceState {
@@ -137,12 +131,13 @@ struct QbgDeviceFile {
 }
 
 impl QbgDeviceFile {
-    pub fn new() -> Self {
+    fn new(service_proxy: &fhvdcpopti::ServiceProxy) -> Result<Self, Errno> {
         let state = Arc::new(QbgDeviceState::new());
-        let hvdcpopti = fhvdcpopti::DeviceSynchronousProxy::new(
-            connect_to_device_channel("device").expect("Could not connect to hvdcpopti service"),
-        );
-        Self { hvdcpopti, state }
+        let hvdcpopti = service_proxy.connect_to_device_sync().map_err(|e| {
+            log_error!("Failed to connect to hvdcp_opti device protocol: {e:?}");
+            errno!(EINVAL)
+        })?;
+        Ok(Self { hvdcpopti, state })
     }
 }
 
@@ -151,10 +146,11 @@ impl FileOps for QbgDeviceFile {
     fileops_impl_noop_sync!();
 
     fn open(&self, _file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
-        let data_provider = self
-            .hvdcpopti
-            .get_data_provider(zx::MonotonicInstant::INFINITE)
-            .expect("GetDataProvider failed");
+        let data_provider =
+            self.hvdcpopti.get_data_provider(zx::MonotonicInstant::INFINITE).map_err(|e| {
+                log_error!("GetDataProvider failed: {e:?}");
+                errno!(EINVAL)
+            })?;
         spawn_qbg_device_tasks(self.state.clone(), data_provider.into(), current_task);
         Ok(())
     }

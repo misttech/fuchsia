@@ -8,31 +8,53 @@ use super::iio_file::{
 };
 use super::qbg_battery_file::create_battery_profile_device;
 use super::qbg_file::create_qbg_device;
-use super::utils::{ReadWriteBytesFile, connect_to_device_channel};
+use super::utils::ReadWriteBytesFile;
 use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use starnix_core::device::DeviceMode;
 use starnix_core::device::kobject::DeviceMetadata;
+use starnix_core::device::service_watcher::watch_fidl_service;
 use starnix_core::fs::sysfs::build_device_directory;
-use starnix_core::task::Kernel;
+use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::vfs::NamespaceNode;
 use starnix_logging::log_warn;
-
 use starnix_uapi::device_id::DeviceId;
+use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
+use starnix_uapi::open_flags::OpenFlags;
+use std::cell::Cell;
 use std::sync::Arc;
 
-pub fn hvdcp_opti_init(kernel: &Kernel) -> Result<(), Errno> {
-    let proxy = match connect_to_device_channel("iio") {
-        Ok(chan) => Arc::new(fhvdcpopti::IioSynchronousProxy::new(chan)),
-        Err(e) => {
-            // hvdcp_opti only supported on Sorrel. Let it fail.
-            log_warn!(
-                "Could not connect to hvdcp_opti server {}. This is expected on everything but Sorrel.",
-                e
-            );
-            return Ok(());
-        }
-    };
+pub fn hvdcp_opti_init(kernel: &Kernel) {
+    let device_added = Cell::new(false);
+    watch_fidl_service(
+        kernel,
+        fhvdcpopti::ServiceMarker,
+        "hvdcp_opti",
+        async move |weak_kernel, service_proxy| {
+            let Some(kernel) = weak_kernel.upgrade() else {
+                return;
+            };
+            if device_added.get() {
+                log_warn!("Ignoring additional hvdcp_opti service instance");
+                return;
+            }
+            match register_hvdcp_opti_devices(&kernel, Arc::new(service_proxy)) {
+                Ok(()) => device_added.set(true),
+                Err(e) => log_warn!("Failed to initialize hvdcp_opti devices: {e:?}"),
+            }
+        },
+    );
+}
+
+fn register_hvdcp_opti_devices(
+    kernel: &Kernel,
+    service_proxy: Arc<fhvdcpopti::ServiceProxy>,
+) -> Result<(), Errno> {
+    let proxy = Arc::new(service_proxy.connect_to_iio_sync().map_err(|e| {
+        log_warn!("Could not connect to hvdcp_opti IIO protocol: {e}");
+        errno!(EINVAL)
+    })?);
 
     let registry = &kernel.device_registry;
 
@@ -41,12 +63,16 @@ pub fn hvdcp_opti_init(kernel: &Kernel) -> Result<(), Errno> {
     });
 
     // /dev/qbg
+    let qbg_service = service_proxy.clone();
     registry.register_device(
         kernel,
         "qbg".into(),
         DeviceMetadata::new("qbg".into(), DeviceId::new(484, 0), DeviceMode::Char),
         qdb_class,
-        create_qbg_device,
+        move |_current_task: &CurrentTask,
+              _id: DeviceId,
+              _node: &NamespaceNode,
+              _flags: OpenFlags| create_qbg_device(&qbg_service),
     )?;
 
     // /dev/qbg_battery
@@ -55,7 +81,10 @@ pub fn hvdcp_opti_init(kernel: &Kernel) -> Result<(), Errno> {
         "qbg_battery".into(),
         DeviceMetadata::new("qbg_battery".into(), DeviceId::new(485, 0), DeviceMode::Char),
         registry.objects.get_or_create_class("qbg_battery".into()),
-        create_battery_profile_device,
+        move |_current_task: &CurrentTask,
+              _id: DeviceId,
+              _node: &NamespaceNode,
+              _flags: OpenFlags| create_battery_profile_device(&service_proxy),
     )?;
 
     let soc = registry.objects.soc_device();
