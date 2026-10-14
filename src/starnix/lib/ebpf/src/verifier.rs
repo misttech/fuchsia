@@ -929,7 +929,7 @@ pub fn verify_program(
     // a conditional jump or a `cmpxchg` (which also branches into two states). Every loop and
     // every join of two branches goes through one of them, and the states are only compared with
     // and recorded as terminating contexts at these points.
-    let mut terminating_contexts: Vec<Option<Vec<TerminatingContext>>> =
+    let mut terminating_contexts: Vec<Option<TerminatingContexts>> =
         (0..code.len()).map(|_| None).collect();
     let mut scan_pc = 0;
     while scan_pc < code.len() {
@@ -986,9 +986,7 @@ pub fn verify_program(
         {
             // Check whether there exist a context that terminate and prove that this context does
             // also terminate.
-            if let Some(ending_context) =
-                terminating_contexts.iter().rev().find(|c| c.computation_context >= context)
-            {
+            if let Some(ending_context) = terminating_contexts.find_greater_or_equal(&context) {
                 // One such context has been found, this proves the current context terminates.
                 // If the context has a parent, register the data dependencies and try to terminate
                 // it.
@@ -1043,7 +1041,7 @@ struct VerificationContext<'a> {
     /// incomparables as each time a bigger context is computed, the smaller ones are removed from
     /// the list. Indexed directly by `ProgramCounter` (`0..code.len()`) for O(1) lookup, and
     /// `None` if the pc is not a prune point.
-    terminating_contexts: Vec<Option<Vec<TerminatingContext>>>,
+    terminating_contexts: Vec<Option<TerminatingContexts>>,
     /// The current set of struct access instructions that will need to be updated when the
     /// program is linked. This is also used to ensure that a given instruction always loads the
     /// same field. If this is not the case, the verifier will reject the program.
@@ -1056,7 +1054,7 @@ impl<'a> VerificationContext<'a> {
         logger: &'a mut dyn VerifierLogger,
         code: &'a [EbpfInstruction],
         states: Vec<ComputationContext>,
-        terminating_contexts: Vec<Option<Vec<TerminatingContext>>>,
+        terminating_contexts: Vec<Option<TerminatingContexts>>,
     ) -> Self {
         debug_assert_eq!(code.len(), terminating_contexts.len());
         Self {
@@ -2260,23 +2258,7 @@ impl ComputationContext {
                 current.stack.retain(dependencies.stack);
 
                 // 3. Add the cleared state to the set of `terminating_contexts`
-                let mut is_dominated = false;
-                terminating_contexts.retain(|c| {
-                    match c.computation_context.partial_cmp(&current) {
-                        Some(Ordering::Less) => false,
-                        Some(Ordering::Equal) | Some(Ordering::Greater) => {
-                            // If the list contains a context greater or equal to the current one, it
-                            // should not be added.
-                            is_dominated = true;
-                            true
-                        }
-                        _ => true,
-                    }
-                });
-                if !is_dominated {
-                    terminating_contexts
-                        .push(TerminatingContext { computation_context: current, dependencies });
-                }
+                terminating_contexts.insert(current, dependencies);
             }
 
             // 4. Register the computed dependencies in our parent, and terminate it if all
@@ -3176,6 +3158,102 @@ impl BpfVisitor for DataDependencies {
 struct TerminatingContext {
     computation_context: ComputationContext,
     dependencies: DataDependencies,
+    /// Known scalar register values of `computation_context`, cached to filter comparisons.
+    known_scalars: KnownScalars,
+}
+
+/// The contexts known to terminate at a given pc. The contexts are pairwise incomparable: each
+/// time a bigger context is inserted, the smaller ones are removed.
+#[derive(Debug, Default)]
+struct TerminatingContexts {
+    contexts: Vec<TerminatingContext>,
+}
+
+impl TerminatingContexts {
+    /// Returns the most recently inserted context that is greater than or equal to `context`.
+    fn find_greater_or_equal(&self, context: &ComputationContext) -> Option<&TerminatingContext> {
+        if self.contexts.is_empty() {
+            return None;
+        }
+        let known_scalars = KnownScalars::new(context);
+        self.contexts
+            .iter()
+            .rev()
+            .find(|c| c.known_scalars >= known_scalars && c.computation_context >= *context)
+    }
+
+    /// Inserts `context` unless a context greater than or equal to it is already present, and
+    /// removes the contexts smaller than it.
+    fn insert(&mut self, context: ComputationContext, dependencies: DataDependencies) {
+        let known_scalars = KnownScalars::new(&context);
+        let mut is_dominated = false;
+        self.contexts.retain(|c| {
+            // Skip the full comparison if the contexts are known to be incomparable. This does not
+            // change the result: the full comparison would return `None`.
+            if c.known_scalars.partial_cmp(&known_scalars).is_none() {
+                return true;
+            }
+            match c.computation_context.partial_cmp(&context) {
+                Some(Ordering::Less) => false,
+                Some(Ordering::Equal) | Some(Ordering::Greater) => {
+                    // If the list contains a context greater or equal to the current one, it
+                    // should not be added.
+                    is_dominated = true;
+                    true
+                }
+                None => true,
+            }
+        });
+        if !is_dominated {
+            self.contexts.push(TerminatingContext {
+                computation_context: context,
+                dependencies,
+                known_scalars,
+            });
+        }
+    }
+}
+
+/// Tracks which general registers of a `ComputationContext` are constrained to a single known
+/// constant scalar.
+///
+/// Used as a fast pre-filter before `ComputationContext::partial_cmp`: if `c1` has a known
+/// constant `v` in register `i`, then `c1 >= c2` requires `c2` to also have `v` in register `i`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct KnownScalars {
+    /// Bitmask of the registers holding a known scalar.
+    mask: u16,
+    /// The value of the registers in `mask`. The other values are 0.
+    values: [u64; GENERAL_REGISTER_COUNT as usize],
+}
+
+impl KnownScalars {
+    fn new(context: &ComputationContext) -> Self {
+        let mut result = Self::default();
+        for (i, reg) in context.registers.iter().enumerate() {
+            if let Type::ScalarValue(data) = reg {
+                if data.is_known() {
+                    result.mask |= 1 << i;
+                    result.values[i] = data.value;
+                }
+            }
+        }
+        result
+    }
+}
+
+impl PartialOrd for KnownScalars {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let result = match (self.mask & !other.mask != 0, !self.mask & other.mask != 0) {
+            (true, true) => return None,
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            (false, false) => Ordering::Equal,
+        };
+        bit_indices((self.mask & other.mask).into())
+            .all(|i| self.values[i] == other.values[i])
+            .then_some(result)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4771,6 +4849,105 @@ mod tests {
         c1.pc = 8;
         assert_eq!(c1.partial_cmp(&c2), None);
         assert_eq!(c2.partial_cmp(&c1), None);
+    }
+
+    /// A sample of types covering the cases distinguished by `Type::partial_cmp`.
+    fn sample_types() -> Vec<Type> {
+        let id = MemoryId::from(1);
+        vec![
+            Type::UNINITIALIZED,
+            Type::UNKNOWN_SCALAR,
+            Type::from(0),
+            Type::from(1),
+            Type::from(u64::MAX),
+            Type::ScalarValue(ScalarValueData::new(0, 0xff, 0, U64Range::new(0, 0xff))),
+            Type::ScalarValue(ScalarValueData::new(0, 0xff, 0, U64Range::new(0, 1))),
+            Type::ScalarValue(ScalarValueData::new(0, 0xff, 0xff, U64Range::new(0, 0xff))),
+            Type::ScalarValue(ScalarValueData::new(0x100, 0xff, 0, U64Range::new(0x100, 0x1ff))),
+            Type::PtrToMemory { id: id.clone(), offset: 0.into(), buffer_size: 8 },
+            Type::PtrToArray { id, offset: 1.into() },
+        ]
+    }
+
+    #[test]
+    fn test_known_scalars_is_necessary_for_greater_or_equal() {
+        let types = sample_types();
+        // Check every pair of types in r0, and in r1 with a known scalar in r0.
+        for t1 in types.iter() {
+            for t2 in types.iter() {
+                for r0 in [None, Some(Type::from(3))] {
+                    let mut c1 = ComputationContext::default();
+                    let mut c2 = ComputationContext::default();
+                    let index = if r0.is_some() { 1 } else { 0 };
+                    if let Some(r0) = r0 {
+                        c1.set_reg(0, r0.clone()).unwrap();
+                        c2.set_reg(0, r0).unwrap();
+                    }
+                    c1.set_reg(index, t1.clone()).unwrap();
+                    c2.set_reg(index, t2.clone()).unwrap();
+                    let k1 = KnownScalars::new(&c1);
+                    let k2 = KnownScalars::new(&c2);
+                    if matches!(c1.partial_cmp(&c2), Some(Ordering::Greater | Ordering::Equal)) {
+                        assert!(k1 >= k2, "{t1:?} >= {t2:?}");
+                    }
+                    if matches!(c1.partial_cmp(&c2), Some(Ordering::Less | Ordering::Equal)) {
+                        assert!(k1 <= k2, "{t1:?} <= {t2:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_known_scalars_filters_distinct_constants() {
+        let mut c1 = ComputationContext::default();
+        let mut c2 = ComputationContext::default();
+        c1.set_reg(7, Type::from(1)).unwrap();
+        c2.set_reg(7, Type::from(2)).unwrap();
+        let k1 = KnownScalars::new(&c1);
+        let k2 = KnownScalars::new(&c2);
+        assert_eq!(k1.partial_cmp(&k2), None);
+        assert_eq!(k2.partial_cmp(&k1), None);
+
+        // An unknown or uninitialized register may be greater than a known one, but not less.
+        c2.set_reg(7, Type::UNKNOWN_SCALAR).unwrap();
+        let k2 = KnownScalars::new(&c2);
+        assert!(k1 < k2);
+        assert!(k1 < KnownScalars::default());
+    }
+
+    #[test]
+    fn test_terminating_contexts_matches_unfiltered_search() {
+        // Insert contexts in a fixed pseudo random order and check that the filtered search and
+        // insertion behave exactly like a plain linear search over the full comparison.
+        let types = sample_types();
+        let mut contexts = TerminatingContexts::default();
+        let mut reference: Vec<ComputationContext> = vec![];
+        let mut seed = 17usize;
+        for _ in 0..200 {
+            let mut context = ComputationContext::default();
+            for reg in 0..3 {
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                context.set_reg(reg, types[(seed >> 16) % types.len()].clone()).unwrap();
+            }
+
+            let expected = reference.iter().rposition(|c| *c >= context);
+            let found = contexts.find_greater_or_equal(&context).map(|found| {
+                contexts.contexts.iter().position(|c| std::ptr::eq(c, found)).unwrap()
+            });
+            assert_eq!(found, expected);
+
+            let dominated = reference.iter().any(|c| *c >= context);
+            reference.retain(|c| c.partial_cmp(&context) != Some(Ordering::Less));
+            if !dominated {
+                reference.push(context.clone());
+            }
+            contexts.insert(context, DataDependencies::default());
+            assert_eq!(contexts.contexts.len(), reference.len());
+            for (c, r) in contexts.contexts.iter().zip(reference.iter()) {
+                assert_eq!(&c.computation_context, r);
+            }
+        }
     }
 
     #[test]
