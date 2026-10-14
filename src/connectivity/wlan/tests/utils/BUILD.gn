@@ -21,6 +21,6 @@ if (is_host) {
 
   python_host_test("odpm_utils_test") {
     main_source = "odpm_utils_test.py"
-    deps = [ ":wlan_test_utils" ]
+    libraries = [ ":wlan_test_utils" ]
   }
 }

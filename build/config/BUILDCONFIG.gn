@@ -1601,6 +1601,7 @@ if (host_os == "linux") {
 e2e_lib_unit_tests = [
   "//sdk/testing/sl4f/client:tests",
   "//tools/emulator:tests",
+  "//src/connectivity/wlan/tests/utils:odpm_utils_test($host_toolchain)",
   "//src/testing/end_to_end/antlion:unit_tests($host_toolchain)",
   "//src/testing/end_to_end/honeydew:unit_tests",
   "//src/testing/end_to_end/mobly_base_tests:tests($host_toolchain)",

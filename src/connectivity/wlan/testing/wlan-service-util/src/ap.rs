@@ -150,12 +150,13 @@ mod tests {
             password: target_password.to_vec(),
             radio_cfg: fidl_sme::RadioConfig {
                 phy: fidl_ieee80211::WlanPhyType::Ht,
-                channel: wlan_common::channel::Channel::new(
+                primary: wlan_common::channel::Channel::new(
                     channel,
                     wlan_common::channel::Bandwidth::Cbw20,
                     band,
                 )
                 .into(),
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
             },
         };
 

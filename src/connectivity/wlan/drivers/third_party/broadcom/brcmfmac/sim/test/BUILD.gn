@@ -597,6 +597,7 @@ _tests = [
   "mfg_test",
   "no_random_mac_test",
   "passive_scan_test",
+  "phy_power_test",
   "phy_ps_mode_test",
   "phy_mac_roles_test",
   "phy_reset_test",

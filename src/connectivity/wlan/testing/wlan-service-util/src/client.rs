@@ -328,7 +328,7 @@ mod tests {
     use futures::stream::{StreamExt, StreamFuture};
     use futures::task::Poll;
     use ieee80211::Ssid;
-    use rand::{Rng as _, RngExt as _};
+    use rand::RngExt as _;
     use std::convert::{TryFrom, TryInto};
     use std::pin::pin;
     use wlan_common::channel::{Bandwidth, Channel};
@@ -341,7 +341,7 @@ mod tests {
             bssid: (0..6).map(|_| rng.random::<u8>()).collect::<Vec<u8>>().try_into().unwrap(),
             beacon_period: rng.random::<u16>(),
             rssi_dbm: rng.random::<i8>(),
-            channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 number: rng.random::<u8>(),
                 band: if rng.random() {
                     fidl_ieee80211::WlanBand::TwoGhz

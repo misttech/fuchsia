@@ -5,11 +5,11 @@
 import unittest
 from unittest import mock
 
-import odpm_utils
 from honeydew.affordances.tracing import tracing as tracing_affordance
 from honeydew.transports.ffx import types as ffx_types
 from reporting import metrics
 from trace_processing import trace_model, trace_time
+from wlan_test_utils import odpm_utils
 
 
 class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
@@ -77,8 +77,12 @@ class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch("os.path.exists", return_value=True)
-    @mock.patch("odpm_utils.trace_importing.create_model_from_trace_file_path")
-    @mock.patch("odpm_utils.odpm_power.OdpmPowerMetricsProcessor")
+    @mock.patch(
+        "wlan_test_utils.odpm_utils.trace_importing.create_model_from_trace_file_path"
+    )
+    @mock.patch(
+        "wlan_test_utils.odpm_utils.odpm_power.OdpmPowerMetricsProcessor"
+    )
     def test_get_odpm_measurements(
         self,
         mock_processor_class: mock.MagicMock,
@@ -134,7 +138,9 @@ class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[1].values, (5.0,))
 
     @mock.patch("os.path.exists", return_value=True)
-    @mock.patch("odpm_utils.trace_importing.create_model_from_trace_file_path")
+    @mock.patch(
+        "wlan_test_utils.odpm_utils.trace_importing.create_model_from_trace_file_path"
+    )
     def test_get_odpm_measurements_real_processor(
         self,
         mock_create_model: mock.MagicMock,
@@ -195,8 +201,8 @@ class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
     @mock.patch("os.path.exists", return_value=True)
     @mock.patch("os.remove")
     @mock.patch("reporting.metrics.TestCaseResult.write_fuchsiaperf_json")
-    @mock.patch("odpm_utils.get_odpm_measurements")
-    @mock.patch("odpm_utils.stop_trace")
+    @mock.patch("wlan_test_utils.odpm_utils.get_odpm_measurements")
+    @mock.patch("wlan_test_utils.odpm_utils.stop_trace")
     async def test_stop_trace_and_save_metrics(
         self,
         mock_stop_trace: mock.AsyncMock,
@@ -232,10 +238,10 @@ class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
     @mock.patch("os.path.exists", return_value=True)
     @mock.patch("os.remove")
     @mock.patch(
-        "odpm_utils.get_odpm_measurements",
+        "wlan_test_utils.odpm_utils.get_odpm_measurements",
         side_effect=ValueError("Parse error"),
     )
-    @mock.patch("odpm_utils.stop_trace")
+    @mock.patch("wlan_test_utils.odpm_utils.stop_trace")
     async def test_stop_trace_and_save_metrics_handles_parse_exception(
         self,
         mock_stop_trace: mock.AsyncMock,
@@ -256,8 +262,8 @@ class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
         "reporting.metrics.TestCaseResult.write_fuchsiaperf_json",
         side_effect=OSError("Disk full"),
     )
-    @mock.patch("odpm_utils.get_odpm_measurements")
-    @mock.patch("odpm_utils.stop_trace")
+    @mock.patch("wlan_test_utils.odpm_utils.get_odpm_measurements")
+    @mock.patch("wlan_test_utils.odpm_utils.stop_trace")
     async def test_stop_trace_and_save_metrics_handles_write_exception(
         self,
         mock_stop_trace: mock.AsyncMock,
@@ -282,8 +288,8 @@ class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res, expected_metrics)
         mock_os_remove.assert_called_once_with("/tmp/test_dir/odpm_trace.fxt")
 
-    @mock.patch("odpm_utils.stop_trace_and_save_metrics")
-    @mock.patch("odpm_utils.start_trace")
+    @mock.patch("wlan_test_utils.odpm_utils.stop_trace_and_save_metrics")
+    @mock.patch("wlan_test_utils.odpm_utils.start_trace")
     async def test_record_odpm_metrics(
         self,
         mock_start_trace: mock.AsyncMock,
@@ -303,8 +309,8 @@ class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
             save_raw_trace=False,
         )
 
-    @mock.patch("odpm_utils.stop_trace_and_save_metrics")
-    @mock.patch("odpm_utils.start_trace")
+    @mock.patch("wlan_test_utils.odpm_utils.stop_trace_and_save_metrics")
+    @mock.patch("wlan_test_utils.odpm_utils.start_trace")
     async def test_record_odpm_metrics_stops_on_exception(
         self,
         mock_start_trace: mock.AsyncMock,
