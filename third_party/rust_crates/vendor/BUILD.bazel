@@ -346,14 +346,14 @@ alias(
 )
 
 alias(
-    name = "blocking-1.6.2",
-    actual = "//third_party/rust_crates/vendor/blocking-1.6.2:blocking",
+    name = "blocking-1.7.0",
+    actual = "//third_party/rust_crates/vendor/blocking-1.7.0:blocking",
     tags = ["manual"],
 )
 
 alias(
     name = "blocking",
-    actual = "//third_party/rust_crates/vendor/blocking-1.6.2:blocking",
+    actual = "//third_party/rust_crates/vendor/blocking-1.7.0:blocking",
     tags = ["manual"],
 )
 

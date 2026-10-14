@@ -50,7 +50,7 @@ bit-set = "0.11.1"
 bit-vec = { version = "0.10.1", features = [ "serde" ] }
 bitfield = "0.19.5"
 bitflags = { version = "2.13.2", features = ["serde", "std"] }
-blocking = "1.6.2"
+blocking = "1.7.0"
 bstr = { version = "1.13.1", default-features = false, features = [ "std" ] }
 bt-bass = { version = "0.0.1", features = ["test-utils"] }
 bt-broadcast-assistant = { version = "0.0.1", features = ["debug"] }

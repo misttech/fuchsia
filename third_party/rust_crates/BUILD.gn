@@ -236,11 +236,11 @@ group("bitflags-2.13.2") {
 }
 
 group("blocking") {
-  public_deps = [ ":blocking-v1_6_2" ]
+  public_deps = [ ":blocking-v1_7_0" ]
 }
 
-group("blocking-1.6.2") {
-  public_deps = [ ":blocking-v1_6_2" ]
+group("blocking-1.7.0") {
+  public_deps = [ ":blocking-v1_7_0" ]
 }
 
 group("bstr") {
@@ -3995,7 +3995,7 @@ rustc_library("async-fs-v2_2_0") {
 
   deps = []
   deps += [ ":async-lock-v3_4_2" ]
-  deps += [ ":blocking-v1_6_2" ]
+  deps += [ ":blocking-v1_7_0" ]
   deps += [ ":futures-lite-v2_6_1" ]
 
   rustenv = []
@@ -5082,18 +5082,18 @@ rustc_library("block-padding-v0_4_2") {
   applicable_licenses = [ ":block-padding-v0_4_2.license" ]
 }
 
-license("blocking-v1_6_2.license") {
+license("blocking-v1_7_0.license") {
   public_package_name = "blocking"
   license_files = [
-    "//third_party/rust_crates/vendor/blocking-1.6.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/blocking-1.6.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/blocking-1.7.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/blocking-1.7.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("blocking-v1_6_2") {
+rustc_library("blocking-v1_7_0") {
   crate_name = "blocking"
-  source_root = "//third_party/rust_crates/vendor/blocking-1.6.2/src/lib.rs"
-  output_name = "blocking-a09092a681ef405e"
+  source_root = "//third_party/rust_crates/vendor/blocking-1.7.0/src/lib.rs"
+  output_name = "blocking-5bdcf039c165b313"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -5110,13 +5110,13 @@ rustc_library("blocking-v1_6_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a09092a681ef405e",
-    "-Cextra-filename=-a09092a681ef405e",
+    "-Cmetadata=5bdcf039c165b313",
+    "-Cextra-filename=-5bdcf039c165b313",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":blocking-v1_6_2.license" ]
+  applicable_licenses = [ ":blocking-v1_7_0.license" ]
 }
 
 rustc_library("borsh-v1_8_1") {
