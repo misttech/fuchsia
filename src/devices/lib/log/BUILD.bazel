@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "log",
+    srcs = ["log.cc"],
+    hdrs = ["log.h"],
+    implementation_deps = [
+        "//sdk/lib/component/incoming/cpp",
+        "//zircon/system/ulib/fbl",
+    ],
+    visibility = [
+        "//src/devices/bin:__subpackages__",
+        "//src/devices/misc/drivers/compat:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+        "//sdk/lib/fdio",
+        "//sdk/lib/fit",
+        "//sdk/lib/syslog/structured_backend",
+    ],
+    alwayslink = True,
+)
