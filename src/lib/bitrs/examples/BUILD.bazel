@@ -1,0 +1,34 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "basic-example",
+    srcs = ["basic.rs"],
+    crate_root = "basic.rs",
+    edition = "2024",
+    deps = ["//src/lib/bitrs"],
+)
+
+rustc_binary(
+    name = "bitfield-repr-example",
+    srcs = ["bitfield-repr.rs"],
+    crate_root = "bitfield-repr.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/bitrs",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_binary(
+    name = "multilayout-example",
+    srcs = ["multilayout.rs"],
+    crate_root = "multilayout.rs",
+    edition = "2024",
+    deps = ["//src/lib/bitrs"],
+)
