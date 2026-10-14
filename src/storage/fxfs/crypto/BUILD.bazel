@@ -33,6 +33,7 @@ rustc_library(
     ],
     visibility = [
         "//src/storage/crypt/fxfs:__subpackages__",
+        "//src/storage/crypt/starnix:__pkg__",
         "//src/storage/f2fs_reader/migrate:__pkg__",
         "//src/storage/fxfs:__subpackages__",
         "//src/storage/lib/block_server/vmo_backed:__pkg__",

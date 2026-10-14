@@ -499,6 +499,15 @@ impl TryFrom<fidl_fuchsia_fxfs::KeyPurpose> for KeyPurpose {
     }
 }
 
+impl From<KeyPurpose> for fidl_fuchsia_fxfs::KeyPurpose {
+    fn from(purpose: KeyPurpose) -> Self {
+        match purpose {
+            KeyPurpose::Data => fidl_fuchsia_fxfs::KeyPurpose::Data,
+            KeyPurpose::Metadata => fidl_fuchsia_fxfs::KeyPurpose::Metadata,
+        }
+    }
+}
+
 /// The `Crypt` trait below provides a mechanism to unwrap a key or set of keys.
 /// The wrapping keys can be one of these types.
 pub enum WrappingKey {
