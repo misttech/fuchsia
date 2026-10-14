@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 pub use crate::kconcurrent::ChainLockTransaction;
-use crate::kernel::idle_power_thread::IdlePowerThread;
 use crate::kernel::timer::Timer;
 use crate::kernel::types::cpu_num_t;
 use crate::stall::StallAccumulator;
@@ -40,6 +39,10 @@ pub type guest_stats = bindings::guest_stats;
 pub type CpuStats = bindings::cpu_stats;
 #[allow(non_camel_case_types)]
 pub type cpu_stats = bindings::cpu_stats;
+
+/// An opaque type representing the C++ `IdlePowerThread` class.
+#[repr(transparent)]
+pub struct IdlePowerThread(pub bindings::IdlePowerThread);
 
 /// An opaque type representing the C++ `DpcRunner` class.
 #[repr(transparent)]

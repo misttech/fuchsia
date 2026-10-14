@@ -9,8 +9,8 @@
 #include <stdint.h>
 #include <zircon/compiler.h>
 
-#include <kernel/ffi.h>
 #include <ktl/type_traits.h>
+#include <object/opaque_storage.h>
 
 class ContinuousAttributionTracker;
 

@@ -8,9 +8,6 @@
 #define ZIRCON_KERNEL_INCLUDE_KERNEL_FFI_H_
 
 #include <lib/lazy_init/lazy_init.h>
-#include <stddef.h>
-
-#include <ktl/byte.h>
 
 // This header defines helper macros and types for C++ to Rust FFI routines in the Zircon kernel.
 //
@@ -27,11 +24,6 @@
 #else
 #define FFI_ALWAYS_INLINE
 #endif
-
-template <size_t Size, size_t Align>
-struct alignas(Align) OpaqueStorage {
-  ktl::byte bytes[Size];
-};
 
 namespace ffi {
 

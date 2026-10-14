@@ -13,23 +13,12 @@
 #include <zircon/time.h>
 
 #include <arch/mp_unplug_event.h>
-#include <kernel/ffi.h>
 #include <kernel/mutex.h>
 #include <kernel/spinlock.h>
 #include <kernel/thread.h>
 #include <kernel/timer.h>
 
 class SuspendWakeupTimer;  // fwd decl
-
-extern "C" {
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE wake_vector::WakeResult cpp_idle_power_thread_trigger_system_wake_event();
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_idle_power_thread_acknowledge_system_wake_event();
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_instant_boot_t
-cpp_idle_power_thread_transition_all_active_to_suspend(zx_instant_boot_t resume_deadline);
-}
 
 //
 // Platform Independent Per-CPU Idle/Power Thread
@@ -191,8 +180,6 @@ class IdlePowerThread final {
   using WakeResult = wake_vector::WakeResult;
   using WakeEvent = wake_vector::WakeEvent;
   friend WakeEvent;
-  friend WakeResult cpp_idle_power_thread_trigger_system_wake_event();
-  friend void cpp_idle_power_thread_acknowledge_system_wake_event();
 
   static WakeResult WakeBootCpu();
   static WakeResult TriggerSystemWakeEvent();

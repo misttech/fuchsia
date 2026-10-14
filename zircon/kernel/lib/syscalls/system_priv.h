@@ -41,6 +41,14 @@ void cpp_platform_graceful_halt_helper(uint32_t action);
 #if defined(__x86_64__)
 zx_status_t cpp_system_powerctl_x86_set_pkg_pl1(const zx_system_powerctl_arg_t* arg);
 #endif
+void cpp_wake_vector_discard_wake_event_report();
+zx_instant_boot_t cpp_idle_power_thread_transition_all_active_to_suspend(
+    zx_instant_boot_t resume_deadline);
+zx_status_t cpp_wake_vector_generate_wake_event_report(zx_instant_boot_t start_time,
+                                                       zx_wake_source_report_header_t* out_header,
+                                                       zx_wake_source_report_entry_t* out_entries,
+                                                       uint32_t num_entries,
+                                                       uint32_t* actual_entries);
 }
 
 #endif  // ZIRCON_KERNEL_LIB_SYSCALLS_SYSTEM_PRIV_H_

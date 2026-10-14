@@ -213,6 +213,12 @@ library_headers("headers") {
     "//zircon/kernel/lib/btree:headers",
     "//zircon/kernel/lib/object-constants:headers",
   ]
+
+  public_configs = [
+    # <vm/vm_object_physical.h> has #include <object/opaque_storage.h>.
+    # But this is a circular dependency, so we can't use its :headers in deps.
+    "//zircon/kernel/object:headers.config",
+  ]
 }
 
 kernel_bindgen_crate("vm-constants-rs") {
