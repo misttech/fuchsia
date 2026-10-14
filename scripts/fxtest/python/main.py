@@ -979,7 +979,8 @@ class AsyncMain:
             # We raced with an exit request.
             # Request termination and await exit.
             self._termination_callback_event.set()
-            await asyncio.sleep(3600)
+            await end_execution("Execution terminated by user")
+            return 1
 
         # Finally, run all selected tests.
         if not await self._run_all_tests(selections):
@@ -1478,8 +1479,6 @@ class AsyncMain:
         recorder.emit_instruction_message("Use --no-build to skip building")
 
         recorder.emit_info_message("\nExecuting build.")
-
-        await asyncio.sleep(0.1)
 
         logs_dir = self._get_logs_dir()
         build_log_path = (

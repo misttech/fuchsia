@@ -4538,3 +4538,36 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         test_result = app._summary.tests[0]
         self.assertIsNotNone(test_result.duration_seconds)
         self.assertGreaterEqual(test_result.duration_seconds, 0.01)
+
+    @mock.patch("args.termout.is_valid", return_value=False)
+    async def test_termination_signal_does_not_block_on_arbitrary_sleep(
+        self,
+        _mock_termout: mock.Mock,
+    ) -> None:
+        """Test that an exit request before test execution terminates promptly without sleeping 3600s."""
+        flags = args.parse_args(["--no-build", "--simple"])
+        recorder = event.EventRecorder()
+        end_event = asyncio.Event()
+        term_event = asyncio.Event()
+        app = main.AsyncMain(
+            flags,
+            [],
+            recorder,
+            end_event,
+            term_event,
+        )
+        # Pre-set the end execution request to simulate racing with interrupt
+        end_event.set()
+
+        # Mock out prerequisites prior to the test execution check in _main_impl
+        app._init = mock.AsyncMock(return_value=mock.MagicMock())
+        app._do_build = mock.AsyncMock(return_value=True)
+        app._list_runtime_deps = mock.MagicMock()
+        app._test_selections = mock.AsyncMock(return_value=mock.MagicMock())
+        app._start_package_server = mock.Mock()
+        app._teardown_resources = mock.AsyncMock()
+
+        # If it blocks on asyncio.sleep(3600), wait_for will raise TimeoutError
+        ret = await asyncio.wait_for(app._main_impl(), timeout=0.5)
+        self.assertEqual(ret, 1)
+        self.assertTrue(term_event.is_set())

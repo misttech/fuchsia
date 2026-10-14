@@ -1071,7 +1071,18 @@ async def run_command(
                 if recorder is not None and not quiet_mode:
                     recorder.emit_info_message(f"Aborting {name}...")
                 started.terminate()
-                await asyncio.sleep(5)
+                runner_task = getattr(started, "_runner_task", None)
+                if runner_task is not None:
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(runner_task),
+                            timeout=5.0,
+                        )
+                        return
+                    except asyncio.TimeoutError:
+                        pass
+                else:
+                    await asyncio.sleep(5)
                 if recorder is not None:
                     recorder.emit_warning_message(
                         f"{name} did not terminate in time, killing it"
