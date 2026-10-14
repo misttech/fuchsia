@@ -17,7 +17,6 @@ source_set("kernel") {
     "brwlock.cc",
     "cpu_distance_map.cc",
     "cpu_search_set.cc",
-    "deadline.cc",
     "debug.cc",
     "dpc.cc",
     "event.cc",

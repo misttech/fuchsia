@@ -50,6 +50,16 @@ class TimerSlack {
   slack_mode mode_;
 };
 
+inline constexpr TimerSlack TimerSlack::none_{0, TIMER_SLACK_CENTER};
+static_assert(sizeof(TimerSlack) == 16);
+static_assert(alignof(TimerSlack) == 8);
+
+class Deadline;
+extern "C" {
+zx_time_t rust_deadline_earliest(const Deadline* deadline);
+zx_time_t rust_deadline_latest(const Deadline* deadline);
+}
+
 // Deadline specifies when a timer or event should occur.
 //
 // This class encapsulates the point in time at which a timer/event should occur ("when") and how
@@ -86,10 +96,10 @@ class Deadline {
   constexpr TimerSlack slack() const { return slack_; }
 
   // Returns the earliest point in time at which this deadline may occur.
-  zx_time_t earliest() const;
+  zx_time_t earliest() const { return rust_deadline_earliest(this); }
 
   // Returns the latest point in time at which this deadline may occur.
-  zx_time_t latest() const;
+  zx_time_t latest() const { return rust_deadline_latest(this); }
 
  private:
   static const Deadline infinite_;
@@ -98,5 +108,10 @@ class Deadline {
   const zx_time_t when_;
   const TimerSlack slack_;
 };
+
+inline constexpr Deadline Deadline::infinite_{ZX_TIME_INFINITE, TimerSlack::none()};
+inline constexpr Deadline Deadline::infinite_past_{ZX_TIME_INFINITE_PAST, TimerSlack::none()};
+static_assert(sizeof(Deadline) == 24);
+static_assert(alignof(Deadline) == 8);
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_DEADLINE_H_

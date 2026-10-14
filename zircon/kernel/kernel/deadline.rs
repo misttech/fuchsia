@@ -112,11 +112,92 @@ impl Deadline {
 
     /// Returns the earliest point in time at which this deadline may occur.
     pub const fn earliest(&self) -> InstantUnknown {
-        unimplemented!()
+        match self.slack.mode {
+            SlackMode::Center | SlackMode::Early => {
+                InstantUnknown(self.when.0.saturating_sub(self.slack.amount.0))
+            }
+            SlackMode::Late => self.when,
+        }
     }
 
     /// Returns the latest point in time at which this deadline may occur.
     pub const fn latest(&self) -> InstantUnknown {
-        unimplemented!()
+        match self.slack.mode {
+            SlackMode::Center | SlackMode::Late => {
+                InstantUnknown(self.when.0.saturating_add(self.slack.amount.0))
+            }
+            SlackMode::Early => self.when,
+        }
+    }
+}
+
+zr::static_assert!(core::mem::size_of::<SlackMode>() == 4);
+zr::static_assert!(core::mem::align_of::<SlackMode>() == 4);
+zr::static_assert!(core::mem::size_of::<TimerSlack>() == 16);
+zr::static_assert!(core::mem::align_of::<TimerSlack>() == 8);
+zr::static_assert!(core::mem::offset_of!(TimerSlack, amount) == 0);
+zr::static_assert!(core::mem::offset_of!(TimerSlack, mode) == 8);
+zr::static_assert!(core::mem::size_of::<Deadline>() == 24);
+zr::static_assert!(core::mem::align_of::<Deadline>() == 8);
+zr::static_assert!(core::mem::offset_of!(Deadline, when) == 0);
+zr::static_assert!(core::mem::offset_of!(Deadline, slack) == 8);
+
+/// FFI trampoline for [`Deadline::earliest`].
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_deadline_earliest(deadline: &Deadline) -> zx_types::zx_time_t {
+    deadline.earliest().0
+}
+
+/// FFI trampoline for [`Deadline::latest`].
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_deadline_latest(deadline: &Deadline) -> zx_types::zx_time_t {
+    deadline.latest().0
+}
+
+/// Unit tests for [`Deadline`].
+#[cfg(ktest)]
+#[unittest::suite(name = "deadline_rust")]
+mod tests {
+    use unittest::expect_eq;
+
+    /// Tests `earliest` and `latest` across `Center`, `Early`, `Late`, and `no_slack` modes.
+    #[test]
+    fn earliest_and_latest_slack_modes() {
+        let when = InstantUnknown(1000);
+        let amount = DurationUnknown(200);
+
+        let center = Deadline::new(when, TimerSlack::new(amount, SlackMode::Center));
+        expect_eq!(center.earliest().0, 800);
+        expect_eq!(center.latest().0, 1200);
+
+        let early = Deadline::new(when, TimerSlack::new(amount, SlackMode::Early));
+        expect_eq!(early.earliest().0, 800);
+        expect_eq!(early.latest().0, 1000);
+
+        let late = Deadline::new(when, TimerSlack::new(amount, SlackMode::Late));
+        expect_eq!(late.earliest().0, 1000);
+        expect_eq!(late.latest().0, 1200);
+
+        let no_slack = Deadline::no_slack(when);
+        expect_eq!(no_slack.earliest().0, when.0);
+        expect_eq!(no_slack.latest().0, when.0);
+    }
+
+    /// Tests saturation at `ZX_TIME_INFINITE` and `ZX_TIME_INFINITE_PAST`.
+    #[test]
+    fn earliest_and_latest_saturation() {
+        let inf = Deadline::new(
+            InstantUnknown(ZX_TIME_INFINITE),
+            TimerSlack::new(DurationUnknown(100), SlackMode::Center),
+        );
+        expect_eq!(inf.latest().0, ZX_TIME_INFINITE);
+        expect_eq!(inf.earliest().0, ZX_TIME_INFINITE - 100);
+
+        let inf_past = Deadline::new(
+            InstantUnknown(ZX_TIME_INFINITE_PAST),
+            TimerSlack::new(DurationUnknown(100), SlackMode::Center),
+        );
+        expect_eq!(inf_past.earliest().0, ZX_TIME_INFINITE_PAST);
+        expect_eq!(inf_past.latest().0, ZX_TIME_INFINITE_PAST + 100);
     }
 }
