@@ -8,7 +8,6 @@ import functools
 import logging
 import os
 import signal
-import uuid
 from collections.abc import Awaitable, Callable, Generator
 from typing import Any, Final, final
 
@@ -314,11 +313,10 @@ class Daemon:
 
     async def _start_dap_server(self) -> Response[Any] | None:
         if not await package_server.is_running():
-            self.repo_name = f"tmp-{uuid.uuid4()}"
             try:
-                self.package_server_proc = await package_server.start(
-                    self.repo_name
-                )
+                repo_name = package_server.ephemeral_repository_name("zxdb")
+                self.package_server_proc = await package_server.start(repo_name)
+                self.repo_name = repo_name
             except Exception as e:
                 return Response(
                     success=False,

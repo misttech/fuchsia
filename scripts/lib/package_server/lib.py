@@ -3,8 +3,9 @@
 # found in the LICENSE file.
 
 import asyncio
+import hashlib
+import os
 import shlex
-import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Literal
 
@@ -24,8 +25,8 @@ class PackageServingCLIException(SystemExit, PackageServingException):
     """
     Like `PackageServingException`, but does not print a stack trace when uncaught.
 
-    Used in the `ensure_running()` asynccontextmanager function, where concise error messages are
-    more helpful than noisy stack traces for CLI developer tools.
+    Used in the `run_and_stop_on_exit()` asynccontextmanager function, where concise error messages
+    are more helpful than noisy stack traces for CLI developer tools.
     """
 
 
@@ -117,6 +118,36 @@ def is_package_repository_built() -> bool:
     ).is_file()
 
 
+def ephemeral_repository_name(
+    prefix: str = "tmp",
+    build_directory: str | os.PathLike[str] | None = None,
+) -> str:
+    """
+    Returns deterministic ephemeral repository name for a build directory.
+
+    Args:
+        prefix (str): Tool-specific prefix for the repository name.
+        build_directory (str | PathLike[str] | None): Build directory whose
+            package repository is being served, or None to use the active build
+            directory.
+
+    Returns:
+        str: Deterministic repository name prefixed with `<prefix>-`.
+
+    Raises:
+        build_dir.GetBuildDirectoryError: If `build_directory` is None and no
+            active build directory can be determined.
+    """
+    out_dir = (
+        build_directory
+        if build_directory is not None
+        else build_dir.get_build_directory()
+    )
+    repo_path = os.path.realpath(os.path.join(out_dir, "amber-files"))
+    path_hash = hashlib.sha256(repo_path.encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}-{path_hash}"
+
+
 async def get_arguments(name: str | None = None) -> tuple[str, ...]:
     """
     Gets the ffx command line arguments for starting a package server.
@@ -127,8 +158,8 @@ async def get_arguments(name: str | None = None) -> tuple[str, ...]:
     Returns:
         tuple[str, ...]: A tuple of ffx arguments for package serving.
     """
-    repo_name = name or f"tmp-{uuid.uuid4()}"
     out_dir = build_dir.get_build_directory()
+    repo_name = name or ephemeral_repository_name(build_directory=out_dir)
     ffx_default_port = await FfxCmd().start(
         "config",
         "get",
@@ -178,7 +209,7 @@ async def start(
     if not is_package_repository_built():
         raise PackageServingException("The package repository is not built!")
 
-    repo_name = name or f"tmp-{uuid.uuid4()}"
+    repo_name = name or ephemeral_repository_name()
     fx = FxCmd()
     ffx = FfxCmd()
     args = await get_arguments(repo_name)
@@ -221,17 +252,35 @@ async def stop(name: str | None = None) -> None:
     await process.run_to_completion()
 
 
-@asynccontextmanager
-async def ensure_running() -> AsyncGenerator[None, None]:
+async def deregister(name: str) -> None:
     """
-    Starts a package server for the duration of the context block, if one is not currently running.
+    Deregisters a package repository from the target device.
+
+    Args:
+        name (str): Repository name to deregister from the target.
+    """
+    process = await FfxCmd().start(
+        "target",
+        "repository",
+        "deregister",
+        "-r",
+        name,
+    )
+    await process.run_to_completion()
+
+
+@asynccontextmanager
+async def run_and_stop_on_exit() -> AsyncGenerator[None, None]:
+    """
+    Starts a package server for the duration of the context block, if one is not currently running,
+    and stops and deregisters it on exit.
     """
     if await is_running():
         yield
         return
 
     try:
-        repo_name = f"tmp-{uuid.uuid4()}"
+        repo_name = ephemeral_repository_name()
         print(
             "You do not seem to have a package server running. "
             + "A temporary one will be started for the duration of this execution."
@@ -246,9 +295,12 @@ async def ensure_running() -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
-        server.terminate()
-        await server.wait()
+        try:
+            await deregister(repo_name)
+        finally:
+            server.terminate()
+            await server.wait()
 
-        # Sending SIGTERM doesn't seem to clean up child processes, so use `ffx` to stop the package
-        # server we just started for good measure.
-        await stop(repo_name)
+            # Sending SIGTERM doesn't seem to clean up child processes, so use `ffx` to stop the
+            # package server we just started for good measure.
+            await stop(repo_name)

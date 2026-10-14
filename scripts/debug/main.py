@@ -35,7 +35,7 @@ async def main(args: list[str] | None = None) -> int:
         )
         return 0
 
-    async with package_server.ensure_running():
+    async with package_server.run_and_stop_on_exit():
         # TODO(https://fxbug.dev/464692993): Refactor `//scripts/fxtest/python/debugger.py` into a
         # shared library and use it here.
         ffx_cmd = await asyncio.subprocess.create_subprocess_exec(

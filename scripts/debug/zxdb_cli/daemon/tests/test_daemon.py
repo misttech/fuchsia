@@ -1920,6 +1920,55 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             task = resp.body.tasks[0]
             self.assertEqual(task.name, "thread2_task")
 
+    @patch("daemon.daemon.FfxCmd")
+    @patch("daemon.daemon.package_server")
+    async def test_start_dap_server_uses_ephemeral_repository_name(
+        self, mock_package_server: Mock, mock_ffx_cmd: Mock
+    ) -> None:
+        mock_package_server.is_running = AsyncMock(return_value=False)
+        mock_package_server.ephemeral_repository_name = Mock(
+            return_value="zxdb-deadbeef12345678"
+        )
+        mock_package_server.start = AsyncMock(return_value=Mock())
+        mock_ffx_cmd.return_value.start = AsyncMock(
+            side_effect=RuntimeError("stop before signal wait")
+        )
+
+        daemon = Daemon(port=15678)
+        resp = await daemon._start_dap_server()
+
+        self.assertIsNotNone(resp)
+        assert resp is not None
+        self.assertFalse(resp.success)
+        self.assertEqual(daemon.repo_name, "zxdb-deadbeef12345678")
+        mock_package_server.ephemeral_repository_name.assert_called_once_with(
+            "zxdb"
+        )
+        mock_package_server.start.assert_awaited_once_with(
+            "zxdb-deadbeef12345678"
+        )
+
+    @patch("daemon.daemon.package_server")
+    async def test_start_dap_server_does_not_set_repo_name_on_start_failure(
+        self, mock_package_server: Mock
+    ) -> None:
+        mock_package_server.is_running = AsyncMock(return_value=False)
+        mock_package_server.ephemeral_repository_name = Mock(
+            return_value="zxdb-deadbeef12345678"
+        )
+        mock_package_server.start = AsyncMock(
+            side_effect=RuntimeError("package server failed")
+        )
+
+        daemon = Daemon(port=15678)
+        resp = await daemon._start_dap_server()
+
+        self.assertIsNotNone(resp)
+        assert resp is not None
+        self.assertFalse(resp.success)
+        self.assertIsNone(daemon.repo_name)
+        self.assertIsNone(daemon.package_server_proc)
+
 
 if __name__ == "__main__":
     unittest.main()

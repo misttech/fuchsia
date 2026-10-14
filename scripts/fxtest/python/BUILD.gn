@@ -59,6 +59,7 @@ if (is_host) {
     "//scripts/lib/agents",
     "//scripts/lib/async_utils",
     "//scripts/lib/fx_cmd",
+    "//scripts/lib/package_server",
     "//scripts/lib/statusinfo",
     "//scripts/lib/termout",
     "//third_party/colorama",

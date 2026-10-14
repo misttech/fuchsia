@@ -19,6 +19,7 @@ import unittest.mock as mock
 
 import agents.agents as agents_lib
 import async_utils.command as command
+import package_server
 from parameterized import parameterized
 
 import args
@@ -193,7 +194,6 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
         self._mock_has_active_device(True)
         self._mock_wait_for_repository_registration(True)
-        self._mock_uuid4()
 
         # Provide hard-coded predictable test-list.json content rather than
         # actually running the generate_test_list program.
@@ -280,13 +280,6 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         patch = mock.patch("main.AsyncMain._has_active_device", m)
         patch.start()
         self.addCleanup(patch.stop)
-
-    def _mock_uuid4(self, value: str = "test-uuid") -> mock.MagicMock:
-        m = mock.MagicMock(return_value=value)
-        patch = mock.patch("main.uuid.uuid4", m)
-        patch.start()
-        self.addCleanup(patch.stop)
-        return m
 
     def _mock_wait_for_repository_registration(self, value: bool) -> None:
         m = mock.AsyncMock(return_value=value)
@@ -843,6 +836,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
 
         if expect_to_serve:
+            expected_repo_name = package_server.ephemeral_repository_name(
+                "fxtest", self.out_dir
+            )
             self.assertIsSubset(
                 {
                     (
@@ -853,7 +849,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                         "-l",
                         "0",
                         "--name",
-                        "fxtest-temp-test-uuid",
+                        expected_repo_name,
                     ),
                     (
                         "fx",
@@ -864,7 +860,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                         "repository",
                         "deregister",
                         "-r",
-                        "fxtest-temp-test-uuid",
+                        expected_repo_name,
                     ),
                 },
                 call_prefixes,
@@ -1394,7 +1390,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                     "-l",
                     "0",
                     "--name",
-                    "fxtest-temp-test-uuid",
+                    package_server.ephemeral_repository_name(
+                        "fxtest", self.out_dir
+                    ),
                 )
             },
             call_prefixes,
@@ -1441,7 +1439,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                     "-l",
                     "0",
                     "--name",
-                    "fxtest-temp-test-uuid",
+                    package_server.ephemeral_repository_name(
+                        "fxtest", self.out_dir
+                    ),
                 )
             },
             call_prefixes,
@@ -2539,8 +2539,8 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         if existing_package_server:
             self.assertEqual(command_mock.call_count, 2)
         else:
-            # has to run two extra commands: "fx serve" and "fx ffx target repository deregister"
-            self.assertEqual(command_mock.call_count, 4)
+            # has to run three extra commands: pre-start "deregister", "fx serve", and teardown "deregister"
+            self.assertEqual(command_mock.call_count, 5)
 
         events = [
             e.payload.enumerate_test_cases
@@ -2582,7 +2582,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                         "-l",
                         "0",
                         "--name",
-                        "fxtest-temp-test-uuid",
+                        package_server.ephemeral_repository_name(
+                            "fxtest", self.out_dir
+                        ),
                     )
                 },
                 call_prefixes,
@@ -4255,6 +4257,156 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         # Invalid JSON raises JSONDecodeError
         with self.assertRaises(json.JSONDecodeError):
             main._is_fuchsia_repo_registered("not json")
+
+        # Filtering by a specific repo_name
+        data_multiple = json.dumps(
+            {
+                "ok": {
+                    "data": [
+                        {"name": "stale-repo", "aliases": ["fuchsia.com"]},
+                        {"name": "fxtest-abc123", "aliases": ["fuchsia.com"]},
+                    ]
+                }
+            }
+        )
+        self.assertTrue(
+            main._is_fuchsia_repo_registered(
+                data_multiple, repo_name="fxtest-abc123"
+            )
+        )
+        self.assertFalse(
+            main._is_fuchsia_repo_registered(
+                data_multiple, repo_name="fxtest-other"
+            )
+        )
+
+        # Filtering by repo_name when target presents fuchsia-pkg:// prefix
+        data_pkg_repo = json.dumps(
+            {
+                "ok": {
+                    "data": [
+                        {
+                            "name": "fuchsia-pkg://fxtest-abc123",
+                            "aliases": ["fuchsia.com"],
+                        }
+                    ]
+                }
+            }
+        )
+        self.assertTrue(
+            main._is_fuchsia_repo_registered(
+                data_pkg_repo, repo_name="fxtest-abc123"
+            )
+        )
+
+    async def test_wait_for_repository_registration_checks_expected_repo_name(
+        self,
+    ) -> None:
+        """_wait_for_repository_registration ignores stale repos and waits for the expected repo_name."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._wait_for_repository_registration = TestMainIntegration.ORIGINAL_WAIT_FOR_REPOSITORY_REGISTRATION.__get__(
+            app, main.AsyncMain
+        )
+        app._recorder = mock.MagicMock()
+        exec_env = mock.MagicMock()
+        exec_env.out_dir = self.out_dir
+        exec_env.fx_cmd_line.side_effect = lambda *args: ["fx"] + list(args)
+        app._exec_env = exec_env
+
+        expected_repo = package_server.ephemeral_repository_name(
+            "fxtest", self.out_dir
+        )
+        stale_output = json.dumps(
+            {
+                "ok": {
+                    "data": [{"name": "stale-repo", "aliases": ["fuchsia.com"]}]
+                }
+            }
+        )
+        registered_output = json.dumps(
+            {
+                "ok": {
+                    "data": [
+                        {"name": "stale-repo", "aliases": ["fuchsia.com"]},
+                        {"name": expected_repo, "aliases": ["fuchsia.com"]},
+                    ]
+                }
+            }
+        )
+
+        with (
+            mock.patch("execution.run_command") as mock_run,
+            mock.patch("asyncio.sleep", new_callable=mock.AsyncMock),
+        ):
+            mock_run.side_effect = [
+                mock.MagicMock(return_code=0, stdout=stale_output),
+                mock.MagicMock(return_code=0, stdout=registered_output),
+            ]
+            self.assertTrue(await app._wait_for_repository_registration())
+            self.assertEqual(mock_run.call_count, 2)
+
+    async def test_start_package_server_deregisters_stale_repo_before_waiting(
+        self,
+    ) -> None:
+        """_start_package_server deregisters any stale registration before _wait_for_repository_registration polls."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._wait_for_repository_registration = TestMainIntegration.ORIGINAL_WAIT_FOR_REPOSITORY_REGISTRATION.__get__(
+            app, main.AsyncMain
+        )
+        app._recorder = mock.MagicMock()
+        exec_env = mock.MagicMock()
+        exec_env.out_dir = self.out_dir
+        exec_env.fx_cmd_line.side_effect = lambda *args: ["fx"] + list(args)
+        app._exec_env = exec_env
+
+        expected_repo = package_server.ephemeral_repository_name(
+            "fxtest", self.out_dir
+        )
+        # Simulate a stale registration for expected_repo already on the target
+        # before _start_package_server runs.
+        repo_registered = True
+        events_order: list[str] = []
+
+        async def fake_run_command(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> mock.MagicMock:
+            nonlocal repo_registered
+            if "deregister" in args:
+                events_order.append("deregister")
+                repo_registered = False
+                return mock.MagicMock(return_code=0, stdout="")
+            if "serve" in args:
+                events_order.append("serve_start")
+                abort_signal = kwargs.get("abort_signal")
+                repo_registered = True
+                if abort_signal is not None:
+                    await abort_signal.wait()
+                return mock.MagicMock(return_code=0, stdout="")
+            if "repository" in args and "list" in args:
+                events_order.append("list")
+                data = (
+                    [{"name": expected_repo, "aliases": ["fuchsia.com"]}]
+                    if repo_registered
+                    else []
+                )
+                return mock.MagicMock(
+                    return_code=0, stdout=json.dumps({"ok": {"data": data}})
+                )
+            return mock.MagicMock(return_code=0, stdout="")
+
+        with (
+            mock.patch("execution.run_command", side_effect=fake_run_command),
+            mock.patch("asyncio.sleep", new_callable=mock.AsyncMock),
+        ):
+            task, cancel_event = app._start_package_server()
+            self.assertTrue(await app._wait_for_repository_registration())
+            cancel_event.set()
+            await task
+
+        self.assertEqual(
+            events_order,
+            ["deregister", "serve_start", "list", "deregister"],
+        )
 
     async def test_no_preflight_skips_device_discovery_and_binding(
         self,

@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 import asyncio
+import os
+import tempfile
 import unittest
 import unittest.mock as mock
 from pathlib import Path
@@ -95,6 +97,7 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         self.assertIn("server", args)
         self.assertIn("start", args)
         self.assertIn("[::]:8084", args)
+        self.assertIn(package_server.ephemeral_repository_name(), args)
         self.assertNotIn("fx", args)
         self.assertNotIn("ffx", args)
         mock_ffx_cmd.return_value.start.assert_called_with(
@@ -102,6 +105,37 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
             "get",
             "repository.server.default_port",
         )
+
+    @mock.patch("package_server.lib.build_dir.get_build_directory")
+    def test_ephemeral_repository_name(
+        self, mock_get_build_dir: mock.Mock
+    ) -> None:
+        mock_get_build_dir.return_value = Path("/some/out/dir")
+        name1 = package_server.ephemeral_repository_name()
+        name2 = package_server.ephemeral_repository_name()
+        fxtest_name = package_server.ephemeral_repository_name("fxtest")
+        explicit_dir_name = package_server.ephemeral_repository_name(
+            "fxtest", "/some/out/dir"
+        )
+        mock_get_build_dir.return_value = Path("/other/out/dir")
+        name3 = package_server.ephemeral_repository_name()
+
+        self.assertEqual(name1, name2)
+        self.assertNotEqual(name1, name3)
+        self.assertEqual(fxtest_name, explicit_dir_name)
+        self.assertRegex(name1, r"^tmp-[0-9a-f]{16}$")
+        self.assertRegex(fxtest_name, r"^fxtest-[0-9a-f]{16}$")
+        self.assertEqual(name1.split("-", 1)[1], fxtest_name.split("-", 1)[1])
+
+        with tempfile.TemporaryDirectory() as td:
+            real_out = os.path.join(td, "real_out")
+            os.makedirs(os.path.join(real_out, "amber-files"))
+            link_out = os.path.join(td, "link_out")
+            os.symlink(real_out, link_out)
+            self.assertEqual(
+                package_server.ephemeral_repository_name("fxtest", real_out),
+                package_server.ephemeral_repository_name("fxtest", link_out),
+            )
 
     @mock.patch("package_server.lib.build_dir.get_build_directory")
     @mock.patch("package_server.lib.FfxCmd")
@@ -150,6 +184,10 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         repo_json.is_file.return_value = False
         self.assertFalse(package_server.is_package_repository_built())
 
+    @mock.patch(
+        "package_server.lib.build_dir.get_build_directory",
+        return_value=Path("/some/out/dir"),
+    )
     @mock.patch("package_server.lib.is_package_repository_built")
     @mock.patch("package_server.lib.wait_for_package_server")
     @mock.patch("package_server.lib.get_arguments")
@@ -164,6 +202,7 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         mock_get_arguments: mock.Mock,
         mock_wait: mock.Mock,
         mock_is_built: mock.Mock,
+        _mock_get_build_dir: mock.Mock,
     ) -> None:
         mock_is_built.return_value = True
         mock_wait.return_value = True
@@ -180,6 +219,9 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         mock_exec.return_value = server_process_mock
 
         self.assertEqual(await package_server.start(), server_process_mock)
+        mock_get_arguments.assert_called_once_with(
+            package_server.ephemeral_repository_name()
+        )
         mock_ffx_cmd.return_value.command_line.assert_called_with(
             "arg1", "arg2"
         )
@@ -239,24 +281,47 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         )
         cmd_mock.run_to_completion.assert_called()
 
+    @mock.patch("package_server.lib.FfxCmd")
+    async def test_deregister(self, mock_ffx_cmd: mock.Mock) -> None:
+        cmd_mock = mock.Mock()
+        cmd_mock.run_to_completion = mock.AsyncMock()
+        mock_ffx_cmd.return_value.start = mock.AsyncMock(return_value=cmd_mock)
+
+        await package_server.deregister("my-repo")
+        mock_ffx_cmd.return_value.start.assert_called_once_with(
+            "target",
+            "repository",
+            "deregister",
+            "-r",
+            "my-repo",
+        )
+        cmd_mock.run_to_completion.assert_called_once()
+
     @mock.patch("package_server.lib.is_running")
-    async def test_ensure_running_already_running(
+    async def test_run_and_stop_on_exit_already_running(
         self,
         mock_is_running: mock.Mock,
     ) -> None:
         mock_is_running.return_value = True
-        async with package_server.ensure_running():
+        async with package_server.run_and_stop_on_exit():
             pass
         mock_is_running.assert_called()
 
+    @mock.patch(
+        "package_server.lib.build_dir.get_build_directory",
+        return_value=Path("/some/out/dir"),
+    )
+    @mock.patch("package_server.lib.deregister")
     @mock.patch("package_server.lib.stop")
     @mock.patch("package_server.lib.start")
     @mock.patch("package_server.lib.is_running")
-    async def test_ensure_running_starts_and_stops(
+    async def test_run_and_stop_on_exit_starts_and_stops(
         self,
         mock_is_running: mock.Mock,
         mock_start: mock.Mock,
         mock_stop: mock.Mock,
+        mock_deregister: mock.Mock,
+        _mock_get_build_dir: mock.Mock,
     ) -> None:
         mock_is_running.return_value = False
         process_mock = mock.Mock()
@@ -264,29 +329,33 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         process_mock.wait = mock.AsyncMock(return_value=None)
         mock_start.return_value = process_mock
 
-        async with package_server.ensure_running():
+        async with package_server.run_and_stop_on_exit():
             pass
 
+        expected_repo_name = package_server.ephemeral_repository_name()
         mock_is_running.assert_called()
-        mock_start.assert_called()
-        mock_stop.assert_called()
-
-        # Verify start and stop called with same repo name
-        self.assertEqual(mock_start.call_args[0][0], mock_stop.call_args[0][0])
+        mock_start.assert_called_once_with(expected_repo_name)
+        mock_deregister.assert_called_once_with(expected_repo_name)
+        mock_stop.assert_called_once_with(expected_repo_name)
 
         process_mock.terminate.assert_called()
         process_mock.wait.assert_called()
 
+    @mock.patch(
+        "package_server.lib.build_dir.get_build_directory",
+        return_value=Path("/some/out/dir"),
+    )
     @mock.patch("package_server.lib.start")
     @mock.patch("package_server.lib.is_running")
-    async def test_ensure_running_failure(
+    async def test_run_and_stop_on_exit_failure(
         self,
         mock_is_running: mock.Mock,
         mock_start: mock.Mock,
+        _mock_get_build_dir: mock.Mock,
     ) -> None:
         mock_is_running.return_value = False
         mock_start.side_effect = package_server.PackageServingException("fail")
 
         with self.assertRaises(package_server.PackageServingCLIException):
-            async with package_server.ensure_running():
+            async with package_server.run_and_stop_on_exit():
                 pass

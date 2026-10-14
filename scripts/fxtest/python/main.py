@@ -21,11 +21,11 @@ import textwrap
 import time
 import typing
 from typing import List
-import uuid
 
 import agents.agents as agents_lib
 import async_utils.command as command
 import async_utils.signals as signals
+import package_server
 import statusinfo
 import termout
 
@@ -524,6 +524,7 @@ class AsyncMain:
 
         self._package_server_task: asyncio.Task[typing.Any] | None = None
         self._package_server_event: asyncio.Event | None = None
+        self._package_server_started_event: asyncio.Event | None = None
         self._summary_val = summary.RunSummary()
         self._agent_log_dir: str | None = None
         if flags.agent_output:
@@ -551,6 +552,7 @@ class AsyncMain:
                 self._package_server_task.cancel()
             self._package_server_event = None
             self._package_server_task = None
+            self._package_server_started_event = None
         if self._emu_instance_dir is not None:
             await self._teardown_emulator()
 
@@ -2391,6 +2393,7 @@ class AsyncMain:
         assert exec_env is not None
 
         cancel_event = asyncio.Event()
+        started_event = asyncio.Event()
 
         # Aborting the `fx serve` task stops the repository server but does not remove the
         # corresponding repository config or rewrite rule from the device. The repository config is
@@ -2398,22 +2401,47 @@ class AsyncMain:
         # cancelling the server task to avoid the pkg-resolver's AutoClient logging that the server
         # has gone away.
         async def impl() -> None:
-            repo_name = f"fxtest-temp-{uuid.uuid4()}"
-            repo_deregistered_event = asyncio.Event()
-            serve_task = asyncio.create_task(
-                execution.run_command(
-                    *exec_env.fx_cmd_line(
-                        "serve",
-                        "-l",
-                        "0",
-                        "--name",
-                        repo_name,
-                    ),
-                    recorder=recorder,
-                    abort_signal=repo_deregistered_event,
-                    quiet_mode=True,
-                )
+            repo_name = package_server.ephemeral_repository_name(
+                "fxtest", exec_env.out_dir
             )
+            repo_deregistered_event = asyncio.Event()
+            try:
+                # Deregister any stale registration left on the device by an
+                # interrupted prior run so `_wait_for_repository_registration`
+                # waits for the newly started server instance to register its port.
+                try:
+                    await execution.run_command(
+                        *exec_env.fx_cmd_line(
+                            "ffx",
+                            "target",
+                            "repository",
+                            "deregister",
+                            "-r",
+                            repo_name,
+                        ),
+                        recorder=recorder,
+                        quiet_mode=True,
+                        timeout=5.0,
+                    )
+                except Exception:
+                    pass
+
+                serve_task = asyncio.create_task(
+                    execution.run_command(
+                        *exec_env.fx_cmd_line(
+                            "serve",
+                            "-l",
+                            "0",
+                            "--name",
+                            repo_name,
+                        ),
+                        recorder=recorder,
+                        abort_signal=repo_deregistered_event,
+                        quiet_mode=True,
+                    )
+                )
+            finally:
+                started_event.set()
             try:
                 await cancel_event.wait()
             finally:
@@ -2455,6 +2483,7 @@ class AsyncMain:
         task = asyncio.create_task(impl())
         self._package_server_task = task
         self._package_server_event = cancel_event
+        self._package_server_started_event = started_event
         return (task, cancel_event)
 
     async def _get_active_devices(self) -> list[dict[str, typing.Any]]:
@@ -2545,15 +2574,33 @@ class AsyncMain:
         active_devices = await self._get_active_devices()
         return len(active_devices) > 0
 
-    async def _wait_for_repository_registration(self) -> bool:
-        """Wait for repository to be registered."""
+    async def _wait_for_repository_registration(
+        self, repo_name: str | None = None
+    ) -> bool:
+        """Wait for the expected package repository to be registered on the device.
+
+        Args:
+            repo_name (str | None): Repository name to wait for. If omitted,
+                defaults to this build directory's `fxtest` ephemeral repository
+                name so unrelated stale `fuchsia.com` registrations do not match.
+
+        Returns:
+            bool: True if the repository is registered within the timeout.
+        """
         recorder = self._recorder
         exec_env = self._exec_env
         assert exec_env is not None
+        if repo_name is None:
+            repo_name = package_server.ephemeral_repository_name(
+                "fxtest", exec_env.out_dir
+            )
+        started_event = getattr(self, "_package_server_started_event", None)
+        if started_event is not None:
+            await started_event.wait()
         for _ in range(30):
             try:
                 if await is_fuchsia_repo_registered_on_device(
-                    exec_env, recorder
+                    exec_env, recorder, repo_name=repo_name
                 ):
                     return True
             except Exception:
@@ -2846,8 +2893,21 @@ async def is_fuchsia_repo_registered_on_device(
     recorder: event.EventRecorder,
     parent: event.Id | None = None,
     timeout: float = _PACKAGE_SERVER_PROBE_TIMEOUT_SECONDS,
+    repo_name: str | None = None,
 ) -> bool:
-    """Check whether fuchsia.com repository is registered on the device."""
+    """Check whether a `fuchsia.com` repository is registered on the device.
+
+    Args:
+        exec_env (environment.ExecutionEnvironment): Execution environment.
+        recorder (event.EventRecorder): Recorder for events.
+        parent (event.Id | None): Parent task ID. Defaults to None.
+        timeout (float): Subprocess timeout in seconds.
+        repo_name (str | None): Optional repository name to require when
+            matching `fuchsia.com` registrations.
+
+    Returns:
+        bool: True if a matching `fuchsia.com` repository is registered.
+    """
     repo_output = await execution.run_command(
         *exec_env.fx_cmd_line(
             "ffx",
@@ -2865,12 +2925,23 @@ async def is_fuchsia_repo_registered_on_device(
     return (
         repo_output is not None
         and repo_output.return_code == 0
-        and _is_fuchsia_repo_registered(repo_output.stdout)
+        and _is_fuchsia_repo_registered(repo_output.stdout, repo_name=repo_name)
     )
 
 
-def _is_fuchsia_repo_registered(output: str) -> bool:
-    """Check whether fuchsia.com repository is registered in ffx output."""
+def _is_fuchsia_repo_registered(
+    output: str, repo_name: str | None = None
+) -> bool:
+    """Check whether a `fuchsia.com` repository is registered in `ffx` output.
+
+    Args:
+        output (str): JSON stdout from `ffx --machine json target repository list`.
+        repo_name (str | None): Optional repository name to require when
+            matching `fuchsia.com` registrations.
+
+    Returns:
+        bool: True if a matching `fuchsia.com` repository entry is present.
+    """
     parsed = json.loads(output)
     # Expected format from ffx --machine json: {"ok": {"data": [...]}}
     entries = []
@@ -2883,6 +2954,11 @@ def _is_fuchsia_repo_registered(output: str) -> bool:
     for entry in entries:
         if isinstance(entry, dict):
             name = entry.get("name", "")
+            if repo_name is not None and name not in (
+                repo_name,
+                f"fuchsia-pkg://{repo_name}",
+            ):
+                continue
             aliases = entry.get("aliases", [])
             if (
                 name == "fuchsia.com"
