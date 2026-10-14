@@ -187,11 +187,11 @@ common_sources = [
   "src/bindings/time.rs",
   "src/bindings/timers.rs",
   "src/bindings/util.rs",
+  "src/bindings/util/data_available.rs",
   "src/bindings/util/rcu.rs",
   "src/bindings/util/result_ext.rs",
   "src/bindings/util/scope_ext.rs",
   "src/bindings/waker.rs",
-  "src/bindings/waker/state.rs",
   "src/main.rs",
 ]
 

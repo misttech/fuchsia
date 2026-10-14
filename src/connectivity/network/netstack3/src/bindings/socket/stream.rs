@@ -38,11 +38,11 @@ use crate::bindings::socket::{
     ZXSIO_SIGNAL_INCOMING,
 };
 use crate::bindings::util::{
-    AllowBindingIdFromWeak, ConversionContext, ErrnoResultExt as _, IntoCore, IntoFidl,
-    IntoFidlWithContext as _, OpAndAddr, ResultExt as _, ScopeExt as _, TryIntoCoreWithContext,
-    TryIntoFidlWithContext,
+    AllowBindingIdFromWeak, ConversionContext, DataNotifier, ErrnoResultExt as _, IntoCore,
+    IntoFidl, IntoFidlWithContext as _, OpAndAddr, ResultExt as _, ScopeExt as _,
+    TryIntoCoreWithContext, TryIntoFidlWithContext,
 };
-use crate::bindings::waker::{DataNotifier, WakeGroupId};
+use crate::bindings::waker::WakeGroupId;
 use crate::bindings::{BindingsCtx, Ctx};
 
 mod buffer;

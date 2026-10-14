@@ -11,7 +11,7 @@ use log::trace;
 use netstack3_core::types::BufferSizeSettings;
 use thiserror::Error;
 
-use crate::bindings::waker::DataNotifier;
+use crate::bindings::util::DataNotifier;
 
 #[derive(Copy, Clone, Debug, Error, Eq, PartialEq)]
 #[error("application buffers are full")]

@@ -16,12 +16,7 @@ use futures::future::FutureExt as _;
 use log::{debug, info, warn};
 use netstack3_core::sync::Mutex;
 
-use crate::bindings::util::ResultExt as _;
-
-mod state;
-
-pub(crate) use state::DataNotifier;
-use state::WakeGroupState;
+use crate::bindings::util::{DataNotifier, DataWatcher, ResultExt as _};
 
 /// The signal we raise to signal the other side to resume when data is available.
 const GROUP_WAKEUP_SIGNAL: zx::Signals =
@@ -79,8 +74,8 @@ impl WakeGroups {
     ) -> (WakeGroup, WakeGroupId) {
         let WakeGroups(inner) = self;
 
-        let (state, data_notifier) = WakeGroupState::new();
-        let wake_group = WakeGroup::new(debug_name, state, wake_watcher);
+        let (data_watcher, data_notifier) = DataWatcher::new();
+        let wake_group = WakeGroup::new(debug_name, data_watcher, wake_watcher);
         let id = wake_group.id.duplicate_for_client();
 
         assert_matches!(
@@ -172,7 +167,7 @@ impl From<fnet_resources::WakeGroupToken> for WakeGroupId {
 struct WakeGroup {
     name: String,
     id: WakeGroupId,
-    state: WakeGroupState,
+    data_watcher: DataWatcher,
     wake_watcher: zx::EventPair,
 }
 
@@ -225,12 +220,12 @@ async fn wait_for_client_state(
 }
 
 impl WakeGroup {
-    fn new(name: String, state: WakeGroupState, wake_watcher: zx::EventPair) -> Self {
-        Self { name, id: WakeGroupId::new(), state, wake_watcher }
+    fn new(name: String, data_watcher: DataWatcher, wake_watcher: zx::EventPair) -> Self {
+        Self { name, id: WakeGroupId::new(), data_watcher, wake_watcher }
     }
 
     async fn serve(self, wake_groups: WakeGroups) -> Result<!, WakeGroupShutdownReason> {
-        let Self { name, id, state, wake_watcher } = self;
+        let Self { name, id, mut data_watcher, wake_watcher } = self;
         let WakeGroupId { token, koid: _ } = &id;
 
         let _cleanup = scopeguard::guard((wake_groups, &id), |(wake_groups, id)| {
@@ -254,10 +249,9 @@ impl WakeGroup {
                 res = wait_for_client_state(&wake_watcher, ClientState::Awake).fuse() => {
                     res?;
                     // The other side woke up without us. Nothing left to do here.
-                    state.client_awake();
                     continue;
                 }
-                () = state.client_asleep_wait_for_data().fuse() => (),
+                () = data_watcher.reset_and_wait().fuse() => (),
             }
 
             // Assert the wake signal to wake up the other side.
@@ -265,7 +259,9 @@ impl WakeGroup {
             debug!("notified wake group '{name}' {id:?} of incoming data");
 
             wait_for_client_state(&wake_watcher, ClientState::Awake).await?;
-            state.client_awake();
+
+            // TODO(https://fxbug.dev/538164589): Hold delegated wake leases
+            // from netdevice until the client is awake.
 
             // Deassert wake signal. When the other side is awake, we assume
             // they're capable of staying awake until they're done processing

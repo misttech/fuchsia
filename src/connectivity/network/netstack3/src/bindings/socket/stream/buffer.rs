@@ -27,7 +27,7 @@ use netstack3_core::tcp::{
 };
 
 use super::TcpSocketId;
-use crate::bindings::waker::DataNotifier;
+use crate::bindings::util::DataNotifier;
 use crate::bindings::{BindingsCtx, Ctx};
 
 // Consider buffers idle after this much time with no data.

@@ -49,9 +49,11 @@ use crate::bindings::devices::BindingId;
 use crate::bindings::socket::{IntoErrno, IpSockAddrExt, SockAddr};
 use crate::bindings::{BindingsCtx, LifetimeExt as _, routes};
 
+mod data_available;
 pub(crate) mod rcu;
 mod result_ext;
 mod scope_ext;
+pub(crate) use data_available::*;
 pub(crate) use result_ext::*;
 pub(crate) use scope_ext::*;
 
