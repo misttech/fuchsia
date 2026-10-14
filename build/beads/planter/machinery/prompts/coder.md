@@ -217,9 +217,9 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
    and report `Also fixed third-party Bazel build: <crate> (needed by //target)`.
 
 ## Expressing GN Semantics in Bazel (bazel2gn Techniques)
-- **C/C++ library type (`alwayslink`)**: a GN `source_set()` becomes `cc_library`/`fx_cc_library`
-   with `alwayslink = True`; a GN `static_library()` omits `alwayslink`. With bazel2gn this also
-   preserves the GN template (`source_set()` vs `static_library()`).
+- **C/C++ library (`fx_cc_library`, `alwayslink`)**: use `fx_cc_library` from
+   `//build/bazel/rules/cc:fx_cc_library.bzl` (not `@rules_cc` `cc_library`), with
+   `alwayslink = True` for a GN `source_set()` and omitted for `static_library()`.
 - **GN target types**: with bazel2gn, every GN target keeps its template; keep a GN-only wrapper
    template above the sentinel when bazel2gn has no equivalent.
 - **C/C++ `copts` that are GN `configs`**: keep package-local `config(...)` above the sentinel,

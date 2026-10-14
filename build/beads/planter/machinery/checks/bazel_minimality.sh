@@ -17,6 +17,11 @@ set -euo pipefail
 #    - missing //build/bazel/versioning:is_api_level_PLATFORM visibility in
 #      build/bazel/versioning/BUILD.bazel when calling legacy host-tool macros
 #      (go_binary_host_tool, py_binary_host_tool)
+#    - unwrapped external C/C++ or Rust rules (cc_library, cc_binary from
+#      @rules_cc//, or rust_library, rust_binary, rust_proc_macro, rust_test,
+#      rust_shared_library, rust_dylib_library from @rules_rust//) when
+#      Fuchsia-specific wrapper macros (fx_cc_library, fx_cc_binary, rustc_*)
+#      exist under //build/bazel/rules/
 #    - private or duplicate external rule load() statements (@...//.../private/...)
 #    and genrule commands added by the change that derive paths or arguments with
 #    shell command substitution ($$(dirname ...), $$(python3 -c ...), backticks) or
@@ -381,6 +386,76 @@ for rel_path, full_path in bazel_files:
                 kw_map[kw.arg] = (kw.value.value, kw.lineno)
 
         target_name, _ = kw_map.get("name", ("", 0))
+
+        # 0. Enforce Fuchsia-specific wrapper macros (fx_cc_*, rustc_*) instead of raw
+        #    @rules_cc// or @rules_rust// rules per the Fuchsia Bazel style guide.
+        UNWRAPPED_FUCHSIA_RULES = {
+            "cc_library": (
+                "fx_cc_library",
+                "//build/bazel/rules/cc:fx_cc_library.bzl",
+                "build/bazel/rules/cc/fx_cc_library.bzl",
+            ),
+            "cc_binary": (
+                "fx_cc_binary",
+                "//build/bazel/rules/cc:fx_cc_binary.bzl",
+                "build/bazel/rules/cc/fx_cc_binary.bzl",
+            ),
+            "rust_library": (
+                "rustc_library",
+                "//build/bazel/rules/rust:rustc_library.bzl",
+                "build/bazel/rules/rust/rustc_library.bzl",
+            ),
+            "rust_binary": (
+                "rustc_binary",
+                "//build/bazel/rules/rust:rustc_binary.bzl",
+                "build/bazel/rules/rust/rustc_binary.bzl",
+            ),
+            "rust_proc_macro": (
+                "rustc_proc_macro",
+                "//build/bazel/rules/rust:rustc_proc_macro.bzl",
+                "build/bazel/rules/rust/rustc_proc_macro.bzl",
+            ),
+            "rust_test": (
+                "rustc_test",
+                "//build/bazel/rules/rust:rustc_test.bzl",
+                "build/bazel/rules/rust/rustc_test.bzl",
+            ),
+            "rust_shared_library": (
+                "rustc_dylib",
+                "//build/bazel/rules/rust:rustc_dylib.bzl",
+                "build/bazel/rules/rust/rustc_dylib.bzl",
+            ),
+            "rust_dylib_library": (
+                "rustc_dylib",
+                "//build/bazel/rules/rust:rustc_dylib.bzl",
+                "build/bazel/rules/rust/rustc_dylib.bzl",
+            ),
+        }
+        if (
+            rule_name in UNWRAPPED_FUCHSIA_RULES
+            and not rel_path.startswith("build/bazel/")
+        ):
+            wrapper_rule, wrapper_bzl, wrapper_path = UNWRAPPED_FUCHSIA_RULES[rule_name]
+            if os.path.isfile(os.path.join(workdir, wrapper_path)):
+                pkg_d = os.path.dirname(rel_path).strip("/")
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "unwrapped_external_language_rule",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": getattr(node, "lineno", 1),
+                    "message": (
+                        f"Target '{target_name}' in '{rel_path}' uses unwrapped `{rule_name}()` "
+                        f"instead of the Fuchsia-specific wrapper `{wrapper_rule}()` from "
+                        f"`{wrapper_bzl}` (see "
+                        "https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#use_fuchsia-specific_wrappers)."
+                    ),
+                    "remediation": (
+                        f"Replace `load(..., \"{rule_name}\")` and `{rule_name}(...)` in "
+                        f"'{rel_path}' with `load(\"{wrapper_bzl}\", \"{wrapper_rule}\")` and "
+                        f"`{wrapper_rule}(...)`, then re-run `fx bazel2gn -d {pkg_d}` if dual-building."
+                    ),
+                })
 
         # 1. Redundant crate_name matching name (or name with '-' -> '_').
         # On rustc_binary, bazel2gn maps crate_name to GN output_name, so crate_name is intentional when output_name is needed.
