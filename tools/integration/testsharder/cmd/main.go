@@ -462,6 +462,13 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 	if err != nil {
 		return err
 	}
+	// If the shard timeout is provided in the params file, use that instead
+	// of the computed shard timeout before constructing the base command.
+	if params.ShardTimeout.AsDuration() > 0 {
+		for _, s := range shards {
+			s.TimeoutSecs = int(params.ShardTimeout.GetSeconds())
+		}
+	}
 	for _, s := range shards {
 		s.ExperimentSpecs = params.Experiments
 		s.EnabledExperiments = experiments
@@ -485,14 +492,6 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 
 	if err := testsharder.ExtractDeps(shards, flags.buildDir); err != nil {
 		return err
-	}
-
-	// If the shard timeout is provided in the params file, use that instead
-	// of the computed shard timeout.
-	if params.ShardTimeout.AsDuration() > 0 {
-		for _, s := range shards {
-			s.TimeoutSecs = int(params.ShardTimeout.GetSeconds())
-		}
 	}
 
 	// Add back the skipped shards so that we can process and upload results

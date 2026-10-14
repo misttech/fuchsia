@@ -762,7 +762,7 @@ func shardByTime(shard *Shard, testDurations TestDurationsMap, numNewShards int)
 		newShard := *shard
 		newShard.Name = name
 		newShard.Tests = subshard.tests
-		newShard.TimeoutSecs = int(computeShardTimeout(subshard).Seconds())
+		newShard.TimeoutSecs = int(computeShardTimeout(subshard).Seconds()) + shard.BootupTimeoutSecs
 		newShards = append(newShards, &newShard)
 	}
 	return newShards
