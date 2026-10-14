@@ -153,6 +153,20 @@ class Fifo {
       last_ = first_ + (kBufferSize / sizeof(T));
     }
 
+    if (cached) {
+      // Clean and invalidate the entire FIFO buffer before handing its physical address to
+      // non-coherent DMA hardware (such as the DWC3 event ring GEVNTADR), preventing dirty CPU
+      // cache lines (e.g. from kernel page zeroing at VMO allocation) from evicting over and
+      // zeroing out hardware-written DMA events.
+      if (auto status = buffer_->CacheFlushInvalidate(0, kBufferSize); status.is_error()) {
+        fdf::error("CacheFlushInvalidate failed: {}", status);
+        if (allocated) {
+          Release();
+        }
+        return status.take_error();
+      }
+    }
+
     write_ = first_;
     read_ = write_;
     return zx::ok(allocated);
