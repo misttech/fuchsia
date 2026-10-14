@@ -1,0 +1,15 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
+
+package(default_applicable_licenses = ["//:license"])
+
+metrics_registry(
+    name = "cobalt_sw_delivery_registry",
+    generate_binarypb = False,
+    generate_rust = True,
+    project_id = 4247972873,
+    visibility = ["//src/sys/pkg:__subpackages__"],
+)

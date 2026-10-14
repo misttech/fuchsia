@@ -156,6 +156,12 @@ filegroup(
     visibility = ["//build/bazel/toolchains/python:__pkg__"],
 )
 
+filegroup(
+    name = "cobalt_config_files",
+    srcs = glob(["third_party/cobalt_config/**"]),
+    visibility = ["//visibility:public"],
+)
+
 fuchsia_devicetree_toolchain_info(
     name = "fuchsia_devicetree_toolchain_info",
     dtc = "//:prebuilt/third_party/dtc/%s/dtc" % build_config.host_tag,

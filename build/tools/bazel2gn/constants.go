@@ -126,6 +126,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	// Other
 	"fidlgentest_go_test": "fidlgentest_go_test",
 	"genrule":             "action",
+	"metrics_registry":    "metrics_registry",
 	"package":             "package",
 	"test_suite":          "group",
 	"stamp_group":         "group",
@@ -401,6 +402,9 @@ var attrMapsByRules = map[string]map[string]string{
 
 	// Others
 	"genrule": genruleAttrMap,
+	"metrics_registry": {
+		"global_registry": "global",
+	},
 	"test_suite": {
 		"tests": "deps",
 	},
