@@ -365,12 +365,7 @@ macro_rules! impl_peered_dispatcher_facade_with_state {
                 self.on_zero_handles_locked(guard.as_mut().token_mut());
 
                 if let Some(peer) = peer {
-                    // SAFETY: `peer` is the paired endpoint sharing the same `PeerHolder` mutex
-                    // held by `guard`.
-                    unsafe {
-                        *peer.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() =
-                            None;
-                    }
+                    *peer.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() = None;
                     peer.on_peer_zero_handles_locked(guard.as_mut().token_mut());
                 }
             }
@@ -675,7 +670,6 @@ impl<T: fbl::IsOpaqueRefCounted> PeeredState<T> {
         &self,
     ) -> impl pin_init::PinInit<PeeredStateMuGuard<'_, T, RawCriticalMutex>, core::convert::Infallible>
     {
-        // SAFETY: `self.holder` is the immutable `PeerHolder` whose `mu` synchronizes `self`.
-        unsafe { self.lock_mu(&self.holder.mu) }
+        self.lock_mu(&self.holder.mu)
     }
 }

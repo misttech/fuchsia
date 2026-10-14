@@ -114,8 +114,7 @@ zr::unsafe_pinned_drop_ffi!(RawMutex, cpp_mutex_destroy);
 
 pub struct RawMutexPolicy;
 
-// SAFETY: `cpp_mutex_acquire` and `cpp_mutex_release` enforce mutual exclusion on `RawMutex`.
-unsafe impl crate::LockPolicy<RawMutex> for RawMutexPolicy {
+impl crate::LockPolicy<RawMutex> for RawMutexPolicy {
     type AcquireArgs = ();
     type GuardState = ();
 
@@ -151,8 +150,7 @@ unsafe impl crate::LockPolicy<RawMutex> for RawMutexPolicy {
     }
 }
 
-// SAFETY: `RawMutex` is a physical kernel mutex with a unique storage address.
-unsafe impl crate::RawLock for RawMutex {
+impl crate::RawLock for RawMutex {
     type LockEntry = LockEntryStorage;
     type DefaultPolicy = RawMutexPolicy;
 
@@ -227,9 +225,7 @@ zr::unsafe_pinned_drop_ffi!(RawCriticalMutex, cpp_critical_mutex_destroy);
 
 pub struct RawCriticalMutexPolicy;
 
-// SAFETY: `cpp_critical_mutex_acquire` and `cpp_critical_mutex_release` enforce mutual exclusion
-// on `RawCriticalMutex`.
-unsafe impl crate::LockPolicy<RawCriticalMutex> for RawCriticalMutexPolicy {
+impl crate::LockPolicy<RawCriticalMutex> for RawCriticalMutexPolicy {
     type AcquireArgs = ();
     type GuardState = bool;
 
@@ -267,8 +263,7 @@ unsafe impl crate::LockPolicy<RawCriticalMutex> for RawCriticalMutexPolicy {
     }
 }
 
-// SAFETY: `RawCriticalMutex` is a physical kernel critical mutex with a unique storage address.
-unsafe impl crate::RawLock for RawCriticalMutex {
+impl crate::RawLock for RawCriticalMutex {
     type LockEntry = LockEntryStorage;
     type DefaultPolicy = RawCriticalMutexPolicy;
 

@@ -191,7 +191,7 @@ impl StreamDispatcher {
                 op,
             );
 
-            let op_token = stream_size_guard.as_mut().token_mut();
+            let (_ssm_token, op_token) = stream_size_guard.as_mut().tokens_mut();
 
             let vmo_size = self.state().vmo.size();
             if vmo_size <= offset {
@@ -253,7 +253,7 @@ impl StreamDispatcher {
             );
             if size_limit <= seek {
                 // Return |ZX_OK| since there is nothing to be read.
-                let op_token = stream_size_guard.as_mut().token_mut();
+                let (_, op_token) = stream_size_guard.as_mut().tokens_mut();
                 op.cancel_locked(op_token);
                 return (Ok(()), 0);
             }
@@ -299,7 +299,7 @@ impl StreamDispatcher {
             );
             if size_limit <= offset {
                 // Return |ZX_OK| since there is nothing to be read.
-                let op_token = stream_size_guard.as_mut().token_mut();
+                let (_, op_token) = stream_size_guard.as_mut().tokens_mut();
                 op.cancel_locked(op_token);
                 return (Ok(()), 0);
             }
@@ -473,7 +473,7 @@ impl StreamDispatcher {
                 return (Err(status), 0);
             }
 
-            let op_token = stream_size_guard.as_mut().token_mut();
+            let (_ssm_token, op_token) = stream_size_guard.as_mut().tokens_mut();
 
             let new_stream_size = op.get_size_locked(op_token);
             offset = new_stream_size - total_capacity as u64;
@@ -504,7 +504,7 @@ impl StreamDispatcher {
         // Reacquire the lock to potentially shrink and commit the operation.
         ksync::lock!(let mut stream_size_guard = ksync::aliased_lock(self.state().stream_size_mgr.lock(), op.lock()));
 
-        let op_token = stream_size_guard.as_mut().token_mut();
+        let (_ssm_token, op_token) = stream_size_guard.as_mut().tokens_mut();
 
         // Update the stream size operation if operation was partially successful.
         if written < length {

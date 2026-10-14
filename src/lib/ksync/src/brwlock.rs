@@ -91,12 +91,6 @@ impl<'a, Class: LockClass> BrwLockPiReadGuard<'a, Class> {
         &self.token
     }
 
-    /// Returns true if this guard holds the given `target` lock instance.
-    #[inline]
-    pub fn is_locked_by(&self, target: &BrwLockPi<Class>) -> bool {
-        core::ptr::eq(self.lock, target)
-    }
-
     /// Temporarily releases the read lock before executing the given callable `f` and then
     /// re-acquires the read lock.
     #[inline]
@@ -175,12 +169,6 @@ impl<'a, Class: LockClass> BrwLockPiWriteGuard<'a, Class> {
         // pinning invariants to be maintained.
         let me = unsafe { self.get_unchecked_mut() };
         &mut me.token
-    }
-
-    /// Returns true if this guard holds the given `target` lock instance.
-    #[inline]
-    pub fn is_locked_by(&self, target: &BrwLockPi<Class>) -> bool {
-        core::ptr::eq(self.lock, target)
     }
 
     /// Temporarily releases the write lock before executing the given callable `f` and then

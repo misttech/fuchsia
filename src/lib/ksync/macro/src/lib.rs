@@ -559,11 +559,6 @@ fn generate_token_guard(
             #accessors
 
             #[inline]
-            #struct_vis fn parent(&self) -> &#struct_ident #ty_generics {
-                self.parent
-            }
-
-            #[inline]
             #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_type> {
                 self.token
             }
@@ -587,7 +582,6 @@ fn generate_token_guard_mut(
     ty_generics: &impl quote::ToTokens,
     where_clause: Option<&syn::WhereClause>,
     class_type: &proc_macro2::TokenStream,
-    token_guard_ident: &Ident,
     token_guard_mut_ident: &Ident,
     read_fields_ident: &Ident,
     write_fields_ident: &Ident,
@@ -595,7 +589,6 @@ fn generate_token_guard_mut(
     token_guard_impl_generics: &proc_macro2::TokenStream,
     token_guard_ty_generics: &proc_macro2::TokenStream,
     fields_ret_ty_generics: &proc_macro2::TokenStream,
-    ty_params: &[proc_macro2::TokenStream],
     accessors: &proc_macro2::TokenStream,
     read_fields_init: &proc_macro2::TokenStream,
     write_fields_init: &proc_macro2::TokenStream,
@@ -609,31 +602,6 @@ fn generate_token_guard_mut(
 
         impl #token_guard_impl_generics #token_guard_mut_ident #token_guard_ty_generics #where_clause {
             #accessors
-
-            #[inline]
-            #struct_vis fn parent(&self) -> &#struct_ident #ty_generics {
-                self.parent
-            }
-
-            #[inline]
-            #struct_vis fn as_token_guard<'c>(
-                &'c self,
-            ) -> #token_guard_ident <'c, 'a, #(#ty_params),*> {
-                #token_guard_ident {
-                    parent: self.parent,
-                    token: &*self.token,
-                }
-            }
-
-            #[inline]
-            #struct_vis fn reborrow<'c>(
-                &'c mut self,
-            ) -> #token_guard_mut_ident <'c, 'a, #(#ty_params),*> {
-                #token_guard_mut_ident {
-                    parent: self.parent,
-                    token: &mut *self.token,
-                }
-            }
 
             #[inline]
             #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_type> {
@@ -851,12 +819,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         };
 
         let is_phantom = is_phantom_mutex_type(&field.ty);
-        if is_phantom && custom_class.is_none() {
-            errors.push(syn::Error::new(
-                field_ident.span(),
-                "PhantomMutex fields must specify an external lock class via #[mutex(LockClass)]",
-            ));
-        }
 
         mutex_fields_processed.push(MutexField {
             ident: field_ident,
@@ -1167,15 +1129,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
         let lock_method_def = if mutex.is_phantom {
             quote! {
-                /// Acquires `real_mutex` and returns a guard for accessing fields of `self`
-                /// protected by this phantom mutex.
-                ///
-                /// # Safety
-                ///
-                /// The caller must ensure that `real_mutex` is the specific physical lock instance
-                /// that synchronizes `self`.
                 #[inline]
-                #struct_vis unsafe fn #lock_method_ident<'a, M: ::ksync::RawLock>(
+                #struct_vis fn #lock_method_ident<'a, M: ::ksync::RawLock>(
                     &'a self,
                     real_mutex: &'a ::ksync::KMutex<#class_type, M>,
                 ) -> impl pin_init::PinInit<#guard_ident #guard_ty_generics, ::core::convert::Infallible>
@@ -1351,81 +1306,22 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             }
         };
 
-        let guard_from_guard_method_ident =
-            format_ident!("guard_{mu_ident}_from_guard", span = mu_ident.span());
-        let guard_mut_from_guard_method_ident =
-            format_ident!("guard_{mu_ident}_mut_from_guard", span = mu_ident.span());
-
-        let guard_from_guard_methods = if mutex.is_phantom {
-            quote! {}
-        } else {
-            quote! {
-                #[inline]
-                #struct_vis fn #guard_from_guard_method_ident<
-                    'b,
-                    'a,
-                    P: ::ksync::LockPolicy<#mutex_type>,
-                >(
-                    &'b self,
-                    guard: &'b ::ksync::KMutexGuard<'a, #class_type, #mutex_type, P>,
-                ) -> #token_guard_ident #token_guard_ty_generics {
-                    assert!(
-                        guard.is_locked_by(&self.#mu_ident),
-                        "KMutexGuard does not belong to this struct's mutex"
-                    );
-                    #token_guard_ident { parent: self, token: guard.token() }
-                }
-
-                #[inline]
-                #struct_vis fn #guard_mut_from_guard_method_ident<
-                    'b,
-                    'a,
-                    P: ::ksync::LockPolicy<#mutex_type>,
-                >(
-                    &'b self,
-                    guard: ::core::pin::Pin<
-                        &'b mut ::ksync::KMutexGuard<'a, #class_type, #mutex_type, P>,
-                    >,
-                ) -> #token_guard_mut_ident #token_guard_ty_generics {
-                    assert!(
-                        guard.is_locked_by(&self.#mu_ident),
-                        "KMutexGuard does not belong to this struct's mutex"
-                    );
-                    #token_guard_mut_ident { parent: self, token: guard.token_mut() }
-                }
-            }
-        };
-
         let guard_method_def = quote! {
-            /// Creates a read-only token guard for accessing fields protected by this mutex.
-            ///
-            /// # Safety
-            ///
-            /// The caller must ensure that `token` belongs to the specific lock instance that
-            /// protects `self`.
             #[inline]
-            #struct_vis unsafe fn #guard_method_ident<'b, 'a>(
+            #struct_vis fn #guard_method_ident<'b, 'a>(
                 &'b self,
                 token: &'b ::ksync::LockToken<'a, #class_type>,
             ) -> #token_guard_ident #token_guard_ty_generics {
                 #token_guard_ident { parent: self, token }
             }
 
-            /// Creates a mutable token guard for accessing fields protected by this mutex.
-            ///
-            /// # Safety
-            ///
-            /// The caller must ensure that `token` belongs to the specific lock instance that
-            /// protects `self` and is not used to create aliasing references to `self`'s fields.
             #[inline]
-            #struct_vis unsafe fn #guard_mut_method_ident<'b, 'a>(
+            #struct_vis fn #guard_mut_method_ident<'b, 'a>(
                 &'b self,
                 token: &'b mut ::ksync::LockToken<'a, #class_type>,
             ) -> #token_guard_mut_ident #token_guard_ty_generics {
                 #token_guard_mut_ident { parent: self, token }
             }
-
-            #guard_from_guard_methods
         };
 
         let guard_accessors = &field_code.write_guard_accessors;
@@ -1454,7 +1350,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &ty_generics,
             where_clause,
             class_type,
-            &token_guard_ident,
             &token_guard_mut_ident,
             &fields_ident,
             &fields_mut_ident,
@@ -1462,7 +1357,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &token_guard_impl_generics,
             &token_guard_ty_generics,
             &fields_ret_ty_generics,
-            ty_params,
             &field_code.write_token_guard_accessors,
             &field_code.read_fields_init,
             &field_code.write_fields_init,
@@ -1488,34 +1382,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
             impl #guard_impl_generics #guard_ident #guard_ty_generics #where_clause {
                 #guard_accessors
-
-                #[inline]
-                #struct_vis fn parent(&self) -> &#struct_ident #ty_generics {
-                    self.parent
-                }
-
-                #[inline]
-                #struct_vis fn as_token_guard<'b>(
-                    &'b self,
-                ) -> #token_guard_ident #token_guard_ty_generics {
-                    #token_guard_ident {
-                        parent: self.parent,
-                        token: self.inner.token(),
-                    }
-                }
-
-                #[inline]
-                #struct_vis fn as_token_guard_mut<'b>(
-                    self: ::core::pin::Pin<&'b mut Self>,
-                ) -> #token_guard_mut_ident #token_guard_ty_generics {
-                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
-                    let me = unsafe { self.get_unchecked_mut() };
-                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-                    #token_guard_mut_ident {
-                        parent: me.parent,
-                        token: inner_pin.token_mut(),
-                    }
-                }
 
                 #[inline]
                 #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_type> {
@@ -1608,10 +1474,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             format_ident!("guard_read_{lock_ident}", span = lock_ident.span());
         let guard_write_method_ident =
             format_ident!("guard_write_{lock_ident}", span = lock_ident.span());
-        let guard_read_from_guard_method_ident =
-            format_ident!("guard_read_{lock_ident}_from_guard", span = lock_ident.span());
-        let guard_write_from_guard_method_ident =
-            format_ident!("guard_write_{lock_ident}_from_guard", span = lock_ident.span());
 
         let this_guarded_fields: Vec<&GuardedField> =
             guarded_fields.iter().filter(|f| f.mutex_ident == *lock_ident).collect();
@@ -1691,7 +1553,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &ty_generics,
             where_clause,
             class_type,
-            &read_token_guard_ident,
             &write_token_guard_ident,
             &read_fields_ident,
             &write_fields_ident,
@@ -1699,7 +1560,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &token_guard_impl_generics,
             &token_guard_ty_generics,
             &fields_ret_ty_generics,
-            ty_params,
             &field_code.write_token_guard_accessors,
             &field_code.read_fields_init,
             &field_code.write_fields_init,
@@ -1741,26 +1601,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 #read_guard_accessors
 
                 #[inline]
-                #struct_vis fn parent(&self) -> &#struct_ident #ty_generics {
-                    self.parent
-                }
-
-                #[inline]
-                #struct_vis fn as_token_guard<'b>(
-                    &'b self,
-                ) -> #read_token_guard_ident #token_guard_ty_generics {
-                    #read_token_guard_ident {
-                        parent: self.parent,
-                        token: self.inner.token(),
-                    }
-                }
-
-                #[inline]
-                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_type> {
-                    self.inner.token()
-                }
-
-                #[inline]
                 #struct_vis fn call_unlocked<R, F: FnOnce() -> R>(
                     self: ::core::pin::Pin<&mut Self>,
                     f: F,
@@ -1785,49 +1625,6 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
             impl #guard_decl_generics #write_guard_ident #guard_ty_generics #where_clause {
                 #write_guard_accessors
-
-                #[inline]
-                #struct_vis fn parent(&self) -> &#struct_ident #ty_generics {
-                    self.parent
-                }
-
-                #[inline]
-                #struct_vis fn as_token_guard<'b>(
-                    &'b self,
-                ) -> #read_token_guard_ident #token_guard_ty_generics {
-                    #read_token_guard_ident {
-                        parent: self.parent,
-                        token: self.inner.token(),
-                    }
-                }
-
-                #[inline]
-                #struct_vis fn as_token_guard_mut<'b>(
-                    self: ::core::pin::Pin<&'b mut Self>,
-                ) -> #write_token_guard_ident #token_guard_ty_generics {
-                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
-                    let me = unsafe { self.get_unchecked_mut() };
-                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-                    #write_token_guard_ident {
-                        parent: me.parent,
-                        token: inner_pin.token_mut(),
-                    }
-                }
-
-                #[inline]
-                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_type> {
-                    self.inner.token()
-                }
-
-                #[inline]
-                #struct_vis fn token_mut(
-                    self: ::core::pin::Pin<&mut Self>,
-                ) -> &mut ::ksync::LockToken<'a, #class_type> {
-                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
-                    let me = unsafe { self.get_unchecked_mut() };
-                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-                    inner_pin.token_mut()
-                }
 
                 #[inline]
                 #struct_vis fn call_unlocked<R, F: FnOnce() -> R>(
@@ -1881,57 +1678,20 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     })
                 }
 
-                /// Creates a read-only token guard for accessing fields protected by this lock.
-                ///
-                /// # Safety
-                ///
-                /// The caller must ensure that `token` belongs to the specific lock instance that
-                /// protects `self`.
                 #[inline]
-                #struct_vis unsafe fn #guard_read_method_ident<'b, 'a>(
+                #struct_vis fn #guard_read_method_ident<'b, 'a>(
                     &'b self,
                     token: &'b ::ksync::LockToken<'a, #class_type>,
                 ) -> #read_token_guard_ident #token_guard_ty_generics {
                     #read_token_guard_ident { parent: self, token }
                 }
 
-                /// Creates a mutable token guard for accessing fields protected by this lock.
-                ///
-                /// # Safety
-                ///
-                /// The caller must ensure that `token` belongs to the specific lock instance that
-                /// protects `self` and is not used to create aliasing references to `self`'s
-                /// fields.
                 #[inline]
-                #struct_vis unsafe fn #guard_write_method_ident<'b, 'a>(
+                #struct_vis fn #guard_write_method_ident<'b, 'a>(
                     &'b self,
                     token: &'b mut ::ksync::LockToken<'a, #class_type>,
                 ) -> #write_token_guard_ident #token_guard_ty_generics {
                     #write_token_guard_ident { parent: self, token }
-                }
-
-                #[inline]
-                #struct_vis fn #guard_read_from_guard_method_ident<'b, 'a>(
-                    &'b self,
-                    guard: &'b ::ksync::BrwLockPiReadGuard<'a, #class_type>,
-                ) -> #read_token_guard_ident #token_guard_ty_generics {
-                    assert!(
-                        guard.is_locked_by(&self.#lock_ident),
-                        "BrwLockPiReadGuard does not belong to this struct's lock"
-                    );
-                    #read_token_guard_ident { parent: self, token: guard.token() }
-                }
-
-                #[inline]
-                #struct_vis fn #guard_write_from_guard_method_ident<'b, 'a>(
-                    &'b self,
-                    guard: ::core::pin::Pin<&'b mut ::ksync::BrwLockPiWriteGuard<'a, #class_type>>,
-                ) -> #write_token_guard_ident #token_guard_ty_generics {
-                    assert!(
-                        guard.is_locked_by(&self.#lock_ident),
-                        "BrwLockPiWriteGuard does not belong to this struct's lock"
-                    );
-                    #write_token_guard_ident { parent: self, token: guard.token_mut() }
                 }
             }
         });

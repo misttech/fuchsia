@@ -768,7 +768,7 @@ impl VmObjectDispatcher {
         // Zero the range from min(target size, old stream size) to the end of the VMO.
         let zero_start = core::cmp::min(target_size, old_stream_size);
         let Some(aligned_stream_size) = round_up_page_size(target_size) else {
-            let op_token = guard.as_mut().token_mut();
+            let (_, op_token) = guard.as_mut().tokens_mut();
             op.cancel_locked(op_token);
             return Err(Status::OUT_OF_RANGE);
         };
@@ -782,7 +782,7 @@ impl VmObjectDispatcher {
         });
 
         if let Err(status) = res {
-            let op_token = guard.as_mut().token_mut();
+            let (_, op_token) = guard.as_mut().tokens_mut();
             op.cancel_locked(op_token);
             return Err(status);
         }
@@ -790,7 +790,7 @@ impl VmObjectDispatcher {
         // Ensure pages between min(target size, old stream size) and the end of the VMO are
         // unmapped before committing new stream size.
         let aligned_zero_start = round_down_page_size(zero_start);
-        let op_token = guard.as_mut().token_mut();
+        let (_, op_token) = guard.as_mut().tokens_mut();
         paged.unmap_pages_and_call(aligned_zero_start, vmo_size - aligned_zero_start, || {
             op.commit_locked(op_token);
         });
@@ -812,14 +812,14 @@ impl VmObjectDispatcher {
         let size_aligned = match VmObject::round_size(size) {
             Ok(size_aligned) => size_aligned,
             Err(status) => {
-                let op_token = guard.as_mut().token_mut();
+                let (_, op_token) = guard.as_mut().tokens_mut();
                 op.cancel_locked(op_token);
                 return Err(status);
             }
         };
 
         if let Err(status) = paged.resize(size_aligned) {
-            let op_token = guard.as_mut().token_mut();
+            let (_, op_token) = guard.as_mut().tokens_mut();
             op.cancel_locked(op_token);
             return Err(status);
         }
@@ -834,7 +834,7 @@ impl VmObjectDispatcher {
             let _ = guard.as_mut().call_unlocked(|| paged.zero_range(size, remaining));
         }
 
-        let op_token = guard.as_mut().token_mut();
+        let (_, op_token) = guard.as_mut().tokens_mut();
         op.commit_locked(op_token);
         Ok(())
     }

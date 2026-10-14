@@ -298,20 +298,16 @@ mod ksync_tests {
 
         {
             // Acquire a guard for `phantom_obj` by passing the physical `real_obj.mu` to `lock_mu`.
-            // SAFETY: `real_obj.mu` is the physical lock synchronizing `phantom_obj` and `target`.
-            ksync::lock!(let mut guard = unsafe { phantom_obj.lock_mu(&real_obj.mu) });
+            ksync::lock!(let mut guard = phantom_obj.lock_mu(&real_obj.mu));
 
             // Read the reference to `real_obj` from `phantom_obj.target`.
             let target = guard.target().clone();
 
             // Using the proof token from `guard`, read `target.value`.
-            // SAFETY: `guard` holds `real_obj.mu`, which protects `target`.
-            unsafe {
-                expect_true!(*target.guard_mu(guard.token()).value() == 1);
+            expect_true!(*target.guard_mu(guard.token()).value() == 1);
 
-                // Modify `target.value` using the mutable token from `guard`.
-                *target.guard_mu_mut(guard.as_mut().token_mut()).value_mut() = 200;
-            }
+            // Modify `target.value` using the mutable token from `guard`.
+            *target.guard_mu_mut(guard.as_mut().token_mut()).value_mut() = 200;
         }
 
         {
@@ -338,14 +334,10 @@ mod ksync_tests {
         }));
 
         {
-            // SAFETY: `real_obj.mu` is the physical lock synchronizing `phantom_obj` and `target`.
-            ksync::lock!(let mut guard = unsafe { phantom_obj.lock_mu(&real_obj.mu) });
+            ksync::lock!(let mut guard = phantom_obj.lock_mu(&real_obj.mu));
             let target = guard.target().clone();
-            // SAFETY: `guard` holds `real_obj.mu`, which protects `target`.
-            unsafe {
-                expect_true!(*target.guard_mu(guard.token()).value() == 42);
-                *target.guard_mu_mut(guard.as_mut().token_mut()).value_mut() = 99;
-            }
+            expect_true!(*target.guard_mu(guard.token()).value() == 42);
+            *target.guard_mu_mut(guard.as_mut().token_mut()).value_mut() = 99;
         }
 
         {
@@ -414,27 +406,19 @@ mod ksync_tests {
         }));
 
         {
-            ksync::lock!(let mut guard = ksync::aliased_lock(&real_obj.mu, &real_obj.mu));
+            ksync::lock!(let mut guard = ksync::aliased_lock(&real_obj.mu, &phantom_obj.mu));
 
-            let (t1, t2) = guard.tokens();
-            // SAFETY: `real_obj` and `phantom_obj` are both protected by `real_obj.mu`, and
-            // `_t2_mut` is unused.
-            unsafe {
-                expect_true!(*real_obj.guard_mu(t1).value() == 10);
-                expect_true!(core::ptr::eq(&**phantom_obj.guard_mu(t2).target(), &*real_obj));
+            let (t1, _t2) = guard.tokens();
+            expect_true!(*real_obj.guard_mu(t1).value() == 10);
 
-                let (t1_mut, _t2_mut) = guard.as_mut().tokens_mut();
-                *real_obj.guard_mu_mut(t1_mut).value_mut() = 55;
-            }
+            let (t1_mut, _t2_mut) = guard.as_mut().tokens_mut();
+            *real_obj.guard_mu_mut(t1_mut).value_mut() = 55;
 
             let res = guard.as_mut().call_unlocked(|| 99);
             expect_true!(res == 99);
 
             let (t1, _t2) = guard.tokens();
-            // SAFETY: `t1` is backed by `real_obj.mu`.
-            unsafe {
-                expect_true!(*real_obj.guard_mu(t1).value() == 55);
-            }
+            expect_true!(*real_obj.guard_mu(t1).value() == 55);
         }
 
         ksync::lock!(let guard = real_obj.lock_mu());
@@ -643,12 +627,8 @@ mod ksync_tests {
                 let mut guards = GuardedMultiSpinlockObj::lock_mu_multiple([&*s1, &*s2])
             );
             let [t1, t2] = guards.as_mut().tokens_mut();
-            // SAFETY: Both `s1.mu` and `s2.mu` are held by `guards`, and `s1` and `s2` are
-            // distinct instances.
-            unsafe {
-                *s1.guard_mu_mut(t1).value_mut() = 100;
-                *s2.guard_mu_mut(t2).value_mut() = 200;
-            }
+            *s1.guard_mu_mut(t1).value_mut() = 100;
+            *s2.guard_mu_mut(t2).value_mut() = 200;
         }
 
         {
@@ -656,11 +636,8 @@ mod ksync_tests {
                 let mut guards = GuardedMultiSpinlockObj::lock_mu_multiple([&*s2, &*s1])
             );
             let [t1, t2] = guards.tokens();
-            // SAFETY: Both `s1.mu` and `s2.mu` are held by `guards`.
-            unsafe {
-                expect_true!(*s1.guard_mu(t1).value() == 100);
-                expect_true!(*s2.guard_mu(t2).value() == 200);
-            }
+            expect_true!(*s1.guard_mu(t1).value() == 100);
+            expect_true!(*s2.guard_mu(t2).value() == 200);
             guards.as_mut().release();
 
             ksync::lock!(let g1 = s1.lock_mu());

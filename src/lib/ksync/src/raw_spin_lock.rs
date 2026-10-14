@@ -130,9 +130,7 @@ zr::unsafe_pinned_drop_ffi!(RawMonitoredSpinlock, cpp_monitored_spinlock_destroy
 
 pub struct IrqSavePolicy;
 
-// SAFETY: `cpp_spinlock_acquire_irqsave` and `cpp_spinlock_release_irqrestore` enforce mutual
-// exclusion on `RawSpinlock`.
-unsafe impl crate::LockPolicy<RawSpinlock> for IrqSavePolicy {
+impl crate::LockPolicy<RawSpinlock> for IrqSavePolicy {
     type AcquireArgs = ();
     type GuardState = InterruptSavedState;
 
@@ -168,9 +166,7 @@ unsafe impl crate::LockPolicy<RawSpinlock> for IrqSavePolicy {
 
 pub struct NoIrqSavePolicy;
 
-// SAFETY: `cpp_spinlock_acquire_no_irqsave` and `cpp_spinlock_release_no_irqrestore` enforce
-// mutual exclusion on `RawSpinlock`.
-unsafe impl crate::LockPolicy<RawSpinlock> for NoIrqSavePolicy {
+impl crate::LockPolicy<RawSpinlock> for NoIrqSavePolicy {
     type AcquireArgs = ();
     type GuardState = ();
 
@@ -211,9 +207,7 @@ pub struct MonitoredSpinlockGuardState {
     pub tag: crate::SourceTag,
 }
 
-// SAFETY: `cpp_monitored_spinlock_acquire_irqsave` and `cpp_monitored_spinlock_release_irqrestore`
-// enforce mutual exclusion on `RawMonitoredSpinlock`.
-unsafe impl crate::LockPolicy<RawMonitoredSpinlock> for IrqSavePolicy {
+impl crate::LockPolicy<RawMonitoredSpinlock> for IrqSavePolicy {
     type AcquireArgs = crate::SourceTag;
     type GuardState = MonitoredSpinlockGuardState;
 
@@ -269,10 +263,7 @@ unsafe impl crate::LockPolicy<RawMonitoredSpinlock> for IrqSavePolicy {
     }
 }
 
-// SAFETY: `cpp_monitored_spinlock_acquire_no_irqsave` and
-// `cpp_monitored_spinlock_release_no_irqrestore` enforce mutual exclusion on
-// `RawMonitoredSpinlock`.
-unsafe impl crate::LockPolicy<RawMonitoredSpinlock> for NoIrqSavePolicy {
+impl crate::LockPolicy<RawMonitoredSpinlock> for NoIrqSavePolicy {
     type AcquireArgs = crate::SourceTag;
     type GuardState = crate::SourceTag;
 
@@ -324,8 +315,7 @@ unsafe impl crate::LockPolicy<RawMonitoredSpinlock> for NoIrqSavePolicy {
     }
 }
 
-// SAFETY: `RawSpinlock` is a physical kernel spinlock with a unique storage address.
-unsafe impl crate::RawLock for RawSpinlock {
+impl crate::RawLock for RawSpinlock {
     const LOCK_FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_IRQ_SAFE;
 
     type LockEntry = LockEntryStorage;
@@ -342,8 +332,7 @@ unsafe impl crate::RawLock for RawSpinlock {
     }
 }
 
-// SAFETY: `RawMonitoredSpinlock` is a physical kernel spinlock with a unique storage address.
-unsafe impl crate::RawLock for RawMonitoredSpinlock {
+impl crate::RawLock for RawMonitoredSpinlock {
     const LOCK_FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_IRQ_SAFE;
 
     type LockEntry = LockEntryStorage;

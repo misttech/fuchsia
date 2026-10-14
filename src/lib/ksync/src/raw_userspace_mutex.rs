@@ -70,8 +70,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
 
 pub struct RawMutexPolicy;
 
-// SAFETY: `RawMutex::lock` and `RawMutex::unlock` enforce mutual exclusion on `RawMutex`.
-unsafe impl super::LockPolicy<RawMutex> for RawMutexPolicy {
+impl super::LockPolicy<RawMutex> for RawMutexPolicy {
     type AcquireArgs = ();
     type GuardState = ();
 
@@ -94,8 +93,7 @@ unsafe impl super::LockPolicy<RawMutex> for RawMutexPolicy {
     }
 }
 
-// SAFETY: `RawMutex` is a physical userspace mutex with a unique storage address.
-unsafe impl RawLock for RawMutex {
+impl RawLock for RawMutex {
     type LockEntry = ();
     type DefaultPolicy = RawMutexPolicy;
 
