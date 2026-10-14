@@ -9,6 +9,15 @@
 
 #include <platform.h>
 #include <zircon/boot/crash-reason.h>
+#include <zircon/compiler.h>
+
+__BEGIN_CDECLS
+
+void rust_platform_graceful_halt_helper(platform_halt_action action, zircon_crash_reason_t reason,
+                                        zx_instant_mono_t panic_deadline) __NO_RETURN;
+zx_status_t rust_platform_halt_secondary_cpus(zx_instant_mono_t deadline);
+
+__END_CDECLS
 
 // Gracefully halt and perform |action|.
 //
@@ -16,8 +25,11 @@
 // panic if the system cannot be successfully halted before |panic_deadline| is reached.
 //
 // If the halt token cannot be acquired, this function will block forever.
-void platform_graceful_halt_helper(platform_halt_action action, zircon_crash_reason_t,
-                                   zx_instant_mono_t panic_deadline);
+__NO_RETURN inline void platform_graceful_halt_helper(platform_halt_action action,
+                                                      zircon_crash_reason_t reason,
+                                                      zx_instant_mono_t panic_deadline) {
+  rust_platform_graceful_halt_helper(action, reason, panic_deadline);
+}
 
 // Gracefully halt secondary (non-boot) CPUs.
 //
@@ -28,6 +40,8 @@ void platform_graceful_halt_helper(platform_halt_action action, zircon_crash_rea
 // reached.
 //
 // This function must be called from the primary (boot) CPU.
-zx_status_t platform_halt_secondary_cpus(zx_instant_mono_t deadline);
+inline zx_status_t platform_halt_secondary_cpus(zx_instant_mono_t deadline) {
+  return rust_platform_halt_secondary_cpus(deadline);
+}
 
 #endif  // ZIRCON_KERNEL_INCLUDE_PLATFORM_HALT_HELPER_H_

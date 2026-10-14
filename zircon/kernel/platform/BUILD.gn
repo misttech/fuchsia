@@ -19,7 +19,6 @@ source_set("platform") {
     "efi.cc",
     "efi_bootbyte.cc",
     "efi_crashlog.cc",
-    "halt_helper.cc",
     "mapped_crashlog.cc",
     "mexec.cc",
     "power.cc",
@@ -125,6 +124,7 @@ kernel_rust_mod("platform-rs") {
   source_root = "platform.rs"
   sources = [
     "debug.rs",
+    "halt_helper.rs",
     "halt_token.rs",
     "platform.rs",
     "power.rs",
@@ -134,6 +134,9 @@ kernel_rust_mod("platform-rs") {
   deps = [
     ":halt-token-bindings",
     "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//src/lib/kprint",
+    "//src/lib/ksync",
     "//src/lib/zr",
     "//zircon/system/ulib/affine/rust:affine",
   ]

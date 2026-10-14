@@ -7,6 +7,7 @@
 #include <kernel/cpu.h>
 #include <kernel/ffi.h>
 #include <kernel/scheduler_state.h>
+#include <kernel/thread_ffi.h>
 
 extern "C" {
 
@@ -21,6 +22,11 @@ FFI_ALWAYS_INLINE cpu_num_t cpp_scheduler_state_curr_cpu(const SchedulerState* s
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE cpu_num_t cpp_scheduler_state_last_cpu(const SchedulerState* state) {
   return state->last_cpu();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE cpu_mask_t cpp_scheduler_state_hard_affinity(const SchedulerState* state) {
+  return state->hard_affinity();
 }
 
 }  // extern "C"

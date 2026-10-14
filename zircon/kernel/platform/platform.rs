@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 pub mod debug;
+pub mod halt_helper;
 pub mod halt_token;
 pub mod power;
 pub mod timer;

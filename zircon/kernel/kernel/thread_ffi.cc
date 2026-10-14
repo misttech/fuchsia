@@ -410,4 +410,9 @@ FFI_ALWAYS_INLINE cpu_mask_t cpp_thread_set_cpu_affinity(Thread* thread, cpu_mas
   return thread->SetCpuAffinity(affinity);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_current_migrate_to_cpu(cpu_num_t target_cpu) {
+  Thread::Current::MigrateToCpu(target_cpu);
+}
+
 }  // extern "C"

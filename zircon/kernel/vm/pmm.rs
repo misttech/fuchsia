@@ -179,6 +179,12 @@ pub fn node() -> &'static PmmNode {
     unsafe { &PMM_NODE }
 }
 
+/// Synchronously walk the PMM's free list and validate each page.  This is an incredibly expensive
+/// operation and should only be used for debugging purposes.
+pub fn pmm_checker_check_all_free_pages() {
+    node().check_all_free_pages();
+}
+
 /// Returns the `VmCompression` instance if compression is enabled.
 pub fn get_page_compression() -> Option<&'static crate::vm::compression::VmCompression> {
     let raw = unsafe { bindings::cpp_pmm_get_page_compression() };

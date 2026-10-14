@@ -8,6 +8,10 @@
 #include <zircon/boot/crash-reason.h>
 
 #include <arch/regs.h>
+#include <platform/halt_token.h>
+
+// Storage for the global halt token singleton
+HaltToken HaltToken::g_instance;
 
 extern "C" {
 

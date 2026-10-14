@@ -10,6 +10,9 @@ use crate::object::{
     EventDispatcher, HandleValue, JobDispatcher, ProcessDispatcher, validate_system_resource,
 };
 use crate::platform_rs::HaltToken;
+use crate::platform_rs::halt_helper::platform_graceful_halt_helper;
+use crate::platform_rs::power::{PlatformHaltAction, ZirconCrashReason};
+use crate::platform_rs::timer::InstantMono;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use boot_options::BootOptions;
 use syscalls_macro::syscall;
@@ -19,11 +22,6 @@ use zx_types::*;
 const VALID_SUSPEND_FLAGS: u64 = ZX_SYSTEM_SUSPEND_OPTION_DISCARD
     | ZX_SYSTEM_SUSPEND_OPTION_REPORT_ONLY
     | ZX_SYSTEM_SUSPEND_OPTION_DEEP;
-
-const HALT_ACTION_REBOOT: u32 = 1;
-const HALT_ACTION_REBOOT_BOOTLOADER: u32 = 2;
-const HALT_ACTION_REBOOT_RECOVERY: u32 = 3;
-const HALT_ACTION_SHUTDOWN: u32 = 4;
 
 zr::static_assert!(core::mem::size_of::<zx_system_powerctl_arg_t>() == 12);
 zr::static_assert!(core::mem::align_of::<zx_system_powerctl_arg_t>() == 4);
@@ -61,7 +59,6 @@ unsafe extern "C" {
 
     fn cpp_mp_hotplug_cpu_mask_all() -> zx_status_t;
     fn cpp_mp_unplug_cpu_mask_all_but_primary() -> zx_status_t;
-    fn cpp_platform_graceful_halt_helper(action: u32);
     #[cfg(target_arch = "x86_64")]
     fn cpp_system_powerctl_x86_set_pkg_pl1(arg: &zx_system_powerctl_arg_t) -> zx_status_t;
     fn cpp_wake_vector_discard_wake_event_report();
@@ -357,25 +354,33 @@ pub fn sys_system_powerctl(
             Ok(())
         }
         ZX_SYSTEM_POWERCTL_REBOOT => {
-            // SAFETY: Call C++ halt helper for reboot.
-            unsafe { cpp_platform_graceful_halt_helper(HALT_ACTION_REBOOT) };
-            Ok(())
+            platform_graceful_halt_helper(
+                PlatformHaltAction::Reboot,
+                ZirconCrashReason::NoCrash,
+                InstantMono::INFINITE,
+            );
         }
         ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT => HaltToken::get().ack_pending_halt(),
         ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER => {
-            // SAFETY: Call C++ halt helper for reboot bootloader.
-            unsafe { cpp_platform_graceful_halt_helper(HALT_ACTION_REBOOT_BOOTLOADER) };
-            Ok(())
+            platform_graceful_halt_helper(
+                PlatformHaltAction::RebootBootloader,
+                ZirconCrashReason::NoCrash,
+                InstantMono::INFINITE,
+            );
         }
         ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY => {
-            // SAFETY: Call C++ halt helper for reboot recovery.
-            unsafe { cpp_platform_graceful_halt_helper(HALT_ACTION_REBOOT_RECOVERY) };
-            Ok(())
+            platform_graceful_halt_helper(
+                PlatformHaltAction::RebootRecovery,
+                ZirconCrashReason::NoCrash,
+                InstantMono::INFINITE,
+            );
         }
         ZX_SYSTEM_POWERCTL_SHUTDOWN => {
-            // SAFETY: Call C++ halt helper for shutdown.
-            unsafe { cpp_platform_graceful_halt_helper(HALT_ACTION_SHUTDOWN) };
-            Ok(())
+            platform_graceful_halt_helper(
+                PlatformHaltAction::Shutdown,
+                ZirconCrashReason::NoCrash,
+                InstantMono::INFINITE,
+            );
         }
         _ => Err(Status::INVALID_ARGS),
     }

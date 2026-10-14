@@ -37,7 +37,6 @@ size_t cpp_percpu_processor_count();
 
 zx_status_t cpp_mp_hotplug_cpu_mask_all();
 zx_status_t cpp_mp_unplug_cpu_mask_all_but_primary();
-void cpp_platform_graceful_halt_helper(uint32_t action);
 #if defined(__x86_64__)
 zx_status_t cpp_system_powerctl_x86_set_pkg_pl1(const zx_system_powerctl_arg_t* arg);
 #endif

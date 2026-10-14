@@ -17,7 +17,7 @@ use zx_types::{zx_instant_mono_t, zx_status_t};
 
 use crate::kernel::restricted_state::RestrictedState;
 use crate::kernel::scheduler_state::{SchedulerState, SchedulerStateBaseProfile};
-use crate::kernel::types::cpu_mask_t;
+use crate::kernel::types::{cpu_mask_t, cpu_num_t};
 use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
 
@@ -108,6 +108,7 @@ unsafe extern "C" {
     fn cpp_thread_scheduler_state(thread: *const Thread) -> *const SchedulerState;
     fn cpp_thread_get_cpu_affinity(thread: *const Thread) -> cpu_mask_t;
     fn cpp_thread_set_cpu_affinity(thread: *mut Thread, affinity: cpu_mask_t) -> cpu_mask_t;
+    fn cpp_thread_current_migrate_to_cpu(target_cpu: cpu_num_t);
 }
 
 /// Stall accounting state of a thread.
@@ -441,6 +442,13 @@ impl ThreadLockGuard {
     pub fn is_user_state_saved_locked(&self) -> bool {
         // SAFETY: the thread is a live C++ `Thread` whose lock this guard holds.
         unsafe { cpp_thread_is_user_state_saved_locked(self.thread()) }
+    }
+
+    /// Returns a reference to the [`SchedulerState`] of the locked thread.
+    pub fn scheduler_state(&self) -> &SchedulerState {
+        // SAFETY: `lock`'s caller guarantees the thread is a live C++ `Thread`, and this guard
+        // holds its lock.
+        unsafe { scheduler_state(self.thread()) }
     }
 }
 
@@ -1039,4 +1047,18 @@ pub fn signal_policy_exception(policy_exception_code: u32, policy_exception_data
     unsafe {
         cpp_thread_current_signal_policy_exception(policy_exception_code, policy_exception_data)
     }
+}
+
+/// Migrates the current thread to the CPU identified by `target_cpu`, and hard-pins it there.
+///
+/// # Safety
+///
+/// The caller must ensure that:
+/// - `target_cpu` is a valid, currently active CPU.
+/// - This function is called from normal thread context where blocking/rescheduling is allowed,
+///   with no spinlocks or active `ChainLockTransaction` held on the current CPU.
+pub unsafe fn migrate_to_cpu(target_cpu: cpu_num_t) {
+    // SAFETY: The caller guarantees `target_cpu` is active and that the calling context is a
+    // normal thread context with no active `ChainLockTransaction` or spinlocks held.
+    unsafe { cpp_thread_current_migrate_to_cpu(target_cpu) }
 }

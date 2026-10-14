@@ -6,7 +6,7 @@
 
 //! Types and structures for kernel scheduler state (`include/kernel/scheduler_state.h`).
 
-use crate::kernel::types::cpu_num_t;
+use crate::kernel::types::{cpu_mask_t, cpu_num_t};
 use core::mem::{MaybeUninit, align_of, size_of};
 use object_constants_rs as object_constants;
 use wait_queue_bindings as bindings;
@@ -63,6 +63,13 @@ impl SchedulerState {
         // SAFETY: `self` is a valid `SchedulerState` reference.
         unsafe { cpp_scheduler_state_last_cpu(self) }
     }
+
+    /// Returns the hard CPU affinity mask of the thread.
+    #[inline]
+    pub fn hard_affinity(&self) -> cpu_mask_t {
+        // SAFETY: `self` is a valid `SchedulerState` reference.
+        unsafe { cpp_scheduler_state_hard_affinity(self) }
+    }
 }
 
 /// Opaque wrapper around C++ `SchedulerState::BaseProfile`.
@@ -85,6 +92,7 @@ unsafe extern "C" {
     );
     fn cpp_scheduler_state_curr_cpu(state: *const SchedulerState) -> cpu_num_t;
     fn cpp_scheduler_state_last_cpu(state: *const SchedulerState) -> cpu_num_t;
+    fn cpp_scheduler_state_hard_affinity(state: *const SchedulerState) -> cpu_mask_t;
 }
 
 // thread priority
