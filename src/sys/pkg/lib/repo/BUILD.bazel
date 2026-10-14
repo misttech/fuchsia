@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -15,7 +16,11 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/src/sys/pkg/lib/repo",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
+    visibility = [
+        "//src/sys/pkg/lib:__pkg__",
+        "//src/testing/host-target-testing/packages:__pkg__",
+        "//tools/botanist:__pkg__",
+    ],
     deps = [
         "//third_party/golibs:github.com/pkg/sftp",
         "//third_party/golibs:github.com/theupdateframework/go-tuf",
@@ -24,5 +29,20 @@ go_library(
         "//tools/lib/logger",
         "//tools/lib/retry",
         "//tools/net/sshutil",
+    ],
+)
+
+host_go_test(
+    name = "repo_tests",
+    srcs = [
+        "add_test.go",
+        "config_test.go",
+    ],
+    embed = [":repo"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/sys/pkg/lib:__pkg__",
+        "//src/testing/host-target-testing/packages:__pkg__",
+        "//tools/botanist:__pkg__",
     ],
 )
