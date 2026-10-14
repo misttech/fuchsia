@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [ "driver/platform-device.shard.cml" ],
+    include: [
+        "driver/platform-device.shard.cml",
+        "driver_component/power_managed_dispatchers.shard.cml",
+    ],
     program: {
         binary: "driver/dw-i2c.so",
         bind: "meta/bind/dw-i2c-bind.bindbc",

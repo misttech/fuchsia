@@ -44,7 +44,15 @@ std::optional<fdf::MmioBuffer> TestDwI2c::mmio_;
 
 class FakeDwI2cController {
  public:
-  FakeDwI2cController() : mmio_(sizeof(uint32_t), 0x100) {
+  static constexpr size_t kRegCount = 0x100;
+
+  FakeDwI2cController() : mmio_(sizeof(uint32_t), kRegCount) {
+    for (size_t i = 0; i < kRegCount; ++i) {
+      size_t offset = i * sizeof(uint32_t);
+      mmio_[offset].SetReadCallback([this, i]() { return regs_[i]; });
+      mmio_[offset].SetWriteCallback(
+          [this, i](uint64_t val) { regs_[i] = static_cast<uint32_t>(val); });
+    }
     // Mock CompTypeReg (0xfc) to return kDwCompTypeNum (0x44570140)
     mmio_[0xfc].SetReadCallback([]() { return DwI2c::kDwCompTypeNum; });
     // Mock CompParam1Reg (0xf4) to return depths (8 for tx and rx)
@@ -53,6 +61,10 @@ class FakeDwI2cController {
 
   fdf::MmioBuffer GetMmioBuffer() { return mmio_.GetMmioBuffer(); }
 
+  uint32_t ReadReg(size_t offset) const { return regs_[offset / sizeof(uint32_t)]; }
+  void ResetWritableRegs() { regs_.fill(0); }
+
+  std::array<uint32_t, kRegCount> regs_{};
   ddk_fake::FakeMmioRegRegion mmio_;
 };
 
@@ -78,6 +90,11 @@ class TestEnvironment : public fdf_testing::Environment {
         reset_.CreateInstanceHandler(), "reset"));
     return zx::ok();
   }
+
+  fdf_fake::FakeClock& clock_bus() { return clock_bus_; }
+  fdf_fake::FakeClock& clock_regs() { return clock_regs_; }
+  fdf_fake::FakePowerDomain& powerdomain() { return powerdomain_; }
+  fdf_fake::FakeReset& reset() { return reset_; }
 
  private:
   fdf_fake::FakePDev pdev_;
@@ -106,6 +123,140 @@ TEST(DwI2cTest, Lifecycle) {
 
   ASSERT_TRUE(driver_test.StartDriver().is_ok());
   ASSERT_TRUE(driver_test.StopDriver().is_ok());
+}
+
+TEST(DwI2cTest, SuspendAndResume) {
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
+
+  zx::interrupt interrupt;
+  ASSERT_EQ(ZX_OK, zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
+
+  driver_test.RunInEnvironmentTypeContext([&](auto& env) { env.Init(std::move(interrupt)); });
+
+  FakeDwI2cController controller;
+  TestDwI2c::set_mmio(controller.GetMmioBuffer());
+
+  ASSERT_OK(driver_test.StartDriver());
+
+  driver_test.RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    EXPECT_TRUE(env.powerdomain().is_enabled());
+    EXPECT_TRUE(env.clock_bus().enabled());
+    EXPECT_TRUE(env.clock_regs().enabled());
+    EXPECT_TRUE(env.reset().take_deasserted());
+  });
+  EXPECT_NE(controller.ReadReg(0x00), 0u);  // ControlReg
+  EXPECT_NE(controller.ReadReg(0x14), 0u);  // StandardSpeedSclHighCountReg
+  EXPECT_NE(controller.ReadReg(0x1c), 0u);  // FastSpeedSclHighCountReg
+  EXPECT_NE(controller.ReadReg(0x3c), 0u);  // TxFifoThresholdReg
+  EXPECT_NE(controller.ReadReg(0x7c), 0u);  // SdaHoldReg
+
+  zx::result<> suspend_result = zx::error(ZX_ERR_INTERNAL);
+  driver_test.RunInDriverContext([&](TestDwI2c& driver) {
+    driver.SystemSuspend(
+        fdf::SuspendCompleter([&](zx::result<> result) { suspend_result = result; }));
+  });
+  ASSERT_OK(suspend_result);
+
+  driver_test.RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    EXPECT_FALSE(env.powerdomain().is_enabled());
+    EXPECT_FALSE(env.clock_bus().enabled());
+    EXPECT_FALSE(env.clock_regs().enabled());
+  });
+
+  // Simulate register state lost while power domain is disabled.
+  controller.ResetWritableRegs();
+  EXPECT_EQ(controller.ReadReg(0x00), 0u);
+  EXPECT_EQ(controller.ReadReg(0x14), 0u);
+  EXPECT_EQ(controller.ReadReg(0x1c), 0u);
+  EXPECT_EQ(controller.ReadReg(0x3c), 0u);
+  EXPECT_EQ(controller.ReadReg(0x7c), 0u);
+
+  zx::result<> resume_result = zx::error(ZX_ERR_INTERNAL);
+  driver_test.RunInDriverContext([&](TestDwI2c& driver) {
+    driver.SystemResume(std::nullopt,
+                        fdf::ResumeCompleter([&](zx::result<> result) { resume_result = result; }));
+  });
+  ASSERT_OK(resume_result);
+
+  driver_test.RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    EXPECT_TRUE(env.powerdomain().is_enabled());
+    EXPECT_TRUE(env.clock_bus().enabled());
+    EXPECT_TRUE(env.clock_regs().enabled());
+    EXPECT_TRUE(env.reset().take_deasserted());
+  });
+  EXPECT_NE(controller.ReadReg(0x00), 0u);  // ControlReg
+  EXPECT_NE(controller.ReadReg(0x14), 0u);  // StandardSpeedSclHighCountReg
+  EXPECT_NE(controller.ReadReg(0x1c), 0u);  // FastSpeedSclHighCountReg
+  EXPECT_NE(controller.ReadReg(0x3c), 0u);  // TxFifoThresholdReg
+  EXPECT_NE(controller.ReadReg(0x7c), 0u);  // SdaHoldReg
+
+  ASSERT_OK(driver_test.StopDriver());
+}
+
+TEST(DwI2cTest, SuspendAndResumeRollbackOnError) {
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
+
+  zx::interrupt interrupt;
+  ASSERT_EQ(ZX_OK, zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
+
+  driver_test.RunInEnvironmentTypeContext([&](auto& env) { env.Init(std::move(interrupt)); });
+
+  FakeDwI2cController controller;
+  TestDwI2c::set_mmio(controller.GetMmioBuffer());
+
+  ASSERT_OK(driver_test.StartDriver());
+
+  // Make disabling clock_bus fail during SystemSuspend; clock_regs should be re-enabled.
+  driver_test.RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.clock_bus().set_disable_result(zx::error(ZX_ERR_IO)); });
+
+  zx::result<> suspend_result = zx::ok();
+  driver_test.RunInDriverContext([&](TestDwI2c& driver) {
+    driver.SystemSuspend(
+        fdf::SuspendCompleter([&](zx::result<> result) { suspend_result = result; }));
+  });
+  EXPECT_STATUS(suspend_result, ZX_ERR_IO);
+
+  driver_test.RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    EXPECT_TRUE(env.powerdomain().is_enabled());
+    EXPECT_TRUE(env.clock_bus().enabled());
+    EXPECT_TRUE(env.clock_regs().enabled());
+    env.clock_bus().set_disable_result(zx::ok());
+  });
+
+  // Now SystemSuspend should succeed.
+  driver_test.RunInDriverContext([&](TestDwI2c& driver) {
+    driver.SystemSuspend(
+        fdf::SuspendCompleter([&](zx::result<> result) { suspend_result = result; }));
+  });
+  ASSERT_OK(suspend_result);
+
+  // Make enabling clock_regs fail during SystemResume; clock_bus and powerdomain should roll back.
+  driver_test.RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.clock_regs().set_enable_result(zx::error(ZX_ERR_IO)); });
+
+  zx::result<> resume_result = zx::ok();
+  driver_test.RunInDriverContext([&](TestDwI2c& driver) {
+    driver.SystemResume(std::nullopt,
+                        fdf::ResumeCompleter([&](zx::result<> result) { resume_result = result; }));
+  });
+  EXPECT_STATUS(resume_result, ZX_ERR_IO);
+
+  driver_test.RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    EXPECT_FALSE(env.powerdomain().is_enabled());
+    EXPECT_FALSE(env.clock_bus().enabled());
+    EXPECT_FALSE(env.clock_regs().enabled());
+    env.clock_regs().set_enable_result(zx::ok());
+  });
+
+  // Now SystemResume should succeed.
+  driver_test.RunInDriverContext([&](TestDwI2c& driver) {
+    driver.SystemResume(std::nullopt,
+                        fdf::ResumeCompleter([&](zx::result<> result) { resume_result = result; }));
+  });
+  ASSERT_OK(resume_result);
+
+  ASSERT_OK(driver_test.StopDriver());
 }
 
 }  // namespace dw_i2c

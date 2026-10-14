@@ -43,6 +43,9 @@ class DwI2c : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_i
   // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
   void Stop(fdf::StopCompleter completer) override;
+  void SystemSuspend(fdf::SuspendCompleter completer) override;
+  void SystemResume(std::optional<fuchsia_power_broker::LeaseToken> pe_lease,
+                    fdf::ResumeCompleter completer) override;
 
   // fdf::WireServer<fuchsia_hardware_i2cimpl::Device> implementation.
   void GetMaxTransferSize(fdf::Arena& arena, GetMaxTransferSizeCompleter::Sync& completer) override;

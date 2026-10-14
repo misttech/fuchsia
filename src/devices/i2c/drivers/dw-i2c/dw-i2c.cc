@@ -7,6 +7,7 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_offers.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/fit/defer.h>
 #include <lib/sync/completion.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -643,6 +644,136 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
 }
 
 void DwI2c::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
+
+void DwI2c::SystemSuspend(fdf::SuspendCompleter completer) {
+  {
+    auto result = clock_regs_->Disable();
+    if (!result.ok()) {
+      fdf::error("Failed to send Disable request to clock-registers: {}", result.status_string());
+      completer(zx::error(result.status()));
+      return;
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to disable clock-registers: {}",
+                 zx_status_get_string(result->error_value()));
+      completer(result->take_error());
+      return;
+    }
+  }
+  fit::deferred_action enable_clock_regs_on_failure =
+      fit::defer([this]() { (void)clock_regs_->Enable(); });
+
+  {
+    auto result = clock_bus_->Disable();
+    if (!result.ok()) {
+      fdf::error("Failed to send Disable request to clock-bus: {}", result.status_string());
+      completer(zx::error(result.status()));
+      return;
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to disable clock-bus: {}", zx_status_get_string(result->error_value()));
+      completer(result->take_error());
+      return;
+    }
+  }
+  fit::deferred_action enable_clock_bus_on_failure =
+      fit::defer([this]() { (void)clock_bus_->Enable(); });
+
+  {
+    auto result = powerdomain_->Disable();
+    if (!result.ok()) {
+      fdf::error("Failed to send Disable request to power domain: {}", result.status_string());
+      completer(zx::error(result.status()));
+      return;
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to disable power domain: {}", zx_status_get_string(result->error_value()));
+      completer(result->take_error());
+      return;
+    }
+  }
+
+  enable_clock_bus_on_failure.cancel();
+  enable_clock_regs_on_failure.cancel();
+  completer(zx::ok());
+}
+
+void DwI2c::SystemResume(std::optional<fuchsia_power_broker::LeaseToken> pe_lease,
+                         fdf::ResumeCompleter completer) {
+  {
+    auto result = powerdomain_->Enable();
+    if (!result.ok()) {
+      fdf::error("Failed to send Enable request to power domain: {}", result.status_string());
+      completer(zx::error(result.status()));
+      return;
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to enable power domain: {}", zx_status_get_string(result->error_value()));
+      completer(result->take_error());
+      return;
+    }
+  }
+  fit::deferred_action disable_powerdomain_on_failure =
+      fit::defer([this]() { (void)powerdomain_->Disable(); });
+
+  {
+    auto result = clock_bus_->Enable();
+    if (!result.ok()) {
+      fdf::error("Failed to send Enable request to clock-bus: {}", result.status_string());
+      completer(zx::error(result.status()));
+      return;
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to enable clock-bus: {}", zx_status_get_string(result->error_value()));
+      completer(result->take_error());
+      return;
+    }
+  }
+  fit::deferred_action disable_clock_bus_on_failure =
+      fit::defer([this]() { (void)clock_bus_->Disable(); });
+
+  {
+    auto result = clock_regs_->Enable();
+    if (!result.ok()) {
+      fdf::error("Failed to send Enable request to clock-registers: {}", result.status_string());
+      completer(zx::error(result.status()));
+      return;
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to enable clock-registers: {}",
+                 zx_status_get_string(result->error_value()));
+      completer(result->take_error());
+      return;
+    }
+  }
+  fit::deferred_action disable_clock_regs_on_failure =
+      fit::defer([this]() { (void)clock_regs_->Disable(); });
+
+  {
+    auto result = reset_->Deassert();
+    if (!result.ok()) {
+      fdf::error("Failed to send Deassert request to reset: {}", result.status_string());
+      completer(zx::error(result.status()));
+      return;
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to deassert reset: {}", zx_status_get_string(result->error_value()));
+      completer(result->take_error());
+      return;
+    }
+  }
+
+  if (auto result = HostInit(); result.is_error()) {
+    fdf::error("Failed to initialize i2c host controller: {}", result.status_string());
+    completer(result.take_error());
+    return;
+  }
+
+  disable_clock_regs_on_failure.cancel();
+  disable_clock_bus_on_failure.cancel();
+  disable_powerdomain_on_failure.cancel();
+  completer(zx::ok());
+}
 
 zx::result<> DwI2c::ServeI2cImpl() {
   auto handler = fuchsia_hardware_i2cimpl::Service::InstanceHandler(
