@@ -1777,6 +1777,30 @@ where
         }
     }
 
+    /// Advances `node` in-place to its in-order successor in the tree (setting `*node` to null
+    /// once the end of the tree is reached), or sets `*node` to null if `*node` is already null
+    /// or a sentinel pointer.
+    ///
+    /// # Safety
+    ///
+    /// - `node` must be a valid, aligned, dereferenceable mutable reference to a raw pointer.
+    /// - `*node` must either be null/sentinel or point to a valid node currently contained within
+    ///   a `WavlTree` whose structure is not being concurrently modified.
+    pub unsafe fn successor_raw(node: &mut *mut P::Target) {
+        if valid_sentinel_ptr(*node) {
+            // SAFETY: `*node` is verified to be non-null and non-sentinel, and the caller
+            // guarantees it points to a valid node in an unmodified WavlTree.
+            unsafe {
+                Self::advance::<ForwardTraits>(node);
+            }
+            if is_sentinel_ptr(*node) {
+                *node = core::ptr::null_mut();
+            }
+        } else {
+            *node = core::ptr::null_mut();
+        }
+    }
+
     /// Inserts an element into the tree.
     ///
     /// For raw pointers, use [`insert_raw`] instead.
@@ -4625,6 +4649,40 @@ mod tests {
                 let expected = expected_in_order(&remaining);
                 assert_eq!(unsafe { &*tree.root }.subtree_val, expected);
             }
+        }
+    }
+
+    #[test]
+    fn test_successor_raw() {
+        type TestTree = WavlTree<i32, *mut TestObject>;
+        stack_pin_init!(let tree = TestTree::new());
+        let tree = unsafe { tree.get_unchecked_mut() };
+
+        let mut cur: *mut TestObject = core::ptr::null_mut();
+        unsafe { TestTree::successor_raw(&mut cur) };
+        assert!(cur.is_null());
+
+        let mut cur = tree.front_cursor().as_raw_ptr();
+        assert!(is_sentinel_ptr(cur));
+        unsafe { TestTree::successor_raw(&mut cur) };
+        assert!(cur.is_null());
+
+        let mut objs =
+            [TestObject::new(20), TestObject::new(10), TestObject::new(30), TestObject::new(15)];
+        for obj in &mut objs {
+            unsafe { tree.insert_raw(obj) };
+        }
+
+        let mut visited = alloc::vec::Vec::new();
+        let mut cur = tree.front_cursor().as_raw_ptr();
+        while !cur.is_null() {
+            visited.push(unsafe { (*cur).value });
+            unsafe { TestTree::successor_raw(&mut cur) };
+        }
+        assert_eq!(visited, alloc::vec![10, 15, 20, 30]);
+
+        for obj in &mut objs {
+            unsafe { tree.erase_raw(obj) };
         }
     }
 }
