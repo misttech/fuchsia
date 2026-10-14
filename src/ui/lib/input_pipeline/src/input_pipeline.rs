@@ -20,7 +20,7 @@ use futures::future::LocalBoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use metrics_registry::*;
-use sorted_vec_map::SortedVecMap;
+use sorted_vec_map::{SortedVecMap, SortedVecSet};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -84,6 +84,9 @@ pub struct InputPipelineAssembly {
 
     /// The metrics logger.
     metrics_logger: metrics::MetricsLogger,
+
+    /// The display ownership handler, if configured.
+    display_ownership: Option<Rc<DisplayOwnership>>,
 }
 
 impl InputPipelineAssembly {
@@ -98,6 +101,7 @@ impl InputPipelineAssembly {
             metrics_logger,
             display_ownership_fut: None,
             focus_listener_fut: None,
+            display_ownership: None,
         }
     }
 
@@ -114,7 +118,7 @@ impl InputPipelineAssembly {
     }
 
     pub fn add_display_ownership(
-        mut self,
+        self,
         display_ownership_event: zx::Event,
         input_handlers_node: &fuchsia_inspect::Node,
     ) -> InputPipelineAssembly {
@@ -123,8 +127,15 @@ impl InputPipelineAssembly {
             input_handlers_node,
             self.metrics_logger.clone(),
         );
+        self.add_display_ownership_handler(h)
+    }
+
+    pub fn add_display_ownership_handler(
+        mut self,
+        display_ownership: Rc<DisplayOwnership>,
+    ) -> InputPipelineAssembly {
         let metrics_logger_clone = self.metrics_logger.clone();
-        let h_clone = h.clone();
+        let h_clone = display_ownership.clone();
         let sender_clone = self.sender.clone();
         let display_ownership_fut = Box::pin(async move {
             h_clone.clone().set_handler_healthy();
@@ -141,7 +152,8 @@ impl InputPipelineAssembly {
             h_clone.set_handler_unhealthy("Receive loop terminated for handler: DisplayOwnership");
         });
         self.display_ownership_fut = Some(display_ownership_fut);
-        self.add_handler(h)
+        self.display_ownership = Some(display_ownership.clone());
+        self.add_handler(display_ownership)
     }
 
     /// Deconstructs the assembly into constituent components, used when constructing
@@ -158,6 +170,7 @@ impl InputPipelineAssembly {
         metrics::MetricsLogger,
         Option<LocalBoxFuture<'static, ()>>,
         Option<LocalBoxFuture<'static, ()>>,
+        Option<Rc<DisplayOwnership>>,
     ) {
         (
             self.sender,
@@ -166,6 +179,7 @@ impl InputPipelineAssembly {
             self.metrics_logger,
             self.display_ownership_fut,
             self.focus_listener_fut,
+            self.display_ownership,
         )
     }
 
@@ -272,9 +286,17 @@ pub struct InputPipeline {
 
     /// The registry for device listeners.
     pub device_listener_registry: DeviceListenerRegistry,
+
+    /// The display ownership handler, if configured.
+    pub display_ownership: Option<Rc<DisplayOwnership>>,
 }
 
 impl InputPipeline {
+    /// Gets the display ownership handler, if configured.
+    pub fn display_ownership(&self) -> Option<&Rc<DisplayOwnership>> {
+        self.display_ownership.as_ref()
+    }
+
     fn new_common(
         input_device_types: Vec<input_device::InputDeviceType>,
         assembly: InputPipelineAssembly,
@@ -288,6 +310,7 @@ impl InputPipeline {
             metrics_logger,
             display_ownership_fut,
             focus_listener_fut,
+            display_ownership,
         ) = assembly.into_components();
 
         let mut handlers_count = handlers.len();
@@ -343,6 +366,7 @@ impl InputPipeline {
             watcher_fut: None,
             runner_fut,
             device_listener_registry,
+            display_ownership,
         }
     }
 
@@ -367,7 +391,29 @@ impl InputPipeline {
             input_device::InputPipelineFeatureFlags { enable_merge_touch_events: false },
         )
     }
+}
 
+#[derive(Clone)]
+enum DeviceServiceSource {
+    Incoming(Incoming),
+    Service(fuchsia_component::client::Service<fidl_fuchsia_input_report::ServiceMarker>),
+}
+
+impl DeviceServiceSource {
+    fn open_service(
+        &self,
+    ) -> Result<fuchsia_component::client::Service<fidl_fuchsia_input_report::ServiceMarker>, Error>
+    {
+        match self {
+            Self::Incoming(incoming) => incoming
+                .open_service(fidl_fuchsia_input_report::ServiceMarker)
+                .context("failed to open service"),
+            Self::Service(service) => Ok(service.clone()),
+        }
+    }
+}
+
+impl InputPipeline {
     /// Creates a new [`InputPipeline`] for production use.
     ///
     /// # Parameters
@@ -382,60 +428,185 @@ impl InputPipeline {
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
+        Self::new_internal(
+            DeviceServiceSource::Incoming(incoming.clone()),
+            input_device_types,
+            assembly,
+            inspect_node,
+            feature_flags,
+            metrics_logger,
+        )
+    }
+
+    /// Creates a new [`InputPipeline`] with an explicitly provided [`Service`].
+    /// Useful for testing with mock service directories.
+    pub fn new_with_service(
+        service: fuchsia_component::client::Service<fidl_fuchsia_input_report::ServiceMarker>,
+        input_device_types: Vec<input_device::InputDeviceType>,
+        assembly: InputPipelineAssembly,
+        inspect_node: fuchsia_inspect::Node,
+        feature_flags: input_device::InputPipelineFeatureFlags,
+        metrics_logger: metrics::MetricsLogger,
+    ) -> Result<Self, Error> {
+        Self::new_internal(
+            DeviceServiceSource::Service(service),
+            input_device_types,
+            assembly,
+            inspect_node,
+            feature_flags,
+            metrics_logger,
+        )
+    }
+
+    fn new_internal(
+        service_source: DeviceServiceSource,
+        input_device_types: Vec<input_device::InputDeviceType>,
+        assembly: InputPipelineAssembly,
+        inspect_node: fuchsia_inspect::Node,
+        feature_flags: input_device::InputPipelineFeatureFlags,
+        metrics_logger: metrics::MetricsLogger,
+    ) -> Result<Self, Error> {
         let mut input_pipeline =
             Self::new_common(input_device_types, assembly, inspect_node, feature_flags);
         let input_device_types = input_pipeline.input_device_types.clone();
         let input_event_sender = input_pipeline.device_event_sender.clone();
         let input_device_bindings = input_pipeline.input_device_bindings.clone();
+        let bound_instances: Arc<Mutex<SortedVecSet<String>>> =
+            Arc::new(Mutex::new(SortedVecSet::new()));
         let device_listener_registry = input_pipeline.device_listener_registry.clone();
         let devices_node = input_pipeline.inspect_node.create_child("input_devices");
         let devices_node_weak = devices_node.clone_weak();
         input_pipeline.inspect_node.record(devices_node);
         let feature_flags = input_pipeline.feature_flags.clone();
-        let incoming = incoming.clone();
+
+        let devices_inspect: Arc<
+            Mutex<Option<(Arc<fuchsia_inspect::UintProperty>, Arc<fuchsia_inspect::UintProperty>)>>,
+        > = Arc::new(Mutex::new(None));
+
+        let display_ownership = input_pipeline.display_ownership.clone();
+
+        if let Some(display_ownership) = &display_ownership {
+            let bindings_clone = input_device_bindings.clone();
+            let bound_instances_clone = bound_instances.clone();
+            let service_source_for_cb = service_source.clone();
+            let input_device_types_clone = input_device_types.clone();
+            let input_event_sender_clone = input_event_sender.clone();
+            let display_ownership_weak = Rc::downgrade(display_ownership);
+            let devices_node_weak_clone = devices_node_weak.clone_weak();
+            let devices_inspect_clone = devices_inspect.clone();
+            let feature_flags_clone = feature_flags.clone();
+            let metrics_logger_clone = metrics_logger.clone();
+            let device_listener_registry_clone = device_listener_registry.clone();
+
+            display_ownership.set_ownership_change_callback(move |has_ownership: bool| {
+                let bindings = bindings_clone.clone();
+                let bound_instances = bound_instances_clone.clone();
+                let service_source = service_source_for_cb.clone();
+                let input_device_types = input_device_types_clone.clone();
+                let input_event_sender = input_event_sender_clone.clone();
+                let display_ownership_weak = display_ownership_weak.clone();
+                let devices_node_weak = devices_node_weak_clone.clone_weak();
+                let devices_inspect = devices_inspect_clone.clone();
+                let feature_flags = feature_flags_clone.clone();
+                let metrics_logger = metrics_logger_clone.clone();
+                let device_listener_registry = device_listener_registry_clone.clone();
+
+                async move {
+                    if !has_ownership {
+                        log::info!("Input ownership lost: pausing device reader tasks and clearing bindings");
+                        *bindings.lock() = SortedVecMap::new();
+                        *bound_instances.lock() = SortedVecSet::new();
+                    } else {
+                        log::info!("Input ownership restored: resuming device discovery and reading");
+                        match service_source.open_service() {
+                            Ok(service) => {
+                                let (discovered_prop, connected_prop) = {
+                                    let guard = devices_inspect.lock();
+                                    (
+                                        guard.as_ref().map(|(d, _)| d.clone()),
+                                        guard.as_ref().map(|(_, c)| c.clone()),
+                                    )
+                                };
+                                let display_ownership = display_ownership_weak.upgrade();
+                                Self::re_enumerate_devices(
+                                    service,
+                                    &input_device_types,
+                                    &input_event_sender,
+                                    &bindings,
+                                    &bound_instances,
+                                    display_ownership.as_ref(),
+                                    &devices_node_weak,
+                                    discovered_prop.as_deref(),
+                                    connected_prop.as_deref(),
+                                    feature_flags,
+                                    metrics_logger,
+                                    device_listener_registry,
+                                )
+                                .await;
+                            }
+                            Err(e) => {
+                                metrics_logger.log_warn(
+                                    InputPipelineErrorMetricDimensionEvent::InputPipelineUnableToWatchForNewInputDevices,
+                                    std::format!("Failed to open service on ownership restore: {:?}", e),
+                                );
+                            }
+                        }
+                    }
+                }
+                .boxed_local()
+            });
+        }
+
         let watcher_fut = async move {
-            let devices_discovered = devices_node_weak.create_uint("devices_discovered", 0);
-            let devices_connected = devices_node_weak.create_uint("devices_connected", 0);
-            // Watches the input device service for new input devices. Creates new InputDeviceBindings
-            // that send InputEvents to `input_event_receiver`.
-            match async {
-                let service = incoming
-                    .open_service(fidl_fuchsia_input_report::ServiceMarker)
-                    .context("failed to open service")?;
-                Self::watch_for_devices(
-                    service,
-                    input_device_types,
-                    input_event_sender,
-                    input_device_bindings,
-                    &devices_node_weak,
-                    &devices_discovered,
-                    &devices_connected,
-                    false, /* break_on_idle */
-                    feature_flags,
-                    metrics_logger.clone(),
-                    device_listener_registry,
-                )
-                .await
-                .context("failed to watch for devices")
-            }
-            .await
-            {
-                Ok(()) => {}
+            let devices_discovered =
+                Arc::new(devices_node_weak.create_uint("devices_discovered", 0));
+            let devices_connected =
+                Arc::new(devices_node_weak.create_uint("devices_connected", 0));
+            *devices_inspect.lock() =
+                Some((devices_discovered.clone(), devices_connected.clone()));
+
+            match service_source.open_service() {
+                Ok(service) => {
+                    match Self::watch_for_devices_internal(
+                        service,
+                        input_device_types,
+                        input_event_sender,
+                        input_device_bindings,
+                        bound_instances,
+                        display_ownership,
+                        &devices_node_weak,
+                        &devices_discovered,
+                        &devices_connected,
+                        false, /* break_on_idle */
+                        feature_flags,
+                        metrics_logger.clone(),
+                        device_listener_registry,
+                    )
+                    .await
+                    .context("failed to watch for devices")
+                    {
+                        Ok(()) => {}
+                        Err(err) => {
+                            metrics_logger.log_warn(
+                                InputPipelineErrorMetricDimensionEvent::InputPipelineUnableToWatchForNewInputDevices,
+                                std::format!(
+                                    "Input pipeline is unable to watch for new input devices: {:?}",
+                                    err
+                                ));
+                        }
+                    }
+                }
                 Err(err) => {
-                    // This error is usually benign in tests: it means that the setup does not
-                    // support dynamic device discovery. Almost no tests support dynamic
-                    // device discovery, and they also do not need those.
                     metrics_logger.log_warn(
                         InputPipelineErrorMetricDimensionEvent::InputPipelineUnableToWatchForNewInputDevices,
                         std::format!(
-                            "Input pipeline is unable to watch for new input devices: {:?}",
+                            "Input pipeline is unable to open service for watching new input devices: {:?}",
                             err
                         ));
                 }
             }
-            devices_node_weak.record(devices_discovered);
-            devices_node_weak.record(devices_connected);
-        }.boxed_local();
+        }
+        .boxed_local();
 
         input_pipeline.watcher_fut = Some(watcher_fut);
 
@@ -495,22 +666,88 @@ impl InputPipeline {
         tasks.run().await;
     }
 
+    async fn re_enumerate_devices(
+        service: fuchsia_component::client::Service<fidl_fuchsia_input_report::ServiceMarker>,
+        device_types: &[input_device::InputDeviceType],
+        input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
+        bindings: &InputDeviceBindingMap,
+        bound_instances: &Arc<Mutex<SortedVecSet<String>>>,
+        display_ownership: Option<&Rc<DisplayOwnership>>,
+        input_devices_node: &fuchsia_inspect::Node,
+        devices_discovered: Option<&fuchsia_inspect::UintProperty>,
+        devices_connected: Option<&fuchsia_inspect::UintProperty>,
+        feature_flags: input_device::InputPipelineFeatureFlags,
+        metrics_logger: metrics::MetricsLogger,
+        device_listener_registry: DeviceListenerRegistry,
+    ) {
+        match service.enumerate().await {
+            Ok(instances) => {
+                for instance in instances {
+                    Self::connect_and_bind_device(
+                        &instance,
+                        device_types,
+                        input_event_sender,
+                        bindings,
+                        bound_instances,
+                        display_ownership,
+                        input_devices_node,
+                        devices_discovered,
+                        devices_connected,
+                        feature_flags.clone(),
+                        metrics_logger.clone(),
+                        device_listener_registry.clone(),
+                    )
+                    .await;
+                }
+            }
+            Err(e) => {
+                metrics_logger.log_warn(
+                    InputPipelineErrorMetricDimensionEvent::InputPipelineUnableToWatchForNewInputDevices,
+                    std::format!("Failed to enumerate devices on ownership restore: {:?}", e),
+                );
+            }
+        }
+    }
+
     async fn connect_and_bind_device(
         instance: &fidl_fuchsia_input_report::ServiceProxy,
         device_types: &[input_device::InputDeviceType],
         input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
         bindings: &InputDeviceBindingMap,
+        bound_instances: &Arc<Mutex<SortedVecSet<String>>>,
+        display_ownership: Option<&Rc<DisplayOwnership>>,
         input_devices_node: &fuchsia_inspect::Node,
-        devices_discovered: &fuchsia_inspect::UintProperty,
-        devices_connected: &fuchsia_inspect::UintProperty,
+        devices_discovered: Option<&fuchsia_inspect::UintProperty>,
+        devices_connected: Option<&fuchsia_inspect::UintProperty>,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
         device_listener_registry: DeviceListenerRegistry,
     ) {
         let filename = instance.instance_name().to_string();
-        log::info!("found input device {}", filename);
-        devices_discovered.add(1);
 
+        if let Some(ownership) = display_ownership {
+            if ownership.is_display_ownership_lost() {
+                log::info!("skipping device {} because platform input ownership is lost", filename);
+                return;
+            }
+        }
+
+        {
+            let mut bound = bound_instances.lock();
+            if bound.contains(&filename) {
+                log::info!("device {} is already bound, skipping", filename);
+                return;
+            }
+            bound.insert(filename.clone());
+        }
+
+        log::info!("found input device {}", filename);
+        if let Some(devices_discovered) = devices_discovered {
+            devices_discovered.add(1);
+        }
+
+        let bound_instances_clone = bound_instances.clone();
+        let filename_clone = filename.clone();
         let res = async {
             let device_proxy =
                 instance.connect_to_input_device().context("connect to input device")?;
@@ -533,13 +770,24 @@ impl InputPipeline {
                 bindings,
                 device_id,
                 input_devices_node,
-                Some(devices_connected),
+                devices_connected,
                 feature_flags,
                 metrics_logger,
                 false,
             )
             .await
             {
+                if let Some(ownership) = display_ownership {
+                    if ownership.is_display_ownership_lost() {
+                        log::info!(
+                            "ownership lost while binding device {}, dropping binding",
+                            filename
+                        );
+                        bound_instances_clone.lock().remove(&filename_clone);
+                        bindings.lock().remove(&device_id);
+                        return Ok::<(), Error>(());
+                    }
+                }
                 device_listener_registry.notify_device_changed(
                     fidl_next_fuchsia_ui_input::Action::Added,
                     device_id,
@@ -547,6 +795,8 @@ impl InputPipeline {
                 );
                 let device_listener_registry_clone = device_listener_registry.clone();
                 let bindings_clone = bindings.clone();
+                let bound_instances_disconnect = bound_instances_clone.clone();
+                let filename_disconnect = filename_clone.clone();
                 let watch_task = Dispatcher::spawn_local(async move {
                     let _ = join_handle.await;
                     log::info!("Device {} disconnected", device_id);
@@ -556,14 +806,18 @@ impl InputPipeline {
                         descriptor,
                     );
                     bindings_clone.lock().remove(&device_id);
+                    bound_instances_disconnect.lock().remove(&filename_disconnect);
                 });
                 watch_task.detach();
+            } else {
+                bound_instances_clone.lock().remove(&filename_clone);
             }
             Ok::<(), Error>(())
         }
         .await;
 
         if let Err(e) = res {
+            bound_instances.lock().remove(&filename);
             log::error!("Failed to connect and bind input device {}: {:?}", filename, e);
         }
     }
@@ -585,11 +839,45 @@ impl InputPipeline {
     ///
     /// # Errors
     /// If the input report service or a connection within it fails.
-    async fn watch_for_devices(
+    pub async fn watch_for_devices(
         service: fuchsia_component::client::Service<fidl_fuchsia_input_report::ServiceMarker>,
         device_types: Vec<input_device::InputDeviceType>,
         input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         bindings: InputDeviceBindingMap,
+        input_devices_node: &fuchsia_inspect::Node,
+        devices_discovered: &fuchsia_inspect::UintProperty,
+        devices_connected: &fuchsia_inspect::UintProperty,
+        break_on_idle: bool,
+        feature_flags: input_device::InputPipelineFeatureFlags,
+        metrics_logger: metrics::MetricsLogger,
+        device_listener_registry: DeviceListenerRegistry,
+    ) -> Result<(), Error> {
+        let bound_instances = Arc::new(Mutex::new(SortedVecSet::new()));
+        Self::watch_for_devices_internal(
+            service,
+            device_types,
+            input_event_sender,
+            bindings,
+            bound_instances,
+            None,
+            input_devices_node,
+            devices_discovered,
+            devices_connected,
+            break_on_idle,
+            feature_flags,
+            metrics_logger,
+            device_listener_registry,
+        )
+        .await
+    }
+
+    async fn watch_for_devices_internal(
+        service: fuchsia_component::client::Service<fidl_fuchsia_input_report::ServiceMarker>,
+        device_types: Vec<input_device::InputDeviceType>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        bindings: InputDeviceBindingMap,
+        bound_instances: Arc<Mutex<SortedVecSet<String>>>,
+        display_ownership: Option<Rc<DisplayOwnership>>,
         input_devices_node: &fuchsia_inspect::Node,
         devices_discovered: &fuchsia_inspect::UintProperty,
         devices_connected: &fuchsia_inspect::UintProperty,
@@ -606,9 +894,11 @@ impl InputPipeline {
                     &device_types,
                     &input_event_sender,
                     &bindings,
+                    &bound_instances,
+                    display_ownership.as_ref(),
                     input_devices_node,
-                    devices_discovered,
-                    devices_connected,
+                    Some(devices_discovered),
+                    Some(devices_connected),
                     feature_flags.clone(),
                     metrics_logger.clone(),
                     device_listener_registry.clone(),
@@ -630,9 +920,11 @@ impl InputPipeline {
                     &device_types,
                     &input_event_sender,
                     &bindings,
+                    &bound_instances,
+                    display_ownership.as_ref(),
                     input_devices_node,
-                    devices_discovered,
-                    devices_connected,
+                    Some(devices_discovered),
+                    Some(devices_connected),
                     feature_flags.clone(),
                     metrics_logger.clone(),
                     device_listener_registry.clone(),
@@ -1122,6 +1414,12 @@ mod tests {
                     ..Default::default()
                 });
             }
+            fidl_fuchsia_input_report::InputDeviceRequest::GetInputReportsReaderV2 {
+                responder,
+                ..
+            } => {
+                let _ = responder.send(2);
+            }
             _ => {}
         }
     }
@@ -1144,7 +1442,7 @@ mod tests {
         );
 
         // Build the input pipeline.
-        let (sender, receiver, handlers, _, _, _) =
+        let (sender, receiver, handlers, _, _, _, _) =
             InputPipelineAssembly::new(metrics::MetricsLogger::default())
                 .add_handler(input_handler)
                 .into_components();
@@ -1166,6 +1464,7 @@ mod tests {
             watcher_fut: None,
             runner_fut,
             device_listener_registry: DeviceListenerRegistry::new(),
+            display_ownership: None,
         };
 
         // Send an input event from each device.
@@ -1206,7 +1505,7 @@ mod tests {
             );
 
         // Build the input pipeline.
-        let (sender, receiver, handlers, _, _, _) =
+        let (sender, receiver, handlers, _, _, _, _) =
             InputPipelineAssembly::new(metrics::MetricsLogger::default())
                 .add_handler(first_input_handler)
                 .add_handler(second_input_handler)
@@ -1229,6 +1528,7 @@ mod tests {
             watcher_fut: None,
             runner_fut,
             device_listener_registry: DeviceListenerRegistry::new(),
+            display_ownership: None,
         };
 
         // Send an input event.
@@ -1771,7 +2071,7 @@ mod tests {
         let fake_handler =
             SpecificInterestFakeHandler::new(vec![InputEventType::Fake], fake_sender);
 
-        let (pipeline_sender, pipeline_receiver, handlers, _, _, _) =
+        let (pipeline_sender, pipeline_receiver, handlers, _, _, _, _) =
             InputPipelineAssembly::new(metrics::MetricsLogger::default())
                 .add_handler(mouse_handler)
                 .add_handler(fake_handler)
@@ -1846,7 +2146,7 @@ mod tests {
         let fake_handler =
             SpecificInterestFakeHandler::new(vec![InputEventType::Fake], fake_sender);
 
-        let (pipeline_sender, pipeline_receiver, handlers, _, _, _) =
+        let (pipeline_sender, pipeline_receiver, handlers, _, _, _, _) =
             InputPipelineAssembly::new(metrics::MetricsLogger::default())
                 .add_handler(mouse_handler)
                 .add_handler(fake_handler)
@@ -1889,5 +2189,251 @@ mod tests {
 
         // Verify Fake Handler received F1
         assert_eq!(fake_receiver.next().await, Some(fake_event_1));
+    }
+
+    #[fuchsia::test]
+    async fn ownership_transition_pauses_and_resumes_device_readers() {
+        use crate::display_ownership;
+        use zx::Peered as _;
+
+        let readers = Arc::new(Mutex::new(Vec::new()));
+        let readers_clone = readers.clone();
+        let dir = pseudo_directory! {
+            "fuchsia.input.report.Service" => pseudo_directory! {
+                "instance_0" => pseudo_directory! {
+                    "input_device" => pseudo_fs_service::host(
+                        move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
+                            let readers = readers_clone.clone();
+                            async move {
+                                while let Ok(Some(input_device_request)) =
+                                    request_stream.try_next().await
+                                {
+                                    match input_device_request {
+                                        fidl_fuchsia_input_report::InputDeviceRequest::GetInputReportsReaderV2 {
+                                            reader,
+                                            responder,
+                                            ..
+                                        } => {
+                                            let _ = responder.send(2);
+                                            readers.lock().push(reader);
+                                        }
+                                        req => handle_input_device_request(req),
+                                    }
+                                }
+                            }.boxed()
+                        },
+                    )
+                }
+            }
+        };
+
+        let svc_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
+        let dir = fuchsia_fs::directory::open_directory_async(
+            &svc_proxy,
+            "fuchsia.input.report.Service",
+            fio::PERM_READABLE,
+        )
+        .expect("open service directory");
+        let service = fuchsia_component::client::Service::from_service_dir_proxy(
+            dir,
+            fidl_fuchsia_input_report::ServiceMarker,
+        );
+
+        let (test_event, handler_event) = zx::EventPair::create();
+        // Initial state: platform owns both display and input.
+        test_event
+            .signal_peer(
+                zx::Signals::empty(),
+                *display_ownership::DISPLAY_PLATFORM_OWNED
+                    | *display_ownership::INPUT_PLATFORM_OWNED,
+            )
+            .unwrap();
+
+        let (loop_done_sender, mut loop_done) = futures::channel::mpsc::unbounded::<()>();
+        let display_ownership = display_ownership::DisplayOwnership::new_for_test(
+            handler_event,
+            loop_done_sender,
+            metrics::MetricsLogger::default(),
+        );
+
+        let assembly = InputPipelineAssembly::new(metrics::MetricsLogger::default())
+            .add_display_ownership_handler(display_ownership.clone());
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let input_pipeline = InputPipeline::new_with_service(
+            service,
+            vec![input_device::InputDeviceType::Mouse],
+            assembly,
+            inspector.root().create_child("input_pipeline"),
+            InputPipelineFeatureFlags { enable_merge_touch_events: false },
+            metrics::MetricsLogger::default(),
+        )
+        .expect("failed to create input pipeline");
+
+        let bindings = input_pipeline.input_device_bindings().clone();
+
+        // Run the pipeline tasks in the background.
+        let _pipeline_task = fasync::Task::local(input_pipeline.handle_input_events());
+
+        // Wait until initial device is discovered and bound.
+        for _ in 0..50 {
+            if bindings.lock().len() == 1 {
+                break;
+            }
+            fasync::Timer::new(fasync::MonotonicInstant::after(
+                zx::MonotonicDuration::from_millis(10),
+            ))
+            .await;
+        }
+        assert_eq!(bindings.lock().len(), 1);
+
+        // 1. Lose display ownership: DISPLAY_PLATFORM_OWNED -> DISPLAY_UNOWNED.
+        test_event
+            .signal_peer(
+                *display_ownership::DISPLAY_PLATFORM_OWNED,
+                *display_ownership::DISPLAY_UNOWNED,
+            )
+            .unwrap();
+        loop_done.next().await.expect("loop_done notification");
+        assert!(bindings.lock().is_empty());
+
+        // 2. Regain display ownership: DISPLAY_UNOWNED -> DISPLAY_PLATFORM_OWNED.
+        test_event
+            .signal_peer(
+                *display_ownership::DISPLAY_UNOWNED,
+                *display_ownership::DISPLAY_PLATFORM_OWNED,
+            )
+            .unwrap();
+        loop_done.next().await.expect("loop_done notification");
+        assert_eq!(bindings.lock().len(), 1);
+
+        // 3. Lose input ownership: INPUT_PLATFORM_OWNED -> INPUT_CLIENT_OWNED.
+        test_event
+            .signal_peer(
+                *display_ownership::INPUT_PLATFORM_OWNED,
+                *display_ownership::INPUT_CLIENT_OWNED,
+            )
+            .unwrap();
+        loop_done.next().await.expect("loop_done notification");
+        assert!(bindings.lock().is_empty());
+
+        // 4. Regain input ownership: INPUT_CLIENT_OWNED -> INPUT_PLATFORM_OWNED.
+        test_event
+            .signal_peer(
+                *display_ownership::INPUT_CLIENT_OWNED,
+                *display_ownership::INPUT_PLATFORM_OWNED,
+            )
+            .unwrap();
+        loop_done.next().await.expect("loop_done notification");
+        assert_eq!(bindings.lock().len(), 1);
+
+        std::mem::drop(_pipeline_task);
+    }
+
+    #[fuchsia::test]
+    async fn device_discovered_while_unowned_is_not_bound_until_ownership_granted() {
+        use crate::display_ownership;
+        use zx::Peered as _;
+
+        let readers = Arc::new(Mutex::new(Vec::new()));
+        let readers_clone = readers.clone();
+        let dir = pseudo_directory! {
+            "fuchsia.input.report.Service" => pseudo_directory! {
+                "instance_0" => pseudo_directory! {
+                    "input_device" => pseudo_fs_service::host(
+                        move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
+                            let readers = readers_clone.clone();
+                            async move {
+                                while let Ok(Some(input_device_request)) =
+                                    request_stream.try_next().await
+                                {
+                                    match input_device_request {
+                                        fidl_fuchsia_input_report::InputDeviceRequest::GetInputReportsReaderV2 {
+                                            reader,
+                                            responder,
+                                            ..
+                                        } => {
+                                            let _ = responder.send(2);
+                                            readers.lock().push(reader);
+                                        }
+                                        req => handle_input_device_request(req),
+                                    }
+                                }
+                            }.boxed()
+                        },
+                    )
+                }
+            }
+        };
+
+        let svc_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
+        let dir = fuchsia_fs::directory::open_directory_async(
+            &svc_proxy,
+            "fuchsia.input.report.Service",
+            fio::PERM_READABLE,
+        )
+        .expect("open service directory");
+        let service = fuchsia_component::client::Service::from_service_dir_proxy(
+            dir,
+            fidl_fuchsia_input_report::ServiceMarker,
+        );
+
+        let (test_event, handler_event) = zx::EventPair::create();
+        // Initial state: platform does NOT own display.
+        test_event
+            .signal_peer(
+                zx::Signals::empty(),
+                *display_ownership::DISPLAY_UNOWNED | *display_ownership::INPUT_PLATFORM_OWNED,
+            )
+            .unwrap();
+
+        let (loop_done_sender, mut loop_done) = futures::channel::mpsc::unbounded::<()>();
+        let display_ownership = display_ownership::DisplayOwnership::new_for_test(
+            handler_event,
+            loop_done_sender,
+            metrics::MetricsLogger::default(),
+        );
+
+        let assembly = InputPipelineAssembly::new(metrics::MetricsLogger::default())
+            .add_display_ownership_handler(display_ownership.clone());
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let input_pipeline = InputPipeline::new_with_service(
+            service,
+            vec![input_device::InputDeviceType::Mouse],
+            assembly,
+            inspector.root().create_child("input_pipeline"),
+            InputPipelineFeatureFlags { enable_merge_touch_events: false },
+            metrics::MetricsLogger::default(),
+        )
+        .expect("failed to create input pipeline");
+
+        let bindings = input_pipeline.input_device_bindings().clone();
+
+        // Run the pipeline tasks in the background.
+        let _pipeline_task = fasync::Task::local(input_pipeline.handle_input_events());
+
+        // Wait a bit to ensure watcher has run and attempted to bind.
+        fasync::Timer::new(fasync::MonotonicInstant::after(zx::MonotonicDuration::from_millis(50)))
+            .await;
+
+        // Device should NOT be bound because ownership was lost.
+        assert!(bindings.lock().is_empty());
+
+        // Regain display ownership: DISPLAY_UNOWNED -> DISPLAY_PLATFORM_OWNED.
+        test_event
+            .signal_peer(
+                *display_ownership::DISPLAY_UNOWNED,
+                *display_ownership::DISPLAY_PLATFORM_OWNED,
+            )
+            .unwrap();
+        loop_done.next().await.expect("loop_done notification");
+
+        // Device should now be re-enumerated and bound.
+        assert_eq!(bindings.lock().len(), 1);
+
+        std::mem::drop(_pipeline_task);
     }
 }
