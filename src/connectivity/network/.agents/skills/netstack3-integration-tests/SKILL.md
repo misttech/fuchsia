@@ -416,8 +416,8 @@ Example expectation file:
 ```
 
 If you add a test that is known to fail (e.g. because Netstack3 does not
-implement the feature yet), you should add it to the expectations
-file rather than disabling it in code.
+implement the feature yet), you should add it to the expectations file rather
+than disabling it in code.
 
 ## Best Practices & Common Pitfalls
 

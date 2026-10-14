@@ -21,27 +21,27 @@ description: >
 
 ### Step 1: Scan `wlan_e2e` Builders & Search Candidate Bugs
 
-1. Run `scan` to fetch recent failures across all `wlan_e2e` builders and cache
-   unassociated failure groups `(1)..(N)`:
+1.  Run `scan` to fetch recent failures across all `wlan_e2e` builders and cache
+    unassociated failure groups `(1)..(N)`:
    ```bash
    python3 src/connectivity/wlan/.agents/skills/wlan-e2e-console-triage/scripts/console_triage.py scan
    ```
-2. For each distinct unassociated failure cause, use the `issues-cli` skill to
-   search Buganizer for open candidate bugs (by key error phrase or suite name)
-   and inspect promising candidates.
+2.  For each distinct unassociated failure cause, use the `issues-cli` skill to
+    search Buganizer for open candidate bugs (by key error phrase or suite name)
+    and inspect promising candidates.
 
 ### Step 2: Propose Triage Actions
 
 Present a concise report and ask the user which actions to execute:
 
-1. **Builder Coverage & Associated Failures**:
+1.  **Builder Coverage & Associated Failures**:
    * Summarize active builders and `WARNING` lines.
    * Print a list of the bugs associated with existing failures, including each
      bug's ID (`b/<id>`), priority, assignee, and affected suite(s)/boards.
    * Flag (for human awareness) any associated bug whose `Rule` only matches
      `test` without constraining `reason`, or where multiple distinct `Reason:`
      lines are masked under one bug.
-2. **Proposals for Unassociated Failures `(N)`**:
+2.  **Proposals for Unassociated Failures `(N)`**:
    * **Missing or bare error tag** (e.g., `[AssertionError]`,
      `[FuchsiaDeviceError]`, `No primary error message found`): Do not propose a
      rule or download logs during the sweep; recommend follow-up via
@@ -58,12 +58,12 @@ Present a concise report and ask the user which actions to execute:
        `-P`/`-s` ports/serials, fault addresses, durations, and newlines/quotes
        with `%`).
      * **Default (`reason`-only)**: `reason LIKE "%<stable error phrase>%"`.
-     * **Suite-scoped (`test+reason`)**:
-       `test LIKE "<suite_prefix>%" AND reason LIKE "%<error phrase>%"` (always
-       parenthesize `OR` clauses: `test LIKE "..." AND (reason LIKE "..." OR ...)`
-       ) — use only when the failure is specific to a single suite/family and
-       the error phrase is too generic to match globally (e.g.,
-       `network is not in connected state`, `DUT failed to get an ipv4 address`).
+     * **Suite-scoped (`test+reason`)**: `test LIKE "<suite_prefix>%" AND reason
+       LIKE "%<error phrase>%"` (always parenthesize `OR` clauses: `test LIKE
+       "..." AND (reason LIKE "..." OR ...)` ) — use only when the failure is
+       specific to a single suite/family and the error phrase is too generic to
+       match globally (e.g., `network is not in connected state`, `DUT failed to
+       get an ipv4 address`).
    * For each proposed action, show the group index(es), suite(s), board(s),
      builder(s), failure reason, sample build link, candidate bugs, proposed
      `--rule`, and recommendation (**Associate** with `b/<id>` or **Create New

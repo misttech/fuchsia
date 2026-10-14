@@ -5,7 +5,8 @@ description: Provides WLAN-API-specific code reviews on Fuchsia CLs.
 
 ## When to use this skill
 
-- Use this when reviewing a Fuchsia CL that includes any WLAN FIDL or API changes.
+- Use this when reviewing a Fuchsia CL that includes any WLAN FIDL or API
+  changes.
 
 ## How to use it
 
