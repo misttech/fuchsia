@@ -50,6 +50,7 @@ import functools
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -298,6 +299,111 @@ def parse_ninja_action_metrics(
     return metrics
 
 
+# TODO(olivernewman): This is a stopgap. Delete the Bazel output condensing
+# logic once infra failure summaries are generated from structured build
+# results (e.g. a checkpoint produced by the build TUI in headless mode)
+# rather than by scraping Bazel's console output.
+
+# Matches lines that only appear in the output of a Bazel invocation.
+_BAZEL_OUTPUT_RE = re.compile(
+    r"^(INFO: Invocation ID: |Starting local Bazel server |\[[\d,]+ / [\d,]+\] )",
+    re.MULTILINE,
+)
+
+# Matches lines of Bazel output that report progress or statistics rather than
+# errors. They often make up the vast majority of a failed Bazel action's
+# output, pushing the actual error message past the point where the recipe
+# truncates the failure summary. These depend on the wording of Bazel's UI, so
+# a Bazel upgrade may require updating them.
+_BAZEL_NOISE_RE = re.compile(
+    r"""^(
+        \[[\d,]+\ /\ [\d,]+\]\    # e.g. "[1,234 / 5,678] Compiling foo.cc"
+        | Computing\ main\ repo\ mapping:
+        | Loading:
+        | Analyzing:
+        | Starting\ local\ Bazel\ server[ ]
+        | \.\.\.\ still\ trying\ to\ connect\ to\ local\ Bazel\ server[ ]
+        | \#\ Configuration:[ ]
+        | INFO:\ (
+            Invocation\ ID
+            | Analyzed\ \d
+            | Found\ \d
+            | Elapsed\ time
+            | \d[\d,]*\ process
+            | Build\ completed\ successfully
+        )
+        | INFO:\s*$
+    )""",
+    re.VERBOSE,
+)
+
+# Matches the first line of the command that Bazel prints after an
+# "ERROR: ... failed" line. Every line of the command except the last ends with
+# a backslash.
+# LINT.IfChange(verbose_failures)
+_BAZEL_COMMAND_START_RE = re.compile(r"^  \(cd \S+ && \\$")
+# LINT.ThenChange(/build/bazel/scripts/bazel_action_impl.py:verbose_failures)
+
+
+def condense_bazel_output(output: str) -> str:
+    """Strips progress noise from a Bazel invocation's output.
+
+    If the output contains an error, everything before the first error is also
+    stripped. Output that doesn't appear to come from Bazel is returned
+    unchanged.
+    """
+    if not _BAZEL_OUTPUT_RE.search(output):
+        return output
+
+    lines = []
+    in_command = False
+    prev_blank = False
+    for line in output.split("\n"):
+        line = line.rstrip("\r")
+        if in_command:
+            if not line.endswith("\\"):
+                in_command = False
+            continue
+        if _BAZEL_COMMAND_START_RE.match(line):
+            # The full command is often many kilobytes long and is rarely
+            # needed to diagnose the failure, since the compiler error comes
+            # right after it.
+            in_command = True
+            lines.append("  (command elided)")
+            prev_blank = False
+            continue
+        if _BAZEL_NOISE_RE.match(line):
+            continue
+        blank = not line.strip()
+        if blank and prev_blank:
+            continue
+        prev_blank = blank
+        lines.append(line)
+
+    if in_command:
+        # The output ended partway through a command, which suggests that
+        # Bazel's command format has changed and we may have elided the actual
+        # error message.
+        return output
+
+    # Anything before the first error is just preamble (warnings, links, output
+    # from earlier successful Bazel invocations in the same action, etc.) that
+    # pushes the error further down the summary.
+    for i, line in enumerate(lines):
+        if line.startswith("ERROR: "):
+            lines = lines[i:]
+            break
+    return "\n".join(lines)
+
+
+# Suffix of the stamp file that is the first output of every GN bazel_action().
+# LINT.IfChange(bazel_action_stamp_suffix)
+_BAZEL_ACTION_STAMP_SUFFIX = (
+    ".bazel_target_can_only_be_referenced_by_one_bazel_action"
+)
+# LINT.ThenChange(/build/bazel/bazel_action.gni:bazel_action_stamp_suffix)
+
+
 @dataclass(frozen=True)
 class NinjaFailure:
     """Represents a single action failure recorded in ninja_errors.json."""
@@ -331,13 +437,20 @@ class NinjaFailure:
         return cls(
             artifacts=[str(a) for a in artifacts],
             exit_code=exit_code_int,
-            output=str(output).strip(),
+            output=condense_bazel_output(str(output)).strip(),
         )
 
     @property
     def is_eligible_for_deduplication(self) -> bool:
         """Returns True if the failure output is eligible for deduplication (>= 5 lines)."""
         return bool(self.output and self.output.count("\n") >= 5)
+
+    @property
+    def is_bazel_action(self) -> bool:
+        """Returns True if the failed action is a GN bazel_action()."""
+        return any(
+            a.endswith(_BAZEL_ACTION_STAMP_SUFFIX) for a in self.artifacts
+        )
 
     def format(self, include_output: bool = True) -> str:
         """Formats the failure into a high-signal error block."""
@@ -489,6 +602,14 @@ def format_ninja_failures(data: JSONObject) -> str | None:
 
     if not failures:
         return None
+
+    # Ninja batches pending bazel_action()s into a single Bazel invocation, so
+    # if one Bazel target fails then every GN action in the batch fails, but
+    # only one of them gets the Bazel output. The rest are collateral and
+    # their headers just bury the real error, as do any other output-less
+    # failures, which are unlikely to be actionable on their own.
+    if any(f.is_bazel_action and f.output for f in failures):
+        failures = [f for f in failures if f.output]
 
     msg_lines = []
     seen_outputs = set()

@@ -287,7 +287,9 @@ class BazelActionRunner(object):
             cmd_args += ["--sandbox_debug"]
 
         # Always enable verbose failures
+        # LINT.IfChange(verbose_failures)
         cmd_args += ["--verbose_failures"]
+        # LINT.ThenChange(/tools/integration/fint/fint_build.py:verbose_failures)
 
         # To capture the set of dependencies for targets, a genquery that can find
         # all the BUILD.bazel and .bzl files needed for each target.

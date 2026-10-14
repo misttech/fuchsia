@@ -817,6 +817,197 @@ class ParseNinjaFailuresTest(unittest.TestCase):
         # Missing failures
         self.assertIsNone(fint_build.format_ninja_failures({"version": 1}))
 
+    def test_format_elides_collateral_failures(self) -> None:
+        """Verifies output-less failures are omitted if a Bazel action failed with output."""
+        stamp = ".fuchsia_sdk_arm64.bazel_target_can_only_be_referenced_by_one_bazel_action"
+        mock_data: fint_build.JSONObject = {
+            "version": 1,
+            "failures": [
+                {
+                    "artifacts": [f"obj/foo{stamp}", "obj/foo.far"],
+                    "exit_code": 1,
+                    "output": "",
+                },
+                {
+                    "artifacts": [f"obj/bar{stamp}", "obj/bar.far"],
+                    "exit_code": 1,
+                    "output": "ERROR: bar failed",
+                },
+                {
+                    "artifacts": ["obj/baz.stamp"],
+                    "exit_code": 1,
+                    "output": "",
+                },
+                {
+                    "artifacts": ["obj/qux.o"],
+                    "exit_code": 1,
+                    "output": "qux.cc: error",
+                },
+            ],
+        }
+        res = fint_build.format_ninja_failures(mock_data)
+        expected = (
+            f"FAILED: [code=1] obj/bar{stamp} obj/bar.far\n\n"
+            "ERROR: bar failed\n\n"
+            "FAILED: [code=1] obj/qux.o\n\n"
+            "qux.cc: error"
+        )
+        self.assertEqual(res, expected)
+
+    def test_format_keeps_output_less_failures_without_bazel_output(
+        self,
+    ) -> None:
+        """Verifies output-less failures are kept if no Bazel action failed with output."""
+        stamp = ".fuchsia_sdk_arm64.bazel_target_can_only_be_referenced_by_one_bazel_action"
+        mock_data: fint_build.JSONObject = {
+            "version": 1,
+            "failures": [
+                {
+                    "artifacts": [f"obj/foo{stamp}"],
+                    "exit_code": 1,
+                    "output": "",
+                },
+                {
+                    "artifacts": ["obj/qux.o"],
+                    "exit_code": 1,
+                    "output": "qux.cc: error",
+                },
+            ],
+        }
+        res = fint_build.format_ninja_failures(mock_data)
+        expected = (
+            f"FAILED: [code=1] obj/foo{stamp}\n\n"
+            "FAILED: [code=1] obj/qux.o\n\n"
+            "qux.cc: error"
+        )
+        self.assertEqual(res, expected)
+
+    def test_format_condenses_bazel_output(self) -> None:
+        """Verifies format_ninja_failures strips Bazel progress noise."""
+        bazel_output = "\n".join(
+            [
+                "Starting local Bazel server (8.5.1) and connecting to it...",
+                "... still trying to connect to local Bazel server (298708) after 10 seconds ...",
+                "INFO: Invocation ID: 83f12aa8-a9bf-4d83-b876-22dcd83493d1",
+                "INFO: Streaming build results to: http://go/fxbtx/83f12aa8",
+                "Computing main repo mapping: ",
+                "Loading: 5 packages loaded",
+                "Analyzing: 4 targets (12 packages loaded, 8 targets configured)",
+                "",
+                "",
+                "[3 / 3] no actions running",
+                "INFO: Analyzed 4 targets (1207 packages loaded, 28611 targets configured).",
+                "[1,222 / 4,436] Compiling foo.cc; 4s remote ... (318 actions, 229 running)",
+                "ERROR: /out/BUILD.bazel:53:11: Compiling foo.cc failed: (Exit 1): clang failed: error executing CppCompile command (from target //foo:foo)",
+                "  (cd /out/execroot/_main && \\",
+                "  exec env - \\",
+                "    PATH=/bin:/usr/bin:/usr/local/bin \\",
+                "  external/clang/bin/clang -c foo.cc -o foo.o)",
+                "# Configuration: e55a32e603a87d351114726c7559d6a5c72b7566a4fbd41dbd1e0c01e14999c9",
+                "# Execution platform: //build/bazel/platforms:linux_x64",
+                "foo.cc:1:2: error: something is wrong",
+                "1 error generated.",
+                "INFO: Elapsed time: 34.007s, Critical Path: 23.95s",
+                "INFO: 8251 processes: 13403 action cache hit, 1 remote.",
+                "ERROR: Build did NOT complete successfully",
+            ]
+        )
+        mock_data: fint_build.JSONObject = {
+            "version": 1,
+            "failures": [
+                {
+                    "artifacts": ["obj/foo.stamp"],
+                    "exit_code": 1,
+                    "output": bazel_output,
+                }
+            ],
+        }
+        res = fint_build.format_ninja_failures(mock_data)
+        expected = "\n".join(
+            [
+                "FAILED: [code=1] obj/foo.stamp",
+                "",
+                "ERROR: /out/BUILD.bazel:53:11: Compiling foo.cc failed: (Exit 1): clang failed: error executing CppCompile command (from target //foo:foo)",
+                "  (command elided)",
+                "# Execution platform: //build/bazel/platforms:linux_x64",
+                "foo.cc:1:2: error: something is wrong",
+                "1 error generated.",
+                "ERROR: Build did NOT complete successfully",
+            ]
+        )
+        self.assertEqual(res, expected)
+
+    def test_condense_bazel_output_leaves_non_bazel_output_alone(self) -> None:
+        """Verifies output that doesn't come from Bazel isn't modified."""
+        output = "Loading: foo\n\n\n[1/2] something\nerror: bad"
+        self.assertEqual(fint_build.condense_bazel_output(output), output)
+
+    def test_condense_bazel_output_without_error(self) -> None:
+        """Verifies non-noise lines are kept if there is no error."""
+        output = "\n".join(
+            [
+                "INFO: Invocation ID: abc",
+                "Loading: 5 packages loaded",
+                "WARNING: something is off",
+                "some tool failed",
+            ]
+        )
+        self.assertEqual(
+            fint_build.condense_bazel_output(output),
+            "WARNING: something is off\nsome tool failed",
+        )
+
+    def test_condense_bazel_output_multiple_commands(self) -> None:
+        """Verifies errors following each elided command are preserved."""
+        output = "\n".join(
+            [
+                "INFO: Invocation ID: abc",
+                "ERROR: first failed",
+                "  (cd /out/execroot/_main && \\",
+                "  exec env - \\",
+                "  clang -c a.cc)",
+                "a.cc:1:2: error: first error",
+                "INFO: Invocation ID: def",
+                "ERROR: second failed",
+                "  (cd /out/execroot/_main && \\",
+                "  clang -c b.cc)",
+                "# Configuration: 1234",
+                "b.cc:1:2: error: second error",
+            ]
+        )
+        expected = "\n".join(
+            [
+                "ERROR: first failed",
+                "  (command elided)",
+                "a.cc:1:2: error: first error",
+                "ERROR: second failed",
+                "  (command elided)",
+                "b.cc:1:2: error: second error",
+            ]
+        )
+        self.assertEqual(fint_build.condense_bazel_output(output), expected)
+
+    def test_condense_bazel_output_crlf(self) -> None:
+        """Verifies CRLF line endings are handled."""
+        output = (
+            "INFO: Invocation ID: abc\r\nLoading: 5 packages\r\nERROR: bad\r\n"
+        )
+        self.assertEqual(
+            fint_build.condense_bazel_output(output), "ERROR: bad\n"
+        )
+
+    def test_condense_bazel_output_unterminated_command(self) -> None:
+        """Verifies output is left alone if it ends partway through a command."""
+        output = "\n".join(
+            [
+                "INFO: Invocation ID: abc",
+                "ERROR: foo failed",
+                "  (cd /out/execroot/_main && \\",
+                "  exec env - \\",
+            ]
+        )
+        self.assertEqual(fint_build.condense_bazel_output(output), output)
+
     def test_parse_file_handling(self) -> None:
         """Verifies parse_ninja_failures correctly loads files and delegates."""
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -634,7 +634,10 @@ template("bazel_action") {
     _dedupe_suffix = get_label_info(_bazel_platform_label, "name")
 
     # The final, unique, stamp path:
+    # LINT.IfChange(bazel_action_stamp_suffix)
     _stamp_path = "${_out_dir}/${_bazel_label}.${_dedupe_suffix}.bazel_target_can_only_be_referenced_by_one_bazel_action"
+
+    # LINT.ThenChange(/tools/integration/fint/fint_build.py:bazel_action_stamp_suffix)
 
     _debug_symbols_manifest =
         "${target_out_dir}/${target_name}.debug_symbols.json"
