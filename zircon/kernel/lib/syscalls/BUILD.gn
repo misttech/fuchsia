@@ -5,7 +5,6 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
-import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
@@ -42,7 +41,6 @@ source_set("impl") {
     "object_wait.cc",
     "port.cc",
     "system.cc",
-    "system_${zircon_cpu}.cc",
     "system_ffi.cc",
     "test.cc",
     "thread_ffi.cc",
@@ -77,6 +75,7 @@ source_set("impl") {
     "//zircon/system/ulib/region-alloc",
   ]
   if (current_cpu == "x64") {
+    sources += [ "system_x86.cc" ]
     deps += [ "//zircon/kernel/platform/pc" ]
   }
 }
