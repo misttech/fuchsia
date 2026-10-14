@@ -5,8 +5,9 @@
 use anyhow::{Context, Error};
 use argh::FromArgs;
 use camino::Utf8PathBuf;
-use fidl_fuchsia_images2::{PixelFormat, PixelFormatModifier};
-use fidl_fuchsia_sysmem2::{BufferUsage, FormatCostEntry, FormatCostKey, FormatCosts};
+use fidl_fuchsia_images2_common::{PixelFormat, PixelFormatModifier};
+use fidl_fuchsia_sysmem2_common as fidl_fuchsia_sysmem2;
+use fidl_fuchsia_sysmem2_common::{BufferUsage, FormatCostEntry, FormatCostKey, FormatCosts};
 
 #[derive(FromArgs)]
 /// Produce the bootfs/packages allowlist for assembly-generated files.

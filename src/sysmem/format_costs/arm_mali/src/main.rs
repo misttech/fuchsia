@@ -5,8 +5,9 @@
 use anyhow::{Context, Error};
 use argh::FromArgs;
 use camino::Utf8PathBuf;
-use fidl_fuchsia_images2::{PixelFormat, PixelFormatModifier};
-use fidl_fuchsia_sysmem2::{BufferUsage, FormatCostEntry, FormatCostKey, FormatCosts};
+use fidl_fuchsia_images2_common as fidl_fuchsia_images2;
+use fidl_fuchsia_images2_common::{PixelFormat, PixelFormatModifier};
+use fidl_fuchsia_sysmem2_common::{BufferUsage, FormatCostEntry, FormatCostKey, FormatCosts};
 
 #[derive(FromArgs)]
 /// Produce the bootfs/packages allowlist for assembly-generated files.
@@ -16,10 +17,7 @@ struct Args {
     output: Utf8PathBuf,
 }
 
-fn generate_rgba_format_costs(
-    modifier: fidl_fuchsia_images2::PixelFormatModifier,
-    cost: f32,
-) -> Vec<FormatCostEntry> {
+fn generate_rgba_format_costs(modifier: PixelFormatModifier, cost: f32) -> Vec<FormatCostEntry> {
     vec![PixelFormat::B8G8R8A8, PixelFormat::R8G8B8A8, PixelFormat::R8G8B8X8, PixelFormat::B8G8R8X8]
         .into_iter()
         .map(|pixel_format| FormatCostEntry {

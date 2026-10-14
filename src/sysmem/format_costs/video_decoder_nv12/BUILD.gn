@@ -12,8 +12,8 @@ rustc_binary("generate_format_costs_video_decoder_nv12") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
   sources = [ "src/main.rs" ]
   deps = [
-    "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
-    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust_common",
+    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_common",
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
