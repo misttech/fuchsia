@@ -166,14 +166,6 @@
     {
       "kind": "Switch",
       "optionality": "optional",
-      "long": "--strict-equivalent",
-      "short": null,
-      "description": "prints the strict equivalent of the command",
-      "hidden": false
-    },
-    {
-      "kind": "Switch",
-      "optionality": "optional",
       "long": "--direct",
       "short": "d",
       "description": "connect directly to the target. Unnecessary, as this is now the default.",

@@ -378,13 +378,6 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
         None => Err(cmd.no_handler_help(metrics, &tools).await?),
     };
 
-    if let Some(strict_cmd) = crate::ffx::build_strict_command(&cmd, &context) {
-        log::debug!("Strict equivalent: {}", strict_cmd);
-        if cmd.global.strict_equivalent {
-            println!("Strict equivalent: {}", strict_cmd);
-        }
-    }
-
     // Write to our stamp file if it was requested
     if let Some(mut stamp) = stamp {
         write_exit_code(&res, &mut stamp);

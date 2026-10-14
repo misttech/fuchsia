@@ -395,10 +395,6 @@ pub struct Ffx {
     /// strict mode: no daemon/discovery, direct connect, RO config.
     pub strict: bool,
 
-    #[argh(switch, long = "strict-equivalent")]
-    /// prints the strict equivalent of the command
-    pub strict_equivalent: bool,
-
     #[argh(switch, short = 'd', long = "direct")]
     /// connect directly to the target. Unnecessary, as this is now the default.
     pub direct: bool,
@@ -663,7 +659,6 @@ impl Ffx {
             log_destination: None,
             no_environment: false,
             strict: false,
-            strict_equivalent: false,
             direct: false,
         };
 
@@ -735,9 +730,6 @@ impl Ffx {
                 "--strict" => {
                     return_val.strict = true;
                 }
-                "--strict-equivalent" => {
-                    return_val.strict_equivalent = true;
-                }
                 "-d" | "--direct" => {
                     return_val.direct = true;
                 }
@@ -761,69 +753,6 @@ impl Ffx {
             _ => true,
         }
     }
-}
-
-pub fn build_strict_command(cmd: &FfxCommandLine, context: &EnvironmentContext) -> Option<String> {
-    if !context.get_direct_connection_mode() && !cmd.global.strict {
-        return None;
-    }
-
-    let mut args = cmd.command.clone();
-    args.push("--strict".to_string());
-
-    let mut configs = context.query_configs();
-
-    if let Some(target) = &cmd.global.target {
-        args.push("--target".to_string());
-        args.push(target.clone());
-        configs.remove("target.default");
-    } else if let Some(target) = configs.remove("target.default") {
-        if let serde_json::Value::String(s) = target {
-            args.push("--target".to_string());
-            args.push(s);
-        }
-    }
-
-    if let Some(machine) = &cmd.global.machine {
-        args.push("--machine".to_string());
-        let m = match machine {
-            crate::MachineFormat::Json => "json",
-            crate::MachineFormat::JsonPretty => "json-pretty",
-            crate::MachineFormat::Raw => "raw",
-        };
-        args.push(m.to_string());
-    } else {
-        args.push("--machine".to_string());
-        args.push("json".to_string());
-    }
-
-    if let Some(log_dest) = &cmd.global.log_destination {
-        args.push("--log-output".to_string());
-        args.push(log_dest.to_string());
-    } else if ffx_config::logging::is_enabled(context) {
-        args.push("--log-output".to_string());
-        args.push("stdout".to_string());
-    }
-
-    if let Some(log_level) = &cmd.global.log_level {
-        args.push("--log-level".to_string());
-        args.push(log_level.clone());
-    }
-
-    for (key, val) in configs {
-        let val_str = match val {
-            serde_json::Value::String(s) => s,
-            v => v.to_string(),
-        };
-        args.push("-c".to_string());
-        args.push(format!("{}={}", key, val_str));
-    }
-
-    for subcmd in &cmd.global.subcommand {
-        args.push(subcmd.clone());
-    }
-
-    Some(args.join(" "))
 }
 
 #[cfg(test)]
@@ -1558,32 +1487,5 @@ mod test {
         let env_vars = std::collections::HashMap::new();
         let ctx = cmd.global.load_context_with_env(ExecutableKind::Test, env_vars);
         assert!(ctx.is_ok());
-    }
-
-    #[fuchsia::test]
-    fn test_build_strict_command() {
-        let env_context = EnvironmentContext::default();
-        let cmd = FfxCommandLine::new(None, &["ffx", "target", "list"]).unwrap();
-
-        let strict_cmd = build_strict_command(&cmd, &env_context).unwrap();
-        assert!(strict_cmd.starts_with("ffx --strict"));
-        assert!(strict_cmd.contains("--machine json"));
-        assert!(strict_cmd.contains("--log-output stdout"));
-        assert!(strict_cmd.ends_with("target list"));
-
-        // Disable direct mode
-        let disabled_cmd = FfxCommandLine::new(
-            None,
-            &["ffx", "--no-environment", "-c", "connectivity.direct=false", "target", "list"],
-        )
-        .unwrap();
-        let disabled_context = disabled_cmd
-            .global
-            .load_context_with_env(
-                ffx_config::environment::ExecutableKind::Test,
-                std::collections::HashMap::new(),
-            )
-            .unwrap();
-        assert_eq!(build_strict_command(&disabled_cmd, &disabled_context), None);
     }
 }
