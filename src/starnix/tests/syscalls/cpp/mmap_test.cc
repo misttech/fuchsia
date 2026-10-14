@@ -1734,6 +1734,103 @@ TEST_F(MMapProcTest, PrivateFileMappingCanBeWritableAndExecutable) {
   EXPECT_EQ(file_byte, 0xAA);
 }
 
+TEST_F(MMapProcTest, PrivateFileMappingMprotectMergesMappings) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_merge_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 3));
+
+  auto expect_single_mapping = [&](uintptr_t addr, size_t length, const char* expected_perms) {
+    std::string maps;
+    ASSERT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    auto report = test_helper::find_memory_mapping(addr, maps);
+    ASSERT_NE(report, std::nullopt);
+    EXPECT_EQ(report->start, addr);
+    EXPECT_EQ(report->end, addr + length);
+    EXPECT_EQ(report->perms, expected_perms);
+  };
+
+  auto set_prot = [&](uintptr_t addr, size_t page, int prot) {
+    SAFE_SYSCALL(mprotect(reinterpret_cast<void*>(addr + page * page_size), page_size, prot));
+  };
+
+  {
+    auto mapping =
+        test_helper::ScopedMMap::MMap(nullptr, page_size * 2, PROT_READ, MAP_PRIVATE, fd.get(), 0);
+    ASSERT_THAT(mapping, SyscallResultIsOk());
+    uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+    expect_single_mapping(addr, page_size * 2, "r--p");
+
+    // mprotect(PROT_WRITE) on two consecutive pages should merge into one mapping in
+    // /proc/self/maps.
+    set_prot(addr, 0, PROT_READ | PROT_WRITE);
+    set_prot(addr, 1, PROT_READ | PROT_WRITE);
+    expect_single_mapping(addr, page_size * 2, "rw-p");
+  }
+
+  {
+    // Splitting a read-only private file mapping first (with PROT_NONE) and then promoting
+    // consecutive pages to PROT_WRITE should also merge them into one mapping.
+    auto mapping =
+        test_helper::ScopedMMap::MMap(nullptr, page_size * 2, PROT_READ, MAP_PRIVATE, fd.get(), 0);
+    ASSERT_THAT(mapping, SyscallResultIsOk());
+    uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+    set_prot(addr, 0, PROT_NONE);
+    set_prot(addr, 0, PROT_READ | PROT_WRITE);
+    set_prot(addr, 1, PROT_READ | PROT_WRITE);
+    expect_single_mapping(addr, page_size * 2, "rw-p");
+  }
+
+  {
+    // Split a 3-page mapping into 3 pieces, then promote the last piece first so that the pieces
+    // preceding it must be promoted along with it.
+    auto mapping =
+        test_helper::ScopedMMap::MMap(nullptr, page_size * 3, PROT_READ, MAP_PRIVATE, fd.get(), 0);
+    ASSERT_THAT(mapping, SyscallResultIsOk());
+    uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+    set_prot(addr, 1, PROT_NONE);
+    set_prot(addr, 2, PROT_READ | PROT_WRITE);
+    set_prot(addr, 1, PROT_READ | PROT_WRITE);
+    set_prot(addr, 0, PROT_READ | PROT_WRITE);
+    expect_single_mapping(addr, page_size * 3, "rw-p");
+
+    volatile uint8_t* bytes = reinterpret_cast<volatile uint8_t*>(addr);
+    bytes[0] = 0xBB;
+    EXPECT_EQ(bytes[0], 0xBB);
+
+    uint8_t file_byte = 0xFF;
+    ASSERT_EQ(pread(fd.get(), &file_byte, 1, 0), 1);
+    EXPECT_EQ(file_byte, 0);
+  }
+
+  {
+    // Split a 3-page mapping into 3 pieces before forking. In the child, promote the middle piece
+    // first and then promote the pieces on either side: they should merge into a single mapping.
+    // Note that on Linux, `mprotect(PROT_WRITE)` permanently sets `VM_ACCOUNT` on a private VMA,
+    // so the pieces only merge once all of them have been made writable.
+    auto mapping =
+        test_helper::ScopedMMap::MMap(nullptr, page_size * 3, PROT_READ, MAP_PRIVATE, fd.get(), 0);
+    ASSERT_THAT(mapping, SyscallResultIsOk());
+    uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+    set_prot(addr, 1, PROT_NONE);
+
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      set_prot(addr, 1, PROT_READ | PROT_WRITE);
+      set_prot(addr, 0, PROT_READ | PROT_WRITE);
+      set_prot(addr, 2, PROT_READ | PROT_WRITE);
+      expect_single_mapping(addr, page_size * 3, "rw-p");
+    });
+    EXPECT_TRUE(helper.WaitForChildren());
+  }
+}
+
 class MMapAllProtectionsTest : public testing::TestWithParam<std::tuple<int, int>> {};
 
 TEST_P(MMapAllProtectionsTest, PrivateFileMappingAllowAllProtections) {

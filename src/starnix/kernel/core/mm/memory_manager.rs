@@ -1548,21 +1548,27 @@ impl MemoryManagerState {
     }
 
     /// Moves the private `mapping` covering `range` onto a new copy-on-write child of its backing
-    /// memory, returning the updated mapping.
+    /// memory, returning the updated `mapping`.
     ///
     /// This is used to make a private mapping writable when its current backing memory isn't,
     /// e.g. a `LAZY_PRIVATE_FILE` mapping backed directly by the file VMO. Any
-    /// `LAZY_PRIVATE_FILE` flag is cleared.
+    /// `LAZY_PRIVATE_FILE` flag is cleared. For a `LAZY_PRIVATE_FILE` mapping, every adjacent
+    /// mapping returned by `collect_lazy_private_run` is moved onto the same child.
     ///
-    /// Only the memory backing the mapping changes; its access flags are preserved, so this is not
-    /// observable by userspace. If the mapping is locked, the mlock pin is moved to the new
-    /// backing. A lazily-mapped mapping stays lazily mapped, now backed by the child.
+    /// Only the memory backing the mappings changes; their access flags are preserved, so this is
+    /// not observable by userspace. Sharing one child VMO lets the entries merge back into a single
+    /// `RangeMap` entry once their flags match again. If any of the mappings are locked, their mlock
+    /// pins are moved to the new backing. Every promoted entry is mapped into the user VMAR, so any
+    /// lazily-mapped entries become `Eager`.
+    ///
+    /// Each entry's VMAR mapping and `RangeMap` entry are updated together, so a failure part way
+    /// through leaves the address space consistent.
     fn promote_to_private_child(
         &mut self,
         kernel: &Kernel,
         context: &MappingContext,
         range: Range<UserAddress>,
-        mut mapping: Mapping,
+        mapping: Mapping,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<Mapping, Errno> {
         debug_assert!(!mapping.flags().contains(MappingFlags::SHARED));
@@ -1575,30 +1581,106 @@ impl MemoryManagerState {
                 .create_private_child()
                 .map_err(MemoryManager::get_errno_for_vmo_err)?,
         );
+        let run = if mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE) {
+            self.collect_lazy_private_run(&range, &mapping, backing)
+        } else {
+            vec![(range.clone(), mapping.clone())]
+        };
 
-        let memory_offset = mapping.address_to_offset(range.start);
-        let flags = mapping.flags().difference(MappingFlags::LAZY_PRIVATE_FILE);
-        if mapping.mapping_mode() == MappingMode::Eager {
+        let mut promoted_mapping = None;
+        for (run_range, mut run_mapping) in run {
+            let memory_offset = run_mapping.address_to_offset(run_range.start);
+            let flags = run_mapping.flags().difference(MappingFlags::LAZY_PRIVATE_FILE);
+            // Map every entry, even ones that were lazily mapped (e.g. after `fork()`), so all
+            // entries in the run end up `Eager`. Otherwise `MAPPED_IN_VMAR` would differ between
+            // neighbors and keep them from merging once their protections match.
             context.map_in_user_vmar(
-                SelectedAddress::FixedOverwrite(range.start),
+                SelectedAddress::FixedOverwrite(run_range.start),
                 &child_memory,
                 memory_offset,
-                range.end - range.start,
+                run_range.end - run_range.start,
                 flags,
                 false,
             )?;
+            run_mapping.set_backing_internal(MappingBacking::Memory(Box::new(
+                MappingBackingMemory::new(run_range.start, child_memory.clone(), memory_offset),
+            )));
+            run_mapping.set_flags(flags);
+            run_mapping.set_mapping_mode(MappingMode::Eager);
+            released_mappings.extend(self.mappings.insert(run_range.clone(), run_mapping.clone()));
+            if run_mapping.flags().contains(MappingFlags::LOCKED) {
+                self.repin_locked_mapping(
+                    kernel,
+                    context,
+                    &run_range,
+                    &run_mapping,
+                    released_mappings,
+                )?;
+            }
+            if run_range == range {
+                promoted_mapping = Some(run_mapping);
+            }
         }
-        mapping.set_backing_internal(MappingBacking::Memory(Box::new(MappingBackingMemory::new(
-            range.start,
-            child_memory,
-            memory_offset,
-        ))));
-        mapping.set_flags(flags);
-        released_mappings.extend(self.mappings.insert(range.clone(), mapping.clone()));
-        if mapping.flags().contains(MappingFlags::LOCKED) {
-            self.repin_locked_mapping(kernel, context, &range, &mapping, released_mappings)?;
+        Ok(promoted_mapping.expect("the run always contains `range`"))
+    }
+
+    /// Returns `range` and all contiguous `LAZY_PRIVATE_FILE` mappings immediately preceding and
+    /// following it that share the same underlying file VMO (`koid` and `EXECUTE` rights), mapping
+    /// name, and contiguous file offsets, in address order.
+    ///
+    /// These are typically pieces of a single read-only `MAP_PRIVATE` file mapping that were split
+    /// into multiple entries by `mprotect` or `madvise`. Promoting them together ensures they keep
+    /// sharing a single backing VMO.
+    fn collect_lazy_private_run(
+        &self,
+        range: &Range<UserAddress>,
+        mapping: &Mapping,
+        backing: &MappingBackingMemory,
+    ) -> Vec<(Range<UserAddress>, Mapping)> {
+        let memory = backing.memory();
+        let memory_koid = memory.get_koid();
+        let has_exec_right = memory.get_rights().contains(zx::Rights::EXECUTE);
+        let can_promote_together = |adj_mapping: &Mapping, shared_addr: UserAddress| -> bool {
+            if !adj_mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE)
+                || adj_mapping.name() != mapping.name()
+            {
+                return false;
+            }
+            debug_assert!(!adj_mapping.flags().contains(MappingFlags::SHARED));
+            let MappingBacking::Memory(adj_backing) = adj_mapping.get_backing_internal() else {
+                return false;
+            };
+            if adj_backing.address_to_offset(shared_addr) != backing.address_to_offset(shared_addr)
+            {
+                return false;
+            }
+            let adj_memory = adj_backing.memory();
+            adj_memory.get_koid() == memory_koid
+                && adj_memory.get_rights().contains(zx::Rights::EXECUTE) == has_exec_right
+        };
+
+        let mut run = Vec::new();
+        let mut cursor = range.start;
+        for (prev_range, prev_mapping) in self.mappings.range(..range.start).rev() {
+            if prev_range.end != cursor || !can_promote_together(prev_mapping, cursor) {
+                break;
+            }
+            cursor = prev_range.start;
+            run.push((prev_range.clone(), prev_mapping.clone()));
         }
-        Ok(mapping)
+        run.reverse();
+
+        run.push((range.clone(), mapping.clone()));
+
+        cursor = range.end;
+        for (next_range, next_mapping) in self.mappings.range(range.end..) {
+            if next_range.start != cursor || !can_promote_together(next_mapping, cursor) {
+                break;
+            }
+            cursor = next_range.end;
+            run.push((next_range.clone(), next_mapping.clone()));
+        }
+        run
     }
 
     /// Applies `madvise(2)` advice that mutates [`MappingFlags`] in `self.mappings`.
@@ -7429,6 +7511,7 @@ mod tests {
             let page_size = *PAGE_SIZE as usize;
             let (fd, addr) = map_private_read_only_memfd(current_task);
             let middle_page = (addr + *PAGE_SIZE).unwrap();
+            let end_addr = (addr + *PAGE_SIZE * 3).unwrap();
             let mm = current_task.mm().unwrap();
 
             // Split the mapping, then write to it the way ptrace(PTRACE_POKEDATA) does.
@@ -7437,6 +7520,12 @@ mod tests {
                 .expect("force_write_memory failed");
             assert_eq!(&current_task.read_memory_to_vec(addr, 4).unwrap(), b"poke");
             check_file_unmodified(current_task, fd);
+
+            // Once the protections match again, the pieces report as a single mapping.
+            mm.protect(current_task, middle_page, page_size, ProtectionFlags::READ).unwrap();
+            let state = mm.state.read();
+            let (range, _) = state.mappings.get(addr).unwrap();
+            assert_eq!(range, &(addr..end_addr));
         })
         .await;
     }
@@ -7590,13 +7679,22 @@ mod tests {
     #[::fuchsia::test]
     async fn test_private_read_only_file_mapping_force_write_after_fork_is_private() {
         spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
             let (fd, addr) = map_private_read_only_memfd(current_task);
+            let middle_page = (addr + *PAGE_SIZE).unwrap();
+            let end_addr = (addr + *PAGE_SIZE * 3).unwrap();
+
+            // Split the mapping before forking so the child gets 3 lazily-mapped pieces.
+            current_task
+                .mm()
+                .unwrap()
+                .protect(current_task, middle_page, page_size, ProtectionFlags::empty())
+                .unwrap();
 
             // Write to the child's lazily mapped mapping the way ptrace(PTRACE_POKEDATA) does.
             let child = current_task.clone_task_for_test(0, None);
-            child
-                .mm()
-                .unwrap()
+            let child_mm = child.mm().unwrap();
+            child_mm
                 .force_write_memory(child.kernel(), addr, b"poke")
                 .expect("force_write_memory failed");
             assert_eq!(&Task::read_memory_to_vec(&child, addr, 4).unwrap(), b"poke");
@@ -7604,6 +7702,13 @@ mod tests {
             // Neither the parent nor the file see the write.
             check_page_eq(current_task, addr, '\0');
             check_file_unmodified(current_task, fd);
+
+            // Restoring the middle page's protection merges it back with the lazily-mapped
+            // neighbors that were promoted along with `addr`.
+            child_mm.protect(&child, middle_page, page_size, ProtectionFlags::READ).unwrap();
+            let state = child_mm.state.read();
+            let (range, _) = state.mappings.get(addr).unwrap();
+            assert_eq!(range, &(addr..end_addr));
         })
         .await;
     }
