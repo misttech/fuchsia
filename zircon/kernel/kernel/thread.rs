@@ -216,6 +216,7 @@ pub fn restricted_enter(vector_table_ptr: usize, context: usize) -> Result<(), S
 }
 
 /// Type-safe wrapper around a raw pointer to a Zircon kernel Thread.
+#[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadPtr(NonNull<Thread>);
 
@@ -223,6 +224,13 @@ pub struct ThreadPtr(NonNull<Thread>);
 // between threads to perform join or kill operations.
 unsafe impl Send for ThreadPtr {}
 unsafe impl Sync for ThreadPtr {}
+
+impl From<&Thread> for ThreadPtr {
+    #[inline]
+    fn from(thread: &Thread) -> Self {
+        Self(NonNull::from(thread))
+    }
+}
 
 impl ThreadPtr {
     /// Creates a `ThreadPtr` from a raw pointer.
@@ -245,6 +253,18 @@ impl ThreadPtr {
     /// Returns the raw const pointer.
     pub const fn as_ptr(self) -> *const Thread {
         self.0.as_ptr()
+    }
+
+    /// Returns a shared reference to the underlying [`Thread`].
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the underlying [`Thread`] is valid and remains alive for `'a`.
+    #[inline]
+    pub const unsafe fn as_ref<'a>(self) -> &'a Thread {
+        // SAFETY: The caller guarantees the underlying `Thread` is valid and remains alive for
+        // `'a`.
+        unsafe { self.0.as_ref() }
     }
 
     /// Makes a suspended thread executable.
