@@ -104,9 +104,7 @@
                 "IntSocketOptionTests/IntSocketOptionTest.SetInvalid/IPv4_Stream_IPPROTO_IPV6_IPV6_UNICAST_HOPS",
                 "IntSocketOptionTests/IntSocketOptionTest.SetInvalid/IPv6_Stream_IPPROTO_IPV6_IPV6_UNICAST_HOPS",
                 "IntSocketOptionTests/IntSocketOptionTest.SetInvalid/IPv4_Datagram_IPPROTO_IPV6_IPV6_UNICAST_HOPS",
-                "TtlHopLimitSocketOptionTests/TtlHopLimitSocketOptionTest.ResetToDefault/IPv4_Stream_IPPROTO_IPV6_IPV6_UNICAST_HOPS",
                 "TtlHopLimitSocketOptionTests/TtlHopLimitSocketOptionTest.ResetToDefault/IPv6_Stream_IPPROTO_IPV6_IPV6_UNICAST_HOPS",
-                "TtlHopLimitSocketOptionTests/TtlHopLimitSocketOptionTest.ResetToDefault/IPv4_Datagram_IPPROTO_IPV6_IPV6_UNICAST_HOPS",
 
                 // IPPROTO_IPV6_IPV6_MULTICAST_HOPS
                 "DatagramIntSocketOptionTests/IntSocketOptionTest.Default/IPv4_Datagram_IPPROTO_IPV6_IPV6_MULTICAST_HOPS",
@@ -195,9 +193,7 @@
         {
             type: "expect_failure_with_err_logs",
             matchers: [
-                "NoNetworkTest.NonBlockingConnectHostV4",
-                "NoNetworkTest.NonBlockingConnectHostV6",
-                "NoNetworkTest.NonBlockingConnectNetV6",
+                // TODO(https://fxbug.dev/411702408) Support SO_REUSEPORT on stream sockets.
                 "LocalhostTest/ReuseTest.AllowsAddressReuse/StreamLoopback",
             ],
         },

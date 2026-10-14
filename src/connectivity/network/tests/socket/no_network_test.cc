@@ -33,7 +33,7 @@ TEST_F(NoNetworkTest, NonBlockingConnectHostV4) {
   addr.sin_port = htons(10000);
 
   ASSERT_EQ(connect(connfd, (const struct sockaddr*)&addr, sizeof(addr)), -1);
-  ASSERT_EQ(errno, EHOSTUNREACH) << strerror(errno);
+  ASSERT_EQ(errno, ENETUNREACH) << strerror(errno);
 
   ASSERT_EQ(close(connfd), 0) << strerror(errno);
 }
@@ -48,7 +48,7 @@ TEST_F(NoNetworkTest, NonBlockingConnectHostV6) {
   addr.sin6_port = htons(10000);
 
   ASSERT_EQ(connect(connfd, (const struct sockaddr*)&addr, sizeof(addr)), -1);
-  ASSERT_EQ(errno, EHOSTUNREACH) << strerror(errno);
+  ASSERT_EQ(errno, ENETUNREACH) << strerror(errno);
 
   ASSERT_EQ(close(connfd), 0) << strerror(errno);
 }
@@ -73,10 +73,10 @@ TEST_F(NoNetworkTest, NonBlockingConnectNetV6) {
   int connfd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, 0);
   ASSERT_GE(connfd, 0) << "socket failed: " << strerror(errno);
 
-  struct sockaddr_in6 addr;
+  struct sockaddr_in6 addr = {};
   addr.sin6_family = AF_INET6;
-  // linklocal address
-  ASSERT_EQ(inet_pton(AF_INET6, "fe80::1", &addr.sin6_addr), 1) << strerror(errno);
+  // multicast address
+  ASSERT_EQ(inet_pton(AF_INET6, "ff0e::1", &addr.sin6_addr), 1) << strerror(errno);
   addr.sin6_port = htons(10000);
 
   ASSERT_EQ(connect(connfd, (const struct sockaddr*)&addr, sizeof(addr)), -1);
