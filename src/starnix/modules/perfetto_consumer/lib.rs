@@ -5,7 +5,7 @@
 #![recursion_limit = "256"]
 
 use crate::blob_sink::TraceBufferSink;
-use crate::packet_forwarder::{MonotonicClock, PacketForwarder};
+use crate::packet_forwarder::{MonotonicClock, PacketForwarder, forward_slices};
 use anyhow::bail;
 use fuchsia_trace::{BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state};
 use fuchsia_trace_observer::TraceObserver;
@@ -39,6 +39,26 @@ mod packet_forwarder;
 mod testing;
 
 const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
+
+/// How long a stop drain may keep writing Perfetto data to the trace buffer, measured from the
+/// start of the drain.
+///
+/// The drain holds a prolonged trace context. trace-engine can't finish stopping while that
+/// context is held, so trace_manager has to wait for the drain. trace_manager gives up on a
+/// stopping session after 60 s (`kStopTimeout` in trace_manager.cc). The drain stops writing
+/// after half of that, which leaves the other half for the rest of the drain and for
+/// trace-engine to finish stopping.
+///
+/// The drain checks the deadline before each slice of the ReadBuffers response, before each
+/// packet, and while it waits for buffer space. It can't interrupt a blocked read from the
+/// Perfetto consumer socket, so a read that blocks past the deadline delays the check. Once
+/// the drain has stopped writing, it no longer copies, frames or rewrites the remaining
+/// packets, but it still holds the prolonged context while it reads the rest of the
+/// ReadBuffers response, up to the size of the Perfetto buffer, and then sends FreeBuffers.
+/// That part isn't bounded, which is a known limitation: the context is released only once
+/// FreeBuffers has been sent.
+// TODO(b/571694521): Release the context once the drain stops writing (fxr/1881111).
+const DRAIN_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(30);
 
 /// State needed to act upon trace state changes.
 struct CallbackState {
@@ -268,7 +288,7 @@ impl CallbackState {
                 // stale case Perfetto tracing pauses for the current session until its own
                 // Started, which is queued after this Stopping, enables it again, unless that
                 // session is already stopping by then. Either way it is not left enabled.
-                let start_time = std::time::Instant::now();
+                let start_time = zx::MonotonicInstant::get();
 
                 let connection = self.connection(current_task)?;
                 let disable_request =
@@ -296,13 +316,24 @@ impl CallbackState {
                     };
                     context.buffering_mode() == BufferingMode::Streaming
                 };
-                let mut forwarder =
-                    PacketForwarder::new(TraceBufferSink, MonotonicClock, retry_on_full);
+                let mut forwarder = PacketForwarder::new(
+                    TraceBufferSink,
+                    MonotonicClock,
+                    retry_on_full,
+                    start_time + DRAIN_TIMEOUT,
+                );
 
                 // IPC responses may be spread across multiple frames, so loop until we get a
                 // message that indicates it is the last one. Additionally, if there are
                 // unrelated messages on the socket (e.g. leftover from a previous trace
                 // session), the loop will read past and ignore them.
+                //
+                // The loop reads the whole response even after the forwarder has stopped:
+                // skipped slices cost little, and if the consumer stops reading, traced blocks
+                // on the full socket and then shuts the connection down
+                // (`kDefaultIpcTxTimeoutMs` in Perfetto's ipc/host_impl.h). `self.connection`
+                // would keep that dead connection, and the next session's EnableTracing would
+                // fail on it, because `connection()` only reconnects when it is `None`.
                 loop {
                     let frame = self.connection(current_task)?.next_frame_blocking(current_task)?;
                     if frame.request_id != Some(read_buffers_request) {
@@ -316,47 +347,16 @@ impl CallbackState {
                         if let Ok(response) = decode_read_buffers_response(
                             reply.reply_proto.as_deref().unwrap_or(&[]),
                         ) {
-                            for slice in &response.slices {
-                                if let Some(data) = &slice.data {
-                                    self.packet_data.extend(data);
-                                }
-                                if slice.last_slice_for_packet.unwrap_or(false) {
-                                    let mut blob_data = Vec::new();
-                                    // Packet field number = 1, length delimited type = 2.
-                                    blob_data.push(1 << 3 | 2);
-                                    // Push a varint encoded length.
-                                    // See https://protobuf.dev/programming-guides/encoding/
-                                    const HIGH_BIT: u8 = 0x80;
-                                    const LOW_SEVEN_BITS: usize = 0x7F;
-                                    let mut value = self.packet_data.len();
-                                    while value >= HIGH_BIT as usize {
-                                        blob_data.push((value & LOW_SEVEN_BITS) as u8 | HIGH_BIT);
-                                        value >>= 7;
-                                    }
-                                    blob_data.push(value as u8);
-                                    // `append` moves all data out of the passed Vec, so
-                                    // s.packet_data will be empty after this call.
-                                    blob_data.append(&mut self.packet_data);
-
-                                    // At this point blob_data is a full Perfetto Trace protobuf.
-                                    // Parse the data and replace the linux pids with their
-                                    // corresponding koid.
-                                    let rewritten =
-                                        self.rewrite_pids(&blob_data).unwrap_or(blob_data);
-
-                                    // A packet that can't be written in full is counted as
-                                    // dropped, and we move on to the next one: in oneshot mode
-                                    // a smaller packet may still fit. If the packet spans
-                                    // several blobs, the ones written before the failure stay
-                                    // in the trace buffer. trace_processor joins all Perfetto
-                                    // blob payloads into one proto stream, so it then reads the
-                                    // packets after the cut-off one as the rest of it, which
-                                    // corrupts the rest of the Perfetto data in the trace.
-                                    // TODO(b/571694521): Stop the drain at a cut-off packet
-                                    // (fxr/1881111).
-                                    forwarder.forward_packet(&rewritten);
-                                }
-                            }
+                            // `rewrite_pids()` borrows all of `self`, so `packet_data` is moved
+                            // out while the slices are forwarded.
+                            let mut packet_data = std::mem::take(&mut self.packet_data);
+                            forward_slices(
+                                &response.slices,
+                                &mut packet_data,
+                                &mut forwarder,
+                                |blob_data| self.rewrite_pids(&blob_data).unwrap_or(blob_data),
+                            );
+                            self.packet_data = packet_data;
                         } else {
                             log_error!("perfetto_consumer cannot decode protobuf from {reply:?}");
                         }
@@ -369,19 +369,27 @@ impl CallbackState {
                         );
                     }
                 }
+                // FreeBuffers comes only after the last ReadBuffers reply: traced reads the
+                // buffers in several tasks, and a FreeBuffers handled in between frees them, so
+                // the response would never get its last reply.
                 // The response to a free buffers request does not have anything meaningful,
                 // so we don't need to worry about tracking the request id to match to the
                 // response.
                 let _free_buffers_request_id = self
                     .connection(current_task)?
                     .free_buffers(current_task, FreeBuffersRequest { buffer_ids: vec![0] })?;
-                let elapsed = start_time.elapsed().as_millis();
-                let PacketForwarder { packets_written, packets_dropped, bytes_dropped, .. } =
-                    forwarder;
+                let elapsed = (zx::MonotonicInstant::get() - start_time).into_millis();
+                let PacketForwarder {
+                    packets_written,
+                    packets_dropped,
+                    bytes_dropped,
+                    stop_reason,
+                    ..
+                } = forwarder;
                 log_info!(
                     "Perfetto frames copied, dropping prolonged trace context. Processing took \
                      {elapsed} ms. Packets written: {packets_written}, dropped: {packets_dropped} \
-                     ({bytes_dropped} bytes)"
+                     ({bytes_dropped} bytes), stop reason: {stop_reason:?}"
                 );
             }
             TraceState::Stopped => {
