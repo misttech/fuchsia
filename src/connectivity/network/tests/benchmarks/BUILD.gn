@@ -9,7 +9,6 @@ group("benchmarks") {
     "resource-usage:benchmarks",
     "socket-loopback:benchmarks",
     "socket-tun:benchmarks",
-    "udp-serde:benchmarks",
     "with-tracing:benchmarks",
   ]
 }
@@ -21,6 +20,5 @@ group("tests") {
     "resource-usage:tests",
     "socket-loopback:tests",
     "socket-tun:tests",
-    "udp-serde:tests",
   ]
 }

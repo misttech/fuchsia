@@ -58,11 +58,6 @@ netstacks involved connected via a network-tun [device-pair]. This means that
 the latency numbers also include time spent in the netstack's device layer,
 which is absent from the loopback benchmarks.
 
-### UDP serde benchmarks
-
-These benchmarks measure the time to serialize and deserialize the metadata that
-is sent with each packet in Fast UDP.
-
 ### Netdevice benchmarks
 
 These benchmarks measure the round trip latency for packet buffer transmission
