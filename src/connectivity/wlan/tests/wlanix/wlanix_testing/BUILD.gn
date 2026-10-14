@@ -16,6 +16,7 @@ python_library("wlanix_testing") {
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     "//src/testing/end_to_end/mobly_controller/legacy_access_point",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point",
     "//third_party/mobly",
   ]
 }
