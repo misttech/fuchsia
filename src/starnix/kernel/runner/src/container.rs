@@ -1008,19 +1008,16 @@ fn create_fs_context(
     Ok((FsContext::new(Namespace::new_with_flags(root_fs, root.flags)), feature_mounts))
 }
 
-fn parse_rlimits(rlimits: &[String]) -> Result<Vec<(Resource, u64)>, Error> {
+pub(crate) fn parse_rlimits(rlimits: &[String]) -> Result<Vec<(Resource, u64)>, Error> {
     let mut res = Vec::new();
 
     for rlimit in rlimits {
         let (key, value) =
             rlimit.split_once('=').ok_or_else(|| anyhow!("Invalid rlimit: {rlimit}"))?;
-        let value = value.parse::<u64>()?;
-        let kv = match key {
-            "RLIMIT_NOFILE" => (Resource::NOFILE, value),
-            "RLIMIT_RTPRIO" => (Resource::RTPRIO, value),
-            _ => bail!("Unknown rlimit: {key}"),
-        };
-        res.push(kv);
+        let value = value.parse::<u64>().with_context(|| format!("Invalid rlimit: {rlimit}"))?;
+        let name = key.strip_prefix("RLIMIT_").ok_or_else(|| anyhow!("Unknown rlimit: {key}"))?;
+        let resource = name.parse::<Resource>().map_err(|_| anyhow!("Unknown rlimit: {key}"))?;
+        res.push((resource, value));
     }
 
     Ok(res)
@@ -1165,7 +1162,7 @@ async fn serve_task_provider(mut job_requests: TaskProviderRequestStream) -> Res
 
 #[cfg(test)]
 mod test {
-    use super::wait_for_init_file;
+    use super::{parse_rlimits, wait_for_init_file};
 
     use futures::{SinkExt, StreamExt};
     use starnix_core::testing::spawn_kernel_and_run;
@@ -1173,8 +1170,27 @@ mod test {
     use starnix_uapi::CLONE_FS;
     use starnix_uapi::file_mode::FileMode;
     use starnix_uapi::open_flags::OpenFlags;
+    use starnix_uapi::resource_limits::Resource;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::vfs::ResolveFlags;
+
+    #[fuchsia::test]
+    fn test_parse_rlimits() {
+        let rlimits = vec![
+            "RLIMIT_NOFILE=131072".to_string(),
+            "RLIMIT_RTPRIO=20".to_string(),
+            "RLIMIT_MEMLOCK=65536".to_string(),
+        ];
+        assert_eq!(
+            parse_rlimits(&rlimits).expect("parse_rlimits"),
+            vec![(Resource::NOFILE, 131072), (Resource::RTPRIO, 20), (Resource::MEMLOCK, 65536),]
+        );
+
+        assert!(parse_rlimits(&["RLIMIT_NOFILE".to_string()]).is_err());
+        assert!(parse_rlimits(&["NOFILE=1024".to_string()]).is_err());
+        assert!(parse_rlimits(&["RLIMIT_UNKNOWN=100".to_string()]).is_err());
+        assert!(parse_rlimits(&["RLIMIT_NOFILE=not_a_number".to_string()]).is_err());
+    }
 
     #[fuchsia::test]
     async fn test_init_file_already_exists() {

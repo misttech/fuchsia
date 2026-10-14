@@ -110,6 +110,32 @@ impl Resource {
     }
 }
 
+impl std::str::FromStr for Resource {
+    type Err = Errno;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Ok(match name {
+            "CPU" => Resource::CPU,
+            "FSIZE" => Resource::FSIZE,
+            "DATA" => Resource::DATA,
+            "STACK" => Resource::STACK,
+            "CORE" => Resource::CORE,
+            "RSS" => Resource::RSS,
+            "NPROC" => Resource::NPROC,
+            "NOFILE" => Resource::NOFILE,
+            "MEMLOCK" => Resource::MEMLOCK,
+            "AS" => Resource::AS,
+            "LOCKS" => Resource::LOCKS,
+            "SIGPENDING" => Resource::SIGPENDING,
+            "MSGQUEUE" => Resource::MSGQUEUE,
+            "NICE" => Resource::NICE,
+            "RTPRIO" => Resource::RTPRIO,
+            "RTTIME" => Resource::RTTIME,
+            _ => return error!(EINVAL),
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ResourceLimits {
     values: HashMap<Resource, rlimit>,
@@ -167,5 +193,21 @@ impl ResourceLimits {
 
     pub fn set(&mut self, resource: Resource, value: rlimit) {
         self.values.insert(resource, value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[::fuchsia::test]
+    fn test_resource_from_str() {
+        for resource in Resource::ALL {
+            let name = format!("{resource:?}");
+            assert_eq!(name.parse::<Resource>(), Ok(resource));
+        }
+        assert!("".parse::<Resource>().is_err());
+        assert!("RLIMIT_NOFILE".parse::<Resource>().is_err());
+        assert!("UNKNOWN".parse::<Resource>().is_err());
     }
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{MountAction, run_component_features};
+use crate::{MountAction, parse_rlimits, run_component_features};
 use anyhow::{Context, Error, anyhow, bail};
 use fidl::AsyncChannel;
 use fidl::endpoints::{RequestStream, ServerEnd};
@@ -34,13 +34,13 @@ use starnix_sync::{ComponentMountRecordLock, LockDepMutex};
 use starnix_task_command::TaskCommand;
 use starnix_uapi::auth::{Capabilities, Credentials};
 use starnix_uapi::device_id::DeviceId;
-use starnix_uapi::errno;
 use starnix_uapi::errors::{EEXIST, ENOTDIR, Errno};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::mount_flags::{MountFlags, MountpointFlags};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{SIGINT, SIGKILL};
 use starnix_uapi::unmount_flags::UnmountFlags;
+use starnix_uapi::{errno, rlimit};
 use std::ffi::CString;
 
 use std::os::unix::ffi::OsStrExt;
@@ -76,6 +76,9 @@ struct ComponentProgram {
 
     #[serde(default)]
     features: Vec<String>,
+
+    #[serde(default)]
+    rlimits: Vec<String>,
 
     #[serde(default, deserialize_with = "parse_capabilities")]
     capabilities: Option<Capabilities>,
@@ -146,6 +149,7 @@ pub async fn start_component(
             let program = start_info.program.as_ref().context("reading program block")?;
             let mut program: ComponentProgram =
                 runner::serde::deserialize_program(program).context("parsing program block")?;
+            let rlimits = parse_rlimits(&program.rlimits)?;
             program.resolve_templates(&component_path, &pkg_path);
             log_debug!("start_component: {}\n{:#?}", url, program);
 
@@ -231,6 +235,15 @@ pub async fn start_component(
                 credentials,
                 program.seclabel.as_ref(),
             )?;
+            // `create_init_child_process` clones the `init` task's resource limits (which include
+            // the container's `program.rlimits`). Apply the component's `program.rlimits` here to
+            // override those container-level defaults.
+            {
+                let mut limits = current_task.thread_group().limits.lock();
+                for (resource, limit) in rlimits {
+                    limits.set(resource, rlimit { rlim_cur: limit, rlim_max: limit });
+                }
+            }
 
             execute_task_with_prerun_result(
                 current_task,
@@ -551,5 +564,50 @@ impl Drop for MountRecord {
             Ok(()) => {}
             Err(e) => log_error!("failed to unmount during component exit: {:?}", e),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::ComponentProgram;
+    use fidl_fuchsia_data as fdata;
+    use std::ffi::CString;
+
+    #[fuchsia::test]
+    fn test_deserialize_component_program_rlimits() {
+        let program_with_rlimits = fdata::Dictionary {
+            entries: Some(vec![
+                fdata::DictionaryEntry {
+                    key: "binary".to_string(),
+                    value: Some(Box::new(fdata::DictionaryValue::Str("/bin/sh".to_string()))),
+                },
+                fdata::DictionaryEntry {
+                    key: "rlimits".to_string(),
+                    value: Some(Box::new(fdata::DictionaryValue::StrVec(vec![
+                        "RLIMIT_NOFILE=131072".to_string(),
+                        "RLIMIT_RTPRIO=10".to_string(),
+                    ]))),
+                },
+            ]),
+            ..Default::default()
+        };
+        let parsed: ComponentProgram =
+            runner::serde::deserialize_program(&program_with_rlimits).expect("deserialize_program");
+        assert_eq!(parsed.binary, CString::new("/bin/sh").unwrap());
+        assert_eq!(
+            parsed.rlimits,
+            vec!["RLIMIT_NOFILE=131072".to_string(), "RLIMIT_RTPRIO=10".to_string()]
+        );
+
+        let program_without_rlimits = fdata::Dictionary {
+            entries: Some(vec![fdata::DictionaryEntry {
+                key: "binary".to_string(),
+                value: Some(Box::new(fdata::DictionaryValue::Str("/bin/sh".to_string()))),
+            }]),
+            ..Default::default()
+        };
+        let parsed: ComponentProgram = runner::serde::deserialize_program(&program_without_rlimits)
+            .expect("deserialize_program");
+        assert!(parsed.rlimits.is_empty());
     }
 }
