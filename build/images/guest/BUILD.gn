@@ -9,7 +9,7 @@ bazel_product_image("guest") {
   testonly = true
   bazel_product_image_target = "//build/images/guest:guest_product"
   bazel_inputs_from_gn = [
-    "//src/devices/board/drivers/machina:package.bazel_input",
+    "//src/devices/board/drivers/qemu-arm64:package.bazel_input",
     "//src/devices/block/drivers/ahci:package.bazel_input",
     "//src/devices/board/drivers/x86:package.bazel_input",
     "//src/devices/i2c/drivers/intel-i2c:package.bazel_input",

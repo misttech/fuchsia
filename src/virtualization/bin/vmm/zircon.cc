@@ -38,9 +38,9 @@
 // to ensure that we do not collide with the mapping of the host kernel.
 static constexpr uintptr_t kKernelOffset = 0x2080000;
 static constexpr zbi_platform_id_t kPlatformId = {
-    .vid = 3,  // PDEV_VID_GOOGLE
-    .pid = 2,  // PDEV_PID_MACHINA
-    .board_name = "machina",
+    .vid = 1,  // PDEV_VID_QEMU
+    .pid = 1,  // PDEV_PID_QEMU
+    .board_name = "qemu-arm64",
 };
 static constexpr zbi_dcfg_arm_psci_driver_t kPsciDriver = {
     .use_hvc = false,

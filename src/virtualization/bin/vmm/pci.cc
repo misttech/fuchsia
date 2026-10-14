@@ -38,16 +38,6 @@ constexpr uint16_t pci_ecam_register_etc(uint64_t addr) {
   return static_cast<uint16_t>(bits_shift(addr, 11, 0));
 }
 
-// The size of an ECAM region depends on values in the MCFG ACPI table. For
-// each ECAM region there is a defined physical base address as well as a bus
-// start/end value for that region.
-//
-// When creating an ECAM address for a PCI configuration register, the bus
-// value must be relative to the starting bus number for that ECAM region.
-inline constexpr uint64_t pci_ecam_size(uint64_t start_bus, uint64_t end_bus) {
-  return (end_bus - start_bus) << 20;
-}
-
 // PCI command register bits.
 constexpr uint16_t kPciCommandIoEnable = 1 << 0;
 constexpr uint16_t kPciCommandMemEnable = 1 << 1;
@@ -81,35 +71,21 @@ constexpr uint8_t kPciRegisterCapMaxBytes = kPciRegisterCapTop - kPciRegisterCap
 // PCI capabilities register layout.
 constexpr uint8_t kPciCapNextOffset = 1;
 
-// clang-format off
-
-// PCI memory ranges.
+// Per-device IRQ assignments.
+//
+// These are provided to the guest via the /pci node within the device
+// tree, and via the _SB section in the DSDT ACPI table.
 #if __aarch64__
-constexpr uint64_t kPciEcamPhysBase    = 0x808100000;
-constexpr uint64_t kPciMmioBarPhysBase = 0x808200000;
+// Matches QEMU's hw/arm/virt.c PCIe INTx swizzle across 4 GIC SPIs (35-38).
+constexpr uint32_t kPciGlobalIrqAssigments[kPciMaxDevices] = {35, 36, 37, 38, 35, 36, 37, 38,
+                                                              35, 36, 37, 38, 35, 36, 37, 38};
 #elif __x86_64__
-constexpr uint64_t kPciEcamPhysBase    = 0xf8100000;
-constexpr uint64_t kPciMmioBarPhysBase = 0xf8200000;
-constexpr uint64_t kPciConfigPortBase  = 0xcf8;
-constexpr uint64_t kPciConfigPortSize  = 0x8;
+// The DSDT defines interrupts for 16 devices (IRQ 32-47).
+constexpr uint32_t kPciGlobalIrqAssigments[kPciMaxDevices] = {32, 33, 34, 35, 36, 37, 38, 39,
+                                                              40, 41, 42, 43, 44, 45, 46, 47};
 #else
 #error Unknown architecture.
 #endif
-
-constexpr uint64_t kPciEcamSize        = pci_ecam_size(0, 1);
-constexpr uint64_t kPciMmioBarSize     = 0x100000;
-
-// clang-format on
-
-// Per-device IRQ assignments.
-//
-// These are provided to the guest via the /pci@10000000 node within the device
-// tree, and via the _SB section in the DSDT ACPI table.
-//
-// The device tree and DSDT define interrupts for 12 devices (IRQ 32-47).
-// Adding  additional devices beyond that will require updates to both.
-constexpr uint32_t kPciGlobalIrqAssigments[kPciMaxDevices] = {32, 33, 34, 35, 36, 37, 38, 39,
-                                                              40, 41, 42, 43, 44, 45, 46, 47};
 
 }  // namespace
 
@@ -510,7 +486,8 @@ zx_status_t PciDevice::ReadConfigWord(uint8_t reg, uint32_t* value) const {
       std::lock_guard<std::mutex> lock(mutex_);
       *value = command_;
 
-      uint16_t status = static_cast<uint16_t>(fpci::wire::Status::kInterrupt);
+      uint16_t status =
+          HasPendingInterrupt() ? static_cast<uint16_t>(fpci::wire::Status::kInterrupt) : 0;
       if (!capabilities_.empty()) {
         status |= static_cast<uint16_t>(fpci::wire::Status::kNewCaps);
       }

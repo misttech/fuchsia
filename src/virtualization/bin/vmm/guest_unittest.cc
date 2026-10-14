@@ -105,7 +105,11 @@ TEST(GuestTest, GetGuestMemoryRegion) {
       {0x100000000, guest_memory - (0xf8000000 - 0x100000) - 0x78000}  // Remaining memory.
   };
 #else
-  const GuestMemoryRegion kExpected[] = {{0, guest_memory}};  // All memory in one region.
+  const GuestMemoryRegion kExpected[] = {
+      {0x0, 0x09010000},                                 // 0 to start of PL031 RTC
+      {0x09011000, 0x3f000000 - 0x09011000},             // End of PL031 RTC to start of PCI ECAM
+      {0x40000000, guest_memory - 0x3f000000 + 0x1000},  // Remaining memory.
+  };
 #endif
 
   EXPECT_THAT(regions, Pointwise(GuestMemoryRegionEq(), kExpected));
@@ -132,7 +136,11 @@ TEST(GuestTest, GetPluggableRegionBaseSkipSmallOnesAndAlign) {
                                             given_base, pluggable_region_size,
                                             guest_block_memory_size, &result));
   EXPECT_EQ(result % guest_block_memory_size, 0u);
+#if __aarch64__
+  EXPECT_EQ(result, 1024u * kOneMib);
+#elif __x86_64__
   EXPECT_EQ(result, 256u * kOneMib);
+#endif
 }
 
 TEST(GuestTest, GetPluggableRegionBaseSkipDeviceRangeForx86NoSkipForArm) {
@@ -145,7 +153,7 @@ TEST(GuestTest, GetPluggableRegionBaseSkipDeviceRangeForx86NoSkipForArm) {
                                             guest_block_memory_size, &result));
   EXPECT_EQ(result % guest_block_memory_size, 0u);
 #if __aarch64__
-  EXPECT_EQ(result, guest_block_memory_size);
+  EXPECT_EQ(result, 1024u * kOneMib);
 #elif __x86_64__
   EXPECT_EQ(result, 4u * 1024 * kOneMib);
 #endif

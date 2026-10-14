@@ -12,6 +12,9 @@
 
 class Guest;
 
+static constexpr uint64_t kPl031PhysBase = 0x09010000;
+static constexpr uint64_t kPl031Size = 0x1000;
+
 // Implements the PL031 RTC.
 class Pl031 : public IoHandler, public PlatformDevice {
  public:

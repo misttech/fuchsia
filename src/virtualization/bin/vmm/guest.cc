@@ -15,6 +15,10 @@
 #include "src/virtualization/bin/vmm/pci.h"
 #include "src/virtualization/bin/vmm/sysinfo.h"
 
+#if __aarch64__
+#include "src/virtualization/bin/vmm/arch/arm64/pl031.h"
+#endif
+
 namespace {
 
 #if __aarch64__
@@ -25,14 +29,14 @@ constexpr GuestMemoryRegion RestrictUntilEnd(zx_gpaddr_t start) {
   return {start, kGuestMemoryAllRemainingRange};
 }
 
+constexpr GuestMemoryRegion RestrictRegion(zx_gpaddr_t start, zx_gpaddr_t end) {
+  return {start, end - start};
+}
+
 #if __x86_64__
 constexpr uint64_t kOneKibibyte = 1ul << 10;
 constexpr uint64_t kOneMebibyte = 1ul << 20;
 constexpr uint64_t kOneGibibyte = 1ul << 30;
-
-constexpr GuestMemoryRegion RestrictRegion(zx_gpaddr_t start, zx_gpaddr_t end) {
-  return {start, end - start};
-}
 #endif
 
 // Ranges to avoid allocating guest memory in. These regions must not overlap and must be
@@ -40,7 +44,10 @@ constexpr GuestMemoryRegion RestrictRegion(zx_gpaddr_t start, zx_gpaddr_t end) {
 // below.
 constexpr std::array kRestrictedRegions = {
 #if __aarch64__
-    // For ARM PCI devices are mapped in at a relatively high address, so it's reasonable to just
+    // Reserve MMIO regions used by the PL031 RTC and PCI ECAM below 1 GiB.
+    RestrictRegion(kPl031PhysBase, kPl031PhysBase + kPl031Size),
+    RestrictRegion(kPciEcamPhysBase, kPciEcamPhysBase + kPciEcamSize),
+    // For ARM most devices are mapped in at a relatively high address, so it's reasonable to just
     // block off the rest of guest memory.
     RestrictUntilEnd(std::min(kDevicePhysBase, kFirstDynamicDeviceAddr)),
 #elif __x86_64__

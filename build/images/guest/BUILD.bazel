@@ -40,7 +40,7 @@ package(
 fuchsia_board_input_bundle(
     name = "main_bundle",
     bootfs_driver_packages = [
-        "//src/devices/board/drivers/machina:machina",
+        "//src/devices/board/drivers/qemu-arm64:package",
     ],
     power_manager_config = "//src/power/power-manager/node_config:base_node_config.json5",
     version = build_info_version,

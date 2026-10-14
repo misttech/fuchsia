@@ -59,6 +59,37 @@ constexpr uint8_t pci_type1_register(uint64_t addr) {
   return static_cast<uint8_t>(bits_shift(addr, 7, 2) << 2);
 }
 
+// The size of an ECAM region depends on values in the MCFG ACPI table. For
+// each ECAM region there is a defined physical base address as well as a bus
+// start/end value for that region.
+//
+// When creating an ECAM address for a PCI configuration register, the bus
+// value must be relative to the starting bus number for that ECAM region.
+inline constexpr uint64_t pci_ecam_size(uint64_t start_bus, uint64_t end_bus) {
+  return (end_bus - start_bus) << 20;
+}
+
+// clang-format off
+
+// PCI memory ranges.
+#if __aarch64__
+static constexpr uint64_t kPciEcamPhysBase    = 0x3f000000;
+static constexpr uint64_t kPciEcamSize        = pci_ecam_size(0, 16);
+static constexpr uint64_t kPciMmioBarPhysBase = 0x808200000;
+#elif __x86_64__
+static constexpr uint64_t kPciEcamPhysBase    = 0xf8100000;
+static constexpr uint64_t kPciEcamSize        = pci_ecam_size(0, 1);
+static constexpr uint64_t kPciMmioBarPhysBase = 0xf8200000;
+static constexpr uint64_t kPciConfigPortBase  = 0xcf8;
+static constexpr uint64_t kPciConfigPortSize  = 0x8;
+#else
+#error Unknown architecture.
+#endif
+
+static constexpr uint64_t kPciMmioBarSize     = 0x100000;
+
+// clang-format on
+
 class PciBus;
 class PciDevice;
 

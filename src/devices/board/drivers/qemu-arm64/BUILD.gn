@@ -64,4 +64,5 @@ fuchsia_driver_component("qemu-arm64") {
 fuchsia_driver_package("package") {
   package_name = "qemu-arm64"
   driver_components = [ ":qemu-arm64" ]
+  export_to_bazel = true
 }

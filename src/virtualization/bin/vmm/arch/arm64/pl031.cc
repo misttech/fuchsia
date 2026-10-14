@@ -30,9 +30,6 @@ enum ControlRegister {
   kCrRtcStart = 1u << 0,
 };
 
-static constexpr uint64_t kPl031PhysBase = 0x808301000;
-static constexpr uint64_t kPl031Size = 0x1000;
-
 zx_status_t Pl031::Init(Guest* guest) {
   return guest->CreateMapping(TrapType::MMIO_SYNC, kPl031PhysBase, kPl031Size, 0, this);
 }

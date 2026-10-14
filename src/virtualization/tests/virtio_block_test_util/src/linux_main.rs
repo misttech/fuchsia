@@ -11,7 +11,10 @@ use std::path::PathBuf;
 
 const PCI_DIR: &str = "/dev/disk/by-path";
 
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+#[cfg(target_arch = "aarch64")]
+const PCI_DEVICE: &str = "platform-3f000000.pci-pci-0000";
+
+#[cfg(target_arch = "riscv64")]
 const PCI_DEVICE: &str = "platform-808100000.pci-pci-0000";
 
 #[cfg(target_arch = "x86_64")]
