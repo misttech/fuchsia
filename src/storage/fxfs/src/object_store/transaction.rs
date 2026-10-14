@@ -331,6 +331,7 @@ impl PartialOrd for DeviceRange {
 
 pub type AllocatorMutation = AllocatorMutationV32;
 
+// LINT.IfChange
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum AllocatorMutationV32 {
@@ -353,6 +354,7 @@ pub enum AllocatorMutationV32 {
     /// should never be reused for the same reasons.
     MarkForDeletion(u64),
 }
+// LINT.ThenChange(//src/storage/fxfs/src/object_store/extent_record.rs)
 
 pub type UpdateMutationsKey = UpdateMutationsKeyV49;
 

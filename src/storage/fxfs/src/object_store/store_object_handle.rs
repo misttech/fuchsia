@@ -9,7 +9,9 @@ use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::ObjectHandle;
-use crate::object_store::extent_record::{ExtentMode, ExtentValue};
+use crate::object_store::extent_record::{
+    ExtentMode, ExtentValue, JOURNAL_CHECKSUM_BYTES_PER_BLOCK, MAX_JOURNAL_BYTES_PER_RANGE,
+};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
     AttributeKey, BytesAndNodes, ExtendedAttributeValue, ObjectAttributes, ObjectKey,
@@ -17,7 +19,7 @@ use crate::object_store::object_record::{
 };
 use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Options, ReadGuard,
-    Transaction, lock_keys,
+    TRANSACTION_MAX_JOURNAL_USAGE, Transaction, lock_keys,
 };
 use crate::object_store::{
     AttributeId, Extent, FileExtent, HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult,
@@ -1345,6 +1347,13 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             return Ok((0, 0));
         }
         let block_size = self.block_size();
+        debug_assert!(
+            transaction.skip_journal_checks
+                || (buf.len() / block_size.get() as usize) * JOURNAL_CHECKSUM_BYTES_PER_BLOCK
+                    + ranges.len() * MAX_JOURNAL_BYTES_PER_RANGE
+                    <= TRANSACTION_MAX_JOURNAL_USAGE as usize,
+            "Write is too large for a single transaction; callers must break up writes"
+        );
         let store = self.store();
         let store_id = store.store_object_id();
 
@@ -3198,5 +3207,45 @@ mod tests {
         let mut read_buf = object.allocate_buffer(size).await;
         assert_eq!(object.read_aligned(0, read_buf.as_mut()).await.expect("read failed"), size);
         assert_eq!(&read_buf.as_ptr_slice().to_vec()[..], &buf.as_ptr_slice().to_vec()[..]);
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "Write is too large for a single transaction")]
+    #[cfg(debug_assertions)]
+    async fn test_multi_write_single_transaction_too_large_panics() {
+        use super::JOURNAL_CHECKSUM_BYTES_PER_BLOCK;
+        use crate::object_store::transaction::TRANSACTION_MAX_JOURNAL_USAGE;
+
+        let device = DeviceHolder::new(FakeDevice::new(32768, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let store = fs.root_store();
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(
+                    store.store_object_id(),
+                    store.root_directory_object_id()
+                )],
+                Options::default(),
+            )
+            .await
+            .expect("new_txn");
+        let object =
+            ObjectStore::create_object(&store, &mut transaction, HandleOptions::default(), None)
+                .await
+                .expect("create_object failed");
+        transaction.commit().await.expect("commit");
+
+        // Writing enough blocks that their journal checksums alone equal
+        // `TRANSACTION_MAX_JOURNAL_USAGE` will exceed `TRANSACTION_MAX_JOURNAL_USAGE` once the
+        // extent record overhead (`MAX_JOURNAL_BYTES_PER_RANGE`) is added.
+        let num_blocks = TRANSACTION_MAX_JOURNAL_USAGE as usize / JOURNAL_CHECKSUM_BYTES_PER_BLOCK;
+        let write_len = num_blocks * fs.block_size().get() as usize;
+        let mut buf = object.allocate_buffer(write_len).await;
+        buf.fill(0x11);
+        let mut transaction = object.new_transaction().await.expect("new_txn");
+        object
+            .multi_write(&mut transaction, AttributeId::DATA, &[0..write_len as u64], buf.as_mut())
+            .await
+            .expect("multi_write");
     }
 }

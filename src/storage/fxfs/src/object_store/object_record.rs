@@ -158,6 +158,7 @@ pub struct EncryptedChild(#[serde(with = "crate::zerocopy_serialization")] pub V
 
 pub type AttributeKey = AttributeKeyV32;
 
+// LINT.IfChange
 #[derive(
     Clone,
     Debug,
@@ -202,6 +203,7 @@ pub struct ObjectKeyV54 {
     /// The type and data of the key.
     pub data: ObjectKeyDataV54,
 }
+// LINT.ThenChange(//src/storage/fxfs/src/object_store/extent_record.rs)
 
 impl SortByU64 for ObjectKey {
     fn get_leading_u64(&self) -> u64 {

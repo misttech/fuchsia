@@ -4,10 +4,11 @@
 
 // TODO(https://fxbug.dev/42178223): need validation after deserialization.
 
-use crate::checksum::{Checksums, ChecksumsV38};
+use crate::checksum::{Checksum, Checksums, ChecksumsV38};
 use bit_vec::BitVec;
 use fprint::TypeFingerprint;
 use serde::{Deserialize, Serialize};
+use static_assertions::const_assert_eq;
 
 /// The mode the extent is operating in. This changes how writes work to this region of the file.
 pub type ExtentMode = ExtentModeV38;
@@ -49,6 +50,14 @@ impl<'a> arbitrary::Arbitrary<'a> for ExtentMode {
 /// is physically located.
 pub type ExtentValue = ExtentValueV38;
 
+/// When barriers are disabled, each block's checksum (`Checksum`) is written to the journal twice:
+/// once in the object store's `ExtentMode::Cow(Checksums)` mutation and once in
+/// `JournalRecord::DataChecksums`. Because `Checksums` uses `zerocopy_serialization`, each
+/// checksum is serialized as raw uncompressed bytes (`std::mem::size_of::<Checksum>()`).
+pub const JOURNAL_CHECKSUM_BYTES_PER_BLOCK: usize = 2 * std::mem::size_of::<Checksum>();
+const_assert_eq!(JOURNAL_CHECKSUM_BYTES_PER_BLOCK, 16);
+
+// LINT.IfChange
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ExtentValueV38 {
@@ -60,6 +69,69 @@ pub enum ExtentValueV38 {
     /// encrypted files).  `mode` describes the write pattern for this extent.
     Some { device_offset: u64, mode: ExtentModeV38, key_id: u64 },
 }
+
+/// Maximum serialized size of a varint-encoded `u64` in bincode (`0xFF` tag byte + 8-byte `u64`).
+const MAX_VARINT_U64_SIZE: usize = 1 + std::mem::size_of::<u64>();
+const_assert_eq!(MAX_VARINT_U64_SIZE, 9);
+
+/// Maximum serialized size of an `ObjectKey::extent` record:
+/// `object_id` (u64) + `ObjectKeyData::Attribute` tag (1) + `AttributeId` (u64)
+/// + `AttributeKey::Extent` tag (1) + `Extent(Range<u64>)` (2 * u64).
+const MAX_EXTENT_KEY_SERIALIZED_SIZE: usize = MAX_VARINT_U64_SIZE // object_id
+    + 1 // ObjectKeyData::Attribute discriminant
+    + MAX_VARINT_U64_SIZE // attribute_id
+    + 1 // AttributeKey::Extent discriminant
+    + 2 * MAX_VARINT_U64_SIZE; // Extent(Range<u64>)
+const_assert_eq!(MAX_EXTENT_KEY_SERIALIZED_SIZE, 38);
+
+/// Maximum serialized size of an `ObjectValue::Extent(ExtentValue::Some)` record (excluding the
+/// per-block checksum bytes):
+/// `ObjectValue::Extent` tag (1) + `ExtentValue::Some` tag (1) + `device_offset` (u64)
+/// + `ExtentMode::Cow` tag (1) + `Checksums` byte-slice length (u64) + `key_id` (u64).
+const MAX_EXTENT_VALUE_SERIALIZED_SIZE: usize = 1 // ObjectValue::Extent discriminant
+    + 1 // ExtentValue::Some discriminant
+    + MAX_VARINT_U64_SIZE // device_offset
+    + 1 // ExtentMode::Cow discriminant
+    + MAX_VARINT_U64_SIZE // Checksums byte-slice length
+    + MAX_VARINT_U64_SIZE; // key_id
+const_assert_eq!(MAX_EXTENT_VALUE_SERIALIZED_SIZE, 30);
+
+/// Maximum serialized size of a `JournalRecord::Mutation` wrapping an
+/// `AllocatorMutation::Allocate` (or `Deallocate`) record:
+/// `JournalRecord::Mutation` tag (1) + `allocator_object_id` (u64) + `Mutation::Allocator` tag (1)
+/// + `AllocatorMutation::Allocate` tag (1) + `device_range: Range<u64>` (2 * u64)
+/// + `owner_object_id` (u64).
+const MAX_ALLOCATOR_JOURNAL_RECORD_SERIALIZED_SIZE: usize = 1 // JournalRecord::Mutation tag
+    + MAX_VARINT_U64_SIZE // allocator_object_id
+    + 1 // Mutation::Allocator discriminant
+    + 1 // AllocatorMutation::Allocate discriminant
+    + 2 * MAX_VARINT_U64_SIZE // device_range: Range<u64>
+    + MAX_VARINT_U64_SIZE; // owner_object_id
+const_assert_eq!(MAX_ALLOCATOR_JOURNAL_RECORD_SERIALIZED_SIZE, 39);
+
+/// Maximum serialized journal overhead per range in `multi_write_internal` (excluding the
+/// per-block checksum payload, which is accounted for by `JOURNAL_CHECKSUM_BYTES_PER_BLOCK`, and
+/// assuming one contiguous allocation per range):
+/// - `JournalRecord::Mutation` (object store extent): tag (1) + `store_object_id` (u64)
+///   + `Mutation::ObjectStore` tag (1) + `MAX_EXTENT_KEY_SERIALIZED_SIZE`
+///   + `MAX_EXTENT_VALUE_SERIALIZED_SIZE` + `Item::sequence` (u64) + `Operation::Merge` tag (1).
+/// - `JournalRecord::DataChecksums`: tag (1) + `device_range: Range<u64>` (2 * u64)
+///   + `Checksums` byte-slice length (u64) + `first_write` (bool, 1).
+/// - `JournalRecord::Mutation` (allocator): `MAX_ALLOCATOR_JOURNAL_RECORD_SERIALIZED_SIZE`.
+pub const MAX_JOURNAL_BYTES_PER_RANGE: usize = (1 // JournalRecord::Mutation discriminant
+    + MAX_VARINT_U64_SIZE // store_object_id
+    + 1 // Mutation::ObjectStore discriminant
+    + MAX_EXTENT_KEY_SERIALIZED_SIZE
+    + MAX_EXTENT_VALUE_SERIALIZED_SIZE
+    + MAX_VARINT_U64_SIZE // Item::sequence
+    + 1) // Operation::Merge discriminant
+    + (1 // JournalRecord::DataChecksums discriminant
+    + 2 * MAX_VARINT_U64_SIZE // device_range: Range<u64>
+    + MAX_VARINT_U64_SIZE // Checksums byte-slice length
+    + 1) // first_write: bool
+    + MAX_ALLOCATOR_JOURNAL_RECORD_SERIALIZED_SIZE;
+const_assert_eq!(MAX_JOURNAL_BYTES_PER_RANGE, 157);
+// LINT.ThenChange(//src/storage/fxfs/src/object_store/object_record.rs, //src/storage/fxfs/src/object_store/transaction.rs)
 
 impl ExtentValue {
     pub fn new(device_offset: u64, mode: ExtentMode, key_id: u64) -> ExtentValue {
