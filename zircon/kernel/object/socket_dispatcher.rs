@@ -243,7 +243,7 @@ impl SocketDispatcher {
 
     fn is_disposition_state_valid(
         &self,
-        token: &mut ksync::LockToken<'_, PeerHolderMuClass<SocketDispatcher>>,
+        token: &ksync::LockToken<'_, PeerHolderMuClass<SocketDispatcher>>,
         disposition_peer: Disposition,
     ) -> bool {
         // All the data written by an endpoint must be read by the other endpoint before writes can
@@ -253,13 +253,31 @@ impl SocketDispatcher {
             && (self.signals_state_locked(token) & ZX_SOCKET_PEER_WRITE_DISABLED) != 0)
     }
 
+    /// Returns a reference to the peer `SocketDispatcher` with lifetime `'a` tied to `&'a self`.
+    ///
+    /// # Safety
+    ///
+    /// The returned reference must not be used after `guard` is dropped/unlocked or after
+    /// `guard.as_mut().peer_mut()` is mutated.
+    #[inline]
+    unsafe fn peer<'a>(
+        &'a self,
+        guard: &PeeredStateMuGuard<'_, Self, RawCriticalMutex>,
+    ) -> Option<&'a Self> {
+        // SAFETY: `guard` holds the shared `PeerHolder` lock, and the caller guarantees that the
+        // returned reference is not used after `guard` is dropped/unlocked or `peer_mut()` is
+        // mutated, so the peer `RefPtr` in `guard` remains alive for all uses of the reference.
+        guard.peer().as_deref().map(|p| unsafe { &*(p as *const Self) })
+    }
+
     /// Sets the disposition of socket endpoints (write enabled / write disabled).
     pub fn set_disposition(
         &self,
         disposition: Disposition,
         disposition_peer: Disposition,
     ) -> Result<(), Status> {
-        self.state().canary.assert();
+        let state = self.state();
+        state.canary.assert();
         ltrace_entry!();
 
         if disposition == Disposition::None && disposition_peer == Disposition::None {
@@ -269,8 +287,10 @@ impl SocketDispatcher {
 
         let self_masks = disposition.signal_masks();
 
-        ksync::lock!(let mut guard = self.state().peered.lock());
-        let peer = guard.peer().as_ref().cloned();
+        ksync::lock!(let mut guard = state.peered.lock());
+        // SAFETY: `guard` is held for the remainder of `set_disposition` and `peer_mut()` is never
+        // mutated.
+        let peer = unsafe { self.peer(&guard) };
         let token = guard.as_mut().token_mut();
 
         if !self.is_disposition_state_valid(token, disposition_peer) {
@@ -280,7 +300,7 @@ impl SocketDispatcher {
         let mut clear_mask = self_masks.clear;
         let mut set_mask = self_masks.set;
 
-        if let Some(peer) = peer.as_ref() {
+        if let Some(peer) = peer {
             if !peer.is_disposition_state_valid(token, disposition) {
                 return Err(Status::BAD_STATE);
             }
@@ -301,12 +321,16 @@ impl SocketDispatcher {
     }
 
     /// Writes data from the buffer pointer into the peer socket endpoint.
+    #[inline]
     pub fn write(&self, src: UserInPtr<core::ffi::c_char>, len: usize) -> Result<usize, Status> {
-        self.state().canary.assert();
+        let state = self.state();
+        state.canary.assert();
         ltrace_entry!();
 
-        ksync::lock!(let mut guard = self.state().peered.lock());
-        let peer = guard.peer().clone().ok_or(Status::PEER_CLOSED)?;
+        ksync::lock!(let mut guard = state.peered.lock());
+        // SAFETY: `guard` is held for the remainder of `write` and `peer_mut()` is never mutated
+        // inside `write_self_locked`.
+        let peer = unsafe { self.peer(&guard) }.ok_or(Status::PEER_CLOSED)?;
 
         if (self.signals_state_locked(guard.token()) & ZX_SOCKET_WRITE_DISABLED) != 0 {
             return Err(Status::BAD_STATE);
@@ -321,6 +345,7 @@ impl SocketDispatcher {
         peer.write_self_locked(self, guard.as_mut(), src, len)
     }
 
+    #[inline]
     fn write_self_locked(
         &self,
         peer: &Self,
@@ -328,14 +353,15 @@ impl SocketDispatcher {
         src: UserInPtr<core::ffi::c_char>,
         len: usize,
     ) -> Result<usize, Status> {
-        self.state().canary.assert();
+        let state = self.state();
+        state.canary.assert();
 
         let was_empty = {
-            let state = self.state().guard_mu(guard.token());
-            if state.data().is_full() {
+            let guard_mu = state.guard_mu(guard.token());
+            if guard_mu.data().is_full() {
                 return Err(Status::SHOULD_WAIT);
             }
-            state.data().is_empty()
+            guard_mu.data().is_empty()
         };
 
         // TODO(https://fxbug.dev/42182048): Perform user copying while holding the dispatcher lock
@@ -345,18 +371,19 @@ impl SocketDispatcher {
         // effectiveness of any other lockdep detections that might involve this lock for the
         // duration of the operation.
         let (status, written) = guard.as_mut().call_untracked(|token| {
-            let is_datagram = (self.state().flags & ZX_SOCKET_DATAGRAM) != 0;
-            let mut state = self.state().guard_mu_mut(token);
+            let is_datagram = (state.flags & ZX_SOCKET_DATAGRAM) != 0;
+            let mut guard_mu = state.guard_mu_mut(token);
             if is_datagram {
-                state.data_mut().write_datagram(src, len)
+                guard_mu.data_mut().write_datagram(src, len)
             } else {
-                state.data_mut().write_stream(src, len)
+                guard_mu.data_mut().write_stream(src, len)
             }
         });
 
         // Regardless of the status, data may have been added, and so we need to update the signals.
         let mut peer_clear: zx_signals_t = 0;
-        let state = self.state().guard_mu(guard.token());
+        let guard_mu = state.guard_mu(guard.token());
+        let size = guard_mu.data().stream_size();
 
         if written > 0 {
             let mut set: zx_signals_t = 0;
@@ -364,8 +391,7 @@ impl SocketDispatcher {
                 set |= ZX_SOCKET_READABLE;
             }
             // Assert signal if we go above the read threshold
-            let read_threshold = *state.read_threshold();
-            let size = state.data().stream_size();
+            let read_threshold = *guard_mu.read_threshold();
             if read_threshold > 0 && size >= read_threshold {
                 set |= ZX_SOCKET_READ_THRESHOLD;
             }
@@ -374,14 +400,15 @@ impl SocketDispatcher {
             }
 
             let peer_write_threshold = *peer.state().guard_mu(guard.token()).write_threshold();
-            let free_space = MBufChain::MAX_SIZE - size;
             // If free space falls below threshold, de-signal
-            if peer_write_threshold > 0 && free_space < peer_write_threshold {
+            if peer_write_threshold > 0
+                && MBufChain::MAX_SIZE.wrapping_sub(size) < peer_write_threshold
+            {
                 peer_clear |= ZX_SOCKET_WRITE_THRESHOLD;
             }
         }
 
-        if state.data().is_full() {
+        if size >= MBufChain::MAX_SIZE {
             peer_clear |= ZX_SOCKET_WRITABLE;
         }
         if peer_clear != 0 {
@@ -393,47 +420,49 @@ impl SocketDispatcher {
     }
 
     /// Reads data from this socket endpoint into the destination buffer pointer.
+    #[inline]
     pub fn read(
         &self,
         read_type: ReadType,
         dst: UserOutPtr<core::ffi::c_char>,
         len: usize,
     ) -> Result<usize, Status> {
-        self.state().canary.assert();
+        let state = self.state();
+        state.canary.assert();
         ltrace_entry!();
-
-        ksync::lock!(let mut guard = self.state().peered.lock());
 
         if u32::try_from(len).is_err() {
             return Err(Status::INVALID_ARGS);
         }
 
+        ksync::lock!(let mut guard = state.peered.lock());
+
         let was_full = {
-            let state = self.state().guard_mu(guard.token());
-            if state.data().is_empty() {
+            let guard_mu = state.guard_mu(guard.token());
+            if guard_mu.data().is_empty() {
                 if guard.peer().is_none() {
                     return Err(Status::PEER_CLOSED);
                 }
                 // If reading is disabled on our end and we're empty, we'll never become readable
                 // again. Return a different error to let the caller know.
-                if *state.read_disabled() {
+                if *guard_mu.read_disabled() {
                     return Err(Status::BAD_STATE);
                 }
                 return Err(Status::SHOULD_WAIT);
             }
-            state.data().is_full()
+            guard_mu.data().is_full()
         };
 
         // TODO(https://fxbug.dev/42182048): See comment in write_self_locked on why we use
         // call_untracked.
         let (status, actual) = guard.as_mut().call_untracked(|token| {
-            let is_datagram = (self.state().flags & ZX_SOCKET_DATAGRAM) != 0;
-            let mut state = self.state().guard_mu_mut(token);
+            let is_datagram = (state.flags & ZX_SOCKET_DATAGRAM) != 0;
+            let mut guard_mu = state.guard_mu_mut(token);
             match (read_type, is_datagram) {
-                (ReadType::Peek, true) => state.data().peek_datagram(dst, len),
-                (ReadType::Peek, false) => state.data().peek_stream(dst, len),
-                (ReadType::Consume, true) => state.data_mut().read_datagram(dst, len),
-                (ReadType::Consume, false) => state.data_mut().read_stream(dst, len),
+                (ReadType::Peek, true) => guard_mu.data().peek_datagram(dst, len),
+                (ReadType::Peek, false) => guard_mu.data().peek_stream(dst, len),
+                (ReadType::Consume, true) => guard_mu.data_mut().read_datagram(dst, len),
+                (ReadType::Consume, false) => guard_mu.data_mut().read_stream(dst, len),
             }
         });
 
@@ -445,27 +474,28 @@ impl SocketDispatcher {
         // Regardless of the status, data may have been consumed, and so we need to update the
         // signals.
         let mut clear: zx_signals_t = 0;
-        let state = self.state().guard_mu(guard.token());
+        let guard_mu = state.guard_mu(guard.token());
+        let size = guard_mu.data().stream_size();
 
         // Deassert signal if we fell below the read threshold
-        let read_threshold = *state.read_threshold();
-        let size = state.data().stream_size();
+        let read_threshold = *guard_mu.read_threshold();
         if read_threshold > 0 && size < read_threshold {
             clear |= ZX_SOCKET_READ_THRESHOLD;
         }
-        if state.data().is_empty() {
+        if size == 0 {
             clear |= ZX_SOCKET_READABLE;
         }
         if clear != 0 {
             self.update_state_locked(guard.token(), clear, 0);
         }
 
-        if let Some(peer) = guard.peer().as_ref() {
+        if let Some(peer) = guard.peer().as_deref() {
             let peer_write_threshold = *peer.state().guard_mu(guard.token()).write_threshold();
-            let free_space = MBufChain::MAX_SIZE - size;
             let mut peer_set: zx_signals_t = 0;
             // Assert (write threshold) signal if space available is above threshold.
-            if peer_write_threshold > 0 && free_space >= peer_write_threshold {
+            if peer_write_threshold > 0
+                && MBufChain::MAX_SIZE.wrapping_sub(size) >= peer_write_threshold
+            {
                 peer_set |= ZX_SOCKET_WRITE_THRESHOLD;
             }
             if was_full && actual > 0 {
@@ -483,9 +513,8 @@ impl SocketDispatcher {
     /// Returns socket buffer info for this endpoint and its peer.
     pub fn get_info(&self) -> zx_info_socket_t {
         self.state().canary.assert();
-        ksync::lock!(let mut guard = self.state().peered.lock());
-        let peer = guard.peer().as_ref().cloned();
-        let token = guard.as_mut().token_mut();
+        ksync::lock!(let guard = self.state().peered.lock());
+        let token = guard.token();
         let is_datagram = (self.state().flags & ZX_SOCKET_DATAGRAM) != 0;
 
         let guard_mu = self.state().guard_mu(token);
@@ -500,7 +529,7 @@ impl SocketDispatcher {
             ..Default::default()
         };
 
-        if let Some(peer) = peer {
+        if let Some(peer) = guard.peer().as_ref() {
             // Peer shares the same lock.
             let peer_guard_mu = peer.state().guard_mu(token);
             info.tx_buf_max = MBufChain::MAX_SIZE;
