@@ -623,6 +623,12 @@ not have a stable ABI. Can be either "none" or "static".""",
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
+        # Bazel's `inherit_attrs` skips undocumented built-in `BaseRuleClasses`
+        # attributes such as `aspect_hints`, so it must be declared explicitly
+        # on symbolic macros that accept `aspect_hints` from callers.
+        "aspect_hints": attr.label_list(
+            doc = "Hints for aspects.",
+        ),
 
         # Require use of `runtime_deps` for atoms that are runtime dependencies. Do not inherit.
         "data": None,

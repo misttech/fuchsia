@@ -4,7 +4,7 @@
 
 load(
     "@fuchsia_rules_common//build_flags:cc.bzl",
-    "BUILD_FLAGS_CC_ATTRS_KWARGS",
+    "BUILD_FLAGS_CC_MACRO_ATTRS",
     "wrap_cc_macro_args_with_build_flags",
 )
 load("@rules_cc//cc:defs.bzl", "cc_binary")
@@ -99,5 +99,5 @@ fx_cc_binary = macro(
             default = False,
             configurable = False,
         ),
-    } | BUILD_FLAGS_CC_ATTRS_KWARGS,
+    } | BUILD_FLAGS_CC_MACRO_ATTRS,
 )

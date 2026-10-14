@@ -6,7 +6,7 @@
 
 load(
     "@fuchsia_rules_common//build_flags:rust.bzl",
-    "BUILD_FLAGS_RUST_ATTRS_KWARGS",
+    "BUILD_FLAGS_RUST_MACRO_ATTRS",
     "wrap_rust_macro_args_with_build_flags",
 )
 load("@rules_rust//rust:defs.bzl", "rust_binary")
@@ -102,5 +102,5 @@ See details in https://fxbug.dev/407441714.
             doc = "Extra dependencies for the test target.",
             default = [],
         ),
-    } | BUILD_FLAGS_RUST_ATTRS_KWARGS,
+    } | BUILD_FLAGS_RUST_MACRO_ATTRS,
 )

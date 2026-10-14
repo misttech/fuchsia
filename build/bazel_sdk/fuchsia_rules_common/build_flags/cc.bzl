@@ -22,8 +22,8 @@ load(
     "BuildFlagsListInfo",
 )
 
-# Common attributes for all C++ rules that support build_flags().
-BUILD_FLAGS_CC_ATTRS_KWARGS = {
+# Common attributes for all C++ macros that support build_flags().
+BUILD_FLAGS_CC_MACRO_ATTRS = {
     "build_flags": attr.label_list(
         doc = "List of `build_flags()` targets.",
         providers = [BuildFlagsInfo],
@@ -33,6 +33,12 @@ BUILD_FLAGS_CC_ATTRS_KWARGS = {
         doc = "List of `build_flags()` targets whose flags should be excluded.",
         providers = [BuildFlagsInfo],
         default = [],
+    ),
+    # Bazel's `inherit_attrs` skips undocumented built-in `BaseRuleClasses`
+    # attributes such as `aspect_hints`, so it must be declared explicitly on
+    # symbolic macros that accept `aspect_hints` from callers.
+    "aspect_hints": attr.label_list(
+        doc = "Hints for aspects.",
     ),
 }
 
@@ -98,12 +104,22 @@ _final_cc_build_flags = rule(
           "to generate response files for different C++ action types.",
     provides = [BuildFlagsListInfo],
     attrs = {
+        "build_flags": attr.label_list(
+            doc = "List of `build_flags()` targets.",
+            providers = [BuildFlagsInfo],
+            default = [],
+        ),
+        "disable_build_flags": attr.label_list(
+            doc = "List of `build_flags()` targets whose flags should be excluded.",
+            providers = [BuildFlagsInfo],
+            default = [],
+        ),
         "target_type": attr.string(
             doc = "The type of target being wrapped.",
             mandatory = True,
             values = list(BUILD_FLAGS_CC_TARGET_TYPES),
         ),
-    } | BUILD_FLAGS_CC_ATTRS_KWARGS,
+    },
 
     # Used to find the list of default build_flags() per target type.
     # See @fuchsia_rules_common//build_flags:{host,fuchsia}_default_build_flags_toolchain

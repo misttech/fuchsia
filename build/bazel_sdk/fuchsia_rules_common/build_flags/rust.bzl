@@ -10,7 +10,7 @@ load(
 )
 load(":providers.bzl", "BuildFlagsInfo", "BuildFlagsListInfo")
 
-# Common attributes for all Rust rules that support build_flags().
+# Common attributes for all Rust macros that support build_flags().
 # Two important points:
 #
 # - disable_build_flags is not supported for Rust targets due to
@@ -19,12 +19,18 @@ load(":providers.bzl", "BuildFlagsInfo", "BuildFlagsListInfo")
 # - build_flags is non-configurable to work-around the fact that
 #   include_str! directives with relative paths that start with
 #   ../ do not work properly. See https://fxbug.dev/516778625
-BUILD_FLAGS_RUST_ATTRS_KWARGS = {
+BUILD_FLAGS_RUST_MACRO_ATTRS = {
     "build_flags": attr.label_list(
         doc = "List of build_flags() targets.",
         providers = [BuildFlagsInfo],
         configurable = False,
         default = [],
+    ),
+    # Bazel's `inherit_attrs` skips undocumented built-in `BaseRuleClasses`
+    # attributes such as `aspect_hints`, so it must be declared explicitly on
+    # symbolic macros that accept `aspect_hints` from callers.
+    "aspect_hints": attr.label_list(
+        doc = "Hints for aspects.",
     ),
 }
 

@@ -6,7 +6,7 @@
 
 load(
     "@fuchsia_rules_common//build_flags:rust.bzl",
-    "BUILD_FLAGS_RUST_ATTRS_KWARGS",
+    "BUILD_FLAGS_RUST_MACRO_ATTRS",
     "wrap_rust_macro_args_with_build_flags",
 )
 load("@rules_rust//rust:defs.bzl", "rust_library")
@@ -131,5 +131,5 @@ keep output paths stable when migrating an existing GN target. Ignored by
 Bazel.""",
             configurable = False,
         ),
-    } | BUILD_FLAGS_RUST_ATTRS_KWARGS,
+    } | BUILD_FLAGS_RUST_MACRO_ATTRS,
 )

@@ -211,6 +211,12 @@ When not using a Zircon-specific toolchain:
             mandatory = True,
             configurable = False,
         ),
+        # Bazel's `inherit_attrs` skips undocumented built-in `BaseRuleClasses`
+        # attributes such as `aspect_hints`, so it must be declared explicitly
+        # on symbolic macros that accept `aspect_hints` from callers.
+        "aspect_hints": attr.label_list(
+            doc = "Hints for aspects.",
+        ),
     },
 )
 
@@ -267,6 +273,12 @@ When not using a Zircon-specific toolchain:
             mandatory = True,
             configurable = False,
         ),
+        # Bazel's `inherit_attrs` skips undocumented built-in `BaseRuleClasses`
+        # attributes such as `aspect_hints`, so it must be declared explicitly
+        # on symbolic macros that accept `aspect_hints` from callers.
+        "aspect_hints": attr.label_list(
+            doc = "Hints for aspects.",
+        ),
     },
 )
 
@@ -322,6 +334,12 @@ When not using a Zircon-specific toolchain:
             doc = 'Path to the root directory for includes. Must always be `["include"]`.',
             mandatory = True,
             configurable = False,
+        ),
+        # Bazel's `inherit_attrs` skips undocumented built-in `BaseRuleClasses`
+        # attributes such as `aspect_hints`, so it must be declared explicitly
+        # on symbolic macros that accept `aspect_hints` from callers.
+        "aspect_hints": attr.label_list(
+            doc = "Hints for aspects.",
         ),
     },
 )

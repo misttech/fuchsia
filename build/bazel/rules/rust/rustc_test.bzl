@@ -4,7 +4,7 @@
 
 """A macro for defining a Rust test with Fuchsia-specific lint config by default."""
 
-load("@fuchsia_rules_common//build_flags:rust.bzl", "BUILD_FLAGS_RUST_ATTRS_KWARGS", "wrap_rust_macro_args_with_build_flags")
+load("@fuchsia_rules_common//build_flags:rust.bzl", "BUILD_FLAGS_RUST_MACRO_ATTRS", "wrap_rust_macro_args_with_build_flags")
 load("@rules_rust//rust:defs.bzl", "rust_test")
 load(
     "//build/bazel/rules/rust:common.bzl",
@@ -57,5 +57,5 @@ rustc_test = macro(
     """,
     implementation = _rustc_test_impl,
     inherit_attrs = rust_test,
-    attrs = BUILD_FLAGS_RUST_ATTRS_KWARGS,
+    attrs = BUILD_FLAGS_RUST_MACRO_ATTRS,
 )
