@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <endian.h>
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -1366,6 +1367,22 @@ TEST_F(BlockDeviceTest, BlockServerService) {
   zx::result volume_connect =
       driver_test().Connect<fuchsia_hardware_block_volume::Service::Volume>(instance_name);
   ASSERT_OK(volume_connect);
+
+  zx::result mapper_connect =
+      driver_test().Connect<fuchsia_hardware_block_volume::Service::Mapper>(instance_name);
+  ASSERT_OK(mapper_connect);
+
+  fidl::SyncClient<fuchsia_storage_block::Mapper> mapper_client(std::move(mapper_connect.value()));
+  auto [session_client, session_server] =
+      fidl::Endpoints<fuchsia_storage_block::MapperSession>::Create();
+
+  zx::vmo mapping_vmo;
+  ASSERT_OK(zx::vmo::create(512ULL * 1024, 0, &mapping_vmo));
+
+  fuchsia_storage_block::MapperOpenSessionRequest request;
+  request.session(std::move(session_server));
+  request.mapping_vmo(std::move(mapping_vmo));
+  ASSERT_OK(mapper_client->OpenSession(std::move(request)));
 
   zx::result token_connect =
       driver_test().Connect<fuchsia_hardware_block_volume::Service::Token>(instance_name);

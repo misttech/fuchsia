@@ -282,6 +282,12 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
               block_server_->Serve(std::move(server_end));
             }
           },
+      .mapper =
+          [this](fidl::ServerEnd<fuchsia_storage_block::Mapper> server_end) {
+            if (block_server_) {
+              block_server_->ServeMapper(std::move(server_end));
+            }
+          },
       .token =
           [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
             fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
