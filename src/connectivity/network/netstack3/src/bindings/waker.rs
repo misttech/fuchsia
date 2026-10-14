@@ -225,7 +225,7 @@ impl WakeGroup {
     }
 
     async fn serve(self, wake_groups: WakeGroups) -> Result<!, WakeGroupShutdownReason> {
-        let Self { name, id, mut data_watcher, wake_watcher } = self;
+        let Self { name, id, data_watcher, wake_watcher } = self;
         let WakeGroupId { token, koid: _ } = &id;
 
         let _cleanup = scopeguard::guard((wake_groups, &id), |(wake_groups, id)| {
@@ -243,6 +243,8 @@ impl WakeGroup {
             debug!("wake group '{name}' {id:?} waiting for suspend");
             wait_for_client_state(&wake_watcher, ClientState::Asleep).await?;
 
+            data_watcher.reset();
+
             // Bias in favor of client wakeup. In that case, raising the
             // wake signal is pointless.
             futures::select_biased! {
@@ -251,7 +253,7 @@ impl WakeGroup {
                     // The other side woke up without us. Nothing left to do here.
                     continue;
                 }
-                () = data_watcher.reset_and_wait().fuse() => (),
+                () = data_watcher.wait().fuse() => (),
             }
 
             // Assert the wake signal to wake up the other side.

@@ -28,9 +28,8 @@ pub(crate) struct DataNotifier {
 impl DataNotifier {
     /// Notifies the watcher that data is available.
     ///
-    /// If the watcher is not currently waiting, the notification will have no
-    /// effect until the watcher starts waiting. Multiple notifications are
-    /// coalesced.
+    /// A notification is latched until cleared by [`DataWatcher::reset`];
+    /// waiting does not clear it. Multiple notifications are coalesced.
     pub(crate) fn notify(&self) {
         let DataAvailable { available, waker } = &*self.inner;
 
@@ -58,16 +57,15 @@ impl DataWatcher {
         (watcher, notifier)
     }
 
-    /// Resets the data availability state and returns a future that completes when
-    /// a new notification is received.
-    ///
-    /// To be clear, this method clears any previous notification, and the returned
-    /// future will only complete the *next* time [`DataNotifier::notify`] is
-    /// called.
-    pub(crate) fn reset_and_wait(&mut self) -> impl Future<Output = ()> + use<'_> {
-        let DataAvailable { available, waker } = &*self.inner;
-
+    /// Clears any pending data availability notification.
+    pub(crate) fn reset(&self) {
+        let DataAvailable { available, waker: _ } = &*self.inner;
         available.store(false, Ordering::Relaxed);
+    }
+
+    /// Returns a future that completes when data availability is observed.
+    pub(crate) fn wait(&self) -> impl Future<Output = ()> + use<'_> {
+        let DataAvailable { available, waker } = &*self.inner;
 
         futures::future::poll_fn(|cx| {
             if available.load(Ordering::Relaxed) {
@@ -95,13 +93,18 @@ mod tests {
     fn notifications() {
         let mut exec = fuchsia_async::TestExecutor::new();
 
-        let (mut watcher, tcp) = DataWatcher::new();
+        let (watcher, tcp) = DataWatcher::new();
         let udp = tcp.clone();
 
-        // If we notify before the watcher wait has been initialized, the watcher is not
-        // notified.
+        // A notification that arrives before the watcher waits is observed by
+        // the wait, and waiting does not consume it.
         tcp.notify();
-        let mut fut = watcher.reset_and_wait();
+        assert_eq!(exec.run_until_stalled(&mut watcher.wait()), Poll::Ready(()));
+        assert_eq!(exec.run_until_stalled(&mut watcher.wait()), Poll::Ready(()));
+
+        // Unless it is cleared before the watcher waits.
+        watcher.reset();
+        let mut fut = watcher.wait();
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
 
         // If we notify after the watcher wait has been initialized, it should wake the
@@ -110,24 +113,22 @@ mod tests {
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
         drop(fut);
 
-        // If we notify again before a new watcher wait is initialized, again, the
-        // notification is swallowed.
-        tcp.notify();
-        let mut fut = watcher.reset_and_wait();
-        assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
-
         // We can notify arbitrarily many times on the same notifier or on arbitrarily
         // many notifiers attached to the same watcher, and regardless it should result
         // in the future waking.
+        watcher.reset();
+        let mut fut = watcher.wait();
+        assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
         tcp.notify();
         udp.notify();
         tcp.notify();
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
         drop(fut);
 
-        // But the notifications are coalesced, so a subsequent wait should not
-        // complete.
-        let mut fut = watcher.reset_and_wait();
+        // But the notifications are coalesced, so a subsequent wait after
+        // clearing should not complete.
+        watcher.reset();
+        let mut fut = watcher.wait();
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
     }
 }
