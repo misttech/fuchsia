@@ -33,6 +33,11 @@ set -euo pipefail
 #    `host_*_test` and `fx_*` rules are never translated, so they aren't flagged. Also flags
 #    a generated section of BUILD.gn that contains `with_unit_tests`, `test_deps`,
 #    `rustc_test(` or `go_test(`.
+# 5. defs_bzl_reexport_load (error): flags any BUILD.bazel `load()` from a `*:defs.bzl` file
+#    (such as `//build/bazel/rules/rust:defs.bzl` or `@rules_cc//cc:defs.bzl`) of a symbol that
+#    `defs.bzl` only re-exports from another `.bzl` file in the same directory. Symbols defined
+#    directly in `defs.bzl` (including `//build/bazel/rules/host:defs.bzl`) or loaded from a
+#    `private/` or other subdirectory are allowed.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -1047,6 +1052,122 @@ for pkg_dir in sorted(candidate_dirs):
                                 ),
                             })
 
+ALLOWED_DEFS_BZL_LABELS = {
+    "//build/bazel/rules/host:defs.bzl",
+    "//build/bazel/rules/host/defs.bzl",
+}
+_defs_bzl_reexport_cache = {}
+
+
+def _resolve_defs_bzl_label(mod_label):
+    """Resolve a //pkg:defs.bzl or @repo//pkg:defs.bzl label to (abs_path, canonical_pkg, repo_name, pkg_path)."""
+    if mod_label in ALLOWED_DEFS_BZL_LABELS:
+        return None
+    if mod_label.endswith(":defs.bzl"):
+        prefix = mod_label[: -len(":defs.bzl")]
+    elif ":" not in mod_label and mod_label.endswith("/defs.bzl"):
+        prefix = mod_label[: -len("/defs.bzl")]
+    else:
+        return None
+    if "//" not in prefix:
+        return None
+    repo_part, pkg_path = prefix.split("//", 1)
+    pkg_path = pkg_path.strip("/")
+    repo_name = repo_part.lstrip("@")
+    if repo_name:
+        defs_abs = os.path.join(
+            workdir, "third_party", "bazel_vendor", f"{repo_name}+", pkg_path, "defs.bzl"
+        )
+        canonical_pkg = f"@{repo_name}//{pkg_path}" if pkg_path else f"@{repo_name}//"
+    else:
+        defs_abs = os.path.join(workdir, pkg_path, "defs.bzl")
+        canonical_pkg = f"//{pkg_path}"
+    return defs_abs, canonical_pkg, repo_name, pkg_path
+
+
+def _same_dir_bzl_target(inner_label, canonical_pkg, repo_name, pkg_path):
+    """Return canonical replacement label if inner_label is a .bzl in the same directory."""
+    if inner_label.startswith(":"):
+        rel = inner_label[1:]
+        if "/" not in rel and rel.endswith(".bzl") and rel != "defs.bzl":
+            sep = "" if canonical_pkg.endswith("//") else ":"
+            return f"{canonical_pkg}{sep}{rel}"
+        return None
+    if "//" not in inner_label:
+        return None
+    in_repo, in_rest = inner_label.split("//", 1)
+    in_repo_name = in_repo.lstrip("@")
+    if in_repo_name not in ("", repo_name):
+        return None
+    if ":" in in_rest:
+        in_pkg, in_file = in_rest.split(":", 1)
+    else:
+        in_pkg, _, in_file = in_rest.rpartition("/")
+    in_pkg = in_pkg.strip("/")
+    if in_pkg == pkg_path and "/" not in in_file and in_file.endswith(".bzl") and in_file != "defs.bzl":
+        sep = "" if canonical_pkg.endswith("//") else ":"
+        return f"{canonical_pkg}{sep}{in_file}"
+    return None
+
+
+def get_defs_bzl_reexports(mod_label):
+    """Return (canonical_pkg, {exported_symbol: (target_bzl_label, orig_symbol)}) for a *:defs.bzl label."""
+    resolved = _resolve_defs_bzl_label(mod_label)
+    if resolved is None:
+        return None
+    defs_abs, canonical_pkg, repo_name, pkg_path = resolved
+    cache_key = (defs_abs, canonical_pkg, repo_name, pkg_path)
+    if cache_key in _defs_bzl_reexport_cache:
+        return _defs_bzl_reexport_cache[cache_key]
+    if not os.path.isfile(defs_abs):
+        _defs_bzl_reexport_cache[cache_key] = None
+        return None
+    try:
+        dtext = open(defs_abs, encoding="utf-8").read()
+        dtree = ast.parse(dtext, filename=defs_abs)
+    except Exception:
+        _defs_bzl_reexport_cache[cache_key] = None
+        return None
+
+    loaded_same_dir = {}
+    reexports = {}
+    for stmt in dtree.body:
+        if (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Call)
+            and isinstance(stmt.value.func, ast.Name)
+            and stmt.value.func.id == "load"
+            and stmt.value.args
+            and isinstance(stmt.value.args[0], ast.Constant)
+            and isinstance(stmt.value.args[0].value, str)
+        ):
+            target_bzl = _same_dir_bzl_target(
+                stmt.value.args[0].value, canonical_pkg, repo_name, pkg_path
+            )
+            if target_bzl:
+                for arg in stmt.value.args[1:]:
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        sym = arg.value
+                        loaded_same_dir[sym] = (target_bzl, sym)
+                        if not sym.startswith("_"):
+                            reexports[sym] = (target_bzl, sym)
+                for kw in stmt.value.keywords:
+                    if kw.arg and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                        loaded_same_dir[kw.arg] = (target_bzl, kw.value.value)
+        elif isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+            lhs = stmt.targets[0].id
+            if isinstance(stmt.value, ast.Name) and stmt.value.id in loaded_same_dir:
+                reexports[lhs] = loaded_same_dir[stmt.value.id]
+            else:
+                reexports.pop(lhs, None)
+        elif isinstance(stmt, ast.FunctionDef):
+            reexports.pop(stmt.name, None)
+
+    result = (canonical_pkg, reexports)
+    _defs_bzl_reexport_cache[cache_key] = result
+    return result
+
+
 # 4. rust_unit_test_layout: Rust unit tests in BUILD.bazel are explicit rustc_test
 #    targets (host/device differences via select()), always `# @bazel2gn:skip`, with
 #    the device side exposed through fx_test_component/fx_package/fx_test.
@@ -1065,6 +1186,56 @@ for pkg_dir in sorted(candidate_dirs):
     rules_used = set()
     rust_tests = []
     for node in btree.body:
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id == "load"
+            and node.value.args
+            and isinstance(node.value.args[0], ast.Constant)
+            and isinstance(node.value.args[0].value, str)
+        ):
+            mod_label = node.value.args[0].value
+            reexport_info = get_defs_bzl_reexports(mod_label)
+            if reexport_info is not None:
+                canonical_pkg, reexports = reexport_info
+                loaded_items = [
+                    (None, a.value)
+                    for a in node.value.args[1:]
+                    if isinstance(a, ast.Constant) and isinstance(a.value, str)
+                ] + [
+                    (kw.arg, kw.value.value)
+                    for kw in node.value.keywords
+                    if kw.arg and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str)
+                ]
+                bad_syms = []
+                repl_loads = []
+                for alias, sym in loaded_items:
+                    if sym in reexports:
+                        target_bzl, orig_sym = reexports[sym]
+                        bad_syms.append(sym)
+                        if alias and alias != orig_sym:
+                            repl_loads.append(f'`load("{target_bzl}", {alias} = "{orig_sym}")`')
+                        else:
+                            repl_loads.append(f'`load("{target_bzl}", "{orig_sym}")`')
+                if bad_syms:
+                    repls = ", ".join(repl_loads)
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "defs_bzl_reexport_load",
+                        "severity": "error",
+                        "file": bazel_rel,
+                        "line": node.lineno,
+                        "message": (
+                            f"'{bazel_rel}' loads {', '.join(f'`{s}`' for s in bad_syms)} from "
+                            f"`{mod_label}`, which only re-exports symbols from individual `.bzl` "
+                            "files in the same directory."
+                        ),
+                        "remediation": (
+                            f"Replace `load(\"{mod_label}\", ...)` in '{bazel_rel}' with direct "
+                            f"loads from the defining files in `{canonical_pkg}`: {repls}."
+                        ),
+                    })
         if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
                 and isinstance(node.value.func, ast.Name)):
             continue
@@ -1090,7 +1261,7 @@ for pkg_dir in sorted(candidate_dirs):
                 ),
                 "remediation": (
                     f"Remove `{flag}` (and `test_deps`) from `{tname}` and declare an explicit "
-                    "`rustc_test` (load from //build/bazel/rules/rust:defs.bzl) preceded by `# @bazel2gn:skip`, "
+                    "`rustc_test` (load from //build/bazel/rules/rust:rustc_test.bzl) preceded by `# @bazel2gn:skip`, "
                     "expressing host vs Fuchsia differences with `select()`. For the Fuchsia side add "
                     "`fx_packaged_binary` (testonly) + `fx_test_component` + `fx_package(test_components = [...])` "
                     "+ `fx_test` per docs/development/build/bazel_concepts/tests.md. Keep the GN test targets "

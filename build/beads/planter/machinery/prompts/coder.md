@@ -49,8 +49,11 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
 - `load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")` (or
   `"//build/bazel/rules/cc:fx_packaged_binary.bzl"` if not yet in `rules/packages`)
 - `load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")` or
-  `load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")`
+  `load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")`
 - `load("@fuchsia_rules_common//packages:resources.bzl", "resource")`
+- Load each symbol from the `.bzl` file that defines it; use a `defs.bzl` only if the symbol is
+  first defined there; never load from `private/`; e.g. `//build/bazel/rules/rust:rustc_test.bzl`
+  rather than `//build/bazel/rules/rust:defs.bzl`.
 1. **Manifest & shard includes (`fx_component_manifest`)**:
    - Declare `fx_component_manifest(name = "<c>-manifest", component_name = "<comp_name>", includes = [...], manifest = "meta/<m>.cml")`.
    - **`component_name` parity**: in `fuchsia_component("<n>")`, `component_name` defaults to
@@ -136,7 +139,7 @@ translate tests, and a Bazel test reaches `tests.json` (`fx test`, CQ) only thro
   is set; `fuchsia_test_package("P") { test_components = [":C"] }`: package `P`, component `C`):
   1. Test binary: C++ `fx_cc_binary(testonly = True, tags = ["manual"])` with the test main in
      `deps`; Rust inline tests `with_unit_tests = "fuchsia"` (`"both"` if GN also ran them on host),
-     giving `:<name>_test`; standalone Rust `rustc_test` from `//build/bazel/rules/rust:defs.bzl`.
+     giving `:<name>_test`; standalone Rust `rustc_test` from `//build/bazel/rules/rust:rustc_test.bzl`.
   2. `fx_packaged_binary(testonly = True, binary = ..., binary_name = ...)` (bundles Rust `libstd`
      and symbols). `binary_name` matches GN's output name: `<crate>_lib_test` for a
      `rustc_library`, `<output_name>_bin_test` for a `rustc_binary`, the executable's
