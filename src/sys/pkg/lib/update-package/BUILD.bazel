@@ -1,0 +1,14 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//tools/protobuf:rust_proto_library.bzl", "rust_proto_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rust_proto_library(
+    name = "ota_manifest_proto",
+    srcs = ["src/ota_manifest.proto"],
+    packages = ["fuchsia.update.manifest"],
+    visibility = [":__pkg__"],
+)
