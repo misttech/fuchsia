@@ -24,10 +24,12 @@ library_headers("headers") {
 kernel_rust_mod("kconcurrent_rs") {
   sources = [
     "src/chainlock.rs",
+    "src/chainlock_proof.rs",
     "src/chainlock_transaction.rs",
     "src/mod.rs",
   ]
   deps = [
+    "//src/lib/ksync",
     "//src/lib/zr",
     "//zircon/system/ulib/affine/rust:affine",
     "//zircon/system/ulib/concurrent/rust:concurrent",

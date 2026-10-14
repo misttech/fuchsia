@@ -17,8 +17,8 @@ use super::thread_dispatcher::{
 };
 use crate::arch_rs::{CopyContext, InterruptDisableGuard, arch_copy_from_user_capture_faults};
 use crate::kconcurrent::{
-    ChainLockTransaction, IRQ_SAVE_OPTION, NO_IRQ_SAVE_OPTION, SingleChainLockGuard, StateOption,
-    StateSaver, clt_tag,
+    ChainLockTransaction, IRQ_SAVE_OPTION, NO_IRQ_SAVE_OPTION, StateOption, StateSaver, clt_tag,
+    single_chain_lock_guard_owned,
 };
 use crate::kernel::deadline::Deadline;
 use crate::kernel::lock_trace::{lock_trace_duration, lock_trace_flow_begin, lock_trace_flow_end};
@@ -1593,14 +1593,15 @@ impl FutexContext {
         // to enter the queue's lock in order to check.
         if !futex_ref.is_null() {
             let waiters = &futex_ref.state().waiters;
-            koid = SingleChainLockGuard::scope(
+            single_chain_lock_guard_owned!(
+                scope,
+                waiters,
                 IRQ_SAVE_OPTION,
-                waiters.get_lock(),
-                clt_tag!("FutexContext::FutexGetOwner"),
-                |guard| {
-                    let Some(owner) = waiters.owner_locked(guard.token()) else {
-                        return ZX_KOID_INVALID;
-                    };
+                clt_tag!("FutexContext::FutexGetOwner")
+            );
+            koid = match waiters.owner_locked(scope.token()) {
+                None => ZX_KOID_INVALID,
+                Some(owner) => {
                     // Any thread which owns a FutexState's wait queue *must* be a
                     // user mode thread.
                     // SAFETY: `owner` is a valid `ThreadPtr` kept alive as the wait queue's owner
@@ -1608,8 +1609,8 @@ impl FutexContext {
                     let user_thread = unsafe { ThreadDispatcher::from_core_thread(owner) };
                     debug_assert!(user_thread.is_some());
                     user_thread.map_or(ZX_KOID_INVALID, |user_thread| user_thread.get_koid())
-                },
-            );
+                }
+            };
         }
 
         koid_out.copy_to_user(&koid)

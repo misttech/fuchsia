@@ -4,10 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::kconcurrent::ChainLock;
+use crate::kconcurrent::{ChainLockProof, ChainLocked, ClassedChainLock};
 use crate::kernel::owned_wait_queue::OWNED_MAGIC;
 use crate::kernel::scheduler_state::WaitQueueInheritedSchedulerState;
-use crate::kernel::thread::Thread;
+use crate::kernel::thread::{Thread, ThreadLockClass};
 use crate::platform_rs::timer::{DurationMono, InstantMono};
 use core::cell::UnsafeCell;
 use core::convert::Infallible;
@@ -16,10 +16,17 @@ use core::marker::PhantomPinned;
 use core::mem::{align_of, offset_of, size_of};
 use core::pin::Pin;
 use core::ptr::NonNull;
+use ksync::KCell;
 use pin_init::{PinInit, pin_data, pinned_drop};
 use wait_queue_bindings as bindings;
 use zr::static_assert;
 use zx_types::zx_status_t;
+
+/// Lock class for data guarded by a wait queue's `ChainLock` (`WaitQueueBase::lock`).
+///
+/// A marker only: tokens of this class exist solely inside a [`ChainLockProof`] for a
+/// [`WaitQueueBase`], [`WaitQueue`], or `OwnedWaitQueue` owner, never via `KMutex`.
+pub enum WaitQueueLockClass {}
 
 /// Magic value identifying a standard [`WaitQueue`].
 pub const MAGIC: u32 = fbl::magic(b"wait");
@@ -161,10 +168,10 @@ pub(crate) type BlockedThreadTree = fbl::WavlTree<
 #[repr(C)]
 pub struct ThreadState {
     /// If blocked, a pointer to the `WaitQueueBase` the `Thread` is on.
-    // Safety invariant: Guarded by the enclosing `Thread`'s `ChainLock`. Points to the active
-    // `WaitQueueBase` while `blocked_threads_tree_node.in_container()` is true, and is `None`
-    // otherwise (including when dropped).
-    blocking_wait_queue: UnsafeCell<Option<NonNull<WaitQueueBase>>>,
+    // Safety invariant: Points to the active `WaitQueueBase` while
+    // `blocked_threads_tree_node.in_container()` is true, and is `None` otherwise (including when
+    // dropped).
+    blocking_wait_queue: KCell<Option<NonNull<WaitQueueBase>>, ThreadLockClass>,
     /// Node state for existing in `WaitQueueCollection::threads`.
     blocked_threads_tree_node: fbl::WavlTreeNode<Thread>,
     /// Primary key used for determining our position in the collection of blocked threads.
@@ -178,11 +185,9 @@ pub struct ThreadState {
     // `WaitQueue`'s `ChainLock` while the thread is in `WaitQueueCollection::threads`.
     subtree_min_deadline: UnsafeCell<DurationMono>,
     /// Return code if woken up abnormally from suspend, sleep, or block.
-    // Safety invariant: Guarded by the enclosing `Thread`'s `ChainLock`.
-    blocked_status: UnsafeCell<zx_status_t>,
+    blocked_status: KCell<zx_status_t, ThreadLockClass>,
     /// Are we allowed to be interrupted on the current thing we're blocked/sleeping on?
-    // Safety invariant: Guarded by the enclosing `Thread`'s `ChainLock`.
-    interruptible: UnsafeCell<Interruptible>,
+    interruptible: KCell<Interruptible, ThreadLockClass>,
     /// Storage used by an `OwnedWaitQueue`, but held within a thread instance, while that thread
     /// is blocked in the wait queue.
     inherited_scheduler_state_storage: WaitQueueInheritedSchedulerState,
@@ -231,7 +236,7 @@ static_assert!(
 
 impl Drop for ThreadState {
     fn drop(&mut self) {
-        debug_assert!(self.blocking_wait_queue.get_mut().is_none());
+        debug_assert!(self.blocking_wait_queue.get_inner_mut().is_none());
     }
 }
 
@@ -261,12 +266,15 @@ impl WaitQueueCollection {
 #[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct WaitQueueBase {
-    lock: ChainLock,
+    // The lock guarding `collection`; `ClassedChainLock` is `repr(transparent)` over `ChainLock`,
+    // so C++ sees a plain `ChainLock` at offset 0.
+    lock: ClassedChainLock<WaitQueueLockClass>,
     // Safety invariant: Initialized to `MAGIC` (for `WaitQueue`) or `OWNED_MAGIC` (for the base
     // subobject of `OwnedWaitQueue`), and zeroed during `PinnedDrop::drop`.
     magic: u32,
-    // Safety invariant: Guarded by `lock`. Must be empty when dropped.
-    collection: UnsafeCell<WaitQueueCollection>,
+    // Safety invariant: Must be empty when dropped. Accessed only through `ChainLockProof`
+    // accessors on `WaitQueueBase`, `WaitQueue`, and `OwnedWaitQueue`.
+    pub(super) collection: KCell<WaitQueueCollection, WaitQueueLockClass>,
     #[pin]
     _pin: PhantomPinned,
 }
@@ -283,15 +291,48 @@ static_assert!(
 // SAFETY: `WaitQueueBase` has no thread-local ownership invariants and is `!Unpin`, so ownership
 // of a pinned `WaitQueueBase` can be transferred across threads.
 unsafe impl Send for WaitQueueBase {}
-// SAFETY: All interior mutations to `WaitQueueBase::collection` through shared references are
-// synchronized by `WaitQueueBase::lock` (`ChainLock`).
+// SAFETY: All interior mutations to `WaitQueueBase::collection` through shared references require
+// a `ChainLockProof<'_, WaitQueueBase>`, which proves `WaitQueueBase::lock` is held, and are thus
+// synchronized by that `ChainLock`.
 unsafe impl Sync for WaitQueueBase {}
 
 impl WaitQueueBase {
-    /// Returns a reference to this wait queue's [`ChainLock`].
+    /// Returns a reference to this wait queue's lock (the same instance as [`ChainLocked::lock`]).
+    ///
+    /// Only the safe inspection methods are reachable this way; acquiring and releasing go through
+    /// [`OwnerGuard`](crate::kconcurrent::OwnerGuard) or the `unsafe`
+    /// [`ClassedChainLock::as_chain_lock`].
     #[inline]
-    pub fn get_lock(&self) -> &ChainLock {
+    pub fn get_lock(&self) -> &ClassedChainLock<WaitQueueLockClass> {
         &self.lock
+    }
+}
+
+// SAFETY: `lock` guards `collection`, the only `KCell<_, WaitQueueLockClass>` field, and is a
+// plain field so the same instance is returned every time.
+unsafe impl ChainLocked for WaitQueueBase {
+    type Class = WaitQueueLockClass;
+
+    /// Returns the lock guarding this wait queue.
+    fn lock(&self) -> &ClassedChainLock<WaitQueueLockClass> {
+        &self.lock
+    }
+}
+
+/// Accessors to the fields of a [`WaitQueueBase`] guarded by its lock.
+impl ChainLockProof<'_, WaitQueueBase> {
+    /// Returns the collection of blocked threads.
+    pub(crate) fn collection(&self) -> &WaitQueueCollection {
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards `collection`.
+        unsafe { self.owner().collection.get(self.token()) }
+    }
+
+    /// Returns the collection of blocked threads mutably.
+    pub(crate) fn collection_mut(&mut self) -> &mut WaitQueueCollection {
+        let (owner, token) = self.split_mut();
+        // SAFETY: As in `collection`; the unique borrow of `self` ensures no other reference to
+        // `collection` is live.
+        unsafe { owner.collection.get_mut(token) }
     }
 }
 
@@ -306,7 +347,7 @@ impl PinnedDrop for WaitQueueBase {
             this.magic
         );
 
-        let count = this.collection.get_mut().count();
+        let count = this.collection.get_inner_mut().count();
         if count != 0 {
             panic!(
                 "~WaitQueue() called on non-empty WaitQueue, count={}, magic={:#010x}",
@@ -340,6 +381,42 @@ unsafe impl Send for WaitQueue {}
 // embedded `WaitQueueBase`'s `ChainLock`.
 unsafe impl Sync for WaitQueue {}
 
+// SAFETY: `base.lock` guards `base.collection`, and `base` is a plain field so the same lock
+// instance is returned every time.
+unsafe impl ChainLocked for WaitQueue {
+    type Class = WaitQueueLockClass;
+
+    /// Returns the lock guarding this wait queue (the embedded `WaitQueueBase`'s).
+    fn lock(&self) -> &ClassedChainLock<WaitQueueLockClass> {
+        self.base.lock()
+    }
+}
+
+/// Accessors to the fields of a [`WaitQueue`] guarded by its lock.
+impl ChainLockProof<'_, WaitQueue> {
+    /// Re-expresses this proof as one for the embedded [`WaitQueueBase`] (same lock instance).
+    /// `self` is unusable while the returned proof lives.
+    pub(crate) fn as_base(&mut self) -> ChainLockProof<'_, WaitQueueBase> {
+        let base = &self.owner().base;
+        self.retag(base)
+    }
+
+    /// Returns the collection of blocked threads.
+    pub(crate) fn collection(&self) -> &WaitQueueCollection {
+        // SAFETY: `self` proves `owner().lock()` (which is `owner().base.lock()`) is held, and
+        // that lock guards `base.collection`.
+        unsafe { self.owner().base.collection.get(self.token()) }
+    }
+
+    /// Returns the collection of blocked threads mutably.
+    pub(crate) fn collection_mut(&mut self) -> &mut WaitQueueCollection {
+        let (queue, token) = self.split_mut();
+        // SAFETY: As in `collection`; the unique borrow of `self` ensures no other reference to
+        // `base.collection` is live.
+        unsafe { queue.base.collection.get_mut(token) }
+    }
+}
+
 impl WaitQueue {
     pub const MAGIC: u32 = MAGIC;
 
@@ -358,5 +435,57 @@ impl WaitQueue {
     /// Returns a raw mutable pointer to the underlying C++ `WaitQueue`.
     pub fn as_ptr(&self) -> *mut c_void {
         self.as_raw().cast()
+    }
+}
+
+/// [`WaitQueue`] and [`WaitQueueBase`] unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "wait_queue")]
+mod tests {
+    use unittest::{expect_eq, expect_true};
+
+    use crate::kconcurrent::{
+        ChainLockTransaction, DONE, IRQ_SAVE_OPTION, OwnerGuard, clt_tag,
+        single_chain_lock_guard_owned,
+    };
+
+    /// Verifies `WaitQueue` and `WaitQueueBase` lock proofs and collection accessors.
+    #[test]
+    fn wait_queue_proof_and_base_retag() {
+        pin_init::stack_pin_init!(let wq = WaitQueue::init());
+        let wq_ref: &WaitQueue = &wq;
+        expect_true!(wq_ref.lock().is_unlocked());
+
+        {
+            single_chain_lock_guard_owned!(
+                scope,
+                wq_ref,
+                IRQ_SAVE_OPTION,
+                clt_tag!("wait_queue_scope")
+            );
+            expect_true!(wq_ref.lock().is_held(scope.token()));
+            let mut proof = scope.proof();
+            expect_eq!(proof.collection().count(), 0);
+            expect_eq!(proof.collection_mut().count(), 0);
+            {
+                let mut base_proof = proof.as_base();
+                expect_true!(core::ptr::eq(base_proof.owner(), &wq_ref.base));
+                expect_eq!(base_proof.collection().count(), 0);
+                expect_eq!(base_proof.collection_mut().count(), 0);
+            }
+        }
+        expect_true!(wq_ref.lock().is_unlocked());
+
+        let mut base_count = u32::MAX;
+        ChainLockTransaction::until_done(IRQ_SAVE_OPTION, clt_tag!("wait_queue_base"), |token| {
+            let mut guard = OwnerGuard::new(&wq_ref.base, token);
+            ChainLockTransaction::finalize(token);
+            let mut proof = guard.proof();
+            base_count = proof.collection_mut().count();
+            guard.release();
+            DONE
+        });
+        expect_eq!(base_count, 0);
+        expect_true!(wq_ref.lock().is_unlocked());
     }
 }

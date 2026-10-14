@@ -37,6 +37,7 @@ use super::chainlock::{
     ChainLockTransaction, ChainLockTransactionToken, EagerReschedDisable, IrqSave, NoIrqSave,
     PreemptDisable,
 };
+use super::chainlock_proof::{ChainLockProof, ChainLocked};
 
 define_kcounter!(CHAINLOCK_BACKOFFS, "chainlock.backoffs", Sum);
 define_kcounter!(CHAINLOCK_BACKOFFS_MAX, "chainlock.backoffs_max", Max);
@@ -685,6 +686,117 @@ macro_rules! single_chain_lock_guard {
     };
 }
 pub use single_chain_lock_guard;
+
+/// Scope handle created by [`single_chain_lock_guard_owned!`] that holds a [`ChainLocked`]
+/// owner's lock and mints [`ChainLockProof`]s via [`Self::proof`].
+#[must_use = "if unused, the owner's ChainLock will immediately be released"]
+pub struct OwnedSingleChainLockScope<
+    'slot,
+    'a,
+    Owner: ChainLocked,
+    O: StateOption<ChainLockTransaction>,
+> {
+    // Safety invariant: `scope`'s guard acquired `owner.lock()` in `new_in_place` and holds it
+    // until `scope` is dropped; nothing exposes the guard mutably.
+    scope: SingleChainLockScope<'slot, 'a, O>,
+    owner: &'a Owner,
+}
+
+impl<'slot, 'a, Owner: ChainLocked, O: StateOption<ChainLockTransaction>>
+    OwnedSingleChainLockScope<'slot, 'a, Owner, O>
+{
+    /// Initializes a [`SingleChainLockGuard`] on `owner.lock()` in-place in `slot` and returns a
+    /// scope handle that drops it when leaving scope. Prefer [`single_chain_lock_guard_owned!`].
+    ///
+    /// # Safety
+    ///
+    /// As [`SingleChainLockGuard::new_in_place`]: the returned scope must be dropped (and not
+    /// passed to `core::mem::forget`) before `slot` is overwritten, moved, or deallocated.
+    #[inline]
+    pub unsafe fn new_in_place(
+        slot: &'slot mut MaybeUninit<SingleChainLockGuard<'a, O>>,
+        owner: &'a Owner,
+        option: O,
+        callsite_info: CallsiteInfo,
+    ) -> Self {
+        // SAFETY: `as_chain_lock`: the raw lock is only acquired through the inner guard, which
+        // releases it once, on scope drop, after every proof (each borrows `self` mutably).
+        // `new_in_place`: the caller's contract, passed through to the returned scope.
+        let scope = unsafe {
+            SingleChainLockGuard::new_in_place(
+                slot,
+                option,
+                owner.lock().as_chain_lock(),
+                callsite_info,
+            )
+        };
+        Self { scope, owner }
+    }
+
+    /// Mints a proof that `owner.lock()` is held: this scope acquired it and holds it until
+    /// dropped; the `&mut` borrow allows one live proof per scope.
+    #[inline]
+    pub fn proof(&mut self) -> ChainLockProof<'_, Owner> {
+        // SAFETY: Acquired and held: the type's safety invariant. Lifetime and uniqueness: the
+        // proof is bounded by this `&mut self` borrow.
+        unsafe { ChainLockProof::from_acquiring_guard(self.owner) }
+    }
+
+    /// Returns the owner whose lock this scope holds.
+    #[inline]
+    pub const fn owner(&self) -> &'a Owner {
+        self.owner
+    }
+
+    /// Returns a reference to the [`ChainLockTransactionToken`] for this active transaction.
+    #[inline]
+    pub fn token(&self) -> &ChainLockTransactionToken {
+        self.scope.token()
+    }
+
+    /// Returns a reference to the active [`ChainLockTransaction`].
+    #[inline]
+    pub fn transaction(&self) -> &ChainLockTransaction {
+        self.scope.transaction()
+    }
+}
+
+/// Acquires `$owner.lock()` in a new transaction and binds `$scope` as
+/// `&mut OwnedSingleChainLockScope`.
+///
+/// Because the scope acquires `$owner`'s lock directly, [`OwnedSingleChainLockScope::proof`]
+/// mints a [`ChainLockProof`](crate::kconcurrent::ChainLockProof) for `$owner` safely and without
+/// runtime checks.
+///
+/// # Example
+/// ```ignore
+/// single_chain_lock_guard_owned!(scope, &owner, IRQ_SAVE_OPTION, clt_tag!("example"));
+/// let mut proof = scope.proof();
+/// ```
+#[macro_export]
+macro_rules! single_chain_lock_guard_owned {
+    ($scope:ident, $owner:expr, $option:expr, $callsite_info:expr $(,)?) => {
+        let mut __single_cl_guard_slot = ::core::mem::MaybeUninit::uninit();
+        let __single_cl_guard_owner = $owner;
+        let __single_cl_guard_option = $option;
+        let __single_cl_guard_callsite_info = $callsite_info;
+        // SAFETY: `__single_cl_guard_scope` is bound in the same lexical scope immediately after
+        // `__single_cl_guard_slot` and cannot be named or passed to `core::mem::forget` by the
+        // caller, ensuring it is dropped before `__single_cl_guard_slot` goes out of scope.
+        let mut __single_cl_guard_scope = unsafe {
+            $crate::kconcurrent::OwnedSingleChainLockScope::new_in_place(
+                &mut __single_cl_guard_slot,
+                __single_cl_guard_owner,
+                __single_cl_guard_option,
+                __single_cl_guard_callsite_info,
+            )
+        };
+        #[allow(unused_variables)]
+        let $scope: &mut $crate::kconcurrent::OwnedSingleChainLockScope<'_, '_, _, _> =
+            &mut __single_cl_guard_scope;
+    };
+}
+pub use single_chain_lock_guard_owned;
 
 /// Tests for kernel [`ChainLock`] and [`ChainLockTransaction`] primitives.
 #[cfg(ktest)]

@@ -8,9 +8,11 @@
 //! adapting the environment-independent `concurrent` crate to the Zircon kernel environment.
 
 mod chainlock;
+mod chainlock_proof;
 mod chainlock_transaction;
 
 pub use chainlock::*;
+pub use chainlock_proof::*;
 pub use chainlock_transaction::*;
 pub use concurrent::{
     Action, AllowFinalized, AtomicToken, ChainLockResult, DONE, DoneType, IntoTransactionResult,

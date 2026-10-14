@@ -4,18 +4,22 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::kconcurrent::{ChainLock, ChainLockTransactionToken};
+use crate::kconcurrent::{
+    ChainLockProof, ChainLockTransactionToken, ChainLocked, ClassedChainLock,
+};
 use crate::kernel::deadline::Deadline;
 use crate::kernel::scheduler_state::WaitQueueInheritedSchedulerState;
 use crate::kernel::thread::{Thread, ThreadPtr};
-use crate::kernel::wait_queue::{Interruptible, ResourceOwnership, WaitQueueBase};
-use core::cell::UnsafeCell;
+use crate::kernel::wait_queue::{
+    Interruptible, ResourceOwnership, WaitQueueBase, WaitQueueCollection, WaitQueueLockClass,
+};
 use core::convert::Infallible;
 use core::ffi::c_void;
 use core::mem::{MaybeUninit, align_of, offset_of, size_of};
 use core::pin::Pin;
 use core::ptr::NonNull;
 use fbl::{DoublyLinkedListContainable, DoublyLinkedListNode};
+use ksync::KCell;
 use owned_wait_queue_bindings as bindings;
 use pin_init::{PinInit, pin_data, pinned_drop};
 use zr::static_assert;
@@ -258,9 +262,10 @@ pub struct OwnedWaitQueue {
     #[pin]
     #[dll_node]
     dll_node: DoublyLinkedListNode<OwnedWaitQueue>,
-    // Safety invariant: Guarded by `base`'s `ChainLock`; either `None` or points to a live
-    // `Thread` that currently owns this queue. Must be `None` when dropped.
-    owner: UnsafeCell<Option<NonNull<Thread>>>,
+    // Safety invariant: Either `None` or points to a live `Thread` that currently owns this queue.
+    // Must be `None` when dropped. Accessed only through
+    // `ChainLockProof<'_, OwnedWaitQueue>::{owner_thread, owner_thread_mut}`.
+    owner: KCell<Option<NonNull<Thread>>, WaitQueueLockClass>,
     /// A pointer to a thread (which _must_ be a current member of this owned wait queue's)
     /// collection which holds the current inherited scheduler state storage for
     /// this wait queue.
@@ -277,11 +282,12 @@ pub struct OwnedWaitQueue {
     /// inherited scheduler state is when there are one or more threads blocked in
     /// the queue, so storing this bookkeeping in a blocked thread object seems
     /// reasonable.
-    // Safety invariant: Guarded by `base`'s `ChainLock`; `None` when `base`'s collection is empty,
-    // or points to the `inherited_scheduler_state_storage` of a `Thread` currently blocked in
-    // `base`'s collection.
+    // Safety invariant: `None` when `base`'s collection is empty, or points to the
+    // `inherited_scheduler_state_storage` of a `Thread` currently blocked in `base`'s collection.
+    // Accessed only through
+    // `ChainLockProof<'_, OwnedWaitQueue>::inherited_scheduler_state_storage{,_mut}`.
     inherited_scheduler_state_storage:
-        UnsafeCell<Option<NonNull<WaitQueueInheritedSchedulerState>>>,
+        KCell<Option<NonNull<WaitQueueInheritedSchedulerState>>, WaitQueueLockClass>,
 }
 
 // Compile-time layout assertions against the C++ OwnedWaitQueue type via bindgen.
@@ -300,9 +306,22 @@ static_assert!(
 // SAFETY: `OwnedWaitQueue` has no thread-local ownership invariants and is `!Unpin`, so ownership
 // of a pinned `OwnedWaitQueue` can be transferred across threads.
 unsafe impl Send for OwnedWaitQueue {}
-// SAFETY: All interior mutations to `OwnedWaitQueue` fields through shared references are
-// synchronized by the embedded `WaitQueueBase`'s `ChainLock`.
+// SAFETY: All interior mutations to `OwnedWaitQueue` fields through shared references require a
+// `ChainLockProof<'_, OwnedWaitQueue>`, which proves the embedded `WaitQueueBase`'s `ChainLock` is
+// held, and are thus synchronized by that lock.
 unsafe impl Sync for OwnedWaitQueue {}
+
+// SAFETY: `base.lock` guards `owner` and `inherited_scheduler_state_storage` (the
+// `KCell<_, WaitQueueLockClass>` fields) as well as `base.collection`, and `base` is a plain
+// field so the same instance is returned every time.
+unsafe impl ChainLocked for OwnedWaitQueue {
+    type Class = WaitQueueLockClass;
+
+    /// Returns the lock guarding this wait queue (the embedded `WaitQueueBase`'s).
+    fn lock(&self) -> &ClassedChainLock<WaitQueueLockClass> {
+        self.base.lock()
+    }
+}
 
 #[pinned_drop]
 impl PinnedDrop for OwnedWaitQueue {
@@ -313,7 +332,63 @@ impl PinnedDrop for OwnedWaitQueue {
         // intrusive list node, is performed by the drop glue of the individual members.
         // SAFETY: We do not move `self` or any pinned fields out of `this`.
         let this = unsafe { self.get_unchecked_mut() };
-        debug_assert!(this.owner.get_mut().is_none());
+        debug_assert!(this.owner.get_inner_mut().is_none());
+    }
+}
+
+/// Accessors to the fields of an [`OwnedWaitQueue`] guarded by its lock.
+impl ChainLockProof<'_, OwnedWaitQueue> {
+    /// Re-expresses this proof as one for the embedded [`WaitQueueBase`] (same lock instance).
+    /// `self` is unusable while the returned proof lives.
+    pub(crate) fn as_base(&mut self) -> ChainLockProof<'_, WaitQueueBase> {
+        let base = &self.owner().base;
+        self.retag(base)
+    }
+
+    /// Returns the collection of blocked threads.
+    pub(crate) fn collection(&self) -> &WaitQueueCollection {
+        // SAFETY: `self` proves `owner().lock()` (which is `owner().base.lock()`) is held, and
+        // that lock guards `base.collection`.
+        unsafe { self.owner().base.collection.get(self.token()) }
+    }
+
+    /// Returns the collection of blocked threads mutably.
+    pub(crate) fn collection_mut(&mut self) -> &mut WaitQueueCollection {
+        let (queue, token) = self.split_mut();
+        // SAFETY: As in `collection`; the unique borrow of `self` ensures no other reference to
+        // `base.collection` is live.
+        unsafe { queue.base.collection.get_mut(token) }
+    }
+
+    /// Returns the current owner of this queue, if any.
+    pub(crate) fn owner_thread(&self) -> Option<NonNull<Thread>> {
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards `owner`.
+        *unsafe { self.owner().owner.get(self.token()) }
+    }
+
+    /// Returns the current owner of this queue mutably.
+    pub(crate) fn owner_thread_mut(&mut self) -> &mut Option<NonNull<Thread>> {
+        let (queue, token) = self.split_mut();
+        // SAFETY: As in `owner_thread`; the unique borrow of `self` ensures no other reference to
+        // `owner` is live.
+        unsafe { queue.owner.get_mut(token) }
+    }
+
+    /// Returns the location of the inherited scheduler state storage, if any.
+    pub(crate) fn inherited_scheduler_state_storage(
+        &self,
+    ) -> Option<NonNull<WaitQueueInheritedSchedulerState>> {
+        // SAFETY: See `owner_thread`.
+        *unsafe { self.owner().inherited_scheduler_state_storage.get(self.token()) }
+    }
+
+    /// Returns the location of the inherited scheduler state storage mutably.
+    pub(crate) fn inherited_scheduler_state_storage_mut(
+        &mut self,
+    ) -> &mut Option<NonNull<WaitQueueInheritedSchedulerState>> {
+        let (queue, token) = self.split_mut();
+        // SAFETY: See `owner_thread_mut`.
+        unsafe { queue.inherited_scheduler_state_storage.get_mut(token) }
     }
 }
 
@@ -337,9 +412,13 @@ impl OwnedWaitQueue {
         self.as_raw().cast()
     }
 
-    /// Returns a reference to this wait queue's [`ChainLock`].
+    /// Returns a reference to this wait queue's lock (the embedded [`WaitQueueBase`]'s).
+    ///
+    /// Only the safe inspection methods are reachable this way; acquiring and releasing go through
+    /// [`OwnerGuard`](crate::kconcurrent::OwnerGuard) or the `unsafe`
+    /// [`ClassedChainLock::as_chain_lock`].
     #[inline]
-    pub fn get_lock(&self) -> &ChainLock {
+    pub fn get_lock(&self) -> &ClassedChainLock<WaitQueueLockClass> {
         self.base.get_lock()
     }
 
@@ -350,14 +429,13 @@ impl OwnedWaitQueue {
     /// Panics if this wait queue's lock is not held by the transaction identified by `token`
     /// (`TA_REQ(get_lock())`).
     #[inline]
+    #[track_caller]
     pub fn owner_locked(&self, token: &ChainLockTransactionToken) -> Option<ThreadPtr> {
-        assert!(
-            self.get_lock().is_held(token),
-            "owner_locked requires the OwnedWaitQueue's lock to be held"
-        );
-        // SAFETY: `owner` is guarded by `self.get_lock()`, which the assertion above verified is
-        // held by the active transaction, so there are no concurrent writes.
-        let owner = unsafe { *self.owner.get() };
+        // SAFETY: `assume_held` asserts `token`'s transaction holds this queue's lock. The proof is
+        // a temporary dropped at the end of this statement, and no `&mut` to `owner` can be live
+        // here: every `_mut` accessor is `pub(crate)` and no caller in this crate holds one across
+        // `owner_locked`.
+        let owner = unsafe { ChainLockProof::assume_held(self, token) }.owner_thread();
         owner.and_then(|owner| {
             // SAFETY: By `owner`'s safety invariant, it points to a live `Thread`.
             unsafe { ThreadPtr::from_raw(owner.as_ptr()) }
@@ -389,8 +467,9 @@ impl OwnedWaitQueue {
         // SAFETY:
         // - `self.as_raw()` returns a valid pointer to this initialized `OwnedWaitQueue`.
         // - All fields of `OwnedWaitQueue` and its embedded `WaitQueueBase` that may be mutated
-        //   under the queue's `ChainLock` (`base.collection`, `dll_node`, `owner`, and
-        //   `inherited_scheduler_state_storage`) are wrapped in `UnsafeCell`.
+        //   under the queue's `ChainLock` (`base.collection`, `owner`, and
+        //   `inherited_scheduler_state_storage`) are wrapped in `KCell` (an `UnsafeCell`), and
+        //   `dll_node` has its own `UnsafeCell`s.
         // - The assertion above ensures no `ChainLockTransaction` is active on the current CPU
         //   (`TA_EXCL(chainlock_transaction_token, get_lock())`).
         unsafe {
@@ -708,8 +787,8 @@ mod tests {
         WakeRequeueHook, WakeThreadsResult,
     };
     use crate::kconcurrent::{
-        Action, ChainLockTransaction, IRQ_SAVE_OPTION, SingleChainLockGuard, TransactionResult,
-        clt_tag,
+        Action, ChainLockTransaction, IRQ_SAVE_OPTION, TransactionResult, clt_tag,
+        single_chain_lock_guard_owned,
     };
     use crate::kernel::deadline::Deadline;
     use crate::kernel::thread::{self, AnnotatedAutoEagerReschedDisabler};
@@ -717,7 +796,7 @@ mod tests {
     use core::ffi::c_void;
     use core::sync::atomic::{AtomicBool, Ordering};
     use pin_init::stack_pin_init;
-    use unittest::{assert_eq, assert_err, assert_true, unwrap_ok};
+    use unittest::{assert_eq, assert_err, assert_true, expect_eq, expect_true, unwrap_ok};
     use zx_status::Status;
 
     #[derive(Default)]
@@ -745,12 +824,13 @@ mod tests {
 
     /// Returns the owner of `owq` as observed while holding its lock.
     fn observe_owner(owq: &OwnedWaitQueue) -> Option<ThreadPtr> {
-        SingleChainLockGuard::scope(
+        single_chain_lock_guard_owned!(
+            scope,
+            owq,
             IRQ_SAVE_OPTION,
-            owq.get_lock(),
-            clt_tag!("owq_rust_test_observe_owner"),
-            |guard| owq.owner_locked(guard.token()),
-        )
+            clt_tag!("owq_rust_test_observe_owner")
+        );
+        owq.owner_locked(scope.token())
     }
 
     /// Blocks the current thread in `owq` using `lock_for_baao_operation_or_backoff` and
@@ -892,14 +972,18 @@ mod tests {
             IRQ_SAVE_OPTION,
             clt_tag!("owq_rust_test_try_lock"),
             |token| -> TransactionResult<Result<(), Status>> {
-                owq.get_lock().acquire_first_in_chain(token);
+                // SAFETY: No `ChainLockProof` for `owq` is live in this transaction; the lock is
+                // released either explicitly below or by C++ inside
+                // `block_and_assign_owner_locked`.
+                let owq_lock = unsafe { owq.get_lock().as_chain_lock() };
+                owq_lock.acquire_first_in_chain(token);
                 // SAFETY: `current`'s lock is not held and `current` is the current thread.
                 let Some(details) =
                     (unsafe { owq.try_lock_for_baao_operation_locked(current, None, token) })
                 else {
                     // `try_lock_for_baao_operation_locked` leaves `owq.get_lock()` held on
                     // failure.
-                    owq.get_lock().release(token);
+                    owq_lock.release(token);
                     return Action::Backoff.into();
                 };
                 ChainLockTransaction::finalize(token);
@@ -1023,5 +1107,40 @@ mod tests {
         assert_eq!(unwrap_ok!(unsafe { waiter.join(InstantMono::INFINITE) }), 0);
         assert_true!(observe_owner(&owq1).is_none());
         assert_true!(observe_owner(&owq2).is_none());
+    }
+
+    /// Verifies `OwnedWaitQueue` lock proofs and guarded field accessors.
+    #[test]
+    fn owned_wait_queue_proof_accessors() {
+        stack_pin_init!(let owq = OwnedWaitQueue::init());
+        let owq_ref: &OwnedWaitQueue = &owq;
+        expect_true!(owq_ref.lock().is_unlocked());
+
+        {
+            single_chain_lock_guard_owned!(
+                scope,
+                owq_ref,
+                IRQ_SAVE_OPTION,
+                clt_tag!("owned_wait_queue_scope")
+            );
+            expect_true!(owq_ref.lock().is_held(scope.token()));
+            let mut proof = scope.proof();
+            expect_true!(proof.owner_thread().is_none());
+            expect_true!(proof.inherited_scheduler_state_storage().is_none());
+            expect_eq!(proof.collection().count(), 0);
+            expect_eq!(proof.collection_mut().count(), 0);
+            *proof.owner_thread_mut() = None;
+            *proof.inherited_scheduler_state_storage_mut() = None;
+            {
+                let mut base_proof = proof.as_base();
+                expect_true!(core::ptr::eq(base_proof.owner(), &owq_ref.base));
+                expect_eq!(base_proof.collection().count(), 0);
+                expect_eq!(base_proof.collection_mut().count(), 0);
+            }
+        }
+        expect_true!(owq_ref.lock().is_unlocked());
+
+        owq_ref.reset_owner_if_no_waiters();
+        expect_true!(owq_ref.lock().is_unlocked());
     }
 }

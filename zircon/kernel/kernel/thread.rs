@@ -23,6 +23,13 @@ use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
 
 pub use crate::kconcurrent::CallsiteInfo as CltTag;
+use crate::kconcurrent::{ChainLockProof, ChainLocked, ClassedChainLock};
+
+/// Lock class for data guarded by a [`Thread`]'s chain lock.
+///
+/// A marker only: tokens of this class exist solely inside a [`ChainLockProof`] for a [`Thread`]
+/// owner, never via `KMutex`.
+pub enum ThreadLockClass {}
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -211,7 +218,28 @@ pub struct FxtRef {
 /// An opaque type representing the C++ `Thread` class.
 #[repr(C, align(8))]
 pub struct Thread {
+    // Safety invariant: `_private` is zero-sized and private so safe code cannot construct a
+    // `Thread` by value; any `&Thread` reference points to a live, initialized `Thread` instance.
     _private: [u8; 0],
+}
+
+// SAFETY: `cpp_thread_get_lock` returns the thread's embedded `ChainLock`, which guards its
+// `KCell<_, ThreadLockClass>` fields and returns the same lock instance on every call.
+unsafe impl ChainLocked for Thread {
+    type Class = ThreadLockClass;
+
+    fn lock(&self) -> &ClassedChainLock<ThreadLockClass> {
+        // SAFETY: Validity: by `Thread`'s safety invariant, `self` points to a live, initialized
+        // `Thread` for the lifetime of `&self`, and `cpp_thread_get_lock` returns a non-null
+        // pointer to its embedded `ChainLock`; the `cast_mut` only satisfies the shim's signature,
+        // it does not mutate the thread. Class binding (`from_chain_lock`): this lock guards the
+        // thread's `ThreadLockClass` fields.
+        unsafe {
+            ClassedChainLock::from_chain_lock(&*cpp_thread_get_lock(
+                core::ptr::from_ref(self).cast_mut(),
+            ))
+        }
+    }
 }
 
 /// Enters restricted mode on the current thread using the given vector table pointer and context.
@@ -473,7 +501,8 @@ impl ThreadPtr {
 pub struct ThreadLockGuard {
     raw: Opaque<lock_guard_bindings::ThreadLockGuard>,
     thread: NonNull<Thread>,
-    phantom: PhantomData<PhantomPinned>,
+    #[pin]
+    phantom: PhantomPinned,
 }
 
 impl ThreadLockGuard {
@@ -544,6 +573,17 @@ impl ThreadLockGuard {
         // SAFETY: `lock`'s caller guarantees the thread is a live C++ `Thread`, and this guard
         // holds its lock.
         unsafe { scheduler_state(self.thread()) }
+    }
+
+    /// Mints a [`ChainLockProof`] proving that the locked thread's chain lock is held.
+    pub fn proof(self: Pin<&mut Self>) -> ChainLockProof<'_, Thread> {
+        // `Pin<&mut Self>` -> `&Self` for the lifetime of the unique borrow: the returned proof
+        // borrows `self` mutably even though we only read through it.
+        let this: &Self = self.into_ref().get_ref();
+        // SAFETY: `this.thread` points to a live `Thread` for the lifetime of this guard (`lock`'s
+        // contract), and `raw` acquired (never adopted) its lock and holds it until drop. The
+        // proof is bounded by the unique borrow of `self`.
+        unsafe { ChainLockProof::from_acquiring_guard(this.thread.as_ref()) }
     }
 }
 
@@ -1221,8 +1261,11 @@ pub unsafe fn migrate_to_cpu(target_cpu: cpu_num_t) {
 #[unittest::suite(name = "thread_rust")]
 mod tests {
     use super::{AnnotatedAutoEagerReschedDisabler, ThreadPtr, eager_resched_disable_count};
-    use crate::kconcurrent::{IRQ_SAVE_OPTION, SingleChainLockGuard, clt_tag};
-    use unittest::{assert_eq, assert_ne, assert_true};
+    use crate::kconcurrent::{
+        ChainLockTransaction, DONE, IRQ_SAVE_OPTION, OwnerGuard, SingleChainLockGuard, clt_tag,
+        single_chain_lock_guard_owned,
+    };
+    use unittest::{assert_eq, assert_ne, assert_true, expect_eq, expect_false, expect_true};
 
     /// Verifies AnnotatedAutoEagerReschedDisabler and ThreadPtr accessors on the current thread.
     #[test]
@@ -1279,5 +1322,61 @@ mod tests {
             assert_true!(lock.is_unlocked());
         }
     }
-}
 
+    /// Verifies `ThreadLockGuard::proof` and `OwnerGuard::<Thread>` on the current `Thread`.
+    #[test]
+    fn thread_lock_proof_and_owner_guard() {
+        let current_ptr = current_get();
+        // SAFETY: `current_get()` returns a valid pointer to the running thread, which stays alive
+        // for the duration of this test.
+        let current: &Thread = unsafe { &*current_ptr };
+        expect_true!(current.lock().is_unlocked());
+
+        {
+            // SAFETY: `current_ptr` is non-null and valid for the guard's lifetime, no transaction
+            // is active, and `guard` is stack-pinned and dropped in this scope without blocking.
+            ksync::lock!(
+                let mut guard = unsafe {
+                    ThreadLockGuard::lock(current_ptr, clt_tag!("thread_lock_guard_proof"))
+                }
+            );
+            expect_eq!(guard.thread(), current_ptr);
+            expect_false!(current.lock().is_unlocked());
+            let proof = guard.as_mut().proof();
+            expect_true!(core::ptr::eq(proof.owner(), current));
+        }
+        expect_true!(current.lock().is_unlocked());
+
+        {
+            single_chain_lock_guard_owned!(
+                scope,
+                current,
+                IRQ_SAVE_OPTION,
+                clt_tag!("thread_owned_scope")
+            );
+            expect_true!(current.lock().is_held(scope.token()));
+            let proof = scope.proof();
+            expect_true!(core::ptr::eq(proof.owner(), current));
+        }
+        expect_true!(current.lock().is_unlocked());
+
+        let mut held = false;
+        let mut owner_matches = false;
+        ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("thread_owner_guard"),
+            |token| {
+                let mut guard = OwnerGuard::new(current, token);
+                ChainLockTransaction::finalize(token);
+                held = guard.is_held() && current.lock().is_held(token);
+                let proof = guard.proof();
+                owner_matches = core::ptr::eq(proof.owner(), current);
+                guard.release();
+                DONE
+            },
+        );
+        expect_true!(held);
+        expect_true!(owner_matches);
+        expect_true!(current.lock().is_unlocked());
+    }
+}
