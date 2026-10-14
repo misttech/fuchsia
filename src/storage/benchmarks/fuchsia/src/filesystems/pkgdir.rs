@@ -38,7 +38,8 @@ impl FilesystemConfig for PkgDirTest {
         block_device_factory: &dyn BlockDeviceFactory,
     ) -> PkgDirInstance {
         let fs = if self.use_fxblob {
-            Box::new(Fxblob.start_filesystem(block_device_factory).await) as Box<dyn BlobFilesystem>
+            Box::new(Fxblob::new().start_filesystem(block_device_factory).await)
+                as Box<dyn BlobFilesystem>
         } else {
             Box::new(Blobfs.start_filesystem(block_device_factory).await) as Box<dyn BlobFilesystem>
         };
