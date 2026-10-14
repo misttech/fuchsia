@@ -1,6 +1,6 @@
 # Triage (fx triage)
 
-Reviewed on: 2026-10-14
+Reviewed on: 2019-12-08
 
 Triage analyzes snapshots for out-of-range values. The analysis is specified by
 configuration files.
@@ -13,7 +13,7 @@ the `fx set` invocation.
 For example:
 
 ```
-fx set core.chromebook-x64 --with //src/diagnostics/triage
+fx set core.chromebook-x64 --with '//topaz/bundles:buildbot' --with //src/diagnostics/triage
 ```
 
 ## Running
