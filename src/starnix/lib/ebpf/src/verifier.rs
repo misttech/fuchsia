@@ -25,6 +25,13 @@ const U32_MAX: u64 = u32::MAX as u64;
 
 /// A trait to receive the log from the verifier.
 pub trait VerifierLogger {
+    /// Returns whether logging is currently enabled and can accept output.
+    ///
+    /// Verifiers check this before evaluating log messages or formatting strings.
+    fn is_enabled(&self) -> bool {
+        true
+    }
+
     /// Log a line. The line is always a correct encoded ASCII string.
     fn log(&mut self, line: &[u8]);
 }
@@ -33,6 +40,10 @@ pub trait VerifierLogger {
 pub struct NullVerifierLogger;
 
 impl VerifierLogger for NullVerifierLogger {
+    fn is_enabled(&self) -> bool {
+        false
+    }
+
     fn log(&mut self, line: &[u8]) {
         debug_assert!(line.is_ascii());
     }
@@ -1455,10 +1466,16 @@ impl PartialOrd for Stack {
 
 macro_rules! bpf_log {
     ($context:ident, $verification_context:ident, $($msg:tt)*) => {
-        let prefix = format!("{}: ({:02x})", $context.pc, $verification_context.code[$context.pc].code());
-        let suffix = format!($($msg)*);
-        $verification_context.logger.log(format!("{prefix} {suffix}").as_bytes());
-    }
+        if $verification_context.logger.is_enabled() {
+            let line = format!(
+                "{}: ({:02x}) {}",
+                $context.pc,
+                $verification_context.code[$context.pc].code(),
+                format_args!($($msg)*)
+            );
+            $verification_context.logger.log(line.as_bytes());
+        }
+    };
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -4718,6 +4735,7 @@ fn associate_orderings(o1: Ordering, o2: Ordering) -> Option<Ordering> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{BPF_ADD, BPF_ALU64, BPF_K, BPF_MOV};
     use std::collections::BTreeSet;
     use test_util::{assert_geq, assert_leq};
 
@@ -5371,5 +5389,41 @@ mod tests {
         s_broad.set(5, Type::from(99));
         assert_eq!(s_broad.partial_cmp(&s_narrow), None);
         assert_eq!(s_narrow.partial_cmp(&s_broad), None);
+    }
+
+    #[test]
+    fn test_verifier_logger_is_enabled() {
+        struct LimitedLogger {
+            max_lines: usize,
+            lines: Vec<String>,
+        }
+
+        impl VerifierLogger for LimitedLogger {
+            fn is_enabled(&self) -> bool {
+                self.lines.len() < self.max_lines
+            }
+
+            fn log(&mut self, line: &[u8]) {
+                assert!(line.is_ascii());
+                self.lines.push(std::str::from_utf8(line).unwrap().to_string());
+            }
+        }
+
+        let code = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 0, 0, 0, 1),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+
+        let mut full_logger = LimitedLogger { max_lines: usize::MAX, lines: vec![] };
+        verify_program(code.clone(), CallingContext::default(), &mut full_logger).unwrap();
+        assert_eq!(
+            full_logger.lines,
+            vec!["0: (b7) mov %r0, 0x0", "1: (07) add %r0, 0x1", "2: (95) exit"]
+        );
+
+        let mut capped_logger = LimitedLogger { max_lines: 2, lines: vec![] };
+        verify_program(code, CallingContext::default(), &mut capped_logger).unwrap();
+        assert_eq!(capped_logger.lines, vec!["0: (b7) mov %r0, 0x0", "1: (07) add %r0, 0x1"]);
     }
 }

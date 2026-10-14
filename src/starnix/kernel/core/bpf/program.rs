@@ -350,11 +350,16 @@ struct BufferVeriferLogger<'a> {
 
 impl BufferVeriferLogger<'_> {
     fn new<'a>(buffer: &'a mut dyn OutputBuffer) -> BufferVeriferLogger<'a> {
-        BufferVeriferLogger { buffer, full: false }
+        let full = buffer.available() == 0;
+        BufferVeriferLogger { buffer, full }
     }
 }
 
 impl VerifierLogger for BufferVeriferLogger<'_> {
+    fn is_enabled(&self) -> bool {
+        !self.full
+    }
+
     fn log(&mut self, line: &[u8]) {
         debug_assert!(line.is_ascii());
 
@@ -378,6 +383,9 @@ impl VerifierLogger for BufferVeriferLogger<'_> {
                 self.full = true;
             }
             _ => {}
+        }
+        if self.buffer.available() == 0 {
+            self.full = true;
         }
     }
 }
