@@ -187,7 +187,13 @@ def update_prebuilt_build_ids_list(fuchsia_dir: Path, list_file: Path) -> None:
 
     list_content = "\n".join(sorted(build_id_files))
     if not list_file.exists() or list_file.read_text() != list_content:
-        list_file.write_text(list_content)
+        # Write to a PID-scoped temporary file and atomically replace list_file
+        # so that concurrent //build/regenerator.py invocations sharing the same
+        # source checkout never observe a truncated/partially-written file or
+        # corrupt it with overlapping writes.
+        tmp_file = list_file.with_name(f".{list_file.name}.{os.getpid()}.tmp")
+        tmp_file.write_text(list_content)
+        os.replace(tmp_file, list_file)
 
 
 def patch_build_ninja_d(
@@ -239,6 +245,21 @@ def main() -> int:
         "--no-export-rust-project",
         action="store_true",
         help="Disable generation of the rust-project.json file.",
+    )
+    parser.add_argument(
+        "--no-gn-ide-json",
+        action="store_true",
+        help="Disable passing --ide=json to gn gen.",
+    )
+    parser.add_argument(
+        "--no-gn-check",
+        action="store_true",
+        help="Disable passing --check=system to gn gen.",
+    )
+    parser.add_argument(
+        "--no-bazel-warm-up",
+        action="store_true",
+        help="Skip the separate bazel warm-up query before dumping root repo mapping.",
     )
     parser.add_argument(
         "--color", action="store_true", help="Force colored output."
@@ -340,11 +361,13 @@ def main() -> int:
             "args" if args.update_args else "gen",
             os.path.relpath(build_dir, fuchsia_dir),
             "--fail-on-unused-args",
-            "--check=system",
             f"--ninja-executable={fuchsia_dir}/{prebuilt_ninja_subpath}",
             "--ninja-outputs-file=ninja_outputs.json",
-            "--ide=json",
         ]
+        if not args.no_gn_check:
+            gn_cmd_args += ["--check=system"]
+        if not args.no_gn_ide_json:
+            gn_cmd_args += ["--ide=json"]
         if not args.no_export_rust_project:
             gn_cmd_args += ["--export-rust-project"]
 
@@ -644,17 +667,18 @@ def main() -> int:
             gn_target_cpu=target_cpu,
         )
 
-        # Bazel warm-up: perform a minimalistic query that ensures that the Bazel
-        # daemon is started for the current build directory and that
-        # toplevel.MODULE.bazel is processed
-        time_profile.start(
-            "bazel_warm_up", "Launching Bazel daemon with minimal query"
-        )
         bazel_paths = build_utils.BazelPaths(fuchsia_dir, build_dir)
         bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
-        returncode = bazel_warm_up(bazel_launcher)
-        if returncode != 0:
-            return returncode
+        if not args.no_bazel_warm_up:
+            # Bazel warm-up: perform a minimalistic query that ensures that the Bazel
+            # daemon is started for the current build directory and that
+            # toplevel.MODULE.bazel is processed
+            time_profile.start(
+                "bazel_warm_up", "Launching Bazel daemon with minimal query"
+            )
+            returncode = bazel_warm_up(bazel_launcher)
+            if returncode != 0:
+                return returncode
 
         # Dump root repository mapping from Bazel
         time_profile.start(
