@@ -4,11 +4,13 @@
 
 package(
     default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
 )
 
-exports_files([
-    "android_misc_info.py",
-    "post_processing_python_wrapper.sh",
-    "zbi_to_android_boot_image.py",
-])
+exports_files(
+    [
+        "android_misc_info.py",
+        "post_processing_python_wrapper.sh",
+        "zbi_to_android_boot_image.py",
+    ],
+    visibility = ["//vendor:__subpackages__"],
+)
