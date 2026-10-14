@@ -5,6 +5,8 @@
 #include <lib/fake-bti/bti.h>
 #include <lib/stdcompat/optional.h>
 
+#include <limits>
+
 #include <gtest/gtest.h>
 
 #include "src/lib/testing/predicates/status.h"
@@ -117,6 +119,12 @@ TEST_F(MapPinTest, Pin) {
                 ZX_ERR_OUT_OF_RANGE);
   ASSERT_STATUS(vmo->GetPinnedRegions(0, VmoSize() + 1, regions, 0, &region_count),
                 ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(vmo->GetPinnedRegions(std::numeric_limits<uint64_t>::max() - kOffset + 1, kOffset,
+                                      regions, 0, &region_count),
+                ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(vmo->GetPinnedRegions(kOffset, std::numeric_limits<uint64_t>::max() - kOffset + 1,
+                                      regions, 0, &region_count),
+                ZX_ERR_OUT_OF_RANGE);
 
   // Check hat we're able to get all the regions and they match the entirety of the pinned
   // structure.
@@ -161,6 +169,12 @@ TEST_F(MapPinTest, PinSingleRegion) {
   ASSERT_STATUS(vmo->GetPinnedRegions(zx_system_get_page_size(), 1, regions, 0, &region_count),
                 ZX_ERR_OUT_OF_RANGE);
   ASSERT_STATUS(vmo->GetPinnedRegions(0, zx_system_get_page_size() + 1, regions, 0, &region_count),
+                ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(vmo->GetPinnedRegions(std::numeric_limits<uint64_t>::max() - kOffset + 1, kOffset,
+                                      regions, 0, &region_count),
+                ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(vmo->GetPinnedRegions(kOffset, std::numeric_limits<uint64_t>::max() - kOffset + 1,
+                                      regions, 0, &region_count),
                 ZX_ERR_OUT_OF_RANGE);
 
   // Check hat we're able to get all the regions and they match the entirety of the pinned

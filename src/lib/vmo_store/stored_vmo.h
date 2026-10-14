@@ -148,7 +148,7 @@ class StoredVmo {
     if (pinned_.region_count() == 1) {
       *region_count_actual = 1;
       auto& region = pinned_.region(0);
-      if (offset + len > region.size) {
+      if (offset > region.size || len > region.size - offset) {
         return ZX_ERR_OUT_OF_RANGE;
       }
       if (region_count == 0) {
