@@ -15,14 +15,20 @@
 #include <openthread/instance.h>
 #include <openthread/platform/misc.h>
 
+#include "src/connectivity/openthread/tests/ot-rcp-fuchsia/rcp/platform/radio.h"
+
 namespace ot_rcp {
 // OpenThread platform state for the ot-rcp-fuchsia RCP: tasklet scheduling, the millisecond
-// alarm, time, and the per-node identity (node id, log tag, reset reason).
+// alarm, time, the stub radio, and the per-node identity (node id, EUI-64, log tag, reset reason).
 //
 // There is at most one Platform at a time, reachable through `Get()`. Not thread-safe and
 // should be called on the same dispatcher.
 class Platform {
  public:
+  // Base of the IEEE EUI-64 reported by the stub radio; this mirrors the upstream OpenThread
+  // simulation platform and OT-NS (ot-rfsim).
+  static constexpr uint64_t kEui64Base = 0x18b4300000000000ull;
+
   static void Create(async_dispatcher_t* dispatcher, uint32_t node_id);
   static void Destroy();
   static Platform& Get();
@@ -32,9 +38,12 @@ class Platform {
   Platform& operator=(const Platform&) = delete;
 
   uint32_t node_id() const { return node_id_; }
+  // EUI-64 of this node, used as the radio's factory MAC address.
+  uint64_t eui64() const { return kEui64Base | node_id_; }
   const std::string& log_tag() const { return log_tag_; }
   otPlatResetReason reset_reason() const { return reset_reason_; }
   void set_reset_reason(otPlatResetReason reason) { reset_reason_ = reason; }
+  Radio& radio() { return radio_; }
 
   // Backing for the `otPlat*` entry points.
   void SignalTaskletPending(otInstance* instance);
@@ -61,6 +70,9 @@ class Platform {
 
   otInstance* milli_instance_ = nullptr;
   async::TaskClosure milli_task_;
+
+  // Constructed fresh on every Create(), which is what returns it to its power-on configuration.
+  Radio radio_{dispatcher_};
 };
 
 }  // namespace ot_rcp

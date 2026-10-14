@@ -10,18 +10,22 @@ group("tests") {
   deps = [ ":ot-rcp-fuchsia-platform-unittests" ]
 }
 
-# The OpenThread platform: the ot_rcp::Platform class (platform.{h,cc}) and
-# the otPlat* entry points that forward to it (ot_platform.cc, logging.cc).
-# Built against the public OpenThread headers only; the OpenThread library
-# itself is linked by the final RCP binary.
+# The OpenThread platform: the ot_rcp::Platform class (platform.{h,cc}), the
+# Radio it owns (radio.{h,cc}) and the otPlat* entry points that
+# forward to them (ot_platform.cc, ot_radio_platform.cc, logging.cc). Built
+# against the public OpenThread headers only; the OpenThread library itself is
+# linked by the final RCP binary.
 source_set("platform") {
   testonly = true
   visibility = [ ":*" ]
   sources = [
     "rcp/platform/logging.cc",
     "rcp/platform/ot_platform.cc",
+    "rcp/platform/ot_radio_platform.cc",
     "rcp/platform/platform.cc",
     "rcp/platform/platform.h",
+    "rcp/platform/radio.cc",
+    "rcp/platform/radio.h",
   ]
   public_deps = [
     "//sdk/lib/async:async-cpp",
@@ -31,10 +35,16 @@ source_set("platform") {
   ]
 }
 
+# The platform calls back into the OpenThread core (otTaskletsProcess,
+# otPlatRadioTxDone, ...). The core is not linked here; each test file fakes
+# the callbacks of the component it tests, so all of them share one binary.
 test("platform_unittests") {
   output_name = "ot_rcp_fuchsia_platform_unittests"
   visibility = [ ":*" ]
-  sources = [ "rcp/platform/platform_unittest.cc" ]
+  sources = [
+    "rcp/platform/platform_unittest.cc",
+    "rcp/platform/radio_unittest.cc",
+  ]
   deps = [
     ":platform",
     "//sdk/lib/async-testing",
