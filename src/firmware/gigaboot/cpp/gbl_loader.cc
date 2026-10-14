@@ -74,7 +74,7 @@ std::span<uint8_t> GblFdtStopInFastboot();
 
 const std::span<const uint8_t> GetGblEfiApp();
 
-zx::result<> LaunchGbl(bool stop_in_fastboot) {
+zx::result<> LaunchGbl(RebootMode mode) {
   const std::span<const uint8_t> app = GetGblEfiApp();
 
   // Allocates boot buffer and copies over the embedded GBL EFI app blob. This is because
@@ -164,8 +164,8 @@ zx::result<> LaunchGbl(bool stop_in_fastboot) {
 
   // Sets `stop-in-fastboot` value.
   // This can be removed once infra GBL is updated.
-  GblFdtStopInFastboot()[0] = stop_in_fastboot ? 1 : 0;
-  g_should_stop_in_fastboot = stop_in_fastboot;
+  GblFdtStopInFastboot()[0] = (mode == RebootMode::kBootloader) ? 1 : 0;
+  g_reboot_mode = mode;
 
   // Installs device tree.
   status =

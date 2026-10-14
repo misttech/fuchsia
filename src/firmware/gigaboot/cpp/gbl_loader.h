@@ -8,10 +8,11 @@
 #include <efi/types.h>
 
 #include "lib/zx/result.h"
+#include "utils.h"
 
 namespace gigaboot {
 // Launches embedded GBL EFI app.
-zx::result<> LaunchGbl(bool stop_in_fastboot);
+zx::result<> LaunchGbl(RebootMode mode);
 }  // namespace gigaboot
 
 #endif  // SRC_FIRMWARE_GIGABOOT_CPP_GBL_LOADER_H_

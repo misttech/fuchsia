@@ -10,6 +10,7 @@ test("gigaboot_unittests") {
     "cmdline_tests.cc",
     "efi_variables_test.cc",
     "fastboot_test.cc",
+    "gbl_efi_boot_control_protocol_test.cc",
     "gbl_efi_fastboot_protocol_test.cc",
     "gpt_tests.cc",
     "input_test.cc",

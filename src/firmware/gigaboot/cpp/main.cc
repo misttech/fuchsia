@@ -105,15 +105,16 @@ gigaboot::RebootMode LoadRebootMode() {
   }
 
   // Print OneShotFlags from ABR
-  AbrDataOneShotFlags one_shot_flags;
+  AbrDataOneShotFlags one_shot_flags = kAbrDataOneShotFlagNone;
   ZirconBootOps zb_ops = gigaboot::GetZirconBootOps();
   AbrOps abr_ops = GetAbrOpsFromZirconBootOps(&zb_ops);
   AbrResult abr_res = AbrGetAndClearOneShotFlags(&abr_ops, &one_shot_flags);
   if (abr_res != kAbrResultOk) {
-    printf("Warning: failed to get one shot flags from ABR; booting normally\n");
-    return gigaboot::RebootMode::kNormal;
+    printf("Warning: failed to get one shot flags from ABR; checking legacy bootbyte\n");
+    one_shot_flags = kAbrDataOneShotFlagNone;
+  } else {
+    printf("abr.one_shot_flags = 0x%02x\n", one_shot_flags);
   }
-  printf("abr.one_shot_flags = 0x%02x\n", one_shot_flags);
 
   gigaboot::RebootMode reboot_mode =
       gigaboot::GetOneShotRebootMode(one_shot_flags).value_or(gigaboot::RebootMode::kNormal);
@@ -197,13 +198,23 @@ int gigaboot_main(int argc, char** argv) {
 // Main routine for booting embedded GBL.
 int gbl_main(bool is_installer) {
   printf("Preparing to boot Generic Bootloader(GBL)...\n");
+  gigaboot::RebootMode mode = gigaboot::RebootMode::kNormal;
   if (is_installer) {
     printf("Image is for bootstrap/installer use. Always stops in Fastboot...\n");
+    mode = gigaboot::RebootMode::kBootloader;
+  } else {
+    mode = LoadRebootMode();
+    if (mode == gigaboot::RebootMode::kRecovery) {
+      // GBL's Fuchsia boot flow selects the recovery slot via ABR one-shot recovery metadata.
+      // Re-apply the one-shot recovery flag so GBL sees and consumes it.
+      ZirconBootOps zb_ops = gigaboot::GetZirconBootOps();
+      AbrOps abr_ops = GetAbrOpsFromZirconBootOps(&zb_ops);
+      AbrSetOneShotRecovery(&abr_ops, true);
+    } else if (mode == gigaboot::RebootMode::kNormal && CheckFastbootKey()) {
+      mode = gigaboot::RebootMode::kBootloader;
+    }
   }
-  auto mode = gigaboot::GetCommandlineRebootMode(IsQemu()).value_or(gigaboot::RebootMode::kNormal);
-  bool stop_in_fastboot =
-      is_installer || mode == gigaboot::RebootMode::kBootloader || CheckFastbootKey();
-  if (gigaboot::LaunchGbl(stop_in_fastboot).is_error()) {
+  if (gigaboot::LaunchGbl(mode).is_error()) {
     printf("Failed to boot GBL\n");
   }
   return 1;

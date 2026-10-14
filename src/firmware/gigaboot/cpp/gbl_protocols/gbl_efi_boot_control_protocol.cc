@@ -15,9 +15,12 @@
 #include <phys/efi/main.h>
 
 #include "efi/types.h"
+#include "utils.h"
 
-// Set within `LaunchGbl()`;
-bool g_should_stop_in_fastboot = false;
+namespace gigaboot {
+// Set within `LaunchGbl()`.
+RebootMode g_reboot_mode = RebootMode::kNormal;
+}  // namespace gigaboot
 
 namespace {
 
@@ -73,8 +76,18 @@ EfiStatus GetOneShotBootMode(struct GblEfiBootControlProtocol* self, GblEfiOneSh
   if (!mode) {
     return EFI_INVALID_PARAMETER;
   }
-  *mode = g_should_stop_in_fastboot ? GblEfiOneShotBootMode::GBL_EFI_ONE_SHOT_BOOT_MODE_BOOTLOADER
-                                    : GblEfiOneShotBootMode::GBL_EFI_ONE_SHOT_BOOT_MODE_NONE;
+  switch (gigaboot::g_reboot_mode) {
+    case gigaboot::RebootMode::kBootloader:
+      *mode = GblEfiOneShotBootMode::GBL_EFI_ONE_SHOT_BOOT_MODE_BOOTLOADER;
+      break;
+    case gigaboot::RebootMode::kRecovery:
+      *mode = GblEfiOneShotBootMode::GBL_EFI_ONE_SHOT_BOOT_MODE_RECOVERY;
+      break;
+    case gigaboot::RebootMode::kNormal:
+    default:
+      *mode = GblEfiOneShotBootMode::GBL_EFI_ONE_SHOT_BOOT_MODE_NONE;
+      break;
+  }
   return EFI_SUCCESS;
 }
 
@@ -120,7 +133,7 @@ EfiStatus GetCurrentSlot(struct GblEfiBootControlProtocol* self, GblEfiSlotInfo*
   AbrSlotIndex abr_index = AbrGetBootSlot(&abr_ops, false, nullptr);
   const auto idx = abr_index_to_int(abr_index);
   if (!idx.has_value()) {
-    return EFI_INVALID_PARAMETER;
+    return EFI_DEVICE_ERROR;
   }
 
   return GetSlotInfo(self, idx.value(), info);

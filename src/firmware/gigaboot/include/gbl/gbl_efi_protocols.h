@@ -7,9 +7,11 @@
 
 #include <efi/types.h>
 
-extern bool g_should_stop_in_fastboot;
+#include "utils.h"
 
 namespace gigaboot {
+
+extern RebootMode g_reboot_mode;
 
 efi_status InstallGblEfiBootControlProtocol();
 efi_status InstallGblEfiFastbootProtocol();
