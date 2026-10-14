@@ -1,10 +1,10 @@
 ---
 name: analyzing-migration-dag
-description: >-
-  Analyzes the recursive GN-to-Bazel dependency and unit-test DAG for a Fuchsia
-  target or BUILD.gn package, detects hard blockers, and computes deterministic
-  topological migration waves using Kahn's in-degree algorithm. Use before
-  migrating any target with migrating-host-tool-to-bazel or
+description: >
+  Analyzes the recursive GN-to-Bazel dependency and unit-test DAG for a
+  Fuchsia target or BUILD.gn package, detects hard blockers, and computes
+  deterministic topological migration waves using Kahn's in-degree algorithm.
+  Use before migrating any target with migrating-host-tool-to-bazel or
   migrating-fidl-to-bazel to determine the exact upstream migration order and
   stacked CL plan.
 ---
@@ -33,25 +33,25 @@ targets into deterministic migration waves before authoring `BUILD.bazel` files.
 
 ## Core Principles
 
-1. **Full Recursive Upstream Scan (Production + Unit Tests):**
+1.  **Full Recursive Upstream Scan (Production + Unit Tests):**
    - Before writing any `BUILD.bazel` file, recursively scan the target's entire
      upstream GN dependency graph (`deps`, `public_deps`, `data_deps`,
      `non_rust_deps`, `proc_macro_deps`, `libraries`, `embed`, `args_deps`,
      `plugin_deps`, `host_deps`, and `test_deps`).
    - **Unit Test Inclusion Rule:** By default, the analyzer includes the tests
      in the root target's package family (`//dir/BUILD.gn`,
-     `//dir/tests/BUILD.gn`, and `//dir/test/BUILD.gn`) that *exercise* a
-     target being migrated: tests that depend on it (directly or through other
-     test targets, e.g. `fuchsia_unittest_component` -> `:foo_test` -> `:foo`)
-     or that recompile the same `sources` in the same BUILD.gn. Aggregator
-     groups (`group("tests")`, `group("host_tests")`) are never followed, so
-     tests of child directories and downstream consumers are not pulled in.
-     Upstream libraries (`rustc_library`) can keep their unit tests in GN via
-     `bazel2gn` if their `test_deps` are not yet migrated, so only their
-     production dependencies are scanned. Pass `--include-upstream-tests` to
-     also expand `test_deps` and tests for every unmigrated upstream package.
+     `//dir/tests/BUILD.gn`, and `//dir/test/BUILD.gn`) that *exercise* a target
+     being migrated: tests that depend on it (directly or through other test
+     targets, e.g. `fuchsia_unittest_component` -> `:foo_test` -> `:foo`) or
+     that recompile the same `sources` in the same BUILD.gn. Aggregator groups
+     (`group("tests")`, `group("host_tests")`) are never followed, so tests of
+     child directories and downstream consumers are not pulled in. Upstream
+     libraries (`rustc_library`) can keep their unit tests in GN via `bazel2gn`
+     if their `test_deps` are not yet migrated, so only their production
+     dependencies are scanned. Pass `--include-upstream-tests` to also expand
+     `test_deps` and tests for every unmigrated upstream package.
 
-2. **Fail-Fast Hard Blocker Detection:**
+2.  **Fail-Fast Hard Blocker Detection:**
    - Detect out-of-scope or unsupported transitive dependencies (`HARD_BLOCKER`)
      across the full recursive graph before starting migration work. Examples
      include:
@@ -61,7 +61,7 @@ targets into deterministic migration waves before authoring `BUILD.bazel` files.
        codegen in Bazel (e.g., `//third_party/luci-go/...`).
      - Custom `.gni` codegen templates without Bazel equivalents.
 
-3. **Kahn's Algorithm (In-Degree Topological Sort):**
+3.  **Kahn's Algorithm (In-Degree Topological Sort):**
    - Prune dependencies that are already migrated and platform-compatible in
      Bazel (`MIGRATED_READY`).
    - For every remaining unmigrated node, compute **`in_degree(node)`** = the
@@ -73,7 +73,7 @@ targets into deterministic migration waves before authoring `BUILD.bazel` files.
        Waves $0 \dots k-1$ are migrated.
      - **Final Wave:** The top-level root target and its unit tests.
 
-4. **Stacked CL Strategy (Max 4-5 Targets per CL):**
+4.  **Stacked CL Strategy (Max 4-5 Targets per CL):**
    - Plan multi-target migrations as **stacked Git commits on a single local Git
      branch (`migrate-<target_name>`)** ordered from Wave 0 up to the root
      target, sharing the same `Bug: <id>` footer.
@@ -114,10 +114,11 @@ python3 build/beads/.agent/skills/analyzing_migration_dag/scripts/analyze_migrat
 
 #### Understanding the Script Output
 
-1. **Node Classification Summary:**
-   - `MIGRATED_READY`: Target already exists in `BUILD.bazel` (or `third_party_target_map.json`,
-     `//third_party/rust_crates`, or `//third_party/golibs`). Pruned from further
-     recursion (any platform constraint adjustments are handled during migration).
+1.  **Node Classification Summary:**
+   - `MIGRATED_READY`: Target already exists in `BUILD.bazel` (or
+     `third_party_target_map.json`, `//third_party/rust_crates`, or
+     `//third_party/golibs`). Pruned from further recursion (any platform
+     constraint adjustments are handled during migration).
    - `UNMIGRATED_IN_SCOPE`: In-tree target (`//src/...`, `//tools/...`,
      `//sdk/...`, `//zircon/...`, `//build/...`, `//scripts/...`) that needs to
      be migrated to Bazel. Subdivided into:
@@ -127,23 +128,24 @@ python3 build/beads/.agent/skills/analyzing_migration_dag/scripts/analyze_migrat
        one or more `HARD_BLOCKER` targets.
    - `HARD_BLOCKER`: Out-of-scope `//third_party/*` target or unsupported custom
      GN template.
-2. **Hard Blockers Detected:** Lists every `HARD_BLOCKER`, its cross-package hop
-   depth, and the reason it is blocked.
-3. **Explicit CL-by-CL Migration Order (Targets in Same Step Packed into Same CL):**
-   Groups unmigrated `BUILD.gn` packages into reviewable stacked CLs ($\le 5$
-   packages per CL) in strict topological and subsystem-affinity order so every
-   `CL k` only depends on `CL < k`:
+2.  **Hard Blockers Detected:** Lists every `HARD_BLOCKER`, its cross-package
+    hop depth, and the reason it is blocked.
+3.  **Explicit CL-by-CL Migration Order (Targets in Same Step Packed into Same
+    CL):** Groups unmigrated `BUILD.gn` packages into reviewable stacked CLs
+    ($\le 5$ packages per CL) in strict topological and subsystem-affinity order
+    so every `CL k` only depends on `CL < k`:
    - **Phase A (`CL 1` - `CL M`):** Unblocked in-tree targets that can be
      migrated and landed immediately without waiting on any hard blockers.
    - **Phase B (`CL M+1` - `CL N`):** Hard blockers followed by transitively
      blocked downstream targets up to the root target.
    - **Upstream Unit-Test (`test_deps`) Notes:** Lists any extra `test_deps`
      targets or unit-test dependency cycles across CLs.
-4. **Topological Migration Waves (Kahn's In-Degree Reference):** Lists `Wave 0`,
-   `Wave 1`, ..., `Wave N`, showing each target's GN rule type, hop depth,
-   initial unmigrated `in-degree`, and exact unmigrated prerequisites (`waits on`).
-5. **Direct Upstream Dependencies Already Migrated (Pruned):** Confirms which
-   upstream dependencies are already available in Bazel.
+4.  **Topological Migration Waves (Kahn's In-Degree Reference):** Lists `Wave
+    0`, `Wave 1`, ..., `Wave N`, showing each target's GN rule type, hop depth,
+    initial unmigrated `in-degree`, and exact unmigrated prerequisites (`waits
+    on`).
+5.  **Direct Upstream Dependencies Already Migrated (Pruned):** Confirms which
+    upstream dependencies are already available in Bazel.
 
 ### Step 2: Check Toolchain-Specific GN Graph & Downstream Referrers
 
@@ -163,30 +165,31 @@ fx gn refs $(fx get-build-dir) "//path/to/dir/*"
 
 Before creating any Git branches or editing `BUILD.bazel` / `BUILD.gn` files:
 
-1. Present the **Node Classification Summary**, **Hard Blocker Chains** (if any),
-   **Explicit CL-by-CL Migration Order (Phase A & Phase B)**, and **Downstream
-   GN Referrers** to the user.
-2. If `HARD_BLOCKER` nodes exist:
+1.  Present the **Node Classification Summary**, **Hard Blocker Chains** (if
+    any), **Explicit CL-by-CL Migration Order (Phase A & Phase B)**, and
+    **Downstream GN Referrers** to the user.
+2.  If `HARD_BLOCKER` nodes exist:
    - Clearly highlight the blocker chain preventing the root target from being
      migrated.
-   - Identify whether **Phase A** (`CL 1` - `CL M`, unblocked targets) should
-     be migrated incrementally now to unblock shared upstream libraries, or if
-     the target should be skipped until the blocker is resolved.
-3. **Stop and wait for explicit user confirmation** before executing the
-   migration CLs.
+   - Identify whether **Phase A** (`CL 1` - `CL M`, unblocked targets) should be
+     migrated incrementally now to unblock shared upstream libraries, or if the
+     target should be skipped until the blocker is resolved.
+3.  **Stop and wait for explicit user confirmation** before executing the
+    migration CLs.
 
 ### Step 4: Execute Migration Wave-by-Wave
 
 Once approved by the user, migrate targets in topological order starting from
 **Wave 0 (`in_degree == 0`)**:
 
-1. For each target in the current wave/CL batch, follow
-   [`migrating-host-tool-to-bazel`](../migrating_host_tool_to_bazel/SKILL.md)
-   (or [`migrating-fidl-to-bazel`](../migrating_fidl_to_bazel/SKILL.md) for FIDL
-   targets).
-2. Whenever an upstream library in Wave $k$ is still referenced by unmigrated GN
-   targets in Wave $> k$ (or external GN consumers), sync the library back from
-   Bazel to GN using [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md)
-   (`fx bazel2gn -d //path/to/dir`), including its Verify step.
-3. Commit each wave batch (at most 4-5 targets) as a stacked commit on the
-   single migration branch before proceeding to the next wave.
+1.  For each target in the current wave/CL batch, follow
+    [`migrating-host-tool-to-bazel`](../migrating_host_tool_to_bazel/SKILL.md)
+    (or [`migrating-fidl-to-bazel`](../migrating_fidl_to_bazel/SKILL.md) for
+    FIDL targets).
+2.  Whenever an upstream library in Wave $k$ is still referenced by unmigrated
+    GN targets in Wave $> k$ (or external GN consumers), sync the library back
+    from Bazel to GN using
+    [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md) (`fx bazel2gn -d
+    //path/to/dir`), including its Verify step.
+3.  Commit each wave batch (at most 4-5 targets) as a stacked commit on the
+    single migration branch before proceeding to the next wave.

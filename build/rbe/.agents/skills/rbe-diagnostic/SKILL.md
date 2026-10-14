@@ -37,14 +37,14 @@ Reproxy logs track remote compilation and linking steps launched by Ninja via
 reclient.
 * **Location**: Check
   `out/_build_logs/<config>/build.<timestamp>.<id>/reproxy_logs/`.
-  * `<config>` is your build directory's basename, which can be found by
-    `fx use` or looking at `.fx-build-dir`.
+  * `<config>` is your build directory's basename, which can be found by `fx
+    use` or looking at `.fx-build-dir`.
   * `<id>` is a random suffix.
   * Look for `reproxy.INFO`, `scandeps_server.INFO`, and `.rrpl` (reclient
     reproxy proto log) files.
-* **Note**: Setting `FX_BUILD_RBE_STATS=1` prints the exact log directory in
-  the build summary. It is highly recommended to set this environment variable
-  while re-building and debugging.
+* **Note**: Setting `FX_BUILD_RBE_STATS=1` prints the exact log directory in the
+  build summary. It is highly recommended to set this environment variable while
+  re-building and debugging.
 
 #### B. Bazel Remote Execution Logs (Bazel-Launched Remote Actions)
 When Bazel is used with RBE, it logs every action execution inside
@@ -52,22 +52,23 @@ When Bazel is used with RBE, it logs every action execution inside
 `bazel_logs/invocation-<timestamp>--<uuid>/`).
 
 * **Decoding the Compact Execution Log**:
-  1. Decompress the log:
+  1.  Decompress the log:
      ```bash
      zstd -d exec_log.pb.zstd -o exec_log.pb
      ```
-  2. Decode to Text Proto (using `gqui` on gLinux, see `go/gqui` for
-     installation instructions):
+  2.  Decode to Text Proto (using `gqui` on gLinux, see `go/gqui` for
+      installation instructions):
      ```bash
      gqui --printproto_readable length-delimited:exec_log.pb proto tools.protos.ExecLogEntry --outfile=exec_log.textproto
      ```
-* **Structure of `exec_log.textproto`**:
-  The resulting `exec_log.textproto` contains `ExecLogEntry` records:
+* **Structure of `exec_log.textproto`**: The resulting `exec_log.textproto`
+  contains `ExecLogEntry` records:
   * **`spawn`**: Represents a single action execution.
-    * `target_label`: The Bazel target label (e.g., `//products/zedboot:zedboot`).
+    * `target_label`: The Bazel target label (e.g.,
+      `//products/zedboot:zedboot`).
     * `mnemonic`: The action mnemonic (e.g., `FuchsiaProductConfig`).
-    * `runner`: The execution mechanism (e.g., `"remote"`, `"linux-sandbox"`). If
-      built remotely via RBE, this is typically `"remote"`.
+    * `runner`: The execution mechanism (e.g., `"remote"`, `"linux-sandbox"`).
+      If built remotely via RBE, this is typically `"remote"`.
     * `args`: Command-line arguments of the action.
     * `input_set_id`: The ID of the input set used.
     * `tool_set_id`: The ID of the toolchain tool set used.
@@ -79,8 +80,8 @@ When Bazel is used with RBE, it logs every action execution inside
     * `platform`: Requested execution environment properties (e.g., `OSFamily`,
       `container-image`, and the requested worker `Pool` name). To find the
       *actually* resolved backend worker or pool execution metadata, run a
-      `remotetool.sh` query (under `Inspect Remote Input Roots`) on the
-      action's `digest`.
+      `remotetool.sh` query (under `Inspect Remote Input Roots`) on the action's
+      `digest`.
     * `remotable` / `cacheable` / `remote_cacheable`: Boolean flags indicating
       eligibility to run remotely or read/write to local/remote caches (governed
       by tags like `no-cache`, `no-remote-cache`, or `no-remote`).
@@ -152,9 +153,8 @@ Some useful event timing keys include:
   * Time spent downloading output file blobs from the cloud CAS over the
     network.
 * `ServerQueue` (under `remote_metadata.event_times`):
-  * Measures server-side queuing duration (in ms) before a backend worker
-    became available. Also summarized as `ServerQueuedMillis` in
-    `rbe_metrics.txt`.
+  * Measures server-side queuing duration (in ms) before a backend worker became
+    available. Also summarized as `ServerQueuedMillis` in `rbe_metrics.txt`.
 
 Should any of these event intervals stand out as unexpectedly slow, look for
 possible explanations in `reproxy.INFO` and the system-wide profile from build
