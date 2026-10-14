@@ -71,6 +71,7 @@ unsafe extern "C" {
     fn cpp_thread_eager_resched_reenable();
     fn cpp_thread_preempt_disable_count() -> u32;
     fn cpp_thread_eager_resched_disable_count() -> u32;
+    fn cpp_thread_preempt_set_pending();
     fn cpp_thread_preempt();
     fn cpp_thread_current_sleep_etc(
         deadline: *const crate::kernel::deadline::Deadline,
@@ -636,6 +637,19 @@ pub fn eager_resched_disable_count() -> u32 {
     // SAFETY: Calling this FFI function safely reads the current thread's eager resched disable
     // count.
     unsafe { cpp_thread_eager_resched_disable_count() }
+}
+
+/// Marks a pending preemption for the current CPU on the current thread's preemption state.
+///
+/// This is similar to `Reschedule()`, except that it may only be used inside an interrupt handler
+/// while interrupts and preemption are disabled, between [`preempt_disable`] and
+/// [`preempt_reenable`]. Unlike `Reschedule()`, it does not need to be called with the thread's
+/// lock held.
+#[inline]
+pub fn preempt_set_pending() {
+    // SAFETY: Calling this FFI function safely marks a pending preemption on the current thread's
+    // preemption state.
+    unsafe { cpp_thread_preempt_set_pending() }
 }
 
 /// Sets a timeslice extension if one is not already set.

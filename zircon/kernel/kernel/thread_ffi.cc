@@ -83,6 +83,7 @@ void cpp_thread_eager_resched_disable();
 void cpp_thread_eager_resched_reenable();
 uint32_t cpp_thread_preempt_disable_count();
 uint32_t cpp_thread_eager_resched_disable_count();
+void cpp_thread_preempt_set_pending();
 void cpp_thread_preempt();
 zx_status_t cpp_thread_current_sleep_etc(const Deadline* deadline, Interruptible interruptible,
                                          zx_instant_mono_t now);
@@ -234,6 +235,11 @@ FFI_ALWAYS_INLINE uint32_t cpp_thread_preempt_disable_count() {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uint32_t cpp_thread_eager_resched_disable_count() {
   return Thread::Current::preemption_state().EagerReschedDisableCount();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_preempt_set_pending() {
+  Thread::Current::preemption_state().PreemptSetPending();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

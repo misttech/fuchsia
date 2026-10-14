@@ -7,27 +7,49 @@
 #ifndef ZIRCON_KERNEL_INCLUDE_KERNEL_RECURRING_CALLBACK_H_
 #define ZIRCON_KERNEL_INCLUDE_KERNEL_RECURRING_CALLBACK_H_
 
+#include <zircon/compiler.h>
+
 #include <fbl/macros.h>
-#include <kernel/spinlock.h>
-#include <kernel/timer.h>
+#include <kernel/ffi.h>
+
+class RecurringCallback;
+
+__BEGIN_CDECLS
+
+void rust_recurring_callback_init(RecurringCallback* cb, void (*callback)());
+void rust_recurring_callback_destroy(RecurringCallback* cb);
+void rust_recurring_callback_toggle(RecurringCallback* cb);
+
+__END_CDECLS
 
 class RecurringCallback {
  public:
   using CallbackFunc = void (*)();
 
-  explicit RecurringCallback(CallbackFunc callback) : func_(callback) {}
+  explicit RecurringCallback(CallbackFunc callback) {
+    rust_recurring_callback_init(this, callback);
+  }
+  ~RecurringCallback() { rust_recurring_callback_destroy(this); }
 
-  void Toggle();
+  void Toggle() {
+    static_assert(sizeof(RecurringCallback) == kStorageSize);
+    static_assert(alignof(RecurringCallback) == kStorageAlign);
+    rust_recurring_callback_toggle(this);
+  }
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(RecurringCallback);
 
-  static void CallbackWrapper(Timer* t, zx_instant_mono_t now, void* arg);
+#if SCHEDULER_LOCK_SPIN_TRACING_ENABLED
+  static constexpr size_t kStorageSize = 112;
+#elifdef WITH_LOCK_DEP
+  static constexpr size_t kStorageSize = 104;
+#else
+  static constexpr size_t kStorageSize = 96;
+#endif
+  static constexpr size_t kStorageAlign = 8;
 
-  DECLARE_SPINLOCK(RecurringCallback) lock_;
-  Timer timer_;
-  bool started_ = false;
-  CallbackFunc func_ = nullptr;
+  [[maybe_unused]] OpaqueStorage<kStorageSize, kStorageAlign> storage_{};
 };
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_RECURRING_CALLBACK_H_
