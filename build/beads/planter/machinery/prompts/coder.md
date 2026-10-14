@@ -117,7 +117,7 @@ translate tests, and a Bazel test reaches `tests.json` (`fx test`, CQ) only thro
 - **Unwrap the magic manifest when custom .cml is needed.** If a test requires a custom manifest
   or capabilities beyond standard runner shards, add `meta/<component>.cml` (the only non-build
   file a migration may add; keep an existing one) reproducing GN's manifest:
-  the runner shard, `"syslog/use.shard.cml"` (what GN injects), capability shards GN added,
+  the runner shard, `"syslog/client.shard.cml"`, capability shards GN added,
   and `program: { binary: "bin/<binary_name>" }`. Runner shards by framework:
   - Rust `rustc_test`/`with_unit_tests`: `//src/sys/test_runners/rust/default.shard.cml`
   - gtest (`//src/lib/fxl/test:gtest_main`, `//third_party/googletest:gtest`): `//src/sys/test_runners/gtest/default.shard.cml`

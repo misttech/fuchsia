@@ -685,7 +685,7 @@ for td in target_dirs:
                         f"Add `fx_unittest_package(name = ..., unit_tests = [\":{device_bin}\"])` or "
                         f"`fx_packaged_binary(testonly = True, binary = \":{device_bin}\", binary_name = ...)` "
                         "(GN's output name, e.g. `<crate>_lib_test`), a `meta/<component>.cml` including "
-                        "`//src/sys/test_runners/rust/default.shard.cml` and `syslog/use.shard.cml` with "
+                        "`//src/sys/test_runners/rust/default.shard.cml` and `syslog/client.shard.cml` with "
                         "`program.binary` = `bin/<binary_name>`, `fx_component_manifest`, `fx_test_component`, "
                         "`fx_package(test_components = ...)` and `fx_test`, exported by a GN `bazel_test_suite` "
                         "(see \"Migrating Tests\" in the coder instructions). If the tests only ran on host in GN, "

@@ -771,9 +771,9 @@ for pkg_dir in sorted(candidate_dirs):
                     )
                     + "`fx_packaged_binary(testonly = True)`, `fx_component_manifest` with a new `meta/<component>.cml` "
                     + (
-                        "(`//src/sys/test_runners/rust/default.shard.cml` + `syslog/use.shard.cml`, as GN generated), "
+                        "(`//src/sys/test_runners/rust/default.shard.cml` + `syslog/client.shard.cml`), "
                         if is_rust
-                        else "(gtest/zxtest/ELF runner shard + the syslog shard GN generated), "
+                        else "(gtest/zxtest/ELF runner shard + `syslog/client.shard.cml`), "
                     )
                     + "`fx_test_component`, "
                     f"`fx_package(package_name = \"{gn_pkg_name}\", test_components = [...])` and `fx_test` (each with "
