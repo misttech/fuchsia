@@ -42,6 +42,19 @@ use std::sync::atomic::Ordering;
 pub struct InterruptibleEvent {
     futex: zx::Futex,
     requeue_target: zx::Futex,
+    /// Retains the PI owner assigned via `assign_new_owner` for the duration of the wait cycle.
+    ///
+    /// Keeping an `Arc<zx::Thread>` reference here (rather than only passing the handle once to
+    /// `zx_futex_requeue`) is required for two reasons:
+    ///  1. If `assign_new_owner` is called after `begin_wait` but before the waiting thread enters
+    ///     `zx_futex_wait` in the kernel (or if a spurious or intermediate wakeup occurs),
+    ///     `zx_futex_requeue` moves 0 kernel waiters, and a subsequent
+    ///     `requeue_target.wait(WAITING, None, ...)` would overwrite `requeue_target`'s kernel
+    ///     owner with `None`.
+    ///  2. Holding an `Arc<zx::Thread>` guarantees the underlying `zx_handle_t` stays open until
+    ///     `reset()`, avoiding `zx_handle_duplicate` syscalls and `ZX_POL_BAD_HANDLE` policy
+    ///     exceptions if the worker thread exits during the wait.
+    requeue_owner: fuchsia_sync::Mutex<Option<Arc<zx::Thread>>>,
 }
 
 /// The initial state.
@@ -110,7 +123,11 @@ pub enum WakeReason {
 
 impl Default for InterruptibleEvent {
     fn default() -> Self {
-        InterruptibleEvent { futex: zx::Futex::new(READY), requeue_target: zx::Futex::new(READY) }
+        InterruptibleEvent {
+            futex: zx::Futex::new(READY),
+            requeue_target: zx::Futex::new(READY),
+            requeue_owner: fuchsia_sync::Mutex::new(None),
+        }
     }
 }
 
@@ -153,12 +170,22 @@ impl InterruptibleEvent {
     ///
     /// TODO(https://fxbug.dev/542307988): Replace this requeue pattern with a dedicated Zircon
     /// syscall to assign a new owner to a futex with waiting threads once available.
-    pub fn assign_new_owner(&self, new_owner: &zx::Thread) -> Result<(), zx::Status> {
+    pub fn assign_new_owner(&self, new_owner: &Arc<zx::Thread>) -> Result<(), zx::Status> {
+        if self.futex.load(Ordering::Relaxed) != WAITING {
+            return Err(zx::Status::BAD_STATE);
+        }
+        // Hold `requeue_owner` across the `WAITING -> REQUEUED` transition, `zx_futex_requeue`,
+        // and `requeue_target` initialization so that any thread in `block_until` or `reset` that
+        // observes `futex == REQUEUED` and locks `requeue_owner` is serialized after the requeue
+        // completes (with kernel Priority Inheritance from `fuchsia_sync::Mutex` if
+        // `assign_new_owner` was preempted).
+        let mut requeue_owner = self.requeue_owner.lock();
         if self
             .futex
             .compare_exchange(WAITING, REQUEUED, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
         {
+            *requeue_owner = Some(Arc::clone(new_owner));
             let res =
                 self.futex.requeue(0, REQUEUED, &self.requeue_target, u32::MAX, Some(new_owner));
             // Setting `requeue_target` to `WAITING` after `zx_futex_requeue` ensures that any
@@ -172,11 +199,25 @@ impl InterruptibleEvent {
     }
 
     fn reset(&self) {
-        // We use a store here rather than a compare_exchange because other threads are
-        // only allowed to write to this value in the `WAITING` state and we are returning
-        // from a completed wait.
-        self.requeue_target.store(READY, Ordering::Relaxed);
-        self.futex.store(READY, Ordering::Relaxed);
+        // `reset()` is only called at the end of `block_until`, which consumes the unique
+        // `EventWaitGuard` created by `begin_wait` (when `futex == READY`). Because `futex` is not
+        // set back to `READY` until the end of this function, at most one thread can execute
+        // `reset()` at a time.
+        //
+        // On normal non-requeued wakeups where `futex` is already `NOTIFIED` or `INTERRUPTED`,
+        // `assign_new_owner` cannot transition `futex` to `REQUEUED` and `requeue_target` is
+        // already `READY`, so we only need to serialize against `assign_new_owner` when `futex` is
+        // `WAITING` or `REQUEUED`.
+        let observed = self.futex.load(Ordering::Relaxed);
+        if observed == WAITING || observed == REQUEUED {
+            if self.futex.swap(NOTIFIED, Ordering::AcqRel) == REQUEUED {
+                *self.requeue_owner.lock() = None;
+            }
+            self.requeue_target.store(READY, Ordering::Relaxed);
+        }
+        // Use `Ordering::Release` so clearing `requeue_owner` and resetting `requeue_target`
+        // happen-before a subsequent `begin_wait()`'s `AcqRel` CAS from `READY` to `WAITING`.
+        self.futex.store(READY, Ordering::Release);
     }
 
     fn block_until(
@@ -189,9 +230,14 @@ impl InterruptibleEvent {
         loop {
             let futex_val = self.futex.load(Ordering::Acquire);
             let is_requeued = futex_val == REQUEUED;
-            let target_futex = if is_requeued { &self.requeue_target } else { &self.futex };
+            let requeued_owner = if is_requeued { self.requeue_owner.lock().clone() } else { None };
+            let (target_futex, effective_owner) = if is_requeued {
+                (&self.requeue_target, requeued_owner.as_deref())
+            } else {
+                (&self.futex, new_owner)
+            };
 
-            match target_futex.wait(WAITING, new_owner, deadline) {
+            match target_futex.wait(WAITING, effective_owner, deadline) {
                 // The deadline expired while we were sleeping.
                 Err(zx::Status::TIMED_OUT) => {
                     self.reset();
@@ -199,31 +245,26 @@ impl InterruptibleEvent {
                 }
                 // The value changed before we went to sleep. Note: If `assign_new_owner()` set
                 // `futex = REQUEUED` before `requeue_target` was initialized to `WAITING`,
-                // `target_futex.wait()` fails with `BAD_STATE`. In this case, `effective_state`
-                // evaluates to `WAITING`, causing the loop to retry on `requeue_target`.
+                // `target_futex.wait()` fails with `BAD_STATE`. In this case, `state` evaluates to
+                // `WAITING` or `READY`, causing the loop to retry on `requeue_target`.
                 Err(zx::Status::BAD_STATE) => (),
                 Err(e) => panic!("Unexpected error from zx_futex_wait: {e}"),
                 Ok(()) => (),
             }
 
-            let state = target_futex.load(Ordering::Acquire);
-            let fallback_state = if is_requeued { futex_val } else { READY };
+            let mut state = target_futex.load(Ordering::Acquire);
+            if state == REQUEUED {
+                state = self.requeue_target.load(Ordering::Acquire);
+            }
 
-            let effective_state = if state == NOTIFIED || state == INTERRUPTED {
-                state
-            } else if fallback_state == NOTIFIED || fallback_state == INTERRUPTED {
-                fallback_state
-            } else {
-                WAITING
-            };
-
-            let res = match effective_state {
-                // If we're still in the `WAITING` state, then the wake ended spuriously and we
-                // need to go back to sleep.
-                WAITING => continue,
+            let res = match state {
+                // If we're still in the `WAITING` state (or `READY` while `assign_new_owner` is
+                // initializing `requeue_target`), then the wake ended spuriously and we need to go
+                // back to sleep.
+                WAITING | READY => continue,
                 NOTIFIED => Ok(()),
                 INTERRUPTED => Err(WakeReason::Interrupted),
-                _ => panic!("Unexpected event state: {effective_state}"),
+                _ => panic!("Unexpected event state: {state}"),
             };
             self.reset();
             return res;
@@ -406,7 +447,10 @@ mod test {
         let event = Arc::new(InterruptibleEvent::new());
 
         let (root_thread_handle, root_thread_koid) = fuchsia_runtime::with_thread_self(|thread| {
-            (thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(), thread.koid().unwrap())
+            (
+                Arc::new(thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                thread.koid().unwrap(),
+            )
         });
 
         let event_for_blocked_thread = event.clone();
@@ -444,8 +488,8 @@ mod test {
 
     #[test]
     fn concurrent_wait_wake_assign_new_owner_stress_test() {
-        let (root_thread_handle, _) = fuchsia_runtime::with_thread_self(|thread| {
-            (thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(), thread.koid().unwrap())
+        let root_thread_handle = fuchsia_runtime::with_thread_self(|thread| {
+            Arc::new(thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
         });
 
         for _ in 0..200 {
@@ -457,8 +501,7 @@ mod test {
             let event_waker = event.clone();
             let barrier_assign = barrier.clone();
             let barrier_waker = barrier.clone();
-            let thread_handle =
-                root_thread_handle.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+            let thread_handle = Arc::clone(&root_thread_handle);
 
             let waiter = std::thread::spawn(move || {
                 let guard = event_waiter.begin_wait();
@@ -483,5 +526,39 @@ mod test {
             waker.join().unwrap();
             waiter.join().unwrap();
         }
+    }
+
+    #[test]
+    fn futex_ownership_is_transferred_when_requeued_before_block() {
+        let event = InterruptibleEvent::new();
+
+        let (root_thread_handle, root_thread_koid) = fuchsia_runtime::with_thread_self(|thread| {
+            (
+                Arc::new(thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                thread.koid().unwrap(),
+            )
+        });
+
+        let event_for_blocked_thread = Arc::clone(&event);
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel();
+        let blocked_thread = std::thread::spawn(move || {
+            let guard = event_for_blocked_thread.begin_wait();
+            ready_tx.send(()).unwrap();
+            go_rx.recv().unwrap();
+            guard.block_until(None, zx::MonotonicInstant::INFINITE).unwrap();
+        });
+
+        // Call `assign_new_owner` after `begin_wait()`, before the thread calls `block_until()`.
+        ready_rx.recv().unwrap();
+        event.assign_new_owner(&root_thread_handle).unwrap();
+        go_tx.send(()).unwrap();
+
+        while event.get_owner() != Some(root_thread_koid) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        event.notify();
+        blocked_thread.join().unwrap();
     }
 }

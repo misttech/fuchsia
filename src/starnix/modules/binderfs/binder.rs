@@ -1336,7 +1336,7 @@ impl BinderDriver {
     fn get_active_command(
         thread_state: &mut BinderThreadState,
         proc_state: &mut crate::process::BinderProcessState,
-        worker_thread: &zx::Thread,
+        worker_thread: &Arc<zx::Thread>,
         available_buffer_len: usize,
         wait_for_proc_work: bool,
         is_first_command: bool,
