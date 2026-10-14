@@ -665,6 +665,9 @@ impl<'slot, 'a, O: StateOption<ChainLockTransaction>> Drop for SingleChainLockSc
 #[macro_export]
 macro_rules! single_chain_lock_guard {
     ($guard:ident, $option:expr, $lock:expr, $callsite_info:expr $(,)?) => {
+        let __single_cl_guard_option = $option;
+        let __single_cl_guard_lock = $lock;
+        let __single_cl_guard_callsite_info = $callsite_info;
         let mut __single_cl_guard_slot = ::core::mem::MaybeUninit::uninit();
         // SAFETY: `__single_cl_guard_scope` is bound in the same lexical scope immediately after
         // `__single_cl_guard_slot` and cannot be named or passed to `core::mem::forget` by the
@@ -672,9 +675,9 @@ macro_rules! single_chain_lock_guard {
         let __single_cl_guard_scope = unsafe {
             $crate::kconcurrent::SingleChainLockGuard::new_in_place(
                 &mut __single_cl_guard_slot,
-                $option,
-                $lock,
-                $callsite_info,
+                __single_cl_guard_option,
+                __single_cl_guard_lock,
+                __single_cl_guard_callsite_info,
             )
         };
         #[allow(unused_variables)]
@@ -873,6 +876,23 @@ mod tests {
         expect_true!(eager_scope_ok);
         assert_false!(ints_disabled());
         expect_eq!(eager_resched_disable_count(), initial_eager);
+        expect_true!(lock.is_unlocked());
+
+        {
+            let lock_ptr: *const ChainLock = &lock;
+            // SAFETY: `lock_ptr` points to the live stack `lock`. Passing an `unsafe`
+            // expression as `$lock` verifies `single_chain_lock_guard!` evaluates its
+            // arguments outside its internal `unsafe` block without `unused_unsafe`.
+            single_chain_lock_guard!(
+                guard,
+                IRQ_SAVE_OPTION,
+                unsafe { &*lock_ptr },
+                clt_tag!("single_unsafe_expr")
+            );
+            expect_true!(ints_disabled());
+            expect_true!(lock.is_held(guard.token()));
+        }
+        assert_false!(ints_disabled());
         expect_true!(lock.is_unlocked());
     }
 
