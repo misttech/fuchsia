@@ -501,8 +501,15 @@ Ok(())
 - **Copied and Narrating Comments**: Do not copy a neighboring block's comment
   onto different code, or add comments noting where code was ported from.
   Comments on new Rust code are fine where they explain something the code does
-  not make obvious, such as why an `unsafe` block is sound or why the code
-  departs from the C++.
+  not make obvious, such as why an `unsafe` block is sound or why the code is
+  written the way it is (without describing C++ the change deletes; see below).
+- **No References to Deleted C++**: A comment may name C++ that stays in the
+  tree, such as an FFI counterpart or a C++ type the Rust binds to. It must not
+  describe C++ that the same change deletes ("like the C++ global was", "the C++
+  enum's `None` is omitted", "unlike `c_str()`"), because the comment stops
+  being true once the change lands. Explain a departure in present terms
+  ("statically initialized so it is usable during early boot") and put the
+  comparison with the old C++ in the commit message or the review thread.
 
 ### 3.16. Code Formatting & Line Length Limits
 - **100-Character Line Limit**: All lines in Rust (`.rs`) and C++ (`.cc`, `.h`)
@@ -685,7 +692,8 @@ Reviewers and Coders must audit code against this checklist:
 46.  [ ] **Invented C++ Methods**: FFI shims expose existing C++ methods rather
      than new ones added for the port.
 47.  [ ] **Copied and Narrating Comments**: No comment copied from a neighboring
-     block onto different code, and no "ported from" notes.
+     block onto different code, no "ported from" notes, and no comment that
+     describes or compares against C++ deleted by the same change.
 48.  [ ] **C-Style Out-Parameters on Rust Methods**: Rust methods do not retain
      C-style `&mut T` out-parameters paired with `bool` or `Status` returns when
      returning `Option<T>` or `Result<T, Status>` by value is possible (any
