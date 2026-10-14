@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fsverity-merkle",
+    srcs = [
+        "src/builder.rs",
+        "src/lib.rs",
+        "src/tree.rs",
+        "src/util.rs",
+        "src/verifier.rs",
+    ],
+    edition = "2024",
+    test_deps = [
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+    visibility = [
+        "//sdk/lib/zxio/tests:__pkg__",
+        "//src/storage/f2fs_reader:__pkg__",
+        "//src/storage/fxfs:__subpackages__",
+        "//src/storage/lib/dm_verity:__pkg__",
+    ],
+    with_host_unit_tests = True,
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx-status",
+        "//src/lib/mundane",
+        "//src/storage/lib/ptr_slice",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
