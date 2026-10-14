@@ -685,3 +685,62 @@ func TestCheck(t *testing.T) {
 		})
 	}
 }
+
+func TestBotanistErrorPrefixCheck(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		checkString string
+		log         string
+		shouldMatch bool
+	}{
+		{
+			name:        "matches catch-all botanist failed check",
+			checkString: "botanist ERROR: botanist failed",
+			log:         "2026-10-01 19:53:55.445836 botanist: run.go:839: botanist ERROR: botanist failed: some error\n",
+			shouldMatch: true,
+		},
+		{
+			name:        "matches bare botanist error line",
+			checkString: "botanist ERROR: botanist failed",
+			log:         "botanist ERROR: botanist failed: some error\n",
+			shouldMatch: true,
+		},
+		{
+			name:        "specific botanist ERROR check matches unwrapped error",
+			checkString: "botanist ERROR: start target error",
+			log:         "2026-10-01 19:53:55.445836 botanist: run.go:839: botanist ERROR: start target error: FFX command failed\n",
+			shouldMatch: true,
+		},
+		{
+			name:        "specific botanist ERROR check matches when wrapped by botanist failed",
+			checkString: "botanist ERROR: start target error",
+			log:         "2026-10-01 19:53:55.445836 botanist: run.go:839: botanist ERROR: botanist failed: start target error: FFX command failed\n",
+			shouldMatch: true,
+		},
+		{
+			name:        "specific botanist ERROR check does not match inner wrapped error",
+			checkString: "botanist ERROR: timed out trying to connect to ssh",
+			log:         "2026-10-01 19:53:55.445836 botanist: run.go:839: botanist ERROR: botanist failed: failed to run snapshot over ssh: timed out trying to connect to ssh\n",
+			shouldMatch: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := stringInLogCheck{
+				String: tc.checkString,
+				Type:   swarmingOutputType,
+			}
+			to := TestingOutputs{
+				SwarmingOutput: []byte(tc.log),
+				SwarmingSummary: &SwarmingTaskSummary{
+					Results: &SwarmingRpcsTaskResult{
+						TaskId: "abc",
+						State:  "COMPLETED",
+					},
+				},
+			}
+			if got := c.Check(&to); got != tc.shouldMatch {
+				t.Errorf("c.Check() for %q on %q = %t, want %t", tc.checkString, tc.log, got, tc.shouldMatch)
+			}
+		})
+	}
+}

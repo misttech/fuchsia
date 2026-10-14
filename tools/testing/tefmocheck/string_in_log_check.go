@@ -12,9 +12,12 @@ import (
 	"slices"
 	"strings"
 
+	"go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
+
+const botanistErrorPrefix = "botanist ERROR: "
 
 // stringInLogCheck checks if String is found in the log named LogName.
 type stringInLogCheck struct {
@@ -265,7 +268,19 @@ func (c *stringInLogCheck) checkBytes(toCheck []byte, start int, end int) (bool,
 			return false, nil
 		}
 	}
-	stringBytes := []byte(c.String)
+	if found, line := c.checkBytesForString(toCheck, start, end, c.String); found {
+		return true, line
+	}
+	if after, ok := strings.CutPrefix(c.String, botanistErrorPrefix); ok {
+		wrapped := botanistErrorPrefix + constants.BotanistFailedMsg + ": " + after
+		return c.checkBytesForString(toCheck, start, end, wrapped)
+	}
+	return false, nil
+}
+
+func (c *stringInLogCheck) checkBytesForString(toCheck []byte, start int, end int, s string) (bool, []byte) {
+	toCheckBlock := toCheck[start:end]
+	stringBytes := []byte(s)
 	if len(c.ExceptBlocks) == 0 {
 		if idx := bytes.Index(toCheckBlock, stringBytes); idx != -1 {
 			line := getLine(toCheckBlock, idx)
