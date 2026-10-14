@@ -1397,6 +1397,29 @@ mod test {
     }
 
     #[fuchsia::test]
+    async fn upload_inline_large_command() {
+        // 120 bytes of data -> 160 bytes of Base64, exceeding the legacy 64-byte packet limit.
+        let data = &[b'a'; 120];
+        let cmds = run_upload_file(
+            data,
+            UploadMethod::Inline {
+                command_prefix: "cmdline add iris.ssh_creds=".to_string(),
+                command_max_length: 256,
+                init_command: Some("cmdline set".to_string()),
+                finalize_command: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let expected_data = BASE64_STANDARD.encode(data);
+        assert_eq!(
+            cmds,
+            ["oem cmdline set", &format!("oem cmdline add iris.ssh_creds={expected_data}")]
+        );
+    }
+
+    #[fuchsia::test]
     async fn upload_inline_overflow() {
         let err = run_upload_file(
             b"foo",
