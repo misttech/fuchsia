@@ -54,7 +54,7 @@ impl BlobSink for TraceBufferSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MAX_BLOB_PAYLOAD_SIZE;
+    use crate::packet_forwarder::MAX_BLOB_PAYLOAD_SIZE;
     use crate::testing::{TRACE_BUFFER_SIZE, TraceSession, lock_trace_engine, test_bytes};
 
     #[fuchsia::test]

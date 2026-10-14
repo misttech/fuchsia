@@ -4,7 +4,8 @@
 
 #![recursion_limit = "256"]
 
-use crate::blob_sink::{BlobSink, TraceBufferSink, WriteAttempt};
+use crate::blob_sink::TraceBufferSink;
+use crate::packet_forwarder::{MonotonicClock, PacketForwarder};
 use anyhow::bail;
 use fuchsia_trace::{BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state};
 use fuchsia_trace_observer::TraceObserver;
@@ -33,76 +34,11 @@ use starnix_uapi::errors::Errno;
 
 mod atrace;
 mod blob_sink;
+mod packet_forwarder;
 #[cfg(test)]
 mod testing;
 
 const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
-
-/// Maximum number of Perfetto bytes carried by one FXT blob record.
-///
-/// The drain writes each Perfetto packet, framed as a field of a `Trace` message, as one
-/// record, and splits only framed packets longer than this limit. Packets can be that long:
-/// upstream traced_probes can put the ftrace events from several ring-buffer pages into one
-/// `FtraceEventBundle` packet.
-///
-/// The value balances these limits:
-/// - An FXT blob record holds at most `fxt::MAX_RECORD_SIZE_WORDS` words: the header word,
-///   the inline blob name and the payload, each padded to 8 bytes (see
-///   [`fxt::blob::build_blob_record()`]).
-/// - Bigger blobs split a long packet into fewer records, so there is less header and name
-///   overhead per byte.
-/// - A record that does not fit in the rest of the current rolling buffer goes into the next
-///   one, and the rest of the current one stays unused, so each buffer switch can waste up to
-///   one record. With trace_manager's minimum default trace buffer, 1 MiB, each rolling
-///   buffer is about 480 KiB, so a 4 KiB blob wastes under 1% of one. A per-provider buffer
-///   size is also a whole number of MiB, so every provider buffer that can hold records is
-///   at least that large.
-const MAX_BLOB_PAYLOAD_SIZE: usize = 4096;
-
-/// Writes `data` to `sink` as Perfetto blob records, split into chunks of at most
-/// `MAX_BLOB_PAYLOAD_SIZE` bytes. Each chunk is written by [`forward_blob()`] with
-/// `retry_on_full`.
-///
-/// Returns the number of payload bytes written (`data.len()`), or `None` if a chunk was
-/// dropped. Chunks written before the dropped one stay in the trace buffer, and later chunks
-/// are not attempted.
-fn forward_packet(sink: &mut impl BlobSink, retry_on_full: bool, data: &[u8]) -> Option<usize> {
-    let mut bytes_written = 0;
-    for chunk in data.chunks(MAX_BLOB_PAYLOAD_SIZE) {
-        forward_blob(sink, retry_on_full, chunk)?;
-        bytes_written += chunk.len();
-    }
-    Some(bytes_written)
-}
-
-/// Writes `blob_data` to `sink` as one Perfetto blob record. With `retry_on_full`, waits
-/// 100 ms and tries again for as long as the trace buffer is full.
-///
-/// Returns `None` if the record was dropped because the buffer is full and `retry_on_full` is
-/// false, no trace context is available, or `blob_data` does not fit in one record.
-fn forward_blob(sink: &mut impl BlobSink, retry_on_full: bool, blob_data: &[u8]) -> Option<()> {
-    loop {
-        match sink.try_write_blob(blob_data) {
-            WriteAttempt::Wrote => return Some(()),
-            WriteAttempt::TracingStopped => return None,
-            WriteAttempt::TooLong => return None,
-            // Only streaming mode retries. In oneshot mode a full buffer stays full. In circular
-            // mode trace-engine frees the other rolling buffer as soon as the last writer
-            // releases its context, so a full buffer is rare and usually short-lived. Losing
-            // the record is acceptable there, so drop it rather than wait.
-            WriteAttempt::BufferFull if !retry_on_full => return None,
-            WriteAttempt::BufferFull => {
-                // We're writing records pretty quick here, we're just forwarding data from
-                // perfetto with no breaks. trace_manager might not be able to keep up if it's
-                // also servicing other trace-providers. We want to back off if we find that we
-                // run out of space.
-                //
-                // TODO(b/304532640)
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-        }
-    }
-}
 
 /// State needed to act upon trace state changes.
 struct CallbackState {
@@ -360,7 +296,8 @@ impl CallbackState {
                     };
                     context.buffering_mode() == BufferingMode::Streaming
                 };
-                let mut sink = TraceBufferSink;
+                let mut forwarder =
+                    PacketForwarder::new(TraceBufferSink, MonotonicClock, retry_on_full);
 
                 // IPC responses may be spread across multiple frames, so loop until we get a
                 // message that indicates it is the last one. Additionally, if there are
@@ -407,18 +344,17 @@ impl CallbackState {
                                     let rewritten =
                                         self.rewrite_pids(&blob_data).unwrap_or(blob_data);
 
-                                    // Ignore a failure to write the packet here. We don't
-                                    // return immediately because we want to allow the
-                                    // remaining records to be recorded as dropped.
-                                    //
-                                    // Once we fill a buffer in oneshot mode, we expect to drop
-                                    // the remaining packets here.
-                                    //
-                                    // Rather than logging here, allow the trace system to
-                                    // aggregate the number of records dropped and we can query
-                                    // the trace system later to determine if we dropped
-                                    // records when it's more efficient to do so.
-                                    let _ = forward_packet(&mut sink, retry_on_full, &rewritten);
+                                    // A packet that can't be written in full is counted as
+                                    // dropped, and we move on to the next one: in oneshot mode
+                                    // a smaller packet may still fit. If the packet spans
+                                    // several blobs, the ones written before the failure stay
+                                    // in the trace buffer. trace_processor joins all Perfetto
+                                    // blob payloads into one proto stream, so it then reads the
+                                    // packets after the cut-off one as the rest of it, which
+                                    // corrupts the rest of the Perfetto data in the trace.
+                                    // TODO(b/571694521): Stop the drain at a cut-off packet
+                                    // (fxr/1881111).
+                                    forwarder.forward_packet(&rewritten);
                                 }
                             }
                         } else {
@@ -440,8 +376,12 @@ impl CallbackState {
                     .connection(current_task)?
                     .free_buffers(current_task, FreeBuffersRequest { buffer_ids: vec![0] })?;
                 let elapsed = start_time.elapsed().as_millis();
+                let PacketForwarder { packets_written, packets_dropped, bytes_dropped, .. } =
+                    forwarder;
                 log_info!(
-                    "Perfetto frames copied, dropping prolonged trace context. Processing took {elapsed} ms"
+                    "Perfetto frames copied, dropping prolonged trace context. Processing took \
+                     {elapsed} ms. Packets written: {packets_written}, dropped: {packets_dropped} \
+                     ({bytes_dropped} bytes)"
                 );
             }
             TraceState::Stopped => {
@@ -664,139 +604,8 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{TraceSession, lock_trace_engine, test_bytes};
+    use crate::testing::{TraceSession, lock_trace_engine};
     use starnix_core::testing::spawn_kernel_and_run;
-    use std::collections::VecDeque;
-
-    /// A `BlobSink` that returns scripted write results.
-    struct FakeSink {
-        /// Results for the next attempts. Once empty, every attempt returns `default_result`.
-        scripted_results: VecDeque<WriteAttempt>,
-        default_result: WriteAttempt,
-        attempts: usize,
-        written: Vec<Vec<u8>>,
-    }
-
-    impl FakeSink {
-        fn new(scripted_results: &[WriteAttempt], default_result: WriteAttempt) -> Self {
-            Self {
-                scripted_results: scripted_results.iter().copied().collect(),
-                default_result,
-                attempts: 0,
-                written: Vec::new(),
-            }
-        }
-    }
-
-    impl BlobSink for FakeSink {
-        fn try_write_blob(&mut self, blob_data: &[u8]) -> WriteAttempt {
-            self.attempts += 1;
-            let result = self.scripted_results.pop_front().unwrap_or(self.default_result);
-            if result == WriteAttempt::Wrote {
-                self.written.push(blob_data.to_vec());
-            }
-            result
-        }
-    }
-
-    #[fuchsia::test]
-    fn forward_packet_splits_packet_into_chunks() {
-        let data = test_bytes(2 * MAX_BLOB_PAYLOAD_SIZE + 10);
-        let mut sink = FakeSink::new(&[], WriteAttempt::Wrote);
-
-        assert_eq!(
-            forward_packet(&mut sink, true, &data),
-            Some(data.len()),
-            "forward_packet(len {})",
-            data.len()
-        );
-
-        let lens: Vec<usize> = sink.written.iter().map(Vec::len).collect();
-        assert_eq!(
-            lens,
-            vec![MAX_BLOB_PAYLOAD_SIZE, MAX_BLOB_PAYLOAD_SIZE, 10],
-            "forward_packet(len {}) blob lengths",
-            data.len()
-        );
-        assert_eq!(sink.written.concat(), data, "forward_packet(len {}) bytes", data.len());
-    }
-
-    #[fuchsia::test]
-    fn forward_packet_chunk_boundaries() {
-        let cases: [(usize, &[usize]); 4] = [
-            (0, &[]),
-            (MAX_BLOB_PAYLOAD_SIZE, &[MAX_BLOB_PAYLOAD_SIZE]),
-            (MAX_BLOB_PAYLOAD_SIZE + 1, &[MAX_BLOB_PAYLOAD_SIZE, 1]),
-            (2 * MAX_BLOB_PAYLOAD_SIZE, &[MAX_BLOB_PAYLOAD_SIZE; 2]),
-        ];
-        for (len, expected_lens) in cases {
-            let data = test_bytes(len);
-            let mut sink = FakeSink::new(&[], WriteAttempt::Wrote);
-
-            assert_eq!(
-                forward_packet(&mut sink, true, &data),
-                Some(len),
-                "forward_packet(len {len})"
-            );
-
-            assert_eq!(sink.attempts, expected_lens.len(), "forward_packet(len {len}) attempts");
-            let lens: Vec<usize> = sink.written.iter().map(Vec::len).collect();
-            assert_eq!(lens, expected_lens, "forward_packet(len {len}) blob lengths");
-            assert_eq!(sink.written.concat(), data, "forward_packet(len {len}) bytes");
-        }
-    }
-
-    #[fuchsia::test]
-    fn forward_packet_waits_for_streaming_buffer_space() {
-        // `forward_blob()` sleeps on the real clock for 100 ms after each full attempt, so this
-        // test takes at least 200 ms.
-        // TODO(b/571694521): Use a fake clock (fxr/1881109).
-        let data = test_bytes(10);
-        let mut sink = FakeSink::new(&[WriteAttempt::BufferFull; 2], WriteAttempt::Wrote);
-        let start = std::time::Instant::now();
-
-        assert_eq!(
-            forward_packet(&mut sink, true, &data),
-            Some(data.len()),
-            "packet after 2 full attempts"
-        );
-
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed >= std::time::Duration::from_millis(200),
-            "packet after 2 full attempts: waited {elapsed:?}"
-        );
-        assert_eq!(sink.attempts, 3, "packet after 2 full attempts");
-        assert_eq!(sink.written, vec![data], "packet after 2 full attempts");
-    }
-
-    #[fuchsia::test]
-    fn forward_packet_stops_at_a_blob_that_cannot_be_written() {
-        // Only a full buffer with `retry_on_full` is retried. `TraceBufferSink` returns `TooLong`
-        // only for a blob that does not fit in one record, which `forward_packet()` never
-        // passes, so the fake stands in for it here to check that `forward_blob()` drops such a
-        // blob instead of retrying it.
-        let cases = [
-            (WriteAttempt::BufferFull, false),
-            (WriteAttempt::TracingStopped, true),
-            (WriteAttempt::TooLong, true),
-        ];
-        for (result, retry_on_full) in cases {
-            let data = test_bytes(2 * MAX_BLOB_PAYLOAD_SIZE + 10);
-            // Every attempt after the failed one would succeed.
-            let mut sink = FakeSink::new(&[WriteAttempt::Wrote, result], WriteAttempt::Wrote);
-            let case = format!("second chunk got {result:?}, retry_on_full {retry_on_full}");
-
-            assert_eq!(forward_packet(&mut sink, retry_on_full, &data), None, "{case}");
-
-            assert_eq!(sink.attempts, 2, "{case}: no retry, and no attempt for the third chunk");
-            assert_eq!(
-                sink.written,
-                vec![data[..MAX_BLOB_PAYLOAD_SIZE].to_vec()],
-                "{case}: only the first chunk is written"
-            );
-        }
-    }
 
     // The tests below run `CallbackState::on_state_change()` with and without a trace context.
     // They have no Perfetto consumer endpoint that answers EnableTracing, DisableTracing and
