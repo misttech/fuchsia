@@ -158,7 +158,7 @@ void profiler::ProfilerControllerImpl::Configure(ConfigureRequest& request,
     completer.Reply(fit::error(fuchsia_cpu_profiler::SessionConfigureError::kBadSocket));
     return;
   }
-  writer_ = std::make_unique<FxtWriter>(std::move(*request.output()));
+  writer_ = std::make_unique<FxtWriter>(std::move(*request.output()), dispatcher_);
 
   if (!request.config() || !request.config()->target()) {
     FX_LOGS(ERROR) << "No Target Specified and System Wide profiling isn't yet implemented!";
@@ -603,7 +603,8 @@ void profiler::ProfilerControllerImpl::Reset(ResetCompleter::Sync& completer) {
 void profiler::ProfilerControllerImpl::Reset() {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   sampler_.reset();
-  writer_.reset();
+  // Let any samples still buffered in the writer drain to the client before the socket is closed.
+  FxtWriter::FlushAndClose(std::move(writer_));
   searcher_ = elf_search::Searcher();
   targets_.Clear();
   state_ = ProfilingState::Unconfigured;

@@ -8,6 +8,7 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
 #include <lib/trace/event.h>
+#include <lib/zx/time.h>
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls.h>
 
@@ -15,6 +16,14 @@
 
 #include <trace-reader/reader.h>
 #include <trace-reader/records.h>
+
+namespace {
+// How often to move samples out of the kernel's per-CPU buffers. Each pass runs on the same
+// dispatcher that handles thread start/exit exceptions for the profiled tasks, so frequent, small
+// passes keep those exceptions (and the threads waiting on them) from queuing up behind a large
+// pass. It also keeps the per-CPU buffers from overflowing at high sample rates.
+constexpr zx::duration kServiceBuffersInterval = zx::msec(100);
+}  // namespace
 
 zx::result<std::unique_ptr<profiler::KernelSamplerSession>>
 profiler::KernelSamplerSession::CreateAndInit(const zx_sampler_config_t& config) {
@@ -67,7 +76,7 @@ void profiler::KernelSampler::ServiceBuffers() {
         ServiceBuffers();
       }
     });
-    service_buffers_task_.PostDelayed(dispatcher_, zx::sec(1));
+    service_buffers_task_.PostDelayed(dispatcher_, kServiceBuffersInterval);
   }
 }
 
@@ -300,12 +309,7 @@ void profiler::KernelSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__, "pid", pid, "tid", tid);
   // Before we start sampling the thread, make sure we've recorded information about its process
   if (!contexts_.contains(pid)) {
-    zx::result<ProcessTarget*> target = targets_.GetProcess(job_path, pid);
-    if (target.is_ok()) {
-      CacheModules(**target);
-    } else {
-      FX_PLOGS(ERROR, target.status_value()) << "Failed to search up process: " << pid;
-    }
+    ScheduleCacheModules(job_path, pid);
   }
 
   // Add the thread so we can later grab its address space and module information for

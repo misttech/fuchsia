@@ -27,6 +27,7 @@ source_set("lib") {
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_cpp",
+    "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",

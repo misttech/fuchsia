@@ -432,3 +432,64 @@ TEST(TargetsTest, PointLookupProcessAndThreadNames) {
   EXPECT_EQ(tree.GetThreadName(201), "t3");
   EXPECT_EQ(tree.GetThreadName(999), std::nullopt);
 }
+
+namespace {
+zx_koid_t GetKoid(const zx::object_base& object) {
+  zx_info_handle_basic_t info;
+  EXPECT_EQ(ZX_OK, object.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+  return info.koid;
+}
+}  // namespace
+
+// Every child job must be given its full ancestry, not just the first child visited. The job
+// paths built from this ancestry are how processes and threads discovered while profiling are added
+// to the tree, so a wrong ancestry silently drops their samples.
+TEST(TargetsTest, SiblingJobsGetAncestry) {
+  zx::job parent;
+  ASSERT_EQ(ZX_OK, zx::job::create(*zx::job::default_job(), 0, &parent));
+  const zx_koid_t parent_koid = GetKoid(parent);
+
+  constexpr size_t kNumChildren = 3;
+  std::vector<zx::job> children(kNumChildren);
+  std::vector<zx::job> grandchildren(kNumChildren);
+  for (size_t i = 0; i < kNumChildren; i++) {
+    ASSERT_EQ(ZX_OK, zx::job::create(parent, 0, &children[i]));
+    ASSERT_EQ(ZX_OK, zx::job::create(children[i], 0, &grandchildren[i]));
+  }
+
+  zx::job parent_dup;
+  ASSERT_EQ(ZX_OK, parent.duplicate(ZX_RIGHT_SAME_RIGHTS, &parent_dup));
+  elf_search::Searcher searcher;
+  zx::result<profiler::JobTarget> target = profiler::MakeJobTarget(std::move(parent_dup), searcher);
+  ASSERT_TRUE(target.is_ok());
+
+  ASSERT_EQ(target->child_jobs.size(), kNumChildren);
+  for (const auto& [child_koid, child] : target->child_jobs) {
+    EXPECT_EQ(child.ancestry, std::vector<zx_koid_t>{parent_koid});
+    ASSERT_EQ(child.child_jobs.size(), size_t{1});
+    EXPECT_EQ(child.child_jobs.begin()->second.ancestry,
+              (std::vector<zx_koid_t>{parent_koid, child_koid}));
+  }
+
+  // Each job's path (ancestry + its own koid) must address that job in the tree.
+  profiler::TargetTree tree;
+  ASSERT_TRUE(tree.AddJob(std::move(*target)).is_ok());
+  std::vector<std::vector<zx_koid_t>> job_paths;
+  ASSERT_TRUE(tree.ForEachJob([&job_paths](const profiler::JobTarget& job) {
+                    std::vector<zx_koid_t> path = job.ancestry;
+                    path.push_back(job.job_id);
+                    job_paths.push_back(std::move(path));
+                    return zx::ok();
+                  })
+                  .is_ok());
+  ASSERT_EQ(job_paths.size(), 1 + 2 * kNumChildren);
+
+  zx_koid_t fake_pid = 1;
+  for (const std::vector<zx_koid_t>& path : job_paths) {
+    const zx_koid_t pid = fake_pid++;
+    profiler::ProcessTarget process{zx::process{ZX_HANDLE_INVALID}, pid, "proc",
+                                    std::unordered_map<zx_koid_t, profiler::ThreadTarget>()};
+    EXPECT_TRUE(tree.AddProcess(path, std::move(process)).is_ok());
+    EXPECT_TRUE(tree.GetProcess(path, pid).is_ok());
+  }
+}

@@ -311,12 +311,7 @@ void profiler::Sampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   // Before we start sampling the thread, make sure we've recorded information about its process
   if (!contexts_.contains(pid)) {
-    zx::result<ProcessTarget*> target = targets_.GetProcess(job_path, pid);
-    if (target.is_ok()) {
-      CacheModules(**target);
-    } else {
-      FX_PLOGS(ERROR, target.status_value()) << "Failed to search up process: " << pid;
-    }
+    ScheduleCacheModules(job_path, pid);
   }
   std::string thread_name = profiler::GetThreadName(t);
   zx::result res = targets_.AddThread(
@@ -349,4 +344,26 @@ void profiler::Sampler::CacheModules(const ProcessTarget& p) {
     }
     contexts_[p.pid] = *modules;
   }
+}
+
+void profiler::Sampler::ScheduleCacheModules(std::vector<zx_koid_t> job_path, zx_koid_t pid) {
+  if (!pending_module_caches_.insert(pid).second) {
+    return;
+  }
+  async::PostTask(dispatcher_, [weak = GetWeakPtr(), job_path = std::move(job_path), pid]() {
+    if (!weak) {
+      return;
+    }
+    weak->pending_module_caches_.erase(pid);
+    if (weak->contexts_.contains(pid)) {
+      return;
+    }
+    zx::result<ProcessTarget*> target = weak->targets_.GetProcess(job_path, pid);
+    if (target.is_error()) {
+      // The process may have exited before we got to it.
+      FX_PLOGS(DEBUG, target.status_value()) << "Failed to search up process: " << pid;
+      return;
+    }
+    weak->CacheModules(**target);
+  });
 }

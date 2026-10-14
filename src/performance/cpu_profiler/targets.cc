@@ -319,7 +319,8 @@ zx::result<profiler::JobTarget> profiler::MakeJobTarget(zx::job job,
         FX_PLOGS(WARNING, child_job_target.status_value()) << "failed to make job_target";
         continue;
       }
-      child_job_target->ancestry = std::move(child_job_ancestry);
+      // MakeJobTarget has already given the child `child_job_ancestry`. Don't move from it here:
+      // it's shared by every child of this job.
       child_job_targets.try_emplace(child_koid, std::move(*child_job_target));
     }
   }
