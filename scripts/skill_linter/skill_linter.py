@@ -42,6 +42,8 @@ class BlockedWordRule:
 
 DEFAULT_GOOGLE3_HEAD_GCL_PATH = "/google/src/files/head/depot/google3/devtools/gerritcodereview/banned_words/fuchsia/common.gcl"
 
+_LINK_REFERENCE_RE = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*")
+
 DEFAULT_POLICY_REL_PATHS = [
     os.path.join("vendor", "google", ".agents", "blocked_words.json"),
     os.path.join("vendor", "google", ".agents", "blocked_words.yaml"),
@@ -1029,6 +1031,11 @@ def format_markdown_with_issues(
             formatted_lines.append(line)
             continue
 
+        if _LINK_REFERENCE_RE.match(stripped_line):
+            flush_paragraph()
+            formatted_lines.append(line)
+            continue
+
         if re.search(r"^\s*([-*+]|\d+\.)\s+", line):
             flush_paragraph()
             current_paragraph.append(line)
@@ -1066,6 +1073,8 @@ def format_markdown_with_issues(
         if in_code_block:
             continue
         if not stripped:
+            continue
+        if _LINK_REFERENCE_RE.match(stripped):
             continue
         if len(line) > width:
             has_long_lines = True

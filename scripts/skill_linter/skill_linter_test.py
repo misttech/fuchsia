@@ -175,6 +175,28 @@ class TestSkillLinter(unittest.TestCase):
         self.assertIn("consecutive empty lines", issues)
         self.assertIn("trailing whitespace", issues)
 
+    def test_format_markdown_link_reference_definitions_not_merged(
+        self,
+    ) -> None:
+        text = (
+            "Paragraph before links.\n\n"
+            "[ref-a]: https://example.com/a\n"
+            "[ref-b]: https://example.com/b\n"
+            "[ref-c]: https://example.com/very/long/url/that/exceeds/the/specified/maximum/width/and/should/not/be/flagged/as/long/line\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(
+            text, width=40
+        )
+        self.assertEqual(issues, [])
+        self.assertIn("[ref-a]: https://example.com/a\n", formatted)
+        self.assertIn("[ref-b]: https://example.com/b\n", formatted)
+        self.assertIn(
+            "[ref-c]: https://example.com/very/long/url/that/exceeds/the/specified/maximum/width/and/should/not/be/flagged/as/long/line\n",
+            formatted,
+        )
+        # Ensure definitions are not concatenated on the same line
+        self.assertNotIn("[ref-a]: https://example.com/a [ref-b]:", formatted)
+
     def test_load_blocked_words_policy(self) -> None:
         # 1. Test JSON structured format
         json_content = """{
