@@ -9,4 +9,6 @@ platforms:
 ffx component explore msd --tools fuchsia-pkg://fuchsia.com/magma-debug-utils -c "magma-debug-utils --count=1 --power-state=0,1"
 ```
 
+`--frequency-state=N` requests frequency state N from drivers that support it.
+
 Note: Make sure to rerun `fx build` after making changes to this file!
