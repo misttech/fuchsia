@@ -11,7 +11,7 @@ use std::sync::{Arc, Weak};
 use storage_device::buffer::OwnedBuffer;
 use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
 
-const DEFAULT_BUFFER_POOL_CAPACITY: usize = 64 * 1024;
+const DEFAULT_BUFFER_POOL_CAPACITY: usize = MAX_READ_BUFFER_SIZE * 16;
 
 /// Default fallback implementation of [`BlockService`] for
 /// [`callback_interface::Interface`] backends (such as C++ drivers / virtio-block)
