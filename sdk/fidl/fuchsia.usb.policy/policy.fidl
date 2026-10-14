@@ -145,4 +145,9 @@ open protocol Configuration {
     flexible DisconnectCable(struct {
         duration zx.Duration;
     }) -> () error zx.Status;
+
+    /// Reconnects the Type-C port CC lines via the USB power debug service after
+    /// a previous `DisconnectCable` call, cancelling any pending automatic
+    /// reconnect alarm.
+    flexible ConnectCable() -> () error zx.Status;
 };
