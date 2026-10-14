@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "blob_metadata",
+    srcs = [
+        "src/lib.rs",
+        "src/zerocopy_serialization.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/storage/fxfs:__pkg__",
+        "//src/storage/lib:__subpackages__",
+    ],
+    with_unit_tests = True,
+    deps = [
+        "//src/storage/type-fprint:fprint",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
