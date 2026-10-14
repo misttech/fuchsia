@@ -69,7 +69,6 @@ use std::mem::MaybeUninit;
 use std::ops::{ControlFlow, Deref, DerefMut, Range, RangeBounds};
 use std::sync::{Arc, LazyLock, Weak};
 use zerocopy::IntoBytes;
-use zx::{Rights, VmoChildOptions};
 
 pub const ZX_VM_SPECIFIC_OVERWRITE: zx::VmarFlags =
     zx::VmarFlags::from_bits_retain(zx::VmarFlagsExtended::SPECIFIC_OVERWRITE.bits());
@@ -152,17 +151,18 @@ pub static PAGE_SIZE: LazyLock<u64> = LazyLock::new(|| zx::system_get_page_size(
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct MappingOptions: u16 {
-      const SHARED      = 1 << 0;
-      const ANONYMOUS   = 1 << 1;
-      const LOWER_32BIT = 1 << 2;
-      const GROWSDOWN   = 1 << 3;
-      const ELF_BINARY  = 1 << 4;
-      const DONTFORK    = 1 << 5;
-      const WIPEONFORK  = 1 << 6;
-      const DONT_SPLIT  = 1 << 7;
-      const DONT_EXPAND = 1 << 8;
-      const POPULATE    = 1 << 9;
+    pub struct MappingOptions: u32 {
+      const SHARED            = 1 << 0;
+      const ANONYMOUS         = 1 << 1;
+      const LOWER_32BIT       = 1 << 2;
+      const GROWSDOWN         = 1 << 3;
+      const ELF_BINARY        = 1 << 4;
+      const DONTFORK          = 1 << 5;
+      const WIPEONFORK        = 1 << 6;
+      const DONT_SPLIT        = 1 << 7;
+      const DONT_EXPAND       = 1 << 8;
+      const LAZY_PRIVATE_FILE = 1 << 9;
+      const POPULATE          = 1 << 10;
     }
 }
 
@@ -1448,64 +1448,69 @@ impl MemoryManagerState {
         };
 
         let mapping_context = &current_task.mm()?.mapping_context;
-        let mut has_lazy = false;
-        let mut range_list = SmallVec::<[(Range<UserAddress>, Mapping); 1]>::new();
 
-        for (range, mapping) in self.mappings.range(prot_range.clone()) {
-            if mapping.mapping_mode() == MappingMode::Lazy
-                && mapping.flags().access_flags() != prot_flags
-            {
-                has_lazy = true;
-                break;
-            }
-            range_list.push((range.clone(), mapping.clone()));
-        }
-
-        if has_lazy {
-            let length = prot_range.end - prot_range.start;
-            self.ensure_range_mapped_in_user_vmar(prot_range.start, Some(length), mapping_context)?;
-            range_list.clear();
-            for (range, mapping) in self.mappings.range(prot_range.clone()) {
-                range_list.push((range.clone(), mapping.clone()));
-            }
-        }
-
-        let mut start_cursor = prot_range.start;
-        let mut updates = SmallVec::<[(Range<UserAddress>, Mapping); 1]>::new();
-        let mut final_result = Ok(());
-
-        for (range, mapping) in range_list {
-            if range.start > start_cursor {
-                final_result = error!(ENOMEM);
-                break;
+        // Like Linux, apply the protection change one mapping at a time and stop at the first
+        // failure. Mappings preceding the failure keep their new protection. Walk the range with a
+        // cursor rather than an iterator, since each step mutates `self.mappings`.
+        let mut cursor = prot_range.start;
+        while cursor < prot_range.end {
+            let Some((range, mapping)) = self.mappings.range(cursor..prot_range.end).next() else {
+                return error!(ENOMEM);
+            };
+            if range.start > cursor {
+                return error!(ENOMEM);
             }
 
             let intersection = range.intersect(&prot_range);
-            if let Err(e) =
-                security::file_mprotect(current_task, &intersection, &mapping, prot_flags)
-            {
-                final_result = Err(e);
-                break;
-            }
+            security::file_mprotect(current_task, &intersection, mapping, prot_flags)?;
 
             if mapping.flags().contains(MappingFlags::UFFD) {
                 track_stub!(
                     TODO("https://fxbug.dev/297375964"),
                     "mprotect on uffd-registered range should not alter protections"
                 );
-                final_result = error!(EINVAL);
-                break;
+                return error!(EINVAL);
             }
 
-            let old_access_flags = mapping.flags().access_flags();
-            if old_access_flags != prot_flags {
-                let mapped_len = intersection.end - intersection.start;
+            if mapping.flags().access_flags() != prot_flags {
+                let range = range.clone();
+                let mut mapping = mapping.clone();
+
+                // Adding write access to a read-only private file mapping requires a
+                // copy-on-write child of the file VMO. Promotion doesn't change the mapping's
+                // access flags, so the protection is still updated below.
+                if prot_flags.contains(ProtectionFlags::WRITE)
+                    && Self::can_promote_lazy_private(&mapping, prot_flags)
+                {
+                    mapping = self.promote_to_private_child(
+                        current_task.kernel(),
+                        mapping_context,
+                        range.clone(),
+                        mapping,
+                        released_mappings,
+                    )?;
+                }
+
+                // A lazily-mapped mapping (e.g. after `fork()`) must be mapped in the user VMAR
+                // before its protection can be changed. Do this only now, after any promotion, so
+                // the file VMO isn't mapped just to be overwritten by its child, and so mappings
+                // past an earlier failure are left untouched.
+                if mapping.mapping_mode() == MappingMode::Lazy {
+                    self.ensure_range_mapped_in_user_vmar(
+                        range.start,
+                        Some(range.end - range.start),
+                        mapping_context,
+                    )?;
+                    // Keep the local copy in sync, since it is written back to `self.mappings`
+                    // below.
+                    mapping.set_mapping_mode(MappingMode::Eager);
+                }
 
                 // SAFETY: This is safe because it's performed on the restricted vmar.
-                let protect_result = unsafe {
+                unsafe {
                     mapping_context.user_vmar.protect(
                         intersection.start.ptr(),
-                        mapped_len,
+                        intersection.end - intersection.start,
                         vmar_flags,
                     )
                 }
@@ -1514,30 +1519,86 @@ impl MemoryManagerState {
                     zx::Status::NOT_FOUND => errno!(ENOMEM),
                     zx::Status::ACCESS_DENIED => errno!(EACCES),
                     _ => impossible_error(s),
-                });
+                })?;
 
-                if let Err(e) = protect_result {
-                    final_result = Err(e);
-                    break;
-                }
-
-                let mut new_mapping = mapping;
-                new_mapping.set_flags(new_mapping.flags().with_access_flags(prot_flags));
-                let push_range = intersection.clone();
-                updates.push((push_range, new_mapping));
+                mapping.set_flags(mapping.flags().with_access_flags(prot_flags));
+                released_mappings.extend(self.mappings.insert(intersection.clone(), mapping));
             }
-            start_cursor = intersection.end;
+
+            cursor = intersection.end;
         }
 
-        if final_result.is_ok() && start_cursor < prot_range.end {
-            final_result = error!(ENOMEM);
-        }
+        Ok(())
+    }
 
-        for (r, m) in updates {
-            released_mappings.extend(self.mappings.insert(r, m));
+    /// Returns whether `mapping` is a `LAZY_PRIVATE_FILE` mapping that should be promoted to a
+    /// copy-on-write child VMO before applying `prot_flags`.
+    ///
+    /// Mappings whose memory lacks `EXECUTE` rights are not promoted when `prot_flags` requests
+    /// `PROT_EXEC`, since the protection change will fail with `EACCES` regardless.
+    fn can_promote_lazy_private(mapping: &Mapping, prot_flags: ProtectionFlags) -> bool {
+        if !mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE) {
+            return false;
         }
+        let MappingBacking::Memory(backing) = mapping.get_backing_internal() else {
+            return false;
+        };
+        !prot_flags.contains(ProtectionFlags::EXEC)
+            || backing.memory().get_rights().contains(zx::Rights::EXECUTE)
+    }
 
-        final_result
+    /// Moves the private `mapping` covering `range` onto a new copy-on-write child of its backing
+    /// memory, returning the updated mapping.
+    ///
+    /// This is used to make a private mapping writable when its current backing memory isn't,
+    /// e.g. a `LAZY_PRIVATE_FILE` mapping backed directly by the file VMO. Any
+    /// `LAZY_PRIVATE_FILE` flag is cleared.
+    ///
+    /// Only the memory backing the mapping changes; its access flags are preserved, so this is not
+    /// observable by userspace. If the mapping is locked, the mlock pin is moved to the new
+    /// backing. A lazily-mapped mapping stays lazily mapped, now backed by the child.
+    fn promote_to_private_child(
+        &mut self,
+        kernel: &Kernel,
+        context: &MappingContext,
+        range: Range<UserAddress>,
+        mut mapping: Mapping,
+        released_mappings: &mut ReleasedMappings,
+    ) -> Result<Mapping, Errno> {
+        debug_assert!(!mapping.flags().contains(MappingFlags::SHARED));
+        let MappingBacking::Memory(backing) = mapping.get_backing_internal() else {
+            unreachable!("only memory-backed mappings can be promoted to a private child");
+        };
+        let child_memory = Arc::new(
+            backing
+                .memory()
+                .create_private_child()
+                .map_err(MemoryManager::get_errno_for_vmo_err)?,
+        );
+
+        let memory_offset = mapping.address_to_offset(range.start);
+        let flags = mapping.flags().difference(MappingFlags::LAZY_PRIVATE_FILE);
+        if mapping.mapping_mode() == MappingMode::Eager {
+            context.map_in_user_vmar(
+                SelectedAddress::FixedOverwrite(range.start),
+                &child_memory,
+                memory_offset,
+                range.end - range.start,
+                flags,
+                false,
+            )?;
+        }
+        mapping.set_backing_internal(MappingBacking::Memory(Box::new(MappingBackingMemory::new(
+            range.start,
+            child_memory,
+            memory_offset,
+        ))));
+        mapping.set_flags(flags);
+        released_mappings.extend(self.mappings.insert(range.clone(), mapping.clone()));
+        if mapping.flags().contains(MappingFlags::LOCKED) {
+            self.repin_locked_mapping(kernel, context, &range, &mapping, released_mappings)?;
+        }
+        Ok(mapping)
     }
 
     /// Applies `madvise(2)` advice that mutates [`MappingFlags`] in `self.mappings`.
@@ -2498,7 +2559,7 @@ impl MemoryManagerState {
         bytes: &[u8],
         released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
-        let (range, mapping) = {
+        let (range, mut mapping) = {
             let (r, m) = self.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
             (r.clone(), m.clone())
         };
@@ -2516,99 +2577,68 @@ impl MemoryManagerState {
             return error!(EIO);
         }
 
-        let memory = match self.get_mapping_backing(&mapping) {
-            MappingBacking::PrivateAnonymous => &context.private_anonymous.backing,
-            MappingBacking::Memory(backing) => backing.memory(),
-        };
-        let vmo = memory.as_vmo().ok_or_else(|| errno!(EFAULT))?;
         let addr_offset = mapping.address_to_offset(addr);
 
-        // Attempt to write to existing VMO
-        match vmo.write(&bytes, addr_offset) {
-            Ok(()) => {
-                // Only synchronize caches if the mapping itself is currently executable; backing
-                // VMOs (such as `private_anonymous`) may carry `Rights::EXECUTE` even for
-                // non-executable mappings, and Zircon synchronizes the instruction cache if a
-                // mapping is later made executable via `mprotect`.
-                if mapping.can_exec() {
-                    // Synchronize the data and instruction caches across cores and issue an
-                    // instruction stream barrier to avoid executing stale instructions.
-                    memory
-                        .op_range(zx::VmoOp::CACHE_SYNC, addr_offset, bytes.len() as u64)
-                        .map_err(MemoryManager::get_errno_for_vmo_err)?;
-                    system_barrier(BarrierType::InstructionStream);
-                }
-                return Ok(());
-            }
-
-            Err(zx::Status::ACCESS_DENIED) => {
-                if mapping.flags().contains(MappingFlags::SHARED) {
+        // Private mappings whose memory isn't writable are moved onto a writable copy-on-write
+        // child, the same way `protect()` does, and the write goes to the child. This is always
+        // the case for `LAZY_PRIVATE_FILE` mappings, which are backed directly by the file VMO
+        // and must never be written in place.
+        let needs_private_child = mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE)
+            || match Self::mapping_vmo(context, &mapping)?.write(bytes, addr_offset) {
+                Ok(()) => false,
+                // Linux returns EIO here instead of EFAULT.
+                Err(zx::Status::ACCESS_DENIED)
+                    if mapping.flags().contains(MappingFlags::SHARED) =>
+                {
                     return error!(EIO);
                 }
-                // Fall through.
-            }
+                Err(zx::Status::ACCESS_DENIED)
+                    if matches!(mapping.get_backing_internal(), MappingBacking::Memory(_)) =>
+                {
+                    true
+                }
+                Err(status) => return Err(MemoryManager::get_errno_for_vmo_err(status)),
+            };
 
-            Err(status) => {
-                return Err(MemoryManager::get_errno_for_vmo_err(status));
-            }
+        if needs_private_child {
+            mapping =
+                self.promote_to_private_child(kernel, context, range, mapping, released_mappings)?;
+            Self::mapping_vmo(context, &mapping)?
+                .write(bytes, addr_offset)
+                .map_err(MemoryManager::get_errno_for_vmo_err)?;
         }
 
-        // Create a CoW child of the entire VMO and swap with the backing.
-        let mapping_offset = mapping.address_to_offset(range.start);
-        let len = range.end - range.start;
-
-        // 1. Obtain a writable child of the VMO.
-        let size = vmo.get_size().map_err(MemoryManager::get_errno_for_vmo_err)?;
-        let child_vmo = vmo
-            .create_child(VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, size)
-            .map_err(MemoryManager::get_errno_for_vmo_err)?;
-
-        // 2. Modify the memory.
-        child_vmo.write(&bytes, addr_offset).map_err(MemoryManager::get_errno_for_vmo_err)?;
-
-        // 3. If the original VMO had `Rights::EXECUTE`, restore it on the child VMO (even if the
-        // mapping is not currently executable) so future `mprotect(..., PROT_EXEC)` calls succeed.
-        // Zircon flushes instruction caches when mapping or protecting executable memory, so a
-        // barrier isn't necessary here.
-        let child_vmo = if memory.get_rights().contains(Rights::EXECUTE) {
-            child_vmo
-                .replace_as_executable(&VMEX_RESOURCE)
-                .map_err(MemoryManager::get_errno_for_vmo_err)?
-        } else {
-            child_vmo
-        };
-
-        // Ensure that the mapping that `addr` falls into is mapped in the user VMAR.
-        // This ensures that the mapping's mode becomes `Eager` (if it was `Lazy`),
-        // otherwise, we might clone a `Lazy` mapping but map it unconditionally below,
-        // leading to state drift where a mapping is mapped in Zircon but marked as lazy in Starnix.
-        self.ensure_range_mapped_in_user_vmar(addr, None, context)?;
-
-        // 4. Map the new VMO into user VMAR
-        let memory = Arc::new(MemoryObject::from(child_vmo));
-        context.map_in_user_vmar(
-            SelectedAddress::FixedOverwrite(range.start),
-            &memory,
-            mapping_offset,
-            len,
-            mapping.flags(),
-            false,
-        )?;
-
-        // 5. Update mappings
-        let new_backing = MappingBackingMemory::new(range.start, memory, mapping_offset);
-
-        let mut new_mapping = mapping;
-        new_mapping.set_backing_internal(MappingBacking::Memory(Box::new(new_backing)));
-
-        released_mappings.extend(self.mappings.insert(range.clone(), new_mapping.clone()));
-
-        // 6. Move any mlock pin onto the new memory.
-        if new_mapping.flags().contains(MappingFlags::LOCKED) {
-            self.repin_locked_mapping(kernel, context, &range, &new_mapping, released_mappings)?;
+        // Only synchronize caches if the mapping itself is currently executable; backing VMOs
+        // (such as `private_anonymous`) may carry `Rights::EXECUTE` even for non-executable
+        // mappings, and Zircon synchronizes the instruction cache if a mapping is later made
+        // executable via `mprotect`. This is also needed after promotion, since the child is mapped
+        // before it is written.
+        if mapping.can_exec() {
+            // Synchronize the data and instruction caches across cores and issue an instruction
+            // stream barrier to avoid executing stale instructions.
+            Self::mapping_memory(context, &mapping)
+                .op_range(zx::VmoOp::CACHE_SYNC, addr_offset, bytes.len() as u64)
+                .map_err(MemoryManager::get_errno_for_vmo_err)?;
+            system_barrier(BarrierType::InstructionStream);
         }
 
         Ok(())
+    }
+
+    /// Returns the memory backing `mapping`.
+    fn mapping_memory<'a>(context: &'a MappingContext, mapping: &'a Mapping) -> &'a MemoryObject {
+        match mapping.get_backing_internal() {
+            MappingBacking::PrivateAnonymous => &context.private_anonymous.backing,
+            MappingBacking::Memory(backing) => backing.memory(),
+        }
+    }
+
+    /// Returns the VMO backing `mapping`, or `EFAULT` if it isn't backed by a VMO.
+    fn mapping_vmo<'a>(
+        context: &'a MappingContext,
+        mapping: &'a Mapping,
+    ) -> Result<&'a zx::Vmo, Errno> {
+        Self::mapping_memory(context, mapping).as_vmo().ok_or_else(|| errno!(EFAULT))
     }
 
     fn set_brk(
@@ -3805,7 +3835,11 @@ impl MemoryManager {
                 target.mapping_context.user_vmar_info
             );
 
-            let mut clone_cache = HashMap::<zx::Koid, Arc<MemoryObject>>::new();
+            // Key by both koid and rights. A given memory backing may have multiple mappings, such
+            // as an ELF file mapped read-only for the rodata section and rx for the .text section.
+            // They may share the same underlying vmo, but have handles with differing executable
+            // permissions.
+            let mut clone_cache = HashMap::<(zx::Koid, zx::Rights), Arc<MemoryObject>>::new();
 
             for (range, mapping) in state.mappings.iter() {
                 if mapping.flags().contains(MappingFlags::DONTFORK) {
@@ -3831,10 +3865,11 @@ impl MemoryManager {
                             if mapping.flags().contains(MappingFlags::WRITE) {
                                 rights |= zx::Rights::WRITE;
                             }
-                            let memory =
-                                clone_cache.entry(memory_obj.get_koid()).or_insert_with_fallible(
-                                    || memory_obj.clone_memory(rights, options),
-                                )?;
+                            let memory = clone_cache
+                                .entry((memory_obj.get_koid(), rights))
+                                .or_insert_with_fallible(|| {
+                                    memory_obj.clone_memory(rights, options)
+                                })?;
                             memory.clone()
                         };
 
@@ -5586,7 +5621,7 @@ mod tests {
     use starnix_uapi::user_address::{UserCString, UserRef};
     use starnix_uapi::{
         MAP_ANONYMOUS, MAP_FIXED, MAP_GROWSDOWN, MAP_PRIVATE, MAP_SHARED, PR_SET_VMA,
-        PR_SET_VMA_ANON_NAME, PROT_NONE, PROT_READ,
+        PR_SET_VMA_ANON_NAME, PROT_EXEC, PROT_NONE, PROT_READ,
     };
     use std::ffi::CString;
     use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -7312,6 +7347,362 @@ mod tests {
             },
             mlock_features(MlockPinFlavor::ShadowProcess),
         )
+        .await;
+    }
+
+    /// Maps a 3-page memfd read-only and `MAP_PRIVATE`, returning the fd and mapping address.
+    fn map_private_read_only_memfd(current_task: &CurrentTask) -> (FdNumber, UserAddress) {
+        let file =
+            new_memfd(current_task, b"test_memfd".into(), SealFlags::empty(), OpenFlags::RDWR)
+                .unwrap();
+        file.node().truncate(current_task, &file.name.mount, *PAGE_SIZE * 3).unwrap();
+        let fd = current_task.add_file(file, FdFlags::empty()).unwrap();
+        let addr = do_mmap(
+            current_task,
+            UserAddress::default(),
+            *PAGE_SIZE as usize * 3,
+            PROT_READ,
+            MAP_PRIVATE,
+            fd,
+            0,
+        )
+        .expect("mmap failed");
+        (fd, addr)
+    }
+
+    /// Checks that the first page of the file behind `fd` is still all zeroes.
+    fn check_file_unmodified(current_task: &CurrentTask, fd: FdNumber) {
+        let addr = do_mmap(
+            current_task,
+            UserAddress::default(),
+            *PAGE_SIZE as usize,
+            PROT_READ,
+            MAP_SHARED,
+            fd,
+            0,
+        )
+        .expect("shared mmap failed");
+        check_page_eq(current_task, addr, '\0');
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_mprotect_write_is_private() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
+            let (fd, addr) = map_private_read_only_memfd(current_task);
+            let middle_page = (addr + *PAGE_SIZE).unwrap();
+            let last_page = (addr + *PAGE_SIZE * 2).unwrap();
+            let mm = current_task.mm().unwrap();
+
+            // Make only the middle page writable and write to it.
+            mm.protect(
+                current_task,
+                middle_page,
+                page_size,
+                ProtectionFlags::READ | ProtectionFlags::WRITE,
+            )
+            .expect("mprotect(PROT_READ | PROT_WRITE) failed");
+            fill_page(current_task, middle_page, 'b');
+
+            // Writes survive toggling the protection off and on again.
+            mm.protect(current_task, middle_page, page_size, ProtectionFlags::READ).unwrap();
+            mm.protect(
+                current_task,
+                middle_page,
+                page_size,
+                ProtectionFlags::READ | ProtectionFlags::WRITE,
+            )
+            .unwrap();
+            check_page_eq(current_task, middle_page, 'b');
+
+            // The write is private: other pages and the file are unchanged.
+            check_page_eq(current_task, addr, '\0');
+            check_page_eq(current_task, last_page, '\0');
+            check_file_unmodified(current_task, fd);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_force_write_is_private() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
+            let (fd, addr) = map_private_read_only_memfd(current_task);
+            let middle_page = (addr + *PAGE_SIZE).unwrap();
+            let mm = current_task.mm().unwrap();
+
+            // Split the mapping, then write to it the way ptrace(PTRACE_POKEDATA) does.
+            mm.protect(current_task, middle_page, page_size, ProtectionFlags::empty()).unwrap();
+            mm.force_write_memory(current_task.kernel(), addr, b"poke")
+                .expect("force_write_memory failed");
+            assert_eq!(&current_task.read_memory_to_vec(addr, 4).unwrap(), b"poke");
+            check_file_unmodified(current_task, fd);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_without_exec_rights_mprotect_exec_fails() {
+        spawn_kernel_and_run_with_pkgfs(async |current_task| {
+            let file =
+                current_task.open_file("data/testfile.txt".into(), OpenFlags::RDONLY).unwrap();
+            let fd = current_task.add_file(file, FdFlags::empty()).unwrap();
+            let addr = do_mmap(
+                current_task,
+                UserAddress::default(),
+                *PAGE_SIZE as usize,
+                PROT_READ,
+                MAP_PRIVATE,
+                fd,
+                0,
+            )
+            .expect("mmap failed");
+
+            let err = current_task
+                .mm()
+                .unwrap()
+                .protect(
+                    current_task,
+                    addr,
+                    *PAGE_SIZE as usize,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE | ProtectionFlags::EXEC,
+                )
+                .expect_err("mprotect(PROT_WRITE | PROT_EXEC) should fail without EXECUTE rights");
+            assert_eq!(err, errno!(EACCES));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_write_after_fork_is_private() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
+            let read_write = ProtectionFlags::READ | ProtectionFlags::WRITE;
+            let (fd, addr) = map_private_read_only_memfd(current_task);
+            let writing_child = current_task.clone_task_for_test(0, None);
+            let idle_child = current_task.clone_task_for_test(0, None);
+
+            // One child makes its mapping writable and writes to it.
+            writing_child
+                .mm()
+                .unwrap()
+                .protect(&writing_child, addr, page_size, read_write)
+                .expect("child mprotect failed");
+            Task::write_memory(&writing_child, addr, b"childmod").unwrap();
+            assert_eq!(&Task::read_memory_to_vec(&writing_child, addr, 8).unwrap(), b"childmod");
+
+            // Neither the parent nor the file see the write.
+            check_page_eq(current_task, addr, '\0');
+            check_file_unmodified(current_task, fd);
+
+            // The parent then makes its own mapping writable and writes to it.
+            current_task
+                .mm()
+                .unwrap()
+                .protect(current_task, addr, page_size, read_write)
+                .expect("parent mprotect failed");
+            current_task.write_memory(addr, b"parentmod").unwrap();
+            assert_eq!(&current_task.read_memory_to_vec(addr, 9).unwrap(), b"parentmod");
+
+            // The parent's write is isolated from both children and the file.
+            assert_eq!(&Task::read_memory_to_vec(&writing_child, addr, 8).unwrap(), b"childmod");
+            assert_eq!(Task::read_memory_to_vec(&idle_child, addr, 9).unwrap(), vec![0u8; 9]);
+            check_file_unmodified(current_task, fd);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_mprotect_partial_failure() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
+            let (_fd, addr) = map_private_read_only_memfd(current_task);
+            let middle_page = (addr + *PAGE_SIZE).unwrap();
+            let last_page = (addr + *PAGE_SIZE * 2).unwrap();
+            let mm = current_task.mm().unwrap();
+
+            // Leave a hole in the middle of the mapping.
+            mm.unmap(middle_page, page_size).expect("munmap failed");
+
+            // mprotect across the hole fails, but only after updating the first page.
+            assert_eq!(
+                mm.protect(
+                    current_task,
+                    addr,
+                    page_size * 3,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE,
+                ),
+                error!(ENOMEM)
+            );
+
+            let state = mm.state.read();
+            let (_, first) = state.mappings.get(addr).expect("first page should be mapped");
+            assert!(first.flags().contains(MappingFlags::WRITE));
+            assert!(!first.flags().contains(MappingFlags::LAZY_PRIVATE_FILE));
+
+            // The page after the hole is neither made writable nor moved onto a child VMO.
+            let (_, last) = state.mappings.get(last_page).expect("last page should be mapped");
+            assert!(!last.flags().contains(MappingFlags::WRITE));
+            assert!(last.flags().contains(MappingFlags::LAZY_PRIVATE_FILE));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_mprotect_partial_failure_after_fork() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
+            let (_fd, addr) = map_private_read_only_memfd(current_task);
+            let middle_page = (addr + *PAGE_SIZE).unwrap();
+            let last_page = (addr + *PAGE_SIZE * 2).unwrap();
+
+            // The child's mappings start out lazily mapped.
+            let child = current_task.clone_task_for_test(0, None);
+            let mm = child.mm().unwrap();
+            mm.unmap(middle_page, page_size).expect("munmap failed");
+
+            assert_eq!(
+                mm.protect(
+                    &child,
+                    addr,
+                    page_size * 3,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE,
+                ),
+                error!(ENOMEM)
+            );
+
+            let state = mm.state.read();
+            let (_, first) = state.mappings.get(addr).expect("first page should be mapped");
+            assert!(first.flags().contains(MappingFlags::WRITE));
+            assert!(!first.flags().contains(MappingFlags::LAZY_PRIVATE_FILE));
+            assert_eq!(first.mapping_mode(), MappingMode::Eager);
+
+            // The page after the hole is left untouched, including not being mapped in the user
+            // VMAR.
+            let (_, last) = state.mappings.get(last_page).expect("last page should be mapped");
+            assert!(!last.flags().contains(MappingFlags::WRITE));
+            assert!(last.flags().contains(MappingFlags::LAZY_PRIVATE_FILE));
+            assert_eq!(last.mapping_mode(), MappingMode::Lazy);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_force_write_after_fork_is_private() {
+        spawn_kernel_and_run(async |current_task| {
+            let (fd, addr) = map_private_read_only_memfd(current_task);
+
+            // Write to the child's lazily mapped mapping the way ptrace(PTRACE_POKEDATA) does.
+            let child = current_task.clone_task_for_test(0, None);
+            child
+                .mm()
+                .unwrap()
+                .force_write_memory(child.kernel(), addr, b"poke")
+                .expect("force_write_memory failed");
+            assert_eq!(&Task::read_memory_to_vec(&child, addr, 4).unwrap(), b"poke");
+
+            // Neither the parent nor the file see the write.
+            check_page_eq(current_task, addr, '\0');
+            check_file_unmodified(current_task, fd);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_mprotect_write_moves_shadow_process_pin() {
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let page_size = *PAGE_SIZE as usize;
+                let (_fd, addr) = map_private_read_only_memfd(current_task);
+                let mm = current_task.mm().unwrap();
+
+                mm.mlock(current_task, addr, page_size, false).expect("mlock failed");
+                let file_koid = mapping_memory_koid(&mm, addr);
+                assert_eq!(mlock_shadow_process_pinned_koids(current_task.kernel()), [file_koid]);
+
+                mm.protect(
+                    current_task,
+                    addr,
+                    page_size,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE,
+                )
+                .expect("mprotect failed");
+
+                // The mapping moved onto a child VMO and the pin moved with it.
+                let child_koid = mapping_memory_koid(&mm, addr);
+                assert_ne!(child_koid, file_koid);
+                assert!(
+                    mm.state
+                        .read()
+                        .mappings
+                        .get(addr)
+                        .unwrap()
+                        .1
+                        .flags()
+                        .contains(MappingFlags::LOCKED)
+                );
+                assert_eq!(mlock_shadow_process_pinned_koids(current_task.kernel()), [child_koid]);
+            },
+            mlock_features(MlockPinFlavor::ShadowProcess),
+        )
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_file_mapping_mprotect_write_vmar_always_need_mlock() {
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let page_size = *PAGE_SIZE as usize;
+                let (_fd, addr) = map_private_read_only_memfd(current_task);
+                let mm = current_task.mm().unwrap();
+
+                mm.mlock(current_task, addr, page_size, false).expect("mlock failed");
+                mm.protect(
+                    current_task,
+                    addr,
+                    page_size,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE,
+                )
+                .expect("mprotect failed");
+                fill_page(current_task, addr, 'a');
+                check_page_eq(current_task, addr, 'a');
+
+                let state = mm.state.read();
+                let (_, mapping) = state.mappings.get(addr).unwrap();
+                assert!(mapping.flags().contains(MappingFlags::LOCKED));
+                assert!(!mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE));
+            },
+            mlock_features(MlockPinFlavor::VmarAlwaysNeed),
+        )
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_private_read_only_and_exec_file_mappings_fork() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
+            let (fd, read_addr) = map_private_read_only_memfd(current_task);
+
+            // Map the second page of the same file again with PROT_EXEC. Both mappings share the
+            // file VMO but through handles with different rights.
+            let exec_addr = (read_addr + *PAGE_SIZE).unwrap();
+            do_mmap(
+                current_task,
+                exec_addr,
+                page_size,
+                PROT_READ | PROT_EXEC,
+                MAP_PRIVATE | MAP_FIXED,
+                fd,
+                *PAGE_SIZE,
+            )
+            .expect("exec mmap failed");
+
+            // Both mappings must still be usable in a forked child.
+            let child_task = current_task.clone_task_for_test(0, None);
+            let child_mm = child_task.mm().unwrap();
+            assert!(child_mm.ensure_range_mapped_in_user_vmar(read_addr, Some(page_size)).unwrap());
+            assert!(child_mm.ensure_range_mapped_in_user_vmar(exec_addr, Some(page_size)).unwrap());
+        })
         .await;
     }
 }

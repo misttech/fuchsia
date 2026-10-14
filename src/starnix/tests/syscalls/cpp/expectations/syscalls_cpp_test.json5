@@ -93,14 +93,10 @@
                 // TODO(https://fxbug.dev/297438799)
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/____and_rwx",
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r___and_rwx",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r___and_rw_",
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/rw__and_r_x",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r_x_and_rwx",
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r___and_r_x",
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/____and_r_x",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/____and_rw_",
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/rw__and_rwx",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r_x_and_rw_",
 
                 // TODO(https://g-issues.fuchsia.dev/issues/318701791)
                 "MemfdFaultTest/FaultFileTest.ReadV/0",
@@ -116,9 +112,6 @@
                 "ProcSelfMemProts.CanWriteToPrivateAnonymousMappings/None",
                 "ProcSelfMemProts.CanWriteToPrivateAnonymousMappings/Read",
                 "ProcSelfMemProts.CanWriteToPrivateAnonymousMappings/ReadExecute",
-
-                // TODO(https://fxbug.dev/335701084)
-                "VmspliceTest.FileInPipe",
 
                 // TODO(https://fxbug.dev/333132302)
                 "Madvise.MadvRemoveZeroesMemory",

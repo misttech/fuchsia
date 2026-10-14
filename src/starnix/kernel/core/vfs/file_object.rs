@@ -4,7 +4,7 @@
 
 use crate::mm::memory::MemoryObject;
 use crate::mm::{
-    DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, ProtectionFlags, VMEX_RESOURCE,
+    DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, MemoryManager, ProtectionFlags,
 };
 use crate::power::OnWakeOps;
 use crate::security;
@@ -1086,7 +1086,7 @@ pub fn default_mmap(
     memory_offset: u64,
     length: usize,
     prot_flags: ProtectionFlags,
-    options: MappingOptions,
+    mut options: MappingOptions,
 ) -> Result<UserAddress, Errno> {
     fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "FileOpsDefaultMmap");
     let min_memory_size = (memory_offset as usize)
@@ -1096,27 +1096,30 @@ pub fn default_mmap(
         fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetSharedVmo");
         file.ops.get_memory(file, current_task, Some(min_memory_size), prot_flags)?
     } else {
-        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetPrivateVmo");
         // TODO(tbodt): Use PRIVATE_CLONE to have the filesystem server do the clone for us.
         let base_prot_flags = (prot_flags | ProtectionFlags::READ) - ProtectionFlags::WRITE;
         let memory =
             file.ops.get_memory(file, current_task, Some(min_memory_size), base_prot_flags)?;
-        let mut clone_flags = zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE;
         if !prot_flags.contains(ProtectionFlags::WRITE) {
-            clone_flags |= zx::VmoChildOptions::NO_WRITE;
+            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetPrivateReadOnlyVmo");
+            // Read-only private mapping: Avoid eagerly creating a child VMO clone.
+            // Map the underlying file VMO directly. If the mapping is later made writable
+            // via mprotect(PROT_WRITE), it will be lazily cloned in MemoryManager::protect().
+            options |= MappingOptions::LAZY_PRIVATE_FILE;
+            let write_rights = zx::Rights::WRITE | zx::Rights::RESIZE;
+            if memory.get_rights().intersects(write_rights) {
+                Arc::new(
+                    memory
+                        .duplicate_handle(memory.get_rights() - write_rights)
+                        .map_err(impossible_error)?,
+                )
+            } else {
+                memory
+            }
+        } else {
+            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetPrivateWritableVmo");
+            Arc::new(memory.create_private_child().map_err(MemoryManager::get_errno_for_map_err)?)
         }
-        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "CreatePrivateChildVmo");
-        let mut child =
-            memory.create_child(clone_flags, 0, memory.get_size()).map_err(impossible_error)?;
-        // Zircon removes `Rights::EXECUTE` from snapshot children created without `NO_WRITE`
-        // (see `zx_vmo_create_child`). If the parent memory was executable, restore the right on
-        // the writable child so that `PROT_WRITE | PROT_EXEC` private mappings can be created.
-        if prot_flags.contains(ProtectionFlags::WRITE | ProtectionFlags::EXEC)
-            && memory.get_rights().contains(zx::Rights::EXECUTE)
-        {
-            child = child.replace_as_executable(&VMEX_RESOURCE).map_err(impossible_error)?;
-        }
-        Arc::new(child)
     };
 
     // Write guard is necessary only for shared mappings. Note that this doesn't depend on

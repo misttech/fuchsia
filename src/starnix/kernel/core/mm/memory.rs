@@ -250,6 +250,22 @@ impl MemoryObject {
         }
     }
 
+    /// Creates a writable `SNAPSHOT_AT_LEAST_ON_WRITE` child spanning all of this memory, for use
+    /// as the backing of a private mapping.
+    ///
+    /// Zircon removes `Rights::EXECUTE` from snapshot children created without `NO_WRITE` (see
+    /// `zx_vmo_create_child`). If this memory has `Rights::EXECUTE`, the right is restored on the
+    /// child so that the private mapping can still be made executable.
+    pub fn create_private_child(&self) -> Result<Self, zx::Status> {
+        let child =
+            self.create_child(zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, self.get_size())?;
+        if self.get_rights().contains(zx::Rights::EXECUTE) {
+            child.replace_as_executable(&VMEX_RESOURCE)
+        } else {
+            Ok(child)
+        }
+    }
+
     pub fn duplicate_handle(&self, rights: zx::Rights) -> Result<Self, zx::Status> {
         match self {
             Self::Vmo(info) => info.share_or_duplicate(rights).map(Self::Vmo),

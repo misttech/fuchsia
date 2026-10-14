@@ -384,30 +384,35 @@ impl MappingBackingMemory {
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[rustfmt::skip]  // Preserve column alignment.
-    pub struct MappingFlags: u16 {
-        const READ           = 1 <<  0;  // PROT_READ
-        const WRITE          = 1 <<  1;  // PROT_WRITE
-        const EXEC           = 1 <<  2;  // PROT_EXEC
-        const SHARED         = 1 <<  3;
-        const ANONYMOUS      = 1 <<  4;
-        const LOWER_32BIT    = 1 <<  5;
-        const GROWSDOWN      = 1 <<  6;
-        const ELF_BINARY     = 1 <<  7;
-        const DONTFORK       = 1 <<  8;
-        const WIPEONFORK     = 1 <<  9;
-        const DONT_SPLIT     = 1 << 10;
-        const DONT_EXPAND    = 1 << 11;
-        const LOCKED         = 1 << 12;
-        const UFFD           = 1 << 13;
-        const UFFD_MISSING   = 1 << 14;
-        const MAPPED_IN_VMAR = 1 << 15;
+    pub struct MappingFlags: u32 {
+        const READ              = 1 <<  0;  // PROT_READ
+        const WRITE             = 1 <<  1;  // PROT_WRITE
+        const EXEC              = 1 <<  2;  // PROT_EXEC
+        const SHARED            = 1 <<  3;
+        const ANONYMOUS         = 1 <<  4;
+        const LOWER_32BIT       = 1 <<  5;
+        const GROWSDOWN         = 1 <<  6;
+        const ELF_BINARY        = 1 <<  7;
+        const DONTFORK          = 1 <<  8;
+        const WIPEONFORK        = 1 <<  9;
+        const DONT_SPLIT        = 1 << 10;
+        const DONT_EXPAND       = 1 << 11;
+        /// A read-only `MAP_PRIVATE` file mapping that is still backed directly by the file's
+        /// VMO, through a handle without `WRITE` rights. It must be promoted to a copy-on-write
+        /// child VMO before it can become writable (see
+        /// `MemoryManagerState::promote_to_private_child`).
+        const LAZY_PRIVATE_FILE = 1 << 12;
+        const LOCKED            = 1 << 13;
+        const UFFD              = 1 << 14;
+        const UFFD_MISSING      = 1 << 15;
+        const MAPPED_IN_VMAR    = 1 << 16;
     }
 }
 
 // The low three bits of MappingFlags match ProtectionFlags.
-const_assert_eq!(MappingFlags::READ.bits(), PROT_READ as u16);
-const_assert_eq!(MappingFlags::WRITE.bits(), PROT_WRITE as u16);
-const_assert_eq!(MappingFlags::EXEC.bits(), PROT_EXEC as u16);
+const_assert_eq!(MappingFlags::READ.bits(), PROT_READ);
+const_assert_eq!(MappingFlags::WRITE.bits(), PROT_WRITE);
+const_assert_eq!(MappingFlags::EXEC.bits(), PROT_EXEC);
 
 // The next bits of MappingFlags match MappingOptions, shifted up.
 const_assert_eq!(MappingFlags::SHARED.bits(), MappingOptions::SHARED.bits() << 3);
@@ -419,6 +424,10 @@ const_assert_eq!(MappingFlags::DONTFORK.bits(), MappingOptions::DONTFORK.bits() 
 const_assert_eq!(MappingFlags::WIPEONFORK.bits(), MappingOptions::WIPEONFORK.bits() << 3);
 const_assert_eq!(MappingFlags::DONT_SPLIT.bits(), MappingOptions::DONT_SPLIT.bits() << 3);
 const_assert_eq!(MappingFlags::DONT_EXPAND.bits(), MappingOptions::DONT_EXPAND.bits() << 3);
+const_assert_eq!(
+    MappingFlags::LAZY_PRIVATE_FILE.bits(),
+    MappingOptions::LAZY_PRIVATE_FILE.bits() << 3
+);
 
 /// `MappingOptions` that only affect how a mapping is created. They have no corresponding
 /// `MappingFlags` bit and are dropped when converting between the two.
@@ -437,19 +446,18 @@ const_assert_eq!(
         | MappingFlags::WIPEONFORK.bits()
         | MappingFlags::DONT_SPLIT.bits()
         | MappingFlags::DONT_EXPAND.bits()
+        | MappingFlags::LAZY_PRIVATE_FILE.bits()
 );
 
 impl MappingFlags {
     pub fn access_flags(&self) -> ProtectionFlags {
-        ProtectionFlags::from_bits_truncate(
-            self.bits() as u32 & ProtectionFlags::ACCESS_FLAGS.bits(),
-        )
+        ProtectionFlags::from_bits_truncate(self.bits() & ProtectionFlags::ACCESS_FLAGS.bits())
     }
 
     pub fn with_access_flags(&self, prot_flags: ProtectionFlags) -> Self {
         let mapping_flags =
             *self & (MappingFlags::READ | MappingFlags::WRITE | MappingFlags::EXEC).complement();
-        mapping_flags | Self::from_bits_truncate(prot_flags.access_flags().bits() as u16)
+        mapping_flags | Self::from_bits_truncate(prot_flags.access_flags().bits())
     }
 
     pub fn options(&self) -> MappingOptions {
@@ -460,7 +468,7 @@ impl MappingFlags {
         prot_flags: ProtectionFlags,
         options: MappingOptions,
     ) -> Self {
-        Self::from_bits_truncate(prot_flags.access_flags().bits() as u16)
+        Self::from_bits_truncate(prot_flags.access_flags().bits())
             | Self::from_bits_truncate(options.difference(CREATION_ONLY_OPTIONS).bits() << 3)
     }
 }
