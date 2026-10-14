@@ -185,14 +185,22 @@ async fn do_start(
         |_: AbortError| StartActionError::Aborted { moniker: component.moniker.clone() };
 
     // Resolve the component and find the runner to use.
-    let (runner_router, runner_name, resolved_component, mut program_input_dict, decl) = {
+    let (
+        runner_router,
+        runner_name,
+        resolved_component,
+        mut program_input_dict,
+        storage_service_use_decls,
+        decl,
+    ) = {
         trace::duration!("component_manager", "Actions::Start::resolve_runner", "moniker" => component.moniker.as_str());
 
         // Obtain a clone of the decl under a short lock. If the decl has
-        // already been dropped from the ResolvedInstanceState, then we will
-        // need to reacquire the lock in order to reresolve the decl.  As a
-        // result, we keep the lock tightly scoped here.
-        let maybe_decl = {
+        // already been dropped from the ResolvedInstanceState and was not
+        // intentionally elided during resolution, then we will need to
+        // reacquire the lock in order to reresolve the decl. As a result, we
+        // keep the lock tightly scoped here.
+        let (maybe_decl, needs_reresolve) = {
             let resolved_state = component
                 .lock_resolved_state()
                 .with(&abortable_scope)
@@ -202,16 +210,21 @@ async fn do_start(
                     moniker: component.moniker.clone(),
                     err: Box::new(err),
                 })?;
-            resolved_state.decl().cloned()
+            let maybe_decl = resolved_state.decl().cloned();
+            let needs_reresolve = maybe_decl.is_none() && !resolved_state.elided_decl;
+            (maybe_decl, needs_reresolve)
         };
         let decl = match maybe_decl {
-            Some(decl) => decl,
-            None => resolve_with_pinned_url(component).await.map_err(|err| {
-                StartActionError::ResolveActionError {
-                    moniker: component.moniker.clone(),
-                    err: Box::new(ActionError::from(ResolveActionError::from(err))),
-                }
-            })?,
+            Some(decl) => Some(decl),
+            None if needs_reresolve => {
+                Some(resolve_with_pinned_url(component).await.map_err(|err| {
+                    StartActionError::ResolveActionError {
+                        moniker: component.moniker.clone(),
+                        err: Box::new(ActionError::from(ResolveActionError::from(err))),
+                    }
+                })?)
+            }
+            None => None,
         };
         let resolved_state = component
             .lock_resolved_state()
@@ -222,19 +235,27 @@ async fn do_start(
                 moniker: component.moniker.clone(),
                 err: Box::new(err),
             })?;
-        let mut numbered_handles = open_protocols_with_numbered_handle(
-            &resolved_state,
-            &decl,
-            component.clone().as_weak().into(),
-        );
-        incoming.numbered_handles.append(&mut numbered_handles);
+        if let Some(decl) = &decl {
+            let mut numbered_handles = open_protocols_with_numbered_handle(
+                &resolved_state,
+                decl,
+                component.clone().as_weak().into(),
+            );
+            incoming.numbered_handles.append(&mut numbered_handles);
+        }
 
         let runner = resolved_state.sandbox.program_input.runner();
+        let storage_service_use_decls = if decl.is_none() {
+            resolved_state.storage_service_use_decls.clone()
+        } else {
+            Vec::new()
+        };
         (
             runner,
-            decl.get_runner().as_ref().map(|r| r.source_name.clone()),
+            decl.as_ref().and_then(|d| d.get_runner()).map(|r| r.source_name),
             resolved_state.resolved_component.clone(),
             resolved_state.sandbox.program_input.namespace(),
+            storage_service_use_decls,
             decl,
         )
     };
@@ -269,10 +290,11 @@ async fn do_start(
         program_input_dict = dict_deep_copy(&program_input_dict);
         dict_merge(&program_input_dict, additions);
     }
+    let use_decls = decl.as_ref().map(|d| &*d.uses).unwrap_or(&storage_service_use_decls);
     let mut namespace_builder = create_namespace(
         resolved_component.package.as_ref(),
         component,
-        &decl.uses,
+        use_decls,
         &program_input_dict,
         component.execution_scope.clone(),
     )
@@ -306,9 +328,9 @@ async fn do_start(
         fdecl::OnTerminate::None => {}
     }
 
-    let encoded_config = match decl.config {
+    let encoded_config = match decl.as_ref().and_then(|d| d.config.as_ref().map(|c| (d, c))) {
         None => None,
-        Some(ref config_decl) => match config_decl.value_source {
+        Some((decl, config_decl)) => match config_decl.value_source {
             cm_rust::ConfigValueSource::PackagePath(_) => {
                 let Some(mut config) = resolved_component.config.clone() else {
                     return Err(StartActionError::StructuredConfigError {
@@ -316,7 +338,7 @@ async fn do_start(
                         err: StructuredConfigError::ConfigValuesMissing,
                     });
                 };
-                update_config_fields(Arc::make_mut(&mut config), &decl, &component)
+                update_config_fields(Arc::make_mut(&mut config), decl, &component)
                     .with(&abortable_scope)
                     .await
                     .map_err(abort_error)??;
@@ -324,7 +346,7 @@ async fn do_start(
                 Some(encode_config(config, &component.moniker).await?)
             }
             cm_rust::ConfigValueSource::Capabilities(_) => {
-                let config = create_config_with_capabilities(&decl, &component)
+                let config = create_config_with_capabilities(decl, &component)
                     .with(&abortable_scope)
                     .await
                     .map_err(abort_error)??;
@@ -348,7 +370,7 @@ async fn do_start(
         execution_controller_task,
     };
 
-    start_component(&component, decl.into(), start_context).await
+    start_component(&component, decl.as_ref(), start_context).await
 }
 
 fn dict_deep_copy(dict: &Arc<Dictionary>) -> Arc<Dictionary> {
@@ -391,7 +413,7 @@ fn dict_merge(dict1: &Arc<Dictionary>, dict2: Arc<Dictionary>) {
 /// `Component`.
 async fn start_component(
     component: &Arc<ComponentInstance>,
-    decl: Arc<ComponentDecl>,
+    decl: Option<&ComponentDecl>,
     start_context: StartContext,
 ) -> Result<(), StartActionError> {
     let runtime_info;
@@ -447,8 +469,7 @@ async fn start_component(
             let start_info = StartInfo {
                 url: component.component_url.clone().into(),
                 program: decl
-                    .program
-                    .as_ref()
+                    .and_then(|d| d.program.as_ref())
                     .map(|p| p.info.clone())
                     .unwrap_or_else(|| fdata::Dictionary::default()),
                 namespace: namespace_builder,

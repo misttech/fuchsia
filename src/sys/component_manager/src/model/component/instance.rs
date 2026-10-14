@@ -458,6 +458,10 @@ pub struct ResolvedInstanceState {
     /// True if restarts are disabled for this instance (e.g. after an unclean exit with
     /// `on_terminate: "reboot"`).
     pub restarts_disabled: bool,
+
+    /// True if the component declaration was elided during resolution because it is not needed
+    /// after `ResolvedInstanceState` construction.
+    pub elided_decl: bool,
 }
 
 /// Abbreviated equivalent to [ComponentAddress] that omits the actual url string.
@@ -606,6 +610,7 @@ impl ResolvedInstanceState {
             offer_decls,
             logger_decl,
             restarts_disabled: false,
+            elided_decl: false,
         };
         state.add_static_children(component).await?;
 
@@ -689,6 +694,15 @@ impl ResolvedInstanceState {
 
         state.sandbox = component_sandbox;
         state.populate_child_inputs(&state.sandbox.child_inputs).await;
+        // Non-executable components without collections or structured configuration do not need
+        // their declaration retained after resolution: `StartAction` does not launch a program or
+        // encode configuration for them, and dynamic child validation will never run on them.
+        if state.resolved_component.decl.as_ref().is_some_and(|d| {
+            d.get_runner().is_none() && d.collections.is_empty() && d.config.is_none()
+        }) {
+            state.resolved_component.decl = None;
+            state.elided_decl = true;
+        }
         Ok(state)
     }
 

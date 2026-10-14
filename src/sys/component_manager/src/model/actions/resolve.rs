@@ -134,7 +134,7 @@ async fn do_resolve(
         };
         let resolved_state = ResolvedInstanceState::new(
             component,
-            component_info.clone(),
+            component_info,
             component_address.into(),
             instance_token_state,
             component_input_dict,
@@ -243,5 +243,65 @@ pub mod tests {
             resolve_fut.await,
             Err(e) if matches!(e.kind(), ActionErrorKind::ResolveError { err: ResolveActionError::Aborted { .. } })
         );
+    }
+
+    #[fuchsia::test]
+    async fn resolve_drops_decl_for_non_executable_realm() {
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new()
+                    .child_default("realm")
+                    .child_default("with_collection")
+                    .child_default("executable")
+                    .build(),
+            ),
+            ("realm", ComponentDeclBuilder::new_empty_component().child_default("nested").build()),
+            (
+                "with_collection",
+                ComponentDeclBuilder::new_empty_component().collection_default("coll").build(),
+            ),
+            ("executable", component_decl_with_test_runner()),
+            ("nested", component_decl_with_test_runner()),
+        ];
+
+        let test = ActionsTest::new("root", components, None).await;
+        let realm = test.look_up(["realm"].try_into().unwrap()).await;
+        let with_collection = test.look_up(["with_collection"].try_into().unwrap()).await;
+        let executable = test.look_up(["executable"].try_into().unwrap()).await;
+
+        // Non-executable realms without collections or structured config drop their decl on resolve.
+        {
+            let resolved_state = realm.lock_resolved_state().await.unwrap();
+            assert!(resolved_state.decl().is_none());
+            assert!(resolved_state.elided_decl);
+        }
+        // Components with collections retain their decl for dynamic child validation.
+        {
+            let resolved_state = with_collection.lock_resolved_state().await.unwrap();
+            assert!(resolved_state.decl().is_some());
+            assert!(!resolved_state.elided_decl);
+        }
+        // Executable components retain their decl until StartAction.
+        {
+            let resolved_state = executable.lock_resolved_state().await.unwrap();
+            assert!(resolved_state.decl().is_some());
+            assert!(!resolved_state.elided_decl);
+        }
+
+        // Starting the non-executable realm should succeed without re-resolving its manifest.
+        let (resolved_tx, mut resolved_rx) = oneshot::channel::<()>();
+        let (_continue_tx, continue_rx) = oneshot::channel::<()>();
+        test.resolver.add_blocker("realm", resolved_tx, continue_rx).await;
+
+        ActionsManager::register(
+            realm.clone(),
+            StartAction::new(StartReason::Debug, None, IncomingCapabilities::default()),
+        )
+        .await
+        .unwrap();
+        assert!(realm.is_started().await);
+        assert!(resolved_rx.try_recv().unwrap().is_none());
+        assert!(realm.lock_resolved_state().await.unwrap().decl().is_none());
     }
 }
