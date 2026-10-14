@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error, bail, ensure};
-pub use fidl_fuchsia_power_clientlevel::ClientType;
-pub use fidl_fuchsia_power_systemmode::{ClientConfig, ModeMatch, SystemMode};
+pub use fidl_fuchsia_power_clientlevel_common::ClientType;
+pub use fidl_fuchsia_power_systemmode_common::{ClientConfig, ModeMatch, SystemMode};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
