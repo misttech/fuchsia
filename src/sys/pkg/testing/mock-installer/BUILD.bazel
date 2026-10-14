@@ -1,0 +1,139 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "mock-installer",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/sys/pkg/tests/omaha-client:__pkg__",
+        "//src/sys/pkg/tests/system-update-checker:__pkg__",
+        "//src/sys/pkg/tests/update:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust_flex",
+        "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+    ],
+)
+
+rustc_library(
+    name = "mock-installer_fdomain",
+    srcs = ["src/lib.rs"],
+    crate_features = ["fdomain"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//src/developer/ffx/plugins/target/update:__pkg__"],
+    deps = [
+        "//src/lib/fdomain/client",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust_fdomain_flex",
+        "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "mock_installer_lib_test",
+    crate = ":mock-installer",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_flex",
+        # The dynamically linked Rust standard library has an implicit link
+        # attribute on libfdio.so. GN adds this to every Rust target via
+        # //src/lib/fdio/rust:fdio_for_rust_stdlib in BUILDCONFIG.gn.
+        "//sdk/lib/fdio",
+        "//src/lib/fuchsia",
+    ],
+)
+
+# @bazel2gn:skip
+host_rustc_test(
+    name = "mock-installer_fdomain_host_test",
+    binary_name = "mock_installer_fdomain_lib_test",
+    crate = ":mock-installer_fdomain",
+    crate_features = ["fdomain"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_fdomain_flex",
+        "//src/lib/fdomain/local",
+        "//src/lib/fuchsia",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "mock-installer_test_packaged_bin",
+    testonly = True,
+    binary = ":mock_installer_lib_test",
+    binary_name = "mock_installer_lib_test",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "mock-installer-tests-manifest",
+    testonly = True,
+    component_name = "mock-installer-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/mock_installer_tests.cml",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "mock-installer-tests-component",
+    compiled_manifest = ":mock-installer-tests-manifest",
+    component_name = "mock-installer-tests",
+    visibility = ["//visibility:private"],
+    deps = [":mock-installer_test_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "mock-installer-tests-package",
+    package_name = "mock-installer-tests",
+    test_components = [":mock-installer-tests-component"],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "mock-installer-tests",
+    package = ":mock-installer-tests-package",
+    visibility = ["//visibility:public"],
+)

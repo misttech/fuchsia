@@ -1,0 +1,121 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl-fuchsia-update-installer-ext",
+    srcs = [
+        "src/lib.rs",
+        "src/options.rs",
+        "src/state.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:proptest-derive"],
+    visibility = [
+        "//src/developer/ffx/plugins/target/update:__pkg__",
+        "//src/sys/pkg:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fdomain/client",
+        "//src/lib/fidl/rust/fidl",
+        "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
+        "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust_fdomain",
+        "//src/sys/pkg/lib/event-queue",
+        "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
+        "//third_party/cobalt/src/lib/client/rust:cobalt-client",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:pin-project",
+        "//third_party/rust_crates/vendor:proptest",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:typed-builder",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fidl_fuchsia_update_installer_ext_lib_test",
+    crate = ":fidl-fuchsia-update-installer-ext",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        # The dynamically linked Rust standard library has an implicit link
+        # attribute on libfdio.so. GN adds this to every Rust target via
+        # //src/lib/fdio/rust:fdio_for_rust_stdlib in BUILDCONFIG.gn.
+        "//sdk/lib/fdio",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fdomain/local",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "fidl-fuchsia-update-installer-ext_test_packaged_bin",
+    testonly = True,
+    binary = ":fidl_fuchsia_update_installer_ext_lib_test",
+    binary_name = "fidl_fuchsia_update_installer_ext_lib_test",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "fidl-fuchsia-update-installer-ext-tests-manifest",
+    testonly = True,
+    component_name = "fidl-fuchsia-update-installer-ext-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fidl_fuchsia_update_installer_ext_tests.cml",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "fidl-fuchsia-update-installer-ext-tests-component",
+    compiled_manifest = ":fidl-fuchsia-update-installer-ext-tests-manifest",
+    component_name = "fidl-fuchsia-update-installer-ext-tests",
+    visibility = ["//visibility:private"],
+    deps = [":fidl-fuchsia-update-installer-ext_test_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "fidl-fuchsia-update-installer-ext-tests-package",
+    package_name = "fidl-fuchsia-update-installer-ext-tests",
+    test_components = [":fidl-fuchsia-update-installer-ext-tests-component"],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "fidl-fuchsia-update-installer-ext-tests",
+    package = ":fidl-fuchsia-update-installer-ext-tests-package",
+    visibility = ["//visibility:public"],
+)
