@@ -20,7 +20,10 @@ rustc_binary("bin") {
   testonly = true
 
   source_root = "src/main.rs"
-  sources = [ "src/main.rs" ]
+  sources = [
+    "src/contention.rs",
+    "src/main.rs",
+  ]
 
   # Disable LTO to keep compile/link times fast when linking starnix_core, and
   # to prevent cross-crate optimizations from skewing the microbenchmark
@@ -34,7 +37,17 @@ rustc_binary("bin") {
     configs -= _thinlto_config
   }
 
+  # Check if the board is the vim3 to set a build cfg that will ultimately be
+  # used to control the affinity of the benchmarking threads.
+  # TODO(https://fxbug.dev/42050716): Find a better way of controlling what
+  # cores are used for benchmarking.
+  check_cfgs = [ "board_is_vim3" ]
+  if (board_name == "vim3") {
+    rustflags = [ "--cfg=board_is_vim3" ]
+  }
+
   deps = [
+    "//sdk/lib/scheduler/rust",
     "//src/developer/fuchsia-criterion",
     "//src/lib/fuchsia-async",
     "//src/starnix/kernel/core",

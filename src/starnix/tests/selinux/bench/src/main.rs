@@ -4,6 +4,8 @@
 
 #![recursion_limit = "1024"]
 
+mod contention;
+
 use criterion::Criterion;
 use criterion::measurement::WallTime;
 use fuchsia_criterion::FuchsiaCriterion;
@@ -60,11 +62,29 @@ fn new_populated_security_server() -> Arc<SecurityServer> {
     server
 }
 
+/// Pins the calling thread to the big CPU cores when built for VIM3 (`board_is_vim3`).
+///
+/// On VIM3s, set the thread affinity to big cores in order to reduce variation in the results.
+/// This works around the scheduler's current behaviour. While the scheduler is set up to prefer
+/// scheduling threads on big cores, benchmark and contention worker threads get scheduled on little
+/// cores often enough that it reduces the usefulness of the performance results.
+// TODO(https://fxbug.dev/42050716): Find a better way of controlling what cores are used for
+// benchmarking and potentially benchmark both big and little cores.
+fn pin_thread_to_big_cores() {
+    if cfg!(board_is_vim3) {
+        fuchsia_scheduler::set_role_for_this_thread(
+            "fuchsia.microbenchmarks.pin_to_vim3_big_cores",
+        )
+        .expect("pin thread to VIM3 big cores");
+    }
+}
+
 async fn spawn_test_kernel<F>(callback: F)
 where
     F: AsyncFnOnce(&mut CurrentTask) + Send + Sync + 'static,
 {
     spawn_kernel_with_selinux_and_run(async |current_task, security_server| {
+        pin_thread_to_big_cores();
         security_server.load_policy(POLICY_BYTES.to_vec()).unwrap();
         populate_sid_table(security_server);
         callback(current_task).await
@@ -439,6 +459,7 @@ fn main() {
             );
         }
         concurrent_access_cache_get_bench(&mut group);
+        contention::register_benchmarks(&mut group);
         file_permission_bench(&mut group, current_task);
         fs_node_permission_bench(&mut group, current_task);
         check_file_ioctl_access_bench(&mut group, current_task);
