@@ -128,6 +128,10 @@ class DebugSymbolsManifestParser(object):
         """Override the function used to compute the BuildID, only used for tests."""
         self._get_build_id = get_build_id
 
+    def extract_build_id(self, path: str | Path) -> str:
+        """Extract the GNU BuildID from an ELF file."""
+        return self._get_build_id(path)
+
     @property
     def entries(self) -> list[DebugSymbolEntryType]:
         """The flattened list of parsed entries, each one describing a single ELF file."""
@@ -362,11 +366,13 @@ class DebugSymbolsManifestParser(object):
                     continue
                 if cur_value == "":
                     cur_entry[key] = new_value
-                elif new_value != "" and key != "label":
+                elif new_value != "" and key not in ("label", "dest_path"):
                     # A single binary can legitimately be referenced by
                     # multiple targets, e.g. a Bazel cc_binary used as the
-                    # `binary` of several host_test() targets, so differing
-                    # labels are not a conflict. Keep the first one.
+                    # `binary` of several host_test() targets, or prebuilt
+                    # packages with different destination paths. Differing
+                    # labels and destination paths are not a conflict; keep
+                    # the first one.
                     errors.append(
                         f"Incompatible '{key}' value between {cur_entry} and {entry}"
                     )

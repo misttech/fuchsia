@@ -346,6 +346,7 @@ class MergeDebugSymbolManifestsTest(unittest.TestCase):
                     ],
                     bazel_execroot=execroot,
                     build_dir=build_dir,
+                    prebuilt_build_id_dir=build_dir / "prebuilt/.build-id",
                     time_profile=build_utils.TimeProfile(),
                 )
 
@@ -391,8 +392,190 @@ class MergeDebugSymbolManifestsTest(unittest.TestCase):
                     ["no_comma_path.json"],
                     bazel_execroot=build_dir,
                     build_dir=build_dir,
+                    prebuilt_build_id_dir=build_dir / "prebuilt/.build-id",
                     time_profile=build_utils.TimeProfile(),
                 )
+
+    def test_merge_debug_symbol_manifests_with_prebuilt_package(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        import bazel_action_impl
+        import build_utils
+
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            build_dir = tmp_dir / "out/default"
+            execroot = build_dir / "execroot"
+            bin_dir = execroot / "bazel-out/arm64/bin"
+            bin_dir.mkdir(parents=True)
+
+            prebuilt_build_id_dir = tmp_dir / "prebuilt/.build-id"
+            debug_file = prebuilt_build_id_dir / "ab/cdef0123.debug"
+            debug_file.parent.mkdir(parents=True)
+            debug_file.write_text("elf_debug")
+
+            pkg_dir = bin_dir / "prebuilt_pkg"
+            (pkg_dir / "blobs").mkdir(parents=True)
+            blob_with_sym = pkg_dir / "blobs/libvulkan.so"
+            blob_with_sym.write_text("elf_stripped_1")
+            blob_missing_sym = pkg_dir / "blobs/libother.so"
+            blob_missing_sym.write_text("elf_stripped_2")
+
+            pkg_manifest_path = pkg_dir / "rebased_package_manifest.json"
+            pkg_manifest_path.write_text(
+                json.dumps(
+                    {
+                        "version": "1",
+                        "blob_sources_relative": "file",
+                        "blobs": [
+                            {
+                                "path": "meta/",
+                                "source_path": "blobs/meta.far",
+                            },
+                            {
+                                "path": "lib/libvulkan.so",
+                                "source_path": "blobs/libvulkan.so",
+                            },
+                            {
+                                "path": "lib/libother.so",
+                                "source_path": "blobs/libother.so",
+                            },
+                        ],
+                    }
+                )
+            )
+
+            (bin_dir / "prebuilt_pkg.debug_symbols.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "package_manifest": "bazel-out/arm64/bin/prebuilt_pkg/rebased_package_manifest.json",
+                            "os": "fuchsia",
+                            "cpu": "arm64",
+                            "label": "@@//src:prebuilt_pkg_fuchsia_package",
+                        }
+                    ]
+                )
+            )
+
+            build_ids = {
+                blob_with_sym: "abcdef0123",
+                blob_missing_sym: "9999999999",
+            }
+
+            with mock.patch.object(
+                bazel_action_impl.DebugSymbolsManifestParser,
+                "extract_build_id",
+                side_effect=lambda p: build_ids.get(Path(p), ""),
+            ):
+                (
+                    merged,
+                    by_target,
+                ) = bazel_action_impl.merge_debug_symbol_manifests(
+                    [
+                        "@@//src:prebuilt_pkg,bazel-out/arm64/bin/prebuilt_pkg.debug_symbols.json",
+                    ],
+                    bazel_execroot=execroot,
+                    build_dir=build_dir,
+                    time_profile=build_utils.TimeProfile(),
+                    prebuilt_build_id_dir=prebuilt_build_id_dir,
+                )
+
+            expected_entry = {
+                "debug": "../../prebuilt/.build-id/ab/cdef0123.debug",
+                "elf_build_id": "abcdef0123",
+                "dest_path": "lib/libvulkan.so",
+                "os": "fuchsia",
+                "cpu": "arm64",
+                "label": "@@//src:prebuilt_pkg_fuchsia_package",
+            }
+
+            self.assertEqual(merged, [expected_entry])
+            self.assertEqual(
+                by_target,
+                {
+                    "//src:prebuilt_pkg": [expected_entry],
+                },
+            )
+
+    def test_prebuilt_package_expander(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        import bazel_action_impl
+
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            build_dir = tmp_dir / "out/default"
+            execroot = build_dir / "execroot"
+            bin_dir = execroot / "bazel-out/arm64/bin"
+            bin_dir.mkdir(parents=True)
+
+            prebuilt_build_id_dir = tmp_dir / "prebuilt/.build-id"
+            debug_file = prebuilt_build_id_dir / "12/345678.debug"
+            debug_file.parent.mkdir(parents=True)
+            debug_file.write_text("elf_debug")
+
+            pkg_dir = bin_dir / "my_pkg"
+            (pkg_dir / "blobs").mkdir(parents=True)
+            blob_file = pkg_dir / "blobs/libmy.so"
+            blob_file.write_text("elf_blob")
+
+            pkg_manifest_path = pkg_dir / "package_manifest.json"
+            pkg_manifest_path.write_text(
+                json.dumps(
+                    {
+                        "version": "1",
+                        "blob_sources_relative": "file",
+                        "blobs": [
+                            {
+                                "path": "lib/libmy.so",
+                                "source_path": "blobs/libmy.so",
+                            }
+                        ],
+                    }
+                )
+            )
+
+            parser = bazel_action_impl.DebugSymbolsManifestParser(build_dir)
+            with mock.patch.object(
+                parser,
+                "extract_build_id",
+                return_value="12345678",
+            ):
+                expander = bazel_action_impl._PrebuiltPackageExpander(
+                    execroot, prebuilt_build_id_dir, build_dir, parser
+                )
+                entry = {
+                    "package_manifest": "bazel-out/arm64/bin/my_pkg/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "arm64",
+                    "label": "@@//src:my_pkg",
+                }
+                expanded = expander.expand(entry)
+
+            self.assertEqual(len(expanded), 1)
+            self.assertEqual(expanded[0]["elf_build_id"], "12345678")
+            self.assertEqual(expanded[0]["dest_path"], "lib/libmy.so")
+
+            # Check that implicit input files were tracked.
+            self.assertIn(pkg_manifest_path, expander.extra_input_files)
+            self.assertIn(blob_file, expander.extra_input_files)
+            self.assertIn(debug_file, expander.extra_input_files)
+
+            # Check that parser.extra_input_files also tracked them.
+            self.assertIn(pkg_manifest_path, parser.extra_input_files)
+            self.assertIn(blob_file, parser.extra_input_files)
+            self.assertIn(debug_file, parser.extra_input_files)
+
+            # Check cache hit returns the same list.
+            cached = expander.expand(entry)
+            self.assertIs(cached, expanded)
 
 
 if __name__ == "__main__":

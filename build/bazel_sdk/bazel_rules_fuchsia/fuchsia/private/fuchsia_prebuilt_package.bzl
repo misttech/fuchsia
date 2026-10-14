@@ -137,7 +137,8 @@ def _pack_prebuilt_package_impl(ctx):
             files = output_files + input_files,
             build_id_dirs = [],
         ),
-        # TODO(https://fxbug.dev/338180287): Add debug symbols support.
+        # Platform debug symbols for prebuilt packages are collected via
+        # //build/bazel/debug_symbols:aspects.bzl.
         FuchsiaDebugSymbolInfo(build_id_dirs_mapping = {}),
     ]
 

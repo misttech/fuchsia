@@ -4,6 +4,7 @@
 
 """Aspects related to debug symbols for the Fuchsia build system."""
 
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("@rules_cc//cc/common:debug_package_info.bzl", "DebugPackageInfo")
 load("@rules_fuchsia//fuchsia/private:providers.bzl", "FuchsiaUnstrippedBinariesInfo", "FuchsiaUnstrippedBinaryInfo")
 load("@rules_rust//rust:rust_common.bzl", "CrateInfo")
@@ -27,13 +28,33 @@ DebugSymbolManifestEntryInfo = provider(
     },
 )
 
+PrebuiltPackageManifestEntryInfo = provider(
+    doc = "A provider describing a prebuilt Fuchsia package whose ELF blobs may have debug symbols in //prebuilt/.build-id.",
+    fields = {
+        "package_manifest": "A File value pointing to the package_manifest.json file.",
+        "files": "A list of File values (including unpacked blob directories/files) required to read the package blobs.",
+        "os": "OS name for debug binaries, using Fuchsia conventions.",
+        "cpu": "CPU name for debug binaries, using Fuchsia conventions.",
+        "label": "Bazel Label of the prebuilt package target.",
+    },
+)
+
 DebugSymbolManifestInfo = provider(
     doc = """A provider for a set of DebugSymbolManifestEntryInfo items and related build files.""",
     fields = {
         "entries": "A depset of DebugSymbolManifestEntryInfo",
         "dest_paths": "A depset of (debug, dest_path) pairs which provide a way to map debug binaries to " +
                       "their Fuchsia destination path, if available.",
+        "prebuilt_packages": "A depset of PrebuiltPackageManifestEntryInfo",
     },
+)
+
+_PREBUILT_PACKAGE_RULE_KINDS = (
+    "_unpack_prebuilt_package",
+    "_pack_prebuilt_package",
+    "prebuilt_package",
+    "_fuchsia_package",
+    "fuchsia_prebuilt_product_configuration_extract_package",
 )
 
 # First, an aspect used to identify debug binaries and propagate them
@@ -41,6 +62,7 @@ DebugSymbolManifestInfo = provider(
 def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
     entries = []
     dest_paths = []
+    prebuilt_packages = []
 
     kind = aspect_ctx.rule.kind
     current_platform = get_current_platform_info(aspect_ctx)
@@ -63,6 +85,17 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
     if FuchsiaUnstrippedBinariesInfo in target:
         for unstripped_info in target[FuchsiaUnstrippedBinariesInfo].binaries:
             dest_paths.append((unstripped_info.unstripped_file, unstripped_info.dest))
+
+    if FuchsiaPackageInfo in target and kind in _PREBUILT_PACKAGE_RULE_KINDS:
+        pkg_info = target[FuchsiaPackageInfo]
+        pkg_files = pkg_info.files.to_list() if type(pkg_info.files) == "depset" else pkg_info.files
+        prebuilt_packages.append(PrebuiltPackageManifestEntryInfo(
+            package_manifest = pkg_info.package_manifest,
+            files = pkg_files,
+            os = "fuchsia",
+            cpu = current_platform.cpu,
+            label = target.label,
+        ))
 
     # TODO: Use something like FuchsiaPlatformBinaryInfo to support
     # non-SDK Fuchsia binaries generated in Bazel.
@@ -133,6 +166,7 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
     return [DebugSymbolManifestInfo(
         entries = depset(entries, transitive = [info.entries for info in dep_infos]),
         dest_paths = depset(dest_paths, transitive = [info.dest_paths for info in dep_infos]),
+        prebuilt_packages = depset(prebuilt_packages, transitive = [info.prebuilt_packages for info in dep_infos]),
     )]
 
 collect_debug_symbols_manifest_aspect = aspect(
@@ -190,6 +224,18 @@ def _generate_manifest_impl(target, actx):
         if dest_path:
             symbol_entry["dest_path"] = dest_path
         manifest.append(symbol_entry)
+
+    for prebuilt_entry in manifest_info.prebuilt_packages.to_list():
+        if prebuilt_entry.label.repo_name == "bazel_tools":
+            continue
+        files.append(prebuilt_entry.package_manifest)
+        files.extend(prebuilt_entry.files)
+        manifest.append({
+            "package_manifest": str(prebuilt_entry.package_manifest.path),
+            "os": prebuilt_entry.os,
+            "cpu": prebuilt_entry.cpu,
+            "label": str(prebuilt_entry.label),
+        })
 
     actx.actions.write(output, json.encode_indent(manifest, indent = "  "))
 

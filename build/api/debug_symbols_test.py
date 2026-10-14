@@ -505,6 +505,39 @@ class DebugSymbolsManifestParserTest(unittest.TestCase):
             ],
         )
 
+        # Check that merging duplicates with different labels or dest_paths keeps
+        # the first non-empty values without raising an error (e.g. when a prebuilt
+        # package is referenced by both GN and Bazel or shared across packages).
+        manifest = [
+            {
+                "label": "//src:label_1",
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "elf_build_id": "123456789",
+                "dest_path": "bin/prog",
+            },
+            {
+                "label": "@//src:label_1_bazel",
+                "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                "elf_build_id": "123456789",
+                "dest_path": "bin/prog_copy",
+            },
+        ]
+
+        parser = DebugSymbolsManifestParser(self._root)
+        parser.parse_manifest_json(manifest, "manifest.json")
+        parser.deduplicate_entries()
+        self.assertListEqual(
+            parser.entries,
+            [
+                {
+                    "label": "//src:label_1",
+                    "debug": "../../prebuilt/.build-id/12/3456789.debug",
+                    "elf_build_id": "123456789",
+                    "dest_path": "bin/prog",
+                },
+            ],
+        )
+
         # Check that duplicates with conflicting elf_build_id values are detected.
         manifest = [
             {

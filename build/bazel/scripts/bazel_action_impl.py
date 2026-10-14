@@ -841,6 +841,9 @@ class BazelActionRunner(object):
             bazel_execroot=self.paths.execroot,
             build_dir=self.paths.ninja_build_dir,
             time_profile=time_profile,
+            prebuilt_build_id_dir=self.paths.fuchsia_dir
+            / "prebuilt"
+            / ".build-id",
         )
 
         if perform_copy and debug_symbols_manifest:
@@ -1373,10 +1376,93 @@ def filename_from_target_label(
         return temp
 
 
+class _PrebuiltPackageExpander(object):
+    """Expands prebuilt package manifests into debug symbol entries and caches the results."""
+
+    def __init__(
+        self,
+        base_path: Path,
+        prebuilt_build_id_dir: Path,
+        build_dir: Path,
+        parser: DebugSymbolsManifestParser,
+    ):
+        self.base_path = Path(base_path)
+        self.prebuilt_build_id_dir = Path(prebuilt_build_id_dir)
+        self.build_dir = Path(build_dir)
+        self.parser = parser
+        self.cache: dict[str, list[DebugSymbolEntryType]] = {}
+        self._extra_input_files: set[Path] = set()
+
+    @property
+    def extra_input_files(self) -> set[Path]:
+        """Set of implicit input files read during expansion."""
+        return self._extra_input_files
+
+    def expand(
+        self, input_entry: dict[str, T.Any]
+    ) -> list[DebugSymbolEntryType]:
+        """Expand a prebuilt package entry into a list of debug symbol entries."""
+        pkg_manifest_rel = input_entry["package_manifest"]
+        if pkg_manifest_rel in self.cache:
+            return self.cache[pkg_manifest_rel]
+
+        expanded: list[DebugSymbolEntryType] = []
+        pkg_manifest_path = self.base_path / pkg_manifest_rel
+        if pkg_manifest_path.exists():
+            self._extra_input_files.add(pkg_manifest_path)
+            self.parser.extra_input_files.add(pkg_manifest_path)
+            with open(pkg_manifest_path, "rt") as pf:
+                pkg_manifest = json.load(pf)
+            sources_relative = pkg_manifest.get("blob_sources_relative")
+            if not sources_relative:
+                sources_relative = pkg_manifest.get(
+                    "sources_relative", "working_dir"
+                )
+            pkg_manifest_dir = pkg_manifest_path.parent
+            for blob in pkg_manifest.get("blobs", []):
+                dest_path = blob["path"]
+                if dest_path.startswith("meta/"):
+                    continue
+                blob_source_path = blob["source_path"]
+                if sources_relative == "file":
+                    blob_path = pkg_manifest_dir / blob_source_path
+                else:
+                    blob_path = self.base_path / blob_source_path
+                self._extra_input_files.add(blob_path)
+                self.parser.extra_input_files.add(blob_path)
+                build_id = self.parser.extract_build_id(blob_path)
+                if not build_id or len(build_id) <= 2:
+                    continue
+                debug_file_path = (
+                    self.prebuilt_build_id_dir
+                    / build_id[:2]
+                    / f"{build_id[2:]}.debug"
+                )
+                if not debug_file_path.exists():
+                    continue
+                self._extra_input_files.add(debug_file_path)
+                self.parser.extra_input_files.add(debug_file_path)
+                expanded.append(
+                    {
+                        "debug": os.path.relpath(
+                            debug_file_path, self.build_dir
+                        ),
+                        "elf_build_id": build_id,
+                        "dest_path": dest_path,
+                        "os": input_entry["os"],
+                        "cpu": input_entry["cpu"],
+                        "label": input_entry["label"],
+                    }
+                )
+        self.cache[pkg_manifest_rel] = expanded
+        return expanded
+
+
 def merge_debug_symbol_manifests(
     debug_symbol_manifest_paths: list[str],
     bazel_execroot: Path,
     build_dir: Path,
+    prebuilt_build_id_dir: Path,
     time_profile: build_utils.TimeProfile,
 ) -> tuple[list[DebugSymbolEntryType], BazelDebugSymbolMap]:
     """Generate final debug symbol manifest and per-target debug symbol map.
@@ -1387,6 +1473,7 @@ def merge_debug_symbol_manifests(
             from the Bazel stderr's DEBUG lines.
         bazel_execroot: Path to Bazel execroot.
         build_dir: Path to Ninja build directory.
+        prebuilt_build_id_dir: Path to //prebuilt/.build-id directory.
         time_profile: A TimeProfile instance.
     Returns:
         A tuple of:
@@ -1403,6 +1490,10 @@ def merge_debug_symbol_manifests(
     output_manifest: list[DebugSymbolEntryType] = []
     entries_by_src_debug: dict[str, DebugSymbolEntryType] = {}
     src_debugs_by_target: dict[str, list[str]] = {}
+    parser = DebugSymbolsManifestParser(build_dir)
+    prebuilt_expander = _PrebuiltPackageExpander(
+        bazel_execroot, prebuilt_build_id_dir, build_dir, parser
+    )
 
     for recorded_entry in debug_symbol_manifest_paths:
         # Expected format: "<label>,<manifest_path>", e.g.
@@ -1424,6 +1515,18 @@ def merge_debug_symbol_manifests(
         seen_in_target: set[str] = set()
 
         for input_entry in input_manifest:
+            if "package_manifest" in input_entry:
+                for expanded_entry in prebuilt_expander.expand(input_entry):
+                    src_debug = expanded_entry["debug"]
+                    if src_debug not in seen_in_target:
+                        seen_in_target.add(src_debug)
+                        target_src_debugs.append(src_debug)
+                    if src_debug not in entries_by_src_debug:
+                        entry = expanded_entry.copy()
+                        entries_by_src_debug[src_debug] = entry
+                        output_manifest.append(entry)
+                continue
+
             src_debug = input_entry["debug"]
             if src_debug not in seen_in_target:
                 seen_in_target.add(src_debug)
@@ -1457,7 +1560,6 @@ def merge_debug_symbol_manifests(
         "compute_elf_build_ids",
         "Extra GNU build-id values from ELF binaries.",
     )
-    parser = DebugSymbolsManifestParser(build_dir)
     parser.enable_build_id_resolution()
     parser.parse_manifest_json(output_manifest)
 
