@@ -65,7 +65,6 @@ _starnix_core_sources = [
   "fs/sysfs/kernel_directory.rs",
   "fs/sysfs/mod.rs",
   "fs/sysfs/power_directory.rs",
-  "fs/sysfs/power_residency_directory.rs",
   "fs/tmpfs.rs",
   "lib.rs",
   "mm/barrier.rs",

@@ -44,7 +44,7 @@ where
 
 /// Drives a [`fclient::ServiceInstanceStream`] for `service`, invoking `on_instance` concurrently
 /// for each discovered instance while `kernel` remains alive.
-pub(crate) async fn run_fidl_service_watcher<S, F>(
+pub(super) async fn run_fidl_service_watcher<S, F>(
     kernel: &Weak<Kernel>,
     service: fclient::Service<S>,
     on_instance: F,

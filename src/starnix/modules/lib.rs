@@ -47,6 +47,7 @@ pub use starnix_modules_odpm::odpm_device_init;
 pub use starnix_modules_overlayfs::OverlayStack;
 use starnix_modules_overlayfs::new_overlay_fs;
 pub use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
+use starnix_modules_power_residency::init_power_residency_device;
 use starnix_modules_procfs::proc_fs;
 use starnix_modules_pstore::pstore_fs;
 use starnix_modules_rtc::rtc_device_init;
@@ -116,6 +117,7 @@ pub fn init_common_devices(kernel: &Kernel) -> Result<(), Errno> {
     loop_device_init(kernel)?;
     device_mapper_init(kernel)?;
     zram_device_init(kernel)?;
+    init_power_residency_device(kernel);
     Ok(())
 }
 
