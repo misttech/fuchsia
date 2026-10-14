@@ -4,10 +4,11 @@
 
 #![recursion_limit = "256"]
 
+use crate::blob_sink::{BlobSink, TraceBufferSink, WriteAttempt};
+use anyhow::bail;
 use fuchsia_trace::{BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state};
 use fuchsia_trace_observer::TraceObserver;
 use futures::{SinkExt, StreamExt};
-use fxt::blob::{BlobType, build_blob_record};
 use perfetto_protos::perfetto::protos::trace_config::buffer_config::FillPolicy;
 use perfetto_protos::perfetto::protos::trace_config::{BufferConfig, DataSource};
 use perfetto_protos::perfetto::protos::{
@@ -25,14 +26,15 @@ use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::tracing::PidKoidSession;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FsString;
-use starnix_logging::{
-    CATEGORY_ATRACE, NAME_PERFETTO_BLOB, log_debug, log_error, log_info, log_warn,
-};
+use starnix_logging::{CATEGORY_ATRACE, log_debug, log_error, log_info, log_warn};
 use starnix_perfetto_trace_decoder::{decode_read_buffers_response, decode_trace, encode_trace};
 
 use starnix_uapi::errors::Errno;
 
 mod atrace;
+mod blob_sink;
+#[cfg(test)]
+mod testing;
 
 const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
 
@@ -46,7 +48,7 @@ const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
 /// The value balances these limits:
 /// - An FXT blob record holds at most `fxt::MAX_RECORD_SIZE_WORDS` words: the header word,
 ///   the inline blob name and the payload, each padded to 8 bytes (see
-///   [`build_blob_record()`]).
+///   [`fxt::blob::build_blob_record()`]).
 /// - Bigger blobs split a long packet into fewer records, so there is less header and name
 ///   overhead per byte.
 /// - A record that does not fit in the rest of the current rolling buffer goes into the next
@@ -56,6 +58,51 @@ const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
 ///   size is also a whole number of MiB, so every provider buffer that can hold records is
 ///   at least that large.
 const MAX_BLOB_PAYLOAD_SIZE: usize = 4096;
+
+/// Writes `data` to `sink` as Perfetto blob records, split into chunks of at most
+/// `MAX_BLOB_PAYLOAD_SIZE` bytes. Each chunk is written by [`forward_blob()`] with
+/// `retry_on_full`.
+///
+/// Returns the number of payload bytes written (`data.len()`), or `None` if a chunk was
+/// dropped. Chunks written before the dropped one stay in the trace buffer, and later chunks
+/// are not attempted.
+fn forward_packet(sink: &mut impl BlobSink, retry_on_full: bool, data: &[u8]) -> Option<usize> {
+    let mut bytes_written = 0;
+    for chunk in data.chunks(MAX_BLOB_PAYLOAD_SIZE) {
+        forward_blob(sink, retry_on_full, chunk)?;
+        bytes_written += chunk.len();
+    }
+    Some(bytes_written)
+}
+
+/// Writes `blob_data` to `sink` as one Perfetto blob record. With `retry_on_full`, waits
+/// 100 ms and tries again for as long as the trace buffer is full.
+///
+/// Returns `None` if the record was dropped because the buffer is full and `retry_on_full` is
+/// false, no trace context is available, or `blob_data` does not fit in one record.
+fn forward_blob(sink: &mut impl BlobSink, retry_on_full: bool, blob_data: &[u8]) -> Option<()> {
+    loop {
+        match sink.try_write_blob(blob_data) {
+            WriteAttempt::Wrote => return Some(()),
+            WriteAttempt::TracingStopped => return None,
+            WriteAttempt::TooLong => return None,
+            // Only streaming mode retries. In oneshot mode a full buffer stays full. In circular
+            // mode trace-engine frees the other rolling buffer as soon as the last writer
+            // releases its context, so a full buffer is rare and usually short-lived. Losing
+            // the record is acceptable there, so drop it rather than wait.
+            WriteAttempt::BufferFull if !retry_on_full => return None,
+            WriteAttempt::BufferFull => {
+                // We're writing records pretty quick here, we're just forwarding data from
+                // perfetto with no breaks. trace_manager might not be able to keep up if it's
+                // also servicing other trace-providers. We want to back off if we find that we
+                // run out of space.
+                //
+                // TODO(b/304532640)
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    }
+}
 
 /// State needed to act upon trace state changes.
 struct CallbackState {
@@ -304,6 +351,17 @@ impl CallbackState {
                 let read_buffers_request =
                     connection.read_buffers(current_task, ReadBuffersRequest {})?;
 
+                // The buffering mode is fixed for the whole trace session.
+                let retry_on_full = {
+                    // A held prolonged context keeps trace-engine's context count above zero,
+                    // so this can't fail.
+                    let Some(context) = fuchsia_trace::Context::acquire() else {
+                        bail!("Tracing stopped despite holding prolonged context");
+                    };
+                    context.buffering_mode() == BufferingMode::Streaming
+                };
+                let mut sink = TraceBufferSink;
+
                 // IPC responses may be spread across multiple frames, so loop until we get a
                 // message that indicates it is the last one. Additionally, if there are
                 // unrelated messages on the socket (e.g. leftover from a previous trace
@@ -360,7 +418,7 @@ impl CallbackState {
                                     // aggregate the number of records dropped and we can query
                                     // the trace system later to determine if we dropped
                                     // records when it's more efficient to do so.
-                                    let _ = self.forward_packet(&rewritten);
+                                    let _ = forward_packet(&mut sink, retry_on_full, &rewritten);
                                 }
                             }
                         } else {
@@ -398,53 +456,6 @@ impl CallbackState {
             }
         }
         Ok(())
-    }
-
-    /// Forwards `data` to the trace buffer as FXT blob records, split into chunks of at most
-    /// `MAX_BLOB_PAYLOAD_SIZE` bytes.
-    ///
-    /// Returns the number of payload bytes written (`data.len()`), or `None` if a chunk was
-    /// dropped. Chunks written before the dropped one stay in the trace buffer.
-    fn forward_packet(&self, data: &[u8]) -> Option<usize> {
-        let mut bytes_written = 0;
-        for chunk in data.chunks(MAX_BLOB_PAYLOAD_SIZE) {
-            self.forward_blob(chunk)?;
-            bytes_written += chunk.len();
-        }
-        Some(bytes_written)
-    }
-
-    /// Writes one Perfetto blob record that carries `blob_data`.
-    ///
-    /// Returns the number of words written, or `None` if the record was dropped because
-    /// `blob_data` does not fit in one record, the buffer is full outside streaming mode, or no
-    /// trace context is available.
-    fn forward_blob(&self, blob_data: &[u8]) -> Option<usize> {
-        let record_words = build_blob_record(NAME_PERFETTO_BLOB, BlobType::Perfetto, blob_data)?;
-
-        while let Some(context) = fuchsia_trace::Context::acquire() {
-            if let Some(words) = context.copy_record(&record_words) {
-                return Some(words);
-            }
-            if context.buffering_mode() != BufferingMode::Streaming {
-                // If we're not in streaming mode, there will never be room for this record. Drop
-                // it.
-                return None;
-            }
-            // We're writing records pretty quick here, we're just forwarding data from
-            // perfetto with no breaks. trace_manager might not be able to keep up if it's also
-            // servicing other trace-providers. We want to back off we if find that we run out
-            // of space.
-            //
-            // We drop the context to decrement the refcount on the trace session. This allows
-            // trace-engine to switch the buffers if needed and drain out the buffers so that
-            // when we wake, there will hopefully be room.
-            //
-            // TODO(b/304532640)
-            drop(context);
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        None
     }
 
     fn rewrite_pids(&mut self, protobuf_blob: &[u8]) -> anyhow::Result<Vec<u8>> {
@@ -653,8 +664,139 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{TraceSession, lock_trace_engine, test_bytes};
     use starnix_core::testing::spawn_kernel_and_run;
-    use std::ffi::c_uint;
+    use std::collections::VecDeque;
+
+    /// A `BlobSink` that returns scripted write results.
+    struct FakeSink {
+        /// Results for the next attempts. Once empty, every attempt returns `default_result`.
+        scripted_results: VecDeque<WriteAttempt>,
+        default_result: WriteAttempt,
+        attempts: usize,
+        written: Vec<Vec<u8>>,
+    }
+
+    impl FakeSink {
+        fn new(scripted_results: &[WriteAttempt], default_result: WriteAttempt) -> Self {
+            Self {
+                scripted_results: scripted_results.iter().copied().collect(),
+                default_result,
+                attempts: 0,
+                written: Vec::new(),
+            }
+        }
+    }
+
+    impl BlobSink for FakeSink {
+        fn try_write_blob(&mut self, blob_data: &[u8]) -> WriteAttempt {
+            self.attempts += 1;
+            let result = self.scripted_results.pop_front().unwrap_or(self.default_result);
+            if result == WriteAttempt::Wrote {
+                self.written.push(blob_data.to_vec());
+            }
+            result
+        }
+    }
+
+    #[fuchsia::test]
+    fn forward_packet_splits_packet_into_chunks() {
+        let data = test_bytes(2 * MAX_BLOB_PAYLOAD_SIZE + 10);
+        let mut sink = FakeSink::new(&[], WriteAttempt::Wrote);
+
+        assert_eq!(
+            forward_packet(&mut sink, true, &data),
+            Some(data.len()),
+            "forward_packet(len {})",
+            data.len()
+        );
+
+        let lens: Vec<usize> = sink.written.iter().map(Vec::len).collect();
+        assert_eq!(
+            lens,
+            vec![MAX_BLOB_PAYLOAD_SIZE, MAX_BLOB_PAYLOAD_SIZE, 10],
+            "forward_packet(len {}) blob lengths",
+            data.len()
+        );
+        assert_eq!(sink.written.concat(), data, "forward_packet(len {}) bytes", data.len());
+    }
+
+    #[fuchsia::test]
+    fn forward_packet_chunk_boundaries() {
+        let cases: [(usize, &[usize]); 4] = [
+            (0, &[]),
+            (MAX_BLOB_PAYLOAD_SIZE, &[MAX_BLOB_PAYLOAD_SIZE]),
+            (MAX_BLOB_PAYLOAD_SIZE + 1, &[MAX_BLOB_PAYLOAD_SIZE, 1]),
+            (2 * MAX_BLOB_PAYLOAD_SIZE, &[MAX_BLOB_PAYLOAD_SIZE; 2]),
+        ];
+        for (len, expected_lens) in cases {
+            let data = test_bytes(len);
+            let mut sink = FakeSink::new(&[], WriteAttempt::Wrote);
+
+            assert_eq!(
+                forward_packet(&mut sink, true, &data),
+                Some(len),
+                "forward_packet(len {len})"
+            );
+
+            assert_eq!(sink.attempts, expected_lens.len(), "forward_packet(len {len}) attempts");
+            let lens: Vec<usize> = sink.written.iter().map(Vec::len).collect();
+            assert_eq!(lens, expected_lens, "forward_packet(len {len}) blob lengths");
+            assert_eq!(sink.written.concat(), data, "forward_packet(len {len}) bytes");
+        }
+    }
+
+    #[fuchsia::test]
+    fn forward_packet_waits_for_streaming_buffer_space() {
+        // `forward_blob()` sleeps on the real clock for 100 ms after each full attempt, so this
+        // test takes at least 200 ms.
+        // TODO(b/571694521): Use a fake clock (fxr/1881109).
+        let data = test_bytes(10);
+        let mut sink = FakeSink::new(&[WriteAttempt::BufferFull; 2], WriteAttempt::Wrote);
+        let start = std::time::Instant::now();
+
+        assert_eq!(
+            forward_packet(&mut sink, true, &data),
+            Some(data.len()),
+            "packet after 2 full attempts"
+        );
+
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_millis(200),
+            "packet after 2 full attempts: waited {elapsed:?}"
+        );
+        assert_eq!(sink.attempts, 3, "packet after 2 full attempts");
+        assert_eq!(sink.written, vec![data], "packet after 2 full attempts");
+    }
+
+    #[fuchsia::test]
+    fn forward_packet_stops_at_a_blob_that_cannot_be_written() {
+        // Only a full buffer with `retry_on_full` is retried. `TraceBufferSink` returns `TooLong`
+        // only for a blob that does not fit in one record, which `forward_packet()` never
+        // passes, so the fake stands in for it here to check that `forward_blob()` drops such a
+        // blob instead of retrying it.
+        let cases = [
+            (WriteAttempt::BufferFull, false),
+            (WriteAttempt::TracingStopped, true),
+            (WriteAttempt::TooLong, true),
+        ];
+        for (result, retry_on_full) in cases {
+            let data = test_bytes(2 * MAX_BLOB_PAYLOAD_SIZE + 10);
+            // Every attempt after the failed one would succeed.
+            let mut sink = FakeSink::new(&[WriteAttempt::Wrote, result], WriteAttempt::Wrote);
+            let case = format!("second chunk got {result:?}, retry_on_full {retry_on_full}");
+
+            assert_eq!(forward_packet(&mut sink, retry_on_full, &data), None, "{case}");
+
+            assert_eq!(sink.attempts, 2, "{case}: no retry, and no attempt for the third chunk");
+            assert_eq!(
+                sink.written,
+                vec![data[..MAX_BLOB_PAYLOAD_SIZE].to_vec()],
+                "{case}: only the first chunk is written"
+            );
+        }
+    }
 
     // The tests below run `CallbackState::on_state_change()` with and without a trace context.
     // They have no Perfetto consumer endpoint that answers EnableTracing, DisableTracing and
@@ -662,81 +804,6 @@ mod tests {
     // enables Perfetto tracing and keeps the context, or a Stopping that then disables Perfetto
     // tracing, reads the buffers and releases the context. If Started stopped storing the context
     // after EnableTracing, every Stopping would skip Perfetto and no test here would fail.
-
-    /// Serializes the tests that depend on whether a trace session is running: trace-engine's
-    /// state is global to the test process. `TraceSession` also holds it to keep its calls into
-    /// trace-engine's test fixture from overlapping.
-    static TRACE_ENGINE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// Locks `TRACE_ENGINE_LOCK`. A test that panicked while holding it doesn't fail the others.
-    fn lock_trace_engine() -> std::sync::MutexGuard<'static, ()> {
-        TRACE_ENGINE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    // `attach_to_thread_t` (from <trace-test-utils/fixture.h>) and `trace_buffering_mode_t` are C
-    // enums with no negative enumerators, so clang gives them the underlying type `unsigned int`.
-    const NO_ATTACH_TO_THREAD: c_uint = 0; // kNoAttachToThread
-    const TRACE_BUFFER_SIZE: usize = 1 << 16;
-    // Only `TraceSession` calls these, and only while it holds `TRACE_ENGINE_LOCK`.
-    unsafe extern "C" {
-        fn fixture_set_up(attach_to_thread: c_uint, mode: c_uint, buffer_size: usize);
-        fn fixture_initialize_and_start_tracing();
-        fn fixture_stop_and_terminate_tracing();
-        fn fixture_tear_down();
-    }
-
-    /// A trace session run in this process by trace-engine's test fixture, so that
-    /// `ProlongedContext::acquire()` succeeds while it exists. It holds `TRACE_ENGINE_LOCK` for its
-    /// whole life, so a test that starts one must not lock it too. Dropping it waits until
-    /// trace-engine has stopped, so it hangs if a prolonged context is still held.
-    struct TraceSession {
-        /// Held from before the fixture is set up until after it is torn down: `Drop::drop()`
-        /// runs before the fields are dropped.
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl TraceSession {
-        fn start() -> Self {
-            let lock = lock_trace_engine();
-            // SAFETY: The fixture functions take no pointers. fixture.cc keeps the fixture in a
-            // global without synchronization, which `fixture_set_up()` requires to be empty and
-            // the other functions require to be set. So the calls must not overlap, and set-up
-            // must come first.
-            // - Only a `TraceSession` calls these functions, and only while it holds
-            //   `TRACE_ENGINE_LOCK` (`lock` here, `_lock` in `drop()`), so no calls overlap.
-            // - An earlier `TraceSession` tore the fixture down in `drop()` before it released
-            //   the lock, including when a panic unwound through it, or, if it was leaked, still
-            //   holds the lock. So no fixture is set up here.
-            // - fixture.cc is built with `-fno-exceptions`, so neither call can unwind, and
-            //   `Self` below takes over `lock` and tears the fixture down.
-            // The fixture runs trace-engine on its own async loop thread (`kNoAttachToThread`).
-            unsafe {
-                fixture_set_up(
-                    NO_ATTACH_TO_THREAD,
-                    BufferingMode::OneShot as c_uint,
-                    TRACE_BUFFER_SIZE,
-                );
-                fixture_initialize_and_start_tracing();
-            }
-            Self { _lock: lock }
-        }
-    }
-
-    impl Drop for TraceSession {
-        fn drop(&mut self) {
-            // SAFETY: `start()` set up the fixture and started tracing, and `self._lock` still
-            // holds `TRACE_ENGINE_LOCK`, so no other fixture call overlaps these.
-            // `fixture_tear_down()` frees the trace buffer. Before that,
-            // `fixture_stop_and_terminate_tracing()` waits for trace-engine to reach Stopped,
-            // which it does only once no context is held, and terminates it. The context count
-            // is then zero, and only a new `trace_engine_start()` makes it nonzero, so no context
-            // can be acquired that uses the freed buffer.
-            unsafe {
-                fixture_stop_and_terminate_tracing();
-                fixture_tear_down();
-            }
-        }
-    }
 
     #[fuchsia::test]
     async fn started_without_trace_context_skips_perfetto() {

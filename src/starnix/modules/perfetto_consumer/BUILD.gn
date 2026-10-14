@@ -15,7 +15,9 @@ rustc_library("perfetto_consumer") {
 
   sources = [
     "atrace.rs",
+    "blob_sink.rs",
     "lib.rs",
+    "testing.rs",
   ]
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
