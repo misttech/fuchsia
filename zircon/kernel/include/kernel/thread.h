@@ -1781,6 +1781,12 @@ class ScopedMemoryStall {
 extern "C" {
 cpu_mask_t cpp_thread_get_cpu_affinity(const Thread* thread);
 cpu_mask_t cpp_thread_set_cpu_affinity(Thread* thread, cpu_mask_t affinity);
+ChainLock* cpp_thread_get_lock(Thread* thread);
+zx_status_t cpp_thread_wait_queue_state_blocked_status_locked(const Thread* thread);
+ThreadDispatcher* cpp_thread_user_thread(Thread* thread);
+zx_koid_t cpp_thread_tid(const Thread* thread);
+uint64_t cpp_thread_lock_flow_id(const Thread* thread);
+uint64_t cpp_thread_take_next_lock_flow_id(Thread* thread);
 }
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_THREAD_H_

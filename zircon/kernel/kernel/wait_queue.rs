@@ -287,6 +287,14 @@ unsafe impl Send for WaitQueueBase {}
 // synchronized by `WaitQueueBase::lock` (`ChainLock`).
 unsafe impl Sync for WaitQueueBase {}
 
+impl WaitQueueBase {
+    /// Returns a reference to this wait queue's [`ChainLock`].
+    #[inline]
+    pub fn get_lock(&self) -> &ChainLock {
+        &self.lock
+    }
+}
+
 #[pinned_drop]
 impl PinnedDrop for WaitQueueBase {
     fn drop(self: Pin<&mut Self>) {
