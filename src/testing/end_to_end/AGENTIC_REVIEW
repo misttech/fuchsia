@@ -1,0 +1,19 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Lacewing timeouts, deadlines, cancellations, and exception handling.
+conditional_capability_groups {
+  path_expression: "....py"
+  path_expression: "....gn"
+  path_expression: "....gni"
+  review_capability_skills: "src/testing/end_to_end/.agents/skills/lacewing-timeouts-deadlines-cancellations/SKILL.md"
+}
+
+# Honeydew FFX and FIDL affordance architecture and GN wiring.
+conditional_capability_groups {
+  path_expression: "honeydew/....py"
+  path_expression: "honeydew/....gn"
+  review_capability_skills: "src/testing/end_to_end/.agents/skills/ffx-to-honeydew-affordance/SKILL.md"
+  review_capability_skills: "src/testing/end_to_end/.agents/skills/fidl-to-honeydew-affordance/SKILL.md"
+}
