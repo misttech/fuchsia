@@ -327,6 +327,59 @@ host_test_data_files(
 )`,
 			wantGN: "",
 		},
+		{
+			name: "Rust proto library",
+			bazel: `load("//tools/protobuf:rust_proto_library.bzl", "rust_proto_library")
+
+rust_proto_library(
+	name = "simple_proto",
+	srcs = ["src/simple.proto"],
+	packages = ["fuchsia.simple"],
+	visibility = [":__pkg__"],
+)
+
+rust_proto_library(
+	name = "foo_proto",
+	srcs = [
+		"//third_party/foo/protos:a.proto",
+		"//third_party/foo/protos:b.proto",
+	],
+	packages = [
+		"foo.protos",
+		"google.protobuf",
+	],
+	include_dirs = ["//third_party/foo"],
+	proto_deps = ["//third_party/foo/protos:imported_protos"],
+	deps = ["//third_party/rust_crates/vendor:bytes"],
+)`,
+			wantGN: `rust_proto_library("simple_proto") {
+	sources = [
+		"src/simple.proto",
+	]
+	packages = [
+		"fuchsia.simple",
+	]
+	visibility = [
+		":*",
+	]
+}
+rust_proto_library("foo_proto") {
+	sources = [
+		"//third_party/foo/protos/a.proto",
+		"//third_party/foo/protos/b.proto",
+	]
+	packages = [
+		"foo.protos",
+		"google.protobuf",
+	]
+	include_dirs = [
+		"//third_party/foo",
+	]
+	deps = [
+		"//third_party/rust_crates:bytes",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

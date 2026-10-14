@@ -77,14 +77,15 @@ var bazelRuleToGNTemplate = map[string]string{
 	"py_binary":  "python_binary",
 
 	// Rust
-	"rust_binary":      "rustc_binary",
-	"rust_library":     "rustc_library",
-	"rustc_binary":     "rustc_binary",
-	"rustc_dylib":      "rustc_dylib",
-	"rustc_library":    "rustc_library",
-	"rustc_proc_macro": "rustc_macro",
-	"rustc_test":       "rustc_test",
-	"rust_proc_macro":  "rustc_macro",
+	"rust_binary":        "rustc_binary",
+	"rust_library":       "rustc_library",
+	"rustc_binary":       "rustc_binary",
+	"rustc_dylib":        "rustc_dylib",
+	"rustc_library":      "rustc_library",
+	"rustc_proc_macro":   "rustc_macro",
+	"rustc_test":         "rustc_test",
+	"rust_proc_macro":    "rustc_macro",
+	"rust_proto_library": "rust_proto_library",
 
 	// C++
 	"cc_library":            "static_library",
@@ -206,6 +207,10 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// The Bazel test target attribute `size` is not supported in GN.
 	"go_test":    {"size": true},
 	"rustc_test": {"size": true},
+	// `proto_deps` lists imported .proto files so the Bazel code generator can run
+	// sandboxed. The GN rust_proto_library() template discovers imports through a
+	// depfile instead.
+	"rust_proto_library": {"proto_deps": true},
 }
 
 // Common Bazel attributes that use different names in GN.

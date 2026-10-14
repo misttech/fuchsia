@@ -21,6 +21,9 @@ import("//build/rust/rustc_library.gni")
 #     Additional rust crates for the generated library to depend on. It is not
 #     necessary to include the prost runtime, it is included implicitly.
 #
+#   testonly, visibility (optional)
+#     Usual GN meaning.
+#
 # Ex:
 #    rust_proto_library("vm_guest_proto") {
 #      sources = [
@@ -100,6 +103,7 @@ template("rust_proto_library") {
   _main_target_label = get_label_info(":$target_name", "label_with_toolchain")
 
   action("gen_${target_name}") {
+    forward_variables_from(invoker, [ "testonly" ])
     script = "//tools/protobuf/rust_proto/prost_build_wrapper.py"
     inputs = [
       prost_build_path,
@@ -133,6 +137,11 @@ template("rust_proto_library") {
   }
 
   rustc_library(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
     edition = "2024"
     deps = [ ":gen_${target_name}" ] + crate_deps
     source_root = "${target_crate_root}/lib.rs"
