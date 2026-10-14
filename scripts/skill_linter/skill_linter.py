@@ -732,6 +732,8 @@ def _pre_process(text: str, tab_size: int) -> str:
     """Pre-processes text to standardize list item indentation.
 
     Fixes bullet points and numbered lists that have excessive spacing.
+    Standardizes child list items, code blocks, and continuation paragraphs
+    under numbered list items to match the 4-space list indentation.
     Skips lines within code blocks.
 
     Args:
@@ -743,17 +745,120 @@ def _pre_process(text: str, tab_size: int) -> str:
     """
     lines = text.split("\n")
     processed = []
-    in_code_block = False
+    in_top_level_code_block = False
+    in_nested_code_block = False
+    nested_code_block_shifted = False
+    active_num_indent: int | None = None
+
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("```"):
-            in_code_block = not in_code_block
+
+        # Handle top level code block
+        if in_top_level_code_block:
+            if stripped.startswith("```"):
+                in_top_level_code_block = False
             processed.append(line)
             continue
 
-        if in_code_block:
+        # Handle nested code block
+        if in_nested_code_block:
+            if stripped.startswith("```"):
+                if nested_code_block_shifted and active_num_indent is not None:
+                    target_3 = " " * (active_num_indent + 3)
+                    if line.startswith(
+                        target_3 + "```"
+                    ) and not line.startswith(target_3 + " ```"):
+                        line = " " + line
+                in_nested_code_block = False
+                nested_code_block_shifted = False
+            else:
+                if nested_code_block_shifted and active_num_indent is not None:
+                    target_3 = " " * (active_num_indent + 3)
+                    if line.startswith(target_3):
+                        line = " " + line
             processed.append(line)
             continue
+
+        if not stripped:
+            processed.append(line)
+            continue
+
+        if stripped.startswith("#") or re.match(r"^([-*_]\s*){3,}$", stripped):
+            active_num_indent = None
+
+        # Check for numbered list item
+        num_match = re.match(r"^(\s*)(\d+\.)( +)(.*)$", line)
+        if num_match:
+            indent_str = num_match.group(1)
+            marker_str = num_match.group(2)
+            rest = num_match.group(4)
+            repl = " " if tab_size == 2 else "  "
+            line = f"{indent_str}{marker_str}{repl}{rest}"
+            if tab_size == 4:
+                active_num_indent = len(indent_str)
+                in_nested_code_block = False
+                nested_code_block_shifted = False
+            processed.append(line)
+            continue
+
+        # Check if non-empty line terminates active_num_indent
+        if active_num_indent is not None:
+            indent_len = len(line) - len(line.lstrip(" "))
+            if indent_len <= active_num_indent:
+                active_num_indent = None
+
+        # Code block opening
+        if stripped.startswith("```"):
+            if active_num_indent is not None and tab_size == 4:
+                target_3 = " " * (active_num_indent + 3)
+                if line.startswith(target_3 + "```") and not line.startswith(
+                    target_3 + " ```"
+                ):
+                    line = " " + line
+                    nested_code_block_shifted = True
+                in_nested_code_block = True
+            else:
+                in_top_level_code_block = True
+            processed.append(line)
+            continue
+
+        if active_num_indent is not None and tab_size == 4:
+            target_3 = " " * (active_num_indent + 3)
+            target_5 = " " * (active_num_indent + 5)
+            # 3-space bullet point
+            bullet_3_match = re.match(
+                r"^" + target_3 + r"([-*+])( +)(.*)$", line
+            )
+            if bullet_3_match:
+                marker = bullet_3_match.group(1)
+                rest = bullet_3_match.group(3)
+                line = " " + target_3 + marker + " " + rest
+                processed.append(line)
+                continue
+            # 5-space sub-bullet
+            bullet_5_match = re.match(
+                r"^" + target_5 + r"([-*+])( +)(.*)$", line
+            )
+            if bullet_5_match:
+                marker = bullet_5_match.group(1)
+                rest = bullet_5_match.group(3)
+                line = " " + target_5 + marker + " " + rest
+                processed.append(line)
+                continue
+            # 5-space continuation
+            if line.startswith(target_5) and not line.startswith(
+                target_5 + " "
+            ):
+                line = " " + line
+                processed.append(line)
+                continue
+            # 3-space continuation or paragraph
+            if line.startswith(target_3) and not line.startswith(
+                target_3 + " "
+            ):
+                line = " " + line
+                processed.append(line)
+                continue
 
         # Match bullet points (-, *, +) at the start of the line with excessive spacing.
         # Capture group 1: indentation and bullet.
@@ -903,10 +1008,10 @@ def _get_table_line_indices(lines: list[str]) -> set[int]:
             continue
 
         if in_table:
-            if "|" not in line:
-                in_table = False
-            else:
+            if "|" in line or stripped.startswith(":"):
                 table_indices.add(idx)
+            else:
+                in_table = False
 
     return table_indices
 
@@ -1009,11 +1114,11 @@ def format_markdown_with_issues(
             continue
 
         if in_table:
-            if "|" not in line:
-                in_table = False
-            else:
+            if "|" in line or stripped_line.startswith(":"):
                 formatted_lines.append(line)
                 continue
+            else:
+                in_table = False
 
         if _is_table_separator(line):
             if current_paragraph:

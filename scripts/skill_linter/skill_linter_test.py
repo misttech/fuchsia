@@ -50,6 +50,74 @@ class TestSkillLinter(unittest.TestCase):
         text = "```markdown\n# Header 1\n## Header 2\n```"
         self.assertEqual(skill_linter._pre_process(text, 4), text)
 
+    def test_pre_process_nested_list_under_numbered_list(self) -> None:
+        # Test that 3-space nested bullets, 5-space continuations, and 3-space code
+        # blocks under numbered lists are normalized to 4, 6, and 4 spaces.
+        text = (
+            "1. First item\n"
+            "   * Child bullet with a longer description that wraps onto the"
+            " next line to verify indentation\n"
+            "     Continuation line\n"
+            "   ```shell\n"
+            "   command\n"
+            "   ```\n"
+            "   Continuation paragraph\n"
+            "2. Second item\n"
+        )
+        expected_4 = (
+            "1.  First item\n"
+            "    * Child bullet with a longer description that wraps onto the"
+            " next line to verify indentation\n"
+            "      Continuation line\n"
+            "    ```shell\n"
+            "    command\n"
+            "    ```\n"
+            "    Continuation paragraph\n"
+            "2.  Second item\n"
+        )
+        self.assertEqual(skill_linter._pre_process(text, 4), expected_4)
+
+        # Test that already properly indented lists are preserved.
+        self.assertEqual(skill_linter._pre_process(expected_4, 4), expected_4)
+
+        # Test formatting end-to-end with format_markdown
+        formatted = skill_linter.format_markdown(text, tab_size=4)
+        self.assertIn("    * Child bullet", formatted)
+        self.assertIn("      verify indentation", formatted)
+        self.assertIn("    ```shell", formatted)
+        self.assertIn("    Continuation paragraph", formatted)
+
+    def test_pre_process_code_blocks_inside_list(self) -> None:
+        # Test that code blocks inside numbered lists are properly indented.
+        text = (
+            "1. Step One:\n"
+            "   ```bash\n"
+            "   ffx target list\n"
+            "   fx status\n"
+            "   ```\n"
+            "2. Step Two:\n"
+            "   ```bash\n"
+            "   fx add-test //src/tests:foo\n"
+            "   fx build\n"
+            "   ```\n"
+        )
+        expected = (
+            "1.  Step One:\n"
+            "    ```bash\n"
+            "    ffx target list\n"
+            "    fx status\n"
+            "    ```\n"
+            "2.  Step Two:\n"
+            "    ```bash\n"
+            "    fx add-test //src/tests:foo\n"
+            "    fx build\n"
+            "    ```\n"
+        )
+        self.assertEqual(skill_linter._pre_process(text, 4), expected)
+        formatted = skill_linter.format_markdown(text, tab_size=4)
+        self.assertIn("    ```bash\n    ffx target list", formatted)
+        self.assertIn("    ```bash\n    fx add-test", formatted)
+
     def test_post_process(self) -> None:
         # Test trailing whitespace removal and newlines
         text = "line with spaces    \nline 2"
@@ -139,6 +207,33 @@ class TestSkillLinter(unittest.TestCase):
         formatted = skill_linter.format_markdown(text, width=10)
         # Width 10 should normally wrap lines, but tables should be skipped
         self.assertEqual(formatted, text + "\n")
+
+    def test_format_markdown_multiline_tables(self) -> None:
+        # Test that multi-line tables with colon row continuations are preserved
+        text = (
+            "| Situation              | Action"
+            "                                            |\n"
+            "| :--------------------- |"
+            " :------------------------------------------------ |\n"
+            "| **P0 Bug**             | Assign an owner IMMEDIATELY. Ensure"
+            " it's Accepted |\n"
+            ":                        : ASAP."
+            "                                             :\n"
+            "| **Semaphore Hang**     | Use"
+            " `fuchsia-diagnose-vksemaphore-hangs` to       |\n"
+            ":                        : identify client KOID. If display Vsync"
+            " stalled,   :\n"
+            ":                        : move to `componentid\\:1335242`   "
+            "                 :\n"
+            ":                        : (`tq-display-bugs@`).            "
+            "                 :\n"
+            "| **Timekeeping**        | Assign to `fmil@`."
+            "                                |\n"
+        )
+        formatted = skill_linter.format_markdown(text, width=10)
+        self.assertEqual(formatted, text)
+        _, issues = skill_linter.format_markdown_with_issues(text, width=80)
+        self.assertEqual(issues, [])
 
     def test_format_markdown_headers(self) -> None:
         # Test that headers are preserved
