@@ -115,10 +115,16 @@ pub const HIGH_PRIORITY: i32 = (NUM_PRIORITIES / 4) * 3;
 
 impl SchedulerStateBaseProfile {
     /// Creates a fair `SchedulerStateBaseProfile` with the given priority and inheritable flag.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `priority` is outside `LOWEST_PRIORITY..=HIGHEST_PRIORITY`.
     pub fn fair(priority: i32, inheritable: bool) -> Self {
+        assert!((LOWEST_PRIORITY..=HIGHEST_PRIORITY).contains(&priority));
         let mut profile = MaybeUninit::uninit();
-        // SAFETY: `cpp_scheduler_state_base_profile_init_fair` unconditionally initializes
-        // a scheduler state into the provided storage.
+        // SAFETY: `priority` is validated to be within `LOWEST_PRIORITY..=HIGHEST_PRIORITY`, and
+        // `cpp_scheduler_state_base_profile_init_fair` unconditionally initializes a scheduler
+        // state into the provided storage.
         unsafe {
             cpp_scheduler_state_base_profile_init_fair(&mut profile, priority, inheritable);
             profile.assume_init()
@@ -131,7 +137,8 @@ impl SchedulerStateBaseProfile {
     }
 }
 
-/// An opaque type representing the C++ `SchedulerState::WaitQueueInheritedSchedulerState` struct.
+/// An opaque type representing the C++ `SchedulerState::WaitQueueInheritedSchedulerState`
+/// struct.
 #[repr(C)]
 pub struct WaitQueueInheritedSchedulerState {
     raw: zr::Opaque<bindings::SchedulerState_WaitQueueInheritedSchedulerState>,
@@ -144,4 +151,19 @@ zr::static_assert!(
 zr::static_assert!(
     align_of::<WaitQueueInheritedSchedulerState>()
         == align_of::<bindings::SchedulerState_WaitQueueInheritedSchedulerState>()
+);
+
+/// An opaque type representing the C++ `SchedulerState::EffectiveProfile` struct.
+#[repr(C)]
+pub struct SchedulerStateEffectiveProfile {
+    raw: zr::Opaque<bindings::SchedulerState_EffectiveProfile>,
+}
+
+zr::static_assert!(
+    size_of::<SchedulerStateEffectiveProfile>()
+        == size_of::<bindings::SchedulerState_EffectiveProfile>()
+);
+zr::static_assert!(
+    align_of::<SchedulerStateEffectiveProfile>()
+        == align_of::<bindings::SchedulerState_EffectiveProfile>()
 );

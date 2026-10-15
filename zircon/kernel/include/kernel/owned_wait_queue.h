@@ -624,8 +624,62 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
 #include <kernel/ffi.h>
 
 extern "C" {
-void cpp_owned_wait_queue_init(ffi::Uninitialized<OwnedWaitQueue>* queue);
-void cpp_owned_wait_queue_reset_owner_if_no_waiters(OwnedWaitQueue* queue);
+void cpp_thread_unblock_list_init(ffi::Uninitialized<Thread::UnblockList>* list);
+void cpp_thread_unblock_list_destroy(Thread::UnblockList* list);
+
+void cpp_owned_wait_queue_init(ffi::Uninitialized<OwnedWaitQueue>* wait_queue);
+bool rust_owned_wait_queue_wake_requeue_hook_allow(void* context, const Thread* t);
+void rust_owned_wait_queue_wake_requeue_hook_on_wake_or_requeue(void* context, Thread* t);
+void cpp_owned_wait_queue_disown_all_queues(Thread* t);
+void cpp_owned_wait_queue_get_effective_profile(
+    const OwnedWaitQueue* wait_queue,
+    ffi::Uninitialized<SchedulerState::EffectiveProfile>* out_profile);
+void cpp_owned_wait_queue_set_thread_base_profile_and_propagate(
+    Thread* thread, const SchedulerState::BaseProfile* profile);
+ChainLock::Result cpp_owned_wait_queue_lock_pi_chain_thread(Thread* start);
+ChainLock::Result cpp_owned_wait_queue_lock_pi_chain_queue(WaitQueueBase* start);
+void cpp_owned_wait_queue_assert_not_owned(const OwnedWaitQueue* wait_queue);
+zx_status_t cpp_owned_wait_queue_assign_owner(OwnedWaitQueue* wait_queue, Thread* new_owner);
+zx_status_t cpp_owned_wait_queue_assign_owner_locked(OwnedWaitQueue* wait_queue, Thread* new_owner);
+void cpp_owned_wait_queue_reset_owner_if_no_waiters(OwnedWaitQueue* wait_queue);
+void cpp_owned_wait_queue_assert_safe_for_pooling(const OwnedWaitQueue* wait_queue);
+zx_status_t cpp_owned_wait_queue_block_and_assign_owner(OwnedWaitQueue* wait_queue,
+                                                        const Deadline* deadline, Thread* new_owner,
+                                                        ResourceOwnership resource_ownership,
+                                                        Interruptible interruptible);
+zx_status_t cpp_owned_wait_queue_block_and_assign_owner_locked(
+    OwnedWaitQueue* wait_queue, Thread* current_thread, const Deadline* deadline,
+    const OwnedWaitQueue::BAAOLockingDetails* details, ResourceOwnership resource_ownership,
+    Interruptible interruptible, ForceInheritance force_inheritance);
+void cpp_owned_wait_queue_cancel_baao_operation_locked(
+    OwnedWaitQueue* wait_queue, Thread* current_thread,
+    const OwnedWaitQueue::BAAOLockingDetails* details);
+bool cpp_owned_wait_queue_lock_for_baao_operation_or_backoff(
+    OwnedWaitQueue* wait_queue, Thread* current_thread, Thread* new_owner,
+    OwnedWaitQueue::BAAOLockingDetails* details_out);
+bool cpp_owned_wait_queue_try_lock_for_baao_operation_locked(
+    OwnedWaitQueue* wait_queue, Thread* current_thread, Thread* new_owner,
+    OwnedWaitQueue::BAAOLockingDetails* details_out);
+void cpp_owned_wait_queue_wake_threads(OwnedWaitQueue* wait_queue, uint32_t wake_count,
+                                       void* wake_hooks,
+                                       OwnedWaitQueue::WakeThreadsResult* out_result);
+void cpp_owned_wait_queue_wake_thread_and_assign_owner(
+    OwnedWaitQueue* wait_queue, void* wake_hooks, OwnedWaitQueue::WakeThreadsResult* out_result);
+void cpp_owned_wait_queue_wake_threads_locked(OwnedWaitQueue* wait_queue,
+                                              Thread::UnblockList* threads, void* wake_hooks,
+                                              OwnedWaitQueue::WakeOption option,
+                                              ForceInheritance force_inheritance,
+                                              OwnedWaitQueue::WakeThreadsResult* out_result);
+bool cpp_owned_wait_queue_lock_for_wake_operation_or_backoff(OwnedWaitQueue* wait_queue,
+                                                             uint32_t max_wake, void* wake_hooks,
+                                                             Thread::UnblockList* unblock_list_out);
+bool cpp_owned_wait_queue_lock_for_wake_operation_locked(OwnedWaitQueue* wait_queue,
+                                                         uint32_t max_wake, void* wake_hooks,
+                                                         Thread::UnblockList* unblock_list_out);
+void cpp_owned_wait_queue_wake_and_requeue(
+    OwnedWaitQueue* wait_queue, OwnedWaitQueue* requeue_target, Thread* new_requeue_owner,
+    uint32_t wake_count, uint32_t requeue_count, void* wake_hooks, void* requeue_hooks,
+    OwnedWaitQueue::WakeOption wake_option, OwnedWaitQueue::WakeThreadsResult* out_result);
 }  // extern "C"
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_OWNED_WAIT_QUEUE_H_

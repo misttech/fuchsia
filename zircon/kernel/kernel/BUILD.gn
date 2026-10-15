@@ -266,12 +266,16 @@ kernel_bindgen_crate("wait-queue-bindings") {
     "WaitQueueCollection_ThreadState",
     "WaitQueueBase",
     "WaitQueue",
+    "SchedulerState::EffectiveProfile",
+    "SchedulerState_EffectiveProfile",
     "SchedulerState::WaitQueueInheritedSchedulerState",
     "SchedulerState_WaitQueueInheritedSchedulerState",
   ]
   var_allowlist = [ "WaitQueue_kMagic" ]
   var_blocklist = [ "WaitQueueCollection_kPrimaryKeyZero" ]
   opaque_types = [
+    "SchedulerState::EffectiveProfile",
+    "SchedulerState_EffectiveProfile",
     "SchedulerState::WaitQueueInheritedSchedulerState",
     "SchedulerState_WaitQueueInheritedSchedulerState",
   ]
@@ -298,6 +302,7 @@ kernel_bindgen_crate("wait-queue-bindings") {
     "WaitQueueCollection_.*",
     "WaitQueueBase_.*",
     "WaitQueue_.*",
+    "SchedulerState_EffectiveProfile_.*",
     "SchedulerState_WaitQueueInheritedSchedulerState_.*",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
@@ -323,10 +328,27 @@ kernel_bindgen_crate("owned-wait-queue-bindings") {
   cpp = true
 
   notice_year = 2026
-  function_allowlist = [ "cpp_owned_wait_queue_.*" ]
+  function_allowlist = [
+    "cpp_owned_wait_queue_.*",
+    "cpp_thread_unblock_list_.*",
+  ]
   type_allowlist = [
     "WaitQueueBase",
     "OwnedWaitQueue",
+    "OwnedWaitQueue::BAAOLockingDetails",
+    "OwnedWaitQueue_BAAOLockingDetails",
+    "OwnedWaitQueue::WakeThreadsResult",
+    "OwnedWaitQueue_WakeThreadsResult",
+    "OwnedWaitQueue::WakeOption",
+    "OwnedWaitQueue_WakeOption",
+    "ResourceOwnership",
+    "Interruptible",
+    "ForceInheritance",
+    "Result",
+    "SchedulerState::EffectiveProfile",
+    "SchedulerState_EffectiveProfile",
+    "Thread::UnblockList",
+    "Thread_UnblockList",
   ]
   var_allowlist = [ "OwnedWaitQueue_kOwnedMagic" ]
   var_blocklist = [
@@ -335,25 +357,54 @@ kernel_bindgen_crate("owned-wait-queue-bindings") {
     "OwnedWaitQueue_BaseProfileChangedOp",
     "OwnedWaitQueue_default_wake_hooks_",
   ]
-  opaque_types = [ "WaitQueueBase" ]
+  opaque_types = [
+    "WaitQueueBase",
+    "SchedulerState::EffectiveProfile",
+    "SchedulerState_EffectiveProfile",
+    "Thread::UnblockList",
+    "Thread_UnblockList",
+  ]
+  rustified_enum = [
+    "OwnedWaitQueue::WakeOption",
+    "OwnedWaitQueue_WakeOption",
+    "ResourceOwnership",
+    "Interruptible",
+    "ForceInheritance",
+    "Result",
+  ]
   type_blocklist = [
     "WaitQueueBase_.*",
-    "OwnedWaitQueue_.*",
+    "OwnedWaitQueue_IWakeRequeueHook",
+    "OwnedWaitQueue_ReplaceOwnerLockingDetails",
+    "OwnedWaitQueue_WakeRequeueThreadDetails",
+    "OwnedWaitQueue_RequeueLockingDetails",
+    "OwnedWaitQueue_PropagateOp",
+    "OwnedWaitQueue_PropagateOpTag",
+    "OwnedWaitQueue_DefaultWakeHooks",
+    "OwnedWaitQueue_LockingBehavior",
+    "Deadline",
+    "SchedulerState_BaseProfile",
     "SchedulerState_WaitQueueInheritedSchedulerState",
     "Thread",
+    "zx_status_t",
   ]
   function_blocklist = [
     "WaitQueueBase_.*",
     "OwnedWaitQueue_.*",
+    "SchedulerState_EffectiveProfile_.*",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//sdk/rust/zx-types" ]
   expect_lints = [
     "non_camel_case_types",
     "non_upper_case_globals",
   ]
   raw_lines = [
     "#![no_std]",
+    "pub use zx_types::zx_status_t;",
+    "pub type Deadline = core::ffi::c_void;",
     "pub type Thread = core::ffi::c_void;",
+    "pub type SchedulerState_BaseProfile = core::ffi::c_void;",
     "pub type SchedulerState_WaitQueueInheritedSchedulerState = core::ffi::c_void;",
   ]
 }

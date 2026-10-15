@@ -355,7 +355,14 @@ impl ChainLockProof<'_, WaitQueueBase> {
     }
 
     /// Returns the collection of blocked threads mutably.
-    pub(crate) fn collection_mut(&mut self) -> &mut WaitQueueCollection {
+    ///
+    /// # Safety
+    ///
+    /// If `self.owner()` is the base subobject of an
+    /// [`OwnedWaitQueue`](crate::kernel::owned_wait_queue::OwnedWaitQueue)
+    /// (`self.owner().magic() == OWNED_MAGIC`), the caller must maintain the `OwnedWaitQueue`
+    /// safety invariants between `collection` and `inherited_scheduler_state_storage`.
+    pub(crate) unsafe fn collection_mut(&mut self) -> &mut WaitQueueCollection {
         let (owner, token) = self.split_mut();
         // SAFETY: As in `collection`; the unique borrow of `self` ensures no other reference to
         // `collection` is live.
@@ -1093,7 +1100,9 @@ mod tests {
                 let mut base_proof = proof.as_base();
                 expect_true!(core::ptr::eq(base_proof.owner(), &wq_ref.base));
                 expect_eq!(base_proof.collection().count(), 0);
-                expect_eq!(base_proof.collection_mut().count(), 0);
+                // SAFETY: `wq_ref.base` is the base of a standalone `WaitQueue` (not an
+                // `OwnedWaitQueue`), and `.count()` does not mutate the collection.
+                expect_eq!(unsafe { base_proof.collection_mut() }.count(), 0);
                 expect_true!(base_proof.is_empty());
                 expect_eq!(base_proof.count(), 0);
                 expect_true!(base_proof.peek_front().is_none());
@@ -1107,7 +1116,9 @@ mod tests {
             let mut guard = OwnerGuard::new(&wq_ref.base, token);
             ChainLockTransaction::finalize(token);
             let mut proof = guard.proof();
-            base_count = proof.collection_mut().count();
+            // SAFETY: `wq_ref.base` is the base of a standalone `WaitQueue` (not an
+            // `OwnedWaitQueue`), and `.count()` does not mutate the collection.
+            base_count = unsafe { proof.collection_mut() }.count();
             guard.release();
             DONE
         });

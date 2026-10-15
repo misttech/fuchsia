@@ -17,14 +17,16 @@ use super::thread_dispatcher::{
 };
 use crate::arch_rs::{CopyContext, InterruptDisableGuard, arch_copy_from_user_capture_faults};
 use crate::kconcurrent::{
-    ChainLockTransaction, IRQ_SAVE_OPTION, NO_IRQ_SAVE_OPTION, StateOption, StateSaver, clt_tag,
-    single_chain_lock_guard_owned,
+    ChainLockProof, ChainLockTransaction, IRQ_SAVE_OPTION, NO_IRQ_SAVE_OPTION, StateOption,
+    StateSaver, clt_tag, single_chain_lock_guard_owned,
 };
 use crate::kernel::deadline::Deadline;
 use crate::kernel::lock_trace::{lock_trace_duration, lock_trace_flow_begin, lock_trace_flow_end};
-use crate::kernel::owned_wait_queue::{OwnedWaitQueue, WakeOption, WakeRequeueHook};
-use crate::kernel::thread::{AnnotatedAutoEagerReschedDisabler, ThreadPtr, soft_fault};
-use crate::kernel::wait_queue::{Interruptible, ResourceOwnership};
+use crate::kernel::owned_wait_queue::{IWakeRequeueHook, OwnedWaitQueue, WakeOption};
+use crate::kernel::thread::{
+    AnnotatedAutoEagerReschedDisabler, PreemptDisabledToken, Thread, ThreadPtr, soft_fault,
+};
+use crate::kernel::wait_queue::{ForceInheritance, Interruptible, ResourceOwnership};
 use crate::ktrace_rs::{ArgValue, begin_scope_cond};
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::mem::{MaybeUninit, size_of};
@@ -297,8 +299,9 @@ impl ThreadDispatcher {
 
 struct WakeHook;
 
-impl WakeRequeueHook for WakeHook {
-    fn on_wake_or_requeue(&mut self, t: ThreadPtr) {
+impl IWakeRequeueHook for WakeHook {
+    fn on_wake_or_requeue(&mut self, t: &mut ChainLockProof<'_, Thread>) {
+        let t = ThreadPtr::from(t.owner());
         // Why is this safe?  Because there are two places that a blocking
         // futex ID gets set.  By a thread while it is running and enters
         // FutexWait, or when a thread has been successfully dequeued from an
@@ -337,8 +340,9 @@ struct RequeueHook<'a, 'b> {
     new_id: FutexId,
 }
 
-impl WakeRequeueHook for RequeueHook<'_, '_> {
-    fn on_wake_or_requeue(&mut self, t: ThreadPtr) {
+impl IWakeRequeueHook for RequeueHook<'_, '_> {
+    fn on_wake_or_requeue(&mut self, t: &mut ChainLockProof<'_, Thread>) {
+        let t = ThreadPtr::from(t.owner());
         // SAFETY: `t` is a valid `ThreadPtr` whose ChainLock is held by the caller.
         if let Some(user_thread) = unsafe { ThreadDispatcher::from_core_thread(t) } {
             // SAFETY: `t`'s ChainLock is held during the requeue operation.
@@ -636,7 +640,11 @@ impl<'a> PendingOpRef<'a> {
                 pool_lock_guard.as_mut().free_futexes_mut().push_front(removed);
                 let token = pool_lock_guard.token();
                 state.set_id(FutexId::null(), token);
-                state.waiters.assert_not_owned();
+                // SAFETY: `pool_lock` is held and `pending_operation_count` just reached 0, so no
+                // concurrent operations are mutating `state.waiters`.
+                unsafe {
+                    state.waiters.assert_not_owned();
+                }
             }
         }
     }
@@ -884,7 +892,11 @@ impl FutexContext {
         let token = guard.token();
         debug_assert_eq!(new_state.id(), FutexId::null());
         debug_assert_eq!(new_state.pending_operation_count(token), 0);
-        new_state.waiters.assert_not_owned();
+        // SAFETY: `pool_lock` is held and `new_state` was just popped from `free_futexes` with a
+        // zero `pending_operation_count`, so no concurrent operations are mutating `waiters`.
+        unsafe {
+            new_state.waiters.assert_not_owned();
+        }
 
         let ptr = NonNull::from(&*new_state);
         new_state.set_id(id, token);
@@ -1103,7 +1115,7 @@ impl FutexContext {
                 // Now we can go ahead and obtain the ChainLocks we need, and once we have
                 // them, drop the spinlocks we are holding.
                 // SAFETY: Called from a running thread context.
-                let current_kernel_thread = unsafe { ThreadPtr::current() };
+                let current_kernel_thread = unsafe { ThreadPtr::current().as_ref() };
 
                 // StateSaver handles the relax operation during backoff. Interrupts are already
                 // disabled by `irqd`.
@@ -1130,17 +1142,17 @@ impl FutexContext {
                 let token = unsafe { transaction.register() };
 
                 let new_owner = new_owner_observation.core_thread();
-                let locking_details = loop {
+                let (locking_details, waiters_guard, mut current_thread_guard) = loop {
                     // SAFETY: `current_kernel_thread` is the current thread, `new_owner` is kept
                     // valid by `new_owner_observation`, and no chain locks are held.
-                    if let Some(details) = unsafe {
+                    if let Some(baao) = unsafe {
                         futex_ref.state().waiters.lock_for_baao_operation_or_backoff(
                             current_kernel_thread,
-                            new_owner,
+                            new_owner.map(|owner| owner.as_ref()),
                             &token,
                         )
                     } {
-                        break details;
+                        break baao;
                     }
                     // No other chain locks are held. Simply try again until the locks are obtained.
                     transaction.assert_num_locks_held(0);
@@ -1199,6 +1211,9 @@ impl FutexContext {
                     let flow_id = unsafe { current_core_thread.take_next_lock_flow_id() };
                     lock_trace_flow_begin!("contend_futex", flow_id);
 
+                    // SAFETY: Preemption is disabled by `_eager_resched_disabler`.
+                    let preempt_disabled_token = unsafe { PreemptDisabledToken::new() };
+                    let mut current_thread_proof = current_thread_guard.proof();
                     // SAFETY: All required ChainLocks were acquired by
                     // `lock_for_baao_operation_or_backoff` (producing `locking_details`) and the
                     // transaction was finalized with rescheduling disabled by
@@ -1206,13 +1221,16 @@ impl FutexContext {
                     // alive until this call returns because `futex_ref` holds a pending operation
                     // reference to it.
                     unsafe {
-                        futex_ref.state().waiters.block_and_assign_owner_locked(
-                            current_kernel_thread,
+                        OwnedWaitQueue::block_and_assign_owner_locked(
+                            waiters_guard,
+                            &mut current_thread_proof,
                             deadline,
-                            locking_details,
+                            &locking_details,
                             ResourceOwnership::Normal,
-                            Interruptible::YES,
+                            Interruptible::Yes,
+                            ForceInheritance::No,
                             &token,
+                            &preempt_disabled_token,
                         )
                     }
                 };
@@ -1226,9 +1244,7 @@ impl FutexContext {
 
                 // We came out of the block operation holding only our current thread's
                 // chain lock.  Drop our own lock and break out of the retry loop.
-                // SAFETY: `current_kernel_thread` is the valid current thread.
-                let current_kernel_thread_lock = unsafe { current_kernel_thread.get_lock() };
-                current_kernel_thread_lock.release(&token);
+                current_thread_guard.release();
                 break block_result;
             }
         };
@@ -1547,9 +1563,13 @@ impl FutexContext {
                 // active, as `wake_and_requeue` asserts. The two queues are distinct because
                 // `wake_id != requeue_id` was checked above and each active futex ID maps to its
                 // own `FutexState`. Neither hook re-enters a queue.
+                // SAFETY: `new_requeue_owner` (if `Some`) is kept valid by
+                // `requeue_owner_guard`.
+                let new_requeue_owner_ref =
+                    unsafe { new_requeue_owner.map(|owner| owner.as_ref()) };
                 let wake_threads_result = wake_futex_ref.state().waiters.wake_and_requeue(
                     &requeue_futex_ref.state().waiters,
-                    new_requeue_owner,
+                    new_requeue_owner_ref,
                     wake_count,
                     requeue_count,
                     &mut wake_hook,
@@ -1597,7 +1617,7 @@ impl FutexContext {
                 IRQ_SAVE_OPTION,
                 clt_tag!("FutexContext::FutexGetOwner")
             );
-            koid = match waiters.owner_locked(scope.token()) {
+            koid = match scope.proof().queue_owner() {
                 None => ZX_KOID_INVALID,
                 Some(owner) => {
                     // Any thread which owns a FutexState's wait queue *must* be a
