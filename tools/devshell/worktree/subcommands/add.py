@@ -53,13 +53,22 @@ def run(args: Any, pool: WorktreePool) -> None:
     try:
         run_jiri(
             pool.jiri_root,
-            ["worktree", "sync", str(wt.path)],
+            [
+                "worktree",
+                "sync",
+                "--force",
+                str(wt.path),
+            ],
             check=True,
         )
     except subprocess.CalledProcessError as e:
         print(f"Failed to sync worktree: {e}", file=sys.stderr)
         wt.release_lease()
         sys.exit(1)
+
+    # Name the slot's jj workspaces after the task, so `jj log` shows which
+    # task each one belongs to.
+    wt.rename_jj_workspaces(task_name)
 
     symlink_path = pool.worktrees_dir / task_name
     if symlink_path != wt.path:

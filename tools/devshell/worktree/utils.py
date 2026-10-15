@@ -102,3 +102,25 @@ def run_git(
     if not quiet:
         print(f"Running git {' '.join(args)} in {repo_path}...")
     return subprocess.run(["git"] + args, **kwargs)
+
+
+def run_jj(
+    repo_path: Path, args: list[str], quiet: bool = False, **kwargs: Any
+) -> subprocess.CompletedProcess[Any]:
+    """Runs a jj command in a specific repository or workspace path.
+
+    Args:
+        repo_path: Path to the repository or jj workspace.
+        args: List of arguments to pass to jj.
+        quiet: If True, do not print the command being run.
+        **kwargs: Additional arguments to pass to subprocess.run.
+
+    Returns:
+        The CompletedProcess object.
+    """
+    if not quiet:
+        print(f"Running jj {' '.join(args)} in {repo_path}...")
+    return subprocess.run(
+        ["jj", "--no-pager", "--color=never", "-R", str(repo_path)] + args,
+        **kwargs,
+    )

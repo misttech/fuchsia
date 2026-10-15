@@ -7,12 +7,13 @@ import os
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 from build_dir import BuildDir
-from utils import run_git
+from utils import run_git, run_jj
 
 
 class NoFreeWorktreesError(RuntimeError):
@@ -47,6 +48,59 @@ class Worktree:
         self.main_checkout_dir = Path(main_checkout_dir).resolve()
         self.meta_dir = self.path / ".jiri_root"
         self.lease_file = self.meta_dir / "lease.json"
+
+    def is_jj_workspace(self) -> bool:
+        # A jj workspace's .jj/repo is a file pointing at the main checkout's
+        # repo (in the main checkout itself, it's a directory).
+        return (self.path / ".jj" / "repo").is_file()
+
+    def jj_workspace_paths(self) -> list[Path]:
+        """Returns the slot's jj workspaces: its root and any jj sub-projects.
+
+        Candidate sub-project paths come from the main checkout's latest jiri
+        snapshot, so this doesn't have to walk the tree.
+        """
+        candidates = [self.path]
+        snapshot = (
+            self.main_checkout_dir / ".jiri_root" / "update_history" / "latest"
+        )
+        try:
+            for project in ET.parse(snapshot).getroot().iter("project"):
+                rel_path = project.get("path")
+                if not rel_path:
+                    continue
+                if os.path.isabs(rel_path):
+                    rel_path = os.path.relpath(rel_path, self.main_checkout_dir)
+                candidates.append(self.path / rel_path)
+        except (OSError, ET.ParseError) as e:
+            print(
+                f"Warning: failed to read {snapshot}; only checking the root for jj workspaces: {e}",
+                file=sys.stderr,
+            )
+        return [
+            p
+            for p in dict.fromkeys(c.resolve() for c in candidates)
+            if (p / ".jj" / "repo").is_file()
+        ]
+
+    def rename_jj_workspaces(self, name: str) -> None:
+        """Renames the slot's jj workspaces to name, warning on failure."""
+        # Renaming a workspace to its current name is a no-op in jj.
+        for ws in self.jj_workspace_paths():
+            try:
+                run_jj(
+                    ws,
+                    ["workspace", "rename", name],
+                    quiet=True,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                print(
+                    f"Warning: failed to rename jj workspace '{ws}' to '{name}': {e.stderr or e}",
+                    file=sys.stderr,
+                )
 
     def get_state(self) -> WorktreeState:
         if self.lease_file.exists():
@@ -208,13 +262,20 @@ class Worktree:
         for bd in self.build_dirs():
             bd.restore_args()
 
-        try:
-            run_git(self.path, ["checkout", "--detach"], quiet=True, check=True)
-        except Exception as e:
-            print(
-                f"Warning: failed to detach branch in worktree '{self.name}': {e}",
-                file=sys.stderr,
-            )
+        # Rename the slot's jj workspaces from the task back to the slot's
+        # name, so `jj log` shows which slots are free.
+        self.rename_jj_workspaces(self.name)
+        # jj keeps HEAD detached already.
+        if not self.is_jj_workspace():
+            try:
+                run_git(
+                    self.path, ["checkout", "--detach"], quiet=True, check=True
+                )
+            except Exception as e:
+                print(
+                    f"Warning: failed to detach branch in worktree '{self.name}': {e}",
+                    file=sys.stderr,
+                )
 
         try:
             if self.lease_file.exists():

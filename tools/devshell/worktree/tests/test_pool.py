@@ -89,6 +89,54 @@ class TestWorktreePool(unittest.TestCase):
             wt.path, ["checkout", "--detach"], quiet=True, check=True
         )
 
+    @patch("worktree.run_jj")
+    @patch("worktree.run_git")
+    def test_release_renames_jj_workspaces(
+        self,
+        mock_run_git: MagicMock,
+        mock_run_jj: MagicMock,
+    ) -> None:
+        wt_path = self.jiri_root / "worktrees" / "wt1"
+        # The root and the vendor/google sub-project are jj workspaces; the
+        # integration sub-project is a plain git worktree.
+        for rel in (".", "vendor/google"):
+            (wt_path / rel / ".jj").mkdir(parents=True, exist_ok=True)
+            (wt_path / rel / ".jj" / "repo").write_text("../../../.jj/repo\n")
+        (wt_path / "integration").mkdir(parents=True, exist_ok=True)
+        snapshot = self.jiri_root / "update_history" / "latest"
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text(
+            "<manifest><projects>"
+            '<project name="fuchsia" path="."/>'
+            '<project name="vendor/google" path="vendor/google"/>'
+            '<project name="integration" path="integration"/>'
+            "</projects></manifest>"
+        )
+        with open(self.pool.registry_file, "w") as f:
+            f.write(f"{wt_path}\n")
+        wt = self.pool.get_worktrees()[0]
+        self.assertTrue(wt.is_jj_workspace())
+        self.assertEqual(
+            wt.jj_workspace_paths(),
+            [wt_path.resolve(), (wt_path / "vendor" / "google").resolve()],
+        )
+
+        wt.acquire_lease("my-task")
+        mock_run_jj.assert_not_called()
+        wt.release_lease()
+        self.assertEqual(
+            [c.args for c in mock_run_jj.call_args_list],
+            [
+                (wt_path.resolve(), ["workspace", "rename", "wt1"]),
+                (
+                    (wt_path / "vendor" / "google").resolve(),
+                    ["workspace", "rename", "wt1"],
+                ),
+            ],
+        )
+        # jj keeps HEAD detached, so git isn't needed.
+        mock_run_git.assert_not_called()
+
     def test_generate_random_pool_name(self) -> None:
         name = self.pool._generate_random_pool_name()
         self.assertIn("-", name)
@@ -125,7 +173,12 @@ class TestAddSubcommand(unittest.TestCase):
         self.assertEqual(lease.task_id, "my-feat")
         mock_run_jiri.assert_called_once_with(
             self.jiri_root,
-            ["worktree", "sync", str(wt_path)],
+            [
+                "worktree",
+                "sync",
+                "--force",
+                str(wt_path),
+            ],
             check=True,
         )
 
@@ -195,7 +248,12 @@ class TestAddSubcommand(unittest.TestCase):
         self.assertEqual(lease.task_id, "my-feat")
         mock_run_jiri_add.assert_called_once_with(
             self.jiri_root,
-            ["worktree", "sync", str(wt.path)],
+            [
+                "worktree",
+                "sync",
+                "--force",
+                str(wt.path),
+            ],
             check=True,
         )
 

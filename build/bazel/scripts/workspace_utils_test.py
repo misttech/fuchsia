@@ -26,6 +26,7 @@ class TestWorkspaceShouldExcludeFile(unittest.TestCase):
             ".jiri",
             ".fx",
             ".git",
+            ".jj",
             "bazel-bin",
             "bazel-repos",
             "bazel-out",

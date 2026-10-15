@@ -44,8 +44,8 @@ def workspace_should_exclude_file(path: str) -> bool:
         return True
     # Don't symlink the Jiri files, this can confuse Jiri during an 'jiri update'
     # Don't symlink the .fx directory (TODO(digit): I don't remember why?)
-    # Don´t symlink the .git directory as well, since it needs to be handled separately.
-    if path.startswith((".jiri", ".fx", ".git")):
+    # Don't symlink the .git or .jj directories as well.
+    if path.startswith((".jiri", ".fx", ".git", ".jj")):
         return True
     # Don't symlink the convenience symlinks from the Fuchsia source tree
     if path in ("bazel-bin", "bazel-out", "bazel-repos", "bazel-workspace"):
