@@ -7,7 +7,7 @@
 
 #![allow(missing_docs)]
 
-use fidl_fuchsia_fonts::{GenericFontFamily, Slant, Style2 as FidlStyle, Width};
+use fidl_fuchsia_fonts_common::{GenericFontFamily, Slant, Style2 as FidlStyle, Width};
 use serde::{Deserialize, Serialize};
 
 /// Generates Serde serialize and deserialize methods for types of `Option<T>`, where `T` is a type
@@ -93,7 +93,7 @@ macro_rules! derive_opt {
     };
 }
 
-/// Local mirror of [`fidl_fuchsia_fonts::Style2`], for use in JSON serialization.
+/// Local mirror of [`fidl_fuchsia_fonts_common::Style2`], for use in JSON serialization.
 ///
 /// We can't just use a Serde remote type for `Style2` here because there are lots of other required
 /// traits that are not derived for FIDL tables.
@@ -129,7 +129,7 @@ impl From<StyleOptions> for FidlStyle {
     }
 }
 
-/// Local mirror of [`fidl_fuchsia_fonts::GenericFontFamily`], for use in JSON serialization.
+/// Local mirror of [`fidl_fuchsia_fonts_common::GenericFontFamily`], for use in JSON serialization.
 ///
 /// Serialized values are in _kebab-case_, e.g. `"sans-serif"`.
 #[allow(missing_docs)]
@@ -149,7 +149,7 @@ pub enum GenericFontFamilyDef {
 
 derive_opt!(OptGenericFontFamily, GenericFontFamily, GenericFontFamilyDef, "GenericFontFamilyDef");
 
-/// Local mirror of [`fidl_fuchsia_fonts::Slant`], for use in JSON serialization.
+/// Local mirror of [`fidl_fuchsia_fonts_common::Slant`], for use in JSON serialization.
 ///
 /// Serialized values are _lowercase_, e.g. `"italic"`.
 #[allow(missing_docs)]
@@ -163,7 +163,7 @@ pub enum SlantDef {
 
 derive_opt!(OptSlant, Slant, SlantDef, "SlantDef");
 
-/// Local mirror of [`fidl_fuchsia_fonts::Width`], for use in JSON serialization.
+/// Local mirror of [`fidl_fuchsia_fonts_common::Width`], for use in JSON serialization.
 ///
 /// Serialized values are in _kebab-case_, e.g. `"semi-condensed"`.
 #[allow(missing_docs)]

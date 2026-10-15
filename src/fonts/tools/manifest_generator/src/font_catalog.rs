@@ -9,13 +9,13 @@
 use crate::merge::{MergeError, TryMerge, TryMergeGroups};
 use crate::serde_ext::{self, LoadError};
 use anyhow::Error;
-use fidl_fuchsia_fonts::GenericFontFamily;
+use fidl_fuchsia_fonts_common::GenericFontFamily;
 use itertools::Itertools;
 use manifest::serde_ext::*;
 use manifest::v2::{FontFamilyAliasSet, Style};
 use rayon::prelude::*;
-use serde::de::Deserializer;
 use serde::Deserialize;
+use serde::de::Deserializer;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
@@ -243,7 +243,7 @@ pub struct Typeface {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_fonts::{Slant, Style2 as FidlStyle, Width, WEIGHT_NORMAL};
+    use fidl_fuchsia_fonts_common::{Slant, Style2 as FidlStyle, WEIGHT_NORMAL, Width};
     use maplit::btreemap;
     use pretty_assertions::assert_eq;
     use std::iter;
@@ -696,12 +696,14 @@ mod tests {
                 },
                 Family {
                     name: "Family B".to_string(),
-                    aliases: vec![FontFamilyAliasSet::new(
-                        vec!["BFamily", "FamilyB"],
-                        StyleOptions::default(),
-                        iter::empty::<String>(),
-                    )?
-                    .into()]
+                    aliases: vec![
+                        FontFamilyAliasSet::new(
+                            vec!["BFamily", "FamilyB"],
+                            StyleOptions::default(),
+                            iter::empty::<String>(),
+                        )?
+                        .into(),
+                    ]
                     .into_iter()
                     .collect(),
                     generic_family: Some(GenericFontFamily::Serif),

@@ -7,7 +7,7 @@
 use crate::serde_ext::*;
 use anyhow::{Error, ensure};
 use char_set::CharSet;
-use fidl_fuchsia_fonts::{GenericFontFamily, Slant, WEIGHT_NORMAL, Width};
+use fidl_fuchsia_fonts_common::{GenericFontFamily, Slant, WEIGHT_NORMAL, Width};
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use itertools::Itertools;
 use offset_string::OffsetString;
@@ -145,7 +145,7 @@ impl FontFamilyAliasSet {
     /// FontFamilyAliasSet::new(
     ///     vec!["Roboto Condensed"],
     ///     StyleOptions {
-    ///         width: Some(fidl_fuchsia_fonts::Width::Condensed),
+    ///         width: Some(fidl_fuchsia_fonts_common::Width::Condensed),
     ///         ..Default::default()
     ///     },
     ///     vec![]);
@@ -382,7 +382,7 @@ impl TypefaceId {
     }
 }
 
-/// Describes a typeface's style properties. Equivalent to [`fidl_fuchsia_fonts::Style2`], but all
+/// Describes a typeface's style properties. Equivalent to [`fidl_fuchsia_fonts_common::Style2`], but all
 /// fields are required.
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash)]

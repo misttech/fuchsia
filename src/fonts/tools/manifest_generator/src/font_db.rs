@@ -547,7 +547,7 @@ mod tests {
     use crate::font_pkgs::FontPackageEntry;
     use crate::product_config::Settings;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_fonts::{GenericFontFamily, Slant, Width};
+    use fidl_fuchsia_fonts_common::{GenericFontFamily, Slant, Width};
     use manifest::v2::Style;
     use maplit::btreemap;
 

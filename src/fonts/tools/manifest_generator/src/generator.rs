@@ -8,7 +8,7 @@ use crate::{FontCatalog, FontPackageListing, FontSets, ProductConfig};
 use anyhow::Error;
 use font_info::FontInfoLoader;
 use itertools::Itertools;
-use manifest::{v2, FontManifestWrapper};
+use manifest::{FontManifestWrapper, v2};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
@@ -188,7 +188,7 @@ impl From<Vec<GeneratorError>> for GeneratorErrorVec {
 
 impl From<GeneratorErrors> for Vec<GeneratorError> {
     fn from(source: GeneratorErrors) -> Self {
-        source.0 .0
+        source.0.0
     }
 }
 
@@ -213,7 +213,7 @@ mod tests {
     use anyhow::format_err;
     use assert_matches::assert_matches;
     use char_set::CharSet;
-    use fidl_fuchsia_fonts::{GenericFontFamily, Slant, Width};
+    use fidl_fuchsia_fonts_common::{GenericFontFamily, Slant, Width};
     use font_info::{FontAssetSource, FontInfo};
     use manifest::v2::Style;
     use maplit::btreemap;
@@ -368,14 +368,18 @@ mod tests {
         assert_matches!(result, Err(_));
         let errors: Vec<GeneratorError> =
             result.unwrap_err().downcast::<GeneratorErrors>().expect("downcast").into();
-        assert!(errors
-            .iter()
-            .find(|e| if let DuplicatePostscriptName { .. } = e { true } else { false })
-            .is_some());
-        assert!(errors
-            .iter()
-            .find(|e| if let DuplicateFullName { .. } = e { true } else { false })
-            .is_none());
+        assert!(
+            errors
+                .iter()
+                .find(|e| if let DuplicatePostscriptName { .. } = e { true } else { false })
+                .is_some()
+        );
+        assert!(
+            errors
+                .iter()
+                .find(|e| if let DuplicateFullName { .. } = e { true } else { false })
+                .is_none()
+        );
     }
 
     /// This is the same as the above test, but "AlphaSansCopy.ttf" is not included in the manifest,
@@ -461,14 +465,18 @@ mod tests {
         assert_matches!(result, Err(_));
         let errors: Vec<GeneratorError> =
             result.unwrap_err().downcast::<GeneratorErrors>().expect("downcast").into();
-        assert!(errors
-            .iter()
-            .find(|e| if let DuplicatePostscriptName { .. } = e { true } else { false })
-            .is_none());
-        assert!(errors
-            .iter()
-            .find(|e| if let DuplicateFullName { .. } = e { true } else { false })
-            .is_some());
+        assert!(
+            errors
+                .iter()
+                .find(|e| if let DuplicatePostscriptName { .. } = e { true } else { false })
+                .is_none()
+        );
+        assert!(
+            errors
+                .iter()
+                .find(|e| if let DuplicateFullName { .. } = e { true } else { false })
+                .is_some()
+        );
     }
 
     #[test]

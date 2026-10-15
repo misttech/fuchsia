@@ -14,7 +14,7 @@ use crate::v2::FontsManifest as FontsManifestV2;
 use anyhow::Error;
 use char_set::CharSet;
 use clonable_error::ClonableError;
-use fidl_fuchsia_fonts::{GenericFontFamily, Slant, WEIGHT_NORMAL, Width};
+use fidl_fuchsia_fonts_common::{GenericFontFamily, Slant, WEIGHT_NORMAL, Width};
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use offset_string::OffsetString;
 use serde::de::{self, Deserializer, Error as DeError};
