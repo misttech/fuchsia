@@ -29,5 +29,6 @@ pub fn default_test_config() -> fshost_config::Config {
         inline_crypto: false,
         disable_automount: false,
         provision_fxfs: false,
+        use_driver_blob_paging: false,
     }
 }

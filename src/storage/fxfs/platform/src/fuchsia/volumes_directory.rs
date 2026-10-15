@@ -92,6 +92,9 @@ struct MountedVolume {
 
     // True if the volume was forcibly locked.
     locked: bool,
+
+    // True if blob page requests for this volume are handled in the block driver.
+    use_driver_blob_paging: bool,
 }
 
 pub(crate) enum Mode {
@@ -108,6 +111,7 @@ impl MountedVolumesGuard<'_> {
         crypt: Option<Arc<dyn Crypt>>,
         mode: Mode,
         as_blob: bool,
+        use_driver_blob_paging: bool,
     ) -> Result<FxVolumeAndRoot, Error> {
         let store = match mode {
             Mode::Create { guid, low_32_bit_object_ids } => self
@@ -148,19 +152,30 @@ impl MountedVolumesGuard<'_> {
             )
             .await?
         };
-        // If there is an ongoing profile activity, we should apply it to the mounted volume.
-        if let Some(ProfileState { profile_name, all_volumes: true, .. }) =
-            &(*self.volumes_directory.profiling_state.lock().await)
-        {
-            if let Err(e) = volume
-                .volume()
-                .record_and_replay_profile(new_profile_state(as_blob), profile_name)
-                .await
+        if use_driver_blob_paging {
+            if let Some(mounted) =
+                self.mounted_volumes.get_mut(&volume.volume().store().store_object_id())
             {
-                error!(
-                    "Failed to record or replay profile '{}' for volume {}: {:?}",
-                    profile_name, name, e
-                );
+                mounted.use_driver_blob_paging = true;
+            }
+        }
+        // If there is an ongoing startup profile activity across all volumes, apply it to the
+        // mounted volume unless this is a blob volume using driver blob paging (where pkg-cache
+        // drives blob profiling).
+        if !(as_blob && use_driver_blob_paging) {
+            if let Some(ProfileState { profile_name, all_volumes: true, .. }) =
+                &(*self.volumes_directory.profiling_state.lock().await)
+            {
+                if let Err(e) = volume
+                    .volume()
+                    .record_and_replay_profile(new_profile_state(as_blob), profile_name)
+                    .await
+                {
+                    error!(
+                        "Failed to record or replay profile '{}' for volume {}: {:?}",
+                        profile_name, name, e
+                    );
+                }
             }
         }
 
@@ -243,7 +258,12 @@ impl MountedVolumesGuard<'_> {
         let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
         self.mounted_volumes.insert(
             volume.volume().store().store_object_id(),
-            MountedVolume { sequence, volume: volume.clone(), locked: false },
+            MountedVolume {
+                sequence,
+                volume: volume.clone(),
+                locked: false,
+                use_driver_blob_paging: false,
+            },
         );
         if let Some(inspect) = self.volumes_directory.inspect_tree.upgrade() {
             inspect.register_volume(
@@ -516,9 +536,14 @@ impl VolumesDirectory {
                 }
             }
             None => {
-                for MountedVolume { volume, .. } in volumes.mounted_volumes.values() {
+                for MountedVolume { volume, use_driver_blob_paging, .. } in
+                    volumes.mounted_volumes.values()
+                {
                     let is_blob =
                         volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
+                    if is_blob && *use_driver_blob_paging {
+                        continue;
+                    }
                     // Just log the errors, don't stop half-way.
                     if let Err(error) = volume
                         .volume()
@@ -668,6 +693,7 @@ impl VolumesDirectory {
                     low_32_bit_object_ids: options.restrict_inode_ids_to_32_bit.unwrap_or(false),
                 },
                 as_blob,
+                false,
             )
             .await
     }
@@ -681,7 +707,7 @@ impl VolumesDirectory {
         crypt: Option<Arc<dyn Crypt>>,
         as_blob: bool,
     ) -> Result<FxVolumeAndRoot, Error> {
-        self.lock().await.create_or_mount_volume(name, crypt, Mode::Mount, as_blob).await
+        self.lock().await.create_or_mount_volume(name, crypt, Mode::Mount, as_blob, false).await
     }
 
     /// Checks the integrity of volume `name`, or succeeds silently if the volume doesn't exist.
@@ -832,6 +858,7 @@ impl VolumesDirectory {
             .crypt
             .map(|crypt| Arc::new(RemoteCrypt::new_with_device(crypt, device)) as Arc<dyn Crypt>);
         let as_blob = mount_options.as_blob.unwrap_or(false);
+        let use_driver_blob_paging = mount_options.use_driver_blob_paging.unwrap_or(false);
         let guid = create_options.guid;
         let low_32_bit_object_ids = create_options.restrict_inode_ids_to_32_bit.unwrap_or(false);
         let volume = guard
@@ -840,6 +867,7 @@ impl VolumesDirectory {
                 crypt,
                 Mode::Create { guid, low_32_bit_object_ids },
                 as_blob,
+                use_driver_blob_paging,
             )
             .await?;
         self.serve_volume(&volume, outgoing_directory_server_end, as_blob)
@@ -1057,9 +1085,10 @@ impl VolumesDirectory {
             .crypt
             .map(|crypt| Arc::new(RemoteCrypt::new_with_device(crypt, device)) as Arc<dyn Crypt>);
         let as_blob = options.as_blob.unwrap_or(false);
+        let use_driver_blob_paging = options.use_driver_blob_paging.unwrap_or(false);
         let mut guard = self.lock().await;
         let volume = guard
-            .create_or_mount_volume(name, crypt, Mode::Mount, as_blob)
+            .create_or_mount_volume(name, crypt, Mode::Mount, as_blob, use_driver_blob_paging)
             .await
             .context("failed to mount volume")?;
         self.serve_volume(&volume, outgoing_directory_server_end, as_blob)
@@ -1988,6 +2017,7 @@ mod tests {
                         Some(crypt.clone()),
                         Mode::Create { guid: None, low_32_bit_object_ids: false },
                         false,
+                        false,
                     )
                     .await
                 {
@@ -2478,8 +2508,10 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_profile_start() {
         const PREMOUNT_BLOB: &str = "premount_blob";
+        const PREMOUNT_DRIVER_BLOB: &str = "premount_driver_blob";
         const PREMOUNT_NOBLOB: &str = "premount_noblob";
         const LIVE_BLOB: &str = "live_blob";
+        const LIVE_DRIVER_BLOB: &str = "live_driver_blob";
         const LIVE_NOBLOB: &str = "live_noblob";
 
         const RECORDING_NAME: &str = "foo";
@@ -2503,6 +2535,10 @@ mod tests {
                 .await
                 .unwrap();
             volumes_directory
+                .create_and_mount_volume(PREMOUNT_DRIVER_BLOB, None, true, CreateOptions::default())
+                .await
+                .expect("create_and_mount_volume failed");
+            volumes_directory
                 .create_and_mount_volume(PREMOUNT_NOBLOB, None, false, CreateOptions::default())
                 .await
                 .unwrap();
@@ -2510,6 +2546,10 @@ mod tests {
                 .create_and_mount_volume(LIVE_BLOB, None, true, CreateOptions::default())
                 .await
                 .unwrap();
+            volumes_directory
+                .create_and_mount_volume(LIVE_DRIVER_BLOB, None, true, CreateOptions::default())
+                .await
+                .expect("create_and_mount_volume failed");
             volumes_directory
                 .create_and_mount_volume(LIVE_NOBLOB, None, false, CreateOptions::default())
                 .await
@@ -2537,9 +2577,15 @@ mod tests {
             .await
             .unwrap();
 
-            // Premount two volumes.
+            // Premount volumes.
             let _premount_blob = volumes_directory
                 .mount_volume(PREMOUNT_BLOB, None, true)
+                .await
+                .expect("Reopen volume");
+            let _premount_driver_blob = volumes_directory
+                .lock()
+                .await
+                .create_or_mount_volume(PREMOUNT_DRIVER_BLOB, None, Mode::Mount, true, true)
                 .await
                 .expect("Reopen volume");
             let _premount_noblob = volumes_directory
@@ -2555,9 +2601,15 @@ mod tests {
                 .await
                 .expect("Recording");
 
-            // Live mount two volumes.
+            // Live mount volumes.
             let _live_blob =
                 volumes_directory.mount_volume(LIVE_BLOB, None, true).await.expect("Reopen volume");
+            let _live_driver_blob = volumes_directory
+                .lock()
+                .await
+                .create_or_mount_volume(LIVE_DRIVER_BLOB, None, Mode::Mount, true, true)
+                .await
+                .expect("Reopen volume");
             let _live_noblob = volumes_directory
                 .mount_volume(LIVE_NOBLOB, None, false)
                 .await
@@ -2592,12 +2644,20 @@ mod tests {
                 .mount_volume(PREMOUNT_BLOB, None, true)
                 .await
                 .expect("Reopen volume");
+            let _premount_driver_blob = volumes_directory
+                .mount_volume(PREMOUNT_DRIVER_BLOB, None, true)
+                .await
+                .expect("Reopen volume");
             let _premount_noblob = volumes_directory
                 .mount_volume(PREMOUNT_NOBLOB, None, false)
                 .await
                 .expect("Reopen volume");
             let _live_blob =
                 volumes_directory.mount_volume(LIVE_BLOB, None, true).await.expect("Reopen volume");
+            let _live_driver_blob = volumes_directory
+                .mount_volume(LIVE_DRIVER_BLOB, None, true)
+                .await
+                .expect("Reopen volume");
             let _live_noblob = volumes_directory
                 .mount_volume(LIVE_NOBLOB, None, false)
                 .await
@@ -2608,6 +2668,13 @@ mod tests {
                 .delete_profile(PREMOUNT_BLOB, RECORDING_NAME)
                 .await
                 .expect("Finding profile to delete.");
+            assert_eq!(
+                volumes_directory
+                    .delete_profile(PREMOUNT_DRIVER_BLOB, RECORDING_NAME)
+                    .await
+                    .expect_err("Driver blob volume should not have recorded a profile in Fxfs"),
+                zx::Status::NOT_FOUND
+            );
             volumes_directory
                 .delete_profile(PREMOUNT_NOBLOB, RECORDING_NAME)
                 .await
@@ -2616,6 +2683,13 @@ mod tests {
                 .delete_profile(LIVE_BLOB, RECORDING_NAME)
                 .await
                 .expect("Finding profile to delete.");
+            assert_eq!(
+                volumes_directory
+                    .delete_profile(LIVE_DRIVER_BLOB, RECORDING_NAME)
+                    .await
+                    .expect_err("Driver blob volume should not have recorded a profile in Fxfs"),
+                zx::Status::NOT_FOUND
+            );
             volumes_directory
                 .delete_profile(LIVE_NOBLOB, RECORDING_NAME)
                 .await
@@ -3680,6 +3754,7 @@ mod tests {
                     None,
                     Mode::Create { guid: None, low_32_bit_object_ids: true },
                     false,
+                    false,
                 )
                 .await
                 .expect("create volume failed");
@@ -3734,7 +3809,7 @@ mod tests {
             let mut guard = volumes_directory.lock().await;
 
             let vol = guard
-                .create_or_mount_volume("low_32", None, Mode::Mount, false)
+                .create_or_mount_volume("low_32", None, Mode::Mount, false, false)
                 .await
                 .expect("mount volume failed");
 

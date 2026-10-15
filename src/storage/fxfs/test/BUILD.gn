@@ -30,6 +30,7 @@ rustc_test("fxfs_mapper_integration_test_bin") {
     "//src/storage/lib/delivery_blob",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/mapping",
+    "//src/storage/lib/profile",
     "//src/storage/lib/vmo-fifo",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//third_party/rust_crates:anyhow",

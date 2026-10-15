@@ -191,15 +191,29 @@ impl BlobMappingSession {
                         |error| warn!(error:?; "Failed to send mapping session response"),
                     );
                 }
-                fmapping::MappingSessionRequest::GetProfile { responder, .. } => {
-                    // TODO(https://fxbug.dev/535492018): Implement GetProfile.
-                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(
+                fmapping::MappingSessionRequest::GetProfile { name, responder } => {
+                    let result = match self.blob_directory.volume().get_profile_vmo(&name).await {
+                        Ok(vmo) => Ok(vmo),
+                        Err(error) => Err(map_to_status(error).into_raw()),
+                    };
+                    responder.send(result).unwrap_or_else(
                         |error| warn!(error:?; "Failed to send mapping session response"),
                     );
                 }
-                fmapping::MappingSessionRequest::WriteProfile { responder, .. } => {
-                    // TODO(https://fxbug.dev/535492018): Implement WriteProfile.
-                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(
+                fmapping::MappingSessionRequest::WriteProfile { name, profile_vmo, responder } => {
+                    let result = match self
+                        .blob_directory
+                        .volume()
+                        .write_profile_vmo(&name, profile_vmo)
+                        .await
+                    {
+                        Ok(()) => Ok(()),
+                        Err(error) => {
+                            error!(error:?, name = name.as_str(); "Failed to write profile VMO");
+                            Err(map_to_status(error).into_raw())
+                        }
+                    };
+                    responder.send(result).unwrap_or_else(
                         |error| warn!(error:?; "Failed to send mapping session response"),
                     );
                 }
@@ -492,6 +506,32 @@ mod tests {
             .await
             .expect("open_session failed")
             .expect("vmo returned an error");
+
+        let not_found_profile_err = session_proxy
+            .get_profile(".boot")
+            .await
+            .expect("get_profile wire call failed")
+            .expect_err("expected get_profile(.boot) to return NOT_FOUND");
+        assert_eq!(not_found_profile_err, zx::Status::NOT_FOUND.into_raw());
+
+        let profile_data = vec![0xABu8; 4096];
+        let write_vmo = zx::Vmo::create(profile_data.len() as u64).expect("create vmo failed");
+        write_vmo.write(&profile_data, 0).expect("vmo write failed");
+        session_proxy
+            .write_profile(".boot", write_vmo)
+            .await
+            .expect("write_profile wire call failed")
+            .expect("write_profile returned an error");
+
+        let read_vmo = session_proxy
+            .get_profile(".boot")
+            .await
+            .expect("get_profile wire call failed")
+            .expect("get_profile returned an error");
+        assert_eq!(
+            read_vmo.read_to_vec::<u8>(0, profile_data.len() as u64).expect("vmo read failed"),
+            profile_data
+        );
 
         let id: [u8; 32] = hash.into();
         let key = 1;

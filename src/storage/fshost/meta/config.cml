@@ -164,5 +164,14 @@
             key: "provision_fxfs",
             type: "bool",
         },
+        {
+            /// If true, blob page requests are handled in the block driver and verified in
+            /// pkg-cache rather than in Fxfs.
+            config: "fuchsia.pkgcache.UseDriverBlobPaging",
+            key: "use_driver_blob_paging",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
 }

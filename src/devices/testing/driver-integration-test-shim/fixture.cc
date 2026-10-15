@@ -182,7 +182,11 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
   });
 
   realm_builder.AddRoute(Route{
-      .capabilities = {Config{.name = "fuchsia.fshost.DisableAutomount"}},
+      .capabilities =
+          {
+              Config{.name = "fuchsia.fshost.DisableAutomount"},
+              Config{.name = "fuchsia.pkgcache.UseDriverBlobPaging"},
+          },
       .source = {VoidRef()},
       .targets = {ChildRef{"fshost"}},
   });

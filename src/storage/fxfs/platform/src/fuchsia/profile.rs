@@ -40,7 +40,7 @@ const REPLAY_THREADS: usize = 2;
 // The number of messages to buffer before sending to record. They are chunked up to reduce the
 // number of allocations in the serving threads.
 const MESSAGE_CHUNK_SIZE: usize = 64;
-const IO_SIZE: usize = 1 << 17; // 128KiB. Needs to be a power of 2 and >= block size.
+pub(crate) const IO_SIZE: usize = 1 << 17; // 128KiB. Needs to be a power of 2 and >= block size.
 
 pub static RECORDED: AtomicU64 = AtomicU64::new(0);
 

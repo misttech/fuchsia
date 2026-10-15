@@ -489,7 +489,9 @@ impl Environment for FshostEnvironment {
         // In production, barriers should only be enabled when inline encryption is enabled.
         let config = Fxfs {
             component_type: ComponentType::StaticChild,
+            // LINT.IfChange(startup_profiling)
             startup_profiling_seconds: Some(60),
+            // LINT.ThenChange(/src/sys/pkg/bin/pkg-cache/src/main.rs:startup_profiling)
             inline_crypto_enabled: self.config.inline_crypto,
             barriers_enabled: self.config.inline_crypto,
             ..Default::default()
@@ -540,6 +542,7 @@ impl Environment for FshostEnvironment {
                 MountOptions {
                     as_blob: Some(true),
                     uri: Some(format!("#meta/blobfs.cm")),
+                    use_driver_blob_paging: Some(self.config.use_driver_blob_paging),
                     ..MountOptions::default()
                 },
             )

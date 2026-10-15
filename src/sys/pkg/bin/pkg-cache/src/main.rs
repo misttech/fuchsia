@@ -195,6 +195,13 @@ async fn main_inner() -> Result<(), Error> {
             Ok(verifier) => {
                 info!("Using driver blob paging");
                 inspector.root().record_string("driver_blob_paging_status", "active");
+                // Matches the `".boot"` profile name in Fxfs and `startup_profiling_seconds` in
+                // fshost.
+                // LINT.IfChange(startup_profiling)
+                verifier
+                    .record_and_replay_profile(".boot", zx::MonotonicDuration::from_seconds(60))
+                    .await;
+                // LINT.ThenChange(/src/storage/fshost/src/environment.rs:startup_profiling)
                 blobfs_builder = blobfs_builder.reader(DriverBlobReader(verifier));
                 driver_blob_paging_active = true;
             }

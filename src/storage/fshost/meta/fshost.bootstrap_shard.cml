@@ -111,7 +111,10 @@
             to: "#fshost",
         },
         {
-            config: [ "fuchsia.fshost.DisableAutomount" ],
+            config: [
+                "fuchsia.fshost.DisableAutomount",
+                "fuchsia.pkgcache.UseDriverBlobPaging",
+            ],
             from: "parent",
             to: "#fshost",
             availability: "optional",

@@ -17,6 +17,7 @@ use fs_management::filesystem::{BlockConnector as _, Filesystem as FsManagementF
 use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_dir_svc};
 use fuchsia_merkle::Hash;
 use std::sync::Arc;
+use storage_profile::{BlobMessage, Message as _};
 use test_case::test_case;
 
 struct TestBlob {
@@ -547,5 +548,94 @@ async fn test_unlink_open_blob(backend: PagingBackend) -> Result<(), Error> {
         backend:?;
         "Successfully verified unlinked blob remained valid and readable if blob remains opened"
     );
+    Ok(())
+}
+
+#[fuchsia::test(threads = 4)]
+async fn test_profile_record_and_replay() -> Result<(), Error> {
+    let env = TestPartitionEnv::new().await?;
+
+    let blob_a = TestBlob::new_type1_compressed(vec![0xAAu8; 64 * 1024]);
+    let blob_b = TestBlob::new_uncompressed(vec![0xBBu8; 32 * 1024]);
+    let blob_c = TestBlob::new_type3_compressed(vec![0xCCu8; 200 * 1024]);
+    env.write_blob(&blob_a).await?;
+    env.write_blob(&blob_b).await?;
+    env.write_blob(&blob_c).await?;
+
+    // 1. Start `.boot` profile recording from `BlobPagerAndVerifier` and read all three blobs.
+    let blob_pager_1 = BlobPagerAndVerifier::new(&env.mapping_provider, &env.mapper_proxy)
+        .await
+        .context("Failed to create BlobPagerAndVerifier (run 1)")?;
+    let recording_1 = blob_pager_1
+        .start_profile(".boot")
+        .await
+        .context("Failed to start profile recording (run 1)")?;
+
+    for blob in [&blob_a, &blob_b, &blob_c] {
+        let vmo = blob_pager_1.create_vmo(&blob.hash.into()).await?;
+        let expected_len = blob.data.len();
+        let reader_thread = std::thread::spawn(move || {
+            let mut buf = vec![0u8; expected_len];
+            vmo.read(&mut buf, 0).expect("paged vmo read failed");
+            buf
+        });
+        assert_eq!(reader_thread.join().expect("reader_thread panicked"), blob.data);
+    }
+
+    recording_1.stop().await.context("Failed to stop profile recording (run 1)")?;
+    drop(blob_pager_1);
+
+    // 2. Create a fresh `BlobPagerAndVerifier` (empty cache) and start a second `.boot` profile
+    // run. It replays `blob_a`, `blob_b`, and `blob_c` into `blob_pager_2`'s VMO cache.
+    let blob_pager_2 = BlobPagerAndVerifier::new(&env.mapping_provider, &env.mapper_proxy)
+        .await
+        .context("Failed to create BlobPagerAndVerifier (run 2)")?;
+    let recording_2 = blob_pager_2
+        .start_profile(".boot")
+        .await
+        .context("Failed to start profile recording (run 2)")?;
+
+    // Open `blob_a` and `blob_c` as a client during run 2 without reading them, so only
+    // background replay's `ZX_VMO_OP_PREFETCH` faults their pages through the driver. Leave
+    // `blob_b` unopened during run 2 so it is filtered out of the new `.boot` recording.
+    let _vmo_a = blob_pager_2.create_vmo(&blob_a.hash.into()).await?;
+    let _vmo_c = blob_pager_2.create_vmo(&blob_c.hash.into()).await?;
+
+    // Stopping `recording_2` waits for replay threads to finish prefetching all replayed blobs,
+    // stops driver recording, filters out unopened `blob_b`, and commits the new `.boot` profile
+    // containing only `blob_a` and `blob_c`.
+    recording_2.stop().await.context("Failed to stop profile recording (run 2)")?;
+    drop(_vmo_a);
+    drop(_vmo_c);
+    drop(blob_pager_2);
+
+    // 3. Call `MappingSession.GetProfile(".boot")` to verify that the persisted `.boot` profile
+    // from run 2 contains `blob_a` and both 128 KiB readahead windows of `blob_c`, and filtered
+    // out `blob_b`.
+    let (mapping_session, mapping_session_server) = fidl::endpoints::create_proxy();
+    let _mapping_vmo = env
+        .mapping_provider
+        .open_session(mapping_session_server)
+        .await
+        .context("FIDL error on open_session (run 3)")?
+        .map_err(zx::Status::err_from_raw)
+        .context("Failed to open mapping session (run 3)")?;
+    let replay_vmo = mapping_session
+        .get_profile(".boot")
+        .await
+        .context("FIDL error on get_profile (run 3)")?
+        .map_err(zx::Status::err_from_raw)
+        .context("Failed to get profile (run 3)")?;
+
+    let messages: Vec<_> = BlobMessage::decode_from_vmo(replay_vmo, 4096)
+        .context("Failed to decode replay_vmo in run 3")?
+        .collect();
+    assert_eq!(messages.len(), 3);
+    assert!(messages.contains(&BlobMessage { id: blob_a.hash, offset: 0 }));
+    assert!(messages.contains(&BlobMessage { id: blob_c.hash, offset: 0 }));
+    assert!(messages.contains(&BlobMessage { id: blob_c.hash, offset: 128 * 1024 }));
+    assert!(!messages.iter().any(|m| m.id == blob_b.hash));
+
+    env.shutdown().await?;
     Ok(())
 }

@@ -123,6 +123,10 @@ type MountOptions = resource table {
     /// unspecified, FVM backed volumes will expose the volume as a block device.  At time of
     /// writing, this is ignored by Fxfs.
     3: uri string:1024;
+
+    /// If true, blob page requests for this volume are handled in the block driver rather than by
+    /// the filesystem. Only applicable when `as_blob` is true.
+    4: use_driver_blob_paging bool;
 };
 
 closed protocol Volume {
