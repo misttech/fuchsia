@@ -9,12 +9,14 @@
 #include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/port.h>
+#include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls.h>
+#include <zircon/syscalls/object.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/syscalls/resource.h>
 #include <zircon/syscalls/system.h>
@@ -33,6 +35,8 @@
 #include "../needs-next.h"
 
 NEEDS_NEXT_SYSCALL(zx_system_suspend_enter);
+NEEDS_NEXT_SYSCALL(zx_debug_suspend);
+NEEDS_NEXT_SYSCALL(zx_debug_resume);
 
 namespace {
 
@@ -179,6 +183,80 @@ TEST(SystemSuspend, SuspendAndResumeByTimer) {
 
   EXPECT_OK(suspend_status);
   EXPECT_GT(zx::clock::get_boot(), resume_at);
+}
+
+// Returns the set of online CPUs, as reported by ZX_INFO_CPU_STATS.
+zx::result<std::vector<uint32_t>> GetOnlineCpus() {
+  zx::resource info_resource;
+  zx_status_t status =
+      zx::resource::create(*standalone::GetSystemResource(), ZX_RSRC_KIND_SYSTEM,
+                           ZX_RSRC_SYSTEM_INFO_BASE, 1, nullptr, 0, &info_resource);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+  std::vector<zx_info_cpu_stats_t> stats(ZX_CPU_SET_MAX_CPUS);
+  size_t actual = 0;
+  status = info_resource.get_info(ZX_INFO_CPU_STATS, stats.data(),
+                                  stats.size() * sizeof(zx_info_cpu_stats_t), &actual, nullptr);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+  std::vector<uint32_t> online;
+  for (size_t i = 0; i < actual; ++i) {
+    if (stats[i].flags & ZX_INFO_CPU_STATS_FLAG_ONLINE) {
+      online.push_back(stats[i].cpu_number);
+    }
+  }
+  return zx::ok(std::move(online));
+}
+
+// Like SuspendAndResumeByTimer, but requests deep suspend, with the debug serial port suspended
+// (if supported) as usermode does before a deep suspend in production.  On systems which do not
+// support deep suspend, this behaves just like SuspendAndResumeByTimer.  Deep suspend temporarily
+// takes the non-boot CPUs offline, so also verify that every CPU which was online beforehand is
+// online afterwards.
+TEST(SystemSuspend, DeepSuspendAndResumeByTimer) {
+  NEEDS_NEXT_SKIP(zx_system_suspend_enter);
+  NEEDS_NEXT_SKIP(zx_debug_suspend);
+  NEEDS_NEXT_SKIP(zx_debug_resume);
+
+  const zx::result resource_result = GetSystemCpuResource();
+  ASSERT_OK(resource_result.status_value());
+
+  const zx::result online_before = GetOnlineCpus();
+  ASSERT_OK(online_before.status_value());
+
+  zx::resource debug_resource;
+  ASSERT_OK(zx::resource::create(*standalone::GetSystemResource(), ZX_RSRC_KIND_SYSTEM,
+                                 ZX_RSRC_SYSTEM_DEBUG_BASE, 1, nullptr, 0, &debug_resource));
+  const zx_status_t debug_suspend_status = zx_debug_suspend(debug_resource.get());
+  if (debug_suspend_status != ZX_ERR_NOT_SUPPORTED) {
+    ASSERT_OK(debug_suspend_status);
+  }
+  auto debug_resume = fit::defer([&]() {
+    if (debug_suspend_status == ZX_OK) {
+      EXPECT_OK(zx_debug_resume(debug_resource.get()));
+    }
+  });
+
+  const zx::time_boot resume_at = zx::clock::get_boot() + zx::sec(1);
+  EXPECT_OK(zx_system_suspend_enter(resource_result->get(), resume_at.get(),
+                                    ZX_SYSTEM_SUSPEND_OPTION_DEEP, nullptr, nullptr, 0, nullptr));
+  EXPECT_GT(zx::clock::get_boot(), resume_at);
+
+  debug_resume.call();
+
+  // The CPUs are back online by the time zx_system_suspend_enter returns, but allow a little time
+  // for the reported state to catch up.
+  const zx::time deadline = zx::deadline_after(zx::sec(10));
+  zx::result online_after = GetOnlineCpus();
+  while (online_after.is_ok() && online_after.value() != online_before.value() &&
+         zx::clock::get_monotonic() < deadline) {
+    zx_nanosleep(zx_deadline_after(ZX_MSEC(1)));
+    online_after = GetOnlineCpus();
+  }
+  ASSERT_OK(online_after.status_value());
+  EXPECT_EQ(online_before.value(), online_after.value());
 }
 
 TEST(SystemSuspend, ConcurrentSuspend) {

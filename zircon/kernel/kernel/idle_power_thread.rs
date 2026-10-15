@@ -14,6 +14,9 @@ unsafe extern "C" {
     fn cpp_idle_power_thread_transition_all_active_to_suspend(
         resume_deadline: zx_instant_boot_t,
     ) -> zx_instant_boot_t;
+    fn cpp_idle_power_thread_suspend_system(
+        resume_deadline: zx_instant_boot_t,
+    ) -> zx_instant_boot_t;
 }
 
 /// An opaque type representing the C++ `IdlePowerThread` class.
@@ -44,5 +47,13 @@ impl IdlePowerThread {
     ) -> zx_instant_boot_t {
         // SAFETY: Foreign function call into `IdlePowerThread::TransitionAllActiveToSuspend`.
         unsafe { cpp_idle_power_thread_transition_all_active_to_suspend(resume_deadline) }
+    }
+
+    /// Suspends the entire system until `resume_deadline` or a wake event occurs, returning the
+    /// boot timestamp when the suspend transition started.
+    #[inline]
+    pub(crate) fn suspend_system(resume_deadline: zx_instant_boot_t) -> zx_instant_boot_t {
+        // SAFETY: Foreign function call into `IdlePowerThread::SuspendSystem`.
+        unsafe { cpp_idle_power_thread_suspend_system(resume_deadline) }
     }
 }

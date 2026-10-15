@@ -358,9 +358,9 @@ pub fn sys_system_suspend_enter(
         return Err(Status::INVALID_ARGS);
     }
 
-    // DEEP may not be combined with any other option.  Otherwise, it is
-    // currently ignored; requesting deep suspend on a system which does not
-    // support it behaves as if the option had not been specified.
+    // DEEP may not be combined with any other option.  Requesting deep suspend
+    // on a system which does not support it behaves as if the option had not
+    // been specified.
     if options & ZX_SYSTEM_SUSPEND_OPTION_DEEP != 0 && options != ZX_SYSTEM_SUSPEND_OPTION_DEEP {
         return Err(Status::INVALID_ARGS);
     }
@@ -408,10 +408,13 @@ pub fn sys_system_suspend_enter(
 
     // Finally, attempt to drop into suspend.  Then, if the user asked for a wake
     // event report, generate one for them.
-    let suspend_start_time =
+    let suspend_start_time = if options & ZX_SYSTEM_SUSPEND_OPTION_DEEP != 0 {
+        crate::kernel::idle_power_thread::IdlePowerThread::suspend_system(resume_deadline)
+    } else {
         crate::kernel::idle_power_thread::IdlePowerThread::transition_all_active_to_suspend(
             resume_deadline,
-        );
+        )
+    };
 
     if wants_report {
         crate::wake_vector::WakeEvent::generate_wake_event_report(

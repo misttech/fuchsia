@@ -29,6 +29,9 @@ FFI_ALWAYS_INLINE void cpp_idle_power_thread_acknowledge_system_wake_event();
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_instant_boot_t
 cpp_idle_power_thread_transition_all_active_to_suspend(zx_instant_boot_t resume_deadline);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_instant_boot_t
+cpp_idle_power_thread_suspend_system(zx_instant_boot_t resume_deadline);
 }
 
 //
