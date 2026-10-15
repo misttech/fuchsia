@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, anyhow};
-use bootfs::{get_bootfs_vmo, get_zbi_container};
+use bootfs::get_bootfs_vmo;
 use cmdline::{ProgramInfo, parse_cmdline};
+use mapped_vmo::ImmutableMapping;
 use program::{SystemHandles, launch_program};
 use std::fmt::Write as _;
 use userboot::{Log, take_system_handles};
@@ -64,11 +65,15 @@ fn get_options(container: &ZbiContainer<&[u8]>, log: &mut Log) -> Result<Options
 
 async fn run(log: &mut Log) -> Result<(), Error> {
     let handles = SystemHandles::from_handles(take_system_handles()?)?;
-    let root_vmar = fuchsia_runtime::vmar_root_self();
 
-    let container = get_zbi_container(&handles.zbi_vmo, &root_vmar)?;
-    let options = get_options(&container, log)?;
-    let bootfs_vmo = get_bootfs_vmo(&container, &root_vmar, options.bootfs_crc_check, log)?;
+    let (options, bootfs_vmo) = {
+        let zbi = ImmutableMapping::create_from_vmo(&handles.zbi_vmo, true)?;
+        let container =
+            ZbiContainer::parse(&zbi[..]).map_err(|e| anyhow!("Failed to parse ZBI: {e:?}"))?;
+        let options = get_options(&container, log)?;
+        let bootfs_vmo = get_bootfs_vmo(&container, options.bootfs_crc_check, log)?;
+        (options, bootfs_vmo)
+    };
 
     let (program_name, target_path) = options.boot.filename();
 

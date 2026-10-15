@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, anyhow};
-use bootfs::{get_bootfs_vmo, get_zbi_container};
+use bootfs::get_bootfs_vmo;
 use cmdline::{ProgramInfo, parse_cmdline};
 use fidl_next::{ClientEnd, ServerEnd};
 use fidl_next_fuchsia_boot as fuchsia_boot;
 use fidl_next_fuchsia_io as fuchsia_io;
 use fuchsia_async::OnSignals;
 use fuchsia_runtime::{HandleInfo, HandleType};
+use mapped_vmo::ImmutableMapping;
 use process_builder::StartupHandle;
 use program::{SystemHandles, launch_program};
 use std::fmt::Write as _;
@@ -107,11 +108,14 @@ async fn run(log: &mut Log) -> Result<(), Error> {
         .as_ref()
         .map(|p| p.duplicate_handle(Rights::SAME_RIGHTS))
         .transpose()?;
-    let root_vmar = fuchsia_runtime::vmar_root_self();
-
-    let container = get_zbi_container(&handles.zbi_vmo, &root_vmar)?;
-    let options = get_options(&container, log)?;
-    let bootfs_vmo = get_bootfs_vmo(&container, &root_vmar, false, log)?;
+    let (options, bootfs_vmo) = {
+        let zbi = ImmutableMapping::create_from_vmo(&handles.zbi_vmo, true)?;
+        let container =
+            ZbiContainer::parse(&zbi[..]).map_err(|e| anyhow!("Failed to parse ZBI: {e:?}"))?;
+        let options = get_options(&container, log)?;
+        let bootfs_vmo = get_bootfs_vmo(&container, false, log)?;
+        (options, bootfs_vmo)
+    };
 
     let (userboot_client, userboot_server) = create_endpoints::<fuchsia_boot::Userboot>();
     let (userboot_client, userboot_task) = userboot_client.spawn_full();

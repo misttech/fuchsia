@@ -109,7 +109,7 @@ rustc_binary("userboot-rust.executable") {
     "//src/bringup/lib/userboot/rust:program",
     "//src/firmware/lib/zbi-rs",
     "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-runtime",
+    "//src/lib/mapped-vmo",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:zerocopy",
   ]
@@ -143,6 +143,7 @@ rustc_binary("userboot-test-rust.executable") {
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/mapped-vmo",
     "//src/lib/process_builder",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:zerocopy",
