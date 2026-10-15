@@ -5,5 +5,6 @@
     program: {
         runner: "starnix_container",
         binary: "data/tests/linux_scheduler_puppet",
+        rlimits: [ "RLIMIT_RTPRIO=10" ],
     },
 }

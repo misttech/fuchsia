@@ -17,7 +17,6 @@
             "/:remote_bundle:data/system:nosuid,nodev,relatime",
             "/dev:devtmpfs::nosuid,relatime",
         ],
-        rlimits: [ "RLIMIT_NOFILE=131072" ],
         name: "debian",
         startup_file_path: "",
     },
