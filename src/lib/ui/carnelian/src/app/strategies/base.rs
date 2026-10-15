@@ -64,7 +64,7 @@ pub(crate) trait AppStrategy {
     ) {
     }
     async fn handle_new_display_coordinator(&mut self, _provider: ProviderProxy) {}
-    async fn handle_display_coordinator_event(
+    fn handle_display_coordinator_event(
         &mut self,
         _event: fidl_fuchsia_hardware_display::CoordinatorListenerRequest,
     ) {

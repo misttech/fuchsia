@@ -12,8 +12,10 @@ use fuchsia_async::{self as fasync, MonotonicInstant, TimeoutExt};
 use fuchsia_component::client::Service;
 use futures::{StreamExt, TryFutureExt};
 use keymaps::usages::input3_key_to_hid_usage;
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::rc::{Rc, Weak};
 use zx::{self as zx, MonotonicDuration};
 
 #[derive(Debug)]
@@ -391,36 +393,13 @@ pub struct Event {
     pub event_type: EventType,
 }
 
-async fn listen_to_instance(
-    instance: &fidl_input_report::ServiceProxy,
-    internal_sender: &InternalSender,
-) -> Result<(), Error> {
-    let device = instance.connect_to_input_device()?;
-    let descriptor = device
-        .get_descriptor()
-        .map_err(|err| format_err!("FIDL error on get_descriptor: {:?}", err))
-        .on_timeout(MonotonicInstant::after(MonotonicDuration::from_millis(200)), || {
-            Err(format_err!("FIDL timeout on get_descriptor"))
-        })
-        .await?;
-
-    let device_id = instance.instance_name().to_string();
-    internal_sender
-        .unbounded_send(MessageInternal::RegisterDevice(
-            DeviceId(device_id.clone()),
-            Box::new(descriptor),
-        ))
-        .expect("unbounded_send");
-    let input_report_sender = internal_sender.clone();
-    let (input_reports_reader_proxy, input_reports_reader_request) =
-        create_proxy::<fidl_input_report::InputReportsReaderV2Marker>();
-
-    const MAX_UNACKNOWLEDGED_REPORTS_LIMIT: u16 = 120;
-    device
-        .get_input_reports_reader_v2(input_reports_reader_request, MAX_UNACKNOWLEDGED_REPORTS_LIMIT)
-        .await
-        .expect("failed to get InputReportsReaderV2; v1 is no longer supported");
-
+pub(crate) fn spawn_input_report_reader(
+    device_id: DeviceId,
+    device: fidl_input_report::InputDeviceProxy,
+    input_reports_reader_proxy: fidl_input_report::InputReportsReaderV2Proxy,
+    input_report_sender: InternalSender,
+    weak_tasks: Weak<RefCell<HashMap<DeviceId, fasync::Task<()>>>>,
+) -> fasync::Task<()> {
     let mut event_stream = input_reports_reader_proxy.take_event_stream();
     fasync::Task::local(async move {
         // Keep `device` alive for the duration of this task.
@@ -436,67 +415,166 @@ async fn listen_to_instance(
                     if let Err(err) =
                         input_reports_reader_proxy.acknowledge_reports(last_report_stamp)
                     {
-                        eprintln!("Error acknowledging reports for {}: {}", device_id, err);
+                        eprintln!("Error acknowledging reports for {}: {}", device_id.0, err);
                     }
                     for report in reports {
+                        // TODO(https://fxbug.dev/571677177): Use Rc/Arc for DeviceId to avoid heap allocation on every report.
                         input_report_sender
-                            .unbounded_send(MessageInternal::InputReport(
-                                DeviceId(device_id.clone()),
-                                report,
-                            ))
+                            .unbounded_send(MessageInternal::InputReport(device_id.clone(), report))
                             .expect("unbounded_send");
                     }
                 }
                 Ok(fidl_input_report::InputReportsReaderV2Event::_UnknownEvent {
                     ordinal, ..
                 }) => {
-                    eprintln!("Unknown event (ordinal {}) for device {}", ordinal, device_id);
+                    eprintln!("Unknown event (ordinal {}) for device {}", ordinal, device_id.0);
                 }
                 Err(err) => {
                     eprintln!(
                         "Error from input reports reader event stream for {}: {}",
-                        device_id, err
+                        device_id.0, err
                     );
                     break;
                 }
             }
         }
+
+        if let Some(tasks) = weak_tasks.upgrade() {
+            tasks.borrow_mut().remove(&device_id);
+        }
     })
-    .detach();
+}
+
+async fn listen_to_device(
+    device_id: DeviceId,
+    device: fidl_input_report::InputDeviceProxy,
+    internal_sender: &InternalSender,
+    weak_tasks: Weak<RefCell<HashMap<DeviceId, fasync::Task<()>>>>,
+) -> Result<fasync::Task<()>, Error> {
+    let descriptor = device
+        .get_descriptor()
+        .map_err(|err| format_err!("FIDL error on get_descriptor: {:?}", err))
+        .on_timeout(MonotonicInstant::after(MonotonicDuration::from_millis(200)), || {
+            Err(format_err!("FIDL timeout on get_descriptor"))
+        })
+        .await?;
+
+    internal_sender
+        .unbounded_send(MessageInternal::RegisterDevice(device_id.clone(), Box::new(descriptor)))
+        .expect("unbounded_send");
+    let input_report_sender = internal_sender.clone();
+    let (input_reports_reader_proxy, input_reports_reader_request) =
+        create_proxy::<fidl_input_report::InputReportsReaderV2Marker>();
+
+    const MAX_UNACKNOWLEDGED_REPORTS_LIMIT: u16 = 120;
+    device
+        .get_input_reports_reader_v2(input_reports_reader_request, MAX_UNACKNOWLEDGED_REPORTS_LIMIT)
+        .await
+        .map_err(|err| format_err!("failed to get InputReportsReaderV2: {:?}", err))?;
+
+    Ok(spawn_input_report_reader(
+        device_id,
+        device,
+        input_reports_reader_proxy,
+        input_report_sender,
+        weak_tasks,
+    ))
+}
+
+async fn listen_to_instance(
+    instance: &fidl_input_report::ServiceProxy,
+    internal_sender: &InternalSender,
+    reader_tasks: &Rc<RefCell<HashMap<DeviceId, fasync::Task<()>>>>,
+) -> Result<(), Error> {
+    let device = instance.connect_to_input_device()?;
+    let device_id = DeviceId(instance.instance_name().to_string());
+    let task =
+        listen_to_device(device_id.clone(), device, internal_sender, Rc::downgrade(reader_tasks))
+            .await?;
+    reader_tasks.borrow_mut().insert(device_id, task);
     Ok(())
 }
 
-pub(crate) async fn listen_for_user_input(internal_sender: InternalSender) -> Result<(), Error> {
-    let watcher_sender = internal_sender.clone();
+/// Manages the background input report watcher and device reader tasks.
+///
+/// When dropped or aborted, all background reader tasks are cancelled and
+/// the device channels closed, preventing inactive readers from consuming
+/// driver reports or waking the system when display ownership is lost.
+pub(crate) struct UserInputListener {
+    watcher_task: Option<fasync::Task<()>>,
+    reader_tasks: Rc<RefCell<HashMap<DeviceId, fasync::Task<()>>>>,
+}
 
-    let service = Service::open(fidl_input_report::ServiceMarker)
-        .map_err(|err| format_err!("failed to open fuchsia.input.report.Service: {:?}", err))?;
-    let mut watcher = service
-        .watch()
-        .await
-        .map_err(|err| format_err!("failed to watch fuchsia.input.report.Service: {:?}", err))?;
+impl Drop for UserInputListener {
+    fn drop(&mut self) {
+        self.abort();
+    }
+}
 
-    fasync::Task::local(async move {
-        while let Some(instance) = watcher.next().await {
-            match instance {
-                Ok(instance) => {
-                    match listen_to_instance(&instance, &watcher_sender).await {
-                        Err(err) => {
-                            eprintln!("Error: {}: {}", instance.instance_name(), err)
-                        }
-                        _ => (),
-                    };
-                }
+impl UserInputListener {
+    pub(crate) fn new(
+        watcher_task: Option<fasync::Task<()>>,
+        reader_tasks: Rc<RefCell<HashMap<DeviceId, fasync::Task<()>>>>,
+    ) -> Self {
+        Self { watcher_task, reader_tasks }
+    }
+
+    pub(crate) fn start(internal_sender: InternalSender) -> Result<Self, Error> {
+        let service = Service::open(fidl_input_report::ServiceMarker)
+            .map_err(|err| format_err!("failed to open fuchsia.input.report.Service: {:?}", err))?;
+        let reader_tasks = Rc::new(RefCell::new(HashMap::new()));
+        let reader_tasks_clone = reader_tasks.clone();
+
+        let watcher_task = fasync::Task::local(async move {
+            let mut watcher = match service.watch().await {
+                Ok(watcher) => watcher,
                 Err(err) => {
-                    eprintln!("Error watching input report service: {}", err);
-                    break;
+                    eprintln!("failed to watch fuchsia.input.report.Service: {:?}", err);
+                    return;
+                }
+            };
+            while let Some(instance) = watcher.next().await {
+                match instance {
+                    Ok(instance) => {
+                        if let Err(err) =
+                            listen_to_instance(&instance, &internal_sender, &reader_tasks_clone)
+                                .await
+                        {
+                            eprintln!("Error: {}: {}", instance.instance_name(), err);
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("Error watching input report service: {}", err);
+                        break;
+                    }
                 }
             }
-        }
-    })
-    .detach();
+        });
 
-    Ok(())
+        Ok(Self::new(Some(watcher_task), reader_tasks))
+    }
+
+    pub(crate) fn abort(&mut self) {
+        self.watcher_task = None;
+        self.reader_tasks.borrow_mut().clear();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_reader_count(&self) -> usize {
+        self.reader_tasks.borrow().len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_device(&self, device_id: &DeviceId) -> bool {
+        self.reader_tasks.borrow().contains_key(device_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_testing() -> (Self, Rc<RefCell<HashMap<DeviceId, fasync::Task<()>>>>) {
+        let reader_tasks = Rc::new(RefCell::new(HashMap::new()));
+        let listener = Self::new(None, reader_tasks.clone());
+        (listener, reader_tasks)
+    }
 }
 
 pub(crate) mod flatland;

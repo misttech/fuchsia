@@ -7,7 +7,7 @@ use crate::app::{Config, InternalSender, MessageInternal};
 use crate::drawing::DisplayRotation;
 use crate::geometry::IntSize;
 use crate::input::report::InputReportHandler;
-use crate::input::{self, DeviceId, listen_for_user_input};
+use crate::input::{self, DeviceId, UserInputListener};
 use crate::view::ViewKey;
 use crate::view::strategies::base::{DisplayDirectParams, ViewStrategyParams, ViewStrategyPtr};
 use crate::view::strategies::display_direct::DisplayDirectViewStrategy;
@@ -22,8 +22,8 @@ use fidl_fuchsia_hardware_display::{
 use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_component::client::Service;
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
-use futures::{StreamExt, TryFutureExt};
 use keymaps::Keymap;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -188,6 +188,8 @@ pub(crate) struct DisplayDirectAppStrategy<'a> {
     pub owned: bool,
     pub primary_display: Option<DisplayInfo>,
     views: HashMap<DisplayId, Vec<ViewKey>>,
+    input_listener: Option<UserInputListener>,
+    input_listener_starter: fn(InternalSender) -> Result<UserInputListener, Error>,
 }
 
 impl<'a> DisplayDirectAppStrategy<'a> {
@@ -207,10 +209,51 @@ impl<'a> DisplayDirectAppStrategy<'a> {
             owned: false,
             primary_display: None,
             views: Default::default(),
+            input_listener: None,
+            input_listener_starter: UserInputListener::start,
         }
     }
 
-    async fn handle_displays_changed(
+    // If the watcher fails or encounters an error, input listener state is reset on the
+    // next ownership transition. Retrying or watcher restarts on failure is pre-existing
+    // behavior and intentionally left unchanged.
+    fn start_input_listener(&mut self) {
+        if self.input_listener.is_none() {
+            match (self.input_listener_starter)(self.app_sender.clone()) {
+                Ok(listener) => {
+                    self.input_listener = Some(listener);
+                }
+                Err(e) => eprintln!("error: listening for input {:?}", e),
+            }
+        }
+    }
+
+    fn stop_input_listener(&mut self) {
+        self.input_listener = None;
+    }
+
+    pub(crate) fn set_ownership(&mut self, has_ownership: bool) {
+        self.owned = has_ownership;
+        if has_ownership {
+            if self.primary_display.is_some() {
+                self.start_input_listener();
+            }
+        } else {
+            self.stop_input_listener();
+            self.context.cancel_autorepeat_timer();
+            self.input_report_handlers.clear();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_input_listener_starter_for_testing(
+        &mut self,
+        starter: fn(InternalSender) -> Result<UserInputListener, Error>,
+    ) {
+        self.input_listener_starter = starter;
+    }
+
+    fn handle_displays_changed(
         &mut self,
         added: Vec<fidl_fuchsia_hardware_display::Info>,
         removed: Vec<fidl_fuchsia_hardware_display_types::DisplayId>,
@@ -248,6 +291,10 @@ impl<'a> DisplayDirectAppStrategy<'a> {
                     },
                 )))
                 .expect("send");
+        }
+
+        if self.owned && self.primary_display.is_some() && self.input_listener.is_none() {
+            self.start_input_listener();
         }
 
         Ok(())
@@ -302,13 +349,10 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
         return false;
     }
 
-    async fn post_setup(&mut self, internal_sender: &InternalSender) -> Result<(), Error> {
-        let input_report_sender = internal_sender.clone();
-        fasync::Task::local(
-            listen_for_user_input(input_report_sender)
-                .unwrap_or_else(|e: anyhow::Error| eprintln!("error: listening for input {:?}", e)),
-        )
-        .detach();
+    async fn post_setup(&mut self, _internal_sender: &InternalSender) -> Result<(), Error> {
+        if self.owned && self.primary_display.is_some() {
+            self.start_input_listener();
+        }
         Ok(())
     }
 
@@ -317,8 +361,16 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
         device_id: &input::DeviceId,
         input_report: &fidl_input_report::InputReport,
     ) -> Vec<input::Event> {
-        let handler = self.input_report_handlers.get_mut(device_id).expect("input_report_handler");
-        handler.handle_input_report(device_id, input_report, &mut self.context)
+        // Input reports queued in app_sender prior to ownership loss or reader task
+        // cancellation may be processed after handlers are cleared or when unowned;
+        // discard them silently.
+        if !self.owned {
+            return Vec::new();
+        }
+        let Some(input_report_handler) = self.input_report_handlers.get_mut(device_id) else {
+            return Vec::new();
+        };
+        input_report_handler.handle_input_report(device_id, input_report, &mut self.context)
     }
 
     fn handle_register_input_device(
@@ -326,8 +378,13 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
         device_id: &input::DeviceId,
         device_descriptor: &fidl_input_report::DeviceDescriptor,
     ) {
+        // Device registrations queued in app_sender prior to ownership loss or
+        // reader task cancellation are discarded if processed while unowned.
+        if !self.owned {
+            return;
+        }
         let frame_buffer_size =
-            self.primary_display.as_ref().expect("primary_display").preferred_size;
+            self.primary_display.as_ref().map(|d| d.preferred_size).unwrap_or_default();
         self.input_report_handlers.insert(
             device_id.clone(),
             InputReportHandler::new(
@@ -341,8 +398,15 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
     }
 
     fn handle_keyboard_autorepeat(&mut self, device_id: &input::DeviceId) -> Vec<input::Event> {
-        let handler = self.input_report_handlers.get_mut(device_id).expect("input_report_handler");
-        handler.handle_keyboard_autorepeat(device_id, &mut self.context)
+        // Keyboard autorepeat timer messages queued prior to ownership loss or
+        // missing handlers are ignored after ownership is lost or handlers are cleared.
+        if !self.owned {
+            return Vec::new();
+        }
+        let Some(input_report_handler) = self.input_report_handlers.get_mut(device_id) else {
+            return Vec::new();
+        };
+        input_report_handler.handle_keyboard_autorepeat(device_id, &mut self.context)
     }
 
     async fn handle_new_display_coordinator(&mut self, provider: ProviderProxy) {
@@ -355,18 +419,16 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
         }
     }
 
-    async fn handle_display_coordinator_event(&mut self, event: CoordinatorListenerRequest) {
+    fn handle_display_coordinator_event(&mut self, event: CoordinatorListenerRequest) {
         match event {
             CoordinatorListenerRequest::OnDisplaysChanged { added, removed, control_handle: _ } => {
-                self.handle_displays_changed(added, removed)
-                    .await
-                    .expect("handle_displays_changed");
+                self.handle_displays_changed(added, removed).expect("handle_displays_changed");
             }
             CoordinatorListenerRequest::OnClientOwnershipChange {
                 has_ownership,
                 control_handle: _,
             } => {
-                self.owned = has_ownership;
+                self.set_ownership(has_ownership);
                 self.app_sender
                     .unbounded_send(MessageInternal::OwnershipChanged(has_ownership))
                     .expect("unbounded_send");
@@ -396,5 +458,234 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
         for views_on_display in self.views.values_mut() {
             views_on_display.retain(|a_view_key| view_key != *a_view_key);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fidl::endpoints::RequestStream;
+    use fidl_fuchsia_hardware_display::CoordinatorListenerRequest;
+    use futures::channel::mpsc::unbounded;
+    use keymaps::US_QWERTY;
+
+    fn make_test_display_info() -> DisplayInfo {
+        DisplayInfo {
+            preferred_size: size2(800, 600),
+            info: fidl_fuchsia_hardware_display::Info {
+                id: fidl_fuchsia_hardware_display_types::DisplayId { value: 1 },
+                modes: vec![],
+                pixel_format: vec![],
+                manufacturer_name: String::new(),
+                monitor_name: String::new(),
+                monitor_serial: String::new(),
+                horizontal_size_mm: 0,
+                vertical_size_mm: 0,
+                using_fallback_size: false,
+                max_layer_count: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn test_ownership_transitions_pause_and_resume_listener() {
+        let (app_sender, _app_receiver) = unbounded::<MessageInternal>();
+        let mut strategy =
+            DisplayDirectAppStrategy::new(None, &US_QWERTY, app_sender, &Config::default());
+
+        assert!(!strategy.owned);
+        assert!(strategy.input_listener.is_none());
+
+        strategy.set_input_listener_starter_for_testing(|_sender| {
+            Ok(input::UserInputListener::new_for_testing().0)
+        });
+        strategy.primary_display = Some(make_test_display_info());
+
+        // Gain ownership -> input report listener starts.
+        strategy.set_ownership(true);
+        assert!(strategy.owned);
+        assert!(strategy.input_listener.is_some());
+
+        // Lose ownership -> input report listener stops/aborts.
+        strategy.set_ownership(false);
+        assert!(!strategy.owned);
+        assert!(strategy.input_listener.is_none());
+
+        // Regain ownership -> input report listener resumes/restarts.
+        strategy.set_ownership(true);
+        assert!(strategy.owned);
+        assert!(strategy.input_listener.is_some());
+    }
+
+    #[test]
+    fn test_unowned_ignores_input_reports_and_autorepeat() {
+        let _exec = fasync::TestExecutor::new();
+        let (app_sender, _app_receiver) = unbounded::<MessageInternal>();
+        let mut strategy =
+            DisplayDirectAppStrategy::new(None, &US_QWERTY, app_sender, &Config::default());
+
+        let dev_id = DeviceId("dev-1".to_string());
+        let descriptor = fidl_input_report::DeviceDescriptor::default();
+
+        // 1. Call handle_register_input_device while unowned and verify handlers remain empty.
+        strategy.owned = false;
+        strategy.handle_register_input_device(&dev_id, &descriptor);
+        assert!(strategy.input_report_handlers.is_empty());
+
+        // 2. Set owned = true and register keyboard device descriptor.
+        strategy.owned = true;
+        strategy.handle_register_input_device(&dev_id, &descriptor);
+        assert!(strategy.input_report_handlers.contains_key(&dev_id));
+
+        let report = fidl_input_report::InputReport {
+            keyboard: Some(fidl_input_report::KeyboardInputReport {
+                pressed_keys3: Some(vec![fidl_fuchsia_input::Key::A]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        // 3. When owned, input report returns non-empty events.
+        let events = strategy.handle_input_report(&dev_id, &report);
+        assert!(!events.is_empty());
+
+        // 4. When unowned, the exact same input report returns an empty vector.
+        strategy.owned = false;
+        let events = strategy.handle_input_report(&dev_id, &report);
+        assert!(events.is_empty());
+
+        let events = strategy.handle_keyboard_autorepeat(&dev_id);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_ownership_loss_clears_handlers_and_missing_handler_or_display_does_not_panic() {
+        let (app_sender, _app_receiver) = unbounded::<MessageInternal>();
+        let mut strategy =
+            DisplayDirectAppStrategy::new(None, &US_QWERTY, app_sender, &Config::default());
+
+        strategy.set_input_listener_starter_for_testing(|_sender| {
+            Ok(input::UserInputListener::new_for_testing().0)
+        });
+
+        strategy.set_ownership(true);
+        assert!(strategy.owned);
+        assert!(strategy.primary_display.is_none());
+
+        let dev_id = DeviceId("dev-1".to_string());
+        let descriptor = fidl_input_report::DeviceDescriptor::default();
+
+        // Register device without primary_display does not panic.
+        strategy.handle_register_input_device(&dev_id, &descriptor);
+        assert!(strategy.input_report_handlers.contains_key(&dev_id));
+
+        // Unknown device does not panic when owned.
+        let unknown_dev = DeviceId("unknown-dev".to_string());
+        let report = fidl_input_report::InputReport::default();
+        let events = strategy.handle_input_report(&unknown_dev, &report);
+        assert!(events.is_empty());
+        let events = strategy.handle_keyboard_autorepeat(&unknown_dev);
+        assert!(events.is_empty());
+
+        // Losing ownership clears input_report_handlers.
+        strategy.set_ownership(false);
+        assert!(!strategy.owned);
+        assert!(strategy.input_report_handlers.is_empty());
+
+        // Input reports and autorepeat return empty and do not panic when unowned.
+        let events = strategy.handle_input_report(&dev_id, &report);
+        assert!(events.is_empty());
+        let events = strategy.handle_keyboard_autorepeat(&dev_id);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_post_setup_starts_input_listener_when_owned_and_display_present() {
+        let mut exec = fasync::TestExecutor::new();
+        let (app_sender, _app_receiver) = unbounded::<MessageInternal>();
+        let mut strategy =
+            DisplayDirectAppStrategy::new(None, &US_QWERTY, app_sender.clone(), &Config::default());
+
+        strategy.set_input_listener_starter_for_testing(|_sender| {
+            Ok(input::UserInputListener::new_for_testing().0)
+        });
+
+        // 1. owned = false, primary_display = None -> post_setup keeps input_listener None
+        {
+            let fut = strategy.post_setup(&app_sender);
+            futures::pin_mut!(fut);
+            let _ = exec.run_until_stalled(&mut fut);
+        }
+        assert!(strategy.input_listener.is_none());
+
+        // 2. owned = true, primary_display = None -> post_setup keeps input_listener None
+        strategy.owned = true;
+        {
+            let fut = strategy.post_setup(&app_sender);
+            futures::pin_mut!(fut);
+            let _ = exec.run_until_stalled(&mut fut);
+        }
+        assert!(strategy.input_listener.is_none());
+
+        // 3. owned = false, primary_display = Some(...) -> post_setup keeps input_listener None
+        strategy.owned = false;
+        strategy.primary_display = Some(make_test_display_info());
+        {
+            let fut = strategy.post_setup(&app_sender);
+            futures::pin_mut!(fut);
+            let _ = exec.run_until_stalled(&mut fut);
+        }
+        assert!(strategy.input_listener.is_none());
+
+        // 4. owned = true, primary_display = Some(...) -> post_setup starts input_listener
+        strategy.owned = true;
+        {
+            let fut = strategy.post_setup(&app_sender);
+            futures::pin_mut!(fut);
+            let _ = exec.run_until_stalled(&mut fut);
+        }
+        assert!(strategy.input_listener.is_some());
+    }
+
+    #[test]
+    fn test_display_coordinator_ownership_change_event() {
+        let _exec = fasync::TestExecutor::new();
+
+        let (app_sender, mut app_receiver) = unbounded::<MessageInternal>();
+        let mut strategy =
+            DisplayDirectAppStrategy::new(None, &US_QWERTY, app_sender, &Config::default());
+
+        strategy.set_input_listener_starter_for_testing(|_sender| {
+            Ok(input::UserInputListener::new_for_testing().0)
+        });
+        strategy.primary_display = Some(make_test_display_info());
+
+        let (_proxy, stream) =
+            fidl::endpoints::create_proxy_and_stream::<CoordinatorListenerMarker>();
+        let control_handle = stream.control_handle();
+
+        // Simulate OnClientOwnershipChange { has_ownership: true }
+        strategy.handle_display_coordinator_event(
+            CoordinatorListenerRequest::OnClientOwnershipChange {
+                has_ownership: true,
+                control_handle: control_handle.clone(),
+            },
+        );
+
+        assert!(strategy.owned);
+        assert!(strategy.input_listener.is_some());
+        assert!(matches!(app_receiver.try_recv(), Ok(MessageInternal::OwnershipChanged(true))));
+
+        // Simulate OnClientOwnershipChange { has_ownership: false }
+        strategy.handle_display_coordinator_event(
+            CoordinatorListenerRequest::OnClientOwnershipChange {
+                has_ownership: false,
+                control_handle,
+            },
+        );
+
+        assert!(!strategy.owned);
+        assert!(strategy.input_listener.is_none());
+        assert!(matches!(app_receiver.try_recv(), Ok(MessageInternal::OwnershipChanged(false))));
     }
 }

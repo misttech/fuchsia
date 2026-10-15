@@ -887,3 +887,176 @@ mod test_data {
         ]
     }
 }
+
+mod listener_tests {
+    use crate::app::MessageInternal;
+    use crate::input::{DeviceId, UserInputListener, listen_to_device, spawn_input_report_reader};
+    use fidl::endpoints::{ControlHandle, RequestStream, create_proxy_and_stream};
+    use fidl_fuchsia_input_report as fidl_input_report;
+    use fuchsia_async as fasync;
+    use futures::StreamExt;
+    use futures::channel::mpsc::unbounded;
+    use std::rc::Rc;
+
+    #[test]
+    fn test_user_input_listener_abort() {
+        let mut exec = fasync::TestExecutor::new();
+        let (app_sender, _app_receiver) = unbounded::<MessageInternal>();
+        let (device_proxy, device_stream) =
+            create_proxy_and_stream::<fidl_input_report::InputDeviceMarker>();
+        let (reader_proxy, reader_stream) =
+            create_proxy_and_stream::<fidl_input_report::InputReportsReaderV2Marker>();
+
+        let dev_id = DeviceId("dev-1".to_string());
+        let (mut listener, reader_tasks) = UserInputListener::new_for_testing();
+        let task = spawn_input_report_reader(
+            dev_id.clone(),
+            device_proxy,
+            reader_proxy,
+            app_sender,
+            Rc::downgrade(&reader_tasks),
+        );
+        reader_tasks.borrow_mut().insert(dev_id.clone(), task);
+
+        // Drive executor so reader task begins listening on event stream.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+        assert_eq!(listener.active_reader_count(), 1);
+        assert!(listener.has_device(&dev_id));
+        assert!(!reader_stream.control_handle().is_closed());
+        assert!(!device_stream.control_handle().is_closed());
+
+        // Aborting the listener clears and drops active reader tasks, closing channels.
+        listener.abort();
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(listener.active_reader_count(), 0);
+        assert!(reader_tasks.borrow().is_empty());
+        assert!(reader_stream.control_handle().is_closed());
+        assert!(device_stream.control_handle().is_closed());
+    }
+
+    #[test]
+    fn test_user_input_listener_drop() {
+        let mut exec = fasync::TestExecutor::new();
+        let (app_sender, _app_receiver) = unbounded::<MessageInternal>();
+        let (device_proxy, device_stream) =
+            create_proxy_and_stream::<fidl_input_report::InputDeviceMarker>();
+        let (reader_proxy, reader_stream) =
+            create_proxy_and_stream::<fidl_input_report::InputReportsReaderV2Marker>();
+
+        let dev_id = DeviceId("dev-1".to_string());
+        let (listener, reader_tasks) = UserInputListener::new_for_testing();
+        let task = spawn_input_report_reader(
+            dev_id.clone(),
+            device_proxy,
+            reader_proxy,
+            app_sender,
+            Rc::downgrade(&reader_tasks),
+        );
+        reader_tasks.borrow_mut().insert(dev_id.clone(), task);
+
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(listener.active_reader_count(), 1);
+        assert!(listener.has_device(&dev_id));
+        assert!(!reader_stream.control_handle().is_closed());
+        assert!(!device_stream.control_handle().is_closed());
+
+        drop(listener);
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        assert!(reader_tasks.borrow().is_empty());
+        assert!(reader_stream.control_handle().is_closed());
+        assert!(device_stream.control_handle().is_closed());
+    }
+
+    #[test]
+    fn test_input_report_reader_task_cleanup_on_stream_end() {
+        let mut exec = fasync::TestExecutor::new();
+        let (app_sender, _app_receiver) = unbounded::<MessageInternal>();
+        let (device_proxy, _device_stream) =
+            create_proxy_and_stream::<fidl_input_report::InputDeviceMarker>();
+        let (reader_proxy, reader_stream) =
+            create_proxy_and_stream::<fidl_input_report::InputReportsReaderV2Marker>();
+
+        let dev_id = DeviceId("dev-1".to_string());
+        let (listener, reader_tasks) = UserInputListener::new_for_testing();
+        let task = spawn_input_report_reader(
+            dev_id.clone(),
+            device_proxy,
+            reader_proxy,
+            app_sender,
+            Rc::downgrade(&reader_tasks),
+        );
+        reader_tasks.borrow_mut().insert(dev_id.clone(), task);
+
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(listener.active_reader_count(), 1);
+        assert!(listener.has_device(&dev_id));
+
+        // When reader stream is closed (e.g. device disconnection), the reader task terminates
+        // and removes itself from reader_tasks via its weak reference.
+        drop(reader_stream);
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+        assert_eq!(listener.active_reader_count(), 0);
+        assert!(!listener.has_device(&dev_id));
+        assert!(reader_tasks.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_listen_to_device() {
+        let mut exec = fasync::TestExecutor::new();
+        let (app_sender, mut app_receiver) = unbounded::<MessageInternal>();
+        let (device_proxy, mut device_stream) =
+            create_proxy_and_stream::<fidl_input_report::InputDeviceMarker>();
+
+        let dev_id = DeviceId("dev-test".to_string());
+        let listen_fut =
+            listen_to_device(dev_id.clone(), device_proxy, &app_sender, std::rc::Weak::new());
+        futures::pin_mut!(listen_fut);
+
+        // Advance until listen_fut sends GetDescriptor.
+        assert!(exec.run_until_stalled(&mut listen_fut).is_pending());
+
+        // Respond to GetDescriptor on device_stream.
+        match exec.run_until_stalled(&mut device_stream.next()) {
+            std::task::Poll::Ready(Some(Ok(
+                fidl_input_report::InputDeviceRequest::GetDescriptor { responder },
+            ))) => {
+                let descriptor = fidl_input_report::DeviceDescriptor::default();
+                responder.send(&descriptor).expect("send descriptor");
+            }
+            other => panic!("expected GetDescriptor request, got {:?}", other),
+        }
+
+        // Advance until listen_fut sends GetInputReportsReaderV2.
+        assert!(exec.run_until_stalled(&mut listen_fut).is_pending());
+
+        // Respond to GetInputReportsReaderV2 on device_stream.
+        match exec.run_until_stalled(&mut device_stream.next()) {
+            std::task::Poll::Ready(Some(Ok(
+                fidl_input_report::InputDeviceRequest::GetInputReportsReaderV2 {
+                    reader: _reader_server,
+                    max_unacknowledged_reports_limit: _,
+                    responder,
+                },
+            ))) => {
+                responder.send(120).expect("send reader response");
+            }
+            other => panic!("expected GetInputReportsReaderV2 request, got {:?}", other),
+        }
+
+        // Now listen_fut should complete with Ok(task).
+        match exec.run_until_stalled(&mut listen_fut) {
+            std::task::Poll::Ready(Ok(_task)) => {}
+            other => panic!("expected Ok(task), got {:?}", other),
+        }
+
+        // Verify MessageInternal::RegisterDevice was dispatched.
+        match app_receiver.try_recv() {
+            Ok(MessageInternal::RegisterDevice(registered_id, _desc)) => {
+                assert_eq!(registered_id, dev_id);
+            }
+            other => panic!("expected RegisterDevice message, got {:?}", other),
+        }
+    }
+}

@@ -584,7 +584,7 @@ impl App {
                     }
                 }
 
-                _ => self.strategy.handle_display_coordinator_event(request).await,
+                _ => self.strategy.handle_display_coordinator_event(request),
             },
         }
         Ok(())
