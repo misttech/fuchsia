@@ -555,23 +555,37 @@ impl EnvironmentContext {
         // Out of tree, we will always want to pull the config from the normal config path, which
         // we can defer to the SdkRoot's mechanisms for.
         let runtime_root: Option<PathBuf> = self.get("sdk.root").ok();
+        let from_exe = || {
+            if self.exe_kind == ExecutableKind::Test {
+                SdkRoot::from_exe_path(&self.self_path)
+            } else {
+                SdkRoot::from_paths(None)
+            }
+        };
         match (&self.kind, runtime_root) {
-            (EnvironmentKind::InTree { build_dir: Some(build_dir), .. }, None) => {
-                let host_arch = match std::env::consts::ARCH {
-                    "x86_64" => "host_x64",
-                    "aarch64" => "host_arm64",
-                    _ => "host_x64",
-                };
-                let host_tools_dir = build_dir.join(host_arch);
-                if host_tools_dir.exists() {
-                    Ok(SdkRoot::HostTools { root: host_tools_dir })
-                } else {
-                    SdkRoot::from_paths(None).map_err(|e| ContextError::Sdk(e.to_string()))
+            (EnvironmentKind::InTree { build_dir, .. }, None) => {
+                // If the running ffx executable is located inside an unpacked SDK directory
+                // containing `meta/manifest.json` (for example, an IDK unpacked into a staging
+                // directory within the source tree), use that SDK root rather than the in-tree
+                // build directory's host tools.
+                let exe_sdk_root = from_exe();
+                if let Ok(sdk_root @ SdkRoot::Full { .. }) = exe_sdk_root {
+                    return Ok(sdk_root);
                 }
+                if let Some(build_dir) = build_dir {
+                    let host_arch = match std::env::consts::ARCH {
+                        "x86_64" => "host_x64",
+                        "aarch64" => "host_arm64",
+                        _ => "host_x64",
+                    };
+                    let host_tools_dir = build_dir.join(host_arch);
+                    if host_tools_dir.exists() {
+                        return Ok(SdkRoot::HostTools { root: host_tools_dir });
+                    }
+                }
+                exe_sdk_root.map_err(|e| ContextError::Sdk(e.to_string()))
             }
-            (EnvironmentKind::InTree { .. }, None) => {
-                SdkRoot::from_paths(None).map_err(|e| ContextError::Sdk(e.to_string()))
-            }
+            (_, None) => from_exe().map_err(|e| ContextError::Sdk(e.to_string())),
             (_, runtime_root) => SdkRoot::from_paths(runtime_root.as_deref())
                 .map_err(|e| ContextError::Sdk(e.to_string())),
         }

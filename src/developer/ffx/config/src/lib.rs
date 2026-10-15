@@ -858,6 +858,69 @@ mod test {
     }
 
     #[fuchsia::test]
+    fn test_get_sdk_root_in_tree_uses_host_tools_when_not_in_full_sdk() {
+        let mut builder = ffx_config::test_env();
+        let build_dir = builder.isolate_root().join("build");
+        let host_arch = match std::env::consts::ARCH {
+            "x86_64" => "host_x64",
+            "aarch64" => "host_arm64",
+            _ => "host_x64",
+        };
+        let in_tree_host_tools = build_dir.join(host_arch);
+        fs::create_dir_all(&in_tree_host_tools).expect("host arch dir created");
+        let host_tools_bin_dir = build_dir.join("host-tools");
+        fs::create_dir_all(&host_tools_bin_dir).expect("host-tools dir created");
+        let in_tree_ffx = host_tools_bin_dir.join("ffx");
+        fs::write(&in_tree_ffx, "").expect("in tree ffx created");
+
+        let env = builder
+            .in_tree(&build_dir)
+            .self_path(&in_tree_ffx)
+            .build()
+            .expect("create test config");
+
+        match env.context.get_sdk_root().expect("get_sdk_root") {
+            sdk::SdkRoot::HostTools { root } => assert_eq!(root, in_tree_host_tools),
+            other => panic!("Expected SdkRoot::HostTools, got {other:?}"),
+        }
+        let loaded_sdk = env.context.get_sdk().expect("get_sdk");
+        assert_eq!(loaded_sdk.get_version(), &sdk::SdkVersion::InTree);
+    }
+
+    #[fuchsia::test]
+    fn test_get_sdk_root_in_tree_prefers_full_sdk_from_exe_path() {
+        let mut builder = ffx_config::test_env();
+        let build_dir = builder.isolate_root().join("build");
+        let host_arch = match std::env::consts::ARCH {
+            "x86_64" => "host_x64",
+            "aarch64" => "host_arm64",
+            _ => "host_x64",
+        };
+        let in_tree_host_tools = build_dir.join(host_arch);
+        fs::create_dir_all(&in_tree_host_tools).expect("host arch dir created");
+
+        let staged_sdk_root = build_dir.join("staging/sdks/test_sdk");
+        put_file!(staged_sdk_root, "../test_data/sdk", "meta/manifest.json");
+        let staged_ffx = staged_sdk_root.join("tools/x64/ffx");
+        fs::create_dir_all(staged_ffx.parent().unwrap()).expect("staged ffx dir created");
+        fs::write(&staged_ffx, "").expect("staged ffx created");
+
+        let env =
+            builder.in_tree(&build_dir).self_path(&staged_ffx).build().expect("create test config");
+
+        let canonical_staged_sdk_root =
+            std::fs::canonicalize(&staged_sdk_root).expect("canonical staged sdk root");
+        match env.context.get_sdk_root().expect("get_sdk_root") {
+            sdk::SdkRoot::Full { root, manifest: None } => {
+                assert_eq!(std::fs::canonicalize(root).unwrap(), canonical_staged_sdk_root);
+            }
+            other => panic!("Expected SdkRoot::Full, got {other:?}"),
+        }
+        let loaded_sdk = env.context.get_sdk().expect("get_sdk");
+        assert_eq!(loaded_sdk.get_version(), &sdk::SdkVersion::Version("0.20201005.4.1".into()));
+    }
+
+    #[fuchsia::test]
     fn test_config_source_runtime() {
         let env = ffx_config::test_env()
             .runtime_config("test.source.runtime", "runtime_val")
