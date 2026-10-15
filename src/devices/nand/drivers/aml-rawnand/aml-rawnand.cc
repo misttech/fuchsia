@@ -1009,8 +1009,7 @@ void AmlRawNand::DdkRelease() {
 void AmlRawNand::DdkUnbind(ddk::UnbindTxn txn) { txn.Reply(); }
 
 void AmlRawNand::DdkSuspend(ddk::SuspendTxn txn) {
-  const uint8_t suspend_reason = txn.suspend_reason() & DEVICE_MASK_SUSPEND_REASON;
-  if (suspend_reason != DEVICE_SUSPEND_REASON_SUSPEND_RAM) {
+  {
     fbl::AutoLock lock(&mutex_);
     shutdown_ = true;
     buffers_.reset();

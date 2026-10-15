@@ -131,7 +131,6 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddProtoco
 
 // Taken from src/lib/ddk/include/lib/ddk/device.h
 #define DEVICE_SUSPEND_REASON_POWEROFF UINT8_C(0x10)
-#define DEVICE_SUSPEND_REASON_SUSPEND_RAM UINT8_C(0x20)
 #define DEVICE_SUSPEND_REASON_REBOOT UINT8_C(0x40)
 #define DEVICE_SUSPEND_REASON_REBOOT_RECOVERY (UINT8_C(DEVICE_SUSPEND_REASON_REBOOT | 0x01))
 #define DEVICE_SUSPEND_REASON_REBOOT_BOOTLOADER (UINT8_C(DEVICE_SUSPEND_REASON_REBOOT | 0x02))
@@ -148,8 +147,6 @@ uint8_t PowerStateToSuspendReason(fss::SystemPowerState power_state) {
       return DEVICE_SUSPEND_REASON_REBOOT_BOOTLOADER;
     case fss::SystemPowerState::kPoweroff:
       return DEVICE_SUSPEND_REASON_POWEROFF;
-    case fss::SystemPowerState::kSuspendRam:
-      return DEVICE_SUSPEND_REASON_SUSPEND_RAM;
     case fss::SystemPowerState::kRebootKernelInitiated:
       return DEVICE_SUSPEND_REASON_REBOOT_KERNEL_INITIATED;
     default:

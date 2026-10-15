@@ -10,15 +10,6 @@
         "error": "int32"
     },
     {
-        "kind": "protocol/member",
-        "name": "fuchsia.hardware.power.statecontrol/Admin.SuspendToRam",
-        "strictness": "strict",
-        "ordinal": "4255397416605803022",
-        "direction": "two_way",
-        "response": "fuchsia.hardware.power.statecontrol/Admin_SuspendToRam_Response",
-        "error": "int32"
-    },
-    {
         "kind": "protocol",
         "name": "fuchsia.hardware.power.statecontrol/Admin",
         "openness": "closed",

@@ -450,8 +450,7 @@ impl<P: SystemPower + 'static> ShutdownManager<P> {
             fsystem_state::SystemPowerState::Poweroff => {
                 self.system_power.system_powerctl(ZX_SYSTEM_POWERCTL_SHUTDOWN)
             }
-            fsystem_state::SystemPowerState::FullyOn
-            | fsystem_state::SystemPowerState::SuspendRam => {
+            fsystem_state::SystemPowerState::FullyOn => {
                 error!("Unexpected shutdown state requested: {:?}", shutdown_system_state);
                 Err(zx::Status::INVALID_ARGS)
             }

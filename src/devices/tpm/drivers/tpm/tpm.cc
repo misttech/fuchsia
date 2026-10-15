@@ -78,9 +78,6 @@ void TpmDevice::DdkSuspend(ddk::SuspendTxn txn) {
     case DEVICE_SUSPEND_REASON_POWEROFF:
       cmd = std::make_unique<TpmShutdownCmd>(TPM_SU_CLEAR);
       break;
-    case DEVICE_SUSPEND_REASON_SUSPEND_RAM:
-      cmd = std::make_unique<TpmShutdownCmd>(TPM_SU_STATE);
-      break;
     default:
       zxlogf(WARNING, "Unknown suspend state %d", txn.requested_state());
       txn.Reply(ZX_OK, DEV_POWER_STATE_D0);

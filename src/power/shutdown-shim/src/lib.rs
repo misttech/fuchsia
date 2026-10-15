@@ -197,11 +197,10 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                     let res = self.shutdown(SystemPowerState::Poweroff, None).await;
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
+                // TODO(https://fxbug.dev/572808810): Remove once all API levels containing
+                // SuspendToRam are retired.
                 AdminRequest::SuspendToRam { responder } => {
-                    let target_state = SystemPowerState::SuspendRam;
-                    set_system_power_state(target_state);
-                    let res = self.forward_command(target_state, None).await;
-                    let _ = responder.send(res.map_err(|s| s.into_raw()));
+                    let _ = responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()));
                 }
                 AdminRequest::Mexec { responder, .. } => {
                     // TODO(https://fxbug.dev/573204187): Delete once Admin.Mexec is gone

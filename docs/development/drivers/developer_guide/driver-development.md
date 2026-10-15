@@ -355,7 +355,6 @@ Flag                                    | Meaning
 `DEVICE_SUSPEND_FLAG_REBOOT_BOOTLOADER` | ?
 `DEVICE_SUSPEND_FLAG_REBOOT_RECOVERY`   | ?
 `DEVICE_SUSPEND_FLAG_POWEROFF`          | The driver should shut itself down in preparation for power off
-`DEVICE_SUSPEND_FLAG_SUSPEND_RAM`       | The driver should arrange so that it can be restarted from RAM
 
 <!---
 Yeah, I'm just guessing on the flags; they're used so little...

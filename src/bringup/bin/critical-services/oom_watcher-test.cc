@@ -70,6 +70,8 @@ class FakeShutdownShim : public fidl::WireServer<fuchsia_hardware_power_statecon
     completer.Close(ZX_ERR_NOT_SUPPORTED);
   }
 
+  // TODO(https://fxbug.dev/572808810): Remove once all API levels containing SuspendToRam are
+  // retired.
   void SuspendToRam(SuspendToRamCompleter::Sync& completer) override {
     unexpected_calls_ = true;
     completer.Close(ZX_ERR_NOT_SUPPORTED);

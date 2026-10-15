@@ -29,10 +29,6 @@ impl Facade for HardwarePowerStatecontrolFacade {
                 let result = self.suspend_poweroff().await?;
                 Ok(to_value(result)?)
             }
-            "SuspendRam" => {
-                let result = self.suspend_ram().await?;
-                Ok(to_value(result)?)
-            }
             _ => bail!("Invalid HardwarePowerStatecontrolFacade FIDL method: {:?}", method),
         }
     }

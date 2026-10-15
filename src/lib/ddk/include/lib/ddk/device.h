@@ -31,7 +31,6 @@ typedef struct zx_protocol_device zx_protocol_device_t;
 // with the system bus device.
 #define DEVICE_SUSPEND_FLAG_REBOOT 0xdcdc0100
 #define DEVICE_SUSPEND_FLAG_POWEROFF 0xdcdc0200
-#define DEVICE_SUSPEND_FLAG_SUSPEND_RAM 0xdcdc0400
 #define DEVICE_SUSPEND_REASON_MASK 0xffffff00
 
 // These values should be same as the enum fuchsia.device.DevicePowerState
@@ -52,7 +51,6 @@ typedef struct zx_protocol_device zx_protocol_device_t;
 #define DEVICE_SUSPEND_FLAG_REBOOT_KERNEL_INITIATED (DEVICE_SUSPEND_FLAG_REBOOT | 0x03)
 
 #define DEVICE_SUSPEND_REASON_POWEROFF UINT8_C(0x10)
-#define DEVICE_SUSPEND_REASON_SUSPEND_RAM UINT8_C(0x20)
 #define DEVICE_SUSPEND_REASON_REBOOT UINT8_C(0x40)
 #define DEVICE_SUSPEND_REASON_REBOOT_RECOVERY (UINT8_C(DEVICE_SUSPEND_REASON_REBOOT | 0x01))
 #define DEVICE_SUSPEND_REASON_REBOOT_BOOTLOADER (UINT8_C(DEVICE_SUSPEND_REASON_REBOOT | 0x02))

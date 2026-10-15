@@ -487,7 +487,6 @@ async fn test_variant_coverage() -> Result<(), Error> {
                 | fdevicemanager::SystemPowerState::RebootBootloader
                 | fdevicemanager::SystemPowerState::RebootRecovery
                 | fdevicemanager::SystemPowerState::Poweroff
-                | fdevicemanager::SystemPowerState::SuspendRam
                 | fdevicemanager::SystemPowerState::RebootKernelInitiated => Mock {},
             }
         }

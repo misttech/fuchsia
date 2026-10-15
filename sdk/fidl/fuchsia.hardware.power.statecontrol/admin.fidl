@@ -108,10 +108,14 @@ closed protocol Admin {
         data_zbi zx.Handle:VMO;
     }) -> () error zx.Status;
 
-    /// Asks the device to enter the suspend to RAM (S3) power state. Currently only supported on
-    /// x64. If a system state transition is already in progress then ZX_ERR_ALREADY_EXISTS is
-    /// returned. If the device fails to reach the suspend power state then ZX_ERR_INTERNAL is
-    /// returned. If the device successfully suspends, ZX_OK is returned when the device resumes.
+    /// Asks the device to enter the suspend to RAM (S3) power state.
+    ///
+    /// # Removal
+    ///
+    /// Suspend to RAM is not supported. The server always returns ZX_ERR_NOT_SUPPORTED.
+    // TODO(https://fxbug.dev/572808810): Delete once all API levels containing this method are
+    // retired.
+    @available(removed=NEXT, note="suspend to RAM is not supported")
     strict SuspendToRam() -> () error zx.Status;
 };
 

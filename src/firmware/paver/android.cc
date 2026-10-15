@@ -171,7 +171,6 @@ zx::result<> AndroidDevicePartitioner::OnStop() const {
     case SystemPowerState::kFullyOn:
     case SystemPowerState::kReboot:
     case SystemPowerState::kPoweroff:
-    case SystemPowerState::kSuspendRam:
     case SystemPowerState::kRebootKernelInitiated:
       // nothing to do for these cases
       break;

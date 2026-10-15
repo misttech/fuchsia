@@ -118,17 +118,4 @@ impl HardwarePowerStatecontrolFacade {
         }
         Ok(())
     }
-
-    /// RSuspend RAM on the Fuchsia device
-    pub async fn suspend_ram(&self) -> Result<(), Error> {
-        let tag = "HardwarePowerStatecontrolFacade::suspend_ram";
-        info!("Executing Suspend: SUSPEND_RAM");
-        if let Err(err) = self.get_admin_proxy()?.suspend_to_ram().await? {
-            fx_err_and_bail!(
-                &with_line!(tag),
-                format_err!("Failed to change power control state: {:?}", err)
-            )
-        }
-        Ok(())
-    }
 }

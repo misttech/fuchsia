@@ -270,7 +270,6 @@ void ShutdownManager::ExecuteShutdownStrategy() {
       status = SystemPowerctl(ZX_SYSTEM_POWERCTL_SHUTDOWN);
       break;
     case SystemPowerState::kFullyOn:
-    case SystemPowerState::kSuspendRam:
       fdf_log::error("Unexpected shutdown state requested: {}", shutdown_system_state);
       break;
   }

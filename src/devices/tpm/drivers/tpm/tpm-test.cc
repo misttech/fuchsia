@@ -260,32 +260,6 @@ TEST_F(TpmTest, TestDdkInit) {
   ASSERT_OK(dev->WaitUntilInitReplyCalled());
 }
 
-TEST_F(TpmTest, TestDdkSuspendToRam) {
-  auto dev = fake_root_->GetLatestChild();
-  dev->InitOp();
-  ASSERT_OK(dev->WaitUntilInitReplyCalled());
-
-  uint16_t shutdown_type = -1;
-  handle_command_ = [&shutdown_type](TpmCmdHeader* c, std::vector<uint8_t>& out) {
-    ASSERT_EQ(be32toh(c->command_code), TPM_CC_SHUTDOWN);
-    ASSERT_EQ(be32toh(c->command_size), sizeof(TpmShutdownCmd));
-    TpmShutdownCmd* shutdown = reinterpret_cast<TpmShutdownCmd*>(c);
-    shutdown_type = be16toh(shutdown->shutdown_type);
-
-    TpmResponseHeader r{
-        .tag = htobe16(TPM_ST_NO_SESSIONS),
-        .response_size = htobe32(sizeof(TpmResponseHeader)),
-        .response_code = 0,
-    };
-    out.resize(sizeof(r), 0);
-    memcpy(out.data(), &r, sizeof(r));
-  };
-
-  dev->SuspendNewOp(DEV_POWER_STATE_D0, false, DEVICE_SUSPEND_REASON_SUSPEND_RAM);
-  dev->WaitUntilSuspendReplyCalled();
-  ASSERT_EQ(shutdown_type, TPM_SU_STATE);
-}
-
 TEST_F(TpmTest, TestDdkSuspendShutdown) {
   auto dev = fake_root_->GetLatestChild();
   dev->InitOp();
