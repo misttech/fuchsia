@@ -9,8 +9,12 @@ use crate::kernel::event::{AutounsignalEvent, Event};
 use crate::kernel::relaxed_atomic::{RelaxedAtomicBool, RelaxedAtomicU32, RelaxedAtomicU64};
 use crate::kernel::thread::{Thread, ThreadPtr};
 use crate::platform_rs::timer::DurationMono;
+use crate::vm::compressor::VmCompressor;
 use crate::vm::page::{VmPage, VmPageDoublyLinkedList, VmPagePtr};
-use crate::vm::vm_cow_pages::VmCowPages;
+use crate::vm::physical_page_borrowing_config::PhysicalPageBorrowingConfig;
+use crate::vm::pmm;
+use crate::vm::vm::vm_ktrace_duration;
+use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowReclaimType};
 use core::cell::UnsafeCell;
 use core::ffi::{CStr, c_void};
 use core::marker::{PhantomData, PhantomPinned};
@@ -18,12 +22,18 @@ use core::mem::{MaybeUninit, offset_of};
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
+use debug::kernel_oops;
 use fbl::{DoublyLinkedListContainable, RefPtr};
+use kprint::kprintln;
 use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
 use page_bindings::{vm_page_state, vm_page_t};
 use page_queues_bindings as bindings;
 use pin_init::{PinInit, pin_data};
 
+define_kcounter!(PQ_LRU_PAGES_EVICTED, "pq.lru.pages_evicted", Sum);
+define_kcounter!(PQ_LRU_PAGES_COMPRESSED, "pq.lru.pages_compressed", Sum);
+define_kcounter!(PQ_LRU_PAGES_DISCARDED, "pq.lru.pages_discarded", Sum);
+define_kcounter!(PQ_LRU_SWEEPING_SKIPPED_UNLOAN, "pq.lru.sweeping_skipped_unloan", Sum);
 define_kcounter!(PQ_ACCESSED_NORMAL, "pq.accessed.normal", Sum);
 define_kcounter!(PQ_ACCESSED_NORMAL_SAME_QUEUE, "pq.accessed.normal_same_queue", Sum);
 define_kcounter!(PQ_ACCESSED_ISOLATE, "pq.accessed.isolate", Sum);
@@ -69,6 +79,18 @@ zr::static_assert!(
     LruAction::EvictAndCompress as i32 == bindings::PageQueues_LruAction::EvictAndCompress as i32
 );
 zr::static_assert!(size_of::<LruAction>() == size_of::<bindings::PageQueues_LruAction>());
+
+impl LruAction {
+    fn from_raw(raw: i32) -> Self {
+        match raw {
+            x if x == Self::None as i32 => Self::None,
+            x if x == Self::EvictOnly as i32 => Self::EvictOnly,
+            x if x == Self::CompressOnly as i32 => Self::CompressOnly,
+            x if x == Self::EvictAndCompress as i32 => Self::EvictAndCompress,
+            _ => panic!("Invalid LruAction: {raw}"),
+        }
+    }
+}
 
 /// Helper struct to group queue length counts returned by [`PageQueues::queue_counts`].
 #[repr(C)]
@@ -286,6 +308,311 @@ unsafe fn remove_page_from_list_node(page: &VmPage) {
     // `VmPageDoublyLinkedList`.
     unsafe {
         let _ = fbl::remove_from_container::<VmPage, fbl::DefaultObjectTag, NonNull<VmPage>>(page);
+    }
+}
+
+// The None is needed since to know if a page can be reclaimed by the current LruAction a RefPtr
+// to the VMO must first be created. If the page shouldn't be reclaimed the RefPtr must not be
+// dropped till outside the lock, in case it's the last ref. The None action provides a way to
+// retain these RefPtrs and have them dropped outside the lock.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum ListAction {
+    None,
+    ReplaceWithLoaned,
+    Reclaim,
+}
+
+const MAX_DEFERRED_COUNT: usize = 16;
+
+// Used to represent page backlink information acquired whilst holding the page queue lock, paired
+// with the deferred `ListAction` to perform once the lock is dropped. As a VMO may not destruct
+// while it has pages in it, the cow RefPtr will always be valid, although the page and offset
+// contained here are not synchronized and must be separately validated before use. This can be done
+// by acquiring the returned vmo's lock and then validating that the page is still contained at the
+// offset.
+struct LruIsolateItem {
+    cow: RefPtr<VmCowPages>,
+    page: VmPagePtr,
+    offset: u64,
+    action: ListAction,
+}
+
+// Helper class for building an isolate list for deferred processing when acting on the LRU queues.
+// Pages are added while the page queues lock is held, and processed once the lock is dropped.
+// Statically sized with the maximum number of items it might need to hold and it is an error to
+// attempt to add more than this many items, as flush() cannot automatically be called due to
+// incompatible locking requirements between flushing and adding items.
+struct LruIsolate {
+    // Cache of the PageQueues LruAction for checking what to do with different reclaimable pages.
+    lru_action: LruAction,
+    // List of pages and the actions to perform on them.
+    // Invariant: elements in `0..self.count` are initialized `LruIsolateItem`s, and elements in
+    // `self.count..MAX_DEFERRED_COUNT` are uninitialized.
+    items: [MaybeUninit<LruIsolateItem>; MAX_DEFERRED_COUNT],
+    // Number of initialized items in `items`.
+    count: usize,
+}
+
+impl LruIsolate {
+    const fn new() -> Self {
+        Self {
+            lru_action: LruAction::None,
+            items: [const { MaybeUninit::uninit() }; MAX_DEFERRED_COUNT],
+            count: 0,
+        }
+    }
+
+    // Sets the LRU action, this allows the object construction to happen without the page queues
+    // lock, where as setting the LruAction can be done within it.
+    fn set_lru_action(&mut self, lru_action: LruAction) {
+        self.lru_action = lru_action;
+    }
+
+    // Checks if there is space for additional pages to be added. If `true` the `add_*` methods
+    // must not be called.
+    #[inline]
+    fn is_full(&self) -> bool {
+        self.count >= MAX_DEFERRED_COUNT
+    }
+
+    /// # Safety
+    ///
+    /// Caller must ensure `!self.is_full()`, `page` is owned by `cow` (in the `OBJECT` state) and
+    /// currently assigned to `PageQueues`, and `_token` proves the `list_lock` is held.
+    #[inline]
+    unsafe fn add_internal(
+        &mut self,
+        cow: Option<RefPtr<VmCowPages>>,
+        page: VmPagePtr,
+        action: ListAction,
+        _token: &LockToken<'_, PageQueuesListLockClass>,
+    ) {
+        debug_assert!(cow.is_some());
+        debug_assert!(!self.is_full());
+        if let Some(cow) = cow {
+            // SAFETY: Caller guarantees `page` is a valid `VmPagePtr` in the `OBJECT` state under
+            // `list_lock`.
+            let offset = unsafe { page.get_page_offset() };
+            self.items[self.count].write(LruIsolateItem { cow, page, offset, action });
+            self.count += 1;
+        }
+    }
+
+    /// Adds a page to be potentially replaced with a loaned page.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `!self.is_full()`, `page` is owned by a VMO (in the `OBJECT` state) and
+    /// currently assigned to a reclaim queue of `PageQueues`, and `token` proves the `list_lock`
+    /// is held.
+    #[inline]
+    unsafe fn add_loan_replacement(
+        &mut self,
+        page: VmPagePtr,
+        token: &LockToken<'_, PageQueuesListLockClass>,
+    ) {
+        // SAFETY: Caller guarantees `page` is a valid `VmPagePtr` attached to a VM object.
+        let raw_page = unsafe { page.as_ref() };
+        debug_assert!(!raw_page.is_loaned());
+        // SAFETY: `raw_page` is in the `OBJECT` state under `list_lock`.
+        let cow_ptr = unsafe { raw_page.get_object() };
+        debug_assert!(!cow_ptr.is_null());
+        // If the VMO does not support borrowing then skip enqueuing the RefPtr, since the
+        // replace_page_with_loaned can never succeed anyway.
+        // SAFETY: `cow_ptr` is a non-null, aligned `VmCowPages` pointer kept alive by `page`'s
+        // membership in `PageQueues` under `list_lock` (a VMO cannot be destroyed while it has
+        // pages in `PageQueues`).
+        if !unsafe { VmCowPages::from_raw_ref(cow_ptr.cast()) }.can_borrow() {
+            return;
+        }
+        // SAFETY: `cow_ptr` is a valid `VmCowPages` with a positive reference count kept alive by
+        // `page` under `list_lock`.
+        let cow_ref = unsafe { VmCowPages::upgrade_from_raw(cow_ptr.cast()) };
+        debug_assert!(cow_ref.is_some());
+        // SAFETY: Caller guarantees `!self.is_full()` and `page` is in the `OBJECT` state under
+        // `list_lock`.
+        unsafe {
+            self.add_internal(cow_ref, page, ListAction::ReplaceWithLoaned, token);
+        }
+    }
+
+    /// Add a page to be reclaimed. Actual reclamation will only be done if the `set_lru_action` is
+    /// compatible with the page and its VMO owner.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `!self.is_full()`, `page` is owned by a VMO (in the `OBJECT` state) and
+    /// currently assigned to a reclaim queue of `PageQueues`, and `token` proves the `list_lock`
+    /// is held.
+    #[inline]
+    unsafe fn add_reclaimable(
+        &mut self,
+        page: VmPagePtr,
+        token: &LockToken<'_, PageQueuesListLockClass>,
+    ) {
+        if self.lru_action == LruAction::None {
+            return;
+        }
+        // SAFETY: Caller guarantees `page` is a valid `VmPagePtr` attached to a VM object.
+        let raw_page = unsafe { page.as_ref() };
+        // SAFETY: `raw_page` is in the `OBJECT` state under `list_lock`.
+        let cow_ptr = unsafe { raw_page.get_object() };
+        debug_assert!(!cow_ptr.is_null());
+        // Need to get the cow refptr before we can check if our lru action is appropriate for this
+        // page.
+        // SAFETY: `cow_ptr` is a non-null, aligned `VmCowPages` pointer with a positive reference
+        // count kept alive by `page` under `list_lock`.
+        let cow_ref = unsafe { VmCowPages::upgrade_from_raw(cow_ptr.cast()) };
+        debug_assert!(cow_ref.is_some());
+        if self.lru_action == LruAction::EvictAndCompress
+            || cow_ref.as_ref().is_some_and(|cow| {
+                (cow.can_evict() || cow.is_discardable())
+                    == (self.lru_action == LruAction::EvictOnly)
+            })
+        {
+            // SAFETY: Caller guarantees `!self.is_full()` and `page` is in the `OBJECT` state
+            // under `list_lock`.
+            unsafe {
+                self.add_internal(cow_ref, page, ListAction::Reclaim, token);
+            }
+        } else {
+            // Must not let the cow refptr get dropped till after the lock, so even if not
+            // reclaiming must keep this entry.
+            // SAFETY: Caller guarantees `!self.is_full()` and `page` is in the `OBJECT` state
+            // under `list_lock`.
+            unsafe {
+                self.add_internal(cow_ref, page, ListAction::None, token);
+            }
+        }
+    }
+
+    // Performs any pending operations on the stored pages.
+    // Requires PageQueues lock NOT be held
+    fn flush(&mut self) {
+        let count = core::mem::replace(&mut self.count, 0);
+        if count == 0 {
+            return;
+        }
+
+        // Compression state will be lazily instantiated if needed, and then used for any remaining
+        // pages in the list. Any items prior to the first Reclaim item are processed without
+        // holding the compressor.
+        let first_reclaim = self.items[..count]
+            .iter()
+            // SAFETY: By `LruIsolate`'s invariant, all slots in `0..count` were initialized by
+            // `add_internal` and have not yet been consumed.
+            .position(|item| unsafe { item.assume_init_ref() }.action == ListAction::Reclaim)
+            .unwrap_or(count);
+        if first_reclaim > 0 {
+            // SAFETY: `0..first_reclaim` is a subrange of `0..count`, and these initialized slots
+            // have not yet been consumed.
+            unsafe {
+                self.flush_range(0..first_reclaim, None);
+            }
+        }
+
+        // Attempt to acquire any compressor that might exist, unless only evicting. Note that if
+        // LruAction::None we would not have enqueued any Reclaim pages, so we can just check for
+        // EvictOnly.
+        if first_reclaim < count {
+            if self.lru_action != LruAction::EvictOnly
+                && let Some(comp) = pmm::get_page_compression()
+            {
+                pin_init::stack_pin_init!(let compressor_guard = comp.acquire_compressor());
+                // SAFETY: `first_reclaim..count` is a subrange of `0..count` disjoint from
+                // `0..first_reclaim`, so these initialized slots have not yet been consumed.
+                unsafe {
+                    self.flush_range(first_reclaim..count, Some(compressor_guard.get()));
+                }
+            } else {
+                // SAFETY: `first_reclaim..count` is a subrange of `0..count` disjoint from
+                // `0..first_reclaim`, so these initialized slots have not yet been consumed.
+                unsafe {
+                    self.flush_range(first_reclaim..count, None);
+                }
+            }
+        }
+    }
+
+    /// Performs the pending operations for the items in `range`, consuming and dropping them.
+    ///
+    /// Requires that no spinlocks or VMO locks are held by the caller.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure every slot in `self.items[range]` is currently initialized and that
+    /// `flush_range` is called at most once for each initialized slot before it is re-initialized.
+    unsafe fn flush_range(
+        &mut self,
+        range: core::ops::Range<usize>,
+        compressor: Option<&VmCompressor>,
+    ) {
+        for slot in &mut self.items[range] {
+            // SAFETY: Caller guarantees every slot in `range` is initialized and read only once.
+            let item = unsafe { slot.assume_init_read() };
+            if item.action == ListAction::ReplaceWithLoaned {
+                // Only replace with a loaned page if background borrowing/sweeping is still
+                // active. We avoid calling replace_page_with_loaned if active unloans are in
+                // progress to prevent lock contention on paged_vmo_lock and redundant
+                // borrowing/reclaiming work.
+                // Note that checking is_borrowing_active() during the initial sweep logic in
+                // process_lru_queue is not sufficient because an unloan can start in the window
+                // after process_lru_queue evaluates the flag but before we flush the deferred
+                // list.
+                if PhysicalPageBorrowingConfig::get().is_borrowing_active() {
+                    // We ignore the return value because the page may have moved, become pinned,
+                    // we may not have any free loaned pages any more, or the VmCowPages may not be
+                    // able to borrow.
+                    let _ = item.cow.replace_page_with_loaned(item.page, item.offset);
+                }
+            } else if item.action == ListAction::Reclaim {
+                // If using a compressor, make sure it is Armed between reclamations.
+                if let Some(c) = compressor
+                    && c.arm().is_err()
+                {
+                    // Continue processing as we might still be able to evict and we need to clear
+                    // all the refptrs as well.
+                    continue;
+                }
+                // SAFETY: `item.cow` is a live `RefPtr<VmCowPages>`, `item.page` points to a valid
+                // PMM `VmPage`, and `reclaim_page` acquires `item.cow`'s lock to validate whether
+                // `page` is still at `offset`.
+                let reclaimed = unsafe {
+                    item.cow.reclaim_page(
+                        item.page,
+                        item.offset,
+                        EvictionAction::FollowHint,
+                        compressor,
+                    )
+                };
+                if let Ok(success) = reclaimed {
+                    let num_pages = success.num_pages;
+                    let num_loaned_pages = success.num_loaned_pages;
+
+                    if num_pages > 0 || num_loaned_pages > 0 {
+                        match success.type_ {
+                            VmCowReclaimType::Evict => {
+                                PQ_LRU_PAGES_EVICTED.add((num_pages + num_loaned_pages) as i64);
+                            }
+                            VmCowReclaimType::Discard => {
+                                debug_assert_eq!(num_loaned_pages, 0);
+                                PQ_LRU_PAGES_DISCARDED.add(num_pages as i64);
+                            }
+                            VmCowReclaimType::Compress => {
+                                debug_assert_eq!(num_loaned_pages, 0);
+                                PQ_LRU_PAGES_COMPRESSED.add(num_pages as i64);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Drop for LruIsolate {
+    fn drop(&mut self) {
+        self.flush();
     }
 }
 
@@ -995,6 +1322,223 @@ impl PageQueues {
             return self.list_lock.raw_mutex().is_contested();
         }
         false
+    }
+
+    // This processes the LRU queue with the goal of increasing the lru_gen to the target_gen. It
+    // achieves this by walking all the pages in the queue and doing one of the following:
+    // 1. For pages that have a newest accessed time and are in the wrong queue, are moved into the
+    // correct queue.
+    // 2. For pages that are in the correct queue, they are moved to the Isolate queue.
+    // An optional limit for the number of pages to Isolate can be provided and if reached this
+    // will return early even if target_gen has not been reached.
+    fn process_lru_queue(&self, target_gen: u64, isolate: Option<usize>) {
+        // This assertion is <=, and not strictly <, since to evict a some queue X, the target must
+        // be X+1. Hence to preserve NUM_ACTIVE_QUEUES, we can allow target_gen to become equal to
+        // the first active queue, as this will process all the non-active queues. Although we
+        // might refresh our value for the mru_queue, since the mru_gen is monotonic increasing, if
+        // this assert passes once it should continue to be true.
+        assert!(
+            target_gen <= self.mru_gen.load(Ordering::Relaxed) - (NUM_ACTIVE_QUEUES as u64 - 1)
+        );
+
+        // Calculate a truly worst case loop iteration count based on every page being in the LRU
+        // queue and needing to iterate the LRU multiple steps to the target_gen. Instead of
+        // reading the LRU and comparing the target_gen, just add a buffer of the maximum number of
+        // page queues.
+        let active_inactive = self.get_active_inactive_counts();
+        let max_lru_iterations =
+            (active_inactive.active + active_inactive.inactive + NUM_RECLAIM) as u64;
+        // Loop iteration counting is just for diagnostic purposes.
+        let mut loop_iterations: u64 = 0;
+
+        // Pages in this list might be reclaimed or replaced with a loaned page, depending on the
+        // action specified in deferred_action. Each of these actions must be done outside the
+        // lock, so we accumulate pages and then act after lock is released. The number of items
+        // collected per batch is limited to avoid excessive stack usage.
+        // The deferred_list is declared here as it is expensive to construct/destruct and we would
+        // like to reuse it between iterations.
+        let mut deferred_list = LruIsolate::new();
+
+        // Only accumulate pages to try to replace with loaned pages if loaned pages are available
+        // and we're allowed to borrow at this code location. We check is_borrowing_active()
+        // instead of is_borrowing_on_mru_enabled() to temporarily suspend sweeping if an unloan is
+        // currently in progress, avoiding lock contention on the borrowing VMOs' paged_vmo_lock
+        // between the LRU thread and the unloaning thread.
+        let has_loaned_pages = pmm::node().count_loaned_free_pages() != 0;
+        let borrowing_config = PhysicalPageBorrowingConfig::get();
+        let do_sweeping = has_loaned_pages && borrowing_config.is_borrowing_active();
+        if do_sweeping {
+            // Sweeping is active, reset the skipped sweeps counter.
+            self.consecutive_skipped_sweeps.store(0);
+        } else if borrowing_config.is_borrowing_on_mru_enabled() && has_loaned_pages {
+            core::hint::cold_path();
+            // Sweeping is enabled and there are loaned free pages to sweep, but we skipped
+            // sweeping due to active unloans.
+            PQ_LRU_SWEEPING_SKIPPED_UNLOAN.add(1);
+            let count = self.consecutive_skipped_sweeps.fetch_add(1) + 1;
+            // Log a diagnostic warning if sweeping is skipped for a large number of consecutive
+            // iterations.
+            if count >= 1000 && count.is_multiple_of(1000) {
+                kprintln!(
+                    "[pq]: WARNING: LRU page sweeping has been skipped for {count} consecutive \
+                     iterations due to active unloans"
+                );
+            }
+        } else {
+            // Sweeping is not applicable at all, reset the skipped sweeps counter.
+            self.consecutive_skipped_sweeps.store(0);
+        }
+
+        let mut isolate_remaining = isolate.unwrap_or(usize::MAX);
+
+        vm_ktrace_duration!(2, "ProcessLruQueue");
+        while isolate_remaining > 0 {
+            if loop_iterations == max_lru_iterations {
+                kernel_oops!(
+                    "[pq]: WARNING: process_lru_queue exceeded expected max LRU loop iterations \
+                     {}\n",
+                    max_lru_iterations
+                );
+            }
+            loop_iterations += 1;
+
+            deferred_list.flush();
+            let mut post = false;
+            {
+                // Need to hold the general lock, in addition to the list lock, so that the lru_gen
+                // does not change while we are working.
+                ksync::lock!(let guard = self.lock_lock());
+                // Fill in the lru action now that the lock is held.
+                deferred_list.set_lru_action(*guard.fields().lru_action);
+
+                ksync::lock!(let mut list_guard = self.lock_list_lock());
+                let lru = self.lru_gen.load(Ordering::Relaxed);
+                if lru >= target_gen {
+                    break;
+                }
+                let mru_queue = self.mru_gen_to_queue();
+                let lru_queue = Self::gen_to_queue(lru);
+
+                let mut iterations: usize = 0;
+                while !list_guard.fields().page_queues[lru_queue.0 as usize].is_empty()
+                    && !deferred_list.is_full()
+                    && isolate_remaining > 0
+                {
+                    // Newer pages accumulate at the head of the list, while older pages are at the
+                    // tail. Pages are removed from the tail to ensure FIFO processing (oldest
+                    // first).
+                    let page_raw = {
+                        let fields = list_guard.as_mut().fields_mut();
+                        // SAFETY: `fields.page_queues` is pinned in place inside `PageQueues`; we
+                        // only mutate the target `VmPageDoublyLinkedList` in place without moving
+                        // the array or list head. `pop_back` returns `Some` because `!is_empty()`
+                        // was verified above while holding `list_lock`.
+                        unsafe {
+                            let page_queues = fields.page_queues.get_unchecked_mut();
+                            Pin::new_unchecked(&mut page_queues[lru_queue.0 as usize])
+                                .pop_back()
+                                .unwrap()
+                        }
+                    };
+                    // SAFETY: `page_raw` is a valid non-null pointer to a `VmPage` in the PMM
+                    // arena popped from `page_queues[lru_queue]`, and all mutated fields use
+                    // interior mutability (`UnsafeCell`).
+                    let page_ref = unsafe { page_raw.as_ref() };
+                    let page = VmPagePtr::new(page_raw);
+                    // SAFETY: `page_ref` is in the OBJECT state while in a reclaim queue under
+                    // `list_lock`.
+                    let raw_queue =
+                        unsafe { page_ref.get_page_queue_ref() }.load(Ordering::Relaxed);
+                    let page_queue = PageQueue(raw_queue);
+                    debug_assert!(page_queue.0 >= PageQueue::RECLAIM_BASE.0);
+
+                    // If the queue stored in the page does not match then we want to move it to
+                    // its correct queue with the caveat that its queue could be invalid. The queue
+                    // would be invalid if mark_accessed had raced. Should this happen we know that
+                    // the page is actually *very* old, and so we will fall back to the case of
+                    // forcibly changing its age to the new lru gen.
+                    if page_queue != lru_queue
+                        && Self::queue_is_valid(page_queue, lru_queue, mru_queue)
+                    {
+                        // Pages are added to the head because they are newer pages.
+                        // SAFETY: `fields.page_queues` is pinned in place inside `PageQueues` and
+                        // mutated in place without moving any list head. `page_raw` was just
+                        // popped from `lru_queue` (so it is a valid `NonNull<VmPage>` not in any
+                        // container) and remains valid for the duration of its residency in
+                        // `page_queues` under `list_lock`.
+                        unsafe {
+                            let fields = list_guard.as_mut().fields_mut();
+                            let page_queues = fields.page_queues.get_unchecked_mut();
+                            Pin::new_unchecked(&mut page_queues[page_queue.0 as usize])
+                                .push_front_raw(page_raw);
+                        }
+
+                        if do_sweeping
+                            && !page_ref.is_loaned()
+                            && Self::queue_is_active(page_queue, mru_queue)
+                        {
+                            // SAFETY: `!deferred_list.is_full()` holds from the loop condition,
+                            // and `page` is in a reclaim queue in the `OBJECT` state under
+                            // `list_lock`.
+                            unsafe {
+                                deferred_list.add_loan_replacement(page, list_guard.token());
+                            }
+                        }
+                    } else {
+                        // Force it the isolate list, don't care about races. If we happened to
+                        // access it at the same time then too bad.
+                        // Aged pages go to the standard priority isolate queue.
+                        // SAFETY: `page_ref` is in the OBJECT state under `list_lock`.
+                        let old_queue = PageQueue(
+                            unsafe { page_ref.get_page_queue_ref() }
+                                .swap(PageQueue::RECLAIM_ISOLATE.0, Ordering::SeqCst),
+                        );
+                        debug_assert!(old_queue.0 >= PageQueue::RECLAIM_BASE.0);
+
+                        self.page_queue_counts[old_queue.0 as usize]
+                            .fetch_sub(1, Ordering::Relaxed);
+                        self.page_queue_counts[PageQueue::RECLAIM_ISOLATE.0 as usize]
+                            .fetch_add(1, Ordering::Relaxed);
+                        // peek_isolate peeks at the head. Pages are added to the tail of the
+                        // isolate queue to preserve relative age (older pages at the head, newer
+                        // at the tail).
+                        // SAFETY: `fields.isolate_queues` is pinned in place inside `PageQueues`
+                        // and mutated in place without moving any list head. `page_raw` was just
+                        // popped from `lru_queue` (so it is a valid `NonNull<VmPage>` not in any
+                        // container) and remains valid for the duration of its residency in
+                        // `isolate_queues` under `list_lock`.
+                        unsafe {
+                            let fields = list_guard.as_mut().fields_mut();
+                            let isolate_queues = fields.isolate_queues.get_unchecked_mut();
+                            Pin::new_unchecked(&mut isolate_queues[ISOLATE_QUEUE_STANDARD])
+                                .push_back_raw(page_raw);
+                        }
+                        // SAFETY: `!deferred_list.is_full()` holds from the loop condition, and
+                        // `page` is in the isolate queue in the `OBJECT` state under `list_lock`.
+                        unsafe {
+                            deferred_list.add_reclaimable(page, list_guard.token());
+                        }
+                        isolate_remaining -= 1;
+                    }
+                    iterations += 1;
+                    if self.batch_op_should_drop_lock(iterations) {
+                        break;
+                    }
+                }
+                if list_guard.fields().page_queues[lru_queue.0 as usize].is_empty() {
+                    // Note that we held the lock the entire time, and lru_gen is always modified
+                    // with the lock held, so this should always precisely set lru_gen to lru + 1.
+                    let prev = self.lru_gen.fetch_add(1, Ordering::Relaxed);
+                    debug_assert_eq!(prev, lru);
+                    post = true;
+                }
+            }
+            if post {
+                // The lru gen was changed and the MruThread might be waiting for space to
+                // increment the mru gen, so kick the MruThread.
+                self.mru_event.signal();
+            }
+        }
     }
 
     /// Helper for DebugPageIs* methods that checks if `page` is in any reclaim queue and passes
@@ -1845,10 +2389,9 @@ impl PageQueues {
     }
 
     /// Returns a global count of all pages compressed at the point of LRU change. This is a global
-    /// method and will include stats from every PageQueues that has been instantiated.
+    /// method and will include stats from every `PageQueues` that has been instantiated.
     pub fn get_lru_pages_compressed() -> u64 {
-        // SAFETY: C++ function is safe to call globally.
-        unsafe { bindings::cpp_page_queues_get_lru_pages_compressed() }
+        PQ_LRU_PAGES_COMPRESSED.sum_across_all_cpus() as u64
     }
 
     /// Enables reclamation of anonymous pages by causing them to be placed into the reclaimable
@@ -2063,10 +2606,10 @@ impl PageQueues {
         unsafe { bindings::cpp_page_queues_set_active_ratio_multiplier(self.as_raw(), multiplier) }
     }
 
-    /// Sets the action to take when processing the LRU queue.
+    /// Sets the LRU action.
     pub fn set_lru_action(&self, action: LruAction) {
-        // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer.
-        unsafe { bindings::cpp_page_queues_set_lru_action(self.as_raw(), action as i32) }
+        ksync::lock!(let mut guard = self.lock_lock());
+        *guard.as_mut().fields_mut().lru_action = action;
     }
 
     /// Disables the active aging system.
@@ -2589,6 +3132,17 @@ pub unsafe extern "C" fn rust_page_queues_get_active_inactive_counts(
     }
 }
 
+/// FFI wrapper for [`PageQueues::get_lru_pages_compressed`].
+///
+/// # Safety
+///
+/// The caller must ensure kernel counters have been initialized.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_get_lru_pages_compressed() -> u64 {
+    PageQueues::get_lru_pages_compressed()
+}
+
 /// FFI wrapper for [`PageQueues::enable_anonymous_reclaim`].
 ///
 /// # Safety
@@ -2765,6 +3319,36 @@ pub unsafe extern "C" fn rust_page_queues_debug_page_is_high_priority(
     let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
     // SAFETY: Caller upholds `debug_page_is_high_priority` preconditions.
     unsafe { queues.debug_page_is_high_priority(page_ptr) }
+}
+
+/// FFI wrapper for [`PageQueues::set_lru_action`].
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is a valid reference to an initialized `PageQueues`, `action`
+/// is a valid `LruAction` discriminant, and the page queues lock is not held by the caller.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_set_lru_action(queues: &PageQueues, action: i32) {
+    queues.set_lru_action(LruAction::from_raw(action));
+}
+
+// TODO(https://fxbug.dev/549881466): Temporary export for the C++ RotateReclaimQueues, LruThread
+// and PeekIsolate, to be removed once those are ported to Rust.
+/// FFI wrapper for [`PageQueues::process_lru_queue`]. An `isolate` of `usize::MAX` means no limit.
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is a valid reference to an initialized `PageQueues`, and no
+/// spinlocks or VMO locks are held by the caller.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_process_lru_queue(
+    queues: &PageQueues,
+    target_gen: u64,
+    isolate: usize,
+) {
+    queues.process_lru_queue(target_gen, (isolate != usize::MAX).then_some(isolate));
 }
 
 #[cfg(ktest)]

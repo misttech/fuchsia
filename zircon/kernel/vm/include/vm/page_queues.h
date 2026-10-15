@@ -75,6 +75,8 @@ void rust_page_queues_get_reclaim_queue_counts(const void* storage, void* out_co
 void rust_page_queues_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_get_active_inactive_counts(const void* storage, void* out_counts);
 
+uint64_t rust_page_queues_get_lru_pages_compressed(void);
+
 void rust_page_queues_enable_anonymous_reclaim(const void* storage, bool zero_forks);
 bool rust_page_queues_reclaim_is_only_pager_backed(const void* storage);
 bool rust_page_queues_is_page_reclaimable(const vm_page_t* page);
@@ -88,6 +90,13 @@ bool rust_page_queues_debug_page_is_anonymous_zero_fork(const void* storage, con
 bool rust_page_queues_debug_page_is_any_anonymous(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_wired(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_high_priority(const void* storage, const vm_page_t* page);
+
+void rust_page_queues_set_lru_action(const void* storage, int32_t action);
+
+// TODO(https://fxbug.dev/549881466): Temporary export used by the C++ RotateReclaimQueues,
+// LruThread and PeekIsolate until they are ported to Rust, at which point this will be removed. An
+// |isolate| of SIZE_MAX means no limit.
+void rust_page_queues_process_lru_queue(const void* storage, uint64_t target_gen, size_t isolate);
 }  // extern "C"
 
 // Allocated pages that are part of the cow pages in a VmObjectPaged can be placed in a page queue.
@@ -543,15 +552,6 @@ class PageQueues {
     return gen_to_queue(lru_gen_.load(ktl::memory_order_relaxed));
   }
 
-  // This processes the LRU queue with the goal of increasing the lru_gen_ to the target_gen. It
-  // achieves this by walking all the pages in the queue and doing one of the following:
-  //   1. For pages that have a newest accessed time and are in the wrong queue, are moved into the
-  //      correct queue.
-  //   2. For pages that are in the correct queue, they are moved to the Isolate queue.
-  // An optional limit for the number of pages to Isolate can be provided and if reached this will
-  // return early even if target_gen has not been reached.
-  void ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isolate);
-
   // Peek the isolate Isolate lists and return the first page, or a nullopt if the list is empty.
   ktl::optional<VmoBacklink> PeekIsolateList() TA_EXCL(lock_);
 
@@ -621,21 +621,6 @@ class PageQueues {
       return false;
     }
     return true;
-  }
-
-  // When holding the PageQueue lock, and performing an operation on an arbitrary number of pages,
-  // the "operation batch size" controls the number of pages for which the lock will be held before
-  // checking for contention and potentially releasing the lock if contended, allowing other
-  // operations to proceed.
-  static constexpr size_t kOpBatchSize = 64;
-
-  // Helper that checks if iterations is at a multiple of the kOpBatchSize, and if so whether or not
-  // the lock is presently contested and hence should be yielded.
-  bool BatchOpShouldDropLock(size_t iterations) const {
-    if ((iterations % kOpBatchSize) == 0) {
-      return list_lock_.lock().IsContested();
-    }
-    return false;
   }
 
   // Returns whether or not it is permissible to increase the mru generation, or if the lru

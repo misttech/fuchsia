@@ -44,15 +44,12 @@ FFI_ALWAYS_INLINE bool cpp_page_queues_get_cow_for_loaned_page(PageQueues* queue
 
 FFI_ALWAYS_INLINE void cpp_page_queues_dump(const PageQueues* queues);
 
-FFI_ALWAYS_INLINE uint64_t cpp_page_queues_get_lru_pages_compressed(void);
-
 FFI_ALWAYS_INLINE void cpp_page_queues_start_threads(PageQueues* queues,
                                                      zx_duration_mono_t min_mru_rotate_time,
                                                      zx_duration_mono_t max_mru_rotate_time);
 FFI_ALWAYS_INLINE void cpp_page_queues_start_debug_compressor(PageQueues* queues);
 FFI_ALWAYS_INLINE void cpp_page_queues_set_active_ratio_multiplier(PageQueues* queues,
                                                                    uint32_t multiplier);
-FFI_ALWAYS_INLINE void cpp_page_queues_set_lru_action(PageQueues* queues, int32_t action);
 FFI_ALWAYS_INLINE void cpp_page_queues_disable_aging(PageQueues* queues);
 FFI_ALWAYS_INLINE void cpp_page_queues_enable_aging(PageQueues* queues);
 FFI_ALWAYS_INLINE void cpp_page_queues_set_aging_event(PageQueues* queues, Event* event);
