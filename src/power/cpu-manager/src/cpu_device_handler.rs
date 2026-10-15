@@ -11,6 +11,7 @@ use crate::utils::get_cpu_ctrl_proxy;
 use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
+use cpu_manager_node_config::CpuDeviceHandlerConfig;
 use fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl;
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
 use serde_derive::Deserialize;
@@ -52,14 +53,8 @@ pub struct CpuDeviceHandlerBuilder<'a> {
 impl<'a> CpuDeviceHandlerBuilder<'a> {
     pub fn new_from_json(json_data: json::Value, _nodes: &HashMap<String, Rc<dyn Node>>) -> Self {
         #[derive(Deserialize)]
-        struct Config {
-            total_domain_count: u8,
-            perf_rank: u8,
-        }
-
-        #[derive(Deserialize)]
         struct JsonData {
-            config: Config,
+            config: CpuDeviceHandlerConfig,
         }
 
         let data: JsonData = json::from_value(json_data).unwrap();

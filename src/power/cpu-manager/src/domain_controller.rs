@@ -8,13 +8,16 @@ use crate::node::Node;
 use crate::ok_or_default_err;
 use anyhow::Error;
 use async_trait::async_trait;
+use cpu_manager_node_config::DomainControllerDependencies;
+use fidl_fuchsia_power_cpu as fcpu;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
 use futures::{TryFutureExt, TryStreamExt};
 use log::{error, info, warn};
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_power_cpu as fcpu, fuchsia_async as fasync, serde_json as json};
 
 /// Node: DomainController
 ///
@@ -66,13 +69,8 @@ impl<'a, 'b> DomainControllerBuilder<'a, 'b> {
         service_fs: &'a mut ServiceFs<ServiceObjLocal<'b, ()>>,
     ) -> Self {
         #[derive(Deserialize)]
-        struct Dependencies {
-            cpu_manager_main_node: String,
-        }
-
-        #[derive(Deserialize)]
         struct JsonData {
-            dependencies: Dependencies,
+            dependencies: DomainControllerDependencies,
         }
 
         let data: JsonData = json::from_value(json_data).unwrap();

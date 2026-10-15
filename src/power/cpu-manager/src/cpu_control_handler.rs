@@ -11,6 +11,7 @@ use crate::utils::get_cpu_ctrl_proxy;
 use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
+use cpu_manager_node_config::{CpuControlHandlerConfig, CpuControlHandlerDependencies};
 use fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl;
 use fidl_fuchsia_thermal as fthermal;
 use fuchsia_inspect::{self as inspect, Property};
@@ -185,26 +186,9 @@ impl<'a> CpuControlHandlerBuilder<'a> {
 
     pub fn new_from_json(json_data: json::Value, nodes: &HashMap<String, Rc<dyn Node>>) -> Self {
         #[derive(Deserialize)]
-        struct Config {
-            sustainable_power: f64,
-            power_gain: f64,
-            total_domain_count: u8,
-            perf_rank: u8,
-            capacitance: f64,
-            min_cpu_clock_speed: f64,
-            logical_cpu_numbers: Vec<u32>,
-        }
-
-        #[derive(Deserialize)]
-        struct Dependencies {
-            cpu_stats_handler_node: String,
-            cpu_dev_handler_node: String,
-        }
-
-        #[derive(Deserialize)]
         struct JsonData {
-            config: Config,
-            dependencies: Dependencies,
+            config: CpuControlHandlerConfig,
+            dependencies: CpuControlHandlerDependencies,
         }
 
         let data: JsonData = json::from_value(json_data).unwrap();

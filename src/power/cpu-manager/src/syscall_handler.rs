@@ -7,6 +7,7 @@ use crate::message::{Message, MessageResult, MessageReturn};
 use crate::node::Node;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use cpu_manager_node_config::SyscallHandlerConfig;
 use fidl_fuchsia_kernel as fkernel;
 use fuchsia_inspect::{self as inspect, NumericProperty as _, Property as _};
 use serde_derive::Deserialize;
@@ -40,14 +41,9 @@ pub struct SyscallHandlerBuilder<'a> {
 
 impl<'a> SyscallHandlerBuilder<'a> {
     pub fn new_from_json(json_data: json::Value) -> Self {
-        #[derive(Default, Deserialize)]
-        struct Config {
-            use_fake_cpu_resource: Option<bool>,
-        }
-
         #[derive(Deserialize)]
         struct JsonData {
-            config: Option<Config>,
+            config: Option<SyscallHandlerConfig>,
         }
 
         let data: JsonData = json::from_value(json_data).unwrap();

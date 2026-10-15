@@ -5,6 +5,8 @@
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use anyhow::{Context, Error, format_err};
+#[cfg(test)]
+use cpu_manager_node_config::NodeConfig;
 use fidl_fuchsia_power_cpu_manager as fcpumanager;
 use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
@@ -311,7 +313,8 @@ mod tests {
         crate::common_utils::test_each_node_config_file(|config_file| {
             let mut set = HashSet::new();
             for node in config_file {
-                let node_name = node["name"].as_str().unwrap().to_string();
+                let typed_node: NodeConfig = json::from_value(node.clone())?;
+                let node_name = typed_node.name().to_string();
                 if set.contains(&node_name) {
                     return Err(format_err!("Node with name {} already specified", node_name));
                 }

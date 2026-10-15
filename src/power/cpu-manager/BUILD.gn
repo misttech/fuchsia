@@ -4,11 +4,25 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/power/cpu-manager/node_config/node_config.gni")
 
+rustc_library("node_config") {
+  name = "cpu_manager_node_config"
+  edition = "2024"
+  configs += [ "//build/config/rust:bootfs" ]
+  source_root = "src/node_config.rs"
+  sources = [ "src/node_config.rs" ]
+  deps = [
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_derive",
+  ]
+}
+
 cpu_manager_deps = [
   ":cpu-manager-config-lib",
+  ":node_config",
   "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
   "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_rust",
   "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",

@@ -5,13 +5,13 @@
 use crate::node::Node;
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use cpu_manager_node_config::CpuStatsRecorderConfig;
 use fidl_fuchsia_kernel as fstats;
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_sync::Mutex;
 use futures::future::{FutureExt as _, LocalBoxFuture};
 use futures::stream::{FuturesUnordered, StreamExt};
-use serde_derive::Deserialize;
 use serde_json as json;
 use state_recorder::{NumericStateRecorder, RecorderOptions, StateRecorderManager, units};
 use std::cell::RefCell;
@@ -43,13 +43,7 @@ pub struct CpuStatsRecorderBuilder {
 
 impl CpuStatsRecorderBuilder {
     pub fn new_from_json(json_data: json::Value, _nodes: &HashMap<String, Rc<dyn Node>>) -> Self {
-        #[derive(Deserialize)]
-        struct Config {
-            poll_interval_s: f64,
-            num_history_entries: usize,
-        }
-
-        let config: Config = json::from_value(json_data["config"].clone())
+        let config: CpuStatsRecorderConfig = json::from_value(json_data["config"].clone())
             .expect("CpuStatsRecorder 'config' is required and must match schema");
 
         Self {

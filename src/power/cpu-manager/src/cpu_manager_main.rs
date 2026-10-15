@@ -11,6 +11,9 @@ use crate::types::{NormPerfs, OperatingPoint, ThermalLoad, Watts};
 use anyhow::{Error, anyhow, bail, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
+use cpu_manager_node_config::{
+    ClusterConfig, CpuManagerMainConfig, CpuManagerMainDependencies, ThermalStateConfig,
+};
 use fidl_fuchsia_power_cpu as fcpu;
 use fidl_fuchsia_thermal as fthermal;
 use fuchsia_inspect::{self as inspect, ArrayProperty as _, Property as _};
@@ -418,49 +421,10 @@ fn validate_thermal_states(states: &Vec<ThermalState>) -> Result<(), Error> {
     Ok(())
 }
 
-// Configuration structs for CpuManagerMainBuilder.
-#[derive(Clone, Debug, Deserialize)]
-struct ClusterConfig {
-    name: String,
-    cluster_index: usize,
-    handler: String,
-    logical_cpu_numbers: Vec<u32>,
-    normperfs_per_ghz: f64,
-    #[serde(default)]
-    boost_opp: Option<usize>,
-    #[serde(default)]
-    boot_max_opp: Option<u64>,
-    #[serde(default)]
-    boot_min_opp: Option<usize>,
-}
-
-#[derive(Clone, Deserialize)]
-struct ThermalStateConfig {
-    cluster_opps: Vec<usize>,
-    min_performance_normperfs: f64,
-    static_power_w: f64,
-    dynamic_power_per_normperf_w: f64,
-}
-
-#[derive(Deserialize)]
-struct Config {
-    sustainable_power: f64,
-    power_gain: f64,
-    clusters: Vec<ClusterConfig>,
-    thermal_states: Vec<ThermalStateConfig>,
-}
-
-#[derive(Deserialize)]
-struct Dependencies {
-    cpu_device_handlers: Vec<String>,
-    cpu_stats_handler: String,
-    syscall_handler: String,
-}
-
 #[derive(Deserialize)]
 struct JsonData {
-    config: Config,
-    dependencies: Dependencies,
+    config: CpuManagerMainConfig,
+    dependencies: CpuManagerMainDependencies,
 }
 
 /// Builder for `CpuManagerMain`

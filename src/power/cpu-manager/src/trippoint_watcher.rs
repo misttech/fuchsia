@@ -7,6 +7,7 @@ use crate::message::Message;
 use crate::node::Node;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use cpu_manager_node_config::{TrippointWatcherConfig, TrippointWatcherDependencies};
 use fidl_fuchsia_hardware_trippoint as ftrippoint;
 use fuchsia_component::client as fclient;
 use futures::FutureExt;
@@ -39,19 +40,9 @@ pub struct TrippointWatcherBuilder {
 impl TrippointWatcherBuilder {
     pub fn new_from_json(json_data: json::Value, nodes: &HashMap<String, Rc<dyn Node>>) -> Self {
         #[derive(Deserialize)]
-        struct Config {
-            index_to_opp_map: HashMap<String, u32>,
-        }
-
-        #[derive(Deserialize)]
-        struct Dependencies {
-            cpu_handler_node: String,
-        }
-
-        #[derive(Deserialize)]
         struct JsonData {
-            config: Config,
-            dependencies: Dependencies,
+            config: TrippointWatcherConfig,
+            dependencies: TrippointWatcherDependencies,
         }
 
         let data: JsonData = json::from_value(json_data).unwrap();

@@ -10,6 +10,7 @@ use crate::node::Node;
 use crate::types::{Milliseconds, Nanoseconds};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use cpu_manager_node_config::CpuStatsHandlerConfig;
 use fidl_fuchsia_kernel as fstats;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::inspect_log;
@@ -50,13 +51,8 @@ impl<'a> CpuStatsHandlerBuilder<'a> {
 
     pub fn new_from_json(json_data: json::Value, _nodes: &HashMap<String, Rc<dyn Node>>) -> Self {
         #[derive(Deserialize)]
-        struct Config {
-            cpu_load_cache_duration_ms: Option<u32>,
-        }
-
-        #[derive(Deserialize)]
         struct JsonData {
-            config: Option<Config>,
+            config: Option<CpuStatsHandlerConfig>,
         }
 
         let data: JsonData = json::from_value(json_data).unwrap();

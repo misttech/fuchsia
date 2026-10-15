@@ -8,15 +8,17 @@ use crate::node::Node;
 use crate::types::ThermalLoad;
 use anyhow::Result;
 use async_trait::async_trait;
+use cpu_manager_node_config::ThermalWatcherDependencies;
+use fidl_fuchsia_thermal as fthermal;
 use fuchsia_async::{self as fasync, DurationExt};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect::{self as inspect, Property};
 use futures::future::{FutureExt as _, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_thermal as fthermal, serde_json as json};
 
 /// Node: ThermalWatcher
 ///
@@ -41,13 +43,8 @@ pub struct ThermalWatcherBuilder<'a> {
 impl<'a> ThermalWatcherBuilder<'a> {
     pub fn new_from_json(json_data: json::Value, nodes: &HashMap<String, Rc<dyn Node>>) -> Self {
         #[derive(Deserialize)]
-        struct Dependencies {
-            thermal_handler_node: String,
-        }
-
-        #[derive(Deserialize)]
         struct JsonData {
-            dependencies: Dependencies,
+            dependencies: ThermalWatcherDependencies,
         }
 
         let data: JsonData = json::from_value(json_data).unwrap();
