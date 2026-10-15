@@ -82,7 +82,7 @@ pub async fn handle_input(
         DeviceRequestStream,
     >,
     node: inspect::Node,
-    display_ownership_event: zx::Event,
+    input_ownership_event: zx::Event,
     focus_chain_publisher: FocusChainProviderPublisher,
     supported_input_devices: Vec<String>,
     light_sensor_configuration: Option<LightSensorConfiguration>,
@@ -167,7 +167,7 @@ pub async fn handle_input(
         incoming,
         scene_manager,
         &node,
-        display_ownership_event,
+        input_ownership_event,
         factory_reset_handler.clone(),
         media_buttons_handler.clone(),
         light_sensor_handler.clone(),
@@ -322,15 +322,15 @@ async fn add_mouse_handler(
 async fn register_keyboard_related_input_handlers(
     incoming: &Incoming,
     assembly: InputPipelineAssembly,
-    display_ownership_event: zx::Event,
+    input_ownership_event: zx::Event,
     focus_chain_publisher: FocusChainProviderPublisher,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
     let mut assembly = assembly;
 
-    // Display ownership deals with keyboard events.
-    assembly = assembly.add_display_ownership(display_ownership_event, input_handlers_node);
+    // Input ownership deals with keyboard events.
+    assembly = assembly.add_display_ownership(input_ownership_event, input_handlers_node);
     assembly = add_modifier_handler(assembly, input_handlers_node, metrics_logger.clone());
 
     assembly = add_keymap_handler(assembly, input_handlers_node, metrics_logger.clone());
@@ -396,7 +396,7 @@ async fn build_input_pipeline_assembly(
     incoming: &Incoming,
     scene_manager: Rc<dyn SceneManagerTrait>,
     node: &inspect::Node,
-    display_ownership_event: zx::Event,
+    input_ownership_event: zx::Event,
     factory_reset_handler: Rc<FactoryResetHandler>,
     media_buttons_handler: Rc<MediaButtonsHandler>,
     light_sensor_handler: Option<Rc<CalibratedLightSensorHandler>>,
@@ -425,7 +425,7 @@ async fn build_input_pipeline_assembly(
             assembly = register_keyboard_related_input_handlers(
                 incoming,
                 assembly,
-                display_ownership_event,
+                input_ownership_event,
                 focus_chain_publisher,
                 &input_handlers_node,
                 metrics_logger.clone(),

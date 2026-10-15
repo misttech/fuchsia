@@ -4,6 +4,7 @@
 
 #include "src/ui/testing/ui_test_realm/ui_test_realm.h"
 
+#include <fidl/fuchsia.ui.input.internal/cpp/fidl.h>
 #include <fuchsia/accessibility/cpp/fidl.h>
 #include <fuchsia/accessibility/scene/cpp/fidl.h>
 #include <fuchsia/accessibility/semantics/cpp/fidl.h>
@@ -19,7 +20,6 @@
 #include <fuchsia/tracing/provider/cpp/fidl.h>
 #include <fuchsia/ui/app/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
-#include <fuchsia/ui/composition/internal/cpp/fidl.h>
 #include <fuchsia/ui/focus/cpp/fidl.h>
 #include <fuchsia/ui/input/cpp/fidl.h>
 #include <fuchsia/ui/observation/scope/cpp/fidl.h>
@@ -423,8 +423,8 @@ void UITestRealm::ConfigureSceneOwner() {
   realm_builder_.RouteReadOnlyDirectory("sensor-config", std::move(targets),
                                         std::move(input_config_directory_contents));
 
-  // Route non-public DisplayOwnership protocol from Scenic to SceneManager.
-  RouteServices({fuchsia::ui::composition::internal::DisplayOwnership::Name_},
+  // Route non-public InputOwnership protocol from Scenic to SceneManager.
+  RouteServices({fidl::DiscoverableProtocolName<fuchsia_ui_input_internal::InputOwnership>},
                 /* source = */ ChildRef{kScenicName},
                 /* targets = */ {ChildRef{kSceneManagerName}});
 

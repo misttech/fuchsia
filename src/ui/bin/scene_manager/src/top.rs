@@ -26,11 +26,11 @@ use fidl_fuchsia_ui_brightness::{
     ColorAdjustmentHandlerRequestStream, ColorAdjustmentRequestStream,
 };
 use fidl_fuchsia_ui_composition as flatland;
-use fidl_fuchsia_ui_composition_internal as fcomp;
 use fidl_fuchsia_ui_display_color as color;
 use fidl_fuchsia_ui_display_singleton as singleton_display;
 use fidl_fuchsia_ui_focus::FocusChainProviderRequestStream;
 use fidl_fuchsia_ui_input::DeviceListenerRegistryRequestStream;
+use fidl_fuchsia_ui_input_internal as finput_internal;
 use fidl_fuchsia_ui_policy::{
     DeviceListenerRegistryRequestStream as MediaButtonsListenerRegistryRequestStream,
     DisplayBacklightRequestStream,
@@ -65,6 +65,18 @@ enum ExposedServices {
 }
 
 const LIGHT_SENSOR_CONFIGURATION: &'static str = "/sensor-config/config.json";
+
+async fn get_platform_input_ownership_event(
+    ownership_proxy: &finput_internal::InputOwnershipProxy,
+) -> Result<zx::Event, anyhow::Error> {
+    ownership_proxy
+        .get_event(finput_internal::InputOwnershipTarget::Platform(finput_internal::Platform {}))
+        .await
+        .context("Failed to get input ownership from Scenic")?
+        .map_err(|e| {
+            anyhow::anyhow!("Scenic returned error {e:?} when getting input ownership event")
+        })
+}
 
 pub async fn start(
     incoming: Incoming,
@@ -166,11 +178,9 @@ pub async fn start(
         crate::factory_reset_device_server::make_server_and_receiver();
 
     let ownership_proxy = incoming
-        .connect_protocol::<fcomp::DisplayOwnershipProxy>()
-        .context("while connecting to DisplayOwnership proxy")?;
-    let display_ownership = ownership_proxy.get_event().await.expect(
-        "Failed to get display ownership. This is usually an upstream issue (Scenic and up), not scene_manager.",
-    );
+        .connect_protocol::<finput_internal::InputOwnershipProxy>()
+        .context("while connecting to InputOwnership proxy")?;
+    let input_ownership_event = get_platform_input_ownership_event(&ownership_proxy).await?;
     info!("Instantiating SceneManager");
 
     let Config {
@@ -280,7 +290,7 @@ pub async fn start(
         factory_reset_countdown_request_stream_receiver,
         factory_reset_device_request_stream_receiver,
         inspect_node,
-        display_ownership,
+        input_ownership_event,
         focus_chain_publisher,
         supported_input_devices,
         light_sensor_configuration,
@@ -603,6 +613,7 @@ fn map_present_root_view_error(e: anyhow::Error) -> PresentRootViewError {
 
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_element::GraphicalPresenterMarker;
     use fuchsia_scenic as scenic;
@@ -688,5 +699,69 @@ mod tests {
                 .await?;
         assert!(result.is_none());
         Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_get_platform_input_ownership_event_success() {
+        let (proxy, mut stream) =
+            create_proxy_and_stream::<finput_internal::InputOwnershipMarker>();
+        let (client_result, _) =
+            futures::join!(get_platform_input_ownership_event(&proxy), async move {
+                if let Some(Ok(finput_internal::InputOwnershipRequest::GetEvent {
+                    target,
+                    responder,
+                })) = stream.next().await
+                {
+                    assert_matches!(target, finput_internal::InputOwnershipTarget::Platform(_));
+                    let event = zx::Event::create();
+                    responder.send(Ok(event)).expect("failed to send response");
+                } else {
+                    panic!("Expected GetEvent request");
+                }
+            });
+        let event = client_result.expect("expected success");
+        assert_ne!(event.raw_handle(), zx::sys::ZX_HANDLE_INVALID);
+    }
+
+    #[fuchsia::test]
+    async fn test_get_platform_input_ownership_event_error() {
+        let (proxy, mut stream) =
+            create_proxy_and_stream::<finput_internal::InputOwnershipMarker>();
+        let (client_result, _) =
+            futures::join!(get_platform_input_ownership_event(&proxy), async move {
+                if let Some(Ok(finput_internal::InputOwnershipRequest::GetEvent {
+                    target,
+                    responder,
+                })) = stream.next().await
+                {
+                    assert_matches!(target, finput_internal::InputOwnershipTarget::Platform(_));
+                    responder
+                        .send(Err(finput_internal::InputOwnershipError::InvalidTarget))
+                        .expect("failed to send response");
+                } else {
+                    panic!("Expected GetEvent request");
+                }
+            });
+        let err = client_result.expect_err("expected error from Scenic");
+        let err_msg = format!("{err:#}");
+        assert!(
+            err_msg
+                .contains("Scenic returned error InvalidTarget when getting input ownership event"),
+            "Unexpected error message: {err_msg}"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_get_platform_input_ownership_event_channel_closed() {
+        let (proxy, stream) = create_proxy_and_stream::<finput_internal::InputOwnershipMarker>();
+        drop(stream);
+        let err = get_platform_input_ownership_event(&proxy)
+            .await
+            .expect_err("expected error on closed channel");
+        let err_msg = format!("{err:#}");
+        assert!(
+            err_msg.contains("Failed to get input ownership from Scenic"),
+            "Unexpected error message: {err_msg}"
+        );
     }
 }
