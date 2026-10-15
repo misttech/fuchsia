@@ -157,6 +157,7 @@
             config: [
                 "fuchsia.driver.ExposeDebugCapabilities",
                 "fuchsia.driver.usb.peripheral",
+                "fuchsia.power.DeepSuspendEnabled",
                 "fuchsia.power.GpuPowerManagementEnabled",
                 "fuchsia.power.PowerFrameworkEnabledForWlanDriver",
                 "fuchsia.power.StoragePowerManagementEnabled",

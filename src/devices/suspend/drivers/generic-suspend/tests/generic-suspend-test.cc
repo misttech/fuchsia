@@ -9,12 +9,18 @@
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/inspect/cpp/hierarchy.h>
+#include <lib/inspect/cpp/reader.h>
+#include <zircon/syscalls-next.h>
+
+#include <optional>
 
 #include <gtest/gtest.h>
 
 #include "lib/zx/handle.h"
 #include "lib/zx/resource.h"
 #include "lib/zx/vmo.h"
+#include "src/devices/suspend/drivers/generic-suspend/generic_suspend_config.h"
 
 namespace suspend {
 
@@ -38,13 +44,19 @@ class GenericSuspendTest : public GenericSuspend {
     return zx::ok(std::move(result));
   }
 
-  zx::result<WakeSourceReport> SystemSuspendEnter() override {
-    // No-op override for testing.
+  zx::result<WakeSourceReport> SystemSuspendEnter(uint64_t options) override {
+    // No-op override for testing, which only records the options it was called with.
+    last_suspend_options_ = options;
     WakeSourceReport empty{
         .actual_entry_count = 0,
     };
     return zx::ok(empty);
   }
+
+  // The options passed to the most recent `SystemSuspendEnter` call, if any.
+  std::optional<uint64_t> last_suspend_options() const { return last_suspend_options_; }
+
+  using GenericSuspend::inspector;
 
   static DriverRegistration GetDriverRegistration() {
     // Use a custom DriverRegistration to create the DUT. Without this, the non-test implementation
@@ -57,6 +69,8 @@ class GenericSuspendTest : public GenericSuspend {
  private:
   // We just need any kernel handle here.
   zx::vmo fake_resource_;
+
+  std::optional<uint64_t> last_suspend_options_;
 };
 
 class TestEnvironmentWrapper : public fdf_testing::Environment {
@@ -89,8 +103,12 @@ class GenericSuspendTestConfiguration {
 
 class GenericSuspendTestFixture : public ::testing::Test {
  public:
-  void SetUp() override {
-    zx::result<> result = driver_test().StartDriver();
+  void SetUp() override { ASSERT_NO_FATAL_FAILURE(StartDriver(generic_suspend_config::Config{})); }
+
+  // Starts the driver with the given structured config and connects to its Suspender protocol.
+  void StartDriver(generic_suspend_config::Config config) {
+    zx::result<> result = driver_test().StartDriverWithCustomStartArgs(
+        [&config](fdf::DriverStartArgs& start_args) { start_args.config(config.ToVmo()); });
     ASSERT_EQ(ZX_OK, result.status_value());
     zx::result connect_result =
         driver_test().Connect<fuchsia_hardware_power_suspend::SuspendService::Suspender>();
@@ -102,6 +120,41 @@ class GenericSuspendTestFixture : public ::testing::Test {
     ASSERT_EQ(ZX_OK, result.status_value());
   }
   fidl::WireSyncClient<fuchsia_hardware_power_suspend::Suspender>& client() { return client_; }
+
+  // Issues a Suspend request for state 0 and expects it to succeed.
+  void Suspend() {
+    fidl::Arena arena;
+    auto request = fuchsia_hardware_power_suspend::wire::SuspenderSuspendRequest::Builder(arena)
+                       .state_index(0)
+                       .Build();
+    auto result = client()->Suspend(request);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  }
+
+  // The options the driver passed to the most recent `SystemSuspendEnter` call, if any.
+  std::optional<uint64_t> LastSuspendOptions() {
+    return driver_test().RunInDriverContext<std::optional<uint64_t>>(
+        [](GenericSuspendTest& driver) { return driver.last_suspend_options(); });
+  }
+
+  // Reads the driver's inspect hierarchy.
+  inspect::Hierarchy ReadInspect() {
+    zx::vmo vmo = driver_test().RunInDriverContext<zx::vmo>(
+        [](GenericSuspendTest& driver) { return driver.inspector().DuplicateVmo(); });
+    fpromise::result<inspect::Hierarchy> hierarchy = inspect::ReadFromVmo(vmo);
+    ZX_ASSERT(hierarchy.is_ok());
+    return hierarchy.take_value();
+  }
+
+  // Expects the `use_deep_suspend` inspect root property to be present and equal `expected`.
+  void ExpectUseDeepSuspendInspect(bool expected) {
+    inspect::Hierarchy hierarchy = ReadInspect();
+    const auto* use_deep_suspend =
+        hierarchy.node().get_property<inspect::BoolPropertyValue>("use_deep_suspend");
+    ASSERT_NE(use_deep_suspend, nullptr);
+    EXPECT_EQ(use_deep_suspend->value(), expected);
+  }
 
   fdf_testing::BackgroundDriverTest<GenericSuspendTestConfiguration>& driver_test() {
     return driver_test_;
@@ -123,13 +176,32 @@ TEST_F(GenericSuspendTestFixture, TrivialGetSuspendStates) {
 }
 
 TEST_F(GenericSuspendTestFixture, TrivialSuspend) {
-  fidl::Arena arena;
-  auto request = fuchsia_hardware_power_suspend::wire::SuspenderSuspendRequest::Builder(arena)
-                     .state_index(0)
-                     .Build();
-  auto result = client()->Suspend(request);
-  EXPECT_TRUE(result.ok());
-  EXPECT_TRUE(result->is_ok());
+  ASSERT_NO_FATAL_FAILURE(Suspend());
+
+  // Deep suspend is disabled by default, so no suspend options are passed.
+  std::optional<uint64_t> options = LastSuspendOptions();
+  ASSERT_TRUE(options.has_value());
+  EXPECT_EQ(options.value(), 0u);
+  ExpectUseDeepSuspendInspect(false);
+}
+
+class GenericSuspendDeepSuspendTestFixture : public GenericSuspendTestFixture {
+ public:
+  void SetUp() override {
+    generic_suspend_config::Config config;
+    config.use_deep_suspend() = true;
+    ASSERT_NO_FATAL_FAILURE(StartDriver(std::move(config)));
+  }
+};
+
+TEST_F(GenericSuspendDeepSuspendTestFixture, SuspendWithDeepSuspendPassesDeepOption) {
+  ASSERT_NO_FATAL_FAILURE(Suspend());
+
+  std::optional<uint64_t> options = LastSuspendOptions();
+  ASSERT_TRUE(options.has_value());
+  // ZX_SYSTEM_SUSPEND_OPTION_DEEP may not be combined with any other option.
+  EXPECT_EQ(options.value(), ZX_SYSTEM_SUSPEND_OPTION_DEEP);
+  ExpectUseDeepSuspendInspect(true);
 }
 
 }  // namespace suspend

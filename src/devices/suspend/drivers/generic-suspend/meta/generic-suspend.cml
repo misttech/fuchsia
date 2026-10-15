@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 {
     include: [
+        "//src/devices/suspend/drivers/generic-suspend/meta/generic-suspend-config.shard.cml",
         "driver/platform-device.shard.cml",
         "driver_component/driver.shard.cml",
     ],

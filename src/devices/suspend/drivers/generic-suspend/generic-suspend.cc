@@ -24,6 +24,7 @@
 #include "lib/fidl/cpp/wire/channel.h"
 #include "lib/fidl/cpp/wire/vector_view.h"
 #include "lib/fidl/cpp/wire/wire_messaging_declarations.h"
+#include "src/devices/suspend/drivers/generic-suspend/generic_suspend_config.h"
 #include "zircon/status.h"
 
 namespace suspend {
@@ -35,6 +36,8 @@ namespace {
 constexpr char kDeviceName[] = "generic-suspend-device";
 
 constexpr uint64_t kInspectHistorySize = 128;
+
+constexpr char kInspectUseDeepSuspend[] = "use_deep_suspend";
 }  // namespace
 
 GenericSuspend::GenericSuspend()
@@ -89,7 +92,13 @@ zx::result<> GenericSuspend::CreateDevfsNode() {
 }
 
 zx::result<> GenericSuspend::Start(fdf::DriverContext context) {
+  const auto config = context.take_config<generic_suspend_config::Config>();
+  // ZX_SYSTEM_SUSPEND_OPTION_DEEP may not be combined with any other option.
+  suspend_options_ = config.use_deep_suspend() ? ZX_SYSTEM_SUSPEND_OPTION_DEEP : 0;
+  fdf::info("Deep suspend is {}", config.use_deep_suspend() ? "enabled" : "disabled");
+
   exposed_inspector_.emplace(context.CreateInspector(this));
+  exposed_inspector_->root().RecordBool(kInspectUseDeepSuspend, config.use_deep_suspend());
   inspect_events_.emplace(exposed_inspector_->root().CreateChild(fobs::kSuspendEventsNode),
                           kInspectHistorySize);
 
@@ -143,7 +152,7 @@ void GenericSuspend::GetSuspendStates(GetSuspendStatesCompleter::Sync& completer
   completer.ReplySuccess(resp);
 }
 
-zx::result<WakeSourceReport> GenericSuspend::SystemSuspendEnter() {
+zx::result<WakeSourceReport> GenericSuspend::SystemSuspendEnter(uint64_t options) {
   // LINT.IfChange
   TRACE_DURATION("power", "generic-suspend:suspend");
   // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
@@ -151,7 +160,7 @@ zx::result<WakeSourceReport> GenericSuspend::SystemSuspendEnter() {
   const auto entry_count = sizeof(report.entries) / sizeof(report.entries[0]);
   fdf::debug("entry_count requested: {}", entry_count);
   const zx_status_t status =
-      zx_system_suspend_enter(cpu_resource_.get(), ZX_TIME_INFINITE, /*options=*/0, &report.header,
+      zx_system_suspend_enter(cpu_resource_.get(), ZX_TIME_INFINITE, options, &report.header,
                               report.entries, entry_count, &report.actual_entry_count);
   fdf::debug("entry_count actual: {}", report.actual_entry_count);
   if (status != ZX_OK) {
@@ -177,7 +186,7 @@ void GenericSuspend::Suspend(SuspendRequestView request, SuspendCompleter::Sync&
 
   fdf::info("on suspend: current monotonic time {}", zx_clock_get_monotonic());
   auto suspend_start = zx_clock_get_boot();
-  zx::result<WakeSourceReport> result = SystemSuspendEnter();
+  zx::result<WakeSourceReport> result = SystemSuspendEnter(suspend_options_);
   auto suspend_return = zx_clock_get_boot();
   fdf::info("on resume: current monotonic time {}", zx_clock_get_monotonic());
 

@@ -35,6 +35,7 @@ driver_bind_rules("generic-suspend-bind") {
 }
 
 _DEPS = [
+  ":generic-suspend-config",
   "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
   "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
   "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
@@ -67,11 +68,21 @@ fuchsia_cc_driver("generic-suspend-driver") {
   deps += [ ":generic-suspend-bind" ]
 }
 
-fuchsia_driver_component("generic-suspend") {
+fuchsia_component_manifest("generic-suspend-manifest") {
   component_name = "generic-suspend"
+  manifest = "meta/generic-suspend.cml"
+}
+
+fuchsia_driver_component("generic-suspend") {
+  cm_label = ":generic-suspend-manifest"
   deps = [ ":generic-suspend-driver" ]
   info = "meta/generic-suspend-info.json"
-  manifest = "meta/generic-suspend.cml"
+}
+
+# Both driver variants declare their config via
+# `meta/generic-suspend-config.shard.cml`, so they share this library.
+fuchsia_structured_config_cpp_elf_lib("generic-suspend-config") {
+  cm_label = ":generic-suspend-manifest"
 }
 
 fuchsia_driver_package("package") {

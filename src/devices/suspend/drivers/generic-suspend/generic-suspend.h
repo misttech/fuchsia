@@ -57,10 +57,15 @@ class GenericSuspend : public fdf::DriverBase2,
 
  protected:
   virtual zx::result<zx::resource> GetCpuResource(fdf::Namespace& incoming);
-  virtual zx::result<WakeSourceReport> SystemSuspendEnter();
+  // Enters system suspend via `zx_system_suspend_enter`, passing `options` as
+  // the suspend options.
+  virtual zx::result<WakeSourceReport> SystemSuspendEnter(uint64_t options);
 
   // Called just at Start(). Used in testing, otherwise a no-op.
   virtual void AtStart() {}
+
+  // The driver's exposed inspector. Only valid after Start(). Used in testing.
+  const inspect::Inspector& inspector() const { return exposed_inspector_->inspector(); }
 
  private:
   void Serve(fidl::ServerEnd<fuchsia_hardware_power_suspend::Suspender> request);
@@ -75,6 +80,11 @@ class GenericSuspend : public fdf::DriverBase2,
   driver_devfs::Connector<fuchsia_hardware_power_suspend::Suspender> devfs_connector_;
 
   zx::resource cpu_resource_;
+
+  // Options passed to `zx_system_suspend_enter`. Set to
+  // `ZX_SYSTEM_SUSPEND_OPTION_DEEP` if the `use_deep_suspend` config is set,
+  // otherwise 0.
+  uint64_t suspend_options_ = 0;
 };
 
 }  // namespace suspend

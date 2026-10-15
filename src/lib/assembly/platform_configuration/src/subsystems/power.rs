@@ -192,6 +192,14 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
         )?;
 
         builder.set_config_capability(
+            "fuchsia.power.DeepSuspendEnabled",
+            Config::new(
+                ConfigValueType::Bool,
+                context.board_config.provides_feature(BoardFeature::DeepSuspend).into(),
+            ),
+        )?;
+
+        builder.set_config_capability(
             "fuchsia.power.GpuPowerManagementEnabled",
             Config::new(ConfigValueType::Bool, config.gpu_power_management_enabled.into()),
         )?;
@@ -262,5 +270,53 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::ConfigurationBuilderImpl;
+    use assembly_config_schema::BoardConfig;
+
+    #[test]
+    fn test_deep_suspend_disabled_by_default() {
+        let context = ConfigurationContext::default_for_tests();
+        let mut builder = ConfigurationBuilderImpl::default();
+        PowerManagementSubsystem::define_configuration(
+            &context,
+            &PowerConfig::default(),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert_eq!(
+            config.configuration_capabilities.get("fuchsia.power.DeepSuspendEnabled"),
+            Some(&Config::new_bool(false))
+        );
+    }
+
+    #[test]
+    fn test_deep_suspend_enabled_by_board_feature() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::DeepSuspend.as_ref().to_string()],
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        PowerManagementSubsystem::define_configuration(
+            &context,
+            &PowerConfig::default(),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert_eq!(
+            config.configuration_capabilities.get("fuchsia.power.DeepSuspendEnabled"),
+            Some(&Config::new_bool(true))
+        );
     }
 }

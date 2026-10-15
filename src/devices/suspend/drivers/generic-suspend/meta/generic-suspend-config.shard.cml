@@ -1,0 +1,20 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Structured configuration used by the generic-suspend driver. Shared by all
+// generic-suspend driver variants, which link the same
+// `generic-suspend-config` structured config library.
+{
+    use: [
+        {
+            // When true, the driver requests the deep system suspend state
+            // (`ZX_SYSTEM_SUSPEND_OPTION_DEEP`) from the kernel when suspending.
+            config: "fuchsia.power.DeepSuspendEnabled",
+            key: "use_deep_suspend",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+    ],
+}

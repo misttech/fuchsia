@@ -26,6 +26,10 @@ pub enum BoardFeature {
     /// `component_manager_policy_debug_uart_suspend.json5`, which grants it only to the driver
     /// monikers it lists (today Iris's `uart-db61000`). Other boards must add theirs there.
     DebugUartSuspend,
+    /// Request the deep system suspend state (`ZX_SYSTEM_SUSPEND_OPTION_DEEP`) when suspending.
+    /// Routed as `fuchsia.power.DeepSuspendEnabled` to the generic-suspend driver; only has an
+    /// effect when suspend is enabled.
+    DeepSuspend,
     /// Eager startup for power-manager component.
     EagerPowerManager,
     /// Fake battery driver for testing or emulators.
@@ -128,6 +132,7 @@ impl AsRef<str> for BoardFeature {
             Self::CpuPowerBoost => "fuchsia::cpu_power_boost",
             Self::CustomAudioCore => "fuchsia::custom_audio_core",
             Self::DebugUartSuspend => "fuchsia::debug_uart_suspend",
+            Self::DeepSuspend => "fuchsia::deep_suspend",
             Self::EagerPowerManager => "fuchsia::eager_power_manager",
             Self::FakeBattery => "fuchsia::fake_battery",
             Self::FakeDisplay => "fuchsia::fake_display",

@@ -110,6 +110,7 @@
                 "fuchsia.driver.devicetree.EnabledNodes",
                 "fuchsia.driver.ExposeDebugCapabilities",
                 "fuchsia.driver.UseHardwareIommu",
+                "fuchsia.power.DeepSuspendEnabled",
                 "fuchsia.power.GpuPowerManagementEnabled",
                 "fuchsia.power.PowerFrameworkEnabledForWlanDriver",
                 "fuchsia.power.RuntimeProcessorPowerManagementEnabled",

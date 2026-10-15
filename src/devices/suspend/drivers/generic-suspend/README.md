@@ -19,6 +19,16 @@ $ fx test generic-suspend-test
 
 To see output, use the `-o` flag.
 
+## Configuration
+
+The driver reads the following structured configuration:
+
+* `use_deep_suspend` (routed from the `fuchsia.power.DeepSuspendEnabled`
+  configuration capability, optional, defaults to `false`): when `true`, the
+  driver passes `ZX_SYSTEM_SUSPEND_OPTION_DEEP` to `zx_system_suspend_enter`
+  to request that the system enter a deep suspend state, if supported. Boards
+  enable this by providing the `fuchsia::deep_suspend` board feature.
+
 ## Inspect
 
 To grab the inspect data, run this `ffx` command:
@@ -32,6 +42,7 @@ bootstrap/boot-drivers:suspend:
     timestamp = 85237566250
   payload:
     root:
+      use_deep_suspend = false
       suspend_events:
         0:
           suspended = 73550318125
