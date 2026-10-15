@@ -3146,11 +3146,19 @@ impl MemoryManager {
         self.state.write().ensure_ranges_mapped_in_user_vmar(ranges, &self.mapping_context)
     }
 
+    /// Releases private anonymous memory for an exiting process (`process_mrelease(2)`).
     pub fn mrelease(&self) -> Result<(), Errno> {
-        self.mapping_context.private_anonymous.zero(
-            UserAddress::from_ptr(self.mapping_context.user_vmar_info.base),
-            self.mapping_context.user_vmar_info.len,
-        )?;
+        // Acquire `self.state.write()` to serialize against concurrent mapping or `vmsplice(2)`
+        // operations, and snapshot any in-flight `vmsplice(2)` pipe segments backed by private
+        // anonymous pages before zeroing the backing memory object.
+        let _state = self.state.write();
+        let base = UserAddress::from_ptr(self.mapping_context.user_vmar_info.base);
+        let len = self.mapping_context.user_vmar_info.len;
+        let end = base.checked_add(len).ok_or_else(|| errno!(EINVAL))?;
+        self.inflight_vmspliced_payloads
+            .handle_unmapping(&self.mapping_context.private_anonymous.backing, &(base..end))?;
+        self.mapping_context.private_anonymous.zero(base, len)?;
+        *self.cached_stats.lock() = None;
         Ok(())
     }
 

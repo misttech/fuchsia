@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -13,7 +14,10 @@
 
 #include <format>
 #include <fstream>
+#include <thread>
 
+#include <fbl/unique_fd.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
@@ -112,7 +116,214 @@ TEST_F(ProcessMemoryReleaseTest, NoPendingSIGKILL) {
   ASSERT_FALSE(fork_helper.WaitForChildren());
 }
 
+TEST_F(ProcessMemoryReleaseTest, SuccessfulReleaseImmediateSIGKILL) {
+  // Sending SIGKILL transitions the target process into an exiting state synchronously, allowing
+  // process_mrelease(2) to succeed immediately after kill(2) returns. If the child finishes
+  // tearing down its address space before process_mrelease(2) runs, process_mrelease(2) fails with
+  // ESRCH; retry on ESRCH to tolerate scheduling races.
+  constexpr int kMaxAttempts = 10;
+  for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+    test_helper::ForkHelper fork_helper;
+    fork_helper.ExpectSignal(SIGKILL);
+    pid_t child_pid = fork_helper.RunInForkedProcess([]() {
+      for (;;) {
+        std::this_thread::yield();
+      }
+    });
+
+    fbl::unique_fd child_pidfd(DoPidFdOpen(child_pid));
+    ASSERT_THAT(child_pidfd.get(), SyscallSucceeds());
+
+    ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+    int result = DoProcessMRelease(child_pidfd.get());
+    int release_errno = errno;
+    ASSERT_TRUE(fork_helper.WaitForChildren());
+
+    if (result == -1 && release_errno == ESRCH) {
+      continue;
+    }
+    errno = release_errno;
+    ASSERT_THAT(result, SyscallSucceeds());
+    return;
+  }
+  FAIL() << "process_mrelease(2) repeatedly lost the race with child exit (ESRCH)";
+}
+
+TEST_F(ProcessMemoryReleaseTest, ZombieProcessFailsWithEsrch) {
+  test_helper::ForkHelper fork_helper;
+  pid_t child_pid = fork_helper.RunInForkedProcess([]() { _exit(0); });
+  fbl::unique_fd child_pidfd(DoPidFdOpen(child_pid));
+  ASSERT_THAT(child_pidfd.get(), SyscallSucceeds());
+
+  // Wait for the child to become a zombie without reaping it.
+  siginfo_t info = {};
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PID, child_pid, &info, WEXITED | WNOWAIT)), SyscallSucceeds());
+
+  EXPECT_THAT(DoProcessMRelease(child_pidfd.get()), SyscallFailsWithErrno(ESRCH));
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+TEST_F(ProcessMemoryReleaseTest, ExitedLeaderWithSiblingThreadSucceeds) {
+  test_helper::ForkHelper fork_helper;
+  pid_t child_pid = fork_helper.RunInForkedProcess([]() {
+    test_helper::Rendezvous sibling_attached = test_helper::MakeRendezvous();
+    std::thread sibling([attached = std::move(sibling_attached.poker)]() mutable {
+      ASSERT_THAT(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr), SyscallSucceeds());
+      attached.poke();
+      raise(SIGSTOP);
+      _exit(0);
+    });
+    sibling.detach();
+    sibling_attached.holder.hold();
+
+    // Exit only the thread-group leader while the sibling thread remains alive.
+    syscall(SYS_exit, 0);
+  });
+
+  fbl::unique_fd child_pidfd(DoPidFdOpen(child_pid));
+  ASSERT_THAT(child_pidfd.get(), SyscallSucceeds());
+
+  int status = 0;
+  pid_t sibling_tid = waitpid(-1, &status, __WALL);
+  ASSERT_THAT(sibling_tid, SyscallSucceeds());
+  ASSERT_NE(sibling_tid, child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, sibling_tid, nullptr, PTRACE_O_TRACEEXIT),
+              SyscallSucceeds());
+
+  // Wait for the leader thread to finish exiting.
+  if (test_helper::IsStarnix()) {
+    // TODO(https://fxbug.dev/365540067): Use `WaitUntilZombie` once Starnix retains the exited
+    // leader's `/proc/<pid>/task/<pid>` entry until the thread group exits.
+    auto leader_stat_path = std::format("/proc/{}/task/{}/stat", child_pid, child_pid);
+    while (files::IsFile(leader_stat_path)) {
+      usleep(1000);
+    }
+  } else {
+    ASSERT_TRUE(test_helper::WaitUntilZombie(child_pid));
+  }
+
+  // Resume the sibling thread so it initiates group exit and stops at PTRACE_EVENT_EXIT before
+  // tearing down the shared address space.
+  ASSERT_THAT(ptrace(PTRACE_CONT, sibling_tid, nullptr, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(sibling_tid, &status, __WALL), SyscallSucceedsWithValue(sibling_tid));
+  ASSERT_TRUE(WIFSTOPPED(status));
+  ASSERT_EQ(status >> 8, (SIGTRAP | (PTRACE_EVENT_EXIT << 8)));
+
+  EXPECT_THAT(DoProcessMRelease(child_pidfd.get()), SyscallSucceeds());
+
+  ASSERT_THAT(ptrace(PTRACE_DETACH, sibling_tid, nullptr, 0), SyscallSucceeds());
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+TEST_F(ProcessMemoryReleaseTest, ProcDirectoryFdRejected) {
+  test_helper::ForkHelper fork_helper;
+  fork_helper.ExpectSignal(SIGKILL);
+  pid_t child_pid = fork_helper.RunInForkedProcess([]() { pause(); });
+  auto proc_path = std::format("/proc/{}", child_pid);
+  fbl::unique_fd proc_fd(open(proc_path.c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_THAT(proc_fd.get(), SyscallSucceeds());
+
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+  EXPECT_THAT(DoProcessMRelease(proc_fd.get()), SyscallFailsWithErrno(EBADF));
+
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+TEST_F(ProcessMemoryReleaseTest, VmsplicePreservesPipePayload) {
+  test_helper::ScopedPipe data_pipe;
+
+  constexpr char kPayload = 'V';
+  const size_t page_size = sysconf(_SC_PAGE_SIZE);
+  ASSERT_GT(page_size, 0u);
+
+  test_helper::ForkHelper fork_helper;
+  pid_t child_pid = fork_helper.RunInForkedProcess([&data_pipe, page_size]() {
+    data_pipe.ReadSide().reset();
+    auto mapping = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+        nullptr, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+    memset(mapping.mapping(), kPayload, page_size);
+    iovec iov = {
+        .iov_base = mapping.mapping(),
+        .iov_len = page_size,
+    };
+    ASSERT_THAT(vmsplice(data_pipe.WriteSide().get(), &iov, 1, 0),
+                SyscallSucceedsWithValue(static_cast<ssize_t>(page_size)));
+    ASSERT_THAT(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr), SyscallSucceeds());
+    raise(SIGSTOP);
+    _exit(0);
+  });
+  data_pipe.WriteSide().reset();
+
+  int status = 0;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, child_pid, nullptr, PTRACE_O_TRACEEXIT), SyscallSucceeds());
+
+  fbl::unique_fd child_pidfd(DoPidFdOpen(child_pid));
+  ASSERT_THAT(child_pidfd.get(), SyscallSucceeds());
+
+  // Hold the child in PTRACE_EVENT_EXIT so process_mrelease(2) deterministically reaps the
+  // address space while the vmspliced mapping is still present.
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFSTOPPED(status));
+  ASSERT_EQ(status >> 8, (SIGTRAP | (PTRACE_EVENT_EXIT << 8)));
+
+  EXPECT_THAT(DoProcessMRelease(child_pidfd.get()), SyscallSucceeds());
+
+  std::vector<char> read_buf(page_size);
+  ASSERT_THAT(read(data_pipe.ReadSide().get(), read_buf.data(), read_buf.size()),
+              SyscallSucceedsWithValue(static_cast<ssize_t>(page_size)));
+  EXPECT_THAT(read_buf, testing::Each(kPayload));
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+TEST_F(ProcessMemoryReleaseTest, ReleaseDuringPtraceEventExit) {
+  test_helper::ForkHelper fork_helper;
+  pid_t child_pid = fork_helper.RunInForkedProcess([]() {
+    test_helper::Rendezvous thread_ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous hold_sibling = test_helper::MakeRendezvous();
+    std::thread sibling([ready = std::move(thread_ready.poker),
+                         sibling_holder = std::move(hold_sibling.holder)]() mutable {
+      ready.poke();
+      sibling_holder.hold();
+    });
+    sibling.detach();
+    thread_ready.holder.hold();
+
+    ASSERT_THAT(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr), SyscallSucceeds());
+    raise(SIGSTOP);
+    _exit(0);
+  });
+
+  int status = 0;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, child_pid, nullptr, PTRACE_O_TRACEEXIT), SyscallSucceeds());
+  fbl::unique_fd child_pidfd(DoPidFdOpen(child_pid));
+  ASSERT_THAT(child_pidfd.get(), SyscallSucceeds());
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFSTOPPED(status));
+  ASSERT_EQ(status >> 8, (SIGTRAP | (PTRACE_EVENT_EXIT << 8)));
+
+  EXPECT_THAT(DoProcessMRelease(child_pidfd.get()), SyscallSucceeds());
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
 TEST_F(ProcessMemoryReleaseTest, SuccessfulRelease) {
+  size_t page_size = sysconf(_SC_PAGE_SIZE);
+  ASSERT_GT(page_size, static_cast<size_t>(0))
+      << "sysconf(_SC_PAGE_SIZE) failed or returned invalid size";
+  size_t num_pages = kMemSizeBytes / page_size;
+
   // Create a pipe to share memory pointer
   int pipe_fds[2];
   ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
@@ -126,9 +337,6 @@ TEST_F(ProcessMemoryReleaseTest, SuccessfulRelease) {
     // Child process
     close(read_fd);
     // Allocate memory
-    size_t page_size = sysconf(_SC_PAGE_SIZE);
-    ASSERT_GT(page_size, static_cast<size_t>(0))
-        << "sysconf(_SC_PAGE_SIZE) failed or returned invalid size";
     auto mem = test_helper::ScopedMMap::MMap(nullptr, kMemSizeBytes, PROT_READ | PROT_WRITE,
                                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (mem.is_error()) {
@@ -139,8 +347,8 @@ TEST_F(ProcessMemoryReleaseTest, SuccessfulRelease) {
 
     // Touch memory to ensure pages are faulted in
     volatile char* p = static_cast<volatile char*>(mem->mapping());
-    for (size_t i = 0; i < kMemSizeBytes; i += page_size) {
-      p[i] = static_cast<char>(i % 256);
+    for (size_t i = 0; i < num_pages; ++i) {
+      p[i * page_size] = static_cast<char>(1 + (i % 255));
     }
     ASSERT_THAT(dprintf(write_fd, "%p", (void*)p), SyscallSucceeds());
     close(write_fd);
@@ -182,12 +390,19 @@ TEST_F(ProcessMemoryReleaseTest, SuccessfulRelease) {
   ss_read >> restored_ptr;  // Read the pointer directly
   std::cout << "parent ptr: " << restored_ptr << "\n";
 
-  // Use process_vm_readv to check the memory
+  // Use process_vm_readv to check the memory before release.
   std::vector<char> buffer(kMemSizeBytes);
   struct iovec local_iov = {.iov_base = buffer.data(), .iov_len = kMemSizeBytes};
   struct iovec remote_iov = {.iov_base = restored_ptr, .iov_len = kMemSizeBytes};
   ASSERT_THAT(process_vm_readv(child_pid, &local_iov, 1, &remote_iov, 1, 0),
               SyscallSucceedsWithValue(kMemSizeBytes));
+  for (size_t i = 0; i < num_pages; ++i) {
+    for (size_t j = 0; j < page_size; ++j) {
+      char expected = (j == 0) ? static_cast<char>(1 + (i % 255)) : 0;
+      ASSERT_EQ(buffer[i * page_size + j], expected)
+          << "Memory at offset " << (i * page_size + j) << " does not match expected value";
+    }
+  }
 
   // Wait for the PTRACE_EVENT_EXIT
   ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid))
@@ -202,10 +417,6 @@ TEST_F(ProcessMemoryReleaseTest, SuccessfulRelease) {
   EXPECT_THAT(DoProcessMRelease(child_pidfd), SyscallSucceeds());
   EXPECT_GT(msize, GetProcessRSSMemorySize(child_pid) + 1024);
   EXPECT_EQ(maps_str, GetMapsString(child_pid));
-
-  for (size_t i = 0; i < kMemSizeBytes; ++i) {
-    EXPECT_EQ(buffer[i], 0) << "Memory at offset " << i << " is not zero";
-  }
 
   // Wait for the child process to terminate and check its status.
   ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());

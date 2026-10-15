@@ -11,11 +11,11 @@ use crate::mm::{
 };
 use crate::security;
 use crate::syscalls::time::TimeSpecPtr;
-use crate::task::CurrentTask;
+use crate::task::{CurrentTask, ProcessEntryRef};
 use crate::time::TargetTime;
 use crate::time::utc::estimate_boot_deadline_from_utc;
-use crate::vfs::FdNumber;
 use crate::vfs::buffers::{OutputBuffer, UserBuffersInputBuffer, UserBuffersOutputBuffer};
+use crate::vfs::{FdNumber, PidFdFileObject};
 use fuchsia_runtime::UtcTimeline;
 use linux_uapi::MLOCK_ONFAULT;
 use starnix_logging::{CATEGORY_STARNIX_MM, log_trace, track_stub};
@@ -361,12 +361,42 @@ pub fn sys_process_mrelease(
         return error!(EINVAL);
     }
     let file = current_task.files().get(pidfd)?;
-    let task = file.as_pid()?.get_task()?;
-    if !task.load_stopped().is_stopped() {
-        return error!(EINVAL);
-    }
+    // From <https://man7.org/linux/man-pages/man2/process_mrelease.2.html>:
+    //
+    //   The pidfd argument is a PID file descriptor (see pidfd_open(2)) that
+    //   refers to the process whose memory is to be released.
+    //   ...
+    //   EBADF  pidfd is not a valid PID file descriptor.
+    //
+    // Unlike `pidfd_send_signal(2)`, `process_mrelease(2)` only accepts PID file
+    // descriptors and rejects `/proc/<pid>` directory file descriptors.
+    let pidfd_file = file.downcast_file::<PidFdFileObject>().ok_or_else(|| errno!(EBADF))?;
+    let pid = pidfd_file.pid();
+    let Some(ProcessEntryRef::Process(thread_group)) = pid.get_process() else {
+        return error!(ESRCH);
+    };
 
-    task.mm()?.mrelease()
+    let mm = {
+        let thread_group_state = thread_group.read();
+        // From <https://man7.org/linux/man-pages/man2/process_mrelease.2.html>:
+        //
+        //   EINVAL The memory of the task cannot be released because the
+        //          process is not exiting, or by other reasons.
+        if thread_group_state.is_running() {
+            return error!(EINVAL);
+        }
+
+        // Find any remaining task in the thread group that still references the shared
+        // `MemoryManager`. Once all tasks in the thread group have cleared their `mm` in
+        // `CurrentTask::exit` (including zombie processes), `process_mrelease(2)` fails with
+        // `ESRCH`.
+        thread_group_state
+            .tasks()
+            .into_iter()
+            .find_map(|task| task.mm().ok())
+            .ok_or_else(|| errno!(ESRCH))?
+    };
+    mm.mrelease()
 }
 
 pub fn sys_membarrier(

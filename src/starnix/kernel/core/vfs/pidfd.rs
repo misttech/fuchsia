@@ -30,6 +30,11 @@ pub struct PidFdFileObject {
 }
 
 impl PidFdFileObject {
+    /// Process identifier ([`Pid`]) tracked by this [`PidFdFileObject`].
+    pub(crate) fn pid(&self) -> &Pid {
+        &self.pid
+    }
+
     fn get_signals_from_events(events: FdEvents) -> zx::Signals {
         if events.contains(FdEvents::POLLIN) {
             zx::Signals::EVENTPAIR_PEER_CLOSED
