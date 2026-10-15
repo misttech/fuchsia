@@ -6,6 +6,7 @@ import("//build/components.gni")
 
 resource("domain-controller-integration-test-resources") {
   sources = [
+    "config_files/domain_controller_test/cpu_manager_boot_sequence_node_config.json5",
     "config_files/domain_controller_test/cpu_manager_node_config.json5",
     "config_files/domain_controller_test/power_manager_node_config.json5",
     "config_files/domain_controller_test/thermal_config.json5",
@@ -19,8 +20,11 @@ rustc_test("domain-controller-integration-test-bin") {
   edition = "2024"
   source_root = "src/domain_controller_test.rs"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
     "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
+    "//sdk/fidl/fuchsia.power.cpu.manager:fuchsia.power.cpu.manager_rust",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
     "//src/power/power-manager/integration/lib",
   ]
 

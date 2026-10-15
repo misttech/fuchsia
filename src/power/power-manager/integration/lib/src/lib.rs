@@ -41,11 +41,16 @@ static UNIQUE_REALM_NUMBER: AtomicU64 = AtomicU64::new(0);
 pub struct TestEnvBuilder {
     power_manager_node_config_path: Option<String>,
     cpu_manager_node_config_path: Option<String>,
+    cpu_boost_enabled: bool,
 }
 
 impl TestEnvBuilder {
     pub fn new() -> Self {
-        Self { power_manager_node_config_path: None, cpu_manager_node_config_path: None }
+        Self {
+            power_manager_node_config_path: None,
+            cpu_manager_node_config_path: None,
+            cpu_boost_enabled: false,
+        }
     }
 
     /// Sets the node config path that Power Manager will be configured with.
@@ -57,6 +62,12 @@ impl TestEnvBuilder {
     /// Sets the node config path that CPU Manager will be configured with.
     pub fn cpu_manager_node_config_path(mut self, path: &str) -> Self {
         self.cpu_manager_node_config_path = Some(path.into());
+        self
+    }
+
+    /// Sets whether CPU boost is enabled in CPU Manager's structured config.
+    pub fn cpu_boost_enabled(mut self, enabled: bool) -> Self {
+        self.cpu_boost_enabled = enabled;
         self
     }
 
@@ -310,7 +321,8 @@ impl TestEnvBuilder {
             .unwrap();
 
         let cpu_manager_to_parent_routes = Route::new()
-            .capability(Capability::protocol_by_name("fuchsia.power.cpu.DomainController"));
+            .capability(Capability::protocol_by_name("fuchsia.power.cpu.DomainController"))
+            .capability(Capability::protocol_by_name("fuchsia.power.cpu.manager.Boost"));
         realm_builder
             .add_route(cpu_manager_to_parent_routes.from(&cpu_manager).to(Ref::parent()))
             .await
@@ -382,7 +394,7 @@ impl TestEnvBuilder {
         realm_builder
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.power.cpu.BoostEnabled".parse().unwrap(),
-                value: false.into(),
+                value: self.cpu_boost_enabled.into(),
             }))
             .await
             .unwrap();

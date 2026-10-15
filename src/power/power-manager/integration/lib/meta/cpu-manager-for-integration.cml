@@ -12,11 +12,19 @@
         use_next_vdso: "true",
     },
     capabilities: [
-        { protocol: "fuchsia.power.cpu.DomainController" },
+        {
+            protocol: [
+                "fuchsia.power.cpu.DomainController",
+                "fuchsia.power.cpu.manager.Boost",
+            ],
+        },
     ],
     expose: [
         {
-            protocol: "fuchsia.power.cpu.DomainController",
+            protocol: [
+                "fuchsia.power.cpu.DomainController",
+                "fuchsia.power.cpu.manager.Boost",
+            ],
             from: "self",
         },
     ],
