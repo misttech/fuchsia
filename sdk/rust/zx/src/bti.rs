@@ -119,6 +119,24 @@ impl Bti {
             Ok(Pmt::from(NullableHandle::from_raw(pmt)))
         }
     }
+
+    /// Releases all quarantined PMTs for the given BTI.
+    ///
+    /// Wraps the [`zx_bti_release_quarantine`](https://fuchsia.dev/fuchsia-src/reference/syscalls/bti_release_quarantine)
+    /// system call.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the hardware is in a state where it is no longer attempting
+    /// to access the memory unpinned by this call. Otherwise, without an IOMMU, this can cause
+    /// arbitrary memory corruption.
+    pub unsafe fn release_quarantine(&self) -> Result<(), Status> {
+        let status = unsafe {
+            // SAFETY: The caller upholds that hardware is no longer accessing quarantined memory.
+            crate::sys::zx_bti_release_quarantine(self.raw_handle())
+        };
+        ok(status)
+    }
 }
 
 #[cfg(test)]
@@ -181,5 +199,33 @@ mod tests {
         unsafe {
             pmt.unpin().unwrap();
         }
+    }
+
+    #[test]
+    fn release_quarantine_wrong_handle() {
+        let vmo = Vmo::create(0).unwrap();
+        let wrong_handle = unsafe { Bti::from(NullableHandle::from_raw(vmo.into_raw())) };
+
+        let status = unsafe { wrong_handle.release_quarantine() };
+        assert_eq!(status, Err(Status::WRONG_TYPE));
+    }
+
+    #[test]
+    fn release_quarantine() {
+        let iommu = create_iommu();
+        let bti = Bti::create(&iommu, 0).unwrap();
+
+        let vmo = Vmo::create_contiguous(&bti, 4096, 0).unwrap();
+        let mut paddr = [0x1];
+        let pmt = bti.pin(BtiOptions::PERM_READ, &vmo, 0, 4096, &mut paddr[..]).unwrap();
+
+        // Dropping the PMT without calling `unpin` quarantines the pinned pages.
+        drop(pmt);
+        assert_eq!(bti.info().unwrap().quarantine_count, 1);
+
+        unsafe {
+            bti.release_quarantine().unwrap();
+        }
+        assert_eq!(bti.info().unwrap().quarantine_count, 0);
     }
 }
