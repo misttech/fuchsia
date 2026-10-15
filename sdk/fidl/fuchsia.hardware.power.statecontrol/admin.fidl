@@ -100,6 +100,9 @@ closed protocol Admin {
     /// It is expected that the ZBI items specified by
     /// `zx_system_mexec_payload_get()` have not yet been appended to the
     /// provided data ZBI.
+    // TODO(https://fxbug.dev/573204187): Delete this method once API level 32
+    // is retired.
+    @available(removed=NEXT, note="mexec is no longer supported")
     strict Mexec(resource struct {
         kernel_zbi zx.Handle:VMO;
         data_zbi zx.Handle:VMO;

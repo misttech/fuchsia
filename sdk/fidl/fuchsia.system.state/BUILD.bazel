@@ -20,7 +20,4 @@ fidl_library(
     enable_rust_next = True,
     stable = False,
     visibility = ["//visibility:public"],
-    deps = [
-        "//zircon/vdso/zx",
-    ],
 )

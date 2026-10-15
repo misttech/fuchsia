@@ -425,7 +425,7 @@ impl<P: SystemPower + 'static> ShutdownManager<P> {
 
         info!("Executing powerctl.");
         let status = match shutdown_system_state {
-            fsystem_state::SystemPowerState::Reboot | fsystem_state::SystemPowerState::Mexec => {
+            fsystem_state::SystemPowerState::Reboot => {
                 self.system_power.system_powerctl(ZX_SYSTEM_POWERCTL_REBOOT)
             }
             fsystem_state::SystemPowerState::RebootBootloader => {

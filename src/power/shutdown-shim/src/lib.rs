@@ -263,9 +263,6 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                     let state = (*SYSTEM_STATE).lock();
                     let _ = responder.send(state.power_state);
                 }
-                SystemStateTransitionRequest::GetMexecZbis { responder } => {
-                    let _ = responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()));
-                }
             }
         }
     }

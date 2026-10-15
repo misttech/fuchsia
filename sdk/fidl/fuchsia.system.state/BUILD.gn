@@ -35,5 +35,4 @@ fidl("fuchsia.system.state") {
   enable_rust_next = true
   stable = false
   visibility = [ "*" ]
-  public_deps = [ "//zircon/vdso/zx" ]
 }

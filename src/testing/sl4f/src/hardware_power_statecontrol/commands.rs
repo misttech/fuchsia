@@ -5,7 +5,7 @@
 use crate::server::Facade;
 use anyhow::Error;
 use async_trait::async_trait;
-use serde_json::{to_value, Value};
+use serde_json::{Value, to_value};
 
 use crate::hardware_power_statecontrol::facade::HardwarePowerStatecontrolFacade;
 
@@ -27,10 +27,6 @@ impl Facade for HardwarePowerStatecontrolFacade {
             }
             "SuspendPoweroff" => {
                 let result = self.suspend_poweroff().await?;
-                Ok(to_value(result)?)
-            }
-            "SuspendMexec" => {
-                let result = self.suspend_mexec().await?;
                 Ok(to_value(result)?)
             }
             "SuspendRam" => {

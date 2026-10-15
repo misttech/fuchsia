@@ -361,9 +361,6 @@ class FakeSystemStateTransition final : public fidl::WireServer<SystemStateTrans
   void GetTerminationSystemState(GetTerminationSystemStateCompleter::Sync& completer) override {
     completer.Reply(state_);
   }
-  void GetMexecZbis(GetMexecZbisCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
 
   void SetTerminationSystemState(SystemPowerState state) { state_ = state; }
 

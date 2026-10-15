@@ -241,7 +241,6 @@ void ShutdownManager::ExecuteShutdownStrategy() {
   fdf_log::info("Executing powerctl.");
   switch (shutdown_system_state) {
     case SystemPowerState::kReboot:
-    case SystemPowerState::kMexec:
       status = SystemPowerctl(ZX_SYSTEM_POWERCTL_REBOOT);
       break;
     case SystemPowerState::kRebootBootloader:

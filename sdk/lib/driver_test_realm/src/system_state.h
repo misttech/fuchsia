@@ -26,10 +26,6 @@ class SystemStateTransition final
     completer.Reply(fuchsia_system_state::SystemPowerState::kFullyOn);
   }
 
-  void GetMexecZbis(GetMexecZbisCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
  private:
   fidl::ServerBindingGroup<fuchsia_system_state::SystemStateTransition> bindings_;
 };

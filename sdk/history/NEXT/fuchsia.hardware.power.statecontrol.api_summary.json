@@ -1,16 +1,6 @@
 [
     {
         "kind": "protocol/member",
-        "name": "fuchsia.hardware.power.statecontrol/Admin.Mexec",
-        "strictness": "strict",
-        "ordinal": "2274853818497868998",
-        "direction": "two_way",
-        "request": "fuchsia.hardware.power.statecontrol/AdminMexecRequest",
-        "response": "fuchsia.hardware.power.statecontrol/Admin_Mexec_Response",
-        "error": "int32"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.hardware.power.statecontrol/Admin.Shutdown",
         "strictness": "strict",
         "ordinal": "3972954692544889391",
@@ -33,23 +23,6 @@
         "name": "fuchsia.hardware.power.statecontrol/Admin",
         "openness": "closed",
         "transport": "channel"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.power.statecontrol/AdminMexecRequest.data_zbi",
-        "ordinal": "2",
-        "type": "zx/Handle:VMO"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.hardware.power.statecontrol/AdminMexecRequest.kernel_zbi",
-        "ordinal": "1",
-        "type": "zx/Handle:VMO"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.hardware.power.statecontrol/AdminMexecRequest",
-        "resourceness": "resource"
     },
     {
         "kind": "struct/member",
