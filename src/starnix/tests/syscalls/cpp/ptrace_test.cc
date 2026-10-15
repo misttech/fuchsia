@@ -3355,4 +3355,53 @@ TEST(PtraceTest, ModifySyscallNumberAtSyscallEnterStop) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+TEST(PtraceTest, SigkillAtSyscallEnterAbortsSyscall) {
+  int pipefd[2];
+  ASSERT_THAT(pipe2(pipefd, O_NONBLOCK), SyscallSucceeds());
+  fbl::unique_fd read_fd(pipefd[0]);
+  fbl::unique_fd write_fd(pipefd[1]);
+
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  pid_t child_pid = helper.RunInForkedProcess([&] {
+    read_fd.reset();
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr));
+    raise(SIGSTOP);
+    // The tracer sends SIGKILL while stopped in PTRACE_SYSCALL entry for this write(2).
+    // The write(2) must not be executed.
+    const char kByte = 'x';
+    std::ignore = write(write_fd.get(), &kByte, 1);
+    _exit(0);
+  });
+  write_fd.reset();
+
+  int status = 0;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, child_pid, nullptr, PTRACE_O_TRACESYSGOOD),
+              SyscallSucceeds());
+
+  // Step until the tracee enters the write(2) syscall-enter stop.
+  for (;;) {
+    ASSERT_THAT(ptrace(PTRACE_SYSCALL, child_pid, nullptr, 0), SyscallSucceeds());
+    ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+    ASSERT_TRUE(WIFSTOPPED(status));
+    if (WSTOPSIG(status) != (SIGTRAP | 0x80)) {
+      continue;
+    }
+    ptrace_syscall_info info = {};
+    ASSERT_THAT(ptrace(PTRACE_GET_SYSCALL_INFO, child_pid, sizeof(info), &info), SyscallSucceeds());
+    if (info.op == PTRACE_SYSCALL_INFO_ENTRY && info.entry.nr == SYS_write) {
+      break;
+    }
+  }
+
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+  helper.ExpectSignal(SIGKILL);
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  char buf = 0;
+  EXPECT_EQ(read(read_fd.get(), &buf, 1), 0);
+}
+
 }  // namespace

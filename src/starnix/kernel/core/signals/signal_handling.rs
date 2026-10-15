@@ -39,46 +39,95 @@ enum SignalPriority {
 
 // `send_signal*()` calls below may fail only for real-time signals (with EAGAIN). They are
 // expected to succeed for all other signals.
-pub fn send_signal_first(task: &Task, task_state: TaskWriteGuard<'_>, siginfo: SignalInfo) {
-    send_signal_prio(task, task_state, siginfo.into(), SignalPriority::First, true)
-        .expect("send_signal(SignalPriority::First) is not expected to fail")
+
+/// Enqueues `signal_info` at the front of `task`'s signal queue and wakes `task`.
+///
+/// Callers must not hold `ThreadGroupMutableStateLock`, as delivering `SIGKILL` or waking the
+/// thread group acquires the target thread group's write lock.
+pub fn send_signal_first(task: &Task, task_state: TaskWriteGuard<'_>, signal_info: SignalInfo) {
+    send_signal_prio(
+        task,
+        task_state,
+        signal_info.into(),
+        SignalPriority::First,
+        /* force_wake = */ true,
+    )
+    .expect("send_signal(SignalPriority::First) is not expected to fail")
 }
 
-// Sends `signal` to `task`. The signal must be a standard (i.e. not real-time) signal.
-pub fn send_standard_signal(task: &Task, siginfo: SignalInfo) {
-    debug_assert!(!siginfo.signal.is_real_time());
+/// Sends a standard (non-real-time) `signal_info` to `task`.
+///
+/// Callers must not hold `ThreadGroupMutableStateLock`, as delivering `SIGKILL` or waking the
+/// thread group acquires the target thread group's write lock.
+pub fn send_standard_signal(task: &Task, signal_info: SignalInfo) {
+    debug_assert!(!signal_info.signal.is_real_time());
     let state = task.write();
-    send_signal_prio(task, state, siginfo.into(), SignalPriority::Last, false)
-        .expect("send_signal(SignalPriority::Last) is not expected to fail for standard signals.")
+    send_signal_prio(
+        task,
+        state,
+        signal_info.into(),
+        SignalPriority::Last,
+        /* force_wake = */ false,
+    )
+    .expect("send_signal(SignalPriority::Last) is not expected to fail for standard signals.")
 }
 
-pub fn send_signal(task: &Task, siginfo: SignalInfo) -> Result<(), Errno> {
+/// Sends `signal_info` to `task`.
+///
+/// May only fail for real-time signals (with `EAGAIN` when `RLIMIT_SIGPENDING` is reached) and
+/// always succeeds for standard signals.
+///
+/// Callers must not hold `ThreadGroupMutableStateLock`, as delivering `SIGKILL` or waking the
+/// thread group acquires the target thread group's write lock.
+pub fn send_signal(task: &Task, signal_info: SignalInfo) -> Result<(), Errno> {
     let state = task.write();
-    send_signal_prio(task, state, siginfo.into(), SignalPriority::Last, false)
+    send_signal_prio(
+        task,
+        state,
+        signal_info.into(),
+        SignalPriority::Last,
+        /* force_wake = */ false,
+    )
 }
 
 pub fn send_freeze_signal(task: &Task, waiter: Waiter) -> Result<(), Errno> {
     let state = task.write();
-    send_signal_prio(task, state, KernelSignalInfo::Freeze(waiter), SignalPriority::First, true)
+    send_signal_prio(
+        task,
+        state,
+        KernelSignalInfo::Freeze(waiter),
+        SignalPriority::First,
+        /* force_wake = */ true,
+    )
 }
 
 fn send_signal_prio(
     task: &Task,
     mut task_state: TaskWriteGuard<'_>,
-    kernel_siginfo: KernelSignalInfo,
+    kernel_signal_info: KernelSignalInfo,
     prio: SignalPriority,
     force_wake: bool,
 ) -> Result<(), Errno> {
-    let (siginfo, signal, is_masked, was_masked, is_real_time, sigaction, action) =
-        match kernel_siginfo {
-            KernelSignalInfo::User(ref user_siginfo) => {
-                let signal = user_siginfo.signal;
+    let (signal_info, signal, is_masked, was_masked, is_real_time, sigaction, action) =
+        match kernel_signal_info {
+            KernelSignalInfo::User(ref user_signal_info) => {
+                if user_signal_info.signal == SIGKILL {
+                    drop(task_state);
+                    // Synchronously transition the thread group to Exiting and interrupt all
+                    // member tasks.
+                    // TODO(https://fxbug.dev/573607334): Immediately transition the thread group
+                    // to Exiting for other unblocked default-fatal signals
+                    // (DeliveryAction::Terminate when not ptraced).
+                    task.thread_group().write().force_exit_for_sigkill(user_signal_info.clone());
+                    return Ok(());
+                }
+                let signal = user_signal_info.signal;
                 let is_masked = task_state.is_signal_masked(signal);
                 let was_masked = task_state.is_signal_masked_by_saved_mask(signal);
                 let sigaction = task.get_signal_action(signal);
-                let action = action_for_signal(&user_siginfo, sigaction);
+                let action = action_for_signal(user_signal_info, sigaction);
                 (
-                    Some(user_siginfo.clone()),
+                    Some(user_signal_info.clone()),
                     Some(signal),
                     is_masked,
                     was_masked,
@@ -108,12 +157,12 @@ fn send_signal_prio(
         || was_masked
         || task_state.is_ptraced();
     if is_queued {
-        match kernel_siginfo {
-            KernelSignalInfo::User(ref siginfo) => {
+        match kernel_signal_info {
+            KernelSignalInfo::User(ref signal_info) => {
                 if prio == SignalPriority::First {
-                    task_state.enqueue_signal_front(siginfo.clone());
+                    task_state.enqueue_signal_front(signal_info.clone());
                 } else {
-                    task_state.enqueue_signal(siginfo.clone());
+                    task_state.enqueue_signal(signal_info.clone());
                 }
                 task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, true);
             }
@@ -133,15 +182,21 @@ fn send_signal_prio(
         task.interrupt();
     }
 
-    // Unstop the process for SIGCONT. Also unstop for SIGKILL, the only signal that can interrupt
-    // a stopped process.
-    if signal == Some(SIGKILL) {
-        task.write().thaw();
-        task.thread_group().set_stopped(StopState::ForceWaking, siginfo, false);
-        task.write().set_stopped(StopState::ForceWaking, None, None, None);
-    } else if signal == Some(SIGCONT) || force_wake {
-        task.thread_group().set_stopped(StopState::Waking, siginfo, false);
-        task.write().set_stopped(StopState::Waking, None, None, None);
+    // Unstop the process for SIGCONT. Also unstop for forced waking, which the only caller
+    // of send_signal_first wants it to do.
+    // TODO: Give SIGSTOP similar immediate-effect treatment.
+    if signal == Some(SIGCONT) || force_wake {
+        task.thread_group().set_stopped(
+            StopState::Waking,
+            signal_info,
+            /* finalize_only = */ false,
+        );
+        task.write().set_stopped(
+            StopState::Waking,
+            /* siginfo = */ None,
+            /* current_task = */ None,
+            /* event = */ None,
+        );
     }
 
     Ok(())

@@ -543,6 +543,11 @@ impl CurrentTask {
             let mut state = self.write();
             assert!(!state.is_blocked());
 
+            // `SIGKILL` and `ThreadGroup::kill` mark tasks `EXITED` synchronously without queueing
+            // a per-task signal, so check `is_exitted()` before blocking.
+            if self.is_exitted() {
+                return error!(EINTR);
+            }
             if run_state.ignores_signals() {
                 // Tasks frozen or stopped ignore all other signals except SIGKILL.
                 if state.has_signal_pending(SIGKILL) {
@@ -2035,11 +2040,10 @@ impl CurrentTask {
         }
     }
 
-    /// Causes the current thread's thread group to exit, notifying any ptracer
-    /// of this task first.
+    /// Causes the current thread's thread group to exit, terminating sibling
+    /// tasks before notifying any ptracer of this task's exit.
     pub fn kill_thread_group(&mut self, exit_status: ExitStatus) {
-        self.ptrace_event(PtraceOptions::TRACEEXIT, exit_status.signal_info_status() as u64);
-        self.thread_group().kill(exit_status, None);
+        Arc::clone(self.thread_group()).kill(exit_status, Some(self));
     }
 
     /// The flags indicates only the flags as in clone3(), and does not use the low 8 bits for the

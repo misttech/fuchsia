@@ -14,6 +14,8 @@ use crate::signals::{
     DeliveryAction, IntoSignalInfoOptions, QueuedSignals, SignalActions, SignalDetail, SignalInfo,
     UncheckedSignalInfo, action_for_signal, send_standard_signal,
 };
+#[cfg(doc)]
+use crate::task::TaskFlags;
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
     CurrentTask, ExitStatus, Kernel, Pid, PidTableGuard, Task, TaskMutableState,
@@ -652,41 +654,50 @@ impl ThreadGroup {
 
     /// Causes the thread group to exit.
     ///
-    /// This marks the thread group as exiting and sends [`SIGKILL`] to its tasks to initiate
-    /// teardown. The thread group will not exist until the last task exits.
+    /// Transitions the thread group to exiting, marks and interrupts sibling tasks to initiate
+    /// teardown, and delivers any `PTRACE_EVENT_EXIT` stop for `current_task`.
     ///
     /// If this is being called from a task that is part of the current thread group, the caller
-    /// should pass `current_task`. If ownership issues prevent passing `current_task`, then callers
-    /// should use [`CurrentTask::kill_thread_group()`] instead.
+    /// should pass `current_task` (or call [`CurrentTask::kill_thread_group()`]).
     pub fn kill(&self, exit_status: ExitStatus, mut current_task: Option<&mut CurrentTask>) {
-        if let Some(ref mut current_task) = current_task {
-            current_task
-                .ptrace_event(PtraceOptions::TRACEEXIT, exit_status.signal_info_status() as u64);
-        }
-        let mut pids = self.kernel.pids.lock();
-        let mut state = self.write();
+        let state = self.write();
         if !state.is_running() {
+            if let Some(current_task) = current_task {
+                current_task.write().set_exit_status_if_not_already(exit_status);
+            }
             return;
         }
 
-        state.run_state = ThreadGroupRunState::Exiting(exit_status.clone());
+        // Mark and wake all sibling tasks while holding the thread-group write lock so no
+        // sibling thread can execute in userspace once the thread group transitions to `Exiting`.
+        // Keep `current_task` unexited (`!TaskFlags::EXITED`) until after `ptrace_event` so it can
+        // block in `PTRACE_EVENT_EXIT`.
+        let current_tid = current_task.as_ref().map(|task| task.tid.clone());
+        state.terminate_tasks(
+            exit_status.clone(),
+            SignalInfo::forced(SIGKILL),
+            current_tid.as_ref(),
+        );
 
-        // Detach from any ptraced zombie tasks.
-        let zombie_notifications = state.zombie_ptracees.detach_all(&mut pids);
-
-        // Interrupt each task. Unlock the group because send_signal will lock the group in order
-        // to call set_stopped.
-        let tasks = state.tasks();
-        drop(state);
-
-        for notification in zombie_notifications {
-            notification.deliver(&mut pids);
-        }
-        self.detach_ptracees(&mut pids);
-
-        for task in tasks {
-            task.write().set_exit_status(exit_status.clone());
-            send_standard_signal(&task, SignalInfo::kernel(SIGKILL));
+        // From <https://man7.org/linux/man-pages/man2/ptrace.2.html>:
+        //
+        //   PTRACE_O_TRACEEXIT (since Linux 2.5.60)
+        //     The tracee is stopped early during process exit, when registers
+        //     are still available, allowing the tracer to see where the exit
+        //     occurred, whereas the normal exit notification is done after the
+        //     process is finished exiting. Even though context is available,
+        //     the tracer cannot prevent the exit from happening at this point.
+        //
+        // Because the thread group is already `Exiting` and all sibling threads
+        // have been marked `TaskFlags::EXITED` and interrupted, `process_mrelease(2)`
+        // can safely release memory while `current_task` is stopped in
+        // `PTRACE_EVENT_EXIT`.
+        if let Some(ref mut current_task) = current_task {
+            current_task
+                .ptrace_event(PtraceOptions::TRACEEXIT, exit_status.signal_info_status() as u64);
+            let mut task_state = current_task.write();
+            task_state.set_exit_status(exit_status);
+            task_state.force_wake_for_exit();
         }
     }
 
@@ -1060,7 +1071,7 @@ impl ThreadGroup {
             } else {
                 // The tracer is not the parent and the tracer has not consumed
                 // the notification.
-                if !state.is_running() {
+                if state.is_exited() {
                     // The tracer exited concurrently. Notify the parent.
                     return Some(zombie);
                 }
@@ -1081,7 +1092,7 @@ impl ThreadGroup {
                 }
 
                 // Tell the tracer that there is a notification pending.
-                // THREAD SAFETY: Checking for concurrent exit with is_running(), releasing the
+                // THREAD SAFETY: Checking for concurrent exit with is_exited(), releasing the
                 // tracer state lock, then reacquiring the lock introduces a TOCTOU race. This
                 // hazard is safe because exit synchronizes on the PidTable lock, which is held
                 // continuously.
@@ -2119,6 +2130,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         matches!(self.run_state, ThreadGroupRunState::Exited(_))
     }
 
+    /// Transitions this [`ThreadGroup`] to [`ThreadGroupRunState::Exiting`].
     fn set_exiting(&mut self, exit_status: ExitStatus) {
         self.run_state = ThreadGroupRunState::Exiting(exit_status);
     }
@@ -2457,13 +2469,66 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         self.base.stop_state.store(state, Ordering::Relaxed)
     }
 
+    /// Synchronously transitions this [`ThreadGroup`] to [`ThreadGroupRunState::Exiting`] and marks
+    /// all running member [`Task`]s (except `excluded_tid`, if specified) as
+    /// [`TaskFlags::EXITED`] before waking and interrupting them.
+    ///
+    /// All targeted member tasks must have [`TaskFlags::EXITED`] set while the
+    /// [`ThreadGroupWriteGuard`] is still held, before [`Self::set_stopped`] notifies
+    /// `lifecycle_waiters` and drops the lock. This guarantees that stopped sibling threads cannot
+    /// wake and return to userspace, and that `process_mrelease(2)` cannot observe a non-running
+    /// [`ThreadGroup`] before all member tasks are marked [`TaskFlags::EXITED`].
+    #[allow(unused_mut, reason = "needed for some but not all macro outputs")]
+    fn terminate_tasks(
+        mut self,
+        exit_status: ExitStatus,
+        wake_signal: SignalInfo,
+        excluded_tid: Option<&Pid>,
+    ) {
+        if self.is_running() {
+            self.set_exiting(exit_status.clone());
+        }
+
+        let tasks: Vec<Arc<Task>> = self
+            .tasks()
+            .into_iter()
+            .filter(|task| task.is_running() && excluded_tid != Some(&task.tid))
+            .collect();
+        for task in &tasks {
+            let mut task_state = task.write();
+            task_state.set_exit_status_if_not_already(exit_status.clone());
+            task_state.force_wake_for_exit();
+        }
+
+        self.set_stopped(
+            StopState::ForceWaking,
+            Some(wake_signal),
+            /* finalize_only = */ false,
+        );
+
+        for task in tasks {
+            task.interrupt();
+        }
+    }
+
+    #[allow(unused_mut, reason = "needed for some but not all macro outputs")]
+    pub(crate) fn force_exit_for_sigkill(mut self, signal_info: SignalInfo) {
+        let exit_status = ExitStatus::Kill(signal_info.clone());
+        self.terminate_tasks(exit_status, signal_info, /* excluded_tid = */ None);
+    }
+
     /// Sends the signal `signal_info` to this thread group.
     #[allow(unused_mut, reason = "needed for some but not all macro outputs")]
     pub fn send_signal(mut self, signal_info: SignalInfo) {
+        // TODO(https://fxbug.dev/573607334): Immediately transition the thread group to Exiting
+        // for other unblocked default-fatal signals (DeliveryAction::Terminate when not ptraced).
+        if signal_info.signal == SIGKILL {
+            self.force_exit_for_sigkill(signal_info);
+            return;
+        }
+
         let sigaction = self.base.signal_actions.get(signal_info.signal);
         let action = action_for_signal(&signal_info, sigaction);
-
-        let tasks: Vec<Pid> = self.tasks.iter().map(|info| info.tid.clone()).collect();
 
         // Like `send_signal_prio` does for a single task, discard an ignored signal instead of
         // queueing it: no task would ever act on it, but it would still make interruptible syscalls
@@ -2471,9 +2536,10 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         // saved mask, as it can be accepted later (see the `SigtimedwaitTest.IgnoredUnmaskedSignal`
         // gvisor test), or when a task is ptraced, for the signal-delivery-stop.
         let queue_on_group = action != DeliveryAction::Ignore
-            || tasks
+            || self
+                .tasks
                 .iter()
-                .filter_map(|pid| pid.get_task().ok())
+                .filter_map(|info| info.tid.get_task().ok())
                 .filter(|task| task.is_running())
                 .any(|task| {
                     let task_state = task.read();
@@ -2488,11 +2554,15 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             self.base.has_pending_signals.store(true, Ordering::Relaxed);
         }
 
+        let tasks: Vec<Pid> = self.tasks.iter().map(|info| info.tid.clone()).collect();
+
         // Set state to waking before interrupting any tasks.
-        if signal_info.signal == SIGKILL {
-            self.set_stopped(StopState::ForceWaking, Some(signal_info.clone()), false);
-        } else if signal_info.signal == SIGCONT {
-            self.set_stopped(StopState::Waking, Some(signal_info.clone()), false);
+        if signal_info.signal == SIGCONT {
+            self.set_stopped(
+                StopState::Waking,
+                Some(signal_info.clone()),
+                /* finalize_only = */ false,
+            );
         }
 
         let mut has_interrupted_task = false;
@@ -2503,11 +2573,13 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
             let mut task_state = task.write();
 
-            if signal_info.signal == SIGKILL {
-                task_state.thaw();
-                task_state.set_stopped(StopState::ForceWaking, None, None, None);
-            } else if signal_info.signal == SIGCONT {
-                task_state.set_stopped(StopState::Waking, None, None, None);
+            if signal_info.signal == SIGCONT {
+                task_state.set_stopped(
+                    StopState::Waking,
+                    /* siginfo = */ None,
+                    /* current_task = */ None,
+                    /* event = */ None,
+                );
             }
 
             let is_masked = task_state.is_signal_masked(signal_info.signal);
@@ -2521,15 +2593,14 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             if is_queued {
                 task_state.notify_signal_waiters(&signal_info.signal);
 
-                let is_fatal = signal_info.signal == SIGKILL
-                    || (action == DeliveryAction::Terminate && !task_state.is_ptraced());
+                let is_fatal = action == DeliveryAction::Terminate && !task_state.is_ptraced();
 
                 if !is_masked
                     && action.must_interrupt(Some(sigaction))
                     && (!has_interrupted_task || is_fatal)
                 {
-                    // Interrupt every task if the action is fatal (such as SIGKILL),
-                    // or only one task for catchable signals.
+                    // Interrupt every task if the action is fatal, or only one task for catchable
+                    // signals.
                     drop(task_state);
                     task.interrupt();
                     has_interrupted_task = true;
@@ -2543,6 +2614,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 mod test {
     use super::*;
     use crate::ptrace::ptrace_traceme;
+    use crate::signals::send_signal;
     use crate::testing::*;
     use starnix_syscalls::SUCCESS;
     use starnix_uapi::user_address::UserRef;
@@ -2577,11 +2649,83 @@ mod test {
         spawn_kernel_and_run(async |current_task| {
             let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
             child.thread_group().kill(ExitStatus::Exit(42), None);
+            assert_eq!(child.exit_status(), Some(ExitStatus::Exit(42)));
             std::mem::drop(child);
             assert_eq!(
                 current_task.thread_group().read().zombie_children[0].state.exit_status,
                 ExitStatus::Exit(42)
             );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_kill_thread_group_when_already_exiting() {
+        spawn_kernel_and_run(async |current_task| {
+            let clone_thread_flags = (CLONE_THREAD | CLONE_SIGHAND | CLONE_VM) as u64;
+            let mut leader = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let mut sibling = leader.clone_task_for_test(clone_thread_flags, None);
+
+            // Simulate the thread group having already transitioned to `Exiting(42)` while a
+            // sibling thread concurrently calls `kill_thread_group` (e.g. `exit_group(99)`).
+            leader.thread_group().write().set_exiting(ExitStatus::Exit(42));
+            sibling.kill_thread_group(ExitStatus::Exit(99));
+            assert!(sibling.is_exitted());
+
+            leader.kill_thread_group(ExitStatus::Exit(0));
+            assert!(leader.is_exitted());
+            std::mem::drop(sibling);
+            std::mem::drop(leader);
+            assert_eq!(
+                current_task.thread_group().read().zombie_children[0].state.exit_status,
+                ExitStatus::Exit(42)
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_sigkill_fast_path_exiting() {
+        spawn_kernel_and_run(async |current_task| {
+            let clone_thread_flags = (CLONE_THREAD | CLONE_SIGHAND | CLONE_VM) as u64;
+
+            // Process-directed SIGKILL synchronously transitions the thread group and all tasks.
+            let process_killed_leader = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let process_killed_thread =
+                process_killed_leader.clone_task_for_test(clone_thread_flags, None);
+            assert!(process_killed_leader.thread_group().read().is_running());
+            assert!(!process_killed_leader.is_exitted());
+            assert!(!process_killed_thread.is_exitted());
+
+            assert_eq!(
+                process_killed_leader
+                    .thread_group()
+                    .send_signal_unchecked(current_task, SIGKILL.into()),
+                Ok(())
+            );
+            assert!(!process_killed_leader.thread_group().read().is_running());
+            assert!(process_killed_leader.is_exitted());
+            assert!(process_killed_thread.is_exitted());
+            std::mem::drop(process_killed_thread);
+            std::mem::drop(process_killed_leader);
+
+            // Task-directed SIGKILL also synchronously transitions the thread group and all tasks.
+            let task_killed_leader = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let task_killed_thread =
+                task_killed_leader.clone_task_for_test(clone_thread_flags, None);
+            let task_sigkill_info = SignalInfo::with_sender(
+                SIGKILL,
+                SI_TKILL,
+                SignalDetail::Kill {
+                    pid: current_task.pid.clone(),
+                    uid: current_task.current_creds().uid,
+                },
+                Some(current_task.weak_self.clone()),
+            );
+            assert_eq!(send_signal(&task_killed_thread, task_sigkill_info), Ok(()));
+            assert!(!task_killed_leader.thread_group().read().is_running());
+            assert!(task_killed_leader.is_exitted());
+            assert!(task_killed_thread.is_exitted());
         })
         .await;
     }

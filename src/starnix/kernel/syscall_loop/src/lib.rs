@@ -272,11 +272,14 @@ fn process_restricted_exit(
             }
         }
         zx::sys::ZX_RESTRICTED_REASON_EXCEPTION => {
-            fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION);
-            // SAFETY: `exception_report_raw` was written by Zircon during this restricted exit.
-            let exception_report = unsafe { zx::ExceptionReport::from_raw(*exception_report_raw) };
-            let exception_result = current_task.process_exception(&exception_report);
-            process_completed_exception(current_task, exception_result, exception_report);
+            if !current_task.is_exitted() {
+                fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION);
+                // SAFETY: `exception_report_raw` was written by Zircon during this restricted exit.
+                let exception_report =
+                    unsafe { zx::ExceptionReport::from_raw(*exception_report_raw) };
+                let exception_result = current_task.process_exception(&exception_report);
+                process_completed_exception(current_task, exception_result, exception_report);
+            }
         }
         zx::sys::ZX_RESTRICTED_REASON_KICK => {
             fuchsia_trace::instant!(
@@ -334,6 +337,11 @@ pub fn execute_syscall(current_task: &mut CurrentTask) -> Option<ErrorContext> {
     current_task.thread_state.registers.save_registers_for_restart();
 
     current_task.ptrace().on_syscall_enter();
+    // A tracee killed (e.g., via `SIGKILL` or `PTRACE_KILL`) while stopped in `PTRACE_SYSCALL`
+    // entry is marked `EXITED` and woken from `on_syscall_enter` without executing the syscall.
+    if current_task.is_exitted() {
+        return None;
+    }
 
     let syscall_decl = SyscallDecl::from_number(
         current_task.thread_state.registers.syscall_register(),

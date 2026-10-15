@@ -315,8 +315,10 @@ impl IntervalTimer {
                         track_stub!(TODO("https://fxbug.dev/322875029"), "SIGEV_THREAD timer");
                     }
                     SignalEventNotify::ThreadId(tid) => {
-                        // Check if the target thread exists in the thread group.
-                        timer_thread_group.read().get_task(tid).map(|target| {
+                        // Drop the `ThreadGroupReadGuard` before calling `send_signal`, because
+                        // `SIGKILL` delivery acquires `ThreadGroupMutableStateLock` for write.
+                        let target = timer_thread_group.read().get_task(tid);
+                        if let Some(target) = target {
                             if let Some(signal_info) = self.signal_info() {
                                 log_trace!(
                                     signal = signal_info.signal.number(),
@@ -327,7 +329,7 @@ impl IntervalTimer {
                                     log_warn!("Failed to queue timer signal: {}", e)
                                 });
                             }
-                        });
+                        }
                     }
                 }
             }

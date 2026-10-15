@@ -30,7 +30,7 @@ use starnix_types::arch::ArchWidth;
 use starnix_types::stats::TaskTimeStats;
 use starnix_uapi::auth::{CAP_SYS_PTRACE, Credentials, FsCred};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::signals::{SIGCHLD, SigSet, Signal, sigaltstack_contains_pointer};
+use starnix_uapi::signals::{SIGCHLD, SIGKILL, SigSet, Signal, sigaltstack_contains_pointer};
 use starnix_uapi::user_address::{
     ArchSpecific, MappingMultiArchUserRef, UserAddress, UserCString, UserRef,
 };
@@ -568,6 +568,19 @@ impl TaskMutableState<Base = Task> {
         self.exit_status.get_or_insert(status);
     }
 
+    /// Transitions the task out of any stop state, notifies signal waiters, and thaws it so it can
+    /// wind down after being marked [`TaskFlags::EXITED`].
+    pub(crate) fn force_wake_for_exit(&mut self) {
+        self.set_stopped(
+            StopState::ForceWaking,
+            /* siginfo = */ None,
+            /* current_task = */ None,
+            /* event = */ None,
+        );
+        self.notify_signal_waiters(&SIGKILL);
+        self.thaw();
+    }
+
     /// The set of pending signals for the task, including the signals pending for the thread
     /// group.
     pub fn pending_signals(&self) -> SigSet {
@@ -1001,8 +1014,9 @@ impl Task {
             if let Some(tracer_tg) = tracer_tg {
                 drop(state);
                 let mut tracer_state = tracer_tg.write();
-                if !tracer_state.is_running() {
-                    // An exiting or exited tracer cannot accept new zombies.
+                if tracer_state.is_exited() {
+                    // An exited tracer has already detached its ptracees and cannot accept new
+                    // zombies.
                     return;
                 }
 

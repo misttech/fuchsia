@@ -601,8 +601,8 @@ impl Waiter {
             )
             .is_err()
         {
-            // Avoid attempting to freeze the task if there is a pending SIGKILL.
-            if current_task.read().has_signal_pending(SIGKILL) {
+            // Avoid attempting to freeze the task if it is exiting or has a pending SIGKILL.
+            if current_task.is_exitted() || current_task.read().has_signal_pending(SIGKILL) {
                 break;
             }
             // Ignore spurious wakeups from the [`PortEvent.futex`]
