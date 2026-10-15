@@ -1,17 +1,24 @@
 {
     component_routes: [
         {
-            // pkg-resolver should have its configuration data and SSL
-            // certificates served directly from fshost out of a directory
-            // covered by verified boot hash chain.
             target_node_path: "/core/pkg-resolver",
-
-            // Most routes are not read-only data covered by verified boot hash
-            // chain.
             routes_to_skip: [
+                // TODO(https://fxbug.dev/448149624): verify the config capabilities routes.
                 {
-                    use_type: "storage",
-                    use_path: "/data",
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.inspect.InspectSink",
                 },
                 {
                     use_type: "protocol",
@@ -26,85 +33,183 @@
                 },
                 {
                     use_type: "protocol",
-                    use_path: "/svc/fuchsia.net.http.Loader",
-                },
-                {
-                    use_type: "protocol",
-                    use_path: "/svc/fuchsia.boot.Arguments",
-                },
-                {
-                    use_type: "protocol",
                     use_path: "/svc/fuchsia.metrics.MetricEventLoggerFactory",
                 },
+
+                // Source chosen by product.
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.net.http.Loader",
+                },
+
+                // TODO(https://fxbug.dev/542690944): Remove entry when capability is removed from
+                // pkg-resolver. pkg-resolver uses its own PackageResolver protocol when serving its
+                // component resolution protocol. All pkg-resolver package and component resolution
+                // capabilities are being moved to pkg-cache.
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.pkg.PackageResolver",
+                },
+
+                // Source chosen by product.
                 {
                     use_type: "protocol",
                     use_path: "/svc/fuchsia.pkg.http.Client",
                 },
                 {
                     use_type: "protocol",
-                    use_path: "/svc/fuchsia.pkg.PackageCache",
+                    use_path: "/svc/fuchsia.tracing.provider.Registry",
+                },
+
+                // Contains mutable storage, not data from a verified, read-only source.
+                {
+                    use_type: "storage",
+                    use_path: "/data",
+                },
+            ],
+            routes_to_verify: [
+                {
+                    use_type: "directory",
+                    use_path: "/config/data",
+                    source_node_path: "/bootstrap/pkg-cache",
+                    source_name: "config-data",
                 },
                 {
                     use_type: "protocol",
-                    use_path: "/svc/fuchsia.tracing.provider.Registry",
+                    use_path: "/svc/fuchsia.pkg.PackageCache",
+                    source_node_path: "/bootstrap/pkg-cache",
+                    source_name: "fuchsia.pkg.PackageCache",
+                },
+            ],
+        },
+        {
+            target_node_path: "/bootstrap/pkg-cache",
+            routes_to_skip: [
+                // TODO(https://fxbug.dev/448149624): verify the config capabilities routes.
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgcache.AllPackagesExecutable",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgcache.EnableUpgradablePackages",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgcache.RequireSystemImage",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgcache.UseDriverBlobPaging",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.zircon.system.pkgfs.cmd",
+                },
+
+                // TODO(https://fxbug.dev/572899885): Verify once the verifier supports capabilities
+                // routed from `/`.
+                {
+                    use_type: "directory",
+                    use_path: "/bootfs-blobs",
                 },
                 {
                     use_type: "protocol",
                     use_path: "/svc/fuchsia.inspect.InspectSink",
                 },
+
+                // TODO(https://fxbug.dev/572899885): Verify once the verifier supports capabilities
+                // routed from `/`.
                 {
                     use_type: "protocol",
-                    use_path: "/svc/fuchsia.pkg.PackageResolver",
+                    use_path: "/svc/fuchsia.kernel.VmexResource",
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.logger.LogSink",
+                },
+                {
+                    use_type: "protocol",
+                    source_name: "fuchsia.logger.LogSink",
+
+                    // PA_LOG_SINK
+                    use_numbered_handle: 0x3D,
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.metrics.MetricEventLoggerFactory",
                 },
 
-                // TODO(https://fxbug.dev/448149624): verify the config capabilities routes.
+                // Source chosen by product.
                 {
-                    use_type: "config",
-                    use_source_name: "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.pkg.http.Client",
                 },
                 {
-                    use_type: "config",
-                    use_source_name: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.tracing.provider.Registry",
                 },
-                {
-                    use_type: "config",
-                    use_source_name: "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
-                },
-
-                // TODO(fxbug.dev/42072443) add verification for these routes (by uncommmenting
-                // the entries in routes_to_verify) once pkg_cache_resolver is removed.
+            ],
+            routes_to_verify: [
                 {
                     use_type: "directory",
-                    use_path: "/config/data",
+                    use_path: "/blob",
+                    source_node_path: "/bootstrap/fshost",
+                    source_name: "blob-exec",
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.fxfs.BlobCreator",
+                    source_node_path: "/bootstrap/fshost",
+                    source_name: "fuchsia.fxfs.BlobCreator",
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.fxfs.BlobReader",
+                    source_node_path: "/bootstrap/fshost",
+                    source_name: "fuchsia.fxfs.BlobReader",
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.pkg.Authority",
+                    source_node_path: "/core/pkg-resolver",
+                    source_name: "fuchsia.pkg.Authority",
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.storage.block.Mapper",
+                    source_node_path: "/bootstrap/fshost",
+                    source_name: "fuchsia.storage.block.Mapper",
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.storage.mapping.MappingProvider",
+                    source_node_path: "/bootstrap/fshost",
+                    source_name: "fuchsia.storage.mapping.MappingProvider",
+                },
+                {
+                    use_type: "protocol",
+                    use_path: "/svc/fuchsia.update.CommitStatusProvider",
+                    source_node_path: "/core/system-update/system-update-committer",
+                    source_name: "fuchsia.update.CommitStatusProvider",
                 },
             ],
-
-            // TODO(fxbug.dev/42072443) add verification for capabilities provided by
-            // /bootstrap/pkg-cache once pkg_cache_resolver is removed.
-            // Assumption: Read-only data covered by verified boot hash chain is
-            // served out of:
-            //   -   /bootstrap/pkg-cache:/pkgfs/packages/config-data/0/meta/data
-            //   -   /bootstrap/pkg-cache:/pkgfs/packages/root_ssl_certificates/0/data
-            routes_to_verify: [
-                //    {
-                //        use_type: "directory",
-                //        use_path: "/config/data",
-                //        source_node_path: "/bootstrap/pkg-cache",
-                //        source_path_prefix: "/pkgfs/packages/config-data/0/meta/data",
-                //    },
-                //    {
-                //        use_type: "directory",
-                //        use_path: "/config/ssl",
-                //        source_node_path: "/bootstrap/pkg-cache",
-                //        source_path_prefix: "/pkgfs/packages/root_ssl_certificates/0/data",
-                //    },
-            ],
         },
-
-        // TODO(fxbug.dev/42072443) add blobfs verification for target_node_path /bootstrap/pkg-cache
-        // once pkg_cache_resolver is removed.
-
-        // TODO(fxbug.dev/42072443) add blobfs verification for target_node_path
-        // /bootstrap/base_resolver once pkg_cache_resolver is removed.
     ],
 }
