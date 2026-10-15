@@ -7,6 +7,7 @@ use crate::device::kobject::{Bus, Class, Device, DeviceMetadata, Subsystem};
 use crate::fs::sysfs::{build_device_directory, get_sysfs, register_cpu_devices};
 use crate::task::Kernel;
 use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
+use crate::vfs::pseudo::stub_bytes_file::StubBytesFile;
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use crate::vfs::{FileSystemHandle, FsStr, FsString};
 use starnix_logging::bug_ref;
@@ -116,8 +117,8 @@ impl KObjectStore {
         );
         registry.add_numberless_device(
             "sde-conn-0-DSI-1".into(),
-            Some(card0),
-            drm_class,
+            Some(card0.clone()),
+            drm_class.clone(),
             |device, dir| {
                 build_device_directory(device, dir);
                 dir.entry(
@@ -132,6 +133,24 @@ impl KObjectStore {
                 );
             },
         );
+        registry.add_numberless_device(
+            "card0-DSI-1".into(),
+            Some(card0),
+            drm_class,
+            |device, dir| {
+                build_device_directory(device, dir);
+                dir.subdir("panel", 0o755, |dir| {
+                    dir.entry(
+                        "panel_name",
+                        StubBytesFile::new_node_with_data(
+                            bug_ref!("https://fxbug.dev/560212202"),
+                            b"Placeholder",
+                        ),
+                        mode!(IFREG, 0o444),
+                    );
+                });
+            },
+        );
 
         // TODO(https://fxbug.dev/452096300): Stub panel backlight device parented by the display
         // controller.
@@ -142,6 +161,41 @@ impl KObjectStore {
             |device, dir| {
                 build_device_directory(device, dir);
                 add_stub_attributes(dir, &["brightness"]);
+            },
+        );
+
+        registry.add_numberless_device(
+            "battery".into(),
+            /* parent = */ None,
+            self.get_or_create_class("power_supply".into()),
+            |device, dir| {
+                build_device_directory(device, dir);
+                dir.entry(
+                    "capacity",
+                    StubBytesFile::new_node_with_data(
+                        bug_ref!("https://fxbug.dev/573313995"),
+                        b"0",
+                    ),
+                    mode!(IFREG, 0o644),
+                );
+            },
+        );
+
+        registry.add_subsystemless_device(
+            "goog-chip-info".into(),
+            Some(self.system_device()),
+            |device, dir| {
+                build_device_directory(device, dir);
+                for name in ["device_table", "dvfs_table", "ids_table"] {
+                    dir.entry(
+                        name,
+                        StubBytesFile::new_node_with_data(
+                            bug_ref!("https://fxbug.dev/560212202"),
+                            b"Placeholder",
+                        ),
+                        mode!(IFREG, 0o444),
+                    );
+                }
             },
         );
 
