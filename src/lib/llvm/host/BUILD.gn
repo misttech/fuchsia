@@ -37,7 +37,7 @@ llvm_library("LLVMAArch64CodeGen") {
     ":LLVMCore",
     ":LLVMGlobalISel",
     ":LLVMMC",
-    ":LLVMPasses",
+    ":LLVMOption",
     ":LLVMScalarOpts",
     ":LLVMSelectionDAG",
     ":LLVMSupport",
@@ -54,6 +54,7 @@ llvm_library("LLVMAArch64Desc") {
     ":LLVMAArch64Utils",
     ":LLVMBinaryFormat",
     ":LLVMMC",
+    ":LLVMOption",
     ":LLVMSupport",
     ":LLVMTargetParser",
   ]
@@ -78,10 +79,7 @@ llvm_library("LLVMAArch64Info") {
 }
 
 llvm_library("LLVMAArch64Utils") {
-  deps = [
-    ":LLVMCore",
-    ":LLVMSupport",
-  ]
+  deps = [ ":LLVMSupport" ]
 }
 
 llvm_library("LLVMARMCodeGen") {
@@ -93,6 +91,7 @@ llvm_library("LLVMARMCodeGen") {
     ":LLVMAsmPrinter",
     ":LLVMCFGuard",
     ":LLVMCodeGen",
+    ":LLVMCodeGenTypes",
     ":LLVMCore",
     ":LLVMGlobalISel",
     ":LLVMMC",
@@ -144,6 +143,7 @@ llvm_library("LLVMAggressiveInstCombine") {
   deps = [
     ":LLVMAnalysis",
     ":LLVMCore",
+    ":LLVMProfileData",
     ":LLVMSupport",
     ":LLVMTransformUtils",
   ]
@@ -180,6 +180,7 @@ llvm_library("LLVMAsmPrinter") {
     ":LLVMDebugInfoDWARFLowLevel",
     ":LLVMMC",
     ":LLVMMCParser",
+    ":LLVMProfileData",
     ":LLVMRemarks",
     ":LLVMSupport",
     ":LLVMTarget",
@@ -229,6 +230,7 @@ llvm_library("LLVMCGData") {
     ":LLVMBitReader",
     ":LLVMBitWriter",
     ":LLVMObject",
+    ":LLVMOption",
     ":LLVMSupport",
   ]
 }
@@ -241,6 +243,7 @@ llvm_library("LLVMCodeGen") {
     ":LLVMCore",
     ":LLVMMC",
     ":LLVMObjCARCOpts",
+    ":LLVMOption",
     ":LLVMProfileData",
     ":LLVMScalarOpts",
     ":LLVMSupport",
@@ -349,7 +352,7 @@ llvm_library("LLVMFrontendAtomic") {
 }
 
 llvm_library("LLVMFrontendDirective") {
-  deps = []
+  deps = [ ":LLVMSupport" ]
 }
 
 llvm_library("LLVMFrontendHLSL") {
@@ -365,7 +368,6 @@ llvm_library("LLVMFrontendOffloading") {
     ":LLVMBinaryFormat",
     ":LLVMCore",
     ":LLVMObject",
-    ":LLVMObjectYAML",
     ":LLVMSupport",
     ":LLVMTransformUtils",
   ]
@@ -397,7 +399,7 @@ llvm_library("LLVMGlobalISel") {
     ":LLVMMC",
     ":LLVMSelectionDAG",
     ":LLVMSupport",
-    ":LLVMTarget",
+    ":LLVMTargetParser",
     ":LLVMTransformUtils",
   ]
 }
@@ -432,6 +434,7 @@ llvm_library("LLVMInstCombine") {
   deps = [
     ":LLVMAnalysis",
     ":LLVMCore",
+    ":LLVMOption",
     ":LLVMSupport",
     ":LLVMTransformUtils",
   ]
@@ -464,6 +467,7 @@ llvm_library("LLVMMC") {
   deps = [
     ":LLVMBinaryFormat",
     ":LLVMDebugInfoDWARFLowLevel",
+    ":LLVMOption",
     ":LLVMSupport",
     ":LLVMTargetParser",
   ]
@@ -481,10 +485,12 @@ llvm_library("LLVMMCJIT") {
   deps = [
     ":LLVMCore",
     ":LLVMExecutionEngine",
+    ":LLVMMC",
     ":LLVMObject",
     ":LLVMRuntimeDyld",
     ":LLVMSupport",
     ":LLVMTarget",
+    ":LLVMTargetParser",
   ]
 }
 
@@ -530,6 +536,10 @@ llvm_library("LLVMObjectYAML") {
   ]
 }
 
+llvm_library("LLVMOption") {
+  deps = [ ":LLVMSupport" ]
+}
+
 llvm_library("LLVMOrcShared") {
   deps = [ ":LLVMSupport" ]
 }
@@ -548,6 +558,7 @@ llvm_library("LLVMPasses") {
   deps = [
     ":LLVMAggressiveInstCombine",
     ":LLVMAnalysis",
+    ":LLVMAsmPrinter",
     ":LLVMCFGuard",
     ":LLVMCodeGen",
     ":LLVMCore",
@@ -606,6 +617,7 @@ llvm_library("LLVMRISCVCodeGen") {
 
 llvm_library("LLVMRISCVDesc") {
   deps = [
+    ":LLVMBinaryFormat",
     ":LLVMMC",
     ":LLVMRISCVInfo",
     ":LLVMSupport",
@@ -649,7 +661,6 @@ llvm_library("LLVMRuntimeDyld") {
 
 llvm_library("LLVMSandboxIR") {
   deps = [
-    ":LLVMAnalysis",
     ":LLVMCore",
     ":LLVMSupport",
   ]
@@ -669,10 +680,12 @@ llvm_library("LLVMSelectionDAG") {
   deps = [
     ":LLVMAnalysis",
     ":LLVMCodeGen",
+    ":LLVMCodeGenTypes",
     ":LLVMCore",
     ":LLVMMC",
     ":LLVMSupport",
     ":LLVMTarget",
+    ":LLVMTargetParser",
     ":LLVMTransformUtils",
   ]
 }
@@ -719,6 +732,7 @@ llvm_library("LLVMTransformUtils") {
   deps = [
     ":LLVMAnalysis",
     ":LLVMCore",
+    ":LLVMProfileData",
     ":LLVMSupport",
   ]
 }
@@ -739,14 +753,13 @@ llvm_library("LLVMX86CodeGen") {
     ":LLVMAsmPrinter",
     ":LLVMCFGuard",
     ":LLVMCodeGen",
+    ":LLVMCodeGenTypes",
     ":LLVMCore",
     ":LLVMGlobalISel",
-    ":LLVMIRPrinter",
     ":LLVMInstrumentation",
     ":LLVMMC",
-    ":LLVMObjCARCOpts",
-    ":LLVMProfileData",
-    ":LLVMScalarOpts",
+    ":LLVMOption",
+    ":LLVMPasses",
     ":LLVMSelectionDAG",
     ":LLVMSupport",
     ":LLVMTarget",
@@ -762,6 +775,7 @@ llvm_library("LLVMX86Desc") {
     ":LLVMBinaryFormat",
     ":LLVMMC",
     ":LLVMMCDisassembler",
+    ":LLVMOption",
     ":LLVMSupport",
     ":LLVMTargetParser",
     ":LLVMX86Info",
@@ -786,6 +800,7 @@ llvm_library("LLVMX86Info") {
 llvm_library("LLVMipo") {
   deps = [
     ":LLVMAnalysis",
+    ":LLVMAsmParser",
     ":LLVMBitReader",
     ":LLVMBitWriter",
     ":LLVMCore",
