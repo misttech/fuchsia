@@ -85,13 +85,22 @@ pub fn sys_debug_write(ptr: UserInPtr<u8>, mut len: usize) -> Result<(), Status>
     let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); MAX_DEBUG_WRITE_SIZE];
     let slice = ptr.copy_slice_from_user(&mut buf[..len]).map_err(|_| Status::INVALID_ARGS)?;
 
-    // Dump what we can into the persistent dlog, if we have one.
-    crate::persistent_debuglog_rs::persistent_dlog_write(slice);
-
     // This path to serial out arbitrates with the debug log
     // drainer and/or kernel ll debug path to minimize interleaving
     // of serial output between various sources.
-    crate::debuglog_rs::dlog_serial_write(slice);
+    //
+    // If the serial port has been suspended (see `zx_debug_suspend`), this will
+    // block until it has been resumed.  This thread may be killed or suspended
+    // while it is blocked (without having written anything); if suspended and
+    // later resumed, the vDSO will restart the syscall.
+    crate::debuglog_rs::dlog_serial_write_interruptible(slice)?;
+
+    // Dump what we can into the persistent dlog, if we have one.  We do this
+    // after `dlog_serial_write_interruptible` succeeds so that a write that is
+    // interrupted by thread suspend and later retried by the vDSO (or killed
+    // while blocked) does not produce duplicate or premature persistent dlog
+    // output.
+    crate::persistent_debuglog_rs::persistent_dlog_write(slice);
 
     Ok(())
 }

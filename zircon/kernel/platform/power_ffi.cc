@@ -47,4 +47,7 @@ FFI_ALWAYS_INLINE void cpp_platform_panic_start() { platform_panic_start(); }
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_platform_halt_cpu() { platform_halt_cpu(); }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_platform_serial_is_suspended() { return platform_serial_is_suspended(); }
+
 }  // extern "C"

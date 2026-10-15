@@ -662,6 +662,10 @@ If this option is set, the system will halt on a kernel panic instead
 of rebooting. To enable halt-on-panic, pass the kernel command line
 argument `kernel.halt-on-panic=true`.
 
+This option is ignored (i.e. the system will reboot) if the kernel panics while
+usermode has suspended the kernel's access to the debug serial port (see
+`zx_debug_suspend`), since the panic shell would be unreachable.
+
 Since the kernel can't reliably draw to a framebuffer when the GPU is enabled,
 the system will reboot by default if the kernel crashes or panics.
 

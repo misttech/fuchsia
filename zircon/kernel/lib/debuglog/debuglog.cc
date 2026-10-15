@@ -573,29 +573,61 @@ zx_status_t dlog_write(uint32_t severity, uint32_t flags, ktl::string_view str) 
 
 namespace {
 DECLARE_SINGLETON_MUTEX(DlogSerialWriteLock);
-}  // namespace
 
-void dlog_serial_write(ktl::string_view str) {
+zx_status_t DlogSerialWrite(ktl::string_view str, Interruptible interruptible) {
   if (dlog_bypass()) {
     // If LL DEBUG is enabled we take this path which uses a spinlock
     // and prevents the direct writes from the kernel from interleaving
     // with our output.
     serial_write(str);
-    return;
+    return ZX_OK;
   }
 
-  // If dlog has finished shutting down, just drop this message.  See https://fxbug.dev/42084162.
-  if (DLOG->ShutdownFinished()) {
-    return;
-  }
+  for (;;) {
+    // If dlog has finished shutting down, just drop this message.  See https://fxbug.dev/42084162.
+    if (DLOG->ShutdownFinished()) {
+      return ZX_OK;
+    }
 
-  Guard<Mutex> guard{DlogSerialWriteLock::Get()};
-  platform_dputs_thread(str.data(), str.size());
+    {
+      Guard<Mutex> guard{DlogSerialWriteLock::Get()};
+      if (platform_dputs_thread(str.data(), str.size()) != ZX_ERR_SHOULD_WAIT) {
+        return ZX_OK;
+      }
+    }
+
+    // The debug UART has been suspended.  Wait for it to be resumed and try
+    // again.  Note that we must not hold DlogSerialWriteLock while waiting.
+    // Acquiring the lock is not interruptible, so holding it here would
+    // prevent other (interruptible) writers waiting for the lock from being
+    // killed or suspended.
+    if (zx_status_t status = platform_serial_wait_for_resume(interruptible); status != ZX_OK) {
+      return status;
+    }
+  }
+}
+
+}  // namespace
+
+void dlog_serial_write(ktl::string_view str) {
+  [[maybe_unused]] zx_status_t status = DlogSerialWrite(str, Interruptible::No);
+  DEBUG_ASSERT(status == ZX_OK);
+}
+
+zx_status_t dlog_serial_write_interruptible(ktl::string_view str) {
+  return DlogSerialWrite(str, Interruptible::Yes);
 }
 
 void dlog_bluescreen_init() { DLOG->BluescreenInit(); }
 void dlog_panic_start() { DLOG->PanicStart(); }
-zx_status_t dlog_shutdown(zx_instant_mono_t deadline) { return DLOG->Shutdown(deadline); }
+bool dlog_panic_started() { return DLOG->PanicStarted(); }
+zx_status_t dlog_shutdown(zx_instant_mono_t deadline) {
+  // If usermode has suspended the debug UART, the dumper thread may be blocked
+  // (indefinitely) waiting for it to be resumed.  Since the system is halting,
+  // discard any output which cannot be written rather than waiting.
+  platform_serial_discard_writes_while_suspended();
+  return DLOG->Shutdown(deadline);
+}
 size_t dlog_render_to_crashlog(ktl::span<char> target) { return DLOG->RenderToCrashlog(target); }
 
 void DLog::Sync() {

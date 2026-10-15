@@ -32,6 +32,9 @@ zx_status_t cpp_dlog_reader_read(DlogReader* reader, uint32_t flags, dlog_record
 }
 
 void cpp_dlog_serial_write(const char* ptr, size_t len) { dlog_serial_write({ptr, len}); }
+zx_status_t cpp_dlog_serial_write_interruptible(const char* ptr, size_t len) {
+  return dlog_serial_write_interruptible({ptr, len});
+}
 void cpp_dlog_sync() { dlog_sync(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

@@ -81,6 +81,7 @@ all_libs = [
   "thread-stack",
   "thread_sampler",
   "topology",
+  "uart-gate",
   "unittest",
   "user_copy",
   "userabi",

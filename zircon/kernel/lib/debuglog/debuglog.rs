@@ -30,6 +30,7 @@ unsafe extern "C" {
         actual: *mut usize,
     ) -> i32;
     fn cpp_dlog_serial_write(ptr: *const c_char, len: usize);
+    fn cpp_dlog_serial_write_interruptible(ptr: *const c_char, len: usize) -> i32;
     fn cpp_dlog_sync();
     fn cpp_dlog_panic_start();
     fn cpp_dlog_bluescreen_init();
@@ -55,6 +56,17 @@ pub fn dlog_write(severity: u32, flags: u32, bytes: &[u8]) -> Result<(), Status>
 pub fn dlog_serial_write(bytes: &[u8]) {
     // SAFETY: `bytes.as_ptr()` points to `bytes.len()` initialized bytes.
     unsafe { cpp_dlog_serial_write(bytes.as_ptr() as *const c_char, bytes.len()) }
+}
+
+/// Like `dlog_serial_write`, except that if the calling thread must wait for the serial debug port
+/// to be resumed (see `zx_debug_suspend`), the wait may be interrupted by the thread being killed
+/// (`ZX_ERR_INTERNAL_INTR_KILLED`) or suspended (`ZX_ERR_INTERNAL_INTR_RETRY`), in which case
+/// nothing was written.
+pub fn dlog_serial_write_interruptible(bytes: &[u8]) -> Result<(), Status> {
+    // SAFETY: `bytes.as_ptr()` points to `bytes.len()` initialized bytes.
+    Status::ok(unsafe {
+        cpp_dlog_serial_write_interruptible(bytes.as_ptr() as *const c_char, bytes.len())
+    })
 }
 
 /// Blocks until the debuglog dumper thread has dumped all queued log messages. Must only be called

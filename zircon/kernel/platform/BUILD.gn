@@ -44,6 +44,7 @@ source_set("platform") {
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/lib/root_resource_filter",
+    "//zircon/kernel/lib/uart-gate:headers",
     "//zircon/kernel/phys:boot-constants",
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys/lib/memalloc",
@@ -64,12 +65,15 @@ library_headers("headers") {
 source_set("tests") {
   testonly = true
   sources = [
+    "debug_tests.cc",
     "efi_test.cc",
     "suspend_cpu_tests.cc",
   ]
   deps = [
     ":platform",
+    "//zircon/kernel/lib/debuglog",
     "//zircon/kernel/lib/efi",
+    "//zircon/kernel/lib/io",
     "//zircon/kernel/lib/unittest",
   ]
 }

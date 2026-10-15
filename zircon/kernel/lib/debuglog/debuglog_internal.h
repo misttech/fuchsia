@@ -59,6 +59,9 @@ class DLog {
   // See |dlog_panic_start|.
   void PanicStart() TA_EXCL(lock_);
 
+  // See |dlog_panic_started|.
+  bool PanicStarted() const { return panic_; }
+
   // See |dlog_bluescreen_init|.
   void BluescreenInit() TA_EXCL(lock_);
 
@@ -253,10 +256,10 @@ class DLog {
   // Indicates that the system has begun to panic.  When true, |write| will
   // immediately return an error.
   //
-  // TODO(maniscalco): This field should probably be an atomic since it can be
-  // accessed from multiple threads.  When/if it becomes an atomic, think
-  // carefully about whether it needs acquire/release semantics.
-  bool panic_ = false;
+  // Accessed from multiple threads without a lock (see |dlog_panic_started|).
+  // Relaxed ordering suffices since it does not publish any other data; readers
+  // only use it to decide how to emit output.
+  RelaxedAtomic<bool> panic_ = false;
 
   // The lifecycle state of this |DLog| object.
   enum class Lifecycle : uint32_t {

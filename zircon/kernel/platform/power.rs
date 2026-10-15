@@ -107,6 +107,13 @@ unsafe extern "C" {
         reason: ZirconCrashReason,
     ) -> usize;
     fn cpp_jtrace_invalidate();
+    fn cpp_platform_serial_is_suspended() -> bool;
+}
+
+#[inline]
+fn platform_serial_is_suspended() -> bool {
+    // SAFETY: `platform_serial_is_suspended` is safe to call from any context, including panic.
+    unsafe { cpp_platform_serial_is_suspended() }
 }
 
 struct PlatformCrashlog;
@@ -187,7 +194,16 @@ pub fn platform_halt(suggested_action: PlatformHaltAction, reason: ZirconCrashRe
     // can) if we plan to halt instead of instigate a reboot.  If we are going to
     // try to actually reboot, pet the dog one last time to give ourselves the
     // maximum amount of time to arrange our graceful reboot.
-    let halt_on_panic = BootOptions::get().halt_on_panic;
+    let mut halt_on_panic = BootOptions::get().halt_on_panic;
+
+    // If we are crashing while usermode has suspended the debug UART, there is no
+    // way for anyone to interact with the panic shell, and we cannot print
+    // anything to the UART.  Rather than silently hanging, reboot so that the
+    // crashlog (which will note that the UART was suspended) can be recovered.
+    if halt_on_panic && reason != ZirconCrashReason::NoCrash && platform_serial_is_suspended() {
+        halt_on_panic = false;
+    }
+
     if halt_on_panic {
         // SAFETY: Safe to call after early boot; dispatches to the registered static watchdog
         // driver or the no-op default driver.

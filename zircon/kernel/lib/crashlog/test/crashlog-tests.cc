@@ -7,6 +7,7 @@
 #include <lib/crashlog.h>
 #include <lib/crashlog/panic_buffer.h>
 #include <lib/unittest/unittest.h>
+#include <platform.h>
 
 #include <ktl/algorithm.h>
 #include <ktl/array.h>
@@ -212,6 +213,46 @@ bool PanicBufferTest() {
   END_TEST;
 }
 
+// Verify that the rendered crashlog includes a note indicating the debug UART
+// was suspended if (and only if) the crash happened while the UART was
+// suspended via `platform_serial_suspend`.  Without this note, a reader of the
+// crashlog would have no explanation for the missing serial console output.
+bool SerialSuspendedTest() {
+  BEGIN_TEST;
+
+  constexpr ktl::string_view kNote = "DEBUG UART SUSPENDED"sv;
+
+  fbl::AllocChecker ac;
+  auto buffer = ktl::make_unique<char[]>(&ac, kLargeBufferSize);
+  ASSERT_TRUE(ac.check());
+
+  // Not suspended, so there should be no note.
+  size_t len = crashlog_to_string({buffer.get(), kLargeBufferSize}, ZirconCrashReason::Panic);
+  ASSERT_LE(len, kLargeBufferSize);
+  EXPECT_FALSE(ktl::string_view(buffer.get(), len).find(kNote) != ktl::string_view::npos);
+
+  const zx_status_t status = platform_serial_suspend();
+  if (status == ZX_ERR_NOT_SUPPORTED) {
+    printf("debug UART suspend not supported, skipping\n");
+    END_TEST;
+  }
+  ASSERT_OK(status);
+  EXPECT_TRUE(platform_serial_is_suspended());
+
+  memset(buffer.get(), 0, kLargeBufferSize);
+  len = crashlog_to_string({buffer.get(), kLargeBufferSize}, ZirconCrashReason::Panic);
+
+  ASSERT_OK(platform_serial_resume());
+  EXPECT_FALSE(platform_serial_is_suspended());
+
+  ASSERT_LE(len, kLargeBufferSize);
+  ktl::string_view text{buffer.get(), len};
+  EXPECT_TRUE(ExpectBanner(text));
+  EXPECT_TRUE(text.find(kNote) != ktl::string_view::npos);
+
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(crashlog_tests)
@@ -221,4 +262,5 @@ UNITTEST("OOM/RootJob", OomRootJobTest)
 UNITTEST("UnknownReason", UnknownTest)
 UNITTEST("Truncation", TruncationTest)
 UNITTEST("PanicBuffer", PanicBufferTest)
+UNITTEST("SerialSuspended", SerialSuspendedTest)
 UNITTEST_END_TESTCASE(crashlog_tests, "crashlog", "crashlog tests")

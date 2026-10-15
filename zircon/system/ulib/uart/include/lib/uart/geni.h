@@ -644,6 +644,9 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
     }
   }
 
+  // Note that this driver does not implement TxDrained, so the default (always
+  // true) applies.  That's OK because PrepareForSuspend cancels any in-flight TX
+  // command and WakeupFromSuspend replays it, so no queued output is lost.
   template <typename IoProvider, typename IrqProvider>
   void PrepareForSuspend(IoProvider& io, IrqProvider& irq) {
     if (prepared_for_suspend_) {

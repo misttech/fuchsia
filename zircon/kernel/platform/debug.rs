@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use core::ffi::c_char;
+use zx_types::zx_status_t;
 
 unsafe extern "C" {
     fn cpp_platform_dgetc(c: *mut c_char, wait: bool) -> i32;
-    fn cpp_platform_dputs_thread(str: *const c_char, len: usize);
+    fn cpp_platform_dputs_thread(str: *const c_char, len: usize) -> zx_status_t;
     fn cpp_platform_pputc(c: c_char);
     fn cpp_platform_pgetc(c: *mut c_char) -> i32;
 }
@@ -18,7 +19,10 @@ pub fn platform_dgetc(c: &mut c_char, wait: bool) -> i32 {
 }
 
 /// Call the platform console output hook.
-pub fn platform_dputs_thread(s: &[u8]) {
+///
+/// Returns `ZX_ERR_SHOULD_WAIT` without writing anything if the debug serial port is suspended.
+/// See `platform_dputs_thread` in `<platform/debug.h>`.
+pub fn platform_dputs_thread(s: &[u8]) -> zx_status_t {
     // SAFETY: The slice `s` guarantees that the pointer is valid for `s.len()` bytes.
     unsafe { cpp_platform_dputs_thread(s.as_ptr() as *const c_char, s.len()) }
 }

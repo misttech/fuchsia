@@ -81,8 +81,18 @@ zx_status_t dlog_write(uint32_t severity, uint32_t flags, ktl::string_view str);
 // This function is a no-op if the dlog has already been shutdown
 // (i.e. |dlog_shutdown| has completed).
 //
-// Used by sys_debug_write().
+// If the debug serial port has been suspended (see `platform_serial_suspend`),
+// this function blocks (not interruptibly) until it has been resumed, or until
+// the system begins halting.
 void dlog_serial_write(ktl::string_view str);
+
+// Like |dlog_serial_write|, except that if the calling thread must wait for the
+// debug serial port to be resumed, the wait may be interrupted by the thread
+// being killed (returning ZX_ERR_INTERNAL_INTR_KILLED) or suspended (returning
+// ZX_ERR_INTERNAL_INTR_RETRY).  In either case nothing is written.
+//
+// Used by sys_debug_write().
+zx_status_t dlog_serial_write_interruptible(ktl::string_view str);
 
 // Allow FILE*-based APIs, like fprintf, to use the same output
 // backend as dlog_serial_write.
@@ -93,6 +103,9 @@ extern FILE gDlogSerialFile;
 // *very* early in the process of panicking.  In particular, it should be called
 // before |dlog_bluescreen_init|.
 void dlog_panic_start();
+
+// Returns true if |dlog_panic_start| has been called.
+bool dlog_panic_started();
 
 // Print the equivalent of a "blue screen" message.  When called during a panic,
 // this function should be called after |dlog_panic_start| to ensure that its
@@ -137,6 +150,7 @@ void cpp_dlog_reader_disconnect(DlogReader* reader);
 zx_status_t cpp_dlog_reader_read(DlogReader* reader, uint32_t flags, dlog_record_t* record,
                                  size_t* actual);
 void cpp_dlog_serial_write(const char* ptr, size_t len);
+zx_status_t cpp_dlog_serial_write_interruptible(const char* ptr, size_t len);
 void cpp_dlog_sync();
 void cpp_dlog_panic_start();
 void cpp_dlog_bluescreen_init();
