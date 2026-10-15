@@ -45,6 +45,8 @@ pub struct RawBrwLockPi {
 // SAFETY: RawBrwLockPi is safe to share and access across threads because it delegates
 // to the thread-safe Zircon kernel BrwLockPi implementation.
 unsafe impl Sync for RawBrwLockPi {}
+// SAFETY: RawBrwLockPi is safe to send across threads because it delegates to the thread-safe
+// Zircon kernel BrwLockPi implementation.
 unsafe impl Send for RawBrwLockPi {}
 
 #[pinned_drop]

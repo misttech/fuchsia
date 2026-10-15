@@ -404,10 +404,7 @@ pub struct PmmNode {
     /// again. Once this value is set the action and armed state in checker may no longer be
     /// changed, and it becomes safe to call AssertPattern even without the lock held.
     #[guarded_by(lock, loaned_list_lock)]
-    // TODO(https://fxbug.dev/562635905): guarded_by currently does not support multiple locks and
-    // so fails to event generate the wrapping UnsafeCell around this method. For now manually put
-    // the UnsafeCell in and require callers to manually manage the locking.
-    all_free_pages_filled: UnsafeCell<bool>,
+    all_free_pages_filled: bool,
     #[pin]
     checker: UnsafeCell<PmmChecker>,
 
@@ -590,8 +587,8 @@ impl PmmNode {
             evictor <- UnsafeCell::pin_init(Evictor::init()),
             compression_lock <- KMutex::init(),
             page_compression: None.into(),
-            free_fill_enabled: AtomicBool::new(false),
-            all_free_pages_filled: UnsafeCell::new(false),
+            free_fill_enabled: AtomicBool::new(false).into(),
+            all_free_pages_filled: false.into(),
             checker <- UnsafeCell::pin_init(PmmChecker::init()),
             random_should_wait_seed: 0.into(),
             used_arena_count: 0.into(),
@@ -711,9 +708,9 @@ impl PmmNode {
         {
             let _preempt_disable = AutoPreemptDisabler::new();
             ksync::lock!(let mut guard = self.lock.lock());
+            free_list_had_fill_pattern =
+                *self.guard_lock_from_guard(&guard).all_free_pages_filled();
             let token = guard.as_mut().token_mut();
-            // SAFETY: lock is held.
-            free_list_had_fill_pattern = unsafe { *self.all_free_pages_filled.get() };
 
             if (alloc_flags & ALLOC_FLAG_CAN_WAIT) != 0
                 && self.should_delay_allocation_locked(token)
@@ -781,9 +778,9 @@ impl PmmNode {
         {
             let _preempt_disable = AutoPreemptDisabler::new();
             ksync::lock!(let mut guard = self.lock.lock());
+            free_list_had_fill_pattern =
+                *self.guard_lock_from_guard(&guard).all_free_pages_filled();
             let token = guard.as_mut().token_mut();
-            // SAFETY: lock is held.
-            free_list_had_fill_pattern = unsafe { *self.all_free_pages_filled.get() };
 
             // SAFETY: token proves lock is held.
             let free_count = unsafe { self.free_count.get(token) }.load(Ordering::Relaxed);
@@ -874,9 +871,9 @@ impl PmmNode {
         {
             let _preempt_disable = AutoPreemptDisabler::new();
             ksync::lock!(let mut guard = self.lock.lock());
+            free_list_had_fill_pattern =
+                *self.guard_lock_from_guard(&guard).all_free_pages_filled();
             let token = guard.as_mut().token_mut();
-            // SAFETY: lock is held.
-            free_list_had_fill_pattern = unsafe { *self.all_free_pages_filled.get() };
 
             // SAFETY: token proves lock is held.
             let num_arenas = unsafe { *self.used_arena_count.get(token) };
@@ -1164,8 +1161,8 @@ impl PmmNode {
     pub fn enable_free_page_filling(&self, fill_size: usize, action: CheckFailAction) -> bool {
         // Require both locks so we can manipulate free_fill_enabled.
         ksync::lock!(let _loaned_guard = self.loaned_list_lock.lock());
-        ksync::lock!(let _free_guard = self.lock.lock());
-        if self.free_fill_enabled.load(Ordering::SeqCst) {
+        ksync::lock!(let free_guard = self.lock_lock());
+        if free_guard.free_fill_enabled().load(Ordering::SeqCst) {
             // Checker is already enabled.
             return false;
         }
@@ -1177,7 +1174,7 @@ impl PmmNode {
         // As free_fill_enabled may be examined outside of the lock, ensure the manipulations to
         // checker complete first by performing a release. See is_free_fill_enabled_racy for where
         // the acquire is performed.
-        self.free_fill_enabled.store(true, Ordering::Release);
+        free_guard.free_fill_enabled().store(true, Ordering::Release);
         true
     }
 
@@ -1189,15 +1186,14 @@ impl PmmNode {
         // Require both locks so we can process both of the free lists and modify
         // all_free_pages_filled.
         ksync::lock!(let mut loaned_guard = self.loaned_list_lock.lock());
-        let loaned_token = loaned_guard.as_mut().token_mut();
         ksync::lock!(let mut free_guard = self.lock.lock());
-        let free_token = free_guard.as_mut().token_mut();
 
-        if !self.free_fill_enabled.load(Ordering::SeqCst) {
+        if !self.guard_lock_from_guard(&free_guard).free_fill_enabled().load(Ordering::SeqCst) {
             return;
         }
 
         // SAFETY: free_token proves lock is held.
+        let free_token = free_guard.as_mut().token_mut();
         let free_list = unsafe { self.free_list.get_mut(free_token) };
         for page in free_list.iter() {
             let vmp = VmPagePtr::new(NonNull::from(page));
@@ -1207,6 +1203,7 @@ impl PmmNode {
             }
         }
         // SAFETY: loaned_token proves lock is held.
+        let loaned_token = loaned_guard.as_mut().token_mut();
         let free_loaned_list = unsafe { self.free_loaned_list.get_mut(loaned_token) };
         for page in free_loaned_list.iter() {
             let vmp = VmPagePtr::new(NonNull::from(page));
@@ -1221,8 +1218,10 @@ impl PmmNode {
         let checker = unsafe { &mut *self.checker.get() };
         // Now that every page has been filled, we can arm the checker.
         checker.arm();
-        // SAFETY: Both loaned_list_lock and lock are held.
-        unsafe { *self.all_free_pages_filled.get() = true };
+        let mut loaned_tg = self.guard_loaned_list_lock_mut_from_guard(loaned_guard.as_mut());
+        *self
+            .guard_lock_mut_from_guard(free_guard.as_mut())
+            .all_free_pages_filled_mut(&mut loaned_tg) = true;
         checker.print_status_stdout();
     }
 
@@ -1511,11 +1510,11 @@ impl PmmNode {
             let _preempt_disable = AutoPreemptDisabler::new();
             // Require both locks in order to manipulate loaned pages and the regular free list.
             ksync::lock!(let mut loaned_guard = self.loaned_list_lock.lock());
-            let loaned_token = loaned_guard.as_mut().token_mut();
             ksync::lock!(let _free_guard = self.lock.lock());
 
-            // SAFETY: loaned_list_lock and lock are held.
-            free_list_had_fill_pattern = unsafe { *self.all_free_pages_filled.get() };
+            free_list_had_fill_pattern =
+                *self.guard_loaned_list_lock_from_guard(&loaned_guard).all_free_pages_filled();
+            let loaned_token = loaned_guard.as_mut().token_mut();
 
             // SAFETY: page is a valid VmPagePtr.
             unsafe {
@@ -1571,9 +1570,9 @@ impl PmmNode {
 
         {
             ksync::lock!(let mut guard = self.loaned_list_lock.lock());
+            free_list_had_fill_pattern =
+                *self.guard_loaned_list_lock_from_guard(&guard).all_free_pages_filled();
             let token = guard.as_mut().token_mut();
-            // SAFETY: loaned_list_lock is held.
-            free_list_had_fill_pattern = unsafe { *self.all_free_pages_filled.get() };
 
             // SAFETY: token proves the lock guarding this list is held, and the list is a
             // structurally pinned field of the pinned `PmmNode`.
@@ -2189,7 +2188,10 @@ impl PmmNode {
         // Read with acquire semantics to ensure that any modifications to checker_ are visible
         // before changes to free_fill_enabled_. See EnableFreePageFilling for where the
         // release is performed.
-        self.free_fill_enabled.load(Ordering::Acquire)
+        // SAFETY: `free_fill_enabled` is an `AtomicBool` specifically intended to be read racily
+        // outside the lock with Acquire ordering.
+        let token = unsafe { LockToken::<PmmNodeLockClass>::new() };
+        unsafe { self.free_fill_enabled.get(&token) }.load(Ordering::Acquire)
     }
 
     fn should_delay_allocation_locked(&self, token: &mut LockToken<'_, PmmNodeLockClass>) -> bool {
@@ -2412,7 +2414,7 @@ impl PmmNode {
 
     unsafe fn free_page_helper_locked(
         &self,
-        _token: &mut LockToken<'_, PmmNodeLockClass>,
+        token: &mut LockToken<'_, PmmNodeLockClass>,
         page: NonNull<VmPage>,
         already_filled: bool,
     ) {
@@ -2440,7 +2442,8 @@ impl PmmNode {
             // pattern, however if it raced with enabling of free filling we may still need to fill
             // the pattern. This should be unlikely, and since free filling can never be turned back
             // off there is no race in the other direction.
-            if self.free_fill_enabled.load(Ordering::SeqCst) && !already_filled {
+            if self.guard_lock(token).free_fill_enabled().load(Ordering::SeqCst) && !already_filled
+            {
                 let vmp = VmPagePtr::new(page);
                 self.checker().fill_pattern(vmp);
             }
@@ -2450,7 +2453,7 @@ impl PmmNode {
 
     unsafe fn free_loaned_page_helper_locked(
         &self,
-        _token: &mut LockToken<'_, PmmNodeLoanedListLockClass>,
+        token: &mut LockToken<'_, PmmNodeLoanedListLockClass>,
         page: NonNull<VmPage>,
         already_filled: bool,
     ) {
@@ -2482,7 +2485,9 @@ impl PmmNode {
             // the pattern. This should be unlikely, and since free filling can never be turned back
             //off there is no race in the other direction. As we hold lock we can safely perform a
             // relaxed read.
-            if !already_filled && self.free_fill_enabled.load(Ordering::SeqCst) {
+            if !already_filled
+                && self.guard_loaned_list_lock(token).free_fill_enabled().load(Ordering::SeqCst)
+            {
                 let vmp = VmPagePtr::new(page);
                 self.checker().fill_pattern(vmp);
             }

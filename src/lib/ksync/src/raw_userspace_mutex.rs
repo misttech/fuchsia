@@ -82,6 +82,7 @@ unsafe impl super::LockPolicy<RawMutex> for RawMutexPolicy {
 
     #[inline]
     unsafe fn reacquire(lock: &RawMutex, entry: *mut (), state: &mut Self::GuardState) {
+        // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
         *state = unsafe { Self::acquire(lock, entry, ()) };
     }
 
@@ -103,6 +104,7 @@ unsafe impl RawLock for RawMutex {
     unsafe fn init(
         class_id: *const core::ffi::c_void,
     ) -> impl PinInit<Self, core::convert::Infallible> {
+        // SAFETY: Closure initializes `slot` in place before returning `Ok(())`.
         unsafe {
             pin_init_from_closure(move |slot| {
                 core::ptr::write(slot, Self::const_init(class_id));

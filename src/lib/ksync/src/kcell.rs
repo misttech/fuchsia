@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::lock_token::LockToken;
+use crate::lock_token::{LockTokenRead, LockTokenWrite};
 use core::marker::PhantomData;
 
 /// A container cell that safe-guards data of type `T` using type-level lock class tracking.
@@ -16,7 +16,9 @@ pub struct KCell<T, Class> {
     _marker: PhantomData<Class>,
 }
 
+// SAFETY: `KCell` synchronizes shared access via `LockToken`, so it is `Sync` when `T: Send`.
 unsafe impl<T: Send, Class> Sync for KCell<T, Class> {}
+// SAFETY: `KCell` owns `T`, so transferring it across threads is safe when `T: Send`.
 unsafe impl<T: Send, Class> Send for KCell<T, Class> {}
 
 impl<T, Class> KCell<T, Class> {
@@ -30,10 +32,14 @@ impl<T, Class> KCell<T, Class> {
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that the provided `LockToken` belongs to the specific lock instance
-    /// that guards this `KCell` (rather than a different lock of the same lock class `Class`).
+    /// The caller must guarantee that the provided `LockToken` belongs to the specific lock
+    /// instance that guards this `KCell` (rather than a different lock of the same lock class
+    /// `Class`).
     #[inline]
-    pub unsafe fn get<'b>(&self, _token: &'b LockToken<'_, Class>) -> &'b T {
+    pub unsafe fn get<'b, Token, Idx>(&self, _token: &'b Token) -> &'b T
+    where
+        Token: LockTokenRead<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell.
         unsafe { &*self.value.get() }
@@ -43,10 +49,14 @@ impl<T, Class> KCell<T, Class> {
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that the provided `LockToken` belongs to the specific lock instance
-    /// that guards this `KCell` (rather than a different lock of the same lock class `Class`).
+    /// The caller must guarantee that the provided `LockToken` belongs to the specific lock
+    /// instance that guards this `KCell` (rather than a different lock of the same lock class
+    /// `Class`).
     #[inline]
-    pub unsafe fn get_mut<'b>(&self, _token: &'b mut LockToken<'_, Class>) -> &'b mut T {
+    pub unsafe fn get_mut<'b, Token, Idx>(&self, _token: &'b mut Token) -> &'b mut T
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell, and the exclusive mutable borrow of the `LockToken`
         // ensures that no other active borrows of the same cell can co-exist.
@@ -61,23 +71,43 @@ impl<T, Class> KCell<T, Class> {
     /// instance that guards this `KCell` (rather than a different lock of the same lock class
     /// `Class`), and that this `KCell` is pinned in memory so its inner value is never moved.
     #[inline]
-    pub unsafe fn get_pinned_mut_locked<'b>(
+    pub unsafe fn get_pinned_mut_locked<'b, Token, Idx>(
         &self,
-        token: &'b mut LockToken<'_, Class>,
-    ) -> core::pin::Pin<&'b mut T> {
+        token: &'b mut Token,
+    ) -> core::pin::Pin<&'b mut T>
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell, and that the cell is pinned in memory.
         unsafe { core::pin::Pin::new_unchecked(self.get_mut(token)) }
+    }
+
+    /// Returns a const raw pointer to the guarded value.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that a lock instance guarding this `KCell` is held continuously
+    /// while dereferencing or accessing the returned raw pointer.
+    #[inline]
+    pub unsafe fn as_ptr<Token, Idx>(&self, _token: &Token) -> *const T
+    where
+        Token: LockTokenRead<Class, Idx>,
+    {
+        self.value.get()
     }
 
     /// Returns a mutable raw pointer to the guarded value.
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that the lock instance guarding this `KCell` is held continuously
-    /// while dereferencing or accessing the returned raw pointer.
+    /// The caller must guarantee that the lock instance(s) guarding this `KCell` are held
+    /// continuously while dereferencing or accessing the returned raw pointer.
     #[inline]
-    pub unsafe fn as_mut_ptr(&self, _token: &mut LockToken<'_, Class>) -> *mut T {
+    pub unsafe fn as_mut_ptr<Token, Idx>(&self, _token: &mut Token) -> *mut T
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         self.value.get()
     }
 
@@ -169,6 +199,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lock_token::LockToken;
     use lockdep::LockClass;
 
     struct MyClass;
@@ -179,6 +210,7 @@ mod tests {
     #[test]
     fn test_kcell_default() {
         let cell: KCell<u32, MyClass> = KCell::default();
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
         unsafe {
             let token = LockToken::new();
             assert_eq!(*cell.get(&token), 0);
@@ -198,6 +230,7 @@ mod tests {
     #[test]
     fn test_kcell_as_mut_ptr() {
         let cell: KCell<u32, MyClass> = KCell::new(100u32);
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
         unsafe {
             let mut token = LockToken::new();
             let ptr = cell.as_mut_ptr(&mut token);
@@ -217,6 +250,7 @@ mod tests {
 
     #[test]
     fn test_kcell_init() {
+        // SAFETY: Closure initializes `slot` in place before returning `Ok(())`.
         let init = unsafe {
             pin_init::pin_init_from_closure(|slot: *mut u32| {
                 slot.write(42);
@@ -228,6 +262,7 @@ mod tests {
         pin_init::stack_pin_init!(let cell = cell_init);
         let cell: core::pin::Pin<&mut KCell<u32, MyClass>> = cell;
 
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
         unsafe {
             let token = LockToken::<MyClass>::new();
             let val = cell.as_ref().get_ref().get(&token);
@@ -240,6 +275,7 @@ mod tests {
         let cell = core::pin::pin!(KCell::<u32, MyClass>::new(7));
         let cell: &KCell<u32, MyClass> = cell.as_ref().get_ref();
 
+        // SAFETY: Single-threaded test with exclusive access to pinned `cell`.
         unsafe {
             let mut token = LockToken::<MyClass>::new();
             let mut pinned: core::pin::Pin<&mut u32> = cell.get_pinned_mut_locked(&mut token);
@@ -247,6 +283,63 @@ mod tests {
             pinned.set(8);
             *pinned.as_mut().get_mut() += 1;
             assert_eq!(*cell.get(&token), 9);
+        }
+    }
+
+    struct SecondClass;
+    impl LockClass for SecondClass {
+        const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+    }
+
+    struct ThirdClass;
+    impl LockClass for ThirdClass {
+        const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+    }
+
+    #[test]
+    fn test_kcell_multi_lock() {
+        let cell = core::pin::pin!(KCell::<u32, (MyClass, SecondClass)>::new(10));
+        let cell: &KCell<u32, (MyClass, SecondClass)> = cell.as_ref().get_ref();
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
+        unsafe {
+            let mut token1 = LockToken::<MyClass>::new();
+            let mut token2 = LockToken::<SecondClass>::new();
+
+            // Read with either single token via `get` and `as_ptr`.
+            assert_eq!(*cell.get(&token1), 10);
+            assert_eq!(*cell.get(&token2), 10);
+            assert_eq!(*cell.as_ptr(&token1), 10);
+            assert_eq!(*cell.as_ptr(&token2), 10);
+
+            // Mutate with joined tokens in either order.
+            *cell.get_mut(token1.join(&mut token2)) = 20;
+            assert_eq!(*cell.get(&token1), 20);
+
+            *cell.get_mut(token2.join(&mut token1)) = 30;
+            assert_eq!(*cell.get(&token2), 30);
+
+            // Test `as_mut_ptr` and `get_pinned_mut_locked` with joined tokens.
+            *cell.as_mut_ptr(token1.join(&mut token2)) = 40;
+            assert_eq!(*cell.get(&token1), 40);
+
+            let mut pinned = cell.get_pinned_mut_locked(token2.join(&mut token1));
+            pinned.set(50);
+            assert_eq!(*cell.get(&token2), 50);
+        }
+
+        let cell3: KCell<u32, (MyClass, SecondClass, ThirdClass)> = KCell::new(100);
+        // SAFETY: Single-threaded test with exclusive access to `cell3`.
+        unsafe {
+            let mut t1 = LockToken::<MyClass>::new();
+            let mut t2 = LockToken::<SecondClass>::new();
+            let mut t3 = LockToken::<ThirdClass>::new();
+
+            assert_eq!(*cell3.get(&t1), 100);
+            assert_eq!(*cell3.get(&t2), 100);
+            assert_eq!(*cell3.get(&t3), 100);
+
+            *cell3.get_mut(t1.join(&mut t2).join(&mut t3)) = 200;
+            assert_eq!(*cell3.get(&t3), 200);
         }
     }
 }

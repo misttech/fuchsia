@@ -90,6 +90,7 @@ impl Default for RawSpinlock {
 
 // SAFETY: RawSpinlock is safe to share and access across threads.
 unsafe impl Sync for RawSpinlock {}
+// SAFETY: RawSpinlock is safe to send across threads.
 unsafe impl Send for RawSpinlock {}
 
 zr::unsafe_pinned_drop_ffi!(RawSpinlock, cpp_spinlock_destroy);
@@ -124,6 +125,7 @@ impl Default for RawMonitoredSpinlock {
 
 // SAFETY: RawMonitoredSpinlock is safe to share and access across threads.
 unsafe impl Sync for RawMonitoredSpinlock {}
+// SAFETY: RawMonitoredSpinlock is safe to send across threads.
 unsafe impl Send for RawMonitoredSpinlock {}
 
 zr::unsafe_pinned_drop_ffi!(RawMonitoredSpinlock, cpp_monitored_spinlock_destroy);
@@ -153,6 +155,7 @@ unsafe impl crate::LockPolicy<RawSpinlock> for IrqSavePolicy {
         entry: *mut LockEntryStorage,
         state: &mut Self::GuardState,
     ) {
+        // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
         *state = unsafe { Self::acquire(lock, entry, ()) };
     }
 
@@ -191,6 +194,7 @@ unsafe impl crate::LockPolicy<RawSpinlock> for NoIrqSavePolicy {
         entry: *mut LockEntryStorage,
         state: &mut Self::GuardState,
     ) {
+        // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
         *state = unsafe { Self::acquire(lock, entry, ()) };
     }
 

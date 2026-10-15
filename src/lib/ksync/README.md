@@ -178,6 +178,48 @@ fn main() {
 }
 ```
 
+### Fields Guarded by Multiple Locks
+
+A field can be annotated with `#[guarded_by(mu1, mu2, ...)]` (comparable to
+`TA_GUARDED(mu1) TA_GUARDED(mu2)` in C++):
+
+*   **Reading** only requires holding **any one** of the guarding locks
+    (`guard1.shared()`, `guard2.shared()`, or `guard1.fields().shared`).
+*   **Mutating** requires holding **all** guarding locks simultaneously and
+    passing the remaining lock guard(s) or mutable token guard(s) to
+    `guard1.as_mut().shared_mut(&mut guard2, ...)`.
+*   In `guard1.as_mut().fields_mut()`, single-lock fields are projected mutably
+    (`&mut T`), whereas multi-lock fields are projected immutably (`&T`) since
+    `fields_mut()` only proves a single lock is held.
+
+```rust
+use ksync::{guarded, KMutex, lock};
+
+#[guarded]
+struct SharedNode {
+    #[mutex]
+    mu1: KMutex,
+    #[mutex]
+    mu2: KMutex,
+
+    #[guarded_by(mu1, mu2)]
+    all_filled: bool,
+}
+
+fn check_and_arm(node: &SharedNode) {
+    // Reading requires only one lock:
+    {
+        lock!(let g1 = node.lock_mu1());
+        let _ = *g1.all_filled();
+    }
+
+    // Mutating requires both locks:
+    lock!(let mut g1 = node.lock_mu1());
+    lock!(let mut g2 = node.lock_mu2());
+    *g1.as_mut().all_filled_mut(&mut g2) = true;
+}
+```
+
 ## Locked Inherent Methods
 
 When porting C++ code that utilizes Clang's Thread Safety Analysis (e.g.,

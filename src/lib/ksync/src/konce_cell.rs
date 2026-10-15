@@ -8,7 +8,7 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 
-use crate::LockToken;
+use crate::lock_token::{LockTokenRead, LockTokenWrite};
 
 /// A cell that provides lazy/one-time initialization synchronized by a lock class `Class`.
 ///
@@ -22,7 +22,10 @@ pub struct KOnceCell<T, Class> {
     _marker: PhantomData<Class>,
 }
 
+// SAFETY: `KOnceCell` synchronizes shared access via `LockToken<Class>`, so it is `Sync` when
+// `T: Send`.
 unsafe impl<T: Send, Class> Sync for KOnceCell<T, Class> {}
+// SAFETY: `KOnceCell` owns `T`, so transferring it across threads is safe when `T: Send`.
 unsafe impl<T: Send, Class> Send for KOnceCell<T, Class> {}
 
 impl<T, Class> KOnceCell<T, Class> {
@@ -44,7 +47,10 @@ impl<T, Class> KOnceCell<T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn is_initialized(&self, _token: &LockToken<'_, Class>) -> bool {
+    pub unsafe fn is_initialized<Token, Idx>(&self, _token: &Token) -> bool
+    where
+        Token: LockTokenRead<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell.
         unsafe { *self.initialized.get() }
@@ -59,13 +65,14 @@ impl<T, Class> KOnceCell<T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn get<'b>(&self, _token: &'b LockToken<'_, Class>) -> Option<&'b T> {
+    pub unsafe fn get<'b, Token, Idx>(&self, _token: &'b Token) -> Option<&'b T>
+    where
+        Token: LockTokenRead<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell.
-        if unsafe { *self.initialized.get() } {
-            Some(unsafe { (*self.value.get()).assume_init_ref() })
-        } else {
-            None
+        unsafe {
+            if *self.initialized.get() { Some((*self.value.get()).assume_init_ref()) } else { None }
         }
     }
 
@@ -78,14 +85,15 @@ impl<T, Class> KOnceCell<T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn get_mut<'b>(&self, _token: &'b mut LockToken<'_, Class>) -> Option<&'b mut T> {
+    pub unsafe fn get_mut<'b, Token, Idx>(&self, _token: &'b mut Token) -> Option<&'b mut T>
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell, and the exclusive mutable borrow of the `LockToken`
         // ensures that no other active borrows of the same cell can co-exist.
-        if unsafe { *self.initialized.get() } {
-            Some(unsafe { (*self.value.get()).assume_init_mut() })
-        } else {
-            None
+        unsafe {
+            if *self.initialized.get() { Some((*self.value.get()).assume_init_mut()) } else { None }
         }
     }
 
@@ -97,7 +105,10 @@ impl<T, Class> KOnceCell<T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn set(&self, value: T, _token: &mut LockToken<'_, Class>) -> Result<(), T> {
+    pub unsafe fn set<Token, Idx>(&self, value: T, _token: &mut Token) -> Result<(), T>
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell, and the exclusive mutable borrow of the `LockToken`
         // ensures no concurrent access.
@@ -105,7 +116,7 @@ impl<T, Class> KOnceCell<T, Class> {
             if *self.initialized.get() {
                 Err(value)
             } else {
-                (*self.value.get()).write(value);
+                let _ = (*self.value.get()).write(value);
                 *self.initialized.get() = true;
                 Ok(())
             }
@@ -121,17 +132,20 @@ impl<T, Class> KOnceCell<T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn get_or_init<'b>(
+    pub unsafe fn get_or_init<'b, Token, Idx>(
         &self,
         f: impl FnOnce() -> T,
-        _token: &'b mut LockToken<'_, Class>,
-    ) -> &'b mut T {
+        _token: &'b mut Token,
+    ) -> &'b mut T
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell, and the exclusive mutable borrow of the `LockToken`
         // ensures no concurrent access.
         unsafe {
             if !*self.initialized.get() {
-                (*self.value.get()).write(f());
+                let _ = (*self.value.get()).write(f());
                 *self.initialized.get() = true;
             }
             (*self.value.get()).assume_init_mut()
@@ -147,18 +161,21 @@ impl<T, Class> KOnceCell<T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn get_or_try_init<'b, E>(
+    pub unsafe fn get_or_try_init<'b, E, Token, Idx>(
         &self,
         f: impl FnOnce() -> Result<T, E>,
-        _token: &'b mut LockToken<'_, Class>,
-    ) -> Result<&'b mut T, E> {
+        _token: &'b mut Token,
+    ) -> Result<&'b mut T, E>
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell, and the exclusive mutable borrow of the `LockToken`
         // ensures no concurrent access.
         unsafe {
             if !*self.initialized.get() {
                 let val = f()?;
-                (*self.value.get()).write(val);
+                let _ = (*self.value.get()).write(val);
                 *self.initialized.get() = true;
             }
             Ok((*self.value.get()).assume_init_mut())
@@ -174,11 +191,14 @@ impl<T, Class> KOnceCell<T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn get_or_pin_init<'b, E>(
+    pub unsafe fn get_or_pin_init<'b, E, Token, Idx>(
         &self,
         init: impl pin_init::PinInit<T, E>,
-        _token: &'b mut LockToken<'_, Class>,
-    ) -> Result<&'b mut T, E> {
+        _token: &'b mut Token,
+    ) -> Result<&'b mut T, E>
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell, and the exclusive mutable borrow of the `LockToken`
         // ensures no concurrent access.
@@ -201,10 +221,8 @@ impl<T, Class> KOnceCell<T, Class> {
     pub unsafe fn get_unchecked(&self) -> Option<&T> {
         // SAFETY: The caller guarantees that the specific lock instance protecting this cell
         // is held.
-        if unsafe { *self.initialized.get() } {
-            Some(unsafe { (*self.value.get()).assume_init_ref() })
-        } else {
-            None
+        unsafe {
+            if *self.initialized.get() { Some((*self.value.get()).assume_init_ref()) } else { None }
         }
     }
 
@@ -220,10 +238,8 @@ impl<T, Class> KOnceCell<T, Class> {
     pub unsafe fn get_mut_unchecked(&self) -> Option<&mut T> {
         // SAFETY: The caller guarantees that the specific lock instance protecting this cell is
         // held exclusively without concurrent access.
-        if unsafe { *self.initialized.get() } {
-            Some(unsafe { (*self.value.get()).assume_init_mut() })
-        } else {
-            None
+        unsafe {
+            if *self.initialized.get() { Some((*self.value.get()).assume_init_mut()) } else { None }
         }
     }
 
@@ -240,7 +256,7 @@ impl<T, Class> KOnceCell<T, Class> {
         // held exclusively without concurrent access.
         unsafe {
             if !*self.initialized.get() {
-                (*self.value.get()).write(f());
+                let _ = (*self.value.get()).write(f());
                 *self.initialized.get() = true;
             }
             (*self.value.get()).assume_init_mut()
@@ -264,7 +280,7 @@ impl<T, Class> KOnceCell<T, Class> {
         unsafe {
             if !*self.initialized.get() {
                 let val = f()?;
-                (*self.value.get()).write(val);
+                let _ = (*self.value.get()).write(val);
                 *self.initialized.get() = true;
             }
             Ok((*self.value.get()).assume_init_mut())
@@ -299,6 +315,7 @@ impl<T, Class> KOnceCell<T, Class> {
     #[inline]
     pub fn get_inner_mut(&mut self) -> Option<&mut T> {
         if *self.initialized.get_mut() {
+            // SAFETY: `initialized` is true, so `value` has been initialized.
             Some(unsafe { self.value.get_mut().assume_init_mut() })
         } else {
             None
@@ -309,7 +326,8 @@ impl<T, Class> KOnceCell<T, Class> {
     #[inline]
     pub fn into_inner(mut self) -> Option<T> {
         if *self.initialized.get_mut() {
-            // Read the initialized value and reset `initialized` so `Drop` does not drop it again.
+            // SAFETY: `initialized` is true, and resetting `initialized` to false below prevents
+            // `Drop` from dropping the value a second time.
             let val = unsafe { core::ptr::read(self.value.get_mut().as_ptr()) };
             *self.initialized.get_mut() = false;
             Some(val)
@@ -326,10 +344,13 @@ impl<T, Class> KOnceCell<T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn guard<'a>(
+    pub unsafe fn guard<'a, Token, Idx>(
         &'a self,
-        token: &'a mut LockToken<'_, Class>,
-    ) -> KOnceCellGuard<'a, T, Class> {
+        token: &'a mut Token,
+    ) -> KOnceCellGuard<'a, T, Class>
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
         // instance that guards this cell.
         unsafe { KOnceCellGuard::new(self, token) }
@@ -355,6 +376,7 @@ impl<T, Class> core::fmt::Debug for KOnceCell<T, Class> {
 impl<T, Class> Drop for KOnceCell<T, Class> {
     fn drop(&mut self) {
         if *self.initialized.get_mut() {
+            // SAFETY: `initialized` is true, so `value` contains an initialized `T`.
             unsafe {
                 self.value.get_mut().assume_init_drop();
             }
@@ -380,19 +402,24 @@ impl<'a, T, Class> KOnceCellGuard<'a, T, Class> {
     /// instance that guards this `KOnceCell` (rather than a different lock of the same lock class
     /// `Class`).
     #[inline]
-    pub unsafe fn new(cell: &'a KOnceCell<T, Class>, _token: &'a mut LockToken<'_, Class>) -> Self {
+    pub unsafe fn new<Token, Idx>(cell: &'a KOnceCell<T, Class>, _token: &'a mut Token) -> Self
+    where
+        Token: LockTokenWrite<Class, Idx>,
+    {
         Self { cell, _marker: core::marker::PhantomData }
     }
 
     /// Returns `true` if the cell has been initialized.
     #[inline]
     pub fn is_initialized(&self) -> bool {
+        // SAFETY: This guard holds exclusive lock-proven access to `self.cell`.
         unsafe { self.cell.get_unchecked().is_some() }
     }
 
     /// Returns a reference to the initialized value, or `None` if uninitialized.
     #[inline]
     pub fn get(&self) -> Option<&T> {
+        // SAFETY: This guard holds exclusive lock-proven access to `self.cell`.
         unsafe { self.cell.get_unchecked() }
     }
 
@@ -411,7 +438,7 @@ impl<'a, T, Class> KOnceCellGuard<'a, T, Class> {
             if self.cell.get_unchecked().is_some() {
                 Err(value)
             } else {
-                (*self.cell.value.get()).write(value);
+                let _ = (*self.cell.value.get()).write(value);
                 *self.cell.initialized.get() = true;
                 Ok(())
             }
@@ -456,6 +483,7 @@ impl<T: core::fmt::Debug, Class> core::fmt::Debug for KOnceCellGuard<'_, T, Clas
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::LockToken;
     use lockdep::LockClass;
 
     struct MyClass;
@@ -466,6 +494,7 @@ mod tests {
     #[test]
     fn test_konce_cell_init_and_get() {
         let cell: KOnceCell<u32, MyClass> = KOnceCell::new();
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
         unsafe {
             let mut token = LockToken::new();
             assert!(!cell.is_initialized(&token));
@@ -487,6 +516,7 @@ mod tests {
     #[test]
     fn test_konce_cell_set() {
         let cell: KOnceCell<u32, MyClass> = KOnceCell::default();
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
         unsafe {
             let mut token = LockToken::new();
             assert_eq!(cell.set(100, &mut token), Ok(()));
@@ -498,6 +528,7 @@ mod tests {
     #[test]
     fn test_konce_cell_try_init() {
         let cell: KOnceCell<u32, MyClass> = KOnceCell::new();
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
         unsafe {
             let mut token = LockToken::new();
             let err_res = cell.get_or_try_init(|| Err::<u32, _>("failed"), &mut token);
@@ -513,6 +544,7 @@ mod tests {
     #[test]
     fn test_konce_cell_pin_init() {
         let cell: KOnceCell<u32, MyClass> = KOnceCell::new();
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
         unsafe {
             let mut token = LockToken::new();
             let init = pin_init::pin_init_from_closure(|slot: *mut u32| {
@@ -533,12 +565,13 @@ mod tests {
         struct DropDetector;
         impl Drop for DropDetector {
             fn drop(&mut self) {
-                DROP_COUNT.fetch_add(1, Ordering::Relaxed);
+                let _ = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
             }
         }
 
         {
             let cell: KOnceCell<DropDetector, MyClass> = KOnceCell::new();
+            // SAFETY: Single-threaded test with exclusive access to `cell`.
             unsafe {
                 let mut token = LockToken::new();
                 let _ = cell.get_or_init(|| DropDetector, &mut token);
@@ -551,6 +584,7 @@ mod tests {
     #[test]
     fn test_konce_cell_guard() {
         let cell: KOnceCell<u32, MyClass> = KOnceCell::new();
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
         unsafe {
             let mut token = LockToken::new();
             let mut guard = cell.guard(&mut token);
@@ -564,6 +598,72 @@ mod tests {
             assert_eq!(guard.get(), Some(&123));
             assert_eq!(guard.get_mut(), Some(&mut 123));
             assert_eq!(guard.set(456), Err(456));
+        }
+    }
+
+    struct SecondClass;
+    impl LockClass for SecondClass {
+        const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+    }
+
+    #[test]
+    fn test_konce_cell_multi_lock() {
+        // 1. Test `is_initialized`, `get`, `set`, `get_mut`, and `guard` with 2 locks.
+        let cell: KOnceCell<u32, (MyClass, SecondClass)> = KOnceCell::new();
+        // SAFETY: Single-threaded test with exclusive access to `cell`.
+        unsafe {
+            let mut t1 = LockToken::<MyClass>::new();
+            let mut t2 = LockToken::<SecondClass>::new();
+
+            assert!(!cell.is_initialized(&t1));
+            assert!(!cell.is_initialized(&t2));
+            assert_eq!(cell.get(&t1), None);
+            assert_eq!(cell.get(&t2), None);
+
+            assert_eq!(cell.set(10, t2.join(&mut t1)), Ok(()));
+            assert!(cell.is_initialized(&t1));
+            assert!(cell.is_initialized(&t2));
+            assert_eq!(cell.get(&t1), Some(&10));
+            assert_eq!(cell.get(&t2), Some(&10));
+
+            *cell.get_mut(t1.join(&mut t2)).unwrap() = 20;
+            assert_eq!(cell.get(&t1), Some(&20));
+
+            *cell.get_mut(t2.join(&mut t1)).unwrap() = 30;
+            assert_eq!(cell.get(&t2), Some(&30));
+
+            let mut g = cell.guard(t2.join(&mut t1));
+            assert_eq!(g.get(), Some(&30));
+            *g.get_mut().unwrap() = 40;
+            assert_eq!(cell.get(&t1), Some(&40));
+        }
+
+        // 2. Test `get_or_init`, `get_or_try_init`, and `get_or_pin_init` with joined tokens.
+        let cell_init: KOnceCell<u32, (MyClass, SecondClass)> = KOnceCell::new();
+        let cell_try: KOnceCell<u32, (MyClass, SecondClass)> = KOnceCell::new();
+        let cell_pin: KOnceCell<u32, (MyClass, SecondClass)> = KOnceCell::new();
+        // SAFETY: Single-threaded test with exclusive access to the cells.
+        unsafe {
+            let mut t1 = LockToken::<MyClass>::new();
+            let mut t2 = LockToken::<SecondClass>::new();
+
+            let val = cell_init.get_or_init(|| 111, t1.join(&mut t2));
+            assert_eq!(*val, 111);
+            assert_eq!(cell_init.get(&t2), Some(&111));
+
+            let err = cell_try.get_or_try_init(|| Err::<u32, _>("err"), t2.join(&mut t1));
+            assert_eq!(err, Err("err"));
+            let ok = cell_try.get_or_try_init(|| Ok::<u32, &'static str>(222), t1.join(&mut t2));
+            assert_eq!(ok, Ok(&mut 222));
+            assert_eq!(cell_try.get(&t1), Some(&222));
+
+            let init = pin_init::pin_init_from_closure(|slot: *mut u32| {
+                slot.write(333);
+                Ok::<(), core::convert::Infallible>(())
+            });
+            let pinned = cell_pin.get_or_pin_init(init, t2.join(&mut t1));
+            assert_eq!(pinned, Ok(&mut 333));
+            assert_eq!(cell_pin.get(&t1), Some(&333));
         }
     }
 }

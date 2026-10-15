@@ -108,6 +108,7 @@ impl Default for RawMutex {
 
 // SAFETY: RawMutex is safe to share and access across threads.
 unsafe impl Sync for RawMutex {}
+// SAFETY: RawMutex is safe to send across threads.
 unsafe impl Send for RawMutex {}
 
 zr::unsafe_pinned_drop_ffi!(RawMutex, cpp_mutex_destroy);
@@ -138,6 +139,7 @@ unsafe impl crate::LockPolicy<RawMutex> for RawMutexPolicy {
         entry: *mut LockEntryStorage,
         state: &mut Self::GuardState,
     ) {
+        // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
         *state = unsafe { Self::acquire(lock, entry, ()) };
     }
 
@@ -221,6 +223,7 @@ impl Default for RawCriticalMutex {
 
 // SAFETY: RawCriticalMutex is safe to share and access across threads.
 unsafe impl Sync for RawCriticalMutex {}
+// SAFETY: RawCriticalMutex is safe to send across threads.
 unsafe impl Send for RawCriticalMutex {}
 
 zr::unsafe_pinned_drop_ffi!(RawCriticalMutex, cpp_critical_mutex_destroy);
@@ -250,6 +253,7 @@ unsafe impl crate::LockPolicy<RawCriticalMutex> for RawCriticalMutexPolicy {
         entry: *mut LockEntryStorage,
         state: &mut Self::GuardState,
     ) {
+        // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
         *state = unsafe { Self::acquire(lock, entry, ()) };
     }
 

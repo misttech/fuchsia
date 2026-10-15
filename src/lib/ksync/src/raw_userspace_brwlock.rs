@@ -14,6 +14,7 @@ pub struct RawBrwLockPi {
 
 // SAFETY: RawBrwLockPi is safe to share across threads.
 unsafe impl Sync for RawBrwLockPi {}
+// SAFETY: RawBrwLockPi is safe to send across threads.
 unsafe impl Send for RawBrwLockPi {}
 
 impl RawBrwLockPi {

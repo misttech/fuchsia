@@ -2,6 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![deny(
+    dead_code,
+    unused_parens,
+    unused_results,
+    unsafe_op_in_unsafe_fn,
+    missing_unsafe_on_extern,
+    unsafe_attr_outside_unsafe,
+    non_local_definitions,
+    mismatched_lifetime_syntaxes,
+    clippy::all,
+    clippy::missing_safety_doc,
+    clippy::undocumented_unsafe_blocks,
+    clippy::not_unsafe_ptr_arg_deref,
+    clippy::new_without_default
+)]
+
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::punctuated::Punctuated;
@@ -20,7 +36,7 @@ struct MutexField {
 
 struct GuardedField {
     ident: Ident,
-    mutex_ident: Ident,
+    mutex_idents: Vec<Ident>,
     ty: Type,
     vis: syn::Visibility,
     project_as_pin: bool,
@@ -31,7 +47,7 @@ struct GuardedField {
 struct FieldAttrAnalysis {
     is_mutex: bool,
     is_brwlock: bool,
-    guarded_by: Option<Ident>,
+    guarded_by: Vec<Ident>,
     is_pinned: bool,
     is_unpinned: bool,
     custom_class: Option<Type>,
@@ -95,7 +111,7 @@ fn parse_field_attributes(
     let mut analysis = FieldAttrAnalysis {
         is_mutex: false,
         is_brwlock: false,
-        guarded_by: None,
+        guarded_by: Vec::new(),
         is_pinned: false,
         is_unpinned: false,
         custom_class: None,
@@ -141,24 +157,49 @@ fn parse_field_attributes(
             false
         } else if attr.path().is_ident("guarded_by") {
             if let syn::Meta::List(meta_list) = &attr.meta {
-                if let Ok(ident) = meta_list.parse_args::<Ident>() {
-                    analysis.guarded_by = Some(ident);
+                match meta_list
+                    .parse_args_with(Punctuated::<Ident, syn::Token![,]>::parse_terminated)
+                {
+                    Ok(idents) if idents.is_empty() => {
+                        errors.push(syn::Error::new(
+                            attr.meta.span(),
+                            "#[guarded_by(...)] requires at least one lock identifier",
+                        ));
+                    }
+                    Ok(idents) => {
+                        for ident in idents {
+                            if analysis.guarded_by.contains(&ident) {
+                                errors.push(syn::Error::new(
+                                    ident.span(),
+                                    format!("Duplicate lock '{ident}' in #[guarded_by] attribute"),
+                                ));
+                            } else {
+                                analysis.guarded_by.push(ident);
+                            }
+                        }
+                    }
+                    Err(e) => errors.push(e),
                 }
+            } else {
+                errors.push(syn::Error::new(
+                    attr.meta.span(),
+                    "#[guarded_by] attribute must be a list of lock identifiers, e.g., \
+                     #[guarded_by(lock1, lock2)]",
+                ));
             }
             false
         } else if attr.path().is_ident("pin") {
             analysis.is_pinned = true;
             true
         } else if attr.path().is_ident("ksync") {
-            if let syn::Meta::List(meta_list) = &attr.meta {
-                if let Ok(ident) = meta_list.parse_args::<Ident>() {
-                    if ident == "unpinned" {
-                        // TODO(https://fxbug.dev/536051491): Remove this workaround once
-                        // WavlTree/region-alloc support safe pin projection.
-                        analysis.is_unpinned = true;
-                        return false;
-                    }
-                }
+            if let syn::Meta::List(meta_list) = &attr.meta
+                && let Ok(ident) = meta_list.parse_args::<Ident>()
+                && ident == "unpinned"
+            {
+                // TODO(https://fxbug.dev/536051491): Remove this workaround once
+                // WavlTree/region-alloc support safe pin projection.
+                analysis.is_unpinned = true;
+                return false;
             }
             true
         } else {
@@ -250,6 +291,21 @@ fn extract_generics_info<'a>(generics: &'a syn::Generics) -> GenericsInfo<'a> {
     }
 }
 
+/// Holds the generated accessor methods and field projection entries for a single lock (`mu`) on a
+/// `#[guarded]` struct.
+///
+/// For each field `#[guarded_by(...)]` whose lock list includes `mu`:
+/// - **Read access (`read_*`)**: Holding `mu` alone is sufficient to read both single-lock
+///   (`#[guarded_by(mu)]`) and multi-lock (`#[guarded_by(mu, other)]`) fields, because mutating the
+///   field requires holding *all* guarding locks simultaneously.
+/// - **Write access (`write_*`)**:
+///   - Single-lock fields (`#[guarded_by(mu)]`) are projected mutably (`&'b mut T`) in `FieldsMut`
+///     and their `_mut(&mut self)` accessor requires no extra arguments.
+///   - Multi-lock fields (`#[guarded_by(mu, other, ...)]`) are projected immutably (`&'b T`) in
+///     `FieldsMut` (since `FieldsMut` only proves `mu` is held), while their `_mut` / `_cell`
+///     accessors accept an `&'f mut impl ExclusiveLockToken<OtherClass>` parameter for each
+///     remaining lock, assert that any guard arguments belong to the same parent struct instance,
+///     and join all lock tokens before calling `KCell::get_mut` / `KOnceCell::guard`.
 #[derive(Default)]
 struct FieldCode {
     read_token_guard_accessors: proc_macro2::TokenStream,
@@ -264,7 +320,10 @@ struct FieldCode {
 
 fn generate_field_code(
     guarded_fields: &[&GuardedField],
+    current_lock_ident: &Ident,
     class_type: &proc_macro2::TokenStream,
+    all_locks: &[&MutexField],
+    parent_ty: &proc_macro2::TokenStream,
 ) -> FieldCode {
     let mut code = FieldCode::default();
 
@@ -274,15 +333,18 @@ fn generate_field_code(
         let f_vis = &f.vis;
         let f_mut_ident = format_ident!("{}_mut", f_ident);
         let f_cell_ident = format_ident!("{}_cell", f_ident);
+        let is_multi_lock = f.mutex_idents.len() > 1;
 
-        // Read accessors and fields
+        // 1. Read accessors (`guard.field()`) and read-only field projections (`guard.fields()`).
+        //    Identical for single-lock and multi-lock fields: holding `current_lock_ident` is
+        //    sufficient for shared read access via `LockTokenRead`.
         if f.is_konce_cell {
             let inner_ty = f.konce_cell_inner_ty.as_ref().unwrap();
 
             code.read_token_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> ::core::option::Option<&#inner_ty> {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(self.token) }
                 }
             });
@@ -290,7 +352,7 @@ fn generate_field_code(
             code.read_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> ::core::option::Option<&#inner_ty> {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(self.inner.token()) }
                 }
             });
@@ -308,7 +370,7 @@ fn generate_field_code(
             code.read_token_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> &#f_ty {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(self.token) }
                 }
             });
@@ -316,7 +378,7 @@ fn generate_field_code(
             code.read_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> &#f_ty {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(self.inner.token()) }
                 }
             });
@@ -332,161 +394,392 @@ fn generate_field_code(
             });
         }
 
-        // Write accessors and fields
+        // 2. Write accessors (`guard.as_mut().field_mut(...)`) and `fields_mut()` projections.
+        //    - For single-lock fields (`#[guarded_by(mu1)]`):
+        //      * `other_token_params` is empty, so
+        //        `field_mut(self: Pin<&'f mut Self>) -> &'f mut T`.
+        //      * `joined_guard_expr` is `self_token`.
+        //      * `fields_mut()` projects the field mutably (`&'b mut T`).
+        //    - For multi-lock fields (`#[guarded_by(mu1, mu2)]`):
+        //      * `other_token_params` contains
+        //        `mu2_token: &'f mut impl ExclusiveLockToken<Mu2Class>`.
+        //      * `joined_guard_expr` asserts `mu2_token` belongs to the same struct instance (if
+        //        bound to a parent guard) and joins the tokens via
+        //        `self_token.join(mu2_token.lock_token_mut())`.
+        //      * `fields_mut()` projects the field immutably (`&'b T`).
+        let cell_class_type = if is_multi_lock {
+            let lock_class_types: Vec<&proc_macro2::TokenStream> = f
+                .mutex_idents
+                .iter()
+                .map(|id| {
+                    &all_locks
+                        .iter()
+                        .find(|m| m.ident == *id)
+                        .expect("validated lock ident")
+                        .class_type
+                })
+                .collect();
+            quote! { (#(#lock_class_types),*) }
+        } else {
+            quote! { #class_type }
+        };
+
+        let other_token_params: Vec<proc_macro2::TokenStream> = f
+            .mutex_idents
+            .iter()
+            .filter(|id| *id != current_lock_ident)
+            .map(|id| {
+                let param_ident = format_ident!("{}_token", id);
+                let other_class_type = &all_locks
+                    .iter()
+                    .find(|m| m.ident == *id)
+                    .expect("validated lock ident")
+                    .class_type;
+                quote! {
+                    #param_ident: &'f mut impl ::ksync::ExclusiveLockToken<
+                        #parent_ty,
+                        #other_class_type,
+                    >
+                }
+            })
+            .collect();
+
+        let token_guard_parent_asserts: Vec<proc_macro2::TokenStream> = f
+            .mutex_idents
+            .iter()
+            .filter(|id| *id != current_lock_ident)
+            .map(|id| {
+                let param_ident = format_ident!("{}_token", id);
+                quote! {
+                    assert!(
+                        ::core::ptr::eq(
+                            ::core::ptr::from_ref(self.parent),
+                            ::ksync::ExclusiveLockToken::parent(#param_ident),
+                        ),
+                        "Lock guard belongs to a different struct instance",
+                    );
+                }
+            })
+            .collect();
+
+        let guard_parent_asserts: Vec<proc_macro2::TokenStream> = f
+            .mutex_idents
+            .iter()
+            .filter(|id| *id != current_lock_ident)
+            .map(|id| {
+                let param_ident = format_ident!("{}_token", id);
+                quote! {
+                    assert!(
+                        ::core::ptr::eq(
+                            ::core::ptr::from_ref(me.parent),
+                            ::ksync::ExclusiveLockToken::parent(#param_ident),
+                        ),
+                        "Lock guard belongs to a different struct instance",
+                    );
+                }
+            })
+            .collect();
+
+        let token_guard_parts: Vec<proc_macro2::TokenStream> = f
+            .mutex_idents
+            .iter()
+            .map(|id| {
+                if id == current_lock_ident {
+                    if is_multi_lock {
+                        quote! { (&mut *self.token) }
+                    } else {
+                        quote! { &mut *self.token }
+                    }
+                } else {
+                    let param_ident = format_ident!("{}_token", id);
+                    quote! { ::ksync::ExclusiveLockToken::lock_token_mut(#param_ident) }
+                }
+            })
+            .collect();
+        let mut joined_token_guard_expr = token_guard_parts[0].clone();
+        for part in &token_guard_parts[1..] {
+            joined_token_guard_expr = quote! { #joined_token_guard_expr.join(#part) };
+        }
+        if !token_guard_parent_asserts.is_empty() {
+            joined_token_guard_expr = quote! {
+                {
+                    #(#token_guard_parent_asserts)*
+                    #joined_token_guard_expr
+                }
+            };
+        }
+
+        let guard_parts: Vec<proc_macro2::TokenStream> = f
+            .mutex_idents
+            .iter()
+            .map(|id| {
+                if id == current_lock_ident {
+                    quote! { self_token }
+                } else {
+                    let param_ident = format_ident!("{}_token", id);
+                    quote! { ::ksync::ExclusiveLockToken::lock_token_mut(#param_ident) }
+                }
+            })
+            .collect();
+        let mut joined_guard_expr = guard_parts[0].clone();
+        for part in &guard_parts[1..] {
+            joined_guard_expr = quote! { #joined_guard_expr.join(#part) };
+        }
+        if !guard_parent_asserts.is_empty() {
+            joined_guard_expr = quote! {
+                {
+                    #(#guard_parent_asserts)*
+                    #joined_guard_expr
+                }
+            };
+        }
+
         if f.is_konce_cell {
+            // Branch A: `KOnceCell<InnerTy>` fields (`field() -> Option<&InnerTy>`,
+            // `field_mut(...) -> Option<&mut InnerTy>`, `field_cell(...) -> KOnceCellGuard<...>`).
             let inner_ty = f.konce_cell_inner_ty.as_ref().unwrap();
 
             code.write_token_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> ::core::option::Option<&#inner_ty> {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(&*self.token) }
                 }
 
                 #[inline]
-                #f_vis fn #f_mut_ident(&mut self) -> ::core::option::Option<&mut #inner_ty> {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
-                    unsafe { self.parent.#f_ident.get_mut(&mut *self.token) }
+                #f_vis fn #f_mut_ident<'f>(
+                    &'f mut self,
+                    #(#other_token_params),*
+                ) -> ::core::option::Option<&'f mut #inner_ty> {
+                    let token = #joined_token_guard_expr;
+                    // SAFETY: We hold exclusive mutable references to all lock tokens guarding
+                    // this cell.
+                    unsafe { self.parent.#f_ident.get_mut(token) }
                 }
 
                 #[inline]
-                #f_vis fn #f_cell_ident(&mut self) -> ::ksync::KOnceCellGuard<'_, #inner_ty, #class_type> {
-                    // SAFETY: We hold an exclusive mutable reference to the guard token.
-                    unsafe { self.parent.#f_ident.guard(&mut *self.token) }
+                #f_vis fn #f_cell_ident<'f>(
+                    &'f mut self,
+                    #(#other_token_params),*
+                ) -> ::ksync::KOnceCellGuard<'f, #inner_ty, #cell_class_type> {
+                    let token = #joined_token_guard_expr;
+                    // SAFETY: We hold exclusive mutable references to all lock tokens guarding
+                    // this cell.
+                    unsafe { self.parent.#f_ident.guard(token) }
                 }
             });
 
             code.write_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> ::core::option::Option<&#inner_ty> {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(self.inner.token()) }
                 }
 
                 #[inline]
-                #f_vis fn #f_mut_ident(self: ::core::pin::Pin<&mut Self>) -> ::core::option::Option<&mut #inner_ty> {
+                #f_vis fn #f_mut_ident<'f>(
+                    self: ::core::pin::Pin<&'f mut Self>,
+                    #(#other_token_params),*
+                ) -> ::core::option::Option<&'f mut #inner_ty> {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-                    // SAFETY: We hold an exclusive mutable reference to the guard token.
-                    unsafe { me.parent.#f_ident.get_mut(inner_pin.token_mut()) }
+                    let self_token = inner_pin.token_mut();
+                    let token = #joined_guard_expr;
+                    // SAFETY: We hold exclusive mutable references to all lock tokens guarding
+                    // this cell.
+                    unsafe { me.parent.#f_ident.get_mut(token) }
                 }
 
                 #[inline]
-                #f_vis fn #f_cell_ident(self: ::core::pin::Pin<&mut Self>) -> ::ksync::KOnceCellGuard<'_, #inner_ty, #class_type> {
+                #f_vis fn #f_cell_ident<'f>(
+                    self: ::core::pin::Pin<&'f mut Self>,
+                    #(#other_token_params),*
+                ) -> ::ksync::KOnceCellGuard<'f, #inner_ty, #cell_class_type> {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-                    // SAFETY: We hold an exclusive mutable reference to the guard token.
-                    unsafe { me.parent.#f_ident.guard(inner_pin.token_mut()) }
+                    let self_token = inner_pin.token_mut();
+                    let token = #joined_guard_expr;
+                    // SAFETY: We hold exclusive mutable references to all lock tokens guarding
+                    // this cell.
+                    unsafe { me.parent.#f_ident.guard(token) }
                 }
             });
 
-            code.write_fields_decl.extend(quote! {
-                #[allow(dead_code)]
-                #f_vis #f_ident: ::core::option::Option<&'b mut #inner_ty>,
-            });
+            if is_multi_lock {
+                code.write_fields_decl.extend(quote! {
+                    #[allow(dead_code)]
+                    #f_vis #f_ident: ::core::option::Option<&'b #inner_ty>,
+                });
 
-            code.write_fields_init.extend(quote! {
-                // SAFETY: We hold exclusive access to the guard token and each field cell
-                // is disjoint.
-                #f_ident: unsafe { me.parent.#f_ident.get_mut_unchecked() },
-            });
+                code.write_fields_init.extend(quote! {
+                    // SAFETY: Holding one of the guarding locks guarantees shared access to the
+                    // cell.
+                    #f_ident: unsafe { me.parent.#f_ident.get_unchecked() },
+                });
+            } else {
+                code.write_fields_decl.extend(quote! {
+                    #[allow(dead_code)]
+                    #f_vis #f_ident: ::core::option::Option<&'b mut #inner_ty>,
+                });
+
+                code.write_fields_init.extend(quote! {
+                    // SAFETY: We hold exclusive access to the guard token and each field cell
+                    // is disjoint.
+                    #f_ident: unsafe { me.parent.#f_ident.get_mut_unchecked() },
+                });
+            }
         } else if f.project_as_pin {
+            // Branch B: Structurally pinned `#[pin]` fields (`field() -> &T`,
+            // `field_mut(...) -> Pin<&mut T>`).
             code.write_token_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> &#f_ty {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(&*self.token) }
                 }
 
                 #[inline]
-                #f_vis fn #f_mut_ident(&mut self) -> ::core::pin::Pin<&mut #f_ty> {
-                    // SAFETY: We hold an exclusive mutable reference to the guard token,
-                    // and the parent struct is pinned so structurally pinned fields remain pinned.
-                    unsafe { ::core::pin::Pin::new_unchecked(self.parent.#f_ident.get_mut(&mut *self.token)) }
+                #f_vis fn #f_mut_ident<'f>(
+                    &'f mut self,
+                    #(#other_token_params),*
+                ) -> ::core::pin::Pin<&'f mut #f_ty> {
+                    let token = #joined_token_guard_expr;
+                    // SAFETY: We hold exclusive mutable references to all lock tokens guarding
+                    // this cell, and the parent struct is pinned so structurally pinned fields
+                    // remain pinned.
+                    unsafe { ::core::pin::Pin::new_unchecked(self.parent.#f_ident.get_mut(token)) }
                 }
             });
 
             code.write_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> &#f_ty {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(self.inner.token()) }
                 }
 
                 #[inline]
-                #f_vis fn #f_mut_ident(self: ::core::pin::Pin<&mut Self>) -> ::core::pin::Pin<&mut #f_ty> {
-                    // SAFETY: Safe projection to obtain pinned reference to self
-                    // without moving fields.
+                #f_vis fn #f_mut_ident<'f>(
+                    self: ::core::pin::Pin<&'f mut Self>,
+                    #(#other_token_params),*
+                ) -> ::core::pin::Pin<&'f mut #f_ty> {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
-                    // SAFETY: `inner` is structurally pinned inside the pinned guard `self`.
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-                    // SAFETY: We hold an exclusive mutable reference to the guard token,
-                    // and the parent is pinned.
-                    unsafe { ::core::pin::Pin::new_unchecked(me.parent.#f_ident.get_mut(inner_pin.token_mut())) }
+                    let self_token = inner_pin.token_mut();
+                    let token = #joined_guard_expr;
+                    // SAFETY: We hold exclusive mutable references to all lock tokens guarding
+                    // this cell, and the parent is pinned.
+                    unsafe { ::core::pin::Pin::new_unchecked(me.parent.#f_ident.get_mut(token)) }
                 }
             });
 
-            code.write_fields_decl.extend(quote! {
-                #[allow(dead_code)]
-                #f_vis #f_ident: ::core::pin::Pin<&'b mut #f_ty>,
-            });
+            if is_multi_lock {
+                code.write_fields_decl.extend(quote! {
+                    #[allow(dead_code)]
+                    #f_vis #f_ident: &'b #f_ty,
+                });
 
-            code.write_fields_init.extend(quote! {
-                // SAFETY: We hold exclusive access to the guard token, each field cell
-                // is disjoint, and the parent struct is pinned so structurally pinned
-                // fields remain pinned.
-                #f_ident: unsafe { ::core::pin::Pin::new_unchecked(&mut *me.parent.#f_ident.as_mut_ptr(token)) },
-            });
+                code.write_fields_init.extend(quote! {
+                    // SAFETY: Holding one of the guarding locks guarantees shared access to the
+                    // cell.
+                    #f_ident: unsafe { &*me.parent.#f_ident.as_ptr(&*token) },
+                });
+            } else {
+                code.write_fields_decl.extend(quote! {
+                    #[allow(dead_code)]
+                    #f_vis #f_ident: ::core::pin::Pin<&'b mut #f_ty>,
+                });
+
+                code.write_fields_init.extend(quote! {
+                    // SAFETY: We hold exclusive access to the guard token, each field cell
+                    // is disjoint, and the parent struct is pinned so structurally pinned
+                    // fields remain pinned.
+                    #f_ident: unsafe {
+                        ::core::pin::Pin::new_unchecked(&mut *me.parent.#f_ident.as_mut_ptr(token))
+                    },
+                });
+            }
         } else {
+            // Branch C: Standard `KCell<T>` fields (`field() -> &T`, `field_mut(...) -> &mut T`).
             code.write_token_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> &#f_ty {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(&*self.token) }
                 }
 
                 #[inline]
-                #f_vis fn #f_mut_ident(&mut self) -> &mut #f_ty {
-                    // SAFETY: We hold an exclusive mutable reference to the guard token.
-                    unsafe { self.parent.#f_ident.get_mut(&mut *self.token) }
+                #f_vis fn #f_mut_ident<'f>(
+                    &'f mut self,
+                    #(#other_token_params),*
+                ) -> &'f mut #f_ty {
+                    let token = #joined_token_guard_expr;
+                    // SAFETY: We hold exclusive mutable references to all lock tokens guarding
+                    // this cell.
+                    unsafe { self.parent.#f_ident.get_mut(token) }
                 }
             });
 
             code.write_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> &#f_ty {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    // SAFETY: The lock token proves that a lock protecting this cell is held.
                     unsafe { self.parent.#f_ident.get(self.inner.token()) }
                 }
 
                 #[inline]
-                #f_vis fn #f_mut_ident(self: ::core::pin::Pin<&mut Self>) -> &mut #f_ty {
-                    // SAFETY: Safe projection to obtain unpinned reference to self
-                    // without moving fields.
+                #f_vis fn #f_mut_ident<'f>(
+                    self: ::core::pin::Pin<&'f mut Self>,
+                    #(#other_token_params),*
+                ) -> &'f mut #f_ty {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
-                    // SAFETY: `inner` is structurally pinned inside the pinned guard `self`.
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-                    // SAFETY: We hold an exclusive mutable reference to the guard token.
-                    unsafe { me.parent.#f_ident.get_mut(inner_pin.token_mut()) }
+                    let self_token = inner_pin.token_mut();
+                    let token = #joined_guard_expr;
+                    // SAFETY: We hold exclusive mutable references to all lock tokens guarding
+                    // this cell.
+                    unsafe { me.parent.#f_ident.get_mut(token) }
                 }
             });
 
-            code.write_fields_decl.extend(quote! {
-                #[allow(dead_code)]
-                #f_vis #f_ident: &'b mut #f_ty,
-            });
+            if is_multi_lock {
+                code.write_fields_decl.extend(quote! {
+                    #[allow(dead_code)]
+                    #f_vis #f_ident: &'b #f_ty,
+                });
 
-            code.write_fields_init.extend(quote! {
-                // SAFETY: We hold exclusive access to the guard token and each field cell
-                // is disjoint.
-                #f_ident: unsafe { &mut *me.parent.#f_ident.as_mut_ptr(token) },
-            });
+                code.write_fields_init.extend(quote! {
+                    // SAFETY: Holding one of the guarding locks guarantees shared access to the
+                    // cell.
+                    #f_ident: unsafe { &*me.parent.#f_ident.as_ptr(&*token) },
+                });
+            } else {
+                code.write_fields_decl.extend(quote! {
+                    #[allow(dead_code)]
+                    #f_vis #f_ident: &'b mut #f_ty,
+                });
+
+                code.write_fields_init.extend(quote! {
+                    // SAFETY: We hold exclusive access to the guard token and each field cell
+                    // is disjoint.
+                    #f_ident: unsafe { &mut *me.parent.#f_ident.as_mut_ptr(token) },
+                });
+            }
         }
     }
 
     code
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_lock_class_registration(
     struct_ident: &Ident,
     lock_ident: &Ident,
@@ -522,17 +815,23 @@ fn generate_fields_struct(
     fields_decl_generics: &proc_macro2::TokenStream,
     where_clause: Option<&syn::WhereClause>,
     fields_decl: &proc_macro2::TokenStream,
+    phantom_lifetimes: &[&syn::Lifetime],
     phantom_ty_params: &[&Ident],
 ) -> proc_macro2::TokenStream {
     quote! {
         #[allow(dead_code)]
         #struct_vis struct #fields_ident #fields_decl_generics #where_clause {
             #fields_decl
-            _marker: ::core::marker::PhantomData<(&'b (), #(#phantom_ty_params),*)>,
+            _marker: ::core::marker::PhantomData<(
+                &'b (),
+                #(& #phantom_lifetimes (),)*
+                #(#phantom_ty_params),*
+            )>,
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_token_guard(
     struct_vis: &syn::Visibility,
     struct_ident: &Ident,
@@ -569,6 +868,7 @@ fn generate_token_guard(
             }
 
             #[inline]
+            #[allow(unused_variables)]
             #struct_vis fn fields<'f>(&'f self) -> #fields_ident #fields_ret_ty_generics {
                 let me = self;
                 let token = me.token;
@@ -581,6 +881,7 @@ fn generate_token_guard(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_token_guard_mut(
     struct_vis: &syn::Visibility,
     struct_ident: &Ident,
@@ -605,6 +906,23 @@ fn generate_token_guard_mut(
         #struct_vis struct #token_guard_mut_ident #token_guard_decl_generics #where_clause {
             parent: &'b #struct_ident #ty_generics,
             token: &'b mut ::ksync::LockToken<'a, #class_type>,
+        }
+
+        // SAFETY: `#token_guard_mut_ident` holds an exclusive mutable reference to the lock token
+        // for `self.parent`.
+        unsafe impl #token_guard_impl_generics
+            ::ksync::ExclusiveLockToken<#struct_ident #ty_generics, #class_type>
+            for #token_guard_mut_ident #token_guard_ty_generics #where_clause
+        {
+            #[inline]
+            fn parent(&self) -> *const #struct_ident #ty_generics {
+                ::core::ptr::from_ref(self.parent)
+            }
+
+            #[inline]
+            fn lock_token_mut(&mut self) -> &mut ::ksync::LockToken<'_, #class_type> {
+                self.token_mut().reborrow()
+            }
         }
 
         impl #token_guard_impl_generics #token_guard_mut_ident #token_guard_ty_generics #where_clause {
@@ -646,6 +964,7 @@ fn generate_token_guard_mut(
             }
 
             #[inline]
+            #[allow(unused_variables)]
             #struct_vis fn fields<'f>(&'f self) -> #read_fields_ident #fields_ret_ty_generics {
                 let me = self;
                 let token = &*me.token;
@@ -656,6 +975,7 @@ fn generate_token_guard_mut(
             }
 
             #[inline]
+            #[allow(unused_variables)]
             #struct_vis fn fields_mut<'f>(&'f mut self) -> #write_fields_ident #fields_ret_ty_generics {
                 let me = self;
                 let token = &mut *me.token;
@@ -668,6 +988,7 @@ fn generate_token_guard_mut(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_pinned_guard_struct(
     struct_vis: &syn::Visibility,
     struct_ident: &Ident,
@@ -694,9 +1015,135 @@ fn generate_pinned_guard_struct(
     }
 }
 
+/// Instruments a struct with lock-class registration, `KCell`/`KOnceCell` field wrapping, and
+/// type-safe lock guard accessors.
+///
+/// # Attributes
+///
+/// - `#[mutex]` / `#[mutex(CustomClass, flags = ...)]`: Marks a `KMutex`, `KSpinlock`, or
+///   `KMonitoredSpinlock` field and generates a lock class and `lock_<name>()` / `guard_<name>()`
+///   methods.
+/// - `#[brwlock]` / `#[brwlock(flags = ...)]`: Marks a `BrwLockPi` field and generates a lock class
+///   and `read_<name>()` / `write_<name>()` / `guard_read_<name>()` / `guard_write_<name>()`
+///   methods.
+/// - `#[guarded_by(lock1)]` or `#[guarded_by(lock1, lock2, ...)]`: Wraps a field in `KCell` (or
+///   parameterizes a `KOnceCell<T>` field) with the lock class (or tuple of lock classes) of the
+///   specified lock(s).
+///   - **Single-lock (`#[guarded_by(mu1)]`)**: Holding `mu1` grants both shared (`&T`) and
+///     exclusive (`&mut T`) access via `guard.field()`, `guard.as_mut().field_mut()`, and
+///     `guard.as_mut().fields_mut().field`.
+///   - **Multi-lock (`#[guarded_by(mu1, mu2, ...)]`)**: Holding *any* one of the guarding locks
+///     grants shared read access (`&T`) via `guard.field()`, `guard.fields().field`, and
+///     `guard.as_mut().fields_mut().field` (which projects the field as `&T` rather than `&mut T`).
+///     Mutating the field requires holding *all* guarding locks simultaneously and passing the
+///     remaining lock guards or tokens to `guard.as_mut().field_mut(&mut other_guard, ...)`.
+///
+/// # Generated Code Example (Multi-Lock Field)
+///
+/// Given the following input struct:
+///
+/// ```ignore
+/// #[guarded]
+/// struct Example {
+///     #[mutex]
+///     mu1: KMutex,
+///     #[mutex]
+///     mu2: KMutex,
+///     #[guarded_by(mu1)]
+///     single: u32,
+///     #[guarded_by(mu1, mu2)]
+///     shared: u64,
+/// }
+/// ```
+///
+/// `#[guarded]` expands to the following (simplified for `mu1`; `mu2` is generated symmetrically):
+///
+/// ```ignore
+/// #[derive(Default, Debug, Clone, Copy)]
+/// struct ExampleMu1Class;
+/// #[derive(Default, Debug, Clone, Copy)]
+/// struct ExampleMu2Class;
+///
+/// #[::pin_init::pin_data]
+/// struct Example {
+///     #[pin]
+///     mu1: KMutex<ExampleMu1Class, ::ksync::RawMutex>,
+///     #[pin]
+///     mu2: KMutex<ExampleMu2Class, ::ksync::RawMutex>,
+///     single: ::ksync::KCell<u32, ExampleMu1Class>,
+///     shared: ::ksync::KCell<u64, (ExampleMu1Class, ExampleMu2Class)>,
+/// }
+///
+/// // Read-only projection (`g1.fields()`): all fields guarded by `mu1` are `&'b T`.
+/// struct ExampleMu1Fields<'b> {
+///     single: &'b u32,
+///     shared: &'b u64,
+///     _marker: ::core::marker::PhantomData<(&'b (),)>,
+/// }
+///
+/// // Mutable projection (`g1.as_mut().fields_mut()`):
+/// // - Single-lock `single` is projected mutably (`&'b mut u32`).
+/// // - Multi-lock `shared` is projected immutably (`&'b u64`) because holding only `mu1`
+/// //   only suffices to read `shared`.
+/// struct ExampleMu1FieldsMut<'b> {
+///     single: &'b mut u32,
+///     shared: &'b u64,
+///     _marker: ::core::marker::PhantomData<(&'b (),)>,
+/// }
+///
+/// impl<'a, P: ::ksync::LockPolicy<::ksync::RawMutex>> ExampleMu1Guard<'a, P> {
+///     fn single(&self) -> &u32 {
+///         unsafe { self.parent.single.get(self.inner.token()) }
+///     }
+///
+///     fn single_mut<'f>(self: ::core::pin::Pin<&'f mut Self>) -> &'f mut u32 {
+///         let me = unsafe { self.get_unchecked_mut() };
+///         let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+///         let self_token = inner_pin.token_mut();
+///         let token = self_token;
+///         unsafe { me.parent.single.get_mut(token) }
+///     }
+///
+///     // Holding `mu1` alone is sufficient to read `shared`:
+///     fn shared(&self) -> &u64 {
+///         unsafe { self.parent.shared.get(self.inner.token()) }
+///     }
+///
+///     // Mutating `shared` requires `self` (`mu1`) plus an exclusive token/guard for `mu2`:
+///     fn shared_mut<'f>(
+///         self: ::core::pin::Pin<&'f mut Self>,
+///         mu2_token: &'f mut impl ::ksync::ExclusiveLockToken<Example, ExampleMu2Class>,
+///     ) -> &'f mut u64 {
+///         let me = unsafe { self.get_unchecked_mut() };
+///         let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+///         let self_token = inner_pin.token_mut();
+///         let token = {
+///             // Runtime check that `mu2_token` belongs to the same `Example` instance
+///             // (`me.parent`). When both guards are locked on the same `Example` reference in
+///             // an inlined scope, the compiler constant-folds this pointer comparison away.
+///             assert!(
+///                 ::core::ptr::eq(
+///                     ::core::ptr::from_ref(me.parent),
+///                     ::ksync::ExclusiveLockToken::parent(mu2_token),
+///                 ),
+///                 "Lock guard belongs to a different struct instance",
+///             );
+///             self_token.join(::ksync::ExclusiveLockToken::lock_token_mut(mu2_token))
+///         };
+///         unsafe { me.parent.shared.get_mut(token) }
+///     }
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let mut input_struct = parse_macro_input!(input as ItemStruct);
+    guarded_impl(input.into()).into()
+}
+
+fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    let mut input_struct: ItemStruct = match syn::parse2(input) {
+        Ok(s) => s,
+        Err(e) => return e.to_compile_error(),
+    };
 
     let mut mutex_fields = Vec::new();
     let mut brwlock_fields = Vec::new();
@@ -711,6 +1158,20 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 errors.push(syn::Error::new(
                     field.ty.span(),
                     "The #[ksync(unpinned)] attribute is only allowed on WavlTree fields",
+                ));
+            }
+
+            if (analysis.is_mutex || analysis.is_brwlock) && !analysis.guarded_by.is_empty() {
+                errors.push(syn::Error::new(
+                    field.ident.as_ref().unwrap().span(),
+                    "Lock fields cannot also have #[guarded_by] attributes",
+                ));
+            }
+
+            if analysis.guarded_by.len() > 3 {
+                errors.push(syn::Error::new(
+                    field.ident.as_ref().unwrap().span(),
+                    "#[guarded_by(...)] supports at most 3 locks",
                 ));
             }
 
@@ -743,7 +1204,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
                 field.attrs.push(syn::parse_quote!(#[pin]));
                 brwlock_fields.push((field.clone(), analysis.custom_flags));
-            } else if let Some(mutex_ident) = analysis.guarded_by {
+            } else if !analysis.guarded_by.is_empty() {
                 let konce_cell_inner_ty = if is_konce_cell_type(&field.ty) {
                     match extract_konce_cell_inner_type(&field.ty) {
                         Some(ty) => Some(ty),
@@ -769,7 +1230,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
                 guarded_fields.push(GuardedField {
                     ident: field.ident.clone().unwrap(),
-                    mutex_ident,
+                    mutex_idents: analysis.guarded_by,
                     ty: field.ty.clone(),
                     vis: field.vis.clone(),
                     project_as_pin: analysis.is_pinned && !analysis.is_unpinned,
@@ -782,7 +1243,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     if !errors.is_empty() {
         let compile_errors = errors.iter().map(|e| e.to_compile_error());
-        return quote! { #(#compile_errors)* }.into();
+        return quote! { #(#compile_errors)* };
     }
 
     // Automatically apply #[::pin_init::pin_data] if not already present
@@ -819,6 +1280,15 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
         let (class_ident, class_type) = match custom_class {
             Some(ref ty) => {
+                let class_str = quote! { #ty }.to_string();
+                check_unique_name(
+                    &class_str,
+                    ty.span(),
+                    &field_ident,
+                    "class",
+                    &mut generated_names,
+                    &mut errors,
+                );
                 let ident = if let syn::Type::Path(syn::TypePath { path, .. }) = ty {
                     path.segments
                         .last()
@@ -923,7 +1393,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     if !errors.is_empty() {
         let compile_errors = errors.iter().map(|e| e.to_compile_error());
-        return quote! { #(#compile_errors)* }.into();
+        return quote! { #(#compile_errors)* };
     }
 
     // Rewrite fields in struct to KMutex / BrwLockPi and KCell
@@ -936,56 +1406,69 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             {
                 let class_type = &mutex_field.class_type;
                 let mutex_type = &mutex_field.mutex_type;
-                if let Type::Path(ref mut type_path) = field.ty {
-                    if let Some(last_segment) = type_path.path.segments.last_mut() {
-                        last_segment.ident = format_ident!("KMutex");
-                        last_segment.arguments = syn::PathArguments::AngleBracketed(
-                            syn::parse2(quote! { <#class_type, #mutex_type> }).unwrap(),
-                        );
-                    }
+                if let Type::Path(ref mut type_path) = field.ty
+                    && let Some(last_segment) = type_path.path.segments.last_mut()
+                {
+                    last_segment.ident = format_ident!("KMutex");
+                    last_segment.arguments = syn::PathArguments::AngleBracketed(
+                        syn::parse2(quote! { <#class_type, #mutex_type> }).unwrap(),
+                    );
                 }
             } else if let Some(brwlock_field) =
                 brwlock_fields_processed.iter().find(|m| m.ident == *field_ident)
             {
                 let class_type = &brwlock_field.class_type;
-                if let Type::Path(ref mut type_path) = field.ty {
-                    if let Some(last_segment) = type_path.path.segments.last_mut() {
-                        last_segment.ident = format_ident!("BrwLockPi");
-                        last_segment.arguments = syn::PathArguments::AngleBracketed(
-                            syn::parse2(quote! { <#class_type> }).unwrap(),
-                        );
-                    }
+                if let Type::Path(ref mut type_path) = field.ty
+                    && let Some(last_segment) = type_path.path.segments.last_mut()
+                {
+                    last_segment.ident = format_ident!("BrwLockPi");
+                    last_segment.arguments = syn::PathArguments::AngleBracketed(
+                        syn::parse2(quote! { <#class_type> }).unwrap(),
+                    );
                 }
             } else if let Some(guarded_field) =
                 guarded_fields.iter().find(|f| f.ident == *field_ident)
             {
-                let class_type_opt = mutex_fields_processed
-                    .iter()
-                    .chain(brwlock_fields_processed.iter())
-                    .find(|m| m.ident == guarded_field.mutex_ident)
-                    .map(|m| &m.class_type);
+                let mut class_types = Vec::new();
+                for mutex_ident in &guarded_field.mutex_idents {
+                    let class_type_opt = mutex_fields_processed
+                        .iter()
+                        .chain(brwlock_fields_processed.iter())
+                        .find(|m| m.ident == *mutex_ident)
+                        .map(|m| &m.class_type);
+                    if let Some(ct) = class_type_opt {
+                        class_types.push(ct);
+                    } else {
+                        errors.push(syn::Error::new(
+                            mutex_ident.span(),
+                            format!(
+                                "Guarded field '{}' references non-existent lock '{}'",
+                                field_ident, mutex_ident
+                            ),
+                        ));
+                    }
+                }
 
-                if let Some(class_type) = class_type_opt {
+                if class_types.len() == guarded_field.mutex_idents.len() {
+                    let cell_class_type = if class_types.len() == 1 {
+                        let ct = class_types[0];
+                        quote! { #ct }
+                    } else {
+                        quote! { (#(#class_types),*) }
+                    };
+
                     if guarded_field.is_konce_cell {
                         let inner_ty = guarded_field.konce_cell_inner_ty.as_ref().unwrap();
                         field.ty =
-                            syn::parse2(quote! { ::ksync::KOnceCell<#inner_ty, #class_type> })
+                            syn::parse2(quote! { ::ksync::KOnceCell<#inner_ty, #cell_class_type> })
                                 .unwrap();
                     } else {
                         let original_ty = &field.ty;
                         field.ty =
-                            syn::parse2(quote! { ::ksync::KCell<#original_ty, #class_type> })
+                            syn::parse2(quote! { ::ksync::KCell<#original_ty, #cell_class_type> })
                                 .unwrap();
                     }
                     field.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
-                } else {
-                    errors.push(syn::Error::new(
-                        guarded_field.mutex_ident.span(),
-                        format!(
-                            "Guarded field '{}' references non-existent lock '{}'",
-                            field_ident, guarded_field.mutex_ident
-                        ),
-                    ));
                 }
             }
         }
@@ -993,8 +1476,11 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     if !errors.is_empty() {
         let compile_errors = errors.iter().map(|e| e.to_compile_error());
-        return quote! { #(#compile_errors)* }.into();
+        return quote! { #(#compile_errors)* };
     }
+
+    let all_locks: Vec<&MutexField> =
+        mutex_fields_processed.iter().chain(brwlock_fields_processed.iter()).collect();
 
     let (impl_generics, ty_generics, where_clause) = input_struct.generics.split_for_impl();
 
@@ -1026,7 +1512,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     let marker_phantom = quote! {
         ::core::marker::PhantomData<(
             #(& #phantom_lifetimes (),)*
-            fn() -> (*const (#(#phantom_ty_params),*)),
+            fn() -> *const (#(#phantom_ty_params),*),
         )>
     };
 
@@ -1075,9 +1561,11 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let guard_mut_method_ident = format_ident!("guard_{mu_ident}_mut", span = mu_ident.span());
 
         let this_guarded_fields: Vec<&GuardedField> =
-            guarded_fields.iter().filter(|f| f.mutex_ident == *mu_ident).collect();
+            guarded_fields.iter().filter(|f| f.mutex_idents.contains(mu_ident)).collect();
 
-        let field_code = generate_field_code(&this_guarded_fields, class_type);
+        let parent_ty = quote! { #struct_ident #ty_generics };
+        let field_code =
+            generate_field_code(&this_guarded_fields, mu_ident, class_type, &all_locks, &parent_ty);
 
         let fields_struct = generate_fields_struct(
             struct_vis,
@@ -1085,6 +1573,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &fields_decl_generics,
             where_clause,
             &field_code.read_fields_decl,
+            phantom_lifetimes,
             phantom_ty_params,
         );
 
@@ -1094,6 +1583,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &fields_decl_generics,
             where_clause,
             &field_code.write_fields_decl,
+            phantom_lifetimes,
             phantom_ty_params,
         );
 
@@ -1510,6 +2000,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 ) -> #token_guard_mut_ident #token_guard_ty_generics {
                     // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     #token_guard_mut_ident {
                         parent: me.parent,
@@ -1523,15 +2014,21 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
 
                 #[inline]
-                #struct_vis fn token_mut(self: ::core::pin::Pin<&mut Self>) -> &mut ::ksync::LockToken<'a, #class_type> {
+                #struct_vis fn token_mut(
+                    self: ::core::pin::Pin<&mut Self>,
+                ) -> &mut ::ksync::LockToken<'a, #class_type> {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.token_mut()
                 }
 
                 #[inline]
                 #struct_vis fn release(self: ::core::pin::Pin<&mut Self>) {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.release();
                 }
@@ -1541,7 +2038,9 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     self: ::core::pin::Pin<&mut Self>,
                     f: F,
                 ) -> R {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.call_unlocked(f)
                 }
@@ -1551,12 +2050,15 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     self: ::core::pin::Pin<&mut Self>,
                     f: F,
                 ) -> R {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.call_untracked(f)
                 }
 
                 #[inline]
+                #[allow(unused_variables)]
                 #struct_vis fn fields<'b>(&'b self) -> #fields_ident #fields_ty_generics {
                     let me = self;
                     let token = me.inner.token();
@@ -1567,14 +2069,33 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
 
                 #[inline]
+                #[allow(unused_variables)]
                 #struct_vis fn fields_mut<'b>(self: ::core::pin::Pin<&'b mut Self>) -> #fields_mut_ident #fields_ty_generics {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     let token = inner_pin.token_mut();
                     #fields_mut_ident {
                         #fields_mut_init
                         _marker: ::core::marker::PhantomData,
                     }
+                }
+            }
+
+            // SAFETY: `#guard_ident` holds an exclusive lock guard for `self.parent`.
+            unsafe impl #guard_impl_generics
+                ::ksync::ExclusiveLockToken<#struct_ident #ty_generics, #class_type>
+                for ::core::pin::Pin<&mut #guard_ident #guard_ty_generics> #where_clause
+            {
+                #[inline]
+                fn parent(&self) -> *const #struct_ident #ty_generics {
+                    ::core::ptr::from_ref(self.parent)
+                }
+
+                #[inline]
+                fn lock_token_mut(&mut self) -> &mut ::ksync::LockToken<'_, #class_type> {
+                    self.as_mut().token_mut().reborrow()
                 }
             }
 
@@ -1614,9 +2135,16 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             format_ident!("guard_write_{lock_ident}_from_guard", span = lock_ident.span());
 
         let this_guarded_fields: Vec<&GuardedField> =
-            guarded_fields.iter().filter(|f| f.mutex_ident == *lock_ident).collect();
+            guarded_fields.iter().filter(|f| f.mutex_idents.contains(lock_ident)).collect();
 
-        let field_code = generate_field_code(&this_guarded_fields, class_type);
+        let parent_ty = quote! { #struct_ident #ty_generics };
+        let field_code = generate_field_code(
+            &this_guarded_fields,
+            lock_ident,
+            class_type,
+            &all_locks,
+            &parent_ty,
+        );
 
         let read_fields_struct = generate_fields_struct(
             struct_vis,
@@ -1624,6 +2152,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &fields_decl_generics,
             where_clause,
             &field_code.read_fields_decl,
+            phantom_lifetimes,
             phantom_ty_params,
         );
 
@@ -1633,6 +2162,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             &fields_decl_generics,
             where_clause,
             &field_code.write_fields_decl,
+            phantom_lifetimes,
             phantom_ty_params,
         );
 
@@ -1765,12 +2295,15 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     self: ::core::pin::Pin<&mut Self>,
                     f: F,
                 ) -> R {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.call_unlocked(f)
                 }
 
                 #[inline]
+                #[allow(unused_variables)]
                 #struct_vis fn fields<'b>(&'b self) -> #read_fields_ident #fields_ty_generics {
                     let me = self;
                     let token = me.inner.token();
@@ -1807,6 +2340,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 ) -> #write_token_guard_ident #token_guard_ty_generics {
                     // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     #write_token_guard_ident {
                         parent: me.parent,
@@ -1825,6 +2359,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 ) -> &mut ::ksync::LockToken<'a, #class_type> {
                     // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.token_mut()
                 }
@@ -1834,12 +2369,15 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     self: ::core::pin::Pin<&mut Self>,
                     f: F,
                 ) -> R {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.call_unlocked(f)
                 }
 
                 #[inline]
+                #[allow(unused_variables)]
                 #struct_vis fn fields<'b>(&'b self) -> #read_fields_ident #fields_ty_generics {
                     let me = self;
                     let token = me.inner.token();
@@ -1850,14 +2388,33 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
 
                 #[inline]
+                #[allow(unused_variables)]
                 #struct_vis fn fields_mut<'b>(self: ::core::pin::Pin<&'b mut Self>) -> #write_fields_ident #fields_ty_generics {
+                    // SAFETY: Projecting `inner` as pinned does not move any pinned fields.
                     let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned.
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     let token = inner_pin.token_mut();
                     #write_fields_ident {
                         #write_fields_init
                         _marker: ::core::marker::PhantomData,
                     }
+                }
+            }
+
+            // SAFETY: `#write_guard_ident` holds an exclusive write lock guard for `self.parent`.
+            unsafe impl #guard_decl_generics
+                ::ksync::ExclusiveLockToken<#struct_ident #ty_generics, #class_type>
+                for ::core::pin::Pin<&mut #write_guard_ident #guard_ty_generics> #where_clause
+            {
+                #[inline]
+                fn parent(&self) -> *const #struct_ident #ty_generics {
+                    ::core::ptr::from_ref(self.parent)
+                }
+
+                #[inline]
+                fn lock_token_mut(&mut self) -> &mut ::ksync::LockToken<'_, #class_type> {
+                    self.as_mut().token_mut().reborrow()
                 }
             }
 
@@ -1937,13 +2494,11 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         });
     }
 
-    let expanded = quote! {
+    quote! {
         #marker_structs
         #input_struct
         #generated_code
-    };
-
-    TokenStream::from(expanded)
+    }
 }
 
 fn to_camel_case(s: &str) -> String {
@@ -2063,7 +2618,7 @@ impl syn::parse::Parse for SingletonLockInput {
         };
         let name = input.parse::<Ident>()?;
         let lock_type = if input.peek(syn::Token![,]) {
-            input.parse::<syn::Token![,]>()?;
+            let _: syn::Token![,] = input.parse()?;
             Some(input.parse::<Type>()?)
         } else {
             None
@@ -2155,6 +2710,7 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
 
         impl #name {
             /// Returns a reference to the global singleton mutex.
+            #[allow(non_snake_case)]
             #[inline]
             pub fn Get() -> &'static ::ksync::KMutex<#name, #raw_lock> {
                 Self::get()
@@ -2172,4 +2728,148 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
         }
     }
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_guarded_by_compile_errors() {
+        // 1. Empty `#[guarded_by()]` list.
+        let err_empty = guarded_impl(quote! {
+            struct BadEmpty {
+                #[mutex]
+                mu: KMutex,
+                #[guarded_by()]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_empty.contains("compile_error")
+                && err_empty.contains("requires at least one lock identifier"),
+            "unexpected output: {err_empty}"
+        );
+
+        // 2. Duplicate lock in `#[guarded_by(mu, mu)]`.
+        let err_dup = guarded_impl(quote! {
+            struct BadDup {
+                #[mutex]
+                mu: KMutex,
+                #[guarded_by(mu, mu)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_dup.contains("compile_error")
+                && err_dup.contains("Duplicate lock 'mu' in #[guarded_by] attribute"),
+            "unexpected output: {err_dup}"
+        );
+
+        // 3. Non-existent lock in `#[guarded_by(mu, missing)]`.
+        let err_missing = guarded_impl(quote! {
+            struct BadMissing {
+                #[mutex]
+                mu: KMutex,
+                #[guarded_by(mu, missing)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_missing.contains("compile_error")
+                && err_missing
+                    .contains("Guarded field 'val' references non-existent lock 'missing'"),
+            "unexpected output: {err_missing}"
+        );
+
+        // 4. Lock field itself annotated with `#[guarded_by(...)]`.
+        let err_lock_guarded = guarded_impl(quote! {
+            struct BadLockGuarded {
+                #[mutex]
+                #[guarded_by(mu2)]
+                mu1: KMutex,
+                #[mutex]
+                mu2: KMutex,
+            }
+        })
+        .to_string();
+        assert!(
+            err_lock_guarded.contains("compile_error")
+                && err_lock_guarded.contains("Lock fields cannot also have #[guarded_by]"),
+            "unexpected output: {err_lock_guarded}"
+        );
+
+        // 5. Two lock fields on the same struct sharing a duplicate custom lock class.
+        let err_dup_class = guarded_impl(quote! {
+            struct BadDupClass {
+                #[mutex(SharedCustomClass)]
+                mu1: KMutex,
+                #[mutex(SharedCustomClass)]
+                mu2: KMutex,
+            }
+        })
+        .to_string();
+        assert!(
+            err_dup_class.contains("compile_error")
+                && err_dup_class.contains("duplicate class name 'SharedCustomClass'"),
+            "unexpected output: {err_dup_class}"
+        );
+
+        // 6. Bare `#[guarded_by]` without a parenthesized list.
+        let err_bare = guarded_impl(quote! {
+            struct BadBare {
+                #[mutex]
+                mu: KMutex,
+                #[guarded_by]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_bare.contains("compile_error")
+                && err_bare.contains("#[guarded_by] attribute must be a list of lock identifiers"),
+            "unexpected output: {err_bare}"
+        );
+
+        // 7. Invalid token inside `#[guarded_by(123)]`.
+        let err_invalid_tok = guarded_impl(quote! {
+            struct BadInvalidTok {
+                #[mutex]
+                mu: KMutex,
+                #[guarded_by(123)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_invalid_tok.contains("compile_error")
+                && err_invalid_tok.contains("expected identifier"),
+            "unexpected output: {err_invalid_tok}"
+        );
+
+        // 8. More than 3 locks in `#[guarded_by(mu1, mu2, mu3, mu4)]`.
+        let err_too_many = guarded_impl(quote! {
+            struct BadTooMany {
+                #[mutex]
+                mu1: KMutex,
+                #[mutex]
+                mu2: KMutex,
+                #[mutex]
+                mu3: KMutex,
+                #[mutex]
+                mu4: KMutex,
+                #[guarded_by(mu1, mu2, mu3, mu4)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_too_many.contains("compile_error")
+                && err_too_many.contains("#[guarded_by(...)] supports at most 3 locks"),
+            "unexpected output: {err_too_many}"
+        );
+    }
 }

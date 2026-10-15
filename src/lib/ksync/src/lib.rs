@@ -3,6 +3,21 @@
 // found in the LICENSE file.
 
 #![no_std]
+#![deny(
+    dead_code,
+    unused_parens,
+    unused_results,
+    unsafe_op_in_unsafe_fn,
+    missing_unsafe_on_extern,
+    unsafe_attr_outside_unsafe,
+    non_local_definitions,
+    mismatched_lifetime_syntaxes,
+    clippy::all,
+    clippy::missing_safety_doc,
+    clippy::undocumented_unsafe_blocks,
+    clippy::not_unsafe_ptr_arg_deref,
+    clippy::new_without_default
+)]
 
 #[cfg(test)]
 extern crate self as ksync;
@@ -134,7 +149,7 @@ pub use kmutex::{
     aliased_lock_policy, aliased_lock_policy_with, aliased_lock_with, guard_multiple,
     guard_multiple_policy, guard_multiple_policy_with, guard_multiple_with,
 };
-pub use lock_token::LockToken;
+pub use lock_token::{ExclusiveLockToken, LockToken, LockTokenRead, LockTokenWrite};
 pub use lockdep::{LOCK_FLAGS_SINGLETON_LOCK, LockClass, LockClassRegistration, LockFlags};
 pub use phantom_mutex::PhantomMutex;
 pub use raw_lock::{LockPolicy, RawLock};

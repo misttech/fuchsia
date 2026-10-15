@@ -21,6 +21,7 @@ pub struct BrwLockPi<Class: LockClass> {
 
 // SAFETY: BrwLockPi is safe to share across threads because the underlying RawBrwLockPi is Sync.
 unsafe impl<Class: LockClass> Sync for BrwLockPi<Class> {}
+// SAFETY: BrwLockPi is safe to send across threads because the underlying RawBrwLockPi is Send.
 unsafe impl<Class: LockClass> Send for BrwLockPi<Class> {}
 
 impl<Class: LockClass> BrwLockPi<Class> {
@@ -72,6 +73,7 @@ impl<'a, Class: LockClass> BrwLockPiReadGuard<'a, Class> {
                     core::ptr::write(lock_addr, lock);
 
                     let entry_addr = addr_of_mut!((*this).lock_entry);
+                    #[allow(clippy::unit_arg)]
                     core::ptr::write(entry_addr, LockEntryStorage::default());
 
                     lock.lock.acquire_read(entry_addr as *mut core::ffi::c_void);
@@ -149,6 +151,7 @@ impl<'a, Class: LockClass> BrwLockPiWriteGuard<'a, Class> {
                     core::ptr::write(lock_addr, lock);
 
                     let entry_addr = addr_of_mut!((*this).lock_entry);
+                    #[allow(clippy::unit_arg)]
                     core::ptr::write(entry_addr, LockEntryStorage::default());
 
                     lock.lock.acquire_write(entry_addr as *mut core::ffi::c_void);
@@ -281,9 +284,10 @@ mod tests {
         use std::sync::atomic::Ordering;
 
         stack_pin_init!(let test = pin_init!(BrwLockTest {
+            // SAFETY: Null class ID is valid for an untracked test lock.
             lock <- unsafe { RawBrwLockPi::init(core::ptr::null()) },
-            state: std::sync::atomic::AtomicU32::new(0).into(),
-            kill: std::sync::atomic::AtomicBool::new(false).into(),
+            state: std::sync::atomic::AtomicU32::new(0),
+            kill: std::sync::atomic::AtomicBool::new(false),
         }));
 
         std::thread::scope(|s| {
@@ -296,9 +300,9 @@ mod tests {
                         unsafe {
                             test.lock.acquire_read(core::ptr::null_mut());
                         }
-                        test.state.fetch_add(1, Ordering::Relaxed);
+                        let _ = test.state.fetch_add(1, Ordering::Relaxed);
                         std::thread::yield_now();
-                        test.state.fetch_sub(1, Ordering::Relaxed);
+                        let _ = test.state.fetch_sub(1, Ordering::Relaxed);
                         // SAFETY: lock is held in read mode.
                         unsafe {
                             test.lock.release_read(core::ptr::null_mut());
@@ -315,9 +319,9 @@ mod tests {
                         unsafe {
                             test.lock.acquire_write(core::ptr::null_mut());
                         }
-                        test.state.fetch_add(0x10000, Ordering::Relaxed);
+                        let _ = test.state.fetch_add(0x10000, Ordering::Relaxed);
                         std::thread::yield_now();
-                        test.state.fetch_sub(0x10000, Ordering::Relaxed);
+                        let _ = test.state.fetch_sub(0x10000, Ordering::Relaxed);
                         // SAFETY: lock is held in write mode.
                         unsafe {
                             test.lock.release_write(core::ptr::null_mut());
@@ -387,5 +391,78 @@ mod tests {
 
         lock!(let guard = s.read_lock());
         assert_eq!(*guard.value(), 42);
+    }
+
+    #[guarded]
+    struct MultiLockBrwStruct {
+        #[brwlock]
+        rw: BrwLockPi,
+        #[mutex]
+        mu: crate::KMutex,
+        #[guarded_by(rw)]
+        only_rw: u32,
+        #[guarded_by(rw, mu)]
+        shared: u32,
+        #[pin]
+        #[guarded_by(rw, mu)]
+        pinned_shared: u32,
+        #[guarded_by(rw, mu)]
+        once_shared: crate::KOnceCell<u32>,
+    }
+
+    #[test]
+    fn test_multi_lock_brwlock_and_mutex() {
+        stack_pin_init!(let s = pin_init!(MultiLockBrwStruct {
+            rw <- BrwLockPi::init(),
+            mu <- crate::KMutex::init(),
+            only_rw: 1.into(),
+            shared: 10.into(),
+            pinned_shared: 100.into(),
+            once_shared: crate::KOnceCell::new(),
+        }));
+
+        {
+            lock!(let rg = s.read_rw());
+            assert_eq!(*rg.only_rw(), 1);
+            assert_eq!(*rg.shared(), 10);
+            assert_eq!(*rg.pinned_shared(), 100);
+            assert_eq!(rg.once_shared(), None);
+            assert_eq!(*rg.fields().shared, 10);
+            assert_eq!(*rg.as_token_guard().shared(), 10);
+        }
+        {
+            lock!(let mg = s.lock_mu());
+            assert_eq!(*mg.shared(), 10);
+            assert_eq!(*mg.pinned_shared(), 100);
+            assert_eq!(mg.once_shared(), None);
+        }
+        {
+            lock!(let mut wg = s.write_rw());
+            lock!(let mut mg = s.lock_mu());
+            *wg.as_mut().shared_mut(&mut mg) = 25;
+            assert_eq!(*wg.shared(), 25);
+            *mg.as_mut().shared_mut(&mut wg) = 50;
+            assert_eq!(*mg.shared(), 50);
+
+            *wg.as_mut().pinned_shared_mut(&mut mg) = 200;
+            assert_eq!(*mg.pinned_shared(), 200);
+
+            let _ = wg.as_mut().once_shared_cell(&mut mg).get_or_init(|| 300);
+            assert_eq!(wg.once_shared(), Some(&300));
+
+            let wf_mut = wg.as_mut().fields_mut();
+            *wf_mut.only_rw = 2;
+            assert_eq!(*wf_mut.shared, 50);
+            assert_eq!(*wf_mut.pinned_shared, 200);
+            assert_eq!(wf_mut.once_shared, Some(&300));
+
+            // Test `BrwLockPi` `WriteTokenGuard` as both receiver and argument.
+            let mut wtg = wg.as_mut().as_token_guard_mut();
+            let mut mtg = mg.as_mut().as_token_guard_mut();
+            *wtg.reborrow().shared_mut(&mut mtg) = 75;
+            assert_eq!(*wtg.as_token_guard().shared(), 75);
+            *mtg.reborrow().shared_mut(&mut wtg) = 90;
+            assert_eq!(*wtg.shared(), 90);
+        }
     }
 }
