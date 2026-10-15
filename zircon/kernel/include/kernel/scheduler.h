@@ -214,6 +214,7 @@ cpu_mask_t rust_scheduler_peek_idle_mask();
 void rust_scheduler_set_idle(const Scheduler* sched, bool is_idle);
 void rust_scheduler_set_curr_cpu_active(bool is_active);
 bool rust_scheduler_enable_new_wakeup_accounting();
+void rust_scheduler_validate_invariants_unconditional(const Scheduler* sched);
 void rust_scheduler_on_power_domain_set_updated(Scheduler* sched, SchedProcessingRate active_rate,
                                                 SchedProcessingRate max_rate, bool has_domain);
 zx_status_t rust_scheduler_update_active_power_level(Scheduler* sched, uint8_t power_level);
@@ -282,7 +283,7 @@ class Scheduler {
 
   // Returns true if new scheduler wakeup accounting is enabled either by boot
   // option or gn arg.
-  static bool EnableNewWakeupAccounting();
+  static bool EnableNewWakeupAccounting() { return rust_scheduler_enable_new_wakeup_accounting(); }
 
   // Helper type used to implement various PI operations. See
   // //zircon/kernel/kernel/scheduler_pi.cc to see how it is used.
@@ -710,17 +711,13 @@ class Scheduler {
   // scheduler's queue lock while the bit is changed, enforcing the invariant
   // that a scheduler's active bit can only ever change while holding that
   // scheduler's lock.
-  static void SetCurrCpuActive(bool is_active) {
-    Scheduler& scheduler = *Get();
-    Guard<MonitoredSpinLock, IrqSave> guard{&scheduler.queue_lock_, SOURCE_TAG};
-    scheduler.SetIsActive(is_active);
-  }
+  static void SetCurrCpuActive(bool is_active) { rust_scheduler_set_curr_cpu_active(is_active); }
 
   // Peek at the current active mask for all schedulers.
   //
   // Note that this is just a lockless atomic load.  Baring special
   // circumstances, the set of active schedulers can change at any time.
-  static cpu_mask_t PeekActiveMask() { return active_schedulers_.load(ktl::memory_order_relaxed); }
+  static cpu_mask_t PeekActiveMask() { return rust_scheduler_peek_active_mask(); }
 
   // Peek at the current active mask state for a given CPU's scheduler.
   //
@@ -732,15 +729,8 @@ class Scheduler {
   }
 
   // Accessors for the "idle" state mask; similar to the active state mask.
-  void SetIdle(bool is_idle) const {
-    const cpu_mask_t mask = cpu_num_to_mask(this_cpu());
-    if (is_idle) {
-      idle_schedulers_.fetch_or(mask, ktl::memory_order_relaxed);
-    } else {
-      idle_schedulers_.fetch_and(~mask, ktl::memory_order_relaxed);
-    }
-  }
-  static cpu_mask_t PeekIdleMask() { return idle_schedulers_.load(ktl::memory_order_relaxed); }
+  void SetIdle(bool is_idle) const { rust_scheduler_set_idle(this, is_idle); }
+  static cpu_mask_t PeekIdleMask() { return rust_scheduler_peek_idle_mask(); }
   static bool PeekIsIdle(cpu_num_t cpu) { return (PeekIdleMask() & cpu_num_to_mask(cpu)) != 0; }
 
   // Accumulates processor idle time.
@@ -1089,27 +1079,6 @@ class Scheduler {
   // a translation unit in an anonymous namespace, with no ability to fwd
   // declare the counter.
   static void IncFindTargetCpuRetriesKcounter();
-
-  // Change this scheduler's CPU's active state. We require that the scheduler's
-  // queue_lock be held during the operation. This enforces the invariant that
-  // "the scheduler's active bit only changes while holding the scheduler's
-  // queue lock".
-  //
-  // This means that things like "FindTargetCpu" are free to check the global
-  // active mask to see whether or not we _think_ that a given scheduler is
-  // likely to be active for selection purposes, but when it comes time to
-  // actually add a thread to a scheduler's queues, we check the active state of
-  // the scheduler's assigned CPU from within the safety of the queue lock using
-  // IsLockedSchedulerActive()
-  void SetIsActive(bool is_active) const TA_REQ(queue_lock_) {
-    const cpu_mask_t mask = cpu_num_to_mask(this_cpu());
-    if (is_active) {
-      active_schedulers_.fetch_or(mask, ktl::memory_order_relaxed);
-    } else {
-      active_schedulers_.fetch_and(~mask, ktl::memory_order_relaxed);
-    }
-    arch_set_blocking_disallowed(!is_active);
-  }
 
   // Check to see if |this| scheduler is currently active while holding its
   // queue_lock, ensuring that it will stay in its current state until after we
@@ -1823,26 +1792,6 @@ class Scheduler {
   static void MarkInFindActiveSchedulerForThreadCbk(const Thread& t, const Scheduler& s)
       TA_ASSERT(t.get_scheduler_variable_lock()) TA_ASSERT(t.get_lock()) TA_ASSERT(s.queue_lock_) {}
 
-  // A mask of all of the currently active scheduler's in the system.  An
-  // "active" scheduler is one who will accept threads to be executed.  An
-  // "in-active" scheduler will not, and is typically the scheduler for a CPU
-  // which is in the process of being taken offline.
-  //
-  // Note that to change the active state of a scheduler for CPU X (eg; to
-  // toggle the state of bit X in the active_schedulers_ mask) that scheduler's
-  // queue_lock_ must be held.  Therefore, observations of the schedulers'
-  // active mask must typically be assumed to be volatile.  As soon as the mask
-  // is observed, it can immediately change.
-  static inline ktl::atomic<cpu_mask_t> active_schedulers_{0};
-
-  // A mask of all of the currently idle scheduler's in the system.  An
-  // "idle" scheduler is one which last selected the idle/power thread to run,
-  // while a "busy" scheduler is one which is running a non-idle thread.
-  //
-  // Like the active mask, the idle mask is volatile and subject to change at
-  // any time barring special circumstances.
-  static inline ktl::atomic<cpu_mask_t> idle_schedulers_{0};
-
   // Flow id counter for sched_latency flow events.
   inline static RelaxedAtomic<uint64_t> next_flow_id_{1};
 
@@ -2276,7 +2225,6 @@ inline const Scheduler& Scheduler::PowerLevelControl::scheduler() const {
 #pragma clang diagnostic pop
 
 extern "C" {
-cpu_mask_t cpp_scheduler_peek_active_mask();
 void cpp_current_mono_time_and_boot_ticks(Scheduler::SchedMonoTimeAndBootTicks* out);
 }  // extern "C"
 

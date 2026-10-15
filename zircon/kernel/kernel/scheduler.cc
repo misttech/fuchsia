@@ -179,14 +179,6 @@ void PreemptReset(cpu_num_t current_cpu, zx_instant_mono_t now, zx_instant_mono_
 
 }  // anonymous namespace
 
-bool Scheduler::EnableNewWakeupAccounting() {
-#if EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING
-  return true;
-#else
-  return BootOptions::Get()->enable_new_wakeup_accounting;
-#endif  // EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING
-}
-
 void Scheduler::CountUpdateInTransition() { counter_update_in_transition.Add(1); }
 
 fxt::StringRef<fxt::RefType::kId> Scheduler::ToStringRef(Placement placement) {
@@ -3162,127 +3154,7 @@ void Scheduler::RemoveThreadLocked(SchedTime now, Thread* thread) {
 }
 
 void Scheduler::ValidateInvariantsUnconditional() const {
-  using ProfileDirtyFlag = SchedulerState::ProfileDirtyFlag;
-
-  auto ObserveFairThread = [&](const Thread& t) TA_REQ(this->queue_lock_,
-                                                       chainlock_transaction_token) {
-    // We are holding the scheduler's queue lock, and observing thread which are
-    // either active, or members of our queues.  Tell the static analyzer that
-    // it is OK for us to access a thread's effective profile in a read-only
-    // fashion, even though we don't explicitly hold the thread's lock.
-    [&t]() {
-      MarkHasOwnedThreadAccess(t);
-      const auto& ss = t.scheduler_state();
-      const auto& ep = ss.effective_profile();
-      ASSERT_MSG(ep.IsFair(), "Fair thread %" PRIu64 " has non-fair effective profile", t.tid());
-    }();
-
-    // If we have dirty tracking enabled for effective profiles (only enabled in
-    // builds with extra scheduler state validation enabled) we can try to make
-    // some extra checks.
-    //
-    // 1) If we know that the current base profile is clean, we can assert that
-    //    the base profile is fair.
-    // 2) If we know that the current IPVs are clean, we can assert that the IPV
-    //    utilization is zero.
-    //
-    // In order to safely observe these things, however, we need to be holding
-    // the thread's lock.  Threads can change their base profile or IPVs (and
-    // the flags which indicate if they are dirty or nor) while only holding
-    // their lock.  They do not need to be holding the scheduler's queue lock if
-    // the thread happens to be running or ready.
-    //
-    // So, _try_ to get the thread's lock if we don't already hold it, and if we
-    // succeed, go ahead a perform our checks.  If we fail to get the lock for
-    // any reason, just skip the checks this time.
-    if constexpr (EffectiveProfile::kDirtyTrackingEnabled) {
-      auto ExtraChecks = [&t]() TA_REQ(t.get_lock()) -> void {
-        const auto& ss = t.scheduler_state();
-        const auto& ep = ss.effective_profile();
-        const auto& bp = ss.base_profile_;
-        const auto& ipv = ss.inherited_profile_values_;
-
-        if (!(ep.dirty_flags() & ProfileDirtyFlag::BaseDirty)) {
-          ASSERT_MSG(bp.IsFair(), "Fair thread %" PRIu64 " has clean, but non-fair, base profile",
-                     t.tid());
-        }
-        if (!(ep.dirty_flags() & ProfileDirtyFlag::InheritedDirty)) {
-          ASSERT_MSG(ipv.uncapped_utilization == SchedUtilization{0},
-                     "Fair thread %" PRIu64
-                     " has clean IPV, but non-zero inherited utilization (%" PRId64 ")",
-                     t.tid(), ipv.uncapped_utilization.raw_value());
-        }
-      };
-
-      if (t.get_lock().is_held()) {
-        t.get_lock().MarkHeld();
-        ExtraChecks();
-      } else if (t.get_lock().TryAcquire(ChainLock::AllowFinalized::Yes)) {
-        ExtraChecks();
-        t.get_lock().Release();
-      }
-    }
-  };
-
-  auto ObserveDeadlineThread = [&](const Thread& t) TA_REQ(this->queue_lock_,
-                                                           chainlock_transaction_token) {
-    // See above for the locking rules for accessing the pieces of effective profile.
-    [&t]() {
-      MarkHasOwnedThreadAccess(t);
-      const auto& ss = t.scheduler_state();
-      const auto& ep = ss.effective_profile();
-      ASSERT_MSG(ep.IsDeadline(), "Deadline thread %" PRIu64 " has non-deadline effective profile",
-                 t.tid());
-    }();
-
-    if constexpr (EffectiveProfile::kDirtyTrackingEnabled) {
-      auto ExtraChecks = [&t]() TA_REQ(t.get_lock()) -> void {
-        const auto& ss = t.scheduler_state();
-        const auto& ep = ss.effective_profile();
-        const auto& bp = ss.base_profile_;
-        const auto& ipv = ss.inherited_profile_values_;
-
-        if (ep.dirty_flags() == ProfileDirtyFlag::Clean) {
-          ASSERT_MSG(
-              bp.IsDeadline() || (ipv.uncapped_utilization > SchedUtilization{0}),
-              "Deadline thread %" PRIu64
-              " has a clean effective profile, but neither a deadline base profile (%s), nor a "
-              "non-zero inherited utilization (%" PRId64 ")",
-              t.tid(), bp.IsFair() ? "Fair" : "Deadline", ipv.uncapped_utilization.raw_value());
-        }
-      };
-
-      if (t.get_lock().is_held()) {
-        t.get_lock().MarkHeld();
-        ExtraChecks();
-      } else if (t.get_lock().TryAcquire(ChainLock::AllowFinalized::Yes)) {
-        ExtraChecks();
-        t.get_lock().Release();
-      }
-    }
-  };
-
-  for (const auto& t : rust_state_.fair_run_queue) {
-    ObserveFairThread(t);
-  }
-
-  for (const auto& t : rust_state_.critical_deadline_run_queue) {
-    ObserveDeadlineThread(t);
-  }
-
-  for (const auto& t : rust_state_.deadline_run_queue) {
-    ObserveDeadlineThread(t);
-  }
-
-  ASSERT(rust_state_.active_thread != nullptr);
-  const Thread& active_thread = *rust_state_.active_thread;
-  MarkHasOwnedThreadAccess(active_thread);  // This should be safe, see above.
-  if (active_thread.scheduler_state().effective_profile().IsFair()) {
-    ObserveFairThread(active_thread);
-  } else {
-    ASSERT(active_thread.scheduler_state().effective_profile().IsDeadline());
-    ObserveDeadlineThread(active_thread);
-  }
+  rust_scheduler_validate_invariants_unconditional(this);
 }
 
 void Scheduler::Block(Thread* const current_thread) {

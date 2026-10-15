@@ -14,8 +14,8 @@ use super::scheduler_state::{
 use super::stats::CpuStats;
 use super::thread::Thread;
 use super::types::{
-    CPU_MASK_ALL, INVALID_CPU, cpu_mask_t as CpuMask, cpu_num_t as CpuNum, cpu_num_to_mask,
-    remove_cpu_from_mask,
+    AtomicCpuMask, CPU_MASK_ALL, INVALID_CPU, cpu_mask_t as CpuMask, cpu_num_t as CpuNum,
+    cpu_num_to_mask, remove_cpu_from_mask,
 };
 use super::wait_queue::WaitQueueBase;
 use crate::counters::define_kcounter;
@@ -431,14 +431,66 @@ const K_PRIORITY_TO_WEIGHT_TABLE: [SchedWeight; 32] = [
     SchedWeight::from_raw(1024),
 ];
 
-unsafe extern "C" {
-    fn cpp_scheduler_peek_active_mask() -> CpuMask;
+/// A mask of all of the currently active schedulers in the system. An
+/// "active" scheduler is one that will accept threads to be executed. An
+/// "inactive" scheduler will not, and is typically the scheduler for a CPU
+/// which is in the process of being taken offline.
+///
+/// Note that to change the active state of a scheduler for CPU X (e.g., to
+/// toggle the state of bit X in the `ACTIVE_SCHEDULERS` mask) that scheduler's
+/// `queue_lock` must be held. Therefore, observations of the schedulers'
+/// active mask must typically be assumed to be volatile. As soon as the mask
+/// is observed, it can immediately change.
+static ACTIVE_SCHEDULERS: AtomicCpuMask = AtomicCpuMask::new(0);
+
+/// A mask of all of the currently idle schedulers in the system. An
+/// "idle" scheduler is one which last selected the idle/power thread to run,
+/// while a "busy" scheduler is one which is running a non-idle thread.
+///
+/// Like the active mask, the idle mask is volatile and subject to change at
+/// any time barring special circumstances.
+static IDLE_SCHEDULERS: AtomicCpuMask = AtomicCpuMask::new(0);
+
+/// Peek at the current active mask for all schedulers.
+///
+/// Note that this is just a lockless atomic load. Barring special
+/// circumstances, the set of active schedulers can change at any time.
+#[inline]
+pub fn peek_active_mask() -> CpuMask {
+    ACTIVE_SCHEDULERS.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-/// Returns the bitmask of currently active CPUs managed by the scheduler.
-pub fn peek_active_mask() -> CpuMask {
-    // SAFETY: FFI call reads the kernel atomic active scheduler mask.
-    unsafe { cpp_scheduler_peek_active_mask() }
+/// Peek at the current active mask state for a given CPU's scheduler.
+///
+/// Note that this is just a lockless atomic load. Barring special
+/// circumstances, the set of active schedulers can change at any time.
+#[inline]
+pub fn peek_is_active(cpu: CpuNum) -> bool {
+    (peek_active_mask() & cpu_num_to_mask(cpu)) != 0
+}
+
+/// Accessors for the "idle" state mask; similar to the active state mask.
+#[inline]
+pub fn peek_idle_mask() -> CpuMask {
+    IDLE_SCHEDULERS.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Returns true if the given CPU's scheduler is currently marked idle; similar
+/// to the active state mask.
+#[inline]
+pub fn peek_is_idle(cpu: CpuNum) -> bool {
+    (peek_idle_mask() & cpu_num_to_mask(cpu)) != 0
+}
+
+/// Returns true if new scheduler wakeup accounting is enabled either by boot
+/// option or gn arg.
+#[inline]
+pub fn enable_new_wakeup_accounting() -> bool {
+    if cfg!(experimental_force_new_wakeup_accounting) {
+        true
+    } else {
+        boot_options::BootOptions::get().enable_new_wakeup_accounting
+    }
 }
 
 /// Indicates whether the CPU stats being updated is for a busy or idle time
@@ -694,6 +746,24 @@ impl EffectiveProfile {
 
     pub fn discipline(&self) -> SchedDiscipline {
         if self.weight.raw_value() >= 0 { SchedDiscipline::Fair } else { SchedDiscipline::Deadline }
+    }
+
+    /// Returns the discipline of the effective profile at `this` without forming a
+    /// reference to it, for use when only the owning scheduler's `queue_lock_` is
+    /// held and other fields (such as the dirty flags) may be concurrently written
+    /// by a CPU holding the thread's lock.
+    ///
+    /// # Safety
+    /// `this` must point to a valid `EffectiveProfile` whose `weight` is stable
+    /// for the duration of the call.
+    pub unsafe fn discipline_raw(this: *const Self) -> SchedDiscipline {
+        // SAFETY: Reading the `weight` field through the raw pointer per the
+        // caller's contract does not create a reference to the whole profile.
+        if unsafe { (*this).weight }.raw_value() >= 0 {
+            SchedDiscipline::Fair
+        } else {
+            SchedDiscipline::Deadline
+        }
     }
 
     pub fn is_fair(&self) -> bool {
@@ -2109,6 +2179,285 @@ impl Scheduler {
         if local_ktrace_level_enabled!(FLOW) { flow_id::generate() } else { 0 }
     }
 
+    /// Asserts that a given thread belongs to `self` `Scheduler` instance.
+    /// Requires holding the scheduler's `queue_lock`.
+    ///
+    /// # Safety
+    /// The caller must ensure that `thread` is a valid pointer and `queue_lock_` is held.
+    pub unsafe fn assert_in_scheduler(&self, thread: *const Thread) {
+        // Evaluate nothing in release builds.
+        if cfg!(debug_assertions) {
+            // SAFETY: `thread` is valid and `queue_lock_` is held, which synchronizes
+            // access to `curr_cpu`, `stolen_by`, and `active_thread`.
+            let (curr_cpu, stolen_by, active_thread) = unsafe {
+                (
+                    (*cpp_thread_get_scheduler_state(thread.cast_mut())).curr_cpu,
+                    (*cpp_thread_get_queue_state(thread.cast_mut())).stolen_by,
+                    (*self.state.get()).active_thread,
+                )
+            };
+            // SAFETY: `this_cpu` is initialized during early boot.
+            let this_cpu = unsafe { self.this_cpu() };
+            // TODO(johngro): Come back here and remove the `thread == active_thread`
+            // clause once other system-wide invariants have been cleaned up. See
+            // https://fxbug.dev/340551498 for details.
+            debug_assert!(
+                curr_cpu == this_cpu || stolen_by == this_cpu || thread == active_thread,
+                "Thread {} expected to be a member of scheduler {}, but curr_cpu says {}",
+                // SAFETY: `thread` is valid.
+                unsafe { cpp_thread_get_tid(thread) },
+                this_cpu,
+                curr_cpu
+            );
+        }
+    }
+
+    /// It would be nice to be able to make a stronger assertion here (that the
+    /// thread was not just in a run queue, but the specific run queue we expect it
+    /// to be in), but unfortunately, there is no inexpensive way of doing that.
+    ///
+    /// Thankfully, most of the time that we need to invoke an assertion like this,
+    /// it is pretty obvious from the context that the assertion is true. It might
+    /// be reasonable to (someday) consider removing even this weak runtime check,
+    /// and just leaving this as a static analysis workaround, and nothing more.
+    ///
+    /// # Safety
+    /// The caller must ensure that `thread` is a valid pointer and `queue_lock_` is held.
+    pub unsafe fn assert_in_run_queue(&self, thread: *const Thread) {
+        // Evaluate nothing in release builds.
+        if cfg!(debug_assertions) {
+            // SAFETY: `thread` is valid and `queue_lock_` is held, which synchronizes
+            // access to `curr_cpu` and the run queue node state.
+            let (curr_cpu, in_queue) = unsafe {
+                (
+                    (*cpp_thread_get_scheduler_state(thread.cast_mut())).curr_cpu,
+                    (*cpp_thread_get_queue_state(thread.cast_mut())).in_queue(),
+                )
+            };
+            // SAFETY: `this_cpu` is initialized during early boot.
+            let this_cpu = unsafe { self.this_cpu() };
+            debug_assert!(
+                curr_cpu == this_cpu && in_queue,
+                "Thread {} expected to be in run queue of scheduler {}, curr_cpu={}, in_queue={}",
+                // SAFETY: `thread` is valid.
+                unsafe { cpp_thread_get_tid(thread) },
+                this_cpu,
+                curr_cpu,
+                in_queue
+            );
+        }
+    }
+
+    /// Unconditionally perform an expensive check of as many scheduler invariants
+    /// as we can. Usually, this is not called directly; the `validate_invariants`
+    /// version (which is gated on a default-off build option) is preferred.
+    ///
+    /// # Safety
+    /// The caller must ensure that `queue_lock_` is held and that a
+    /// `ChainLockTransaction` is active on the current CPU (the C++ equivalent of
+    /// holding the `chainlock_transaction_token` capability).
+    pub unsafe fn validate_invariants_unconditional(&self) {
+        let observe_fair_thread = |t: *const Thread| {
+            // We are holding the scheduler's queue lock, and observing threads which
+            // are either active, or members of our queues, so it is OK for us to
+            // read a thread's effective profile discipline, even though we don't
+            // explicitly hold the thread's lock. Other fields of the effective
+            // profile (the dirty flags) may be written by a CPU holding only the
+            // thread's lock, so no reference to the profile is formed here.
+            //
+            // SAFETY: `t` is a valid thread which is active in, or queued on, this
+            // scheduler, and `queue_lock_` is held, which keeps its effective
+            // profile weight stable.
+            let discipline = unsafe {
+                EffectiveProfile::discipline_raw(
+                    &raw const (*cpp_thread_get_scheduler_state(t.cast_mut())).effective_profile,
+                )
+            };
+            assert!(
+                discipline == SchedDiscipline::Fair,
+                "Fair thread {} has non-fair effective profile",
+                // SAFETY: `t` is valid.
+                unsafe { cpp_thread_get_tid(t) }
+            );
+
+            // If we have dirty tracking enabled for effective profiles (only enabled in
+            // builds with extra scheduler state validation enabled) we can try to make
+            // some extra checks.
+            //
+            // 1) If we know that the current base profile is clean, we can assert that
+            //    the base profile is fair.
+            // 2) If we know that the current IPVs are clean, we can assert that the IPV
+            //    utilization is zero.
+            //
+            // In order to safely observe these things, however, we need to be holding
+            // the thread's lock. Threads can change their base profile or IPVs (and
+            // the flags which indicate if they are dirty or nor) while only holding
+            // their lock. They do not need to be holding the scheduler's queue lock if
+            // the thread happens to be running or ready.
+            //
+            // So, _try_ to get the thread's lock if we don't already hold it, and if we
+            // succeed, go ahead a perform our checks. If we fail to get the lock for
+            // any reason, just skip the checks this time.
+            #[cfg(scheduler_extra_invariant_validation)]
+            {
+                // Requires `t`'s lock to be held by the current CPU.
+                let extra_checks = |t: *const Thread| {
+                    // SAFETY: `t` is valid and its lock is held by the current CPU (it
+                    // was either already held, or acquired below), so the base profile,
+                    // inherited profile values, and dirty flags cannot change while this
+                    // reference is live. The reference is formed only after the lock is
+                    // held.
+                    let ss = unsafe { &*cpp_thread_get_scheduler_state(t.cast_mut()) };
+                    let ep = &ss.effective_profile;
+                    let bp = &ss.base_profile;
+                    let ipv = &ss.inherited_profile_values;
+
+                    if (ep.dirty_flags & EffectiveProfile::DIRTY_FLAG_BASE_DIRTY) == 0 {
+                        assert!(
+                            bp.is_fair(),
+                            "Fair thread {} has clean, but non-fair, base profile",
+                            // SAFETY: `t` is valid.
+                            unsafe { cpp_thread_get_tid(t) }
+                        );
+                    }
+                    if (ep.dirty_flags & EffectiveProfile::DIRTY_FLAG_INHERITED_DIRTY) == 0 {
+                        assert!(
+                            ipv.uncapped_utilization == SchedUtilization::from_raw(0),
+                            "Fair thread {} has clean IPV, but non-zero inherited utilization ({})",
+                            // SAFETY: `t` is valid.
+                            unsafe { cpp_thread_get_tid(t) },
+                            ipv.uncapped_utilization.raw_value()
+                        );
+                    }
+                };
+
+                // SAFETY: The caller guarantees that a `ChainLockTransaction` is active
+                // on the current CPU.
+                let token = unsafe { ChainLockTransaction::assert_active() };
+                // SAFETY: `t` is valid, and cannot be destroyed while it is active in,
+                // or queued on, this scheduler, whose `queue_lock_` we hold, so its
+                // embedded lock outlives this reference.
+                let lock = unsafe { &*thread_get_lock(t) };
+                if lock.is_held(&token) {
+                    extra_checks(t);
+                } else if lock.try_acquire_with_options(
+                    AllowFinalized::Yes,
+                    RecordBackoff::Yes,
+                    &token,
+                ) {
+                    extra_checks(t);
+                    lock.release(&token);
+                }
+            }
+        };
+
+        let observe_deadline_thread = |t: *const Thread| {
+            // See above for the locking rules for accessing the pieces of effective
+            // profile.
+            //
+            // SAFETY: See `observe_fair_thread`.
+            let discipline = unsafe {
+                EffectiveProfile::discipline_raw(
+                    &raw const (*cpp_thread_get_scheduler_state(t.cast_mut())).effective_profile,
+                )
+            };
+            assert!(
+                discipline == SchedDiscipline::Deadline,
+                "Deadline thread {} has non-deadline effective profile",
+                // SAFETY: `t` is valid.
+                unsafe { cpp_thread_get_tid(t) }
+            );
+
+            #[cfg(scheduler_extra_invariant_validation)]
+            {
+                // Requires `t`'s lock to be held by the current CPU.
+                let extra_checks = |t: *const Thread| {
+                    // SAFETY: See `observe_fair_thread`.
+                    let ss = unsafe { &*cpp_thread_get_scheduler_state(t.cast_mut()) };
+                    let ep = &ss.effective_profile;
+                    let bp = &ss.base_profile;
+                    let ipv = &ss.inherited_profile_values;
+
+                    if ep.dirty_flags == EffectiveProfile::DIRTY_FLAG_CLEAN {
+                        assert!(
+                            bp.is_deadline()
+                                || (ipv.uncapped_utilization > SchedUtilization::from_raw(0)),
+                            "Deadline thread {} has a clean effective profile, but neither a \
+                             deadline base profile ({}), nor a non-zero inherited utilization ({})",
+                            // SAFETY: `t` is valid.
+                            unsafe { cpp_thread_get_tid(t) },
+                            if bp.is_fair() { "Fair" } else { "Deadline" },
+                            ipv.uncapped_utilization.raw_value()
+                        );
+                    }
+                };
+
+                // SAFETY: See `observe_fair_thread`.
+                let token = unsafe { ChainLockTransaction::assert_active() };
+                // SAFETY: See `observe_fair_thread`.
+                let lock = unsafe { &*thread_get_lock(t) };
+                if lock.is_held(&token) {
+                    extra_checks(t);
+                } else if lock.try_acquire_with_options(
+                    AllowFinalized::Yes,
+                    RecordBackoff::Yes,
+                    &token,
+                ) {
+                    extra_checks(t);
+                    lock.release(&token);
+                }
+            }
+        };
+
+        // SAFETY: `queue_lock_` is held, so the run queues are stable while we
+        // iterate them and the observers only read thread state.
+        for t in unsafe { &*self.fair_run_queue() }.iter() {
+            observe_fair_thread(t);
+        }
+
+        // SAFETY: As above.
+        for t in unsafe { &*self.critical_deadline_queue() }.iter() {
+            observe_deadline_thread(t);
+        }
+
+        // SAFETY: As above.
+        for t in unsafe { &*self.deadline_queue() }.iter() {
+            observe_deadline_thread(t);
+        }
+
+        // SAFETY: `queue_lock_` is held, synchronizing access to `active_thread`.
+        let active_thread = unsafe { (*self.state.get()).active_thread };
+        assert!(!active_thread.is_null());
+        // SAFETY: `active_thread` is non-null and is active on this scheduler, so
+        // reading its effective profile discipline under `queue_lock_` is safe (see
+        // above).
+        let active_discipline = unsafe {
+            EffectiveProfile::discipline_raw(
+                &raw const (*cpp_thread_get_scheduler_state(active_thread)).effective_profile,
+            )
+        };
+        if active_discipline == SchedDiscipline::Fair {
+            observe_fair_thread(active_thread);
+        } else {
+            assert!(active_discipline == SchedDiscipline::Deadline);
+            observe_deadline_thread(active_thread);
+        }
+    }
+
+    /// Performs an expensive check of scheduler invariants when the
+    /// `scheduler_extra_invariant_validation` build option is enabled, and
+    /// nothing otherwise.
+    ///
+    /// # Safety
+    /// See `validate_invariants_unconditional`.
+    #[inline]
+    pub unsafe fn validate_invariants(&self) {
+        if cfg!(scheduler_extra_invariant_validation) {
+            // SAFETY: Forwarded from the caller.
+            unsafe { self.validate_invariants_unconditional() };
+        }
+    }
+
     /// Returns the number of the CPU this scheduler instance is associated with.
     ///
     /// # Safety
@@ -2986,6 +3335,44 @@ impl Drop for QueueLockGuard {
     }
 }
 
+// RAII lock helper which also saves and restores the interrupt state, the
+// equivalent of `Guard<MonitoredSpinLock, IrqSave>`.
+//
+// TODO(https://fxbug.dev/537458631): The C++ shim acquires the underlying
+// spinlock directly, bypassing lockdep validation. Route through `Guard` once
+// cross-language inlining allows it.
+struct QueueLockIrqSaveGuard {
+    // Safety invariant: `scheduler` points to a valid `Scheduler` whose
+    // `queue_lock_` is held by the current CPU for the lifetime of this guard,
+    // and `irq_state` is the interrupt state saved when it was acquired.
+    scheduler: *mut Scheduler,
+    irq_state: u64,
+}
+impl QueueLockIrqSaveGuard {
+    /// Disables interrupts, acquires `scheduler`'s queue lock, and returns an
+    /// RAII guard that releases the lock and restores the interrupt state on
+    /// drop.
+    ///
+    /// # Safety
+    /// `scheduler` must point to a valid `Scheduler` instance and `queue_lock_`
+    /// must not already be held by the current CPU.
+    unsafe fn acquire(scheduler: *mut Scheduler) -> Self {
+        // SAFETY: `scheduler` is valid and `queue_lock_` is not already held.
+        let irq_state = unsafe { cpp_scheduler_lock_queue_irq_save(scheduler) };
+        Self { scheduler, irq_state }
+    }
+}
+impl Drop for QueueLockIrqSaveGuard {
+    fn drop(&mut self) {
+        // SAFETY: By the type's safety invariant, `self.scheduler` is valid, its
+        // `queue_lock_` is held by the current CPU, and `self.irq_state` is the
+        // state saved on acquisition.
+        unsafe {
+            cpp_scheduler_unlock_queue_irq_restore(self.scheduler, self.irq_state);
+        }
+    }
+}
+
 // Handle all of the common tasks associated with each of the possible PI
 // interactions. The outline of this is:
 //
@@ -3029,4 +3416,145 @@ pub enum UnblockType {
     /// compatible conditions, the woken thread can replace the current thread on
     /// a CPU as it blocks in the same reschedule operation.
     Synchronous = 1,
+}
+
+impl Scheduler {
+    /// Sets or clears this scheduler's bit in the global idle state mask; similar
+    /// to the active state mask.
+    ///
+    /// # Safety
+    /// `this_cpu` must have been initialized by `sched_early_init`.
+    pub unsafe fn set_idle(&self, is_idle: bool) {
+        // SAFETY: Forwarded from the caller.
+        let mask = cpu_num_to_mask(unsafe { self.this_cpu() });
+        if is_idle {
+            IDLE_SCHEDULERS.fetch_or(mask, core::sync::atomic::Ordering::Relaxed);
+        } else {
+            IDLE_SCHEDULERS.fetch_and(!mask, core::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Changes this scheduler's CPU's active state. We require that the scheduler's
+    /// `queue_lock` be held during the operation. This enforces the invariant that
+    /// "the scheduler's active bit only changes while holding the scheduler's
+    /// queue lock".
+    ///
+    /// This means that things like `find_target_cpu` are free to check the global
+    /// active mask to see whether or not we _think_ that a given scheduler is
+    /// likely to be active for selection purposes, but when it comes time to
+    /// actually add a thread to a scheduler's queues, we check the active state of
+    /// the scheduler's assigned CPU from within the safety of the queue lock using
+    /// `is_scheduler_active_locked()`.
+    ///
+    /// # Safety
+    /// `self` must be the current CPU's scheduler (`set_blocking_disallowed`
+    /// operates on the current CPU), `this_cpu` must have been initialized by
+    /// `sched_early_init`, and the caller must hold `queue_lock_`.
+    unsafe fn set_is_active(&self, is_active: bool) {
+        // SAFETY: Forwarded from the caller.
+        let this_cpu = unsafe { self.this_cpu() };
+        debug_assert_eq!(this_cpu, crate::arch_rs::curr_cpu_num());
+        let mask = cpu_num_to_mask(this_cpu);
+        if is_active {
+            ACTIVE_SCHEDULERS.fetch_or(mask, core::sync::atomic::Ordering::Relaxed);
+        } else {
+            ACTIVE_SCHEDULERS.fetch_and(!mask, core::sync::atomic::Ordering::Relaxed);
+        }
+        crate::arch_rs::set_blocking_disallowed(!is_active);
+    }
+
+    /// Sets/clears the current CPU's bit in the global active mask. Holds the
+    /// scheduler's queue lock while the bit is changed, enforcing the invariant
+    /// that a scheduler's active bit can only ever change while holding that
+    /// scheduler's lock.
+    ///
+    /// # Safety
+    /// The current CPU's `Scheduler` must be initialized and its `queue_lock_`
+    /// must not already be held by the current CPU. Interrupts must be disabled,
+    /// or the calling thread must otherwise be unable to migrate to another CPU,
+    /// so that the scheduler looked up here is still the current CPU's when the
+    /// queue lock is acquired.
+    pub unsafe fn set_curr_cpu_active(is_active: bool) {
+        // SAFETY: The current CPU's scheduler is initialized, so `cpp_scheduler_get`
+        // returns a valid pointer.
+        let scheduler = unsafe { cpp_scheduler_get(crate::arch_rs::curr_cpu_num()) };
+        // SAFETY: `scheduler` is valid and `queue_lock_` is not already held.
+        let _guard = unsafe { QueueLockIrqSaveGuard::acquire(scheduler) };
+        // SAFETY: `scheduler` is valid and `_guard` holds its `queue_lock_`.
+        unsafe { (*scheduler).set_is_active(is_active) };
+    }
+
+    /// Checks to see if `self` scheduler is currently active while holding its
+    /// `queue_lock`, ensuring that it will stay in its current state until after we
+    /// drop the lock.
+    ///
+    /// # Safety
+    /// `this_cpu` must have been initialized by `sched_early_init`, and the caller
+    /// must hold `queue_lock_`.
+    pub unsafe fn is_scheduler_active_locked(&self) -> bool {
+        // SAFETY: Forwarded from the caller.
+        peek_is_active(unsafe { self.this_cpu() })
+    }
+}
+
+/// Peeks at the active scheduler mask. See `peek_active_mask`.
+///
+/// # Safety
+/// No preconditions; this is a lockless atomic load.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_peek_active_mask() -> CpuMask {
+    peek_active_mask()
+}
+
+/// Peeks at the idle scheduler mask. See `peek_idle_mask`.
+///
+/// # Safety
+/// No preconditions; this is a lockless atomic load.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_peek_idle_mask() -> CpuMask {
+    peek_idle_mask()
+}
+
+/// Sets or clears `sched`'s bit in the idle scheduler mask. See `Scheduler::set_idle`.
+///
+/// # Safety
+/// `sched` must point to a valid `Scheduler` whose `this_cpu` has been initialized.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_set_idle(sched: *const Scheduler, is_idle: bool) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).set_idle(is_idle) };
+}
+
+/// Sets or clears the current CPU's bit in the active scheduler mask. See
+/// `Scheduler::set_curr_cpu_active`.
+///
+/// # Safety
+/// The current CPU's `Scheduler` must be initialized and its `queue_lock_` must
+/// not already be held by the current CPU. Interrupts must be disabled, or the
+/// calling thread must otherwise be unable to migrate to another CPU.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_set_curr_cpu_active(is_active: bool) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { Scheduler::set_curr_cpu_active(is_active) };
+}
+
+/// Returns true if new wakeup accounting is enabled. See `enable_new_wakeup_accounting`.
+///
+/// # Safety
+/// No preconditions beyond boot options having been initialized.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_enable_new_wakeup_accounting() -> bool {
+    enable_new_wakeup_accounting()
+}
+
+/// Unconditionally validates `sched`'s invariants. See
+/// `Scheduler::validate_invariants_unconditional`.
+///
+/// # Safety
+/// `sched` must point to a valid `Scheduler` whose `queue_lock_` is held by the
+/// current CPU, and a `ChainLockTransaction` must be active on the current CPU.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_validate_invariants_unconditional(sched: *const Scheduler) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).validate_invariants_unconditional() };
 }

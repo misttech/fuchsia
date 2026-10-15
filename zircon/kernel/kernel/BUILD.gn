@@ -37,7 +37,6 @@ source_set("kernel") {
     "restricted_ffi.cc",
     "rppm_ffi.cc",
     "scheduler.cc",
-    "scheduler_ffi.cc",
     "scheduler_pi.cc",
     "scheduler_state.cc",
     "scheduler_state_ffi.cc",
