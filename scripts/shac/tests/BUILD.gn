@@ -34,7 +34,7 @@ python_host_test("python_format_test") {
 
 python_host_test("bazel_root_package_labels_test") {
   main_source = "bazel_root_package_labels_test.py"
-  sources = [ "//scripts/shac/bazel_root_package_labels.py" ]
+  sources = [ "//scripts/shac/bazel_lint/checks/root_package_labels.py" ]
 }
 
 python_host_test("check_header_guards_test") {

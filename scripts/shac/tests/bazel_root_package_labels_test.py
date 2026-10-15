@@ -14,10 +14,15 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-# Add parent directory so bazel_root_package_labels can be imported directly.
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+# Add checks directory so root_package_labels can be imported directly.
+sys.path.insert(
+    0,
+    str(
+        pathlib.Path(__file__).resolve().parent.parent / "bazel_lint" / "checks"
+    ),
+)
 
-import bazel_root_package_labels as checker
+import root_package_labels as checker
 
 
 class TestBazelRootPackageLabels(unittest.TestCase):

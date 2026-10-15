@@ -76,7 +76,7 @@ def _bazel_disallowed_workspace_root_package_labels(ctx):
         fuchsia_dir,
         cipd_platform_name(ctx),
     )
-    checker_script = "%s/scripts/shac/bazel_root_package_labels.py" % fuchsia_dir
+    checker_script = "%s/scripts/shac/bazel_lint/checks/root_package_labels.py" % fuchsia_dir
 
     res = os_exec(
         ctx,
