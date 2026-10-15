@@ -221,15 +221,14 @@ impl BootfsSvc {
 
     // This function will iterate through all entries parsed from the Bootfs
     // VMO. A VMO is created for each entry, and the content located at the
-    // entry's offset in the Bootfs VMO is  transferred to the newly created
+    // entry's offset in the Bootfs VMO is transferred to the newly created
     // VMO. The entry VMO corresponds to a new VMO file that gets inserted into
     // the Bootfs VFS. The Bootfs VMO gets decommitted during this process.
     //
-    // Note that until https://fxbug.dev/352179816 is landed, Userboot continues
-    // to hold onto copy-on-write VMO clones of the Component Manager binary and
-    // deps backing this process, so that even when this function creates
-    // true-copy VMOs and decommits their regions, the COW VMO will still have
-    // its own copy of pages with the original content.
+    // Userboot already transfers the ranges for the Component Manager binary
+    // and its shared library dependencies into dedicated VMOs and passes them
+    // via `fuchsia.boot.Userboot/PostBootfsFiles` (`bootfs_entries`), which are
+    // inserted into `seen_ranges` below before scanning the remaining entries.
     fn ingest_bootfs_vmo(
         mut self,
         vmex: Resource,
