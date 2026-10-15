@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::common::{EventCode, MetricId, MetricType, ProjectId};
-use fidl_fuchsia_diagnostics::Selector;
+use fidl_fuchsia_diagnostics_common::Selector;
 use selectors::SelectorDisplayOptions;
 use serde::ser::{Error, SerializeSeq};
 use serde::{Deserialize, Serialize, Serializer};

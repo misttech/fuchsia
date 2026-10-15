@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_diagnostics::{Selector, StringSelector, TreeNames};
+use fidl_fuchsia_diagnostics_common::{Selector, StringSelector, TreeNames};
 use selectors::FastError;
 use serde::{Deserialize, Deserializer, de};
 use std::fmt;

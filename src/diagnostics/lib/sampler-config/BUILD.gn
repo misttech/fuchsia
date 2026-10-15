@@ -18,7 +18,7 @@ rustc_library("sampler-config") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_common",
     "//src/lib/diagnostics/selectors",
     "//src/sys/lib/component_id_index",
     "//src/sys/lib/moniker",

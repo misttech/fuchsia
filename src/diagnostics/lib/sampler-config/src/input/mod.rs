@@ -9,7 +9,7 @@
 //! [`crate::assembly`] types, which identify metrics only by ID.
 
 use crate::common::{EventCode, MetricId, MetricType, ProjectId};
-use fidl_fuchsia_diagnostics::Selector;
+use fidl_fuchsia_diagnostics_common::Selector;
 use serde::{Deserialize, Deserializer, de};
 use std::fmt;
 

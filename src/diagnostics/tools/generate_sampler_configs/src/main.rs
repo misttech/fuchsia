@@ -6,7 +6,7 @@ use anyhow::{Context, Error, bail, format_err};
 use argh::{ArgsInfo, FromArgs};
 use cobalt_registry_proto::cobalt::metric_definition::MetricType as CobaltMetricType;
 use cobalt_registry_proto::cobalt::{CobaltRegistry, MetricDefinition};
-use fidl_fuchsia_diagnostics::Selector;
+use fidl_fuchsia_diagnostics_common::Selector;
 use prost::Message;
 use sampler_config::assembly::{MergedSamplerConfig, MetricTemplate, ProjectTemplate};
 use sampler_config::runtime::{DataSetConfig, MetricConfig, ProjectConfig as SamplerProjectConfig};
