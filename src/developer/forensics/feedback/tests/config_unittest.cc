@@ -5,6 +5,7 @@
 #include "src/developer/forensics/feedback/config.h"
 
 #include <lib/inspect/testing/cpp/inspect.h>
+#include <lib/syslog/cpp/macros.h>
 
 #include <initializer_list>
 #include <optional>
@@ -16,6 +17,9 @@
 #include "src/developer/forensics/feedback/constants.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/lib/files/scoped_temp_dir.h"
+#include "third_party/rapidjson/include/rapidjson/document.h"
+#include "third_party/rapidjson/include/rapidjson/stringbuffer.h"
+#include "third_party/rapidjson/include/rapidjson/writer.h"
 
 namespace forensics::feedback {
 namespace {
@@ -68,762 +72,324 @@ class SnapshotExclusionConfigTest : public ConfigTest {
   }
 };
 
+class TestConfig {
+ public:
+  explicit TestConfig(const char* raw_json) {
+    json_.Parse(raw_json);
+    FX_CHECK(!json_.HasParseError());
+  }
+
+  template <typename T>
+  void Set(const char* key, T value) {
+    FX_CHECK(json_.HasMember(key));
+    json_[key] = rapidjson::Value(value);
+  }
+
+  void Set(const char* key, const char* value) {
+    FX_CHECK(json_.HasMember(key));
+    json_[key].SetString(value, json_.GetAllocator());
+  }
+
+  void AddMember(const char* key, const char* value) {
+    FX_CHECK(!json_.HasMember(key));
+    json_.AddMember(rapidjson::Value(key, json_.GetAllocator()),
+                    rapidjson::Value(value, json_.GetAllocator()), json_.GetAllocator());
+  }
+
+  void EraseMember(const char* key) { FX_CHECK(json_.EraseMember(key)); }
+
+  std::string ToString() const {
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    json_.Accept(writer);
+    return buffer.GetString();
+  }
+
+ private:
+  rapidjson::Document json_;
+};
+
+TestConfig CreateDefaultConfig() {
+  return TestConfig(R"({
+    "persisted_logs_total_size_kib": 512,
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false,
+    "disk_endurance": "high",
+    "remote_device_id_provider": false,
+    "supports_user_initiated_poweroffs": false
+  })");
+}
+
 class FeedbackConfigTest : public ConfigTest {
  protected:
-  std::optional<FeedbackConfig> ParseConfig(const std::string& config) {
-    return GetFeedbackConfig(WriteConfig(config));
+  std::optional<FeedbackConfig> ParseConfig(const TestConfig& config) {
+    return GetFeedbackConfig(WriteConfig(config.ToString()));
   }
 };
 
 using InspectConfigTest = UnitTestFixture;
 
 TEST_F(FeedbackConfigTest, MissingCrashReportUploadPolicy) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("crash_report_upload_policy");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingDailyPerProductCrashReportQuota) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("daily_per_product_crash_report_quota");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingEnableDataRedaction) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("enable_data_redaction");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingEnableHourlySnapshots) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("enable_hourly_snapshots");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingEnableLimitInspectData) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("enable_limit_inspect_data");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingDiskEndurance) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("disk_endurance");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingRemoteDeviceIdProvider) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "supports_user_initiated_poweroffs": false
-})");
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("remote_device_id_provider");
+  EXPECT_FALSE(ParseConfig(config).has_value());
+}
 
-  EXPECT_FALSE(config.has_value());
+TEST_F(FeedbackConfigTest, MissingSupportsUserInitiatedPoweroffs) {
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("supports_user_initiated_poweroffs");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, CrashReportUploadPolicyDisabled) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->build_type_config.crash_report_upload_policy,
+  TestConfig config = CreateDefaultConfig();
+  config.Set("crash_report_upload_policy", "disabled");
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->build_type_config.crash_report_upload_policy,
             CrashReportUploadPolicy::kDisabled);
 }
 
 TEST_F(FeedbackConfigTest, CrashReportUploadPolicyEnabled) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "enabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->build_type_config.crash_report_upload_policy,
+  TestConfig config = CreateDefaultConfig();
+  config.Set("crash_report_upload_policy", "enabled");
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->build_type_config.crash_report_upload_policy,
             CrashReportUploadPolicy::kEnabled);
 }
 
 TEST_F(FeedbackConfigTest, CrashReportUploadPolicyReadFromPrivacySettings) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "read_from_privacy_settings",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->build_type_config.crash_report_upload_policy,
+  TestConfig config = CreateDefaultConfig();
+  config.Set("crash_report_upload_policy", "read_from_privacy_settings");
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->build_type_config.crash_report_upload_policy,
             CrashReportUploadPolicy::kReadFromPrivacySettings);
 }
 
 TEST_F(FeedbackConfigTest, CrashReportUploadPolicyNotAllowedValue) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "not_allowed",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("crash_report_upload_policy", "not_allowed");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, CrashReportUploadPolicyNotString) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": 0,
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("crash_report_upload_policy", 0);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaNegative) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->build_type_config.daily_per_product_crash_report_quota, std::nullopt);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("daily_per_product_crash_report_quota", -1);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->build_type_config.daily_per_product_crash_report_quota, std::nullopt);
 }
 
 TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaZero) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": 0,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->build_type_config.daily_per_product_crash_report_quota, std::nullopt);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("daily_per_product_crash_report_quota", 0);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->build_type_config.daily_per_product_crash_report_quota, std::nullopt);
 }
 
 TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaPositive) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": 100,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->build_type_config.daily_per_product_crash_report_quota, 100);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("daily_per_product_crash_report_quota", 100);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->build_type_config.daily_per_product_crash_report_quota, 100);
 }
 
 TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaNotNumber) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": "",
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("daily_per_product_crash_report_quota", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, EnableDataRedactionTrue) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": true,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->build_type_config.enable_data_redaction);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_data_redaction", true);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_TRUE(feedback_config->build_type_config.enable_data_redaction);
 }
 
 TEST_F(FeedbackConfigTest, EnableDataRedactionFalse) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->build_type_config.enable_data_redaction);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_data_redaction", false);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->build_type_config.enable_data_redaction);
 }
 
 TEST_F(FeedbackConfigTest, EnableDataRedactionNotBoolean) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": "",
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_data_redaction", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, EnableHourlySnapshotsTrue) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": true,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->build_type_config.enable_hourly_snapshots);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_hourly_snapshots", true);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_TRUE(feedback_config->build_type_config.enable_hourly_snapshots);
 }
 
 TEST_F(FeedbackConfigTest, EnableHourlySnapshotsFalse) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->build_type_config.enable_hourly_snapshots);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_hourly_snapshots", false);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->build_type_config.enable_hourly_snapshots);
 }
 
 TEST_F(FeedbackConfigTest, EnableHourlySnapshotsNotBoolean) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": "",
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_hourly_snapshots", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, EnableLimitInspectDataTrue) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": true,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->build_type_config.enable_limit_inspect_data);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_limit_inspect_data", true);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_TRUE(feedback_config->build_type_config.enable_limit_inspect_data);
 }
 
 TEST_F(FeedbackConfigTest, EnableLimitInspectDataFalse) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->build_type_config.enable_limit_inspect_data);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_limit_inspect_data", false);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->build_type_config.enable_limit_inspect_data);
 }
 
 TEST_F(FeedbackConfigTest, EnableLimitInspectDataNotBoolean) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": "",
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("enable_limit_inspect_data", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, DiskEnduranceHigh) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->disk_endurance, DiskEndurance::kHigh);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("disk_endurance", "high");
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->disk_endurance, DiskEndurance::kHigh);
 }
 
 TEST_F(FeedbackConfigTest, DiskEnduranceLow) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "low",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->disk_endurance, DiskEndurance::kLow);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("disk_endurance", "low");
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->disk_endurance, DiskEndurance::kLow);
 }
 
 TEST_F(FeedbackConfigTest, DiskEnduranceNotAllowedValue) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "not_allowed",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("disk_endurance", "not_allowed");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, DiskEnduranceNotString) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": 0,
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("disk_endurance", 0);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, RemoteDeviceIdProviderTrue) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": true,
-    "supports_user_initiated_poweroffs": true
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->remote_device_id_provider);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("remote_device_id_provider", true);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_TRUE(feedback_config->remote_device_id_provider);
 }
 
 TEST_F(FeedbackConfigTest, RemoteDeviceIdProviderFalse) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->remote_device_id_provider);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("remote_device_id_provider", false);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->remote_device_id_provider);
 }
 
 TEST_F(FeedbackConfigTest, RemoteDeviceIdProviderNotBoolean) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": "",
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("remote_device_id_provider", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, SupportsUserInitiatedPoweroffsTrue) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": true
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->supports_user_initiated_poweroffs);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("supports_user_initiated_poweroffs", true);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_TRUE(feedback_config->supports_user_initiated_poweroffs);
 }
 
 TEST_F(FeedbackConfigTest, SupportsUserInitiatedPoweroffsFalse) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->supports_user_initiated_poweroffs);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("supports_user_initiated_poweroffs", false);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->supports_user_initiated_poweroffs);
 }
 
 TEST_F(FeedbackConfigTest, SupportsUserInitiatedPoweroffsNotBoolean) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": ""
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("supports_user_initiated_poweroffs", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(SnapshotConfigTest, MissingAnnotationAllowlist) {
@@ -1005,686 +571,223 @@ TEST_F(SnapshotExclusionConfigTest, ExcludedAnnotationsNonEmpty) {
 }
 
 TEST_F(FeedbackConfigTest, MissingConfigs) {
-  const std::optional<FeedbackConfig> config = GetFeedbackConfig("/bad/path");
-
-  EXPECT_FALSE(config.has_value());
+  EXPECT_FALSE(GetFeedbackConfig("/bad/path").has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingPersistedLogsTotalSizeKib) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("persisted_logs_total_size_kib");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingReportPersistenceMaxCacheSizeKib) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("report_persistence_max_cache_size_kib");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingReportPersistenceMaxTmpSizeKib) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("report_persistence_max_tmp_size_kib");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("snapshot_persistence_max_cache_size_mib");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("snapshot_persistence_max_tmp_size_mib");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingSpontaneousRebootReason) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.EraseMember("spontaneous_reboot_reason");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, SpuriousField) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false,
-    "spurious": ""
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.AddMember("spurious", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, PersistedLogsTotalSizeKibPositive) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->persisted_logs_total_size, StorageSize::Kilobytes(512));
+  TestConfig config = CreateDefaultConfig();
+  config.Set("persisted_logs_total_size_kib", 512);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->persisted_logs_total_size, StorageSize::Kilobytes(512));
 }
 
 TEST_F(FeedbackConfigTest, PersistedLogsTotalSizeKibZero) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 0,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("persisted_logs_total_size_kib", 0);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, PersistedLogsTotalSizeKibNegative) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": -1,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("persisted_logs_total_size_kib", -1);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, PersistedLogsTotalSizeKibNotNumber) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": "",
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("persisted_logs_total_size_kib", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeMibPositive) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_EQ(config->report_persistence_max_cache_size, StorageSize::Kilobytes(1));
+  TestConfig config = CreateDefaultConfig();
+  config.Set("report_persistence_max_cache_size_kib", 1);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->report_persistence_max_cache_size, StorageSize::Kilobytes(1));
 }
 
 TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibZero) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 0,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("report_persistence_max_cache_size_kib", 0);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibNegative) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": -1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("report_persistence_max_cache_size_kib", -1);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibNotNumber) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": "",
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("report_persistence_max_cache_size_kib", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeMibPositive) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_EQ(config->report_persistence_max_tmp_size, StorageSize::Kilobytes(1));
+  TestConfig config = CreateDefaultConfig();
+  config.Set("report_persistence_max_tmp_size_kib", 1);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->report_persistence_max_tmp_size, StorageSize::Kilobytes(1));
 }
 
 TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibZero) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 0,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("report_persistence_max_tmp_size_kib", 0);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibNegative) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": -1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("report_persistence_max_tmp_size_kib", -1);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibNotNumber) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": "",
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("report_persistence_max_tmp_size_kib", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
+  TestConfig config = CreateDefaultConfig();
+  config.Set("snapshot_persistence_max_cache_size_mib", 1);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
 }
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 0,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_cache_size.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("snapshot_persistence_max_cache_size_mib", 0);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->snapshot_persistence_max_cache_size.has_value());
 }
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": -1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_cache_size.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("snapshot_persistence_max_cache_size_mib", -1);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->snapshot_persistence_max_cache_size.has_value());
 }
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": "",
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("snapshot_persistence_max_cache_size_mib", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
+  TestConfig config = CreateDefaultConfig();
+  config.Set("snapshot_persistence_max_tmp_size_mib", 1);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
 }
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 0,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_tmp_size.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("snapshot_persistence_max_tmp_size_mib", 0);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->snapshot_persistence_max_tmp_size.has_value());
 }
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": -1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_tmp_size.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("snapshot_persistence_max_tmp_size_mib", -1);
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_FALSE(feedback_config->snapshot_persistence_max_tmp_size.has_value());
 }
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": "",
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("snapshot_persistence_max_tmp_size_mib", "");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotAllowedValue) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "not_allowed",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("spontaneous_reboot_reason", "not_allowed");
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotString) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": 0,
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  EXPECT_FALSE(config.has_value());
+  TestConfig config = CreateDefaultConfig();
+  config.Set("spontaneous_reboot_reason", 0);
+  EXPECT_FALSE(ParseConfig(config).has_value());
 }
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonSpontaneous) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->spontaneous_reboot_reason, SpontaneousRebootReason::kBriefPowerLoss);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("spontaneous_reboot_reason", "spontaneous");
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->spontaneous_reboot_reason, SpontaneousRebootReason::kBriefPowerLoss);
 }
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonBriefPowerLoss) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "brief_power_loss",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->spontaneous_reboot_reason, SpontaneousRebootReason::kBriefPowerLoss);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("spontaneous_reboot_reason", "brief_power_loss");
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->spontaneous_reboot_reason, SpontaneousRebootReason::kBriefPowerLoss);
 }
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonHardReset) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({
-    "persisted_logs_total_size_kib": 512,
-    "report_persistence_max_cache_size_kib": 1,
-    "report_persistence_max_tmp_size_kib": 1,
-    "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "hard_reset",
-    "crash_report_upload_policy": "disabled",
-    "daily_per_product_crash_report_quota": -1,
-    "enable_data_redaction": false,
-    "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false,
-    "disk_endurance": "high",
-    "remote_device_id_provider": false,
-    "supports_user_initiated_poweroffs": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->spontaneous_reboot_reason, SpontaneousRebootReason::kHardReset);
+  TestConfig config = CreateDefaultConfig();
+  config.Set("spontaneous_reboot_reason", "hard_reset");
+  const std::optional<FeedbackConfig> feedback_config = ParseConfig(config);
+  ASSERT_TRUE(feedback_config.has_value());
+  EXPECT_EQ(feedback_config->spontaneous_reboot_reason, SpontaneousRebootReason::kHardReset);
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_UploadDisabled) {

@@ -134,12 +134,14 @@ cc_test_executable("config_unittest_exe") {
   sources = [ "config_unittest.cc" ]
 
   deps = [
+    "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/feedback:config",
     "//src/developer/forensics/testing:unit_test_fixture",
     "//src/lib/files",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
+    "//third_party/rapidjson",
   ]
 }
 
