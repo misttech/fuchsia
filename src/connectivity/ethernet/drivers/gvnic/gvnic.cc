@@ -1232,6 +1232,11 @@ void Gvnic::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {
   // The port is never removed, there's no extra cleanup needed here.
 }
 
+void Gvnic::GetPowerDependencyToken(fdf::Arena& arena,
+                                    GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 void Gvnic::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
   fuchsia_net::wire::MacAddress mac;
   memcpy(mac.octets.data(), dev_descr_.mac, ETH_ALEN);

@@ -314,6 +314,11 @@ void NetworkPort::Removed(fdf::Arena&, RemovedCompleter::Sync&) {
   RemovePortLocked(nullptr);
 }
 
+void NetworkPort::GetPowerDependencyToken(fdf::Arena& arena,
+                                          GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 void NetworkPort::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
   fuchsia_net::MacAddress mac;
   iface_.MacGetAddress(&mac);

@@ -181,6 +181,11 @@ class FakeDeviceImpl : public fdf::WireServer<netdriver::NetworkPort>,
 
   void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override {}
 
+  void GetPowerDependencyToken(fdf::Arena& arena,
+                               GetPowerDependencyTokenCompleter::Sync& completer) override {
+    completer.buffer(arena).Reply(zx::event{});
+  }
+
   fdf::ClientEnd<netdriver::NetworkDeviceImpl> Bind() {
     auto [client, server] = fdf::Endpoints<netdriver::NetworkDeviceImpl>::Create();
     fdf::BindServer(impl_dispatcher_->get(), std::move(server), this);

@@ -891,6 +891,11 @@ void IgcDriver::Removed(
     RemovedCompleter::Sync& completer) { /* Do nothing here, we don't remove port in this driver.*/
 }
 
+void IgcDriver::GetPowerDependencyToken(fdf::Arena& arena,
+                                        GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 void IgcDriver::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
   fuchsia_net::wire::MacAddress mac;
   memcpy(mac.octets.data(), adapter_->hw.mac.addr, kEtherAddrLen);

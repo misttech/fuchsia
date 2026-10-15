@@ -25,6 +25,8 @@ fidl_library(
         "//sdk/fidl/fuchsia.driver.development:__subpackages__",
         "//sdk/fidl/fuchsia.driver.framework:__subpackages__",
         "//sdk/fidl/fuchsia.hardware.hrtimer:__subpackages__",
+        "//sdk/fidl/fuchsia.hardware.network:__subpackages__",
+        "//sdk/fidl/fuchsia.hardware.network.driver:__subpackages__",
         "//sdk/fidl/fuchsia.power.system:__subpackages__",
         "//sdk/fidl/fuchsia.power.topology.test:__subpackages__",
         "//sdk/fidl/fuchsia.session.power:__subpackages__",

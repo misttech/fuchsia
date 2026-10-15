@@ -43,6 +43,8 @@ fidl("fuchsia.power.broker") {
     "//sdk/fidl/fuchsia.driver.development/*",
     "//sdk/fidl/fuchsia.driver.framework/*",
     "//sdk/fidl/fuchsia.hardware.hrtimer/*",
+    "//sdk/fidl/fuchsia.hardware.network.driver/*",
+    "//sdk/fidl/fuchsia.hardware.network/*",
     "//sdk/fidl/fuchsia.power.system/*",
     "//sdk/fidl/fuchsia.power.topology.test/*",
     "//sdk/fidl/fuchsia.session.power/*",

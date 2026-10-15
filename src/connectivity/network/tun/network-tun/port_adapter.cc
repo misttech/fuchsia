@@ -53,6 +53,11 @@ void PortAdapter::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) 
   parent_->OnPortDestroyed(*this);
 }
 
+void PortAdapter::GetPowerDependencyToken(fdf::Arena& arena,
+                                          GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkPort> PortAdapter::BindDriver() {
   auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::NetworkPort>::Create();
   fdf::BindServer(dispatcher_->get(), std::move(server), this);

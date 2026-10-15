@@ -1404,6 +1404,11 @@ void RndisFunction::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) 
 
 void RndisFunction::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {}
 
+void RndisFunction::GetPowerDependencyToken(fdf::Arena& arena,
+                                            GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 void RndisFunction::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
   fuchsia_net::wire::MacAddress mac;
   static_assert(sizeof(mac.octets) == sizeof(mac_addr_), "MAC address size mismatch");

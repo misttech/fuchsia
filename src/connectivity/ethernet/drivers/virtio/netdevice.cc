@@ -815,6 +815,11 @@ void NetworkDevice::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer
   // Do nothing.
 }
 
+void NetworkDevice::GetPowerDependencyToken(fdf::Arena& arena,
+                                            GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 void NetworkDevice::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
   fuchsia_net::wire::MacAddress mac;
   std::copy(mac_.octets.begin(), mac_.octets.end(), mac.octets.data());

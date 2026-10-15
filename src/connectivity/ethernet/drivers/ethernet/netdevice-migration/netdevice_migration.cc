@@ -707,6 +707,11 @@ void NetdeviceMigration::Removed(fdf::Arena& arena, RemovedCompleter::Sync& comp
   fdf::info("removed event for port {}", kPortId);
 }
 
+void NetdeviceMigration::GetPowerDependencyToken(
+    fdf::Arena& arena, GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 void NetdeviceMigration::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
   fuchsia_net::wire::MacAddress mac;
   static_assert(sizeof(mac_) == decltype(mac.octets)::size());

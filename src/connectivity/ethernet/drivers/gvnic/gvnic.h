@@ -84,6 +84,8 @@ class Gvnic : public DeviceType,
                  fdf::Arena& arena, SetActiveCompleter::Sync& completer) override;
   void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override;
   void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override;
+  void GetPowerDependencyToken(fdf::Arena& arena,
+                               GetPowerDependencyTokenCompleter::Sync& completer) override;
 
   // MacAddr protocol:
   void GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) override;

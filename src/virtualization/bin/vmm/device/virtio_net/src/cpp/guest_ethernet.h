@@ -86,6 +86,8 @@ class GuestEthernet : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
                  fdf::Arena& arena, SetActiveCompleter::Sync& completer) override;
   void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override;
   void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override;
+  void GetPowerDependencyToken(fdf::Arena& arena,
+                               GetPowerDependencyTokenCompleter::Sync& completer) override;
 
   // Port GuestEthernet uses for communication.
   static constexpr uint8_t kPortId = 0;

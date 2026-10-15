@@ -86,8 +86,7 @@ void GuestEthernet::Teardown() {
   // destroying the completion queues. This drains pending callbacks
   // that capture raw |this| pointers through the completion queues.
   libsync::Completion teardown_complete;
-  device_interface_->Teardown(
-      [&teardown_complete]() { teardown_complete.Signal(); });
+  device_interface_->Teardown([&teardown_complete]() { teardown_complete.Signal(); });
   teardown_complete.Wait();
 }
 
@@ -555,3 +554,10 @@ void GuestEthernet::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) 
 }
 
 void GuestEthernet::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {}
+
+void GuestEthernet::GetPowerDependencyToken(fdf::Arena& arena,
+                                            GetPowerDependencyTokenCompleter::Sync& completer) {
+  // GuestEthernet doesn't support power management, so nothing needs to be
+  // returned.
+  completer.buffer(arena).Reply(zx::event{});
+}

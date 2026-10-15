@@ -78,6 +78,7 @@
 library fuchsia.hardware.network.driver;
 
 using fuchsia.hardware.network;
+using fuchsia.power.broker;
 using zx;
 
 /// Maximum number of disjoint parts a buffer may have.
@@ -268,6 +269,21 @@ closed protocol NetworkPort {
     /// returned and indicated success. If AddPort fails this will not be called,
     /// check the return status of AddPort instead.
     strict Removed();
+    /// Gets the Power Broker dependency token for this port's power element.
+    ///
+    /// The token exposes two levels: `0` (off) and `1` (on). Clients lease
+    /// level `1` whenever the port's datapath is required and hold the lease
+    /// for as long as it is required. Drivers are free to internally
+    /// power-manage a leased-but-idle port so long as it's invisible to upper
+    /// layers.
+    ///
+    /// The token is fixed for the lifetime of the port.
+    ///
+    /// - response `token` absent if this port does not participate in power
+    ///   management.
+    strict GetPowerDependencyToken() -> (resource struct {
+        token fuchsia.power.broker.DependencyToken:optional;
+    });
 };
 
 /// The maximum number of `TxResult` structs that could be sent in a single FIDL

@@ -161,6 +161,9 @@ class DWMacDevice : public ddk::Device<DWMacDevice, ddk::Unbindable, ddk::Suspen
                          fdf::WireServer<netdev::NetworkPort>::GetMacCompleter::Sync& completer);
   void NetworkPortRemoved(fdf::Arena& arena,
                           fdf::WireServer<netdev::NetworkPort>::RemovedCompleter::Sync& completer);
+  void NetworkPortGetPowerDependencyToken(
+      fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkPort>::GetPowerDependencyTokenCompleter::Sync& completer);
 
   // For MacAddrProtocol.
   void MacAddrGetAddress(fdf::Arena& arena,
@@ -342,6 +345,10 @@ class NetworkFunction : public ddk::Device<NetworkFunction, ddk::Unbindable, ddk
   }
   void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override {
     device_->NetworkPortRemoved(arena, completer);
+  }
+  void GetPowerDependencyToken(fdf::Arena& arena,
+                               GetPowerDependencyTokenCompleter::Sync& completer) override {
+    device_->NetworkPortGetPowerDependencyToken(arena, completer);
   }
 
   // For MacAddrProtocol.

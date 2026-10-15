@@ -1869,6 +1869,11 @@ void UsbCdcFunction::GetMac(fdf::Arena &arena, GetMacCompleter::Sync &completer)
 
 void UsbCdcFunction::Removed(fdf::Arena &arena, RemovedCompleter::Sync &completer) {}
 
+void UsbCdcFunction::GetPowerDependencyToken(fdf::Arena &arena,
+                                             GetPowerDependencyTokenCompleter::Sync &completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 void UsbCdcFunction::GetAddress(fdf::Arena &arena, GetAddressCompleter::Sync &completer) {
   fuchsia_net::wire::MacAddress mac;
   memcpy(mac.octets.data(), mac_addr_.data(), mac_addr_.size());

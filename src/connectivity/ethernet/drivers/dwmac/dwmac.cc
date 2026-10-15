@@ -1153,6 +1153,12 @@ void DWMacDevice::NetworkPortRemoved(
   zxlogf(INFO, "removed event for port %d", kPortId);
 }
 
+void DWMacDevice::NetworkPortGetPowerDependencyToken(
+    fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkPort>::GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 void DWMacDevice::MacAddrGetAddress(
     fdf::Arena& arena, fdf::WireServer<netdev::MacAddr>::GetAddressCompleter::Sync& completer) {
   fuchsia_net::wire::MacAddress mac;

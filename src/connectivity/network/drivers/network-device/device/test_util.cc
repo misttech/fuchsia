@@ -119,6 +119,15 @@ void FakeNetworkPortImpl::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& compl
   completer.buffer(arena).Reply(std::move(client));
 }
 
+void FakeNetworkPortImpl::GetPowerDependencyToken(
+    fdf::Arena& arena, GetPowerDependencyTokenCompleter::Sync& completer) {
+  zx::event token;
+  if (power_dependency_token_.is_valid()) {
+    ASSERT_OK(power_dependency_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token));
+  }
+  completer.buffer(arena).Reply(std::move(token));
+}
+
 zx_status_t FakeNetworkPortImpl::AddPort(uint8_t port_id, fdf_dispatcher_t* dispatcher,
                                          fidl::WireSyncClient<netdev::Device> device,
                                          NetDevIfcClient& netdev_ifc) {

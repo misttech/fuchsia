@@ -1368,6 +1368,12 @@ void Device<RxDescriptor>::Removed(fdf::Arena& arena, RemovedCompleter::Sync& co
   // The driver never explicitly removes the port, nothing to do here.
 }
 
+template <typename RxDescriptor>
+void Device<RxDescriptor>::GetPowerDependencyToken(
+    fdf::Arena& arena, GetPowerDependencyTokenCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(zx::event{});
+}
+
 // MacAddr protocol:
 template <typename RxDescriptor>
 void Device<RxDescriptor>::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {

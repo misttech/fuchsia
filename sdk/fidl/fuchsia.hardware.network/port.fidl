@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.hardware.network;
 
+using fuchsia.power.broker;
 using zx;
 
 /// The maximum number of status samples that can be buffered by a
@@ -192,5 +193,20 @@ closed protocol Port {
     /// across different APIs in the system.
     strict GetIdentity() -> (resource struct {
         event zx.Handle:<EVENT, zx.Rights.TRANSFER | zx.Rights.DUPLICATE>;
+    });
+    /// Gets the Power Broker dependency token for this port's power element.
+    ///
+    /// The token exposes two levels: `0` (off) and `1` (on). Clients lease
+    /// level `1` whenever the port's datapath is required and hold the lease
+    /// for as long as it is required. Drivers are free to internally
+    /// power-manage a leased-but-idle port so long as it's invisible to upper
+    /// layers.
+    ///
+    /// The token is fixed for the lifetime of the port.
+    ///
+    /// - response `token` absent if this port does not participate in power
+    ///   management.
+    strict GetPowerDependencyToken() -> (resource struct {
+        token fuchsia.power.broker.DependencyToken:optional;
     });
 };

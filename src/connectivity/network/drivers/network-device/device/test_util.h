@@ -161,6 +161,8 @@ class FakeNetworkPortImpl : public fdf::WireServer<fuchsia_hardware_network_driv
                  fdf::Arena& arena, SetActiveCompleter::Sync& completer) override;
   void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override;
   void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override;
+  void GetPowerDependencyToken(fdf::Arena& arena,
+                               GetPowerDependencyTokenCompleter::Sync& completer) override;
 
   PortInfo& port_info() { return port_info_; }
   const PortStatus& status() const { return status_; }
@@ -173,6 +175,7 @@ class FakeNetworkPortImpl : public fdf::WireServer<fuchsia_hardware_network_driv
   void SetMac(fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> client) {
     mac_client_end_ = std::move(client);
   }
+  void SetPowerDependencyToken(zx::event token) { power_dependency_token_ = std::move(token); }
   void SetOnSetActiveCallback(OnSetActiveCallback cb) { on_set_active_ = std::move(cb); }
   void SetSupportedRxType(netdev::wire::FrameType frame_type) {
     port_info_.rx_types = {frame_type};
@@ -211,6 +214,7 @@ class FakeNetworkPortImpl : public fdf::WireServer<fuchsia_hardware_network_driv
   std::atomic_bool port_active_ = false;
   PortStatus status_;
   zx::event event_;
+  zx::event power_dependency_token_;
   bool port_removed_ = false;
   bool port_added_ = false;
   std::optional<fidl::WireSyncClient<netdev::Device>> device_;

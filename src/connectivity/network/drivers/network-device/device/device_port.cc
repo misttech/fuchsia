@@ -445,4 +445,10 @@ void DevicePort::GetIdentity(GetIdentityCompleter::Sync& completer) {
   completer.Reply(std::move(event));
 }
 
+void DevicePort::GetPowerDependencyToken(GetPowerDependencyTokenCompleter::Sync& completer) {
+  // TODO(https://fxbug.dev/380897711): Forward the dependency token from the
+  // vendor driver.
+  completer.Reply(zx::event{});
+}
+
 }  // namespace network::internal
