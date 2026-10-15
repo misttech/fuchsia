@@ -276,11 +276,9 @@ pub(crate) const HYBRID_SWITCH_REMOVAL_LEN: usize = 5;
 ///
 /// Details: Rust's `BTreeMap` implementation uses a `B` value of 6, which means each node in the
 /// `BTreeMap` reserves space for 11 entries. Inserting 1 entry will allocate a node with space for
-/// 11 entries. Each entry is 48 bytes, 48 * 11 + some metadata = 544 bytes. Rounding up to the
-/// nearest scudo bucket size means each node consumes 656 bytes of memory.
-///
-/// A BTreeMap with only 2 entries uses 656 bytes when 112 would be sufficient (48 * 2 = 96 fits in
-/// the 112 byte scudo bucket).
+/// 11 entries. Each `(Key, Capability)` entry is 24 bytes (`8 B` `FlyStr` key + `16 B`
+/// `Capability`), so 24 * 11 + node metadata = 280 bytes (304-byte Scudo bucket), compared to a
+/// 2-entry `Vec` using 48 bytes (64-byte Scudo bucket).
 #[derive(Debug)]
 pub(crate) enum HybridMap {
     Vec(Vec<(Key, Capability)>),

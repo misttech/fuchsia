@@ -53,6 +53,16 @@ pub enum Capability {
     Instance(Arc<crate::WeakInstanceToken>),
 }
 
+// Every `Dictionary` entry across all component sandboxes stores `(DictKey, Capability)`.
+// Guard against accidental enum size regressions; all `Capability` variants must remain <= 16B
+// so that `Capability` stays 16 bytes and `(DictKey, Capability)` stays 24 bytes.
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(std::mem::size_of::<crate::Data>() == 16);
+    assert!(std::mem::size_of::<Capability>() == 16);
+    assert!(std::mem::size_of::<(crate::DictKey, Capability)>() == 24);
+};
+
 impl Capability {
     pub fn to_dictionary(self) -> Option<Arc<crate::Dictionary>> {
         match self {

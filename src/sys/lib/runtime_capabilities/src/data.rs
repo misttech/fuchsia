@@ -4,14 +4,19 @@
 
 use crate::{CapabilityBound, RemoteError};
 use fidl_fuchsia_component_sandbox as fsandbox;
+use flyweights::{FlyByteStr, FlyStr};
 use std::fmt::Debug;
 use std::sync::Arc;
 
 /// A capability that holds immutable data.
+///
+/// `Bytes` and `String` use pointer-sized flyweight types (`8 B` on 64-bit, with inline SSO for
+/// <= 7 bytes) rather than 16-byte fat pointers (`Arc<[u8]>` / `Arc<str>`) so that `Data` and
+/// `Capability` stay 16 bytes while `Int64` and `Uint64` remain inline without heap allocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Data {
-    Bytes(Arc<[u8]>),
-    String(Arc<str>),
+    Bytes(FlyByteStr),
+    String(FlyStr),
     Int64(i64),
     Uint64(u64),
 }
@@ -39,8 +44,8 @@ impl TryFrom<fsandbox::Data> for Data {
 impl From<Data> for fsandbox::Data {
     fn from(data: Data) -> Self {
         match data {
-            Data::Bytes(bytes) => fsandbox::Data::Bytes(bytes.to_vec()),
-            Data::String(string) => fsandbox::Data::String(string.to_string()),
+            Data::Bytes(bytes) => fsandbox::Data::Bytes(bytes.into()),
+            Data::String(string) => fsandbox::Data::String(string.into()),
             Data::Int64(num) => fsandbox::Data::Int64(num),
             Data::Uint64(num) => fsandbox::Data::Uint64(num),
         }

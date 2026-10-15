@@ -28,6 +28,7 @@ rustc_library("runtime_capabilities") {
     "//src/sys/lib/cm_types",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:derivative",
+    "//third_party/rust_crates:flyweights",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:thiserror",

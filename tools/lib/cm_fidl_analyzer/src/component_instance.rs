@@ -437,7 +437,7 @@ mod tests {
 
     /// CQ guardrail test: ensures sandbox construction for a 50-child realm (549 offers,
     /// 50 exposes, 8 uses, 100 capabilities) stays within its retained heap object and byte
-    /// budget (~1,991 live heap objects, ~175 KB retained heap).
+    /// budget (~1,991 live heap objects, ~168 KB retained heap).
     #[test]
     fn sandbox_construction_memory_budget() {
         let decl = synthetic_decl(50, 8, 2);
@@ -478,8 +478,8 @@ mod tests {
              (did a new per-route Arc/Box allocation get introduced in build_component_sandbox?)"
         );
         assert!(
-            live_bytes <= 180_000,
-            "sandbox construction retained heap bytes regressed: {live_bytes} > 180000 \
+            live_bytes <= 172_000,
+            "sandbox construction retained heap bytes regressed: {live_bytes} > 172000 \
              (did IntermediateRouter, RouteRequest, or Capability struct layout grow?)"
         );
     }

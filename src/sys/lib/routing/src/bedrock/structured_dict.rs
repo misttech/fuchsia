@@ -234,7 +234,7 @@ impl ComponentEnvironment {
 
     /// Sets the name for this environment.
     pub fn set_name(&self, name: &Name) {
-        let _ = self.0.insert(NAME.clone(), Capability::Data(Data::String(name.as_str().into())));
+        let _ = self.0.insert(NAME.clone(), Capability::Data(Data::String(name.clone().into())));
     }
 
     /// Returns the name for this environment.
