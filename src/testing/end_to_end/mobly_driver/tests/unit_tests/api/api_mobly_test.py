@@ -154,6 +154,7 @@ class ApiMoblyTest(unittest.TestCase):
                                 "AccessPoint": [
                                     {
                                         "allow_regdb_bypass": False,
+                                        "wan_interface": "eth0",
                                         "ssh_config": {
                                             "ssh_binary_path": "some/ssh_binary/path",
                                             "host": "192.168.42.11",
@@ -227,8 +228,43 @@ class ApiMoblyTest(unittest.TestCase):
                                 "AccessPoint": [
                                     {
                                         "allow_regdb_bypass": False,
+                                        "wan_interface": "eth0",
                                         "ssh_config": {
                                             "ssh_binary_path": "some/ssh_binary/path",
+                                            "host": "192.168.42.11",
+                                            "user": "root",
+                                            "identity_file": "some/key/path",
+                                        },
+                                    },
+                                ],
+                            },
+                            "Name": "tb_name",
+                            "TestParams": {},
+                        }
+                    ],
+                },
+            ),
+            param(
+                "success_access_point_defaults_user_and_wan_interface",
+                override_args={
+                    "mobly_controllers": [
+                        {
+                            "type": "AccessPoint",
+                            "ip": "192.168.42.11",
+                            "ssh_key": "some/key/path",
+                        },
+                    ],
+                },
+                expected_config_obj={
+                    "MoblyParams": {"LogPath": "output_path"},
+                    "TestBeds": [
+                        {
+                            "Controllers": {
+                                "AccessPoint": [
+                                    {
+                                        "allow_regdb_bypass": False,
+                                        "wan_interface": "eth0",
+                                        "ssh_config": {
                                             "host": "192.168.42.11",
                                             "user": "root",
                                             "identity_file": "some/key/path",
@@ -306,6 +342,7 @@ class ApiMoblyTest(unittest.TestCase):
                                 "OpenWrtAP": [
                                     {
                                         "allow_regdb_bypass": False,
+                                        "wan_interface": "eth0",
                                         "ssh_config": {
                                             "host": "192.168.42.11",
                                             "user": "root",
@@ -356,6 +393,7 @@ class ApiMoblyTest(unittest.TestCase):
                                             }
                                         ],
                                         "allow_regdb_bypass": False,
+                                        "wan_interface": "eth0",
                                         "ssh_config": {
                                             "host": "192.168.42.11",
                                             "user": "root",
@@ -437,6 +475,7 @@ class ApiMoblyTest(unittest.TestCase):
                                 "AccessPoint": [
                                     {
                                         "allow_regdb_bypass": False,
+                                        "wan_interface": "eth0",
                                         "ssh_config": {
                                             "host": "192.168.42.11",
                                             "user": "root",

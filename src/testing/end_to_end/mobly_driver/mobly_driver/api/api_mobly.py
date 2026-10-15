@@ -245,10 +245,11 @@ def new_testbed_config(
                 ALLOW_REGDB_BYPASS,
                 test_params_dict.get(ALLOW_REGDB_BYPASS, False),
             )
+            controller.setdefault("wan_interface", "eth0")
 
             controller[SSH_CONFIG_KEY] = {
                 SSH_HOST_KEY: controller.pop("ip"),
-                SSH_USER_KEY: controller.pop("user"),
+                SSH_USER_KEY: controller.pop("user", "root"),
                 SSH_IDENTITY_FILE_KEY: controller.pop("ssh_key"),
             }
             if ssh_path:
