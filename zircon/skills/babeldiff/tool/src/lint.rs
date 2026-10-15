@@ -965,58 +965,224 @@ static PROVENANCE: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 
+/// The most line numbers a lint lists in its message.
+const MAX_LISTED_LINES: usize = 8;
+
+/// The most characters of a comment a lint quotes as an example.
+const EXAMPLE_WIDTH: usize = 80;
+
+/// What a blank line between paragraphs becomes in a `Comment`'s text.
+const PARAGRAPH_BREAK: &str = "\n\n";
+
+/// A comment: a run of consecutive `//`, `///` or `//!` lines of the same
+/// kind, or the comment after code on a line. A `SAFETY:` line starts a new
+/// comment, so a safety comment is never joined to the comment above it.
+struct Comment {
+    /// The line the comment starts on. Its lines are consecutive.
+    first_line: usize,
+    /// The byte offset in `text` where each of its lines starts; the first is
+    /// always 0.
+    line_starts: Vec<usize>,
+    /// The comment's text without comment markers, lines joined with spaces.
+    /// A blank comment line between paragraphs becomes `PARAGRAPH_BREAK`.
+    text: String,
+    /// The comment marker (`//`, `///` or `//!`), or `None` after code.
+    marker: Option<&'static str>,
+}
+
+impl Comment {
+    fn new(first_line: usize, text: &str, marker: Option<&'static str>) -> Self {
+        Comment {
+            first_line,
+            line_starts: vec![0],
+            text: text.to_string(),
+            marker,
+        }
+    }
+
+    /// Appends the text of the comment's next line.
+    fn push_line(&mut self, text: &str) {
+        if !self.text.is_empty() && !self.text.ends_with(PARAGRAPH_BREAK) {
+            self.text.push_str(if text.is_empty() {
+                PARAGRAPH_BREAK
+            } else {
+                " "
+            });
+        }
+        self.line_starts.push(self.text.len());
+        self.text.push_str(text);
+    }
+
+    fn last_line(&self) -> usize {
+        self.first_line + self.line_starts.len() - 1
+    }
+
+    /// The line that byte `offset` of `text` falls on.
+    fn line_at(&self, offset: usize) -> usize {
+        self.first_line + self.line_starts.partition_point(|&start| start <= offset) - 1
+    }
+
+    fn is_safety(&self) -> bool {
+        self.text.starts_with("SAFETY")
+    }
+}
+
+/// The comments in `v` that include a changed line. Matching a whole comment
+/// rather than each line finds wording that a comment wraps across lines.
+fn comments(v: &Version) -> Vec<Comment> {
+    let mut comments: Vec<Comment> = Vec::new();
+    // Whether the previous line was a whole-line comment the next can join.
+    let mut joinable = false;
+    for (i, line) in v.text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let (marker, rest) = if trimmed.starts_with("//") {
+            // `////` and longer are plain comments (often dividers), not docs.
+            let marker = if trimmed.starts_with("///") && !trimmed.starts_with("////") {
+                "///"
+            } else if trimmed.starts_with("//!") {
+                "//!"
+            } else {
+                "//"
+            };
+            (Some(marker), &trimmed[marker.len()..])
+        } else if let Some(pos) = line.find("//") {
+            (None, &line[pos + 2..])
+        } else {
+            joinable = false;
+            continue;
+        };
+        let text = rest.trim_start_matches(['/', '!']).trim();
+        let joins = joinable
+            && !text.starts_with("SAFETY")
+            && comments
+                .last()
+                .is_some_and(|comment| comment.marker == marker);
+        match comments.last_mut() {
+            Some(comment) if joins => comment.push_line(text),
+            _ => comments.push(Comment::new(i + 1, text, marker)),
+        }
+        joinable = marker.is_some();
+    }
+    comments.retain(|comment| touched(v, comment.first_line..=comment.last_line()));
+    comments
+}
+
+/// The paragraphs of a comment's text, with the byte offset each starts at.
+fn paragraphs(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    let mut start = 0;
+    text.split(PARAGRAPH_BREAK).map(move |paragraph| {
+        let at = start;
+        start += paragraph.len() + PARAGRAPH_BREAK.len();
+        (at, paragraph)
+    })
+}
+
+/// Whether the part of `comment` at byte `offset` stays relevant after the change
+/// even though it talks about C++: the comment is a keep-in-sync note about
+/// C++ that still exists, or the paragraph is a TODO or says something must
+/// match or agree.
+fn stays_relevant(comment: &Comment, offset: usize) -> bool {
+    let paragraph = paragraphs(&comment.text)
+        .take_while(|&(start, _)| start <= offset)
+        .last()
+        .map_or("", |(_, paragraph)| paragraph);
+    let comment_lower = comment.text.to_ascii_lowercase();
+    let paragraph_lower = paragraph.to_ascii_lowercase();
+    ["keep in sync", "kept in sync"]
+        .iter()
+        .any(|k| comment_lower.contains(k))
+        || paragraph.contains("TODO")
+        || ["must match", "must agree"]
+            .iter()
+            .any(|k| paragraph_lower.contains(k))
+}
+
+/// Where `provenance-comment` matches in `comment`, if it does. Safety comments are
+/// exempt, as are keep-in-sync comments and TODO paragraphs.
+fn provenance_match(comment: &Comment) -> Option<usize> {
+    if comment.is_safety() {
+        return None;
+    }
+    PROVENANCE
+        .find_iter(&comment.text)
+        .map(|m| m.start())
+        .find(|&at| !stays_relevant(comment, at))
+}
+
+/// Up to `EXAMPLE_WIDTH` characters of `text` around byte offset `at`,
+/// starting on a word boundary.
+fn excerpt(text: &str, at: usize) -> String {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let centre = chars.iter().position(|&(i, _)| i >= at).unwrap_or(0);
+    let mut start = centre.saturating_sub(EXAMPLE_WIDTH / 4);
+    while start > 0 && !chars[start - 1].1.is_whitespace() {
+        start -= 1;
+    }
+    let end = (start + EXAMPLE_WIDTH).min(chars.len());
+    let quoted: String = chars[start..end]
+        .iter()
+        .map(|&(_, ch)| if ch == '\n' { ' ' } else { ch })
+        .collect();
+    format!(
+        "{}{quoted}{}",
+        if start > 0 { "..." } else { "" },
+        if end < chars.len() { "..." } else { "" }
+    )
+}
+
+/// `1 comment` or `3 comments`.
+fn count_noun(n: usize, noun: &str) -> String {
+    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
+}
+
+/// `line 4` or `lines 4, 44`, listing at most `MAX_LISTED_LINES`.
+fn line_list(lines: &[usize]) -> String {
+    let shown: Vec<String> = lines
+        .iter()
+        .take(MAX_LISTED_LINES)
+        .map(|n| n.to_string())
+        .collect();
+    format!(
+        "line{} {}{}",
+        if lines.len() == 1 { "" } else { "s" },
+        shown.join(", "),
+        if lines.len() > MAX_LISTED_LINES {
+            ", ..."
+        } else {
+            ""
+        }
+    )
+}
+
 /// Comments that point back at the C++ a function was ported from
 /// ("Ported from foo.cc", "(`foo.cc:12-34`)"). They stop being true, or
 /// useful, once the change lands. Reported once per file.
 fn provenance(v: &Version) -> Vec<Lint> {
-    let mut hits: Vec<(usize, String)> = Vec::new();
-    for (i, line) in v.text.lines().enumerate() {
-        let n = i + 1;
-        let Some(pos) = line.find("//") else { continue };
-        let comment = &line[pos..];
-        if comment.contains("SAFETY") || !touched(v, n..=n) {
-            continue;
-        }
-        // A TODO or a keep-in-sync note about C++ that still exists stays
-        // relevant after the change.
-        let lower = comment.to_ascii_lowercase();
-        let live = comment.contains("TODO")
-            || ["keep in sync", "kept in sync", "must match", "must agree"]
-                .iter()
-                .any(|k| lower.contains(k));
-        if !live && PROVENANCE.is_match(comment) {
-            let text = comment
-                .trim_start_matches('/')
-                .trim_start_matches('!')
-                .trim();
-            hits.push((n, text.to_string()));
-        }
-    }
-    let Some((first, example)) = hits.first().cloned() else {
+    let hits: Vec<(usize, String)> = comments(v)
+        .into_iter()
+        .filter_map(|comment| {
+            provenance_match(&comment).map(|at| (comment.line_at(at), excerpt(&comment.text, at)))
+        })
+        .collect();
+    let Some((first, example)) = hits.first() else {
         return Vec::new();
     };
-    let example: String = if example.chars().count() > 80 {
-        format!("{}...", example.chars().take(80).collect::<String>())
-    } else {
-        example
-    };
-    let lines: Vec<String> = hits.iter().take(8).map(|(n, _)| n.to_string()).collect();
-    let more = if hits.len() > 8 { ", ..." } else { "" };
+    let n = hits.len();
+    let lines: Vec<usize> = hits.iter().map(|(line, _)| *line).collect();
     vec![Lint {
         kind: LintKind::Provenance,
         severity: Severity::Issue,
         path: v.path.clone(),
-        line: first,
+        line: *first,
         message: format!(
-            "{} comment{} say{} where the code was ported from (line{} {}{more}), such as \"{example}\"; drop {}, since {} stop{} being relevant once the change lands",
-            hits.len(),
-            if hits.len() == 1 { "" } else { "s" },
-            if hits.len() == 1 { "s" } else { "" },
-            if hits.len() == 1 { "" } else { "s" },
-            lines.join(", "),
-            if hits.len() == 1 { "it" } else { "them" },
-            if hits.len() == 1 { "it" } else { "they" },
-            if hits.len() == 1 { "s" } else { "" },
+            "{} say{} where the code was ported from ({}), such as \"{example}\"; drop {}, \
+             since {} stop{} being relevant once the change lands",
+            count_noun(n, "comment"),
+            if n == 1 { "s" } else { "" },
+            line_list(&lines),
+            if n == 1 { "it" } else { "them" },
+            if n == 1 { "it" } else { "they" },
+            if n == 1 { "s" } else { "" },
         ),
         related: None,
     }]
@@ -1534,6 +1700,138 @@ mod tests {
         assert_eq!(l[0].line, 1);
         assert!(
             l[0].message.starts_with("2 comments say"),
+            "{}",
+            l[0].message
+        );
+    }
+
+    /// The `(first line, last line, text)` of each comment in `src`.
+    fn comment_spans(src: &str) -> Vec<(usize, usize, String)> {
+        comments(&version("foo.rs", src))
+            .into_iter()
+            .map(|comment| (comment.first_line, comment.last_line(), comment.text))
+            .collect()
+    }
+
+    /// The line each provenance match in `src` is reported on.
+    fn provenance_lines(src: &str) -> Vec<usize> {
+        comments(&version("foo.rs", src))
+            .iter()
+            .filter_map(|comment| provenance_match(comment).map(|at| comment.line_at(at)))
+            .collect()
+    }
+
+    #[test]
+    fn comments_split_into_runs_of_one_kind() {
+        let src = concat!(
+            "//! Module.\n",
+            "/// Doc one,\n",
+            "/// doc two.\n",
+            "///\n",
+            "/// Next paragraph.\n",
+            "// Inline\n",
+            "// SAFETY: sound.\n",
+            "// More safety.\n",
+            "x(); // trailing\n",
+            "// After code.\n",
+            "fn main() { // no args\n",
+            "} // end\n",
+            "//////////\n",
+            "/// Doc.\n",
+        );
+        let spans = comment_spans(src);
+        let expected = [
+            (1, 1, "Module."),
+            (2, 5, "Doc one, doc two.\n\nNext paragraph."),
+            (6, 6, "Inline"),
+            (7, 8, "SAFETY: sound. More safety."),
+            (9, 9, "trailing"),
+            (10, 10, "After code."),
+            (11, 11, "no args"),
+            (12, 12, "end"),
+            (13, 13, ""),
+            (14, 14, "Doc."),
+        ];
+        let got: Vec<(usize, usize, &str)> = spans
+            .iter()
+            .map(|(first, last, text)| (*first, *last, text.as_str()))
+            .collect();
+        assert_eq!(got, expected);
+
+        let doc = &comments(&version("foo.rs", src))[1];
+        assert_eq!(doc.line_at(doc.text.find("doc two").unwrap()), 3);
+        assert_eq!(doc.line_at(doc.text.find("Next").unwrap()), 5);
+    }
+
+    #[test]
+    fn paragraphs_split_at_blank_comment_lines() {
+        let got: Vec<(usize, &str)> = paragraphs("One. Two.\n\nThree.").collect();
+        assert_eq!(got, [(0, "One. Two."), (11, "Three.")]);
+    }
+
+    #[test]
+    fn provenance_wrapped_across_lines_is_reported() {
+        let v = version(
+            "foo.rs",
+            concat!(
+                "/// Checks the bounds in the same order as the C++\n",
+                "/// implementation.\n",
+                "fn check() {}\n",
+                "// SAFETY: ported from foo.cc; safety comments are exempt.\n",
+                "unsafe fn h() {}\n",
+            ),
+        );
+        let l = provenance(&v);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].line, 1);
+        assert!(
+            l[0].message.starts_with("1 comment says"),
+            "{}",
+            l[0].message
+        );
+    }
+
+    #[test]
+    fn provenance_exemptions() {
+        let src = concat!(
+            // A keep-in-sync note exempts its whole comment.
+            "/// Keep in sync with foo.h. The layout mirrors the C++ version.\n",
+            "fn a() {}\n",
+            // A TODO exempts its paragraph, across a `;`.
+            "// TODO(b/1): drop this; it mirrors the C++ version until then.\n",
+            "fn b() {}\n",
+            // ... but not an earlier paragraph.
+            "/// Ported from foo.cc.\n",
+            "///\n",
+            "/// TODO(b/1): make it faster.\n",
+            "fn c() {}\n",
+            // "must match" exempts only its own paragraph.
+            "/// Ported from lamp.cc.\n",
+            "///\n",
+            "/// The two lengths must match.\n",
+            "fn d() {}\n",
+            "/// The two lengths must match lamp.cc:12.\n",
+            "fn e() {}\n",
+        );
+        assert_eq!(provenance_lines(src), [5, 9]);
+    }
+
+    #[test]
+    fn provenance_example_quotes_the_match() {
+        let v = version(
+            "foo.rs",
+            concat!(
+                "/// Does a lot of things, and this first line of the comment is quite long.\n",
+                "/// It goes on for a while before it says that it was\n",
+                "/// ported from foo.cc.\n",
+                "fn f() {}\n",
+            ),
+        );
+        let l = provenance(&v);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].line, 3);
+        assert!(
+            l[0].message.contains("ported from foo.cc"),
             "{}",
             l[0].message
         );
