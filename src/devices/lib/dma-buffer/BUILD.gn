@@ -6,7 +6,10 @@ import("//build/zircon/zx_library.gni")
 
 group("tests") {
   testonly = true
-  deps = [ "test:dma-buffer-test" ]
+  deps = [
+    "rust:tests",
+    "test:dma-buffer-test",
+  ]
 }
 
 zx_library("dma-buffer") {
