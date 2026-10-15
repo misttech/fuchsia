@@ -808,6 +808,25 @@ class Flatland2Test : public FlatlandTest {
     return CreateFlatland2(FlatlandConfig{}, error_log);
   }
 
+  std::pair<fuchsia_ui_views::wire::ViewCreationToken,
+            fidl::ClientEnd<fuchsia_ui_composition::ChildViewWatcher>>
+  CreateViewport2(Flatland* flatland, ViewportId viewport_id,
+                  fuchsia_math::wire::SizeU logical_size = {100, 100}) {
+    fuchsia_ui_views::wire::ViewportCreationToken parent_token;
+    fuchsia_ui_views::wire::ViewCreationToken child_token;
+    ZX_ASSERT(zx::channel::create(0, &parent_token.value, &child_token.value) == ZX_OK);
+
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(logical_size)
+                          .Build();
+    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+        fidl::Endpoints<fuchsia_ui_composition::ChildViewWatcher>::Create();
+    flatland->CreateViewport2(viewport_id, std::move(parent_token), properties,
+                              std::move(child_view_watcher_server_end));
+    return {std::move(child_token), std::move(child_view_watcher_client_end)};
+  }
+
   std::vector<ResolvedLayer> ComputeResolvedLayers(Flatland* flatland) {
     auto snapshot = uber_struct_system_->Snapshot();
     GlobalTopologyData::LinkTopologyMap links;

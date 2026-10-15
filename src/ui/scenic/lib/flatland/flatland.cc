@@ -188,6 +188,7 @@ Flatland::Flatland(
       layer_objects_(&pool_),
       layer_stacks_(&pool_),
       layer_stack_handles_(&pool_),
+      viewport_handles_(&pool_),
       image_objects_(&pool_),
       error_reporter_(scenic_impl::ErrorReporter::DefaultUnique()),
       pending_image_releases_(&pool_),
@@ -733,17 +734,18 @@ void Flatland::CreateViewHelper(
     fidl::ServerEnd<fuchsia_ui_composition::ParentViewportWatcher> parent_viewport_watcher,
     std::optional<fuchsia_ui_views::wire::ViewIdentityOnCreation> view_identity,
     std::optional<fuchsia_ui_composition::wire::ViewBoundProtocols> protocols) {
+  const char* kErrorPrefix = view_identity.has_value() ? "CreateView2" : "CreateView";
   // Attempting to link with an invalid token will never succeed, so its better to fail early and
   // immediately close the link connection.
   if (!token.value.is_valid()) {
-    error_reporter_->ERROR() << "CreateView failed, ViewCreationToken was invalid";
+    error_reporter_->ERROR() << kErrorPrefix << " failed, ViewCreationToken was invalid";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
 
   if (view_identity.has_value() &&
       !utils::validate_viewref(view_identity->view_ref_control, view_identity->view_ref)) {
-    error_reporter_->ERROR() << "CreateView failed, ViewIdentityOnCreation was invalid";
+    error_reporter_->ERROR() << kErrorPrefix << " failed, ViewIdentityOnCreation was invalid";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
@@ -786,7 +788,7 @@ void Flatland::CreateViewHelper(
           impl->ReportLinkProtocolError(error_log);
       });
 
-  FLATLAND_VERBOSE_LOG << "Flatland::CreateView() session_id=" << session_id_
+  FLATLAND_VERBOSE_LOG << "Flatland::" << kErrorPrefix << "() session_id=" << session_id_
                        << "  link-attachment-point=" << child_transform_handle;
 
   // This portion of the method is feed-forward. The parent-child relationship between
@@ -1171,9 +1173,10 @@ void Flatland::ClearFlatland2State() {
     ReleaseLayerObject(handle);
   }
   layer_handles_.clear();
-  // The stacks' transforms die with ResetGraph(); the dead-transform cleanup
-  // drops their LayerStackData.
+  // Stack and viewport transforms die with `ResetGraph()`. The dead-transform cleanup drops
+  // each stack's `LayerStackData`; `Clear()` tears down `links_to_children_` itself.
   layer_stack_handles_.clear();
+  viewport_handles_.clear();
   for (const auto& [image_id, global_id] : images2_) {
     ReleaseImageObject(global_id);
   }
@@ -1410,25 +1413,55 @@ void Flatland::CreateViewport(
     return;
   }
 
+  if (viewport_id == kInvalidContentId) {
+    error_reporter_->ERROR() << "CreateViewport called with ContentId zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (content_handles_.contains(viewport_id)) {
+    error_reporter_->ERROR() << "CreateViewport called with existing ContentId " << viewport_id;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto parent_transform_handle =
+      CreateViewportHelper(std::move(token), properties, std::move(child_view_watcher));
+  if (!parent_transform_handle) {
+    return;
+  }
+
+  FLATLAND_VERBOSE_LOG << "Flatland::CreateViewport() session_id=" << session_id_
+                       << "  viewport_id=" << viewport_id
+                       << "  parent_transform=" << *parent_transform_handle;
+
+  content_handles_[viewport_id] = *parent_transform_handle;
+}
+
+std::optional<TransformHandle> Flatland::CreateViewportHelper(
+    fuchsia_ui_views::wire::ViewportCreationToken token,
+    const fuchsia_ui_composition::wire::ViewportProperties& properties,
+    fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher) {
+  const char* kErrorPrefix = config_.use_flatland2 ? "CreateViewport2" : "CreateViewport";
   // Attempting to link with an invalid token will never succeed, so its better to fail early and
   // immediately close the link connection.
   if (!token.value.is_valid()) {
-    error_reporter_->ERROR() << "CreateViewport failed, ViewportCreationToken was invalid";
+    error_reporter_->ERROR() << kErrorPrefix << " failed, ViewportCreationToken was invalid";
     CloseConnection(FlatlandError::kBadOperation);
-    return;
+    return std::nullopt;
   }
 
   if (!properties.has_logical_size()) {
-    error_reporter_->ERROR()
-        << "CreateViewport must be provided a ViewportProperties with a logical size";
+    error_reporter_->ERROR() << kErrorPrefix
+                             << " must be provided a ViewportProperties with a logical size";
     CloseConnection(FlatlandError::kBadOperation);
-    return;
+    return std::nullopt;
   }
 
   if (auto error = ValidateViewportProperties(properties)) {
-    error_reporter_->ERROR() << "CreateViewport failed: " << *error;
+    error_reporter_->ERROR() << kErrorPrefix << " failed: " << *error;
     CloseConnection(FlatlandError::kBadOperation);
-    return;
+    return std::nullopt;
   }
 
   fuchsia_ui_composition::ViewportProperties natural_properties;
@@ -1445,18 +1478,6 @@ void Flatland::CreateViewport(
     }));
   } else {
     natural_properties.inset(fuchsia_math::Inset({.top = 0, .right = 0, .bottom = 0, .left = 0}));
-  }
-
-  if (viewport_id == kInvalidContentId) {
-    error_reporter_->ERROR() << "CreateViewport called with ContentId zero";
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
-  }
-
-  if (content_handles_.contains(viewport_id)) {
-    error_reporter_->ERROR() << "CreateViewport called with existing ContentId " << viewport_id;
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
   }
 
   FX_DCHECK(link_system_);
@@ -1491,16 +1512,10 @@ void Flatland::CreateViewport(
     FX_DCHECK(child_added);
   }
 
-  FLATLAND_VERBOSE_LOG << "Flatland::CreateViewport() session_id=" << session_id_
-                       << "  viewport_id=" << viewport_id
-                       << "  parent_transform=" << link_to_child.parent_transform_handle
-                       << "  internal_link_handle=" << link_to_child.internal_link_handle;
-
   // Default the link size to the logical size, which is just an identity scale matrix, so
   // that future logical size changes will result in the correct scale matrix.
   const fuchsia_math::wire::SizeU size = properties.logical_size();
 
-  content_handles_[viewport_id] = link_to_child.parent_transform_handle;
   links_to_children_[link_to_child.parent_transform_handle] = {
       .link = std::move(link_to_child), .properties = std::move(natural_properties)};
 
@@ -1512,6 +1527,7 @@ void Flatland::CreateViewport(
   SetClipBoundaryInternal(parent_transform_handle,
                           TransformClipRegion({.x = 0, .y = 0, .width = width, .height = height}));
   scene_state_dirty_ = true;
+  return parent_transform_handle;
 }
 
 LayerObject* Flatland::GetFacadeLayerObject(TransformHandle content_handle) {
@@ -1549,10 +1565,10 @@ UberStructLayer::SolidColorModeProperties* Flatland::GetFacadeLayerSolidColorCon
   return &layer->solid_color_mode;
 }
 
-// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
-// is that it captures "illegal usage".
 void Flatland::CreateViewport2(CreateViewport2RequestView request,
                                CreateViewport2Completer::Sync& completer) {
+  TRACE_DURATION("gfx", "Flatland::CreateViewport2", "debug_name", TA_STRING(debug_name_.c_str()));
+
   CreateViewport2(ViewportId(request->viewport_id.value), std::move(request->token),
                   request->properties, std::move(request->child_view_watcher));
 }
@@ -1566,8 +1582,31 @@ void Flatland::CreateViewport2(
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
-  error_reporter_->ERROR() << "CreateViewport2: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+
+  if (viewport_id == kInvalidViewportId) {
+    error_reporter_->ERROR() << "CreateViewport2 called with ViewportId zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (viewport_handles_.contains(viewport_id)) {
+    error_reporter_->ERROR() << "CreateViewport2 called with existing ViewportId "
+                             << viewport_id.value();
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto parent_transform_handle =
+      CreateViewportHelper(std::move(token), properties, std::move(child_view_watcher));
+  if (!parent_transform_handle) {
+    return;
+  }
+
+  FLATLAND_VERBOSE_LOG << "Flatland::CreateViewport2() session_id=" << session_id_
+                       << "  viewport_id=" << viewport_id.value()
+                       << "  parent_transform=" << *parent_transform_handle;
+
+  viewport_handles_[viewport_id] = *parent_transform_handle;
 }
 
 std::optional<allocation::ImageMetadata> Flatland::ImportImage(
@@ -2393,8 +2432,24 @@ void Flatland::SetTransformContent(TransformId transform_id, ViewportId viewport
     return;
   }
 
-  error_reporter_->ERROR() << "SetTransformContent(viewport) not yet implemented";
-  CloseConnection(FlatlandError::kBadOperation);
+  auto viewport_it = viewport_handles_.find(viewport_id);
+  if (viewport_it == viewport_handles_.end()) {
+    error_reporter_->ERROR() << "SetTransformContent failed, viewport_id " << viewport_id.value()
+                             << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  FLATLAND_VERBOSE_LOG << "Flatland::SetTransformContent() session_id=" << session_id_
+                       << "  client_transform_id=" << transform_id
+                       << "  transform=" << transform_kv->second
+                       << "  client_viewport_id=" << viewport_id.value()
+                       << "  content=" << viewport_it->second;
+
+  transform_graph_.SetPriorityChild(transform_kv->second, viewport_it->second);
+  // Attaching, detaching, or swapping a viewport changes the topology and rebuilds the global
+  // transform state.
+  scene_state_dirty_ = true;
 }
 
 void Flatland::ClearTransformContent(TransformId transform_id) {
@@ -2426,6 +2481,53 @@ void Flatland::ClearTransformContent(TransformId transform_id) {
 void Flatland::SetViewportProperties(SetViewportPropertiesRequestView request,
                                      SetViewportPropertiesCompleter::Sync& completer) {
   SetViewportProperties(ContentId(request->viewport_id.value), request->properties);
+}
+
+void Flatland::SetViewportPropertiesHelper(
+    TransformHandle viewport_handle, LinkToChildData& link_data,
+    const fuchsia_ui_composition::wire::ViewportProperties& properties) {
+  const char* kErrorPrefix =
+      config_.use_flatland2 ? "SetViewportProperties2" : "SetViewportProperties";
+  if (!link_data.link.importer.valid()) {
+    // Other side of the Viewport has been invalidated and the Viewport should be released.
+    // Calling SetViewportProperties() must still be allowed since the client may not have gotten
+    // the destruction message yet.
+    return;
+  }
+
+  if (auto error = ValidateViewportProperties(properties)) {
+    error_reporter_->ERROR() << kErrorPrefix << " failed: " << *error;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  FX_DCHECK(link_data.properties.logical_size().has_value());
+  FX_DCHECK(link_data.properties.inset().has_value());
+  if (properties.has_logical_size()) {
+    link_data.properties.logical_size(fuchsia_math::SizeU({
+        .width = properties.logical_size().width,
+        .height = properties.logical_size().height,
+    }));
+
+    // Update the clip boundaries when the logical size changes.
+    const int32_t width = static_cast<int32_t>(link_data.properties.logical_size()->width());
+    const int32_t height = static_cast<int32_t>(link_data.properties.logical_size()->height());
+    FX_DCHECK(width >= 0 && height >= 0)
+        << "Integer overflow.  width=" << width << ", height=" << height;
+    SetClipBoundaryInternal(
+        viewport_handle, TransformClipRegion({.x = 0, .y = 0, .width = width, .height = height}));
+  }
+  if (properties.has_inset()) {
+    link_data.properties.inset(fuchsia_math::Inset({
+        .top = properties.inset().top,
+        .right = properties.inset().right,
+        .bottom = properties.inset().bottom,
+        .left = properties.inset().left,
+    }));
+  }
+
+  link_system_->UpdateViewportPropertiesFor(viewport_handle, link_data.properties);
+  scene_state_dirty_ = true;
 }
 
 void Flatland::SetViewportProperties(
@@ -2460,47 +2562,7 @@ void Flatland::SetViewportProperties(
     return;
   }
 
-  LinkToChildData& link_data = link_kv->second;
-  if (!link_data.link.importer.valid()) {
-    // Other side of the Viewport has been invalidated and the Viewport should be released.
-    // Calling SetViewportProperties() must still be allowed since the client may not have gotten
-    // the destruction message yet.
-    return;
-  }
-
-  if (auto error = ValidateViewportProperties(properties)) {
-    error_reporter_->ERROR() << "SetViewportProperties failed: " << *error;
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
-  }
-
-  FX_DCHECK(link_data.properties.logical_size().has_value());
-  FX_DCHECK(link_data.properties.inset().has_value());
-  if (properties.has_logical_size()) {
-    link_data.properties.logical_size(fuchsia_math::SizeU({
-        .width = properties.logical_size().width,
-        .height = properties.logical_size().height,
-    }));
-  }
-  if (properties.has_inset()) {
-    link_data.properties.inset(fuchsia_math::Inset({
-        .top = properties.inset().top,
-        .right = properties.inset().right,
-        .bottom = properties.inset().bottom,
-        .left = properties.inset().left,
-    }));
-  }
-
-  // Update the clip boundaries when the properties change.
-  const int32_t width = static_cast<int32_t>(link_data.properties.logical_size()->width());
-  const int32_t height = static_cast<int32_t>(link_data.properties.logical_size()->height());
-  FX_DCHECK(width >= 0 && height >= 0)
-      << "Integer overflow.  width=" << width << ", height=" << height;
-  SetClipBoundaryInternal(viewport_handle,
-                          TransformClipRegion({.x = 0, .y = 0, .width = width, .height = height}));
-
-  link_system_->UpdateViewportPropertiesFor(viewport_handle, link_data.properties);
-  scene_state_dirty_ = true;
+  SetViewportPropertiesHelper(viewport_handle, link_kv->second, properties);
 }
 
 void Flatland::SetViewportProperties2(SetViewportProperties2RequestView request,
@@ -2515,8 +2577,25 @@ void Flatland::SetViewportProperties2(
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
-  error_reporter_->ERROR() << "SetViewportProperties2: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+
+  if (viewport_id == kInvalidViewportId) {
+    error_reporter_->ERROR() << "SetViewportProperties2 called with ViewportId zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto it = viewport_handles_.find(viewport_id);
+  if (it == viewport_handles_.end()) {
+    error_reporter_->ERROR() << "SetViewportProperties2 failed, viewport_id " << viewport_id.value()
+                             << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto link_it = links_to_children_.find(it->second);
+  FX_CHECK(link_it != links_to_children_.end());
+
+  SetViewportPropertiesHelper(it->second, link_it->second, properties);
 }
 
 void Flatland::ReleaseTransform(ReleaseTransformRequestView request,
@@ -2543,6 +2622,47 @@ void Flatland::ReleaseTransform(TransformId transform_id) {
   bool erased_from_graph = transform_graph_.ReleaseTransform(transform_kv->second);
   FX_DCHECK(erased_from_graph);
   transforms_.erase(transform_kv);
+}
+
+void Flatland::ReleaseViewportHelper(
+    TransformHandle viewport_handle, LinkToChildData& link_data,
+    fit::function<void(fuchsia_ui_views::wire::ViewportCreationToken)> completer) {
+  // Deleting the LinkToChild's `parent_transform_handle` effectively deletes the link from
+  // the local topology, even if the link object itself is not deleted.
+  {
+    const bool child_removed = transform_graph_.RemoveChild(link_data.link.parent_transform_handle,
+                                                            link_data.link.internal_link_handle);
+    FX_DCHECK(child_removed);
+    const bool content_released =
+        transform_graph_.ReleaseTransform(link_data.link.parent_transform_handle);
+    FX_DCHECK(content_released);
+  }
+
+  // Move the old child link into the delayed operation so that the ViewportId/ContentId is
+  // immediately free for reuse, but it doesn't get deleted until after the new UberStruct is
+  // published.
+  auto link_to_child = std::move(link_data);
+  links_to_children_.erase(viewport_handle);
+
+  // Delay the actual destruction of the link until the next Present().
+  pending_link_operations_.push_back(
+      [link_to_child = std::move(link_to_child), completer = std::move(completer)]() mutable {
+        fuchsia_ui_views::wire::ViewportCreationToken return_token;
+
+        // If the link is still valid, return the original token. If not, create an orphaned
+        // zx::channel and return it since the ObjectLinker does not retain the orphaned token.
+        auto link_token = link_to_child.link.importer.ReleaseToken();
+        if (link_token.has_value()) {
+          return_token.value = zx::channel(std::move(link_token.value()));
+        } else {
+          // `peer_token` immediately falls out of scope, orphaning `return_token`.
+          zx::channel peer_token;
+          zx::channel::create(0, &return_token.value, &peer_token);
+        }
+
+        completer(std::move(return_token));
+      });
+  scene_state_dirty_ = true;
 }
 
 void Flatland::ReleaseViewport(ReleaseViewportRequestView request,
@@ -2586,44 +2706,9 @@ void Flatland::ReleaseViewport(
     return;
   }
 
-  LinkToChildData& link_data = link_kv->second;
-
-  // Deleting the LinkToChild's |parent_transform_handle| effectively deletes the link from
-  // the local topology, even if the link object itself is not deleted.
-  {
-    const bool child_removed = transform_graph_.RemoveChild(link_data.link.parent_transform_handle,
-                                                            link_data.link.internal_link_handle);
-    FX_DCHECK(child_removed);
-    const bool content_released =
-        transform_graph_.ReleaseTransform(link_data.link.parent_transform_handle);
-    FX_DCHECK(content_released);
-  }
-
-  // Move the old child link into the delayed operation so that the ContentId is immediately free
-  // for re-use, but it doesn't get deleted until after the new UberStruct is published.
-  auto link_to_child = std::move(link_data);
-  links_to_children_.erase(content_kv->second);
+  TransformHandle handle = content_kv->second;
   content_handles_.erase(content_kv);
-
-  // Delay the actual destruction of the link until the next Present().
-  pending_link_operations_.push_back(
-      [link_to_child = std::move(link_to_child), completer = std::move(completer)]() mutable {
-        fuchsia_ui_views::wire::ViewportCreationToken return_token;
-
-        // If the link is still valid, return the original token. If not, create an orphaned
-        // zx::channel and return it since the ObjectLinker does not retain the orphaned token.
-        auto link_token = link_to_child.link.importer.ReleaseToken();
-        if (link_token.has_value()) {
-          return_token.value = zx::channel(std::move(link_token.value()));
-        } else {
-          // |peer_token| immediately falls out of scope, orphaning |return_token|.
-          zx::channel peer_token;
-          zx::channel::create(0, &return_token.value, &peer_token);
-        }
-
-        completer(std::move(return_token));
-      });
-  scene_state_dirty_ = true;
+  ReleaseViewportHelper(handle, link_kv->second, std::move(completer));
 }
 
 void Flatland::ReleaseViewport2(ReleaseViewport2RequestView request,
@@ -2643,8 +2728,28 @@ void Flatland::ReleaseViewport2(
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
-  error_reporter_->ERROR() << "ReleaseViewport2: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+
+  if (viewport_id == kInvalidViewportId) {
+    error_reporter_->ERROR() << "ReleaseViewport2 called with ViewportId zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto it = viewport_handles_.find(viewport_id);
+  if (it == viewport_handles_.end()) {
+    error_reporter_->ERROR() << "ReleaseViewport2 failed, viewport_id " << viewport_id.value()
+                             << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  TransformHandle handle = it->second;
+  viewport_handles_.erase(it);
+
+  auto link_it = links_to_children_.find(handle);
+  FX_CHECK(link_it != links_to_children_.end());
+
+  ReleaseViewportHelper(handle, link_it->second, std::move(completer));
 }
 
 void Flatland::ReleaseImage(ReleaseImageRequestView request,
@@ -3685,6 +3790,14 @@ allocation::GlobalImageId Flatland::GetGlobalImageIdForTest(ImageId image_id) co
   auto it = images2_.find(image_id);
   if (it == images2_.end()) {
     return allocation::kInvalidImageId;
+  }
+  return it->second;
+}
+
+std::optional<TransformHandle> Flatland::GetViewportHandleForTest(ViewportId viewport_id) const {
+  auto it = viewport_handles_.find(viewport_id);
+  if (it == viewport_handles_.end()) {
+    return std::nullopt;
   }
   return it->second;
 }

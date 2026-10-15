@@ -1711,7 +1711,7 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsNoLogicalSize) {
       fidl::Endpoints<ChildViewWatcher>::Create();
   fidl::Arena arena;
   auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena).Build();
-  flatland->CreateViewport(kInvalidContentId, ToWire(std::move(parent_token)), properties,
+  flatland->CreateViewport(ContentId(1), ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
   Present(flatland, false);
 }
@@ -1730,7 +1730,7 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsInvalidLogicalSize) {
                           .Build();
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    flatland->CreateViewport(kInvalidContentId, ToWire(std::move(parent_token)), properties,
+    flatland->CreateViewport(ContentId(1), ToWire(std::move(parent_token)), properties,
                              std::move(child_view_watcher_server_end));
     Present(flatland, false);
   }
@@ -1745,7 +1745,7 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsInvalidLogicalSize) {
                            .Build();
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    flatland->CreateViewport(kInvalidContentId, ToWire(std::move(parent_token)), properties2,
+    flatland->CreateViewport(ContentId(1), ToWire(std::move(parent_token)), properties2,
                              std::move(child_view_watcher_server_end));
     Present(flatland, false);
   }
@@ -7820,6 +7820,107 @@ TEST_F(Flatland2Test, MultiAttachSameStack) {
   EXPECT_EQ(uber_struct->local_topology[5].child_count, 0u);
 }
 
+TEST_F(Flatland2Test, MultiAttachSameViewport) {
+  std::optional<std::string> error_log;
+  auto parent = CreateFlatland2(&error_log);
+  auto child = CreateFlatland2();
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  const TransformId kParentRoot(1);
+  const TransformId kTransformA(2);
+  const TransformId kTransformB(3);
+  const TransformId kTransformC(4);
+  const ViewportId kViewport(5);
+
+  const TransformId kChildRoot(10);
+  const LayerId kChildLayer(11);
+  const LayerStackId kChildStack(12);
+  const ImageId kChildImage(13);
+
+  auto [child_token, child_view_watcher_client_end] =
+      CreateViewport2(parent.get(), kViewport, {200, 300});
+
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<ParentViewportWatcher>::Create();
+  child->CreateView2(std::move(child_token), NewWireViewIdentityOnCreation(), NoViewProtocols(),
+                     std::move(parent_viewport_watcher_server_end));
+
+  // Child session: one image layer in one stack on its root.
+  child->CreateTransform(kChildRoot);
+  child->SetRootTransform(kChildRoot);
+  child->CreateLayer(kChildLayer);
+  child->CreateLayerStack(kChildStack);
+  child->SetStackLayers(kChildStack, {kChildLayer});
+  child->SetTransformContent(kChildRoot, kChildStack);
+
+  fidl::Arena arena;
+  auto img_props = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                       .size(fuchsia_math::wire::SizeU{100, 200})
+                       .Build();
+  child->CreateImage2(kChildImage, ToWire(ref_pair.DuplicateImportToken()), 0, img_props);
+
+  fuchsia_ui_composition::LayerProperties layer_props;
+  layer_props.display_rect(fuchsia_math::RectU{10, 10, 100, 200});
+  layer_props.composition_mode(fuchsia_ui_composition::CompositionMode::kImage);
+  child->SetLayerProperties(kChildLayer, fidl::ToWire(arena, std::move(layer_props)));
+  child->SetLayerImage(kChildLayer, kChildImage, std::nullopt, std::nullopt);
+
+  // Parent, first frame: root with children A and B, viewport attached to both A and B.
+  parent->CreateTransform(kParentRoot);
+  parent->CreateTransform(kTransformA);
+  parent->CreateTransform(kTransformB);
+  parent->AddChild(kParentRoot, kTransformA);
+  parent->AddChild(kParentRoot, kTransformB);
+  parent->SetRootTransform(kParentRoot);
+
+  // Rotate B by 90 degrees CCW and translate so its copy ([310, 510] x [90, 190]) stays fully on
+  // the display and does not overlap A's copy ([10, 110] x [10, 210]).
+  parent->SetOrientation(kTransformB, Orientation::kCcw90Degrees);
+  parent->SetTranslation(kTransformB, {300, 200});
+
+  parent->SetTransformContent(kTransformA, kViewport);
+  parent->SetTransformContent(kTransformB, kViewport);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(parent, true);
+  Present(child, true);
+
+  auto frame1_renderables = GetRenderables(parent.get(), 1000, 1000);
+  ASSERT_EQ(frame1_renderables.size(), 2u);
+  EXPECT_EQ(frame1_renderables[0].content, frame1_renderables[1].content);
+  EXPECT_EQ(frame1_renderables[0].geometry.src, (types::RectangleF({0.f, 0.f, 100.f, 200.f})));
+  EXPECT_EQ(frame1_renderables[0].geometry.src, frame1_renderables[1].geometry.src);
+  EXPECT_NE(frame1_renderables[0].geometry.dest, frame1_renderables[1].geometry.dest);
+  EXPECT_NE(frame1_renderables[0].geometry.transform, frame1_renderables[1].geometry.transform);
+
+  // Parent, second frame: clear content of A and B, attach viewport to a new transform C, and add
+  // C as a child of both A and B.
+  parent->SetTransformContent(kTransformA, nullptr);
+  parent->SetTransformContent(kTransformB, nullptr);
+  parent->CreateTransform(kTransformC);
+  parent->SetTransformContent(kTransformC, kViewport);
+  parent->AddChild(kTransformA, kTransformC);
+  parent->AddChild(kTransformB, kTransformC);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(parent, true);
+
+  auto frame2_renderables = GetRenderables(parent.get(), 1000, 1000);
+  ASSERT_EQ(frame2_renderables.size(), 2u);
+  for (auto& layer : frame1_renderables) {
+    layer.topology_index = ResolvedLayer::kInvalidTopologyIndex;
+  }
+  for (auto& layer : frame2_renderables) {
+    layer.topology_index = ResolvedLayer::kInvalidTopologyIndex;
+  }
+  EXPECT_EQ(frame2_renderables, frame1_renderables);
+}
+
 TEST_F(Flatland2Test, SwapStacks) {
   std::optional<std::string> error_log;
   auto flatland = CreateFlatland2(&error_log);
@@ -7958,7 +8059,7 @@ TEST_F(Flatland2Test, SetTransformContentUnknownStackIdEvenIfLayerExists) {
   Present(flatland, false);
 }
 
-TEST_F(Flatland2Test, SetTransformContentViewportArmNotImplementedFails) {
+TEST_F(Flatland2Test, SetTransformContentUnknownViewportIdFails) {
   std::optional<std::string> error_log;
   auto flatland = CreateFlatland2(&error_log);
   const TransformId kTransformId(1);
@@ -7967,6 +8068,8 @@ TEST_F(Flatland2Test, SetTransformContentViewportArmNotImplementedFails) {
 
   flatland->SetTransformContent(kTransformId, ViewportId(2));
   ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("SetTransformContent failed, viewport_id 2 not found"),
+            std::string::npos);
   Present(flatland, false);
 }
 
@@ -9610,6 +9713,7 @@ TEST_F(Flatland2Test, ClearResetsFlatland2Ids) {
   const LayerId kLayerId(1);
   const LayerStackId kStackId(2);
   const ImageId kImageId(3);
+  const ViewportId kViewportId(4);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
       .WillOnce(ReturnPromise(fpromise::ok()));
@@ -9621,6 +9725,8 @@ TEST_F(Flatland2Test, ClearResetsFlatland2Ids) {
                         .size(fuchsia_math::wire::SizeU{100, 100})
                         .Build();
   flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(flatland.get(), kViewportId);
   EXPECT_FALSE(error_log.has_value());
 
   LayerHandle layer_handle = flatland->GetLayerHandleForTest(kLayerId);
@@ -9634,6 +9740,9 @@ TEST_F(Flatland2Test, ClearResetsFlatland2Ids) {
   EXPECT_NE(global_image_id, allocation::kInvalidImageId);
   EXPECT_NE(flatland->GetImageObjectForTest(global_image_id), nullptr);
 
+  auto viewport_handle = flatland->GetViewportHandleForTest(kViewportId);
+  ASSERT_TRUE(viewport_handle.has_value());
+
   flatland->Clear();
 
   // The client-only layer is destroyed by the Clear().
@@ -9642,8 +9751,9 @@ TEST_F(Flatland2Test, ClearResetsFlatland2Ids) {
   EXPECT_FALSE(flatland->GetLayerStackHandleForTest(kStackId).has_value());
   EXPECT_EQ(flatland->GetGlobalImageIdForTest(kImageId), allocation::kInvalidImageId);
   EXPECT_EQ(flatland->GetImageObjectForTest(global_image_id), nullptr);
+  EXPECT_EQ(flatland->GetViewportHandleForTest(kViewportId), std::nullopt);
 
-  // Recreate all three IDs: succeeds.
+  // Recreate all four IDs: succeeds.
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
       .WillOnce(ReturnPromise(fpromise::ok()));
 
@@ -9653,6 +9763,9 @@ TEST_F(Flatland2Test, ClearResetsFlatland2Ids) {
                          .size(fuchsia_math::wire::SizeU{100, 100})
                          .Build();
   flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties2);
+
+  auto [child_token2, child_view_watcher_client_end2] =
+      CreateViewport2(flatland.get(), kViewportId);
   EXPECT_FALSE(error_log.has_value());
 
   LayerHandle new_layer_handle = flatland->GetLayerHandleForTest(kLayerId);
@@ -9668,6 +9781,10 @@ TEST_F(Flatland2Test, ClearResetsFlatland2Ids) {
   EXPECT_NE(new_global_image_id, allocation::kInvalidImageId);
   EXPECT_NE(new_global_image_id, global_image_id);
   EXPECT_NE(flatland->GetImageObjectForTest(new_global_image_id), nullptr);
+
+  auto new_viewport_handle = flatland->GetViewportHandleForTest(kViewportId);
+  ASSERT_TRUE(new_viewport_handle.has_value());
+  EXPECT_NE(*new_viewport_handle, *viewport_handle);
 
   // The unbound image's release is observed at the next Present()'s fence.
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
@@ -12812,6 +12929,785 @@ TEST_F(Flatland2Test, ReleaseFencesSignaledOnTeardown) {
   EXPECT_TRUE(utils::IsCounterSignalled(held_counter_dup, ZX_COUNTER_SIGNALED));
 }
 
+TEST_F(Flatland2Test, ClassicViewportMethodsFailWhenFlatland2Enabled) {
+  {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+
+    fuchsia_ui_views::ViewportCreationToken parent_token;
+    fuchsia_ui_views::ViewCreationToken child_token;
+    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
+
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{100, 100})
+                          .Build();
+    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+        fidl::Endpoints<ChildViewWatcher>::Create();
+    flatland->CreateViewport(ContentId(1), ToWire(std::move(parent_token)), properties,
+                             std::move(child_view_watcher_server_end));
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("is illegal because Flatland2 is enabled"), std::string::npos);
+    Present(flatland, false);
+  }
+
+  {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{100, 100})
+                          .Build();
+    flatland->SetViewportProperties(ContentId(1), properties);
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("is illegal because Flatland2 is enabled"), std::string::npos);
+    Present(flatland, false);
+  }
+
+  {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+
+    flatland->ReleaseViewport(
+        ContentId(1),
+        [](fuchsia_ui_views::wire::ViewportCreationToken token) { EXPECT_TRUE(false); });
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("is illegal because Flatland2 is enabled"), std::string::npos);
+    Present(flatland, false);
+  }
+}
+
+TEST_F(Flatland2Test, CreateViewport2FailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+
+  CreateViewport2(flatland.get(), ViewportId(1));
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("Flatland2 not enabled"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, CreateViewport2ZeroIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  CreateViewport2(flatland.get(), kInvalidViewportId);
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("ViewportId zero"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, CreateViewport2DuplicateIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  const ViewportId kViewportId(1);
+  auto [child_token1, child_view_watcher_client_end1] =
+      CreateViewport2(flatland.get(), kViewportId);
+  EXPECT_FALSE(error_log.has_value());
+
+  auto [child_token2, child_view_watcher_client_end2] =
+      CreateViewport2(flatland.get(), kViewportId);
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("existing ViewportId"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseViewport2FailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+
+  flatland->ReleaseViewport2(
+      ViewportId(1),
+      [](fuchsia_ui_views::wire::ViewportCreationToken token) { EXPECT_TRUE(false); });
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("Flatland2 not enabled"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseViewport2ZeroIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  flatland->ReleaseViewport2(
+      kInvalidViewportId,
+      [](fuchsia_ui_views::wire::ViewportCreationToken token) { EXPECT_TRUE(false); });
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("ViewportId zero"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseViewport2UnknownIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  flatland->ReleaseViewport2(
+      ViewportId(999),
+      [](fuchsia_ui_views::wire::ViewportCreationToken token) { EXPECT_TRUE(false); });
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("not found"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseViewport2DoubleReleaseFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  const ViewportId kViewportId(1);
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(flatland.get(), kViewportId);
+  flatland->ReleaseViewport2(kViewportId,
+                             [](fuchsia_ui_views::wire::ViewportCreationToken token) {});
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->ReleaseViewport2(
+      kViewportId, [](fuchsia_ui_views::wire::ViewportCreationToken token) { EXPECT_TRUE(false); });
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("not found"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetViewportProperties2FailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
+  flatland->SetViewportProperties2(ViewportId(1), properties);
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("Flatland2 not enabled"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetViewportProperties2ZeroIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
+  flatland->SetViewportProperties2(kInvalidViewportId, properties);
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("ViewportId zero"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetViewportProperties2UnknownIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
+  flatland->SetViewportProperties2(ViewportId(999), properties);
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("not found"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetViewportProperties2ReleasedIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  const ViewportId kViewportId(1);
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(flatland.get(), kViewportId);
+  flatland->ReleaseViewport2(kViewportId,
+                             [](fuchsia_ui_views::wire::ViewportCreationToken token) {});
+  EXPECT_FALSE(error_log.has_value());
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
+  flatland->SetViewportProperties2(kViewportId, properties);
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("not found"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetTransformContentReleasedViewportIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  const TransformId kTransformId(1);
+  const ViewportId kViewportId(2);
+  flatland->CreateTransform(kTransformId);
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(flatland.get(), kViewportId);
+  flatland->ReleaseViewport2(kViewportId,
+                             [](fuchsia_ui_views::wire::ViewportCreationToken token) {});
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetTransformContent(kTransformId, kViewportId);
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("not found"), std::string::npos);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseViewport2ReturnsToken) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  const ViewportId kViewportId(1);
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(flatland.get(), kViewportId);
+  const zx_koid_t expected_koid = fsl::GetRelatedKoid(child_token.value.get());
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  fuchsia_ui_views::wire::ViewportCreationToken returned_token;
+  flatland->ReleaseViewport2(
+      kViewportId, [&returned_token](fuchsia_ui_views::wire::ViewportCreationToken token) {
+        returned_token = std::move(token);
+      });
+  EXPECT_FALSE(error_log.has_value());
+
+  // Until Present() is called and session updates applied, the link is still valid and token
+  // has not been returned.
+  RunLoopUntilIdle();
+  EXPECT_TRUE(ClientEndPeerExists(child_view_watcher_client_end));
+  EXPECT_FALSE(returned_token.value.is_valid());
+
+  // Re-creating the same ViewportId immediately before Present() succeeds.
+  auto [child_token2, child_view_watcher_client_end2] =
+      CreateViewport2(flatland.get(), kViewportId);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(flatland, true);
+  RunLoopUntilIdle();
+
+  // Now the returned token is received and matches the original koid.
+  EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end));
+  EXPECT_TRUE(ClientEndPeerExists(child_view_watcher_client_end2));
+  EXPECT_TRUE(returned_token.value.is_valid());
+  EXPECT_EQ(fsl::GetKoid(returned_token.value.get()), expected_koid);
+}
+
+TEST_F(Flatland2Test, CreateViewport2InvalidPropertiesFails) {
+  // Missing logical_size.
+  {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+
+    ViewportCreationToken parent_token;
+    ViewCreationToken child_token;
+    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
+
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena).Build();
+    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+        fidl::Endpoints<ChildViewWatcher>::Create();
+
+    flatland->CreateViewport2(ViewportId(1), ToWire(std::move(parent_token)), properties,
+                              std::move(child_view_watcher_server_end));
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find(
+                  "CreateViewport2 must be provided a ViewportProperties with a logical size"),
+              std::string::npos);
+    Present(flatland, false);
+  }
+
+  // Zero logical_size component.
+  {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+
+    CreateViewport2(flatland.get(), ViewportId(1), {0, 100});
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("CreateViewport2 failed"), std::string::npos);
+    Present(flatland, false);
+  }
+
+  // Negative inset.
+  {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+
+    ViewportCreationToken parent_token;
+    ViewCreationToken child_token;
+    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
+
+    fidl::Arena arena;
+    auto properties =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+            .logical_size(fuchsia_math::wire::SizeU{100, 100})
+            .inset(fuchsia_math::wire::Inset{.top = -1, .right = 0, .bottom = 0, .left = 0})
+            .Build();
+    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+        fidl::Endpoints<ChildViewWatcher>::Create();
+
+    flatland->CreateViewport2(ViewportId(1), ToWire(std::move(parent_token)), properties,
+                              std::move(child_view_watcher_server_end));
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("CreateViewport2 failed"), std::string::npos);
+    Present(flatland, false);
+  }
+}
+
+TEST_F(Flatland2Test, SetViewportProperties2InvalidPropertiesFails) {
+  // Zero logical_size component.
+  {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+
+    const ViewportId kViewportId(1);
+    auto [child_token, child_view_watcher_client_end] =
+        CreateViewport2(flatland.get(), kViewportId);
+    EXPECT_FALSE(error_log.has_value());
+
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{0, 100})
+                          .Build();
+    flatland->SetViewportProperties2(kViewportId, properties);
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("SetViewportProperties2 failed"), std::string::npos);
+    Present(flatland, false);
+  }
+
+  // Negative inset.
+  {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+
+    const ViewportId kViewportId(1);
+    auto [child_token, child_view_watcher_client_end] =
+        CreateViewport2(flatland.get(), kViewportId);
+    EXPECT_FALSE(error_log.has_value());
+
+    fidl::Arena arena;
+    auto properties =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+            .inset(fuchsia_math::wire::Inset{.top = -1, .right = 0, .bottom = 0, .left = 0})
+            .Build();
+    flatland->SetViewportProperties2(kViewportId, properties);
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("SetViewportProperties2 failed"), std::string::npos);
+    Present(flatland, false);
+  }
+}
+
+TEST_F(Flatland2Test, SetViewportProperties2UpdatesClip) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  const ViewportId kViewportId(1);
+  const int32_t kWidth1 = 300;
+  const int32_t kHeight1 = 500;
+  auto [child_token, child_view_watcher_client_end] =
+      CreateViewport2(flatland.get(), kViewportId, {kWidth1, kHeight1});
+  Present(flatland, true);
+
+  auto maybe_handle = flatland->GetViewportHandleForTest(kViewportId);
+  ASSERT_TRUE(maybe_handle.has_value());
+  TransformHandle handle = *maybe_handle;
+
+  auto uber_struct = GetUberStruct(flatland.get());
+  ASSERT_NE(uber_struct, nullptr);
+  auto clip_itr = uber_struct->local_clip_regions.find(handle);
+  ASSERT_NE(clip_itr, uber_struct->local_clip_regions.end());
+  EXPECT_EQ(clip_itr->second,
+            TransformClipRegion({.x = 0, .y = 0, .width = kWidth1, .height = kHeight1}));
+
+  // Update properties via SetViewportProperties2.
+  const int32_t kWidth2 = 900;
+  const int32_t kHeight2 = 700;
+  fidl::Arena arena;
+  auto properties2 = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                         .logical_size(fuchsia_math::wire::SizeU{kWidth2, kHeight2})
+                         .Build();
+  flatland->SetViewportProperties2(kViewportId, properties2);
+  Present(flatland, true);
+
+  uber_struct = GetUberStruct(flatland.get());
+  ASSERT_NE(uber_struct, nullptr);
+  clip_itr = uber_struct->local_clip_regions.find(handle);
+  ASSERT_NE(clip_itr, uber_struct->local_clip_regions.end());
+  EXPECT_EQ(clip_itr->second,
+            TransformClipRegion({.x = 0, .y = 0, .width = kWidth2, .height = kHeight2}));
+}
+
+TEST_F(Flatland2Test, ReleaseViewport2WhileAttached) {
+  std::optional<std::string> error_log;
+  auto parent = CreateFlatland2(&error_log);
+  auto child = CreateFlatland2();
+
+  const TransformId kRoot(1);
+  const ViewportId kViewport(2);
+
+  parent->CreateTransform(kRoot);
+  parent->SetRootTransform(kRoot);
+
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(parent.get(), kViewport);
+  const zx_koid_t expected_koid = fsl::GetRelatedKoid(child_token.value.get());
+
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<ParentViewportWatcher>::Create();
+  child->CreateView2(std::move(child_token), NewWireViewIdentityOnCreation(), NoViewProtocols(),
+                     std::move(parent_viewport_watcher_server_end));
+
+  parent->SetTransformContent(kRoot, kViewport);
+  Present(parent, true);
+  Present(child, true);
+
+  EXPECT_TRUE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+
+  auto maybe_viewport_handle = parent->GetViewportHandleForTest(kViewport);
+  ASSERT_TRUE(maybe_viewport_handle.has_value());
+  TransformHandle viewport_handle = *maybe_viewport_handle;
+
+  // Release the viewport while attached.
+  fuchsia_ui_views::wire::ViewportCreationToken returned_token;
+  parent->ReleaseViewport2(kViewport,
+                           [&returned_token](fuchsia_ui_views::wire::ViewportCreationToken token) {
+                             returned_token = std::move(token);
+                           });
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(parent, true);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+  EXPECT_TRUE(returned_token.value.is_valid());
+  EXPECT_EQ(fsl::GetKoid(returned_token.value.get()), expected_koid);
+
+  // kRoot still holds the viewport's transform as content, keeping the handle reachable.
+  auto uber_struct = GetUberStruct(parent.get());
+  ASSERT_NE(uber_struct, nullptr);
+  EXPECT_TRUE(uber_struct->local_clip_regions.contains(viewport_handle));
+
+  parent->SetTransformContent(kRoot, nullptr);
+  Present(parent, true);
+
+  uber_struct = GetUberStruct(parent.get());
+  ASSERT_NE(uber_struct, nullptr);
+  EXPECT_FALSE(uber_struct->local_clip_regions.contains(viewport_handle));
+}
+
+TEST_F(Flatland2Test, ReleaseViewport2ReturnedTokenRelinks) {
+  std::optional<std::string> error_log;
+  auto parent = CreateFlatland2(&error_log);
+  auto child = CreateFlatland2();
+
+  const TransformId kRoot(1);
+  const ViewportId kViewport1(2);
+  const ViewportId kViewport2(3);
+
+  parent->CreateTransform(kRoot);
+  parent->SetRootTransform(kRoot);
+
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(parent.get(), kViewport1);
+
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<ParentViewportWatcher>::Create();
+  zx::unowned_channel unowned_parent_viewport_watcher(
+      parent_viewport_watcher_client_end.channel().get());
+  fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end), dispatcher());
+
+  child->CreateView2(std::move(child_token), NewWireViewIdentityOnCreation(), NoViewProtocols(),
+                     std::move(parent_viewport_watcher_server_end));
+
+  parent->SetTransformContent(kRoot, kViewport1);
+  Present(parent, true);
+  Present(child, true);
+
+  EXPECT_TRUE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+
+  // Release the attached viewport and capture the returned token.
+  fuchsia_ui_views::wire::ViewportCreationToken returned_token;
+  parent->ReleaseViewport2(kViewport1,
+                           [&returned_token](fuchsia_ui_views::wire::ViewportCreationToken token) {
+                             returned_token = std::move(token);
+                           });
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(parent, true);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+  ASSERT_TRUE(returned_token.value.is_valid());
+
+  // Re-link the same child view using the returned token.
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{200, 300})
+                        .Build();
+  auto [child_view_watcher_client_end2, child_view_watcher_server_end2] =
+      fidl::Endpoints<ChildViewWatcher>::Create();
+  parent->CreateViewport2(kViewport2, std::move(returned_token), properties,
+                          std::move(child_view_watcher_server_end2));
+  parent->SetTransformContent(kRoot, kViewport2);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(parent, true);
+
+  EXPECT_TRUE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+  EXPECT_TRUE(PeerExists(unowned_parent_viewport_watcher));
+
+  std::optional<LayoutInfo> layout;
+  parent_viewport_watcher->GetLayout().ThenExactlyOnce(
+      [&layout](ParentViewportWatcher_GetLayoutResult& result) {
+        ASSERT_TRUE(result.is_ok());
+        layout = result->info();
+      });
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(layout.has_value());
+  ASSERT_TRUE(layout->logical_size().has_value());
+  EXPECT_EQ(layout->logical_size()->width(), 200u);
+  EXPECT_EQ(layout->logical_size()->height(), 300u);
+}
+
+TEST_F(Flatland2Test, ViewportIdSpaceIsPerType) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  // Common ID value 1 across LayerId, LayerStackId, ImageId, and ViewportId.
+  const LayerId kLayerId(1);
+  const LayerStackId kStackId(1);
+  const ImageId kImageId(1);
+  const ViewportId kViewportId(1);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  flatland->CreateLayer(kLayerId);
+  flatland->CreateLayerStack(kStackId);
+
+  fidl::Arena arena;
+  auto img_properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                            .size(fuchsia_math::wire::SizeU{100, 100})
+                            .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, img_properties);
+
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(flatland.get(), kViewportId);
+
+  EXPECT_FALSE(error_log.has_value());
+
+  EXPECT_NE(flatland->GetLayerHandleForTest(kLayerId), LayerHandle());
+  EXPECT_TRUE(flatland->GetLayerStackHandleForTest(kStackId).has_value());
+  EXPECT_NE(flatland->GetGlobalImageIdForTest(kImageId), allocation::kInvalidImageId);
+  EXPECT_TRUE(flatland->GetViewportHandleForTest(kViewportId).has_value());
+
+  Present(flatland, true);
+  EXPECT_FALSE(error_log.has_value());
+
+  // With only LayerStackId(1) live, ViewportId(1) lookups fail and close the session.
+  {
+    std::optional<std::string> error_log;
+    auto session = CreateFlatland2(&error_log);
+    session->CreateTransform(TransformId(1));
+    session->CreateLayerStack(kStackId);
+    EXPECT_FALSE(error_log.has_value());
+
+    session->SetTransformContent(TransformId(1), kViewportId);
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("not found"), std::string::npos);
+    Present(session, false);
+  }
+  {
+    std::optional<std::string> error_log;
+    auto session = CreateFlatland2(&error_log);
+    session->CreateLayerStack(kStackId);
+    EXPECT_FALSE(error_log.has_value());
+
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{100, 100})
+                          .Build();
+    session->SetViewportProperties2(kViewportId, properties);
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("not found"), std::string::npos);
+    Present(session, false);
+  }
+  {
+    std::optional<std::string> error_log;
+    auto session = CreateFlatland2(&error_log);
+    session->CreateLayerStack(kStackId);
+    EXPECT_FALSE(error_log.has_value());
+
+    session->ReleaseViewport2(kViewportId, [](fuchsia_ui_views::wire::ViewportCreationToken token) {
+      EXPECT_TRUE(false);
+    });
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("not found"), std::string::npos);
+    Present(session, false);
+  }
+}
+
+TEST_F(Flatland2Test, SetTransformContentViewport) {
+  std::optional<std::string> error_log;
+  auto parent = CreateFlatland2(&error_log);
+  auto child = CreateFlatland2();
+
+  const TransformId kRoot(1);
+  const ViewportId kViewport(2);
+  const LayerId kLayer(3);
+  const LayerStackId kStack(4);
+
+  parent->CreateTransform(kRoot);
+  parent->SetRootTransform(kRoot);
+
+  auto [child_token, child_view_watcher_client_end] = CreateViewport2(parent.get(), kViewport);
+
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<ParentViewportWatcher>::Create();
+  child->CreateView2(std::move(child_token), NewWireViewIdentityOnCreation(), NoViewProtocols(),
+                     std::move(parent_viewport_watcher_server_end));
+
+  parent->CreateLayer(kLayer);
+  parent->CreateLayerStack(kStack);
+  parent->SetStackLayers(kStack, {kLayer});
+
+  // Attach viewport to root transform.
+  parent->SetTransformContent(kRoot, kViewport);
+  EXPECT_FALSE(error_log.has_value());
+  Present(parent, true);
+  Present(child, true);
+
+  EXPECT_TRUE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+
+  // Swap to stack on same transform.
+  parent->SetTransformContent(kRoot, kStack);
+  EXPECT_FALSE(error_log.has_value());
+  Present(parent, true);
+
+  EXPECT_FALSE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+  auto stack_handle = parent->GetLayerStackHandleForTest(kStack);
+  ASSERT_TRUE(stack_handle.has_value());
+  auto uber_struct = GetUberStruct(parent.get());
+  ASSERT_NE(uber_struct, nullptr);
+  EXPECT_TRUE(uber_struct->layer_stacks.contains(*stack_handle));
+
+  // Swap back to viewport.
+  parent->SetTransformContent(kRoot, kViewport);
+  EXPECT_FALSE(error_log.has_value());
+  Present(parent, true);
+
+  EXPECT_TRUE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+  uber_struct = GetUberStruct(parent.get());
+  ASSERT_NE(uber_struct, nullptr);
+  EXPECT_FALSE(uber_struct->layer_stacks.contains(*stack_handle));
+
+  // Detach content without releasing viewport.
+  parent->SetTransformContent(kRoot, nullptr);
+  EXPECT_FALSE(error_log.has_value());
+  Present(parent, true);
+
+  EXPECT_FALSE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+  EXPECT_TRUE(parent->GetViewportHandleForTest(kViewport).has_value());
+  EXPECT_TRUE(ClientEndPeerExists(child_view_watcher_client_end));
+
+  // Verify viewport remains re-attachable.
+  parent->SetTransformContent(kRoot, kViewport);
+  EXPECT_FALSE(error_log.has_value());
+  Present(parent, true);
+
+  EXPECT_TRUE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+}
+
+TEST_F(Flatland2Test, TwoSessionViewViewportConnection) {
+  std::optional<std::string> error_log;
+  auto parent = CreateFlatland2(&error_log);
+  auto child = CreateFlatland2();
+
+  const TransformId kParentRoot(1);
+  const ViewportId kViewport(2);
+  const TransformId kChildRoot(10);
+  const LayerId kChildLayer(11);
+  const LayerStackId kChildStack(12);
+
+  parent->CreateTransform(kParentRoot);
+  parent->SetRootTransform(kParentRoot);
+
+  auto [child_token, child_view_watcher_client_end] =
+      CreateViewport2(parent.get(), kViewport, {200, 300});
+  zx::unowned_channel unowned_child_view_watcher(child_view_watcher_client_end.channel().get());
+  fidl::Client child_view_watcher(std::move(child_view_watcher_client_end), dispatcher());
+  parent->SetTransformContent(kParentRoot, kViewport);
+
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<ParentViewportWatcher>::Create();
+  zx::unowned_channel unowned_parent_viewport_watcher(
+      parent_viewport_watcher_client_end.channel().get());
+  fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end), dispatcher());
+
+  child->CreateView2(std::move(child_token), NewWireViewIdentityOnCreation(), NoViewProtocols(),
+                     std::move(parent_viewport_watcher_server_end));
+
+  // Build child content: root transform with a solid color layer stack.
+  child->CreateTransform(kChildRoot);
+  child->SetRootTransform(kChildRoot);
+  child->CreateLayer(kChildLayer);
+  child->CreateLayerStack(kChildStack);
+  child->SetStackLayers(kChildStack, {kChildLayer});
+  child->SetTransformContent(kChildRoot, kChildStack);
+
+  fidl::Arena arena;
+  fuchsia_ui_composition::LayerProperties layer_props;
+  layer_props.display_rect(fuchsia_math::RectU{0, 0, 200, 300});
+  layer_props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  layer_props.color(fuchsia_ui_composition::ColorRgba{0.f, 1.f, 0.f, 1.f});
+  child->SetLayerProperties(kChildLayer, fidl::ToWire(arena, std::move(layer_props)));
+
+  Present(parent, true);
+  Present(child, true);
+
+  // Link resolves, parent's root has child's root as descendant.
+  EXPECT_TRUE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
+  EXPECT_TRUE(PeerExists(unowned_child_view_watcher));
+  EXPECT_TRUE(PeerExists(unowned_parent_viewport_watcher));
+
+  // Child gets layout from parent's viewport properties.
+  std::optional<LayoutInfo> layout;
+  parent_viewport_watcher->GetLayout().ThenExactlyOnce(
+      [&layout](ParentViewportWatcher_GetLayoutResult& result) {
+        ASSERT_TRUE(result.is_ok());
+        layout = result->info();
+      });
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(layout.has_value());
+  ASSERT_TRUE(layout->logical_size().has_value());
+  EXPECT_EQ(layout->logical_size()->width(), 200u);
+  EXPECT_EQ(layout->logical_size()->height(), 300u);
+
+  // Updating viewport properties via SetViewportProperties2 reaches the child.
+  auto updated_properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                                .logical_size(fuchsia_math::wire::SizeU{400, 500})
+                                .Build();
+  parent->SetViewportProperties2(kViewport, updated_properties);
+  EXPECT_FALSE(error_log.has_value());
+
+  layout = std::nullopt;
+  parent_viewport_watcher->GetLayout().ThenExactlyOnce(
+      [&layout](ParentViewportWatcher_GetLayoutResult& result) {
+        ASSERT_TRUE(result.is_ok());
+        layout = result->info();
+      });
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(layout.has_value());
+  ASSERT_TRUE(layout->logical_size().has_value());
+  EXPECT_EQ(layout->logical_size()->width(), 400u);
+  EXPECT_EQ(layout->logical_size()->height(), 500u);
+
+  // Child content renders under parent's topology.
+  auto renderables = GetRenderables(parent.get(), 1000, 1000);
+  ASSERT_EQ(renderables.size(), 1u);
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(renderables[0].content));
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(renderables[0].content).color,
+            (std::array<float, 4>{0.f, 1.f, 0.f, 1.f}));
+}
+
 // These tests exercise the legacy bridging logic where Flatland1 mutator calls
 // are converted into Flatland2 UberStructLayer properties. They will be removed
 // when the Flatland1 FIDL API is finally deleted.
@@ -13884,9 +14780,9 @@ TEST_F(FlatlandTest, LayerMutatorsLeaveDirtySignalClear) {
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(1);
 }
 
-// Verifies that the Flatland2 mutators that change a transform's priority child (attaching,
-// swapping, and detaching a layer stack) set `Flatland::scene_state_dirty_` and publish
-// `recompute_scene_state = true` through `UberStructSystem::MustRecomputeSceneState()`.
+// Verifies that the Flatland2 mutators that change a transform's priority child or mutate
+// viewports set `Flatland::scene_state_dirty_` and publish `recompute_scene_state = true` through
+// `UberStructSystem::MustRecomputeSceneState()`.
 TEST_F(Flatland2Test, TransformGraphMutatorsSetDirtySignal) {
   std::optional<std::string> error_log;
   auto flatland = CreateFlatland2(&error_log);
@@ -13894,11 +14790,16 @@ TEST_F(Flatland2Test, TransformGraphMutatorsSetDirtySignal) {
   const TransformId kRoot(1);
   const LayerStackId kStackA(1);
   const LayerStackId kStackB(2);
+  const ViewportId kViewport(1);
 
   flatland->CreateTransform(kRoot);
   flatland->SetRootTransform(kRoot);
   flatland->CreateLayerStack(kStackA);
   flatland->CreateLayerStack(kStackB);
+
+  // Keep `view_token` alive across the cases so the viewport link remains valid when
+  // `SetViewportProperties2` runs.
+  fuchsia_ui_views::wire::ViewCreationToken view_token;
 
   // Initial Present consumes the startup dirty flag.
   Present(flatland, true);
@@ -13915,6 +14816,22 @@ TEST_F(Flatland2Test, TransformGraphMutatorsSetDirtySignal) {
       {.name = "SetTransformContent_Swap",
        .mutate = [&] { flatland->SetTransformContent(kRoot, kStackB); }},
       {.name = "ClearTransformContent", .mutate = [&] { flatland->ClearTransformContent(kRoot); }},
+      {.name = "CreateViewport2",
+       .mutate =
+           [&] { std::tie(view_token, std::ignore) = CreateViewport2(flatland.get(), kViewport); }},
+      {.name = "SetTransformContent_AttachViewport",
+       .mutate = [&] { flatland->SetTransformContent(kRoot, kViewport); }},
+      {.name = "SetViewportProperties2",
+       .mutate =
+           [&] {
+             fidl::Arena arena;
+             auto props = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                              .logical_size({200, 200})
+                              .Build();
+             flatland->SetViewportProperties2(kViewport, props);
+           }},
+      {.name = "ReleaseViewport2",
+       .mutate = [&] { flatland->ReleaseViewport2(kViewport, [](auto) {}); }},
   };
 
   for (const auto& test_case : cases) {

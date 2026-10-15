@@ -396,16 +396,20 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // the local_root_.
   TransformHandle GetRoot() const;
 
-  // For validating properties associated with content in tests only. If |content_id| does not
-  // exist for this Flatland instance, returns std::nullopt.
+  // For validating properties associated with content in tests only. If `content_id` does not
+  // exist for this Flatland instance, returns `std::nullopt`.
   std::optional<TransformHandle> GetContentHandle(ContentId content_id) const;
 
-  // For validating properties associated with layer stacks in tests only. If |layer_stack_id| does
-  // not exist for this Flatland instance, returns std::nullopt.
+  // For validating properties associated with layer stacks in tests only. If `layer_stack_id`
+  // does not exist for this Flatland instance, returns `std::nullopt`.
   std::optional<TransformHandle> GetLayerStackHandleForTest(LayerStackId layer_stack_id) const;
 
-  // For validating properties associated with transforms in tests only. If |transform_id| does not
-  // exist for this Flatland instance, returns std::nullopt.
+  // For validating properties associated with viewports in tests only. If `viewport_id` does
+  // not exist for this Flatland instance, returns `std::nullopt`.
+  std::optional<TransformHandle> GetViewportHandleForTest(ViewportId viewport_id) const;
+
+  // For validating properties associated with transforms in tests only. If `transform_id` does
+  // not exist for this Flatland instance, returns `std::nullopt`.
   std::optional<TransformHandle> GetTransformHandle(TransformId transform_id) const;
 
   // For validating logs in tests only.
@@ -465,6 +469,28 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // TransformID as a parameter so that it can be applied to content transforms that do
   // not have an external ID that they are mapped to.
   void SetClipBoundaryInternal(TransformHandle handle, TransformClipRegion bounds);
+
+  // Shared implementation for CreateViewport and CreateViewport2.
+  std::optional<TransformHandle> CreateViewportHelper(
+      fuchsia_ui_views::wire::ViewportCreationToken token,
+      const fuchsia_ui_composition::wire::ViewportProperties& properties,
+      fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher);
+
+  // Wraps a LinkSystem::LinkToChild and the properties currently associated with that link.
+  struct LinkToChildData {
+    LinkSystem::LinkToChild link;
+    fuchsia_ui_composition::ViewportProperties properties;
+  };
+
+  // Shared implementation for ReleaseViewport and ReleaseViewport2.
+  void ReleaseViewportHelper(
+      TransformHandle viewport_handle, LinkToChildData& link_data,
+      fit::function<void(fuchsia_ui_views::wire::ViewportCreationToken)> completer);
+
+  // Shared implementation for SetViewportProperties and SetViewportProperties2.
+  void SetViewportPropertiesHelper(
+      TransformHandle viewport_handle, LinkToChildData& link_data,
+      const fuchsia_ui_composition::wire::ViewportProperties& properties);
 
   // Called by `Clear()`.  Releases every Flatland2 object referenced by a client ID.
   // All IDs are immediately safe to reuse.
@@ -566,6 +592,11 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   std::pmr::unordered_map<LayerHandle, LayerObject> layer_objects_;
   std::pmr::unordered_map<TransformHandle, LayerStackData> layer_stacks_;
   std::pmr::unordered_map<LayerStackId, TransformHandle> layer_stack_handles_;
+
+  // A mapping from user-generated `ViewportId` to the viewport's content handle, which
+  // stays a key of `links_to_children_` while the id is mapped. Erased the moment the client
+  // releases the id.
+  std::pmr::unordered_map<ViewportId, TransformHandle> viewport_handles_;
 
   // Image resources, keyed by the never-reused GlobalImageId.  See ImageObject.
   std::pmr::unordered_map<allocation::GlobalImageId, ImageObject> image_objects_;
@@ -679,12 +710,6 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // These are appended to acquire fences in the next `Present()` to ensure
   // that the Present task waits for image import to complete.
   std::vector<zx::event> pending_create_image_fences_;
-
-  // Wraps a LinkSystem::LinkToChild and the properties currently associated with that link.
-  struct LinkToChildData {
-    LinkSystem::LinkToChild link;
-    fuchsia_ui_composition::ViewportProperties properties;
-  };
 
   // A mapping from Flatland-generated TransformHandle to the LinkToChildData it represents.
   std::unordered_map<TransformHandle, LinkToChildData> links_to_children_;
