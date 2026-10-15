@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_check_cfg_build_flags.bzl", "rustc_check_cfg_build_flags")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_check_cfg_build_flags(
+    name = "check_cfg_flags",
+    cfgs = ["ignore"],
+)
+
+rustc_library(
+    name = "const-unwrap",
+    srcs = ["src/lib.rs"],
+    build_flags = [":check_cfg_flags"],
+    edition = "2024",
+    visibility = ["//src/connectivity/lib/network-device/rust:__pkg__"],
+)
