@@ -10,6 +10,8 @@
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
 #include <lib/fake-bti/bti.h>
+#include <lib/fpromise/single_threaded_executor.h>
+#include <lib/inspect/cpp/reader.h>
 #include <lib/sync/completion.h>
 #include <lib/virtio/backends/fake.h>
 
@@ -207,6 +209,7 @@ class TestBlockDriver : public virtio::BlockDriver {
   explicit TestBlockDriver() : BlockDriver() {}
 
   virtio::BlockDevice& block_device() const { return virtio::BlockDriver::block_device(); }
+  const inspect::Inspector& inspector() const { return virtio::BlockDriver::inspector(); }
 
  protected:
   zx::result<std::unique_ptr<virtio::BlockDevice>> CreateBlockDevice(
@@ -610,6 +613,70 @@ TEST_F(BlockDriverTest, ConnectMapper) {
   request.mapping_vmo(std::move(mapping_vmo));
   auto open_result = sync_mapper_client->OpenSession(std::move(request));
   ASSERT_OK(open_result);
+}
+
+TEST_F(BlockDriverTest, InspectIoCounters) {
+  StartDriver();
+
+  zx::result client = CreateClient();
+  ASSERT_OK(client);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 3, 0, &vmo));
+  storage::Vmoid owned_vmoid;
+  ASSERT_OK(client.value()->BlockAttachVmo(vmo, &owned_vmoid));
+  vmoid_t vmoid = owned_vmoid.TakeId();
+
+  BlockFifoRequest write_req = {.command = {.opcode = BLOCK_OPCODE_WRITE},
+                                .vmoid = vmoid,
+                                .length = 2,
+                                .vmo_offset = 0,
+                                .dev_offset = 0};
+  EXPECT_OK(client.value()->FifoTransaction(&write_req, 1));
+
+  BlockFifoRequest read_req = {.command = {.opcode = BLOCK_OPCODE_READ},
+                               .vmoid = vmoid,
+                               .length = 1,
+                               .vmo_offset = 0,
+                               .dev_offset = 0};
+  EXPECT_OK(client.value()->FifoTransaction(&read_req, 1));
+
+  BlockFifoRequest flush_req = {.command = {.opcode = BLOCK_OPCODE_FLUSH},
+                                .vmoid = 0,
+                                .length = 0,
+                                .vmo_offset = 0,
+                                .dev_offset = 0};
+  EXPECT_OK(client.value()->FifoTransaction(&flush_req, 1));
+
+  BlockFifoRequest trim_req = {.command = {.opcode = BLOCK_OPCODE_TRIM},
+                               .vmoid = 0,
+                               .length = 3,
+                               .vmo_offset = 0,
+                               .dev_offset = 0};
+  EXPECT_OK(client.value()->FifoTransaction(&trim_req, 1));
+
+  driver_test().RunInDriverContext([&](TestBlockDriver& driver) {
+    fpromise::result<inspect::Hierarchy> hierarchy =
+        fpromise::run_single_threaded(inspect::ReadFromInspector(driver.inspector()));
+    ASSERT_TRUE(hierarchy.is_ok());
+    const auto* node = hierarchy.value().GetByPath({"virtio_block"});
+    ASSERT_NE(node, nullptr);
+
+    auto get_uint = [&](const char* name) -> uint64_t {
+      const auto* prop = node->node().get_property<inspect::UintPropertyValue>(name);
+      EXPECT_NE(prop, nullptr);
+      return prop ? prop->value() : UINT64_MAX;
+    };
+
+    EXPECT_EQ(get_uint("block.read.count"), 1u);
+    EXPECT_EQ(get_uint("block.write.count"), 1u);
+    EXPECT_EQ(get_uint("block.flush.count"), 1u);
+    EXPECT_EQ(get_uint("block.trim.count"), 1u);
+    EXPECT_EQ(get_uint("block.read.bytes"), kBlkSize);
+    EXPECT_EQ(get_uint("block.write.bytes"), 2 * kBlkSize);
+    EXPECT_EQ(get_uint("block.flush.bytes"), 0u);
+    EXPECT_EQ(get_uint("block.trim.bytes"), 3 * kBlkSize);
+  });
 }
 
 FUCHSIA_DRIVER_EXPORT2(TestBlockDriver);

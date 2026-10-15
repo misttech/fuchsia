@@ -60,6 +60,7 @@ source_set("block_lib") {
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/listnode",
     "//src/storage/lib/block_server:block_server_cc",
+    "//zircon/system/ulib/inspect",
   ]
 }
 
@@ -129,6 +130,7 @@ test("virtio-block-test-bin") {
     ":block_lib",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/driver/testing/cpp:minimal_compat_environment",
+    "//sdk/lib/fit-promise",
     "//src/devices/bus/lib/virtio",
     "//src/devices/testing/fake-bti",
     "//src/lib/fxl/test:gtest_main",

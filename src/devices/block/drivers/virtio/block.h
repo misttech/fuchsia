@@ -11,6 +11,7 @@
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fit/function.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/completion.h>
 #include <lib/virtio/backends/backend.h>
 #include <lib/virtio/device.h>
@@ -56,6 +57,7 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
 
   // virtio::Device overrides
   zx_status_t Init() override;
+  void InitInspect(inspect::Node inspect_node);
   void Release() override;
 
   void IrqRingUpdate() override;
@@ -247,6 +249,16 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
   bool supports_discard_ = false;
   bool supports_barriers_ = false;
 
+  inspect::Node inspect_node_;
+  inspect::UintProperty read_ops_;
+  inspect::UintProperty write_ops_;
+  inspect::UintProperty flush_ops_;
+  inspect::UintProperty trim_ops_;
+  inspect::UintProperty read_bytes_;
+  inspect::UintProperty write_bytes_;
+  inspect::UintProperty flush_bytes_;
+  inspect::UintProperty trim_bytes_;
+
   fdf::Logger& logger_;
 };
 
@@ -277,9 +289,11 @@ class BlockDriver : public fdf::DriverBase2, public fidl::Server<fuchsia_driver_
       const fdf::Namespace& incoming);
   // Exposed for testing
   BlockDevice& block_device() const { return *block_device_; }
+  const inspect::Inspector& inspector() const { return exposed_inspector_->inspector(); }
 
  private:
   std::unique_ptr<BlockDevice> block_device_;
+  std::optional<inspect::ComponentInspector> exposed_inspector_;
   zx::event node_token_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;

@@ -79,6 +79,30 @@ void BlockDevice::CompleteTxn(block_txn_t* transaction, zx_status_t status) {
   // requests, the req_index is used to reserve a slot in our pool for txn, so once we free that,
   // txn could be reused.
   uint64_t request_id = transaction->request;
+  if (status == ZX_OK) {
+    switch (transaction->operation.tag) {
+      case block_server::Operation::Tag::Read:
+        read_ops_.Add(1);
+        read_bytes_.Add(static_cast<uint64_t>(transaction->operation.read.block_count) *
+                        config_.blk_size);
+        break;
+      case block_server::Operation::Tag::Write:
+        write_ops_.Add(1);
+        write_bytes_.Add(static_cast<uint64_t>(transaction->operation.write.block_count) *
+                         config_.blk_size);
+        break;
+      case block_server::Operation::Tag::Flush:
+        flush_ops_.Add(1);
+        break;
+      case block_server::Operation::Tag::Trim:
+        trim_ops_.Add(1);
+        trim_bytes_.Add(static_cast<uint64_t>(transaction->operation.trim.block_count) *
+                        config_.blk_size);
+        break;
+      default:
+        break;
+    }
+  }
   {
     fbl::AutoLock lock(&txn_lock_);
     // NB: req_index might be invalid (>= kBlkReqCount) if transaction comes from Banjo but never
@@ -252,6 +276,18 @@ zx_status_t BlockDevice::Init() {
     return ZX_ERR_INTERNAL;
   }
   return ZX_OK;
+}
+
+void BlockDevice::InitInspect(inspect::Node inspect_node) {
+  inspect_node_ = std::move(inspect_node);
+  read_ops_ = inspect_node_.CreateUint("block.read.count", 0);
+  write_ops_ = inspect_node_.CreateUint("block.write.count", 0);
+  flush_ops_ = inspect_node_.CreateUint("block.flush.count", 0);
+  trim_ops_ = inspect_node_.CreateUint("block.trim.count", 0);
+  read_bytes_ = inspect_node_.CreateUint("block.read.bytes", 0);
+  write_bytes_ = inspect_node_.CreateUint("block.write.bytes", 0);
+  flush_bytes_ = inspect_node_.CreateUint("block.flush.bytes", 0);
+  trim_bytes_ = inspect_node_.CreateUint("block.trim.bytes", 0);
 }
 
 void BlockDevice::Release() {
@@ -730,6 +766,7 @@ void BlockDevice::CleanUpPendingTxns() {
 }
 
 zx::result<> BlockDriver::Start(fdf::DriverContext context) {
+  exposed_inspector_.emplace(context.CreateInspector(this));
   auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   node_token_ = context.take_node_token();
 
@@ -738,6 +775,7 @@ zx::result<> BlockDriver::Start(fdf::DriverContext context) {
     return device.take_error();
   }
   block_device_ = std::move(*device);
+  block_device_->InitInspect(exposed_inspector_->root().CreateChild("virtio_block"));
 
   zx_status_t status = block_device_->Init();
   if (status != ZX_OK) {
