@@ -423,8 +423,11 @@ pub(crate) async fn knock_target_impl(
 
         log::debug!("daemonless knock connecting to resolved target {:?}", res);
         if res.get_connection_if_already_established().is_none() {
-            let conn = res.get_connection(context).await.map_err(|e| {
-                KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e)))
+            let conn = res.get_connection(context).await.map_err(|e| match e {
+                FfxTargetCrateError::Knock(ke) => ke,
+                other => {
+                    KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", other)))
+                }
             })?;
             log::debug!("daemonless knock connection established");
             let _ = conn.rcs_proxy_fdomain().await.map_err(|e| {

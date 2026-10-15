@@ -361,15 +361,9 @@ mod test {
     #[fuchsia::test]
     async fn test_connect_ssh_failures_connector_fails() {
         let env = ffx_config::test_env().build().unwrap();
-        // TODO(b/425474866): This should result in a check where we can see that the connection
-        // failed multiple times albeit non-fatally.
-        let mock_connector = MockConnector::with_results([
-            Err(TargetConnectionError::NonFatal(anyhow::anyhow!("Test non-fatal error"))),
-            Err(TargetConnectionError::NonFatal(anyhow::anyhow!(
-                "Test non-fatal error two: electric boogaloo"
-            ))),
-            Ok(TargetConnection::FDomain(FDomainConnection::invalid())),
-        ]);
+        let mock_connector = MockConnector::with_results([Err(TargetConnectionError::NonFatal(
+            anyhow::anyhow!("Test non-fatal error"),
+        ))]);
         let m = MockSshConnectorProvider::with_res(Ok(mock_connector));
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let mut check = ConnectSsh::new(&env.context, &m);
@@ -379,7 +373,7 @@ mod test {
             manual: false,
         };
         let res = check.check(handle, &mut notifier).await;
-        assert!(res.is_ok());
+        assert!(res.is_err());
     }
 
     #[fuchsia::test]

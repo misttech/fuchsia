@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl_pipe::FidlPipe;
-use crate::target_connector::{ConnectionStreamError, TargetConnector};
+use crate::target_connector::{ConnectionStreamError, TargetConnectionError, TargetConnector};
 use anyhow::Result;
 use async_lock::Mutex;
 use fdomain_client::fidl::DiscoverableProtocolMarker;
@@ -65,13 +65,25 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// This function will only ever return a `ConnectionStartError` or `InternalError`, both of
-    /// which are considered fatal (e.g. there is no means to reattempt connecting to the device).
+    /// Returns `ConnectionError::ConnectionStartError` for fatal connector errors, or
+    /// `ConnectionError::KnockError(KnockError::NonCritical(_))` for transient/non-fatal
+    /// connector errors.
     pub async fn new(connector: impl TargetConnector + 'static) -> Result<Self, ConnectionError> {
         let connector_debug_string = format!("{connector:?}");
-        let (fidl_pipe, node, client) = FidlPipe::start_internal(connector).await.map_err(|e| {
-            ConnectionError::ConnectionStartError(connector_debug_string, format!("{e:#}"))
-        })?;
+        let (fidl_pipe, node, client) =
+            FidlPipe::start_internal(connector).await.map_err(|e| match e {
+                TargetConnectionError::Fatal(err) => ConnectionError::ConnectionStartError(
+                    connector_debug_string,
+                    format!("{err:#}"),
+                ),
+                TargetConnectionError::NonFatal(err) => ConnectionError::KnockError(
+                    crate::KnockError::NonCritical(crate::KnockNonCriticalError::RcsKnockFailed {
+                        detail: format!(
+                            "starting connection with connector {connector_debug_string}: {err:#}"
+                        ),
+                    }),
+                ),
+            })?;
         let overnet = node.map(|node| OvernetClient { node });
         Ok(Self { overnet, fdomain: Mutex::new(client), fidl_pipe, rcs_info: Default::default() })
     }
@@ -462,7 +474,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_overnet_rcs_knock_retry() {
+    async fn test_overnet_rcs_knock_non_fatal_propagated() {
         let circuit_node = overnet_core::Router::new(None).unwrap();
         let (_sender, error_receiver) = async_channel::unbounded();
         let circuit = FakeOvernet::new(
@@ -470,8 +482,8 @@ mod test {
             error_receiver,
             FakeOvernetBehavior::FailNonFatalOnce,
         );
-        let conn = Connection::new(circuit).await.expect("making connection");
-        assert!(conn.rcs_proxy().await.is_ok());
+        let res = Connection::new(circuit).await;
+        assert!(matches!(res, Err(ConnectionError::KnockError(crate::KnockError::NonCritical(_)))));
     }
 
     #[fuchsia::test]

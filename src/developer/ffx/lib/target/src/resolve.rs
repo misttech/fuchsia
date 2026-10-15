@@ -934,13 +934,18 @@ impl Resolution {
             return Ok(conn.clone());
         }
 
+        // Transition to `Failed` before awaiting `connect_new` so that if this future is
+        // cancelled by a caller's timeout while `connect_new` is pending, the resolution is
+        // still marked as unusable (`is_usable() == false`) and will be re-resolved on the
+        // next attempt.
+        *conn_guard = ConnectionState::Failed;
+
         let conn_res = self.connect_new(context).await;
         match &conn_res {
             Ok(conn) => {
                 *conn_guard = ConnectionState::Connected(conn.clone());
             }
             Err(_) => {
-                *conn_guard = ConnectionState::Failed;
                 // If a connection attempt fails, invalidate the discovery cache file so subsequent
                 // attempts re-discover rather than pinning to a stale or unreachable cached entry.
                 if let Err(e) = crate::cache::remove_target_cache(context) {
@@ -955,59 +960,42 @@ impl Resolution {
         &self,
         context: &EnvironmentContext,
     ) -> std::result::Result<Arc<Connection>, crate::FfxTargetCrateError> {
-        let conn =
-            match &self.target {
-                ResolutionTarget::Addr(socket_addr) => {
-                    if !context.get(keys::NETWORK_ENABLED).unwrap_or(true) {
-                        return Err(crate::error::TargetResolutionError::NetworkDisabled.into());
-                    }
-                    let connector = SshConnector::new(
-                        netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
-                        context,
-                    )?;
-                    emit_target_connection_event("SSH").await;
-                    Connection::new(connector).await.map_err(|e| {
-                        crate::KnockError::Critical(crate::KnockCriticalError::TargetError(
-                            format!("{:?}", e),
-                        ))
-                    })?
+        let conn = match &self.target {
+            ResolutionTarget::Addr(socket_addr) => {
+                if !context.get(keys::NETWORK_ENABLED).unwrap_or(true) {
+                    return Err(crate::error::TargetResolutionError::NetworkDisabled.into());
                 }
-                ResolutionTarget::Usb(cid) => {
-                    if !context.get(keys::USB_ENABLED).unwrap_or(false) {
-                        return Err(crate::error::TargetResolutionError::UsbDisabled.into());
-                    }
-                    let connector = UsbConnector::new(*cid, context).await?;
-                    emit_target_connection_event("USB").await;
-                    Connection::new(connector).await.map_err(|e| {
-                        crate::KnockError::Critical(crate::KnockCriticalError::TargetError(
-                            format!("{:?}", e),
-                        ))
-                    })?
+                let connector = SshConnector::new(
+                    netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
+                    context,
+                )?;
+                emit_target_connection_event("SSH").await;
+                Connection::new(connector).await.map_err(crate::KnockError::from)?
+            }
+            ResolutionTarget::Usb(cid) => {
+                if !context.get(keys::USB_ENABLED).unwrap_or(false) {
+                    return Err(crate::error::TargetResolutionError::UsbDisabled.into());
                 }
-                ResolutionTarget::Vsock(cid) => {
-                    if !context.get(keys::VSOCK_ENABLED).unwrap_or(false) {
-                        return Err(crate::error::TargetResolutionError::VsockDisabled.into());
-                    }
-                    let connector = VSockConnector::new(*cid);
-                    emit_target_connection_event("VSOCK").await;
-                    Connection::new(connector).await.map_err(|e| {
-                        crate::KnockError::Critical(crate::KnockCriticalError::TargetError(
-                            format!("{:?}", e),
-                        ))
-                    })?
+                let connector = UsbConnector::new(*cid, context).await?;
+                emit_target_connection_event("USB").await;
+                Connection::new(connector).await.map_err(crate::KnockError::from)?
+            }
+            ResolutionTarget::Vsock(cid) => {
+                if !context.get(keys::VSOCK_ENABLED).unwrap_or(false) {
+                    return Err(crate::error::TargetResolutionError::VsockDisabled.into());
                 }
-                ResolutionTarget::Uart(endpoint) => {
-                    let connector = UartConnector::new(endpoint.clone(), context)?;
-                    emit_target_connection_event("UART").await;
-                    Connection::new(connector).await.map_err(|e| {
-                        crate::KnockError::Critical(crate::KnockCriticalError::TargetError(
-                            format!("{:?}", e),
-                        ))
-                    })?
-                }
-                ResolutionTarget::TestMock(f) => f()?,
-                ResolutionTarget::TestMockAsync(f) => f().await?,
-            };
+                let connector = VSockConnector::new(*cid);
+                emit_target_connection_event("VSOCK").await;
+                Connection::new(connector).await.map_err(crate::KnockError::from)?
+            }
+            ResolutionTarget::Uart(endpoint) => {
+                let connector = UartConnector::new(endpoint.clone(), context)?;
+                emit_target_connection_event("UART").await;
+                Connection::new(connector).await.map_err(crate::KnockError::from)?
+            }
+            ResolutionTarget::TestMock(f) => f()?,
+            ResolutionTarget::TestMockAsync(f) => f().await?,
+        };
 
         Ok(Arc::new(conn))
     }
@@ -1790,5 +1778,23 @@ mod test {
             err,
             FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::QueryAmbiguous, .. }
         ));
+    }
+
+    #[fuchsia::test]
+    async fn test_get_connection_timeout_cancellation_marks_resolution_unusable() {
+        let test_env = ffx_config::test_env().build().unwrap();
+        let resolution =
+            Resolution::mock_async(|| futures::future::pending::<Result<Connection>>());
+        assert!(resolution.is_usable().await);
+
+        let res = resolution
+            .get_connection(&test_env.context)
+            .on_timeout(Duration::from_millis(10), || Err(anyhow::anyhow!("timed out").into()))
+            .await;
+        assert!(res.is_err());
+        assert!(
+            !resolution.is_usable().await,
+            "Resolution should be marked unusable if get_connection is cancelled by a timeout"
+        );
     }
 }

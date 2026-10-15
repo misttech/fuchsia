@@ -11,14 +11,13 @@ use anyhow::Result;
 use async_channel::Receiver;
 use ffx_diagnostics_analytics::ResultExt;
 use ffx_ssh::parse::HostAddr;
-use fuchsia_async::{Task, Timer};
+use fuchsia_async::Task;
 use futures::FutureExt;
 use futures_lite::stream::StreamExt;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 /// Represents a FIDL-piping connection to a Fuchsia target.
 ///
@@ -79,57 +78,43 @@ pub fn create_overnet_socket(
 
 impl FidlPipe {
     /// This is the main internal constructor for FIDL pipe. This will take a connector and attempt
-    /// to connect to it. If the connector fails, this function will attempt to reconnect as long
-    /// as the error is not fatal (using an exponential backoff of `t**(2n)` where `t` is the
-    /// initial time and `n` is the number of iterations). Any error returned from this function,
-    /// therefore, should be interpreted as a non-recoverable error.
+    /// to connect to it once, returning `TargetConnectionError` on failure so that higher-level
+    /// callers (such as `Connector` and `Resolution`) can invalidate stale resolutions and
+    /// re-resolve the target address before retrying.
     pub(crate) async fn start_internal<C>(
         mut connector: C,
-    ) -> Result<(Self, Option<Arc<overnet_core::Router>>, Option<Arc<fdomain_client::Client>>)>
+    ) -> Result<
+        (Self, Option<Arc<overnet_core::Router>>, Option<Arc<fdomain_client::Client>>),
+        TargetConnectionError,
+    >
     where
         C: TargetConnector + 'static,
     {
-        let mut wait_duration = Duration::from_millis(50);
-
-        let (overnet_connection, fdomain_connection) = loop {
-            let error = match connector
-                .connect()
-                .await
-                .or_else_analytics(|e| {
-                    crate::analytics::PointOfFailure::TargetConnectorFailure {
-                        connection_type: C::CONNECTION_TYPE,
-                        error: &e,
-                    }
-                    .into()
-                })
-                .await
-            {
-                Ok(TargetConnection::Overnet(o)) => break (Some(o), None),
-                Ok(TargetConnection::FDomain(f)) => break (None, Some(f)),
-                Err(TargetConnectionError::Fatal(e)) => return Err(e),
-                Err(TargetConnectionError::NonFatal(e)) => e,
-            };
-
-            let error = format!(
-                "non-fatal error connecting to device. Retrying again after {wait_duration:?}: {error:?}"
-            );
-            log::debug!("{}", error);
-            // TODO(b/421014246): We should have a more effective way to report non-fatal
-            // connectivity errors to the user. This currently only affects a small number of tools,
-            // but as more adopt directly connecting to the device for diagnostics this will
-            // undoubtedly create more noise than necessary.
-            eprintln!("{}", error);
-            Timer::new(wait_duration).await;
-            wait_duration *= 2;
+        let (overnet_connection, fdomain_connection) = match connector
+            .connect()
+            .await
+            .or_else_analytics(|e| {
+                crate::analytics::PointOfFailure::TargetConnectorFailure {
+                    connection_type: C::CONNECTION_TYPE,
+                    error: &e,
+                }
+                .into()
+            })
+            .await
+        {
+            Ok(TargetConnection::Overnet(o)) => (Some(o), None),
+            Ok(TargetConnection::FDomain(f)) => (None, Some(f)),
+            Err(e) => return Err(e),
         };
 
         let device_address = connector.device_address();
         let (error_sender, error_queue) = async_channel::unbounded();
 
         let (node, overnet_task) = if let Some(overnet_connection) = overnet_connection {
-            let node = overnet_core::Router::new(None)?;
-            let socket = create_overnet_socket(node.clone())
-                .map_err(|e| ConnectionError::InternalError(e.into()))?;
+            let node = overnet_core::Router::new(None).map_err(TargetConnectionError::Fatal)?;
+            let socket = create_overnet_socket(node.clone()).map_err(|e| {
+                TargetConnectionError::Fatal(ConnectionError::InternalError(e.into()).into())
+            })?;
             let error_sender = error_sender.clone();
             let (overnet_reader, overnet_writer) = tokio::io::split(socket);
             (
@@ -342,13 +327,10 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_retry() {
-        let (fidl_pipe, _node, _client) =
-            FidlPipe::start_internal(FailOnceThenSucceedConnector { should_succeed: false })
-                .await
-                .unwrap();
-        let errs = fidl_pipe.try_drain_errors();
-        assert!(errs.is_none());
+    async fn test_non_fatal_error_propagated() {
+        let res =
+            FidlPipe::start_internal(FailOnceThenSucceedConnector { should_succeed: false }).await;
+        assert!(matches!(res, Err(TargetConnectionError::NonFatal(_))));
     }
 
     #[fuchsia::test]

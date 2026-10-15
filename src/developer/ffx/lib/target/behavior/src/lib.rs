@@ -58,6 +58,11 @@ impl DirectConnector {
         self.0.resolver.lock().await.set_discovery_timeout(timeout);
     }
 
+    /// Returns `true` if a target has previously been resolved in this connector.
+    pub async fn has_resolved_target(&self) -> bool {
+        self.0.resolution.lock().await.is_some()
+    }
+
     // Return a pinned boxed future (LocalBoxFuture) to prevent deep recursion
     // of compiler-generated future types. When this method is called within
     // other complex async contexts (e.g., the ffx log or update plugins),
@@ -359,6 +364,7 @@ mod tests {
     use super::*;
     use ffx_config::environment::ExecutableKind;
     use ffx_config::test_env;
+    use std::str::FromStr;
 
     #[fuchsia::test]
     async fn test_connection_behavior_correct_in_strict() {
@@ -606,19 +612,19 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_direct_connector_reconnect_re_resolves_to_new_address() {
-        use std::str::FromStr;
         let mut builder = test_env();
         let cache_dir = builder.isolate_root().join("cache");
         let env = builder
             .runtime_config("target.default", "test-target")
             .runtime_config("target.discovery_cache_dir", cache_dir.to_str().unwrap())
-            // Set "ssh.priv" to an invalid path to force SshConnector to fail instantly with a
-            // Fatal error. This simulates a connection failure without getting stuck in the
-            // infinite NonFatal retry loop (e.g. on connection refused/timeout), which would
-            // hang the test.
-            .runtime_config("ssh.priv", "/invalid/nonexistent/ssh/path")
+            // Use `/bin/false` as `ssh.path` and a fake `ssh.priv` key so `SshConnector`
+            // fails immediately with a non-fatal exit status ( simulating an unreachable
+            // target after reboot without hanging on network timeouts).
+            .runtime_config("ssh.path", "/bin/false")
+            .runtime_config("ssh.priv", cache_dir.to_str().unwrap())
             .build()
             .unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
 
         // Define two target handles representing the device before and after reboot (with different ports)
         let addr1 = addr::TargetAddr::from_str("127.0.0.1:8082").unwrap();
@@ -693,6 +699,58 @@ mod tests {
         let res2 = connector.resolution().await;
         assert!(res2.is_ok());
         let res2 = res2.unwrap();
+        assert_eq!(res2.target_spec(), "127.0.0.1:8083");
+    }
+
+    #[fuchsia::test]
+    async fn test_direct_connector_strict_mode_reconnect_reloads_targets_json() {
+        let mut builder = test_env();
+        let temp_dir = builder.isolate_root();
+        let fake_key = temp_dir.join("fake_ssh_key");
+        std::fs::write(&fake_key, "fake").unwrap();
+
+        let runtime_args = serde_json::json!({
+            "shared_data": temp_dir.to_str().unwrap(),
+            "target": { "default": "id:04012C12D45E" },
+            "ssh": {
+                "path": "/bin/false",
+                "priv": fake_key.to_str().unwrap()
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let strict_ctx = EnvironmentContext::strict(ExecutableKind::Test, runtime_args).unwrap();
+
+        let mut target_v1 = ffx_target::TargetInfo::default();
+        target_v1.nodename = Some("fuchsia-node".to_string());
+        target_v1.serial_number = Some("04012C12D45E".to_string());
+        target_v1.target_state = ffx_target::info::TargetState::Product;
+        target_v1.addresses = vec![addr::TargetAddr::from_str("127.0.0.1:8082").unwrap()];
+        ffx_target::register_targets(&strict_ctx, &[target_v1]).unwrap();
+
+        let target_env = FhoTargetEnvironment::default();
+        let behavior = target_env.init_connection_behavior(&strict_ctx).await.unwrap();
+        let dc = behavior.direct_connector().unwrap();
+
+        // 1. Initial resolution resolves to 127.0.0.1:8082 from $SHARED_DATA/targets.json.
+        let res1 = dc.resolution().await.unwrap();
+        assert_eq!(res1.target_spec(), "127.0.0.1:8082");
+
+        // 2. Simulate connection failure (non-fatal SSH exit status 1 from /bin/false).
+        let conn_err = res1.get_connection(&strict_ctx).await.unwrap_err();
+        assert!(conn_err.into_command_error().downcast_non_fatal().is_ok());
+
+        // 3. Orchestrator atomically updates $SHARED_DATA/targets.json with new address after reboot.
+        let mut target_v2 = ffx_target::TargetInfo::default();
+        target_v2.nodename = Some("fuchsia-node".to_string());
+        target_v2.serial_number = Some("04012C12D45E".to_string());
+        target_v2.target_state = ffx_target::info::TargetState::Product;
+        target_v2.addresses = vec![addr::TargetAddr::from_str("127.0.0.1:8083").unwrap()];
+        ffx_target::register_targets(&strict_ctx, &[target_v2]).unwrap();
+
+        // 4. Subsequent `dc.resolution()` re-reads $SHARED_DATA/targets.json and resolves to 127.0.0.1:8083.
+        let res2 = dc.resolution().await.unwrap();
         assert_eq!(res2.target_spec(), "127.0.0.1:8083");
     }
 

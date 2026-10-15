@@ -11,7 +11,10 @@ use anyhow::Result;
 use async_channel::Sender;
 use ffx_command_error::FfxContext as _;
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
-use ffx_ssh::ssh::{SshError, build_ssh_command_with_env};
+use ffx_ssh::ssh::{
+    ManageSshControlMasterError, SpawnControlMasterError, SshCommandError, SshError,
+    build_ssh_command_with_env,
+};
 use fuchsia_async::Task;
 use futures::future::LocalBoxFuture;
 use netext::ScopedSocketAddr;
@@ -63,6 +66,17 @@ impl From<SshError> for TargetConnectionError {
     }
 }
 
+impl From<SshCommandError> for TargetConnectionError {
+    fn from(err: SshCommandError) -> Self {
+        match err {
+            SshCommandError::ControlMaster(ManageSshControlMasterError::SpawnError(
+                SpawnControlMasterError::ControlMasterStartError(ssh_err),
+            )) => TargetConnectionError::from(ssh_err),
+            other => TargetConnectionError::Fatal(other.into()),
+        }
+    }
+}
+
 enum FDomainConnectionError {
     ConnectionError(TargetConnectionError),
     NotSupported,
@@ -93,7 +107,9 @@ impl SshConnector {
     /// This is mainly for diagnostics/reporting info to the user. This takes the usual command
     /// with which fdomain is started and converts it into a readable string.
     pub async fn fdomain_command(&self) -> std::result::Result<String, crate::FfxTargetCrateError> {
-        let cmd = make_fdomain_ssh_command(self.target.clone(), &self.env_context).await?;
+        let cmd = make_fdomain_ssh_command(self.target.clone(), &self.env_context)
+            .await
+            .map_err(anyhow::Error::from)?;
         let envs = cmd
             .as_std()
             .get_envs()
@@ -317,7 +333,7 @@ async fn make_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
     args: Vec<&str>,
-) -> Result<tokio::process::Command> {
+) -> Result<tokio::process::Command, SshCommandError> {
     let ssh_path: String = env_context.get("ssh.path").unwrap_or_else(|_| "ssh".to_string());
     let ssh = tokio::process::Command::from(
         build_ssh_command_with_env(&ssh_path, target, env_context, args).await?,
@@ -325,16 +341,19 @@ async fn make_ssh_command(
     Ok(ssh)
 }
 
-async fn spawn_ssh_command(mut ssh: tokio::process::Command, label: &str) -> Result<Child> {
+async fn spawn_ssh_command(
+    mut ssh: tokio::process::Command,
+    label: &str,
+) -> Result<Child, TargetConnectionError> {
     log::debug!("SshConnector starting {label} invoking: {ssh:?}");
     let ssh_cmd = ssh.stdout(Stdio::piped()).stdin(Stdio::piped()).stderr(Stdio::piped());
-    Ok(ssh_cmd.spawn().bug_context("spawning ssh command")?)
+    Ok(ssh_cmd.spawn().bug_context("spawning ssh command").map_err(anyhow::Error::from)?)
 }
 
 async fn make_fdomain_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
-) -> Result<tokio::process::Command> {
+) -> Result<tokio::process::Command, SshCommandError> {
     let log_id = format!("{:0>20}", *ffx_config::logging::LOGGING_ID);
     let args = vec!["fdomain_runner", "--log-id", &log_id];
     make_ssh_command(target, env_context, args).await
@@ -343,7 +362,7 @@ async fn make_fdomain_ssh_command(
 async fn start_fdomain_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
-) -> Result<Child> {
+) -> Result<Child, TargetConnectionError> {
     let ssh = make_fdomain_ssh_command(target, env_context).await?;
     spawn_ssh_command(ssh, "start_fdomain_ssh").await
 }
@@ -352,7 +371,7 @@ async fn start_overnet_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
     use_log_id: bool,
-) -> Result<Child> {
+) -> Result<Child, TargetConnectionError> {
     // Converting milliseconds since unix epoch should have enough bits for u64. As of writing
     // it takes up 43 of the 128 bits to represent the number.
     let circuit_id =

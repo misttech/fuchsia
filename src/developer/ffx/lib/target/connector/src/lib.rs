@@ -5,9 +5,37 @@
 use async_trait::async_trait;
 use ffx_command_error::{Error, Result};
 use fho::{FhoEnvironment, TryFromEnv};
+use std::time::Duration;
 use target_behavior::{
     ConnectionBehavior, DirectConnector, FhoTargetEnvironment, target_interface,
 };
+
+const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(50);
+const MAX_RETRY_DELAY: Duration = Duration::from_millis(500);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum DiscoveryRetryMode {
+    FailOnInitialMiss,
+    RetryIndefinitely,
+}
+
+/// Returns `true` if `err` wraps an `OpenTargetError::TargetNotFound` target resolution error.
+fn is_target_not_found(err: &ffx_command_error::Error) -> bool {
+    let ffx_command_error::Error::User(e) = err else {
+        return false;
+    };
+    let Some(errors::FfxError::OpenTargetError { err, .. }) = e.downcast_ref::<errors::FfxError>()
+    else {
+        return false;
+    };
+    matches!(
+        err.downcast_ref::<target_errors::FfxTargetError>(),
+        Some(target_errors::FfxTargetError::OpenTargetError {
+            err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
+            ..
+        })
+    )
+}
 
 /// A connector lets a tool make multiple attempts to connect to an object. It
 /// retains the environment in the tool body to allow this.
@@ -33,7 +61,13 @@ where
             self.target_env.init_connection_behavior(self.env.environment_context()).await?;
         // TODO(b/540442481): Clean up naming (e.g. "Direct", "DirectConnector") in a follow-up CL now that direct connection is the only mechanism.
         let ConnectionBehavior::Direct(dc) = &*behavior;
-        direct_connector_try_connect::<T>(&self.env, dc, &mut log_target_wait).await
+        direct_connector_try_connect::<T>(
+            &self.env,
+            dc,
+            &mut log_target_wait,
+            DiscoveryRetryMode::FailOnInitialMiss,
+        )
+        .await
     }
 
     /// Try to get a `T` from the environment with an indefinite discovery timeout.
@@ -46,7 +80,13 @@ where
             self.target_env.init_connection_behavior_indef(self.env.environment_context()).await?;
         match *behavior {
             ConnectionBehavior::Direct(ref dc) => {
-                direct_connector_try_connect::<T>(&self.env, dc, &mut log_target_wait).await
+                direct_connector_try_connect::<T>(
+                    &self.env,
+                    dc,
+                    &mut log_target_wait,
+                    DiscoveryRetryMode::RetryIndefinitely,
+                )
+                .await
             }
         }
     }
@@ -64,28 +104,60 @@ where
     }
 }
 
+/// Repeatedly resolves and connects to the target until `T::try_from_env` succeeds or a fatal
+/// error occurs.
+///
+/// Each retry calls `dc.resolution()`, which re-resolves from `$SHARED_DATA/targets.json` (in
+/// strict mode) or live discovery (in non-strict mode) whenever the previous `Resolution` was
+/// invalidated by a failed or timed-out connection attempt.
+///
+/// If `dc.resolution()` fails with `TargetNotFound`, it retries when `retry_mode` is
+/// `DiscoveryRetryMode::RetryIndefinitely` or when `dc.has_resolved_target()` is `true`
+/// (meaning a target was previously resolved and may be temporarily offline across a reboot).
 async fn direct_connector_try_connect<T>(
     env: &FhoEnvironment,
     dc: &DirectConnector,
     log_target_wait: &mut impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
+    retry_mode: DiscoveryRetryMode,
 ) -> Result<T>
 where
     T: TryFromEnv<Error = ffx_command_error::Error>,
 {
+    let mut retry_delay = INITIAL_RETRY_DELAY;
     loop {
-        let target_spec = {
-            let resolution = dc.resolution().await.map_err(|e| e.into_command_error())?;
-            let _ = resolution
-                .get_connection(env.environment_context())
-                .await
-                .map_err(|e| e.into_command_error())?;
-            resolution.target_spec()
+        let should_retry_not_found =
+            retry_mode == DiscoveryRetryMode::RetryIndefinitely || dc.has_resolved_target().await;
+        let resolution = match dc.resolution().await {
+            Ok(res) => res,
+            Err(err) => {
+                let cmd_err = err.into_command_error();
+                if should_retry_not_found && is_target_not_found(&cmd_err) {
+                    log::debug!("Target not found during resolution, waiting to retry: {cmd_err}");
+                    log_target_wait(&None, &Some(cmd_err))?;
+                    fuchsia_async::Timer::new(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
+                    continue;
+                }
+                return Err(cmd_err);
+            }
         };
+        let target_spec = resolution.target_spec();
+        if let Err(conn_err) = resolution.get_connection(env.environment_context()).await {
+            let cmd_err = conn_err.into_command_error();
+            let e = cmd_err.downcast_non_fatal()?;
+            log::debug!("error when trying to connect to target {target_spec}: {e}");
+            log_target_wait(&Some(target_spec), &Some(Error::User(e)))?;
+            fuchsia_async::Timer::new(retry_delay).await;
+            retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
+            continue;
+        }
         return match T::try_from_env(env).await {
             Err(conn_error) => {
                 let e = conn_error.downcast_non_fatal()?;
                 log::debug!("error when trying to connect using TryFromEnv: {e}");
                 log_target_wait(&Some(target_spec), &Some(Error::User(e)))?;
+                fuchsia_async::Timer::new(retry_delay).await;
+                retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
                 continue;
             }
             Ok(res) => Ok(res),
@@ -96,8 +168,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffx_config::environment::ExecutableKind;
     use ffx_config::test_env;
     use std::cell::RefCell;
+    use std::str::FromStr;
     use target_behavior::ConnectionBehavior;
 
     #[derive(Debug)]
@@ -193,6 +267,64 @@ mod tests {
         assert!(!*log_target_wait_called.borrow());
     }
 
+    // Tests that a fatal error returned during `Resolution::get_connection()` (simulated via
+    // `Resolution::mock`) fails immediately without retrying.
+    #[fuchsia::test]
+    async fn test_connector_try_connect_mock_connection_fatal_error_fails_immediately() {
+        let env = test_env().build().unwrap();
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let target_env = target_behavior::target_interface(&fho_env);
+
+        let resolution = ffx_target::Resolution::mock(|| {
+            Err(target_errors::FfxTargetError::OpenTargetError {
+                err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
+                target: None,
+                targets: vec![],
+                target_source: None,
+            }
+            .into())
+        });
+        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
+        target_env.set_behavior_for_test(behavior);
+
+        let connector = Connector::<DummyHolder>::try_from_env(&fho_env).await.unwrap();
+        let log_target_wait_called = RefCell::new(false);
+        let res = connector
+            .try_connect(|_, _| {
+                *log_target_wait_called.borrow_mut() = true;
+                Ok(())
+            })
+            .await;
+
+        assert!(is_target_not_found(&res.unwrap_err()));
+        assert!(!*log_target_wait_called.borrow());
+    }
+
+    // Tests that even when `try_connect_indefinitely` is used (`should_retry_not_found == true`),
+    // a non-`TargetNotFound` resolution error (such as missing `-t` in strict mode) fails
+    // immediately without retrying.
+    #[fuchsia::test]
+    async fn test_connector_try_connect_indefinitely_non_target_not_found_resolution_error_fails_immediately()
+     {
+        let strict_ctx =
+            ffx_config::EnvironmentContext::strict(ExecutableKind::Test, Default::default())
+                .unwrap();
+        let fho_env = FhoEnvironment::new_with_args(&strict_ctx, &["some", "test"]);
+        let connector = Connector::<DummyHolder>::try_from_env(&fho_env).await.unwrap();
+
+        let log_target_wait_called = RefCell::new(false);
+        let res = connector
+            .try_connect_indefinitely(|_, _| {
+                *log_target_wait_called.borrow_mut() = true;
+                Ok(())
+            })
+            .await;
+
+        let err = res.unwrap_err();
+        assert!(!is_target_not_found(&err));
+        assert!(!*log_target_wait_called.borrow());
+    }
+
     #[fuchsia::test]
     async fn test_connector_try_connect_explicit_ip_succeeds() {
         let mut env_success = test_env().build().unwrap();
@@ -222,5 +354,66 @@ mod tests {
 
         assert!(res_success.is_ok());
         assert!(!*log_target_wait_called_success.borrow());
+    }
+
+    #[fuchsia::test]
+    async fn test_connector_retries_non_fatal_and_re_resolves_from_strict_targets_json() {
+        let mut builder = test_env();
+        let temp_dir = builder.isolate_root();
+        let fake_key = temp_dir.join("fake_ssh_key");
+        std::fs::write(&fake_key, "fake").unwrap();
+
+        let runtime_args = serde_json::json!({
+            "shared_data": temp_dir.to_str().unwrap(),
+            "target": { "default": "id:04012C12D45E" },
+            "ssh": {
+                "path": "/bin/false",
+                "priv": fake_key.to_str().unwrap()
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let strict_ctx =
+            ffx_config::EnvironmentContext::strict(ExecutableKind::Test, runtime_args).unwrap();
+
+        // Register v1 address (127.0.0.1:8082) in $SHARED_DATA/targets.json.
+        let mut target_v1 = ffx_target::TargetInfo::default();
+        target_v1.nodename = Some("fuchsia-node".to_string());
+        target_v1.serial_number = Some("04012C12D45E".to_string());
+        target_v1.target_state = ffx_target::info::TargetState::Product;
+        target_v1.addresses = vec![addr::TargetAddr::from_str("127.0.0.1:8082").unwrap()];
+        ffx_target::register_targets(&strict_ctx, &[target_v1]).unwrap();
+
+        let fho_env = FhoEnvironment::new_with_args(&strict_ctx, &["some", "test"]);
+        let connector = Connector::<DummyHolder>::try_from_env(&fho_env).await.unwrap();
+        let wait_specs = RefCell::new(Vec::<Option<String>>::new());
+
+        let res = connector
+            .try_connect(|target_spec, _err| {
+                let mut specs = wait_specs.borrow_mut();
+                specs.push(target_spec.clone());
+                if specs.len() == 1 {
+                    // Simulate the external orchestrator atomically updating $SHARED_DATA/targets.json
+                    // to the new address (127.0.0.1:8083) while ffx waits to retry.
+                    let mut target_v2 = ffx_target::TargetInfo::default();
+                    target_v2.nodename = Some("fuchsia-node".to_string());
+                    target_v2.serial_number = Some("04012C12D45E".to_string());
+                    target_v2.target_state = ffx_target::info::TargetState::Product;
+                    target_v2.addresses =
+                        vec![addr::TargetAddr::from_str("127.0.0.1:8083").unwrap()];
+                    ffx_target::register_targets(&strict_ctx, &[target_v2]).unwrap();
+                    Ok(())
+                } else {
+                    Err(ffx_command_error::user_error!("stop after observing updated target"))
+                }
+            })
+            .await;
+
+        assert!(res.is_err());
+        assert_eq!(
+            *wait_specs.borrow(),
+            vec![Some("127.0.0.1:8082".to_string()), Some("127.0.0.1:8083".to_string())]
+        );
     }
 }

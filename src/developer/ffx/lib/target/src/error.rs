@@ -101,6 +101,12 @@ impl FfxTargetCrateError {
     pub fn into_command_error(self) -> ffx_command_error::Error {
         match self {
             Self::Target(err) => ffx_command_error::Error::User(anyhow::Error::new(err)),
+            Self::Knock(crate::KnockError::NonCritical(err)) => ffx_command_error::Error::User(
+                ffx_command_error::NonFatalError(anyhow::Error::new(Self::Knock(
+                    crate::KnockError::NonCritical(err),
+                )))
+                .into(),
+            ),
             Self::Fallback(err) => ffx_command_error::Error::Unexpected(err),
             other => ffx_command_error::Error::Unexpected(anyhow::Error::new(other)),
         }
