@@ -171,6 +171,7 @@ impl Drop for DeliveryBlobWriter {
             let store = handle.store();
             store
                 .filesystem()
+                .ensure_local()
                 .graveyard()
                 .queue_tombstone_object(store.store_object_id(), handle.object_id());
         }
@@ -434,10 +435,15 @@ impl DeliveryBlobWriter {
                         None => {
                             // If it isn't open now, it is no longer reachable to be opened, so just
                             // tombstone it.
-                            self.parent.store().filesystem().graveyard().queue_tombstone_object(
-                                self.parent.store().store_object_id(),
-                                old_id,
-                            );
+                            self.parent
+                                .store()
+                                .filesystem()
+                                .ensure_local()
+                                .graveyard()
+                                .queue_tombstone_object(
+                                    self.parent.store().store_object_id(),
+                                    old_id,
+                                );
                         }
                     }
                 }

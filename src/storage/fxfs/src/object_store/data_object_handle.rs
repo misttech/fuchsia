@@ -643,7 +643,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             ))
             .await?
         {
-            self.store().filesystem().graveyard().flush().await;
+            self.store().filesystem().ensure_local().graveyard().flush().await;
         }
         let mut transaction = self.new_transaction().await?;
         let hash_alg =
@@ -2152,7 +2152,7 @@ mod tests {
     use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose};
     use fxfs_insecure_crypto::new_insecure_crypt;
     use std::ops::Range;
-    use std::sync::Arc;
+    use std::sync::{Arc, Weak};
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -3749,6 +3749,7 @@ mod tests {
         // graveyard trims the file as expected.
         #[derive(Default)]
         struct Context {
+            fs: Option<Weak<FxFilesystem>>,
             store: Option<Arc<ObjectStore>>,
             object_id: Option<u64>,
         }
@@ -3797,7 +3798,13 @@ mod tests {
 
         let shared_context_clone = shared_context.clone();
         let post_commit = move || {
-            let store = shared_context_clone.lock().store.as_ref().cloned().unwrap();
+            let (fs, store) = {
+                let context = shared_context_clone.lock();
+                (
+                    context.fs.as_ref().unwrap().upgrade().unwrap(),
+                    context.store.as_ref().cloned().unwrap(),
+                )
+            };
             let shared_context = shared_context_clone.clone();
             async move {
                 // First run fsck on the current filesystem.
@@ -3807,7 +3814,6 @@ mod tests {
                     on_error: Box::new(|err| println!("fsck error: {:?}", err)),
                     ..Default::default()
                 };
-                let fs = store.filesystem();
 
                 fsck_with_options(fs.clone(), &options).await.expect("fsck_with_options failed");
                 fsck_volume_with_options(fs.as_ref(), &options, store.store_object_id(), None)
@@ -3891,7 +3897,11 @@ mod tests {
         let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_vol.volume("test", StoreOptions::default()).await.expect("volume failed");
 
-        shared_context.lock().store = Some(store.clone());
+        {
+            let mut context = shared_context.lock();
+            context.fs = Some(Arc::downgrade(&fs));
+            context.store = Some(store.clone());
+        }
 
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");

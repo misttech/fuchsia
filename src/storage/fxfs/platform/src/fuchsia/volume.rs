@@ -36,10 +36,10 @@ use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::directory::Directory;
 use fxfs::object_store::object_record::ObjectItem;
 use fxfs::object_store::project_id::ProjectIdExt;
-use fxfs::object_store::transaction::{LockKey, Options, ReservationOptions, lock_keys};
+use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{
     AttributeId, AttributeKey, DataObjectHandle, DirType, HandleOptions, HandleOwner,
-    ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore, ObjectValue, ProjectId,
+    ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore, ObjectStoreTrait, ObjectValue, ProjectId,
 };
 use refaults_vmo::PageRefaultCounter;
 use std::future::Future;
@@ -257,7 +257,7 @@ impl FxVolume {
     /// Reports the filesystem info, but if the volume has a space limit applied then the space
     /// available and space used are reported based on the volume instead.
     pub fn filesystem_info_for_volume(&self) -> fio::FilesystemInfo {
-        let allocator = self.store.filesystem().allocator();
+        let allocator = self.store.filesystem().ensure_local().allocator();
         let info =
             if let Some(limit) = allocator.get_owner_bytes_limit(self.store.store_object_id()) {
                 filesystem::Info {
@@ -454,7 +454,7 @@ impl FxVolume {
         }
 
         self.flush_all_files(FlushType::LastChance).await;
-        self.store.filesystem().graveyard().flush().await;
+        self.store.filesystem().ensure_local().graveyard().flush().await;
         if self.store.crypt().is_some() {
             if let Err(e) = self.store.lock().await {
                 // The store will be left in a safe state and there won't be data-loss unless
@@ -596,9 +596,7 @@ impl FxVolume {
             return Ok(());
         }
         // If this fails, the graveyard should clean it up on next mount.
-        let txn_options =
-            Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() };
-        self.store.tombstone_object(object_id, txn_options, truncate_guard).await?;
+        self.store.purge(object_id, truncate_guard).await?;
         Ok(())
     }
 
@@ -983,6 +981,7 @@ impl FxVolume {
                 DebugRequest::ClearCaches { responder } => {
                     this.clear_caches();
                     let fs = this.store.filesystem();
+                    let fs = fs.ensure_local();
                     fs.root_store().clear_caches();
                     fs.root_parent_store().clear_caches();
                     fs.allocator().tree().clear_cache();
@@ -1065,6 +1064,12 @@ impl AsRef<ObjectStore> for FxVolume {
     }
 }
 
+impl AsRef<dyn ObjectStoreTrait> for FxVolume {
+    fn as_ref(&self) -> &dyn ObjectStoreTrait {
+        &*self.store
+    }
+}
+
 #[async_trait]
 impl FsInspectVolume for FxVolume {
     async fn get_volume_data(&self) -> Option<VolumeData> {
@@ -1072,8 +1077,12 @@ impl FsInspectVolume for FxVolume {
         let _guard = self.scope.try_active_guard()?;
 
         let object_count = self.store().object_count();
-        let (used_bytes, bytes_limit) =
-            self.store.filesystem().allocator().owner_allocation_info(self.store.store_object_id());
+        let (used_bytes, bytes_limit) = self
+            .store
+            .filesystem()
+            .ensure_local()
+            .allocator()
+            .owner_allocation_info(self.store.store_object_id());
         let encrypted = self.store().crypt().is_some();
         let port_koid = fasync::EHandle::local().port().as_handle_ref().koid().unwrap().raw_koid();
         Some(VolumeData { bytes_limit, used_bytes, used_nodes: object_count, encrypted, port_koid })

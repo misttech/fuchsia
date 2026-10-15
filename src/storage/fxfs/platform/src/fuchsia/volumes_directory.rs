@@ -256,12 +256,7 @@ impl MountedVolumesGuard<'_> {
                 name,
                 Some((
                     volume.volume().clone(),
-                    self.volumes_directory
-                        .root_volume
-                        .volume_directory()
-                        .store()
-                        .filesystem()
-                        .root_store(),
+                    self.volumes_directory.root_volume.filesystem().root_store(),
                 )),
             );
         }
@@ -419,7 +414,7 @@ impl VolumesDirectory {
         for volume in volumes {
             volume.clear_caches();
         }
-        let fs = self.root_volume.volume_directory().store().filesystem();
+        let fs = self.root_volume.filesystem();
         fs.root_store().clear_caches();
         fs.root_parent_store().clear_caches();
         fs.allocator().tree().clear_cache();
@@ -695,7 +690,7 @@ impl VolumesDirectory {
         name: &str,
         crypt: Option<Arc<dyn Crypt>>,
     ) -> Result<(), Error> {
-        let fs = self.root_volume.volume_directory().store().filesystem();
+        let fs = self.root_volume.filesystem();
         let store = self.lock().await.check_volume(fs.as_ref(), name, crypt).await?;
         if let Some(store) = store {
             if store.is_unlocked() {
@@ -832,7 +827,7 @@ impl VolumesDirectory {
         create_options: CreateOptions,
     ) -> Result<(), Error> {
         let mut guard = self.lock().await;
-        let device = self.root_volume.volume_directory().store().filesystem().device();
+        let device = self.root_volume.filesystem().device();
         let crypt = mount_options
             .crypt
             .map(|crypt| Arc::new(RemoteCrypt::new_with_device(crypt, device)) as Arc<dyn Crypt>);
@@ -1009,7 +1004,7 @@ impl VolumesDirectory {
         store_id: u64,
         options: CheckOptions,
     ) -> Result<(), Error> {
-        let fs = self.root_volume.volume_directory().store().filesystem();
+        let fs = self.root_volume.filesystem();
         let crypt = if let Some(crypt) = options.crypt {
             Some(Arc::new(RemoteCrypt::new_with_device(crypt, fs.device())) as Arc<dyn Crypt>)
         } else {
@@ -1022,23 +1017,28 @@ impl VolumesDirectory {
     }
 
     async fn handle_set_limit(self: &Arc<Self>, store_id: u64, bytes: u64) -> Result<(), Error> {
-        let store = self.root_volume.volume_directory().store();
-        if store.filesystem().allocator().get_owner_bytes_limit(store_id) == Some(bytes) {
+        let fs = self.root_volume.filesystem();
+        if fs.allocator().get_owner_bytes_limit(store_id) == Some(bytes) {
             return Ok(());
         }
-        let mut transaction = store.new_transaction(lock_keys![], Options::default()).await?;
-        store.filesystem().allocator().set_bytes_limit(&mut transaction, store_id, bytes)?;
+        let mut transaction = self
+            .root_volume
+            .volume_directory()
+            .store()
+            .new_transaction(lock_keys![], Options::default())
+            .await?;
+        fs.allocator().set_bytes_limit(&mut transaction, store_id, bytes)?;
         transaction.commit().await?;
         Ok(())
     }
 
     fn handle_get_limit(self: &Arc<Self>, store_id: u64) -> u64 {
-        let fs = self.root_volume.volume_directory().store().filesystem();
+        let fs = self.root_volume.filesystem();
         fs.allocator().get_owner_bytes_limit(store_id).unwrap_or_default()
     }
 
     async fn handle_get_info(self: &Arc<Self>, store_id: u64) -> Result<[u8; 16], Error> {
-        let fs = self.root_volume.volume_directory().store().filesystem();
+        let fs = self.root_volume.filesystem();
         let store =
             fs.object_manager().store(store_id).ok_or_else(|| anyhow!("Store not found"))?;
         Ok(store.guid())
@@ -1052,7 +1052,7 @@ impl VolumesDirectory {
         options: MountOptions,
     ) -> Result<(), Error> {
         info!(name:%, store_id:%, options:?; "Received mount request");
-        let device = self.root_volume.volume_directory().store().filesystem().device();
+        let device = self.root_volume.filesystem().device();
         let crypt = options
             .crypt
             .map(|crypt| Arc::new(RemoteCrypt::new_with_device(crypt, device)) as Arc<dyn Crypt>);

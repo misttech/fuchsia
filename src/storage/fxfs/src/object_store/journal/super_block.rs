@@ -23,7 +23,7 @@
 //! must NOT be held when saving the superblock as additional extents may need to be allocated as
 //! part of the save process.
 use crate::errors::FxfsError;
-use crate::filesystem::{ApplyContext, ApplyMode, FxFilesystem, JournalingObject};
+use crate::filesystem::{ApplyContext, ApplyMode, Filesystem, JournalingObject};
 use crate::log::*;
 use crate::lsm_tree::types::LayerIterator;
 use crate::lsm_tree::{LSMTree, LayerSet, Query};
@@ -394,10 +394,10 @@ impl SuperBlockManager {
     pub async fn save(
         &self,
         super_block_header: SuperBlockHeader,
-        filesystem: Arc<FxFilesystem>,
+        filesystem: Arc<dyn Filesystem>,
         root_parent: LayerSet<ObjectKey, ObjectValue>,
     ) -> Result<(), Error> {
-        let root_store = filesystem.root_store();
+        let root_store = filesystem.ensure_local().root_store();
         let instance = *self.next_instance.lock();
         let handle = ObjectStore::open_object(
             &root_store,

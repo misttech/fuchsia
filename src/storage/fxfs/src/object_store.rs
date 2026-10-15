@@ -37,8 +37,8 @@ pub use store_object_handle::{MAX_INLINE_XATTR_SIZE, SetExtendedAttributeMode, S
 
 use crate::errors::FxfsError;
 use crate::filesystem::{
-    ApplyContext, ApplyMode, FxFilesystem, JournalingObject, MAX_FILE_SIZE, SyncOptions,
-    TruncateGuard,
+    ApplyContext, ApplyMode, Filesystem, FxFilesystem, JournalingObject, MAX_FILE_SIZE,
+    SyncOptions, TruncateGuard,
 };
 use crate::log::*;
 use crate::lsm_tree::cache::ObjectCache;
@@ -585,6 +585,25 @@ impl Drop for ReservedId<'_> {
     }
 }
 
+#[async_trait]
+pub trait ObjectStoreTrait: Send + Sync + 'static {
+    /// Purges an object that is in the graveyard.
+    async fn purge(
+        &self,
+        object_id: u64,
+        truncate_guard: Option<&TruncateGuard<'_>>,
+    ) -> Result<(), Error>;
+
+    /// Purges an object that is in the graveyard asynchronously.
+    fn purge_async(&self, object_id: u64);
+
+    /// Returns a reference to the store's LSM tree.
+    fn tree(&self) -> &LSMTree<ObjectKey, ObjectValue>;
+
+    /// Returns the filesystem that this store belongs to.
+    fn filesystem(&self) -> Arc<dyn Filesystem>;
+}
+
 /// An object store supports a file like interface for objects.  Objects are keyed by a 64 bit
 /// identifier.  And object store has to be backed by a parent object store (which stores metadata
 /// for the object store).  The top-level object store (a.k.a. the root parent object store) is
@@ -594,7 +613,7 @@ pub struct ObjectStore {
     store_object_id: u64,
     device: Arc<dyn Device>,
     block_size: BlockSize,
-    filesystem: Weak<FxFilesystem>,
+    filesystem: Weak<dyn Filesystem>,
     // Lock ordering: This must be taken before `lock_state`.
     store_info: Mutex<Option<StoreInfo>>,
     tree: LSMTree<ObjectKey, ObjectValue>,
@@ -644,13 +663,13 @@ impl ObjectStore {
     fn new(
         parent_store: Option<Arc<ObjectStore>>,
         store_object_id: u64,
-        filesystem: Arc<FxFilesystem>,
+        filesystem: Arc<dyn Filesystem>,
         store_info: Option<StoreInfo>,
         object_cache: Option<Box<dyn ObjectCache<ObjectKey, ObjectValue>>>,
         lock_state: LockState,
         last_object_id: LastObjectId,
     ) -> Arc<ObjectStore> {
-        let device = filesystem.device();
+        let device = filesystem.ensure_local().device();
         let block_size = filesystem.block_size();
         Arc::new(ObjectStore {
             parent_store,
@@ -725,7 +744,7 @@ impl ObjectStore {
     /// Used to set filesystem on root_parent stores at bootstrap time after the filesystem has
     /// been created.
     pub fn attach_filesystem(mut this: ObjectStore, filesystem: Arc<FxFilesystem>) -> ObjectStore {
-        this.filesystem = Arc::downgrade(&filesystem);
+        this.filesystem = Arc::downgrade(&filesystem) as Weak<dyn Filesystem>;
         this
     }
 
@@ -736,8 +755,7 @@ impl ObjectStore {
         locks: LockKeys,
         options: Options<'a>,
     ) -> Result<Transaction<'a>, Error> {
-        let fs = self.filesystem();
-        Transaction::new(fs, options, locks).await
+        self.filesystem().new_transaction(locks, options).await
     }
 
     /// Ensures that `cached_keys` is filled up to `CACHED_KEYS_LIMIT`.
@@ -990,7 +1008,7 @@ impl ObjectStore {
         self.block_size
     }
 
-    pub fn filesystem(&self) -> Arc<FxFilesystem> {
+    pub fn filesystem(&self) -> Arc<dyn Filesystem> {
         self.filesystem.upgrade().unwrap()
     }
 
@@ -1951,7 +1969,7 @@ impl ObjectStore {
                 .context("Failed to read object store layers")?;
         }
 
-        fs.object_manager().update_reservation(
+        fs.ensure_local().object_manager().update_reservation(
             store_object_id,
             tree::reservation_amount_from_layer_size(total_layer_size),
         );
@@ -2068,7 +2086,8 @@ impl ObjectStore {
         // This assumes that the journal has no buffered mutations for this store (see Self::lock).
         let journaled = EncryptedMutations::from_replayed_mutations(
             self.store_object_id,
-            fs.journal()
+            fs.ensure_local()
+                .journal()
                 .read_transactions_for_object(self.store_object_id)
                 .await
                 .context("Failed to read encrypted mutations from journal")?,
@@ -2287,7 +2306,7 @@ impl ObjectStore {
             self.flush_with_reason(FlushReason::EncryptedMutations).await?;
 
             // Reap purged files within this store.
-            let _ = self.filesystem().graveyard().initial_reap(&self).await?;
+            let _ = self.filesystem().ensure_local().graveyard().initial_reap(&self).await?;
         }
 
         // Return and cancel the clean up.
@@ -2552,7 +2571,7 @@ impl ObjectStore {
             self.write_store_info(&mut transaction, &new_store_info).await?;
 
             transaction
-                .commit_with_callback(|_| {
+                .commit_with_callback(move |_| {
                     self.store_info.lock().as_mut().unwrap().last_object_id =
                         new_store_info.last_object_id;
                     match &mut *self.last_object_id.lock() {
@@ -2578,7 +2597,7 @@ impl ObjectStore {
     }
 
     fn allocator(&self) -> Arc<Allocator> {
-        self.filesystem().allocator()
+        self.filesystem().ensure_local().allocator()
     }
 
     // If |transaction| has an impending mutation for the underlying object, returns that.
@@ -2958,6 +2977,49 @@ impl ObjectStore {
             .await?
             .ok_or(FxfsError::NotFound)??;
         Ok(size)
+    }
+
+    /// Purges an object that is in the graveyard.
+    pub async fn purge(
+        &self,
+        object_id: u64,
+        truncate_guard: Option<&TruncateGuard<'_>>,
+    ) -> Result<(), Error> {
+        self.filesystem().tombstone_object(self.store_object_id, object_id, truncate_guard).await
+    }
+
+    /// Purges an object that is in the graveyard asynchronously.
+    pub fn purge_async(&self, object_id: u64) {
+        self.filesystem().queue_tombstone_object(self.store_object_id, object_id);
+    }
+}
+
+#[async_trait]
+impl ObjectStoreTrait for ObjectStore {
+    async fn purge(
+        &self,
+        object_id: u64,
+        truncate_guard: Option<&TruncateGuard<'_>>,
+    ) -> Result<(), Error> {
+        self.purge(object_id, truncate_guard).await
+    }
+
+    fn purge_async(&self, object_id: u64) {
+        self.purge_async(object_id);
+    }
+
+    fn tree(&self) -> &LSMTree<ObjectKey, ObjectValue> {
+        self.tree()
+    }
+
+    fn filesystem(&self) -> Arc<dyn Filesystem> {
+        self.filesystem()
+    }
+}
+
+impl AsRef<dyn ObjectStoreTrait> for ObjectStore {
+    fn as_ref(&self) -> &dyn ObjectStoreTrait {
+        self
     }
 }
 
@@ -6668,6 +6730,80 @@ mod tests {
             flush_task.await;
             target_store_id.store(0, Ordering::SeqCst);
         }
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_object_store_trait() {
+        let fs = test_filesystem().await;
+        let root_store = fs.root_store();
+        let store_trait: &dyn super::ObjectStoreTrait = (*root_store).as_ref();
+
+        // Test filesystem() and tree() accessors via trait
+        let fs_from_trait = store_trait.filesystem();
+        assert_eq!(fs_from_trait.block_size(), fs.block_size());
+
+        // Create two objects to test purge and purge_async
+        let mut transaction =
+            root_store.new_transaction(lock_keys![], Options::default()).await.expect("new_txn");
+        let obj1 = ObjectStore::create_object(
+            &root_store,
+            &mut transaction,
+            HandleOptions::default(),
+            None,
+        )
+        .await
+        .expect("create_object 1 failed");
+        let obj2 = ObjectStore::create_object(
+            &root_store,
+            &mut transaction,
+            HandleOptions::default(),
+            None,
+        )
+        .await
+        .expect("create_object 2 failed");
+        root_store.add_to_graveyard(&mut transaction, obj1.object_id());
+        root_store.add_to_graveyard(&mut transaction, obj2.object_id());
+        transaction.commit().await.expect("commit failed");
+
+        let obj1_id = obj1.object_id();
+        let obj2_id = obj2.object_id();
+        std::mem::drop(obj1);
+        std::mem::drop(obj2);
+
+        // Verify objects exist in the tree via trait
+        assert!(
+            store_trait
+                .tree()
+                .find(&ObjectKey::object(obj1_id))
+                .await
+                .expect("find failed")
+                .is_some()
+        );
+
+        // Test synchronous purge via trait
+        store_trait.purge(obj1_id, None).await.expect("purge failed");
+        assert!(
+            store_trait
+                .tree()
+                .find(&ObjectKey::object(obj1_id))
+                .await
+                .expect("find failed")
+                .is_none()
+        );
+
+        // Test asynchronous purge via trait
+        store_trait.purge_async(obj2_id);
+        fs.graveyard().wait_for_reap().await;
+        assert!(
+            store_trait
+                .tree()
+                .find(&ObjectKey::object(obj2_id))
+                .await
+                .expect("find failed")
+                .is_none()
+        );
+
         fs.close().await.expect("close failed");
     }
 }

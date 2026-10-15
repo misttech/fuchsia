@@ -560,7 +560,7 @@ impl PagedObjectHandle {
     }
 
     fn allocator(&self) -> Arc<Allocator> {
-        self.store().filesystem().allocator()
+        self.store().filesystem().ensure_local().allocator()
     }
 
     pub fn uncached_handle(&self) -> &DataObjectHandle<FxVolume> {

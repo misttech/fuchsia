@@ -61,7 +61,7 @@ impl ObjectStore {
         }
 
         let filesystem = self.filesystem();
-        let object_manager = filesystem.object_manager();
+        let object_manager = filesystem.ensure_local().object_manager();
         let earliest_version = self.tree.get_earliest_version();
         let needs_flush = object_manager.needs_flush(self.store_object_id);
         // If we don't need to do anything for the stated flush purpose, do nothing.
@@ -215,7 +215,7 @@ impl ObjectStore {
             &self.tree,
             writer,
             matches!(reason, FlushReason::Journal(_))
-                .then(|| filesystem.journal().get_compaction_yielder()),
+                .then(|| filesystem.ensure_local().journal().get_compaction_yielder()),
             full_compaction,
         )
         .await
@@ -440,6 +440,7 @@ impl ObjectStore {
         // Append the encrypted mutations, which need to be read from the journal.
         // This assumes that the journal has no buffered mutations for this store (see Self::lock).
         let journaled = filesystem
+            .ensure_local()
             .journal()
             .read_transactions_for_object(self.store_object_id)
             .await

@@ -32,6 +32,10 @@ pub struct RootVolume {
 }
 
 impl RootVolume {
+    pub fn filesystem(&self) -> &Arc<FxFilesystem> {
+        &self.filesystem
+    }
+
     pub fn volume_directory(&self) -> &Directory<ObjectStore> {
         self.filesystem.object_manager().volume_directory()
     }
@@ -70,7 +74,11 @@ impl RootVolume {
         struct CleanUp<'a>(&'a ObjectStore);
         impl Drop for CleanUp<'_> {
             fn drop(&mut self) {
-                self.0.filesystem().object_manager().forget_store(self.0.store_object_id());
+                self.0
+                    .filesystem()
+                    .ensure_local()
+                    .object_manager()
+                    .forget_store(self.0.store_object_id());
             }
         }
         let clean_up = CleanUp(&store);

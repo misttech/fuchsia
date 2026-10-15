@@ -264,7 +264,6 @@ impl FxNode for FxSymlink {
                 let store = self.handle.store();
                 store
                     .filesystem()
-                    .graveyard()
                     .queue_tombstone_object(store.store_object_id(), self.object_id());
             });
         }
@@ -279,10 +278,7 @@ impl FxNode for FxSymlink {
         assert!(old & TO_BE_PURGED == 0);
         if old == 0 {
             let store = self.handle.store();
-            store
-                .filesystem()
-                .graveyard()
-                .queue_tombstone_object(store.store_object_id(), self.object_id());
+            store.filesystem().queue_tombstone_object(store.store_object_id(), self.object_id());
         }
     }
 }

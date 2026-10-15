@@ -2776,6 +2776,7 @@ mod tests {
 
         let mut transaction = store
             .filesystem()
+            .ensure_local()
             .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(

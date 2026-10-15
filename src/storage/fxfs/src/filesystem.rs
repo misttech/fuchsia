@@ -2,21 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::errors::FxfsError;
 use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
 use crate::hooks::HooksHandle;
 use crate::log::*;
 use crate::metrics;
 use crate::object_handle::LayerObject;
-use crate::object_store::allocator::Allocator;
+use crate::object_store::allocator::{Allocator, Reservation};
 use crate::object_store::directory::Directory;
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::super_block::{SuperBlockHeader, SuperBlockInstance};
 use crate::object_store::journal::{self, Journal, JournalCheckpoint, JournalOptions};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::transaction::{
-    self, AssocObj, LockKey, LockManager, MetadataReservation, Mutation, ObjectMutationIterator,
-    TRANSACTION_METADATA_MAX_AMOUNT, Transaction, WriteGuard, lock_keys,
+    self, AssocObj, LockKey, LockKeys, LockManager, Mutation, ObjectMutationIterator, Transaction,
+    TransactionConcurrencyLimiter, TransactionSink, WriteGuard, lock_keys,
 };
 use crate::object_store::volume::{VOLUMES_DIRECTORY, root_volume};
 use crate::object_store::{
@@ -26,7 +25,6 @@ use crate::range::RangeExt;
 use crate::serialized_types::{LATEST_VERSION, Version};
 use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
-use event_listener::Event;
 use fuchsia_async as fasync;
 use fuchsia_async::condition::Condition;
 use fuchsia_inspect::{Inspector, LazyNode, NumericProperty as _, UintProperty};
@@ -38,7 +36,7 @@ use fxfs_crypto::{Crypt, UnwrappedKey};
 use fxfs_trace::{TraceFutureExt, trace_future_args};
 use static_assertions::const_assert;
 use std::pin::pin;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::task::Poll;
 use std::time::{Duration, Instant};
@@ -521,7 +519,7 @@ impl FxFilesystemBuilder {
                 objects: objects.clone(),
                 journal,
                 commit_mutex: futures::lock::Mutex::new(()),
-                lock_manager: LockManager::new(),
+                lock_manager: LockManager::default(),
                 flush_task: Mutex::new(None),
                 background_tasks: fasync::Scope::new(),
                 closed: AtomicBool::new(true),
@@ -529,8 +527,7 @@ impl FxFilesystemBuilder {
                 graveyard: Graveyard::new(weak.clone()),
                 completed_transactions: metrics::detail().create_uint("completed_transactions", 0),
                 options: filesystem_options,
-                in_flight_transactions: AtomicU64::new(0),
-                transaction_limit_event: Event::new(),
+                transaction_limiter: TransactionConcurrencyLimiter::new(MAX_IN_FLIGHT_TRANSACTIONS),
                 layer_pager: self.layer_pager,
                 _stores_node: metrics::register_fs(move || {
                     let weak = weak.clone();
@@ -636,12 +633,7 @@ pub struct FxFilesystem {
     completed_transactions: UintProperty,
     options: Options,
 
-    // The number of in-flight transactions which we will limit to MAX_IN_FLIGHT_TRANSACTIONS.
-    in_flight_transactions: AtomicU64,
-
-    // An event that is used to wake up tasks that are blocked due to the in-flight transaction
-    // limit.
-    transaction_limit_event: Event,
+    transaction_limiter: TransactionConcurrencyLimiter,
 
     // The "stores" node in the Inspect tree.
     _stores_node: LazyNode,
@@ -870,7 +862,183 @@ impl FxFilesystem {
         self.objects.drop_transaction(transaction);
         self.lock_manager.drop_transaction(transaction);
     }
+}
 
+#[async_trait]
+pub trait Filesystem: TransactionSink + Send + Sync + 'static {
+    /// Returns true if the filesystem is remote.  Some functionality is not supported in this case
+    /// (e.g. the allocator, graveyard, or journal).
+    fn is_remote(&self) -> bool {
+        true
+    }
+
+    /// Returns a reference to the local `FxFilesystem` instance.
+    ///
+    /// Panics if called on a remote filesystem.
+    fn ensure_local(&self) -> &FxFilesystem {
+        panic!("not a local filesystem");
+    }
+
+    /// Returns the layer pager if one is configured for this filesystem.
+    fn layer_pager(&self) -> Option<&Arc<dyn LayerPager>> {
+        None
+    }
+
+    /// Queues a graveyard object for tombstoning.
+    fn queue_tombstone_object(&self, store_object_id: u64, object_id: u64);
+
+    /// Tombstones a graveyard object synchronously.
+    async fn tombstone_object(
+        &self,
+        store_object_id: u64,
+        object_id: u64,
+        truncate_guard: Option<&TruncateGuard<'_>>,
+    ) -> Result<(), Error>;
+
+    /// Returns the options used to configure the filesystem.
+    fn options(&self) -> &Options;
+
+    /// Returns the block size of the underlying device.
+    fn block_size(&self) -> BlockSize;
+
+    /// Returns info about the filesystem.
+    fn get_info(&self) -> Info;
+
+    /// Syncs the filesystem.
+    async fn sync(&self, options: SyncOptions<'_>) -> Result<(), Error>;
+
+    /// Takes a truncate guard for the given store and object.
+    async fn truncate_guard(&self, store_id: u64, object_id: u64) -> TruncateGuard<'_> {
+        let keys = lock_keys![LockKey::truncate(store_id, object_id)];
+        TruncateGuard(self.lock_manager().write_lock(keys).await)
+    }
+
+    /// Returns the hooks handle for this filesystem.
+    fn hooks(&self) -> &Arc<HooksHandle> {
+        &self.options().hooks
+    }
+}
+
+impl dyn Filesystem {
+    pub async fn truncate_guard_owned(
+        self: &Arc<Self>,
+        store_id: u64,
+        object_id: u64,
+    ) -> TruncateGuard<'static> {
+        self.truncate_guard(store_id, object_id).await.into_owned(self.clone())
+    }
+}
+
+#[async_trait]
+impl TransactionSink for FxFilesystem {
+    async fn new_transaction<'a>(
+        self: Arc<Self>,
+        txn_locks: LockKeys,
+        options: transaction::Options<'a>,
+    ) -> Result<Transaction<'a>, Error> {
+        Transaction::new(self, options, txn_locks).await
+    }
+
+    async fn check_space(&self) -> Result<(), Error> {
+        if self.options.image_builder_mode.is_none() {
+            self.maybe_start_flush_task();
+            self.journal.check_journal_space().await?;
+        }
+        Ok(())
+    }
+
+    fn reserve(&self, owner_object_id: Option<u64>, amount: u64) -> Option<Reservation> {
+        self.allocator().reserve(owner_object_id, amount)
+    }
+
+    fn image_builder_mode(&self) -> bool {
+        self.options.image_builder_mode.is_some()
+    }
+
+    async fn commit(&self, transaction: &mut Transaction<'_>) -> Result<u64, Error> {
+        self.commit_transaction(transaction, |x| x).await
+    }
+
+    async fn commit_with_callback<'a>(
+        &self,
+        transaction: &mut Transaction<'_>,
+        callback: Box<dyn FnOnce(u64) + Send + 'a>,
+    ) -> Result<u64, Error> {
+        let mut journal_offset = 0;
+        self.commit_transaction(transaction, |offset| {
+            journal_offset = offset;
+            callback(offset);
+        })
+        .await?;
+        Ok(journal_offset)
+    }
+
+    fn downgrade_locks(&self, lock_keys: &LockKeys) {
+        self.lock_manager().downgrade_locks(lock_keys);
+    }
+
+    fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
+        FxFilesystem::drop_transaction(self, transaction);
+    }
+
+    fn lock_manager(&self) -> &LockManager {
+        self.lock_manager()
+    }
+
+    fn transaction_limiter(&self) -> &TransactionConcurrencyLimiter {
+        &self.transaction_limiter
+    }
+
+    fn metadata_reservation(&self) -> Option<&Reservation> {
+        Some(self.object_manager().metadata_reservation())
+    }
+}
+
+#[async_trait]
+impl Filesystem for FxFilesystem {
+    fn is_remote(&self) -> bool {
+        false
+    }
+
+    fn ensure_local(&self) -> &FxFilesystem {
+        self
+    }
+
+    fn layer_pager(&self) -> Option<&Arc<dyn LayerPager>> {
+        self.layer_pager()
+    }
+
+    fn queue_tombstone_object(&self, store_object_id: u64, object_id: u64) {
+        self.graveyard().queue_tombstone_object(store_object_id, object_id);
+    }
+
+    async fn tombstone_object(
+        &self,
+        store_object_id: u64,
+        object_id: u64,
+        truncate_guard: Option<&TruncateGuard<'_>>,
+    ) -> Result<(), Error> {
+        FxFilesystem::tombstone_object(self, store_object_id, object_id, truncate_guard).await
+    }
+
+    fn block_size(&self) -> BlockSize {
+        self.block_size()
+    }
+
+    fn get_info(&self) -> Info {
+        FxFilesystem::get_info(self)
+    }
+
+    async fn sync(&self, options: SyncOptions<'_>) -> Result<(), Error> {
+        FxFilesystem::sync(self, options).await
+    }
+
+    fn options(&self) -> &Options {
+        &self.options
+    }
+}
+
+impl FxFilesystem {
     fn maybe_start_flush_task(&self) {
         if self.journal.image_builder_mode().is_some() {
             return;
@@ -1008,86 +1176,6 @@ impl FxFilesystem {
         );
     }
 
-    /// Tops up the transaction's metadata_reservation to ensure the reservation is large enough to
-    /// accommodate a maximally sized transaction.  This must be called before the transaction is
-    /// used.
-    ///
-    /// If `skip_journal_checks` is unset, this function also ensures that there is sufficient
-    /// space in the journal to write the transaction, and will block if the journal needs to grow.
-    pub(crate) async fn add_transaction_reservation(
-        self: &Arc<Self>,
-        transaction: &mut Transaction<'_>,
-    ) -> Result<(), Error> {
-        if self.options.image_builder_mode.is_some() {
-            // Image builder mode avoids the journal so reservation tracking for metadata overheads
-            // doesn't make sense and so we essentially have 'all or nothing' semantics instead.
-            return Ok(());
-        }
-        if !transaction.skip_journal_checks {
-            self.maybe_start_flush_task();
-            self.journal.check_journal_space().await?;
-        }
-
-        match &mut transaction.metadata_reservation {
-            MetadataReservation::BorrowedMetadata
-            | MetadataReservation::BorrowedMetadataAndData => {}
-            MetadataReservation::Hold(hold) => {
-                let amount = TRANSACTION_METADATA_MAX_AMOUNT.saturating_sub(hold.amount());
-                hold.add(hold.owner().reserve(amount).ok_or(FxfsError::NoSpace)?.forget());
-            }
-            MetadataReservation::Reservation(txn_reservation) => {
-                txn_reservation.add(
-                    self.allocator()
-                        .reserve(
-                            txn_reservation.owner_object_id(),
-                            TRANSACTION_METADATA_MAX_AMOUNT
-                                .saturating_sub(txn_reservation.amount()),
-                        )
-                        .ok_or(FxfsError::NoSpace)?
-                        .forget(),
-                );
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) async fn add_transaction(&self, skip_journal_checks: bool) {
-        if skip_journal_checks {
-            self.in_flight_transactions.fetch_add(1, Ordering::Relaxed);
-        } else {
-            let inc = || {
-                let mut in_flights = self.in_flight_transactions.load(Ordering::Relaxed);
-                while in_flights < MAX_IN_FLIGHT_TRANSACTIONS {
-                    match self.in_flight_transactions.compare_exchange_weak(
-                        in_flights,
-                        in_flights + 1,
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => return true,
-                        Err(x) => in_flights = x,
-                    }
-                }
-                return false;
-            };
-            while !inc() {
-                let listener = self.transaction_limit_event.listen();
-                if inc() {
-                    break;
-                }
-                debug_assert_not_too_long!(listener);
-            }
-        }
-    }
-
-    pub(crate) fn sub_transaction(&self) {
-        let old = self.in_flight_transactions.fetch_sub(1, Ordering::Relaxed);
-        assert!(old != 0);
-        if old <= MAX_IN_FLIGHT_TRANSACTIONS {
-            self.transaction_limit_event.notify(usize::MAX);
-        }
-    }
-
     pub async fn truncate_guard(&self, store_id: u64, object_id: u64) -> TruncateGuard<'_> {
         let keys = lock_keys![LockKey::truncate(store_id, object_id,)];
         TruncateGuard(self.lock_manager().write_lock(keys).await)
@@ -1199,7 +1287,7 @@ impl FxFilesystem {
 pub struct TruncateGuard<'a>(WriteGuard<'a>);
 
 impl<'a> TruncateGuard<'a> {
-    pub fn into_owned(self, fs: Arc<FxFilesystem>) -> TruncateGuard<'static> {
+    pub fn into_owned(self, fs: Arc<dyn Filesystem>) -> TruncateGuard<'static> {
         TruncateGuard(self.0.into_owned(fs))
     }
 }
@@ -1327,7 +1415,8 @@ impl<T: ?Sized + Unpin> NextLatest for T where T: Stream {}
 
 #[cfg(test)]
 mod tests {
-    use super::{FxFilesystem, FxFilesystemBuilder, FxfsError, SyncOptions};
+    use super::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
+    use crate::errors::FxfsError;
     use crate::fsck::{fsck, fsck_volume};
     use crate::log::*;
     use crate::lsm_tree::Operation;
@@ -1767,6 +1856,7 @@ mod tests {
                         .expect("open failed");
                     for i in 0..100 {
                         let mut transaction = fs
+                            .ensure_local()
                             .root_store()
                             .new_transaction(
                                 lock_keys![LockKey::object(
@@ -2052,7 +2142,6 @@ mod tests {
             .expect("there is no test volume");
 
         // Create a number of files with the goal of using up more than one journal block.
-        let fs = store.filesystem();
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         for i in 0..100 {
@@ -2143,7 +2232,6 @@ mod tests {
             .expect("there is no test volume");
 
         // Create a file and write something to it. This should cause a barrier to be emitted.
-        let fs: Arc<FxFilesystem> = store.filesystem();
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 

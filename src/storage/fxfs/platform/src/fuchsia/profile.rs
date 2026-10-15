@@ -126,7 +126,7 @@ impl FileRecordingHandle {
         transaction.commit().await?;
 
         if old_id != INVALID_OBJECT_ID {
-            fs.graveyard().queue_tombstone_object(store.store_object_id(), old_id);
+            fs.ensure_local().graveyard().queue_tombstone_object(store.store_object_id(), old_id);
         }
 
         Ok(())
@@ -152,6 +152,7 @@ impl RecordingHandle for FileRecordingHandle {
         self.commit_impl().await.inspect_err(|_| {
             store
                 .filesystem()
+                .ensure_local()
                 .graveyard()
                 .queue_tombstone_object(store.store_object_id(), self.handle.object_id());
         })
@@ -161,6 +162,7 @@ impl RecordingHandle for FileRecordingHandle {
         self.volume
             .store()
             .filesystem()
+            .ensure_local()
             .graveyard()
             .queue_tombstone_object(self.volume.store().store_object_id(), self.handle.object_id());
     }
@@ -272,7 +274,7 @@ impl RecordingHandle for AttributeRecordingHandle {
     fn abort_cleanup(self: Box<Self>) {
         // TODO(https://fxbug.dev/507875809): How is this going to be cleaned up if it fails part
         // way? How will we know that it is invalid and should be replaced?
-        self.volume.store().filesystem().graveyard().queue_tombstone_attribute(
+        self.volume.store().filesystem().ensure_local().graveyard().queue_tombstone_attribute(
             self.volume.store().store_object_id(),
             self.handle.object_id(),
             AttributeId::PROFILE_RECORDING,

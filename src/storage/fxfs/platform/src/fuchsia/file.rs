@@ -425,7 +425,6 @@ impl FxFile {
                         let store = self.handle.store();
                         store
                             .filesystem()
-                            .graveyard()
                             .queue_tombstone_object(store.store_object_id(), self.object_id());
                     }
                     return;

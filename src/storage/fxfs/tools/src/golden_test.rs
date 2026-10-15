@@ -422,12 +422,8 @@ async fn check_image(path: &Path) -> Result<(), Error> {
             let vol_and_dir = volumes_dir
                 .mount_volume(vol_name, vol_crypt.as_ref().map(|c| c.clone()), is_blob)
                 .await?;
-            fsck::fsck_volume(
-                &vol_and_dir.volume().store().filesystem(),
-                vol_and_dir.volume().store().store_object_id(),
-                vol_crypt,
-            )
-            .await?;
+            fsck::fsck_volume(&fs, vol_and_dir.volume().store().store_object_id(), vol_crypt)
+                .await?;
 
             if is_blob {
                 ensure!(
@@ -480,12 +476,8 @@ async fn check_image(path: &Path) -> Result<(), Error> {
             let vol_and_dir = volumes_dir
                 .mount_volume(vol_name, vol_crypt.as_ref().map(|c| c.clone()), is_blob)
                 .await?;
-            fsck::fsck_volume(
-                &vol_and_dir.volume().store().filesystem(),
-                vol_and_dir.volume().store().store_object_id(),
-                vol_crypt,
-            )
-            .await?;
+            fsck::fsck_volume(&fs, vol_and_dir.volume().store().store_object_id(), vol_crypt)
+                .await?;
             if !is_blob {
                 let (dir, server_end) = create_proxy::<fio::DirectoryMarker>();
                 vol_and_dir

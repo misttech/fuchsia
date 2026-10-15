@@ -290,7 +290,10 @@ impl ObjectStore {
         // Delete objects from the destination volume we replaced, if any.
         if let Some(replaced_objects) = replaced_objects {
             for object_id in replaced_objects {
-                fs.root_store().tombstone_object(object_id, Options::default(), None).await?;
+                fs.ensure_local()
+                    .root_store()
+                    .tombstone_object(object_id, Options::default(), None)
+                    .await?;
             }
         }
         // Delete the metadata ownership file.
@@ -453,6 +456,7 @@ mod tests {
             let keys = lock_keys![LockKey::object(volume.store_object_id(), inner_dir.object_id())];
             let mut transaction = volume
                 .filesystem()
+                .ensure_local()
                 .root_store()
                 .new_transaction(keys, Default::default())
                 .await
@@ -489,6 +493,7 @@ mod tests {
                 lock_keys![LockKey::object(volume.store_object_id(), dir.object_id())];
             let mut transaction = volume
                 .filesystem()
+                .ensure_local()
                 .root_store()
                 .new_transaction(keys, Default::default())
                 .await

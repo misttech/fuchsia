@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::checksum::Checksum;
-use crate::filesystem::FxFilesystem;
+use crate::errors::FxfsError;
+use crate::filesystem::Filesystem;
 use crate::log::*;
 use crate::lsm_tree::types::Item;
 use crate::object_handle::INVALID_OBJECT_ID;
@@ -16,7 +17,9 @@ use crate::object_store::object_record::{
 use crate::object_store::{AttributeId, AttributeKey, ProjectId};
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use anyhow::Error;
+use async_trait::async_trait;
 use either::{Either, Left, Right};
+use event_listener::Event;
 use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use futures::future::poll_fn;
@@ -32,6 +35,7 @@ use std::iter::Peekable;
 use std::marker::PhantomPinned;
 use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::task::{Poll, Waker};
 use std::{fmt, mem};
 
@@ -138,6 +142,109 @@ pub const TRANSACTION_METADATA_MAX_AMOUNT: u64 =
 
 #[must_use]
 pub struct TransactionLocks<'a>(pub WriteGuard<'a>);
+
+/// Limits the number of in-flight transactions to `limit`.
+pub struct TransactionConcurrencyLimiter {
+    limit: u64,
+    // The number of in-flight transactions which we will limit to `limit`.
+    in_flight_transactions: AtomicU64,
+    // An event that is used to wake up tasks that are blocked due to the in-flight transaction
+    // limit.
+    transaction_limit_event: Event,
+}
+
+impl TransactionConcurrencyLimiter {
+    pub fn new(limit: u64) -> Self {
+        Self {
+            limit,
+            in_flight_transactions: AtomicU64::new(0),
+            transaction_limit_event: Event::new(),
+        }
+    }
+
+    pub async fn add(&self, skip_journal_checks: bool) {
+        if skip_journal_checks {
+            self.in_flight_transactions.fetch_add(1, AtomicOrdering::Relaxed);
+        } else {
+            let inc = || {
+                let mut in_flights = self.in_flight_transactions.load(AtomicOrdering::Relaxed);
+                while in_flights < self.limit {
+                    match self.in_flight_transactions.compare_exchange_weak(
+                        in_flights,
+                        in_flights + 1,
+                        AtomicOrdering::Relaxed,
+                        AtomicOrdering::Relaxed,
+                    ) {
+                        Ok(_) => return true,
+                        Err(x) => in_flights = x,
+                    }
+                }
+                false
+            };
+            while !inc() {
+                let listener = self.transaction_limit_event.listen();
+                if inc() {
+                    break;
+                }
+                debug_assert_not_too_long!(listener);
+            }
+        }
+    }
+
+    pub fn sub(&self) {
+        let old = self.in_flight_transactions.fetch_sub(1, AtomicOrdering::Relaxed);
+        assert!(old != 0);
+        if old <= self.limit {
+            self.transaction_limit_event.notify(usize::MAX);
+        }
+    }
+}
+
+/// An object into which transactions are committed.  Usually, this is the journal.
+///
+/// This exists as an abstraction for remotely mounted volumes, which need to submit transactions to
+/// the remote filesystem rather than directly writing into the journal.
+#[async_trait]
+pub trait TransactionSink: Send + Sync + 'static {
+    /// Creates a new transaction, acquiring `txn_locks`.  See [`Options`] for details.
+    async fn new_transaction<'a>(
+        self: Arc<Self>,
+        txn_locks: LockKeys,
+        options: Options<'a>,
+    ) -> Result<Transaction<'a>, Error>;
+    /// Checks that there is sufficient space in the journal to write a transaction, blocking if
+    /// necessary until space is available.
+    async fn check_space(&self) -> Result<(), Error>;
+    /// Reserves space for a transaction's metadata.  Returns `None` if there is insufficient space.
+    fn reserve(&self, owner_object_id: Option<u64>, amount: u64) -> Option<Reservation>;
+    /// Returns true if the sink is in image builder mode.
+    fn image_builder_mode(&self) -> bool {
+        false
+    }
+    /// Commits a transaction.  Returns a monotonically increasing offset (usually, the journal
+    /// offset of the transaction) on success.
+    async fn commit(&self, transaction: &mut Transaction<'_>) -> Result<u64, Error>;
+    /// Like [`Self::commit`], but invokes a callback upon completion, before dropping locks.
+    async fn commit_with_callback<'a>(
+        &self,
+        transaction: &mut Transaction<'_>,
+        callback: Box<dyn FnOnce(u64) + Send + 'a>,
+    ) -> Result<u64, Error>;
+    /// Downgrades locks from the WriteLock state to Locked state.  This will panic if the locks are
+    /// not in the WriteLock state.
+    fn downgrade_locks(&self, lock_keys: &LockKeys);
+    /// A function to be called by [`Transaction::drop`], allowing for additional work to be
+    /// performed on drop.
+    fn drop_transaction(&self, transaction: &mut Transaction<'_>);
+    /// Returns the lock manager instance.
+    fn lock_manager(&self) -> &LockManager;
+    /// Returns the transaction concurrency limiter.
+    fn transaction_limiter(&self) -> &TransactionConcurrencyLimiter;
+    /// Returns the global metadata reservation if supported by this sink.
+    fn metadata_reservation(&self) -> Option<&Reservation> {
+        None
+    }
+}
 
 /// The journal consists of these records which will be replayed at mount time.  Within a
 /// transaction, these are stored as a set which allows some mutations to be deduplicated and found
@@ -724,7 +831,7 @@ pub enum MetadataReservation<'a> {
 
 /// A transaction groups mutation records to be committed as a group.
 pub struct Transaction<'a> {
-    fs: Arc<FxFilesystem>,
+    sink: Arc<dyn TransactionSink>,
 
     // The mutations that make up this transaction.
     mutations: BTreeSet<TxnMutation<'a>>,
@@ -750,19 +857,19 @@ pub struct Transaction<'a> {
 
     /// If set, indicates that this transaction is nested within `parent_transaction` and shares
     /// its in-flight transaction slot.
-    parent_transaction: Option<&'a Transaction<'a>>,
+    pub(crate) parent_transaction: Option<&'a Transaction<'a>>,
 }
 
 impl<'a> Transaction<'a> {
     /// Creates a new transaction.  `txn_locks` are read locks that can be upgraded to write locks
     /// at commit time.
     pub async fn new(
-        fs: Arc<FxFilesystem>,
+        sink: Arc<dyn TransactionSink>,
         options: Options<'a>,
         txn_locks: LockKeys,
     ) -> Result<Transaction<'a>, Error> {
         if options.parent_transaction.is_none() {
-            fs.add_transaction(options.skip_journal_checks).await;
+            sink.transaction_limiter().add(options.skip_journal_checks).await;
         }
         // We support three options for metadata space reservation:
         //
@@ -777,12 +884,12 @@ impl<'a> Transaction<'a> {
         //
         //   3. No reservation is supplied, so we try and reserve space with the allocator now,
         //      and will return NoSpace if that fails.
-        let metadata_reservation = if fs.options().image_builder_mode.is_some() {
+        let metadata_reservation = if sink.image_builder_mode() {
             MetadataReservation::BorrowedMetadata
         } else {
             match options.reservation {
                 ReservationOptions::New => {
-                    MetadataReservation::Reservation(fs.allocator().reserve(None, 0).unwrap())
+                    MetadataReservation::Reservation(sink.reserve(None, 0).unwrap())
                 }
                 ReservationOptions::BorrowedMetadata => MetadataReservation::BorrowedMetadata,
                 ReservationOptions::BorrowedMetadataAndData => {
@@ -794,7 +901,7 @@ impl<'a> Transaction<'a> {
             }
         };
         let mut transaction = Transaction {
-            fs: fs.clone(),
+            sink: sink.clone(),
             mutations: BTreeSet::new(),
             txn_locks: LockKeys::default(),
             metadata_reservation,
@@ -804,23 +911,60 @@ impl<'a> Transaction<'a> {
             skip_journal_checks: options.skip_journal_checks,
             parent_transaction: options.parent_transaction,
         };
-        fs.add_transaction_reservation(&mut transaction).await?;
+        transaction.add_transaction_reservation().await?;
 
         transaction.txn_locks = {
-            let lock_manager = fs.lock_manager();
+            let lock_manager = sink.lock_manager();
             let mut write_guard = lock_manager.txn_lock(txn_locks).await;
             std::mem::take(&mut write_guard.0.lock_keys)
         };
         Ok(transaction)
     }
 
+    /// Tops up the transaction's metadata_reservation to ensure the reservation is large enough to
+    /// accommodate a maximally sized transaction.  This must be called before the transaction is
+    /// used.
+    ///
+    /// If `skip_journal_checks` is unset, this function also ensures that there is sufficient
+    /// space in the journal to write the transaction, and will block if the journal needs to grow.
+    async fn add_transaction_reservation(&mut self) -> Result<(), Error> {
+        if self.sink.image_builder_mode() {
+            // Image builder mode avoids the journal so reservation tracking for metadata overheads
+            // doesn't make sense and so we essentially have 'all or nothing' semantics instead.
+            return Ok(());
+        }
+        if !self.skip_journal_checks {
+            self.sink.check_space().await?;
+        }
+
+        match &mut self.metadata_reservation {
+            MetadataReservation::BorrowedMetadata
+            | MetadataReservation::BorrowedMetadataAndData => {}
+            MetadataReservation::Hold(hold) => {
+                let amount = TRANSACTION_METADATA_MAX_AMOUNT.saturating_sub(hold.amount());
+                hold.add(hold.owner().reserve(amount).ok_or(FxfsError::NoSpace)?.forget());
+            }
+            MetadataReservation::Reservation(txn_reservation) => {
+                txn_reservation.add(
+                    self.sink
+                        .reserve(
+                            txn_reservation.owner_object_id(),
+                            TRANSACTION_METADATA_MAX_AMOUNT
+                                .saturating_sub(txn_reservation.amount()),
+                        )
+                        .ok_or(FxfsError::NoSpace)?
+                        .forget(),
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Returns the allocator reservation to be used for allocations and deallocations in this
     /// transaction, if any.
     pub fn allocator_reservation(&self) -> Option<&Reservation> {
         match &self.metadata_reservation {
-            MetadataReservation::BorrowedMetadataAndData => {
-                Some(self.fs.object_manager().metadata_reservation())
-            }
+            MetadataReservation::BorrowedMetadataAndData => self.sink.metadata_reservation(),
             MetadataReservation::Hold(hold) => Some(hold.owner()),
             MetadataReservation::BorrowedMetadata | MetadataReservation::Reservation(_) => None,
         }
@@ -948,7 +1092,7 @@ impl<'a> Transaction<'a> {
         if is_allocate {
             assert!(
                 !matches!(self.metadata_reservation, MetadataReservation::BorrowedMetadata)
-                    || self.fs.options().image_builder_mode.is_some(),
+                    || self.sink.image_builder_mode(),
                 "Allocations are not allowed in BorrowedMetadata transactions"
             );
         }
@@ -1140,7 +1284,8 @@ impl<'a> Transaction<'a> {
     /// Commits a transaction.  If successful, returns the journal offset of the transaction.
     pub async fn commit(mut self) -> Result<u64, Error> {
         debug!(txn:? = &self; "Commit");
-        self.fs.clone().commit_transaction(&mut self, |x| x).await
+        let sink = self.sink.clone();
+        sink.commit(&mut self).await
     }
 
     /// Commits and then runs the callback whilst locks are held.  The callback accepts a single
@@ -1150,26 +1295,36 @@ impl<'a> Transaction<'a> {
         f: impl FnOnce(u64) -> R + Send,
     ) -> Result<R, Error> {
         debug!(txn:? = &self; "Commit");
-        self.fs.clone().commit_transaction(&mut self, f).await
+        let mut res = None;
+        let sink = self.sink.clone();
+        sink.commit_with_callback(
+            &mut self,
+            Box::new(|offset| {
+                res = Some(f(offset));
+            }),
+        )
+        .await?;
+        Ok(res.expect("callback should have been called"))
     }
 
     /// Commits the transaction, but allows the transaction to be used again.  The locks are not
     /// dropped (but transaction locks will get downgraded to read locks).
     pub async fn commit_and_continue(&mut self) -> Result<(), Error> {
         debug!(txn:? = self; "Commit");
-        self.fs.clone().commit_transaction(self, |_| {}).await?;
+        let sink = self.sink.clone();
+        sink.commit(self).await?;
         assert!(self.mutations.is_empty());
         assert!(self.new_objects.is_empty());
         assert!(self.checksums.is_empty());
         self.includes_write = false;
-        self.fs.lock_manager().downgrade_locks(&self.txn_locks);
-        self.fs.clone().add_transaction_reservation(self).await
+        sink.downgrade_locks(&self.txn_locks);
+        self.add_transaction_reservation().await
     }
 
     /// Prepares to commit by upgrading transaction locks to write locks and waiting for active
     /// readers to finish.
     pub async fn commit_prepare(&self) {
-        self.fs.lock_manager().commit_prepare(self).await;
+        self.sink.lock_manager().commit_prepare(self).await;
     }
 }
 
@@ -1178,10 +1333,11 @@ impl Drop for Transaction<'_> {
         // Call the filesystem implementation of drop_transaction which should, as a minimum, call
         // LockManager's drop_transaction to ensure the locks are released.
         debug!(txn:? = &self; "Drop");
+        let sink = self.sink.clone();
         if self.parent_transaction.is_none() {
-            self.fs.sub_transaction();
+            sink.transaction_limiter().sub();
         }
-        self.fs.clone().drop_transaction(self);
+        sink.drop_transaction(self);
     }
 }
 
@@ -1251,10 +1407,12 @@ impl<T> From<T> for BorrowedOrOwned<'_, T> {
 /// +-------------------------+-----------------+----------------+------------------+
 /// | Can acquire write_lock? | false           | false          | false            |
 /// +-------------------------+-----------------+----------------+------------------+
+#[derive(Default)]
 pub struct LockManager {
     locks: Mutex<Locks>,
 }
 
+#[derive(Default)]
 struct Locks {
     keys: HashMap<LockKey, LockEntry>,
 }
@@ -1431,10 +1589,6 @@ enum LockState {
 }
 
 impl LockManager {
-    pub fn new() -> Self {
-        LockManager { locks: Mutex::new(Locks { keys: HashMap::default() }) }
-    }
-
     /// Acquires the locks.  It is the caller's responsibility to ensure that drop_transaction is
     /// called when a transaction is dropped i.e. the filesystem's drop_transaction method should
     /// call LockManager's drop_transaction method.
@@ -1736,11 +1890,11 @@ pub struct ReadGuard<'a> {
 }
 
 impl ReadGuard<'_> {
-    pub fn fs(&self) -> Option<&Arc<FxFilesystem>> {
+    pub fn fs(&self) -> Option<&Arc<dyn Filesystem>> {
         if let LockManagerRef::Owned(fs) = &self.manager { Some(fs) } else { None }
     }
 
-    pub fn into_owned(mut self, fs: Arc<FxFilesystem>) -> ReadGuard<'static> {
+    pub fn into_owned(mut self, fs: Arc<dyn Filesystem>) -> ReadGuard<'static> {
         ReadGuard {
             manager: LockManagerRef::Owned(fs),
             lock_keys: std::mem::replace(&mut self.lock_keys, LockKeys::None),
@@ -1771,7 +1925,7 @@ pub struct WriteGuard<'a> {
 }
 
 impl WriteGuard<'_> {
-    pub fn into_owned(mut self, fs: Arc<FxFilesystem>) -> WriteGuard<'static> {
+    pub fn into_owned(mut self, fs: Arc<dyn Filesystem>) -> WriteGuard<'static> {
         WriteGuard {
             manager: LockManagerRef::Owned(fs),
             lock_keys: std::mem::replace(&mut self.lock_keys, LockKeys::None),
@@ -1797,7 +1951,7 @@ impl fmt::Debug for WriteGuard<'_> {
 
 enum LockManagerRef<'a> {
     Borrowed(&'a LockManager),
-    Owned(Arc<FxFilesystem>),
+    Owned(Arc<dyn Filesystem>),
 }
 
 impl Deref for LockManagerRef<'_> {
@@ -1821,10 +1975,14 @@ impl<'a> From<&'a LockManager> for LockManagerRef<'a> {
 mod tests {
     use super::{
         AssocObj, AttributeId, LockKey, LockKeys, LockManager, LockState, Mutation,
-        ObjectMutationIterator, Options, ReservationOptions, TxnMutation,
+        ObjectMutationIterator, Options, ReservationOptions, Transaction,
+        TransactionConcurrencyLimiter, TransactionSink, TxnMutation,
     };
     use crate::filesystem::FxFilesystem;
+    use crate::object_store::allocator::{Reservation, ReservationOwner};
     use crate::object_store::{BytesAndNodes, ObjectKey};
+    use anyhow::Error;
+    use async_trait::async_trait;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::channel::oneshot::channel;
@@ -1832,6 +1990,8 @@ mod tests {
     use futures::stream::FuturesUnordered;
     use futures::{StreamExt, join, pin_mut};
     use std::collections::BTreeSet;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::task::Poll;
     use std::time::Duration;
     use storage_device::DeviceHolder;
@@ -2023,7 +2183,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_drop_waiting_write_lock() {
-        let manager = LockManager::new();
+        let manager = LockManager::default();
         let keys = lock_keys![LockKey::object(1, 1)];
         {
             let _guard = manager.lock(keys.clone(), LockState::ReadLock).await;
@@ -2038,7 +2198,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_write_lock_blocks_everything() {
-        let manager = LockManager::new();
+        let manager = LockManager::default();
         let keys = lock_keys![LockKey::object(1, 1)];
         {
             let _guard = manager.lock(keys.clone(), LockState::WriteLock).await;
@@ -2063,7 +2223,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_downgrade_locks() {
-        let manager = LockManager::new();
+        let manager = LockManager::default();
         let keys = lock_keys![LockKey::object(1, 1)];
         let _guard = manager.txn_lock(keys.clone()).await;
         manager.commit_prepare_keys(&keys).await;
@@ -2083,7 +2243,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_dropped_write_lock_wakes() {
-        let manager = LockManager::new();
+        let manager = LockManager::default();
         let keys = lock_keys![LockKey::object(1, 1)];
         let _guard = manager.lock(keys.clone(), LockState::ReadLock).await;
         let mut read_lock = FuturesUnordered::new();
@@ -2106,7 +2266,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_drop_upgrade() {
-        let manager = LockManager::new();
+        let manager = LockManager::default();
         let keys = lock_keys![LockKey::object(1, 1)];
         let _guard = manager.lock(keys.clone(), LockState::Locked).await;
 
@@ -2126,7 +2286,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_woken_upgrade_blocks_reads() {
-        let manager = LockManager::new();
+        let manager = LockManager::default();
         let keys = lock_keys![LockKey::object(1, 1)];
         // Start with a transaction lock.
         let guard = manager.lock(keys.clone(), LockState::Locked).await;
@@ -2555,5 +2715,171 @@ mod tests {
 
         transaction.commit().await.expect("commit failed");
         fs.close().await.expect("close failed");
+    }
+
+    struct MockSink {
+        commits: AtomicU64,
+        callbacks: AtomicU64,
+        drops: AtomicU64,
+        downgrades: AtomicU64,
+        should_fail: AtomicBool,
+        lock_manager: LockManager,
+        transaction_limiter: TransactionConcurrencyLimiter,
+    }
+
+    impl Default for MockSink {
+        fn default() -> Self {
+            Self {
+                commits: Default::default(),
+                callbacks: Default::default(),
+                drops: Default::default(),
+                downgrades: Default::default(),
+                should_fail: Default::default(),
+                lock_manager: LockManager::default(),
+                transaction_limiter: TransactionConcurrencyLimiter::new(u64::MAX),
+            }
+        }
+    }
+
+    struct MockReservationOwner;
+
+    impl ReservationOwner for MockReservationOwner {
+        fn release_reservation(&self, _owner_object_id: Option<u64>, _amount: u64) {}
+    }
+
+    #[async_trait]
+    impl TransactionSink for MockSink {
+        async fn new_transaction<'a>(
+            self: Arc<Self>,
+            txn_locks: LockKeys,
+            options: Options<'a>,
+        ) -> Result<Transaction<'a>, Error> {
+            Transaction::new(self, options, txn_locks).await
+        }
+
+        async fn check_space(&self) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn reserve(&self, owner_object_id: Option<u64>, amount: u64) -> Option<Reservation> {
+            Some(Reservation::new(Arc::new(MockReservationOwner), owner_object_id, amount))
+        }
+
+        async fn commit(&self, _transaction: &mut Transaction<'_>) -> Result<u64, Error> {
+            if self.should_fail.load(Ordering::Relaxed) {
+                anyhow::bail!("mock commit failed");
+            }
+            let count = self.commits.fetch_add(1, Ordering::Relaxed);
+            Ok(count + 1)
+        }
+
+        async fn commit_with_callback<'a>(
+            &self,
+            _transaction: &mut Transaction<'_>,
+            callback: Box<dyn FnOnce(u64) + Send + 'a>,
+        ) -> Result<u64, Error> {
+            if self.should_fail.load(Ordering::Relaxed) {
+                anyhow::bail!("mock commit_with_callback failed");
+            }
+            let count = self.commits.fetch_add(1, Ordering::Relaxed);
+            let offset = count + 1;
+            callback(offset);
+            self.callbacks.fetch_add(1, Ordering::Relaxed);
+            Ok(offset)
+        }
+
+        fn downgrade_locks(&self, _lock_keys: &LockKeys) {
+            self.downgrades.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
+            self.lock_manager.drop_transaction(transaction);
+            self.drops.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn lock_manager(&self) -> &LockManager {
+            &self.lock_manager
+        }
+
+        fn transaction_limiter(&self) -> &TransactionConcurrencyLimiter {
+            &self.transaction_limiter
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_mock_transaction_sink_lifecycle_and_stress() {
+        let sink = Arc::new(MockSink::default());
+
+        // 1. Test standard commit
+        {
+            let txn = sink
+                .clone()
+                .new_transaction(lock_keys![LOCK_KEY_1], Options::default())
+                .await
+                .unwrap();
+            let offset = txn.commit().await.expect("commit should succeed");
+            assert_eq!(offset, 1);
+            assert_eq!(sink.commits.load(Ordering::Relaxed), 1);
+            assert_eq!(sink.drops.load(Ordering::Relaxed), 1);
+        }
+
+        // 2. Test commit_with_callback
+        {
+            let txn = sink
+                .clone()
+                .new_transaction(lock_keys![LOCK_KEY_1], Options::default())
+                .await
+                .unwrap();
+            let res = txn
+                .commit_with_callback(|offset| {
+                    assert_eq!(offset, 2);
+                    "callback_executed"
+                })
+                .await
+                .expect("commit_with_callback should succeed");
+            assert_eq!(res, "callback_executed");
+            assert_eq!(sink.commits.load(Ordering::Relaxed), 2);
+            assert_eq!(sink.callbacks.load(Ordering::Relaxed), 1);
+            assert_eq!(sink.drops.load(Ordering::Relaxed), 2);
+        }
+
+        // 3. Test commit_and_continue across multiple iterations
+        {
+            let mut txn = sink
+                .clone()
+                .new_transaction(lock_keys![LOCK_KEY_1], Options::default())
+                .await
+                .unwrap();
+            for i in 0..100 {
+                txn.commit_and_continue().await.expect("commit_and_continue should succeed");
+                assert_eq!(sink.commits.load(Ordering::Relaxed), 3 + i);
+                assert_eq!(sink.downgrades.load(Ordering::Relaxed), 1 + i);
+            }
+            std::mem::drop(txn);
+            assert_eq!(sink.drops.load(Ordering::Relaxed), 3);
+        }
+
+        // 4. Test drop without commit
+        {
+            let txn = sink
+                .clone()
+                .new_transaction(lock_keys![LOCK_KEY_1], Options::default())
+                .await
+                .unwrap();
+            std::mem::drop(txn);
+            assert_eq!(sink.drops.load(Ordering::Relaxed), 4);
+        }
+
+        // 5. Test failure mode
+        {
+            sink.should_fail.store(true, Ordering::Relaxed);
+            let txn = sink
+                .clone()
+                .new_transaction(lock_keys![LOCK_KEY_1], Options::default())
+                .await
+                .unwrap();
+            assert!(txn.commit().await.is_err());
+            assert_eq!(sink.drops.load(Ordering::Relaxed), 5);
+        }
     }
 }

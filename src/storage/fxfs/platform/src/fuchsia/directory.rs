@@ -511,7 +511,11 @@ impl FxDirectory {
         dst: &'a str,
         must_be_directory: bool,
     ) -> Result<Option<ReplaceWithPurgeResult<'a>>, zx::Status> {
-        let mut allow_purge = true;
+        // In some cases, we can directly purge the deleted object's extents, bypassing the
+        // graveyard.  This reduces the latency of unlinking files.  We disable this for remote
+        // stores since remote stores *must* delete via the external filesystem's graveyard (they
+        // cannot directly interact with the allocator).
+        let mut allow_purge = !self.store().filesystem().is_remote();
         loop {
             let borrow_metadata_space = src.is_none();
             // Acquire the transaction that locks |src_dir|, |src_name|, |self|, and |dst_name| if
@@ -692,10 +696,7 @@ impl FxDirectory {
                     }
                     ReplacedChild::Directory(id) => {
                         let store = self.store();
-                        store
-                            .filesystem()
-                            .graveyard()
-                            .queue_tombstone_object(store.store_object_id(), id);
+                        store.filesystem().queue_tombstone_object(store.store_object_id(), id);
                         self.did_remove(&actual_dst_name);
                         self.volume().mark_directory_deleted(id);
                     }
@@ -833,10 +834,7 @@ impl MutableDirectory for FxDirectory {
                 transaction
                     .commit_with_callback(|_| {
                         let store = self.store();
-                        store
-                            .filesystem()
-                            .graveyard()
-                            .queue_tombstone_object(store.store_object_id(), id);
+                        store.filesystem().queue_tombstone_object(store.store_object_id(), id);
                         self.did_remove(&actual_dst_name);
                         self.volume().mark_directory_deleted(id);
                     })

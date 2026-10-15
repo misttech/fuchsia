@@ -349,6 +349,7 @@ impl FxNode for FxBlob {
             let store = self.handle.store();
             store
                 .filesystem()
+                .ensure_local()
                 .graveyard()
                 .queue_tombstone_object(store.store_object_id(), self.object_id());
         }
@@ -369,6 +370,7 @@ impl FxNode for FxBlob {
             let store = self.handle.store();
             store
                 .filesystem()
+                .ensure_local()
                 .graveyard()
                 .queue_tombstone_object(store.store_object_id(), self.object_id());
         }
