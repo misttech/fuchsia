@@ -38,6 +38,19 @@ struct CpuDistanceMapTestAccess {
   static ktl::optional<CpuDistanceMap> Create(size_t cpu_count, Callable&& callable) {
     return CpuDistanceMap::Create(cpu_count, ktl::forward<Callable>(callable));
   }
+  static void LaunderEntries(ktl::optional<CpuDistanceMap>& map) {
+    if (map) {
+      if (auto* entries = map->entries_.release()) {
+        // Launder the pointer returned by malloc (via operator new[]) so Clang
+        // cannot prove the allocation never escapes, optimize away the
+        // malloc/free pair, and unconditionally assume the malloc succeeded.
+        // This is only needed for test code that intentionally tests allocation
+        // failure without reading back the entries, not production code.
+        __asm__("" : "+r"(entries));
+        map->entries_.reset(entries);
+      }
+    }
+  }
   static size_t EntryCountFromCpuCount(size_t cpu_count) {
     return CpuDistanceMap::EntryCountFromCpuCount(cpu_count);
   }
@@ -133,12 +146,13 @@ static bool allocate_distance_map_tests() {
 
   {
     // Request a large number of CPUs without triggering the integer overflow ASSERT.
-    const size_t cpu_count = size_t{1} << 32;
+    const size_t cpu_count = ktl::numeric_limits<cpu_num_t>::max();
     size_t invocations = 0;
     auto map = CpuDistanceMapTestAccess::Create(cpu_count, [&invocations](cpu_num_t, cpu_num_t) {
       invocations++;
       return 1u;
     });
+    CpuDistanceMapTestAccess::LaunderEntries(map);
     EXPECT_FALSE(map.has_value());
     EXPECT_EQ(0u, invocations);
   }
