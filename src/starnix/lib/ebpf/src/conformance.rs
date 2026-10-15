@@ -17,8 +17,8 @@ pub mod test {
         BPF_SUB, BPF_TO_BE, BPF_TO_LE, BPF_W, BPF_XCHG, BPF_XOR, BpfValue, CallingContext,
         DataWidth, EbpfHelperImpl, EbpfInstruction, EbpfProgramContext, FromBpfValue,
         FunctionSignature, HelperDefinition, MapFlags, MapReference, MapSchema, MapTypeFilter,
-        MemoryId, MemoryParameterSize, NullVerifierLogger, Packet, ProgramArgument, Type,
-        link_program_dynamic, static_helper_set, verify_program,
+        MemoryId, MemoryParameterSize, NullVerifierLogger, Packet, PointerOrigin, ProgramArgument,
+        Type, link_program_dynamic, static_helper_set, verify_program,
     };
     use pest::Parser;
     use pest::iterators::Pair;
@@ -479,6 +479,7 @@ pub mod test {
                     id: TEST_ARG_MEMORY_ID.clone(),
                     offset: 0.into(),
                     buffer_size: self.size as u64,
+                    origin: PointerOrigin::KernelWritable,
                 }
             }
         }
@@ -720,6 +721,7 @@ pub mod test {
                                 filter: MapTypeFilter::AllowList(&[
                                     linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
                                 ]),
+                                must_be_writable: false,
                             }],
                             return_value: Type::UNKNOWN_SCALAR,
                             invalidate_array_bounds: false,
@@ -736,6 +738,24 @@ pub mod test {
                                 filter: MapTypeFilter::DenyList(&[
                                     linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
                                 ]),
+                                must_be_writable: false,
+                            }],
+                            return_value: Type::UNKNOWN_SCALAR,
+                            invalidate_array_bounds: false,
+                        },
+                    },
+                    EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
+                ),
+                (
+                    HelperDefinition {
+                        index: 108,
+                        name: "map_update",
+                        signature: FunctionSignature {
+                            args: vec![Type::ConstPtrToMapParameter {
+                                filter: MapTypeFilter::DenyList(&[
+                                    linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                                ]),
+                                must_be_writable: true,
                             }],
                             return_value: Type::UNKNOWN_SCALAR,
                             invalidate_array_bounds: false,
@@ -1180,6 +1200,8 @@ pub mod test {
     #[test_case(local_test_data!("malloc_double_free.data"))]
     #[test_case(local_test_data!("malloc_multiple_use_free.data"))]
     #[test_case(local_test_data!("malloc_use_free.data"))]
+    #[test_case(local_test_data!("map_read_only_allowed.data"))]
+    #[test_case(local_test_data!("map_read_only_prohibited.data"))]
     #[test_case(local_test_data!("map_type_allowed.data"))]
     #[test_case(local_test_data!("map_type_prohibited.data"))]
     #[test_case(local_test_data!("mem_oob_underflow.data"))]
@@ -1221,13 +1243,22 @@ pub mod test {
         let verified_program = verify_program(
             test_case.code,
             CallingContext {
-                maps: vec![MapSchema {
-                    map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
-                    key_size: 4,
-                    value_size: 4,
-                    max_entries: 0,
-                    flags: MapFlags::NoPrealloc,
-                }],
+                maps: vec![
+                    MapSchema {
+                        map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                        key_size: 4,
+                        value_size: 4,
+                        max_entries: 0,
+                        flags: MapFlags::NoPrealloc,
+                    },
+                    MapSchema {
+                        map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY,
+                        key_size: 4,
+                        value_size: 4,
+                        max_entries: 1,
+                        flags: MapFlags::ProgReadOnly,
+                    },
+                ],
                 helpers,
                 args,
                 packet_type,

@@ -11,6 +11,7 @@ mod ebpf_test {
     };
     use linux_uapi::{bpf_attr, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE};
     use serial_test::serial;
+    use std::assert_matches;
     use std::ffi::CString;
     use std::fs::{File, OpenOptions};
     use std::io::Write as _;
@@ -1602,6 +1603,28 @@ mod ebpf_test {
 
         let mut maps = MapSet::new();
 
+        // Program calling bpf_map_update_elem on read-only map must fail
+        // verification.
+        let err = LoadedProgram::try_new(
+            "test_read_only_prog_map_update",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER,
+            0,
+            &mut maps,
+        )
+        .expect_err("update on read-only map must fail verification");
+        assert_matches!(err.raw_os_error(), Some(libc::EACCES | libc::EINVAL));
+
+        // Program storing into lookup pointer of read-only map must fail
+        // verification.
+        let err = LoadedProgram::try_new(
+            "test_read_only_prog_map_store",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER,
+            0,
+            &mut maps,
+        )
+        .expect_err("store into read-only map must fail verification");
+        assert_matches!(err.raw_os_error(), Some(libc::EACCES | libc::EINVAL));
+
         // Program reading from lookup pointer of read-only map must pass
         // verification.
         let _read_prog = LoadedProgram::try_new(
@@ -1611,6 +1634,38 @@ mod ebpf_test {
             &mut maps,
         )
         .expect("reading from read-only map must pass verification");
+
+        // Program passing read-only map pointer to a helper that writes memory
+        // must fail verification.
+        let err = LoadedProgram::try_new(
+            "test_read_only_prog_map_helper_write",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER,
+            0,
+            &mut maps,
+        )
+        .expect_err("helper write into read-only map must fail verification");
+        assert_matches!(err.raw_os_error(), Some(libc::EACCES | libc::EINVAL));
+
+        // Program modifying read-only global variable (.rodata) must fail
+        // verification.
+        let err = LoadedProgram::try_new(
+            "test_read_only_prog_global_write",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER,
+            0,
+            &mut maps,
+        )
+        .expect_err("write into read-only global must fail verification");
+        assert_matches!(err.raw_os_error(), Some(libc::EACCES | libc::EINVAL));
+
+        // Program reading from read-only global variable (.rodata) must pass
+        // verification.
+        let _global_read_prog = LoadedProgram::try_new(
+            "test_read_only_prog_global_read",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER,
+            0,
+            &mut maps,
+        )
+        .expect("reading from read-only global must pass verification");
 
         // Userspace write (update) should succeed on ProgReadOnly map.
         let ro_map_fd = maps.find(RO_ARRAY_MAP_NAME, linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY);

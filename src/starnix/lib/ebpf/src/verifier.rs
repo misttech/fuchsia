@@ -10,7 +10,7 @@ use crate::{
     BPF_ATOMIC, BPF_CALL, BPF_CLS_MASK, BPF_CMPXCHG, BPF_DW, BPF_EXIT, BPF_JA, BPF_JMP, BPF_JMP32,
     BPF_LDDW, BPF_MAX_INSTS, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE, BPF_STACK_SIZE, BPF_STX,
     BPF_SUB_OP_MASK, BPF_W, DataWidth, EbpfError, EbpfInstruction, GENERAL_REGISTER_COUNT,
-    MapSchema, REGISTER_COUNT,
+    MapFlags, MapSchema, REGISTER_COUNT,
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian, NativeEndian};
 use linux_uapi::{bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY};
@@ -292,6 +292,39 @@ impl MapTypeFilter {
     }
 }
 
+/// Indicates the origin and mutability of a memory buffer referenced by
+/// `Type::PtrToMemory`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PointerOrigin {
+    /// A pointer to a value in a read-only eBPF map (`BPF_F_RDONLY_PROG`).
+    MapReadOnly,
+    /// A pointer to a value in a writable eBPF map.
+    MapWritable,
+    /// A read-only pointer to kernel memory (e.g., packet payload in
+    /// `sk_buff`).
+    KernelReadOnly,
+    /// A writable pointer to kernel memory.
+    KernelWritable,
+}
+
+impl PointerOrigin {
+    /// Returns true if the memory referenced by this pointer can be written to.
+    pub fn is_writable(self) -> bool {
+        match self {
+            Self::MapWritable | Self::KernelWritable => true,
+            Self::MapReadOnly | Self::KernelReadOnly => false,
+        }
+    }
+
+    /// Returns true if the pointer points to an eBPF map value.
+    pub fn is_map_value(self) -> bool {
+        match self {
+            Self::MapReadOnly | Self::MapWritable => true,
+            Self::KernelReadOnly | Self::KernelWritable => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     /// A number.
@@ -302,7 +335,7 @@ pub enum Type {
     PtrToStack { offset: StackOffset },
     /// A pointer to the kernel memory. The full buffer is `buffer_size` bytes long. The pointer is
     /// situated at `offset` from the start of the buffer.
-    PtrToMemory { id: MemoryId, offset: ScalarValueData, buffer_size: u64 },
+    PtrToMemory { id: MemoryId, offset: ScalarValueData, buffer_size: u64, origin: PointerOrigin },
     /// A pointer to a struct with the specified `StructDescriptor`.
     PtrToStruct { id: MemoryId, offset: ScalarValueData, descriptor: Arc<StructDescriptor> },
     /// A pointer to the kernel memory. The full buffer size is determined by an instance of
@@ -320,7 +353,7 @@ pub enum Type {
     /// A function parameter that must be a `ScalarValue` when called.
     ScalarValueParameter,
     /// A function parameter that must be a `ConstPtrToMap` when called.
-    ConstPtrToMapParameter { filter: MapTypeFilter },
+    ConstPtrToMapParameter { filter: MapTypeFilter, must_be_writable: bool },
     /// A function parameter that must be a key of a map.
     MapKeyParameter {
         /// The index in the arguments list that contains a `ConstPtrToMap` for the map this key is
@@ -674,7 +707,13 @@ impl Type {
             {
                 Ok(())
             }
-            (Type::ConstPtrToMapParameter { filter }, Type::ConstPtrToMap { schema, .. }) => {
+            (
+                Type::ConstPtrToMapParameter { filter, must_be_writable },
+                Type::ConstPtrToMap { schema, .. },
+            ) => {
+                if *must_be_writable && schema.flags.contains(MapFlags::ProgReadOnly) {
+                    return Err("write to a read-only map".to_string());
+                }
                 let map_type = schema.map_type;
                 if !filter.is_allowed(map_type) {
                     return Err(format!("Map type {map_type} not allowed in {helper_name}"));
@@ -703,7 +742,13 @@ impl Type {
                 let schema = context.get_map_schema(*map_ptr_index)?;
                 context.stack.read_data_ptr(context.pc, *offset, schema.value_size as u64)
             }
-            (Type::MemoryParameter { size, .. }, Type::PtrToMemory { offset, buffer_size, .. }) => {
+            (
+                Type::MemoryParameter { size, output, .. },
+                Type::PtrToMemory { offset, buffer_size, origin, .. },
+            ) => {
+                if *output && !origin.is_writable() {
+                    return Err("write to read-only memory".to_string());
+                }
                 let expected_size = size.size(context)?;
                 let offset_max = offset.max();
                 if offset_max > *buffer_size {
@@ -1644,8 +1689,11 @@ impl ComputationContext {
                 let offset_sum = offset.add(field.offset);
                 return self.stack.store(offset_sum, value, field.width);
             }
-            Type::PtrToMemory { offset, buffer_size, .. } => {
+            Type::PtrToMemory { offset, buffer_size, origin, .. } if origin.is_writable() => {
                 self.check_memory_access(offset, buffer_size, field.offset, field.width.bytes())?;
+            }
+            Type::PtrToMemory { .. } => {
+                return Err("write to read-only memory".to_string());
             }
             Type::PtrToStruct { ref id, offset, ref descriptor, .. } => {
                 let field_desc = descriptor
@@ -1719,6 +1767,7 @@ impl ComputationContext {
                             id: memory_id.prepended(id.clone()),
                             offset: 0.into(),
                             buffer_size: *buffer_size as u64,
+                            origin: PointerOrigin::KernelReadOnly,
                         },
                         *is_32_bit,
                     ),
@@ -1731,6 +1780,7 @@ impl ComputationContext {
                                     id,
                                     offset: 0.into(),
                                     buffer_size: *buffer_size as u64,
+                                    origin: PointerOrigin::KernelReadOnly,
                                 }),
                             },
                             *is_32_bit,
@@ -1805,20 +1855,36 @@ impl ComputationContext {
             Type::MapValueParameter { map_ptr_index } => {
                 let schema = self.get_map_schema(*map_ptr_index)?;
                 let id = verification_context.next_id();
+                let origin = if schema.flags.contains(MapFlags::ProgReadOnly) {
+                    PointerOrigin::MapReadOnly
+                } else {
+                    PointerOrigin::MapWritable
+                };
                 Ok(Type::PtrToMemory {
                     id,
                     offset: 0.into(),
                     buffer_size: schema.value_size as u64,
+                    origin,
                 })
             }
             Type::MemoryParameter { size, .. } => {
                 let buffer_size = size.size(self)?;
                 let id = verification_context.next_id();
-                Ok(Type::PtrToMemory { id, offset: 0.into(), buffer_size })
+                Ok(Type::PtrToMemory {
+                    id,
+                    offset: 0.into(),
+                    buffer_size,
+                    origin: PointerOrigin::MapWritable,
+                })
             }
-            Type::PtrToMemory { id, offset, buffer_size } => {
+            Type::PtrToMemory { id, offset, buffer_size, origin } => {
                 let id = id.prepended(verification_context.next_id());
-                Ok(Type::PtrToMemory { id, offset: *offset, buffer_size: *buffer_size })
+                Ok(Type::PtrToMemory {
+                    id,
+                    offset: *offset,
+                    buffer_size: *buffer_size,
+                    origin: *origin,
+                })
             }
             Type::PtrToStruct { id, offset, descriptor } => {
                 let id = id.prepended(verification_context.next_id());
@@ -1874,11 +1940,16 @@ impl ComputationContext {
             }
             (
                 alu_type,
-                Type::PtrToMemory { id, offset: x, buffer_size },
+                Type::PtrToMemory { id, offset: x, buffer_size, origin },
                 Type::ScalarValue(data),
             ) if alu_type.is_ptr_compatible() => {
                 let offset = op(*x, *data);
-                Type::PtrToMemory { id: id.clone(), offset, buffer_size: *buffer_size }
+                Type::PtrToMemory {
+                    id: id.clone(),
+                    offset,
+                    buffer_size: *buffer_size,
+                    origin: *origin,
+                }
             }
             (
                 alu_type,
@@ -4522,10 +4593,16 @@ impl BpfVisitor for ComputationContext {
                     return Err(format!("Array has no entry."));
                 }
 
+                let origin = if map_schema.flags.contains(MapFlags::ProgReadOnly) {
+                    PointerOrigin::MapReadOnly
+                } else {
+                    PointerOrigin::MapWritable
+                };
                 Type::PtrToMemory {
                     id: MemoryId::from(id),
                     offset: offset.into(),
                     buffer_size: map_schema.value_size.into(),
+                    origin,
                 }
             }
             _ => {
@@ -4882,7 +4959,12 @@ mod tests {
             Type::ScalarValue(ScalarValueData::new(0, 0xff, 0, U64Range::new(0, 1))),
             Type::ScalarValue(ScalarValueData::new(0, 0xff, 0xff, U64Range::new(0, 0xff))),
             Type::ScalarValue(ScalarValueData::new(0x100, 0xff, 0, U64Range::new(0x100, 0x1ff))),
-            Type::PtrToMemory { id: id.clone(), offset: 0.into(), buffer_size: 8 },
+            Type::PtrToMemory {
+                id: id.clone(),
+                offset: 0.into(),
+                buffer_size: 8,
+                origin: PointerOrigin::MapWritable,
+            },
             Type::PtrToArray { id, offset: 1.into() },
         ]
     }
@@ -5201,8 +5283,12 @@ mod tests {
         let comp_ctx = ComputationContext::default();
 
         let static_id = MemoryId::from_raw(42);
-        let ret_template =
-            Type::PtrToMemory { id: static_id.clone(), offset: 0.into(), buffer_size: 64 };
+        let ret_template = Type::PtrToMemory {
+            id: static_id.clone(),
+            offset: 0.into(),
+            buffer_size: 64,
+            origin: PointerOrigin::KernelReadOnly,
+        };
 
         let mut next1 = ComputationContext::default();
         let t1 = comp_ctx
@@ -5239,6 +5325,7 @@ mod tests {
                 id: static_id.clone(),
                 offset: 0.into(),
                 buffer_size: 64,
+                origin: PointerOrigin::KernelReadOnly,
             }),
         };
 
@@ -5425,5 +5512,41 @@ mod tests {
         let mut capped_logger = LimitedLogger { max_lines: 2, lines: vec![] };
         verify_program(code, CallingContext::default(), &mut capped_logger).unwrap();
         assert_eq!(capped_logger.lines, vec!["0: (b7) mov %r0, 0x0", "1: (07) add %r0, 0x1"]);
+    }
+
+    /// Verifies that memory store instructions to read-only memory pointers are
+    /// rejected, while stores to writable pointers succeed.
+    #[test]
+    fn test_read_only_map_value_store() {
+        let mut logger = NullVerifierLogger;
+        let mut context = make_verification_context(&mut logger);
+        let mut next = ComputationContext::default();
+
+        let ptr_with_origin = |origin| Type::PtrToMemory {
+            id: MemoryId::new(),
+            offset: 0.into(),
+            buffer_size: 4,
+            origin,
+        };
+
+        let u32_field = Field::new(0, DataWidth::U32);
+
+        // Store to read-only memory must fail.
+        let ro_map_ptr = ptr_with_origin(PointerOrigin::MapReadOnly);
+        let err = next.store_memory(&mut context, &ro_map_ptr, u32_field, Type::from(42));
+        assert_eq!(err, Err("write to read-only memory".to_string()));
+
+        let ro_kernel_ptr = ptr_with_origin(PointerOrigin::KernelReadOnly);
+        let err = next.store_memory(&mut context, &ro_kernel_ptr, u32_field, Type::from(42));
+        assert_eq!(err, Err("write to read-only memory".to_string()));
+
+        // Store to writable memory must succeed.
+        let rw_map_ptr = ptr_with_origin(PointerOrigin::MapWritable);
+        let res = next.store_memory(&mut context, &rw_map_ptr, u32_field, Type::from(42));
+        assert!(res.is_ok());
+
+        let rw_kernel_ptr = ptr_with_origin(PointerOrigin::KernelWritable);
+        let res = next.store_memory(&mut context, &rw_kernel_ptr, u32_field, Type::from(42));
+        assert!(res.is_ok());
     }
 }

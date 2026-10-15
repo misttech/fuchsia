@@ -345,21 +345,52 @@ pub fn load_ebpf_program_from_file(
             let sym_index = (rel.info >> 32) as usize;
             let sym = elf_file.symbol_by_index(sym_index)?;
 
-            // Determine whether the map is found the map section or bss
-            let is_from_map_section = match sym {
-                SymbolInfo { name: Some(_), section: Elf64SectionHeader { type_, .. }, .. }
-                    if *type_ == Elf64SectionType::Progbits as u32 =>
-                {
-                    code[pc].set_src_reg(ebpf::BPF_PSEUDO_MAP_IDX);
-                    true
-                }
-                SymbolInfo { name: None, section: Elf64SectionHeader { type_, .. }, .. }
-                    if *type_ == Elf64SectionType::NoBits as u32 =>
-                {
+            let section_name = elf_file.strings.get(sym.section.name)?;
+
+            enum RelocationTarget {
+                MapSection,
+                Bss,
+                RoData,
+            }
+
+            const RODATA: &[u8] = b".rodata";
+            const PROGBITS: u32 = Elf64SectionType::Progbits as u32;
+            const NO_BITS: u32 = Elf64SectionType::NoBits as u32;
+            let target = match (section_name.map(|s| s.as_ref()), &sym) {
+                (
+                    Some(RODATA),
+                    SymbolInfo {
+                        name: _, section: Elf64SectionHeader { type_: PROGBITS, .. }, ..
+                    },
+                ) => {
                     let offset = code[pc].imm();
                     code[pc].set_src_reg(ebpf::BPF_PSEUDO_MAP_IDX_VALUE);
                     code[pc + 1].set_imm(offset);
-                    false
+                    RelocationTarget::RoData
+                }
+                (
+                    _,
+                    SymbolInfo {
+                        name: Some(_),
+                        section: Elf64SectionHeader { type_: PROGBITS, .. },
+                        ..
+                    },
+                ) => {
+                    code[pc].set_src_reg(ebpf::BPF_PSEUDO_MAP_IDX);
+                    RelocationTarget::MapSection
+                }
+                (
+                    _,
+                    SymbolInfo {
+                        name: None,
+                        section: Elf64SectionHeader { type_: NO_BITS, .. },
+                        ..
+                    },
+                ) => {
+                    let offset = code[pc].imm();
+                    code[pc].set_src_reg(ebpf::BPF_PSEUDO_MAP_IDX_VALUE);
+                    code[pc + 1].set_imm(offset);
+                    RelocationTarget::Bss
                 }
                 _ => return Err(Error::ElfParse("Invalid map symbol")),
             };
@@ -367,27 +398,39 @@ pub fn load_ebpf_program_from_file(
             // Insert map index to the code. The actual map address is inserted
             // later, when the program is linked.
             let map_index = map_indices.entry(sym_index).or_insert_with_fallible(|| {
-                let schema = if is_from_map_section {
-                    let Ok((def, _)) = bpf_map_def::ref_from_prefix(sym.data) else {
-                        return Err(Error::ElfParse("Failed to load map definition"));
-                    };
-                    MapSchema {
-                        map_type: def.map_type,
-                        key_size: def.key_size,
-                        value_size: def.value_size,
-                        max_entries: def.max_entries,
-                        flags: MapFlags::from_bits_truncate(def.flags),
+                let map_def = match target {
+                    RelocationTarget::MapSection => {
+                        let Ok((def, _)) = bpf_map_def::ref_from_prefix(sym.data) else {
+                            return Err(Error::ElfParse("Failed to load map definition"));
+                        };
+                        MapSchema {
+                            map_type: def.map_type,
+                            key_size: def.key_size,
+                            value_size: def.value_size,
+                            max_entries: def.max_entries,
+                            flags: MapFlags::from_bits_truncate(def.flags),
+                        }
                     }
-                } else {
-                    MapSchema {
+                    RelocationTarget::Bss => MapSchema {
                         map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY,
                         key_size: 4,
                         value_size: sym.section.size as u32,
                         max_entries: 1,
                         flags: MapFlags::empty(),
-                    }
+                    },
+                    RelocationTarget::RoData => MapSchema {
+                        map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY,
+                        key_size: 4,
+                        value_size: sym.section.size as u32,
+                        max_entries: 1,
+                        flags: MapFlags::ProgReadOnly,
+                    },
                 };
-                maps.push(MapDefinition { name: sym.name.map(|x| x.to_owned()), schema });
+                let name = match target {
+                    RelocationTarget::RoData => Some(BStr::new(".rodata").to_owned()),
+                    _ => sym.name.map(|x| x.to_owned()),
+                };
+                maps.push(MapDefinition { name, schema: map_def });
                 Ok(maps.len() - 1)
             })?;
 

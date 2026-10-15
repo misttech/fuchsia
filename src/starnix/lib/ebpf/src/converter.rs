@@ -464,7 +464,7 @@ pub fn convert_and_link_cbpf<C: BpfProgramContext + StaticHelperSet>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MemoryId, NoMap, empty_static_helper_set};
+    use crate::{MemoryId, NoMap, PointerOrigin, empty_static_helper_set};
     use linux_uapi::{
         AUDIT_ARCH_AARCH64, AUDIT_ARCH_X86_64, SECCOMP_RET_ALLOW, SECCOMP_RET_TRAP, seccomp_data,
         sock_filter,
@@ -638,6 +638,7 @@ mod tests {
         id: MemoryId::new(),
         offset: 0.into(),
         buffer_size: 0,
+        origin: PointerOrigin::KernelReadOnly,
     });
 
     impl ProgramArgument for &'_ seccomp_data {
@@ -860,6 +861,7 @@ mod tests {
         id: MemoryId::new(),
         offset: 0.into(),
         buffer_size: size_of::<VariableLengthPacket>() as u64,
+        origin: PointerOrigin::KernelReadOnly,
     });
 
     impl ProgramArgument for &'_ VariableLengthPacket {

@@ -15,7 +15,8 @@ use crate::vfs::{
 use bstr::ByteSlice;
 use ebpf::{
     BPF_ABS, BPF_IND, BPF_LD, BPF_ST, BPF_W, BpfProgramContext, CbpfConfig, EbpfProgram, MemoryId,
-    NoMap, ProgramArgument, Type, bpf_addressing_mode, bpf_class, bpf_size, convert_and_link_cbpf,
+    NoMap, PointerOrigin, ProgramArgument, Type, bpf_addressing_mode, bpf_class, bpf_size,
+    convert_and_link_cbpf,
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
 use linux_uapi::AUDIT_SECCOMP;
@@ -149,8 +150,12 @@ impl BpfProgramContext for SeccompFilter {
 
 ebpf::empty_static_helper_set!(SeccompFilter);
 
-static SECCOMP_DATA_TYPE: LazyLock<Type> =
-    LazyLock::new(|| Type::PtrToMemory { id: MemoryId::new(), offset: 0.into(), buffer_size: 0 });
+static SECCOMP_DATA_TYPE: LazyLock<Type> = LazyLock::new(|| Type::PtrToMemory {
+    id: MemoryId::new(),
+    offset: 0.into(),
+    buffer_size: 0,
+    origin: PointerOrigin::KernelReadOnly,
+});
 
 impl ProgramArgument for &'_ SeccompData {
     fn get_type() -> &'static Type {

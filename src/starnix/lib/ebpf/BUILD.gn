@@ -99,6 +99,8 @@ rustc_library("ebpf") {
     "src/tests/malloc_double_free.data",
     "src/tests/malloc_multiple_use_free.data",
     "src/tests/malloc_use_free.data",
+    "src/tests/map_read_only_allowed.data",
+    "src/tests/map_read_only_prohibited.data",
     "src/tests/map_type_allowed.data",
     "src/tests/map_type_prohibited.data",
     "src/tests/mem_oob_underflow.data",

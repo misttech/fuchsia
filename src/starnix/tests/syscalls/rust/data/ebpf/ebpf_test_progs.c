@@ -479,6 +479,22 @@ struct bpf_map_def ro_mmap_map = {
     .map_flags = BPF_F_MMAPABLE | BPF_F_RDONLY_PROG,
 };
 
+int test_read_only_prog_map_update(struct __sk_buff* skb) {
+  int key = 0;
+  int value = 42;
+  bpf_map_update_elem(&ro_array_map, &key, &value, 0);
+  return 0;
+}
+
+int test_read_only_prog_map_store(struct __sk_buff* skb) {
+  int key = 0;
+  int* val = bpf_map_lookup_elem(&ro_array_map, &key);
+  if (val) {
+    *val = 42;
+  }
+  return 0;
+}
+
 int test_read_only_prog_map_read(struct __sk_buff* skb) {
   int key = 0;
   int* val = bpf_map_lookup_elem(&ro_array_map, &key);
@@ -505,3 +521,23 @@ int test_read_only_prog_mmap(struct __sk_buff* skb) {
   }
   return 0;
 }
+
+// Static const value is loaded as read-only eBPF array and then
+// accessed using BPF_PSEUDO_MAP_IDX_VALUE.
+static const volatile int ro_global = 42;
+
+int test_read_only_prog_map_helper_write(struct __sk_buff* skb) {
+  int key = 0;
+  int* val = bpf_map_lookup_elem(&ro_array_map, &key);
+  if (val) {
+    bpf_skb_load_bytes_relative(skb, 0, val, sizeof(*val), BPF_HDR_START_NET);
+  }
+  return 0;
+}
+
+int test_read_only_prog_global_write(struct __sk_buff* skb) {
+  *(volatile int*)&ro_global = 1;
+  return 0;
+}
+
+int test_read_only_prog_global_read(struct __sk_buff* skb) { return ro_global; }

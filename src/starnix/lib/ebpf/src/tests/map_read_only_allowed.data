@@ -1,0 +1,6 @@
+-- asm
+lddw %r1, map[1]
+call 106
+exit
+-- result
+0

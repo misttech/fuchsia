@@ -1,0 +1,6 @@
+-- asm
+lddw %r1, map[1]
+call 108
+exit
+-- error
+write into map forbidden

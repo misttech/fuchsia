@@ -4,7 +4,9 @@
 
 use crate::MapKey;
 use crate::maps::{Map, MapValueRef, RingBuffer, RingBufferWakeupPolicy};
-use ebpf::{BpfValue, EbpfBufferPtr, EbpfHelperImpl, EbpfProgramContext, FromBpfValue, HelperSet};
+use ebpf::{
+    BpfValue, EbpfBufferPtr, EbpfHelperImpl, EbpfProgramContext, FromBpfValue, HelperSet, MapFlags,
+};
 use inspect_stubs::track_stub;
 use linux_uapi::{
     BPF_SK_STORAGE_GET_F_CREATE, bpf_func_id_BPF_FUNC_get_current_pid_tgid,
@@ -93,6 +95,8 @@ fn bpf_map_update_elem<C: MapsProgramContext>(
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
 
+    assert!(!map.schema.flags.contains(MapFlags::ProgReadOnly));
+
     // TODO(https://fxbug.dev/496639039): This should be checked by the verifier.
     if map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
         return BpfValue::default();
@@ -121,6 +125,8 @@ fn bpf_map_delete_elem<C: MapsProgramContext>(
 ) -> BpfValue {
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
+
+    assert!(!map.schema.flags.contains(MapFlags::ProgReadOnly));
 
     // TODO(https://fxbug.dev/496639039): This should be checked by the verifier.
     if map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {

@@ -4,8 +4,8 @@
 
 use ebpf::{
     CallingContext, CbpfConfig, CbpfLenInstruction, FieldDescriptor, FieldType, FunctionSignature,
-    HelperDefinition, MapSchema, MapTypeFilter, MemoryId, MemoryParameterSize, StructDescriptor,
-    Type,
+    HelperDefinition, MapSchema, MapTypeFilter, MemoryId, MemoryParameterSize, PointerOrigin,
+    StructDescriptor, Type,
 };
 use fidl_fuchsia_ebpf as febpf;
 use linux_uapi::{
@@ -113,6 +113,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, HelperDefinition)>>
                         args: vec![
                             Type::ConstPtrToMapParameter {
                                 filter: MapTypeFilter::DenyList(SPECIAL_MAP_TYPES),
+                                must_be_writable: false,
                             },
                             Type::MapKeyParameter { map_ptr_index: 0 },
                         ],
@@ -132,6 +133,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, HelperDefinition)>>
                         args: vec![
                             Type::ConstPtrToMapParameter {
                                 filter: MapTypeFilter::DenyList(SPECIAL_MAP_TYPES),
+                                must_be_writable: true,
                             },
                             Type::MapKeyParameter { map_ptr_index: 0 },
                             Type::MapValueParameter { map_ptr_index: 0 },
@@ -151,6 +153,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, HelperDefinition)>>
                         args: vec![
                             Type::ConstPtrToMapParameter {
                                 filter: MapTypeFilter::DenyList(SPECIAL_MAP_TYPES),
+                                must_be_writable: true,
                             },
                             Type::MapKeyParameter { map_ptr_index: 0 },
                         ],
@@ -306,6 +309,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, HelperDefinition)>>
                                 filter: MapTypeFilter::AllowList(&[
                                     bpf_map_type_BPF_MAP_TYPE_RINGBUF,
                                 ]),
+                                must_be_writable: true,
                             },
                             Type::ScalarValueParameter,
                             Type::ScalarValueParameter,
@@ -615,6 +619,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, HelperDefinition)>>
                                 filter: MapTypeFilter::AllowList(&[
                                     bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
                                 ]),
+                                must_be_writable: false,
                             },
                             Type::StructParameter { id: BPF_SOCK_ID.clone() },
                             Type::NullOrParameter(Box::new(Type::MapValueParameter {
@@ -941,7 +946,12 @@ fn ptr_to_struct_type(id: MemoryId, fields: Vec<FieldDescriptor>) -> Type {
 }
 
 fn ptr_to_mem_type<T: IntoBytes>(id: MemoryId) -> Type {
-    Type::PtrToMemory { id, offset: 0.into(), buffer_size: std::mem::size_of::<T>() as u64 }
+    Type::PtrToMemory {
+        id,
+        offset: 0.into(),
+        buffer_size: std::mem::size_of::<T>() as u64,
+        origin: PointerOrigin::KernelReadOnly,
+    }
 }
 
 static RING_BUFFER_RESERVATION: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);

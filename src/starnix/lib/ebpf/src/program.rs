@@ -841,7 +841,7 @@ mod test {
     use crate::conformance::test::parse_asm;
     use crate::{
         CallingContext, FieldDescriptor, FieldMapping, FieldType, NullVerifierLogger,
-        ProgramArgument, StructDescriptor, Type, verify_program,
+        PointerOrigin, ProgramArgument, StructDescriptor, Type, verify_program,
     };
     use std::mem::offset_of;
     use std::sync::{Arc, LazyLock};
@@ -1207,8 +1207,18 @@ mod test {
         exit
         "#;
         let args = vec![
-            Type::PtrToMemory { id: MemoryId::new(), offset: 0.into(), buffer_size: 16 },
-            Type::PtrToMemory { id: MemoryId::new(), offset: 0.into(), buffer_size: 16 },
+            Type::PtrToMemory {
+                id: MemoryId::new(),
+                offset: 0.into(),
+                buffer_size: 16,
+                origin: PointerOrigin::KernelReadOnly,
+            },
+            Type::PtrToMemory {
+                id: MemoryId::new(),
+                offset: 0.into(),
+                buffer_size: 16,
+                origin: PointerOrigin::KernelReadOnly,
+            },
         ];
         let verify_result = verify_program(
             parse_asm(program),
