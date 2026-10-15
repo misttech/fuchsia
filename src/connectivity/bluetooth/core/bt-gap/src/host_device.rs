@@ -210,6 +210,7 @@ impl HostDevice {
         .map_ok(|v| v.into_iter().flatten().collect())
     }
 
+    /// Sets whether the host is connectable to other devices.
     pub fn set_connectable(&self, value: bool) -> impl Future<Output = types::Result<()>> + use<> {
         self.0.proxy.set_connectable(value).map(from_fidl_result)
     }

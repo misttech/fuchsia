@@ -6,13 +6,13 @@ use assert_matches::assert_matches;
 use fidl::endpoints;
 use fidl_fuchsia_bluetooth_host::HostRequest;
 use fidl_fuchsia_bluetooth_sys::{
-    AccessMarker, AccessSetConnectionPolicyRequest, ProcedureTokenMarker,
+    self as sys, AccessMarker, AccessSetConnectionPolicyRequest, ProcedureTokenMarker,
 };
 use fuchsia_bluetooth::types::pairing_options::{BondableMode, PairingOptions, SecurityLevel};
 use fuchsia_bluetooth::types::{HostId, PeerId, Technology};
 use fuchsia_sync::RwLock;
-use futures::future;
 use futures::stream::{StreamExt, TryStreamExt};
+use futures::{FutureExt, future};
 use std::sync::Arc;
 
 use crate::services::access;
@@ -229,4 +229,388 @@ async fn toggle_connectable_of_active_host() {
         }
         x => panic!("Expected SetConnectable, got: {x:?}"),
     }
+}
+
+#[fuchsia::test]
+async fn multiple_connection_policy_clients() {
+    let dispatcher = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server, _, _gatt_server, _bonding) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(49), &dispatcher)
+            .await
+            .unwrap();
+
+    let (client1, server1) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task1 = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server1));
+    let (client2, server2) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task2 = fuchsia_async::Task::spawn(access::run(dispatcher, server2));
+
+    let (token1, server_token1) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy1 = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token1),
+        ..Default::default()
+    };
+    let fut1 = client1.set_connection_policy(policy1);
+
+    // Host should receive request to disable connectable.
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable, got: {x:?}"),
+    }
+    assert_matches!(fut1.await, Ok(Ok(_)));
+
+    // Second client requests suppression.
+    let (token2, server_token2) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy2 = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token2),
+        ..Default::default()
+    };
+    let fut2 = client2.set_connection_policy(policy2);
+    // Second request resolves successfully without issuing another SetConnectable to host.
+    assert_matches!(fut2.await, Ok(Ok(_)));
+    assert!(
+        host_server.next().now_or_never().is_none(),
+        "Unexpected message received on host_server after second client requested suppression"
+    );
+
+    // Drop first client's token and ensure Client 1's access task finishes processing.
+    drop(token1);
+    drop(client1);
+    assert_matches!(run_access_task1.await, Ok(()));
+
+    // Verify that dropping the first token did NOT re-enable connectable because second client
+    // is still active.
+    assert!(
+        host_server.next().now_or_never().is_none(),
+        "Unexpected message received on host_server after first client dropped token"
+    );
+
+    // Dropping second token should now cause connectable to be re-enabled.
+    drop(token2);
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable, got: {x:?}"),
+    }
+
+    drop(client2);
+    assert_matches!(run_access_task2.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn connection_policy_over_adapter_change() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    hd.set_active_host(HostId(1)).expect("can set active host");
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Host 1 should receive SetConnectable(false)
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 1, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Spawn task to remove Host 1 so Host 2 becomes active
+    let host_path_1 = host_1.path().to_string();
+    let hd_clone = hd.clone();
+    let rm_task = fuchsia_async::Task::spawn(async move {
+        hd_clone.rm_device(&host_path_1).await;
+    });
+
+    // Host 2 should receive SetConnectable(false) during configure_newly_active_adapter
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    rm_task.await;
+
+    // Dropping token should cause Host 2 to receive SetConnectable(true)
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn connection_policy_over_adapter_removal_and_late_addition() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Host 1 should receive SetConnectable(false)
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 1, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Remove Host 1 so 0 hosts remain.
+    let host_path_1 = host_1.path().to_string();
+    hd.rm_device(&host_path_1).await;
+
+    // Add Host 2 (0 -> 1 host transition).
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    // Host 2 should receive SetConnectable(false) during configure_newly_active_adapter
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    // Dropping token should cause Host 2 to receive SetConnectable(true)
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn connection_policy_host_error_does_not_deadlock_and_recovers() {
+    let dispatcher = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server, _, _gatt_server, _bonding) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &dispatcher)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server));
+
+    let (_token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Host receives SetConnectable(false) and replies with an error.
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Err(sys::Error::Failed)).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false), got: {x:?}"),
+    }
+
+    // The client request must fail without deadlocking the dispatcher.
+    assert_matches!(fut.await, Ok(Err(sys::Error::Failed)));
+
+    // A subsequent connection policy request should be able to try again and succeed.
+    let (token2, server_token2) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy2 = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token2),
+        ..Default::default()
+    };
+    let fut2 = client.set_connection_policy(policy2);
+
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false), got: {x:?}"),
+    }
+    assert_matches!(fut2.await, Ok(Ok(_)));
+
+    drop(token2);
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true), got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn connection_policy_immediate_re_suppression_maintains_ordering() {
+    let dispatcher = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server, _, _gatt_server, _bonding) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &dispatcher)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server));
+
+    let (token1, server_token1) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy1 = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token1),
+        ..Default::default()
+    };
+    let fut1 = client.set_connection_policy(policy1);
+
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false), got: {x:?}"),
+    }
+    assert_matches!(fut1.await, Ok(Ok(_)));
+
+    // Client 1 drops token and Client 2 immediately requests suppression.
+    drop(token1);
+    let (token2, server_token2) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy2 = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token2),
+        ..Default::default()
+    };
+    let fut2 = client.set_connection_policy(policy2);
+
+    // Host should first receive SetConnectable(true) from the drop, followed by
+    // SetConnectable(false) from the new request, in strict FIFO order.
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true), got: {x:?}"),
+    }
+
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false), got: {x:?}"),
+    }
+    assert_matches!(fut2.await, Ok(Ok(_)));
+
+    drop(token2);
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true), got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn connection_policy_migrates_pending_suppression() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    hd.set_active_host(HostId(1)).expect("can set active host");
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Host 1 receives SetConnectable(false), but does NOT respond yet (keeping state Pending).
+    let responder_1 = match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => responder,
+        x => panic!("Expected SetConnectable on host 1, got: {x:?}"),
+    };
+
+    // Remove Host 1 while suppression is pending so Host 2 becomes active.
+    let host_path_1 = host_1.path().to_string();
+    let hd_clone = hd.clone();
+    let rm_task = fuchsia_async::Task::spawn(async move {
+        hd_clone.rm_device(&host_path_1).await;
+    });
+
+    // Host 2 should receive SetConnectable(false) as the pending task is migrated.
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    rm_task.await;
+
+    // Dropping or replying on the abandoned Host 1 responder should be harmless.
+    drop(responder_1);
+
+    // The client's original future should resolve successfully on Host 2!
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Dropping the token should cause Host 2 to receive SetConnectable(true).
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
 }

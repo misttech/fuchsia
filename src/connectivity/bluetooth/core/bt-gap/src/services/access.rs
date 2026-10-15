@@ -9,7 +9,7 @@ use fuchsia_bluetooth::types::pairing_options::{BondableMode, PairingOptions};
 use fuchsia_bluetooth::types::{Peer, PeerId, Technology};
 use fuchsia_sync::Mutex;
 use futures::future::{BoxFuture, pending};
-use futures::stream::{Count, FuturesUnordered, Stream, StreamExt};
+use futures::stream::{FuturesUnordered, Stream, StreamExt};
 use futures::{FutureExt, select};
 use log::{debug, info, trace, warn};
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ struct AccessSession {
     peers_seen: Arc<Mutex<HashMap<PeerId, Peer>>>,
     /// Active `sys.Access` clients that are requesting to suppress connections. Connections will be
     /// suppressed as long as there is one or more outstanding `ProcedureToken`.
-    suppress_connections_sessions: FuturesUnordered<Count<sys::ProcedureTokenRequestStream>>,
+    suppress_connections_sessions: FuturesUnordered<BoxFuture<'static, ()>>,
     /// Only one discovery session is stored per Access session at a time;
     /// if an Access client requests discovery while holding an existing session token,
     /// the old session is replaced, and the old session token is invalidated.
@@ -46,13 +46,7 @@ pub async fn run(hd: HostDispatcher, mut stream: AccessRequestStream) -> Result<
                     None => break,
                 }
             }
-            _token_dropped = session.suppress_connections_sessions.select_next_some() => {
-                // If this was the last token to be dropped, make the active host connectable again.
-                if session.suppress_connections_sessions.is_empty() {
-                    let res = hd.set_connectable(/*connectable=*/ true).await;
-                    trace!("Last suppress connections token dropped. Setting connectable: {res:?}");
-                }
-            }
+            _ = session.suppress_connections_sessions.select_next_some() => {}
             _ = session.discovery_session.as_mut().unwrap_or(&mut discovery_pending).fuse() => {
                 // drop the boxed future, which owns the discovery session token
                 session.discovery_session = None;
@@ -113,10 +107,12 @@ async fn handler(
                 return responder.send(Err(sys::Error::InvalidArguments)).map_err(Error::from);
             };
             let result = hd
-                .set_connectable(/*connectable=*/ false)
+                .suppress_connections()
                 .await
-                .map(|_| {
-                    session.suppress_connections_sessions.push(stream.count());
+                .map(|token| {
+                    session
+                        .suppress_connections_sessions
+                        .push(watch_stream_for_session(stream, token).boxed());
                 })
                 .map_err(Into::into);
             responder.send(result).map_err(Error::from)
