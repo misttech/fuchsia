@@ -138,7 +138,10 @@ if (has_board) {
     # Only test on linux. Also check for has_board, since this test
     # cannot run on a configuration without a board.
     if (is_linux) {
-      deps = [ ":ffx-golden-command-list" ] + command_test_deps
+      deps = [
+               ":ffx-golden-command-list",
+               ":ffx_cli_goldens_test($host_toolchain)",
+             ] + command_test_deps
     }
   }
 } else {

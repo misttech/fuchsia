@@ -11,8 +11,6 @@ ffx_plugin("ffx_bluetooth") {
   version = "0.1.0"
   edition = "2024"
 
-  with_unit_tests = false
-
   plugin_deps = [
     "src/connectable:ffx_bluetooth_connectable",
     "src/controller:ffx_bluetooth_controller",
@@ -27,8 +25,6 @@ ffx_plugin("ffx_bluetooth") {
     "//src/developer/ffx/core:lib",
     "//third_party/rust_crates:argh",
   ]
-
-  deps = [ "//src/developer/ffx/lib/errors:lib" ]
 }
 
 ffx_tool("ffx_bluetooth_tool") {
@@ -54,5 +50,8 @@ group("bin") {
 
 group("tests") {
   testonly = true
-  deps = [ ":ffx_bluetooth_tests" ]
+  deps = [
+    ":ffx_bluetooth_tests",
+    "common:tests",
+  ]
 }

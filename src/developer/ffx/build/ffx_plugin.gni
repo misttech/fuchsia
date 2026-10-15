@@ -263,6 +263,10 @@ template("ffx_plugin") {
     }
 
     includes_execution = defined(invoker.sources) && invoker.sources != []
+    assert(includes_execution || !defined(invoker.deps),
+           "`deps` requires `sources` to be specified.")
+    assert(includes_execution || !defined(invoker.proc_macro_deps),
+           "`proc_macro_deps` requires `sources` to be specified.")
     assert(includes_execution || !defined(invoker.test_deps),
            "`test_deps` requires `sources` to be specified.")
     assert(includes_execution ||
@@ -325,9 +329,6 @@ template("ffx_plugin") {
       if (defined(invoker.with_unit_tests) && invoker.with_unit_tests) {
         tests_deps += [ ":${_crate_name}_test" ]
       }
-    } else {
-      # TODO(https://fxbug.dev/378585405): Address presenence of unused `deps`
-      # parameter when not building the execution library.
     }
 
     rustc_library("${_crate_name}_suite") {

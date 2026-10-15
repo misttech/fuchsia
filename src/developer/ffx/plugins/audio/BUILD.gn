@@ -9,7 +9,6 @@ ffx_plugin("ffx_audio") {
   sdk_category = "not-yet-specified"
   version = "0.1.0"
   edition = "2024"
-  with_unit_tests = false
 
   args_deps = [
     "//src/developer/ffx/core:lib",
@@ -23,8 +22,6 @@ ffx_plugin("ffx_audio") {
     "play:ffx_audio_play",
     "record:ffx_audio_record",
   ]
-
-  deps = [ "//src/developer/ffx/lib/errors:lib" ]
 
   args_sources = [ "src/args.rs" ]
 

@@ -57,15 +57,10 @@ if (is_host) {
   group("tests") {
     testonly = true
     deps = [
-      "add:tests",
-      "default:tests",
-      "list:tests",
-      "log-message:tests",
-      "package:tests",
-      "remove:tests",
-      "ssh:tests",
-      "wait:tests",
-      "wipe:tests",
+      # `:ffx_target_tests` aggregates `<subdir>:<plugin_name>_tests` for all
+      # plugins in `plugin_deps` above.
+      ":ffx_target_tests",
+      "list/target_formatter:target_formatter_test",
     ]
   }
 
