@@ -45,17 +45,17 @@ inline uint64_t Scheduler::NextFlowId() {
 // exported value is scaled by the relative performance factor of the CPU to
 // account for performance differences in the estimate.
 inline void Scheduler::UpdateTotalExpectedRuntime(SchedDuration delta_ns) {
-  total_expected_runtime_ns_ += delta_ns;
-  DEBUG_ASSERT(total_expected_runtime_ns_ >= 0);
-  const SchedDuration scaled_ns = ScaleUp(total_expected_runtime_ns_);
-  exported_queue_time_ns_ = scaled_ns;
+  rust_state_.total_expected_runtime_ns += delta_ns;
+  DEBUG_ASSERT(rust_state_.total_expected_runtime_ns >= 0);
+  const SchedDuration scaled_ns = ScaleUp(rust_state_.total_expected_runtime_ns);
+  rust_state_.exported_queue_time_ns = scaled_ns;
   LOCAL_KTRACE_COUNTER(COUNTER, "Estimated Runtime", this_cpu(), ("CPU", scaled_ns.raw_value()));
 
   if (power_level_control_.is_enabled()) {
     const SchedUtilization fair_demand = power_level_control_.fair_demand();
-    exported_fair_utilization_ = fair_demand;
-    exported_clamped_fair_utilization_ = power_level_control_.clamped_fair_demand();
-    exported_clamped_total_utilization_ = power_level_control_.clamped_total_demand();
+    rust_state_.exported_fair_utilization = fair_demand;
+    rust_state_.exported_clamped_fair_utilization = power_level_control_.clamped_fair_demand();
+    rust_state_.exported_clamped_total_utilization = power_level_control_.clamped_total_demand();
 
     auto latched_timestamp = KTrace::LatchedTimestamp();
     KTRACE_CPU_COUNTER_TIMESTAMP("kernel:sched-demand", "Demand:Variable", latched_timestamp(),
@@ -73,9 +73,10 @@ inline void Scheduler::UpdateTotalDeadlineUtilization(SchedUtilization delta) {
     const SchedUtilization utilization = power_level_control_.UpdateNormalizedUtilization(delta);
     DEBUG_ASSERT_MSG(utilization >= 0, "utilization=%s delta=%s", Format(utilization).c_str(),
                      Format(delta).c_str());
-    exported_deadline_utilization_ = utilization;
-    exported_clamped_deadline_utilization_ = power_level_control_.clamped_deadline_utilization();
-    exported_clamped_total_utilization_ = power_level_control_.clamped_total_demand();
+    rust_state_.exported_deadline_utilization = utilization;
+    rust_state_.exported_clamped_deadline_utilization =
+        power_level_control_.clamped_deadline_utilization();
+    rust_state_.exported_clamped_total_utilization = power_level_control_.clamped_total_demand();
 
     auto latched_timestamp = KTrace::LatchedTimestamp();
     KTRACE_CPU_COUNTER_TIMESTAMP("kernel:sched-demand", "Demand:Constant", latched_timestamp(),
@@ -97,9 +98,9 @@ inline void Scheduler::UpdateTotalDeadlineUtilization(SchedUtilization delta) {
 inline bool Scheduler::UpdateProcessingRate(zx_instant_boot_ticks_t boot_ticks) {
   if (power_level_control_.is_processing_rate_update_pending()) {
     const SchedProcessingRate processing_rate = power_level_control_.UpdateProcessingRate();
-    exported_processing_rate_ = processing_rate;
+    rust_state_.exported_processing_rate = processing_rate;
     if (!power_level_control_.domain()) {
-      exported_max_processing_rate_ = power_level_control_.clamped_max_processing_rate();
+      rust_state_.exported_max_processing_rate = power_level_control_.clamped_max_processing_rate();
     }
     KTRACE_CPU_COUNTER_TIMESTAMP("kernel:power", "Rate", boot_ticks, this_cpu(),
                                  ("CPU", ffl::Round<uint64_t>(processing_rate * 1000)));

@@ -6,13 +6,103 @@
 
 #include <lib/fit/defer.h>
 
+#include <kernel/ffi.h>
 #include <kernel/owned_wait_queue.h>
 #include <kernel/scheduler.h>
 #include <kernel/scheduler_inline.h>
 #include <kernel/scheduler_state.h>
 #include <kernel/scheduler_tracing.h>
 #include <ktl/algorithm.h>
+#include <ktl/memory.h>
 #include <ktl/type_traits.h>
+
+extern "C" {
+
+// Helper FFI functions implemented in C++
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE WaitQueueBase* cpp_thread_get_blocking_wait_queue(const Thread* thread) {
+  return Scheduler::GetBlockingWaitQueue(thread);
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_wait_queue_update_blocked_thread_effective_profile(WaitQueueBase* wq,
+                                                                              Thread* thread) {
+  Scheduler::UpdateBlockedThreadEffectiveProfile(wq, thread);
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_current_mono_time_and_boot_ticks(
+    Scheduler::SchedMonoTimeAndBootTicks* out) {
+  *out = Scheduler::CurrentMonoTimeAndBootTicks();
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_call_migrate_fn_locked(Thread* thread, int32_t stage)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  thread->CallMigrateFnLocked(static_cast<Thread::MigrateStage>(stage));
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const ChainLock* cpp_wait_queue_get_lock(const WaitQueueBase* wq)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &wq->get_lock();
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_save_state_list_push_front(Scheduler* sched, Thread* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  sched->save_state_list_.push_front(thread);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_unblock_list_init(ffi::Uninitialized<Thread::UnblockList>* holder) {
+  holder->Initialize();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_unblock_list_destroy(Thread::UnblockList* holder) {
+  ktl::destroy_at(holder);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_unblock_list_push_back(Thread::UnblockList* holder, Thread* thread) {
+  holder->push_back(thread);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Thread* cpp_unblock_list_pop_front(Thread::UnblockList* holder) {
+  return holder->pop_front();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_unblock_list_is_empty(const Thread::UnblockList* holder) {
+  return holder->is_empty();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_scheduler_save_state_list_is_empty(Scheduler* sched)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return sched->save_state_list_.is_empty();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_save_state_list_move(
+    Scheduler* sched,
+    ffi::Uninitialized<Thread::SaveStateList>* holder) TA_NO_THREAD_SAFETY_ANALYSIS {
+  holder->Initialize(ktl::move(sched->save_state_list_));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Thread* cpp_save_state_list_pop(Thread::SaveStateList* holder) {
+  return holder->pop_front();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_save_state_list_destroy(Thread::SaveStateList* holder) {
+  ktl::destroy_at(holder);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_call_migrate_fn_for_cpu(cpu_num_t cpu) {
+  Thread::CallMigrateFnForCpu(cpu);
+}
+
+}  // extern "C"
 
 // Pi is an inner class of Scheduler that provides access to scheduler state
 // while hiding the implementation details from the main scheduler header. Its
@@ -275,7 +365,7 @@ inline void Scheduler::Pi::Common(Upstream& upstream, Thread& thread,
       state.runtime_ns_ += actual_runtime_ns;
       state.time_slice_used_ns_ += scaled_actual_runtime_ns;
       state.last_started_running_ = now.mono_time;
-      scheduler.start_of_current_time_slice_ns_ = now.mono_time;
+      scheduler.rust_state_.start_of_current_time_slice_ns = now.mono_time;
       scheduler.UpdateEstimatedEnergyConsumption(&thread, now, actual_runtime_ns);
 
       trace_update = KTRACE_END_SCOPE(("mono_now", now.mono_time), ("boot_ticks", now.boot_ticks),
@@ -314,18 +404,18 @@ inline void Scheduler::Pi::Common(Upstream& upstream, Thread& thread,
 
       if (weight_delta != 0) {
         bandwidth_demand_changed = true;
-        scheduler.weight_total_ += weight_delta;
+        scheduler.rust_state_.weight_total += weight_delta;
         scheduler.UpdateFairBandwidthPeriod(now.mono_time);
       }
       if (utilization_delta != 0) {
         bandwidth_demand_changed = true;
         scheduler.UpdateTotalDeadlineUtilization(utilization_delta);
       }
-      scheduler.critical_deadline_utilization_ += critical_utilization_delta;
+      scheduler.rust_state_.critical_deadline_utilization += critical_utilization_delta;
     }
 
-    DEBUG_ASSERT(scheduler.weight_total_ >= SchedWeight{0});
-    DEBUG_ASSERT(scheduler.critical_deadline_utilization_ >= SchedUtilization{0});
+    DEBUG_ASSERT(scheduler.rust_state_.weight_total >= SchedWeight{0});
+    DEBUG_ASSERT(scheduler.rust_state_.critical_deadline_utilization >= SchedUtilization{0});
     DEBUG_ASSERT(scheduler.power_level_control_.normalized_deadline_utilization() >=
                  SchedUtilization{0});
 
@@ -338,13 +428,13 @@ inline void Scheduler::Pi::Common(Upstream& upstream, Thread& thread,
     } else {
       DEBUG_ASSERT(thread.state() == THREAD_RUNNING);
       if (new_ep.IsFair()) {
-        scheduler.target_preemption_time_ns_ =
-            scheduler.start_of_current_time_slice_ns_ + state.remaining_time_slice_ns();
+        scheduler.rust_state_.target_preemption_time_ns =
+            scheduler.rust_state_.start_of_current_time_slice_ns + state.remaining_time_slice_ns();
       } else {
         const SchedDuration scaled_remaining_time_slice_ns =
             scheduler.ScaleUp(state.remaining_time_slice_ns());
-        scheduler.target_preemption_time_ns_ = ktl::min<SchedTime>(
-            scheduler.start_of_current_time_slice_ns_ + scaled_remaining_time_slice_ns,
+        scheduler.rust_state_.target_preemption_time_ns = ktl::min<SchedTime>(
+            scheduler.rust_state_.start_of_current_time_slice_ns + scaled_remaining_time_slice_ns,
             state.finish_time_);
       }
 
@@ -733,3 +823,8 @@ template void Scheduler::SplitNodeFromPiGraph(OwnedWaitQueue&, Thread&,
                                               const SchedulerState::EffectiveProfile*);
 template void Scheduler::SplitNodeFromPiGraph(OwnedWaitQueue&, OwnedWaitQueue&,
                                               const SchedulerState::EffectiveProfile*);
+
+static_assert(sizeof(Thread::SaveStateList) == 8);
+static_assert(alignof(Thread::SaveStateList) == 8);
+static_assert(sizeof(Thread::UnblockList) == 8);
+static_assert(alignof(Thread::UnblockList) == 8);

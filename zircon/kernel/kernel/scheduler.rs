@@ -25,12 +25,55 @@ use crate::kconcurrent::{
     single_chain_lock_guard,
 };
 use crate::ktrace_rs;
-
+use crate::vm::vm_aspace::VmAspace;
 use fbl::{
     Cursor, DefaultObjectTag, TrackingSize, WavlTree, WavlTreeAugmentedInvariantObserver,
     WavlTreeAugmentedInvariantObserverTraits, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
 };
 use ffl::{FastFixed, Fixed};
+
+struct ThreadName {
+    buf: [u8; zx_types::ZX_MAX_NAME_LEN],
+    len: usize,
+}
+
+impl ThreadName {
+    #[inline]
+    fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
+    }
+}
+
+/// Copies the thread's name into a stack-allocated buffer using volatile reads
+/// so that concurrent calls to `Thread::set_name` (which does not synchronize
+/// with scheduler locks) cannot cause a data race or out-of-bounds read.
+///
+/// # Safety
+/// `thread` must be null or point to a valid `Thread`.
+#[inline]
+unsafe fn thread_name(thread: *const Thread) -> ThreadName {
+    let mut res = ThreadName { buf: [0u8; zx_types::ZX_MAX_NAME_LEN], len: 0 };
+    if thread.is_null() {
+        return res;
+    }
+    // SAFETY: `thread` is non-null and valid per the caller's contract.
+    let ptr = unsafe { super::thread::name(thread) }.cast::<u8>();
+    if ptr.is_null() {
+        return res;
+    }
+    for i in 0..zx_types::ZX_MAX_NAME_LEN {
+        // SAFETY: `Thread::name()` points to an inline buffer of `ZX_MAX_NAME_LEN`
+        // bytes inside `Thread`. Volatile byte reads avoid UB from concurrent
+        // unsynchronized writes in `Thread::set_name`.
+        let b = unsafe { ptr.add(i).read_volatile() };
+        if b == 0 {
+            break;
+        }
+        res.buf[i] = b;
+        res.len = i + 1;
+    }
+    res
+}
 
 // Counts the number of times we set the preemption timer to fire at a point
 // that's prior to the time at which the CPU last entered the scheduler.  See
@@ -72,6 +115,16 @@ define_kcounter!(COUNTER_WAKEUP_SYNCHRONOUS_LOCAL, "scheduler.wakeup.synchronous
 // Counts the number of times a task wakes up synchronously and is placed on a
 // different CPU than the CPU the waker ran on.
 define_kcounter!(COUNTER_WAKEUP_SYNCHRONOUS_MIGRATED, "scheduler.wakeup.synchronous-migrated", Sum);
+
+#[inline]
+fn counter_wakeup_add(is_sync: bool, is_local: bool) {
+    match (is_sync, is_local) {
+        (false, true) => COUNTER_WAKEUP_NORMAL_LOCAL.add(1),
+        (false, false) => COUNTER_WAKEUP_NORMAL_MIGRATED.add(1),
+        (true, true) => COUNTER_WAKEUP_SYNCHRONOUS_LOCAL.add(1),
+        (true, false) => COUNTER_WAKEUP_SYNCHRONOUS_MIGRATED.add(1),
+    }
+}
 
 ktrace_rs::declare_interned_string!(PLACEMENT_INSERTION, "Insertion");
 ktrace_rs::declare_interned_string!(PLACEMENT_ADJUSTMENT, "Adjustment");
@@ -1225,6 +1278,53 @@ pub struct SchedulerQueueState {
     pub active: bool,
 }
 
+impl SchedulerQueueState {
+    /// Sets the thread state to active (i.e. associated with a specific CPU's
+    /// scheduler and bookkeeping).
+    ///
+    /// Returns true if the thread was not previously active.
+    pub fn on_insert(&mut self) -> bool {
+        let was_active = self.active;
+        self.active = true;
+        self.stolen_by = INVALID_CPU;
+        !was_active
+    }
+
+    /// Sets the thread state to inactive (i.e. not associated with a CPU's
+    /// scheduler or bookkeeping). If the thread is being stolen from another CPU's
+    /// run queue, `stolen_by` must be the CPU id of the stealing CPU, otherwise it
+    /// must be `INVALID_CPU`.
+    ///
+    /// Returns true if the task was previously active.
+    pub fn on_remove(&mut self, stolen_by: CpuNum) -> bool {
+        let was_active = self.active;
+        self.active = false;
+        self.stolen_by = stolen_by;
+        was_active
+    }
+
+    /// Returns true if the thread is currently enqueued in a run queue.
+    pub fn in_queue(&self) -> bool {
+        self.run_queue_node.in_container()
+    }
+
+    /// Returns the disposition of this scheduler queue state. Asserts on invalid
+    /// combinations.
+    pub fn disposition(&self) -> QueueDisposition {
+        if self.active {
+            debug_assert_eq!(self.stolen_by, INVALID_CPU);
+            if self.in_queue() { QueueDisposition::Enqueued } else { QueueDisposition::Associated }
+        } else {
+            debug_assert!(!self.in_queue());
+            if self.stolen_by == INVALID_CPU {
+                QueueDisposition::Unassociated
+            } else {
+                QueueDisposition::Stolen
+            }
+        }
+    }
+}
+
 #[repr(C)]
 pub struct WaitQueueInheritedSchedulerState {
     pub ipvs: InheritedProfileValues,
@@ -1361,22 +1461,169 @@ pub struct CpuSearchSetEntry {
     pub cluster: usize,
 }
 
-#[repr(C)]
-#[repr(align(8))]
-pub struct SaveStateList {
-    _opaque: [u8; 8],
-}
+#[repr(C, align(8))]
+pub struct PowerLevel(zr::Opaque<[u8; 0]>);
 
-#[repr(C)]
-#[repr(align(8))]
-pub struct UnblockList {
-    _opaque: [u8; 8],
-}
+#[repr(C, align(8))]
+pub struct SaveStateList(zr::Opaque<[*mut Thread; 1]>);
+
+#[repr(C, align(8))]
+pub struct UnblockList(zr::Opaque<[*mut Thread; 1]>);
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    fn cpp_thread_call_migrate_fn_locked(thread: *mut Thread, stage: i32);
+    fn cpp_wait_queue_get_lock(wq: *const WaitQueueBase) -> *const ChainLock;
+    fn cpp_scheduler_save_state_list_push_front(sched: *mut Scheduler, thread: *mut Thread);
+
+    fn cpp_thread_get_blocking_wait_queue(thread: *const Thread) -> *mut WaitQueueBase;
+    fn cpp_wait_queue_update_blocked_thread_effective_profile(
+        wq: *mut WaitQueueBase,
+        thread: *mut Thread,
+    );
+    fn cpp_current_mono_time_and_boot_ticks(out: *mut SchedMonoTimeAndBootTicks);
+
+    fn cpp_thread_get_lock(thread: *mut Thread) -> *mut ChainLock;
+    fn cpp_thread_preempts_pending_add(thread: *mut Thread, mask: CpuMask);
+    fn cpp_thread_preempts_pending(thread: *const Thread) -> CpuMask;
+    fn cpp_thread_preempts_pending_clear(thread: *mut Thread);
+    fn cpp_thread_preempt_evaluate_timeslice_extension(thread: *mut Thread) -> bool;
+    fn cpp_thread_preempt_eager_resched_disable_count(thread: *const Thread) -> u32;
+    fn cpp_thread_preempt_set_pending();
+    fn cpp_thread_set_ready(thread: *mut Thread);
+    fn cpp_arch_num_spinlocks_held() -> u32;
+    fn cpp_unblock_list_pop_back(list: *mut UnblockList) -> *mut Thread;
+
     fn cpp_thread_get_queue_node(thread: *mut Thread) -> *mut WavlTreeNode<Thread, bool>;
     fn cpp_thread_get_scheduler_state(thread: *mut Thread) -> *mut SchedulerState;
+    fn cpp_thread_get_queue_state(thread: *mut Thread) -> *mut SchedulerQueueState;
+    fn cpp_thread_get_tid(thread: *const Thread) -> u64;
+    fn cpp_owq_get_inherited_state(
+        owq: *mut OwnedWaitQueue,
+    ) -> *mut WaitQueueInheritedSchedulerState;
+    fn cpp_owq_get_inherited_state_const(
+        owq: *const OwnedWaitQueue,
+    ) -> *const WaitQueueInheritedSchedulerState;
+    fn cpp_scheduler_get_normalized_utilization(sched: *const Scheduler) -> SchedUtilization;
+    fn cpp_thread_is_idle(thread: *const Thread) -> bool;
+    fn cpp_dump_write_str(output_target: *mut core::ffi::c_void, s: *const u8, len: usize);
+    fn cpp_thread_dump_active(thread: *const Thread, output_target: *mut core::ffi::c_void);
+
+    fn cpp_scheduler_get(cpu: CpuNum) -> *mut Scheduler;
+    fn cpp_thread_has_migrate_fn(thread: *const Thread) -> bool;
+    fn cpp_thread_migrate_pending(thread: *const Thread) -> bool;
+
+    fn cpp_get_cpu_stats(cpu_num: CpuNum) -> *mut CpuStats;
+    fn cpp_scheduler_power_state_active_power_coefficient_nw(sched: *const Scheduler) -> u64;
+    fn cpp_scheduler_power_level_control_max_idle_power_coefficient_nw(
+        sched: *const Scheduler,
+    ) -> u64;
+
+    fn cpp_scheduler_lock_queue(sched: *mut Scheduler);
+    fn cpp_scheduler_unlock_queue(sched: *mut Scheduler);
+    fn cpp_scheduler_lock_queue_irq_save(sched: *mut Scheduler) -> u64;
+    fn cpp_scheduler_unlock_queue_irq_restore(sched: *mut Scheduler, state: u64);
+
+    fn cpp_thread_update_runtime_stats(thread: *mut Thread, state: i32);
+
+    fn cpp_thread_get_disposition(thread: *const Thread) -> i32;
+    fn cpp_stall_accumulator_apply_context_switch(
+        current_thread: *const Thread,
+        next_thread: *const Thread,
+    );
+
+    fn cpp_scheduler_get_idle_thread(sched: *const Scheduler) -> *mut Thread;
+    fn cpp_scheduler_has_pending_power_work(sched: *const Scheduler) -> bool;
+
+    fn cpp_scheduler_power_level_control_is_enabled(sched: *const Scheduler) -> bool;
+    fn cpp_scheduler_power_state_scheduler_control_enabled(sched: *const Scheduler) -> bool;
+    fn cpp_scheduler_power_state_is_serving(sched: *const Scheduler) -> bool;
+    fn cpp_scheduler_power_state_is_valid_active_power_level(
+        sched: *const Scheduler,
+        power_level: u8,
+    ) -> bool;
+    fn cpp_scheduler_power_state_domain_cpus(sched: *const Scheduler) -> CpuMask;
+    fn cpp_scheduler_power_state_target_processing_rate(
+        sched: *const Scheduler,
+    ) -> SchedProcessingRate;
+    fn cpp_scheduler_power_state_preceding_target_processing_rate(
+        sched: *const Scheduler,
+    ) -> SchedProcessingRate;
+    fn cpp_scheduler_power_state_has_preceding_target_power_level(sched: *const Scheduler) -> bool;
+    fn cpp_scheduler_power_state_find_active_power_level_for_rate(
+        sched: *const Scheduler,
+        processing_rate: SchedProcessingRate,
+    ) -> *const PowerLevel;
+    fn cpp_power_level_get_level(power_level: *const PowerLevel) -> u8;
+    fn cpp_scheduler_power_state_request_transition(
+        sched: *mut Scheduler,
+        cpu: CpuNum,
+        power_level: u8,
+        out_request: *mut PowerLevelUpdateRequest,
+    ) -> bool;
+    fn cpp_scheduler_power_state_post_update_request(
+        sched: *const Scheduler,
+        request: *const PowerLevelUpdateRequest,
+    ) -> CpuMask;
+    fn cpp_scheduler_power_state_update_active_power_level(
+        sched: *mut Scheduler,
+        power_level: u8,
+        out_active_rate: *mut SchedProcessingRate,
+    ) -> zx_types::zx_status_t;
+    fn cpp_timer_queue_preempt_reset(cpu: CpuNum, deadline: zx_types::zx_instant_mono_t);
+    fn cpp_timer_queue_preempt_armed(cpu: CpuNum) -> bool;
+    fn cpp_thread_call_context_switch_fn_locked(thread: *mut Thread);
+    fn cpp_thread_get_aspace(thread: *mut Thread) -> *mut VmAspace;
+    fn cpp_vmm_context_switch(old_aspace: *mut VmAspace, new_aspace: *mut VmAspace);
+    fn cpp_arch_context_switch(current_thread: *mut Thread, next_thread: *mut Thread);
+    fn cpp_thread_signal_check_restartable_sequence_if_needed(thread: *mut Thread);
+
+    fn cpp_get_cpu_search_set_entries(cpu: CpuNum) -> *const CpuSearchSetEntry;
+    fn cpp_get_cpu_search_set_count(cpu: CpuNum) -> usize;
+    fn cpp_scheduler_get_power_domain_set_count(sched: *const Scheduler) -> usize;
+    fn cpp_scheduler_lookup_power_cost(
+        sched: *const Scheduler,
+        cpu: CpuNum,
+        rate: SchedProcessingRate,
+    ) -> u64;
+    fn cpp_scheduler_lookup_total_normalized_utilization(
+        sched: *const Scheduler,
+        cpu: CpuNum,
+    ) -> SchedUtilization;
+    fn cpp_thread_canary_assert(thread: *const Thread);
+    fn cpp_scheduler_power_level_control_update_normalized_utilization(
+        sched: *mut Scheduler,
+        delta: SchedUtilization,
+    ) -> SchedUtilization;
+    fn cpp_scheduler_power_level_control_domain_id(sched: *const Scheduler) -> u32;
+    fn cpp_scheduler_power_level_control_total_normalized_utilization(
+        sched: *const Scheduler,
+    ) -> SchedUtilization;
+
+    fn cpp_unblock_list_init(holder: *mut UnblockList);
+    fn cpp_unblock_list_destroy(holder: *mut UnblockList);
+    fn cpp_unblock_list_push_back(holder: *mut UnblockList, thread: *mut Thread);
+    fn cpp_unblock_list_pop_front(holder: *mut UnblockList) -> *mut Thread;
+    fn cpp_unblock_list_is_empty(holder: *const UnblockList) -> bool;
+
+    fn cpp_scheduler_save_state_list_is_empty(sched: *mut Scheduler) -> bool;
+    fn cpp_scheduler_save_state_list_move(sched: *mut Scheduler, holder: *mut SaveStateList);
+    fn cpp_save_state_list_pop(holder: *mut SaveStateList) -> *mut Thread;
+    fn cpp_save_state_list_destroy(holder: *mut SaveStateList);
+
+    fn cpp_thread_call_migrate_fn_for_cpu(cpu: CpuNum);
+}
+
+/// Returns a pointer to the `ChainLock` embedded in `thread`.
+///
+/// # Safety
+/// `thread` must point to a valid `Thread`.
+#[inline(always)]
+unsafe fn thread_get_lock(thread: *const Thread) -> *const ChainLock {
+    // SAFETY: The caller guarantees `thread` is valid. `cpp_thread_get_lock` only
+    // computes the address of the lock embedded in the thread and does not
+    // mutate the thread, so the pointer may be used as a shared pointer.
+    unsafe { cpp_thread_get_lock(thread.cast_mut()) }
 }
 
 /// Reciprocal of the default fair period to minimize runtime divisions in fair
@@ -1434,6 +1681,35 @@ pub struct PowerLevelControlState {
     pub pending_update_request: PowerLevelUpdateRequest,
     /// True if there is a pending request to change the active power level.
     pub has_pending_update_request: bool,
+}
+
+impl PowerLevelControlState {
+    /// Returns the given demand clamped to the current rate limits.
+    ///
+    /// Note that the minimum limit can be greater than the maximum limit, in
+    /// which case the maximum limit takes precedence to correctly support using
+    /// the maximum for thermal mitigation.
+    #[inline]
+    pub fn clamp_demand(&self, demand: SchedUtilization) -> SchedUtilization {
+        let min_limit =
+            core::cmp::min(self.processing_rate_limit_min, self.processing_rate_limit_max);
+        demand.clamp(min_limit, self.processing_rate_limit_max)
+    }
+
+    /// Returns the maximum processing rate of this processor, clamped to the
+    /// current performance limits.
+    #[inline]
+    pub fn clamped_max_processing_rate(&self) -> SchedProcessingRate {
+        core::cmp::min(self.max_processing_rate, self.processing_rate_limit_max)
+    }
+
+    /// Returns true if there is a pending update to the processing rate that has not yet been
+    /// processed by the scheduler. Checked by `reschedule_common` after accounting has been updated
+    /// for the runtime segment covering the previous processing rate.
+    #[inline]
+    pub fn is_processing_rate_update_pending(&self) -> bool {
+        self.processing_rate != self.updated_processing_rate
+    }
 }
 
 #[repr(C)]
@@ -1580,6 +1856,659 @@ pub struct BandwidthReservationCache<const N: usize> {
     pub entries: [BandwidthReservationEntry; N],
     /// The total utilization of the deferred reservations tracked by the cache.
     pub total_deferred_utilization: SchedUtilization,
+}
+
+#[repr(C)]
+pub struct RustSchedulerState {
+    /// The run queue of fair scheduled threads ready to run, but not currently running.
+    pub fair_run_queue: RunQueue,
+
+    /// The run queue of deadline scheduled threads ready to run, but not currently running.
+    pub deadline_run_queue: RunQueue,
+
+    /// The run queue of critical deadline scheduled threads ready to run, but
+    /// not currently running.
+    pub critical_deadline_run_queue: RunQueue,
+
+    /// Count of the threads running on this CPU, including threads in the run
+    /// queue and the currently running thread. Does not include the idle thread.
+    pub runnable_task_count: i32,
+    _pad1: [u8; 4],
+
+    /// Total weights of threads running on this CPU, including threads in the
+    /// run queue and the currently running thread. Does not include the idle
+    /// thread.
+    pub weight_total: SchedWeight,
+
+    /// The value of `weight_total` when the current thread was scheduled.
+    /// Provides a reference for determining whether the total weights changed
+    /// since the last reschedule.
+    pub scheduled_weight_total: SchedWeight,
+
+    /// Pointer to the thread actively running on this CPU.
+    pub active_thread: *mut Thread,
+
+    pub fair_period: SchedDuration,
+    pub reciprocal_fair_period: SchedUtilization,
+
+    /// The system time since the last update to the global virtual time.
+    pub last_update_time_ns: SchedTime,
+
+    /// The system time that the current time slice started.
+    pub start_of_current_time_slice_ns: SchedTime,
+
+    /// The system time that the current thread should be preempted. Initialized to
+    /// `ZX_TIME_INFINITE` to pass the assertion `now < target_preemption_time_ns` (or
+    /// else the current time slice is expired) on the first entry into the
+    /// scheduler.
+    pub target_preemption_time_ns: SchedTime,
+
+    /// The sum of the expected runtimes of all active threads on this CPU. This
+    /// value is an estimate of the average queuing time for this CPU, given the
+    /// current set of active threads.
+    pub total_expected_runtime_ns: SchedDuration,
+
+    /// The CPU this scheduler instance is associated with.
+    /// NOTE: This member is not initialized to prevent clobbering the value set
+    /// by `sched_early_init()`, which is called before the global ctors that
+    /// initialize the rest of the members of this class.
+    // TODO(eieio): Figure out a better long-term solution to determine which
+    // CPU is associated with each instance of this class. This is needed by
+    // non-static methods that are called from arbitrary CPUs, namely `insert()`.
+    pub this_cpu: CpuNum,
+    _pad2: [u8; 4],
+
+    /// The index of the logical cluster this CPU belongs to. CPUs with the same
+    /// logical cluster index have the best chance of good cache affinity with
+    /// respect to load distribution decisions.
+    pub cluster: usize,
+
+    /// Flag indicating that this `Scheduler`'s CPU is in the process of becoming
+    /// inactive. When true, threads who have a migration function which must be
+    /// run on this CPU are permitted to join this CPU's ready queue, even if the
+    /// CPU has already been flagged as inactive. The thread who is in charge of
+    /// deactivating the CPU will make sure to run the migration function of the
+    /// thread on this CPU before finishing the deactivation process.
+    pub cpu_deactivating: core::sync::atomic::AtomicBool,
+    _pad3: [u8; 7],
+
+    // Values exported for lock-free access across CPUs. These are mirrors of the
+    // members of the same name without the `exported_` prefix. This avoids
+    // unnecessary atomic loads when updating the values using arithmetic
+    // operations on the local CPU. These values are atomically readonly to other
+    // CPUs.
+    // TODO(eieio): Look at cache line alignment for these members to optimize
+    // cache performance.
+    /// The lock-free value of the estimated queue time for the CPU this
+    /// scheduler is associated with.
+    pub exported_queue_time_ns: RelaxedAtomicI64,
+    /// The lock-free value of the estimated deadline utilization for the
+    /// CPU this scheduler is associated with.
+    pub exported_deadline_utilization: RelaxedAtomicI64,
+    /// The lock-free value of the estimated deadline utilization for the
+    /// CPU, clamped to the current rate limits, for the CPU this scheduler is
+    /// associated with.
+    pub exported_clamped_deadline_utilization: RelaxedAtomicI64,
+    /// The lock-free value of the processing rate for the CPU this
+    /// scheduler is associated with.
+    pub exported_processing_rate: RelaxedAtomicI64,
+    /// The lock-free value of the max processing rate for the CPU this
+    /// scheduler is associated with.
+    pub exported_max_processing_rate: RelaxedAtomicI64,
+    /// The lock-free value of the estimated fair utilization for the
+    /// CPU this scheduler is associated with.
+    pub exported_fair_utilization: RelaxedAtomicI64,
+    /// The lock-free value of the estimated fair utilization for the
+    /// CPU, clamped to the current rate limits, for the CPU this scheduler is
+    /// associated with.
+    pub exported_clamped_fair_utilization: RelaxedAtomicI64,
+    /// The lock-free value of the total estimated utilization (deadline + fair)
+    /// for the CPU, clamped to the current rate limits, for the CPU this scheduler
+    /// is associated with.
+    pub exported_clamped_total_utilization: RelaxedAtomicI64,
+
+    /// The thread which ran just before this thread was scheduled. Used by
+    /// `lock_handoff_internal` to release the previous thread's lock after a
+    /// context switch operation has fully completed.
+    pub previous_thread: core::sync::atomic::AtomicPtr<Thread>,
+
+    /// The total critical deadline utilization of threads associated with this CPU.
+    pub critical_deadline_utilization: SchedUtilization,
+
+    pub active_thread_weight: SchedWeight,
+
+    /// The affine transform for converting between monotonic and variable
+    /// timelines for the fair run queue.
+    pub fair_affine_transform: Affine,
+
+    /// Accumulates the time spent in an idle state since the last reschedule.
+    pub processor_idle_time_ns: RelaxedAtomicI64,
+
+    /// Track bandwidth reservations for up to 8 recently blocked threads.
+    pub bandwidth_reservation_cache: BandwidthReservationCache<8>,
+
+    /// Encapsulates the CPU energy model and power level control interface state
+    /// for energy aware scheduling.
+    pub power_level_control: PowerLevelControlState,
+}
+
+const CPP_SCHEDULER_TAIL_BYTES: usize =
+    core::mem::size_of::<percpu_bindings::Scheduler>() - core::mem::size_of::<RustSchedulerState>();
+
+/// Implements fair and deadline scheduling algorithms and manages the associated
+/// per-CPU state.
+#[repr(C)]
+pub struct Scheduler {
+    pub state: core::cell::UnsafeCell<RustSchedulerState>,
+    _cpp_fields: core::cell::UnsafeCell<core::mem::MaybeUninit<[u8; CPP_SCHEDULER_TAIL_BYTES]>>,
+}
+
+// Affine layout assertions
+zr::static_assert!(core::mem::size_of::<Affine>() == 24);
+zr::static_assert!(core::mem::align_of::<Affine>() == 8);
+zr::static_assert!(core::mem::offset_of!(Affine, monotonic_reference_time) == 0);
+zr::static_assert!(core::mem::offset_of!(Affine, variable_reference_time) == 8);
+zr::static_assert!(core::mem::offset_of!(Affine, slope) == 16);
+
+// PowerLevelUpdateRequest layout assertions
+zr::static_assert!(core::mem::size_of::<PowerLevelUpdateRequest>() == 32);
+zr::static_assert!(core::mem::align_of::<PowerLevelUpdateRequest>() == 8);
+zr::static_assert!(core::mem::offset_of!(PowerLevelUpdateRequest, domain_id) == 0);
+zr::static_assert!(core::mem::offset_of!(PowerLevelUpdateRequest, target_id) == 4);
+zr::static_assert!(core::mem::offset_of!(PowerLevelUpdateRequest, control) == 8);
+zr::static_assert!(core::mem::offset_of!(PowerLevelUpdateRequest, control_argument) == 16);
+zr::static_assert!(core::mem::offset_of!(PowerLevelUpdateRequest, options) == 24);
+
+// PowerLevelControlState layout assertions
+zr::static_assert!(core::mem::size_of::<PowerLevelControlState>() == 104);
+zr::static_assert!(core::mem::align_of::<PowerLevelControlState>() == 8);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, processing_rate) == 0);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, processing_rate_reciprocal) == 8);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, updated_processing_rate) == 16);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, default_processing_rate) == 24);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, max_processing_rate) == 32);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, processing_rate_limit_min) == 40);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, processing_rate_limit_max) == 48);
+zr::static_assert!(
+    core::mem::offset_of!(PowerLevelControlState, active_power_coefficient_nw) == 56
+);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, pending_update_request) == 64);
+zr::static_assert!(core::mem::offset_of!(PowerLevelControlState, has_pending_update_request) == 96);
+
+// BandwidthReservationCache layout assertions
+zr::static_assert!(core::mem::size_of::<BandwidthReservationEntry>() == 24);
+zr::static_assert!(core::mem::align_of::<BandwidthReservationEntry>() == 8);
+zr::static_assert!(core::mem::size_of::<BandwidthReservationCache<8>>() == 200);
+zr::static_assert!(core::mem::align_of::<BandwidthReservationCache<8>>() == 8);
+
+// RustSchedulerState layout assertions
+zr::static_assert!(core::mem::size_of::<RustSchedulerState>() == 624);
+zr::static_assert!(core::mem::align_of::<RustSchedulerState>() == 8);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, fair_run_queue) == 0);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, deadline_run_queue) == 32);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, critical_deadline_run_queue) == 64);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, runnable_task_count) == 96);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, weight_total) == 104);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, scheduled_weight_total) == 112);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, active_thread) == 120);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, fair_period) == 128);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, reciprocal_fair_period) == 136);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, last_update_time_ns) == 144);
+zr::static_assert!(
+    core::mem::offset_of!(RustSchedulerState, start_of_current_time_slice_ns) == 152
+);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, target_preemption_time_ns) == 160);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, total_expected_runtime_ns) == 168);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, this_cpu) == 176);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, cluster) == 184);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, cpu_deactivating) == 192);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_queue_time_ns) == 200);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_deadline_utilization) == 208);
+zr::static_assert!(
+    core::mem::offset_of!(RustSchedulerState, exported_clamped_deadline_utilization) == 216
+);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_processing_rate) == 224);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_max_processing_rate) == 232);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_fair_utilization) == 240);
+zr::static_assert!(
+    core::mem::offset_of!(RustSchedulerState, exported_clamped_fair_utilization) == 248
+);
+zr::static_assert!(
+    core::mem::offset_of!(RustSchedulerState, exported_clamped_total_utilization) == 256
+);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, previous_thread) == 264);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, critical_deadline_utilization) == 272);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, active_thread_weight) == 280);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, fair_affine_transform) == 288);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, processor_idle_time_ns) == 312);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, bandwidth_reservation_cache) == 320);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, power_level_control) == 520);
+
+zr::static_assert!(core::mem::offset_of!(Scheduler, state) == 0);
+zr::static_assert!(
+    core::mem::size_of::<Scheduler>() == core::mem::size_of::<percpu_bindings::Scheduler>()
+);
+zr::static_assert!(
+    core::mem::align_of::<Scheduler>() == core::mem::align_of::<percpu_bindings::Scheduler>()
+);
+
+/// Returns a tracing string ref for the given placement value.
+fn placement_to_str(placement: Placement) -> &'static ktrace_rs::InternedString {
+    match placement {
+        Placement::Insertion => PLACEMENT_INSERTION,
+        Placement::Adjustment => PLACEMENT_ADJUSTMENT,
+        Placement::Preemption => PLACEMENT_PREEMPTION,
+        Placement::Migration => PLACEMENT_MIGRATION,
+        Placement::Association => PLACEMENT_ASSOCIATION,
+    }
+}
+
+impl Scheduler {
+    /// Returns a new flow id when flow tracing is enabled, zero otherwise.
+    fn next_flow_id(&self) -> u64 {
+        if local_ktrace_level_enabled!(FLOW) { flow_id::generate() } else { 0 }
+    }
+
+    /// Returns the number of the CPU this scheduler instance is associated with.
+    ///
+    /// # Safety
+    /// `this_cpu` must have been initialized by `sched_early_init`.
+    unsafe fn this_cpu(&self) -> CpuNum {
+        // SAFETY: `this_cpu` is initialized once during early boot before any
+        // scheduler operations and is immutable thereafter.
+        unsafe { (*self.state.get()).this_cpu }
+    }
+
+    /// Returns the system time that the current time slice started.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn start_of_current_time_slice_ns(&self) -> SchedTime {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to
+        // `start_of_current_time_slice_ns`.
+        unsafe { (*self.state.get()).start_of_current_time_slice_ns }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn set_start_of_current_time_slice_ns(&self, t: SchedTime) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to
+        // `start_of_current_time_slice_ns`.
+        unsafe {
+            (*self.state.get()).start_of_current_time_slice_ns = t;
+        }
+    }
+
+    /// Total weights of threads running on this CPU, including threads in the
+    /// run queue and the currently running thread. Does not include the idle
+    /// thread.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    pub unsafe fn weight_total(&self) -> SchedWeight {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `weight_total`.
+        unsafe { (*self.state.get()).weight_total }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    pub unsafe fn set_weight_total(&self, w: SchedWeight) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `weight_total`.
+        unsafe { (*self.state.get()).weight_total = w };
+    }
+
+    /// The value of `weight_total` when the current thread was scheduled.
+    /// Provides a reference for determining whether the total weights changed
+    /// since the last reschedule.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    pub unsafe fn scheduled_weight_total(&self) -> SchedWeight {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `scheduled_weight_total`.
+        unsafe { (*self.state.get()).scheduled_weight_total }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    pub unsafe fn set_scheduled_weight_total(&self, w: SchedWeight) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `scheduled_weight_total`.
+        unsafe { (*self.state.get()).scheduled_weight_total = w };
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn set_active_thread(&self, thread: *mut Thread) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `active_thread`.
+        unsafe {
+            (*self.state.get()).active_thread = thread;
+        }
+    }
+
+    /// Returns the system time that the current thread should be preempted.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn target_preemption_time_ns(&self) -> SchedTime {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to
+        // `target_preemption_time_ns`.
+        unsafe { (*self.state.get()).target_preemption_time_ns }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn set_target_preemption_time_ns(&self, t: SchedTime) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to
+        // `target_preemption_time_ns`.
+        unsafe {
+            (*self.state.get()).target_preemption_time_ns = t;
+        }
+    }
+
+    /// # Safety
+    /// The caller must ensure that interrupts are disabled, `queue_lock_` is not
+    /// already held by the current CPU, and lock ordering invariants are respected.
+    unsafe fn lock_queue(&self) {
+        // SAFETY: `self` points to a valid `Scheduler` instance, interrupts are
+        // disabled, and `queue_lock_` is not already held.
+        unsafe { cpp_scheduler_lock_queue(self as *const Scheduler as *mut Scheduler) }
+    }
+
+    /// # Safety
+    /// The caller must ensure that `queue_lock_` is currently held by the current CPU.
+    unsafe fn unlock_queue(&self) {
+        // SAFETY: `self` points to a valid `Scheduler` instance with `queue_lock_` held.
+        unsafe { cpp_scheduler_unlock_queue(self as *const Scheduler as *mut Scheduler) }
+    }
+
+    fn arch_yield() {
+        core::hint::spin_loop()
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn set_active_thread_weight(&self, w: SchedWeight) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `active_thread_weight`.
+        unsafe {
+            (*self.state.get()).active_thread_weight = w;
+        }
+    }
+
+    /// Count of the threads running on this CPU, including threads in the run
+    /// queue and the currently running thread. Does not include the idle thread.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn runnable_task_count(&self) -> i32 {
+        // SAFETY: The caller must hold the scheduler's queue lock, ensuring
+        // exclusive mutable access to the run queues and task count.
+        unsafe { (*self.state.get()).runnable_task_count }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn set_runnable_task_count(&self, count: i32) {
+        // SAFETY: The caller must hold the scheduler's queue lock, ensuring
+        // exclusive mutable access to the run queues and task count.
+        unsafe { (*self.state.get()).runnable_task_count = count };
+    }
+
+    /// The run queue of critical deadline scheduled threads ready to run, but
+    /// not currently running.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn critical_deadline_queue(&self) -> *const RunQueue {
+        // SAFETY: The caller must hold the scheduler's queue lock, ensuring
+        // exclusive access to the run queues.
+        unsafe { &raw const (*self.state.get()).critical_deadline_run_queue }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn critical_deadline_queue_mut(&self) -> *mut RunQueue {
+        // SAFETY: The caller must hold the scheduler's queue lock, ensuring
+        // exclusive access to the run queues.
+        unsafe { &raw mut (*self.state.get()).critical_deadline_run_queue }
+    }
+
+    /// The run queue of deadline scheduled threads ready to run, but not currently running.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn deadline_queue(&self) -> *const RunQueue {
+        // SAFETY: The caller must hold the scheduler's queue lock, ensuring
+        // exclusive access to the run queues.
+        unsafe { &raw const (*self.state.get()).deadline_run_queue }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn deadline_queue_mut(&self) -> *mut RunQueue {
+        // SAFETY: The caller must hold the scheduler's queue lock, ensuring
+        // exclusive access to the run queues.
+        unsafe { &raw mut (*self.state.get()).deadline_run_queue }
+    }
+
+    /// The run queue of fair scheduled threads ready to run, but not currently running.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn fair_run_queue(&self) -> *const RunQueue {
+        // SAFETY: The caller must hold the scheduler's queue lock, ensuring
+        // exclusive access to the run queues.
+        unsafe { &raw const (*self.state.get()).fair_run_queue }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn fair_run_queue_mut(&self) -> *mut RunQueue {
+        // SAFETY: The caller must hold the scheduler's queue lock, ensuring
+        // exclusive access to the run queues.
+        unsafe { &raw mut (*self.state.get()).fair_run_queue }
+    }
+
+    /// Returns the total critical deadline utilization of threads associated with this CPU.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn critical_deadline_utilization(&self) -> SchedUtilization {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to
+        // `critical_deadline_utilization`.
+        unsafe { (*self.state.get()).critical_deadline_utilization }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn set_critical_deadline_utilization(&self, u: SchedUtilization) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to
+        // `critical_deadline_utilization`.
+        unsafe { (*self.state.get()).critical_deadline_utilization = u };
+    }
+
+    /// Returns the normalized processing rate of the CPU this scheduler instance is
+    /// associated with at its current active power level.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    #[inline]
+    unsafe fn processing_rate(&self) -> SchedProcessingRate {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `power_level_control`.
+        unsafe { (*self.state.get()).power_level_control.processing_rate }
+    }
+
+    /// Returns the reciprocal of the normalized processing rate of the CPU this
+    /// scheduler instance is associated with.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    #[inline]
+    unsafe fn processing_rate_reciprocal(&self) -> SchedProcessingRate {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `power_level_control`.
+        unsafe { (*self.state.get()).power_level_control.processing_rate_reciprocal }
+    }
+
+    fn round_1000(v: FastFixed<i64, 31>) -> u64 {
+        let prod = v * FastFixed::<i64, 0>::from_raw(1000);
+        Fixed::<i64, 0>::from_fixed(prod.into_fixed()).raw_value() as u64
+    }
+
+    /// Updates trace counters which track the total number of runnable threads for a CPU.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn trace_total_runnable_threads(&self) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `runnable_task_count`.
+        let (this_cpu, runnable_task_count) = unsafe {
+            let state = self.state.get();
+            ((*state).this_cpu, (*state).runnable_task_count)
+        };
+        local_ktrace_counter!(
+            COUNTER,
+            "Queue Length",
+            this_cpu as u64,
+            "CPU" => runnable_task_count
+        );
+    }
+
+    /// # Safety
+    /// `this_cpu` must have been initialized by `sched_early_init`.
+    unsafe fn trace_estimated_runtime(&self, value: i64) {
+        // SAFETY: `this_cpu` is initialized during early boot.
+        let cpu = unsafe { self.this_cpu() };
+        local_ktrace_counter!(
+            COUNTER,
+            "Estimated Runtime",
+            cpu as u64,
+            "CPU" => value
+        );
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn trace_fair_demand(&self) {
+        // SAFETY: The caller holds `queue_lock_`. We read scalar fields first so no
+        // Rust reference is live across `cpp_scheduler_get_normalized_utilization`.
+        let (this_cpu, total_expected_runtime_ns) = unsafe {
+            let state = self.state.get();
+            ((*state).this_cpu, (*state).total_expected_runtime_ns)
+        };
+        let fair_demand = K_RECIPROCAL_DEFAULT_FAIR_PERIOD * total_expected_runtime_ns;
+        // SAFETY: `self` is a valid `Scheduler` and `queue_lock_` is held.
+        let deadline_util = unsafe { cpp_scheduler_get_normalized_utilization(self) };
+        let total_demand = deadline_util + fair_demand;
+
+        // SAFETY: The caller holds `queue_lock_`, and no FFI calls occur while
+        // accessing `power_level_control` or the `exported_*` atomics.
+        unsafe {
+            let state = self.state.get();
+            let plc = &(*state).power_level_control;
+            let clamped_fair = plc.clamp_demand(fair_demand);
+            let clamped_total = plc.clamp_demand(total_demand);
+            (*state).exported_fair_utilization.store(fair_demand.raw_value());
+            (*state).exported_clamped_fair_utilization.store(clamped_fair.raw_value());
+            (*state).exported_clamped_total_utilization.store(clamped_total.raw_value());
+        }
+
+        let latched_ts = core::cell::Cell::new(None);
+        let get_ts = || {
+            if let Some(ts) = latched_ts.get() {
+                ts
+            } else {
+                let ts = ktrace_rs::KTrace::timestamp();
+                latched_ts.set(Some(ts));
+                ts
+            }
+        };
+        ktrace_rs::cpu_counter_timestamp!(
+            "kernel:sched-demand",
+            "Demand:Variable",
+            get_ts(),
+            this_cpu as u64,
+            "CPU" => Self::round_1000(fair_demand)
+        );
+        ktrace_rs::cpu_counter_timestamp!(
+            "kernel:sched-demand",
+            "Demand:Total",
+            get_ts(),
+            this_cpu as u64,
+            "CPU" => Self::round_1000(total_demand)
+        );
+    }
+
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn trace_deadline_utilization(&self, utilization: SchedUtilization) {
+        // SAFETY: The caller holds `queue_lock_`, and no FFI calls occur while
+        // reading `total_expected_runtime_ns` or `power_level_control` and storing
+        // to `exported_clamped_total_utilization`.
+        let (this_cpu, total_demand) = unsafe {
+            let state = self.state.get();
+            let fair_demand = K_RECIPROCAL_DEFAULT_FAIR_PERIOD * (*state).total_expected_runtime_ns;
+            let total_demand = utilization + fair_demand;
+            let clamped_total = (*state).power_level_control.clamp_demand(total_demand);
+            (*state).exported_clamped_total_utilization.store(clamped_total.raw_value());
+            ((*state).this_cpu, total_demand)
+        };
+
+        let latched_ts = core::cell::Cell::new(None);
+        let get_ts = || {
+            if let Some(ts) = latched_ts.get() {
+                ts
+            } else {
+                let ts = ktrace_rs::KTrace::timestamp();
+                latched_ts.set(Some(ts));
+                ts
+            }
+        };
+        ktrace_rs::cpu_counter_timestamp!(
+            "kernel:sched-demand",
+            "Demand:Constant",
+            get_ts(),
+            this_cpu as u64,
+            "CPU" => Self::round_1000(utilization)
+        );
+        ktrace_rs::cpu_counter_timestamp!(
+            "kernel:sched-demand",
+            "Demand:Total",
+            get_ts(),
+            this_cpu as u64,
+            "CPU" => Self::round_1000(total_demand)
+        );
+
+        // SAFETY: `self` is a valid `Scheduler` and `queue_lock_` is held.
+        // `cpp_scheduler_power_level_control_domain_id` is only called when
+        // `cpp_scheduler_power_level_control_is_enabled` returns true.
+        if unsafe { cpp_scheduler_power_level_control_is_enabled(self) } {
+            let domain_id = unsafe { cpp_scheduler_power_level_control_domain_id(self) };
+            let domain_util =
+                unsafe { cpp_scheduler_power_level_control_total_normalized_utilization(self) };
+            local_ktrace_counter_timestamp!(
+                BANDWIDTH,
+                "Demand:Constant",
+                get_ts(),
+                domain_id as u64,
+                "Domain" => Self::round_1000(domain_util)
+            );
+        }
+    }
+
+    /// # Safety
+    /// `this_cpu` must have been initialized by `sched_early_init`.
+    unsafe fn trace_processing_rate(
+        &self,
+        rate: SchedProcessingRate,
+        boot_ticks: zx_types::zx_instant_boot_ticks_t,
+    ) {
+        // SAFETY: `this_cpu` is initialized during early boot.
+        let cpu = unsafe { self.this_cpu() };
+        ktrace_rs::cpu_counter_timestamp!(
+            "kernel:power",
+            "Rate",
+            ktrace_rs::InstantBootTicks(boot_ticks),
+            cpu as u64,
+            "CPU" => Self::round_1000(rate)
+        );
+    }
 }
 
 // Traits implementations to adapt the WavlTree to Thread with node state in the
@@ -2021,6 +2950,39 @@ pub unsafe extern "C" fn rust_kernel_run_queue_destroy(rq: *mut RunQueue) {
     // SAFETY: `rq` points to valid initialized memory.
     unsafe {
         core::ptr::drop_in_place(rq);
+    }
+}
+
+// RAII lock helper
+struct QueueLockGuard {
+    // Safety invariant: `scheduler` points to a valid `Scheduler` whose
+    // `queue_lock_` is held by the current CPU for the lifetime of this guard.
+    scheduler: *mut Scheduler,
+}
+impl QueueLockGuard {
+    /// Acquires `scheduler`'s queue lock and returns an RAII guard that releases
+    /// it on drop.
+    ///
+    /// # Safety
+    /// `scheduler` must point to a valid `Scheduler` instance, interrupts must
+    /// already be disabled, and `queue_lock_` must not already be held by the
+    /// current CPU.
+    unsafe fn acquire(scheduler: *mut Scheduler) -> Self {
+        // SAFETY: `scheduler` is valid, interrupts are disabled, and `queue_lock_`
+        // is not already held.
+        unsafe {
+            cpp_scheduler_lock_queue(scheduler);
+        }
+        Self { scheduler }
+    }
+}
+impl Drop for QueueLockGuard {
+    fn drop(&mut self) {
+        // SAFETY: By the type's safety invariant, `self.scheduler` is valid and
+        // its `queue_lock_` is held by the current CPU.
+        unsafe {
+            cpp_scheduler_unlock_queue(self.scheduler);
+        }
     }
 }
 

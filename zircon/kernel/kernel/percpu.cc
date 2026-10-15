@@ -32,7 +32,7 @@ percpu** percpu::processor_index_{percpu::boot_index_};
 size_t percpu::processor_count_{1};
 
 percpu::percpu(cpu_num_t cpu_num) {
-  scheduler.this_cpu_ = cpu_num;
+  scheduler.set_this_cpu(cpu_num);
   idle_power_thread.this_cpu_ = cpu_num;
 
 #if WITH_LOCK_DEP
@@ -106,7 +106,7 @@ void percpu::InitializeSecondariesBegin() {
     processor_index_[i]->search_set.Dump();
 
     const size_t cluster = processor_index_[i]->search_set.cluster();
-    processor_index_[i]->scheduler.cluster_ = cluster;
+    processor_index_[i]->scheduler.set_cluster(cluster);
   }
 }
 
