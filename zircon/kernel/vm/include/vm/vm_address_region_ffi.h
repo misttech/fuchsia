@@ -19,7 +19,6 @@ void cpp_vm_address_region_free(VmAddressRegion* vmar);
 void* cpp_vm_address_region_state(VmAddressRegion* vmar);
 void* cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping* region_or_mapping);
 zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar);
-bool cpp_vm_address_region_has_parent(VmAddressRegion* vmar);
 zx_status_t cpp_vm_address_region_set_memory_priority(VmAddressRegion* vmar,
                                                       VmAddressRegion::MemoryPriority priority);
 zx_status_t cpp_vm_address_region_unmap(VmAddressRegion* vmar, vaddr_t base, size_t size,

@@ -4,7 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::arch_vm_aspace::ArchMmuFlags;
+use super::arch_vm_aspace::{
+    ARCH_MMU_FLAG_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
+};
 use super::vm_aspace::{
     VmAspace, VmAspaceLockClass, VmAspaceMutex, VmAspaceRegionLockClass, VmAspaceRegionMutex,
 };
@@ -321,6 +323,39 @@ impl VmAddressRegionOrMapping {
         self.state().aspace.region_lock()
     }
 
+    pub fn is_in_range(&self, base: VAddr, size: usize) -> bool {
+        let offset = base.0.wrapping_sub(self.base().0);
+        base.0 >= self.base().0 && offset < self.size() && self.size() - offset >= size
+    }
+
+    /// Returns true if the instance is alive and reporting information that
+    /// reflects the address space layout. `aspace().lock()` must be held.
+    pub fn is_alive_locked(&self, token: &LockToken<'_, VmAspaceLockClass>) -> bool {
+        self.state().canary.assert();
+        self.state_locked(token) == LifeCycleState::Alive
+    }
+
+    /// Check if the given `arch_mmu_flags` are allowed under this
+    /// region's `flags()`
+    pub fn is_valid_mapping_flags(&self, arch_mmu_flags: ArchMmuFlags) -> bool {
+        // Work out what flags we must support for these arch_mmu_flags
+        let mut needed = 0;
+        if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_READ) != 0 {
+            needed |= flag::CAN_MAP_READ;
+        }
+        if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) != 0 {
+            needed |= flag::CAN_MAP_WRITE;
+        }
+        if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) != 0 {
+            needed |= flag::CAN_MAP_EXECUTE;
+        }
+        // Mask out the actual relevant mappings flags we have.
+        let actual =
+            self.flags() & (flag::CAN_MAP_READ | flag::CAN_MAP_WRITE | flag::CAN_MAP_EXECUTE);
+        // Validate that every `needed` occurs in `actual`
+        (needed & actual) == needed
+    }
+
     #[inline]
     fn state_locked(&self, _token: &LockToken<'_, VmAspaceLockClass>) -> LifeCycleState {
         // SAFETY: The aspace lock is held.
@@ -372,6 +407,11 @@ impl VmAddressRegionOrMapping {
     ) {
         // SAFETY: The aspace lock is held.
         *unsafe { self.state().memory_priority.get_mut(token) } = priority;
+    }
+
+    pub fn parent_locked(&self, token: &LockToken<'_, VmAspaceLockClass>) -> *mut VmAddressRegion {
+        // SAFETY: The aspace lock is held.
+        unsafe { *self.state().parent.get(token) }
     }
 
     #[inline]
@@ -547,8 +587,8 @@ impl VmAddressRegion {
 
     /// Returns true if this region has a parent region.
     pub fn has_parent(&self) -> bool {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
-        unsafe { bindings::cpp_vm_address_region_has_parent(self.as_ffi_ptr()) }
+        ksync::lock!(let guard = self.lock().lock());
+        !self.parent_locked(guard.token()).is_null()
     }
 
     /// Applies the given memory priority to this region and all subregions.
@@ -804,7 +844,8 @@ pub unsafe extern "C" fn rust_vm_address_region_or_mapping_parent_locked(
     this: &VmAddressRegionOrMapping,
 ) -> *mut VmAddressRegion {
     // SAFETY: The aspace lock is held by the caller.
-    unsafe { *this.state().parent.get(&LockToken::new()) }
+    let token = unsafe { LockToken::new() };
+    this.parent_locked(&token)
 }
 
 /// # Safety
@@ -818,6 +859,23 @@ pub unsafe extern "C" fn rust_vm_address_region_or_mapping_set_parent_locked(
     // SAFETY: The aspace lock is held by the caller.
     let mut token = unsafe { LockToken::new() };
     this.set_parent_locked(&mut token, parent);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_address_region_or_mapping_is_in_range(
+    this: &VmAddressRegionOrMapping,
+    base: usize,
+    size: usize,
+) -> bool {
+    this.is_in_range(VAddr(base), size)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_address_region_or_mapping_is_valid_mapping_flags(
+    this: &VmAddressRegionOrMapping,
+    arch_mmu_flags: ArchMmuFlags,
+) -> bool {
+    this.is_valid_mapping_flags(arch_mmu_flags)
 }
 
 /// # Safety
@@ -852,4 +910,9 @@ pub extern "C" fn rust_vm_address_region_name(this: &VmAddressRegion) -> *const 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_vm_address_region_assert_canary(this: &VmAddressRegion) {
     this.state().canary.assert();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_address_region_has_parent(this: &VmAddressRegion) -> bool {
+    this.has_parent()
 }

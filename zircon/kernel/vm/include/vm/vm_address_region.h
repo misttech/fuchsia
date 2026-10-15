@@ -157,10 +157,7 @@ class VmAddressRegionOrMapping : public fbl::Recyclable<VmAddressRegionOrMapping
     return aspace()->region_lock_ref();
   }
 
-  bool is_in_range(vaddr_t base, size_t size) const {
-    const size_t offset = base - this->base();
-    return base >= this->base() && offset < this->size() && this->size() - offset >= size;
-  }
+  bool is_in_range(vaddr_t base, size_t size) const;
 
   // Memory priorities that can be applied to VMARs and mappings to propagate to VMOs and page
   // tables.
@@ -216,24 +213,7 @@ class VmAddressRegionOrMapping : public fbl::Recyclable<VmAddressRegionOrMapping
 
   // Check if the given *arch_mmu_flags* are allowed under this
   // region's *flags()*
-  bool is_valid_mapping_flags(arch_mmu_flags_t arch_mmu_flags) {
-    // Work out what flags we must support for these arch_mmu_flags
-    uint32_t needed = 0;
-    if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_READ) {
-      needed |= VMAR_FLAG_CAN_MAP_READ;
-    }
-    if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) {
-      needed |= VMAR_FLAG_CAN_MAP_WRITE;
-    }
-    if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) {
-      needed |= VMAR_FLAG_CAN_MAP_EXECUTE;
-    }
-    // Mask out the actual relevant mappings flags we have.
-    const uint32_t actual =
-        flags() & (VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE | VMAR_FLAG_CAN_MAP_EXECUTE);
-    // Validate that every |needed| occurs in |actual|
-    return (needed & actual) == needed;
-  }
+  bool is_valid_mapping_flags(arch_mmu_flags_t arch_mmu_flags);
 
   zx_status_t DestroyLocked() TA_REQ(lock()) TA_REQ(region_lock());
 
@@ -291,6 +271,10 @@ VmAddressRegion* rust_vm_address_region_or_mapping_parent_locked(
     const VmAddressRegionOrMapping* region_or_mapping);
 void rust_vm_address_region_or_mapping_set_parent_locked(
     VmAddressRegionOrMapping* region_or_mapping, VmAddressRegion* parent);
+bool rust_vm_address_region_or_mapping_is_in_range(
+    const VmAddressRegionOrMapping* region_or_mapping, vaddr_t base, size_t size);
+bool rust_vm_address_region_or_mapping_is_valid_mapping_flags(
+    const VmAddressRegionOrMapping* region_or_mapping, arch_mmu_flags_t arch_mmu_flags);
 fbl::RefCounted<VmAddressRegionOrMapping>* rust_vm_address_region_or_mapping_ref_counted(
     const VmAddressRegionOrMapping* region_or_mapping);
 }
@@ -348,6 +332,12 @@ inline VmAddressRegion* VmAddressRegionOrMapping::parent_locked() const {
 }
 inline void VmAddressRegionOrMapping::set_parent_locked(VmAddressRegion* parent) {
   rust_vm_address_region_or_mapping_set_parent_locked(this, parent);
+}
+inline bool VmAddressRegionOrMapping::is_in_range(vaddr_t base, size_t size) const {
+  return rust_vm_address_region_or_mapping_is_in_range(this, base, size);
+}
+inline bool VmAddressRegionOrMapping::is_valid_mapping_flags(arch_mmu_flags_t arch_mmu_flags) {
+  return rust_vm_address_region_or_mapping_is_valid_mapping_flags(this, arch_mmu_flags);
 }
 
 // A list of regions ordered by virtual address. Templated to allow for test code to avoid needing
@@ -824,11 +814,6 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   VmAddressRegion(VmAddressRegion& parent, vaddr_t base, size_t size, uint32_t vmar_flags,
                   const char* name);
 
-  bool is_in_range(vaddr_t base, size_t size) const {
-    const size_t offset = base - this->base();
-    return base >= this->base() && offset < this->size() && this->size() - offset >= size;
-  }
-
   // Traverses this vmar (and any sub-vmars) starting at this node, in depth-first pre-order. See
   // VmEnumerator for more details. If this vmar is not alive (in the LifeCycleState sense) or
   // otherwise not enumerable this returns ZX_ERR_BAD_STATE, otherwise the result of enumeration is
@@ -924,10 +909,12 @@ void rust_vm_address_region_state_init(void* storage, const char* name);
 void rust_vm_address_region_destruct(void* storage);
 const char* rust_vm_address_region_name(const VmAddressRegion* vmar);
 void rust_vm_address_region_assert_canary(const VmAddressRegion* vmar);
+bool rust_vm_address_region_has_parent(const VmAddressRegion* vmar);
 }
 
 inline const char* VmAddressRegion::name() const { return rust_vm_address_region_name(this); }
 inline void VmAddressRegion::AssertCanary() const { rust_vm_address_region_assert_canary(this); }
+inline bool VmAddressRegion::has_parent() const { return rust_vm_address_region_has_parent(this); }
 
 extern "C" {
 void cpp_vm_mapping_free(VmMapping* mapping);

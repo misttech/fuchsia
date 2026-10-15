@@ -856,7 +856,6 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_address_region_destroy",
     "cpp_vm_address_region_free",
     "cpp_vm_address_region_or_mapping_state",
-    "cpp_vm_address_region_has_parent",
     "cpp_vm_address_region_protect",
     "cpp_vm_address_region_range_op",
     "cpp_vm_address_region_reserve_space",

@@ -633,11 +633,6 @@ zx_status_t VmAddressRegion::EnumerateChildren(VmEnumerator* ve) {
   return ZX_OK;
 }
 
-bool VmAddressRegion::has_parent() const {
-  Guard<CriticalMutex> guard{lock()};
-  return parent_locked() != nullptr;
-}
-
 void VmAddressRegion::DumpLockedImpl(uint depth, bool verbose) const {
   AssertCanary();
   for (uint i = 0; i < depth; ++i) {

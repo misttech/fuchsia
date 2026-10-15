@@ -25,9 +25,6 @@ FFI_ALWAYS_INLINE void* cpp_vm_address_region_or_mapping_state(
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar) {
   return vmar->Destroy();
 }
-FFI_ALWAYS_INLINE bool cpp_vm_address_region_has_parent(VmAddressRegion* vmar) {
-  return vmar->has_parent();
-}
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_set_memory_priority(
     VmAddressRegion* vmar, VmAddressRegion::MemoryPriority priority) {
   return vmar->SetMemoryPriority(priority);
