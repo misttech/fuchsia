@@ -58,7 +58,6 @@ use builtins::iommu_resource::IommuResource;
 use builtins::irq_resource::IrqResource;
 use builtins::items::Items;
 use builtins::kernel_stats::KernelStats;
-use builtins::mexec_resource::MexecResource;
 use builtins::mmio_resource::MmioResource;
 use builtins::msi_resource::MsiResource;
 use builtins::power_resource::PowerResource;
@@ -1246,28 +1245,6 @@ fn setup_kernel_resources(
     if let Some(iommu_resource) = iommu_resource {
         root_input_builder.add_builtin_protocol_if_enabled::<fkernel::IommuResourceMarker>(
             move |stream| iommu_resource.clone().serve(stream).boxed(),
-        );
-    }
-
-    // Set up the MexecResource service.
-    let mexec_resource = system_resource_handle
-        .as_ref()
-        .and_then(|handle| {
-            handle
-                .create_child(
-                    zx::ResourceKind::SYSTEM,
-                    None,
-                    zx::sys::ZX_RSRC_SYSTEM_MEXEC_BASE,
-                    1,
-                    b"mexec",
-                )
-                .ok()
-        })
-        .map(MexecResource::new)
-        .and_then(Result::ok);
-    if let Some(mexec_resource) = mexec_resource {
-        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::MexecResourceMarker>(
-            move |stream| mexec_resource.clone().serve(stream).boxed(),
         );
     }
 

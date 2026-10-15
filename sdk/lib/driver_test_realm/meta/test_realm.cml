@@ -217,10 +217,7 @@
             to: [ "#driver_manager" ],
         },
         {
-            protocol: [
-                "fuchsia.kernel.MexecResource",
-                "fuchsia.kernel.PowerResource",
-            ],
+            protocol: [ "fuchsia.kernel.PowerResource" ],
             from: "void",
             to: [ "#driver_manager" ],
             availability: "optional",

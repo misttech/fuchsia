@@ -20,7 +20,6 @@
         {
             protocol: [
                 "fuchsia.boot.WriteOnlyLog",
-                "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.PowerResource",
             ],
 

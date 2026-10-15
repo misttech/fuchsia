@@ -129,15 +129,6 @@
             {
                 source_moniker: "<component_manager>",
                 source: "component",
-                source_name: "fuchsia.kernel.MexecResource",
-                capability: "protocol",
-                target_monikers: [
-                    "/bootstrap/driver_manager",
-                ],
-            },
-            {
-                source_moniker: "<component_manager>",
-                source: "component",
                 source_name: "fuchsia.kernel.MmioResource",
                 capability: "protocol",
                 target_monikers: [

@@ -33,7 +33,6 @@
                 "fuchsia.kernel.IrqResource",
                 "fuchsia.component.resolution.Resolver",
                 "fuchsia.kernel.KernelStats",
-                "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.MmioResource",
                 "fuchsia.kernel.MsiResource",
                 "fuchsia.kernel.ProfileResource",

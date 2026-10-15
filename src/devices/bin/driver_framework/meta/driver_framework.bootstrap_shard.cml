@@ -212,7 +212,6 @@
             protocol: [
                 "fuchsia.boot.Items",
                 "fuchsia.boot.WriteOnlyLog",
-                "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.PowerResource",
             ],
             from: "parent",

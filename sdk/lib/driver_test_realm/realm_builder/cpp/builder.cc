@@ -416,10 +416,6 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher, Options 
           .availability = fuchsia::component::decl::Availability::OPTIONAL,
       },
       Protocol{
-          .name = "fuchsia.kernel.MexecResource",
-          .availability = fuchsia::component::decl::Availability::OPTIONAL,
-      },
-      Protocol{
           .name = "fuchsia.kernel.PowerResource",
           .availability = fuchsia::component::decl::Availability::OPTIONAL,
       },

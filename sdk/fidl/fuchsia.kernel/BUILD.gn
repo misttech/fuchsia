@@ -41,7 +41,6 @@ fidl("fuchsia.kernel") {
     "kernel-counter.fidl",
     "kernel-debug.fidl",
     "kernel-stats.fidl",
-    "mexec-resource.fidl",
     "mmio-resource.fidl",
     "msi-resource.fidl",
     "overview.fidl",

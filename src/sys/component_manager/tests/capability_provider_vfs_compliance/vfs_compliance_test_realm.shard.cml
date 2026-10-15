@@ -22,7 +22,6 @@
                 "fuchsia.kernel.InfoResource",
                 "fuchsia.kernel.IommuResource",
                 "fuchsia.kernel.IrqResource",
-                "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.MmioResource",
                 "fuchsia.kernel.MsiResource",
                 "fuchsia.kernel.PowerResource",

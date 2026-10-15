@@ -254,7 +254,6 @@
                 "fuchsia.kernel.IommuResource",
                 "fuchsia.kernel.IoportResource",
                 "fuchsia.kernel.IrqResource",
-                "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.MsiResource",
                 "fuchsia.kernel.PowerResource",
                 "fuchsia.kernel.ProfileResource",

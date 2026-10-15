@@ -33,7 +33,6 @@ async fn component_manager_namespace() {
         "/svc/fuchsia.kernel.InfoResource",
         "/svc/fuchsia.kernel.IommuResource",
         "/svc/fuchsia.kernel.IrqResource",
-        "/svc/fuchsia.kernel.MexecResource",
         "/svc/fuchsia.kernel.MmioResource",
         "/svc/fuchsia.kernel.MsiResource",
         "/svc/fuchsia.kernel.PowerResource",

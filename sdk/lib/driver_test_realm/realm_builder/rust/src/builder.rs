@@ -339,7 +339,6 @@ impl DriverTestRealmBuilder for RealmBuilder {
             Capability::protocol_by_name("fuchsia.boot.Items").optional().into(),
             Capability::protocol_by_name("fuchsia.kernel.IommuResource").optional().into(),
             Capability::protocol_by_name("fuchsia.diagnostics.LogFlusher").optional().into(),
-            Capability::protocol_by_name("fuchsia.kernel.MexecResource").optional().into(),
             Capability::protocol_by_name("fuchsia.kernel.PowerResource").optional().into(),
         ];
         for (capability, from) in options.extra_realm_capabilities {

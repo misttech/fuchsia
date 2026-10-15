@@ -16,7 +16,6 @@ pub mod ioport_resource;
 pub mod irq_resource;
 pub mod items;
 pub mod kernel_stats;
-pub mod mexec_resource;
 pub mod mmio_resource;
 pub mod msi_resource;
 pub mod power_resource;

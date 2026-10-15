@@ -221,7 +221,6 @@
         {
             protocol: [
                 "fuchsia.diagnostics.LogFlusher",
-                "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.PowerResource",
             ],
             from: "parent",

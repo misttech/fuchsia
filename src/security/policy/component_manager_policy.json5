@@ -149,16 +149,6 @@
             {
                 source_moniker: "<component_manager>",
                 source: "component",
-                source_name: "fuchsia.kernel.MexecResource",
-                capability: "protocol",
-                target_monikers: [
-                    "/core/testing/system-tests:**",
-                    "/core/test_manager/system-tests:**",
-                ],
-            },
-            {
-                source_moniker: "<component_manager>",
-                source: "component",
                 source_name: "fuchsia.kernel.MmioResource",
                 capability: "protocol",
                 target_monikers: [

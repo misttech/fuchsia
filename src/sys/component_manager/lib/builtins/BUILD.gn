@@ -51,7 +51,6 @@ rustc_library("builtins") {
     "src/items.rs",
     "src/kernel_stats.rs",
     "src/lib.rs",
-    "src/mexec_resource.rs",
     "src/mmio_resource.rs",
     "src/msi_resource.rs",
     "src/power_resource.rs",
