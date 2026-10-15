@@ -16,13 +16,15 @@ use crate::ifaces::{self, ClientIface};
 use anyhow::{Error, format_err};
 use futures::channel::mpsc;
 use wlan_common::bss::BssDescription;
+use wlan_power_manager::{PowerManager, WakeLease};
 use wlan_telemetry::{TelemetryEvent, TelemetrySender};
 
 type IfaceId = u32;
 
 /// Events to be reported to the wlanix main loop, for netlink serialization.
+#[derive(Debug)]
 pub(crate) enum ScheduledScanEvent {
-    ResultsAvailable { iface_id: IfaceId },
+    ResultsAvailable { iface_id: IfaceId, _wake_lease: Option<WakeLease> },
     Stopped { iface_id: IfaceId },
 }
 
@@ -55,6 +57,7 @@ pub(crate) struct ScheduledScanController {
     pub(crate) states: Mutex<HashMap<IfaceId, ScheduledScanState>>,
     event_sender: mpsc::UnboundedSender<ScheduledScanEvent>,
     telemetry_sender: TelemetrySender,
+    power_manager: Arc<dyn PowerManager>,
     is_charging: AtomicBool,
 }
 
@@ -62,11 +65,13 @@ impl ScheduledScanController {
     pub(crate) fn new(
         telemetry_sender: TelemetrySender,
         event_sender: mpsc::UnboundedSender<ScheduledScanEvent>,
+        power_manager: Arc<dyn PowerManager>,
     ) -> Self {
         Self {
             states: Mutex::new(HashMap::new()),
             event_sender,
             telemetry_sender,
+            power_manager,
             is_charging: AtomicBool::new(false),
         }
     }
@@ -123,10 +128,12 @@ impl ScheduledScanController {
                     let telemetry_sender = self.telemetry_sender.clone();
                     let event_sender = self.event_sender.clone();
                     let iface_clone = Arc::clone(&iface);
+                    let power_manager = Arc::clone(&self.power_manager);
                     let task = fasync::Task::spawn(async move {
                         let res = handle_scheduled_scan_transactions(
                             telemetry_sender,
                             event_sender,
+                            power_manager,
                             event_stream,
                             iface_id,
                             iface_clone,
@@ -168,10 +175,12 @@ impl ScheduledScanController {
                         let controller_weak = Arc::downgrade(self);
                         let telemetry_sender = self.telemetry_sender.clone();
                         let event_sender = self.event_sender.clone();
+                        let power_manager = Arc::clone(&self.power_manager);
                         let task = fasync::Task::spawn(async move {
                             software_scheduled_scan_loop(
                                 telemetry_sender,
                                 event_sender,
+                                power_manager,
                                 iface_id,
                                 iface_clone,
                                 scan_primary_channels,
@@ -285,10 +294,12 @@ impl ScheduledScanController {
                         let controller_weak = Arc::downgrade(self);
                         let telemetry_sender = self.telemetry_sender.clone();
                         let event_sender = self.event_sender.clone();
+                        let power_manager = Arc::clone(&self.power_manager);
                         let new_task = fasync::Task::spawn(async move {
                             software_scheduled_scan_loop(
                                 telemetry_sender,
                                 event_sender,
+                                power_manager,
                                 iface_id,
                                 iface_clone,
                                 scan_primary_channels,
@@ -319,6 +330,7 @@ impl ScheduledScanController {
 async fn software_scheduled_scan_loop(
     telemetry_sender: TelemetrySender,
     event_sender: mpsc::UnboundedSender<ScheduledScanEvent>,
+    power_manager: Arc<dyn PowerManager>,
     iface_id: u32,
     iface: Arc<dyn ClientIface>,
     scan_primary_channels: Vec<u8>,
@@ -329,6 +341,7 @@ async fn software_scheduled_scan_loop(
     loop {
         // Trigger scan
         info!("Triggering software scheduled scan for iface {}", iface_id);
+        let wake_lease = power_manager.take_wake_lease("wlanix-software-sched-scan").await;
         match iface.trigger_scan(None, scan_primary_channels.clone()).await {
             Ok(ifaces::ScanEnd::Complete) => {
                 let results = iface.get_last_scan_results();
@@ -342,8 +355,10 @@ async fn software_scheduled_scan_loop(
                         iface_id
                     );
                     telemetry_sender.send(TelemetryEvent::PnoScanResultsReceived);
-                    let _ = event_sender
-                        .unbounded_send(ScheduledScanEvent::ResultsAvailable { iface_id });
+                    let _ = event_sender.unbounded_send(ScheduledScanEvent::ResultsAvailable {
+                        iface_id,
+                        _wake_lease: wake_lease,
+                    });
                 }
             }
             Ok(ifaces::ScanEnd::Cancelled) => {
@@ -370,6 +385,7 @@ async fn software_scheduled_scan_loop(
 async fn handle_scheduled_scan_transactions(
     telemetry_sender: TelemetrySender,
     event_sender: mpsc::UnboundedSender<ScheduledScanEvent>,
+    power_manager: Arc<dyn PowerManager>,
     mut stream: fidl_sme::ScheduledScanTransactionEventStream,
     iface_id: u32,
     iface: Arc<dyn ClientIface>,
@@ -379,6 +395,7 @@ async fn handle_scheduled_scan_transactions(
             Ok(fidl_sme::ScheduledScanTransactionEvent::OnScheduledScanMatchesAvailable {
                 scan_results,
             }) => {
+                let wake_lease = power_manager.take_wake_lease("wlanix-process-sched-scan").await;
                 info!("Received scheduled scan results from SME for iface {}", iface_id);
                 let results = match wlan_common::scan::read_vmo(scan_results) {
                     Ok(res) => res,
@@ -394,8 +411,10 @@ async fn handle_scheduled_scan_transactions(
                 iface.update_last_scan_results(results);
 
                 telemetry_sender.send(TelemetryEvent::PnoScanResultsReceived);
-                let _ =
-                    event_sender.unbounded_send(ScheduledScanEvent::ResultsAvailable { iface_id });
+                let _ = event_sender.unbounded_send(ScheduledScanEvent::ResultsAvailable {
+                    iface_id,
+                    _wake_lease: wake_lease,
+                });
             }
             Err(fidl::Error::ClientChannelClosed { .. }) => {
                 info!("Scheduled scan transaction channel closed by SME for iface {}", iface_id);
@@ -491,7 +510,8 @@ mod test {
     use futures::task::Poll;
     use std::pin::pin;
 
-    use crate::ifaces::test_utils::{ClientIfaceCall, TestClientIface};
+    use crate::ifaces::test_utils::{ClientIfaceCall, TestClientIface, fake_scan_result};
+    use wlan_power_manager_testing::TestPowerManager;
 
     impl std::fmt::Debug for ScheduledScanState {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -569,8 +589,12 @@ mod test {
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let (event_sender, _event_receiver) = mpsc::unbounded();
-        let controller =
-            Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
+        let power_manager = Arc::new(wlan_power_manager_testing::TestPowerManager::new());
+        let controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            event_sender,
+            power_manager,
+        ));
         let iface = Arc::new(TestClientIface::new());
         (exec, controller, iface, telemetry_sender, telemetry_receiver)
     }
@@ -819,5 +843,98 @@ mod test {
 
         // Verify that the state remained cleaned up (we did NOT insert FirmwareScansActive)
         assert_matches!(controller.states.lock().get(&1), None);
+    }
+
+    #[fuchsia::test]
+    fn test_software_scheduled_scan_loop_wake_lease() {
+        let mut exec = fasync::TestExecutor::new();
+        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let (event_sender, mut event_receiver) = mpsc::unbounded();
+        let power_manager = Arc::new(TestPowerManager::new());
+        let iface = Arc::new(TestClientIface::new());
+
+        let mut loop_fut = pin!(software_scheduled_scan_loop(
+            telemetry_sender,
+            event_sender,
+            power_manager.clone(),
+            1,
+            iface,
+            vec![],
+            None,
+        ));
+
+        // Poll software scan loop for one iteration. It will execute the scan, send ResultsAvailable, and await a 5-min timer.
+        assert_matches!(exec.run_until_stalled(&mut loop_fut), Poll::Pending);
+
+        // Receive the event from event_receiver.
+        let event = event_receiver.try_recv().unwrap();
+        let (iface_id, wake_lease) = assert_matches!(
+            event,
+            ScheduledScanEvent::ResultsAvailable { iface_id, _wake_lease } => (iface_id, _wake_lease)
+        );
+        assert_eq!(iface_id, 1);
+        assert!(wake_lease.is_some());
+
+        // Verify that wlanix-software-sched-scan lease was taken and is active while held.
+        let calls = power_manager.calls.lock();
+        assert!(calls.contains(&"wlanix-software-sched-scan".to_string()));
+        drop(calls);
+        assert!(!power_manager.is_lease_dropped("wlanix-software-sched-scan"));
+
+        // Dropping the wake lease releases it.
+        drop(wake_lease);
+        assert!(power_manager.is_lease_dropped("wlanix-software-sched-scan"));
+    }
+
+    #[fuchsia::test]
+    fn test_handle_scheduled_scan_transactions_wake_lease() {
+        let mut exec = fasync::TestExecutor::new();
+        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let (event_sender, mut event_receiver) = mpsc::unbounded();
+        let power_manager = Arc::new(TestPowerManager::new());
+        let iface = Arc::new(TestClientIface::new());
+
+        let (proxy, server) =
+            fidl::endpoints::create_proxy::<fidl_sme::ScheduledScanTransactionMarker>();
+        let (_, control_handle) = server.into_stream_and_control_handle();
+        let event_stream = proxy.take_event_stream();
+
+        let mut txn_fut = pin!(handle_scheduled_scan_transactions(
+            telemetry_sender,
+            event_sender,
+            power_manager.clone(),
+            event_stream,
+            1,
+            iface,
+        ));
+
+        assert_matches!(exec.run_until_stalled(&mut txn_fut), Poll::Pending);
+
+        // Send scheduled scan matches from SME
+        let vmo = wlan_common::scan::write_vmo(vec![fake_scan_result()]).unwrap();
+        control_handle.send_on_scheduled_scan_matches_available(vmo).expect("failed to send event");
+
+        assert_matches!(exec.run_until_stalled(&mut txn_fut), Poll::Pending);
+
+        // Receive the event from event_receiver.
+        let event = event_receiver.try_recv().unwrap();
+        let (iface_id, wake_lease) = assert_matches!(
+            event,
+            ScheduledScanEvent::ResultsAvailable { iface_id, _wake_lease } => (iface_id, _wake_lease)
+        );
+        assert_eq!(iface_id, 1);
+        assert!(wake_lease.is_some());
+
+        // Verify that wlanix-process-sched-scan lease was taken and is active while held.
+        let calls = power_manager.calls.lock();
+        assert!(calls.contains(&"wlanix-process-sched-scan".to_string()));
+        drop(calls);
+        assert!(!power_manager.is_lease_dropped("wlanix-process-sched-scan"));
+
+        // Dropping the wake lease releases it.
+        drop(wake_lease);
+        assert!(power_manager.is_lease_dropped("wlanix-process-sched-scan"));
     }
 }

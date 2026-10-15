@@ -1753,6 +1753,7 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager, P: PowerManager>(
             }
         }
         fidl_wlanix::SupplicantStaIfaceRequest::Disconnect { responder } => {
+            let _wake_lease = power_manager.take_wake_lease("wlanix-supplicant-disconnect").await;
             let (iface, _) = get_iface_and_log(
                 "fidl_wlanix::SupplicantStaIfaceRequest::Disconnect",
                 iface_manager,
@@ -2172,11 +2173,13 @@ impl MessageResponder for Nl80211MessageResponder {
     }
 }
 
-async fn handle_nl80211_message<I: IfaceManager>(
+#[allow(clippy::too_many_arguments)]
+async fn handle_nl80211_message<I: IfaceManager, P: PowerManager>(
     netlink_message: fidl_wlanix::Nl80211Message,
     responder: WithDefaultDrop<impl MessageResponder + DefaultDrop + Send + 'static>,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
     scheduled_scan_controller: &Arc<ScheduledScanController>,
@@ -2340,6 +2343,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
             info!("Nl80211Cmd::TriggerScan, attrs={:?}", message.payload.attrs);
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
                 Ok((client_iface, iface_id)) => {
+                    let _wake_lease = power_manager.take_wake_lease("wlanix-trigger-scan").await;
                     responder
                         .take()
                         .send(Ok(vec![build_nl80211_ack()]))
@@ -2817,10 +2821,11 @@ async fn get_client_iface_and_id<I: IfaceManager>(
     }
 }
 
-async fn handle_nl80211_request<I: IfaceManager>(
+async fn handle_nl80211_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::Nl80211Request,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
     scheduled_scan_controller: &Arc<ScheduledScanController>,
@@ -2832,6 +2837,7 @@ async fn handle_nl80211_request<I: IfaceManager>(
                 WithDefaultDrop::new(responder),
                 Arc::clone(&state),
                 Arc::clone(&iface_manager),
+                Arc::clone(&power_manager),
                 telemetry_sender.clone(),
                 Arc::clone(&log_throttler),
                 scheduled_scan_controller,
@@ -2847,6 +2853,7 @@ async fn handle_nl80211_request<I: IfaceManager>(
                 WithDefaultDrop::new(responder),
                 Arc::clone(&state),
                 Arc::clone(&iface_manager),
+                Arc::clone(&power_manager),
                 telemetry_sender.clone(),
                 Arc::clone(&log_throttler),
                 scheduled_scan_controller,
@@ -2876,10 +2883,11 @@ async fn handle_nl80211_request<I: IfaceManager>(
     }
 }
 
-async fn serve_nl80211<I: IfaceManager>(
+async fn serve_nl80211<I: IfaceManager, P: PowerManager>(
     reqs: fidl_wlanix::Nl80211RequestStream,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
     scheduled_scan_controller: Arc<ScheduledScanController>,
@@ -2890,6 +2898,7 @@ async fn serve_nl80211<I: IfaceManager>(
                 req,
                 Arc::clone(&state),
                 Arc::clone(&iface_manager),
+                Arc::clone(&power_manager),
                 telemetry_sender.clone(),
                 Arc::clone(&log_throttler),
                 &scheduled_scan_controller,
@@ -3157,6 +3166,7 @@ async fn handle_wlanix_request<I: IfaceManager, P: PowerManager>(
                     nl80211_stream,
                     Arc::clone(&state),
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     telemetry_sender,
                     Arc::clone(&log_throttler),
                     Arc::clone(&scheduled_scan_controller),
@@ -3359,7 +3369,7 @@ async fn handle_scheduled_scan_events(
     use scheduled_scans::ScheduledScanEvent;
     while let Some(event) = receiver.next().await {
         match event {
-            ScheduledScanEvent::ResultsAvailable { iface_id } => {
+            ScheduledScanEvent::ResultsAvailable { iface_id, _wake_lease } => {
                 state.lock().scan_multicast_proxies.send_sched_scan_results(iface_id);
             }
             ScheduledScanEvent::Stopped { iface_id } => {
@@ -3575,8 +3585,11 @@ async fn main() {
 
     let wifi_state = Arc::new(Mutex::new(WifiState::default()));
     let (event_sender, event_receiver) = mpsc::unbounded::<scheduled_scans::ScheduledScanEvent>();
-    let scheduled_scan_controller =
-        Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
+    let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+        telemetry_sender.clone(),
+        event_sender,
+        Arc::clone(&power_manager) as Arc<dyn PowerManager>,
+    ));
 
     let suspend_blocker_fut: future::BoxFuture<'static, Result<(), Error>> =
         if let Some(requests) = suspend_blocker_requests {
@@ -4155,6 +4168,7 @@ mod tests {
         let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
             telemetry_sender.clone(),
             scheduled_scan_event_sender,
+            power_manager.clone(),
         ));
         let test_fut = serve_wlanix(
             wlanix_stream,
@@ -4249,6 +4263,7 @@ mod tests {
         let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
             telemetry_sender.clone(),
             scheduled_scan_event_sender,
+            power_manager.clone(),
         ));
         let test_fut = serve_wlanix(
             wlanix_stream,
@@ -4800,6 +4815,7 @@ mod tests {
         let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
             telemetry_sender.clone(),
             scheduled_scan_event_sender,
+            power_manager.clone(),
         ));
         let test_fut = serve_wlanix(
             wlanix_stream,
@@ -4867,6 +4883,11 @@ mod tests {
             test_helper.exec.run_until_stalled(&mut disconnect_fut),
             Poll::Ready(Ok(()))
         );
+
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-supplicant-disconnect".to_string()));
+        drop(power_manager_calls);
+        assert!(test_helper.power_manager.is_lease_dropped("wlanix-supplicant-disconnect"));
     }
 
     #[fuchsia::test]
@@ -5970,8 +5991,11 @@ mod tests {
         let (telemetry_sender_raw, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender_raw);
         let (event_sender, event_receiver) = mpsc::unbounded();
-        let scheduled_scan_controller =
-            Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            event_sender,
+            power_manager.clone(),
+        ));
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
 
@@ -6054,6 +6078,7 @@ mod tests {
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
         state: Arc<Mutex<WifiState>>,
         scheduled_scan_controller: Arc<ScheduledScanController>,
+        power_manager: Arc<TestPowerManager>,
     }
 
     fn setup_nl80211_test(exec: &mut fasync::TestExecutor) -> Nl80211TestValues {
@@ -6068,15 +6093,20 @@ mod tests {
         let state = Arc::new(Mutex::new(WifiState::default()));
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let power_manager = Arc::new(TestPowerManager::new());
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
         let (event_sender, event_receiver) = mpsc::unbounded();
-        let scheduled_scan_controller =
-            Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            event_sender,
+            power_manager.clone(),
+        ));
         let nl80211_fut = serve_nl80211(
             stream,
             Arc::clone(&state),
             Arc::new(iface_manager),
+            power_manager.clone(),
             telemetry_sender,
             Arc::clone(&log_throttler),
             Arc::clone(&scheduled_scan_controller),
@@ -6096,6 +6126,7 @@ mod tests {
             telemetry_receiver,
             state,
             scheduled_scan_controller,
+            power_manager,
         }
     }
 
@@ -6109,16 +6140,18 @@ mod tests {
         let telemetry_sender = TelemetrySender::new(telemetry_sender_raw);
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let power_manager = Arc::new(TestPowerManager::new());
         let (scheduled_scan_event_sender, _) = mpsc::unbounded();
         let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
             telemetry_sender.clone(),
             scheduled_scan_event_sender,
+            power_manager.clone(),
         ));
         let wlanix_fut = serve_wlanix(
             stream,
             state,
             iface_manager,
-            Arc::new(TestPowerManager::new()),
+            power_manager,
             telemetry_sender,
             Arc::clone(&log_throttler),
             scheduled_scan_controller,
@@ -6423,6 +6456,36 @@ mod tests {
         let mcast_msg =
             assert_matches!(exec.run_until_stalled(&mut next_mcast), Poll::Ready(msg) => msg);
         assert_eq!(mcast_msg.payload.cmd, Nl80211Cmd::NewScanResults);
+
+        // Verify that wlanix-trigger-scan was acquired and has been released.
+        let power_manager_calls = test_values.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-trigger-scan".to_string()));
+        drop(power_manager_calls);
+        assert!(test_values.power_manager.is_lease_dropped("wlanix-trigger-scan"));
+    }
+
+    #[fuchsia::test]
+    fn test_handle_scheduled_scan_events_results_available() {
+        let mut exec = fasync::TestExecutor::new();
+        let state = Arc::new(Mutex::new(WifiState::default()));
+        let (sender, receiver) = mpsc::unbounded();
+        let power_manager = Arc::new(TestPowerManager::new());
+        let wake_lease = exec.run_singlethreaded(power_manager.take_wake_lease("test-lease"));
+
+        let mut events_fut = pin!(handle_scheduled_scan_events(Arc::clone(&state), receiver));
+        assert_matches!(exec.run_until_stalled(&mut events_fut), Poll::Pending);
+
+        sender
+            .unbounded_send(scheduled_scans::ScheduledScanEvent::ResultsAvailable {
+                iface_id: 1,
+                _wake_lease: wake_lease,
+            })
+            .expect("Failed to send scheduled scan event");
+
+        assert!(!power_manager.is_lease_dropped("test-lease"));
+        assert_matches!(exec.run_until_stalled(&mut events_fut), Poll::Pending);
+        // After handle_scheduled_scan_events processes the event, the wake lease is dropped.
+        assert!(power_manager.is_lease_dropped("test-lease"));
     }
 
     #[fuchsia::test]
@@ -6789,15 +6852,18 @@ mod tests {
 
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let power_manager = Arc::new(TestPowerManager::new());
         let (scheduled_scan_event_sender, _) = mpsc::unbounded();
         let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
             telemetry_sender.clone(),
             scheduled_scan_event_sender,
+            power_manager.clone(),
         ));
         let nl80211_fut = serve_nl80211(
             stream,
             Arc::clone(&state),
             Arc::clone(&iface_manager),
+            power_manager,
             telemetry_sender,
             Arc::clone(&log_throttler),
             Arc::clone(&scheduled_scan_controller),
@@ -6909,13 +6975,18 @@ mod tests {
 
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let power_manager = Arc::new(TestPowerManager::new());
         let (event_sender, event_receiver) = mpsc::unbounded();
-        let scheduled_scan_controller =
-            Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            event_sender,
+            power_manager.clone(),
+        ));
         let nl80211_fut = serve_nl80211(
             stream,
             Arc::clone(&state),
             Arc::clone(&iface_manager),
+            power_manager,
             telemetry_sender,
             Arc::clone(&log_throttler),
             Arc::clone(&scheduled_scan_controller),
@@ -7303,15 +7374,18 @@ mod tests {
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let power_manager = Arc::new(TestPowerManager::new());
         let (scheduled_scan_event_sender, _) = mpsc::unbounded();
         let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
             telemetry_sender.clone(),
             scheduled_scan_event_sender,
+            power_manager.clone(),
         ));
         let nl80211_fut = serve_nl80211(
             stream,
             state,
             iface_manager,
+            power_manager,
             telemetry_sender,
             Arc::clone(&log_throttler),
             scheduled_scan_controller,
@@ -8079,9 +8153,11 @@ mod tests {
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new());
         let (scheduled_scan_event_sender, _) = mpsc::unbounded();
+        let power_manager = Arc::new(TestPowerManager::new());
         let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
             telemetry_sender.clone(),
             scheduled_scan_event_sender,
+            power_manager,
         ));
         // Instantiate a mapped test client interface to catch StopSchedScan calls from the loop
         let _ = exec.run_singlethreaded(iface_manager.create_client_iface(0));
