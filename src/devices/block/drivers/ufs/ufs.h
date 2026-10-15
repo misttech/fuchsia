@@ -154,6 +154,15 @@ struct InspectProperties {
   inspect::UintProperty user_space_configuration_option;             // Set once by the init thread.
   inspect::UintProperty write_booster_dedicated_lu;                  // Set once by the init thread.
   inspect::UintProperty write_booster_buffer_size_in_bytes;          // Set once by the init thread.
+  // Block I/O counters
+  inspect::UintProperty read_ops;
+  inspect::UintProperty write_ops;
+  inspect::UintProperty flush_ops;
+  inspect::UintProperty trim_ops;
+  inspect::UintProperty read_bytes;
+  inspect::UintProperty write_bytes;
+  inspect::UintProperty flush_bytes;
+  inspect::UintProperty trim_bytes;
 };
 
 using HostControllerCallback = fit::function<zx::result<>(NotifyEvent, uint64_t data)>;

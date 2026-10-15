@@ -4,6 +4,7 @@
 
 #include "ufs.h"
 
+#include <endian.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/wire_types.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -208,10 +209,45 @@ void Ufs::ProcessIoSubmissions() {
     }
     const uint8_t lun = io_cmd.lun;
     const auto inline_crypto = io_cmd.request.inline_crypto();
+    const scsi::Opcode opcode = io_cmd.request.opcode();
+    uint64_t io_bytes = static_cast<uint64_t>(io_cmd.request.transfer_length()) * io_cmd.block_size;
+    if (opcode == scsi::Opcode::UNMAP &&
+        io_cmd.request.immediate_data().size() >=
+            sizeof(scsi::UnmapParameterListHeader) + sizeof(scsi::UnmapBlockDescriptor)) {
+      const auto* desc = reinterpret_cast<const scsi::UnmapBlockDescriptor*>(
+          io_cmd.request.immediate_data().data() + sizeof(scsi::UnmapParameterListHeader));
+      io_bytes = static_cast<uint64_t>(betoh32(desc->blocks)) * io_cmd.block_size;
+    }
 
-    auto cb = [req = std::move(io_cmd.request),
-               vmo = std::move(unmap_vmo)](zx_status_t status) mutable {
+    auto cb = [this, req = std::move(io_cmd.request), vmo = std::move(unmap_vmo), opcode,
+               io_bytes](zx_status_t status) mutable {
       vmo.reset();
+      if (status == ZX_OK) {
+        switch (opcode) {
+          case scsi::Opcode::READ_10:
+          case scsi::Opcode::READ_12:
+          case scsi::Opcode::READ_16:
+            properties_.read_ops.Add(1);
+            properties_.read_bytes.Add(io_bytes);
+            break;
+          case scsi::Opcode::WRITE_10:
+          case scsi::Opcode::WRITE_12:
+          case scsi::Opcode::WRITE_16:
+            properties_.write_ops.Add(1);
+            properties_.write_bytes.Add(io_bytes);
+            break;
+          case scsi::Opcode::SYNCHRONIZE_CACHE_10:
+          case scsi::Opcode::SYNCHRONIZE_CACHE_16:
+            properties_.flush_ops.Add(1);
+            break;
+          case scsi::Opcode::UNMAP:
+            properties_.trim_ops.Add(1);
+            properties_.trim_bytes.Add(io_bytes);
+            break;
+          default:
+            break;
+        }
+      }
       req.Complete(status);
     };
 
@@ -654,6 +690,14 @@ zx_status_t Ufs::Init() {
 
   if (component_inspector_) {
     inspect_node_ = component_inspector_->root().CreateChild("ufs");
+    properties_.read_ops = inspect_node_.CreateUint("block.read.count", 0);
+    properties_.write_ops = inspect_node_.CreateUint("block.write.count", 0);
+    properties_.flush_ops = inspect_node_.CreateUint("block.flush.count", 0);
+    properties_.trim_ops = inspect_node_.CreateUint("block.trim.count", 0);
+    properties_.read_bytes = inspect_node_.CreateUint("block.read.bytes", 0);
+    properties_.write_bytes = inspect_node_.CreateUint("block.write.bytes", 0);
+    properties_.flush_bytes = inspect_node_.CreateUint("block.flush.bytes", 0);
+    properties_.trim_bytes = inspect_node_.CreateUint("block.trim.bytes", 0);
     PopulateVersionInspect(&inspect_node_);
     PopulateCapabilitiesInspect(&inspect_node_);
   }

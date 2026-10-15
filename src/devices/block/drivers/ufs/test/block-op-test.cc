@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fpromise/single_threaded_executor.h>
+
 #include <bitset>
 #include <future>
 
@@ -495,6 +497,101 @@ TEST_F(BlockOpTest, ReadPinFailureCompletesWithoutAssertion) {
         .dev_offset = 0,
     };
     EXPECT_NE(client_->FifoTransaction(&request, 1), ZX_OK);
+
+    ASSERT_OK(client_->BlockDetachVmo(std::move(owned_vmoid)));
+  }));
+}
+
+TEST_F(BlockOpTest, InspectIoCounters) {
+  auto check_counters = [&](uint64_t read_ops, uint64_t write_ops, uint64_t flush_ops,
+                            uint64_t trim_ops, uint64_t read_bytes, uint64_t write_bytes,
+                            uint64_t trim_bytes) {
+    fpromise::result<inspect::Hierarchy> hierarchy =
+        fpromise::run_single_threaded(inspect::ReadFromInspector(dut_->inspect()));
+    ASSERT_TRUE(hierarchy.is_ok());
+    const auto* ufs = hierarchy.value().GetByPath({"ufs"});
+    ASSERT_NE(ufs, nullptr);
+
+    auto get_uint = [&](const char* name) -> uint64_t {
+      const auto* prop = ufs->node().get_property<inspect::UintPropertyValue>(name);
+      EXPECT_NE(prop, nullptr);
+      return prop ? prop->value() : UINT64_MAX;
+    };
+
+    EXPECT_EQ(get_uint("block.read.count"), read_ops);
+    EXPECT_EQ(get_uint("block.write.count"), write_ops);
+    EXPECT_EQ(get_uint("block.flush.count"), flush_ops);
+    EXPECT_EQ(get_uint("block.trim.count"), trim_ops);
+    EXPECT_EQ(get_uint("block.read.bytes"), read_bytes);
+    EXPECT_EQ(get_uint("block.write.bytes"), write_bytes);
+    EXPECT_EQ(get_uint("block.flush.bytes"), 0u);
+    EXPECT_EQ(get_uint("block.trim.bytes"), trim_bytes);
+  };
+
+  ASSERT_NO_FATAL_FAILURE(check_counters(0, 0, 0, 0, 0, 0, 0));
+
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() {
+    zx::vmo vmo;
+    ASSERT_OK(zx::vmo::create(2 * ufs_mock_device::kMockBlockSize, 0, &vmo));
+    storage::Vmoid owned_vmoid;
+    ASSERT_OK(client_->BlockAttachVmo(vmo, &owned_vmoid));
+
+    BlockFifoRequest write_request = {
+        .command = {.opcode = BLOCK_OPCODE_WRITE},
+        .vmoid = owned_vmoid.get(),
+        .length = 2,
+        .vmo_offset = 0,
+        .dev_offset = 0,
+    };
+    ASSERT_OK(client_->FifoTransaction(&write_request, 1));
+    ASSERT_NO_FATAL_FAILURE(check_counters(0, 1, 0, 0, 0, 2 * ufs_mock_device::kMockBlockSize, 0));
+
+    BlockFifoRequest read_request = {
+        .command = {.opcode = BLOCK_OPCODE_READ},
+        .vmoid = owned_vmoid.get(),
+        .length = 1,
+        .vmo_offset = 0,
+        .dev_offset = 0,
+    };
+    ASSERT_OK(client_->FifoTransaction(&read_request, 1));
+    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 0, 0, ufs_mock_device::kMockBlockSize,
+                                           2 * ufs_mock_device::kMockBlockSize, 0));
+
+    BlockFifoRequest flush_request = {
+        .command = {.opcode = BLOCK_OPCODE_FLUSH},
+        .vmoid = BLOCK_VMOID_INVALID,
+        .length = 0,
+        .vmo_offset = 0,
+        .dev_offset = 0,
+    };
+    ASSERT_OK(client_->FifoTransaction(&flush_request, 1));
+    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 0, ufs_mock_device::kMockBlockSize,
+                                           2 * ufs_mock_device::kMockBlockSize, 0));
+
+    BlockFifoRequest trim_request = {
+        .command = {.opcode = BLOCK_OPCODE_TRIM},
+        .vmoid = BLOCK_VMOID_INVALID,
+        .length = 2,
+        .vmo_offset = 0,
+        .dev_offset = 0,
+    };
+    ASSERT_OK(client_->FifoTransaction(&trim_request, 1));
+    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 1, ufs_mock_device::kMockBlockSize,
+                                           2 * ufs_mock_device::kMockBlockSize,
+                                           2 * ufs_mock_device::kMockBlockSize));
+
+    // Verify failed I/O does not increment counters.
+    BlockFifoRequest bad_read_request = {
+        .command = {.opcode = BLOCK_OPCODE_READ},
+        .vmoid = owned_vmoid.get(),
+        .length = 1,
+        .vmo_offset = 0,
+        .dev_offset = static_cast<uint32_t>(info_.block_count),
+    };
+    EXPECT_EQ(client_->FifoTransaction(&bad_read_request, 1), ZX_ERR_OUT_OF_RANGE);
+    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 1, ufs_mock_device::kMockBlockSize,
+                                           2 * ufs_mock_device::kMockBlockSize,
+                                           2 * ufs_mock_device::kMockBlockSize));
 
     ASSERT_OK(client_->BlockDetachVmo(std::move(owned_vmoid)));
   }));

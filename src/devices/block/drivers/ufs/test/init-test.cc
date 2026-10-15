@@ -135,6 +135,14 @@ TEST_F(InitTest, Inspect) {
   const auto* ufs = hierarchy.value().GetByPath({"ufs"});
   ASSERT_NE(ufs, nullptr);
 
+  for (const char* prop_name :
+       {"block.read.count", "block.write.count", "block.flush.count", "block.trim.count",
+        "block.read.bytes", "block.write.bytes", "block.flush.bytes", "block.trim.bytes"}) {
+    auto prop = ufs->node().get_property<inspect::UintPropertyValue>(prop_name);
+    ASSERT_NE(prop, nullptr);
+    EXPECT_EQ(prop->value(), 0U);
+  }
+
   const auto* version = ufs->GetByPath({"version"});
   ASSERT_NE(version, nullptr);
   auto major_version =
