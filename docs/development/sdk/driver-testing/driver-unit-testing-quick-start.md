@@ -5,12 +5,21 @@ Follow this quick start to write a driver unit test based on the
 
 ## Include library dependencies
 
-Include this library dependency, as well as the gtest dependency:
+Include this library dependency, as well as the gtest dependency in your C++ file:
 
 ```cpp
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <gtest/gtest.h>
+```
+
+You will also need to add the corresponding targets to your `BUILD.gn` file's `deps`:
+
+```gn
+deps = [
+  "//sdk/lib/driver/testing/cpp",
+  "//src/lib/fxl/test:gtest_main",
+]
 ```
 
 The library provides two classes that can be used in tests.
