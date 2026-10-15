@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "mock-metrics",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/sys/pkg/lib/isolated-swd:__pkg__",
+        "//src/sys/pkg/tests/pkg-cache:__pkg__",
+        "//src/sys/pkg/tests/pkg-cache-as-base-resolver/as-a-component-resolver:__pkg__",
+        "//src/sys/pkg/tests/pkg-resolver:__pkg__",
+        "//src/sys/pkg/tests/system-updater:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "mock-metrics_test",
+    crate = ":mock-metrics",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "mock-metrics-tests",
+    unit_tests = [":mock-metrics_test"],
+    visibility = ["//visibility:public"],
+)
