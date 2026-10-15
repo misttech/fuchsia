@@ -16,7 +16,10 @@
 #include "src/devices/board/lib/acpi/bus-type.h"
 #include "src/devices/board/lib/acpi/device-builder.h"
 #include "src/devices/board/lib/acpi/power-resource.h"
-#include "src/devices/lib/iommu/iommu.h"
+
+namespace iommu {
+class IommuManagerInterface;
+}
 
 namespace async {
 class Executor;

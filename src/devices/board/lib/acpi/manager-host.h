@@ -9,17 +9,13 @@
 #include <zircon/compiler.h>
 
 #include "src/devices/board/lib/acpi/manager.h"
-#include "src/devices/board/lib/acpi/test/null-iommu-manager.h"
+
 namespace acpi {
 
 class HostManager : public Manager {
  public:
-  HostManager(acpi::Acpi* acpi, zx_device_t* acpi_root)
-      : Manager(acpi, &iommu_manager_, acpi_root) {}
+  HostManager(acpi::Acpi* acpi, zx_device_t* acpi_root) : Manager(acpi, nullptr, acpi_root) {}
   ~HostManager() override {}
-
- private:
-  NullIommuManager iommu_manager_;
 };
 
 }  // namespace acpi

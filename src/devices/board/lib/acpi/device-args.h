@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BOARD_LIB_ACPI_DEVICE_ARGS_H_
 #define SRC_DEVICES_BOARD_LIB_ACPI_DEVICE_ARGS_H_
 
+#include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/ddk/device.h>
 
 #include <vector>
@@ -12,16 +13,6 @@
 #include <acpica/acpi.h>
 
 #include "src/devices/board/lib/acpi/manager.h"
-
-#ifdef __Fuchsia__
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
-#else
-using pci_bdf_t = struct pci_bdf {
-  uint8_t bus_id;
-  uint8_t device_id;
-  uint8_t function_id;
-};
-#endif
 
 namespace acpi {
 

@@ -4,7 +4,7 @@
 
 #ifndef SRC_DEVICES_BOARD_LIB_ACPI_PCI_H_
 #define SRC_DEVICES_BOARD_LIB_ACPI_PCI_H_
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
+#include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/ddk/device.h>
 
 #include <vector>

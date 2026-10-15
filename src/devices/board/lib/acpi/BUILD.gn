@@ -16,11 +16,11 @@ group("tests") {
 }
 
 shared_public_deps = [
+  "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_c",
   "//sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
   "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_cpp",
   "//src/devices/bind/fuchsia:fuchsia_cpp",
   "//src/devices/bind/fuchsia.acpi:fuchsia.acpi_cpp",
-  "//src/devices/lib/iommu",
   "//src/lib/ddktl",
   "//third_party/acpica",
 ]
@@ -41,11 +41,11 @@ shared_defines = [ "ACPI_FLEX_ARRAY(TYPE, NAME)=TYPE NAME[0]" ]
 shared_fuchsia_public_deps = [
   "//sdk/lib/async-loop:async-loop-cpp",
   "//sdk/lib/component/outgoing/cpp",
+  "//src/devices/lib/iommu",
   "//zircon/system/ulib/svc",
 ]
 
 shared_deps = [
-  "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
   "//src/devices/bind/fuchsia:fuchsia_cpp",
   "//src/devices/bind/fuchsia.pci:fuchsia.pci_cpp",
   "//zircon/system/ulib/fbl",
@@ -53,6 +53,7 @@ shared_deps = [
 ]
 
 shared_fuchsia_deps = [
+  "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
   "//sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp",
   "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_cpp",
   "//src/devices/lib/acpi",
