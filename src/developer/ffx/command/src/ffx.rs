@@ -121,31 +121,65 @@ impl FfxCommandLine {
         args
     }
 
-    /// Creates a Vec<String> of the subcommand args ignoring flags and positionals.
+    /// Creates a Vec<String> of the subcommand args ignoring flags and positionals
+    /// using the static `ArgsInfo` of type `C`.
     /// e.g. if the user runs `ffx target list foo` this would return `["target", "list"]`
-    pub fn redact_subcmd_for_enhanced_analytics<C: ArgsInfo>(&self, _cmd: &C) -> Vec<String> {
+    pub fn redact_subcmd_from_args_info<C: ArgsInfo>(&self) -> Vec<String> {
         let main_info = C::get_args_info();
         let mut info_ref = &main_info;
         let mut ffx_subcmd_iter = self.subcmd_iter();
         let mut res = Vec::<String>::new();
-        // We can't use take_while because when the argument is equal to the one we're looking at,
-        // we consume that part of the iterator, and we want to include it.
-        for sc in ffx_subcmd_iter.by_ref() {
-            res.push(sc.to_owned());
-            if sc == info_ref.name {
-                break;
+        // When `C` is a subtool or nested `ffx_plugin` (rather than `FfxBuiltIn` where
+        // `name == "ffx"`), `C::get_args_info()` only describes the command tree starting at `C`.
+        // Advance `ffx_subcmd_iter` up to `C` (note: any `ffx_plugin` routers above `C` are
+        // generated dispatchers without flags).
+        if info_ref.name != "ffx" && !info_ref.name.is_empty() {
+            for sc in ffx_subcmd_iter.by_ref() {
+                if sc == info_ref.name
+                    || (*info_ref.short != '\0' && sc.len() == 1 && sc.starts_with(*info_ref.short))
+                {
+                    res.push(info_ref.name.to_owned());
+                    break;
+                }
+                res.push(sc.to_owned());
             }
         }
-        // For commands that are the root and contain subcommands, things are a little more
-        // involved.
-        //
-        // The args info struct contains a list of _possible_ subcommands, so we need
-        // to match until we've run out (as that means we're now dealing with positional
-        // arguments or flags that would need to be otherwise redacted).
-        for arg in ffx_subcmd_iter {
+        // Walk `C`'s subcommand tree until reaching a leaf command (`info_ref.commands.is_empty()`),
+        // stopping before leaf flags or positional arguments.
+        while !info_ref.commands.is_empty() {
+            let Some(arg) = ffx_subcmd_iter.next() else {
+                break;
+            };
+            if arg == "--" {
+                break;
+            }
+            if matches!(arg, "help" | "--help" | "-h") {
+                continue;
+            }
+            if arg.starts_with('-') {
+                // Skip known flags on the current command (1 token for Switch, 2 for Option)
+                // so we can reach the nested subcommand token that follows.
+                if let Some(flag) = info_ref.flags.iter().find(|f| {
+                    f.long == arg
+                        || (arg.len() == 2
+                            && !arg.starts_with("--")
+                            && f.short == arg.chars().nth(1))
+                }) {
+                    if matches!(flag.kind, argh::FlagInfoKind::Option { .. }) {
+                        let _ = ffx_subcmd_iter.next();
+                    }
+                    continue;
+                }
+                break;
+            }
             let subcmds = &info_ref.commands;
-            if let Some(item) = subcmds.iter().find(|s| s.name == arg) {
-                res.push(arg.to_owned());
+            if let Some(item) = subcmds.iter().find(|s| {
+                s.name == arg
+                    || (*s.command.short != '\0'
+                        && arg.len() == 1
+                        && arg.starts_with(*s.command.short))
+            }) {
+                res.push(item.name.to_owned());
                 info_ref = &item.command;
             } else {
                 return res;
@@ -194,6 +228,8 @@ impl FfxCommandLine {
             .into_iter()
             .chain(subcmd_name.map(|_| "<unknown-subtool>".to_owned()).into_iter())
             .collect();
+        let subcommand_chain: Vec<_> =
+            subcmd_name.map(|_| "<unknown-subtool>".to_owned()).into_iter().collect();
         let enhanced_args = match enhanced_analytics().await {
             // construct a 'sanitized' argument list that includes an indication of whether
             // it was just no arguments passed or an unknown subtool.
@@ -210,7 +246,15 @@ impl FfxCommandLine {
             }),
         };
 
-        metrics.command_finished(&error_res, &redacted_args, enhanced_args.as_deref()).await?;
+        metrics
+            .command_finished(
+                &error_res,
+                &redacted_args,
+                &subcommand_chain,
+                false,
+                enhanced_args.as_deref(),
+            )
+            .await?;
         Ok(help_err)
     }
 
@@ -1021,7 +1065,7 @@ mod test {
 
     /// A subcommand
     #[derive(FromArgs, ArgsInfo, Default)]
-    #[argh(subcommand, name = "subcommand")]
+    #[argh(subcommand, name = "subcommand", short = 's')]
     #[allow(unused)]
     struct TestCmd {
         /// an argument
@@ -1084,10 +1128,7 @@ mod test {
             FfxCommandLine::new(None, &args).expect("Command line should parse correctly");
         assert_eq!(cmd_line.command, vec!["ffx"]);
         assert_eq!(cmd_line.ffx_args, vec!["-v", "--env", "boom"]);
-        assert_eq!(
-            cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmd::default()),
-            vec!["subcommand"],
-        );
+        assert_eq!(cmd_line.redact_subcmd_from_args_info::<TestCmd>(), vec!["subcommand"]);
     }
 
     #[test]
@@ -1100,7 +1141,7 @@ mod test {
         assert_eq!(cmd_line.command, vec!["ffx"]);
         assert_eq!(cmd_line.ffx_args, vec!["-v", "--env", "boom"]);
         assert_eq!(
-            cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmd::default()),
+            cmd_line.redact_subcmd_from_args_info::<TestCmd>(),
             vec!["pow", "pop", "blip", "subcommand"],
         );
     }
@@ -1120,9 +1161,7 @@ mod test {
         assert_eq!(cmd_line.ffx_args, vec!["-v", "--env", "boom"]);
         assert_eq!(cmd_line.global.subcommand, vec!["target", "middle", "subcommand", "--arg"]);
         assert_eq!(
-            cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmdMiddle {
-                subcommand: TestCmdMiddleEnum::Middle(Default::default())
-            }),
+            cmd_line.redact_subcmd_from_args_info::<TestCmdMiddle>(),
             vec!["target", "middle", "subcommand"],
         );
     }
@@ -1140,11 +1179,7 @@ mod test {
             vec!["target", "root", "middle", "subcommand", "--arg"]
         );
         assert_eq!(
-            cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmdRoot {
-                subcommand: TestCmdRootEnum::Root(TestCmdMiddle {
-                    subcommand: TestCmdMiddleEnum::Middle(Default::default())
-                })
-            }),
+            cmd_line.redact_subcmd_from_args_info::<TestCmdRoot>(),
             vec!["target", "root", "middle", "subcommand"],
         );
     }
@@ -1157,6 +1192,130 @@ mod test {
         assert_eq!(
             cmd_line.redact_subcmd(&TestCmd::default()),
             vec!["ffx", "--env", "-v", "subcommand", "--arg", "--stuff"]
+        );
+    }
+
+    /// A parent command with option and switch flags before a nested subcommand.
+    #[derive(FromArgs, ArgsInfo)]
+    #[argh(subcommand, name = "inspect")]
+    #[allow(unused)]
+    struct TestCmdWithParentFlags {
+        /// a switch flag on the parent command
+        #[argh(switch, short = 'q')]
+        quiet: bool,
+        /// an option flag on the parent command
+        #[argh(option, short = 's')]
+        select: Option<String>,
+        #[argh(subcommand)]
+        subcommand: TestCmdRootEnum,
+    }
+
+    #[derive(FromArgs, ArgsInfo)]
+    #[argh(subcommand)]
+    #[allow(unused)]
+    enum FakeFfxSubCommand {
+        Root(TestCmdRoot),
+    }
+
+    /// Simulacrum of `FfxBuiltIn` whose top-level `ArgsInfo.name` is `"ffx"`.
+    #[derive(FromArgs, ArgsInfo)]
+    #[argh(subcommand, name = "ffx")]
+    #[allow(unused)]
+    struct FakeFfxBuiltIn {
+        #[argh(subcommand)]
+        subcommand: Option<FakeFfxSubCommand>,
+    }
+
+    #[test]
+    fn redact_subcmd_from_args_info_parent_flags_and_help() {
+        // Parent option value ("middle") matches a subcommand name, followed by the real
+        // subcommand ("subcommand") and "--help".
+        let args = [
+            "ffx",
+            "target",
+            "inspect",
+            "-q",
+            "--select",
+            "middle",
+            "subcommand",
+            "--help",
+            "middle",
+        ];
+        let cmd_line = FfxCommandLine::new(None, &args).expect("Command line should parse");
+        assert_eq!(
+            cmd_line.redact_subcmd_from_args_info::<TestCmdWithParentFlags>(),
+            vec!["target", "inspect", "subcommand"],
+        );
+
+        // Same with short option `-s` and `help` keyword before the nested
+        // subcommands ("middle" -> "subcommand").
+        let args_short_opt =
+            ["ffx", "target", "inspect", "-s", "subcommand", "help", "middle", "subcommand"];
+        let cmd_line_short_opt =
+            FfxCommandLine::new(None, &args_short_opt).expect("Command line should parse");
+        assert_eq!(
+            cmd_line_short_opt.redact_subcmd_from_args_info::<TestCmdWithParentFlags>(),
+            vec!["target", "inspect", "middle", "subcommand"],
+        );
+    }
+
+    #[test]
+    fn redact_subcmd_from_args_info_builtin_ffx_root() {
+        let args = ["ffx", "root", "middle", "--help"];
+        let cmd_line = FfxCommandLine::new(None, &args).expect("Command line should parse");
+        assert_eq!(
+            cmd_line.redact_subcmd_from_args_info::<FakeFfxBuiltIn>(),
+            vec!["root", "middle"],
+        );
+    }
+
+    #[test]
+    fn redact_subcmd_from_args_info_double_dash() {
+        let args = ["ffx", "target", "inspect", "--", "subcommand"];
+        let cmd_line = FfxCommandLine::new(None, &args).expect("Command line should parse");
+        assert_eq!(
+            cmd_line.redact_subcmd_from_args_info::<TestCmdWithParentFlags>(),
+            vec!["target", "inspect"],
+        );
+    }
+
+    #[test]
+    fn redact_subcmd_from_args_info_unknown_flag() {
+        let args = ["ffx", "target", "inspect", "--unknown-flag", "subcommand"];
+        let cmd_line = FfxCommandLine::new(None, &args).expect("Command line should parse");
+        assert_eq!(
+            cmd_line.redact_subcmd_from_args_info::<TestCmdWithParentFlags>(),
+            vec!["target", "inspect"],
+        );
+    }
+
+    #[test]
+    fn redact_subcmd_from_args_info_short_subcmd_and_unknown_token() {
+        // Short alias in Loop 2 (nested subcommand under TestCmdMiddle)
+        let args_short = ["ffx", "target", "middle", "s", "--arg"];
+        let cmd_line_short =
+            FfxCommandLine::new(None, &args_short).expect("Command line should parse");
+        assert_eq!(
+            cmd_line_short.redact_subcmd_from_args_info::<TestCmdMiddle>(),
+            vec!["target", "middle", "subcommand"],
+        );
+
+        // Short alias in Loop 1 (when C itself is invoked via its short alias `s`),
+        // ensuring positional arguments and flags after `s` are not leaked.
+        let args_leaf_short = ["ffx", "pow", "s", "secret-positional", "--arg"];
+        let cmd_line_leaf_short =
+            FfxCommandLine::new(None, &args_leaf_short).expect("Command line should parse");
+        assert_eq!(
+            cmd_line_leaf_short.redact_subcmd_from_args_info::<TestCmd>(),
+            vec!["pow", "subcommand"],
+        );
+
+        let args_unknown = ["ffx", "target", "middle", "not-a-subcommand"];
+        let cmd_line_unknown =
+            FfxCommandLine::new(None, &args_unknown).expect("Command line should parse");
+        assert_eq!(
+            cmd_line_unknown.redact_subcmd_from_args_info::<TestCmdMiddle>(),
+            vec!["target", "middle"],
         );
     }
 

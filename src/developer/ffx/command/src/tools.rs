@@ -119,6 +119,11 @@ pub trait ToolSuite: Sized {
 
     /// Gets the command line argument information.
     async fn get_args_info(&self) -> Result<CliArgsInfo, Error>;
+
+    /// Extracts the subcommand chain for analytics from the suite's static argument info.
+    fn subcommand_chain(&self, _cmd: &FfxCommandLine) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 fn print_command_list(

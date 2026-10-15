@@ -339,13 +339,25 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
 
                     let command_clone = command.clone();
                     append_strict_help(&mut output, app.strict, code);
+                    let subcommand_chain = tools.subcommand_chain(&cmd);
+                    // `try_from_args` only returns `Error::Help` on `argh` help exits
+                    // (`early_exit.status == Ok(())`; parse errors map to `Error::Config`)
+                    // or for `ffx commands`, which reuses `Error::Help` to print the command list.
+                    let is_help = subcommand_chain != ["commands"]
+                        || cmd.subcmd_iter().skip(1).any(|a| matches!(a, "help" | "--help" | "-h"));
                     let res: Result<ExitStatus, Error> = Err(Error::Help { command, output, code });
                     let enhanced_args = match send_enhanced_analytics().await {
                         true => Some(cmd.unredacted_args_for_analytics()),
                         false => None,
                     };
                     metrics
-                        .command_finished(&res, &command_clone, enhanced_args.as_deref())
+                        .command_finished(
+                            &res,
+                            &command_clone,
+                            &subcommand_chain,
+                            is_help,
+                            enhanced_args.as_deref(),
+                        )
                         .await
                         .ok();
                     return Err(res.unwrap_err());
@@ -357,12 +369,27 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
                 if let Some(s) = cmd.subcmd_iter().next() {
                     command_name.push(s.to_string());
                 }
+                let mut subcommand_chain = tools.subcommand_chain(&cmd);
+                if subcommand_chain.is_empty() {
+                    if let Some(s) = cmd.subcmd_iter().next() {
+                        subcommand_chain.push(s.to_string());
+                    }
+                }
                 let res: Result<ExitStatus, Error> = Err(e);
                 let enhanced_args = match send_enhanced_analytics().await {
                     true => Some(cmd.unredacted_args_for_analytics()),
                     false => None,
                 };
-                metrics.command_finished(&res, &command_name, enhanced_args.as_deref()).await.ok();
+                metrics
+                    .command_finished(
+                        &res,
+                        &command_name,
+                        &subcommand_chain,
+                        false,
+                        enhanced_args.as_deref(),
+                    )
+                    .await
+                    .ok();
                 return Err(res.unwrap_err());
             }
         }
@@ -647,7 +674,6 @@ mod test {
         append_strict_help(&mut output3, true, 1);
         assert!(!output3.contains("Strict Mode Notes:"));
     }
-
     #[fuchsia::test]
     fn test_is_help_all() {
         for (args, expected) in [
@@ -667,5 +693,72 @@ mod test {
             };
             assert_eq!(is_help_all(&command), expected, "args: {args:?}");
         }
+    }
+
+    struct DummyToolSuite;
+
+    #[async_trait::async_trait(?Send)]
+    impl ToolSuite for DummyToolSuite {
+        fn from_env(_env: &EnvironmentContext) -> Result<Self> {
+            Ok(Self)
+        }
+
+        fn global_command_list() -> &'static [&'static argh::CommandInfo] {
+            &[]
+        }
+
+        async fn get_args_info(&self) -> Result<CliArgsInfo> {
+            Ok(CliArgsInfo::default())
+        }
+
+        async fn try_from_args(
+            &self,
+            cmd: &FfxCommandLine,
+        ) -> Result<Option<Box<dyn ToolRunner + '_>>> {
+            match cmd.subcmd_iter().next() {
+                Some("help-cmd") => Err(Error::Help {
+                    command: cmd.command.clone(),
+                    output: "help text".to_string(),
+                    code: 0,
+                }),
+                Some("err-cmd") => Err(Error::Config(anyhow::anyhow!("parse error"))),
+                _ => Ok(None),
+            }
+        }
+
+        async fn try_runner_from_name(
+            &self,
+            _cmd: &FfxCommandLine,
+        ) -> Result<Option<Box<dyn ToolRunner + '_>>> {
+            Ok(None)
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_run_help_error_and_no_handler() {
+        let isolate_dir = tempfile::tempdir().expect("tempdir");
+        let make_icmd = |args: &[&str]| {
+            let mut cmd = FfxCommandLine::new(None, args).expect("parse cmdline");
+            cmd.global.isolate_dir = Some(isolate_dir.path().to_owned());
+            cmd.global.config.push("log.enabled=false".to_string());
+            let context =
+                cmd.global.load_context(ExecutableKind::Test).expect("load isolated context");
+            InitializedCmd { cmd, context, help_state: HelpState::None }
+        };
+
+        // 1. Err(Error::Help) branch
+        let res_help = run::<DummyToolSuite>(make_icmd(&["ffx", "help-cmd", "--help"])).await;
+        assert!(matches!(res_help, Err(Error::Help { code: 0, .. })));
+
+        // 2. Err(e) branch (also exercises default ToolSuite::subcommand_chain)
+        let res_err = run::<DummyToolSuite>(make_icmd(&["ffx", "err-cmd", "--bad-flag"])).await;
+        assert!(matches!(res_err, Err(Error::Config(_))));
+
+        // 3. Ok(None) -> no_handler_help with unknown subtool and with no subtool
+        let res_unknown = run::<DummyToolSuite>(make_icmd(&["ffx", "unknown-cmd"])).await;
+        assert!(matches!(res_unknown, Err(Error::Help { code: 1, .. })));
+
+        let res_empty = run::<DummyToolSuite>(make_icmd(&["ffx"])).await;
+        assert!(matches!(res_empty, Err(Error::Help { code: 0, .. })));
     }
 }

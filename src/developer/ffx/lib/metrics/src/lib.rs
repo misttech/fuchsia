@@ -177,6 +177,8 @@ pub fn sanitize(parameter: &str) -> String {
 pub async fn add_ffx_launch_event(
     connection_mode: Option<&str>,
     redacted_args: String,
+    subcommand_chain: String,
+    is_help: bool,
     enhanced_args: Option<String>,
     time: u128,
     exit_code: i32,
@@ -189,6 +191,8 @@ pub async fn add_ffx_launch_event(
         ("exit_code", exit_code.to_string().into()),
         ("error_message", error_message.unwrap_or_else(|| "".to_string()).into()),
         ("redacted_args", redacted_args.into()),
+        ("subcommand_chain", subcommand_chain.into()),
+        ("is_help", is_help.into()),
         ("call_stack", call_stack.into()),
     ]);
     let mut metrics_svc = ga4_metrics().await?;
@@ -489,6 +493,19 @@ mod test {
 
         // Initialize disabled/test metrics service and verify submission still succeeds.
         block_on(init_metrics_svc(None, VersionInfo::default(), None, "test-sdk".to_string()));
+        assert!(
+            block_on(add_ffx_launch_event(
+                Some("direct"),
+                "ffx target list".to_string(),
+                "target list".to_string(),
+                false,
+                None,
+                10,
+                0,
+                None,
+            ))
+            .is_ok()
+        );
         assert!(block_on(add_usb_driver_launch_event()).is_ok());
         assert!(block_on(add_usb_driver_connection_event(&conn_event)).is_ok());
         assert!(block_on(add_usb_driver_protocol_event(&conn_event.protocol_counts)).is_ok());

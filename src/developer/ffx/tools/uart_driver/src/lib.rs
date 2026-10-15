@@ -382,11 +382,20 @@ async fn implementation(
 
     if let Some(metrics) = metrics {
         let redacted_args = ffx.redact_subcmd(&command);
+        let subcommand_chain = ffx.redact_subcmd_from_args_info::<UartDriverCommand>();
         let enhanced_args = match ffx_command::send_enhanced_analytics().await {
             true => Some(ffx.unredacted_args_for_analytics()),
             false => None,
         };
-        let _ = metrics.command_finished(&res, &redacted_args, enhanced_args.as_deref()).await;
+        let _ = metrics
+            .command_finished(
+                &res,
+                &redacted_args,
+                &subcommand_chain,
+                false,
+                enhanced_args.as_deref(),
+            )
+            .await;
     }
 
     res

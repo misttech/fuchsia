@@ -109,6 +109,14 @@ impl ToolSuite for FfxSuite {
         }
     }
 
+    fn subcommand_chain(&self, ffx_cmd: &FfxCommandLine) -> Vec<String> {
+        if ffx_cmd.global.subcommand.first().map(String::as_str) == Some("commands") {
+            vec!["commands".to_string()]
+        } else {
+            ffx_cmd.redact_subcmd_from_args_info::<FfxBuiltIn>()
+        }
+    }
+
     async fn command_list(&self) -> Vec<FfxToolInfo> {
         let builtin_commands = SubCommand::COMMANDS.iter().copied().map(FfxToolInfo::from);
 
@@ -206,6 +214,7 @@ impl ToolRunner for FfxSubCommand {
                 metrics.print_notice(&mut std::io::stderr()).await?;
             }
             let redacted_args = ffx_lib_suite::ffx_plugin_redact_args(&self.app, &self.cmd);
+            let subcommand_chain = self.app.redact_subcmd_from_args_info::<FfxBuiltIn>();
             let enhanced_args = match send_enhanced_analytics().await {
                 false => None,
                 true => Some(self.app.unredacted_args_for_analytics()),
@@ -216,7 +225,16 @@ impl ToolRunner for FfxSubCommand {
             if let Err(ref e) = res {
                 log::error!("[{}]: {:?}", e.diagnostic_code(), e);
             }
-            metrics.command_finished(&res, &redacted_args, enhanced_args.as_deref()).await.and(res)
+            metrics
+                .command_finished(
+                    &res,
+                    &redacted_args,
+                    &subcommand_chain,
+                    false,
+                    enhanced_args.as_deref(),
+                )
+                .await
+                .and(res)
         }
     }
 }
@@ -382,7 +400,6 @@ mod test {
         let actual = find_info_from_cmd(&args, &some_info);
         assert!(actual.is_some());
     }
-
     #[fuchsia::test]
     async fn test_global_options_in_subcommand_help() {
         let env =
@@ -423,5 +440,17 @@ mod test {
         } else {
             panic!("Expected Help error");
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_subcommand_chain() {
+        let env = ffx_config::test_init().expect("test env");
+        let suite = FfxSuite::from_env(&env.context).expect("ffx suite");
+
+        let cmd = FfxCommandLine::new(None, &["ffx", "commands"]).expect("ffx cmdline");
+        assert_eq!(suite.subcommand_chain(&cmd), vec!["commands"]);
+
+        let cmd = FfxCommandLine::new(None, &["ffx", "target", "list"]).expect("ffx cmdline");
+        assert_eq!(suite.subcommand_chain(&cmd), vec!["target", "list"]);
     }
 }

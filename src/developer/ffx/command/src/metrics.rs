@@ -88,6 +88,8 @@ impl MetricsSession {
         self,
         res: &Result<ExitStatus, Error>,
         redacted_args: &[impl AsRef<str>],
+        subcommand_chain: &[impl AsRef<str>],
+        is_help: bool,
         enhanced_args: Option<&[impl AsRef<str>]>,
     ) -> Result<CommandStats> {
         let exit_code = match res {
@@ -104,12 +106,15 @@ impl MetricsSession {
         let analytics_duration = if self.enabled {
             let timing_in_millis = command_duration.as_millis();
             let redacted_args = redacted_args.iter().map(AsRef::as_ref).join(" ");
+            let subcommand_chain = subcommand_chain.iter().map(AsRef::as_ref).join(" ");
             let enhanced_args = enhanced_args.map(|val| val.iter().map(AsRef::as_ref).join(" "));
             let connection_mode = self.connection_mode;
             let analytics_done = async move {
                 if let Err(e) = add_ffx_launch_event(
                     Some(connection_mode),
                     redacted_args,
+                    subcommand_chain,
+                    is_help,
                     enhanced_args,
                     timing_in_millis,
                     exit_code,

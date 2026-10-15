@@ -178,6 +178,7 @@ where
 {
     env: FhoEnvironment,
     redacted_args: Vec<String>,
+    subcommand_chain: Vec<String>,
     enhanced_args: Option<Vec<String>>,
     main: M,
     _p: std::marker::PhantomData<E>,
@@ -228,7 +229,13 @@ impl<T: FfxTool<E>, E: Into<Error> + 'static> ToolRunner for FhoTool<T, E> {
             }
         };
         let res = metrics
-            .command_finished(&res, &self.redacted_args, self.enhanced_args.as_deref())
+            .command_finished(
+                &res,
+                &self.redacted_args,
+                &self.subcommand_chain,
+                false,
+                self.enhanced_args.as_deref(),
+            )
             .await
             .and(res);
         self.env.wrap_main_result(res)
@@ -246,14 +253,21 @@ impl<T: FfxTool<E>, E: Into<Error> + 'static> FhoTool<T, E> {
         let env = FhoEnvironment::new(context, &ffx);
         ffx_diagnostics_analytics_state::set_command_line_context(env.ffx_command(), &tool);
         let redacted_args = ffx.redact_subcmd(&tool);
+        let subcommand_chain = ffx.redact_subcmd_from_args_info::<T::Command>();
         let enhanced_args = match send_enhanced_analytics().await {
             false => None,
             true => Some(ffx.unredacted_args_for_analytics()),
         };
         let main = T::from_env(env.clone(), tool).await?;
 
-        let found =
-            FhoTool { env, redacted_args, enhanced_args, main, _p: std::marker::PhantomData };
+        let found = FhoTool {
+            env,
+            redacted_args,
+            subcommand_chain,
+            enhanced_args,
+            main,
+            _p: std::marker::PhantomData,
+        };
         Ok(Box::new(found))
     }
 }
@@ -267,6 +281,10 @@ impl<M: FfxTool<E>, E: Into<Error> + 'static> ToolSuite for FhoSuite<M, E> {
 
     fn global_command_list() -> &'static [&'static argh::CommandInfo] {
         FhoHandler::<M, E>::COMMANDS
+    }
+
+    fn subcommand_chain(&self, cmd: &FfxCommandLine) -> Vec<String> {
+        cmd.redact_subcmd_from_args_info::<M::Command>()
     }
 
     async fn get_args_info(&self) -> Result<ffx_command::CliArgsInfo> {
@@ -410,5 +428,13 @@ mod tests {
             panic!("Not testing metadata generation");
         };
         T::from_env(env, cmd).await
+    }
+
+    #[fuchsia::test]
+    async fn test_fho_suite_subcommand_chain() {
+        let config_env = ffx_config::test_init().unwrap();
+        let suite = FhoSuite::<FakeTool>::from_env(&config_env.context).unwrap();
+        let ffx = FfxCommandLine::new(None, &["ffx", "fake", "stuff"]).expect("test ffx cmd");
+        assert_eq!(suite.subcommand_chain(&ffx), vec!["fake"]);
     }
 }

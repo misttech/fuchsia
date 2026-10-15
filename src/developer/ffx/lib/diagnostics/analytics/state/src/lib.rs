@@ -13,8 +13,8 @@ use std::sync::OnceLock;
 static FFX_COMMAND_LINE: OnceLock<Vec<String>> = OnceLock::new();
 
 /// Sets the GLOBAL ffx command line info. This is idempotent.
-pub fn set_command_line_context<C: ArgsInfo>(ffx: &FfxCommandLine, subcmd: &C) {
-    let ctx = ffx.redact_subcmd_for_enhanced_analytics(subcmd);
+pub fn set_command_line_context<C: ArgsInfo>(ffx: &FfxCommandLine, _subcmd: &C) {
+    let ctx = ffx.redact_subcmd_from_args_info::<C>();
     log::info!("Setting command line ctx for analytics: {ctx:?}");
     let _ = FFX_COMMAND_LINE.set(ctx);
 }
