@@ -288,7 +288,19 @@ int IdlePowerThread::Run(void* arg) {
           resume_timer_->EnsureStarted();
         }
 
-        if (platform_supports_suspend_cpu()) {
+        if (cpu_num == BOOT_CPU_ID && system_suspend_requested_.load(ktl::memory_order_relaxed)) {
+          // SuspendSystem has taken all other CPUs offline.  Suspend the whole system.
+          const zx_status_t status = platform_suspend_system();
+          if (status != ZX_OK) {
+            // Retrying is unlikely to help (e.g. another CPU was unexpectedly online).  Fall back
+            // to platform_suspend_cpu for the remainder of this suspend operation.
+            //
+            // Logging may pend a preemption (see the warning above), but that is fine here since
+            // we will not suspend during this iteration of the loop.
+            dprintf(INFO, "platform_suspend_system failed: %d\n", status);
+            system_suspend_requested_.store(false, ktl::memory_order_relaxed);
+          }
+        } else if (platform_supports_suspend_cpu()) {
           zx_status_t status = platform_suspend_cpu(PlatformAllowDomainPowerDown::Yes);
           DEBUG_ASSERT_MSG(
               status == ZX_OK || status == ZX_ERR_ACCESS_DENIED || status == ZX_ERR_INVALID_ARGS,
@@ -316,15 +328,21 @@ int IdlePowerThread::Run(void* arg) {
 IdlePowerThread::TransitionResult IdlePowerThread::TransitionActiveToOffline(
     zx_instant_mono_t timeout_at) {
   Guard<Mutex> guard{TransitionLock::Get()};
+  return TransitionActiveToOfflineLocked(timeout_at, PowerOffConfirmation::BestEffort);
+}
+
+IdlePowerThread::TransitionResult IdlePowerThread::TransitionActiveToOfflineLocked(
+    zx_instant_mono_t timeout_at, PowerOffConfirmation confirmation) {
   const TransitionResult result = TransitionFromTo(State::Active, State::Offline, timeout_at);
   if (result.status != ZX_OK) {
     return result;
   }
 
   // Wait until the platform reports that the CPU is actually powered off. If the platform does not
-  // support querying CPU power state, return immediately.
+  // support querying CPU power state, return immediately (failing if confirmation is required).
   const zx_status_t status = WaitForCpuPowerOff(this_cpu_, timeout_at);
-  if (status == ZX_OK || status == ZX_ERR_NOT_SUPPORTED) {
+  if (status == ZX_OK ||
+      (status == ZX_ERR_NOT_SUPPORTED && confirmation == PowerOffConfirmation::BestEffort)) {
     return result;
   }
   return {status, result.starting_state};
@@ -396,8 +414,22 @@ IdlePowerThread::TransitionResult IdlePowerThread::TransitionFromTo(State expect
 }
 
 zx_instant_boot_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resume_at) {
+  return SuspendAllActive(resume_at, SuspendMode::Cpu);
+}
+
+zx_instant_boot_t IdlePowerThread::SuspendSystem(zx_instant_boot_t resume_at) {
+  // System suspend requires that the platform both support it and be able to confirm that the
+  // non-boot CPUs have powered off (see |SuspendAllActive|).
+  const bool can_confirm_power_off =
+      platform_get_cpu_state(BOOT_CPU_ID).status_value() != ZX_ERR_NOT_SUPPORTED;
+  return SuspendAllActive(resume_at, platform_supports_suspend_system() && can_confirm_power_off
+                                         ? SuspendMode::System
+                                         : SuspendMode::Cpu);
+}
+
+zx_instant_boot_t IdlePowerThread::SuspendAllActive(zx_instant_boot_t resume_at, SuspendMode mode) {
   // Ensure CPUs in |cpus_active_before_suspend| are not modified during the execution of
-  // TransitionAllActiveToSuspend.
+  // SuspendAllActive.
   Guard<Mutex> guard{TransitionLock::Get()};
 
   // Ensure that the monotonic clock is running and is returned to the running state no matter how
@@ -455,29 +487,51 @@ zx_instant_boot_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_
       Scheduler::PeekActiveMask() & ~cpu_num_to_mask(BOOT_CPU_ID);
   dprintf(INFO, "Active non-boot CPUs before suspend: %#x\n", cpus_active_before_suspend);
 
-  // Suspend all of the active CPUs besides the boot CPU.
-  dprintf(INFO, "Suspending non-boot CPUs...\n");
+  // Suspend all of the active CPUs besides the boot CPU.  For a system suspend, take them offline
+  // instead, since platform_suspend_system requires that they be powered off.
+  dprintf(INFO, "%s non-boot CPUs...\n",
+          mode == SuspendMode::System ? "Taking offline" : "Suspending");
 
   const Deadline suspend_timeout_at = Deadline::after_mono(ZX_MIN(1));
   cpu_mask_t cpus_to_suspend = cpus_active_before_suspend;
+  cpu_mask_t cpus_to_resume = 0;
   while (cpus_to_suspend != 0) {
     const cpu_num_t cpu_id = highest_cpu_set(cpus_to_suspend);
+    IdlePowerThread& idle_power_thread = percpu::Get(cpu_id).idle_power_thread;
+    // For a system suspend, it is critical that each CPU has finished powering off (i.e. completed
+    // PSCI CPU_OFF) before the boot CPU calls platform_suspend_system, so require confirmation from
+    // the platform.  If it cannot be confirmed, abort.
     const TransitionResult active_to_suspend_result =
-        percpu::Get(cpu_id).idle_power_thread.TransitionFromTo(State::Active, State::Suspend,
-                                                               suspend_timeout_at.when());
+        mode == SuspendMode::System ? idle_power_thread.TransitionActiveToOfflineLocked(
+                                          suspend_timeout_at.when(), PowerOffConfirmation::Required)
+                                    : idle_power_thread.TransitionFromTo(
+                                          State::Active, State::Suspend, suspend_timeout_at.when());
     if (active_to_suspend_result.status != ZX_OK) {
-      KERNEL_OOPS("Failed to transition CPU %u to suspend: %d\n", cpu_id,
+      // Taking a CPU offline may fail after it has gone offline (e.g. if it was not reported to be
+      // powered off before the timeout), or the request may still be pending (if the transition
+      // itself timed out), in which case the CPU may yet go offline.  Either way, try to bring it
+      // back online (see below).
+      if (mode == SuspendMode::System) {
+        const StateMachine state = idle_power_thread.state_.load(ktl::memory_order_acquire);
+        if (state.current == State::Offline || state.target == State::Offline) {
+          cpus_to_resume |= cpu_num_to_mask(cpu_id);
+        }
+      }
+      KERNEL_OOPS("Failed to transition CPU %u to %s: %d\n", cpu_id,
+                  mode == SuspendMode::System ? "offline" : "suspend",
                   active_to_suspend_result.status);
       break;
     }
 
     cpus_to_suspend &= ~cpu_num_to_mask(cpu_id);
+    cpus_to_resume |= cpu_num_to_mask(cpu_id);
   }
 
   if (cpus_to_suspend != 0) {
     dprintf(INFO, "Aborting suspend and resuming non-boot CPUs...\n");
   } else {
-    dprintf(INFO, "Done suspending non-boot CPUs.\n");
+    dprintf(INFO, "Done %s non-boot CPUs.\n",
+            mode == SuspendMode::System ? "taking offline" : "suspending");
 
     // Set the resume timer before suspending the boot CPU.
     if (resume_at != ZX_TIME_INFINITE) {
@@ -490,7 +544,14 @@ zx_instant_boot_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_
       dprintf(INFO, "No kernel resume timeout set. System will only resume by wake vector.\n");
     }
 
-    dprintf(INFO, "Attempting to suspend boot CPU...\n");
+    // For a system suspend, have the boot CPU's idle/power thread suspend the system rather than
+    // just the boot CPU.  See |Run|.
+    if (mode == SuspendMode::System) {
+      system_suspend_requested_.store(true, ktl::memory_order_relaxed);
+    }
+
+    dprintf(INFO, "Attempting to suspend %s...\n",
+            mode == SuspendMode::System ? "system from boot CPU" : "boot CPU");
 
     IdlePowerThread& boot_idle_power_thread = percpu::Get(BOOT_CPU_ID).idle_power_thread;
     const TransitionResult active_to_suspend_result = boot_idle_power_thread.TransitionFromTo(
@@ -498,6 +559,8 @@ zx_instant_boot_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_
 
     // Cancel the resume timer in case it wasn't the reason for the wakeup.
     resume_timer_->CancelTimer();
+
+    system_suspend_requested_.store(false, ktl::memory_order_relaxed);
 
     switch (active_to_suspend_result.status) {
       case ZX_ERR_TIMED_OUT:
@@ -532,25 +595,99 @@ zx_instant_boot_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_
                      ToString(expected.current), ToString(expected.target));
   }
 
-  // Resume all non-boot CPUs that were successfully suspended.
+  // Resume all non-boot CPUs that were successfully suspended (or taken offline).
   dprintf(INFO, "Resuming non-boot CPUs...\n");
 
   const Deadline resume_timeout_at = Deadline::after_mono(ZX_MIN(1));
-  cpu_mask_t cpus_to_resume = cpus_active_before_suspend ^ cpus_to_suspend;
-  while (cpus_to_resume != 0) {
-    const cpu_num_t cpu_id = highest_cpu_set(cpus_to_resume);
-    const TransitionResult suspend_to_active_result =
-        percpu::Get(cpu_id).idle_power_thread.TransitionFromTo(State::Suspend, State::Active,
-                                                               resume_timeout_at.when());
-    if (suspend_to_active_result.status != ZX_OK) {
-      KERNEL_OOPS("Failed to transition CPU %u to active: %d\n", cpu_id,
-                  suspend_to_active_result.status);
-      break;
+  if (mode == SuspendMode::System) {
+    // The CPUs were taken offline via their idle/power threads rather than unplugged (see
+    // |SuspendSystem|), so their TimerQueues, DpcRunners, and pinned threads stayed with them.  If
+    // a CPU cannot be brought back online, migrate its timers to this CPU (the boot CPU) so that
+    // they are not stranded.  This is only safe once the CPU is Offline (no longer processing
+    // tasks) and will not be restarted.  Its queued DPCs and pinned threads cannot be migrated (its
+    // DpcRunner was not shut down), so they remain with it until it is brought back online.
+    auto migrate_timers_off = [](cpu_num_t cpu_id) {
+      percpu& cpu = percpu::Get(cpu_id);
+      if (cpu.idle_power_thread.state_.load(ktl::memory_order_acquire).current != State::Offline) {
+        // The CPU may still be processing tasks, so its timers cannot be migrated.
+        KERNEL_OOPS("CPU %u is not offline.  Not migrating its timers.\n", cpu_id);
+        return;
+      }
+      percpu::GetCurrent().timer_queue.TransitionOffCpu(cpu.timer_queue);
+    };
+
+    // Start all of the CPUs first, and then wait for all of them, so that
+    // their bring-up overlaps.
+    cpu_mask_t cpus_started = 0;
+    while (cpus_to_resume != 0) {
+      const cpu_num_t cpu_id = highest_cpu_set(cpus_to_resume);
+      cpus_to_resume &= ~cpu_num_to_mask(cpu_id);
+
+      // If taking the CPU offline was aborted before the platform confirmed that it had powered
+      // off, it may still be powering off.  Starting it before then would fail (e.g. PSCI CPU_ON
+      // would return ALREADY_ON), so wait.  Normally, the CPU has long since powered off.
+      //
+      // If the CPU has not yet gone offline at all (its transition to Offline timed out and is
+      // still pending), it is still processing tasks, so |migrate_timers_off| will leave its timers
+      // alone.
+      if (const zx_status_t status = WaitForCpuPowerOff(cpu_id, resume_timeout_at.when());
+          status != ZX_OK) {
+        KERNEL_OOPS("CPU %u did not power off: %d.  Leaving it offline.\n", cpu_id, status);
+        migrate_timers_off(cpu_id);
+        continue;
+      }
+
+      const zx_status_t status = platform_mp_cpu_hotplug(cpu_id);
+      if (status != ZX_OK) {
+        KERNEL_OOPS("Failed to hotplug CPU %u: %d.  Leaving it offline.\n", cpu_id, status);
+        migrate_timers_off(cpu_id);
+        continue;
+      }
+      cpus_started |= cpu_num_to_mask(cpu_id);
     }
 
-    cpus_to_resume &= ~cpu_num_to_mask(cpu_id);
+    // Wait for each started CPU to complete its transition to Active.
+    while (cpus_started != 0) {
+      const cpu_num_t cpu_id = highest_cpu_set(cpus_started);
+      cpus_started &= ~cpu_num_to_mask(cpu_id);
+
+      const IdlePowerThread& idle_power_thread = percpu::Get(cpu_id).idle_power_thread;
+      while (idle_power_thread.state_.load(ktl::memory_order_acquire) != kActive) {
+        const zx_instant_mono_t now = current_mono_time();
+        if (now >= resume_timeout_at.when()) {
+          // If the platform reports that the CPU is (still) powered off, it never started, so it is
+          // safe to migrate its timers.  Otherwise, it may yet come online.
+          const zx::result<power_cpu_state> cpu_state = platform_get_cpu_state(cpu_id);
+          const bool powered_off =
+              cpu_state.is_ok() && (cpu_state.value() == power_cpu_state::OFF ||
+                                    cpu_state.value() == power_cpu_state::STOPPED);
+          KERNEL_OOPS("Timed out waiting for CPU %u to become active (powered off: %d)\n", cpu_id,
+                      powered_off);
+          if (powered_off) {
+            migrate_timers_off(cpu_id);
+          }
+          break;
+        }
+        Thread::Current::Sleep(
+            ktl::min(zx_time_add_duration(now, kCpuStatePollInterval), resume_timeout_at.when()));
+      }
+    }
+  } else {
+    while (cpus_to_resume != 0) {
+      const cpu_num_t cpu_id = highest_cpu_set(cpus_to_resume);
+      const TransitionResult suspend_to_active_result =
+          percpu::Get(cpu_id).idle_power_thread.TransitionFromTo(State::Suspend, State::Active,
+                                                                 resume_timeout_at.when());
+      if (suspend_to_active_result.status != ZX_OK) {
+        KERNEL_OOPS("Failed to transition CPU %u to active: %d\n", cpu_id,
+                    suspend_to_active_result.status);
+        break;
+      }
+
+      cpus_to_resume &= ~cpu_num_to_mask(cpu_id);
+    }
+    DEBUG_ASSERT(cpus_to_resume == 0);
   }
-  DEBUG_ASSERT(cpus_to_resume == 0);
 
   dprintf(INFO, "Done resuming non-boot CPUs.\n");
   return suspend_start_time;
@@ -667,7 +804,7 @@ LK_INIT_HOOK(idle_power_thread_platform, IdlePowerThread::InitHook, LK_INIT_LEVE
 static int cmd_suspend(int argc, const cmd_args* argv, uint32_t flags) {
   auto usage = [&argv]() -> int {
     printf("usage:\n");
-    printf("%s enter <resume delay> <m|s|ms|us|ns>\n", argv[0].str);
+    printf("%s enter <resume delay> <m|s|ms|us|ns> [cpu|system]\n", argv[0].str);
     printf("%s wake-events\n", argv[0].str);
     return ZX_ERR_INTERNAL;
   };
@@ -677,8 +814,18 @@ static int cmd_suspend(int argc, const cmd_args* argv, uint32_t flags) {
   }
 
   if (!strcmp(argv[1].str, "enter")) {
-    if (argc < 4) {
+    if (argc < 4 || argc > 5) {
       return usage();
+    }
+
+    bool suspend_system = false;
+    if (argc == 5) {
+      if (!strcmp(argv[4].str, "system")) {
+        suspend_system = true;
+      } else if (strcmp(argv[4].str, "cpu") != 0) {
+        printf("Invalid mode: %s\n", argv[4].str);
+        return usage();
+      }
     }
 
     zx_duration_boot_t delay = argv[2].i;
@@ -699,7 +846,11 @@ static int cmd_suspend(int argc, const cmd_args* argv, uint32_t flags) {
     }
 
     const zx_instant_boot_t resume_at = zx_time_add_duration(current_boot_time(), delay);
-    IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
+    if (suspend_system) {
+      IdlePowerThread::SuspendSystem(resume_at);
+    } else {
+      IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
+    }
     return ZX_OK;
   }
 
