@@ -1681,7 +1681,9 @@ TEST(SignalHandling, SigillAddress) {
 TEST(SignalHandling, IgnoredChildExitDoesNotInterruptSyscall) {
   test_helper::ForkHelper helper;
 
-  helper.RunInForkedProcess([&helper] {
+  helper.RunInForkedProcess([] {
+    test_helper::ForkHelper helper;
+
     // Nothing is ever written to this pipe, so `epoll_wait` always waits for its full timeout.
     // `epoll_wait` is used rather than `poll` because it reports an interruption instead of being
     // restarted.
@@ -1768,7 +1770,8 @@ TEST(SignalHandling, BlockedIgnoredSignalStaysPending) {
 TEST(SignalHandling, SigtimedwaitReceivesBlockedIgnoredSignal) {
   test_helper::ForkHelper helper;
 
-  helper.RunInForkedProcess([&helper] {
+  helper.RunInForkedProcess([] {
+    test_helper::ForkHelper helper;
     sigset_t waited;
     sigemptyset(&waited);
     sigaddset(&waited, SIGWINCH);

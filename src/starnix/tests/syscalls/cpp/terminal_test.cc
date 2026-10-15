@@ -62,7 +62,8 @@ TEST(JobControl, BackgroundProcessGroupDoNotUpdateOnDeath) {
 
   IgnoreSignal(SIGTTOU);
 
-  helper.RunInForkedProcess([&] {
+  helper.RunInForkedProcess([] {
+    test_helper::ForkHelper helper;
     SAFE_SYSCALL(setsid());
     int main_terminal = OpenMainTerminal();
     int replica_terminal = SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR));
@@ -131,7 +132,8 @@ class Pty : public testing::Test {
 TEST_F(Pty, SIGWINCH) {
   test_helper::ForkHelper helper;
 
-  helper.RunInForkedProcess([&] {
+  helper.RunInForkedProcess([] {
+    test_helper::ForkHelper helper;
     // Create a new session here, and associate it with the new terminal.
     SAFE_SYSCALL(setsid());
     int main_terminal = OpenMainTerminal();
@@ -496,7 +498,8 @@ TEST_F(Pty, SendSignals) {
     auto signal = s;
     auto character = c;
 
-    helper.RunInForkedProcess([&] {
+    helper.RunInForkedProcess([signal, character] {
+      test_helper::ForkHelper helper;
       // Create a new session here, and associate it with the new terminal.
       SAFE_SYSCALL(setsid());
       int main_terminal = OpenMainTerminal();
@@ -538,7 +541,8 @@ TEST_F(Pty, SendSignals) {
         ASSERT_TRUE(WIFSTOPPED(wstatus));
         // Ensure the children is called, even when only stopped.
         SAFE_SYSCALL(kill(child_pid, SIGKILL));
-        SAFE_SYSCALL(waitpid(child_pid, nullptr, 0));
+        ASSERT_TRUE(
+            helper.WaitForChild(child_pid, /*expected_exit_status=*/0, SIGKILL).determined_result);
       } else {
         ASSERT_TRUE(WIFSIGNALED(wstatus));
         ASSERT_EQ(WTERMSIG(wstatus), signal);
@@ -599,7 +603,8 @@ TEST_F(Pty, CloseReplicaTerminal) {
 
 TEST_F(Pty, DetectReplicaClosing) {
   test_helper::ForkHelper helper;
-  helper.RunInForkedProcess([&] {
+  helper.RunInForkedProcess([] {
+    test_helper::ForkHelper helper;
     // Create a new session here, and associate it with the new terminal.
     SAFE_SYSCALL(setsid());
     int main_terminal = OpenMainTerminal(O_NOCTTY);

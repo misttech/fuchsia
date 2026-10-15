@@ -7,7 +7,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <lib/fit/defer.h>
+#include <signal.h>
+#include <sys/ptrace.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstring>
@@ -133,6 +136,8 @@ TEST(TestHelperTest, WaitForChild) {
 
   pid_t failing_child = helper.RunInForkedProcess([] { exit(1); });
   pid_t succeeding_child = helper.RunInForkedProcess([] { exit(0); });
+  pid_t custom_exit_child = helper.RunInForkedProcess([] { exit(42); });
+  pid_t signaled_child = helper.RunInForkedProcess([] { raise(SIGUSR1); });
 
   helper.ExpectExitValue(0);
   auto failing_result = helper.WaitForChild(failing_child);
@@ -142,6 +147,14 @@ TEST(TestHelperTest, WaitForChild) {
   auto succeeding_result = helper.WaitForChild(succeeding_child);
   EXPECT_TRUE(succeeding_result.determined_result);
   EXPECT_EQ(succeeding_result.subprocess_exit_status, 0);
+
+  auto custom_exit_result = helper.WaitForChild(custom_exit_child, /*expected_exit_status=*/42);
+  EXPECT_TRUE(custom_exit_result.determined_result);
+  EXPECT_EQ(custom_exit_result.subprocess_exit_status, 42);
+
+  auto signaled_result =
+      helper.WaitForChild(signaled_child, /*expected_exit_status=*/0, /*death_signum=*/SIGUSR1);
+  EXPECT_TRUE(signaled_result.determined_result);
 }
 
 TEST(TestHelperTest, WaitForChildMultipleTimes) {
@@ -213,6 +226,58 @@ TEST(TestHelperTest, MultipleChildrenFailing) {
   for (const auto& result : results) {
     EXPECT_FALSE(result.determined_result);
   }
+}
+
+TEST(TestHelperTest, KillChildrenOnDestroyKillsRunningAndStoppedChildren) {
+  pid_t paused_child = -1;
+  pid_t stopped_child = -1;
+  {
+    test_helper::ForkHelper helper;
+    helper.OnlyWaitForForkedChildren();
+    helper.KillChildrenOnDestroy();
+
+    stopped_child = helper.RunInForkedProcess([] {
+      SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr));
+      SAFE_SYSCALL(raise(SIGSTOP));
+      pause();
+    });
+    paused_child = helper.RunInForkedProcess([] { pause(); });
+
+    // WaitForChildren observes the ptrace stop on stopped_child, reports failure, and leaves both
+    // children in child_pids_ to be killed and reaped by ~ForkHelper().
+    EXPECT_FALSE(helper.WaitForChildren());
+  }
+
+  int status = 0;
+  EXPECT_THAT(waitpid(paused_child, &status, WNOHANG), SyscallFailsWithErrno(ECHILD));
+  EXPECT_THAT(waitpid(stopped_child, &status, WNOHANG), SyscallFailsWithErrno(ECHILD));
+}
+
+TEST(TestHelperTest, KillChildrenOnDestroyHandlesExitedAndReapedChildren) {
+  pid_t reaped_child = -1;
+  pid_t zombie_child = -1;
+  pid_t running_child = -1;
+  {
+    test_helper::ForkHelper helper;
+    helper.OnlyWaitForForkedChildren();
+    helper.KillChildrenOnDestroy();
+
+    reaped_child = helper.RunInForkedProcess([] { _exit(0); });
+    int status = 0;
+    ASSERT_EQ(HANDLE_EINTR(waitpid(reaped_child, &status, 0)), reaped_child);
+
+    zombie_child = helper.RunInForkedProcess([] { _exit(0); });
+    siginfo_t info = {};
+    ASSERT_THAT(HANDLE_EINTR(waitid(P_PID, zombie_child, &info, WEXITED | WNOWAIT)),
+                SyscallSucceeds());
+
+    running_child = helper.RunInForkedProcess([] { pause(); });
+  }
+
+  int status = 0;
+  EXPECT_THAT(waitpid(reaped_child, &status, WNOHANG), SyscallFailsWithErrno(ECHILD));
+  EXPECT_THAT(waitpid(zombie_child, &status, WNOHANG), SyscallFailsWithErrno(ECHILD));
+  EXPECT_THAT(waitpid(running_child, &status, WNOHANG), SyscallFailsWithErrno(ECHILD));
 }
 
 TEST(SyscallResultMatchersTest, SyscallResultIsOk) {

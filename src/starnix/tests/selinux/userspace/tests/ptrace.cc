@@ -367,8 +367,8 @@ TEST(PtraceTest, PtraceAttachDeniedWithoutSelinuxCapSysPtrace) {
 
     // Tear down the tracee.
     EXPECT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
-    helper.ExpectSignal(SIGKILL);
-    test_helper::ForkResult tracee_result = helper.WaitForChild(tracee_pid);
+    test_helper::ForkResult tracee_result =
+        helper.WaitForChild(tracee_pid, /*expected_exit_status=*/0, SIGKILL);
     EXPECT_TRUE(tracee_result.determined_result);
   }));
 }

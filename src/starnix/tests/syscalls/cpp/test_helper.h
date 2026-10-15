@@ -77,6 +77,7 @@ class ForkHelper {
 
   // Wait for a specific child of the current process, and return results on it.
   ForkResult WaitForChild(pid_t child_pid);
+  ForkResult WaitForChild(pid_t child_pid, int expected_exit_status, int death_signum = 0);
 
   // Wait for all children of the current process, and return results on each.
   std::vector<ForkResult> WaitForChildrenWithResults();
@@ -98,14 +99,19 @@ class ForkHelper {
   // of waiting for all children.
   void OnlyWaitForForkedChildren();
 
+  // If called, sends SIGKILL to any remaining forked children before waiting for them when
+  // the ForkHelper is destroyed.
+  void KillChildrenOnDestroy();
+
  private:
   std::vector<pid_t> child_pids_;
-  bool wait_for_all_children_;
-  int death_signum_;
-  int exit_value_;
+  bool wait_for_all_children_ = true;
+  bool kill_children_on_destroy_ = false;
+  int death_signum_ = 0;
+  int expected_exit_status_ = 0;
 
-  std::vector<ForkResult> WaitForChildrenInternal(int exit_value, int death_signum);
-  ForkResult GenerateForkResult(pid_t pid, int wstatus, int exit_value, int death_signum);
+  std::vector<ForkResult> WaitForChildrenInternal(bool no_hang = false);
+  ForkResult GenerateForkResult(pid_t pid, int wstatus, int expected_exit_status, int death_signum);
 };
 
 // Helper class to handle tests that needs to clone processes.

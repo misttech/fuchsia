@@ -1454,22 +1454,20 @@ TEST(PtraceTest, RunningTraceeDetachedOnNormalTracerExit) {
         });
 
     // Wait for tracer to exit.
-    int status;
-    SAFE_SYSCALL(waitpid(tracer_pid, &status, 0));
-    EXPECT_TRUE(WIFEXITED(status));
-    EXPECT_EQ(WEXITSTATUS(status), EXIT_SUCCESS);
+    ASSERT_TRUE(trace_fork_helper.WaitForChild(tracer_pid).determined_result);
 
     // Verify that we (the parent) can attach to the tracee.
     // If the tracer did not detach, this will fail.
     ASSERT_THAT(ptrace(PTRACE_ATTACH, tracee_pid, nullptr, nullptr), SyscallSucceeds());
 
     // Detach and kill the tracee.
+    int status;
     SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
     EXPECT_TRUE(WIFSTOPPED(status));
     ASSERT_THAT(ptrace(PTRACE_DETACH, tracee_pid, nullptr, 0), SyscallSucceeds());
     SAFE_SYSCALL(kill(tracee_pid, SIGKILL));
-    trace_fork_helper.ExpectSignal(SIGKILL);
-    ASSERT_TRUE(trace_fork_helper.WaitForChild(tracee_pid).determined_result);
+    ASSERT_TRUE(trace_fork_helper.WaitForChild(tracee_pid, /*expected_exit_status=*/0, SIGKILL)
+                    .determined_result);
   });
 
   EXPECT_TRUE(helper.WaitForChildren());
@@ -1531,8 +1529,8 @@ TEST(PtraceTest, ZombieTraceeDetachedOnNormalTracerExit) {
 
     // Reap the tracer before the tracee to ensure they are fully disconnected.
     ASSERT_TRUE(trace_fork_helper.WaitForChild(tracer_pid).determined_result);
-    trace_fork_helper.ExpectSignal(SIGKILL);
-    ASSERT_TRUE(trace_fork_helper.WaitForChild(tracee_pid).determined_result);
+    ASSERT_TRUE(trace_fork_helper.WaitForChild(tracee_pid, /*expected_exit_status=*/0, SIGKILL)
+                    .determined_result);
   });
 
   EXPECT_TRUE(helper.WaitForChildren());
@@ -2048,17 +2046,13 @@ TEST(PtraceTest, UndefinedInstructionSignal) {
 
   ASSERT_NE(child_pid, 0);
 
-  int status;
-  ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
-
 #if defined(__arm__)
   // We expect SIGTRAP for this specific instruction on ARM32
-  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGTRAP)
-      << "Expected SIGTRAP on ARM32, got " << WTERMSIG(status);
+  EXPECT_TRUE(
+      helper.WaitForChild(child_pid, /*expected_exit_status=*/0, SIGTRAP).determined_result);
 #else
   // We expect SIGILL on other architectures
-  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGILL)
-      << "Expected SIGILL, got " << WTERMSIG(status);
+  EXPECT_TRUE(helper.WaitForChild(child_pid, /*expected_exit_status=*/0, SIGILL).determined_result);
 #endif
 }
 
@@ -2081,10 +2075,8 @@ TEST(PtraceTest, ThumbUndefinedInstructionSignal) {
     _exit(1);
   });
 
-  int status;
-  ASSERT_EQ(child_pid1, waitpid(child_pid1, &status, 0));
-  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGTRAP)
-      << "Expected SIGTRAP for Thumb-1, got " << WTERMSIG(status);
+  EXPECT_TRUE(
+      helper.WaitForChild(child_pid1, /*expected_exit_status=*/0, SIGTRAP).determined_result);
 
   // Test Thumb-2 breakpoint (0xf7f0a000)
   pid_t child_pid2 = helper.RunInForkedProcess([] {
@@ -2092,9 +2084,8 @@ TEST(PtraceTest, ThumbUndefinedInstructionSignal) {
     _exit(1);
   });
 
-  ASSERT_EQ(child_pid2, waitpid(child_pid2, &status, 0));
-  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGTRAP)
-      << "Expected SIGTRAP for Thumb-2, got " << WTERMSIG(status);
+  EXPECT_TRUE(
+      helper.WaitForChild(child_pid2, /*expected_exit_status=*/0, SIGTRAP).determined_result);
 }
 #endif
 
@@ -2524,9 +2515,7 @@ TEST(PtraceTest, MaskedSignalDelivery) {
   SAFE_SYSCALL(ptrace(PTRACE_CONT, pid, nullptr, nullptr));
 
   // Child should exit, i.e. not stop at SIGTRAP.
-  ASSERT_EQ(waitpid(pid, &status, 0), pid);
-  ASSERT_TRUE(WIFEXITED(status));
-  EXPECT_EQ(WEXITSTATUS(status), 0);
+  EXPECT_TRUE(helper.WaitForChild(pid).determined_result);
 }
 
 TEST(PtraceTest, PtraceEventStopWithMaskedSigtrap) {
@@ -2579,13 +2568,8 @@ TEST(PtraceTest, PtraceEventStopWithMaskedSigtrap) {
   ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
   ASSERT_THAT(ptrace(PTRACE_CONT, grandchild_pid, 0, 0), SyscallSucceeds());
 
-  ASSERT_EQ(HANDLE_EINTR(waitpid(child_pid, &status, 0)), child_pid);
-  EXPECT_TRUE(WIFEXITED(status)) << "Child exit status: " << std::hex << status;
-  EXPECT_EQ(WEXITSTATUS(status), 0);
-
-  ASSERT_EQ(HANDLE_EINTR(waitpid(grandchild_pid, &status, 0)), grandchild_pid);
-  EXPECT_TRUE(WIFEXITED(status)) << "Grandchild exit status: " << std::hex << status;
-  EXPECT_EQ(WEXITSTATUS(status), 0);
+  ASSERT_TRUE(helper.WaitForChild(child_pid).determined_result);
+  ASSERT_TRUE(helper.WaitForChild(grandchild_pid).determined_result);
 
   ptrace(PTRACE_DETACH, grandchild_pid, 0, 0);
   ptrace(PTRACE_DETACH, child_pid, 0, 0);
@@ -2961,9 +2945,6 @@ TEST(PtraceTest, SigcontDoesNotWakePtraceEventStop) {
   ASSERT_THAT(ptrace(PTRACE_CONT, tracee_pid, nullptr, 0), SyscallSucceeds());
 
   // Now wait for the tracee to actually exit with code 42.
-  SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 42);
-
   helper.ExpectExitValue(42);
   EXPECT_TRUE(helper.WaitForChildren());
 }
@@ -3032,6 +3013,7 @@ TEST(PtraceTest, SyscallExecutesSideEffectBeforeSigstop) {
 TEST(PtraceTest, ReplaceForcedSignalWithBlockedSignal) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
+  helper.KillChildrenOnDestroy();
 
   pid_t child_pid = helper.RunInForkedProcess([] {
     static volatile sig_atomic_t sigusr1_delivered = 0;
@@ -3092,6 +3074,7 @@ TEST(PtraceTest, ReplaceForcedSignalWithBlockedSignal) {
 TEST(PtraceTest, ReplaceForcedSignalWithIgnoredSignal) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
+  helper.KillChildrenOnDestroy();
 
   pid_t child_pid = helper.RunInForkedProcess([] {
     struct sigaction sa = {};

@@ -246,9 +246,8 @@ TEST(WaitpidExitSignalTest, StoppedChildInOrphanedGroup) {
     ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
 
     test_helper::ForkHelper fork_helper;
-    fork_helper.OnlyWaitForForkedChildren();
     test_helper::ScopedPipe pipe;
-    fork_helper.RunInForkedProcess([&] {
+    pid_t child_pid = fork_helper.RunInForkedProcess([&] {
       // This is the child process.
       pipe.ReadSide().reset();
       ASSERT_THAT(setsid(), SyscallSucceeds());
@@ -281,14 +280,12 @@ TEST(WaitpidExitSignalTest, StoppedChildInOrphanedGroup) {
     pipe.ReadSide().reset();
     pipe.WriteSide().reset();
 
-    EXPECT_TRUE(fork_helper.WaitForChildren());
+    EXPECT_TRUE(fork_helper.WaitForChild(child_pid).determined_result);
 
     // Grandchild is now reparented to us. Since its process group is orphaned, and it was stopped,
     // it should have received SIGHUP and SIGCONT, and exited.
-    int status;
-    ASSERT_THAT(waitpid(grandchild_pid, &status, 0), SyscallSucceedsWithValue(grandchild_pid));
-    ASSERT_TRUE(WIFSIGNALED(status));
-    EXPECT_EQ(WTERMSIG(status), SIGHUP);
+    EXPECT_TRUE(fork_helper.WaitForChild(grandchild_pid, /*expected_exit_status=*/0, SIGHUP)
+                    .determined_result);
   });
   EXPECT_TRUE(fork_helper.WaitForChildren());
 }

@@ -62,10 +62,10 @@ int lambda_wrapper(void *func_ptr) {
 
 }  // namespace
 
-ForkResult ForkHelper::GenerateForkResult(pid_t pid, int wstatus, int exit_value,
+ForkResult ForkHelper::GenerateForkResult(pid_t pid, int wstatus, int expected_exit_status,
                                           int death_signum) {
   // If we had a normal death signal wired up, only fail if the exit status wasn't expected.
-  if (death_signum == 0 && (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != exit_value)) {
+  if (death_signum == 0 && (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != expected_exit_status)) {
     auto unexpected_exit = ::testing::AssertionFailure()
                            << "wait_status: WIFEXITED(wstatus) = " << WIFEXITED(wstatus)
                            << ", WEXITSTATUS(wstatus) = " << WEXITSTATUS(wstatus)
@@ -92,25 +92,30 @@ ForkResult ForkHelper::GenerateForkResult(pid_t pid, int wstatus, int exit_value
   }
 }
 
-std::vector<ForkResult> ForkHelper::WaitForChildrenInternal(int exit_value, int death_signum) {
+std::vector<ForkResult> ForkHelper::WaitForChildrenInternal(bool no_hang) {
   std::vector<ForkResult> results;
-  while (wait_for_all_children_ || !child_pids_.empty()) {
+  int options = no_hang ? WNOHANG : 0;
+  for (auto it = child_pids_.begin(); wait_for_all_children_ || it != child_pids_.end();) {
     int wstatus;
-    pid_t target_pid = wait_for_all_children_ ? -1 : child_pids_.back();
-    pid_t pid = waitpid(target_pid, &wstatus, 0);
-    if (pid == -1) {
-      if (errno == EINTR) {
-        continue;
+    pid_t target_pid = wait_for_all_children_ ? -1 : *it;
+    pid_t pid = HANDLE_EINTR(waitpid(target_pid, &wstatus, options));
+    if (pid == 0) {
+      if (wait_for_all_children_) {
+        break;
       }
+      ++it;
+      continue;
+    }
+    if (pid == -1) {
       if (errno == ECHILD) {
         if (wait_for_all_children_) {
           // No more children, reaping is done.
-          return results;
+          child_pids_.clear();
+          break;
         }
-        // If we are waiting for specific children, ECHILD means the target_pid is not waitable.
-        // This typically happens if the child has already been reaped manually. Pop it and continue
-        // to check others.
-        child_pids_.pop_back();
+        // If we are waiting for specific children, ECHILD means target_pid is not waitable
+        // (typically because it was already reaped manually).
+        it = child_pids_.erase(it);
         continue;
       }
 
@@ -120,53 +125,81 @@ std::vector<ForkResult> ForkHelper::WaitForChildrenInternal(int exit_value, int 
       results.push_back({.subprocess_id = pid,
                          .subprocess_exit_status = errno,
                          .determined_result = unexpected_failure});
-      if (!wait_for_all_children_) {
-        child_pids_.pop_back();
+      if (wait_for_all_children_) {
+        break;
+      }
+      it = child_pids_.erase(it);
+      continue;
+    }
+
+    if (wait_for_all_children_) {
+      it = std::ranges::find(child_pids_, pid);
+    }
+
+    if (WIFSTOPPED(wstatus)) {
+      // A ptraced child reports stops to waitpid(..., 0) even without WUNTRACED. If
+      // KillChildrenOnDestroy is enabled, leave the still-living child in child_pids_ so
+      // ~ForkHelper() can kill and reap it; otherwise remove it so ~ForkHelper() does not block
+      // waiting for it again.
+      if (it != child_pids_.end()) {
+        if (kill_children_on_destroy_) {
+          ++it;
+        } else {
+          it = child_pids_.erase(it);
+        }
+      }
+      if (!no_hang) {
+        results.push_back(GenerateForkResult(pid, wstatus, expected_exit_status_, death_signum_));
+        break;
       }
       continue;
     }
 
-    bool check_result = wait_for_all_children_;
-    if (!check_result) {
-      auto it = std::ranges::find(child_pids_, pid);
-      if (it != child_pids_.end()) {
-        child_pids_.erase(it);
-        check_result = true;
-      }
+    if (it != child_pids_.end()) {
+      it = child_pids_.erase(it);
     }
-
-    if (check_result) {
-      results.push_back(GenerateForkResult(pid, wstatus, exit_value, death_signum));
-    }
+    results.push_back(GenerateForkResult(pid, wstatus, expected_exit_status_, death_signum_));
   }
 
   return results;
 }
 
-ForkHelper::ForkHelper() : wait_for_all_children_(true), death_signum_(0), exit_value_(0) {
+ForkHelper::ForkHelper() {
   // Ensure that all children will ends up being parented to the process that
   // created the helper.
   prctl(PR_SET_CHILD_SUBREAPER, 1);
 }
 
 ForkHelper::~ForkHelper() {
-  // Wait for all remaining children, and ensure none failed.
-  auto results = WaitForChildrenInternal(exit_value_, death_signum_);
-  for (const auto &result : results) {
-    // EXPECT_TRUE on the result directly will implicitly print failure details.!
-    EXPECT_TRUE(result.determined_result);
+  auto reap_and_check = [this](bool no_hang) {
+    for (const auto &result : WaitForChildrenInternal(no_hang)) {
+      // EXPECT_TRUE on the result directly will implicitly print failure details.
+      EXPECT_TRUE(result.determined_result);
+    }
+    return child_pids_.empty();
+  };
+
+  if (kill_children_on_destroy_ && !reap_and_check(/*no_hang=*/true)) {
+    for (pid_t pid : child_pids_) {
+      EXPECT_THAT(kill(pid, SIGKILL), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(ESRCH)));
+    }
+    ExpectSignal(SIGKILL);
   }
+
+  // Wait for all remaining children, and ensure none failed.
+  reap_and_check(/*no_hang=*/false);
 }
 
 void ForkHelper::OnlyWaitForForkedChildren() { wait_for_all_children_ = false; }
 
+void ForkHelper::KillChildrenOnDestroy() { kill_children_on_destroy_ = true; }
+
 void ForkHelper::ExpectSignal(int signum) { death_signum_ = signum; }
 
-void ForkHelper::ExpectExitValue(int value) { exit_value_ = value; }
+void ForkHelper::ExpectExitValue(int value) { expected_exit_status_ = value; }
 
 testing::AssertionResult ForkHelper::WaitForChildren() {
-  auto results = WaitForChildrenInternal(exit_value_, death_signum_);
-  for (const auto &result : results) {
+  for (const auto &result : WaitForChildrenInternal()) {
     if (result.determined_result != testing::AssertionSuccess()) {
       return result.determined_result;
     }
@@ -176,13 +209,12 @@ testing::AssertionResult ForkHelper::WaitForChildren() {
 }
 
 ForkResult ForkHelper::WaitForChild(pid_t child_pid) {
+  return WaitForChild(child_pid, expected_exit_status_, death_signum_);
+}
+
+ForkResult ForkHelper::WaitForChild(pid_t child_pid, int expected_exit_status, int death_signum) {
   int wstatus;
-  int pid;
-
-  // Continually loop waitpid to handle EINTR signals.
-  while ((pid = waitpid(child_pid, &wstatus, 0)) == -1 && errno == EINTR) {
-  }
-
+  pid_t pid = HANDLE_EINTR(waitpid(child_pid, &wstatus, 0));
   if (pid == -1) {
     auto unexpected_failure = testing::AssertionFailure()
                               << "wait error: " << strerror(errno) << "(" << errno << ")";
@@ -191,15 +223,15 @@ ForkResult ForkHelper::WaitForChild(pid_t child_pid) {
             .determined_result = unexpected_failure};
   }
 
-  auto it = std::ranges::find(child_pids_, pid);
-  EXPECT_TRUE(it != child_pids_.end());
-  child_pids_.erase(it);
+  if (!WIFSTOPPED(wstatus) || !kill_children_on_destroy_) {
+    std::erase(child_pids_, pid);
+  }
 
-  return GenerateForkResult(pid, wstatus, exit_value_, death_signum_);
+  return GenerateForkResult(pid, wstatus, expected_exit_status, death_signum);
 }
 
 std::vector<ForkResult> ForkHelper::WaitForChildrenWithResults() {
-  return WaitForChildrenInternal(exit_value_, death_signum_);
+  return WaitForChildrenInternal();
 }
 
 pid_t ForkHelper::RunInForkedProcess(fit::function<void()> action) {
@@ -210,6 +242,7 @@ pid_t ForkHelper::RunInForkedProcess(fit::function<void()> action) {
     child_pids_.push_back(pid);
     return pid;
   }
+  child_pids_.clear();
   action();
   // Flush buffers before exiting to ensure failures are logged. Unlike exit(), _exit() bypasses
   // flushing.
