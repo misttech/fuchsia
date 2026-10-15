@@ -327,7 +327,11 @@ class LintCodeActionTest(BaseTestCase):
         ):
             mock_cmd.return_value = self.make_completed_process()
             self.assertTrue(adapters.lint_code_action(ctx, ["foo.py"]))
-            base = ["fx", "lint", "--skip=check_licenses"]
+            base = [
+                "fx",
+                "lint",
+                "--skip=check_licenses,clang_tidy,python_format",
+            ]
             self.assertEqual(
                 mock_cmd.call_args_list,
                 [
@@ -347,16 +351,15 @@ class LintCodeActionTest(BaseTestCase):
             mock_cmd.return_value = self.make_completed_process()
             ok = adapters.lint_code_action(ctx, ["a.py", "b.cc"])
             self.assertTrue(ok)
+            base = ["fx", "lint", "--skip=clang_tidy,python_format"]
             self.assertEqual(
                 mock_cmd.call_args_list,
                 [
                     mock.call(
-                        ["fx", "lint", "--fix", "--files=a.py,b.cc"],
+                        [*base, "--fix", "--files=a.py,b.cc"],
                         cwd=self.test_dir,
                     ),
-                    mock.call(
-                        ["fx", "lint", "--files=a.py,b.cc"], cwd=self.test_dir
-                    ),
+                    mock.call([*base, "--files=a.py,b.cc"], cwd=self.test_dir),
                 ],
             )
 
@@ -399,7 +402,12 @@ class LintCodeActionTest(BaseTestCase):
             ok = adapters.lint_code_action(ctx, ["foo.py"])
             self.assertTrue(ok)
             mock_cmd.assert_called_once_with(
-                ["fx", "lint", "--files=foo.py"],
+                [
+                    "fx",
+                    "lint",
+                    "--skip=clang_tidy,python_format",
+                    "--files=foo.py",
+                ],
                 cwd=self.test_dir,
             )
 
@@ -476,11 +484,22 @@ class LintCodeActionTest(BaseTestCase):
                 mock_cmd.call_args_list,
                 [
                     mock.call(
-                        [str(fx_script), "lint", "--fix", "--files=foo.py"],
+                        [
+                            str(fx_script),
+                            "lint",
+                            "--skip=clang_tidy,python_format",
+                            "--fix",
+                            "--files=foo.py",
+                        ],
                         cwd=self.test_dir,
                     ),
                     mock.call(
-                        [str(fx_script), "lint", "--files=foo.py"],
+                        [
+                            str(fx_script),
+                            "lint",
+                            "--skip=clang_tidy,python_format",
+                            "--files=foo.py",
+                        ],
                         cwd=self.test_dir,
                     ),
                 ],

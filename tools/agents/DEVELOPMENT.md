@@ -134,7 +134,8 @@ tools/agents/
     partially staged files).
   - `fx lint` adapter (mutating: an advisory `--fix` pass applies automated replacements on fully
     staged files, followed by a check pass that gates the commit; partially staged files run the
-    check pass only).
+    check pass only; skips `clang_tidy` and `python_format` on all commits via
+    `ALWAYS_SKIPPED_LINTERS` and `check_licenses` on human commits via `HUMAN_SKIPPED_LINTERS`).
   - `commit_msg_checker.py` adapter (validating subject length, body wrapping, and required
     footers).
 - **`installer.py`**: Installs, uninstalls, and checks status of Git hooks across repositories

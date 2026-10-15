@@ -18,13 +18,17 @@ unstaged edits:
   (`git add`). Partially staged files are evaluated strictly in read-only check mode under stash
   isolation.
 - **Static Analysis & Code Linting**: `fx lint` runs on staged files for every commit, validating
-  compliance with all platform linters (GN format, Python format, fidl-lint, clippy, mdlint, etc.).
+  compliance with platform linters (GN format, fidl-lint, clippy, mdlint, etc.).
   Fully staged files get two passes: an advisory `fx lint --fix` pass that applies automated
   replacements (re-staged by the pipeline), followed by a check pass that gates the commit. The
   second pass is required because `--fix` delegates to `shac fix`, which skips formatter checks and
   exits 0 even when findings remain. Partially staged files run the check pass only, under stash
-  isolation. Human commits skip `check_licenses` (`HUMAN_SKIPPED_LINTERS`) because it can take over
-  a minute when triggered; agents run the full set so automated changes are CQ-clean before upload.
+  isolation. `clang_tidy` and `python_format` (`ALWAYS_SKIPPED_LINTERS`) are skipped on all commits:
+  `clang_tidy` takes ~10-20s per C++ file, does not emit auto-fixes in shac, and only emits non-blocking
+  warnings, while `python_format` takes ~1.1s per Python file and already runs during the preceding
+  `fx format-code` pass. Human commits also skip `check_licenses` (`HUMAN_SKIPPED_LINTERS`) because
+  it can take over a minute when triggered; agents run `check_licenses` so automated changes are
+  CQ-clean before upload.
 - **Commit Message Style Verification**: Validates subject line length ($\le 50$ chars recommended,
   $> 65$ warned), 72-character body line wrapping, and mandatory footers (`Bug:`, `Test:`,
   `Change-Id:`) via `scripts/shac/commit_msg_checker.py`.

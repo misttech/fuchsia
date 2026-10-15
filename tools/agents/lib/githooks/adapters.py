@@ -43,9 +43,16 @@ DEFAULT_FORMATTABLE_EXTENSIONS: tuple[str, ...] = (
     ".ts",
 )
 
+# Linters that are skipped on every commit (both human and agent).
+# - `clang_tidy` takes ~10-20s per C++ file, does not emit auto-fixes in shac,
+#   and only emits non-blocking warnings.
+# - `python_format` takes ~1.1s per Python file and already runs during the
+#   preceding `fx format-code` (`shac fmt`) pass.
+ALWAYS_SKIPPED_LINTERS: tuple[str, ...] = ("clang_tidy", "python_format")
+
 # Linters that are prohibitively slow to run on every interactive commit.
 # `check_licenses` can take over a minute when it is triggered, so human
-# commits skip it and rely on CQ. Agents run the full set so that automated
+# commits skip it and rely on CQ. Agents still run it so that automated
 # changes are CQ-clean before upload.
 HUMAN_SKIPPED_LINTERS: tuple[str, ...] = ("check_licenses",)
 
@@ -185,9 +192,10 @@ def lint_code_action(
     Partially staged files are linted in check-only mode under stash isolation
     to avoid clobbering unstaged hunks.
 
-    Human commits skip the linters in `HUMAN_SKIPPED_LINTERS` to keep
-    interactive commit latency low. Agents run the full linter set so that
-    automated changes match what CQ enforces.
+    `ALWAYS_SKIPPED_LINTERS` (e.g. `clang_tidy`) are skipped on all commits.
+    Human commits additionally skip the linters in `HUMAN_SKIPPED_LINTERS` to
+    keep interactive commit latency low, while agents run all remaining linters
+    so automated changes match what CQ enforces.
 
     Args:
         context: HookContext with repo_root, check_only, is_agent, and reporter.
@@ -203,9 +211,12 @@ def lint_code_action(
     if fx_cmd is None:
         return not context.is_agent
 
-    base_cmd = [fx_cmd, "lint"]
-    if not context.is_agent:
-        base_cmd.append(f"--skip={','.join(HUMAN_SKIPPED_LINTERS)}")
+    skipped = (
+        ALWAYS_SKIPPED_LINTERS
+        if context.is_agent
+        else (*HUMAN_SKIPPED_LINTERS, *ALWAYS_SKIPPED_LINTERS)
+    )
+    base_cmd = [fx_cmd, "lint", f"--skip={','.join(skipped)}"]
     files_arg = f"--files={','.join(files)}"
 
     if not context.check_only:

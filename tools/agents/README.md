@@ -129,10 +129,10 @@ Formatting and linting run for everyone. The hooks check whether a commit is run
 AI agent (via environment variables) to decide how strict commit message validation is and which
 linters to run:
 
-| Commit Invocation                        | Commit Message Style                                                            | Formatting & Linting Behavior                                                                            |
-| ---------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Human Developer** (Interactive)        | **Advisory Warnings**: Non-blocking warnings for style/length; commits succeed. | Fully staged files auto-formatted, auto-fixed by `fx lint`, and re-staged. Slow linters (`check_licenses`) are skipped. |
-| **AI Coding Agent** (`GEMINI_CLI`, etc.) | **Strict Rejection**: Non-compliant commit messages fail (`--strict`).          | Same, but the full linter set runs so automated changes are CQ-clean before upload.                      |
+| Commit Invocation                        | Commit Message Style                                                            | Formatting & Linting Behavior                                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Human Developer** (Interactive)        | **Advisory Warnings**: Non-blocking warnings for style/length; commits succeed. | Fully staged files auto-formatted, auto-fixed by `fx lint`, and re-staged. Slow linters (`check_licenses`, `clang_tidy`, `python_format`) are skipped. |
+| **AI Coding Agent** (`GEMINI_CLI`, etc.) | **Strict Rejection**: Non-compliant commit messages fail (`--strict`).          | Same, but only `clang_tidy` and `python_format` are skipped so automated changes run `check_licenses` and are CQ-clean before upload.      |
 
 ### Opt-Outs & Bypasses
 
