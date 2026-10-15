@@ -496,6 +496,7 @@ impl UpdateTool {
             allow_attach_to_existing_attempt: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let client = installer_proxy.domain();
@@ -541,7 +542,7 @@ for more detail on the progress of update-related downloads.\n"
                 }
                 fidl_fuchsia_update_installer_ext::State::Reboot(info)
                 | fidl_fuchsia_update_installer_ext::State::DeferReboot(info)
-                | fidl_fuchsia_update_installer_ext::State::Complete(info) => {
+                | fidl_fuchsia_update_installer_ext::State::CompleteButNotActive(info) => {
                     write_progress_kb(&info, "Complete", writer)?;
                     writeln!(writer)?;
                     return Ok(());

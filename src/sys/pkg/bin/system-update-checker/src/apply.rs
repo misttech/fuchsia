@@ -117,6 +117,7 @@ async fn apply_system_update_impl(
         allow_attach_to_existing_attempt: true,
         manifest_range: None,
         manifest_headers: vec![],
+        should_commit: true,
     };
     let update_url = target_channel_updater
         .get_target_channel_update_url()
@@ -217,7 +218,7 @@ mod test_apply_system_update_impl {
         ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>> {
             self.was_called = true;
             let info = UpdateInfo::builder().download_size(0).build();
-            let state = State::Complete(UpdateInfoAndProgress::done(info));
+            let state = State::CompleteButNotActive(UpdateInfoAndProgress::done(info));
             future::ok(futures::stream::once(future::ok(state))).boxed()
         }
     }
@@ -258,7 +259,7 @@ mod test_apply_system_update_impl {
             self.options = Some(options);
             self.reboot_controller_server_end = Some(reboot_controller_server_end);
             let state = self.state.clone().unwrap_or_else(|| {
-                State::Complete(UpdateInfoAndProgress::done(
+                State::CompleteButNotActive(UpdateInfoAndProgress::done(
                     UpdateInfo::builder().download_size(0).build(),
                 ))
             });
@@ -288,6 +289,7 @@ mod test_apply_system_update_impl {
                 allow_attach_to_existing_attempt: true,
                 manifest_range: None,
                 manifest_headers: vec![],
+                should_commit: true,
             })
         );
         assert_matches!(update_installer.reboot_controller_server_end, Some(Some(_)));
@@ -316,6 +318,7 @@ mod test_apply_system_update_impl {
                 allow_attach_to_existing_attempt: true,
                 manifest_range: None,
                 manifest_headers: vec![],
+                should_commit: true,
             })
         );
         assert_matches!(update_installer.reboot_controller_server_end, Some(Some(_)));
@@ -469,6 +472,7 @@ mod test_apply_system_update_impl {
                         allow_attach_to_existing_attempt: true,
                         manifest_range: None,
                         manifest_headers: vec![],
+                        should_commit: true,
                     })
                 );
                 Ok(())}
@@ -558,7 +562,7 @@ mod test_apply_system_update_impl {
                 )
                 .unwrap(),
             ),
-            State::Complete(UpdateInfoAndProgress::done(info)),
+            State::CompleteButNotActive(UpdateInfoAndProgress::done(info)),
         ]);
 
         let mut stream = apply_system_update_impl(

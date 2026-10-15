@@ -32,6 +32,7 @@ impl std::fmt::Debug for Config {
             .field("initiator", &self.options.initiator)
             .field("update_url", &self.update_url.to_string())
             .field("should_write_recovery", &self.options.should_write_recovery)
+            .field("should_commit", &self.options.should_commit)
             .field("start_time", &chrono::DateTime::<chrono::Utc>::from(self.start_time))
             .field("start_time_mono", &self.start_time_mono)
             .field(
@@ -57,6 +58,7 @@ impl std::fmt::Debug for Config {
 pub struct ConfigBuilder<'a> {
     update_url: &'a str,
     should_write_recovery: bool,
+    should_commit: bool,
     allow_attach_to_existing_attempt: bool,
     manifest_range: Option<Range>,
 }
@@ -67,6 +69,7 @@ impl<'a> ConfigBuilder<'a> {
         Self {
             update_url: "fuchsia-pkg://fuchsia.test/update",
             should_write_recovery: true,
+            should_commit: true,
             allow_attach_to_existing_attempt: false,
             manifest_range: None,
         }
@@ -86,6 +89,10 @@ impl<'a> ConfigBuilder<'a> {
         self.should_write_recovery = should_write_recovery;
         self
     }
+    pub fn should_commit(mut self, should_commit: bool) -> Self {
+        self.should_commit = should_commit;
+        self
+    }
     pub fn manifest_range(mut self, manifest_range: Option<Range>) -> Self {
         self.manifest_range = manifest_range;
         self
@@ -94,6 +101,7 @@ impl<'a> ConfigBuilder<'a> {
         let Self {
             update_url,
             should_write_recovery,
+            should_commit,
             allow_attach_to_existing_attempt,
             manifest_range,
         } = self;
@@ -102,6 +110,7 @@ impl<'a> ConfigBuilder<'a> {
             Options {
                 allow_attach_to_existing_attempt,
                 should_write_recovery,
+                should_commit,
                 initiator: Initiator::User,
                 manifest_range,
                 manifest_headers: vec![],
@@ -122,6 +131,7 @@ mod tests {
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
         let update_url: http::Uri = "fuchsia-pkg://fuchsia.test/foo".parse().unwrap();
 

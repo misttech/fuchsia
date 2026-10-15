@@ -90,6 +90,7 @@ async fn run<N, U, E>(
         // Now we can actually start the task that manages the update attempt.
         let update_url = &config.update_url.clone();
         let should_write_recovery = config.options.should_write_recovery;
+        let should_commit = config.options.should_commit;
         let manifest_range = config.options.manifest_range;
         let (cancel_sender, cancel_receiver) = oneshot::channel();
         let (attempt_id, attempt_stream) =
@@ -149,6 +150,7 @@ async fn run<N, U, E>(
                         &attempt_id,
                         update_url,
                         should_write_recovery,
+                        should_commit,
                         manifest_range,
                         &mut suspend_state,
                         suspend_deadline,
@@ -231,6 +233,7 @@ async fn handle_active_control_request<N>(
     attempt_id: &str,
     update_url: &http::Uri,
     should_write_recovery: bool,
+    should_commit: bool,
     manifest_range: Option<fidl_fuchsia_update_installer_ext::options::Range>,
     suspend_state: &mut SuspendState,
     suspend_deadline: fasync::BootInstant,
@@ -256,6 +259,7 @@ async fn handle_active_control_request<N>(
                 && config.options.allow_attach_to_existing_attempt
                 && &config.update_url == update_url
                 && config.options.should_write_recovery == should_write_recovery
+                && config.options.should_commit == should_commit
                 && config.options.manifest_range == manifest_range
             {
                 if let Err(e) = monitor_queue.add_client(monitor).await {
@@ -445,6 +449,10 @@ impl<N: Notify> ControlRequest<N> {
                 node.record_string(
                     "should_write_recovery",
                     format!("{:?}", data.config.options.should_write_recovery),
+                );
+                node.record_string(
+                    "should_commit",
+                    format!("{:?}", data.config.options.should_commit),
                 );
                 node.record_string(
                     "allow_attach_to_existing_attempt",
@@ -1217,6 +1225,24 @@ mod tests {
             Ok(Err(UpdateNotStartedReason::AlreadyInProgress))
         );
 
+        // Fails because incompatible configs (i.e. should_commit is different).
+        let (notifier_commit, _state_receiver_commit) =
+            FakeStateNotifier::new_callback_and_receiver();
+        assert_eq!(
+            install_manager_ch
+                .start_update(
+                    ConfigBuilder::new()
+                        .allow_attach_to_existing_attempt(true)
+                        .should_commit(false)
+                        .build()
+                        .unwrap(),
+                    notifier_commit,
+                    None
+                )
+                .await,
+            Ok(Err(UpdateNotStartedReason::AlreadyInProgress))
+        );
+
         // Fails because incompatible configs (i.e. manifest_range is different).
         let (notifier_range, _state_receiver_range) =
             FakeStateNotifier::new_callback_and_receiver();
@@ -1344,6 +1370,7 @@ mod tests {
                             allow_attach_to_existing_attempt: "false",
                             initiator: "User",
                             should_write_recovery: "true",
+                            should_commit: "true",
                             update_url: "fuchsia-pkg://fuchsia.test/update",
                         },
                     },

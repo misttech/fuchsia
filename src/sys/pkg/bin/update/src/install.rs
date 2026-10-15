@@ -36,6 +36,7 @@ async fn handle_force_install_impl(
         allow_attach_to_existing_attempt: true,
         manifest_range: None,
         manifest_headers: vec![],
+        should_commit: true,
     };
 
     let (reboot_controller, reboot_controller_server_end) =

@@ -184,3 +184,115 @@ async fn fails_commit_recovery_packageless() {
         Paver(PaverEvent::SetConfigurationUnbootable { configuration: paver::Configuration::A }),
     ]));
 }
+
+#[fuchsia::test]
+async fn skips_commit_when_should_commit_is_false() {
+    let env = TestEnv::builder().build().await;
+
+    env.resolver
+        .register_package("update", "upd4t3")
+        .add_file("packages.json", make_packages_json([]))
+        .add_file("images.json", make_images_json_zbi())
+        .add_file("epoch.json", make_current_epoch_json());
+
+    let attempt = env
+        .start_update_with_options(
+            UPDATE_PKG_URL,
+            Options { should_commit: false, ..default_options() },
+            None,
+        )
+        .await
+        .unwrap();
+
+    let states: Vec<fidl_fuchsia_update_installer_ext::State> =
+        attempt.map(|res| res.unwrap()).collect().await;
+    assert_eq!(
+        states.iter().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![
+            fidl_fuchsia_update_installer_ext::StateId::Prepare,
+            fidl_fuchsia_update_installer_ext::StateId::Stage,
+            fidl_fuchsia_update_installer_ext::StateId::Stage,
+            fidl_fuchsia_update_installer_ext::StateId::Fetch,
+            fidl_fuchsia_update_installer_ext::StateId::CompleteButNotActive,
+        ]
+    );
+
+    assert_eq!(
+        env.get_ota_metrics().await,
+        OtaMetrics {
+            initiator:
+                metrics::OtaResultAttemptsMigratedMetricDimensionInitiator::UserInitiatedCheck
+                    as u32,
+            phase: metrics::OtaResultAttemptsMigratedMetricDimensionPhase::SuccessPendingReboot
+                as u32,
+            status_code: metrics::OtaResultAttemptsMigratedMetricDimensionStatusCode::Success
+                as u32,
+        }
+    );
+
+    env.assert_interactions(crate::initial_interactions().chain([
+        PackageResolve(UPDATE_PKG_URL.to_string()),
+        Paver(PaverEvent::ReadAsset {
+            configuration: paver::Configuration::B,
+            asset: paver::Asset::Kernel,
+        }),
+        Paver(PaverEvent::DataSinkFlush),
+        ReplaceRetainedPackages(vec![]),
+        Gc,
+        BlobfsSync,
+    ]));
+}
+
+#[fuchsia::test]
+async fn skips_commit_when_should_commit_is_false_packageless() {
+    let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
+
+    let attempt = env
+        .start_update_with_options(
+            MANIFEST_URL,
+            Options { should_commit: false, ..default_options() },
+            None,
+        )
+        .await
+        .unwrap();
+
+    let states: Vec<fidl_fuchsia_update_installer_ext::State> =
+        attempt.map(|res| res.unwrap()).collect().await;
+    assert_eq!(
+        states.iter().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![
+            fidl_fuchsia_update_installer_ext::StateId::Prepare,
+            fidl_fuchsia_update_installer_ext::StateId::Stage,
+            fidl_fuchsia_update_installer_ext::StateId::Stage,
+            fidl_fuchsia_update_installer_ext::StateId::Stage,
+            fidl_fuchsia_update_installer_ext::StateId::Fetch,
+            fidl_fuchsia_update_installer_ext::StateId::CompleteButNotActive,
+        ]
+    );
+
+    assert_eq!(
+        env.get_ota_metrics().await,
+        OtaMetrics {
+            initiator:
+                metrics::OtaResultAttemptsMigratedMetricDimensionInitiator::UserInitiatedCheck
+                    as u32,
+            phase: metrics::OtaResultAttemptsMigratedMetricDimensionPhase::SuccessPendingReboot
+                as u32,
+            status_code: metrics::OtaResultAttemptsMigratedMetricDimensionStatusCode::Success
+                as u32,
+        }
+    );
+
+    env.assert_interactions(initial_interactions().chain([
+        ReplaceRetainedBlobs(vec![empty_merkle().into()]),
+        Gc,
+        Paver(PaverEvent::ReadAsset {
+            configuration: paver::Configuration::B,
+            asset: paver::Asset::Kernel,
+        }),
+        Paver(PaverEvent::DataSinkFlush),
+        ReplaceRetainedBlobs(vec![]),
+        Gc,
+        BlobfsSync,
+    ]));
+}

@@ -49,6 +49,7 @@ impl Updater {
                 should_write_recovery: false,
                 manifest_range: None,
                 manifest_headers: vec![],
+                should_commit: true,
             },
             &self.proxy,
             Some(reboot_controller_server_end),

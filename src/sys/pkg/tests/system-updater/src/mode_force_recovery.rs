@@ -165,6 +165,34 @@ async fn rejects_skip_recovery_flag(update_url: &str) {
                 should_write_recovery: false,
                 manifest_range: None,
                 manifest_headers: vec![],
+                should_commit: true,
+            },
+        )
+        .await;
+    assert!(result.is_err(), "system updater succeeded when it should fail");
+}
+
+#[test_case(UPDATE_PKG_URL)]
+#[test_case(MANIFEST_URL)]
+#[fuchsia::test]
+async fn rejects_skip_commit_flag(update_url: &str) {
+    let env = TestEnv::builder().ota_manifest(make_forced_recovery_manifest()).build().await;
+
+    env.resolver
+        .register_package("update", "upd4t3")
+        .add_file("packages", make_packages_json([]))
+        .add_file("update-mode", force_recovery_json());
+
+    let result = env
+        .run_update_with_options(
+            update_url,
+            Options {
+                initiator: Initiator::User,
+                allow_attach_to_existing_attempt: true,
+                should_write_recovery: true,
+                manifest_range: None,
+                manifest_headers: vec![],
+                should_commit: false,
             },
         )
         .await;

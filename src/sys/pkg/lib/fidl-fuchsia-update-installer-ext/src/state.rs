@@ -25,7 +25,7 @@ pub enum State {
     WaitToReboot(UpdateInfoAndProgress),
     Reboot(UpdateInfoAndProgress),
     DeferReboot(UpdateInfoAndProgress),
-    Complete(UpdateInfoAndProgress),
+    CompleteButNotActive(UpdateInfoAndProgress),
     FailPrepare(PrepareFailureReason),
     FailStage(FailStageData),
     FailFetch(FailFetchData),
@@ -44,7 +44,7 @@ pub enum StateId {
     WaitToReboot,
     Reboot,
     DeferReboot,
-    Complete,
+    CompleteButNotActive,
     FailPrepare,
     FailStage,
     FailFetch,
@@ -147,7 +147,7 @@ impl State {
             State::WaitToReboot(_) => StateId::WaitToReboot,
             State::Reboot(_) => StateId::Reboot,
             State::DeferReboot(_) => StateId::DeferReboot,
-            State::Complete(_) => StateId::Complete,
+            State::CompleteButNotActive(_) => StateId::CompleteButNotActive,
             State::FailPrepare(_) => StateId::FailPrepare,
             State::FailStage(_) => StateId::FailStage,
             State::FailFetch(_) => StateId::FailFetch,
@@ -158,7 +158,7 @@ impl State {
 
     /// Determines if this state is terminal and represents a successful attempt.
     pub fn is_success(&self) -> bool {
-        matches!(self.id(), StateId::Reboot | StateId::DeferReboot | StateId::Complete)
+        matches!(self.id(), StateId::Reboot | StateId::DeferReboot | StateId::CompleteButNotActive)
     }
 
     /// Determines if this state is terminal and represents a failure.
@@ -185,7 +185,7 @@ impl State {
             State::WaitToReboot(_) => "wait_to_reboot",
             State::Reboot(_) => "reboot",
             State::DeferReboot(_) => "defer_reboot",
-            State::Complete(_) => "complete",
+            State::CompleteButNotActive(_) => "complete_but_not_active",
             State::FailPrepare(_) => "fail_prepare",
             State::FailStage(_) => "fail_stage",
             State::FailFetch(_) => "fail_fetch",
@@ -210,7 +210,7 @@ impl State {
             | WaitToReboot(info_progress)
             | Reboot(info_progress)
             | DeferReboot(info_progress)
-            | Complete(info_progress)
+            | CompleteButNotActive(info_progress)
             | FailCommit(info_progress) => {
                 info_progress.write_to_inspect(node);
             }
@@ -229,7 +229,7 @@ impl State {
             | State::WaitToReboot(data)
             | State::Reboot(data)
             | State::DeferReboot(data)
-            | State::Complete(data)
+            | State::CompleteButNotActive(data)
             | State::FailCommit(data) => Some(data),
         }
     }
@@ -680,8 +680,8 @@ impl From<State> for fidl::State {
                     ..Default::default()
                 })
             }
-            State::Complete(UpdateInfoAndProgress { info, progress }) => {
-                fidl::State::Complete(fidl::CompleteData {
+            State::CompleteButNotActive(UpdateInfoAndProgress { info, progress }) => {
+                fidl::State::CompleteButNotActive(fidl::CompleteButNotActiveData {
                     info: Some(info.into()),
                     progress: Some(progress.into()),
                     ..Default::default()
@@ -758,9 +758,11 @@ impl TryFrom<fidl::State> for State {
             fidl::State::DeferReboot(fidl::DeferRebootData { info, progress, .. }) => {
                 State::DeferReboot(decode_info_progress(info, progress)?)
             }
-            fidl::State::Complete(fidl::CompleteData { info, progress, .. }) => {
-                State::Complete(decode_info_progress(info, progress)?)
-            }
+            fidl::State::CompleteButNotActive(fidl::CompleteButNotActiveData {
+                info,
+                progress,
+                ..
+            }) => State::CompleteButNotActive(decode_info_progress(info, progress)?),
             fidl::State::FailPrepare(fidl::FailPrepareData { reason, .. }) => State::FailPrepare(
                 reason.ok_or(DecodeStateError::MissingField(RequiredStateField::Reason))?.into(),
             ),
@@ -1092,7 +1094,7 @@ mod tests {
                 fidl::State::WaitToReboot(fidl::WaitToRebootData { info, progress, .. }) => break_info_progress(info, progress),
                 fidl::State::Reboot(fidl::RebootData { info, progress, .. }) => break_info_progress(info, progress),
                 fidl::State::DeferReboot(fidl::DeferRebootData { info, progress, .. }) => break_info_progress(info, progress),
-                fidl::State::Complete(fidl::CompleteData { info, progress, .. }) => break_info_progress(info, progress),
+                fidl::State::CompleteButNotActive(fidl::CompleteButNotActiveData { info, progress, .. }) => break_info_progress(info, progress),
                 fidl::State::FailPrepare(fidl::FailPrepareData { .. }) => prop_assume!(false),
                 fidl::State::FailStage(fidl::FailStageData { info, progress, .. }) => break_info_progress(info, progress),
                 fidl::State::FailFetch(fidl::FailFetchData { info, progress, .. }) => break_info_progress(info, progress),
@@ -1128,7 +1130,7 @@ mod tests {
                 State::WaitToReboot(_) => State::WaitToReboot(different_data),
                 State::Reboot(_) => State::Reboot(different_data),
                 State::DeferReboot(_) => State::DeferReboot(different_data),
-                State::Complete(_) => State::Complete(different_data),
+                State::CompleteButNotActive(_) => State::CompleteButNotActive(different_data),
                 // We currently allow merging states with different failure reasons, though
                 // we don't expect that to ever happen in practice.
                 State::FailPrepare(_) => State::FailPrepare(different_prepare_reason),

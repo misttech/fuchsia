@@ -1383,6 +1383,7 @@ fn default_options() -> Options {
         should_write_recovery: true,
         manifest_range: None,
         manifest_headers: vec![],
+        should_commit: true,
     }
 }
 

@@ -57,15 +57,15 @@ closed protocol Monitor {
 ///            |          +----------------+     +----------------+
 ///            +----------|     fetch      |---->|   fail_fetch   |
 ///            |          +----------------+     +----------------+
-///            |                  |
-///            |                  v
-///            |          +----------------+     +----------------+
-///            +----------|     commit     |---->|   fail_commit  |
-///            |          +----------------+     +----------------+
 ///            v                  |
-///    +----------------+         |              +----------------+
-///    |    canceled    |         +------------> |    complete    |
-///    +----------------+         |              +----------------+
+///    +----------------+         |              +-------------------------+
+///    |    canceled    |         +------------->| complete_but_not_active |
+///    +----------------+         |              +-------------------------+
+///                               v
+///                       +----------------+     +----------------+
+///                       |     commit     |---->|   fail_commit  |
+///                       +----------------+     +----------------+
+///                               |
 ///                               v
 ///                       +----------------+     +----------------+
 ///                       | wait_to_reboot |---->|  defer_reboot  |
@@ -97,18 +97,18 @@ type State = strict union {
     ///
     /// Next States:
     /// * `commit` packages were fetched successfully.
+    /// * `complete_but_not_active` if the initiator specifically requests not
+    ///   to commit the update.
     /// * `fail_fetch` on error.
     /// * `canceled` on cancel.
     3: fetch FetchData;
 
-    /// Prepare to switch over to the new system by writing the packages
-    /// and switching the active partition.
+    /// Prepare to switch over to the new system by switching the active
+    /// partition.
     ///
     /// Next States:
     /// * `wait_to_reboot` if a reboot is necessary to complete the update.
-    /// * `complete` if no reboot is necessary to complete the update.
     /// * `fail_commit` on error.
-    /// * `canceled` on cancel.
     4: commit CommitData;
 
     /// The system is configured to boot the updated OS on next boot, and the
@@ -133,11 +133,11 @@ type State = strict union {
     ///
     7: defer_reboot DeferRebootData;
 
-    /// The update is complete and no reboot was required.
+    /// The initiator specifically requested not to commit the update.
     ///
     /// **This is a terminal state**
     ///
-    8: complete CompleteData;
+    8: complete_but_not_active CompleteButNotActiveData;
 
     /// An error occurred while preparing the install.
     ///
@@ -209,8 +209,8 @@ type DeferRebootData = table {
     2: progress InstallationProgress;
 };
 
-/// Data associated with [`State.complete`].
-type CompleteData = table {
+/// Data associated with [`State.complete_but_not_active`].
+type CompleteButNotActiveData = table {
     1: info UpdateInfo;
     2: progress InstallationProgress;
 };

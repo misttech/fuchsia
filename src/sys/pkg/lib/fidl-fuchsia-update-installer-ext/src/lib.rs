@@ -431,6 +431,7 @@ mod tests {
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -487,6 +488,7 @@ mod tests {
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -532,6 +534,7 @@ mod tests {
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -563,6 +566,7 @@ mod tests {
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -624,6 +628,7 @@ mod tests {
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -855,6 +860,7 @@ mod tests {
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let client = fdomain_local::local_client_empty();
@@ -912,6 +918,7 @@ mod tests {
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let client = fdomain_local::local_client_empty();

@@ -359,6 +359,7 @@ State: WaitToReboot(UpdateInfoAndProgress { info: UpdateInfo { download_size: 10
             initiator: Some(fidl_installer::Initiator::User),
             should_write_recovery: Some(true),
             allow_attach_to_existing_attempt: Some(true),
+            should_commit: Some(true),
             ..Default::default()
         },
         reboot_controller_present: true,
@@ -422,6 +423,7 @@ State: DeferReboot(UpdateInfoAndProgress { info: UpdateInfo { download_size: 100
             initiator: Some(fidl_installer::Initiator::User),
             should_write_recovery: Some(true),
             allow_attach_to_existing_attempt: Some(true),
+            should_commit: Some(true),
             ..Default::default()
         },
         reboot_controller_present: true,
@@ -466,6 +468,7 @@ State: FailPrepare(Internal)\n",
             initiator: Some(fidl_installer::Initiator::User),
             should_write_recovery: Some(true),
             allow_attach_to_existing_attempt: Some(true),
+            should_commit: Some(true),
             ..Default::default()
         },
         reboot_controller_present: true,
@@ -504,6 +507,7 @@ State: Prepare\n",
             initiator: Some(fidl_installer::Initiator::User),
             should_write_recovery: Some(true),
             allow_attach_to_existing_attempt: Some(true),
+            should_commit: Some(true),
             ..Default::default()
         },
         reboot_controller_present: true,
@@ -528,6 +532,7 @@ async fn force_install_service_initiated_flag() {
             initiator: Some(fidl_installer::Initiator::Service),
             should_write_recovery: Some(true),
             allow_attach_to_existing_attempt: Some(true),
+            should_commit: Some(true),
             ..Default::default()
         },
         reboot_controller_present: true,

@@ -346,6 +346,7 @@ async fn succeed_additional_start_requests_when_compatible(update_url: &str) {
                 should_write_recovery: true,
                 manifest_range: None,
                 manifest_headers: vec![],
+                should_commit: true,
             },
             None,
         )
@@ -405,6 +406,7 @@ async fn fail_additional_start_requests_when_not_compatible(
         should_write_recovery: true,
         manifest_range: None,
         manifest_headers: vec![],
+        should_commit: true,
     };
     let _attempt = env
         .start_update_with_options(compatible_url, compatible_options.clone(), None)
@@ -418,6 +420,7 @@ async fn fail_additional_start_requests_when_not_compatible(
         should_write_recovery: false,
         manifest_range: None,
         manifest_headers: vec![],
+        should_commit: true,
     };
     let incompatible_options1 = Options {
         initiator: Initiator::User,
@@ -425,6 +428,15 @@ async fn fail_additional_start_requests_when_not_compatible(
         should_write_recovery: true,
         manifest_range: None,
         manifest_headers: vec![],
+        should_commit: true,
+    };
+    let incompatible_options2 = Options {
+        initiator: Initiator::User,
+        allow_attach_to_existing_attempt: true,
+        should_write_recovery: true,
+        manifest_range: None,
+        manifest_headers: vec![],
+        should_commit: false,
     };
 
     // Show that start_update requests fail with AlreadyInProgress errors.
@@ -437,6 +449,13 @@ async fn fail_additional_start_requests_when_not_compatible(
     );
     assert_matches!(
         env.start_update_with_options(compatible_url, incompatible_options1, None)
+            .await
+            .map(|_| ())
+            .unwrap_err(),
+        UpdateAttemptError::InstallInProgress
+    );
+    assert_matches!(
+        env.start_update_with_options(compatible_url, incompatible_options2, None)
             .await
             .map(|_| ())
             .unwrap_err(),

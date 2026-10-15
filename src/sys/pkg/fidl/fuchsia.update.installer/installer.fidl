@@ -142,6 +142,12 @@ type Options = table {
     /// The HTTP headers to include when fetching the manifest. Can only be set when the
     /// [`Installer.StartUpdate`] url has scheme "http[s]".
     5: manifest_headers vector<fuchsia.net.http.Header>:MAX;
+
+    /// Determines if the installer should commit the update by setting the
+    /// non-current configuration active. If false, the installer will not
+    /// reboot at the end of the update attempt, and any [`RebootController`]
+    /// passed to [`Installer.StartUpdate`] will be ignored. Defaults to true.
+    6: should_commit bool;
 };
 
 /// Who or what initiated the update installation.

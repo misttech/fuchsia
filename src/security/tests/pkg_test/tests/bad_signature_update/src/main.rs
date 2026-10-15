@@ -127,7 +127,7 @@ async fn attempt_update(update_url: &str) -> Result<State> {
                     State::WaitToReboot(_)
                     | State::Reboot(_)
                     | State::DeferReboot(_)
-                    | State::Complete(_)
+                    | State::CompleteButNotActive(_)
                     | State::FailPrepare(_)
                     | State::FailFetch(_) => {
                         return Ok(state);

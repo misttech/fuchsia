@@ -168,6 +168,7 @@ where
             allow_attach_to_existing_attempt: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         };
 
         let proxy = self.installer_connector.connect().map_err(FuchsiaInstallError::Connect)?;

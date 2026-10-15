@@ -233,6 +233,7 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
             should_write_recovery: true,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         },
     )
     .await
@@ -275,6 +276,7 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
                     "allow_attach_to_existing_attempt": false,
                     "initiator": "Service",
                     "should_write_recovery": true,
+                    "should_commit": true,
                     "manifest_range": null,
                 },
                 "url": update_url,
@@ -341,6 +343,7 @@ async fn replaces_bogus_history(update_url: &str, update_hash: &str) {
                     "allow_attach_to_existing_attempt": true,
                     "initiator": "User",
                     "should_write_recovery": true,
+                    "should_commit": true,
                     "manifest_range": null,
                 },
                 "url": update_url,
@@ -435,6 +438,7 @@ async fn increments_attempts_counter_on_retry(
                 should_write_recovery: true,
                 manifest_range: None,
                 manifest_headers: vec![],
+                should_commit: true,
             },
         )
         .await
@@ -478,6 +482,7 @@ async fn increments_attempts_counter_on_retry(
                     "allow_attach_to_existing_attempt": true,
                     "initiator": "User",
                     "should_write_recovery": true,
+                    "should_commit": true,
                     "manifest_range": null,
                 },
                 "url": update_url,
@@ -513,6 +518,7 @@ async fn increments_attempts_counter_on_retry(
                     "allow_attach_to_existing_attempt": false,
                     "initiator": "Service",
                     "should_write_recovery": true,
+                    "should_commit": true,
                     "manifest_range": null,
                 },
                 "url": not_found_url,

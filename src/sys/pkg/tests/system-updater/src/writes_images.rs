@@ -2333,6 +2333,7 @@ async fn recovery_present_but_should_write_recovery_is_false() {
             should_write_recovery: false,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         },
     )
     .await
@@ -2411,6 +2412,7 @@ async fn recovery_present_but_should_write_recovery_is_false_packageless() {
             should_write_recovery: false,
             manifest_range: None,
             manifest_headers: vec![],
+            should_commit: true,
         },
     )
     .await

@@ -150,6 +150,7 @@ async fn packageless_update_with_valid_range_and_header() {
             },
             fidl_fuchsia_net_http::Header { name: b"X-Custom".to_vec(), value: b"val".to_vec() },
         ],
+        should_commit: true,
     };
 
     env.run_update_with_options(MANIFEST_URL, options).await.unwrap();
@@ -188,6 +189,7 @@ async fn packageless_update_fails_with_overflowing_range() {
             size: 10,
         }),
         manifest_headers: vec![],
+        should_commit: true,
     };
 
     let mut attempt = env.start_update_with_options(MANIFEST_URL, options, None).await.unwrap();

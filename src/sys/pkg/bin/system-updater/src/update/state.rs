@@ -192,6 +192,12 @@ impl Fetch {
         }
     }
 
+    /// Transition to the CompleteButNotActive terminal state.
+    pub async fn enter_complete_but_not_active(self, co: &mut Yield<State>) {
+        debug_assert!(self.progress.done());
+        co.yield_(State::CompleteButNotActive(self.info_progress())).await;
+    }
+
     /// Transition to the FailFetch terminal state.
     pub async fn fail(self, co: &mut Yield<State>, reason: FetchFailureReason) {
         co.yield_(State::FailFetch(self.info_progress().with_fetch_reason(reason))).await;
@@ -397,6 +403,22 @@ mod tests {
             })
             .await,
             vec![State::DeferReboot(
+                UpdateInfoAndProgress::new(
+                    info,
+                    Progress::builder().fraction_completed(1.0).bytes_downloaded(60).build()
+                )
+                .unwrap()
+            ),]
+        );
+
+        assert_eq!(
+            collect_states(|mut co| async move {
+                Fetch { info, bytes_downloaded: 60, progress: ProgressTracker::new(0) }
+                    .enter_complete_but_not_active(&mut co)
+                    .await;
+            })
+            .await,
+            vec![State::CompleteButNotActive(
                 UpdateInfoAndProgress::new(
                     info,
                     Progress::builder().fraction_completed(1.0).bytes_downloaded(60).build()

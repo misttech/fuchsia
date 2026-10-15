@@ -419,20 +419,26 @@ async fn update(
         };
         let attempt_res = match attempt_res {
             Ok((state, mode, current_configuration)) => {
-                // Commit the update
-                let state = state.enter_commit(&mut co).await;
-                phase = metrics::Phase::ImageCommit;
+                if !config.options.should_commit {
+                    state.enter_complete_but_not_active(&mut co).await;
+                    phase = metrics::Phase::SuccessPendingReboot;
+                    Ok(None)
+                } else {
+                    // Commit the update
+                    let state = state.enter_commit(&mut co).await;
+                    phase = metrics::Phase::ImageCommit;
 
-                match commit_images(&env.boot_manager, mode, current_configuration).await {
-                    Ok(()) => {
-                        // Success!
-                        let state = state.enter_wait_to_reboot(&mut co).await;
-                        phase = metrics::Phase::SuccessPendingReboot;
-                        Ok((state, mode))
-                    }
-                    Err(e) => {
-                        state.fail(&mut co).await;
-                        Err(AttemptError::Commit(e))
+                    match commit_images(&env.boot_manager, mode, current_configuration).await {
+                        Ok(()) => {
+                            // Success!
+                            let state = state.enter_wait_to_reboot(&mut co).await;
+                            phase = metrics::Phase::SuccessPendingReboot;
+                            Ok(Some((state, mode)))
+                        }
+                        Err(e) => {
+                            state.fail(&mut co).await;
+                            Err(AttemptError::Commit(e))
+                        }
                     }
                 }
             }
@@ -491,7 +497,7 @@ async fn update(
         info!("flushing cobalt events");
         let () = flush_cobalt(cobalt_forwarder_task, COBALT_FLUSH_TIMEOUT).await;
 
-        let Some((state, mode)) = attempt_res else {
+        let Some(Some((state, mode))) = attempt_res else {
             return target_version;
         };
 
@@ -931,7 +937,8 @@ impl Attempt<'_> {
         match mode {
             update_package::UpdateMode::Normal => {}
             update_package::UpdateMode::ForceRecovery => {
-                if !self.config.options.should_write_recovery {
+                if !self.config.options.should_write_recovery || !self.config.options.should_commit
+                {
                     return Err(PrepareError::VerifyUpdateMode);
                 }
             }
@@ -1357,7 +1364,8 @@ impl PackagelessAttempt<'_> {
         let zbi_slot = match manifest.mode {
             update_package::UpdateMode::Normal => update_package::manifest::Slot::AB,
             update_package::UpdateMode::ForceRecovery => {
-                if !self.config.options.should_write_recovery {
+                if !self.config.options.should_write_recovery || !self.config.options.should_commit
+                {
                     return Err(PrepareError::VerifyUpdateMode);
                 }
                 update_package::manifest::Slot::R

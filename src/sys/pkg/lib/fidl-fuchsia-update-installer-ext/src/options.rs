@@ -76,6 +76,17 @@ pub struct Options {
     #[serde(skip)]
     #[proptest(strategy = "prop::collection::vec(any_header(), 0..2)")]
     pub manifest_headers: Vec<fidl_fuchsia_net_http::Header>,
+
+    /// Determines if the installer should commit the update by setting the
+    /// non-current configuration active. If false, the installer will not
+    /// reboot at the end of the update attempt, and any `RebootController`
+    /// passed to `Installer.StartUpdate` will be ignored. Defaults to true.
+    #[serde(default = "default_should_commit")]
+    pub should_commit: bool,
+}
+
+fn default_should_commit() -> bool {
+    true
 }
 
 fn any_header() -> impl Strategy<Value = fidl_fuchsia_net_http::Header> {
@@ -92,10 +103,12 @@ impl Options {
             should_write_recovery,
             manifest_range,
             manifest_headers,
+            should_commit,
         } = self;
         node.record_string("initiator", initiator.name());
         node.record_bool("allow_attach_to_existing_attempt", *allow_attach_to_existing_attempt);
         node.record_bool("should_write_recovery", *should_write_recovery);
+        node.record_bool("should_commit", *should_commit);
         if let Some(range) = manifest_range {
             node.record_child("manifest_range", |range_node| {
                 range_node.record_uint("offset", range.offset);
@@ -152,6 +165,7 @@ impl TryFrom<fidl_fuchsia_update_installer::Options> for Options {
             should_write_recovery: data.should_write_recovery.unwrap_or(true),
             manifest_range,
             manifest_headers,
+            should_commit: data.should_commit.unwrap_or(true),
         })
     }
 }
@@ -168,6 +182,7 @@ impl From<&Options> for fidl_fuchsia_update_installer::Options {
             } else {
                 Some(options.manifest_headers.clone())
             },
+            should_commit: Some(options.should_commit),
             ..Default::default()
         }
     }

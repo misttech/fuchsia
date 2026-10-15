@@ -375,7 +375,7 @@ async fn perform_update(update_url: &str) {
                     }
                     State::Reboot(_)
                     | State::DeferReboot(_)
-                    | State::Complete(_)
+                    | State::CompleteButNotActive(_)
                     | State::FailPrepare(_)
                     | State::FailFetch(_) => {
                         panic!("Update entered unexpected terminal state: {:#?}", state);
