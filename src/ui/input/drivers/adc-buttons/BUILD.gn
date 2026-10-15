@@ -15,7 +15,6 @@ bazel_driver_package("bazel_package") {
     "adc-buttons-device.cc",
     "adc-buttons-device.h",
   ]
-  bazel_inputs = [ "//src/devices/tools/dmlc:bazel_input" ]
 }
 
 driver_bind_rules("adc-buttons-bind") {
@@ -37,7 +36,6 @@ bazel_fuchsia_test_package("adc-buttons-test") {
       max_severity = "ERROR"
     }
   }
-  bazel_inputs = [ "//src/devices/tools/dmlc:bazel_input" ]
 }
 
 group("tests") {

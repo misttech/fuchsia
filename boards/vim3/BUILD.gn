@@ -19,7 +19,6 @@ group("bazel_inputs") {
     ":devicetree_board_driver.bazel_inputs",
     ":main_bundle.bazel_inputs",
     ":vulkan_arm_mali.bazel_inputs",
-    "//src/devices/tools/dmlc:bazel_input",
   ]
   if (!use_vim3_dml) {
     deps += [ "//src/devices/board/drivers/vim3-devicetree:vim3-dtb" ]

@@ -28,9 +28,6 @@ bazel_action("target_tests") {
     # The following are currently needed by `fx_package()`.
     # TODO(b/519244675): Remove once `package-tool` is migrated to Bazel.
     "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
-
-    # The following is needed by `dml_cc_library()`.
-    "//src/devices/tools/dmlc:bazel_input($host_toolchain)",
   ]
 
   copy_outputs = [

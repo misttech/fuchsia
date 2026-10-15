@@ -40,13 +40,11 @@ bazel_driver_package("bazel_package") {
     "usb-phy3.h",
     "usb-phy3-regs.h",
   ]
-  bazel_inputs = [ "//src/devices/tools/dmlc:bazel_input" ]
 }
 
 bazel_fuchsia_test_package("aml-usb-phy-test") {
   bazel_target = ":aml-usb-phy-test-package"
   test_component_names = [ "aml-usb-phy-test-bin" ]
-  bazel_inputs = [ "//src/devices/tools/dmlc:bazel_input" ]
 }
 
 group("tests") {
