@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_hardware_rtc as frtc;
+use fidl_next_fuchsia_hardware_rtc as frtc;
 use log::warn;
 
 // Time conversion constants (same as pl031-rtc)
@@ -123,4 +123,84 @@ pub fn sanitize_rtc(rtc: frtc::Time) -> frtc::Time {
         return DEFAULT_RTC;
     }
     rtc
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_leap_year() {
+        assert!(is_leap_year(2000));
+        assert!(is_leap_year(2020));
+        assert!(is_leap_year(2024));
+        assert!(!is_leap_year(2021));
+        assert!(!is_leap_year(2022));
+        assert!(!is_leap_year(2023));
+        assert!(!is_leap_year(2100));
+    }
+
+    #[test]
+    fn test_is_rtc_valid() {
+        let valid =
+            frtc::Time { seconds: 30, minutes: 15, hours: 10, day: 15, month: 6, year: 2024 };
+        assert!(is_rtc_valid(&valid));
+
+        let invalid_year = frtc::Time { year: 1999, ..valid };
+        assert!(!is_rtc_valid(&invalid_year));
+
+        let invalid_year_high = frtc::Time { year: 2100, ..valid };
+        assert!(!is_rtc_valid(&invalid_year_high));
+
+        let invalid_month = frtc::Time { month: 13, ..valid };
+        assert!(!is_rtc_valid(&invalid_month));
+
+        let invalid_day_zero = frtc::Time { day: 0, ..valid };
+        assert!(!is_rtc_valid(&invalid_day_zero));
+
+        let invalid_feb = frtc::Time { day: 29, month: 2, year: 2023, ..valid };
+        assert!(!is_rtc_valid(&invalid_feb));
+
+        let valid_feb = frtc::Time { day: 29, month: 2, year: 2024, ..valid };
+        assert!(is_rtc_valid(&valid_feb));
+
+        let invalid_hours = frtc::Time { hours: 24, ..valid };
+        assert!(!is_rtc_valid(&invalid_hours));
+
+        let invalid_minutes = frtc::Time { minutes: 60, ..valid };
+        assert!(!is_rtc_valid(&invalid_minutes));
+
+        let invalid_seconds = frtc::Time { seconds: 60, ..valid };
+        assert!(!is_rtc_valid(&invalid_seconds));
+    }
+
+    #[test]
+    fn test_seconds_conversion_roundtrip() {
+        let time =
+            frtc::Time { seconds: 45, minutes: 30, hours: 14, day: 28, month: 2, year: 2024 };
+        let seconds = seconds_since_epoch(&time);
+        let converted = seconds_to_rtc(seconds);
+        assert_eq!(converted.seconds, time.seconds);
+        assert_eq!(converted.minutes, time.minutes);
+        assert_eq!(converted.hours, time.hours);
+        assert_eq!(converted.day, time.day);
+        assert_eq!(converted.month, time.month);
+        assert_eq!(converted.year, time.year);
+    }
+
+    #[test]
+    fn test_sanitize_rtc() {
+        let invalid = frtc::Time { seconds: 0, minutes: 0, hours: 0, day: 1, month: 1, year: 2010 };
+        let sanitized = sanitize_rtc(invalid);
+        assert_eq!(sanitized.year, DEFAULT_YEAR);
+        assert_eq!(sanitized.month, 1);
+        assert_eq!(sanitized.day, 1);
+
+        let valid =
+            frtc::Time { seconds: 10, minutes: 20, hours: 8, day: 14, month: 10, year: 2026 };
+        let kept = sanitize_rtc(valid);
+        assert_eq!(kept.year, 2026);
+        assert_eq!(kept.month, 10);
+        assert_eq!(kept.day, 14);
+    }
 }
