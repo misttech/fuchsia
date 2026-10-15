@@ -4,28 +4,74 @@
 
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
+    "fuchsia_cc_library",
     "fuchsia_fidl_library",
 )
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "fuchsia.driver.compat",
+    srcs = [
+        "compat.fidl",
+    ],
+    # TODO(https://fxbug.dev/493687765): Re-enable C++ bindings here and remove
+    # the @rules_fuchsia targets below once this FIDL library is added to the
+    # IDK/SDK and //sdk/lib/driver/compat/cpp uses it from @fuchsia_sdk.
+    # @bazel2gn:skip
+    enable_cpp = False,
+    visibility = [
+        "//sdk/lib/driver/compat/cpp:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/graphics:__subpackages__",
+        "//src/media:__subpackages__",
+        "//src/ui:__subpackages__",
+        "//vendor/google:__subpackages__",
+        "//zircon/third_party:__subpackages__",
+    ],
+    deps = [
+        "//zircon/vdso/zx",
+    ],
 )
 
+# @bazel2gn:skip
 fuchsia_fidl_library(
-    name = "fuchsia.driver.compat",
+    name = "fuchsia.driver.compat_sdk",
     srcs = [
         "compat.fidl",
     ],
     cc_bindings = [
         "cpp",
-        "cpp_wire",
-        "cpp_driver_wire",
-        "cpp_driver",
     ],
     library = "fuchsia.driver.compat",
-    target_compatible_with = ["@platforms//os:fuchsia"],
+    tags = ["manual"],
+    target_compatible_with = [
+        "@platforms//os:fuchsia",
+        "//build/bazel/platforms:fuchsia_artifacts_build_with_sdk_rules",
+    ],
     deps = [
         "@fuchsia_sdk//fidl/zx",
     ],
+)
+
+# @bazel2gn:skip
+fuchsia_cc_library(
+    name = "fuchsia.driver.compat_cpp",
+    target_compatible_with = [
+        "@platforms//os:fuchsia",
+        "//build/bazel/platforms:fuchsia_artifacts_build_with_sdk_rules",
+    ],
+    visibility = [
+        "//sdk/lib/driver/compat/cpp:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/graphics:__subpackages__",
+        "//src/media:__subpackages__",
+        "//src/ui:__subpackages__",
+        "//vendor/google:__subpackages__",
+        "//zircon/third_party:__subpackages__",
+    ],
+    deps = [":fuchsia.driver.compat_sdk_cpp"],
 )
