@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "host_tests",
+    testonly = True,
+    actual = "//src/sys/pkg/scripts/gen_eager_package_config:host_tests",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//src/sys/pkg:__pkg__"],
+)
+
+alias(
+    name = "all_tests",
+    testonly = True,
+    actual = ":host_tests",  # @bazel2gn:raw_overwrite:[ ":host_tests($host_toolchain)" ]
+    visibility = ["//visibility:private"],
+)
