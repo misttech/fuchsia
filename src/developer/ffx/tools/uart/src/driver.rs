@@ -25,6 +25,8 @@ use std::time::{Duration, Instant};
 
 pub const DAEMON_START_POLL_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DAEMON_START_POLL_INTERVAL: Duration = Duration::from_millis(50);
+pub const DAEMON_SPAWN_ETXTBSY_MAX_RETRIES: u32 = 40;
+pub const DAEMON_SPAWN_ETXTBSY_RETRY_DELAY: Duration = Duration::from_millis(5);
 pub const SIGTERM_TIMEOUT: Duration = Duration::from_secs(1);
 pub const SIGKILL_TIMEOUT: Duration = Duration::from_millis(200);
 pub const SOCKET_PROBE_TIMEOUT: Duration = Duration::from_millis(100);
@@ -103,6 +105,11 @@ pub fn check_startup_status(
 ) -> Result<Option<u32>> {
     match read_metadata(context, target) {
         Ok(Some(meta)) => {
+            if meta.pid == 0 {
+                // Metadata file is transiently empty or partially written during startup;
+                // continue polling until timeout.
+                return Ok(None);
+            }
             if !is_driver_running(meta.pid) {
                 return match meta.status {
                     ConnectionStatus::Error(reason) => Err(user_error!(
@@ -271,7 +278,21 @@ pub async fn spawn_driver_daemon(
         no_retry,
     );
     log::info!("Spawning UART driver: {:?}", cmd);
-    let child = cmd.spawn().map_err(|e| user_error!("Failed to spawn ffx-uart-driver: {:?}", e))?;
+    let mut attempts = 0;
+    let child = loop {
+        match cmd.spawn() {
+            Ok(child) => break child,
+            Err(e)
+                if (e.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    || e.raw_os_error() == Some(nix::libc::ETXTBSY))
+                    && attempts < DAEMON_SPAWN_ETXTBSY_MAX_RETRIES =>
+            {
+                attempts += 1;
+                fuchsia_async::Timer::new(DAEMON_SPAWN_ETXTBSY_RETRY_DELAY).await;
+            }
+            Err(e) => return Err(user_error!("Failed to spawn ffx-uart-driver: {:?}", e)),
+        }
+    };
 
     wait_for_parent_exit(child).await
 }
@@ -451,5 +472,22 @@ mod tests {
         assert!(args.contains(&"/tmp/logs".to_string()));
         assert!(args.contains(&"--background".to_string()));
         assert!(args.contains(&"--no-retry".to_string()));
+    }
+
+    #[fuchsia::test]
+    fn test_check_startup_status_transient_empty_metadata_returns_none() {
+        let temp = tempfile::tempdir().unwrap();
+        let env = ffx_config::test_env()
+            .runtime_config("shared_data", temp.path().to_str().unwrap())
+            .build()
+            .unwrap();
+        let target = "/dev/ttyUSB0";
+        let meta_path = crate::metadata::get_metadata_path(&env.context, target).unwrap();
+        if let Some(parent) = meta_path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&meta_path, b"").unwrap();
+        let log_path = temp.path().join("driver.log");
+        assert_eq!(check_startup_status(&env.context, target, &log_path).unwrap(), None);
     }
 }

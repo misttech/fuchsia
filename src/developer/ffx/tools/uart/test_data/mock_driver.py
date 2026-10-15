@@ -68,8 +68,11 @@ if target and log_dir:
             control_fd = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             control_fd.bind(control_path)
             control_fd.listen(5)
-        with open(meta_path, "w") as f:
+        tmp_meta_path = f"{meta_path}.{my_pid}.tmp"
+        with open(tmp_meta_path, "w") as f:
             json.dump(data, f)
+            f.flush()
+        os.replace(tmp_meta_path, meta_path)
         time.sleep(3600)
         if sock_fd:
             sock_fd.close()
