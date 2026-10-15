@@ -3,6 +3,7 @@
 ## 1. Find a package
 
 Use the "gsheets" skill: In the **control table**, find the first row from the top where the "Migration Status" column is "ready_for_migration" and the "Owner" column is empty.
+   * If the **control table** link cannot be resolved or the sheet cannot be read, fail the Migration Package Selection step with the reason: "Failed to read the control table."
    * If no row meets the requirements, fail the Migration Package Selection step with the reason: "No migration package is found."
    * The row that meets the requirements is the **migration package**.
 

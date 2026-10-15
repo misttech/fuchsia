@@ -11,10 +11,10 @@ description: >
 
 ## Terminology
 
-* **control table** : The Google Sheet for tracking migration status. The sheet
-  is at
-  https://docs.google.com/spreadsheets/d/1LJBype1IvOKlCrNd2NQdpEEnDMvSCZYd7e4wVp29gOg/edit?resourcekey=0-_guvG1cqt62s4cBY-aeuiQ&gid=0#gid=0
-  .
+* **control table** : The Google Sheet for tracking migration status, at
+  go/fuchsia-bazel-migration-control-table. Use the `go-links` skill to resolve
+  it to the sheet URL before using the `gsheets` skill. If the user specifies a
+  different table in the prompt, use that one instead.
 
 * **migration branch** : The branch used for the Bazel migration. If the user
   does not specify a branch, it defaults to `migration_branch_default`.
@@ -31,6 +31,17 @@ description: >
   the row for the **migration package** in the **control table**. If it's a URL,
   strip the "http://b/". (e.g., "http://b/1234567", the buganizer ticket number
   is "1234567")
+
+* **auth check command** : A command that exits non-zero if the user's
+  credentials expire within one hour. The user specifies it in the prompt. If
+  it is not specified when the Authentication Check runs, ask the user for it.
+  If you cannot ask the user (e.g., in an unattended run), fail the
+  Pre-Migration Checks step with the reason: "The auth check command is not
+  specified".
+
+* **Planter installation guide** : The document with the steps to install
+  Planter, at go/planter_installation_guide. If the user specifies a different
+  guide in the prompt, use that one instead.
 
 ## End-to-End Bazel Migration
 
