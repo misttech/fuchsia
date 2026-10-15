@@ -974,11 +974,11 @@ group("http-body-1.1.0") {
 }
 
 group("http-body-util") {
-  public_deps = [ ":http-body-util-v0_1_4" ]
+  public_deps = [ ":http-body-util-v0_1_5" ]
 }
 
-group("http-body-util-0.1.4") {
-  public_deps = [ ":http-body-util-v0_1_4" ]
+group("http-body-util-0.1.5") {
+  public_deps = [ ":http-body-util-v0_1_5" ]
 }
 
 group("humansize") {
@@ -11778,17 +11778,17 @@ rustc_library("http-body-v1_1_0") {
   applicable_licenses = [ ":http-body-v1_1_0.license" ]
 }
 
-license("http-body-util-v0_1_4.license") {
+license("http-body-util-v0_1_5.license") {
   public_package_name = "http_body_util"
   license_files =
-      [ "//third_party/rust_crates/vendor/http-body-util-0.1.4/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/http-body-util-0.1.5/LICENSE" ]
 }
 
-rustc_library("http-body-util-v0_1_4") {
+rustc_library("http-body-util-v0_1_5") {
   crate_name = "http_body_util"
   source_root =
-      "//third_party/rust_crates/vendor/http-body-util-0.1.4/src/lib.rs"
-  output_name = "http_body_util-72c0a73c1a60e1b2"
+      "//third_party/rust_crates/vendor/http-body-util-0.1.5/src/lib.rs"
+  output_name = "http_body_util-94e4d1bbadbabe77"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -11805,14 +11805,14 @@ rustc_library("http-body-util-v0_1_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=72c0a73c1a60e1b2",
-    "-Cextra-filename=-72c0a73c1a60e1b2",
+    "-Cmetadata=94e4d1bbadbabe77",
+    "-Cextra-filename=-94e4d1bbadbabe77",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":http-body-util-v0_1_4.license" ]
+  applicable_licenses = [ ":http-body-util-v0_1_5.license" ]
 }
 
 license("httparse-v1_10_1.license") {
@@ -15376,7 +15376,7 @@ rustc_library("omaha_client-v0_4_1") {
   deps += [ ":elliptic-curve-v0_14_1" ]
   deps += [ ":futures-v0_3_34" ]
   deps += [ ":hex-v0_4_3" ]
-  deps += [ ":http-body-util-v0_1_4" ]
+  deps += [ ":http-body-util-v0_1_5" ]
   deps += [ ":http-body-v1_1_0" ]
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
@@ -25093,7 +25093,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":data-encoding-v2_11_1" ]
   deps += [ ":futures-io-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
-  deps += [ ":http-body-util-v0_1_4" ]
+  deps += [ ":http-body-util-v0_1_5" ]
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
   deps += [ ":hyper-v1_11_1" ]
@@ -25147,7 +25147,7 @@ rustc_test("tuf-v0_3_0-beta14.test") {
   deps += [ ":futures-executor-v0_3_34" ]
   deps += [ ":futures-io-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
-  deps += [ ":http-body-util-v0_1_4" ]
+  deps += [ ":http-body-util-v0_1_5" ]
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
   deps += [ ":hyper-v1_11_1" ]

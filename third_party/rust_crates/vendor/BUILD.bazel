@@ -1366,14 +1366,14 @@ alias(
 )
 
 alias(
-    name = "http-body-util-0.1.4",
-    actual = "//third_party/rust_crates/vendor/http-body-util-0.1.4:http_body_util",
+    name = "http-body-util-0.1.5",
+    actual = "//third_party/rust_crates/vendor/http-body-util-0.1.5:http_body_util",
     tags = ["manual"],
 )
 
 alias(
     name = "http-body-util",
-    actual = "//third_party/rust_crates/vendor/http-body-util-0.1.4:http_body_util",
+    actual = "//third_party/rust_crates/vendor/http-body-util-0.1.5:http_body_util",
     tags = ["manual"],
 )
 
