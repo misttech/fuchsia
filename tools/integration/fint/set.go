@@ -179,9 +179,9 @@ func setImpl(
 	if contextSpec.ArtifactDir != "" {
 		artifacts.GnTracePath = filepath.Join(contextSpec.ArtifactDir, "gn_trace.json")
 	}
-	genStdout, err := runGen(ctx, runner, staticSpec, contextSpec, platform, artifacts.GnTracePath, genArgs)
+	genOutput, err := runGen(ctx, runner, staticSpec, contextSpec, platform, artifacts.GnTracePath, genArgs)
 	if err != nil {
-		artifacts.FailureSummary = genStdout
+		artifacts.FailureSummary = genOutput
 		return artifacts, err
 	}
 
@@ -230,7 +230,7 @@ func runGen(
 	platform string,
 	gnTracePath string,
 	args []string,
-) (genStdout string, err error) {
+) (output string, err error) {
 	gn := thirdPartyPrebuilt(contextSpec.CheckoutDir, platform, "gn")
 
 	formattedArgs := gnFormat(ctx, gn, runner, args)
@@ -267,12 +267,19 @@ func runGen(
 		regenCmd = append(regenCmd, fmt.Sprintf("--gn-json-ide-script=%s", s))
 	}
 
-	// When `gn gen` fails, it outputs a brief helpful error message to stdout.
-	var stdoutBuf bytes.Buffer
-	if err := runner.Run(ctx, regenCmd, subprocess.RunOptions{Stdout: io.MultiWriter(&stdoutBuf, os.Stdout)}); err != nil {
-		return stdoutBuf.String(), fmt.Errorf("error running %q: %w", regenCmd[0], err)
+	// When `gn gen` fails, it outputs a brief helpful error message to stdout,
+	// but the regenerator prints errors from its post-GN steps (e.g.
+	// generating tests.json) to stderr, so the failure summary needs both.
+	var stdoutBuf, stderrBuf bytes.Buffer
+	err = runner.Run(ctx, regenCmd, subprocess.RunOptions{
+		Stdout: io.MultiWriter(&stdoutBuf, os.Stdout),
+		Stderr: io.MultiWriter(&stderrBuf, os.Stderr),
+	})
+	output = stdoutBuf.String() + stderrBuf.String()
+	if err != nil {
+		return output, fmt.Errorf("error running %q: %w", regenCmd[0], err)
 	}
-	return stdoutBuf.String(), nil
+	return output, nil
 }
 
 func genArgs(

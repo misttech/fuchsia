@@ -92,17 +92,19 @@ func TestSet(t *testing.T) {
 		}
 	})
 
-	t.Run("propagates GN stdout to failure summary in case of failure", func(t *testing.T) {
+	t.Run("propagates regenerator stdout and stderr to failure summary in case of failure", func(t *testing.T) {
 		runner := &fakeSubprocessRunner{
-			mockStdout: []byte("some stdout"),
+			mockStdout: []byte("some stdout\n"),
+			mockStderr: []byte("some stderr\n"),
 			fail:       true,
 		}
 		artifacts, err := setImpl(ctx, runner, staticSpec, contextSpec, "linux-x64", false, []string{})
 		if !errors.Is(err, errSubprocessFailure) {
 			t.Fatalf("Unexpected error from setImpl: %s", err)
 		}
-		if artifacts.FailureSummary != string(runner.mockStdout) {
-			t.Errorf("Expected setImpl to propagate GN stdout to failure summary: %q != %q", runner.mockStdout, artifacts.FailureSummary)
+		want := string(runner.mockStdout) + string(runner.mockStderr)
+		if artifacts.FailureSummary != want {
+			t.Errorf("Expected setImpl to propagate regenerator stdout and stderr to failure summary: %q != %q", want, artifacts.FailureSummary)
 		}
 	})
 
