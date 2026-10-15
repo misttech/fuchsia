@@ -240,158 +240,6 @@ def run_commit_msg_hook(
     return 0 if ok else 1
 
 
-def run_pre_push_hook(
-    remote_name: str = "",
-    remote_location: str = "",
-    *,
-    repo_dir: Path | None = None,
-    actions: Sequence[HookAction] = DEFAULT_PRE_COMMIT_ACTIONS,
-    reporter: ConsoleReporter | None = None,
-    is_agent: bool | None = None,
-    stdin_lines: Sequence[str] | None = None,
-) -> int:
-    """Executes pre-push hook checks for AI coding agents.
-
-    Args:
-        remote_name: Destination remote name (e.g. 'origin').
-        remote_location: Destination remote URL or path.
-        repo_dir: Root directory of the repository (defaults to cwd).
-        actions: Actions to execute on pushed files.
-        reporter: Optional ConsoleReporter instance.
-        is_agent: Override for agent execution detection.
-        stdin_lines: Sequence of input lines passed by Git pre-push via stdin.
-
-    Returns:
-        0 if checks pass or hook is bypassed, 1 on failure.
-    """
-    if _is_env_truthy("FUCHSIA_SKIP_HOOKS"):
-        return 0
-
-    active_reporter = reporter or ConsoleReporter()
-
-    target_dir = repo_dir if repo_dir is not None else Path.cwd()
-    try:
-        repo_root = paths.get_repo_root(target_dir)
-    except RuntimeError as e:
-        active_reporter.on_error(str(e))
-        active_reporter.finish()
-        return 1
-
-    is_agent = is_invoked_by_agent() if is_agent is None else is_agent
-    if not is_agent:
-        return 0
-
-    if stdin_lines is None:
-        if not sys.stdin.isatty():
-            try:
-                stdin_lines = sys.stdin.read().splitlines()
-            except Exception:
-                stdin_lines = []
-        else:
-            stdin_lines = []
-
-    pushed_files: set[str] = set()
-    for line in stdin_lines:
-        parts = line.strip().split()
-        if len(parts) >= 4:
-            local_ref, local_oid, remote_ref, remote_oid = parts[:4]
-            # Branch deletion: local_oid is all zeros
-            if set(local_oid) == {"0"}:
-                continue
-            if set(remote_oid) == {"0"}:
-                # New branch: get all commits reachable from local_oid not in any remotes
-                res = git_staging.engine.run_cmd(
-                    [
-                        "git",
-                        "log",
-                        "--name-only",
-                        "--format=",
-                        local_oid,
-                        "--not",
-                        "--remotes",
-                    ],
-                    cwd=repo_root,
-                )
-                if res.returncode == 0:
-                    pushed_files.update(f for f in res.stdout.splitlines() if f)
-                else:
-                    res2 = git_staging.engine.run_cmd(
-                        [
-                            "git",
-                            "diff-tree",
-                            "--no-commit-id",
-                            "--name-only",
-                            "-r",
-                            local_oid,
-                        ],
-                        cwd=repo_root,
-                    )
-                    if res2.returncode == 0:
-                        pushed_files.update(
-                            f for f in res2.stdout.splitlines() if f
-                        )
-            else:
-                res = git_staging.engine.run_cmd(
-                    [
-                        "git",
-                        "diff",
-                        "--name-only",
-                        f"{remote_oid}..{local_oid}",
-                    ],
-                    cwd=repo_root,
-                )
-                if res.returncode == 0:
-                    pushed_files.update(f for f in res.stdout.splitlines() if f)
-
-    if not stdin_lines:
-        # Fallback if invoked without ref spec on stdin (e.g. direct CLI invocation or tests)
-        res = git_staging.engine.run_cmd(
-            ["git", "diff", "--name-only", "@{u}..HEAD"],
-            cwd=repo_root,
-        )
-        if res.returncode == 0:
-            pushed_files.update(f for f in res.stdout.splitlines() if f)
-        else:
-            res = git_staging.engine.run_cmd(
-                ["git", "diff", "--name-only", "HEAD~1..HEAD"],
-                cwd=repo_root,
-            )
-            if res.returncode == 0:
-                pushed_files.update(f for f in res.stdout.splitlines() if f)
-
-    existing_files = [
-        f for f in sorted(pushed_files) if (repo_root / f).is_file()
-    ]
-    if not existing_files:
-        active_reporter.finish()
-        return 0
-
-    context = HookContext(
-        repo_root=repo_root,
-        check_only=True,
-        is_agent=is_agent,
-        reporter=active_reporter,
-    )
-
-    all_ok = True
-    for action in actions:
-        matched_files = (
-            [f for f in existing_files if f.endswith(tuple(action.extensions))]
-            if action.extensions
-            else list(existing_files)
-        )
-        if not matched_files:
-            continue
-        ok = action.action_fn(context, matched_files)
-        if not ok:
-            all_ok = False
-            if not active_reporter.has_errors:
-                active_reporter.on_error(f"Action '{action.name}' failed.")
-
-    active_reporter.finish()
-    return 0 if all_ok else 1
-
-
 def _build_parser() -> argparse.ArgumentParser:
     """Constructs the standard ArgumentParser for Git hooks CLI dispatcher."""
     parser = argparse.ArgumentParser(
@@ -409,16 +257,6 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "pre-commit",
         help="Run pre-commit hook checks.",
-    )
-
-    pre_push_parser = subparsers.add_parser(
-        "pre-push",
-        help="Run pre-push hook checks.",
-    )
-    pre_push_parser.add_argument(
-        "hook_args",
-        nargs="*",
-        help="Positional arguments passed by git pre-push (e.g. remote_name, remote_location).",
     )
 
     commit_msg_parser = subparsers.add_parser(
@@ -443,7 +281,7 @@ def main(raw_args: Sequence[str] | None = None) -> int:
     parser = _build_parser()
 
     try:
-        args, _ = parser.parse_known_args(raw_args)
+        args = parser.parse_args(raw_args)
     except SystemExit as e:
         return (
             int(e.code)
@@ -455,15 +293,6 @@ def main(raw_args: Sequence[str] | None = None) -> int:
 
     if args.subcommand == "pre-commit":
         return run_pre_commit_hook(reporter=reporter, is_agent=is_agent)
-    elif args.subcommand == "pre-push":
-        remote_name = args.hook_args[0] if len(args.hook_args) > 0 else ""
-        remote_location = args.hook_args[1] if len(args.hook_args) > 1 else ""
-        return run_pre_push_hook(
-            remote_name=remote_name,
-            remote_location=remote_location,
-            reporter=reporter,
-            is_agent=is_agent,
-        )
     else:
         return run_commit_msg_hook(
             msg_file_path=args.msg_file,

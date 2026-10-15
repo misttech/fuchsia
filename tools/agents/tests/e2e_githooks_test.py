@@ -143,7 +143,7 @@ def _init_git_repo(
     if install_jiri_dispatchers:
         hooks_dir = repo_dir / ".git" / "hooks"
         hooks_dir.mkdir(parents=True, exist_ok=True)
-        for hook_name in ("pre-commit", "commit-msg", "pre-push"):
+        for hook_name in ("pre-commit", "commit-msg"):
             hook_file = hooks_dir / hook_name
             hook_file.write_text(
                 _MOCK_JIRI_DISPATCHER_TEMPLATE.format(hook_name=hook_name),
@@ -424,12 +424,6 @@ class E2EGitHooksTest(unittest.TestCase):
         """Verifies that pre-commit skips for human and auto-formats for agent."""
         workspace = self.fixture.create_isolated_workspace()
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
-        githooks.install_git_hook(
-            workspace,
-            hook_name="pre-commit",
-            script_path="$FUCHSIA_DIR/tools/agents/lib/githooks/runner.py",
-            script_args=["pre-commit"],
-        )
 
         foo_json = workspace / "src" / "foo.json"
         unformatted_content = '{\n  "unformatted":   true,\n "key": "value" \n}'
@@ -495,12 +489,6 @@ class E2EGitHooksTest(unittest.TestCase):
         """Verifies that a partially staged file with formatting violations blocks agent commit."""
         workspace = self.fixture.create_isolated_workspace()
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
-        githooks.install_git_hook(
-            workspace,
-            hook_name="pre-commit",
-            script_path="$FUCHSIA_DIR/tools/agents/lib/githooks/runner.py",
-            script_args=["pre-commit"],
-        )
 
         foo_json = workspace / "src" / "foo.json"
         staged_content = '{\n  "unformatted":   true,\n "key": "foo" \n}'
@@ -591,12 +579,6 @@ class E2EGitHooksTest(unittest.TestCase):
         """Verifies that hooks function properly in a linked Git worktree."""
         workspace = self.fixture.create_isolated_workspace()
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
-        githooks.install_git_hook(
-            workspace,
-            hook_name="pre-commit",
-            script_path="$FUCHSIA_DIR/tools/agents/lib/githooks/runner.py",
-            script_args=["pre-commit"],
-        )
 
         worktree_temp = pathlib.Path(tempfile.mkdtemp(prefix="e2e_wt_"))
         self.addCleanup(shutil.rmtree, worktree_temp, ignore_errors=True)
@@ -655,12 +637,6 @@ class E2EGitHooksTest(unittest.TestCase):
         """Verifies that lint failures block agent and forced commits, but skip human commits."""
         workspace = self.fixture.create_isolated_workspace(with_hooks=True)
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
-        githooks.install_git_hook(
-            workspace,
-            hook_name="pre-commit",
-            script_path="$FUCHSIA_DIR/tools/agents/lib/githooks/runner.py",
-            script_args=["pre-commit"],
-        )
 
         target_file = workspace / "src" / "foo.json"
         target_file.write_text('{\n    "valid": true\n}\n', encoding="utf-8")
@@ -742,12 +718,6 @@ class E2EGitHooksTest(unittest.TestCase):
         """
         workspace = self.fixture.create_isolated_workspace(with_hooks=True)
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
-        githooks.install_git_hook(
-            workspace,
-            hook_name="pre-commit",
-            script_path="$FUCHSIA_DIR/tools/agents/lib/githooks/runner.py",
-            script_args=["pre-commit"],
-        )
 
         target_file = workspace / "src" / "foo.json"
         target_file.write_text('{\n    "valid": true\n}\n', encoding="utf-8")
@@ -790,7 +760,9 @@ class E2EGitHooksTest(unittest.TestCase):
             for repo in repos:
                 hooks_dir = repo / ".git" / "hooks"
                 self.assertTrue(
-                    (hooks_dir / "pre-push.d" / "10-fuchsia-agent.sh").is_file()
+                    (
+                        hooks_dir / "pre-commit.d" / "10-fuchsia-agent.sh"
+                    ).is_file()
                 )
                 self.assertTrue(
                     (
@@ -810,7 +782,9 @@ class E2EGitHooksTest(unittest.TestCase):
             for repo in repos:
                 hooks_dir = repo / ".git" / "hooks"
                 self.assertFalse(
-                    (hooks_dir / "pre-push.d" / "10-fuchsia-agent.sh").exists()
+                    (
+                        hooks_dir / "pre-commit.d" / "10-fuchsia-agent.sh"
+                    ).exists()
                 )
                 self.assertFalse(
                     (
