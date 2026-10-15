@@ -199,7 +199,7 @@ While supporting both machine and human-readable output is the default expectati
     ```
 * **Querying Configuration via `EnvironmentContext`**:
   * Use `self.context.get::<T, _>(KEY_CONST)` or `self.context.get_optional::<T, _>(KEY_CONST)` for direct typed lookups, or `self.context.query(KEY_CONST)` (`ConfigQueryBuilder`) when specifying a `ConfigLevel` or `SelectMode`.
-  * For structured config-backed types, use `#[derive(FfxConfigBacked)]` (`//src/developer/ffx/config/macro`) with `#[ffx_config_default(key = "...", default = "...")]` attributes, or implement `ffx_config::TryFromEnvContext`.
+  * For structured config-backed types, implement `ffx_config::TryFromEnvContext`.
 * **Define Configuration Keys in `//src/developer/ffx/config/src/keys.rs` & Use Constants for Defaults**:
   * **No Inline Config Key Strings**: Never pass raw string literals (e.g., `context.get("discovery.fastboot.timeout")`) directly at call sites. Place shared or global configuration keys in `//src/developer/ffx/config/src/keys.rs` (`ffx_config::keys::*`), or define a named `const` at the module/crate level if a key is strictly internal to a single subtool.
   * **No Magic Default Values**: Never pass hardcoded numeric or string literals directly to `.unwrap_or(...)` when falling back to a default configuration value (e.g., avoid `.unwrap_or(500)`). Define a descriptive named `const` (e.g., `const DEFAULT_FASTBOOT_DISCOVERY_TIMEOUT_MS: u64 = 500;`) and/or register the default in `//src/developer/ffx/data/config.json`.

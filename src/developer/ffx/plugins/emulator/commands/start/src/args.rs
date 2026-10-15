@@ -4,13 +4,23 @@
 
 use argh::{ArgsInfo, FromArgs};
 use emulator_instance::AccelerationMode;
-use ffx_config::FfxConfigBacked;
+use ffx_config::EnvironmentContext;
 use ffx_core::ffx_command;
+use ffx_emulator_common::config::{
+    EMU_DEFAULT_DEVICE, EMU_DEFAULT_ENGINE, EMU_DEFAULT_GPU, EMU_DEFAULT_NAME, EMU_DEFAULT_NET,
+    EMU_START_TIMEOUT, VBMETA_KEY_FILE, VBMETA_METADATA_FILE,
+};
 use ffx_emulator_common::host_is_mac;
 use std::path::PathBuf;
 
+const DEFAULT_EMU_ENGINE: &str = "femu";
+const DEFAULT_EMU_GPU: &str = "swiftshader_indirect";
+const DEFAULT_EMU_NAME: &str = "fuchsia-emulator";
+const DEFAULT_EMU_NET: &str = "auto";
+const DEFAULT_EMU_START_TIMEOUT_SECS: u64 = 60;
+
 #[ffx_command()]
-#[derive(Clone, ArgsInfo, FromArgs, FfxConfigBacked, Debug, Default, PartialEq)]
+#[derive(Clone, ArgsInfo, FromArgs, Debug, Default, PartialEq)]
 #[argh(
     subcommand,
     name = "start",
@@ -85,7 +95,6 @@ pub struct StartCommand {
     /// specified and no default is set, then `ffx emu` will attempt to use the product bundle's
     /// recommended device.
     #[argh(option)]
-    #[ffx_config_default(key = "emu.device")]
     pub device: Option<String>,
 
     /// print the list of available virtual devices.
@@ -107,7 +116,6 @@ pub struct StartCommand {
     /// is "femu", which can be overridden by running `ffx config set emu.engine <type>`. Engine
     /// defaults are overridden to "qemu" in cases of incompatibility (cross cpu or uefi emulation).
     #[argh(option)]
-    #[ffx_config_default(key = "emu.engine", default = "femu")]
     pub engine: Option<String>,
 
     /// GPU acceleration mode. Allowed values are "swiftshader_indirect", "lavapipe", "software",
@@ -118,7 +126,6 @@ pub struct StartCommand {
     /// https://developer.android.com/studio/run/emulator-acceleration#command-gpu for details on
     /// the available options. This can be overridden by running `ffx config set emu.gpu <type>`.
     #[argh(option)]
-    #[ffx_config_default(key = "emu.gpu", default = "swiftshader_indirect")]
     pub gpu: Option<String>,
 
     /// run the emulator without a GUI. The guest system may still initialize graphics drivers,
@@ -151,7 +158,6 @@ pub struct StartCommand {
     /// the generated mac address for this emulator. This is currently required to support a
     /// seamless OTA testing workflow.
     #[argh(option)]
-    #[ffx_config_default(key = "emu.name", default = "fuchsia-emulator")]
     pub name: Option<String>,
 
     /// disable serial number generation. Overrides the "emu.serial_number.enabled" config.
@@ -164,7 +170,6 @@ pub struct StartCommand {
     /// it is available and "user" otherwise. Default is "auto". This can be overridden by
     /// running `ffx config set emu.net <type>`.
     #[argh(option)]
-    #[ffx_config_default(key = "emu.net", default = "auto")]
     pub net: Option<String>,
 
     /// specify a host port mapping for user-networking mode. Ignored in other networking modes.
@@ -214,7 +219,6 @@ pub struct StartCommand {
     /// to the user. A value of 0 will skip the check entirely. Default is 60 seconds. This
     /// can be overridden with `ffx config set emu.start.timeout <seconds>`.
     #[argh(option, short = 's')]
-    #[ffx_config_default(key = "emu.start.timeout", default = "60")]
     pub startup_timeout: Option<u64>,
 
     /// create and start an emulator with a full GPT disk including UEFI boot environment and all
@@ -233,7 +237,6 @@ pub struct StartCommand {
     /// after it was stopped with the `--persist` flag, this argument is not necessary as the
     /// previously created images will be used.
     #[argh(option)]
-    #[ffx_config_default(key = "emu.vbmeta.key")]
     pub vbmeta_key: Option<String>,
 
     /// path to the key metadata (a binary file accompanying the PEM, for example
@@ -242,10 +245,101 @@ pub struct StartCommand {
     /// Note that this is only required when using `--uefi`. Also, when an emulator is `--reuse`d
     /// after it was stopped with the `--persist` flag, this argument is not necessary as the
     #[argh(option)]
-    #[ffx_config_default(key = "emu.vbmeta.metadata")]
     pub vbmeta_key_metadata: Option<String>,
 
     /// enables extra logging for debugging.
     #[argh(switch, short = 'V')]
     pub verbose: bool,
+}
+
+impl StartCommand {
+    pub fn device(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<Option<String>, ffx_config::api::ConfigError> {
+        match &self.device {
+            Some(val) => Ok(Some(val.clone())),
+            None => context.get_optional(EMU_DEFAULT_DEVICE),
+        }
+    }
+
+    pub fn engine(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<String, ffx_config::api::ConfigError> {
+        match &self.engine {
+            Some(val) => Ok(val.clone()),
+            None => Ok(context
+                .get_optional::<Option<String>, _>(EMU_DEFAULT_ENGINE)?
+                .unwrap_or_else(|| DEFAULT_EMU_ENGINE.to_string())),
+        }
+    }
+
+    pub fn gpu(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<String, ffx_config::api::ConfigError> {
+        match &self.gpu {
+            Some(val) => Ok(val.clone()),
+            None => Ok(context
+                .get_optional::<Option<String>, _>(EMU_DEFAULT_GPU)?
+                .unwrap_or_else(|| DEFAULT_EMU_GPU.to_string())),
+        }
+    }
+
+    pub fn name(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<String, ffx_config::api::ConfigError> {
+        match &self.name {
+            Some(val) => Ok(val.clone()),
+            None => Ok(context
+                .get_optional::<Option<String>, _>(EMU_DEFAULT_NAME)?
+                .unwrap_or_else(|| DEFAULT_EMU_NAME.to_string())),
+        }
+    }
+
+    pub fn net(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<String, ffx_config::api::ConfigError> {
+        match &self.net {
+            Some(val) => Ok(val.clone()),
+            None => Ok(context
+                .get_optional::<Option<String>, _>(EMU_DEFAULT_NET)?
+                .unwrap_or_else(|| DEFAULT_EMU_NET.to_string())),
+        }
+    }
+
+    pub fn startup_timeout(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<u64, ffx_config::api::ConfigError> {
+        match self.startup_timeout {
+            Some(val) => Ok(val),
+            None => Ok(context
+                .get_optional::<Option<u64>, _>(EMU_START_TIMEOUT)?
+                .unwrap_or(DEFAULT_EMU_START_TIMEOUT_SECS)),
+        }
+    }
+
+    pub fn vbmeta_key(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<Option<String>, ffx_config::api::ConfigError> {
+        match &self.vbmeta_key {
+            Some(val) => Ok(Some(val.clone())),
+            None => context.get_optional(VBMETA_KEY_FILE),
+        }
+    }
+
+    pub fn vbmeta_key_metadata(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<Option<String>, ffx_config::api::ConfigError> {
+        match &self.vbmeta_key_metadata {
+            Some(val) => Ok(Some(val.clone())),
+            None => context.get_optional(VBMETA_METADATA_FILE),
+        }
+    }
 }

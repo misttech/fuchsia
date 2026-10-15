@@ -75,7 +75,7 @@ pub enum UpdateError {
 
     #[exit_with_code(1)]
     #[error("Failed to resolve product bundle port: {0}")]
-    ProductBundlePortResolution(#[source] anyhow::Error),
+    ProductBundlePortResolution(#[source] ffx_config::api::ConfigError),
 
     #[exit_with_code(1)]
     #[error("Not started error on check-now: {0:?}")]

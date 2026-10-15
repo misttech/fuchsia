@@ -30,7 +30,6 @@ mod storage;
 pub use aliases::{is_analytics_disabled, is_mdns_discovery_disabled, is_usb_discovery_disabled};
 pub use api::ConfigError;
 pub use api::query::{ConfigQuery, ConfigQueryBuilder, SelectMode};
-pub use config_macros::FfxConfigBacked;
 
 pub use environment::{Environment, EnvironmentContext, TestEnv, test_env, test_init};
 pub use paths::get_state_base as get_state_base_path;
@@ -328,8 +327,6 @@ pub async fn show_metrics_status<W: Write>(mut writer: W) -> Result<(), LibError
 #[cfg(test)]
 mod test {
     use super::*;
-    // This is to get the FfxConfigBacked derive to compile, as it
-    // creates a token stream referencing `ffx_config` on the inside.
     use crate::{self as ffx_config};
     use api::value::TryConvert;
     use serde_json::{Value, json};
@@ -494,52 +491,6 @@ mod test {
         let val = ConfigValue::from(Some(json!("true")));
         let res = <bool>::try_convert(val).unwrap();
         assert_eq!(res, true);
-    }
-
-    #[derive(FfxConfigBacked, Default)]
-    struct TestConfigBackedStruct {
-        #[ffx_config_default(key = "test.test.thing", default = "thing")]
-        value: Option<String>,
-
-        #[ffx_config_default(default = "what", key = "oops")]
-        reverse_value: Option<String>,
-
-        #[ffx_config_default(key = "other.test.thing")]
-        other_value: Option<f64>,
-    }
-
-    #[derive(FfxConfigBacked, Default)] // This should just compile despite having no config.
-    struct TestEmptyBackedStruct {}
-
-    #[fuchsia::test]
-    fn test_config_backed_attribute_default() {
-        let env = ffx_config::test_env().build().expect("create test config");
-        let empty_config_struct = TestConfigBackedStruct::default();
-        assert!(empty_config_struct.value.is_none());
-        assert_eq!(empty_config_struct.value(&env.context).unwrap(), "thing");
-        assert!(empty_config_struct.reverse_value.is_none());
-        assert_eq!(empty_config_struct.reverse_value(&env.context).unwrap(), "what");
-    }
-
-    #[fuchsia::test]
-    fn test_config_backed_attribute_override() {
-        let env = ffx_config::test_env()
-            .user_config("test.test.thing", "config_value_thingy")
-            .user_config("other.test.thing", 2.0)
-            .build()
-            .expect("create test config");
-
-        let mut empty_config_struct = TestConfigBackedStruct::default();
-
-        // If this is set, this should pop up before the config values.
-        empty_config_struct.value = Some("wat".to_owned());
-        assert_eq!(empty_config_struct.value(&env.context).unwrap(), "wat");
-        empty_config_struct.value = None;
-        assert_eq!(empty_config_struct.value(&env.context).unwrap(), "config_value_thingy");
-        assert_eq!(empty_config_struct.other_value(&env.context).unwrap().unwrap(), 2f64);
-
-        // This should just compile and drop without panicking is all.
-        let _ignore = TestEmptyBackedStruct {};
     }
 
     /// Writes the file to $root, with the path $path, from the source tree prefix $prefix

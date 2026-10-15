@@ -45,6 +45,12 @@ pub const EMU_DEFAULT_ENGINE: &'static str = "emu.engine";
 /// "auto", but can be overridden by the user.
 pub const EMU_DEFAULT_GPU: &'static str = "emu.gpu";
 
+/// The default name of the emulator instance. Defaults to "fuchsia-emulator".
+pub const EMU_DEFAULT_NAME: &'static str = "emu.name";
+
+/// The default networking mode for the emulator. Defaults to "auto".
+pub const EMU_DEFAULT_NET: &'static str = "emu.net";
+
 /// The root directory for storing instance specific data. Instances
 /// should create a subdirectory in this directory to store data.
 pub const EMU_INSTANCE_ROOT_DIR: &'static str = "emu.instance_dir";

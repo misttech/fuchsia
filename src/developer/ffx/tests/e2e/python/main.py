@@ -178,7 +178,7 @@ class FfxTest(ffxtestcase.FfxTestCase):
         cmd = [
             "--machine",
             "json",
-            "-t",
+            "-c",
             "foo,bar",
             "target",
             "show",

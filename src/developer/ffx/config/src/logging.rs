@@ -99,7 +99,7 @@ const LOG_ROTATIONS: &str = "log.rotations";
 const LOG_ROTATE_SIZE: &str = "log.rotate_size";
 const LOG_ENABLED: &str = "log.enabled";
 const LOG_TARGET_LEVELS: &str = "log.target_levels";
-const LOG_LEVEL: &str = "log.level";
+pub const LOG_LEVEL: &str = "log.level";
 
 // The log filename and basename should always be in-sync.
 pub const LOG_FILENAME: &str = "ffx.log";

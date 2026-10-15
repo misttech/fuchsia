@@ -461,7 +461,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
     ) -> Result<Option<LoadedProductBundle>> {
         // name is important to not be empty since it is used to
         // create a directory path.
-        let mut name = self.cmd.name(&self.context)?;
+        let mut name = self.cmd.name(&self.context).bug()?;
         if self.cmd.name.is_none() || name == "" {
             if name == "" {
                 name = DEFAULT_NAME.into();
@@ -494,17 +494,17 @@ impl<T: EngineOperations> EmuStartTool<T> {
                 return Ok(Some(loaded_product_bundle));
             }
 
-            let gpu = self.cmd.gpu(&self.context)?;
+            let gpu = self.cmd.gpu(&self.context).bug()?;
             if self.cmd.gpu.is_none() && gpu != "" {
                 self.cmd.gpu = Some(gpu);
             }
 
-            let net = self.cmd.net(&self.context)?;
+            let net = self.cmd.net(&self.context).bug()?;
             if self.cmd.net.is_none() && net != "" {
                 self.cmd.net = Some(net);
             }
 
-            let startup_timeout = self.cmd.startup_timeout(&self.context)?;
+            let startup_timeout = self.cmd.startup_timeout(&self.context).bug()?;
             if self.cmd.startup_timeout.is_none() && startup_timeout > 0 {
                 self.cmd.startup_timeout = Some(startup_timeout);
             }
@@ -521,7 +521,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
                     )
                 }
                 // Virtual device spec name
-                if let Some(device_name) = self.cmd.device(&self.context)? {
+                if let Some(device_name) = self.cmd.device(&self.context).bug()? {
                     if self.cmd.device.is_none() && device_name != "" {
                         self.cmd.device = Some(device_name);
                     } else {
@@ -576,7 +576,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
         writer: &mut <EmuStartTool<T> as fho::FfxMain>::Writer,
         target_arch: CpuArchitecture,
     ) -> Result<String> {
-        let config_default_engine = self.cmd.engine(&self.context)?;
+        let config_default_engine = self.cmd.engine(&self.context).bug()?;
         let is_uefi = self.cmd.uefi;
 
         // The android emulator (femu) doesn't support cross-cpu virtualization,

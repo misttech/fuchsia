@@ -45,11 +45,6 @@ if (is_host) {
     edition = "2024"
     proc_macro_deps = [ "//src/lib/include_str_from_working_dir" ]
     rustenv = [ "FFX_DEFAULT_CONFIG_JSON=${rebased_config_path}" ]
-    deps = [
-      "//third_party/rust_crates:proc-macro2",
-      "//third_party/rust_crates:quote",
-      "//third_party/rust_crates:serde_json",
-      "//third_party/rust_crates:syn",
-    ]
+    deps = [ "//third_party/rust_crates:serde_json" ]
   }
 }

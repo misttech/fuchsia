@@ -4,8 +4,11 @@
 
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
-use ffx_config::FfxConfigBacked;
+use ffx_config::EnvironmentContext;
 use ffx_core::ffx_command;
+
+const REPOSITORY_OTA_PORT_KEY: &str = "repository.ota_port";
+const DEFAULT_REPOSITORY_OTA_PORT: u64 = 0;
 
 /// Manage updates: query/set update channel, kick off a check for update, force
 /// an update (to any point, i.e. a downgrade can be requested).
@@ -135,7 +138,7 @@ Returns an empty list if no other update channels are configured.",
 }
 
 /// Start an update. If no newer update is available, no update is performed.
-#[derive(Clone, Debug, Eq, ArgsInfo, FromArgs, FfxConfigBacked, PartialEq)]
+#[derive(Clone, Debug, Eq, ArgsInfo, FromArgs, PartialEq)]
 #[argh(
     subcommand,
     name = "check-now",
@@ -169,7 +172,6 @@ pub struct CheckNow {
     /// port to start the OTA repo server on when using --product_bundle. This is configured by
     /// `repository.ota_port` and defaults to 0, which indicates a random unassigned port.
     #[argh(option)]
-    #[ffx_config_default(key = "repository.ota_port", default = "0")]
     pub product_bundle_port: Option<u64>,
 
     /// optionally specify the product bundle to use as the source of the update
@@ -179,9 +181,23 @@ pub struct CheckNow {
     pub product_bundle_path: Option<Utf8PathBuf>,
 }
 
+impl CheckNow {
+    pub fn product_bundle_port(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<u64, ffx_config::api::ConfigError> {
+        match self.product_bundle_port {
+            Some(port) => Ok(port),
+            None => Ok(context
+                .get_optional::<Option<u64>, _>(REPOSITORY_OTA_PORT_KEY)?
+                .unwrap_or(DEFAULT_REPOSITORY_OTA_PORT)),
+        }
+    }
+}
+
 /// Directly invoke the system updater to install the provided update, bypassing
 /// any update checks.
-#[derive(Clone, Debug, Eq, ArgsInfo, FromArgs, FfxConfigBacked, PartialEq)]
+#[derive(Clone, Debug, Eq, ArgsInfo, FromArgs, PartialEq)]
 #[argh(
     subcommand,
     name = "force-install",
@@ -223,7 +239,6 @@ pub struct ForceInstall {
     /// port to start the OTA repo server on when using --product_bundle. This is configured by
     /// `repository.ota_port` and defaults to 0, which indicates a random unassigned port.
     #[argh(option)]
-    #[ffx_config_default(key = "repository.ota_port", default = "0")]
     pub product_bundle_port: Option<u64>,
 
     /// optionally specify the product bundle to use as the source of the update, implies
@@ -235,6 +250,20 @@ pub struct ForceInstall {
     /// use a default packageless update url if no update_url is provided
     #[argh(switch)]
     pub packageless: bool,
+}
+
+impl ForceInstall {
+    pub fn product_bundle_port(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<u64, ffx_config::api::ConfigError> {
+        match self.product_bundle_port {
+            Some(port) => Ok(port),
+            None => Ok(context
+                .get_optional::<Option<u64>, _>(REPOSITORY_OTA_PORT_KEY)?
+                .unwrap_or(DEFAULT_REPOSITORY_OTA_PORT)),
+        }
+    }
 }
 
 /// Wait for the update to be committed.

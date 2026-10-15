@@ -3,14 +3,19 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use ffx_config::{EnvironmentContext, FfxConfigBacked};
+use ffx_config::EnvironmentContext;
 use ffx_core::ffx_command;
 use ffx_flash_manifest::{Command, ManifestParams, OemFile};
 use std::default::Default;
 use std::path::PathBuf;
 
+const FLASH_TIMEOUT_RATE_KEY: &str = "fastboot.flash.timeout_rate";
+const DEFAULT_FLASH_TIMEOUT_RATE_MB_PER_SEC: f64 = 2.0;
+const FLASH_MIN_TIMEOUT_SECS_KEY: &str = "fastboot.flash.min_timeout_secs";
+const DEFAULT_FLASH_MIN_TIMEOUT_SECS: u64 = 60;
+
 #[ffx_command()]
-#[derive(FfxConfigBacked, ArgsInfo, FromArgs, Default, Clone, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Default, Clone, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "flash",
@@ -86,14 +91,12 @@ pub struct FlashCommand {
     pub skip_verify: bool,
 
     #[argh(option, description = "flash timeout rate in mb/second.")]
-    #[ffx_config_default(key = "fastboot.flash.timeout_rate", default = "2")]
     pub timeout_rate: Option<f64>,
 
     #[argh(
         option,
         description = "minimum timeout in seconds to wait while flashing per-partition"
     )]
-    #[ffx_config_default(key = "fastboot.flash.min_timeout_secs", default = "60")]
     pub min_timeout_secs: Option<u64>,
 
     #[argh(
@@ -105,6 +108,30 @@ pub struct FlashCommand {
 }
 
 impl FlashCommand {
+    pub fn min_timeout_secs(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<u64, ffx_config::api::ConfigError> {
+        match self.min_timeout_secs {
+            Some(val) => Ok(val),
+            None => Ok(context
+                .get_optional::<Option<u64>, _>(FLASH_MIN_TIMEOUT_SECS_KEY)?
+                .unwrap_or(DEFAULT_FLASH_MIN_TIMEOUT_SECS)),
+        }
+    }
+
+    pub fn timeout_rate(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<f64, ffx_config::api::ConfigError> {
+        match self.timeout_rate {
+            Some(val) => Ok(val),
+            None => Ok(context
+                .get_optional::<Option<f64>, _>(FLASH_TIMEOUT_RATE_KEY)?
+                .unwrap_or(DEFAULT_FLASH_TIMEOUT_RATE_MB_PER_SEC)),
+        }
+    }
+
     pub fn to_manifest(self, context: &EnvironmentContext) -> ManifestParams {
         let flash_min_timeout_seconds = self.min_timeout_secs(context).ok().unwrap();
         let flash_timeout_rate_mb_per_second = self.timeout_rate(context).ok().unwrap();

@@ -31,9 +31,6 @@ rustc_proc_macro(
     },
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        "//third_party/rust_crates/vendor:proc-macro2",
-        "//third_party/rust_crates/vendor:quote",
         "//third_party/rust_crates/vendor:serde_json",
-        "//third_party/rust_crates/vendor:syn",
     ],
 )

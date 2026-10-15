@@ -9,7 +9,7 @@ use camino::Utf8PathBuf;
 use ffx_command_error::{Error, FfxContext as _, Result, bug, return_user_error, user_error};
 use ffx_config::environment::ExecutableKind;
 use ffx_config::logging::LogDestination;
-use ffx_config::{AssertNoEnvError, EnvironmentContext, FfxConfigBacked};
+use ffx_config::{AssertNoEnvError, EnvironmentContext};
 use ffx_metrics::{enhanced_analytics, sanitize};
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -373,7 +373,7 @@ impl FfxCommandLine {
     }
 }
 
-#[derive(ArgsInfo, Clone, Default, FfxConfigBacked, FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, Clone, Default, FromArgs, Debug, PartialEq)]
 /// Fuchsia's developer tool
 pub struct Ffx {
     #[argh(option, short = 'c')]
@@ -402,17 +402,14 @@ pub struct Ffx {
     pub stamp: Option<String>,
 
     #[argh(option, short = 't')]
-    #[ffx_config_default("target.default")]
     /// apply operations to single or multiple targets.
     pub target: Option<String>,
 
     #[argh(option)]
-    #[ffx_config_default(key = "proxy.timeout_secs", default = "1.0")]
     /// override proxy timeout (default: 1s).
     pub timeout: Option<f64>,
 
     #[argh(option, short = 'l', long = "log-level")]
-    #[ffx_config_default(key = "log.level", default = "Info")]
     /// set log level: Info (default), Error, Warn, Trace.
     pub log_level: Option<String>,
 
@@ -577,9 +574,29 @@ impl Ffx {
     ) -> Result<EnvironmentContext> {
         // Configuration initialization must happen before ANY calls to the config (or the cache won't
         // properly have the runtime parameters.
-        let overrides = self.runtime_config_overrides();
-        let mut runtime_args = ffx_config::runtime::populate_runtime(&*self.config, overrides)
+        let mut runtime_args = ffx_config::runtime::populate_runtime(&*self.config, None)
             .map_err(anyhow::Error::from)?;
+        if let Some(ref target) = self.target {
+            let mut target_map = serde_json::Map::new();
+            target_map.insert("default".into(), serde_json::Value::String(target.clone()));
+            let mut root = serde_json::Map::new();
+            root.insert("target".into(), serde_json::Value::Object(target_map));
+            ffx_config::api::value::merge_map(&mut runtime_args, &root);
+        }
+        if let Some(timeout) = self.timeout {
+            let mut proxy_map = serde_json::Map::new();
+            proxy_map.insert("timeout_secs".into(), serde_json::Value::String(timeout.to_string()));
+            let mut root = serde_json::Map::new();
+            root.insert("proxy".into(), serde_json::Value::Object(proxy_map));
+            ffx_config::api::value::merge_map(&mut runtime_args, &root);
+        }
+        if let Some(ref log_level) = self.log_level {
+            let mut log_map = serde_json::Map::new();
+            log_map.insert("level".into(), serde_json::Value::String(log_level.clone()));
+            let mut root = serde_json::Map::new();
+            root.insert("log".into(), serde_json::Value::Object(log_map));
+            ffx_config::api::value::merge_map(&mut runtime_args, &root);
+        }
         let is_agent = agents::is_invoked_by_agent(&env_vars);
         if self.direct || is_agent {
             if is_agent && !self.direct {
@@ -1646,5 +1663,37 @@ mod test {
         let env_vars = std::collections::HashMap::new();
         let ctx = cmd.global.load_context_with_env(ExecutableKind::Test, env_vars);
         assert!(ctx.is_ok());
+    }
+
+    #[fuchsia::test]
+    fn cli_overrides_update_runtime_config() {
+        let isolate_dir = tempdir().expect("isolate dir");
+        let args = [
+            "ffx",
+            "-t",
+            "id:1234,extra=val",
+            "--timeout",
+            "2.5",
+            "-l",
+            "Debug",
+            "-c",
+            "target.default=ignored",
+            "-c",
+            "proxy.timeout_secs=9.0",
+            "-c",
+            "log.level=Warn",
+        ]
+        .map(String::from);
+        let mut cmd_line =
+            FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
+        let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
+
+        let target: String = context.get(ffx_config::keys::TARGET_DEFAULT_KEY).expect("target");
+        assert_eq!(target, "id:1234,extra=val");
+        let timeout: f64 = context.get(ffx_config::keys::PROXY_TIMEOUT).expect("timeout");
+        assert_eq!(timeout, 2.5);
+        let log_level: String = context.get(ffx_config::logging::LOG_LEVEL).expect("log.level");
+        assert_eq!(log_level, "Debug");
     }
 }
