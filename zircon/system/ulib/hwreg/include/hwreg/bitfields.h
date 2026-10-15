@@ -292,6 +292,7 @@ class BitfieldRef {
   constexpr void set(IntType field_val) {
     static_assert(!std::is_const_v<IntType>);
     ZX_DEBUG_ASSERT((field_val & ~mask_) == 0);
+    field_val &= mask_;
     auto masked = static_cast<IntType>(*value_ptr_ & ~(mask_ << shift_));
     *value_ptr_ = static_cast<IntType>(masked | (field_val << shift_));
   }

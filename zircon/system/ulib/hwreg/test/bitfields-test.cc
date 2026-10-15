@@ -10,7 +10,14 @@
 #include <limits>
 #include <utility>
 
+#include <hwreg/internal.h>
+// Disable ZX_DEBUG_ASSERT in bitfields.h so the FieldMasking test can verify that
+// BitfieldRef::set masks out-of-range inputs in all build configurations.
+#pragma push_macro("ZX_DEBUG_ASSERT_IMPLEMENTED")
+#undef ZX_DEBUG_ASSERT_IMPLEMENTED
+#define ZX_DEBUG_ASSERT_IMPLEMENTED 0
 #include <hwreg/bitfields.h>
+#pragma pop_macro("ZX_DEBUG_ASSERT_IMPLEMENTED")
 #include <hwreg/mmio.h>
 #include <hwreg/mock.h>
 #include <hwreg/pio.h>
@@ -784,6 +791,16 @@ TEST(RegisterTestCase, UnshiftedField) {
     EXPECT_EQ(test_reg.is_64bit(), 1);
     EXPECT_EQ(test_reg.is_io_space(), 1);
   }
+}
+
+TEST(RegisterTestCase, FieldMasking) {
+  // Ensure that with debug asserts disabled we don't modify adjacent fields if a value is out of
+  // range.
+  auto reg = FieldTestReg8::Get().FromValue(0);
+  reg.set_field2(0xffu);
+  EXPECT_EQ(0x7u, reg.field2());
+  EXPECT_EQ(0u, reg.field1());
+  EXPECT_EQ(0x7u, reg.reg_value());
 }
 
 struct ConstexprArithmeticTestReg
