@@ -235,23 +235,28 @@ pub fn sys_close_range(
     last: u32,
     flags: u32,
 ) -> Result<(), Errno> {
+    // From close_range(2): "EINVAL: flags is not valid, or first is greater than last."
     if first > last || flags & !(CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC) != 0 {
         return error!(EINVAL);
     }
+    // CLOSE_RANGE_UNSHARE: "Unshare the specified file descriptors from any other processes
+    // before closing them."
     if flags & CLOSE_RANGE_UNSHARE != 0 {
         current_task.running_state().unshare_files(current_task);
     }
     let files = current_task.files();
-    let in_range = |fd: FdNumber| fd.raw() as u32 >= first && fd.raw() as u32 <= last;
+    let range = first..=last;
     if flags & CLOSE_RANGE_CLOEXEC != 0 {
-        files.retain(|fd, flags| {
-            if in_range(fd) {
-                *flags |= FdFlags::CLOEXEC;
+        // CLOSE_RANGE_CLOEXEC: "Set the close-on-exec flag on the specified file descriptors,
+        // rather than immediately closing them."
+        files.retain(|fd, fd_flags| {
+            if range.contains(&(fd.raw() as u32)) {
+                *fd_flags |= FdFlags::CLOEXEC;
             }
             true
         });
     } else {
-        files.retain(|fd, _| !in_range(fd));
+        files.retain(|fd, _| !range.contains(&(fd.raw() as u32)));
     }
     Ok(())
 }

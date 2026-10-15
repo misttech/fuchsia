@@ -14,6 +14,18 @@
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
+#ifndef SYS_close_range
+#define SYS_close_range 436
+#endif
+
+#ifndef CLOSE_RANGE_UNSHARE
+#define CLOSE_RANGE_UNSHARE (1U << 1)
+#endif
+
+#ifndef CLOSE_RANGE_CLOEXEC
+#define CLOSE_RANGE_CLOEXEC (1U << 2)
+#endif
+
 namespace {
 
 bool CheckLock(int fd, short type, off_t start, off_t length, pid_t pid) {
@@ -358,4 +370,74 @@ TEST(FcntlTest, GetOwnExDefault) {
   EXPECT_EQ(owner.type, F_OWNER_TID);
   EXPECT_EQ(owner.pid, 0);
 }
+
+int close_range(unsigned int first, unsigned int last, unsigned int flags) {
+  return static_cast<int>(syscall(SYS_close_range, first, last, flags));
+}
+
+TEST(FcntlTest, CloseRangeInvalidArgs) {
+  EXPECT_THAT(close_range(10, 5, /* flags = */ 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(close_range(0, 10, ~(CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC)),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(FcntlTest, CloseRangeClosesFdsInRange) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
+
+  fbl::unique_fd fd0(SAFE_SYSCALL(fcntl(fd, F_DUPFD, 1000)));
+  fbl::unique_fd fd1(SAFE_SYSCALL(fcntl(fd, F_DUPFD, fd0.get() + 1)));
+  fbl::unique_fd fd2(SAFE_SYSCALL(fcntl(fd, F_DUPFD, fd1.get() + 1)));
+  fbl::unique_fd fd3(SAFE_SYSCALL(fcntl(fd, F_DUPFD, fd2.get() + 1)));
+
+  ASSERT_THAT(close_range(fd1.get(), fd2.get(), /* flags = */ 0), SyscallSucceeds());
+
+  EXPECT_THAT(fcntl(fd0.get(), F_GETFD), SyscallSucceeds());
+  EXPECT_THAT(fcntl(fd1.release(), F_GETFD), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(fcntl(fd2.release(), F_GETFD), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(fcntl(fd3.get(), F_GETFD), SyscallSucceeds());
+}
+
+TEST(FcntlTest, CloseRangeCloexec) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
+
+  fbl::unique_fd fd0(SAFE_SYSCALL(fcntl(fd, F_DUPFD, 1000)));
+  fbl::unique_fd fd1(SAFE_SYSCALL(fcntl(fd, F_DUPFD, fd0.get() + 1)));
+  fbl::unique_fd fd2(SAFE_SYSCALL(fcntl(fd, F_DUPFD, fd1.get() + 1)));
+  fbl::unique_fd fd3(SAFE_SYSCALL(fcntl(fd, F_DUPFD, fd2.get() + 1)));
+
+  ASSERT_THAT(close_range(fd1.get(), fd2.get(), CLOSE_RANGE_CLOEXEC), SyscallSucceeds());
+
+  EXPECT_EQ(SAFE_SYSCALL(fcntl(fd0.get(), F_GETFD)) & FD_CLOEXEC, 0);
+  EXPECT_EQ(SAFE_SYSCALL(fcntl(fd1.get(), F_GETFD)) & FD_CLOEXEC, FD_CLOEXEC);
+  EXPECT_EQ(SAFE_SYSCALL(fcntl(fd2.get(), F_GETFD)) & FD_CLOEXEC, FD_CLOEXEC);
+  EXPECT_EQ(SAFE_SYSCALL(fcntl(fd3.get(), F_GETFD)) & FD_CLOEXEC, 0);
+}
+
+TEST(FcntlTest, CloseRangeUnshare) {
+  test_helper::ForkHelper helper;
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
+
+  fbl::unique_fd fd0(SAFE_SYSCALL(fcntl(fd, F_DUPFD, 1000)));
+  fbl::unique_fd fd1(SAFE_SYSCALL(fcntl(fd, F_DUPFD, fd0.get() + 1)));
+
+  pid_t child = static_cast<pid_t>(
+      SAFE_SYSCALL(syscall(SYS_clone, CLONE_FILES | SIGCHLD, nullptr, nullptr, nullptr, nullptr)));
+  if (child == 0) {
+    EXPECT_THAT(close_range(fd0.get(), fd0.get(), CLOSE_RANGE_UNSHARE), SyscallSucceeds());
+    EXPECT_THAT(fcntl(fd0.get(), F_GETFD), SyscallFailsWithErrno(EBADF));
+    EXPECT_THAT(fcntl(fd1.get(), F_GETFD), SyscallSucceeds());
+    fflush(nullptr);
+    _exit(testing::Test::HasFailure());
+  }
+
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  // Because the child passed CLOSE_RANGE_UNSHARE, the parent's FD table is unaffected.
+  EXPECT_THAT(fcntl(fd0.get(), F_GETFD), SyscallSucceeds());
+  EXPECT_THAT(fcntl(fd1.get(), F_GETFD), SyscallSucceeds());
+}
+
 }  // namespace
