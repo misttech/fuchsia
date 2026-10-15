@@ -330,4 +330,157 @@ mod tests {
         assert!(instance.address_maybe_resolve().now_or_never().is_some());
         assert!(instance.context_to_resolve_children().now_or_never().is_some());
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Sandbox construction memory budget guardrail & microbenchmark.
+    //
+    // `ComponentInstanceForAnalyzer::new_root` is synchronous and runs the same
+    // `build_program_output_dictionary` + `build_component_sandbox` code that component_manager
+    // runs inside `Actions::Resolve::new_resolved_state`, isolating sandbox construction from
+    // resolver IPC, async scheduling, and device noise.
+    //
+    // A thread-local counting allocator gives an exact, deterministic heap allocation and
+    // retained-bytes count per construction, even when cargo/fx test runs tests in parallel.
+    // ---------------------------------------------------------------------------------------
+
+    use cm_rust_testing::{ExposeBuilder, OfferBuilder, UseBuilder};
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    struct CountingAllocator;
+
+    thread_local! {
+        static ALLOCS: Cell<u64> = const { Cell::new(0) };
+        static ALLOC_BYTES: Cell<u64> = const { Cell::new(0) };
+        static DEALLOCS: Cell<u64> = const { Cell::new(0) };
+        static DEALLOC_BYTES: Cell<u64> = const { Cell::new(0) };
+    }
+
+    unsafe impl GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            let _ = ALLOCS.try_with(|c| c.set(c.get() + 1));
+            let _ = ALLOC_BYTES.try_with(|c| c.set(c.get() + layout.size() as u64));
+            unsafe { System.alloc(layout) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            let _ = DEALLOCS.try_with(|c| c.set(c.get() + 1));
+            let _ = DEALLOC_BYTES.try_with(|c| c.set(c.get() + layout.size() as u64));
+            unsafe { System.dealloc(ptr, layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            let _ = ALLOCS.try_with(|c| c.set(c.get() + 1));
+            let _ = ALLOC_BYTES.try_with(|c| c.set(c.get() + new_size as u64));
+            let _ = DEALLOCS.try_with(|c| c.set(c.get() + 1));
+            let _ = DEALLOC_BYTES.try_with(|c| c.set(c.get() + layout.size() as u64));
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+    }
+
+    #[global_allocator]
+    static GLOBAL: CountingAllocator = CountingAllocator;
+
+    fn snapshot_counters() -> (u64, u64, u64, u64) {
+        (
+            ALLOCS.with(|c| c.get()),
+            ALLOC_BYTES.with(|c| c.get()),
+            DEALLOCS.with(|c| c.get()),
+            DEALLOC_BYTES.with(|c| c.get()),
+        )
+    }
+
+    fn synthetic_decl(
+        num_children: usize,
+        parent_protocols_per_child: usize,
+        self_protocols_per_child: usize,
+    ) -> ComponentDecl {
+        let mut b = ComponentDeclBuilder::new();
+        for i in 0..parent_protocols_per_child {
+            b = b.use_(UseBuilder::protocol().name(&format!("fuchsia.bench.Parent{i}")));
+        }
+        for c in 0..num_children {
+            let child = format!("child_{c}");
+            b = b.child_default(&child);
+            for i in 0..parent_protocols_per_child {
+                b = b.offer(
+                    OfferBuilder::protocol()
+                        .name(&format!("fuchsia.bench.Parent{i}"))
+                        .source(cm_rust::offer::OfferSource::Parent)
+                        .target_static_child(&child),
+                );
+            }
+            for i in 0..self_protocols_per_child {
+                let name = format!("fuchsia.bench.Self{c}_{i}");
+                b = b.protocol_default(&name);
+                b = b.offer(
+                    OfferBuilder::protocol()
+                        .name(&name)
+                        .source(cm_rust::offer::OfferSource::Self_)
+                        .target_static_child(&child),
+                );
+            }
+            b = b.expose(
+                ExposeBuilder::protocol()
+                    .name(&format!("fuchsia.bench.Exposed{c}"))
+                    .source_static_child(&child),
+            );
+            if c > 0 {
+                b = b.offer(
+                    OfferBuilder::protocol()
+                        .name(&format!("fuchsia.bench.Exposed{}", c - 1))
+                        .source_static_child(&format!("child_{}", c - 1))
+                        .target_static_child(&child),
+                );
+            }
+        }
+        b.build()
+    }
+
+    /// CQ guardrail test: ensures sandbox construction for a 50-child realm (549 offers,
+    /// 50 exposes, 8 uses, 100 capabilities) stays within its retained heap object and byte
+    /// budget (~1,991 live heap objects, ~175 KB retained heap).
+    #[test]
+    fn sandbox_construction_memory_budget() {
+        let decl = synthetic_decl(50, 8, 2);
+        let url: Url = "base://bench".parse().unwrap();
+        let top_instance = TopInstanceForAnalyzer::new(vec![], vec![]);
+        let runtime_config = Arc::new(RuntimeConfig::default());
+        let policy = GlobalPolicyChecker::default();
+        let id_index = Arc::new(component_id_index::Index::default());
+        let dynamic_dictionaries = Arc::new(DynamicDictionaryConfig::default());
+
+        let construct = |d: ComponentDecl| {
+            ComponentInstanceForAnalyzer::new_root(
+                d,
+                None,
+                url.clone(),
+                Arc::clone(&top_instance),
+                Arc::clone(&runtime_config),
+                policy.clone(),
+                Arc::clone(&id_index),
+                Arc::clone(&dynamic_dictionaries),
+            )
+        };
+
+        // Warm up once to initialize any lazy globals / FlyStr interning tables.
+        drop(std::hint::black_box(construct(decl.clone())));
+
+        let input = decl.clone();
+        let (a0, b0, d0, db0) = snapshot_counters();
+        let instance = construct(input);
+        let (a1, b1, d1, db1) = snapshot_counters();
+        let live_objs = (a1 - a0).saturating_sub(d1 - d0);
+        let live_bytes = (b1 - b0).saturating_sub(db1 - db0);
+        drop(std::hint::black_box(instance));
+
+        assert!(
+            live_objs <= 2_050,
+            "sandbox construction retained heap objects regressed: {live_objs} > 2050 \
+             (did a new per-route Arc/Box allocation get introduced in build_component_sandbox?)"
+        );
+        assert!(
+            live_bytes <= 180_000,
+            "sandbox construction retained heap bytes regressed: {live_bytes} > 180000 \
+             (did IntermediateRouter, RouteRequest, or Capability struct layout grow?)"
+        );
+    }
 }

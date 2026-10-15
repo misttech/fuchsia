@@ -7,7 +7,7 @@ use crate::rights::{Rights, validate_rights};
 use async_trait::async_trait;
 use capability_source::CapabilitySource;
 use cm_rust::{CapabilityTypeName, FidlIntoNative, GenericRef, NativeIntoFidl};
-use cm_rust_derive::FidlDecl;
+use cm_rust_derive as _;
 use cm_types::RelativePath;
 use fidl_fuchsia_component_runtime as fruntime;
 use fidl_fuchsia_io as fio;
@@ -39,54 +39,14 @@ impl From<Weak<Router<Dictionary>>> for WeakDictionaryOrRouter {
     }
 }
 
-/// RoutingError is big, and we're going to hold a lot of IntermediateRouter types, so instead of
-/// pre-creating a RoutingError we hold the pieces we need to make a
-/// RoutingError::RouteSourceNotFound and construct it as needed.
-struct NotFoundErrorContext {
-    verb: RouteVerb,
-    source: GenericRef,
-    type_name: CapabilityTypeName,
-}
-
-impl NotFoundErrorContext {
-    fn to_router_error(&self, intermediate_router: &IntermediateRouter) -> RouterError {
-        RoutingError::RouteSourceNotFound {
-            moniker: intermediate_router.moniker.clone(),
-            verb: self.verb,
-            counter_verb: match &self.source {
-                GenericRef::Parent => RouteVerb::Offer,
-                GenericRef::Child(_)
-                | GenericRef::ChildInCollection(_, _)
-                | GenericRef::Collection(_) => RouteVerb::Expose,
-                GenericRef::Self_ | GenericRef::Capability(_) => RouteVerb::Declare,
-                GenericRef::Framework
-                | GenericRef::Debug
-                | GenericRef::Void
-                | GenericRef::Environment => RouteVerb::Contain,
-            },
-            source: self.source.clone(),
-            capability_type: self.type_name,
-            capability_name: intermediate_router.source_path.clone(),
-        }
-        .into()
-    }
-}
-
-#[derive(FidlDecl, Debug, Clone, PartialEq)]
-#[fidl_decl(fidl_table = "fruntime::RouteRequest")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RouteRequest {
     pub build_type_name: cm_rust::CapabilityTypeName,
     pub availability: Option<cm_rust::Availability>,
     pub directory_rights: Option<fio::Flags>,
-    pub directory_intermediate_rights: Option<fio::Flags>,
-    pub inherit_rights: Option<bool>,
     pub sub_directory_path: Option<RelativePath>,
-    pub isolated_storage_path: Option<RelativePath>,
-    pub storage_sub_directory_path: Option<RelativePath>,
-    pub storage_source_moniker: Option<Moniker>,
     pub event_stream_scope_moniker: Option<Moniker>,
     pub event_stream_scope: Option<Box<[cm_rust::EventScope]>>,
-    pub skip_policy_checks: Option<bool>,
 }
 
 impl Default for RouteRequest {
@@ -99,34 +59,55 @@ impl Default for RouteRequest {
             build_type_name: cm_rust::CapabilityTypeName::Protocol,
             availability: None,
             directory_rights: None,
-            directory_intermediate_rights: None,
-            inherit_rights: None,
             sub_directory_path: None,
-            isolated_storage_path: None,
-            storage_sub_directory_path: None,
-            storage_source_moniker: None,
             event_stream_scope_moniker: None,
             event_stream_scope: None,
-            skip_policy_checks: None,
         }
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TypeSpecificProperties {
+    // storage and directory
+    DirectoryType(Box<DirectoryProperties>),
+    // event stream
+    EventStream(Box<EventStreamProperties>),
+    // everything else
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectoryRights {
+    Explicit(fio::Flags),
+    Inherit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DirectoryProperties {
+    rights: DirectoryRights,
+    // default to "."
+    subdir: RelativePath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EventStreamProperties {
+    moniker: Moniker,
+    scope: Box<[cm_rust::EventScope]>,
+}
+
 /// A router that attempts to find a router to forward to in a source dictionary, validates (and
 /// potentially mutates) the route request, and then forwards the request to next router.
+///
+/// Because `component_manager` retains thousands of `IntermediateRouter` instances across the
+/// component topology, type-specific fields of `RouteRequest` are boxed in
+/// `TypeSpecificProperties` so that each `IntermediateRouter` occupies 88 bytes instead of 216
+/// bytes.
 pub struct IntermediateRouter {
     /// The dictionary (or router for a dictionary) which will hold the router that we forward to.
     source_dictionary: WeakDictionaryOrRouter,
 
     /// The path in the source dictionary at which we should find the router to forward to.
     source_path: RelativePath,
-
-    /// The request that will be used if the route request is empty. The route request will also be
-    /// compared against this "default" request, and if it's requesting something different/larger
-    /// in scope than the default then the request will be rejected. For example, any incoming
-    /// requests must have the same build type name as the default request and they must not
-    /// request greater directory rights than are listed in the default request.
-    default_request: RouteRequest,
 
     /// The "default" instance token to use when performing routes in order to find the router we
     /// will forward the request to.
@@ -135,15 +116,30 @@ pub struct IntermediateRouter {
     /// The moniker of the component which created this router.
     moniker: Moniker,
 
-    /// Additional context about this step in the route, which is used to generate error values
-    /// when the source router cannot be found.
-    not_found_context: NotFoundErrorContext,
+    /// The source reference of the route.
+    source: GenericRef,
+
+    /// Type-specific routing properties boxed for directory/storage and scoped event streams.
+    type_specific: TypeSpecificProperties,
+
+    type_name: CapabilityTypeName,
+    availability: Option<cm_rust::Availability>,
+    verb: RouteVerb,
 
     /// Whether or not to emit tracing events for routes. This field is ignored during host
     /// routing, where tracing events are never emitted.
     #[allow(unused)]
     enable_tracing: bool,
 }
+
+// `component_manager` retains thousands of `IntermediateRouter` instances across the topology.
+// Guard against accidental struct size regressions; type-specific fields belong in
+// `TypeSpecificProperties`.
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(std::mem::size_of::<IntermediateRouter>() == 88);
+    assert!(std::mem::size_of::<RouteRequest>() <= 72);
+};
 
 enum RouterCapabilityOrSource<C: CapabilityBound> {
     Router(Arc<Router<C>>),
@@ -164,17 +160,58 @@ impl IntermediateRouter {
         source: GenericRef,
     ) -> Capability {
         assert!(source_path.len() != 0);
-        let type_name = default_request.build_type_name;
+        let RouteRequest {
+            build_type_name: type_name,
+            availability,
+            directory_rights,
+            sub_directory_path,
+            event_stream_scope_moniker,
+            event_stream_scope,
+        } = default_request;
+
+        let type_specific = match type_name {
+            CapabilityTypeName::Directory | CapabilityTypeName::Storage => {
+                let rights = match directory_rights {
+                    Some(rights) => DirectoryRights::Explicit(rights),
+                    None => DirectoryRights::Inherit,
+                };
+                let subdir = sub_directory_path.unwrap_or_else(RelativePath::dot);
+                TypeSpecificProperties::DirectoryType(Box::new(DirectoryProperties {
+                    rights,
+                    subdir,
+                }))
+            }
+            CapabilityTypeName::EventStream => {
+                match (event_stream_scope_moniker, event_stream_scope) {
+                    (Some(moniker), Some(scope)) => TypeSpecificProperties::EventStream(Box::new(
+                        EventStreamProperties { moniker, scope },
+                    )),
+                    (None, None) => TypeSpecificProperties::None,
+                    _ => panic!(
+                        "event_stream_scope_moniker and event_stream_scope must both be Some or both be None"
+                    ),
+                }
+            }
+            CapabilityTypeName::Protocol
+            | CapabilityTypeName::Service
+            | CapabilityTypeName::Config
+            | CapabilityTypeName::Runner
+            | CapabilityTypeName::Resolver
+            | CapabilityTypeName::Dictionary => TypeSpecificProperties::None,
+        };
 
         let enable_tracing = route_verb == RouteVerb::Use;
 
         let self_ = Self {
             source_dictionary,
             source_path,
-            default_request,
             default_token,
             moniker,
-            not_found_context: NotFoundErrorContext { verb: route_verb, source, type_name },
+            source,
+            type_specific,
+            type_name,
+            availability,
+            verb: route_verb,
             enable_tracing,
         };
 
@@ -192,9 +229,82 @@ impl IntermediateRouter {
         }
     }
 
+    fn default_directory_rights(&self) -> Option<fio::Flags> {
+        match &self.type_specific {
+            TypeSpecificProperties::DirectoryType(props) => match props.rights {
+                DirectoryRights::Explicit(rights) => Some(rights),
+                DirectoryRights::Inherit => None,
+            },
+            _ if self.type_name == CapabilityTypeName::Service => Some(fio::PERM_READABLE),
+            _ => None,
+        }
+    }
+
+    fn default_inherit_rights(&self) -> Option<bool> {
+        match &self.type_specific {
+            TypeSpecificProperties::DirectoryType(props) => match props.rights {
+                DirectoryRights::Inherit => Some(true),
+                DirectoryRights::Explicit(_) => Some(false),
+            },
+            _ if self.type_name == CapabilityTypeName::Service => Some(false),
+            _ => None,
+        }
+    }
+
+    fn default_sub_directory_path(&self) -> Option<RelativePath> {
+        match &self.type_specific {
+            TypeSpecificProperties::DirectoryType(props) => Some(props.subdir.clone()),
+            _ => None,
+        }
+    }
+
+    fn to_not_found_router_error(&self) -> RouterError {
+        RoutingError::RouteSourceNotFound {
+            moniker: self.moniker.clone(),
+            verb: self.verb,
+            counter_verb: match &self.source {
+                GenericRef::Parent => RouteVerb::Offer,
+                GenericRef::Child(_)
+                | GenericRef::ChildInCollection(_, _)
+                | GenericRef::Collection(_) => RouteVerb::Expose,
+                GenericRef::Self_ | GenericRef::Capability(_) => RouteVerb::Declare,
+                GenericRef::Framework
+                | GenericRef::Debug
+                | GenericRef::Void
+                | GenericRef::Environment => RouteVerb::Contain,
+            },
+            source: self.source.clone(),
+            capability_type: self.type_name,
+            capability_name: self.source_path.clone(),
+        }
+        .into()
+    }
+
+    fn default_request_to_fidl(&self) -> fruntime::RouteRequest {
+        let (event_stream_scope_moniker, event_stream_scope) = match &self.type_specific {
+            TypeSpecificProperties::EventStream(props) => (
+                Some(props.moniker.clone().native_into_fidl()),
+                Some(props.scope.clone().native_into_fidl()),
+            ),
+            _ => (None, None),
+        };
+        fruntime::RouteRequest {
+            build_type_name: Some(self.type_name.native_into_fidl()),
+            availability: self.availability.map(NativeIntoFidl::native_into_fidl),
+            directory_rights: self.default_directory_rights(),
+            inherit_rights: self.default_inherit_rights(),
+            sub_directory_path: self
+                .default_sub_directory_path()
+                .map(NativeIntoFidl::native_into_fidl),
+            event_stream_scope_moniker,
+            event_stream_scope,
+            ..Default::default()
+        }
+    }
+
     /// Returns the moniker that owns the source dictionary.
     fn get_upgrade_failure_moniker(&self) -> Moniker {
-        match &self.not_found_context.source {
+        match &self.source {
             GenericRef::Parent => self.moniker.parent().unwrap_or_else(|| Moniker::root()),
 
             GenericRef::Child(name) => {
@@ -302,7 +412,7 @@ impl IntermediateRouter {
                     .into());
                 }
                 None => {
-                    return Err(self.not_found_context.to_router_error(self));
+                    return Err(self.to_not_found_router_error());
                 }
             }
         }
@@ -311,7 +421,7 @@ impl IntermediateRouter {
             .expect("we stopped the above loop before fully draining the path");
         let maybe_source_router = source_dictionary
             .get(&capability_name)
-            .ok_or_else(|| self.not_found_context.to_router_error(self))?;
+            .ok_or_else(|| self.to_not_found_router_error())?;
 
         let maybe_c: Option<Arc<C>> = maybe_source_router.clone().try_into().ok();
         if let Some(c) = maybe_c {
@@ -338,10 +448,10 @@ impl IntermediateRouter {
     }
 
     /// Check to see if `request` does not request anything different or larger in scope than
-    /// `self.default_request`. `request` will be set to `self.default_request` if it is empty.
+    /// `self`'s default request. `request` will be set to the default request if it is empty.
     fn handle_new_request(&self, request: &mut fruntime::RouteRequest) -> Result<(), RouterError> {
         if *request == fruntime::RouteRequest::default() {
-            *request = self.default_request.clone().native_into_fidl();
+            *request = self.default_request_to_fidl();
             return Ok(());
         }
 
@@ -358,7 +468,7 @@ impl IntermediateRouter {
         &self,
         request: &mut fruntime::RouteRequest,
     ) -> Result<(), RouterError> {
-        if request.build_type_name != Some(self.default_request.build_type_name.to_string()) {
+        if request.build_type_name != Some(self.type_name.to_string()) {
             Err(RoutingError::BedrockWrongCapabilityType {
                 moniker: self.moniker.clone().into(),
                 actual: request
@@ -366,16 +476,16 @@ impl IntermediateRouter {
                     .as_ref()
                     .map(Clone::clone)
                     .unwrap_or_else(|| "".to_string()),
-                expected: self.default_request.build_type_name.to_string(),
+                expected: self.type_name.to_string(),
             })?;
         }
         Ok(())
     }
 
     fn handle_availability(&self, request: &mut fruntime::RouteRequest) -> Result<(), RouterError> {
-        if self.default_request.availability.is_none() {
+        let Some(default_availability) = self.availability else {
             return Ok(());
-        }
+        };
         let request_availability: fidl_fuchsia_component_decl::Availability = *request
             .availability
             .as_ref()
@@ -384,8 +494,6 @@ impl IntermediateRouter {
                 missing_field: "availability".to_string(),
             })?;
         let request_availability: cm_rust::Availability = request_availability.fidl_into_native();
-        let default_availability =
-            self.default_request.availability.expect("default request is missing availability");
         let new_availability = crate::availability::advance(
             &self.moniker.clone().into(),
             request_availability,
@@ -400,7 +508,7 @@ impl IntermediateRouter {
         &self,
         request: &mut fruntime::RouteRequest,
     ) -> Result<(), RouterError> {
-        let Some(directory_rights) = self.default_request.directory_rights else {
+        let Some(directory_rights) = self.default_directory_rights() else {
             return Ok(());
         };
         let rights = Rights::from(directory_rights);
@@ -413,13 +521,12 @@ impl IntermediateRouter {
         &self,
         request: &mut fruntime::RouteRequest,
     ) -> Result<(), RouterError> {
-        let Some(mut new_subdir) = self.default_request.sub_directory_path.clone() else {
+        let Some(mut new_subdir) = self.default_sub_directory_path() else {
             return Ok(());
         };
 
         let Some(current_subdir) = request.sub_directory_path.as_ref() else {
-            request.sub_directory_path =
-                self.default_request.sub_directory_path.clone().map(|p| p.to_string());
+            request.sub_directory_path = Some(new_subdir.to_string());
             return Ok(());
         };
         let current_subdir = RelativePath::new(current_subdir).map_err(|e| {
@@ -434,7 +541,7 @@ impl IntermediateRouter {
         if !success {
             return Err(RoutingError::PathTooLong {
                 moniker: self.moniker.clone().into(),
-                path: self.default_request.sub_directory_path.clone().unwrap().to_string(),
+                path: self.default_sub_directory_path().unwrap().to_string(),
                 keyword: request.sub_directory_path.clone().unwrap(),
             }
             .into());
@@ -450,14 +557,10 @@ impl IntermediateRouter {
             // these), so only set our scope if the request doesn't have one yet.
             return;
         }
-        let Some(new_moniker) = self.default_request.event_stream_scope_moniker.as_ref() else {
-            return;
-        };
-        let Some(new_scope) = self.default_request.event_stream_scope.as_ref() else {
-            return;
-        };
-        request.event_stream_scope_moniker = Some(new_moniker.clone().native_into_fidl());
-        request.event_stream_scope = Some(new_scope.clone().native_into_fidl());
+        if let TypeSpecificProperties::EventStream(props) = &self.type_specific {
+            request.event_stream_scope_moniker = Some(props.moniker.clone().native_into_fidl());
+            request.event_stream_scope = Some(props.scope.clone().native_into_fidl());
+        }
     }
 }
 
@@ -481,7 +584,7 @@ where
                 "component_manager",
                 "route_capability",
                 "target" => self.moniker.as_str(),
-                "type" => self.default_request.build_type_name.to_string().as_str(),
+                "type" => self.type_name.to_string().as_str(),
                 "capability" => self.source_path.iter_segments().join("/").as_str()
             )
         });
@@ -517,7 +620,7 @@ where
                 "component_manager",
                 "route_capability_debug",
                 "target" => self.moniker.as_str(),
-                "type" => self.default_request.build_type_name.to_string().as_str(),
+                "type" => self.type_name.to_string().as_str(),
                 "capability" => self.source_path.iter_segments().join("/").as_str()
             )
         });
@@ -534,9 +637,9 @@ where
 
     fn error_info(&self) -> Option<RouterErrorInfo> {
         Some(RouterErrorInfo {
-            capability_type: self.not_found_context.type_name,
+            capability_type: self.type_name,
             name: self.source_path.basename().unwrap().to_owned(),
-            availability: self.default_request.availability.unwrap(),
+            availability: self.availability.unwrap(),
         })
     }
 }

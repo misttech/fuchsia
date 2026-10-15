@@ -26,7 +26,6 @@ impl ToRequest for OfferDecl {
         match self {
             cm_rust::OfferDecl::Service(_) => {
                 request.directory_rights = Some(fio::PERM_READABLE);
-                request.inherit_rights = Some(true);
             }
             cm_rust::OfferDecl::Directory(o) => {
                 request.directory_rights = o.rights.map(|rights| {
@@ -34,12 +33,10 @@ impl ToRequest for OfferDecl {
                         .expect("operations and flags are bit compatible")
                 });
                 request.sub_directory_path = Some(o.subdir.clone());
-                request.inherit_rights = Some(true);
             }
             cm_rust::OfferDecl::Storage(_) => {
                 request.directory_rights = Some(fio::PERM_READABLE | fio::PERM_WRITABLE);
                 request.sub_directory_path = Some(RelativePath::dot());
-                request.inherit_rights = Some(false);
             }
             cm_rust::OfferDecl::EventStream(o) => {
                 if let Some(scope) = &o.scope {
@@ -67,7 +64,6 @@ impl ToRequest for UseDecl {
         match self {
             cm_rust::UseDecl::Service(_) => {
                 request.directory_rights = Some(fio::PERM_READABLE);
-                request.inherit_rights = Some(false);
             }
             cm_rust::UseDecl::Directory(u) => {
                 request.directory_rights = Some(
@@ -75,12 +71,10 @@ impl ToRequest for UseDecl {
                         .expect("operations and flags are bit compatible"),
                 );
                 request.sub_directory_path = Some(u.subdir.clone());
-                request.inherit_rights = Some(false);
             }
             cm_rust::UseDecl::Storage(_) => {
                 request.directory_rights = Some(fio::PERM_READABLE | fio::PERM_WRITABLE);
                 request.sub_directory_path = Some(RelativePath::dot());
-                request.inherit_rights = Some(false);
             }
             cm_rust::UseDecl::EventStream(u) => {
                 if let Some(scope) = &u.scope {
@@ -107,7 +101,6 @@ impl ToRequest for ExposeDecl {
         match self {
             cm_rust::ExposeDecl::Service(_) => {
                 request.directory_rights = Some(fio::PERM_READABLE);
-                request.inherit_rights = Some(true);
             }
             cm_rust::ExposeDecl::Directory(o) => {
                 request.directory_rights = o.rights.map(|rights| {
@@ -115,7 +108,6 @@ impl ToRequest for ExposeDecl {
                         .expect("operations and flags are bit compatible")
                 });
                 request.sub_directory_path = Some(o.subdir.clone());
-                request.inherit_rights = Some(true);
             }
             cm_rust::ExposeDecl::Config(_)
             | cm_rust::ExposeDecl::Runner(_)

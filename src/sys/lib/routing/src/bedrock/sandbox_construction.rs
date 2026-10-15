@@ -311,6 +311,17 @@ impl ComponentSandbox {
     }
 }
 
+struct ComponentWithToken<'a, C: ComponentInstanceInterface + 'static> {
+    component: &'a Arc<C>,
+    weak_token: Arc<WeakInstanceToken>,
+}
+
+impl<'a, C: ComponentInstanceInterface + 'static> ComponentWithToken<'a, C> {
+    fn new(component: &'a Arc<C>) -> Self {
+        Self { component, weak_token: component.as_weak().into() }
+    }
+}
+
 /// Once a component has been resolved and its manifest becomes known, this function produces the
 /// various dicts the component needs based on the contents of its manifest.
 pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
@@ -341,12 +352,13 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
         child_outputs: Mutex::new(child_outputs),
         ..Default::default()
     };
+    let component_with_token = ComponentWithToken::new(component);
     let mut environments = HashMap::new();
 
     for environment_decl in &decl.environments {
         let _ = environments.insert(
             environment_decl.name.clone(),
-            build_environment(component, &sandbox, environment_decl),
+            build_environment(&component_with_token, &sandbox, environment_decl),
         );
     }
 
@@ -394,7 +406,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     || matches!(first_use.source(), cm_rust::UseSource::Collection(_)) =>
             {
                 let aggregate_router = new_aggregate_service_router(
-                    component,
+                    &component_with_token,
                     &sandbox,
                     &use_bundle,
                     aggregate_router_fn,
@@ -410,7 +422,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 );
             }
             cm_rust::UseDecl::EventStream(_) => extend_dict_with_event_stream_uses(
-                component,
+                &component_with_token,
                 &sandbox,
                 use_bundle,
                 error_reporter.clone(),
@@ -419,7 +431,12 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
             cm_rust::UseDecl::Dictionary(_) => {
                 dictionary_use_bundles.push(use_bundle);
             }
-            use_ => install_use_in_sandbox(component, &sandbox, use_, error_reporter.clone()),
+            use_ => install_use_in_sandbox(
+                &component_with_token,
+                &sandbox,
+                use_,
+                error_reporter.clone(),
+            ),
         }
     }
 
@@ -429,7 +446,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
     if !decl.uses.iter().any(|u| matches!(u, cm_rust::UseDecl::Runner(_))) {
         if let Some(runner_name) = decl.program.as_ref().and_then(|p| p.runner.as_ref()) {
             install_use_in_sandbox(
-                component,
+                &component_with_token,
                 &sandbox,
                 &cm_rust::UseDecl::Runner(cm_rust::UseRunnerDecl {
                     source: cm_rust::UseSource::Environment,
@@ -449,7 +466,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
     // until after all other uses are processed before processing used dictionaries.
     for dictionary_use_bundle in dictionary_use_bundles {
         extend_dict_with_dictionary_use(
-            component,
+            &component_with_token,
             &sandbox,
             dictionary_use_bundle,
             error_reporter.clone(),
@@ -467,7 +484,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     ) =>
             {
                 let aggregate_router = new_aggregate_service_router(
-                    component,
+                    &component_with_token,
                     &sandbox,
                     &offer_bundle,
                     aggregate_router_fn,
@@ -479,7 +496,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     vec![first_offer.target_name().clone()].into(),
                 );
             }
-            _ => install_offer_in_sandbox(component, &sandbox, first_offer),
+            _ => install_offer_in_sandbox(&component_with_token, &sandbox, first_offer),
         }
     }
 
@@ -491,7 +508,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     || matches!(first_expose.source(), cm_rust::ExposeSource::Collection(_)) =>
             {
                 let router = new_aggregate_service_router(
-                    component,
+                    &component_with_token,
                     &sandbox,
                     &expose_bundle,
                     aggregate_router_fn,
@@ -505,7 +522,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     first_expose.target_name()
                 );
             }
-            _ => install_expose_in_sandbox(component, &sandbox, first_expose),
+            _ => install_expose_in_sandbox(&component_with_token, &sandbox, first_expose),
         }
     }
 
@@ -513,7 +530,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
 }
 
 fn new_aggregate_service_router<'a, C: ComponentInstanceInterface + 'static, D>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     decl_bundle: &Vec<&'a D>,
     aggregate_router_fn: &AggregateRouterFn<C>,
@@ -524,7 +541,8 @@ where
     &'a D: Into<CapabilityTypeName> + Into<RouteVerb>,
 {
     let mut aggregate_sources = vec![];
-    let source = new_aggregate_capability_source(component.moniker().clone(), decl_bundle);
+    let source =
+        new_aggregate_capability_source(component.component.moniker().clone(), decl_bundle);
     for decl in decl_bundle.iter() {
         if matches!(&source, &CapabilitySource::FilteredAggregateProvider(_))
             && decl
@@ -560,7 +578,7 @@ where
             aggregate_sources.push(AggregateSource::DirectoryRouter { source_instance, router })
         }
     }
-    (aggregate_router_fn)(component.clone(), aggregate_sources, source).into()
+    (aggregate_router_fn)(component.component.clone(), aggregate_sources, source).into()
 }
 
 /// Returns `true` if any of the offers set a filter or rename mapping.
@@ -649,7 +667,7 @@ fn group_expose_aggregates<'a>(
 }
 
 fn build_environment<C: ComponentInstanceInterface + 'static>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     environment_decl: &cm_rust::EnvironmentDecl,
 ) -> ComponentEnvironment {
@@ -701,6 +719,7 @@ pub fn extend_dict_with_offers<C: ComponentInstanceInterface + 'static>(
     target_input: &ComponentInput,
     aggregate_router_fn: &AggregateRouterFn<C>,
 ) {
+    let component_with_token = ComponentWithToken::new(component);
     for offer_bundle in group_offer_aggregates(dynamic_offers).into_iter() {
         let first_offer = offer_bundle.first().unwrap();
         match first_offer {
@@ -721,14 +740,15 @@ pub fn extend_dict_with_offers<C: ComponentInstanceInterface + 'static>(
                 if combined_offer_bundle.len() == 1
                     && !matches!(first_offer.source(), cm_rust::offer::OfferSource::Collection(_))
                 {
-                    let router = new_intermediate_router(component, sandbox, *first_offer);
+                    let router =
+                        new_intermediate_router(&component_with_token, sandbox, *first_offer);
                     let prev = target_input
                         .capabilities()
                         .insert(first_offer.target_name().clone(), router);
                     assert!(prev.is_none(), "failed to insert capability into target dict");
                 } else {
                     let aggregate_router = new_aggregate_service_router(
-                        component,
+                        &component_with_token,
                         sandbox,
                         &combined_offer_bundle,
                         aggregate_router_fn,
@@ -740,7 +760,7 @@ pub fn extend_dict_with_offers<C: ComponentInstanceInterface + 'static>(
                 }
             }
             offer => {
-                let router = new_intermediate_router(component, sandbox, *offer);
+                let router = new_intermediate_router(&component_with_token, sandbox, *offer);
                 let prev =
                     target_input.capabilities().insert(first_offer.target_name().clone(), router);
                 assert!(prev.is_none(), "failed to insert capability into target dict");
@@ -750,7 +770,7 @@ pub fn extend_dict_with_offers<C: ComponentInstanceInterface + 'static>(
 }
 
 fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     uses: Vec<&cm_rust::UseDecl>,
     error_reporter: impl ErrorReporter,
@@ -764,7 +784,7 @@ fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
                 router,
                 *use_,
                 error_reporter.clone(),
-                component.as_weak().into(),
+                component.weak_token.clone(),
             );
             let filter = match use_ {
                 cm_rust::UseDecl::EventStream(u) => u.filter.clone(),
@@ -777,7 +797,7 @@ fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
         })
         .collect::<Vec<_>>();
 
-    let router = event_stream_use_router_fn(component, routers);
+    let router = event_stream_use_router_fn(component.component, routers);
     let target_path = match uses.first().unwrap() {
         cm_rust::UseDecl::EventStream(u) => u.target_path.clone(),
         _ => panic!("found non-event-stream use"),
@@ -841,13 +861,14 @@ fn new_intermediate_router_inner(
 }
 
 fn install_use_in_sandbox<C: ComponentInstanceInterface + 'static>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     use_: &cm_rust::UseDecl,
     error_reporter: impl ErrorReporter,
 ) {
     let router = new_intermediate_router(component, sandbox, use_);
-    let router = ErrorLoggingRouter::new(router, use_, error_reporter, component.as_weak().into());
+    let router =
+        ErrorLoggingRouter::new(router, use_, error_reporter, component.weak_token.clone());
     match use_ {
         cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
             numbered_handle: Some(numbered_handle),
@@ -885,7 +906,7 @@ fn install_use_in_sandbox<C: ComponentInstanceInterface + 'static>(
 }
 
 fn extend_dict_with_dictionary_use<C: ComponentInstanceInterface + 'static>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     use_bundle: Vec<&cm_rust::UseDecl>,
     error_reporter: impl ErrorReporter,
@@ -907,14 +928,15 @@ fn extend_dict_with_dictionary_use<C: ComponentInstanceInterface + 'static>(
         dictionary_routers.push(dictionary_router);
     }
 
+    let moniker = component.component.moniker().clone();
     let router = UseDictionaryRouter::new(
         path.clone(),
-        component.moniker().clone(),
+        moniker.clone(),
         original_dictionary,
         dictionary_routers,
         CapabilitySource::Component(ComponentSource {
             capability: ComponentCapability::Use_((*use_bundle.first().unwrap()).clone()),
-            moniker: component.moniker().clone(),
+            moniker,
         }),
     );
     // This value will be `Some` if we're shadowing something else. This is fine in this case
@@ -970,7 +992,7 @@ impl ServiceDeclExt for cm_rust::OfferDecl {
 }
 
 fn install_offer_in_sandbox<C: ComponentInstanceInterface + 'static>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     offer: &cm_rust::offer::OfferDecl,
 ) {
@@ -1012,7 +1034,7 @@ fn install_router_to_target(
 }
 
 fn new_intermediate_router_source_name<'a, C: ComponentInstanceInterface + 'static, D>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     decl: &'a D,
 ) -> Capability
@@ -1022,12 +1044,13 @@ where
 {
     let source = decl.to_source();
     let source_path = RelativePath::from(vec![decl.source_name().clone()]);
+    let moniker = component.component.moniker();
     new_intermediate_router_inner(
-        component.moniker().clone(),
+        moniker.clone(),
         decl.into(),
         sandbox,
-        decl.to_request(component.moniker()),
-        component.as_weak().into(),
+        decl.to_request(moniker),
+        component.weak_token.clone(),
         decl.into(),
         source,
         source_path,
@@ -1035,7 +1058,7 @@ where
 }
 
 fn new_intermediate_router<'a, C: ComponentInstanceInterface + 'static, D>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     decl: &'a D,
 ) -> Capability
@@ -1058,12 +1081,13 @@ where
         }
         _ => decl.source_path().iter_segments().collect::<Vec<_>>().into(),
     };
+    let moniker = component.component.moniker();
     let router = new_intermediate_router_inner(
-        component.moniker().clone(),
+        moniker.clone(),
         decl.into(),
         sandbox,
-        decl.to_request(component.moniker()),
-        component.as_weak().into(),
+        decl.to_request(moniker),
+        component.weak_token.clone(),
         decl.into(),
         source,
         source_path,
@@ -1084,7 +1108,7 @@ where
 }
 
 fn install_expose_in_sandbox<C: ComponentInstanceInterface + 'static>(
-    component: &Arc<C>,
+    component: &ComponentWithToken<'_, C>,
     sandbox: &ComponentSandbox,
     expose: &cm_rust::ExposeDecl,
 ) {

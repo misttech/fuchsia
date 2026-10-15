@@ -207,7 +207,6 @@ pub async fn route_backing_directory(
             availability: Some(cm_rust::Availability::Required),
             directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
             sub_directory_path: Some(RelativePath::dot()),
-            inherit_rights: Some(false),
             ..Default::default()
         },
         target.as_weak().into(),

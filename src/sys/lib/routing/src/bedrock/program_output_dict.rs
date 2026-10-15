@@ -6,7 +6,6 @@ use crate::bedrock::structured_dict::ComponentInput;
 use crate::bedrock::with_policy_check::WithPolicyCheck;
 use crate::component_instance::{
     ComponentInstanceInterface, ExtendedInstanceInterface, WeakComponentInstanceInterface,
-    WeakExtendedInstanceInterface,
 };
 use crate::error::{RouteVerb, RoutingError};
 use crate::intermediate_router::{IntermediateRouter, RouteRequest, WeakDictionaryOrRouter};
@@ -153,6 +152,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                     )
                 }
             };
+            let weak_component_token: Arc<WeakInstanceToken> = component.as_weak().into();
             let router: Arc<Router<DirConnector>> = IntermediateRouter::new(
                 backing_source,
                 vec![backing_dir.clone()].into(),
@@ -161,10 +161,9 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                     availability: Some(cm_rust::Availability::Required),
                     directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
                     sub_directory_path: Some(RelativePath::dot()),
-                    inherit_rights: Some(false),
                     ..Default::default()
                 },
-                component.as_weak().into(),
+                weak_component_token.clone(),
                 component.moniker().clone(),
                 RouteVerb::Declare,
                 source_ref,
@@ -309,9 +308,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 storage_id: storage_id.clone(),
                 backing_dir_router: router,
                 storage_source_moniker: component.moniker().clone(),
-                backing_dir_target: Arc::new(WeakInstanceToken {
-                    inner: Box::new(WeakExtendedInstanceInterface::Component(component.as_weak())),
-                }),
+                backing_dir_target: weak_component_token,
                 _component_type: Default::default(),
             });
             let prev =
