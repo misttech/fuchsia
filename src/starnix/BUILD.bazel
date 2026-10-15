@@ -15,5 +15,5 @@ test_suite(
 test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
-    tests = [],
+    tests = ["//src/starnix/tools/tar_to_pkg:host_tests"],
 )

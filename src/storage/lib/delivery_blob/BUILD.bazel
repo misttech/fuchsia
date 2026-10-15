@@ -1,0 +1,72 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "delivery_blob",
+    srcs = [
+        "src/compression.rs",
+        "src/compression/compression_algorithm.rs",
+        "src/compression/compression_info.rs",
+        "src/format.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    link_deps = ["//third_party/zstd"],
+    visibility = [
+        "//src/developer/ffx/plugins/package/blob:__subpackages__",
+        "//src/developer/ffx/plugins/product/extract_blobs:__pkg__",
+        "//src/developer/ffx/plugins/product_bundle/create:__pkg__",
+        "//src/lib/assembly:__subpackages__",
+        "//src/security/lib/scrutiny:__subpackages__",
+        "//src/storage:__subpackages__",
+        "//src/sys/pkg:__subpackages__",
+    ],
+    deps = [
+        "//src/storage/lib/ptr_slice",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//third_party/lz4/rust:lz4",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:crc",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:rayon",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+        "//third_party/rust_crates/vendor:zstd",
+    ] + select({
+        "@platforms//os:fuchsia": ["//sdk/rust/zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "delivery_blob_test",
+    crate = ":delivery_blob",
+    edition = "2024",
+    deps = ["//third_party/rust_crates/vendor:rand"],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "delivery_blob_host_test",
+    binary_name = "delivery_blob_test",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "delivery-blob-test",
+    unit_tests = [":delivery_blob_test"],
+)

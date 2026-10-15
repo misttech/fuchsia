@@ -1,0 +1,180 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//packages:resources.bzl", "resource")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuchsia-pkg",
+    srcs = [
+        "src/build.rs",
+        "src/errors.rs",
+        "src/lib.rs",
+        "src/meta_contents.rs",
+        "src/meta_package.rs",
+        "src/meta_subpackages.rs",
+        "src/package_archive.rs",
+        "src/package_build_manifest.rs",
+        "src/package_builder.rs",
+        "src/package_directory.rs",
+        "src/package_manifest.rs",
+        "src/package_manifest_list.rs",
+        "src/package_sets.rs",
+        "src/path.rs",
+        "src/path_to_string.rs",
+        "src/subpackages_build_manifest.rs",
+        "src/test.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    # fuchsia-pkg should not depend on host-side assembly tooling
+    tags = ["assert_no_deps=//src/lib/assembly:__subpackages__"],
+    visibility = [
+        "//build/assembly:__subpackages__",
+        "//src/bringup:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/lib/assembly:__subpackages__",
+        "//src/starnix:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//tools/configc:__pkg__",
+        "//tools/pkgstats:__pkg__",
+        "//tools/test_list_tool:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//src/lib/buf-read-ext",
+        "//src/lib/collections/packed",
+        "//src/lib/fuchsia-url",
+        "//src/lib/tempfile-ext",
+        "//src/lib/utf8_path",
+        "//src/lib/versioning/version-history/rust",
+        "//src/lib/versioning/version-history/rust/data",
+        "//src/storage/lib/delivery_blob",
+        "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:proptest",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:walkdir",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+            "//sdk/rust/zx-status",
+            "//src/lib/fidl/rust/fidl",
+            "//src/lib/fuchsia-fs",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "lib_test",
+    crate = ":fuchsia-pkg",
+    crate_name = "fuchsia_pkg_lib_test",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:regex",
+    ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "fuchsia-pkg_host_test",
+    binary_name = "lib_test",
+)
+
+# @bazel2gn:skip
+resource(
+    name = "dup1",
+    testonly = True,
+    src = "duplicate-blob.txt",
+    dest = "data/dup1",
+)
+
+# @bazel2gn:skip
+resource(
+    name = "dup2",
+    testonly = True,
+    src = "duplicate-blob.txt",
+    dest = "data/dup2",
+)
+
+# @bazel2gn:skip
+resource(
+    name = "dup3",
+    testonly = True,
+    src = "duplicate-blob.txt",
+    dest = "data/dup3",
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "lib_test_packaged_bin",
+    testonly = True,
+    binary = ":lib_test",
+    binary_name = "fuchsia_pkg_lib_test",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "test-component-manifest",
+    testonly = True,
+    component_name = "fuchsia-pkg-lib-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fuchsia-pkg-tests.cml",
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "test-component",
+    compiled_manifest = ":test-component-manifest",
+    component_name = "fuchsia-pkg-lib-test",
+    deps = [
+        ":dup1",
+        ":dup2",
+        ":lib_test_packaged_bin",
+    ],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "fuchsia-pkg-tests-package",
+    package_name = "fuchsia-pkg-tests",
+    test_components = [":test-component"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "fuchsia-pkg-tests",
+    package = ":fuchsia-pkg-tests-package",
+)

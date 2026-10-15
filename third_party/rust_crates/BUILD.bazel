@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+package(default_applicable_licenses = ["//:license"])
+
 exports_files([
     "Cargo.toml",
     "Cargo.lock",
@@ -60,7 +62,9 @@ package_group(
 
 package_group(
     name = "bincode_visibility",
-    packages = [],
+    packages = [
+        "//src/storage/ext4/lib/metadata",
+    ],
 )
 
 package_group(
@@ -77,6 +81,7 @@ package_group(
         "//src/lib/diagnostics/testing/diagnostics-assertions/rust",
         "//src/storage/fxfs/unicode",
         "//src/sys/lib/cm_fidl_validator",
+        "//src/sys/pkg/lib/fuchsia-pkg",
         "//tools/fidl/fidldoc",
         "//tools/gtest_test_parser",
         "//tools/pretty_serial",

@@ -277,7 +277,6 @@ regex_visibility = [
   "//src/sys/component_manager:*",
   "//src/sys/fuzzing/fuzzctl:*",
   "//src/sys/lib/cm_fidl_validator:*",
-  "//src/sys/pkg/lib/fuchsia-pkg:*",
   "//src/sys/run_test_suite/tests:*",
   "//src/sys/test_runners/gotests:*",
   "//src/sys/test_runners/gotests/tests:*",
