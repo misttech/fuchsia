@@ -10,7 +10,7 @@ build graph.
 The Fuchsia build is not homogeneous: a single build invocation must produce
 artifacts for many distinct environments, including:
 
-- Host tools (e.g., Linux or macOS binaries running on the build machine)
+- Host tools (e.g., Linux binaries running on the build machine)
 - Fuchsia user-space device binaries and packages
 - Bootloaders and firmware images
 - Kernel images (Zircon, Physboot)
@@ -114,7 +114,7 @@ classifying GN configuration variables across **two axes**:
   values outside of `declare_args()` (cannot be directly overridden in
   `args.gn`).
   - *Examples in Fuchsia*:
-    - `is_host = current_os == "linux" || current_os == "mac"`
+    - `is_linux = current_os == "linux"`
     - `use_thinlto = (optimize == "size_thinlto" || optimize == "speed_thinlto") && !is_host && !is_profile && (current_cpu == "x64" || current_cpu == "arm64")`
 
 > [!NOTE]

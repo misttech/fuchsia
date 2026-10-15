@@ -117,7 +117,7 @@ _log_severity_allowed_val = [
 #           accel (optional, default: "auto")
 #             [string] Virtualization acceleration. Valid choices are "none" to
 #             disable acceleration, "hyper" to use the host's hypervisor interface
-#             (KVM on Linux and HVF on MacOS), or "auto" to use the hypervisor if
+#             (KVM on Linux), or "auto" to use the hypervisor if
 #             detected.
 #
 #           kernel_args (optional)

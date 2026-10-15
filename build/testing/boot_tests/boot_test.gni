@@ -39,7 +39,7 @@ _emu_device_types = [
 # Helper template defining a boot test for a particular host architecture. This
 # flexibility is needed as we wish to define one for emulators on $target_cpu
 # hosts even when $target_cpu != $host_cpu in order to take advantage of KVM,
-# HVF, etc.
+# etc.
 #
 # Parameters
 #
@@ -432,7 +432,7 @@ template("boot_test") {
   }
 
   # If host_cpu != target_cpu, then we make sure to define a separate boot
-  # test for a target_cpu host in order to take advantage of KVM, HVF, etc.
+  # test for a target_cpu host in order to take advantage of KVM, etc.
   #
   # TODO(mcgrathr): No riscv64 hosts are available yet.
   if (host_cpu != target_cpu && target_cpu != "riscv64") {

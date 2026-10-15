@@ -233,7 +233,6 @@ def host_tool_shlibs(executable: Path) -> Iterable[Path]:
       paths to non-system shared libraries
     """
     # TODO: do this once in the entire build, as early as GN time
-    # TODO: support Mac OS using `otool -L`
     ldd_output = subprocess.run(
         ["ldd", str(executable)], capture_output=True, text=True
     )

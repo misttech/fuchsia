@@ -41,7 +41,7 @@ def vmsg(text: str) -> None:
 # library files we expect to encounter.
 # Source: https://en.wikipedia.org/wiki/List_of_file_signatures
 LIBRARY_FILE_MAGIC_NUMBERS = {
-    b"!<arch>",  # archives (.a) (on Linux, MacOS)
+    b"!<arch>",  # archives (.a) (on Linux)
     b"\x7fELF",  # ELF files
     b"\xfe\xed\xfa\xce",  # Mach-O 32b
     b"\xfe\xed\xfa\xcf",  # Mach-O 64b

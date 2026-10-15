@@ -21,9 +21,6 @@ def prepare_clang_repository(repo_ctx, clang_install_dir, needs_symlinks = True)
 
       - Symlinks to the clang bin/, lib/ and other directories.
 
-      - On MacOS, symlinks xcode/MacSDK/usr and xcode/MacSDK/Frameworks
-        pointing to system-installed XCode OSX SDK directories.
-
       - An `empty` file which is ... empty.
 
       - A `generated_constants.bzl` file that exports values corresponding

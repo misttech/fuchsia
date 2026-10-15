@@ -294,7 +294,7 @@ build_config = struct(
     host_tag_alt = "{host_tag_alt}",
 
     # The GCC/Clang target triple for the host operating system.
-    # (e.g. x86_64-unknown-gnu-linux or aarcg64-apple-darwin).
+    # (e.g. 'x86_64-unknown-linux-gnu' or 'aarch64-unknown-linux-gnu').
     host_target_triple = "{host_target_triple}",
 
     # The Bazel platform os constraint value for the host

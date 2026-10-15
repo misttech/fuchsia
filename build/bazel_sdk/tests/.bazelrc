@@ -10,7 +10,7 @@ build:fuchsia_riscv64 --copt=--debug --strip=never
 # The @fuchsia_build_config//:host platform definition always
 # matches the host os and cpu, which is very convenient to avoid
 # a hard-coded --host_cpu=k8 flag in this file (which would not
-# work on arm64-based Linux or MacOS machines).
+# work on arm64-based Linux machines).
 #
 # However, when --host_cpu is not defined, Bazel will try to
 # auto-detect the host C++ toolchain, which will fail since

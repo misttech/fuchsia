@@ -296,8 +296,7 @@ class RustRemoteAction(object):
 
     def _remote_disqualified(self) -> bool:
         """Detects when the action cannot run remotely for various reasons."""
-        # If the C sysroot is outside of exec_root, (e.g. an absolute path
-        # like /Library/Developer/... for Mac OS SDKs) then the command
+        # If the C sysroot is outside of exec_root, then the command
         # will only work locally.
         if self.needs_linker:
             if self._c_sysroot_is_outside_exec_root:

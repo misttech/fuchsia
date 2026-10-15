@@ -1040,7 +1040,7 @@ template("clang_toolchain") {
       # There is no SOLINK_FLAGS for binaries
       command = string_replace(command, "{{SOLINK_FLAGS}}", "")
 
-      # Use --start-group and --eng-group for binaries, except on Mac.
+      # Use --start-group and --end-group for binaries.
       # IMPORTANT: The trailing spaces in the replacement strings are critical!
       command = string_replace(command, "{{START_GROUP}}", "-Wl,--start-group ")
       command = string_replace(command, "{{END_GROUP}}", "-Wl,--end-group ")

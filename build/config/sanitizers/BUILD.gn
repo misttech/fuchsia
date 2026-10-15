@@ -25,7 +25,7 @@ config("variant-libprefix") {
 }
 
 template("sanitizer_rustflags") {
-  # For dynamic linking (Fuchsia and macOS), there is just one combined DSO.
+  # For dynamic linking (Fuchsia), there is just one combined DSO.
   # For static linking (other platforms), there are separate libraries for the
   # generic (C) and C++-specific runtime support.
   _shared_runtime = defined(invoker.shared_runtime) && invoker.shared_runtime

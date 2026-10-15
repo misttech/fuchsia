@@ -223,7 +223,7 @@ archive file.
             doc = "CIPD tag for the version to load.",
         ),
         "sha256": attr.string_dict(
-            doc = "Optional SHA-256 hash of the clang archive. Valid keys are mac and linux",
+            doc = "Optional SHA-256 hash of the clang archive. Valid key is linux",
         ),
         "local_archive": attr.string(
             doc = "local clang archive file.",
@@ -356,7 +356,7 @@ _cipd_tag_tag = tag_class(
             mandatory = True,
         ),
         "sha256": attr.string_dict(
-            doc = "Optional SHA-256 hash of the clang archive. Valid keys are mac and linux",
+            doc = "Optional SHA-256 hash of the clang archive. Valid key is linux",
         ),
     },
 )

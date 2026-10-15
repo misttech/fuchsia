@@ -360,8 +360,7 @@ def main() -> int:
     build_goroot = os.path.abspath(args.go_root)
 
     env = {
-        # /usr/bin:/bin are required for basic things like bash(1) and env(1). Note
-        # that on Mac, ld is also found from /usr/bin.
+        # /usr/bin:/bin are required for basic things like bash(1) and env(1).
         "PATH": os.path.join(build_goroot, "bin") + ":/usr/bin:/bin",
         "GOARCH": goarch,
         "GOOS": goos,

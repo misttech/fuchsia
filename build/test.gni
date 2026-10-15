@@ -11,8 +11,8 @@ import("//build/testing/host_test.gni")
 #
 # environments
 #   Optional: What environments this test should target. Only used here for
-#     linux and mac tests, with a default value of a general linux/mac
-#     environment (as a function of $current_os).
+#     linux host tests, with a default value of a general linux
+#     environment.
 #     See //build/testing/test_spec.gni for more details.
 #
 # package_deps
