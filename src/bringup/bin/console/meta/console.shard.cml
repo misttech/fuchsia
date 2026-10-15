@@ -334,7 +334,7 @@
             to: "#console-launcher",
         },
         {
-            service: "fuchsia.hardware.pci.BusService",
+            service: "fuchsia.hardware.pci.DebugService",
             from: "#boot-drivers",
             to: "#console-launcher",
             availability: "optional",
@@ -361,7 +361,7 @@
             to: "#console-launcher",
         },
         {
-            service: "fuchsia.hardware.pci.BusService",
+            service: "fuchsia.hardware.pci.DebugService",
             from: "#boot-drivers",
             to: "#console-launcher",
         },

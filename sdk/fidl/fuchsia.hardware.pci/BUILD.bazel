@@ -9,6 +9,7 @@ package(default_applicable_licenses = ["//:license"])
 fidl_library(
     name = "fuchsia.hardware.pci",
     srcs = [
+        "debug.fidl",
         "metadata.fidl",
         "pci.fidl",
     ],

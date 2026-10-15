@@ -29,6 +29,7 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 fidl("fuchsia.hardware.pci") {
   sources = [
+    "debug.fidl",
     "metadata.fidl",
     "pci.fidl",
   ]

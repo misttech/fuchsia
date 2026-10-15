@@ -274,7 +274,7 @@
             availability: "optional",
         },
         {
-            service: "fuchsia.hardware.pci.BusService",
+            service: "fuchsia.hardware.pci.DebugService",
             availability: "optional",
         },
         {

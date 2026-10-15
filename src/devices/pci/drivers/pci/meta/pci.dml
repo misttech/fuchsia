@@ -11,7 +11,7 @@
     },
     capabilities: [
         { service: "fuchsia.hardware.pci.Service" },
-        { service: "fuchsia.hardware.pci.BusService" },
+        { service: "fuchsia.hardware.pci.DebugService" },
     ],
     use: [
         {
@@ -26,7 +26,7 @@
             from: "self",
         },
         {
-            service: "fuchsia.hardware.pci.BusService",
+            service: "fuchsia.hardware.pci.DebugService",
             from: "self",
         },
     ],

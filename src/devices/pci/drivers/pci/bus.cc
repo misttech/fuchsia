@@ -89,12 +89,12 @@ zx_status_t Bus::Initialize() {
   }
 
   dispatcher_ = fdf::Dispatcher::GetCurrent()->async_dispatcher();
-  zx::result result = DdkAddService<fuchsia_hardware_pci::BusService>(
-      fuchsia_hardware_pci::BusService::InstanceHandler({
-          .bus = bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
+  zx::result result = DdkAddService<fuchsia_hardware_pci::DebugService>(
+      fuchsia_hardware_pci::DebugService::InstanceHandler({
+          .debug = bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
       }));
   if (result.is_error()) {
-    zxlogf(ERROR, "failed to add BusService: %s", result.status_string());
+    zxlogf(ERROR, "failed to add DebugService: %s", result.status_string());
     return result.status_value();
   }
 

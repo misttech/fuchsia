@@ -5,7 +5,7 @@
 // All PCI layouts and information are documented in the PCI Local Bus Specification
 // https://pcisig.com/specification-overview/pci-conventional
 use anyhow::{Context, Error, anyhow};
-use fidl_fuchsia_hardware_pci::{Address, BusProxy, HeaderType};
+use fidl_fuchsia_hardware_pci::{Address, DebugProxy, HeaderType};
 use fuchsia_component::client::Service;
 use lspci::bridge::Bridge;
 use lspci::device::Device;
@@ -23,7 +23,7 @@ async fn main() -> Result<(), Error> {
     handle_subcommands(&proxies, args).await
 }
 
-async fn handle_subcommands<'a>(proxies: &'a Vec<BusProxy>, args: Args) -> Result<(), Error> {
+async fn handle_subcommands<'a>(proxies: &'a Vec<DebugProxy>, args: Args) -> Result<(), Error> {
     // Read the database.
     let mut buf = String::new();
     let db = read_database(&mut buf)
@@ -113,8 +113,8 @@ fn read_database<'a>(buf: &'a mut String) -> Result<db::PciDb<'a>, Error> {
 
 async fn find_bus_containing_bdf<'a>(
     filter: &'a Filter,
-    proxies: &'a Vec<BusProxy>,
-) -> Result<&'a BusProxy, Error> {
+    proxies: &'a Vec<DebugProxy>,
+) -> Result<&'a DebugProxy, Error> {
     for proxy in proxies {
         let info = proxy.get_host_bridge_info().await?;
         if info.start_bus_number <= filter.bus && info.end_bus_number >= filter.bus {
@@ -124,15 +124,18 @@ async fn find_bus_containing_bdf<'a>(
     Err(anyhow!("PCI bus containing {} not found", filter))
 }
 
-// Find 'bus' entries that correspond to fuchsia.hardware.pci.BusService instances.
-async fn find_buses() -> Result<Vec<BusProxy>, Error> {
+// Find 'debug' entries that correspond to fuchsia.hardware.pci.DebugService instances.
+async fn find_buses() -> Result<Vec<DebugProxy>, Error> {
     let mut proxies = Vec::new();
-    let service = Service::open(fidl_fuchsia_hardware_pci::BusServiceMarker)
-        .context("Failed to open BusService")?;
+    let service = Service::open(fidl_fuchsia_hardware_pci::DebugServiceMarker)
+        .context("Failed to open DebugService")?;
 
-    for instance in service.enumerate().await.context("Failed to enumerate BusService instances")? {
-        let proxy =
-            instance.connect_to_bus().context("Failed to connect to BusService instance member")?;
+    for instance in
+        service.enumerate().await.context("Failed to enumerate DebugService instances")?
+    {
+        let proxy = instance
+            .connect_to_debug()
+            .context("Failed to connect to DebugService instance member")?;
         proxies.push(proxy);
     }
 

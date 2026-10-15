@@ -70,7 +70,7 @@ namespace PciFidl = fuchsia_hardware_pci;
 using DeviceTree = std::map<pci_bdf_t, fbl::RefPtr<pci::Device>, Device::BdfCompare>;
 
 class Bus;
-using PciBusType = ddk::Device<Bus, ddk::Messageable<PciFidl::Bus>::Mixin>;
+using PciBusType = ddk::Device<Bus, ddk::Messageable<PciFidl::Debug>::Mixin>;
 class Bus : public PciBusType,
             public ddk::EmptyProtocol<ZX_PROTOCOL_PCI>,
             public BusDeviceInterface {
@@ -172,7 +172,7 @@ class Bus : public PciBusType,
   LegacyIrqs legacy_irqs_;
   SharedIrqMap shared_irqs_ __TA_GUARDED(devices_lock_);
 
-  fidl::ServerBindingGroup<fuchsia_hardware_pci::Bus> bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_pci::Debug> bindings_;
 };
 
 zx_status_t pci_bus_bind(void* ctx, zx_device_t* parent);
