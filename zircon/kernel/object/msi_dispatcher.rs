@@ -1,4 +1,4 @@
-// Copyright 2026 The Fuchsia Authors
+// Copyright 2020 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
@@ -32,9 +32,9 @@ define_kcounter!(DISPATCHER_MSI_DESTROY_COUNT, "dispatcher.msi.destroy", Sum);
 #[repr(C)]
 pub struct MsiDispatcherState {
     /// Magic canary value validating structural integrity.
-    canary: Canary<{ fbl::magic(b"MSIA") }>,
+    canary: Canary<{ fbl::magic(b"MSID") }>,
 
-    /// Reference to the underlying C++ `MsiAllocation` object (not protected by lock).
+    /// Reference to the underlying `MsiAllocation` object (not protected by lock).
     msi_alloc: RefPtr<MsiAllocation>,
 
     /// Mutex guarding state operations.
@@ -44,11 +44,17 @@ pub struct MsiDispatcherState {
 
 impl MsiDispatcherState {
     /// Initializes the `MsiDispatcherState`.
-    pub fn init(
+    ///
+    /// # Safety
+    ///
+    /// `msi_alloc_raw` must be a valid pointer exported from `RefPtr::into_raw`.
+    pub unsafe fn init(
         _dispatcher: *const MsiDispatcher,
-        msi_alloc: RefPtr<MsiAllocation>,
+        msi_alloc_raw: *mut MsiAllocation,
     ) -> impl PinInit<Self, core::convert::Infallible> {
         DISPATCHER_MSI_CREATE_COUNT.add(1);
+        // SAFETY: `msi_alloc_raw` was exported from `RefPtr::into_raw` in `MsiDispatcher::create`.
+        let msi_alloc = unsafe { RefPtr::from_raw(msi_alloc_raw) };
         pin_init!(Self {
             canary: Canary::new(),
             msi_alloc,
@@ -58,6 +64,7 @@ impl MsiDispatcherState {
 
     /// Returns a reference to the underlying `MsiAllocation` ref pointer.
     pub fn msi_allocation(&self) -> &RefPtr<MsiAllocation> {
+        self.canary.assert();
         &self.msi_alloc
     }
 }
@@ -70,6 +77,7 @@ impl PinnedDrop for MsiDispatcherState {
 }
 
 crate::object::dispatcher::impl_dispatcher_facade_with_state!(
+    /// Message Signaled Interrupts (MSI) allocation wrapper dispatcher.
     pub struct MsiDispatcher,
     MsiDispatcherState,
     ZX_OBJ_TYPE_MSI,
@@ -77,21 +85,21 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
 );
 
 impl MsiDispatcher {
-    /// Returns default rights for an MsiDispatcher handle.
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_MSI_RIGHTS
-    }
-
     /// Creates a new MsiDispatcher wrapping an MsiAllocation and returns its handle and rights.
     pub fn create(
         msi_alloc: RefPtr<MsiAllocation>,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        // SAFETY: `msi_alloc` is transferred to C++ (`cpp_msi_dispatcher_create` takes ownership
-        // of the raw pointer), and `cpp_msi_dispatcher_create` initializes `handle` on success.
+        let msi_alloc_raw = RefPtr::into_raw(msi_alloc).cast_mut();
+        // SAFETY: `msi_alloc_raw` is transferred to `rust_msi_dispatcher_state_init` if C++
+        // allocates `MsiDispatcher`, and `cpp_msi_dispatcher_create` initializes `handle` on
+        // success. If C++ allocation fails before invoking `MsiDispatcher::MsiDispatcher`,
+        // we reclaim and drop `msi_alloc_raw`.
         let handle = unsafe {
-            KernelHandle::create(|out| {
-                cpp_msi_dispatcher_create(RefPtr::into_raw(msi_alloc).cast_mut(), out)
-            })
+            KernelHandle::create(|out| cpp_msi_dispatcher_create(msi_alloc_raw, out)).inspect_err(
+                |_| {
+                    drop(RefPtr::from_raw(msi_alloc_raw));
+                },
+            )
         }?;
         Ok((handle, ZX_DEFAULT_MSI_RIGHTS))
     }

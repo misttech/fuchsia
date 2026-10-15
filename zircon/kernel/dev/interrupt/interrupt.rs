@@ -184,6 +184,14 @@ mod sys {
         ) -> zx_types::zx_status_t;
         pub fn remap_interrupt(vector: u32) -> u32;
         pub fn is_valid_interrupt(vector: u32, flags: u32) -> bool;
+        pub fn msi_is_supported() -> bool;
+        pub fn msi_alloc_block(
+            requested_irqs: u32,
+            can_target_64bit: bool,
+            is_msix: bool,
+            out_block: *mut MsiBlock,
+        ) -> zx_types::zx_status_t;
+        pub fn msi_free_block(block: *mut MsiBlock);
         pub fn msi_supports_masking() -> bool;
         pub fn msi_mask_unmask(block: *const MsiBlock, msi_id: u32, mask: bool);
         pub fn msi_register_handler(block: *const MsiBlock, msi_id: u32, handler: InterruptHandler);
@@ -263,6 +271,34 @@ pub fn remap_interrupt(vector: u32) -> u32 {
 pub fn is_valid_interrupt(vector: u32, flags: u32) -> bool {
     // SAFETY: `sys::is_valid_interrupt` has no memory safety preconditions.
     unsafe { sys::is_valid_interrupt(vector, flags) }
+}
+
+/// Returns `true` if the platform interrupt controller supports MSI.
+#[inline]
+pub fn msi_is_supported() -> bool {
+    // SAFETY: `sys::msi_is_supported` has no memory safety preconditions.
+    unsafe { sys::msi_is_supported() }
+}
+
+/// Allocates a block of `requested_irqs` MSI interrupts into `out_block`.
+#[inline]
+pub fn msi_alloc_block(
+    requested_irqs: u32,
+    can_target_64bit: bool,
+    is_msix: bool,
+    out_block: &mut MsiBlock,
+) -> Result<(), zx_status::Status> {
+    // SAFETY: `out_block` is a valid mutable reference to an `MsiBlock`.
+    zx_status::Status::ok(unsafe {
+        sys::msi_alloc_block(requested_irqs, can_target_64bit, is_msix, out_block)
+    })
+}
+
+/// Frees a previously allocated MSI `block`.
+#[inline]
+pub fn msi_free_block(block: &mut MsiBlock) {
+    // SAFETY: `block` is a valid mutable reference to an `MsiBlock`.
+    unsafe { sys::msi_free_block(block) }
 }
 
 /// Returns `true` if the platform interrupt controller supports MSI masking.

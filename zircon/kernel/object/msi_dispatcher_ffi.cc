@@ -1,4 +1,4 @@
-// Copyright 2026 The Fuchsia Authors
+// Copyright 2020 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
@@ -11,20 +11,22 @@
 #include <kernel/ffi.h>
 #include <ktl/utility.h>
 #include <object/handle.h>
-#include <object/msi_allocation.h>
 #include <object/msi_dispatcher.h>
+
+MsiDispatcher::MsiDispatcher(MsiAllocation* msi_alloc) : Dispatcher(0u) {
+  DISPATCHER_VERIFY_OFFSET(MsiDispatcher, kMsiDispatcherStateOffset);
+  rust_msi_dispatcher_state_init(&opaque_storage_, this, msi_alloc);
+}
+
+IMPLEMENT_DISPATCHER_RUST_STATE(MsiDispatcher, rust_msi_dispatcher_state_get_lock,
+                                rust_msi_dispatcher_state_destroy)
 
 extern "C" {
 
 zx_status_t cpp_msi_dispatcher_create(MsiAllocation* msi_alloc_raw,
                                       ffi::Uninitialized<KernelHandle<MsiDispatcher>>* handle_out) {
-  if (!msi_alloc_raw) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  fbl::RefPtr<MsiAllocation> msi_alloc = fbl::ImportFromRawPtr(msi_alloc_raw);
   fbl::AllocChecker ac;
-  KernelHandle new_handle(fbl::AdoptRef(new (&ac) MsiDispatcher(ktl::move(msi_alloc))));
+  KernelHandle new_handle(fbl::AdoptRef(new (&ac) MsiDispatcher(msi_alloc_raw)));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
