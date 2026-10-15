@@ -369,8 +369,7 @@ impl ChannelDispatcher {
         let max_handle_count = *msg_handle_count;
 
         let (msg, too_small) = {
-            ksync::lock!(let mut guard = state.channel_lock.lock());
-            let mut g = state.guard_channel_lock_mut(guard.token_mut());
+            ksync::lock!(let mut g = state.lock_channel_lock());
 
             // SAFETY: Holding `channel_lock` is sufficient to read `owner` (writing requires
             // holding both the peer holder lock and `channel_lock`).
@@ -378,9 +377,10 @@ impl ChannelDispatcher {
                 return Err(Status::BAD_HANDLE);
             }
 
-            let mut messages = g.messages_mut();
+            let peer_has_closed = *g.peer_has_closed();
+            let mut messages = g.as_mut().messages_mut();
             let Some(front) = messages.front() else {
-                return Err(if *g.peer_has_closed() {
+                return Err(if peer_has_closed {
                     Status::PEER_CLOSED
                 } else {
                     Status::SHOULD_WAIT
@@ -627,7 +627,8 @@ impl ChannelDispatcher {
         let state = self.state();
         state.canary.assert();
 
-        let g = state.guard_mu(token);
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self`.
+        let g = unsafe { state.guard_mu(token) };
         let waiters = g.waiters();
         if waiters.is_empty() {
             return Err(msg);
@@ -689,14 +690,15 @@ impl ChannelDispatcher {
         // signals contained READABLE (because there can't be any observers still waiting for
         // READABLE if that signal is already active).
         let previous_signals = {
-            ksync::lock!(let mut guard = state.channel_lock.lock());
-            let mut g = state.guard_channel_lock_mut(guard.token_mut());
-            let mut messages = g.messages_mut();
-
-            messages.as_mut().push_back(msg);
+            ksync::lock!(let mut g = state.lock_channel_lock());
+            let size = {
+                let mut messages = g.as_mut().messages_mut();
+                messages.as_mut().push_back(msg);
+                messages.len()
+            };
             let previous_signals = self.raise_signals_locked(token, ZX_CHANNEL_READABLE);
-            let size = messages.len();
-            *g.max_message_count_mut() = cmp::max(size as u64, *g.max_message_count());
+            let max_count = cmp::max(size as u64, *g.max_message_count());
+            *g.as_mut().max_message_count_mut() = max_count;
 
             // TODO(cpu): Remove this hack. See comment in MAX_PENDING_MESSAGE_COUNT definition.
             if size >= WARN_PENDING_MESSAGE_COUNT {
@@ -760,7 +762,8 @@ impl ChannelDispatcher {
         &self,
         token: &mut ksync::LockToken<'_, PeerHolderMuClass<Self>>,
     ) -> u32 {
-        let mut g = self.state().guard_mu_mut(token);
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self`.
+        let mut g = unsafe { self.state().guard_mu_mut(token) };
         let mut txid = *g.txid();
         loop {
             // Values 1..MIN_KERNEL_GENERATED_TXID are reserved for userspace.
@@ -843,16 +846,15 @@ impl ChannelDispatcher {
     pub(super) fn peer_has_closed(&self) -> bool {
         let state = self.state();
         state.canary.assert();
-        ksync::lock!(let guard = state.channel_lock.lock());
-        *state.guard_channel_lock(guard.token()).peer_has_closed()
+        ksync::lock!(let guard = state.lock_channel_lock());
+        *guard.peer_has_closed()
     }
 
     /// Returns the current and maximum pending message counts for this endpoint.
     pub(super) fn get_message_counts(&self) -> (usize, u64) {
         let state = self.state();
         state.canary.assert();
-        ksync::lock!(let guard = state.channel_lock.lock());
-        let g = state.guard_channel_lock(guard.token());
+        ksync::lock!(let g = state.lock_channel_lock());
         (g.messages().len(), *g.max_message_count())
     }
 
@@ -895,8 +897,8 @@ impl ChannelDispatcher {
         self.state().canary.assert();
         {
             let state = self.state();
-            ksync::lock!(let mut guard = state.channel_lock.lock());
-            *state.guard_channel_lock_mut(guard.token_mut()).peer_has_closed_mut() = true;
+            ksync::lock!(let mut guard = state.lock_channel_lock());
+            *guard.as_mut().peer_has_closed_mut() = true;
         }
         self.update_state_locked(token, ZX_CHANNEL_WRITABLE, ZX_CHANNEL_PEER_CLOSED);
         // (3B) Abort any waiting Call operations because we've been canceled by reason of the

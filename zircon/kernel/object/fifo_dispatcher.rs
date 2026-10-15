@@ -233,8 +233,11 @@ impl FifoDispatcher {
         }
 
         let elem_count = self.state().elem_count as usize;
-        let old_head = *self.state().guard_mu(token).head();
-        let tail = *self.state().guard_mu(token).tail();
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+        let (old_head, tail) = unsafe {
+            let state = self.state().guard_mu(token);
+            (*state.head(), *state.tail())
+        };
 
         // Total number of available empty slots in the FIFO.
         let avail = elem_count.wrapping_sub((old_head.wrapping_sub(tail)) as usize);
@@ -257,7 +260,8 @@ impl FifoDispatcher {
             let copy_bytes = to_copy * elem_size;
             let byte_offset = offset * elem_size;
 
-            let data_ptr = self.state().guard_mu_mut(token).data_mut().as_mut_ptr();
+            // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+            let data_ptr = unsafe { self.state().guard_mu_mut(token) }.data_mut().as_mut_ptr();
             // SAFETY: `data_ptr.add(byte_offset)` points to `copy_bytes` bytes within `data`,
             // `src` is a user pointer of length `copy_bytes`, and no spinlock is held.
             let res = unsafe {
@@ -270,13 +274,19 @@ impl FifoDispatcher {
             };
             if let Err(err) = res {
                 // Roll back, in case this is the second copy.
-                *self.state().guard_mu_mut(token).head_mut() = old_head;
+                // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+                unsafe {
+                    *self.state().guard_mu_mut(token).head_mut() = old_head;
+                }
                 return Err(err);
             }
 
             // Adjust head and count.
             current_head += to_copy as u64;
-            *self.state().guard_mu_mut(token).head_mut() = current_head;
+            // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+            unsafe {
+                *self.state().guard_mu_mut(token).head_mut() = current_head;
+            }
             count -= to_copy;
             src = src.byte_offset(copy_bytes as isize);
         }
@@ -287,8 +297,9 @@ impl FifoDispatcher {
         }
 
         // If now full, peer (the writer endpoint) is no longer writable.
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state().peered`.
         if elem_count as u64 == (current_head - tail)
-            && let Some(peer) = self.state().peered.guard_mu(token).peer().as_ref()
+            && let Some(peer) = unsafe { self.state().peered.guard_mu(token) }.peer().as_ref()
         {
             peer.update_state_locked(token, ZX_FIFO_WRITABLE, 0);
         }
@@ -357,13 +368,18 @@ impl FifoDispatcher {
         }
 
         let elem_count = self.state().elem_count as usize;
-        let head = *self.state().guard_mu(token).head();
-        let old_tail = *self.state().guard_mu(token).tail();
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+        let (head, old_tail) = unsafe {
+            let state = self.state().guard_mu(token);
+            (*state.head(), *state.tail())
+        };
 
         // Total number of available entries to read from the FIFO.
         let avail = (head.wrapping_sub(old_tail)) as usize;
         if avail == 0 {
-            let has_peer = self.state().peered.guard_mu(token).peer().is_some();
+            // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing
+            // `self.state().peered`.
+            let has_peer = unsafe { self.state().peered.guard_mu(token) }.peer().is_some();
             return Err((if has_peer { Status::SHOULD_WAIT } else { Status::PEER_CLOSED }).into());
         }
 
@@ -382,7 +398,8 @@ impl FifoDispatcher {
             let copy_bytes = to_copy * elem_size;
             let byte_offset = offset * elem_size;
 
-            let data_ptr = self.state().guard_mu(token).data().as_ptr();
+            // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+            let data_ptr = unsafe { self.state().guard_mu(token) }.data().as_ptr();
             // SAFETY: `data_ptr.add(byte_offset)` points to `copy_bytes` bytes within `data`,
             // `dst` is a user pointer of length `copy_bytes`, and no spinlock is held.
             let res = unsafe {
@@ -395,19 +412,28 @@ impl FifoDispatcher {
             };
             if let Err(err) = res {
                 // Roll back, in case this is the second copy.
-                *self.state().guard_mu_mut(token).tail_mut() = old_tail;
+                // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+                unsafe {
+                    *self.state().guard_mu_mut(token).tail_mut() = old_tail;
+                }
                 return Err(err);
             }
 
             // Adjust tail and count.
             current_tail += to_copy as u64;
-            *self.state().guard_mu_mut(token).tail_mut() = current_tail;
+            // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+            unsafe {
+                *self.state().guard_mu_mut(token).tail_mut() = current_tail;
+            }
             count -= to_copy;
             dst = dst.byte_offset(copy_bytes as isize);
         }
 
         // If we were full, peer (writer) has become writable.
-        if was_full && let Some(peer) = self.state().peered.guard_mu(token).peer().as_ref() {
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state().peered`.
+        if was_full
+            && let Some(peer) = unsafe { self.state().peered.guard_mu(token) }.peer().as_ref()
+        {
             peer.update_state_locked(token, 0, ZX_FIFO_WRITABLE);
         }
 

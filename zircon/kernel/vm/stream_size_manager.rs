@@ -124,14 +124,18 @@ impl Operation {
     /// Indicates whether the operation is valid.
     #[inline]
     pub fn is_valid_locked(&self, token: &LockToken<'_, StreamSizeManagerLockClass>) -> bool {
-        *self.guard_phantom_lock(token).valid()
+        // SAFETY: The caller holds the parent `StreamSizeManager`'s lock represented by `token`.
+        unsafe { *self.guard_phantom_lock(token).valid() }
     }
 
     /// Resets validity of the operation. This operation is private as it is assumed to only be
     /// called when it is correct to do so by the StreamSizeManager.
     #[inline]
     fn reset(&self, token: &mut LockToken<'_, StreamSizeManagerLockClass>) {
-        *self.guard_phantom_lock_mut(token).valid_mut() = false;
+        // SAFETY: The caller holds the parent `StreamSizeManager`'s lock represented by `token`.
+        unsafe {
+            *self.guard_phantom_lock_mut(token).valid_mut() = false;
+        }
     }
 
     fn initialize(
@@ -141,10 +145,12 @@ impl Operation {
         op_type: OperationType,
         token: &mut LockToken<'_, StreamSizeManagerLockClass>,
     ) {
-        debug_assert!(!*self.guard_phantom_lock(token).valid());
+        // SAFETY: The caller holds the parent `StreamSizeManager`'s lock represented by `token`.
+        debug_assert!(!unsafe { *self.guard_phantom_lock(token).valid() });
         debug_assert!(core::ptr::eq(self.parent, parent));
 
-        let mut guard = self.guard_phantom_lock_mut(token);
+        // SAFETY: The caller holds the parent `StreamSizeManager`'s lock represented by `token`.
+        let mut guard = unsafe { self.guard_phantom_lock_mut(token) };
         *guard.valid_mut() = true;
         *guard.size_mut() = size;
         *guard.op_type_mut() = op_type;
@@ -156,7 +162,8 @@ impl Operation {
         &self,
         token: &LockToken<'_, StreamSizeManagerLockClass>,
     ) -> OperationType {
-        *self.guard_phantom_lock(token).op_type()
+        // SAFETY: The caller holds the parent `StreamSizeManager`'s lock represented by `token`.
+        unsafe { *self.guard_phantom_lock(token).op_type() }
     }
 
     /// Gets the stream size that the operation will expand to once it is completed.
@@ -165,7 +172,8 @@ impl Operation {
     ///  * This may only be called on a valid operation.
     ///  * This must only be called when holding the parent `StreamSizeManager` lock.
     pub fn get_size_locked(&self, token: &LockToken<'_, StreamSizeManagerLockClass>) -> u64 {
-        let guard = self.guard_phantom_lock(token);
+        // SAFETY: The caller holds the parent `StreamSizeManager`'s lock represented by `token`.
+        let guard = unsafe { self.guard_phantom_lock(token) };
         debug_assert!(*guard.valid());
         // Reading the size for `Append` operations should only occur after it's been initialized.
         debug_assert!(*guard.op_type() != OperationType::Append || *guard.size() > 0);
@@ -189,7 +197,8 @@ impl Operation {
         token: &mut LockToken<'_, StreamSizeManagerLockClass>,
         new_size: u64,
     ) {
-        let mut guard = self.guard_phantom_lock_mut(token);
+        // SAFETY: The caller holds the parent `StreamSizeManager`'s lock represented by `token`.
+        let mut guard = unsafe { self.guard_phantom_lock_mut(token) };
         debug_assert!(*guard.valid());
         // If `new_size` is 0, the operation should be cancelled instead.
         debug_assert!(new_size > 0);
@@ -247,7 +256,7 @@ impl Operation {
         // stack-allocated `Operation`. No other thread modifies `valid`, `op_type`, or `size`, and
         // the constructed `LockToken` does not escape this function scope.
         let token = unsafe { LockToken::<StreamSizeManagerLockClass>::new() };
-        let guard = self.guard_phantom_lock(&token);
+        let guard = unsafe { self.guard_phantom_lock(&token) };
         debug_assert!(*guard.valid());
         let op_type = *guard.op_type();
         debug_assert!(op_type == OperationType::Write || op_type == OperationType::Append);
@@ -378,7 +387,8 @@ impl StreamSizeManager {
         token: &mut LockToken<'_, StreamSizeManagerLockClass>,
         op: &Operation,
     ) {
-        let mut guard = self.guard_lock_mut(token);
+        // SAFETY: The caller holds `self.lock` represented by `token`.
+        let mut guard = unsafe { self.guard_lock_mut(token) };
         // SAFETY: `op` is pinned for the duration of the operation and inserted into `write_q`.
         unsafe {
             guard.write_q_mut().push_back_raw(core::ptr::from_ref(op).cast_mut());
@@ -390,7 +400,8 @@ impl StreamSizeManager {
         token: &mut LockToken<'_, StreamSizeManagerLockClass>,
         op: &Operation,
     ) {
-        let mut guard = self.guard_lock_mut(token);
+        // SAFETY: The caller holds `self.lock` represented by `token`.
+        let mut guard = unsafe { self.guard_lock_mut(token) };
         // SAFETY: `op` is pinned for the duration of the operation and inserted into `read_q`.
         unsafe {
             guard.read_q_mut().push_back_raw(core::ptr::from_ref(op).cast_mut());
@@ -402,7 +413,8 @@ impl StreamSizeManager {
         token: &mut LockToken<'_, StreamSizeManagerLockClass>,
         op: &Operation,
     ) {
-        let mut guard = self.guard_lock_mut(token);
+        // SAFETY: The caller holds `self.lock` represented by `token`.
+        let mut guard = unsafe { self.guard_lock_mut(token) };
         Self::dequeue_from_list::<WriteQueueTag>(guard.write_q_mut(), op);
     }
 
@@ -411,7 +423,8 @@ impl StreamSizeManager {
         token: &mut LockToken<'_, StreamSizeManagerLockClass>,
         op: &Operation,
     ) {
-        let mut guard = self.guard_lock_mut(token);
+        // SAFETY: The caller holds `self.lock` represented by `token`.
+        let mut guard = unsafe { self.guard_lock_mut(token) };
         Self::dequeue_from_list::<ReadQueueTag>(guard.read_q_mut(), op);
     }
 
@@ -429,7 +442,8 @@ impl StreamSizeManager {
         // is okay to be more conservative here and only read up to the guaranteed valid region.
         let mut stream_size_limit = self.get_stream_size();
         {
-            let guard = self.guard_lock(token);
+            // SAFETY: The caller holds `self.lock` represented by `token`.
+            let guard = unsafe { self.guard_lock(token) };
             for item in guard.read_q().iter() {
                 if item.get_type_locked(token) == OperationType::SetSize {
                     stream_size_limit =
@@ -469,7 +483,7 @@ impl StreamSizeManager {
         // smaller than `target_size`. `op` was just pushed to the back of the write queue while
         // holding the lock, so skipping the tail visits every operation in front of it.
         let mut block_due_to_set = false;
-        for item in self.guard_lock(guard.token()).write_q().reverse_iter().skip(1) {
+        for item in self.guard_lock_from_guard(guard).write_q().reverse_iter().skip(1) {
             if item.get_type_locked(guard.token()) == OperationType::SetSize
                 && item.get_size_locked(guard.token()) < target_size
             {
@@ -531,7 +545,7 @@ impl StreamSizeManager {
 
         // `op` was just pushed to the back of the write queue while holding the lock, so skipping
         // the tail visits every operation in front of it.
-        for item in self.guard_lock(guard.token()).write_q().reverse_iter().skip(1) {
+        for item in self.guard_lock_from_guard(guard).write_q().reverse_iter().skip(1) {
             let item_op_type = item.get_type_locked(guard.token());
             if item_op_type == OperationType::SetSize
                 || item_op_type == OperationType::Append
@@ -562,7 +576,10 @@ impl StreamSizeManager {
             self.dequeue_operation_locked(op, guard.as_mut().token_mut());
             return Err(Status::OUT_OF_RANGE);
         };
-        *op.guard_phantom_lock_mut(guard.as_mut().token_mut()).size_mut() = new_size;
+        // SAFETY: `guard` holds the parent `StreamSizeManager`'s lock.
+        unsafe {
+            *op.guard_phantom_lock_mut(guard.as_mut().token_mut()).size_mut() = new_size;
+        }
 
         Ok(())
     }
@@ -601,7 +618,7 @@ impl StreamSizeManager {
 
         // `op` was just pushed to the back of both queues while holding the lock, so skipping the
         // tail visits every operation in front of it.
-        for item in self.guard_lock(guard.token()).write_q().reverse_iter().skip(1) {
+        for item in self.guard_lock_from_guard(guard).write_q().reverse_iter().skip(1) {
             let item_op_type = item.get_type_locked(guard.token());
             if item_op_type == OperationType::SetSize
                 || item_op_type == OperationType::Append
@@ -615,7 +632,7 @@ impl StreamSizeManager {
         }
 
         if !should_block {
-            for item in self.guard_lock(guard.token()).read_q().reverse_iter().skip(1) {
+            for item in self.guard_lock_from_guard(guard).read_q().reverse_iter().skip(1) {
                 if item.get_type_locked(guard.token()) == OperationType::Read
                     && item.get_size_locked(guard.token()) > target_size
                 {
@@ -643,7 +660,7 @@ impl StreamSizeManager {
 
         if op.write_node.in_container() {
             while op.is_valid_locked(guard.token()) {
-                let guard_lock = self.guard_lock(guard.token());
+                let guard_lock = self.guard_lock_from_guard(guard);
                 let is_front =
                     guard_lock.write_q().front().map(|f| core::ptr::eq(f, op)).unwrap_or(false);
                 if is_front {
@@ -657,7 +674,7 @@ impl StreamSizeManager {
 
         if op.read_node.in_container() {
             while op.is_valid_locked(guard.token()) {
-                let guard_lock = self.guard_lock(guard.token());
+                let guard_lock = self.guard_lock_from_guard(guard);
                 let is_front =
                     guard_lock.read_q().front().map(|f| core::ptr::eq(f, op)).unwrap_or(false);
                 if is_front {

@@ -230,13 +230,14 @@ impl SocketDispatcher {
         token: &mut ksync::LockToken<'_, PeerHolderMuClass<SocketDispatcher>>,
         disposition_peer: Disposition,
     ) {
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
         match disposition_peer {
-            Disposition::WriteDisabled => {
+            Disposition::WriteDisabled => unsafe {
                 *self.state().guard_mu_mut(token).read_disabled_mut() = true;
-            }
-            Disposition::WriteEnabled => {
+            },
+            Disposition::WriteEnabled => unsafe {
                 *self.state().guard_mu_mut(token).read_disabled_mut() = false;
-            }
+            },
             Disposition::None => {}
         }
     }
@@ -248,8 +249,10 @@ impl SocketDispatcher {
     ) -> bool {
         // All the data written by an endpoint must be read by the other endpoint before writes can
         // be re-enabled, as per /docs/reference/syscalls/socket_set_disposition.md.
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+        let is_empty = unsafe { self.state().guard_mu(token) }.data().is_empty();
         !(disposition_peer == Disposition::WriteEnabled
-            && !self.state().guard_mu(token).data().is_empty()
+            && !is_empty
             && (self.signals_state_locked(token) & ZX_SOCKET_PEER_WRITE_DISABLED) != 0)
     }
 
@@ -357,7 +360,8 @@ impl SocketDispatcher {
         state.canary.assert();
 
         let was_empty = {
-            let guard_mu = state.guard_mu(guard.token());
+            // SAFETY: `guard` holds the `PeerHolder` mutex synchronizing `state`.
+            let guard_mu = unsafe { state.guard_mu(guard.token()) };
             if guard_mu.data().is_full() {
                 return Err(Status::SHOULD_WAIT);
             }
@@ -372,7 +376,8 @@ impl SocketDispatcher {
         // duration of the operation.
         let (status, written) = guard.as_mut().call_untracked(|token| {
             let is_datagram = (state.flags & ZX_SOCKET_DATAGRAM) != 0;
-            let mut guard_mu = state.guard_mu_mut(token);
+            // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `state`.
+            let mut guard_mu = unsafe { state.guard_mu_mut(token) };
             if is_datagram {
                 guard_mu.data_mut().write_datagram(src, len)
             } else {
@@ -382,7 +387,8 @@ impl SocketDispatcher {
 
         // Regardless of the status, data may have been added, and so we need to update the signals.
         let mut peer_clear: zx_signals_t = 0;
-        let guard_mu = state.guard_mu(guard.token());
+        // SAFETY: `guard` holds the `PeerHolder` mutex synchronizing `state` and `peer`.
+        let guard_mu = unsafe { state.guard_mu(guard.token()) };
         let size = guard_mu.data().stream_size();
 
         if written > 0 {
@@ -399,7 +405,9 @@ impl SocketDispatcher {
                 self.update_state_locked(guard.token(), 0, set);
             }
 
-            let peer_write_threshold = *peer.state().guard_mu(guard.token()).write_threshold();
+            // SAFETY: `guard` holds the shared `PeerHolder` mutex synchronizing `peer`.
+            let peer_write_threshold =
+                *unsafe { peer.state().guard_mu(guard.token()) }.write_threshold();
             // If free space falls below threshold, de-signal
             if peer_write_threshold > 0
                 && MBufChain::MAX_SIZE.wrapping_sub(size) < peer_write_threshold
@@ -438,7 +446,8 @@ impl SocketDispatcher {
         ksync::lock!(let mut guard = state.peered.lock());
 
         let was_full = {
-            let guard_mu = state.guard_mu(guard.token());
+            // SAFETY: `guard` holds the `PeerHolder` mutex synchronizing `state`.
+            let guard_mu = unsafe { state.guard_mu(guard.token()) };
             if guard_mu.data().is_empty() {
                 if guard.peer().is_none() {
                     return Err(Status::PEER_CLOSED);
@@ -457,7 +466,8 @@ impl SocketDispatcher {
         // call_untracked.
         let (status, actual) = guard.as_mut().call_untracked(|token| {
             let is_datagram = (state.flags & ZX_SOCKET_DATAGRAM) != 0;
-            let mut guard_mu = state.guard_mu_mut(token);
+            // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `state`.
+            let mut guard_mu = unsafe { state.guard_mu_mut(token) };
             match (read_type, is_datagram) {
                 (ReadType::Peek, true) => guard_mu.data().peek_datagram(dst, len),
                 (ReadType::Peek, false) => guard_mu.data().peek_stream(dst, len),
@@ -474,7 +484,8 @@ impl SocketDispatcher {
         // Regardless of the status, data may have been consumed, and so we need to update the
         // signals.
         let mut clear: zx_signals_t = 0;
-        let guard_mu = state.guard_mu(guard.token());
+        // SAFETY: `guard` holds the `PeerHolder` mutex synchronizing `state`.
+        let guard_mu = unsafe { state.guard_mu(guard.token()) };
         let size = guard_mu.data().stream_size();
 
         // Deassert signal if we fell below the read threshold
@@ -490,7 +501,9 @@ impl SocketDispatcher {
         }
 
         if let Some(peer) = guard.peer().as_deref() {
-            let peer_write_threshold = *peer.state().guard_mu(guard.token()).write_threshold();
+            // SAFETY: `guard` holds the shared `PeerHolder` mutex synchronizing `peer`.
+            let peer_write_threshold =
+                *unsafe { peer.state().guard_mu(guard.token()) }.write_threshold();
             let mut peer_set: zx_signals_t = 0;
             // Assert (write threshold) signal if space available is above threshold.
             if peer_write_threshold > 0
@@ -517,7 +530,8 @@ impl SocketDispatcher {
         let token = guard.token();
         let is_datagram = (self.state().flags & ZX_SOCKET_DATAGRAM) != 0;
 
-        let guard_mu = self.state().guard_mu(token);
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+        let guard_mu = unsafe { self.state().guard_mu(token) };
         let data = guard_mu.data();
         let mut info = zx_info_socket_t {
             options: self.state().flags,
@@ -531,7 +545,8 @@ impl SocketDispatcher {
 
         if let Some(peer) = guard.peer().as_ref() {
             // Peer shares the same lock.
-            let peer_guard_mu = peer.state().guard_mu(token);
+            // SAFETY: `token` belongs to the shared `PeerHolder` mutex synchronizing `peer`.
+            let peer_guard_mu = unsafe { peer.state().guard_mu(token) };
             info.tx_buf_max = MBufChain::MAX_SIZE;
             info.tx_buf_size = peer_guard_mu.data().stream_size();
         }
@@ -542,14 +557,16 @@ impl SocketDispatcher {
     pub fn get_read_threshold(&self) -> usize {
         self.state().canary.assert();
         ksync::lock!(let guard = self.state().peered.lock());
-        *self.state().guard_mu(guard.token()).read_threshold()
+        // SAFETY: `guard` holds the `PeerHolder` mutex synchronizing `self.state()`.
+        *unsafe { self.state().guard_mu(guard.token()) }.read_threshold()
     }
 
     /// Returns the write threshold value.
     pub fn get_write_threshold(&self) -> usize {
         self.state().canary.assert();
         ksync::lock!(let guard = self.state().peered.lock());
-        *self.state().guard_mu(guard.token()).write_threshold()
+        // SAFETY: `guard` holds the `PeerHolder` mutex synchronizing `self.state()`.
+        *unsafe { self.state().guard_mu(guard.token()) }.write_threshold()
     }
 
     /// Sets the read threshold value.
@@ -562,7 +579,8 @@ impl SocketDispatcher {
         }
 
         let token = guard.as_mut().token_mut();
-        let mut state = self.state().guard_mu_mut(token);
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+        let mut state = unsafe { self.state().guard_mu_mut(token) };
         let size = state.data().stream_size();
         *state.read_threshold_mut() = value;
 
@@ -589,10 +607,15 @@ impl SocketDispatcher {
 
         let peer_available = {
             let peer = guard.peer().as_ref().ok_or(Status::PEER_CLOSED)?;
-            MBufChain::MAX_SIZE - peer.state().guard_mu(guard.token()).data().stream_size()
+            // SAFETY: `guard` holds the shared `PeerHolder` mutex synchronizing `peer`.
+            MBufChain::MAX_SIZE
+                - unsafe { peer.state().guard_mu(guard.token()) }.data().stream_size()
         };
         let token = guard.as_mut().token_mut();
-        *self.state().guard_mu_mut(token).write_threshold_mut() = value;
+        // SAFETY: `token` belongs to the `PeerHolder` mutex synchronizing `self.state()`.
+        unsafe {
+            *self.state().guard_mu_mut(token).write_threshold_mut() = value;
+        }
 
         // Setting 0 disables thresholding. Deassert signal unconditionally.
         // Assert signal if we have available space above the write threshold.

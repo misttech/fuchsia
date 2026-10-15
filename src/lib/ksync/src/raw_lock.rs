@@ -7,7 +7,13 @@ use pin_init::PinInit;
 /// Trait defining a policy for how a lock should be acquired and released. A given `RawLock` may
 /// have multiple policy implementations allowing a specific instance of a lock to be acquired, at
 /// different times, in different ways.
-pub trait LockPolicy<L: RawLock + ?Sized> {
+///
+/// # Safety
+///
+/// Implementors must guarantee that [`acquire`](Self::acquire) and [`reacquire`](Self::reacquire)
+/// establish exclusive mutual exclusion on `lock` until the matching [`release`](Self::release)
+/// call completes.
+pub unsafe trait LockPolicy<L: RawLock + ?Sized> {
     /// Arguments passed when acquiring the lock under this policy.
     type AcquireArgs: Copy;
 
@@ -53,7 +59,13 @@ pub trait LockPolicy<L: RawLock + ?Sized> {
 ///
 /// Implementors of `RawLock` supply the platform-specific lock storage, in-place pinning
 /// initialization logic, and raw synchronization entry points for lock validation systems.
-pub trait RawLock {
+///
+/// # Safety
+///
+/// Implementors must represent a physical synchronization primitive with non-zero size whose
+/// [`as_mut_ptr`](Self::as_mut_ptr) uniquely identifies the underlying lock storage for the
+/// lifetime of `&self`.
+pub unsafe trait RawLock {
     /// Flags specifying validation rules for the lock class.
     const LOCK_FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_NONE;
 

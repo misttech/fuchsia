@@ -839,16 +839,17 @@ impl FutexContext {
     // manage the pending operation references.
     fn find_active_futex(&self, id: FutexId) -> PendingOpRef<'_> {
         ksync::lock!(let pool_lock_guard = self.lock_pool_lock());
-        self.find_active_futex_locked(id, pool_lock_guard.token())
+        self.find_active_futex_locked(id, &pool_lock_guard)
     }
 
-    fn find_active_futex_locked(
-        &self,
+    fn find_active_futex_locked<'a>(
+        &'a self,
         id: FutexId,
-        token: &LockToken<'_, FutexContextPoolLockClass>,
-    ) -> PendingOpRef<'_> {
-        let guard = self.guard_pool_lock(token);
+        guard: &FutexContextPoolLockGuard<'a>,
+    ) -> PendingOpRef<'a> {
+        debug_assert!(core::ptr::eq(self, guard.parent()));
         if let Some(state) = guard.active_futexes().find(&id) {
+            let token = guard.token();
             let count = state.pending_operation_count(token);
             debug_assert!(count > 0);
             state.set_pending_operation_count(count + 1, token);
@@ -863,26 +864,24 @@ impl FutexContext {
     // active, grab a free one and activate it.
     fn activate_futex(&self, id: FutexId) -> PendingOpRef<'_> {
         ksync::lock!(let mut pool_lock_guard = self.lock_pool_lock());
-        self.activate_futex_locked(id, pool_lock_guard.as_mut().token_mut())
+        self.activate_futex_locked(id, pool_lock_guard.as_mut())
     }
 
-    fn activate_futex_locked(
-        &self,
+    fn activate_futex_locked<'a>(
+        &'a self,
         id: FutexId,
-        token: &mut LockToken<'_, FutexContextPoolLockClass>,
-    ) -> PendingOpRef<'_> {
-        let existing = self.find_active_futex_locked(id, token);
+        mut guard: Pin<&mut FutexContextPoolLockGuard<'a>>,
+    ) -> PendingOpRef<'a> {
+        let existing = self.find_active_futex_locked(id, &guard);
         if !existing.is_null() {
             return existing;
         }
 
-        let new_state = self
-            .guard_pool_lock_mut(token)
-            .free_futexes_mut()
-            .pop_front()
-            .expect("free_futexes must not be empty");
+        let new_state =
+            guard.as_mut().free_futexes_mut().pop_front().expect("free_futexes must not be empty");
 
         // Sanity checks.
+        let token = guard.token();
         debug_assert_eq!(new_state.id(), FutexId::null());
         debug_assert_eq!(new_state.pending_operation_count(token), 0);
         new_state.waiters.assert_not_owned();
@@ -890,7 +889,7 @@ impl FutexContext {
         let ptr = NonNull::from(&*new_state);
         new_state.set_id(id, token);
         new_state.set_pending_operation_count(1, token);
-        self.guard_pool_lock_mut(token).active_futexes_mut().insert(new_state);
+        guard.as_mut().active_futexes_mut().insert(new_state);
 
         PendingOpRef::new(self, Some(ptr))
     }
@@ -1423,9 +1422,8 @@ impl FutexContext {
         // Find the FutexState for the wake and requeue futexes.
         let (mut wake_futex_ref, requeue_futex_ref) = {
             ksync::lock!(let mut ref_lookup_guard = self.lock_pool_lock());
-            let token = ref_lookup_guard.as_mut().token_mut();
-            let wake_ref = self.activate_futex_locked(wake_id, token);
-            let requeue_ref = self.activate_futex_locked(requeue_id, token);
+            let wake_ref = self.activate_futex_locked(wake_id, ref_lookup_guard.as_mut());
+            let requeue_ref = self.activate_futex_locked(requeue_id, ref_lookup_guard.as_mut());
             debug_assert!(!wake_ref.is_null());
             debug_assert!(!requeue_ref.is_null());
             // Manually release the ref lookup guard.  While we would typically do this

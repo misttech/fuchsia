@@ -292,13 +292,15 @@ mutex once while returning a `KMutexAliasedGuard` that provides proof tokens for
 both lock classes:
 
 ```rust
-// Acquires the lock once and verifies at runtime in debug mode that both alias pointers match:
-lock!(let mut guard = ksync::aliased_lock(&parent.mu, &op.mu));
+// Acquires the lock once and verifies at runtime that both alias pointers match:
+lock!(let mut guard = ksync::aliased_lock(&parent.mu, op.lock()));
 
 // Access parent and child fields simultaneously with disjoint mutable tokens:
-let (parent_token, op_token) = guard.as_mut().tokens_mut();
-*parent.guard_mu_mut(parent_token).data_mut() = 1;
-*op.guard_mu_mut(op_token).value_mut() = 2;
+unsafe {
+    let (parent_token, op_token) = guard.as_mut().tokens_mut();
+    *parent.guard_mu_mut(parent_token).data_mut() = 1;
+    *op.guard_mu_mut(op_token).value_mut() = 2;
+}
 ```
 
 ### Lock Flags Configuration
