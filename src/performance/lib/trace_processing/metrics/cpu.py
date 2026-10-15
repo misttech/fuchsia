@@ -13,8 +13,8 @@ import typing
 from collections.abc import Collection, Mapping, MutableSequence, Sequence
 from typing import (
     NotRequired,
+    ReadOnly,
     Self,
-    TypeAlias,
     TypedDict,
     cast,
 )
@@ -38,17 +38,17 @@ _NS_PER_MS = 1_000_000.0
 # relationship. We would be able to do this with:
 #
 # _PROCESS_BREAKDOWN_METRIC_FIELDS = frozendict({
-#     'process_name': str,
-#     'cpu': int,
-#     'percent': float,
-#     'duration': float,
+#     'process_name': ReadOnly[str],
+#     'cpu': ReadOnly[int],
+#     'percent': ReadOnly[float],
+#     'duration': ReadOnly[float],
 #     'normalized_percent': NotRequired[float],
 #     'normalized_duration': NotRequired[float],
 #     'duration_per_rate': NotRequired[Mapping[str, float]],
 # })
 # _THREAD_BREAKDOWN_METRIC_FIELDS = _PROCESS_BREAKDOWN_METRIC_FIELDS | frozendict({
-#     'thread_name': str,
-#     'tid': int,
+#     'thread_name': ReadOnly[str],
+#     'tid': ReadOnly[int],
 # })
 # ProcessBreakdownMetric = TypedDict(
 #     "ProcessBreakdownMetric", _PROCESS_BREAKDOWN_METRIC_FIELDS, total=True, closed=True)
@@ -62,10 +62,10 @@ _NS_PER_MS = 1_000_000.0
 ProcessBreakdownMetric = TypedDict(
     "ProcessBreakdownMetric",
     {
-        "process_name": str,
-        "cpu": int,
-        "percent": float,
-        "duration": float,
+        "process_name": ReadOnly[str],
+        "cpu": ReadOnly[int],
+        "percent": ReadOnly[float],
+        "duration": ReadOnly[float],
         "normalized_percent": NotRequired[float],
         "normalized_duration": NotRequired[float],
         "duration_per_rate": NotRequired[Mapping[str, float]],
@@ -77,23 +77,23 @@ ProcessBreakdownMetric = TypedDict(
 ThreadBreakdownMetric = TypedDict(
     "ThreadBreakdownMetric",
     {
-        "process_name": str,
-        "cpu": int,
-        "percent": float,
-        "duration": float,
+        "process_name": ReadOnly[str],
+        "cpu": ReadOnly[int],
+        "percent": ReadOnly[float],
+        "duration": ReadOnly[float],
         "normalized_percent": NotRequired[float],
         "normalized_duration": NotRequired[float],
         "duration_per_rate": NotRequired[Mapping[str, float]],
-        "thread_name": str,
-        "tid": int,
+        "thread_name": ReadOnly[str],
+        "tid": ReadOnly[int],
     },
     total=True,
     # TODO(https://fxbug.dev/569952695): used closed=True when able.
     # closed=True,
 )
 
-ProcessBreakdown: TypeAlias = Sequence[ProcessBreakdownMetric]
-ThreadBreakdown: TypeAlias = Sequence[ThreadBreakdownMetric]
+type ProcessBreakdown = Sequence[ProcessBreakdownMetric]
+type ThreadBreakdown = Sequence[ThreadBreakdownMetric]
 
 
 @dataclasses.dataclass(frozen=True)

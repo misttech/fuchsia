@@ -5,7 +5,7 @@
 
 import collections
 from collections.abc import Mapping, Sequence
-from typing import TypedDict
+from typing import ReadOnly, TypedDict
 
 from trace_processing.metrics import cpu
 
@@ -15,10 +15,10 @@ DEFAULT_PERCENT_CUTOFF = 0.0
 
 
 class AggregateRecord(TypedDict):
-    process_name: str
-    thread_name: str
-    duration: float
-    percent: float
+    process_name: ReadOnly[str]
+    thread_name: ReadOnly[str]
+    duration: ReadOnly[float]
+    percent: ReadOnly[float]
 
 
 class AggCpuBreakdownMetricsProcessor:

@@ -8,7 +8,7 @@ import enum
 import typing
 from collections.abc import Iterator, Mapping, Sequence
 from functools import total_ordering
-from typing import Any, Self, TypeVar
+from typing import Any, Self
 
 from trace_processing import trace_time
 
@@ -472,9 +472,7 @@ class Model:
         # event in the new model it corresponds to.
         new_event_map: dict[Any, Event] = {}
 
-        T = TypeVar("T")
-
-        def get_new_event(old_event: T) -> T | None:
+        def get_new_event[T](old_event: T) -> T | None:
             new_event: Event | None = new_event_map.get(old_event)
             if not new_event:
                 return None

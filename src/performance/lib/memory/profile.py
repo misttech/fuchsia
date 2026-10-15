@@ -7,7 +7,7 @@ import fnmatch
 import json
 import re
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
 from reporting import metrics
 
@@ -239,7 +239,7 @@ def _simplify_name_to_vmo_memory(
     if not isinstance(name_to_vmo_memory, dict):
         raise ValueError
     return [
-        dict(name=cast(metrics.JSON, k)) | _with_vmos_removed(v)
+        dict(name=k) | _with_vmos_removed(v)
         for k, v in name_to_vmo_memory.items()
     ]
 

@@ -5,23 +5,18 @@
 """Unit tests for cpu.py."""
 
 import unittest
-from typing import TypeVar, cast
+from typing import cast
 
 from trace_processing import trace_model, trace_time
 from trace_processing.metrics import cpu
-
-_Breakdown = TypeVar("_Breakdown", cpu.ProcessBreakdown, cpu.ThreadBreakdown)
 
 
 class CpuBreakdownTest(unittest.TestCase):
     """CPU breakdown tests."""
 
-    def assertBreakdownAlmostEqual(
-        self,
-        first: _Breakdown,
-        second: _Breakdown,
-        places: int,
-    ) -> None:
+    def assertBreakdownAlmostEqual[
+        B: (cpu.ProcessBreakdown, cpu.ThreadBreakdown)
+    ](self, first: B, second: B, places: int,) -> None:
         self.assertEqual(len(first), len(second))
         for first_breakdown_metric, second_breakdown_metric in zip(
             first, second, strict=True

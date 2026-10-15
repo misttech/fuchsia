@@ -8,12 +8,7 @@ import math
 import statistics
 from collections.abc import Collection, Container, Generator, Iterator
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Generic,
-    TypeVar,
-    overload,
-)
+from typing import Any, overload
 
 from reporting import metrics
 from trace_processing import trace_model, trace_time
@@ -42,15 +37,14 @@ def percentile(values: Collection[int | float], percentile: int) -> float:
     )
 
 
-T = TypeVar("T", bound=trace_model.Event)
-
-
-def filter_events(
+def filter_events[
+    E: trace_model.Event
+](
     events: Iterator[trace_model.Event],
-    type: type[T],
+    type: type[E],
     category: str | None = None,
     name: str | Container[str] | None = None,
-) -> Generator[T, None, None]:
+) -> Generator[E, None, None]:
     """Filter |events| based on category, name, or type.
 
     Args:
@@ -76,84 +70,94 @@ def filter_events(
             yield event
 
 
-T_Event = TypeVar("T_Event", bound=trace_model.Event)
-
-
 @dataclass(frozen=True)
-class EventFilter(Generic[T_Event]):
+class EventFilter[E: trace_model.Event]:
     """A filter for trace events."""
 
-    type: type[T_Event]
+    type: type[E]
     category: str | None = None
     name: str | None = None
 
 
-T1 = TypeVar("T1", bound=trace_model.Event)
-T2 = TypeVar("T2", bound=trace_model.Event)
-T3 = TypeVar("T3", bound=trace_model.Event)
-T4 = TypeVar("T4", bound=trace_model.Event)
-T5 = TypeVar("T5", bound=trace_model.Event)
-
-
 @overload
-def filter_events_parallel(
+def filter_events_parallel[
+    E1: trace_model.Event
+](
     events: Iterator[trace_model.Event],
-    filters: tuple[EventFilter[T1]],
-) -> tuple[Generator[T1, None, None]]:
+    filters: tuple[EventFilter[E1]],
+) -> tuple[Generator[E1, None, None]]:
     ...
 
 
 @overload
-def filter_events_parallel(
+def filter_events_parallel[
+    E1: trace_model.Event,
+    E2: trace_model.Event,
+](
     events: Iterator[trace_model.Event],
-    filters: tuple[EventFilter[T1], EventFilter[T2]],
-) -> tuple[Generator[T1, None, None], Generator[T2, None, None]]:
+    filters: tuple[EventFilter[E1], EventFilter[E2]],
+) -> tuple[Generator[E1, None, None], Generator[E2, None, None]]:
     ...
 
 
 @overload
-def filter_events_parallel(
+def filter_events_parallel[
+    E1: trace_model.Event,
+    E2: trace_model.Event,
+    E3: trace_model.Event,
+](
     events: Iterator[trace_model.Event],
-    filters: tuple[EventFilter[T1], EventFilter[T2], EventFilter[T3]],
+    filters: tuple[EventFilter[E1], EventFilter[E2], EventFilter[E3]],
 ) -> tuple[
-    Generator[T1, None, None],
-    Generator[T2, None, None],
-    Generator[T3, None, None],
+    Generator[E1, None, None],
+    Generator[E2, None, None],
+    Generator[E3, None, None],
 ]:
     ...
 
 
 @overload
-def filter_events_parallel(
+def filter_events_parallel[
+    E1: trace_model.Event,
+    E2: trace_model.Event,
+    E3: trace_model.Event,
+    E4: trace_model.Event,
+](
     events: Iterator[trace_model.Event],
     filters: tuple[
-        EventFilter[T1], EventFilter[T2], EventFilter[T3], EventFilter[T4]
+        EventFilter[E1], EventFilter[E2], EventFilter[E3], EventFilter[E4]
     ],
 ) -> tuple[
-    Generator[T1, None, None],
-    Generator[T2, None, None],
-    Generator[T3, None, None],
-    Generator[T4, None, None],
+    Generator[E1, None, None],
+    Generator[E2, None, None],
+    Generator[E3, None, None],
+    Generator[E4, None, None],
 ]:
     ...
 
 
 @overload
-def filter_events_parallel(
+def filter_events_parallel[
+    E1: trace_model.Event,
+    E2: trace_model.Event,
+    E3: trace_model.Event,
+    E4: trace_model.Event,
+    E5: trace_model.Event,
+](
     events: Iterator[trace_model.Event],
     filters: tuple[
-        EventFilter[T1],
-        EventFilter[T2],
-        EventFilter[T3],
-        EventFilter[T4],
-        EventFilter[T5],
+        EventFilter[E1],
+        EventFilter[E2],
+        EventFilter[E3],
+        EventFilter[E4],
+        EventFilter[E5],
     ],
 ) -> tuple[
-    Generator[T1, None, None],
-    Generator[T2, None, None],
-    Generator[T3, None, None],
-    Generator[T4, None, None],
-    Generator[T5, None, None],
+    Generator[E1, None, None],
+    Generator[E2, None, None],
+    Generator[E3, None, None],
+    Generator[E4, None, None],
+    Generator[E5, None, None],
 ]:
     ...
 
@@ -190,12 +194,11 @@ def filter_events_parallel(
     return tuple(results)
 
 
-U = TypeVar("U", bound=trace_model.SchedulingRecord)
-
-
-def filter_records(
-    records: Iterator[trace_model.SchedulingRecord], type_: type[U]
-) -> Iterator[U]:
+def filter_records[
+    U: trace_model.SchedulingRecord
+](records: Iterator[trace_model.SchedulingRecord], type_: type[U]) -> Iterator[
+    U
+]:
     """Filters SchedulingRecords by type.
 
     Easier for mypy to grok than using types with filter().
@@ -360,10 +363,12 @@ def get_nearest_following_flow_event(
 # This method used to check processes with given process and thread name. That did not work because
 # different product may have different process setup, for example Display process with different
 # names.
-def adjust_to_common_process_start(
+def adjust_to_common_process_start[
+    E: trace_model.Event
+](
     model: trace_model.Model,
     name: str,
-    type: type[T],
+    type: type[E],
     category: str | None = None,
 ) -> trace_model.Model:
     """Adjust model to a consistent start time tracking the latest first event recorded from a
