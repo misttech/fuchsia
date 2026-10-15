@@ -73,8 +73,6 @@ zx_status_t acpi_suspend(zx_device_t* device, bool enable_wake, uint8_t suspend_
     case DEVICE_SUSPEND_REASON_POWEROFF:
       poweroff(device);
       exit(0);
-    case DEVICE_SUSPEND_REASON_SUSPEND_RAM:
-      return suspend_to_ram(device);
     default:
       return ZX_ERR_NOT_SUPPORTED;
   };

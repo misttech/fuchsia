@@ -620,7 +620,7 @@ TEST_F(InterceptionWorkflowTestX64, SyscallsAutomated) {
       "zx_system_get_version_string doesn't need automation\n"
       "zx_system_mexec doesn't need automation\n"
       "zx_system_mexec_payload_get fully automated\n"
-      "zx_system_powerctl not automated\n"
+      "zx_system_powerctl doesn't need automation\n"
       "zx_task_create_exception_channel fully automated\n"
       "zx_task_kill doesn't need automation\n"
       "zx_task_suspend fully automated\n"
@@ -658,9 +658,9 @@ TEST_F(InterceptionWorkflowTestX64, SyscallsAutomated) {
       "zx_vmo_set_size doesn't need automation\n"
       "zx_vmo_write fully automated\n";
   uint32_t expected_fully_automated = 59;
-  uint32_t expected_cant_be_automated = 52;
+  uint32_t expected_cant_be_automated = 53;
   uint32_t expected_partially_automated = 15;
-  uint32_t expected_not_automated = 11;
+  uint32_t expected_not_automated = 10;
   EXPECT_EQ(actual_fully_automated, expected_fully_automated);
   EXPECT_EQ(actual_cant_be_automated, expected_cant_be_automated);
   EXPECT_EQ(actual_partially_automated, expected_partially_automated);

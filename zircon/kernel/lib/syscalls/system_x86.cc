@@ -7,7 +7,6 @@
 #include <bits.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/console.h>
-#include <pow2.h>
 #include <trace.h>
 
 #include <arch/arch_ops.h>
@@ -18,16 +17,9 @@
 #include <kernel/recurring_callback.h>
 #include <kernel/timer.h>
 
-#include "system_priv.h"
-
 #define LOCAL_TRACE 0
 
 namespace {
-
-static constexpr uint64_t kMaxLongTermPowerLimit = 0x7FFF;
-
-// Intel recommends a time window of 28s, which corresponds to the following value.
-static constexpr uint64_t kDefaultTimeWindow = 0x6e;
 
 // Intel Volume 3 Section 14.9.3.
 static constexpr uint64_t kPowerLimitPl1Enable = 1ull << 15;
@@ -124,77 +116,6 @@ rapl_units GetUnits(MsrAccess* msr) {
       .energy_uj = 1000000u / (1 << BITS_SHIFT(rapl_unit, 12, 8)),
   };
   return units;
-}
-
-zx_status_t SetPkgPl1(const zx_system_powerctl_arg_t* arg, MsrAccess* msr) {
-  if (!PowerLimitSuported()) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  uint32_t power_limit = arg->x86_power_limit.power_limit;
-  uint32_t time_window = arg->x86_power_limit.time_window;
-  uint8_t clamp = arg->x86_power_limit.clamp;
-  uint8_t enable = arg->x86_power_limit.enable;
-
-  // zx_system_powerctl_arg_t is in mW and us, hence the math below
-  rapl_units units = GetUnits(msr);
-
-  // MSR_PKG_POWER_LIMIT allows SW to define power limit from package domain
-  // power limit is defined in terms of avg power over a time window
-  // Power limit 1[14:0]: sets avg power limit of package domain corresponding
-  // to time window 1. Unit is in MSR_RAPL_POWER_UNIT
-  // Enable power limit[15]: 0-disabled, 1-enabled
-  // Package clamp limit1[16]: Allow going below OS requested p/t states
-  // Time window[23:17]: Time limit = 2^Y * (1.0 + Z/4.0) * Time_Unit
-  // Y = uint in bits[21:17] and Z = uint in bits[23:22]
-  // Based on Intel Software Manual vol 3, chapter 14.9
-
-  uint64_t rapl = msr->read_msr(X86_MSR_PKG_POWER_LIMIT);
-
-  rapl &= ~BITMAP_LAST_WORD_MASK(15);
-
-  if (power_limit > 0) {
-    uint64_t raw_msr = power_limit / units.power_mw;
-    if (raw_msr > kMaxLongTermPowerLimit) {
-      return ZX_ERR_INVALID_ARGS;
-    }
-
-    rapl |= BITS(raw_msr, 15, 0);
-  } else {
-    // MSR_PKG_POWER_INFO is a RO MSR that reports package power range for RAPL
-    // Thermal Spec power[14:0]: The value here is the equivalent of thermal spec power
-    // of package domain. Setting to this thermal spec power if input is 0
-    rapl |= BITS_SHIFT(msr->read_msr(X86_MSR_PKG_POWER_INFO), 15, 0);
-  }
-
-  // Based on Intel Software Manual vol 3, chapter 14.9,
-  // Time limit = 2^Y * (1.0 + Z/4.0) * Time_Unit
-
-  rapl &= ~0xFE0000;
-
-  if (time_window > 0) {
-    uint64_t t = time_window / units.time_us;
-    uint64_t y = log2_ulong_floor(t);
-    uint64_t z = (((4 * t)) / (1 << y)) - 4;
-    t = (y & 0x1F) | ((z & 0x3) << 5);
-    rapl |= t << 17;
-  } else {
-    rapl |= kDefaultTimeWindow << 17;
-  }
-  if (clamp) {
-    rapl |= kPowerLimitPl1Clamp;
-  } else {
-    rapl &= ~kPowerLimitPl1Clamp;
-  }
-
-  if (enable) {
-    rapl |= kPowerLimitPl1Enable;
-  } else {
-    rapl &= ~kPowerLimitPl1Enable;
-  }
-
-  msr->write_msr(X86_MSR_PKG_POWER_LIMIT, rapl);
-  return ZX_OK;
 }
 
 void print_limits() {
@@ -349,18 +270,6 @@ void print_command_usage() {
 }
 
 }  // namespace
-
-zx_status_t arch_system_powerctl(uint32_t cmd, const zx_system_powerctl_arg_t* arg,
-                                 MsrAccess* msr) {
-  switch (cmd) {
-    case ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE:
-      return ZX_ERR_NOT_SUPPORTED;
-    case ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1:
-      return SetPkgPl1(arg, msr);
-    default:
-      return ZX_ERR_NOT_SUPPORTED;
-  }
-}
 
 static zx_status_t cmd_power(int argc, const cmd_args* argv, uint32_t flags) {
   if (argc < 2) {

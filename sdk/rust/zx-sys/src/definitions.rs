@@ -839,11 +839,7 @@ unsafe extern "C" {
         buffer_size: usize,
     ) -> zx_status_t;
 
-    pub fn zx_system_powerctl(
-        resource: zx_handle_t,
-        cmd: u32,
-        arg: *const zx_system_powerctl_arg_t,
-    ) -> zx_status_t;
+    pub fn zx_system_powerctl(resource: zx_handle_t, cmd: u32) -> zx_status_t;
 
     pub fn zx_system_set_performance_info(
         resource: zx_handle_t,

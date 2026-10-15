@@ -14,7 +14,6 @@ use mapped_vmo::ImmutableMapping;
 use process_builder::StartupHandle;
 use program::{SystemHandles, launch_program};
 use std::fmt::Write as _;
-use std::ptr;
 use userboot::{Log, take_system_handles};
 use zbi::{ZbiContainer, ZbiType};
 use zerocopy::IntoBytes as _;
@@ -199,11 +198,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
             writeln!(log, "Process exited, executing poweroff")?;
             // SAFETY: `power_resource` holds a valid resource handle required for poweroff.
             unsafe {
-                zx_system_powerctl(
-                    power_resource.raw_handle(),
-                    ZX_SYSTEM_POWERCTL_SHUTDOWN,
-                    ptr::null(),
-                );
+                zx_system_powerctl(power_resource.raw_handle(), ZX_SYSTEM_POWERCTL_SHUTDOWN);
             }
             writeln!(log, "Still here after poweroff")?;
         }

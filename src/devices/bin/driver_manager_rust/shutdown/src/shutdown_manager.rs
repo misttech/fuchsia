@@ -59,9 +59,7 @@ impl SystemPower for RealSystemPower {
         let Some(power_resource) = &self.power_resource else {
             return Err(zx::Status::INVALID_ARGS);
         };
-        zx::Status::ok(unsafe {
-            zx::sys::zx_system_powerctl(power_resource.raw_handle(), cmd, std::ptr::null())
-        })
+        zx::Status::ok(unsafe { zx::sys::zx_system_powerctl(power_resource.raw_handle(), cmd) })
     }
 
     fn has_resources(&self) -> bool {

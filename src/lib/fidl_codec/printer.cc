@@ -851,10 +851,6 @@ void PrettyPrinter::DisplaySystemEventType(zx_system_event_type_t type) {
 void PrettyPrinter::DisplaySystemPowerctl(uint32_t powerctl) {
   *this << Blue;
   switch (powerctl) {
-    SystemPowerctlCase(ZX_SYSTEM_POWERCTL_ENABLE_ALL_CPUS);
-    SystemPowerctlCase(ZX_SYSTEM_POWERCTL_DISABLE_ALL_CPUS_BUT_PRIMARY);
-    SystemPowerctlCase(ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE);
-    SystemPowerctlCase(ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1);
     SystemPowerctlCase(ZX_SYSTEM_POWERCTL_REBOOT);
     SystemPowerctlCase(ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER);
     SystemPowerctlCase(ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY);

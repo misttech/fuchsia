@@ -201,7 +201,6 @@ config("kernel") {
 
 source_set("x86") {
   sources = [
-    "acpi.S",
     "amd.cc",
     "arch.cc",
     "asm.S",
@@ -363,7 +362,6 @@ kernel_rust_mod("arch-x86-rs") {
     "src/platform_access.rs",
     "src/pv.rs",
     "src/registers.rs",
-    "src/suspend.rs",
     "src/system_topology.rs",
     "src/vm.rs",
     "src/x86.rs",

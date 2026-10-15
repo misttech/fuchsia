@@ -19,8 +19,6 @@
 #define BCD_CPU_WAITING_OFFSET 36
 #define BCD_PER_CPU_BASE_OFFSET 44
 
-#define RED_REGISTERS_OFFSET 32
-
 #ifndef __ASSEMBLER__
 #include <lib/page/size.h>
 #include <zircon/compiler.h>
@@ -47,20 +45,6 @@ struct x86_bootstrap16_data {
   // The virtual address of the high-addressed entry point after the long mode
   // entry point.
   uint64_t virt_long_mode_high_entry;
-};
-
-struct __PACKED x86_realmode_entry_data {
-  struct x86_bootstrap16_data hdr;
-
-  // Virtual address of the register dump (expected to be in
-  // the form of x86_realmode_entry_data_registers)
-  uint64_t registers_ptr;
-};
-
-struct x86_realmode_entry_data_registers {
-  uint64_t rdi, rsi, rbp, rbx, rdx, rcx, rax;
-  uint64_t r8, r9, r10, r11, r12, r13, r14, r15;
-  uint64_t rsp, rip;
 };
 
 struct __PACKED x86_ap_bootstrap_data {
@@ -98,7 +82,6 @@ zx_status_t x86_bootstrap16_acquire(uintptr_t entry64, void** bootstrap_aperture
 void x86_bootstrap16_release(void* bootstrap_aperture);
 
 static_assert(sizeof(struct x86_ap_bootstrap_data) <= kPageSize);
-static_assert(sizeof(struct x86_realmode_entry_data) <= kPageSize);
 
 static_assert(__offsetof(struct x86_bootstrap16_data, phys_bootstrap_pml4) ==
               BCD_PHYS_BOOTSTRAP_PML4_OFFSET);
@@ -117,9 +100,6 @@ static_assert(__offsetof(struct x86_ap_bootstrap_data, hdr) == 0);
 static_assert(__offsetof(struct x86_ap_bootstrap_data, cpu_id_counter) == BCD_CPU_COUNTER_OFFSET);
 static_assert(__offsetof(struct x86_ap_bootstrap_data, cpu_waiting_mask) == BCD_CPU_WAITING_OFFSET);
 static_assert(__offsetof(struct x86_ap_bootstrap_data, per_cpu) == BCD_PER_CPU_BASE_OFFSET);
-
-static_assert(__offsetof(struct x86_realmode_entry_data, hdr) == 0);
-static_assert(__offsetof(struct x86_realmode_entry_data, registers_ptr) == RED_REGISTERS_OFFSET);
 
 #endif  // __ASSEMBLER__
 

@@ -239,20 +239,17 @@ SYSTEM_MEXEC_PAYLOAD_GET_DISPLAY_TEST(
 // zx_system_powerctl tests.
 
 std::unique_ptr<SystemCallTest> ZxSystemPowerctl(int64_t result, std::string_view result_name,
-                                                 zx_handle_t resource, uint32_t cmd,
-                                                 const zx_system_powerctl_arg_t* arg) {
+                                                 zx_handle_t resource, uint32_t cmd) {
   auto value = std::make_unique<SystemCallTest>("zx_system_powerctl", result, result_name);
   value->AddInput(resource);
   value->AddInput(cmd);
-  value->AddInput(reinterpret_cast<uint64_t>(arg));
   return value;
 }
 
-#define SYSTEM_POWERCTL_DISPLAY_TEST_CONTENT(result, expected)                                 \
-  PerformDisplayTest(                                                                          \
-      "$plt(zx_system_powerctl)",                                                              \
-      ZxSystemPowerctl(result, #result, kHandle, ZX_SYSTEM_POWERCTL_ENABLE_ALL_CPUS, nullptr), \
-      expected)
+#define SYSTEM_POWERCTL_DISPLAY_TEST_CONTENT(result, expected)                              \
+  PerformDisplayTest("$plt(zx_system_powerctl)",                                            \
+                     ZxSystemPowerctl(result, #result, kHandle, ZX_SYSTEM_POWERCTL_REBOOT), \
+                     expected)
 
 #define SYSTEM_POWERCTL_DISPLAY_TEST(name, result, expected) \
   TEST_F(InterceptionWorkflowTestX64, name) {                \
@@ -269,72 +266,8 @@ SYSTEM_POWERCTL_DISPLAY_TEST(ZxSystemPowerctl, ZX_OK,
                              "zx_system_powerctl("
                              "resource: \x1B[32mhandle\x1B[0m = \x1B[31mcefa1db0\x1B[0m, "
                              "cmd: \x1B[32mzx.system_powerctl\x1B[0m = "
-                             "\x1B[34mZX_SYSTEM_POWERCTL_ENABLE_ALL_CPUS\x1B[0m)\n"
+                             "\x1B[34mZX_SYSTEM_POWERCTL_REBOOT\x1B[0m)\n"
                              "\x1B[32m0.000000\x1B[0m "
                              "  -> \x1B[32mZX_OK\x1B[0m\n")
-
-#define SYSTEM_POWERCTL_ACPI_DISPLAY_TEST_CONTENT(result, expected)                            \
-  zx_system_powerctl_arg_t arg = {                                                             \
-      .acpi_transition_s_state = {.target_s_state = 1, .sleep_type_a = 2, .sleep_type_b = 3}}; \
-  PerformDisplayTest("$plt(zx_system_powerctl)",                                               \
-                     ZxSystemPowerctl(result, #result, kHandle,                                \
-                                      ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE, &arg),       \
-                     expected)
-
-#define SYSTEM_POWERCTL_ACPI_DISPLAY_TEST(name, result, expected) \
-  TEST_F(InterceptionWorkflowTestX64, name) {                     \
-    SYSTEM_POWERCTL_ACPI_DISPLAY_TEST_CONTENT(result, expected);  \
-  }                                                               \
-  TEST_F(InterceptionWorkflowTestArm, name) {                     \
-    SYSTEM_POWERCTL_ACPI_DISPLAY_TEST_CONTENT(result, expected);  \
-  }
-
-SYSTEM_POWERCTL_ACPI_DISPLAY_TEST(ZxSystemPowerctlAcpi, ZX_OK,
-                                  "\n"
-                                  "\x1B[32m0.000000\x1B[0m "
-                                  "test_3141 \x1B[31m3141\x1B[0m:\x1B[31m8764\x1B[0m "
-                                  "zx_system_powerctl("
-                                  "resource: \x1B[32mhandle\x1B[0m = \x1B[31mcefa1db0\x1B[0m, "
-                                  "cmd: \x1B[32mzx.system_powerctl\x1B[0m = "
-                                  "\x1B[34mZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE\x1B[0m)\n"
-                                  "  arg: \x1B[32mzx_system_powerctl_arg_t\x1B[0m = { "
-                                  "target_s_state: \x1B[32muint8\x1B[0m = \x1B[34m1\x1B[0m, "
-                                  "sleep_type_a: \x1B[32muint8\x1B[0m = \x1B[34m2\x1B[0m, "
-                                  "sleep_type_b: \x1B[32muint8\x1B[0m = \x1B[34m3\x1B[0m }\n"
-                                  "\x1B[32m0.000000\x1B[0m "
-                                  "  -> \x1B[32mZX_OK\x1B[0m\n")
-
-#define SYSTEM_POWERCTL_PL1_DISPLAY_TEST_CONTENT(result, expected)                          \
-  zx_system_powerctl_arg_t arg = {                                                          \
-      .x86_power_limit = {                                                                  \
-          .power_limit = 200, .time_window = 300, .clamp = false, .enable = true}};         \
-  PerformDisplayTest(                                                                       \
-      "$plt(zx_system_powerctl)",                                                           \
-      ZxSystemPowerctl(result, #result, kHandle, ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1, &arg), \
-      expected)
-
-#define SYSTEM_POWERCTL_PL1_DISPLAY_TEST(name, result, expected) \
-  TEST_F(InterceptionWorkflowTestX64, name) {                    \
-    SYSTEM_POWERCTL_PL1_DISPLAY_TEST_CONTENT(result, expected);  \
-  }                                                              \
-  TEST_F(InterceptionWorkflowTestArm, name) {                    \
-    SYSTEM_POWERCTL_PL1_DISPLAY_TEST_CONTENT(result, expected);  \
-  }
-
-SYSTEM_POWERCTL_PL1_DISPLAY_TEST(ZxSystemPowerctlPl1, ZX_OK,
-                                 "\n"
-                                 "\x1B[32m0.000000\x1B[0m "
-                                 "test_3141 \x1B[31m3141\x1B[0m:\x1B[31m8764\x1B[0m "
-                                 "zx_system_powerctl("
-                                 "resource: \x1B[32mhandle\x1B[0m = \x1B[31mcefa1db0\x1B[0m, "
-                                 "cmd: \x1B[32mzx.system_powerctl\x1B[0m = "
-                                 "\x1B[34mZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1\x1B[0m)\n"
-                                 "  arg: \x1B[32mzx_system_powerctl_arg_t\x1B[0m = { "
-                                 "power_limit: \x1B[32muint32\x1B[0m = \x1B[34m200\x1B[0m, "
-                                 "time_window: \x1B[32muint32\x1B[0m = \x1B[34m300\x1B[0m, "
-                                 "clamp: \x1B[32muint8\x1B[0m = \x1B[34m0\x1B[0m, "
-                                 "enable: \x1B[32muint8\x1B[0m = \x1B[34m1\x1B[0m }\n"
-                                 "\x1B[32m0.000000\x1B[0m "
-                                 "  -> \x1B[32mZX_OK\x1B[0m\n")
 
 }  // namespace fidlcat

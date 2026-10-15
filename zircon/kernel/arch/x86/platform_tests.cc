@@ -290,38 +290,6 @@ static bool test_x64_intel_ucode_patch_loader() {
   END_TEST;
 }
 
-static bool test_x64_power_limits() {
-  BEGIN_TEST;
-  FakeMsrAccess fake_msrs = {};
-  // defaults on Ava/Eve. They both use the same Intel chipset
-  // only diff is the WiFi. Ava uses Broadcom vs Eve uses Intel
-  fake_msrs.msrs_[0] = {X86_MSR_PKG_POWER_LIMIT, 0x1807800dd8038};
-  fake_msrs.msrs_[1] = {X86_MSR_RAPL_POWER_UNIT, 0xA0E03};
-  // This default value does not look right, but this is a RO MSR
-  fake_msrs.msrs_[2] = {X86_MSR_PKG_POWER_INFO, 0x24};
-  // Read the defaults from pkg power msr.
-  uint64_t default_val = fake_msrs.read_msr(X86_MSR_PKG_POWER_LIMIT);
-  uint32_t new_power_limit = 4500;
-  uint32_t new_time_window = 24000000;
-  // expected value in MSR with the new power limit and time window
-  uint64_t new_msr = 0x18078009d8024;
-  zx_system_powerctl_arg_t arg;
-  arg.x86_power_limit.clamp = static_cast<uint8_t>(default_val >> 16 & 0x01);
-  arg.x86_power_limit.enable = static_cast<uint8_t>(default_val >> 15 & 0x01);
-  // changing the value to 4.5W from 7W = 0x24 in the MSR
-  // X86_MSR_PKG_POWER_LIMIT & 0x7FFF = 0x24 * power_units should give 4.5W
-  arg.x86_power_limit.power_limit = new_power_limit;
-  // changing the value to 24s from 28s = 0x4E in the MSR
-  arg.x86_power_limit.time_window = new_time_window;
-  // write it back again to see if the new function does it right
-  auto status = arch_system_powerctl(ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1, &arg, &fake_msrs);
-  if (status != ZX_ERR_NOT_SUPPORTED) {
-    uint64_t new_val = fake_msrs.read_msr(X86_MSR_PKG_POWER_LIMIT);
-    EXPECT_EQ(new_val, new_msr, "Set power limit failed");
-  }
-  END_TEST;
-}
-
 static bool test_amd_platform_init() {
   BEGIN_TEST;
   FakeMsrAccess fake_msrs = {};
@@ -470,7 +438,6 @@ UNITTEST("test k hwp commands", test_x64_hwp_k_commands)
 UNITTEST("test uarch_config is correctly selected", test_x64_cpu_uarch_config_selection)
 UNITTEST("test Intel x86 microcode patch loader match and load logic", test_x64_intel_ucode_loader)
 UNITTEST("test Intel x86 microcode patch loader mechanism", test_x64_intel_ucode_patch_loader)
-UNITTEST("test pkg power limit change", test_x64_power_limits)
 UNITTEST("test amd_platform_init", test_amd_platform_init)
 UNITTEST("test spectre v2 mitigation building blocks", test_spectre_v2_mitigations)
 UNITTEST("test mds mitigation building blocks", test_mds_taa_mitigation)

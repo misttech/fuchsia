@@ -9,6 +9,5 @@
 #include <zircon/types.h>
 
 void poweroff(zx_device_t* device);
-zx_status_t suspend_to_ram(zx_device_t* device);
 
 #endif  // SRC_DEVICES_BOARD_DRIVERS_X86_INCLUDE_POWER_H_

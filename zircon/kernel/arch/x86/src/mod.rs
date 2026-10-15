@@ -14,7 +14,6 @@ pub mod lapic;
 pub mod platform_access;
 pub mod pv;
 pub mod registers;
-pub mod suspend;
 pub mod system_topology;
 pub mod vm;
 pub mod x86;

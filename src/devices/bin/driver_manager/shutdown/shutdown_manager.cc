@@ -291,7 +291,7 @@ void ShutdownManager::ExecuteShutdownStrategy() {
 }
 
 zx_status_t ShutdownManager::SystemPowerctl(uint32_t cmd) {
-  return zx_system_powerctl(power_resource_.get(), cmd, nullptr);
+  return zx_system_powerctl(power_resource_.get(), cmd);
 }
 
 void ShutdownManager::Exit(int status) { exit(status); }

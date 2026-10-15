@@ -1829,83 +1829,6 @@ const ZxSmcResult* ZxSmcResult::GetClass() {
   return instance_;
 }
 
-class ZxSystemPowerctlArgAcpi : public Class<zx_system_powerctl_arg_t> {
- public:
-  static const ZxSystemPowerctlArgAcpi* GetClass();
-
-  static uint8_t target_s_state(const zx_system_powerctl_arg_t* from) {
-    return from->acpi_transition_s_state.target_s_state;
-  }
-  static uint8_t sleep_type_a(const zx_system_powerctl_arg_t* from) {
-    return from->acpi_transition_s_state.sleep_type_a;
-  }
-  static uint8_t sleep_type_b(const zx_system_powerctl_arg_t* from) {
-    return from->acpi_transition_s_state.sleep_type_b;
-  }
-
- private:
-  ZxSystemPowerctlArgAcpi() : Class("zx_system_powerctl_arg_t") {
-    AddField(std::make_unique<ClassField<zx_system_powerctl_arg_t, uint8_t>>(
-        "target_s_state", SyscallType::kUint8, target_s_state));
-    AddField(std::make_unique<ClassField<zx_system_powerctl_arg_t, uint8_t>>(
-        "sleep_type_a", SyscallType::kUint8, sleep_type_a));
-    AddField(std::make_unique<ClassField<zx_system_powerctl_arg_t, uint8_t>>(
-        "sleep_type_b", SyscallType::kUint8, sleep_type_b));
-  }
-  ZxSystemPowerctlArgAcpi(const ZxSystemPowerctlArgAcpi&) = delete;
-  ZxSystemPowerctlArgAcpi& operator=(const ZxSystemPowerctlArgAcpi&) = delete;
-  static ZxSystemPowerctlArgAcpi* instance_;
-};
-
-ZxSystemPowerctlArgAcpi* ZxSystemPowerctlArgAcpi::instance_ = nullptr;
-
-const ZxSystemPowerctlArgAcpi* ZxSystemPowerctlArgAcpi::GetClass() {
-  if (instance_ == nullptr) {
-    instance_ = new ZxSystemPowerctlArgAcpi;
-  }
-  return instance_;
-}
-
-class ZxSystemPowerctlArgX86PowerLimit : public Class<zx_system_powerctl_arg_t> {
- public:
-  static const ZxSystemPowerctlArgX86PowerLimit* GetClass();
-
-  static uint32_t power_limit(const zx_system_powerctl_arg_t* from) {
-    return from->x86_power_limit.power_limit;
-  }
-  static uint32_t time_window(const zx_system_powerctl_arg_t* from) {
-    return from->x86_power_limit.time_window;
-  }
-  static uint8_t clamp(const zx_system_powerctl_arg_t* from) { return from->x86_power_limit.clamp; }
-  static uint8_t enable(const zx_system_powerctl_arg_t* from) {
-    return from->x86_power_limit.enable;
-  }
-
- private:
-  ZxSystemPowerctlArgX86PowerLimit() : Class("zx_system_powerctl_arg_t") {
-    AddField(std::make_unique<ClassField<zx_system_powerctl_arg_t, uint32_t>>(
-        "power_limit", SyscallType::kUint32, power_limit));
-    AddField(std::make_unique<ClassField<zx_system_powerctl_arg_t, uint32_t>>(
-        "time_window", SyscallType::kUint32, time_window));
-    AddField(std::make_unique<ClassField<zx_system_powerctl_arg_t, uint8_t>>(
-        "clamp", SyscallType::kUint8, clamp));
-    AddField(std::make_unique<ClassField<zx_system_powerctl_arg_t, uint8_t>>(
-        "enable", SyscallType::kUint8, enable));
-  }
-  ZxSystemPowerctlArgX86PowerLimit(const ZxSystemPowerctlArgX86PowerLimit&) = delete;
-  ZxSystemPowerctlArgX86PowerLimit& operator=(const ZxSystemPowerctlArgX86PowerLimit&) = delete;
-  static ZxSystemPowerctlArgX86PowerLimit* instance_;
-};
-
-ZxSystemPowerctlArgX86PowerLimit* ZxSystemPowerctlArgX86PowerLimit::instance_ = nullptr;
-
-const ZxSystemPowerctlArgX86PowerLimit* ZxSystemPowerctlArgX86PowerLimit::GetClass() {
-  if (instance_ == nullptr) {
-    instance_ = new ZxSystemPowerctlArgX86PowerLimit;
-  }
-  return instance_;
-}
-
 class ZxThreadStateDebugRegsAArch64Bp : public Class<zx_thread_state_debug_regs_aarch64_bp_t> {
  public:
   static const ZxThreadStateDebugRegsAArch64Bp* GetClass();
@@ -2694,28 +2617,10 @@ void SyscallDecoderDispatcher::Populate() {
     // Arguments
     auto resource = zx_system_powerctl->Argument<zx_handle_t>(SyscallType::kHandle);
     auto cmd = zx_system_powerctl->Argument<uint32_t>(SyscallType::kSystemPowerctl);
-    auto arg = zx_system_powerctl->PointerArgument<uint8_t>(SyscallType::kUint8);
-    // Conditional field Ids
-    const uint8_t kZxSystemPowerctl_ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE = 1;
-    const uint8_t kZxSystemPowerctl_ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1 = 2;
     // Inputs
     zx_system_powerctl->Input<uint32_t>("resource",
                                         std::make_unique<ArgumentAccess<zx_handle_t>>(resource));
     zx_system_powerctl->Input<uint32_t>("cmd", std::make_unique<ArgumentAccess<uint32_t>>(cmd));
-    zx_system_powerctl
-        ->InputObject<zx_system_powerctl_arg_t>("arg",
-                                                std::make_unique<ArgumentAccess<uint8_t>>(arg),
-                                                ZxSystemPowerctlArgAcpi::GetClass())
-        ->DisplayIfEqual<uint32_t>(std::make_unique<ArgumentAccess<uint32_t>>(cmd),
-                                   ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE)
-        ->SetId(kZxSystemPowerctl_ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE);
-    zx_system_powerctl
-        ->InputObject<zx_system_powerctl_arg_t>("arg",
-                                                std::make_unique<ArgumentAccess<uint8_t>>(arg),
-                                                ZxSystemPowerctlArgX86PowerLimit::GetClass())
-        ->DisplayIfEqual<uint32_t>(std::make_unique<ArgumentAccess<uint32_t>>(cmd),
-                                   ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1)
-        ->SetId(kZxSystemPowerctl_ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1);
   }
 
   {

@@ -23,8 +23,6 @@ const VALID_SUSPEND_FLAGS: u64 = ZX_SYSTEM_SUSPEND_OPTION_DISCARD
     | ZX_SYSTEM_SUSPEND_OPTION_REPORT_ONLY
     | ZX_SYSTEM_SUSPEND_OPTION_DEEP;
 
-zr::static_assert!(core::mem::size_of::<zx_system_powerctl_arg_t>() == 12);
-zr::static_assert!(core::mem::align_of::<zx_system_powerctl_arg_t>() == 4);
 zr::static_assert!(core::mem::size_of::<zx_wake_source_report_header_t>() == 24);
 zr::static_assert!(core::mem::align_of::<zx_wake_source_report_header_t>() == 8);
 zr::static_assert!(core::mem::size_of::<zx_wake_source_report_entry_t>() == 72);
@@ -56,11 +54,6 @@ unsafe extern "C" {
         count: usize,
     );
     fn cpp_scheduler_get_processing_limits(info: *mut zx_cpu_perf_limit_t, count: usize);
-
-    fn cpp_mp_hotplug_cpu_mask_all() -> zx_status_t;
-    fn cpp_mp_unplug_cpu_mask_all_but_primary() -> zx_status_t;
-    #[cfg(target_arch = "x86_64")]
-    fn cpp_system_powerctl_x86_set_pkg_pl1(arg: &zx_system_powerctl_arg_t) -> zx_status_t;
 }
 
 #[syscall]
@@ -309,39 +302,10 @@ pub fn sys_system_get_performance_info(
 }
 
 #[syscall]
-pub fn sys_system_powerctl(
-    power_rsrc: HandleValue,
-    cmd: u32,
-    raw_arg: UserInPtr<zx_system_powerctl_arg_t>,
-) -> Result<(), Status> {
+pub fn sys_system_powerctl(power_rsrc: HandleValue, cmd: u32) -> Result<(), Status> {
     validate_system_resource(power_rsrc, ZX_RSRC_SYSTEM_POWER_BASE)?;
 
-    #[cfg(not(target_arch = "x86_64"))]
-    let _ = raw_arg;
-
     match cmd {
-        ZX_SYSTEM_POWERCTL_ENABLE_ALL_CPUS => {
-            // SAFETY: Call C++ MP hotplug helper.
-            let status = unsafe { cpp_mp_hotplug_cpu_mask_all() };
-            Status::ok(status)?;
-            Ok(())
-        }
-        ZX_SYSTEM_POWERCTL_DISABLE_ALL_CPUS_BUT_PRIMARY => {
-            // SAFETY: Call C++ MP unplug helper.
-            let status = unsafe { cpp_mp_unplug_cpu_mask_all_but_primary() };
-            Status::ok(status)?;
-            Ok(())
-        }
-        #[cfg(target_arch = "x86_64")]
-        ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE => Err(Status::NOT_SUPPORTED),
-        #[cfg(target_arch = "x86_64")]
-        ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1 => {
-            let arg = raw_arg.read()?;
-            // SAFETY: Pass reference to valid arg.
-            let status = unsafe { cpp_system_powerctl_x86_set_pkg_pl1(&arg) };
-            Status::ok(status)?;
-            Ok(())
-        }
         ZX_SYSTEM_POWERCTL_REBOOT => {
             platform_graceful_halt_helper(
                 PlatformHaltAction::Reboot,

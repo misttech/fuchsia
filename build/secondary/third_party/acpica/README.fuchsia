@@ -25,5 +25,6 @@ Local Modifications:
   - Fix instances of undefined behavior reported by UBSan (misaligned pointer
     accesses, member accesses on nullptrs, and left shifting by 31 on ints)
   - Added workaround for use-after-free on NuC in AcpiNsTerminate
-  - Modified AcpiHwLegacySleep to call zx_system_powerctl syscall in order to
-    handle transition of S-state in the kernel with interrupts disabled
+  - Modified AcpiHwLegacySleep to fail transitions to S-states other than S5,
+    which are not supported because ACPICA runs in usermode and cannot disable
+    interrupts

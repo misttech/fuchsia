@@ -220,10 +220,8 @@ ACPI_STATUS AcpiOsEnterSleep(UINT8 SleepState, UINT32 RegaValue, UINT32 RegbValu
 
   // In Fuchsia, ACPICA runs in usermode and we don't expose a mechanism for it to disable
   // interrupts. For full shutdown (sleep state 5) this does not matter as any cache corruption
-  // will be trumped by full power loss. For any other S state transitions via AcpiHwLegacySleep()
-  // or AcpiHwExtendedSleep() we make a call to zx_system_powerctl to execute the necessary code in
-  // the kernel where interrupts can be disabled.  This means that any call to this hook is from a
-  // function which we do not support for S state transitions so we should return an error.
+  // will be trumped by full power loss. Other S state transitions are not supported, so return an
+  // error for them.
   if (SleepState == ACPI_STATE_S5) {
     return (AE_OK);
   } else {

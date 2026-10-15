@@ -7,16 +7,8 @@
 #ifndef ZIRCON_KERNEL_LIB_SYSCALLS_SYSTEM_PRIV_H_
 #define ZIRCON_KERNEL_LIB_SYSCALLS_SYSTEM_PRIV_H_
 
-#if defined __x86_64__
-#include <arch/x86/platform_access.h>
-#endif  //__x86_64__
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls/system.h>
-
-#if defined __x86_64__
-class MsrAccess;
-zx_status_t arch_system_powerctl(uint32_t cmd, const zx_system_powerctl_arg_t* arg, MsrAccess* msr);
-#endif
 
 zx_status_t system_mexec_core(zx_handle_t resource, zx_handle_t kernel_vmo,
                               zx_handle_t data_zbi_vmo);
@@ -32,12 +24,6 @@ void cpp_scheduler_get_performance_scales(zx_cpu_performance_info_t* info, size_
 void cpp_scheduler_get_default_performance_scales(zx_cpu_performance_info_t* info, size_t count);
 void cpp_scheduler_get_processing_limits(zx_cpu_perf_limit_t* info, size_t count);
 size_t cpp_percpu_processor_count();
-
-zx_status_t cpp_mp_hotplug_cpu_mask_all();
-zx_status_t cpp_mp_unplug_cpu_mask_all_but_primary();
-#if defined(__x86_64__)
-zx_status_t cpp_system_powerctl_x86_set_pkg_pl1(const zx_system_powerctl_arg_t* arg);
-#endif
 }
 
 #endif  // ZIRCON_KERNEL_LIB_SYSCALLS_SYSTEM_PRIV_H_

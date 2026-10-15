@@ -127,24 +127,3 @@ extern "C" FFI_ALWAYS_INLINE void cpp_scheduler_get_processing_limits(zx_cpu_per
 extern "C" FFI_ALWAYS_INLINE size_t cpp_percpu_processor_count() {
   return percpu::processor_count();
 }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_mp_hotplug_cpu_mask_all() {
-  cpu_mask_t all_cpus = ((cpu_mask_t)1u << arch_max_num_cpus()) - 1;
-  return mp_hotplug_cpu_mask(~mp_get_online_mask() & all_cpus);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_mp_unplug_cpu_mask_all_but_primary() {
-  cpu_mask_t primary = cpu_num_to_mask(0);
-  return mp_unplug_cpu_mask(mp_get_online_mask() & ~primary, ZX_TIME_INFINITE);
-}
-
-#if defined(__x86_64__)
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE zx_status_t
-cpp_system_powerctl_x86_set_pkg_pl1(const zx_system_powerctl_arg_t* arg) {
-  MsrAccess msr;
-  return arch_system_powerctl(ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1, arg, &msr);
-}
-#endif

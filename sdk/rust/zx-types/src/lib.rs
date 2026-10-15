@@ -3196,54 +3196,12 @@ multiconst!(u32, [
 
 // source: zircon/system/public/zircon/syscalls/system.h
 multiconst!(zx_system_powerctl_cmd_t, [
-    ZX_SYSTEM_POWERCTL_ENABLE_ALL_CPUS               = 1;
-    ZX_SYSTEM_POWERCTL_DISABLE_ALL_CPUS_BUT_PRIMARY  = 2;
-    ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE       = 3;
-    ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1               = 4;
     ZX_SYSTEM_POWERCTL_REBOOT                        = 5;
     ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER             = 6;
     ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY               = 7;
     ZX_SYSTEM_POWERCTL_SHUTDOWN                      = 8;
     ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT   = 9;
 ]);
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
-pub struct zx_system_powerctl_arg_t {
-    // rust can't express anonymous unions at this time
-    // https://github.com/rust-lang/rust/issues/49804
-    pub powerctl_internal: zx_powerctl_union,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
-pub union zx_powerctl_union {
-    acpi_transition_s_state: acpi_transition_s_state,
-    x86_power_limit: x86_power_limit,
-}
-
-#[repr(C)]
-#[derive(Default, Debug, PartialEq, Copy, Clone)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
-pub struct acpi_transition_s_state {
-    target_s_state: u8, // Value between 1 and 5 indicating which S-state
-    sleep_type_a: u8,   // Value from ACPI VM (SLP_TYPa)
-    sleep_type_b: u8,   // Value from ACPI VM (SLP_TYPb)
-    padding1: [PadByte; 9],
-}
-
-#[repr(C)]
-#[derive(Default, Debug, PartialEq, Copy, Clone)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
-pub struct x86_power_limit {
-    power_limit: u32, // PL1 value in milliwatts
-    time_window: u32, // PL1 time window in microseconds
-    clamp: u8,        // PL1 clamping enable
-    enable: u8,       // PL1 enable
-    padding1: [PadByte; 2],
-}
 
 // source: zircon/system/public/zircon/syscalls/smc.h
 #[repr(C)]
