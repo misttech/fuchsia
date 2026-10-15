@@ -14,7 +14,7 @@ use zx_types::{ZX_RSRC_SYSTEM_DEBUG_BASE, ZX_RSRC_SYSTEM_TRACING_BASE};
 
 use crate::ktrace_rs::KTrace;
 use crate::object::{HandleValue, validate_system_resource};
-use crate::platform_rs::debug::platform_dgetc;
+use crate::platform_rs::debug::{platform_dgetc, platform_serial_resume, platform_serial_suspend};
 use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 
 const LOCAL_TRACE: u32 = 0;
@@ -106,13 +106,17 @@ pub fn sys_debug_write(ptr: UserInPtr<u8>, mut len: usize) -> Result<(), Status>
 }
 
 #[syscall]
-pub fn sys_debug_suspend(_resource: HandleValue) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
+pub fn sys_debug_suspend(resource: HandleValue) -> Result<(), Status> {
+    validate_system_resource(resource, ZX_RSRC_SYSTEM_DEBUG_BASE)?;
+
+    Status::ok(platform_serial_suspend())
 }
 
 #[syscall]
-pub fn sys_debug_resume(_resource: HandleValue) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
+pub fn sys_debug_resume(resource: HandleValue) -> Result<(), Status> {
+    validate_system_resource(resource, ZX_RSRC_SYSTEM_DEBUG_BASE)?;
+
+    Status::ok(platform_serial_resume())
 }
 
 #[syscall]

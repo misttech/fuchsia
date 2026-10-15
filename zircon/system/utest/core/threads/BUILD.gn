@@ -61,6 +61,7 @@ hermetic_source_set("thread-functions.impl") {
     "threads_bad_syscall_fn",
     "threads_test_atomic_store",
     "threads_test_channel_call_fn",
+    "threads_test_debug_write_fn",
     "threads_test_infinite_wait_fn",
     "threads_test_port_fn",
     "threads_test_run_fn",

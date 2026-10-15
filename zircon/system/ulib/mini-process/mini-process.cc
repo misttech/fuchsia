@@ -57,6 +57,7 @@ static zx_status_t write_ctx_message(zx_handle_t channel, uintptr_t vdso_base,
       .vmo_read = get_syscall_addr(&zx_vmo_read, vdso_base),
       .vmo_write = get_syscall_addr(&zx_vmo_write, vdso_base),
       .debug_read = get_syscall_addr(&zx_debug_read, vdso_base),
+      .debug_write = get_syscall_addr(&zx_debug_write, vdso_base),
   };
   uint32_t actual_handles = (transferred_handle == ZX_HANDLE_INVALID) ? 0u : 1u;
   return zx_channel_write(channel, 0u, &ctx, sizeof(ctx), &transferred_handle, actual_handles);

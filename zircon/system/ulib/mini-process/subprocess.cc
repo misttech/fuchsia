@@ -317,6 +317,15 @@
           ctx.handle_close(received_handle);
           goto reply;
         }
+        if (what & MINIP_CMD_DEBUG_WRITE) {
+          what &= ~MINIP_CMD_DEBUG_WRITE;
+
+          // Note that this code is copied into the mini-process without any
+          // read-only data, so the message must live on the stack.
+          char newline = '\n';
+          cmd.status = ctx.debug_write(&newline, 1);
+          goto reply;
+        }
 
         // The following don't send a message so the client will get ZX_CHANNEL_PEER_CLOSED.
 

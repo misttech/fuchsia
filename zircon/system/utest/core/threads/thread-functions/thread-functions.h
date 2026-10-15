@@ -83,6 +83,15 @@ struct syscall_suspended_reg_state_test_arg {
 // On finding signal 1, it will return.
 [[noreturn]] void threads_test_wait_loop(zx_handle_t event);
 
+struct debug_write_arg {
+  const char* buffer;
+  size_t buffer_size;
+  zx_status_t status;
+};
+
+// Calls zx_debug_write() with |buffer| and |buffer_size| and stores the result in |status|.
+[[noreturn]] void threads_test_debug_write_fn(debug_write_arg* arg);
+
 }  // extern "C"
 
 #endif  // ZIRCON_SYSTEM_UTEST_CORE_THREADS_THREAD_FUNCTIONS_THREAD_FUNCTIONS_H_

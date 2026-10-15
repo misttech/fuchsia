@@ -138,3 +138,8 @@ void threads_test_wait_loop(zx_handle_t event) {
   }
   zx_thread_exit();
 }
+
+void threads_test_debug_write_fn(debug_write_arg* arg) {
+  arg->status = zx_debug_write(arg->buffer, arg->buffer_size);
+  zx_thread_exit();
+}

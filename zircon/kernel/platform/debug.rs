@@ -10,6 +10,8 @@ unsafe extern "C" {
     fn cpp_platform_dputs_thread(str: *const c_char, len: usize) -> zx_status_t;
     fn cpp_platform_pputc(c: c_char);
     fn cpp_platform_pgetc(c: *mut c_char) -> i32;
+    fn cpp_platform_serial_suspend() -> zx_status_t;
+    fn cpp_platform_serial_resume() -> zx_status_t;
 }
 
 /// Call the platform console input hook.
@@ -37,4 +39,27 @@ pub fn platform_pputc(c: u8) {
 pub fn platform_pgetc(c: &mut c_char) -> i32 {
     // SAFETY: The mutable reference `c` guarantees that the pointer is valid, non-null, and properly aligned.
     unsafe { cpp_platform_pgetc(c as *mut c_char) }
+}
+
+/// Suspend kernel access to the debug serial port.  See `platform_serial_suspend` in
+/// `<platform.h>`.
+///
+/// Must be called from thread context (e.g. from a syscall), as it may block.
+pub fn platform_serial_suspend() -> zx_status_t {
+    // SAFETY: `cpp_platform_serial_suspend` takes no arguments and has no memory-safety
+    // preconditions.  Its only requirement, that it be called from a context which may block, is
+    // documented above and is not a memory-safety concern.
+    unsafe { cpp_platform_serial_suspend() }
+}
+
+/// Resume kernel access to the debug serial port.  See `platform_serial_resume` in
+/// `<platform.h>`.
+///
+/// Must be called from thread context (e.g. from a syscall), as it may block.  The caller is
+/// responsible for ensuring the debug serial port hardware is powered and clocked.
+pub fn platform_serial_resume() -> zx_status_t {
+    // SAFETY: `cpp_platform_serial_resume` takes no arguments and has no memory-safety
+    // preconditions.  Its requirements, that it be called from a context which may block and that
+    // the hardware be powered, are documented above and are not memory-safety concerns.
+    unsafe { cpp_platform_serial_resume() }
 }

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ZIRCON_SYSTEM_ULIB_MINI_PROCESS_INCLUDE_MINI_PROCESS_MINI_PROCESS_H_
-#define ZIRCON_SYSTEM_ULIB_MINI_PROCESS_INCLUDE_MINI_PROCESS_MINI_PROCESS_H_
+#ifndef MINI_PROCESS_MINI_PROCESS_H_
+#define MINI_PROCESS_MINI_PROCESS_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -82,6 +82,9 @@ __BEGIN_CDECLS
 // The process calls |zx_debug_read| in a loop, using the transferred debug resource |handle|, until
 // it fails.  The return value is the failing status.
 #define MINIP_CMD_DEBUG_READ (1 << 24)
+// The process writes a single newline character with |zx_debug_write|.
+// The return value is the result of that syscall.
+#define MINIP_CMD_DEBUG_WRITE (1 << 25)
 #define MINIP_THREAD_POINTER_CHECK_VALUE (0xdeadbeeffeedfaceUL)
 
 // Create and run a minimal process with one thread that blocks forever.
@@ -138,4 +141,4 @@ zx_status_t mini_process_cmd_read_reply(zx_handle_t cntrl_channel, zx_handle_t* 
 
 __END_CDECLS
 
-#endif  // ZIRCON_SYSTEM_ULIB_MINI_PROCESS_INCLUDE_MINI_PROCESS_MINI_PROCESS_H_
+#endif  // MINI_PROCESS_MINI_PROCESS_H_
