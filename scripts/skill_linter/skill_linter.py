@@ -43,6 +43,7 @@ class BlockedWordRule:
 DEFAULT_GOOGLE3_HEAD_GCL_PATH = "/google/src/files/head/depot/google3/devtools/gerritcodereview/banned_words/fuchsia/common.gcl"
 
 _LINK_REFERENCE_RE = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*")
+_LIST_ITEM_RE = re.compile(r"^\s*([-*+]|\d+\.)\s+")
 
 DEFAULT_POLICY_REL_PATHS = [
     os.path.join("vendor", "google", ".agents", "blocked_words.json"),
@@ -1023,7 +1024,8 @@ def format_markdown_with_issues(
 
     Identifies paragraphs, lists, code blocks, and tables to apply
     appropriate formatting while preserving structure. Tracks specific
-    issues like long lines, trailing whitespace, etc.
+    issues like long lines, trailing whitespace, missing empty lines around
+    lists and code blocks, etc.
 
     Args:
       text: The input markdown text.
@@ -1081,41 +1083,92 @@ def format_markdown_with_issues(
     in_code_block = False
     current_paragraph: list[str] = []
     in_table = False
+    in_list = False
+    has_missing_empty_line_before_list = False
+    has_missing_empty_line_after_list = False
+    has_missing_empty_line_before_code_block = False
+    has_missing_empty_line_after_code_block = False
+    just_closed_code_block = False
+    # Whether the last emitted non-empty block is a list item paragraph. A
+    # list item may directly follow another list item (tight list), but must
+    # be separated by an empty line from any other preceding block.
+    last_block_is_list_item = False
 
     def flush_paragraph() -> None:
-        nonlocal current_paragraph
+        nonlocal current_paragraph, last_block_is_list_item
+        if current_paragraph:
+            last_block_is_list_item = bool(
+                _LIST_ITEM_RE.match(current_paragraph[0])
+            )
         formatted_lines.extend(_format_paragraph(current_paragraph, width))
         current_paragraph[:] = []
 
+    def emit(line: str) -> None:
+        nonlocal last_block_is_list_item
+        if line.strip():
+            last_block_is_list_item = False
+        formatted_lines.append(line)
+
+    def needs_empty_line() -> bool:
+        return bool(formatted_lines) and bool(formatted_lines[-1].strip())
+
+    def end_list_with_empty_line() -> None:
+        # A non-indented block (heading, blockquote, table, or link reference
+        # definition) directly after a list must be separated by an empty line.
+        nonlocal in_list, has_missing_empty_line_after_list
+        if in_list and needs_empty_line():
+            formatted_lines.append("")
+            has_missing_empty_line_after_list = True
+        in_list = False
+
     for line in lines:
         stripped_line = line.strip()
+        is_indented = line.startswith((" ", "\t"))
 
-        if stripped_line.startswith("```"):
-            flush_paragraph()
-            if in_code_block:
+        if in_code_block:
+            if stripped_line.startswith("```"):
                 current_code_block.append(line)
                 placeholder = f"__SKILL_LINTER_CODE_BLOCK_{len(code_blocks)}__"
                 code_blocks.append("\n".join(current_code_block))
-                formatted_lines.append(placeholder)
+                emit(placeholder)
                 current_code_block = []
+                in_code_block = False
+                if not is_indented:
+                    in_list = False
+                just_closed_code_block = True
             else:
                 current_code_block.append(line)
-            in_code_block = not in_code_block
             continue
 
-        if in_code_block:
+        if just_closed_code_block:
+            just_closed_code_block = False
+            if stripped_line:
+                formatted_lines.append("")
+                has_missing_empty_line_after_code_block = True
+
+        if stripped_line.startswith("```"):
+            flush_paragraph()
+            if needs_empty_line():
+                formatted_lines.append("")
+                has_missing_empty_line_before_code_block = True
             current_code_block.append(line)
+            in_code_block = True
+            # Code blocks indented under a list item belong to that item.
+            if not is_indented:
+                in_list = False
             continue
 
         if not stripped_line:
             flush_paragraph()
             in_table = False
+            # A list stays active across empty lines; it only ends at the
+            # next non-indented block that is not a list item.
             formatted_lines.append(line)
             continue
 
         if in_table:
             if "|" in line or stripped_line.startswith(":"):
-                formatted_lines.append(line)
+                emit(line)
                 continue
             else:
                 in_table = False
@@ -1124,28 +1177,44 @@ def format_markdown_with_issues(
             if current_paragraph:
                 header_line = current_paragraph.pop()
                 flush_paragraph()
-                formatted_lines.append(header_line)
+                if not header_line.startswith((" ", "\t")):
+                    end_list_with_empty_line()
+                emit(header_line)
             else:
                 flush_paragraph()
-            formatted_lines.append(line)
+            emit(line)
             in_table = True
+            in_list = False
             continue
 
         if stripped_line.startswith("#") or stripped_line.startswith(">"):
             flush_paragraph()
-            formatted_lines.append(line)
+            if not is_indented:
+                end_list_with_empty_line()
+            emit(line)
             continue
 
         if _LINK_REFERENCE_RE.match(stripped_line):
             flush_paragraph()
-            formatted_lines.append(line)
+            end_list_with_empty_line()
+            emit(line)
             continue
 
-        if re.search(r"^\s*([-*+]|\d+\.)\s+", line):
+        if _LIST_ITEM_RE.match(line):
             flush_paragraph()
+            if needs_empty_line() and not last_block_is_list_item:
+                formatted_lines.append("")
+                has_missing_empty_line_before_list = True
+            in_list = True
             current_paragraph.append(line)
             continue
 
+        # Non-indented text directly following a list item is a lazy
+        # continuation of that item, so the list remains active. After an
+        # empty line, non-indented text starts a new paragraph that ends the
+        # list.
+        if not is_indented and not current_paragraph and not needs_empty_line():
+            in_list = False
         current_paragraph.append(line)
         if line.endswith("  "):
             flush_paragraph()
@@ -1187,6 +1256,18 @@ def format_markdown_with_issues(
 
     if has_long_lines:
         issues.append(f"lines exceeding {width} characters")
+
+    if has_missing_empty_line_before_list:
+        issues.append("missing empty line before list")
+
+    if has_missing_empty_line_after_list:
+        issues.append("missing empty line after list")
+
+    if has_missing_empty_line_before_code_block:
+        issues.append("missing empty line before code block")
+
+    if has_missing_empty_line_after_code_block:
+        issues.append("missing empty line after code block")
 
     if formatted_text != text and not issues:
         issues.append("formatting inconsistencies")

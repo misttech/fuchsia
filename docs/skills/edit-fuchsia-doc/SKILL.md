@@ -108,6 +108,10 @@ When editing any Fuchsia documentation file, enforce the following standards:
   automatically.
 - Use `none` (or `none {:.devsite-disable-click-to-copy}`) for output logs or
   code samples that should not be copied.
+- **Surround code blocks with empty lines**: Always include an empty line before
+  the opening code fence and after the closing code fence (`` ``` ``) to ensure
+  proper separation from preceding and following prose paragraphs, list items,
+  or headings.
 - **Do NOT put example reference link definitions (`[id]: url`) in fenced
   Markdown code blocks**: Always format example reference link definitions using
   HTML `<pre><code>` blocks with the opening bracket escaped as **`&#91;`**
@@ -141,9 +145,19 @@ When editing any Fuchsia documentation file, enforce the following standards:
 
 ### 8. Lists & List Item Spacing
 
-- In bulleted lists and numbered lists, include an empty line between items for
-  readability and proper rendering on fuchsia.dev.
-- Include an empty line between a parent list item and the start of a sub-list.
+- **Surround lists with empty lines**: Always include an empty line before the
+  start of a list and after the end of a list to separate it from preceding and
+  following prose paragraphs, headings, blockquotes, tables, or code blocks.
+  Omitting an empty line before a list causes DevSite's Markdown parser to
+  collapse the list into the preceding paragraph as a single unformatted block
+  of text.
+- **No empty lines required between list items**: Empty lines are NOT required
+  between all entries in a list. Tight lists (consecutive list items without
+  empty lines between them) are valid and preferred for concise items. An empty
+  line between items is only necessary when a list item contains multiple
+  paragraphs, nested code blocks, or complex sub-elements.
+- Include an empty line between a parent list item and the start of a nested
+  sub-list if the parent item has preceding content.
 
 ### 9. Tone, Voice, and Grammar
 
@@ -230,27 +244,19 @@ When editing any Fuchsia documentation file, enforce the following standards:
     - Page or section titles (`#`, `##`, `###`, ...) containing backticks.
     - Main title (`# ...`) containing custom anchor, or section headers using
       underscore-based anchors.
-
     - Email addresses or usernames formatted as `mailto:` links.
-
     - File links using `file://` scheme instead of full paths in the codebase.
-
     - Top-level outline list containing redundant nested sub-section items.
-
     - Missing top-level outline navigation list or sub-section step lists.
-
     - Bad callout box syntax (e.g., `> [!NOTE]`, `**Note:**`, `_Note:_`).
-
     - Presence of `---` horizontal rules / separators.
-
-    - Bulleted or numbered list items without empty lines between them.
-
+    - Bulleted or numbered lists without empty lines before their start or after
+      their end.
     - Inline links instead of reference-style links, or reference link
       definitions containing `{:.external}`.
-
     - Shell code blocks using `sh` or hardcoded `$` prompts instead of
       `posix-terminal`.
-
+    - Code blocks without empty lines before or after them.
     - Passive voice, future tense ("will"), or third-person phrasing.
 
 3.  **Apply Copyediting Changes**:
@@ -270,11 +276,12 @@ When editing any Fuchsia documentation file, enforce the following standards:
     - Convert bad callout syntax (`> [!NOTE]`, `**Note:**`) to DevSite callout
       syntax (e.g., `Note: ...`, `Tip: ...`).
     - Remove all `---` horizontal rules / separators.
-    - Add empty lines between list items in bulleted and numbered lists.
+    - Add empty lines before the start and after the end of lists (do not force
+      empty lines between every single item in concise lists).
+    - Surround all code blocks with empty lines before and after.
     - Wrap prose lines at 80 characters while preserving single-line URLs.
     - Convert inline links to reference links at the end of the file (do NOT add
       `{:.external}` to reference link definitions).
-
     - Update shell code blocks to `posix-terminal` syntax.
 
 4.  **Validate & Review**:

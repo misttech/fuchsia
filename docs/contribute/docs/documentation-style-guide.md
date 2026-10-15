@@ -304,33 +304,44 @@ Remove any custom anchor (such as `{#anchor-name}`) from the `# Title` line.
 
 ## Lists {#lists}
 
-### Include empty lines between list items {#include-empty-lines-between-list-items}
+### Include empty lines before and after lists {#include-empty-lines-before-and-after-lists}
 
-In bulleted lists and numbered lists, include an empty line between items for
-readability and proper rendering on fuchsia.dev. In addition, include an empty
-line between a parent list item and the start of a nested sub-list.
+Always surround a list (bulleted or numbered) with empty lines: include an empty
+line before the first item and an empty line after the last item. This separates
+the list from the preceding and following paragraph, heading, blockquote, table,
+or code block.
 
-<span class="compare-better">Recommended</span>: Add empty lines between items
-and before sub-lists:
+On `fuchsia.dev`, DevSite's Markdown parser does not allow a list to interrupt an
+active paragraph without a preceding empty line. Omitting the empty line causes
+the entire list (including child items, nested sub-lists, and code blocks) to
+collapse into the preceding paragraph as a single unformatted block of text.
+
+Empty lines are **not** required between individual items within a list. Tight
+lists (consecutive items without empty lines between them) are fully supported
+and recommended for concise items. Adding empty lines between items is optional,
+and is typically only necessary when an item contains multiple paragraphs,
+nested code blocks, or complex sub-elements.
+
+<span class="compare-better">Recommended</span>: Concise list with empty lines
+before and after the list:
 
 ```none
-* First list item.
+To configure your build, complete the following steps:
 
-* Second list item.
+1. Select your target device.
+2. Build the package.
 
-  * First nested sub-list item.
-
-  * Second nested sub-list item.
+Once the build finishes, you can proceed to testing.
 ```
 
-<span class="compare-worse">Not recommended</span>: Consecutive list items
-without empty lines:
+<span class="compare-worse">Not recommended</span>: List without empty lines
+before or after:
 
 ```none
-* First list item.
-* Second list item.
-  * First nested sub-list item.
-  * Second nested sub-list item.
+To configure your build, complete the following steps:
+1. Select your target device.
+2. Build the package.
+Once the build finishes, you can proceed to testing.
 ```
 
 ## Callouts (notes, warnings, and tips) {#callouts-notes-warnings-and-tips}
@@ -382,6 +393,37 @@ Section headings (`##`, `###`) provide sufficient visual separation and
 structure on fuchsia.dev without needing decorative horizontal lines.
 
 ## Code samples {#code-samples}
+
+### Include empty lines before and after code blocks {#include-empty-lines-before-and-after-code-blocks}
+
+Always surround fenced code blocks (<code>```</code>) with an empty line before
+the opening fence and after the closing fence. This ensures clean separation
+between prose paragraphs, list items, and code samples, and prevents Markdown
+parsers from improperly grouping subsequent text into code blocks.
+
+<span class="compare-better">Recommended</span>: Include empty lines around code
+blocks:
+
+<pre><code>
+Run the following command to start the emulator:
+
+```posix-terminal
+ffx emu start
+```
+
+Once the emulator is running, proceed to the next step.
+</code></pre>
+
+<span class="compare-worse">Not recommended</span>: Code block without empty
+lines before or after:
+
+<pre><code>
+Run the following command to start the emulator:
+```posix-terminal
+ffx emu start
+```
+Once the emulator is running, proceed to the next step.
+</code></pre>
 
 ### Use posix-terminal for shell command examples {#use-posix-terminal-for-shell-command-examples}
 

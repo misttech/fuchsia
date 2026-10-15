@@ -270,6 +270,228 @@ class TestSkillLinter(unittest.TestCase):
         self.assertIn("consecutive empty lines", issues)
         self.assertIn("trailing whitespace", issues)
 
+    def test_format_markdown_missing_empty_line_before_list(self) -> None:
+        # Paragraph followed immediately by numbered list without empty line
+        text = (
+            "To configure your build, complete the following steps:\n"
+            "1. Select your target device.\n"
+            "2. Build the package.\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertIn("missing empty line before list", issues)
+        expected = (
+            "To configure your build, complete the following steps:\n\n"
+            "1.  Select your target device.\n"
+            "2.  Build the package.\n"
+        )
+        self.assertEqual(formatted, expected)
+
+        # Paragraph followed immediately by bullet list without empty line
+        text_bullet = (
+            "Available components:\n" "* Component A\n" "* Component B\n"
+        )
+        (
+            formatted_bullet,
+            issues_bullet,
+        ) = skill_linter.format_markdown_with_issues(text_bullet)
+        self.assertIn("missing empty line before list", issues_bullet)
+        expected_bullet = (
+            "Available components:\n\n" "* Component A\n" "* Component B\n"
+        )
+        self.assertEqual(formatted_bullet, expected_bullet)
+
+    def test_format_markdown_missing_empty_line_before_list_already_spaced(
+        self,
+    ) -> None:
+        text = (
+            "To configure your build, complete the following steps:\n\n"
+            "1.  Select your target device.\n"
+            "2.  Build the package.\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertEqual(issues, [])
+        self.assertEqual(formatted, text)
+
+    def test_format_markdown_missing_empty_line_before_list_after_heading(
+        self,
+    ) -> None:
+        text = "### Steps\n1. First step.\n2. Second step.\n"
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertIn("missing empty line before list", issues)
+        expected = "### Steps\n\n1.  First step.\n2.  Second step.\n"
+        self.assertEqual(formatted, expected)
+
+    def test_format_markdown_missing_empty_line_before_list_preserves_tight_lists(
+        self,
+    ) -> None:
+        text = (
+            "Introductory text:\n\n"
+            "1.  Step 1\n"
+            "    * Sub-step a\n"
+            "    * Sub-step b\n"
+            "2.  Step 2\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertEqual(issues, [])
+        self.assertEqual(formatted, text)
+
+    def test_format_markdown_missing_empty_line_around_code_block(
+        self,
+    ) -> None:
+        text = (
+            "Paragraph before code block.\n"
+            "```python\n"
+            "def foo():\n"
+            "    pass\n"
+            "```\n"
+            "Paragraph after code block.\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertIn("missing empty line before code block", issues)
+        self.assertIn("missing empty line after code block", issues)
+        expected = (
+            "Paragraph before code block.\n\n"
+            "```python\n"
+            "def foo():\n"
+            "    pass\n"
+            "```\n\n"
+            "Paragraph after code block.\n"
+        )
+        self.assertEqual(formatted, expected)
+
+    def test_format_markdown_code_block_already_spaced(self) -> None:
+        text = (
+            "Paragraph before code block.\n\n"
+            "```python\n"
+            "def foo():\n"
+            "    pass\n"
+            "```\n\n"
+            "Paragraph after code block.\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertEqual(issues, [])
+        self.assertEqual(formatted, text)
+
+    def test_format_markdown_missing_empty_line_after_list(self) -> None:
+        # Headings and link reference definitions directly after a list.
+        text = (
+            "- Item with [a link][ref]\n"
+            "[ref]: https://fuchsia.dev\n"
+            "\n"
+            "- Another item\n"
+            "## Next section\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertIn("missing empty line after list", issues)
+        expected = (
+            "- Item with [a link][ref]\n"
+            "\n"
+            "[ref]: https://fuchsia.dev\n"
+            "\n"
+            "- Another item\n"
+            "\n"
+            "## Next section\n"
+        )
+        self.assertEqual(formatted, expected)
+
+    def test_format_markdown_lazy_continuation_keeps_list(self) -> None:
+        # A non-indented line directly after a list item is a lazy
+        # continuation, so no empty line is inserted before the next item.
+        text = "Intro:\n\n- First item\nlazy continuation\n- Second item\n"
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertNotIn("missing empty line before list", issues)
+        expected = "Intro:\n\n- First item lazy continuation\n- Second item\n"
+        self.assertEqual(formatted, expected)
+
+    def test_format_markdown_list_after_new_paragraph(self) -> None:
+        # A non-indented paragraph after an empty line ends the list, so a
+        # following list needs a new empty line.
+        text = "- First list\n\nA new paragraph:\n- Second list\n"
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertIn("missing empty line before list", issues)
+        expected = "- First list\n\nA new paragraph:\n\n- Second list\n"
+        self.assertEqual(formatted, expected)
+
+    def test_format_markdown_nested_list_after_item_text(self) -> None:
+        # A nested list following continuation text inside a list item.
+        text = (
+            "1.  Parent item:\n"
+            "\n"
+            "    Continuation paragraph:\n"
+            "    - Child A\n"
+            "    - Child B\n"
+            "2.  Next parent\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertIn("missing empty line before list", issues)
+        expected = (
+            "1.  Parent item:\n"
+            "\n"
+            "    Continuation paragraph:\n"
+            "\n"
+            "    - Child A\n"
+            "    - Child B\n"
+            "2.  Next parent\n"
+        )
+        self.assertEqual(formatted, expected)
+
+    def test_format_markdown_code_block_inside_list_item(self) -> None:
+        text = (
+            "1.  Run the command:\n"
+            "    ```bash\n"
+            "    fx build\n"
+            "    ```\n"
+            "    Then continue with the next step.\n"
+            "2.  Next step\n"
+        )
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertIn("missing empty line before code block", issues)
+        self.assertIn("missing empty line after code block", issues)
+        # The next item follows a continuation paragraph rather than a list
+        # item paragraph, so it is also separated by an empty line.
+        self.assertIn("missing empty line before list", issues)
+        expected = (
+            "1.  Run the command:\n"
+            "\n"
+            "    ```bash\n"
+            "    fx build\n"
+            "    ```\n"
+            "\n"
+            "    Then continue with the next step.\n"
+            "\n"
+            "2.  Next step\n"
+        )
+        self.assertEqual(formatted, expected)
+
+    def test_format_markdown_whitespace_only_line_counts_as_empty(
+        self,
+    ) -> None:
+        text = "Intro paragraph.\n  \n- Item\n"
+        formatted, issues = skill_linter.format_markdown_with_issues(text)
+        self.assertNotIn("missing empty line before list", issues)
+        self.assertNotIn("\n\n\n", formatted)
+
+    def test_format_markdown_spacing_rules_are_idempotent(self) -> None:
+        text = (
+            "Intro:\n"
+            "- Item A\n"
+            "    ```bash\n"
+            "    echo a\n"
+            "    ```\n"
+            "    More text.\n"
+            "- Item B\n"
+            "### Heading\n"
+            "Text before code:\n"
+            "```\n"
+            "code\n"
+            "```\n"
+            "Text after code.\n"
+        )
+        once, _ = skill_linter.format_markdown_with_issues(text)
+        twice, issues = skill_linter.format_markdown_with_issues(once)
+        self.assertEqual(once, twice)
+        self.assertEqual(issues, [])
+
     def test_format_markdown_link_reference_definitions_not_merged(
         self,
     ) -> None:

@@ -143,6 +143,20 @@ ensure consistency across all skills:
 - **Whitespace Hygiene**: Trailing whitespace is removed, and consecutive
   empty lines are collapsed into single breaks.
 
+- **List Item Spacing & Structure**: Lists must be separated from preceding
+  paragraphs, headings, blockquotes, tables, or code blocks by an empty line.
+  A list item may directly follow another list item (tight lists are
+  preserved), but a list (including a nested list) that follows any other
+  block needs an empty line before it. Non-indented headings, blockquotes,
+  tables, or link reference definitions that directly follow a list are also
+  separated from the list by an empty line. Missing empty lines before and
+  after lists are automatically detected and fixed to ensure proper rendering
+  on DevSite, whose Markdown parser does not let a list interrupt a paragraph.
+
+- **Code Block Spacing**: Fenced code blocks must be preceded and followed by an
+  empty line. Missing empty lines around code blocks are automatically detected
+  and fixed.
+
 ### Restricted Terms & Policy Validation
 
 The linter optionally scans skills for restricted or blocked terminology (e.g.,
