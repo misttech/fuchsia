@@ -18,6 +18,7 @@ def _skill_format(ctx):
         "zircon/skills/**/SKILL.md",
         "src/devices/skills/**/SKILL.md",
         "src/developer/debug/skills/**/SKILL.md",
+        "src/diagnostics/skills/**/SKILL.md",
     ])
 
     if not skill_files:
