@@ -193,6 +193,7 @@
             protocol: [
                 "fuchsia.bluetooth.gatt2.Server",
                 "fuchsia.bluetooth.le.Peripheral",
+                "fuchsia.bluetooth.sys.Access",
                 "fuchsia.bluetooth.sys.HostWatcher",
                 "fuchsia.bluetooth.sys.Pairing",
             ],

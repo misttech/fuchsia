@@ -7,7 +7,9 @@ use bt_metrics::MetricsLogger;
 use fidl_fuchsia_bluetooth_bredr::ProfileMarker;
 use fidl_fuchsia_bluetooth_fastpair::{ProviderEnableResponder, ProviderWatcherProxy};
 use fidl_fuchsia_bluetooth_gatt2 as gatt;
-use fidl_fuchsia_bluetooth_sys::{HostWatcherMarker, PairingMarker, PairingProxy};
+use fidl_fuchsia_bluetooth_sys::{
+    AccessMarker, AccessProxy, HostWatcherMarker, PairingMarker, PairingProxy,
+};
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
 use fuchsia_inspect_derive::{AttachError, Inspect};
@@ -89,6 +91,8 @@ pub struct Provider {
     host_watcher: HostWatcher,
     /// Connection to the system pairing service.
     pairing_svc: PairingProxy,
+    /// Connection to the system access service. Used to remove unauthenticated bonds.
+    access_svc: AccessProxy,
     /// Manages Fast Pair pairing procedures and proxies non-FP requests to the upstream
     /// `sys.Pairing` client.
     pairing: MaybeStream<PairingManager>,
@@ -127,6 +131,7 @@ impl Provider {
         let watcher = fuchsia_component::client::connect_to_protocol::<HostWatcherMarker>()?;
         let host_watcher = HostWatcher::new(watcher);
         let pairing_svc = fuchsia_component::client::connect_to_protocol::<PairingMarker>()?;
+        let access_svc = fuchsia_component::client::connect_to_protocol::<AccessMarker>()?;
         let profile = fuchsia_component::client::connect_to_protocol::<ProfileMarker>()?;
         Ok(Self {
             state: State { config, personalized_name: None },
@@ -136,6 +141,7 @@ impl Provider {
             gatt,
             host_watcher,
             pairing_svc,
+            access_svc,
             pairing: MaybeStream::default(),
             message_stream: MessageStream::new(profile),
             inspect_node: ProviderInspect::default(),
@@ -519,6 +525,7 @@ impl Provider {
                 if self.pairing.inner_mut().map_or(true, |p| p.is_terminated()) {
                     let mut pairing_manager = PairingManager::new(
                         self.pairing_svc.clone(),
+                        self.access_svc.clone(),
                         client,
                         self.metrics.clone(),
                     )?;
@@ -694,6 +701,7 @@ mod tests {
             gatt,
             host_watcher,
             pairing_svc: mock_pairing.pairing_svc.clone(),
+            access_svc: mock_pairing.access_svc.clone(),
             pairing: Some(pairing).into(),
             message_stream,
             inspect_node: ProviderInspect::default(),
