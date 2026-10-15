@@ -131,6 +131,8 @@ compilation_settings = {
   }
 }
 
+# LINT.IfChange(valid_optimize_values)
+
 # Validate that the configured 'foo_optimize' values set above are one of the
 # valid optimization modes:
 _optimize_valid = [
@@ -140,25 +142,25 @@ _optimize_valid = [
   "sanitizer",
   "profile",
   "coverage",
-]
-foreach(primary,
-        [
-          "moderate",
-          "size",
-          "speed",
-        ]) {
-  foreach(suffix,
-          [
-            "",
-            "_lto",
-            "_thinlto",
-          ]) {
-    _optimize_valid += [ primary + suffix ]
-  }
-}
+  "moderate",
+  "moderate_lto",
+  "moderate_thinlto",
+  "size",
+  "size_lto",
+  "size_thinlto",
+  "speed",
+  "speed_lto",
+  "speed_thinlto",
 
-# TODO(https://fxbug.dev/517626589): remove this when default is changed
-_optimize_valid += [ "size_thinlto_clang" ]
+  # TODO(https://fxbug.dev/517626589): remove this when default is changed
+  "size_thinlto_clang",
+]
+
+# LINT.ThenChange(
+#   //build/bazel/config/bazel_args.gni:valid_optimize_values,
+#   //build/bazel/config/select/optimize/BUILD.bazel:valid_optimize_values,
+#   //build/bazel/config/variables/BUILD.bazel:valid_optimize_values,
+# )
 
 foreach(_optimize_arg,
         [

@@ -33,3 +33,36 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(//build/config/compiler.gni:compress_debuginfo)
+
+# LINT.IfChange(valid_optimize_values)
+# The platform-specific "optimize" variable.
+string_flag(
+    name = "optimize",
+    build_setting_default = "none",
+    values = [
+        "none",
+        "debug",
+        "minimal",
+        "sanitizer",
+        "profile",
+        "coverage",
+        "moderate",
+        "moderate_lto",
+        "moderate_thinlto",
+        "size",
+        "size_lto",
+        "size_thinlto",
+        "speed",
+        "speed_lto",
+        "speed_thinlto",
+
+        # TODO(https://fxbug.dev/517626589): remove this when default is changed
+        "size_thinlto_clang",
+    ],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(
+#   //build/bazel/config/bazel_args.gni:valid_optimize_values,
+#   //build/bazel/config/select/optimize/BUILD.bazel:valid_optimize_values,
+#   //build/config/compilation_modes.gni:valid_optimize_values,
+# )

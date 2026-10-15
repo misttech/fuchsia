@@ -1,0 +1,142 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(valid_optimize_values)
+
+config_setting(
+    name = "none",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "none",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "debug",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "debug",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "minimal",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "minimal",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "sanitizer",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "sanitizer",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "profile",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "profile",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "coverage",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "coverage",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "moderate",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "moderate",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "moderate_lto",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "moderate_lto",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "moderate_thinlto",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "moderate_thinlto",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "size",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "size",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "size_lto",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "size_lto",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "size_thinlto",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "size_thinlto",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "speed",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "speed",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "speed_lto",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "speed_lto",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "speed_thinlto",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "speed_thinlto",
+    },
+    visibility = ["//visibility:public"],
+)
+
+# TODO(https://fxbug.dev/517626589): remove this when default is changed
+config_setting(
+    name = "size_thinlto_clang",
+    flag_values = {
+        "//build/bazel/config/variables:optimize": "size_thinlto_clang",
+    },
+    visibility = ["//visibility:public"],
+)
+
+# LINT.ThenChange(
+#   //build/bazel/config/bazel_args.gni:valid_optimize_values,
+#   //build/bazel/config/variables/BUILD.bazel:valid_optimize_values,
+#   //build/config/compilation_modes.gni:valid_optimize_values,
+# )

@@ -30,6 +30,8 @@ if (bazel_execution_logs) {
   _common_args += [ "--config=exec_log" ]
 }
 
+# LINT.IfChange(valid_optimize_values)
+
 _optimize_to_dbg = [ "debug" ]
 _optimize_to_fastbuild = [
   "none",
@@ -38,25 +40,26 @@ _optimize_to_fastbuild = [
   "sanitizer",
   "profile",
 ]
-_optimize_to_opt = []
-foreach(mode,
-        [
-          "moderate",
-          "speed",
-          "size",
-        ]) {
-  foreach(suffix,
-          [
-            "",
-            "_lto",
-            "_thinlto",
-          ]) {
-    _optimize_to_opt += [ mode + suffix ]
-  }
-}
+_optimize_to_opt = [
+  "moderate",
+  "moderate_lto",
+  "moderate_thinlto",
+  "size",
+  "size_lto",
+  "size_thinlto",
+  "speed",
+  "speed_lto",
+  "speed_thinlto",
 
-# TODO(https://fxbug.dev/517626589): remove this when default is changed
-_optimize_to_opt += [ "size_thinlto_clang" ]
+  # TODO(https://fxbug.dev/517626589): remove this when default is changed
+  "size_thinlto_clang",
+]
+
+# LINT.ThenChange(
+#   //build/bazel/config/select/optimize/BUILD.bazel:valid_optimize_values,
+#   //build/bazel/config/variables/BUILD.bazel:valid_optimize_values,
+#   //build/config/compilation_modes.gni:valid_optimize_values,
+# )
 
 _is_compilation_mode_dbg =
     _optimize_to_dbg + [ optimize ] - [ optimize ] != _optimize_to_dbg
@@ -140,6 +143,9 @@ _build_args += [
 # LINT.ThenChange(//build/config/compiler.gni:compress_debuginfo)
 
 # Forward GN C/C++ compiler optimization configuration to Bazel
+
+_build_args += [ "--//build/bazel/config/variables:optimize=${optimize}" ]
+
 if (_is_compilation_mode_dbg) {
   _build_args += [ "--compilation_mode=dbg" ]
 } else if (_is_compilation_mode_fastbuild) {
