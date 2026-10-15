@@ -452,6 +452,59 @@ TEST(FinalShutdownInfoTest, InferredFdr_Cold) {
             fuchsia::feedback::RebootReason::FACTORY_DATA_RESET);
 }
 
+TEST(FinalShutdownInfoTest, GracefulOnCold) {
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kCold, ZirconShutdownReason::kNotSet,
+      GracefulShutdownInfo{
+          .action = GracefulShutdownAction::kReboot,
+          .reasons = {GracefulShutdownReason::kUserRequest},
+      },
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
+
+  EXPECT_EQ(final_shutdown_info.ToGracefulShutdownAction(), GracefulShutdownAction::kReboot);
+  EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "USER REQUEST");
+}
+
+TEST(FinalShutdownInfoTest, GracefulPoweroffOnCold) {
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kCold, ZirconShutdownReason::kNotSet,
+      GracefulShutdownInfo{
+          .action = GracefulShutdownAction::kPoweroff,
+          .reasons = {GracefulShutdownReason::kUserRequest},
+      },
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
+
+  EXPECT_EQ(final_shutdown_info.ToGracefulShutdownAction(), GracefulShutdownAction::kPoweroff);
+  EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "USER REQUEST");
+}
+
+TEST(FinalShutdownInfoTest, EmptyGracefulReasonsOnCold) {
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kCold, ZirconShutdownReason::kNotSet,
+      GracefulShutdownInfo{
+          .action = GracefulShutdownAction::kReboot,
+          .reasons = {},
+      },
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
+
+  EXPECT_EQ(final_shutdown_info.ToGracefulShutdownAction(), GracefulShutdownAction::kReboot);
+  EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "GENERIC GRACEFUL");
+}
+
+TEST(FinalShutdownInfoTest, NoGracefulInfoOnCold) {
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kCold, ZirconShutdownReason::kNotSet,
+      /*graceful_shutdown_info=*/std::nullopt,
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
+
+  EXPECT_FALSE(final_shutdown_info.ToGracefulShutdownAction().has_value());
+  EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "COLD");
+}
+
 TEST(FinalShutdownInfoTest, LastRebootReasonAnnotationSpontaneous) {
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kSpontaneousReboot);
   EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kSpontaneous),

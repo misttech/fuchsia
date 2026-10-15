@@ -217,13 +217,13 @@ INSTANTIATE_TEST_SUITE_P(
             "Cold",
             std::nullopt,
             ShutdownReason::USER_REQUEST,
-            "COLD",
+            "USER REQUEST",
         },
         {
             "ColdWithHwReason",
             "HW REBOOT REASON (COLD BOOT)\n\n",
             ShutdownReason::USER_REQUEST,
-            "COLD",
+            "USER REQUEST",
         },
         {
             "ColdWithHwReasonAndWarning",
@@ -326,6 +326,11 @@ class ColdBootTest : public RebootLogTest,
 INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, ColdBootTest,
                          ::testing::ValuesIn(std::vector<ShutdownActionTestParam>({
                              {
+                                 "Poweroff",
+                                 ShutdownAction::POWEROFF,
+                                 GracefulShutdownAction::kPoweroff,
+                             },
+                             {
                                  "Reboot",
                                  ShutdownAction::REBOOT,
                                  GracefulShutdownAction::kReboot,
@@ -345,7 +350,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, ColdBootTest,
                            return info.param.test_name;
                          });
 
-TEST_P(ColdBootTest, ActionPreservedForColdBoot) {
+// NOLINTNEXTLINE(misc-override-with-different-visibility)
+TEST_P(ColdBootTest, UsesGracefulReasons) {
   const ShutdownActionTestParam& param = GetParam();
 
   WriteGracefulShutdownInfoContents(
@@ -358,20 +364,6 @@ TEST_P(ColdBootTest, ActionPreservedForColdBoot) {
 
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(),
             param.output_shutdown_action);
-  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "COLD");
-}
-
-TEST_F(ColdBootTest, UsesGracefulPoweroffReasons) {
-  WriteGracefulShutdownInfoContents(
-      NewShutdownOptions(ShutdownAction::POWEROFF, {ShutdownReason::USER_REQUEST}));
-
-  const RebootLog reboot_log(
-      ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
-                     /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
-                     /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
-
-  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(),
-            GracefulShutdownAction::kPoweroff);
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "USER REQUEST");
 }
 
@@ -385,6 +377,19 @@ TEST_F(ColdBootTest, EmptyGracefulReasonsIsGenericGraceful) {
 
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(),
             GracefulShutdownAction::kPoweroff);
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "GENERIC GRACEFUL");
+}
+
+TEST_F(ColdBootTest, EmptyGracefulReasonsRebootIsGenericGraceful) {
+  WriteGracefulShutdownInfoContents(NewShutdownOptions(ShutdownAction::REBOOT, {}));
+
+  const RebootLog reboot_log(
+      ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                     /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
+                     /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
+
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(),
+            GracefulShutdownAction::kReboot);
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "GENERIC GRACEFUL");
 }
 
@@ -874,7 +879,7 @@ INSTANTIATE_TEST_SUITE_P(
             {ShutdownReason::USER_REQUEST},
             "HW REBOOT REASON (COLD BOOT)\n"
             "GRACEFUL SHUTDOWN ACTION: (REBOOT)\n"
-            "GRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (COLD)",
+            "GRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (USER REQUEST)",
         },
     })),
     [](const testing::TestParamInfo<RebootLogStrTestParam>& info) { return info.param.test_name; });

@@ -759,17 +759,8 @@ FinalShutdownInfo FinalShutdownInfo::MakeFinalShutdownInfo(
     }
   }
 
-  // Graceful poweroffs will likely result in a cold boot. If so, the graceful info might have
-  // reasons more informative than just "cold."
-  if (graceful_shutdown_info->action == GracefulShutdownAction::kPoweroff) {
-    return FinalShutdownInfo(ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
-                             graceful_shutdown_info->action, uptime, runtime);
-  }
-
-  // While we now distinguish HwShutdownReason being cold, warm, undefined and not set,
-  // for now we still report all of them as cold boots.
-  return FinalShutdownInfo(FinalShutdownReason::kCold,
-                           std::make_optional(graceful_shutdown_info->action), uptime, runtime);
+  return FinalShutdownInfo(ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
+                           graceful_shutdown_info->action, uptime, runtime);
 }
 
 std::string FinalShutdownInfo::ToSnapshotAnnotationReason(
