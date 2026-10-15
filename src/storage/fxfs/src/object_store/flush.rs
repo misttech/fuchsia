@@ -53,12 +53,18 @@ impl ObjectStore {
             return Ok(self.tree.get_earliest_version());
         }
 
-        // After taking the lock, check to see if the store has been deleted.
-        if matches!(*self.lock_state.lock(), LockState::Deleted) {
-            // When we compact, it's possible that the store has been deleted since we gathered the
-            // list of stores that need compacting.  This is benign.
-            return Ok(LATEST_VERSION);
-        }
+        // After taking the lock, check to see if the store has been deleted. Stores that are
+        // unlocked read-only (e.g. during volume fsck) behave like locked stores when flushed:
+        // mutations are written to the encrypted mutations file rather than layer files.
+        let flush_as_locked = match *self.lock_state.lock() {
+            LockState::Deleted => {
+                // When we compact, it's possible that the store has been deleted since we gathered
+                // the list of stores that need compacting.  This is benign.
+                return Ok(LATEST_VERSION);
+            }
+            LockState::Locked | LockState::UnlockedReadOnly(..) => true,
+            _ => false,
+        };
 
         let filesystem = self.filesystem();
         let object_manager = filesystem.ensure_local().object_manager();
@@ -80,7 +86,7 @@ impl ObjectStore {
             info!(store_id = self.store_object_id(); "OS: begin flush");
         }
 
-        if matches!(&*self.lock_state.lock(), LockState::Locked) {
+        if flush_as_locked {
             self.flush_locked().await.with_context(|| {
                 format!("Failed to flush object store {}", self.store_object_id)
             })?;
@@ -475,7 +481,17 @@ impl ObjectStore {
             AssocObj::Borrowed(&reservation_update),
         );
 
-        end_transaction.commit().await.context("Failed to commit EndFlush transaction")?;
+        end_transaction
+            .commit_with_callback(|_| {
+                // If the store is `UnlockedReadOnly`, `self.store_info` is populated in memory, so
+                // keep its `encrypted_mutations_object_id` in sync with the on-disk `StoreInfo`.
+                if let Some(info) = &mut *self.store_info.lock() {
+                    info.encrypted_mutations_object_id =
+                        new_store_info.encrypted_mutations_object_id;
+                }
+            })
+            .await
+            .context("Failed to commit EndFlush transaction")?;
 
         Ok(())
     }

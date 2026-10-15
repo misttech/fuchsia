@@ -4835,6 +4835,13 @@ mod tests {
 
         store.unlock_read_only(crypt.clone()).await.expect("unlock failed");
         root_directory.lookup("test").await.expect("lookup failed").expect("not found");
+
+        // Flushing a read-only unlocked store (e.g. from a background compaction while fsck is
+        // running on the volume) should behave as if the store were still locked and succeed so the
+        // rest of the filesystem can continue operating normally.
+        assert_eq!(store.store_info().unwrap().encrypted_mutations_object_id, INVALID_OBJECT_ID);
+        store.flush().await.expect("flush failed");
+        assert_ne!(store.store_info().unwrap().encrypted_mutations_object_id, INVALID_OBJECT_ID);
         store.lock_read_only();
         store.unlock_read_only(crypt).await.expect("unlock failed");
         root_directory.lookup("test").await.expect("lookup failed").expect("not found");
