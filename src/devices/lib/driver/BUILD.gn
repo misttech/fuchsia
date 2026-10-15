@@ -129,7 +129,6 @@ shared_library("driver") {
     "//src/devices/pwm/drivers/pwm:*",
     "//src/devices/ram/drivers/aml-ram:*",
     "//src/devices/registers/drivers/registers:*",
-    "//src/devices/rtc/drivers/aml-rtc:*",
     "//src/devices/rtc/drivers/intel-rtc:*",
     "//src/devices/rtc/drivers/pl031-rtc:*",
     "//src/devices/rtc/lib/rtc:*",

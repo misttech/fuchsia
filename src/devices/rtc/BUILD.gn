@@ -4,10 +4,7 @@
 
 group("drivers") {
   testonly = true
-  deps = [
-    "drivers/aml-rtc",
-    "drivers/pl031-rtc",
-  ]
+  deps = [ "drivers/pl031-rtc" ]
 
   if (current_cpu == "x64") {
     deps += [ "drivers/intel-rtc" ]

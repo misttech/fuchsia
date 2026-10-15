@@ -740,3 +740,9 @@
   available_in_git: '37dcc72f6feaee5f4afc4008b00bc23e7fb6c1aa'
   areas: ['ML']
   path: '/src/devices/ml/drivers/usb-harriet'
+- short_description: 'Amlogic RTC driver'
+  deletion_reason: 'Driver is unused'
+  gerrit_change_id: '1886384'
+  available_in_git: '7c6541bda79bac210a20dd3bbeea9207d2285bd2'
+  areas: ['RTC']
+  path: '/src/devices/rtc/drivers/aml-rtc'
