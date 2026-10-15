@@ -20,6 +20,7 @@ mod exceptions;
 mod fifo;
 mod futex;
 mod guest;
+mod handle_ops;
 mod interrupt;
 mod iob;
 mod iommu;

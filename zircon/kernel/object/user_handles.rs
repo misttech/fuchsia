@@ -359,25 +359,44 @@ pub trait WriteHandles: Copy {
     ) -> Result<(), Status>;
 }
 
+/// Removes the handles pointed by `user_handles` from `process`. Returns `Ok(())` if all handles
+/// have been removed, error otherwise. It only stops early if copying from user memory fails.
+pub fn remove_user_handles(
+    user_handles: UserInPtr<zx_handle_t>,
+    num_handles: usize,
+    process: &ProcessDispatcher,
+) -> Result<(), Status> {
+    let mut handles = [MaybeUninit::<zx_handle_t>::uninit(); ZX_CHANNEL_MAX_MSG_HANDLES as usize];
+    let mut offset = 0;
+    let mut status = Ok(());
+
+    while offset < num_handles {
+        // We process `num_handles` in chunks of `ZX_CHANNEL_MAX_MSG_HANDLES` because we don't have
+        // a limit on how large `num_handles` can be.
+        let chunk_size = cmp::min(num_handles - offset, ZX_CHANNEL_MAX_MSG_HANDLES as usize);
+        let chunk = match user_handles
+            .element_offset(offset)
+            .copy_slice_from_user(&mut handles[..chunk_size])
+        {
+            Ok(chunk) => chunk,
+            Err(consume_status) => {
+                status = Err(consume_status);
+                break;
+            }
+        };
+
+        if let Err(remove_status) = process.handle_table().remove_handles(process, chunk) {
+            status = Err(remove_status);
+        }
+        offset += chunk_size;
+    }
+    status
+}
+
 impl WriteHandles for UserInPtr<zx_handle_t> {
     #[cold]
     fn remove_user_handles(self, proc: &ProcessDispatcher, num_handles: u32) {
-        let num_handles = num_handles as usize;
-        let mut handles =
-            [MaybeUninit::<zx_handle_t>::uninit(); ZX_CHANNEL_MAX_MSG_HANDLES as usize];
-        let mut offset = 0;
-        // We process `num_handles` in chunks of `ZX_CHANNEL_MAX_MSG_HANDLES` because we don't have
-        // a limit on how large `num_handles` can be.
-        while offset < num_handles {
-            let chunk_size = cmp::min(num_handles - offset, ZX_CHANNEL_MAX_MSG_HANDLES as usize);
-            let Ok(chunk) =
-                self.element_offset(offset).copy_slice_from_user(&mut handles[..chunk_size])
-            else {
-                break;
-            };
-            let _ = proc.handle_table().remove_handles(proc, chunk);
-            offset += chunk_size;
-        }
+        let _ = remove_user_handles(self, num_handles as usize, proc);
     }
 
     fn put_handles(

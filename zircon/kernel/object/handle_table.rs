@@ -50,6 +50,40 @@ impl Debug for HandleTable {
     }
 }
 
+/// A mutable entry for a handle in a [`HandleTable`] while holding the handle table's write lock.
+///
+/// Holding this entry exclusively borrows the write lock token for `'a`, preventing any other
+/// [`HandleRef`] or table mutation from coexisting until the entry is dropped or consumed by
+/// [`HandleEntry::remove`].
+pub struct HandleEntry<'a> {
+    table: &'a HandleTable,
+    ptr: NonNull<c_void>,
+    _marker: core::marker::PhantomData<&'a mut LockToken<'a, HandleTableLockClass>>,
+}
+
+impl<'a> HandleEntry<'a> {
+    /// Borrows this entry as a [`HandleRef`] tied to the borrow of `self`.
+    #[inline]
+    pub fn as_ref(&self) -> HandleRef<'_> {
+        // SAFETY: `self.ptr` is a valid handle pointer in `self.table` and the handle table write
+        // lock is held for the lifetime of `&self`.
+        unsafe { HandleRef::from_raw(self.ptr) }
+    }
+
+    /// Removes the handle from the handle table and returns the owned handle.
+    #[inline]
+    pub fn remove(self) -> HandleOwner {
+        // SAFETY: `self.table` is valid, the handle table write lock is exclusively held via
+        // `self`, and `self.ptr` is a valid handle in `self.table` looked up under the same lock.
+        let raw = unsafe {
+            cpp_handle_table_remove_handle_locked(self.table.as_ffi_mut(), self.ptr.as_ptr())
+        };
+        // SAFETY: `cpp_handle_table_remove_handle_locked` returns the non-null owned handle pointer
+        // corresponding to `self.ptr`.
+        unsafe { HandleOwner::from_raw_non_null(NonNull::new_unchecked(raw)) }
+    }
+}
+
 impl HandleTable {
     /// Returns a `*const HandleTable` pointer suitable for passing to FFI routines.
     #[inline]
@@ -125,6 +159,18 @@ impl HandleTable {
         NonNull::new(ptr).map(|ptr| unsafe { HandleRef::from_raw(ptr) })
     }
 
+    /// Retrieves a mutable handle entry while holding the handle table write lock.
+    #[inline]
+    pub fn get_handle_entry_locked<'a>(
+        &'a self,
+        token: &'a mut LockToken<'_, HandleTableLockClass>,
+        caller: &ProcessDispatcher,
+        handle_value: HandleValue,
+    ) -> Option<HandleEntry<'a>> {
+        let ptr = self.get_handle_locked(token, caller, handle_value)?.as_non_null();
+        Some(HandleEntry { table: self, ptr, _marker: core::marker::PhantomData })
+    }
+
     /// Adds an owned handle to the handle table while holding the write lock.
     #[inline]
     pub fn add_handle_locked(
@@ -147,13 +193,7 @@ impl HandleTable {
         caller: &ProcessDispatcher,
         handle_value: HandleValue,
     ) -> Option<HandleOwner> {
-        let ptr = self.get_handle_locked(token, caller, handle_value)?.as_ptr();
-        // SAFETY: `self` is valid, the handle table write lock is held, and `ptr` was looked up in
-        // `self` under the same lock.
-        let raw =
-            unsafe { cpp_handle_table_remove_handle_locked(self.as_ffi_mut(), ptr as *mut _) };
-        // SAFETY: `raw` is a non-null owned handle pointer released from the handle table.
-        Some(unsafe { HandleOwner::from_raw(raw).unwrap() })
+        self.get_handle_entry_locked(token, caller, handle_value).map(HandleEntry::remove)
     }
 
     /// Adds an owned handle to this handle table.

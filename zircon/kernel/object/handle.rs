@@ -139,13 +139,23 @@ pub struct HandleOwner {
 }
 
 impl HandleOwner {
-    /// Creates a new `HandleOwner` from a non-null raw handle pointer.
+    /// Creates a new `HandleOwner` from a raw handle pointer, returning `None` if null.
     ///
     /// # Safety
-    /// `ptr` must be a valid, owned `Handle*` created by C++ `Handle::Make` or `Handle::Dup`.
+    /// `ptr` must be null or a valid, owned `Handle*` created by C++ `Handle::Make` or
+    /// `Handle::Dup`.
     #[inline]
     pub unsafe fn from_raw(ptr: *mut core::ffi::c_void) -> Option<Self> {
         NonNull::new(ptr).map(|ptr| Self { ptr })
+    }
+
+    /// Creates a new `HandleOwner` from a non-null raw handle pointer.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid, non-null owned `Handle*`.
+    #[inline]
+    pub unsafe fn from_raw_non_null(ptr: NonNull<core::ffi::c_void>) -> Self {
+        Self { ptr }
     }
 
     /// Releases the raw pointer from `HandleOwner` without running its destructor.
@@ -303,6 +313,12 @@ impl<'a> HandleRef<'a> {
     #[inline]
     pub fn as_ptr(&self) -> *const core::ffi::c_void {
         self.ptr.as_ptr()
+    }
+
+    /// Returns the non-null pointer to the handle.
+    #[inline]
+    pub(crate) fn as_non_null(&self) -> NonNull<core::ffi::c_void> {
+        self.ptr
     }
 }
 
