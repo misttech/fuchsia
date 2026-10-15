@@ -353,7 +353,7 @@ pub(crate) fn filter_actions(
 mod test {
     use super::*;
     use crate::act::Alert;
-    use fidl_fuchsia_feedback::MAX_CRASH_SIGNATURE_LENGTH;
+    use fidl_fuchsia_feedback_common::MAX_CRASH_SIGNATURE_LENGTH;
     use maplit::hashmap;
 
     // initialize() will be tested in the integration test: "fx test triage_lib_test"

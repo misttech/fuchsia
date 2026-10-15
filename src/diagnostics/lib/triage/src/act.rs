@@ -13,7 +13,7 @@ use super::metrics::{
 use super::plugins::{Plugin, register_plugins};
 use crate::{inspect_logger, metric_value_to_int};
 use anyhow::{Error, bail};
-use fidl_fuchsia_feedback::MAX_CRASH_SIGNATURE_LENGTH;
+use fidl_fuchsia_feedback_common::MAX_CRASH_SIGNATURE_LENGTH;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
