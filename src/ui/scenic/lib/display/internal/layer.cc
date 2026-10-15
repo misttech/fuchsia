@@ -13,6 +13,8 @@ namespace display::internal {
 
 void Layer::SetPrimaryConfig(const Extent2& image_dimensions, uint32_t image_tiling_type) {
   if (!std::holds_alternative<ImageLayerEquivalence>(draft_equiv_.config)) {
+    // TODO(https://fxbug.dev/571977404): The reset of blend mode and alpha state should match the
+    // coordinator.fidl behavior once that bug specifies it.
     draft_equiv_ = ImageLayerEquivalence{};
   }
   auto& equiv = std::get<ImageLayerEquivalence>(draft_equiv_.config);
@@ -81,12 +83,14 @@ size_t Layer::SendDiffsToCoordinator(
 
 void Layer::ResetDraftState() {
   draft_equiv_ = applied_equiv_;
+  draft_values_ = applied_values_;
   draft_image_ = applied_image_;
   draft_wait_event_ = applied_wait_event_;
 }
 
 void Layer::AcceptDraftState() {
   applied_equiv_ = draft_equiv_;
+  applied_values_ = draft_values_;
   applied_image_ = draft_image_;
   applied_wait_event_ = draft_wait_event_;
 }
@@ -126,7 +130,7 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
         draft_equiv.image_source != applied_equiv.image_source ||
         draft_equiv.display_destination != applied_equiv.display_destination;
     must_set_alpha = draft_equiv.blend_mode != applied_equiv.blend_mode ||
-                     draft_equiv.alpha_range != applied_equiv.alpha_range;
+                     draft_values_.alpha_value != applied_values_.alpha_value;
     // Setting the config clears the image in the Coordinator impl, so `must_set_config == true`
     // means that we must set the image even if it matches the already-applied image.
     must_set_image =

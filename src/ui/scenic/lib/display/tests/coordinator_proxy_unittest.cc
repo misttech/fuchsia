@@ -372,6 +372,100 @@ TEST_F(CoordinatorProxyTest, SetAndApplyLayerImage) {
   EXPECT_EQ(captured_image_id.value, kImageId.value());
   EXPECT_EQ(captured_wait_event_id.value, kWaitEventId.value());
 
+  // Updating alpha within (0.0, 1.0) should send `SetLayerPrimaryAlpha()` on the next
+  // `ApplyConfig()`.
+  const uint64_t initial_check_config_calls_skipped =
+      coordinator_proxy_->check_config_calls_skipped();
+  set_layer_primary_alpha_called = false;
+  const float kUpdatedAlpha = 0.25f;
+  coordinator_proxy_->SetLayerPrimaryAlpha(layer_id, kBlendMode, kUpdatedAlpha);
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 2}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_TRUE(set_layer_primary_alpha_called);
+  EXPECT_EQ(captured_alpha_val, kUpdatedAlpha);
+  EXPECT_EQ(coordinator_proxy_->check_config_calls_skipped(),
+            initial_check_config_calls_skipped + 1);
+
+  // Calling `ApplyConfig()` again without changing alpha skips the alpha update.
+  set_layer_primary_alpha_called = false;
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 3}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_FALSE(set_layer_primary_alpha_called);
+
+  EXPECT_EQ(mock_coordinator_->illegal_action_count(), 0u);
+}
+
+// Test that an ApplyConfig() failure followed by applying a different property successfully does
+// not send the abandoned draft alpha.
+TEST_F(CoordinatorProxyTest, ResetDraftStateDiscardsAbandonedAlphaOnApplyConfigFailure) {
+  bool set_layer_primary_alpha_called = false;
+  float captured_alpha_val = 0.f;
+  mock_coordinator_->set_set_layer_primary_alpha_fn(
+      [&](WireLayerId layer_id, WireAlphaMode alpha_mode, float alpha_val) {
+        set_layer_primary_alpha_called = true;
+        captured_alpha_val = alpha_val;
+      });
+
+  bool set_layer_primary_position_called = false;
+  mock_coordinator_->set_layer_primary_position_fn(
+      [&](WireLayerId layer_id, WireCoordinateTransformation transform, WireRectU src_frame,
+          WireRectU dest_frame) { set_layer_primary_position_called = true; });
+
+  const LayerId layer_id = coordinator_proxy_->CreateLayer();
+  const types::Extent2 kImageExtent({.width = 100, .height = 100});
+  const uint32_t kImageTilingType = 0;
+  coordinator_proxy_->SetLayerPrimaryConfig(layer_id, kImageExtent, kImageTilingType);
+
+  const RotateFlip kTransform = RotateFlip::kReflectY();
+  const Rectangle kSrcFrame({.x = 0, .y = 0, .width = 100, .height = 100});
+  const Rectangle kDestFrame({.x = 0, .y = 0, .width = 200, .height = 200});
+  coordinator_proxy_->SetLayerPrimaryPosition(layer_id, kTransform, kSrcFrame, kDestFrame);
+
+  const BlendMode kBlendMode = BlendMode::kStraightAlpha();
+  const float kInitialAlpha = 0.5f;
+  coordinator_proxy_->SetLayerPrimaryAlpha(layer_id, kBlendMode, kInitialAlpha);
+
+  const ImageId kImageId(1);
+  const EventId kWaitEventId(1);
+  coordinator_proxy_->SetLayerImage(layer_id, kImageId, kWaitEventId);
+
+  const DisplayId kDisplayId(1);
+  coordinator_proxy_->SetDisplayLayers(kDisplayId, std::span<const LayerId>(&layer_id, 1));
+
+  // Successfully apply the initial config.
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 1}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_TRUE(set_layer_primary_alpha_called);
+  EXPECT_EQ(captured_alpha_val, kInitialAlpha);
+
+  // Update alpha to a new value and modify position so the config is not cached, then make
+  // CheckConfig() fail.
+  mock_coordinator_->set_check_config_fn(
+      [](WireConfigResult* out) { *out = WireConfigResult::kInvalidConfig; });
+  const float kAbandonedAlpha = 0.8f;
+  coordinator_proxy_->SetLayerPrimaryAlpha(layer_id, kBlendMode, kAbandonedAlpha);
+  const Rectangle kFailingDestFrame({.x = 0, .y = 0, .width = 500, .height = 500});
+  coordinator_proxy_->SetLayerPrimaryPosition(layer_id, kTransform, kSrcFrame, kFailingDestFrame);
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 2}).status_value(),
+            ZX_ERR_BAD_STATE);
+  PingMockDisplayCoordinator();
+
+  // Allow CheckConfig() to succeed again.
+  mock_coordinator_->set_check_config_fn(
+      [](WireConfigResult* out) { *out = WireConfigResult::kOk; });
+
+  // Apply a different property (destination frame) without changing alpha.
+  // The proxy should have reset the draft alpha back to kInitialAlpha, so no alpha update
+  // should be sent.
+  set_layer_primary_alpha_called = false;
+  set_layer_primary_position_called = false;
+  const Rectangle kNewDestFrame({.x = 0, .y = 0, .width = 300, .height = 300});
+  coordinator_proxy_->SetLayerPrimaryPosition(layer_id, kTransform, kSrcFrame, kNewDestFrame);
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 3}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+
+  EXPECT_TRUE(set_layer_primary_position_called);
+  EXPECT_FALSE(set_layer_primary_alpha_called);
   EXPECT_EQ(mock_coordinator_->illegal_action_count(), 0u);
 }
 

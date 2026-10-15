@@ -22,9 +22,10 @@ namespace display::internal {
 // 1.  Calls to `Set*()` methods update the `draft_equiv_` and other draft fields
 //     (e.g., `draft_image_`).
 // 2.  `CoordinatorProxy` calls `SendDiffsToCoordinator()`. This method compares the current
-//     `draft_equiv_` and `draft_image_` against the `applied_equiv_` and `applied_image_`.  It
-//     sends the minimal set of FIDL commands to the `fuchsia.hardware.display.Coordinator` to make
-//     the coordinator's layer state match this `Layer`'s draft state.
+//     `draft_equiv_`, `draft_values_`, and `draft_image_` against the `applied_equiv_`,
+//     `applied_values_`, and `applied_image_`.  It sends the minimal set of FIDL commands to the
+//     `fuchsia.hardware.display.Coordinator` to make the coordinator's layer state match this
+//     `Layer`'s draft state.
 // 3a. *After* a successful `CheckConfig()` and `ApplyConfig()` sequence in `CoordinatorProxy`, the
 //     proxy calls this `Layer`'s `AcceptDraftState()` method to promote the draft state to the
 //     applied state.  Or:
