@@ -333,9 +333,10 @@ fn check_scaling_max_freq() {
     assert_eq!("2024000\n", read_sysfs(POLICY0));
 }
 
-/// Checks the cpufreq nodes that the Power HAL writes but that Fuchsia cannot act on: they must
-/// accept writes and report a stable value, rather than failing the write.
+/// Checks the cpufreq min-frequency voter nodes and inert governor nodes.
 fn check_inert_cpufreq_nodes(dir: &str, min_frequency_str: &str) {
+    let min_khz: u64 = min_frequency_str.parse().unwrap();
+    let expected_vote = 1_000_000u64.max(min_khz);
     for rel_path in [
         "scaling_min_freq",
         "vote_manager/powerhint_min_freq",
@@ -344,7 +345,14 @@ fn check_inert_cpufreq_nodes(dir: &str, min_frequency_str: &str) {
     ] {
         let path = format!("{dir}/{rel_path}");
         std::fs::write(&path, "1000000").unwrap();
+        assert_eq!(&format!("{expected_vote}\n"), &read_sysfs(&path));
+        assert_eq!(&format!("{expected_vote}\n"), &read_sysfs(&format!("{dir}/scaling_min_freq")));
+        std::fs::write(&path, "0").unwrap();
         assert_eq!(&format!("{min_frequency_str}\n"), &read_sysfs(&path));
+        assert_eq!(
+            &format!("{min_frequency_str}\n"),
+            &read_sysfs(&format!("{dir}/scaling_min_freq"))
+        );
     }
 
     std::fs::write(format!("{dir}/scaling_governor"), "schedutil").unwrap();

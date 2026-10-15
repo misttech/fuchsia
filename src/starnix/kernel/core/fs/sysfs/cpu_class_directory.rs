@@ -13,6 +13,7 @@ use crate::vfs::{FsNodeOps, FsString};
 use fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl;
 use fidl_fuchsia_hardware_power_stats as fpowerstats;
 use fidl_fuchsia_power_cpu as fcpu;
+use fidl_fuchsia_power_cpu_manager as fcpumanager;
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
 use starnix_logging::{bug_ref, log_warn};
@@ -361,6 +362,24 @@ fn add_max_freq_entry(
     }
 }
 
+fn add_min_freq_entry(
+    dir: &SimpleDirectoryMutator,
+    name: &'static str,
+    domain: &Arc<CpuFreqDomain>,
+) {
+    // Mirror `add_max_freq_entry`: only expose active min-frequency voting when the domain is
+    // tunable, falling back to an inert node reporting `lowest_khz()` otherwise.
+    if domain.is_tunable() {
+        dir.entry(name, ScalingMinFreqFile::new_node(domain, name), mode!(IFREG, 0o644));
+    } else {
+        dir.entry(
+            name,
+            InertFile::new_node(format_freq_khz(domain.lowest_khz())),
+            mode!(IFREG, 0o644),
+        );
+    }
+}
+
 fn build_cpufreq_directory(dir: &SimpleDirectoryMutator, domain: &Arc<CpuFreqDomain>) {
     dir.subdir("stats", 0o755, |dir| {
         dir.entry("reset", CpuFreqStatsResetFile::new_node(), mode!(IFREG, 0o200));
@@ -379,11 +398,7 @@ fn build_cpufreq_directory(dir: &SimpleDirectoryMutator, domain: &Arc<CpuFreqDom
             add_max_freq_entry(dir, name, domain);
         }
         for name in VOTE_MANAGER_MIN_FREQ_NODES {
-            dir.entry(
-                name,
-                InertFile::new_node(format_freq_khz(domain.lowest_khz())),
-                mode!(IFREG, 0o644),
-            );
+            add_min_freq_entry(dir, name, domain);
         }
     });
 
@@ -399,14 +414,7 @@ fn build_cpufreq_directory(dir: &SimpleDirectoryMutator, domain: &Arc<CpuFreqDom
         mode!(IFREG, 0o444),
     );
 
-    // Fuchsia has no per-domain minimum frequency control yet (b/564595245), so
-    // `scaling_min_freq` accepts writes and discards them. It reads back the domain's lowest
-    // frequency, which is the value an unconstrained Linux policy reports.
-    dir.entry(
-        "scaling_min_freq",
-        InertFile::new_node(format_freq_khz(domain.lowest_khz())),
-        mode!(IFREG, 0o644),
-    );
+    add_min_freq_entry(dir, "scaling_min_freq", domain);
 
     add_max_freq_entry(dir, "scaling_max_freq", domain);
 
@@ -474,6 +482,11 @@ struct CpuFreqDomainState {
     /// `freq_qos` / `vote_manager` semantics (the lowest maximum frequency wins).
     votes: HashMap<&'static str, u64>,
 
+    /// Active floor votes in kHz keyed by voter name (`voter -> khz` where `khz > lowest_khz`),
+    /// aggregated using Linux `freq_qos` / `vote_manager` semantics (the highest minimum
+    /// frequency wins).
+    min_votes: HashMap<&'static str, u64>,
+
     /// The effective ceiling (`Some(opp_index)` or `None` when uncapped) last applied to
     /// `DomainController`, or `None` when unknown, either because no vote has been applied yet
     /// or because the last call failed.
@@ -482,6 +495,14 @@ struct CpuFreqDomainState {
     /// Lazily established connection to the server, dropped if a call fails at the transport
     /// level so that the next caller reconnects.
     domain_controller: Option<fcpu::DomainControllerSynchronousProxy>,
+
+    /// Lazily established connection to `fuchsia.power.cpu.manager.Boost`, dropped if a call
+    /// fails at the transport level so that the next caller reconnects.
+    boost_proxy: Option<fcpumanager::BoostSynchronousProxy>,
+
+    /// Active boost token held while `min_votes` is non-empty. Dropping this token signals
+    /// `ZX_EVENTPAIR_PEER_CLOSED` to `cpu-manager`, releasing this domain's boost vote.
+    boost_token: Option<zx::EventPair>,
 }
 
 impl CpuFreqDomainState {
@@ -743,6 +764,73 @@ impl CpuFreqDomain {
             errno!(EINVAL)
         })
     }
+
+    /// Returns the effective minimum frequency in kHz for `scaling_min_freq`, or `voter`'s active
+    /// floor in kHz for `vote_manager/*_min_freq`, falling back to the domain's lowest frequency.
+    fn min_frequency_khz(&self, voter: &'static str) -> Option<u64> {
+        let state = self.state.lock();
+        let active_vote = if voter == "scaling_min_freq" {
+            state.min_votes.values().copied().max()
+        } else {
+            state.min_votes.get(voter).copied()
+        };
+        active_vote.or_else(|| self.lowest_khz())
+    }
+
+    /// Updates `voter`'s floor vote in kHz and acquires or releases a `cpu-manager` `Boost` token
+    /// for this domain when the set of active floor votes transitions between empty and non-empty.
+    pub fn update_min_vote(
+        &self,
+        kernel: Option<&Kernel>,
+        voter: &'static str,
+        khz: u64,
+    ) -> Result<(), Errno> {
+        let lowest_khz = self.lowest_khz().unwrap_or(0);
+        let highest_khz = self.highest_khz().unwrap_or(u64::MAX);
+        let mut state = self.state.lock();
+        if khz <= lowest_khz {
+            state.min_votes.remove(voter);
+        } else {
+            state.min_votes.insert(voter, khz.min(highest_khz));
+        }
+
+        if !state.min_votes.is_empty() && state.boost_token.is_none() {
+            if state.boost_proxy.is_none() {
+                state.boost_proxy = kernel
+                    .and_then(|k| {
+                        k.connect_to_protocol_at_container_svc::<fcpumanager::BoostMarker>()
+                            .ok()
+                            .map(|c| c.into_sync_proxy())
+                    })
+                    .or_else(|| connect_to_protocol_sync::<fcpumanager::BoostMarker>().ok());
+            }
+            if let Some(ref proxy) = state.boost_proxy {
+                match proxy.boost(zx::MonotonicInstant::INFINITE) {
+                    Ok(Ok(token)) => {
+                        state.boost_token = Some(token);
+                    }
+                    Ok(Err(e)) => {
+                        log_warn!(
+                            "cpu-manager Boost returned error for domain {}: {:?}",
+                            self.domain_id,
+                            e
+                        );
+                    }
+                    Err(e) => {
+                        log_warn!(
+                            "cpu-manager Boost FIDL call failed for domain {}: {:?}",
+                            self.domain_id,
+                            e
+                        );
+                        state.boost_proxy = None;
+                    }
+                }
+            }
+        } else if state.min_votes.is_empty() && state.boost_token.is_some() {
+            state.boost_token = None;
+        }
+        Ok(())
+    }
 }
 
 /// A writable max-frequency node (`scaling_max_freq` and `vote_manager/*_max_freq`), backed by
@@ -774,6 +862,34 @@ impl BytesFileOps for ScalingMaxFreqFile {
     fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let opp_index = self.domain.opp_index_for_khz(parse_unsigned_file::<u64>(&data)?);
         self.domain.update_vote(self.voter, opp_index)
+    }
+}
+
+/// A writable min-frequency node (`scaling_min_freq` and `vote_manager/*_min_freq`), backed by
+/// `fuchsia.power.cpu.manager/Boost`.
+///
+/// While any voter on a domain requests a floor above `lowest_khz`, the domain holds a
+/// ref-counted `Boost` token with `cpu-manager`; when all floor votes are cleared
+/// (`<= lowest_khz`), the token is dropped.
+struct ScalingMinFreqFile {
+    domain: Arc<CpuFreqDomain>,
+    voter: &'static str,
+}
+
+impl ScalingMinFreqFile {
+    fn new_node(domain: &Arc<CpuFreqDomain>, voter: &'static str) -> impl FsNodeOps {
+        BytesFile::new_node(Self { domain: domain.clone(), voter })
+    }
+}
+
+impl BytesFileOps for ScalingMinFreqFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        Ok(format_freq_khz(self.domain.min_frequency_khz(self.voter)).into_bytes().into())
+    }
+
+    fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let khz = parse_unsigned_file::<u64>(&data)?;
+        self.domain.update_min_vote(Some(current_task.kernel()), self.voter, khz)
     }
 }
 
@@ -1137,5 +1253,95 @@ mod tests {
 
         // Saturate at 0 if C2 residency exceeds aggregate idle time due to sampling skew.
         assert_eq!(c1_time_us(/* zircon_idle_ns = */ 1_000_000_000, Some(&c2)), 0);
+    }
+
+    #[::fuchsia::test]
+    fn min_freq_votes_manage_boost_token_lifecycle() {
+        let (client, server) = zx::Channel::create();
+        let (token_tx, token_rx) = std::sync::mpsc::channel::<zx::EventPair>();
+        let server_thread = std::thread::spawn(move || {
+            let mut executor = fuchsia_async::LocalExecutor::default();
+            executor.run_singlethreaded(async move {
+                let mut stream = fcpumanager::BoostRequestStream::from_channel(
+                    fuchsia_async::Channel::from_channel(server),
+                );
+                while let Some(fcpumanager::BoostRequest::Boost { responder }) =
+                    stream.try_next().await.expect("failed to read Boost request")
+                {
+                    let (client_token, server_token) = zx::EventPair::create();
+                    responder.send(Ok(client_token)).expect("failed to send Boost response");
+                    token_tx.send(server_token).expect("failed to forward server token");
+                }
+            });
+        });
+
+        let domain = CpuFreqDomain::new(
+            &fcpu::DomainInfo {
+                id: Some(0),
+                core_ids: Some(vec![0, 1]),
+                available_frequencies_hz: Some(vec![820_000_000, 1_200_000_000, 1_632_000_000]),
+                name: Some("little".to_string()),
+                ..Default::default()
+            },
+            None,
+        );
+        domain.state.lock().boost_proxy = Some(fcpumanager::BoostSynchronousProxy::new(client));
+
+        assert_eq!(domain.min_frequency_khz("powerhint_min_freq"), Some(820_000));
+        assert_eq!(domain.min_frequency_khz("soft_min_freq"), Some(820_000));
+        assert_eq!(domain.min_frequency_khz("scaling_min_freq"), Some(820_000));
+
+        // 1. Writing khz > lowest_khz to powerhint_min_freq requests a Boost token and updates
+        //    powerhint_min_freq and scaling_min_freq reads.
+        domain
+            .update_min_vote(None, "powerhint_min_freq", 1_632_000)
+            .expect("update_min_vote must succeed");
+        let server_token = token_rx.recv().expect("must receive a Boost token");
+        assert_eq!(
+            server_token
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST),
+            zx::WaitResult::TimedOut(zx::Signals::NONE)
+        );
+        assert_eq!(domain.min_frequency_khz("powerhint_min_freq"), Some(1_632_000));
+        assert_eq!(domain.min_frequency_khz("soft_min_freq"), Some(820_000));
+        assert_eq!(domain.min_frequency_khz("scaling_min_freq"), Some(1_632_000));
+
+        // 2. While another voter (soft_min_freq) also holds a vote > lowest_khz, clearing
+        //    powerhint_min_freq (<= lowest_khz) keeps the boost token alive.
+        domain
+            .update_min_vote(None, "soft_min_freq", 1_200_000)
+            .expect("update_min_vote must succeed");
+        assert!(token_rx.try_recv().is_err(), "must reuse existing Boost token");
+        assert_eq!(domain.min_frequency_khz("soft_min_freq"), Some(1_200_000));
+        assert_eq!(domain.min_frequency_khz("scaling_min_freq"), Some(1_632_000));
+
+        domain
+            .update_min_vote(None, "powerhint_min_freq", 820_000)
+            .expect("clearing powerhint_min_freq must succeed");
+        assert_eq!(domain.min_frequency_khz("powerhint_min_freq"), Some(820_000));
+        assert_eq!(domain.min_frequency_khz("soft_min_freq"), Some(1_200_000));
+        assert_eq!(domain.min_frequency_khz("scaling_min_freq"), Some(1_200_000));
+        assert_eq!(
+            server_token
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST),
+            zx::WaitResult::TimedOut(zx::Signals::NONE)
+        );
+
+        // 3. Clearing all min votes (<= lowest_khz or 0) drops the zx::EventPair token
+        //    (ZX_EVENTPAIR_PEER_CLOSED observed by the server end) and restores scaling_min_freq
+        //    to lowest_khz.
+        domain
+            .update_min_vote(None, "soft_min_freq", 0)
+            .expect("clearing soft_min_freq must succeed");
+        assert_eq!(domain.min_frequency_khz("soft_min_freq"), Some(820_000));
+        assert_eq!(domain.min_frequency_khz("scaling_min_freq"), Some(820_000));
+        let closed_signals = server_token
+            .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+            .to_result()
+            .expect("server_token must observe ZX_EVENTPAIR_PEER_CLOSED");
+        assert!(closed_signals.contains(zx::Signals::EVENTPAIR_PEER_CLOSED));
+
+        drop(domain);
+        server_thread.join().expect("server thread panicked");
     }
 }
