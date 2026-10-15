@@ -65,6 +65,51 @@ The GN `rustc_*` templates accept `link_deps` too (with the same semantics as
 `deps`), so `bazel2gn` passes the attribute through unchanged, applying the
 same label translations it applies to `deps`.
 
+#### `compiled_action()`
+
+GN `compiled_action()` targets, which run a tool built in the same build, map
+to `compiled_action()` from `//build/bazel/rules:compiled_action.bzl`:
+
+```bzl
+compiled_action(
+    name = "generate",
+    srcs = ["input.json"],
+    outs = ["out.rs"],
+    args = [
+        "--input",
+        "$(location :input.json)",
+        "--output",
+        "$(location :out.rs)",
+        "--out-dir",
+        "$(RULEDIR)",
+    ],
+    tool = ":generator",
+)
+```
+
+is synced to:
+
+```gn
+compiled_action("generate") {
+  sources = [ "input.json" ]
+  outputs = [ "$target_gen_dir/out.rs" ]
+  args = [
+    "--input",
+    rebase_path("input.json", root_build_dir),
+    "--output",
+    rebase_path("$target_gen_dir/out.rs", root_build_dir),
+    "--out-dir",
+    rebase_path(target_gen_dir, root_build_dir),
+  ]
+  tool = ":generator"
+}
+```
+
+`outs` are placed in `$target_gen_dir` unless they have a `path_overwrite`
+annotation. `args` only support `$(location <file>)`, `$(execpath <file>)`, and
+`$(RULEDIR)`; any other substitution is an error. The GN tool's output name
+must match its target name, because `tool_output_name` is not synced.
+
 ### Starlark vs GN
 
 [Starlark][starlark] is the chosen language of Bazel for defining build targets,

@@ -126,6 +126,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"idk_rustc_binary_host_tool": "sdk_rustc_binary_host_tool",
 
 	// Other
+	"compiled_action":     "compiled_action",
 	"fidlgentest_go_test": "fidlgentest_go_test",
 	"genrule":             "action",
 	"metrics_registry":    "metrics_registry",
@@ -340,6 +341,16 @@ var genruleAttrMap = map[string]string{
 	"outs": "outputs",
 }
 
+// compiledActionAttrMap maps from attribute names in Bazel `compiled_action()`
+// to GN `compiled_action()` parameter names.
+//
+// `tool` and `args` keep their names, but `args` is converted by
+// `compiledActionArgsToGN()`, and `outs` are placed in `$target_gen_dir` by
+// `compiledActionOutsTransformer()`.
+var compiledActionAttrMap = map[string]string{
+	"outs": "outputs",
+}
+
 // idkCcAttrMap maps from attribute name in Bazel IDK C++ rules to GN parameter names.
 var idkCcAttrMap = mustMergeMaps(idkAttrMap, ccLibAttrMap)
 
@@ -407,7 +418,8 @@ var attrMapsByRules = map[string]map[string]string{
 	"install_host_tools": installHostToolAttrMap,
 
 	// Others
-	"genrule": genruleAttrMap,
+	"compiled_action": compiledActionAttrMap,
+	"genrule":         genruleAttrMap,
 	"metrics_registry": {
 		"global_registry": "global",
 	},

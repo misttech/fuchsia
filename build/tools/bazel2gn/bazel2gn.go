@@ -298,11 +298,21 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 		return nil, errors.New("missing `name` attribute in Bazel target")
 	}
 
+	// `compiled_action()` args can refer to outputs, so collect them first.
+	var compiledActionOutputs map[string]string
+	if bazelRule == compiledActionRule {
+		var err error
+		compiledActionOutputs, err = compiledActionOuts(expr)
+		if err != nil {
+			return nil, fmt.Errorf("converting compiled_action outs: %v", err)
+		}
+	}
+
 	ret := []string{fmt.Sprintf("%s(%s) {", gnTemplateName, name)}
 
 	// Loop through all args again to actually build the content of this target.
 	for _, arg := range remainingArgs {
-		lines, err := attrAssignmentToGN(arg, bazelRule)
+		lines, err := attrAssignmentToGN(arg, bazelRule, compiledActionOutputs)
 		if err != nil {
 			return nil, fmt.Errorf("converting Bazel attribute to GN: %v", err)
 		}
@@ -398,7 +408,7 @@ func disableInstrumentationToGN(expr syntax.Expr) ([]string, error) {
 // NOTE: Assignment is a special binary expression with operator =.
 //
 // [0] https://github.com/bazelbuild/starlark/blob/master/spec.md#assignments
-func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, error) {
+func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActionOutputs map[string]string) ([]string, error) {
 	lhs, ok := expr.X.(*syntax.Ident)
 	if !ok {
 		return nil, fmt.Errorf("expecting an identifier on the left hand side of attribute assignment, got %T", expr.X)
@@ -481,7 +491,19 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 			transformers = append(transformers, bazelCOptToGNConfig)
 		}
 	case "api", "outputs", "sources", "inputs", "args_sources":
-		transformers = append(transformers, bazelFilePathsToGN)
+		if bazelRule == compiledActionRule && attrName == "outputs" {
+			transformers = append(transformers, compiledActionOutsTransformer)
+		} else {
+			transformers = append(transformers, bazelFilePathsToGN)
+		}
+	case "args":
+		if bazelRule == compiledActionRule {
+			transformers = append(transformers, compiledActionArgsTransformer(compiledActionOutputs))
+		}
+	case "tool":
+		if bazelRule == compiledActionRule {
+			transformers = append(transformers, bazelDepToGN)
+		}
 	case "ldflags":
 		transformers = append(transformers, bazelLdflagsToGN)
 	}

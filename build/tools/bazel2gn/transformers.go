@@ -188,8 +188,17 @@ func bazelFilePathsToGN(expr syntax.Expr) (syntax.Expr, error) {
 	}
 	if path, ok := overwrittenPath(lit); ok {
 		lit.Raw = fmt.Sprintf(`"%s"`, path)
+		return lit, nil
 	}
-	lit.Raw = strings.Replace(lit.Raw, ":", "/", 1)
+	label, ok := lit.Value.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string literal in file path list, got %s", lit.Raw)
+	}
+	gnPath, err := bazelFileLabelToGNPath(label)
+	if err != nil {
+		return nil, err
+	}
+	lit.Raw = gnQuote(gnPath)
 	return lit, nil
 }
 
