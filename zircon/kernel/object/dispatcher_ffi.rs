@@ -79,4 +79,22 @@ unsafe extern "C" {
         port: *const PortDispatcher,
         key: u64,
     ) -> bool;
+    pub(crate) fn cpp_dispatcher_user_signal_self(
+        dispatcher: *const Dispatcher,
+        clear_mask: u32,
+        set_mask: u32,
+    ) -> zx_types::zx_status_t;
+    pub(crate) fn cpp_dispatcher_user_signal_peer(
+        dispatcher: *const Dispatcher,
+        clear_mask: u32,
+        set_mask: u32,
+    ) -> zx_types::zx_status_t;
+    pub(crate) fn cpp_dispatcher_make_port_observer(
+        dispatcher: *const Dispatcher,
+        options: u32,
+        handle: *const core::ffi::c_void,
+        signals: zx_types::zx_signals_t,
+        key: u64,
+        port: *const PortDispatcher,
+    ) -> zx_types::zx_status_t;
 }

@@ -1,4 +1,4 @@
-// Copyright 2026 The Fuchsia Authors
+// Copyright 2016 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
@@ -7,7 +7,9 @@
 use crate::kernel::deadline::Deadline;
 use crate::kernel::event::Event;
 use crate::kernel::thread::Interruptible;
-use crate::object::{AutoBlocked, Blocked, HandleValue, ProcessDispatcher, WaitSignalObserver};
+use crate::object::{
+    AutoBlocked, Blocked, HandleValue, PortDispatcher, ProcessDispatcher, WaitSignalObserver,
+};
 use crate::platform_rs::timer::InstantUnknown;
 use crate::user_copy::{UserInOutPtr, UserOutPtr};
 use debug::ltracef;
@@ -15,7 +17,8 @@ use fbl::InlineArray;
 use syscalls_macro::syscall;
 use zx_status::Status;
 use zx_types::{
-    ZX_RIGHT_WAIT, ZX_SIGNAL_HANDLE_CLOSED, ZX_WAIT_MANY_MAX_ITEMS, zx_instant_mono_t,
+    ZX_RIGHT_WAIT, ZX_RIGHT_WRITE, ZX_SIGNAL_HANDLE_CLOSED, ZX_WAIT_ASYNC_BOOT_TIMESTAMP,
+    ZX_WAIT_ASYNC_EDGE, ZX_WAIT_ASYNC_TIMESTAMP, ZX_WAIT_MANY_MAX_ITEMS, zx_instant_mono_t,
     zx_signals_t, zx_wait_item_t,
 };
 
@@ -165,4 +168,64 @@ pub fn sys_object_wait_many(
     }
 
     wait_result
+}
+
+// zx_status_t zx_object_wait_async
+#[syscall]
+pub fn sys_object_wait_async(
+    handle_value: HandleValue,
+    port_handle_value: HandleValue,
+    key: u64,
+    signals: zx_signals_t,
+    options: u32,
+) -> Result<(), Status> {
+    ltracef!("handle {:x}\n", handle_value.raw_value());
+
+    if (options & !(ZX_WAIT_ASYNC_TIMESTAMP | ZX_WAIT_ASYNC_BOOT_TIMESTAMP | ZX_WAIT_ASYNC_EDGE))
+        != 0
+    {
+        return Err(Status::INVALID_ARGS);
+    }
+
+    // It is invalid to request both a monotonic and boot timestamp.
+    if (options & ZX_WAIT_ASYNC_TIMESTAMP) != 0 && (options & ZX_WAIT_ASYNC_BOOT_TIMESTAMP) != 0 {
+        return Err(Status::INVALID_ARGS);
+    }
+
+    let up = ProcessDispatcher::get_current();
+
+    {
+        ksync::lock!(let guard = up.handle_table().read_lock());
+
+        // Note, we're doing this all while holding the handle table lock for two reasons.
+        //
+        // First, this thread may be racing with another thread that's closing the last handle to
+        // the port. By holding the lock we can ensure that this syscall behaves as if the port was
+        // closed just *before* the syscall started or closed just *after* it has completed.
+        //
+        // Second, MakeObserver takes a Handle. By holding the lock we ensure the Handle isn't
+        // destroyed out from under it.
+
+        let port_handle = up
+            .handle_table()
+            .get_handle_locked(guard.token(), &up, port_handle_value)
+            .ok_or(Status::BAD_HANDLE)?;
+        let port_dispatcher = port_handle.dispatcher_ref();
+        let port = port_dispatcher.downcast::<PortDispatcher>().ok_or(Status::WRONG_TYPE)?;
+        if !port_handle.has_rights(ZX_RIGHT_WRITE) {
+            return Err(Status::ACCESS_DENIED);
+        }
+
+        let handle = up
+            .handle_table()
+            .get_handle_locked(guard.token(), &up, handle_value)
+            .ok_or(Status::BAD_HANDLE)?;
+        if !handle.has_rights(ZX_RIGHT_WAIT) {
+            return Err(Status::ACCESS_DENIED);
+        }
+
+        let dispatcher = handle.dispatcher_ref();
+
+        dispatcher.make_port_observer(options, handle, signals, key, port)
+    }
 }

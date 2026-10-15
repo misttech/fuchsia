@@ -348,4 +348,9 @@ unsafe extern "C" {
     pub(crate) fn cpp_process_dispatcher_debug_exceptionate(
         process: *mut ProcessDispatcher,
     ) -> *mut super::exceptionate::Exceptionate;
+
+    pub(crate) fn cpp_process_dispatcher_lookup_thread_by_id(
+        process: *mut ProcessDispatcher,
+        koid: zx_koid_t,
+    ) -> *mut ThreadDispatcher;
 }

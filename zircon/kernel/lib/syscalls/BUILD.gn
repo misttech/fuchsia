@@ -34,10 +34,8 @@ source_set("impl") {
   sources = [
     "driver.cc",
     "membarrier_ffi.cc",
-    "object.cc",
     "object_info_ffi.cc",
     "object_property_ffi.cc",
-    "object_wait.cc",
     "system.cc",
     "system_ffi.cc",
     "test.cc",
@@ -130,6 +128,7 @@ kernel_rust_mod("syscalls-rs") {
     "mod.rs",
     "msi.rs",
     "nanosleep.rs",
+    "object.rs",
     "object_info.rs",
     "object_property.rs",
     "object_wait.rs",

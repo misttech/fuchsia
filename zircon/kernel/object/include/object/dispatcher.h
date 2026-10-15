@@ -141,6 +141,25 @@ DECLARE_DISPTAG(SamplerDispatcher, ZX_OBJ_TYPE_SAMPLER, "SMPL")
 
 #undef DECLARE_DISPTAG
 
+extern "C" {
+void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask,
+                                 zx_signals_t strobe_mask);
+void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
+                                        zx_signals_t set_mask, zx_signals_t strobe_mask);
+zx_signals_t cpp_dispatcher_raise_signals_locked(Dispatcher* disp, zx_signals_t signals);
+void cpp_dispatcher_notify_observers_locked(Dispatcher* disp, zx_signals_t signals,
+                                            void* queue_to_own);
+zx_signals_t cpp_dispatcher_signals_state_locked(const Dispatcher* disp);
+zx_koid_t cpp_dispatcher_get_related_koid(const Dispatcher* disp);
+zx_status_t cpp_dispatcher_user_signal_self(Dispatcher* disp, uint32_t clear_mask,
+                                            uint32_t set_mask);
+zx_status_t cpp_dispatcher_user_signal_peer(Dispatcher* disp, uint32_t clear_mask,
+                                            uint32_t set_mask);
+zx_status_t cpp_dispatcher_make_port_observer(Dispatcher* disp, uint32_t options,
+                                              const void* handle, zx_signals_t signals,
+                                              uint64_t key, PortDispatcher* port);
+}
+
 // Base class for all kernel objects that can be exposed to user-mode via
 // the syscall API and referenced by handles.
 //
@@ -154,18 +173,6 @@ DECLARE_DISPTAG(SamplerDispatcher, ZX_OBJ_TYPE_SAMPLER, "SMPL")
 //
 // You don't derive directly from this class; instead derive
 // from SoloDispatcher or PeeredDispatcher.
-extern "C" {
-void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask,
-                                 zx_signals_t strobe_mask);
-void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
-                                        zx_signals_t set_mask, zx_signals_t strobe_mask);
-zx_signals_t cpp_dispatcher_raise_signals_locked(Dispatcher* disp, zx_signals_t signals);
-void cpp_dispatcher_notify_observers_locked(Dispatcher* disp, zx_signals_t signals,
-                                            void* queue_to_own);
-zx_signals_t cpp_dispatcher_signals_state_locked(const Dispatcher* disp);
-zx_koid_t cpp_dispatcher_get_related_koid(const Dispatcher* disp);
-}
-
 class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
                    private fbl::Recyclable<Dispatcher> {
  public:

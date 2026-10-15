@@ -20,7 +20,7 @@ use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_get_timer_slack_policy,
     cpp_process_dispatcher_get_timer_slack_policy_amount, cpp_process_dispatcher_handle_table,
     cpp_process_dispatcher_is_current, cpp_process_dispatcher_job, cpp_process_dispatcher_kill,
-    cpp_process_dispatcher_make_and_add_handle,
+    cpp_process_dispatcher_lookup_thread_by_id, cpp_process_dispatcher_make_and_add_handle,
     cpp_process_dispatcher_make_and_add_handle_from_ref, cpp_process_dispatcher_resume,
     cpp_process_dispatcher_set_critical_to_job, cpp_process_dispatcher_set_debug_addr,
     cpp_process_dispatcher_set_dyn_break_on_load, cpp_process_dispatcher_start,
@@ -537,6 +537,18 @@ impl ProcessDispatcher {
                 self.as_ffi_mut(),
             )
         }
+    }
+
+    /// Looks up a thread in this process given its koid.
+    #[inline]
+    pub fn lookup_thread_by_id(
+        &self,
+        koid: zx_types::zx_koid_t,
+    ) -> Option<fbl::RefPtr<ThreadDispatcher>> {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        let ptr = unsafe { cpp_process_dispatcher_lookup_thread_by_id(self.as_ffi_mut(), koid) };
+        // SAFETY: `ptr` is exported via `fbl::ExportToRawPtr` with an acquired refcount, or null.
+        unsafe { fbl::RefPtr::try_from_raw(ptr) }
     }
 }
 

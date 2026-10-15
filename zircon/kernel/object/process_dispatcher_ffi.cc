@@ -253,4 +253,11 @@ FFI_ALWAYS_INLINE Exceptionate* cpp_process_dispatcher_debug_exceptionate(
   return process->debug_exceptionate();
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE ThreadDispatcher* cpp_process_dispatcher_lookup_thread_by_id(
+    ProcessDispatcher* process, zx_koid_t koid) {
+  fbl::RefPtr<ThreadDispatcher> thread = process->LookupThreadById(koid);
+  return fbl::ExportToRawPtr(&thread);
+}
+
 }  // extern "C"

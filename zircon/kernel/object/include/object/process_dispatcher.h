@@ -103,6 +103,8 @@ zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process, Threa
 void cpp_process_remove_thread(ProcessDispatcher* process, ThreadDispatcher* thread);
 Exceptionate* cpp_process_dispatcher_exceptionate(ProcessDispatcher* process);
 Exceptionate* cpp_process_dispatcher_debug_exceptionate(ProcessDispatcher* process);
+ThreadDispatcher* cpp_process_dispatcher_lookup_thread_by_id(ProcessDispatcher* process,
+                                                             zx_koid_t koid);
 
 }  // extern "C"
 

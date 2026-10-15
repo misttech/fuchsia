@@ -7,6 +7,7 @@
 #include <kernel/ffi.h>
 #include <object/handle.h>
 #include <object/job_dispatcher.h>
+#include <object/process_dispatcher.h>
 
 extern "C" {
 
@@ -191,6 +192,20 @@ FFI_ALWAYS_INLINE zx_status_t cpp_job_dispatcher_create_debug_exceptionate(
     JobDispatcher* job, KernelHandle<ChannelDispatcher>* channel, zx_rights_t thread_rights,
     zx_rights_t process_rights) {
   return job->CreateDebugExceptionate(ktl::move(*channel), thread_rights, process_rights);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE JobDispatcher* cpp_job_dispatcher_lookup_job_by_id(JobDispatcher* job,
+                                                                     zx_koid_t koid) {
+  fbl::RefPtr<JobDispatcher> child = job->LookupJobById(koid);
+  return fbl::ExportToRawPtr(&child);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE ProcessDispatcher* cpp_job_dispatcher_lookup_process_by_id(JobDispatcher* job,
+                                                                             zx_koid_t koid) {
+  fbl::RefPtr<ProcessDispatcher> proc = job->LookupProcessById(koid);
+  return fbl::ExportToRawPtr(&proc);
 }
 
 }  // extern "C"

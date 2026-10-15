@@ -121,4 +121,24 @@ FFI_ALWAYS_INLINE bool cpp_dispatcher_cancel_by_key(Dispatcher* disp, const void
   return disp->CancelByKey(handle, port, key);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_dispatcher_user_signal_self(Dispatcher* disp, uint32_t clear_mask,
+                                                              uint32_t set_mask) {
+  return disp->user_signal_self(clear_mask, set_mask);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_dispatcher_user_signal_peer(Dispatcher* disp, uint32_t clear_mask,
+                                                              uint32_t set_mask) {
+  return disp->user_signal_peer(clear_mask, set_mask);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_dispatcher_make_port_observer(Dispatcher* disp, uint32_t options,
+                                                                const void* handle,
+                                                                zx_signals_t signals, uint64_t key,
+                                                                PortDispatcher* port) {
+  return disp->MakePortObserver(options, static_cast<const Handle*>(handle), signals, key, port);
+}
+
 }  // extern "C"

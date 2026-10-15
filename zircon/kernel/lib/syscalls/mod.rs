@@ -28,6 +28,7 @@ mod job;
 mod membarrier;
 mod msi;
 mod nanosleep;
+mod object;
 mod object_info;
 mod object_property;
 mod object_wait;

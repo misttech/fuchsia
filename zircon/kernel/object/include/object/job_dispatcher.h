@@ -343,6 +343,8 @@ zx_status_t cpp_job_dispatcher_create_debug_exceptionate(JobDispatcher* job,
                                                          KernelHandle<ChannelDispatcher>* channel,
                                                          zx_rights_t thread_rights,
                                                          zx_rights_t process_rights);
+JobDispatcher* cpp_job_dispatcher_lookup_job_by_id(JobDispatcher* job, zx_koid_t koid);
+ProcessDispatcher* cpp_job_dispatcher_lookup_process_by_id(JobDispatcher* job, zx_koid_t koid);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_DISPATCHER_H_

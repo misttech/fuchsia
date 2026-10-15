@@ -8,9 +8,10 @@ use super::channel_dispatcher::ChannelDispatcher;
 use super::exceptionate::Exceptionate;
 use super::handle::KernelHandle;
 use super::job_dispatcher::JobDispatcher;
+use super::process_dispatcher::ProcessDispatcher;
 use core::mem::MaybeUninit;
 use zx_types::{
-    zx_info_job_t, zx_policy_basic_v1_t, zx_policy_basic_v2_t, zx_policy_timer_slack_t,
+    zx_info_job_t, zx_koid_t, zx_policy_basic_v1_t, zx_policy_basic_v2_t, zx_policy_timer_slack_t,
     zx_rights_t, zx_status_t,
 };
 
@@ -187,4 +188,13 @@ unsafe extern "C" {
         thread_rights: zx_rights_t,
         process_rights: zx_rights_t,
     ) -> zx_status_t;
+
+    pub(crate) fn cpp_job_dispatcher_lookup_job_by_id(
+        job: *mut JobDispatcher,
+        koid: zx_koid_t,
+    ) -> *mut JobDispatcher;
+    pub(crate) fn cpp_job_dispatcher_lookup_process_by_id(
+        job: *mut JobDispatcher,
+        koid: zx_koid_t,
+    ) -> *mut ProcessDispatcher;
 }
