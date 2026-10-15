@@ -2,6 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+namespace {
+int g_hw_mb_count = 0;
+}  // namespace
+// Replaces the hardware barrier so the UnsynchronizedOps test can count barriers; must stay above
+// all includes.
+#define mmio_hw_mb() (++g_hw_mb_count)
+
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
@@ -502,6 +509,24 @@ TEST(MmioBuffer, SetMmioBufferOps) {
   buffer.Write8(0x66, 0);
   EXPECT_EQ(0x66, buffer.Read8(0));
   EXPECT_FALSE(read_called);
+}
+
+TEST(MmioBuffer, UnsynchronizedOps) {
+  size_t size = zx_system_get_page_size();
+  EXPECT_EQ(fdf::MmioBuffer::GetUnsynchronizedOps(), &fdf::internal::kUnsynchronizedOps);
+  auto default_buffer = fdf_testing::CreateMmioBuffer(size);
+  auto unsync_buffer = fdf::SetMmioBufferOps(fdf_testing::CreateMmioBuffer(size),
+                                             fdf::MmioBuffer::GetUnsynchronizedOps());
+
+  g_hw_mb_count = 0;
+  default_buffer.Write32(0x12345678, 0);
+  EXPECT_EQ(0x12345678u, default_buffer.Read32(0));
+  EXPECT_GT(g_hw_mb_count, 0);
+
+  g_hw_mb_count = 0;
+  unsync_buffer.Write32(0x87654321, 0);
+  EXPECT_EQ(0x87654321u, unsync_buffer.Read32(0));
+  EXPECT_EQ(0, g_hw_mb_count);
 }
 
 }  // namespace

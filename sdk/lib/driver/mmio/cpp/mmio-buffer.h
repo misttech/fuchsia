@@ -40,7 +40,12 @@ class MmioBuffer {
   MmioBuffer(const MmioBuffer&) = delete;
   MmioBuffer& operator=(const MmioBuffer&) = delete;
 
+  // Returns the default MmioBufferOps instance.
   static const MmioBufferOps* GetDefaultOps();
+
+  // Returns an MmioBufferOps table whose writes omit the trailing hardware memory barrier, for
+  // drivers that order accesses themselves.
+  static const MmioBufferOps* GetUnsynchronizedOps();
 
   // Adopts an existing mapping of |vmo| at |vaddr|. The buffer takes ownership of the mapping and
   // unmaps it from the root VMAR on destruction or reset(). If |vmo| is invalid, the buffer does
