@@ -74,6 +74,11 @@ Prepend `DISABLED_` to a `.script` filename (for example,
 Disabling one script preserves test coverage across the rest of the suite while
 you fix the failure.
 
+### Disabling a Single python DAP Test
+
+Add the decorator `@unittest.skip("...")` with a reason string pointing to a bug link
+`https://fxbug.dev/<id>` above a test case.
+
 ### Breaking on Functions Instead of Line Numbers
 
 Always set breakpoints on function names rather than source line numbers in

@@ -258,6 +258,9 @@ class TestDapPrettyTypes(DapTestCase):
 class TestDapPrettyTypesRust(DapTestCase):
     require_build_type = ["optimize=none"]
 
+    @unittest.skip(
+        "https://fxbug.dev/573803353: disabled to unblock toolchain roll."
+    )
     async def test_pretty_types_rust(self) -> None:
         pretty_types_path = get_dap_source_path(
             "src/developer/debug/e2e_tests/inferiors/pretty_types.rs"
