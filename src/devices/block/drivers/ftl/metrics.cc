@@ -63,6 +63,11 @@ std::string GetCounterPropertyName(BlockOperationType operation_type) {
   return name + ".count";
 }
 
+std::string GetBytesPropertyName(BlockOperationType operation_type) {
+  auto name = GetName(operation_type);
+  return name + ".bytes";
+}
+
 std::string GetCounterPropertyName(BlockOperationType operation_type,
                                    NandOperationType nand_operation) {
   auto name = GetName(operation_type);
@@ -86,6 +91,7 @@ std::string GetMapBlockEndPageFailureReasonPropertyName(int reason) {
 BlockOperationProperties MakePropertyForBlockOperation(inspect::Node& root,
                                                        BlockOperationType block_operation) {
   auto count = root.CreateUint(GetCounterPropertyName(block_operation), 0);
+  auto bytes = root.CreateUint(GetBytesPropertyName(block_operation), 0);
   auto all_nand = NestedNandOperationProperties(
       root.CreateUint(GetCounterPropertyName(block_operation, NandOperationType::kAll), 0),
       root.CreateDouble(GetRatePropertyName(block_operation, NandOperationType::kAll), 0));
@@ -100,6 +106,7 @@ BlockOperationProperties MakePropertyForBlockOperation(inspect::Node& root,
       root.CreateDouble(GetRatePropertyName(block_operation, NandOperationType::kBlockErase), 0));
 
   return BlockOperationProperties{.count = std::move(count),
+                                  .bytes = std::move(bytes),
                                   .all = std::move(all_nand),
                                   .page_read = std::move(nand_page_read),
                                   .page_write = std::move(nand_page_write),
@@ -113,6 +120,7 @@ std::vector<std::string> Metrics::GetPropertyNames<inspect::UintProperty>() {
   std::vector<std::string> property_names;
   for (auto block_op : kAllBlockOps) {
     property_names.push_back(GetCounterPropertyName(block_op));
+    property_names.push_back(GetBytesPropertyName(block_op));
     for (auto nand_op : kAllNandOps) {
       property_names.push_back(GetCounterPropertyName(block_op, nand_op));
     }

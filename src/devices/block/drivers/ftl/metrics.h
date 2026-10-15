@@ -67,6 +67,9 @@ struct BlockOperationProperties {
   // Number of block operations of a given type that have been processed by the FTL.
   inspect::UintProperty count;
 
+  // Number of bytes processed by block operations of a given type.
+  inspect::UintProperty bytes;
+
   // Operation stats per nand operation type for operation issued for this block operation type.
   NestedNandOperationProperties all;
   NestedNandOperationProperties page_read;

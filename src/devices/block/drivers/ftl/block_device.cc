@@ -129,6 +129,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
     }
     zx_status_t status = ZX_OK;
     ftl::BlockOperationProperties* op_stats = nullptr;
+    uint64_t op_bytes = 0;
     nand_counters_.Reset();
 
     TRACE_DURATION_BEGIN("block:ftl", "Operation", "opcode",
@@ -164,10 +165,11 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
         }
 
         fzl::VmoMapper mapper;
-        status =
-            mapper.Map(*request.vmo, vmo_offset, static_cast<uint64_t>(length) * params_.page_size,
-                       ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE | ZX_VM_MAP_RANGE);
+        op_bytes = static_cast<uint64_t>(length) * params_.page_size;
+        status = mapper.Map(*request.vmo, vmo_offset, op_bytes,
+                            ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE | ZX_VM_MAP_RANGE);
         if (status != ZX_OK) {
+          op_bytes = 0;
           break;
         }
         if (request.operation.tag == block_server::Operation::Tag::Write) {
@@ -183,6 +185,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
         if (status != ZX_OK) {
           break;
         }
+        op_bytes = static_cast<uint64_t>(request.operation.trim.block_count) * params_.page_size;
         status = volume_->Trim(request.operation.trim.device_block_offset,
                                request.operation.trim.block_count);
         break;
@@ -202,6 +205,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
 
     if (op_stats != nullptr) {
       op_stats->count.Add(1);
+      op_stats->bytes.Add(op_bytes);
       op_stats->all.count.Add(nand_counters_.GetSum());
       op_stats->all.rate.Add(nand_counters_.GetSum());
       op_stats->block_erase.count.Add(nand_counters_.block_erase);
@@ -236,11 +240,22 @@ void BlockDevice::DoBackgroundFlush() {
     return;
   }
   if (pending_flush_) {
+    nand_counters_.Reset();
     zx_status_t status = volume_->Flush();
     if (status != ZX_OK) {
       FDF_LOG(ERROR, "FTL: background flush failed: %s", zx_status_get_string(status));
     }
     pending_flush_ = false;
+    auto& op_stats = metrics_->flush();
+    op_stats.count.Add(1);
+    op_stats.all.count.Add(nand_counters_.GetSum());
+    op_stats.all.rate.Add(nand_counters_.GetSum());
+    op_stats.block_erase.count.Add(nand_counters_.block_erase);
+    op_stats.block_erase.rate.Add(nand_counters_.block_erase);
+    op_stats.page_write.count.Add(nand_counters_.page_write);
+    op_stats.page_write.rate.Add(nand_counters_.page_write);
+    op_stats.page_read.count.Add(nand_counters_.page_read);
+    op_stats.page_read.rate.Add(nand_counters_.page_read);
   }
   ScheduleFlush();
 }

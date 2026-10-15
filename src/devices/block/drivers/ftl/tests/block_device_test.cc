@@ -519,7 +519,8 @@ void ReadProperties(const zx::vmo& vmo, std::map<std::string, uint64_t>& counter
 }
 
 void VerifyInspectMetrics(BlockDeviceTest* fixture, const std::string& block_metric_prefix,
-                          fit::function<std::string()> clear_op,
+                          uint64_t expected_bytes_per_op,
+                          fit::function<std::pair<std::string, uint64_t>()> clear_op,
                           fit::function<void()> trigger_metric_update_op) {
   fixture->driver_test_.RunInDriverContext([](TestFtlBlockDevice& driver) {
     driver.volume()->UpdateWearCount(0);
@@ -533,7 +534,9 @@ void VerifyInspectMetrics(BlockDeviceTest* fixture, const std::string& block_met
   std::map<std::string, double> expected_rates;
 
   // Random operation to trigger a metric update.
-  expected_counters[clear_op()]++;
+  auto [clear_prefix, clear_bytes] = clear_op();
+  expected_counters[clear_prefix + ".count"]++;
+  expected_counters[clear_prefix + ".bytes"] += clear_bytes;
 
   zx::vmo vmo;
   fixture->driver_test_.RunInDriverContext([&vmo](TestFtlBlockDevice& driver) {
@@ -576,6 +579,7 @@ void VerifyInspectMetrics(BlockDeviceTest* fixture, const std::string& block_met
 
   // Counters
   expected_counters[block_metric_prefix + ".count"] = 2;
+  expected_counters[block_metric_prefix + ".bytes"] = 2 * expected_bytes_per_op;
   expected_counters[block_metric_prefix + ".issued_nand_operation.count"] = 17;
   expected_counters[block_metric_prefix + ".issued_page_read.count"] = 3;
   expected_counters[block_metric_prefix + ".issued_page_write.count"] = 6;
@@ -607,40 +611,40 @@ void VerifyInspectMetrics(BlockDeviceTest* fixture, const std::string& block_met
 
 TEST_F(BlockDeviceTest, InspectReadMetricsUpdatedCorrectly) {
   VerifyInspectMetrics(
-      this, "block.read",
-      [&]() {
+      this, "block.read", kPageSize,
+      [&]() -> std::pair<std::string, uint64_t> {
         Flush();
-        return "block.flush.count";
+        return {"block.flush", 0};
       },
       [&]() { Read(); });
 }
 
 TEST_F(BlockDeviceTest, InspectWriteMetricsUpdatedCorrectly) {
   VerifyInspectMetrics(
-      this, "block.write",
-      [&]() {
+      this, "block.write", kPageSize,
+      [&]() -> std::pair<std::string, uint64_t> {
         Flush();
-        return "block.flush.count";
+        return {"block.flush", 0};
       },
       [&]() { Write(); });
 }
 
 TEST_F(BlockDeviceTest, InspectTrimMetricsUpdatedCorrectly) {
   VerifyInspectMetrics(
-      this, "block.trim",
-      [&]() {
+      this, "block.trim", 2 * kPageSize,
+      [&]() -> std::pair<std::string, uint64_t> {
         Flush();
-        return "block.flush.count";
+        return {"block.flush", 0};
       },
       [&]() { Trim(); });
 }
 
 TEST_F(BlockDeviceTest, InspectFlushMetricsUpdatedCorrectly) {
   VerifyInspectMetrics(
-      this, "block.flush",
-      [&]() {
+      this, "block.flush", 0,
+      [&]() -> std::pair<std::string, uint64_t> {
         Trim();
-        return "block.trim.count";
+        return {"block.trim", 2 * kPageSize};
       },
       [&]() { Flush(); });
 }
