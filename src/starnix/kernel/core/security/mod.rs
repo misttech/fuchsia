@@ -43,9 +43,12 @@ impl KernelState {
     }
 }
 
-/// The opaque type used by [`crate::vfs::FsNodeInfo`] to store security state.
+/// Opaque structure holding security state for an [`crate::vfs::FsNode`].
 #[derive(Debug, Default)]
-pub struct FsNodeState(selinux_hooks::FsNodeState);
+pub struct FsNodeState {
+    selinux: selinux_hooks::FsNodeState,
+    common_cap: common_cap::FsNodeState,
+}
 
 /// Opaque structure holding security state for a [`crate::vfs::socket::Socket`].
 #[derive(Debug, Default)]

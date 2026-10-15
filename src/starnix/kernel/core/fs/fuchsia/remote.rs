@@ -4167,6 +4167,9 @@ mod test {
                         };
                         responder.send(Ok(new_offset)).unwrap();
                     }
+                    fio::FileRequest::GetExtendedAttribute { responder, .. } => {
+                        responder.send(Err(zx::Status::NOT_FOUND.into_raw())).unwrap();
+                    }
                     fio::FileRequest::Close { responder } => {
                         responder.send(Ok(())).unwrap();
                     }

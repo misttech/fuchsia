@@ -193,7 +193,7 @@ pub(in crate::security) fn socket_socketpair(
 pub(in crate::security) fn socket_post_create(security_server: &SecurityServer, socket: &Socket) {
     let socket_node = socket.fs_node().expect("socket_post_create without FsNode");
     debug_assert!(!socket_node.is_private());
-    socket_node.security_state.0.update_class(
+    socket_node.security_state.selinux.update_class(
         compute_socket_security_class(
             security_server,
             socket.domain,
@@ -292,7 +292,7 @@ pub(in crate::security) fn socket_accept(
 
     let current_sid = current_task_state(current_task).current_sid;
     let listening_security_state =
-        (*listening_socket.file().node().security_state.0.read()).clone();
+        (*listening_socket.file().node().security_state.selinux.read()).clone();
     has_socket_permission(
         &build_permission_check(current_task, security_server),
         current_task,
@@ -301,8 +301,8 @@ pub(in crate::security) fn socket_accept(
         CommonSocketPermission::Accept,
         current_task.into(),
     )?;
-    let _lock = accepted_socket.file().node().security_state.0.update_lock.lock();
-    accepted_socket.file().node().security_state.0.label.update(listening_security_state);
+    let _lock = accepted_socket.file().node().security_state.selinux.update_lock.lock();
+    accepted_socket.file().node().security_state.selinux.label.update(listening_security_state);
     Ok(())
 }
 
@@ -598,7 +598,7 @@ mod tests {
             )
             .expect("failed to create socket");
 
-            let socket_label = socket_node.node().security_state.0.read();
+            let socket_label = socket_node.node().security_state.selinux.read();
             assert_eq!(socket_label.class(), SocketClass::UnixStreamSocket.into());
             assert_eq!(get_cached_sid(socket_node.node()), Some(task_sid));
         })

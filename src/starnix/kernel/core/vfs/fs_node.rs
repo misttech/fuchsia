@@ -252,11 +252,7 @@ impl FsNodeInfo {
         if let Some(group) = group {
             self.gid = group;
         }
-        // Clear the setuid and setgid bits if the file is executable and a regular file.
-        if self.mode.is_reg() {
-            self.mode &= !FileMode::ISUID;
-            self.clear_sgid_bit();
-        }
+        self.clear_suid_and_sgid_bits();
     }
 
     fn clear_sgid_bit(&mut self) {
@@ -269,12 +265,17 @@ impl FsNodeInfo {
 
     fn has_suid_or_sgid_bits(&self) -> bool {
         // ISGID is only considered as setgid bit if IXGRP is present.
-        self.mode.contains(FileMode::ISUID) || self.mode.contains(FileMode::ISGID | FileMode::IXGRP)
+        self.mode.is_reg()
+            && (self.mode.contains(FileMode::ISUID)
+                || self.mode.contains(FileMode::ISGID | FileMode::IXGRP))
     }
 
     fn clear_suid_and_sgid_bits(&mut self) {
-        self.mode &= !FileMode::ISUID;
-        self.clear_sgid_bit();
+        // Clear the setuid and setgid bits if the file is executable and a regular file.
+        if self.mode.is_reg() {
+            self.mode &= !FileMode::ISUID;
+            self.clear_sgid_bit();
+        }
     }
 
     pub fn cred(&self) -> FsCred {
@@ -2083,16 +2084,24 @@ impl FsNode {
 
             // But not on set-user-ID or set-group-ID files.
             // If we were to chown them, they would drop the set-ID bit.
-            if info.mode.is_reg()
-                && (info.mode.contains(FileMode::ISUID)
-                    || info.mode.contains(FileMode::ISGID | FileMode::IXGRP))
-            {
+            if info.has_suid_or_sgid_bits() {
                 return error!(EPERM);
             }
 
             info.chown(None, None);
             Ok(())
-        })
+        })?;
+        // From <https://man7.org/linux/man-pages/man2/chown.2.html>:
+        //
+        //   When the owner or group of an executable file is changed by an
+        //   unprivileged user, the S_ISUID and S_ISGID mode bits are cleared.
+        //   POSIX does not specify whether this also should happen when root
+        //   does the chown(); the Linux behavior depends on the kernel version,
+        //   and since Linux 2.2.13, root is treated like other users.
+        //   ...
+        //   When the owner or group of an executable file is changed (by any user),
+        //   all capability sets for the file are cleared.
+        self.clear_suid_and_sgid_bits(current_task)
     }
 
     /// Forcefully change the owner and group of this node.
@@ -2426,19 +2435,33 @@ impl FsNode {
         mutator(&mut info)
     }
 
-    /// Clear the SUID and SGID bits unless the `current_task` has `CAP_FSETID`
+    /// Clears the `S_ISUID` and `S_ISGID` mode bits (unless `current_task` has [`CAP_FSETID`]),
+    /// and removes any `security.capability` extended attribute.
     pub fn clear_suid_and_sgid_bits(&self, current_task: &CurrentTask) -> Result<(), Errno> {
-        if !self.info().has_suid_or_sgid_bits() {
-            return Ok(());
-        }
-        self.update_attributes(current_task, |info| {
-            if info.has_suid_or_sgid_bits()
-                && !security::is_task_capable_noaudit(current_task, CAP_FSETID)
-            {
+        // Clear `S_ISUID` and `S_ISGID` before removing `security.capability` so that a
+        // SUID-root binary whose capabilities are restricted by `security.capability` cannot
+        // be observed with `S_ISUID` still set after `security.capability` is removed.
+        //
+        // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
+        //
+        //   CAP_FSETID
+        //          •  Don't clear set-user-ID and set-group-ID mode bits when a
+        //             file is modified;
+        if self.info().has_suid_or_sgid_bits()
+            && !security::is_task_capable_noaudit(current_task, CAP_FSETID)
+        {
+            self.update_attributes(current_task, |info| {
                 info.clear_suid_and_sgid_bits();
-            }
-            Ok(())
-        })
+                Ok(())
+            })?;
+        }
+
+        // Always clear `security.capability` when file contents or ownership are modified,
+        // regardless of `CAP_FSETID`.
+        if security::fs_node_needs_killpriv(current_task, self)? {
+            security::fs_node_killpriv(current_task, self)?;
+        }
+        Ok(())
     }
 
     /// Update the ctime and mtime of a file to now.

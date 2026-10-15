@@ -1571,15 +1571,12 @@ pub fn bprm_creds_from_file(
     resolved_program: &mut ResolvedProgram,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.bprm_creds_from_file");
-
-    let (no_new_privs, is_ptraced_without_cap_sys_ptrace) = {
+    let mask_caps = {
         let state = current_task.read();
-        (state.no_new_privs(), state.is_ptraced_without_cap_sys_ptrace())
+        state.no_new_privs() || state.is_ptraced_without_cap_sys_ptrace()
     };
 
-    let enable_suid = current_task.kernel().features.enable_suid
-        && !no_new_privs
-        && !is_ptraced_without_cap_sys_ptrace;
+    let enable_suid = current_task.kernel().features.enable_suid && !mask_caps;
     if enable_suid {
         resolved_program.file.name().apply_suid_and_sgid(&mut resolved_program.creds);
     }
@@ -1596,9 +1593,7 @@ pub fn bprm_creds_from_file(
     resolved_program.creds.saved_uid = resolved_program.creds.euid;
     resolved_program.creds.saved_gid = resolved_program.creds.egid;
 
-    common_cap::bprm_creds_from_file(current_task, resolved_program)?;
-
-    Ok(())
+    common_cap::bprm_creds_from_file(current_task, resolved_program, mask_caps)
 }
 
 /// Checks permissions for `execve`, updating [`ResolvedProgram`] with the post-exec
@@ -1996,7 +1991,7 @@ pub fn path_notify(
 /// Returns true if the security subsystem should skip capability checks on access to the named
 /// attribute, false otherwise.
 pub fn fs_node_xattr_skipcap(name: &FsStr) -> bool {
-    selinux_hooks::fs_node::fs_node_xattr_skipcap(name)
+    common_cap::fs_node_xattr_skipcap(name) || selinux_hooks::fs_node::fs_node_xattr_skipcap(name)
 }
 
 /// This is called by Starnix even for filesystems which support extended attributes, unlike Linux
@@ -2087,6 +2082,30 @@ pub fn check_fs_node_removexattr_access(
     })
 }
 
+/// Returns whether `fs_node` has privileges (e.g. file capabilities) that need to be removed when
+/// modified.
+///
+/// Corresponds to the `inode_need_killpriv()` LSM hook.
+pub fn fs_node_needs_killpriv(current_task: &CurrentTask, fs_node: &FsNode) -> Result<bool, Errno> {
+    track_hook_duration!("security.hooks.fs_node_needs_killpriv");
+    if fs_node.is_private() {
+        return Ok(false);
+    }
+    common_cap::fs_node_needs_killpriv(current_task, fs_node)
+}
+
+/// Removes privileges (e.g. file capabilities) from `fs_node` when its contents or ownership
+/// are modified.
+///
+/// Corresponds to the `inode_killpriv()` LSM hook.
+pub fn fs_node_killpriv(current_task: &CurrentTask, fs_node: &FsNode) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.fs_node_killpriv");
+    if fs_node.is_private() {
+        return Ok(());
+    }
+    common_cap::fs_node_killpriv(current_task, fs_node)
+}
+
 /// If SELinux is enabled and `fs_node` is in a filesystem without xattr support, returns the xattr
 /// name for the security label associated with inode. Otherwise returns None.
 ///
@@ -2122,7 +2141,7 @@ pub fn fs_node_getsecurity(
     if fs_node.is_private() {
         return fs_node.ops().get_xattr(fs_node, current_task, name, max_size);
     }
-    if_selinux_else(
+    let result = if_selinux_else(
         current_task,
         |security_server| {
             selinux_hooks::fs_node::fs_node_getsecurity(
@@ -2132,9 +2151,14 @@ pub fn fs_node_getsecurity(
                 name,
                 max_size,
             )
+            .transpose()
         },
-        || fs_node.ops().get_xattr(fs_node, current_task, name, max_size),
-    )
+        || None,
+    );
+    let result = result.or_else(|| {
+        common_cap::fs_node_getsecurity(current_task, fs_node, name, max_size).transpose()
+    });
+    result.unwrap_or_else(|| fs_node.ops().get_xattr(fs_node, current_task, name, max_size))
 }
 
 /// Called when an extended attribute with "security."-prefixed `name` is being set, after having
@@ -2153,7 +2177,7 @@ pub fn fs_node_setsecurity(
     if fs_node.is_private() {
         return fs_node.ops().set_xattr(fs_node, current_task, name, value, op);
     }
-    if_selinux_else(
+    let result = if_selinux_else(
         current_task,
         |security_server| {
             selinux_hooks::fs_node::fs_node_setsecurity(
@@ -2164,9 +2188,14 @@ pub fn fs_node_setsecurity(
                 value,
                 op,
             )
+            .transpose()
         },
-        || fs_node.ops().set_xattr(fs_node, current_task, name, value, op),
-    )
+        || None,
+    );
+    let result = result.or_else(|| {
+        common_cap::fs_node_setsecurity(current_task, fs_node, name, value, op).transpose()
+    });
+    result.unwrap_or_else(|| fs_node.ops().set_xattr(fs_node, current_task, name, value, op))
 }
 
 /// Checks whether `current_task` can perform the given bpf `cmd`. This hook is called from the

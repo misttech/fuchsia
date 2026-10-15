@@ -312,7 +312,7 @@ macro_rules! TODO_DENY {
 /// against `fs_node`.
 fn fs_node_effective_sid_and_class(fs_node: &FsNode) -> FsNodeSidAndClass {
     debug_assert!(!fs_node.is_private());
-    let label_class = fs_node.security_state.0.read();
+    let label_class = fs_node.security_state.selinux.read();
     if matches!(label_class.label, FsNodeLabel::Uninitialized) {
         // We should never reach here, but for now enforce it in debug builds.
         if cfg!(any(test, debug_assertions)) {
@@ -678,7 +678,7 @@ pub(super) struct BpfProgState {
 /// security id of this [`FsNode`].
 pub(super) fn set_cached_sid(fs_node: &FsNode, sid: SecurityId) {
     debug_assert!(!fs_node.is_private());
-    fs_node.security_state.0.update_label(FsNodeLabel::SecurityId { sid });
+    fs_node.security_state.selinux.update_label(FsNodeLabel::SecurityId { sid });
 }
 
 /// Sets the Task associated with `fs_node` to `task`.
@@ -688,7 +688,7 @@ fn fs_node_set_label_with_task(fs_node: &FsNode, task_persistent_info: &TaskPers
     debug_assert!(!fs_node.is_private());
     fs_node
         .security_state
-        .0
+        .selinux
         .update_label(FsNodeLabel::FromTask { task_state: task_persistent_info.clone() });
 }
 
@@ -697,28 +697,28 @@ fn fs_node_set_label_with_task(fs_node: &FsNode, task_persistent_info: &TaskPers
 /// a security class more specific than "file" has already been set on the node.
 fn fs_node_ensure_class(fs_node: &FsNode) -> Result<FsNodeClass, Errno> {
     debug_assert!(!fs_node.is_private());
-    let label_class = fs_node.security_state.0.read();
+    let label_class = fs_node.security_state.selinux.read();
     if let Some(class) = label_class.class {
         return Ok(class);
     }
 
     let file_mode = fs_node.info().mode;
-    let _lock = fs_node.security_state.0.update_lock.lock();
-    let label_class = fs_node.security_state.0.read();
+    let _lock = fs_node.security_state.selinux.update_lock.lock();
+    let label_class = fs_node.security_state.selinux.read();
     if let Some(class) = label_class.class {
         return Ok(class);
     }
     let mut new_label_class = (*label_class).clone();
     let class = file_class_from_file_mode(file_mode)?.into();
     new_label_class.class = Some(class);
-    fs_node.security_state.0.label.update(new_label_class);
+    fs_node.security_state.selinux.label.update(new_label_class);
     Ok(class)
 }
 
 #[cfg(test)]
 /// Returns the SID with which the node is labeled, if any, for use by `FsNode` labeling tests.
 pub(super) fn get_cached_sid(fs_node: &FsNode) -> Option<SecurityId> {
-    let label_class = fs_node.security_state.0.read();
+    let label_class = fs_node.security_state.selinux.read();
     if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
         Some(label_class.sid())
     } else {

@@ -3,11 +3,14 @@
 // found in the LICENSE file.
 #include <err.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/auxv.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <print>
@@ -16,39 +19,6 @@
 #include <linux/prctl.h>
 
 namespace {
-
-bool HasCapabilityEffective(int cap) {
-  __user_cap_header_struct header;
-  memset(&header, 0, sizeof(header));
-  header.version = _LINUX_CAPABILITY_VERSION_3;
-  __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-  if (syscall(SYS_capget, &header, &caps) != 0) {
-    err(EXIT_FAILURE, "capget");
-  }
-  return caps[CAP_TO_INDEX(cap)].effective & CAP_TO_MASK(cap);
-}
-
-bool HasCapabilityPermitted(int cap) {
-  __user_cap_header_struct header;
-  memset(&header, 0, sizeof(header));
-  header.version = _LINUX_CAPABILITY_VERSION_3;
-  __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-  if (syscall(SYS_capget, &header, &caps) != 0) {
-    err(EXIT_FAILURE, "capget");
-  }
-  return caps[CAP_TO_INDEX(cap)].permitted & CAP_TO_MASK(cap);
-}
-
-bool HasCapabilityInheritable(int cap) {
-  __user_cap_header_struct header;
-  memset(&header, 0, sizeof(header));
-  header.version = _LINUX_CAPABILITY_VERSION_3;
-  __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-  if (syscall(SYS_capget, &header, &caps) != 0) {
-    err(EXIT_FAILURE, "capget");
-  }
-  return caps[CAP_TO_INDEX(cap)].inheritable & CAP_TO_MASK(cap);
-}
 
 bool HasCapabilityAmbient(int cap) {
   int res = prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, cap, 0, 0);
@@ -87,13 +57,20 @@ int MaxCapabilitySupported() {
 }
 
 void PrintCapabilities() {
+  __user_cap_header_struct header = {.version = _LINUX_CAPABILITY_VERSION_3, .pid = 0};
+  __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {};
+  if (syscall(SYS_capget, &header, &caps) != 0) {
+    err(EXIT_FAILURE, "capget");
+  }
+
   std::println(stdout, "CAP_NUM,EFFECTIVE,PERMITTED,INHERITABLE,BOUNDING,AMBIENT");
 
   const int cap_last_cap = MaxCapabilitySupported();
-
   for (int capability = 0; capability <= cap_last_cap; capability++) {
-    std::println(stdout, "{},{},{},{},{},{}", capability, b2d(HasCapabilityEffective(capability)),
-                 b2d(HasCapabilityPermitted(capability)), b2d(HasCapabilityInheritable(capability)),
+    const auto& data = caps[CAP_TO_INDEX(capability)];
+    const uint32_t mask = CAP_TO_MASK(capability);
+    std::println(stdout, "{},{},{},{},{},{}", capability, b2d((data.effective & mask) != 0),
+                 b2d((data.permitted & mask) != 0), b2d((data.inheritable & mask) != 0),
                  b2d(HasCapabilityBounding(capability)), b2d(HasCapabilityAmbient(capability)));
   }
 }
@@ -116,6 +93,16 @@ void PrintPDeathSig() {
   std::println(stdout, "{}", pdeathsig);
 }
 
+void PrintAtSecure() { std::println(stdout, "{}", getauxval(AT_SECURE)); }
+
+void PrintUids() {
+  uid_t ruid = 0, euid = 0, suid = 0;
+  if (getresuid(&ruid, &euid, &suid) != 0) {
+    err(EXIT_FAILURE, "getresuid");
+  }
+  std::println(stdout, "{},{},{}", ruid, euid, suid);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -126,8 +113,11 @@ int main(int argc, char** argv) {
   if (argc != 2) {
     std::println(stderr, "Usage: {} <command>", argv[0]);
     std::println(stderr, "commands:");
+    std::println(stderr, "\tcapabilities: print the capability sets");
     std::println(stderr, "\tsecurebits: print the securebits flags");
     std::println(stderr, "\tpdeathsig: print the parent-death signal number");
+    std::println(stderr, "\tat_secure: print the AT_SECURE auxv value");
+    std::println(stderr, "\tuids: print the real, effective, and saved user IDs");
     exit(EXIT_FAILURE);
   }
 
@@ -137,6 +127,10 @@ int main(int argc, char** argv) {
     PrintCapabilities();
   } else if (strcmp(argv[1], "pdeathsig") == 0) {
     PrintPDeathSig();
+  } else if (strcmp(argv[1], "at_secure") == 0) {
+    PrintAtSecure();
+  } else if (strcmp(argv[1], "uids") == 0) {
+    PrintUids();
   } else {
     std::println(stderr, "Invalid command: {}", argv[1]);
     exit(EXIT_FAILURE);

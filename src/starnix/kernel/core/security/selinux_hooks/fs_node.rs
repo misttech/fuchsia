@@ -90,7 +90,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     // This hook is called every time an `FsNode` is linked to a `DirEntry`, so it is expected that
     // the `FsNode` may already have been labeled.
     let fs_node = &dir_entry.node;
-    let label_class = fs_node.security_state.0.read();
+    let label_class = fs_node.security_state.selinux.read();
     if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
         return Ok(());
     }
@@ -101,7 +101,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     let parent = dir_entry.parent();
     if let Some(ref parent) = parent {
         let parent_node = &parent.node;
-        let parent_label = (*parent_node.security_state.0.read()).clone();
+        let parent_label = (*parent_node.security_state.selinux.read()).clone();
         if let FsNodeLabel::FromTask { task_state } = &parent_label.label {
             fs_node_set_label_with_task(fs_node, task_state);
             return Ok(());
@@ -218,7 +218,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
         }
         FileSystemLabelingScheme::GenFsCon { .. } => {
             let fs_type = fs_node.fs().name();
-            let fs_node_class = fs_node.security_state.0.read().class();
+            let fs_node_class = fs_node.security_state.selinux.read().class();
             let sub_path = get_fs_relative_path(dir_entry);
             security_server
                 .genfscon_label_for_fs_and_path(
@@ -420,7 +420,7 @@ pub(in crate::security) fn fs_node_init_on_create(
     debug_assert!(parent.is_none_or(|parent| !parent.is_private()));
 
     // By definition this is a new `FsNode` so should not have already been labeled.
-    let label_class = new_node.security_state.0.read();
+    let label_class = new_node.security_state.selinux.read();
     let is_uninitialized = matches!(label_class.label, FsNodeLabel::Uninitialized);
     assert!(is_uninitialized, "init_on_create() for {:?} with label {:?}", new_node, *label_class);
     if new_node.fs().name() == "overlay" {
@@ -543,7 +543,7 @@ pub(in crate::security) fn fs_node_init_anon(
         InitialSid::Unlabeled.into()
     };
 
-    new_node.security_state.0.update(FsNodeLabel::SecurityId { sid }, node_class);
+    new_node.security_state.selinux.update(FsNodeLabel::SecurityId { sid }, node_class);
 
     Ok(())
 }
@@ -1284,18 +1284,17 @@ pub(in crate::security) fn fs_node_listsecurity(fs_node: &FsNode) -> Option<FsSt
 }
 
 /// Returns the Security Context corresponding to the SID with which `FsNode`
-/// is labelled, otherwise delegates to the node's [`crate::vfs::FsNodeOps`].
+/// is labelled, or `Ok(None)` if `name` is not `"security.selinux"`.
 pub(in crate::security) fn fs_node_getsecurity(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     fs_node: &FsNode,
     name: &FsStr,
     max_size: usize,
-) -> Result<ValueOrSize<FsString>, Errno> {
+) -> Result<Option<ValueOrSize<FsString>>, Errno> {
     debug_assert!(!fs_node.is_private());
-    // If the xattr is not "security.selinux" then immediately fall back to `get_xattr()`.
-    if name != FsStr::new(XATTR_NAME_SELINUX.to_bytes()) {
-        return fs_node.ops().get_xattr(fs_node, current_task, name, max_size);
+    if name != XATTR_NAME_SELINUX.to_bytes() {
+        return Ok(None);
     }
 
     // If the SID cached on the node is "unlabeled" then the node may have an xattr with an invalid
@@ -1305,20 +1304,20 @@ pub(in crate::security) fn fs_node_getsecurity(
     if sid == InitialSid::Unlabeled.into() && fs_node.fs().security_state.state.supports_xattr() {
         let result = fs_node.ops().get_xattr(fs_node, current_task, name, max_size);
         if result != error!(ENOTSUP) {
-            return result;
+            return result.map(Some);
         }
     }
 
     // Serialize the SID to a Security Context and return it.
     if let Some(context) = security_server.sid_to_security_context_with_nul(sid) {
-        return Ok(ValueOrSize::Value(context.into()));
+        return Ok(Some(ValueOrSize::Value(context.into())));
     }
 
     error!(ENOTSUP)
 }
 
 /// Sets the `name`d security attribute on `fs_node` and updates internal
-/// kernel state.
+/// kernel state, or returns `Ok(None)` if `name` is not `"security.selinux"`.
 // TODO: https://fxbug.dev/367585803 - This API should be called with the `fs_node`'s security
 // state already locked by `check_fs_node_setxattr_access()`, for consistency.
 pub(in crate::security) fn fs_node_setsecurity(
@@ -1328,10 +1327,10 @@ pub(in crate::security) fn fs_node_setsecurity(
     name: &FsStr,
     value: &FsStr,
     op: XattrOp,
-) -> Result<(), Errno> {
+) -> Result<Option<()>, Errno> {
     debug_assert!(!fs_node.is_private());
-    if name != FsStr::new(XATTR_NAME_SELINUX.to_bytes()) {
-        return fs_node.ops().set_xattr(fs_node, current_task, name, value, op);
+    if name != XATTR_NAME_SELINUX.to_bytes() {
+        return Ok(None);
     }
 
     // If the filesystem is configured to persist labels into xattrs then apply the label to the
@@ -1345,7 +1344,7 @@ pub(in crate::security) fn fs_node_setsecurity(
     let effective_new_sid = new_sid.unwrap_or_else(|| InitialSid::Unlabeled.into());
     set_cached_sid(fs_node, effective_new_sid);
 
-    Ok(())
+    Ok(Some(()))
 }
 
 /// Updates `new_creds` with the credentials required to copy-up `fs_node` into a new node.
@@ -1387,7 +1386,7 @@ mod tests {
 
     /// Clears the cached security id on `fs_node`.
     fn clear_cached_sid(fs_node: &FsNode) {
-        fs_node.security_state.0.clear_label_for_test();
+        fs_node.security_state.selinux.clear_label_for_test();
     }
 
     #[fuchsia::test]
@@ -1431,7 +1430,7 @@ mod tests {
                 SECURITY_SELINUX_XATTR_VALUE_MAX_SIZE,
             )
             .unwrap();
-            assert_eq!(result, ValueOrSize::Value(default_file_context));
+            assert_eq!(result, Some(ValueOrSize::Value(default_file_context)));
             assert!(get_cached_sid(node).is_some());
         })
         .await;
@@ -1477,7 +1476,7 @@ mod tests {
                 SECURITY_SELINUX_XATTR_VALUE_MAX_SIZE,
             )
             .unwrap();
-            assert_eq!(result, ValueOrSize::Value(INVALID_CONTEXT.into()));
+            assert_eq!(result, Some(ValueOrSize::Value(INVALID_CONTEXT.into())));
 
             // The SID cached for the `node` should be "unlabeled".
             let unlabeled_initial_sid = InitialSid::Unlabeled.into();
@@ -1528,7 +1527,7 @@ mod tests {
                 SECURITY_SELINUX_XATTR_VALUE_MAX_SIZE,
             )
             .unwrap();
-            assert_eq!(result, ValueOrSize::Value(VALID_SECURITY_CONTEXT_WITH_NUL.into()));
+            assert_eq!(result, Some(ValueOrSize::Value(VALID_SECURITY_CONTEXT_WITH_NUL.into())));
 
             // There should be a SID cached, and it should map to the valid Security Context.
             let cached_sid = get_cached_sid(node).unwrap();

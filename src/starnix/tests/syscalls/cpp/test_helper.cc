@@ -943,6 +943,8 @@ void Holder::hold() {
       .revents = 0,
   };
   SAFE_SYSCALL(HANDLE_EINTR(poll(&pfd, 1, -1)));
+  EXPECT_TRUE(pfd.revents & POLLIN)
+      << "Peer closed pipe without poking (revents=" << pfd.revents << ")";
 }
 
 Rendezvous MakeRendezvous() { return MakeRendezvous(ScopedPipe()); }
