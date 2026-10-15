@@ -322,6 +322,23 @@ class ZeroFunctionTest(zero_function.ZeroFunctionBaseTest):
             results, "Loopback EP0 generic control tests failed"
         )
 
+    def test_loopback_control_roundtrip(self) -> None:
+        """Verifies userspace EP0 control loopback round-trips (Test 36)."""
+        dev_node = self.require_dev_node()
+        _LOGGER.info(
+            "Executing Userspace EP0 Control Loopback Round-trips on %s...",
+            dev_node,
+        )
+        results = self.execute_testusb(
+            dev_node=dev_node,
+            test_ids=[36],
+            mode="loopback",
+            iterations=5,
+        )
+        self.assert_testusb_success(
+            results, "Userspace EP0 Control Loopback Round-trips failed"
+        )
+
     def test_loopback_bulk_roundtrip(self) -> None:
         """Verifies userspace bulk loopback fixed and varying round-trips."""
         dev_node = self.require_dev_node()

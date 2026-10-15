@@ -130,6 +130,30 @@ class USBTestBackend(ABC):
             error_message="Bulk loopback test not implemented for backend",
         )
 
+    def run_control_loopback(
+        self,
+        params: TestParams,
+        test_id: int = 36,
+        test_name: str = "Test 36: LOOPBACK_CTRL",
+    ) -> TestResult:
+        """Run bidirectional EP0 control loopback test.
+
+        Args:
+            params: Test parameters controlling transfer length and iterations.
+            test_id: Numerical identifier of the test case.
+            test_name: Human-readable name of the test case.
+
+        Returns:
+            TestResult summarizing outcome and transfer metrics.
+        """
+        return TestResult(
+            test_id=test_id,
+            test_name=test_name,
+            status=TestStatus.SKIP,
+            duration_secs=0.0,
+            error_message="Control loopback test not implemented for backend",
+        )
+
     @abstractmethod
     def claimed_interface(
         self, ifnum: int

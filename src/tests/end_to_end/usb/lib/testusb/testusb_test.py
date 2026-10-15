@@ -48,8 +48,8 @@ class TestParseTestSelection(unittest.TestCase):
         self.assertEqual(parse_test_selection("0-31"), list(range(32)))
 
     def test_all_keyword(self) -> None:
-        self.assertEqual(parse_test_selection("all"), list(range(36)))
-        self.assertEqual(parse_test_selection("ALL"), list(range(36)))
+        self.assertEqual(parse_test_selection("all"), list(range(37)))
+        self.assertEqual(parse_test_selection("ALL"), list(range(37)))
 
     def test_none_keyword(self) -> None:
         self.assertEqual(parse_test_selection("none"), [])
@@ -68,8 +68,8 @@ class TestParseTestSelection(unittest.TestCase):
             "-5",
             "5-2",  # start > end
             "-1",
-            "36",  # out of range 0..35
-            "1,2,36",
+            "37",  # out of range 0..36
+            "1,2,37",
             "",
             "   ",
         ]
@@ -868,6 +868,96 @@ class TestIoctlBackendLoopback(unittest.TestCase):
         backend = ioctl.USBTestIoctlBackend("/dev/usbtest")
         self.assertIsNone(backend._get_sysfs_device_path())
 
+    def test_ioctl_run_control_loopback_success(self) -> None:
+        backend = ioctl.USBTestIoctlBackend("/dev/bus/usb/001/002")
+        backend._fd = 123
+        backend.is_open = True
+        backend.speed_name = "high"
+        backend.current_config = 2
+
+        mock_cdll = MagicMock()
+        loopback_buf = b""
+
+        def ioctl_side_effect(fd: int, request: int, arg_ptr: Any) -> int:
+            nonlocal loopback_buf
+            if request == ioctl.USBDEVFS_CONTROL:
+                ctrl = arg_ptr._obj
+                if ctrl.bRequest == ioctl._USB_ZERO_REQ_CTRL_LOOPBACK_OUT:
+                    buf = ctypes.cast(
+                        ctrl.data,
+                        ctypes.POINTER(ctypes.c_char * ctrl.wLength),
+                    )
+                    loopback_buf = buf.contents.raw
+                    return ctrl.wLength
+                if ctrl.bRequest == ioctl._USB_ZERO_REQ_CTRL_LOOPBACK_IN:
+                    to_copy = min(ctrl.wLength, len(loopback_buf))
+                    buf = ctypes.cast(
+                        ctrl.data,
+                        ctypes.POINTER(ctypes.c_char * to_copy),
+                    )
+                    buf.contents.raw = loopback_buf[:to_copy]
+                    return to_copy
+                if ctrl.bRequest == 0x06 and ctrl.wValue == 0x0100:
+                    buf18 = (ctypes.c_char * 18).from_address(ctrl.data)
+                    buf18[17] = b"\x02"
+                    return 18
+                if ctrl.bRequest == 0x08:
+                    buf1 = (ctypes.c_char * 1).from_address(ctrl.data)
+                    buf1[0] = b"\x02"
+                    return 1
+            return 0
+
+        mock_cdll.ioctl.side_effect = ioctl_side_effect
+        with patch.object(ioctl, "_get_libc", return_value=mock_cdll):
+            params = TestParams(iterations=2, length=512)
+            res = backend.run_test(36, params)
+            self.assertEqual(res.status, TestStatus.PASS)
+            self.assertEqual(res.test_id, 36)
+            self.assertEqual(res.iterations_completed, 2)
+            expected_bytes = 2 * sum(ioctl._CTRL_LOOPBACK_LENGTHS) * 2
+            self.assertEqual(res.bytes_transferred, expected_bytes)
+
+    def test_ioctl_run_control_loopback_mismatch_failure(self) -> None:
+        backend = ioctl.USBTestIoctlBackend("/dev/bus/usb/001/002")
+        backend._fd = 123
+        backend.is_open = True
+        backend.speed_name = "high"
+        backend.current_config = 2
+
+        mock_cdll = MagicMock()
+
+        def ioctl_side_effect(fd: int, request: int, arg_ptr: Any) -> int:
+            if request == ioctl.USBDEVFS_CONTROL:
+                ctrl = arg_ptr._obj
+                if ctrl.bRequest == ioctl._USB_ZERO_REQ_CTRL_LOOPBACK_OUT:
+                    return ctrl.wLength
+                if ctrl.bRequest == ioctl._USB_ZERO_REQ_CTRL_LOOPBACK_IN:
+                    buf = ctypes.cast(
+                        ctrl.data,
+                        ctypes.POINTER(ctypes.c_char * ctrl.wLength),
+                    )
+                    buf.contents.raw = b"\xff" * ctrl.wLength
+                    return ctrl.wLength
+                if ctrl.bRequest == 0x06 and ctrl.wValue == 0x0100:
+                    buf18 = (ctypes.c_char * 18).from_address(ctrl.data)
+                    buf18[17] = b"\x02"
+                    return 18
+                if ctrl.bRequest == 0x08:
+                    buf1 = (ctypes.c_char * 1).from_address(ctrl.data)
+                    buf1[0] = b"\x02"
+                    return 1
+            return 0
+
+        mock_cdll.ioctl.side_effect = ioctl_side_effect
+        with patch.object(ioctl, "_get_libc", return_value=mock_cdll):
+            params = TestParams(iterations=1, length=512)
+            res = backend.run_test(36, params)
+            self.assertEqual(res.status, TestStatus.FAIL)
+            self.assertIn(
+                "Control loopback data corruption (wLength=63)",
+                res.error_message or "",
+            )
+
 
 class TestCLI(unittest.TestCase):
     """Tests for testusb CLI argument parsing, flags, and error codes."""
@@ -917,7 +1007,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(mock_backend.configs_set, [2])
         self.assertEqual(
             mock_backend.executed_tests,
-            [0, 9, 10, 14, 21, 32, 33, 34, 35],
+            [0, 9, 10, 14, 21, 32, 33, 34, 35, 36],
         )
 
     @patch.object(cli, "_create_backend")

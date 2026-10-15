@@ -264,9 +264,16 @@ _USB_REQ_SYNCH_FRAME: int = 0x0C
 
 # USB Request Types and Recipients
 _USB_TYPE_STANDARD: int = 0x00
+_USB_TYPE_VENDOR: int = 0x40
 _USB_RECIP_DEVICE: int = 0x00
 _USB_RECIP_INTERFACE: int = 0x01
 _USB_RECIP_ENDPOINT: int = 0x02
+
+# USB Zero Function Vendor Control Loopback Requests. These match the Linux
+# usbtest host driver (drivers/usb/misc/usbtest.c) and f_sourcesink gadget.
+_USB_ZERO_REQ_CTRL_LOOPBACK_OUT: int = 0x5B
+_USB_ZERO_REQ_CTRL_LOOPBACK_IN: int = 0x5C
+_CTRL_LOOPBACK_LENGTHS: tuple[int, ...] = (63, 64, 65, 512)
 
 _USB_DT_DEVICE_SIZE: int = 18
 _USB_DT_CONFIG_SIZE: int = 9
@@ -354,12 +361,13 @@ def _make_get_configuration_transfer(
 
 
 class LoopbackTestId(enum.IntEnum):
-    """Test IDs for userspace bidirectional bulk loopback tests."""
+    """Test IDs for userspace bidirectional loopback tests."""
 
     BULK_FIXED = 32
     BULK_VARY = 33
     BULK_SHORT = 34
     BULK_ZLP = 35
+    CTRL = 36
 
 
 class USBTestIoctlBackend(USBTestBackend):
@@ -1302,6 +1310,185 @@ class USBTestIoctlBackend(USBTestBackend):
             throughput_mbs=throughput_mbs,
         )
 
+    def run_control_loopback(
+        self,
+        params: TestParams,
+        test_id: int = 36,
+        test_name: str = "Test 36: LOOPBACK_CTRL",
+    ) -> TestResult:
+        """Executes bidirectional EP0 control loopback test via USBDEVFS_CONTROL.
+
+        Sends unaligned and MPS-aligned control-write (0x5b) and control-read
+        (0x5c) vendor requests across payload lengths (63, 64, 65, 512 bytes)
+        and verifies payload integrity.
+
+        Args:
+            params: Parameters controlling iterations and timeout.
+            test_id: Integer test identifier.
+            test_name: Human-readable test name.
+
+        Returns:
+            TestResult recording status, duration, throughput, and errors.
+
+        Raises:
+            RuntimeError: If backend is not open.
+        """
+        if not self.is_open or self._fd is None:
+            raise RuntimeError("Backend is not open")
+
+        num_configs = self.get_num_configurations()
+        target_config = (
+            2 if num_configs > 1 else (self.get_configuration() or 1)
+        )
+        if self.get_configuration() != target_config:
+            if not self.set_configuration(target_config):
+                return TestResult(
+                    test_id=test_id,
+                    test_name=test_name,
+                    status=TestStatus.FAIL,
+                    duration_secs=0.0,
+                    error_message=(
+                        f"Failed to set Configuration {target_config} "
+                        "for control loopback"
+                    ),
+                )
+
+        cdll = _get_libc()
+        start_time = time.perf_counter()
+        total_bytes = 0
+        iterations_done = 0
+        error_msg = None
+
+        max_buf_len = max(_CTRL_LOOPBACK_LENGTHS)
+        pattern = bytes((j % 256) for j in range(max_buf_len))
+        out_buf = ctypes.create_string_buffer(pattern, max_buf_len)
+        in_buf = ctypes.create_string_buffer(max_buf_len)
+        mv_out = memoryview(out_buf)
+        mv_in = memoryview(in_buf)
+
+        for i in range(params.iterations):
+            for curr_len in _CTRL_LOOPBACK_LENGTHS:
+                ctypes.memset(in_buf, 0, curr_len)
+
+                ctrl_out = _make_ctrl_transfer(
+                    request_type=USB_DIR_OUT
+                    | _USB_TYPE_VENDOR
+                    | _USB_RECIP_DEVICE,
+                    request=_USB_ZERO_REQ_CTRL_LOOPBACK_OUT,
+                    length=curr_len,
+                    timeout_ms=params.timeout_ms,
+                    data_ptr=ctypes.addressof(out_buf),
+                )
+                try:
+                    res_out = cdll.ioctl(
+                        self._fd, USBDEVFS_CONTROL, ctypes.byref(ctrl_out)
+                    )
+                except OSError as err:
+                    error_msg = (
+                        f"Control OUT transfer (wLength={curr_len}) failed "
+                        f"at iteration {i}: {err}"
+                    )
+                    break
+                if res_out < 0:
+                    errno_val = ctypes.get_errno()
+                    error_msg = (
+                        f"Control OUT write (wLength={curr_len}) failed "
+                        f"at iteration {i}: errno {errno_val} "
+                        f"({os.strerror(errno_val)})"
+                    )
+                    break
+                if res_out != curr_len:
+                    error_msg = (
+                        f"Control OUT short write (wLength={curr_len}) "
+                        f"at iteration {i}: requested {curr_len} bytes, "
+                        f"sent {res_out} bytes"
+                    )
+                    break
+
+                ctrl_in = _make_ctrl_transfer(
+                    request_type=USB_DIR_IN
+                    | _USB_TYPE_VENDOR
+                    | _USB_RECIP_DEVICE,
+                    request=_USB_ZERO_REQ_CTRL_LOOPBACK_IN,
+                    length=curr_len,
+                    timeout_ms=params.timeout_ms,
+                    data_ptr=ctypes.addressof(in_buf),
+                )
+                try:
+                    res_in = cdll.ioctl(
+                        self._fd, USBDEVFS_CONTROL, ctypes.byref(ctrl_in)
+                    )
+                except OSError as err:
+                    error_msg = (
+                        f"Control IN transfer (wLength={curr_len}) failed "
+                        f"at iteration {i}: {err}"
+                    )
+                    break
+                if res_in < 0:
+                    errno_val = ctypes.get_errno()
+                    error_msg = (
+                        f"Control IN read (wLength={curr_len}) failed "
+                        f"at iteration {i}: errno {errno_val} "
+                        f"({os.strerror(errno_val)})"
+                    )
+                    break
+                if res_in != curr_len:
+                    error_msg = (
+                        f"Control loopback short read (wLength={curr_len}) "
+                        f"at iteration {i}: requested {curr_len} bytes, "
+                        f"got {res_in} bytes"
+                    )
+                    break
+
+                if mv_in[:curr_len] != mv_out[:curr_len]:
+                    recv_head = bytes(mv_in[: min(curr_len, 16)]).hex()
+                    sent_head = bytes(mv_out[: min(curr_len, 16)]).hex()
+                    error_msg = (
+                        f"Control loopback data corruption (wLength={curr_len})"
+                        f" at iteration {i}: recv {res_in} bytes "
+                        f"(head: {recv_head}) != sent {curr_len} bytes "
+                        f"(head: {sent_head})"
+                    )
+                    break
+
+                total_bytes += curr_len * 2
+
+            if error_msg:
+                break
+            iterations_done += 1
+
+        elapsed = time.perf_counter() - start_time
+        throughput_mbps = (
+            (total_bytes * 8 / 1e6) / elapsed if elapsed > 0 else 0.0
+        )
+        throughput_mbs = (
+            (total_bytes / (1024 * 1024)) / elapsed if elapsed > 0 else 0.0
+        )
+
+        if error_msg:
+            return TestResult(
+                test_id=test_id,
+                test_name=test_name,
+                status=TestStatus.FAIL,
+                duration_secs=elapsed,
+                error_message=error_msg,
+                iterations_completed=iterations_done,
+                bytes_transferred=total_bytes,
+                throughput_mbps=throughput_mbps,
+                throughput_mbs=throughput_mbs,
+            )
+
+        return TestResult(
+            test_id=test_id,
+            test_name=test_name,
+            status=TestStatus.PASS,
+            duration_secs=elapsed,
+            iterations_completed=iterations_done,
+            bytes_transferred=total_bytes,
+            throughput_mbps=throughput_mbps,
+            throughput_mbs=throughput_mbs,
+        )
+
     def run_test(self, test_id: int, params: TestParams) -> TestResult:
         """Executes a single test case against the target USB device.
 
@@ -1321,7 +1508,7 @@ class USBTestIoctlBackend(USBTestBackend):
         test_case = ALL_TEST_CASES.get(test_id)
         test_name = test_case.name if test_case else f"Test {test_id}"
 
-        # Dispatch Loopback tests 32..35 via pattern matching
+        # Dispatch Loopback tests 32..36 via pattern matching
         match test_id:
             case LoopbackTestId.BULK_FIXED:
                 return self.run_bulk_loopback(
@@ -1348,6 +1535,12 @@ class USBTestIoctlBackend(USBTestBackend):
                 return self.run_bulk_loopback(
                     params,
                     is_zlp=True,
+                    test_id=test_id,
+                    test_name=test_name,
+                )
+            case LoopbackTestId.CTRL:
+                return self.run_control_loopback(
+                    params,
                     test_id=test_id,
                     test_name=test_name,
                 )

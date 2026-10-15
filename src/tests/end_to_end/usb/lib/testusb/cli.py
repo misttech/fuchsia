@@ -74,11 +74,11 @@ def parse_test_selection(selection_str: str) -> list[int]:
     """Parse test selection string into a sorted list of unique test IDs.
 
     Supported formats:
-    - 'all' -> [0..35]
+    - 'all' -> [0..36]
     - '0' -> [0]
     - '0,1,2' -> [0, 1, 2]
     - '0-31' -> [0..31]
-    - '0-35' -> [0..35]
+    - '0-36' -> [0..36]
     - '1,2,5-10,32,33'
     - 'none' -> []
 
@@ -377,7 +377,7 @@ def main(argv: collections.abc.Sequence[str] | None = None) -> int:
     if args.tests != "all":
         test_selection = args.tests
     elif mode == "loopback":
-        test_selection = "0,9,10,14,21,32,33,34,35"
+        test_selection = "0,9,10,14,21,32,33,34,35,36"
     else:
         test_selection = "all"
 

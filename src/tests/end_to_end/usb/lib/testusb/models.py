@@ -289,4 +289,9 @@ ALL_TEST_CASES: dict[int, TestCase] = {
         "Test 35: LOOPBACK_BULK_ZLP",
         "Bidirectional bulk loopback zero-length packets",
     ),
+    36: TestCase(
+        36,
+        "Test 36: LOOPBACK_CTRL",
+        "Bidirectional EP0 control loopback round-trip",
+    ),
 }
