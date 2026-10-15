@@ -58,6 +58,14 @@ core_tests_for_fyi = [
 core_tests_for_fyi_iperf =
     [ "//src/connectivity/wlan/tests/core:throughput_test" ]
 
+# FYI Tests that require an iperf server and an attenuator
+core_tests_for_fyi_iperf_attenuator = [
+  "//src/connectivity/wlan/tests/core:rvr_test_2g_open",
+  "//src/connectivity/wlan/tests/core:rvr_test_2g_wpa2",
+  "//src/connectivity/wlan/tests/core:rvr_test_5g_open",
+  "//src/connectivity/wlan/tests/core:rvr_test_5g_wpa2",
+]
+
 # Tests longer than ~20 minutes consume significant resources and significantly
 # lengthen the cadence of the test runs. Split these tests out so we can run
 # them at reduced frequency.

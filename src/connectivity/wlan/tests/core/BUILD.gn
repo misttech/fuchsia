@@ -235,6 +235,86 @@ antlion_host_test("phy_compliance_abg_test") {
   ]
 }
 
+antlion_host_test("rvr_test_2g_open") {
+  main_source = "WlanRvrTest.py"
+  test_params = "rvr_settings.yaml"
+  test_cases = [ "re:test_rvr_11n_2g_20mhz_open_.*" ]
+  package_deps = [ "//third_party/iperf:iperf3_pkg" ]
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",
+    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_host_test_data",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/iperf",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+}
+
+antlion_host_test("rvr_test_2g_wpa2") {
+  main_source = "WlanRvrTest.py"
+  test_params = "rvr_settings.yaml"
+  test_cases = [ "re:test_rvr_11n_2g_20mhz_wpa2_.*" ]
+  package_deps = [ "//third_party/iperf:iperf3_pkg" ]
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",
+    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_host_test_data",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/iperf",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+}
+
+antlion_host_test("rvr_test_5g_open") {
+  main_source = "WlanRvrTest.py"
+  test_params = "rvr_settings.yaml"
+  test_cases = [ "re:test_rvr_11ac_5g_80mhz_open_.*" ]
+  package_deps = [ "//third_party/iperf:iperf3_pkg" ]
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",
+    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_host_test_data",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/iperf",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+}
+
+antlion_host_test("rvr_test_5g_wpa2") {
+  main_source = "WlanRvrTest.py"
+  test_params = "rvr_settings.yaml"
+  test_cases = [ "re:test_rvr_11ac_5g_80mhz_wpa2_.*" ]
+  package_deps = [ "//third_party/iperf:iperf3_pkg" ]
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",
+    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_host_test_data",
+    "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_host_test_data",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/iperf",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+}
+
 # This is a helper group so developers can easily add all tests to their build.
 # It is not run by infra. You should not directly add tests here, but rather to
 # one of the other groups below so it runs in infra.
@@ -243,6 +323,7 @@ group("tests_host") {
   public_deps = [
     ":tests_for_fyi",
     ":tests_for_fyi_iperf",
+    ":tests_for_fyi_iperf_attenuator",
     ":tests_for_fyi_long",
     ":tests_for_postsubmit",
     ":tests_for_presubmit",
@@ -279,6 +360,11 @@ group("tests_for_fyi") {
 group("tests_for_fyi_iperf") {
   testonly = true
   public_deps = core_tests_for_fyi_iperf  # Edit in test_lists.gni
+}
+
+group("tests_for_fyi_iperf_attenuator") {
+  testonly = true
+  public_deps = core_tests_for_fyi_iperf_attenuator  # Edit in test_lists.gni
 }
 
 group("tests_for_fyi_long") {

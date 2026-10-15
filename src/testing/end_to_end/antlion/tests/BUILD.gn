@@ -10,10 +10,13 @@ assert(is_host, "antlion tests only supported for host testing")
 group("e2e_tests") {
   testonly = true
   public_deps =
-      [ "wlan:e2e_tests" ] +
       # As tests are migrated out of the antlion directory, add them
       # to this group to ensure they are still included in the e2e
       # test suite for release testing.
+      #
+      # TODO(b/573468837): Turn down antlion builders and migrate to
+      # fuchsia_internal builders.
+      core_tests_for_fyi_iperf + core_tests_for_fyi_iperf_attenuator +
       core_tests_for_fyi_long + wlancfg_tests_for_presubmit +
       wlancfg_tests_for_wlan_presubmit + wlancfg_tests_for_postsubmit +
       wlancfg_tests_for_fyi + wlancfg_tests_for_fyi_long
