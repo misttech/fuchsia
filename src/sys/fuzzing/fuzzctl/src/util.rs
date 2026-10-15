@@ -8,8 +8,8 @@ use anyhow::{Context as _, Result, bail};
 use flex_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
 use url::Url;
 
 /// Creates a directory under the given `parent` directory, if it does not already exist.
@@ -68,37 +68,16 @@ pub fn digest_path<P: AsRef<Path>>(out_dir: P, result: Option<FuzzResult>, data:
 
 /// Gets URLs for available fuzzers.
 ///
-/// Reads from the filesystem and parses the build metadata to produce a list of URLs for fuzzer
-/// packages. If `tests_json` is `None`, this will look for the FUCHSIA_DIR environment variable to
-/// locate tests.json within the build directory.
+/// Reads from the filesystem and parses the build metadata in `tests_json` to produce a list of
+/// URLs for fuzzer packages.
 ///
-/// Returns an error if tests.json cannot be found, read, or parsed as valid JSON.
-pub fn get_fuzzer_urls(tests_json: &Option<String>) -> Result<Vec<Url>> {
-    let tests_json = match tests_json {
-        Some(tests_json) => Ok(PathBuf::from(tests_json)),
-        None => test_json_path(None).context("tests.json was not provided and could not be found"),
-    }?;
-    let json_data = fs::read_to_string(&tests_json)
+/// Returns an error if `tests_json` cannot be read or parsed as valid JSON.
+pub fn get_fuzzer_urls<P: AsRef<Path>>(tests_json: P) -> Result<Vec<Url>> {
+    let tests_json = tests_json.as_ref();
+    let json_data = fs::read_to_string(tests_json)
         .context(format!("failed to read '{}'", tests_json.to_string_lossy()))?;
     parse_tests_json(json_data)
         .context(format!("failed to parse '{}'", tests_json.to_string_lossy()))
-}
-
-fn test_json_path(fuchsia_dir: Option<&Path>) -> Result<PathBuf> {
-    let fuchsia_dir = match fuchsia_dir {
-        Some(fuchsia_dir) => Ok(fuchsia_dir.to_string_lossy().to_string()),
-        None => env::var("FUCHSIA_DIR").context("FUCHSIA_DIR is not set"),
-    }?;
-    let mut fx_build_dir = PathBuf::from(&fuchsia_dir);
-    fx_build_dir.push(".fx-build-dir");
-    let mut fx_build_dir = fs::read_to_string(&fx_build_dir)
-        .with_context(|| format!("failed to read '{}'", fx_build_dir.to_string_lossy()))?;
-
-    fx_build_dir.retain(|c| !c.is_whitespace());
-    let mut tests_json = PathBuf::from(&fuchsia_dir);
-    tests_json.push(&fx_build_dir);
-    tests_json.push("tests.json");
-    Ok(tests_json)
 }
 
 fn parse_tests_json(json_data: String) -> Result<Vec<Url>> {
@@ -135,36 +114,16 @@ fn parse_tests_json(json_data: String) -> Result<Vec<Url>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{get_fuzzer_urls, test_json_path};
+    use super::get_fuzzer_urls;
     use anyhow::Result;
     use fuchsia_fuzzctl_test::Test;
     use serde_json::json;
 
     #[fuchsia::test]
-    async fn test_test_json_path() -> Result<()> {
-        let test = Test::try_new()?;
-        let build_dir = test.create_dir("out/default")?;
-
-        // Missing .fx-build-dir
-        let fuchsia_dir = test.root_dir();
-        let actual = format!("{:?}", test_json_path(Some(&fuchsia_dir)));
-        let expected = format!("failed to read '{}/.fx-build-dir'", fuchsia_dir.to_string_lossy());
-        assert!(actual.contains(&expected));
-
-        // Valid
-        test.write_fx_build_dir(&build_dir)?;
-        test_json_path(Some(&fuchsia_dir))?;
-        Ok(())
-    }
-
-    #[fuchsia::test]
     async fn test_get_fuzzer_urls() -> Result<()> {
         let test = Test::try_new()?;
         let build_dir = test.create_dir("out/default")?;
-        test.write_fx_build_dir(&build_dir)?;
-        let fuchsia_dir = test.root_dir();
-        let tests_json = test_json_path(Some(fuchsia_dir))?;
-        let tests_json = Some(tests_json.to_string_lossy().to_string());
+        let tests_json = build_dir.join("tests.json");
 
         // Missing tests.json
         let actual = format!("{:?}", get_fuzzer_urls(&tests_json));

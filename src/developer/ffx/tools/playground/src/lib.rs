@@ -10,6 +10,7 @@ use buf_read_ext::BufReadExt as _;
 use crossterm::tty::IsTty;
 use errors::ffx_bail;
 use fdomain_client::fidl::Proxy;
+use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fidl_codec_fdomain::library as lib;
@@ -22,7 +23,6 @@ use playground::interpreter::Interpreter;
 use playground::value::Value;
 use std::fs::File;
 use std::io::{self, BufReader, stdin};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use target_holders::RemoteControlProxyHolder;
 use vfs::directory::helper::DirectlyMutable;
@@ -57,6 +57,7 @@ pub struct PlaygroundTool {
     #[command]
     cmd: PlaygroundCommand,
     rcs_proxy: RemoteControlProxyHolder,
+    context: EnvironmentContext,
 }
 
 #[async_trait(?Send)]
@@ -66,12 +67,13 @@ impl FfxMain for PlaygroundTool {
     type Error = ::fho::Error;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        exec_playground(self.rcs_proxy, self.cmd).await?;
+        exec_playground(&self.context, self.rcs_proxy, self.cmd).await?;
         Ok(())
     }
 }
 
 pub async fn exec_playground(
+    context: &EnvironmentContext,
     remote_proxy: RemoteControlProxyHolder,
     command: PlaygroundCommand,
 ) -> Result<()> {
@@ -87,19 +89,11 @@ pub async fn exec_playground(
 
     let mut lib_namespace = lib::Namespace::new();
 
-    let Ok(fuchsia_dir) = std::env::var("FUCHSIA_DIR") else {
-        ffx_bail!("FUCHSIA_DIR environment variable is not set")
+    let Some(build_dir) = context.build_dir() else {
+        ffx_bail!("Could not find Fuchsia build directory")
     };
-    let fuchsia_dir = fuchsia_dir.trim();
-    let build_dir_file: PathBuf = [fuchsia_dir, ".fx-build-dir"].iter().collect();
 
-    let root = match std::fs::read_to_string(&build_dir_file) {
-        Ok(root) => root,
-        Err(e) => ffx_bail!("Could not read {}: {e}", build_dir_file.display()),
-    };
-    let root = root.trim();
-
-    let all_fidl_json: PathBuf = [fuchsia_dir, root, "all_fidl_json.txt"].iter().collect();
+    let all_fidl_json = build_dir.join("all_fidl_json.txt");
 
     let file = match File::open(&all_fidl_json) {
         Ok(file) => file,
@@ -114,7 +108,7 @@ pub async fn exec_playground(
             Err(e) => ffx_bail!("Error reading {}, {e}", all_fidl_json.display()),
         };
         let line = line.trim();
-        let path: PathBuf = [fuchsia_dir, root, line].iter().collect();
+        let path = build_dir.join(line);
         let json_file = match std::fs::read_to_string(&path) {
             Ok(json_file) => json_file,
             Err(e) => {

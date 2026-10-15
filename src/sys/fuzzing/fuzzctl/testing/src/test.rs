@@ -154,24 +154,6 @@ impl Test {
         create_corpus_dir(&self.root_dir, corpus_type).unwrap()
     }
 
-    /// Creates a fake ".fx-build-dir" file for testing.
-    ///
-    /// The ".fx-build-dir" file will be created under this object's `root_dir`, and will
-    /// contain the `relative_path` to the build directory. Except for some `util::tests`, unit
-    /// tests should prefer `create_tests_json`.
-    ///
-    /// Returns an error if any filesystem operations fail.
-    ///
-    pub fn write_fx_build_dir<P: AsRef<Path>>(&self, build_dir: P) -> Result<()> {
-        let build_dir = build_dir.as_ref();
-        let mut fx_build_dir = PathBuf::from(self.root_dir());
-        fx_build_dir.push(".fx-build-dir");
-        let build_dir = build_dir.to_string_lossy().to_string();
-        fs::write(&fx_build_dir, &build_dir)
-            .with_context(|| format!("failed to write to '{}'", fx_build_dir.to_string_lossy()))?;
-        Ok(())
-    }
-
     /// Creates a fake "tests.json" file for testing.
     ///
     /// The "tests.json" will be created under the `relative_path` from this object's `root_dir`
@@ -203,9 +185,6 @@ impl Test {
         let build_dir = self
             .create_dir("out/default")
             .context("failed to create build directory for 'tests.json'")?;
-        self.write_fx_build_dir(&build_dir).with_context(|| {
-            format!("failed to set build directory to '{}'", build_dir.to_string_lossy())
-        })?;
 
         let json_data: Vec<_> = urls
             .map(|url| {

@@ -9,47 +9,24 @@ use std::fs::read_dir;
 use std::path::PathBuf;
 
 /// The default configs paths used if 0 paths are given.
-/// These will be prefixed by ${FUCHSIA_DIR} to get the full config file path.
+/// These will be prefixed by the project root directory to get the full config file path.
 const DEFAULT_INTREE_RELATIVE_CONFIG_FILES: [&str; 2] =
     ["src/diagnostics/config/triage/", "src/diagnostics/config/triage/detect/"];
 
 /// The default config paths variable in OOT invocation.
 const DEFAULT_CONFIG_PATHS_VARIABLE: &str = "triage.config_paths";
 
-/// Gets the closest enclosing fuchsia checkout.
-/// We look for .fx-root to determine whether a directory
-/// is a fuchsia checkout.
-/// Returns None if not working in tree.
-fn get_closest_enclosing_fuchsia_dir(current_dir: PathBuf) -> Result<Option<PathBuf>> {
-    let mut current_dir = current_dir;
-    loop {
-        let fx_root_path = current_dir.join(".fx-root");
-        if fx_root_path.is_file() {
-            return Ok(Some(current_dir));
-        }
-        if !current_dir.pop() {
-            break;
-        }
-    }
-    Ok(None)
-}
-
 /// Returns the config files passed via cmdline arguments.
 /// If 0 paths are given returns default paths.
 pub async fn get_or_default_config_files(
     context: &EnvironmentContext,
     config: Vec<String>,
-    current_dir: PathBuf,
 ) -> Result<Vec<PathBuf>> {
     let config_paths: Vec<PathBuf> = if config.is_empty() {
-        if let Some(fuchsia_dir) = get_closest_enclosing_fuchsia_dir(current_dir)? {
+        if let Some(fuchsia_dir) = context.project_root() {
             DEFAULT_INTREE_RELATIVE_CONFIG_FILES
                 .iter()
-                .map(|default_file| {
-                    let mut dir = fuchsia_dir.clone();
-                    dir.push(default_file);
-                    dir
-                })
+                .map(|default_file| fuchsia_dir.join(default_file))
                 .collect()
         } else {
             // OOT default configs are expected to be set in triage.config_path variable.
@@ -101,47 +78,21 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn innermost_fuchsia_dir_default_config() {
-        let env = ffx_config::test_init().expect("Unable to initialize ffx_config.");
-        let tempdir = tempdir().expect("Unable to create tempdir for testing.");
-        let root = tempdir.path();
+    async fn in_tree_default_config() {
+        let build_dir = tempdir().expect("Unable to create tempdir for testing.");
+        let mut builder = ffx_config::test_env().in_tree(build_dir.path());
+        let tree_root = builder.isolate_root();
+        let env = builder.build().expect("Unable to initialize ffx_config.");
 
-        let outer_fx_root = root.join(".fx-root");
-        let inner_dir = root.join("fake");
-        let innermost_checkout = inner_dir.join("fuchsia");
-        let inner_fx_root = innermost_checkout.join(".fx-root");
-        let inner_subdir = innermost_checkout.join("subdir");
-
-        fs::create_dir_all(&inner_subdir).expect("Unable to create inner subdir root directory.");
-        fs::File::create(&outer_fx_root).expect("Unable to create outer fx root file.");
-        fs::File::create(&inner_fx_root).expect("Unable to create inner fx root file.");
-
-        let canonical_inner_subdir = fs::canonicalize(&inner_subdir)
-            .expect("Unable to get canonical path to fuchsia checkout.");
-
-        // Directory structure is
-        // $root/.fx-root
-        // $root/fake/fuchsia/
-        // $root/fake/fuchsia/.fx-root
-        // We invoke the plugin from $root/fake/fuchsia/subdir/
-
-        let config_files =
-            get_or_default_config_files(&env.context, vec![], canonical_inner_subdir)
-                .await
-                .expect("Unable to get config files.");
-
-        // Get absolute path as $TMPDIR might contain symlinks.
-        // Eg. on macOS /var@ -> /private/var
-        // Hence for tempdir, env::current_dir()? will return /private/var/...
-        // but tempdir() will return /var/... .
-        let canonical_innermost_path = fs::canonicalize(&innermost_checkout)
-            .expect("Unable to get canonical path to fuchsia checkout.");
+        let config_files = get_or_default_config_files(&env.context, vec![])
+            .await
+            .expect("Unable to get config files.");
 
         assert_eq!(
             config_files,
             &[
-                canonical_innermost_path.join("src/diagnostics/config/triage/"),
-                canonical_innermost_path.join("src/diagnostics/config/triage/detect/")
+                tree_root.join("src/diagnostics/config/triage/"),
+                tree_root.join("src/diagnostics/config/triage/detect/")
             ]
         );
     }
@@ -156,22 +107,16 @@ mod tests {
             .build()
             .expect("Unable to initialize ffx_config.");
 
-        let tempdir = tempdir().expect("Unable to create tempdir for testing.");
-        let root = tempdir.path();
-
-        let config_files = get_or_default_config_files(&env.context, vec![], root.to_path_buf())
+        let config_files = get_or_default_config_files(&env.context, vec![])
             .await
             .expect("Unable to get config files.");
 
-        // One reason of failure might be the existence of .fx-root in the $TEMPDIR parent
-        // path due to which OOT configs are not picked up.
         assert_eq!(config_files, oot_test_default_configs);
     }
 
     #[fuchsia::test]
     async fn directory_passed_to_config() {
         let env = ffx_config::test_init().expect("Unable to initialize ffx_config.");
-        let fake_cwd = tempdir().expect("Unable to create tempdir for testing.");
 
         let tempdir = tempdir().expect("Unable to create tempdir for testing.");
         let root = tempdir.path();
@@ -185,7 +130,6 @@ mod tests {
         let config_files = get_or_default_config_files(
             &env.context,
             vec![root.to_string_lossy().into(), config_file2.path().to_string_lossy().into()],
-            fake_cwd.path().to_path_buf(),
         )
         .await
         .expect("Unable to get config files.");

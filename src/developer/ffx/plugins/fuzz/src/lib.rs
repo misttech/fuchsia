@@ -66,15 +66,23 @@ async fn fuzz(
     let rc = (*rc_holder).clone();
     writer.mute(muted);
     writer.use_colors(use_colors);
+    let default_tests_json =
+        || context.build_dir().map(|dir| dir.join("tests.json").display().to_string());
     match session {
         Session::Interactive(json_file) => {
-            Shell::new(json_file, rc, ShellReader::new(), &writer).run(context).await
+            Shell::new(json_file.or_else(default_tests_json), rc, ShellReader::new(), &writer)
+                .run(context)
+                .await
         }
         Session::Quiet(commands) => {
-            Shell::new(None, rc, CommandReader::new(commands), &writer).run(context).await
+            Shell::new(default_tests_json(), rc, CommandReader::new(commands), &writer)
+                .run(context)
+                .await
         }
         Session::Verbose(commands) => {
-            Shell::new(None, rc, CommandReader::new(commands), &writer).run(context).await
+            Shell::new(default_tests_json(), rc, CommandReader::new(commands), &writer)
+                .run(context)
+                .await
         }
     }
 }

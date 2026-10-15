@@ -189,8 +189,11 @@ impl FuzzHelper {
     fn get_parameter_completions(&self, expected: &Option<ParameterType>) -> Vec<String> {
         match expected {
             Some(ParameterType::Opt) => options::NAMES.iter().map(|s| s.to_string()).collect(),
-            Some(ParameterType::Url) => get_fuzzer_urls(&self.tests_json)
-                .unwrap_or(Vec::new())
+            Some(ParameterType::Url) => self
+                .tests_json
+                .as_deref()
+                .and_then(|path| get_fuzzer_urls(path).ok())
+                .unwrap_or_default()
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect(),

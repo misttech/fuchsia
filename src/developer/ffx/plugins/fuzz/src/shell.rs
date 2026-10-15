@@ -170,7 +170,10 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
     async fn execute_any(&self, args: FuzzShellCommand) -> Result<NextAction> {
         match args.command {
             FuzzShellSubcommand::List(ListSubcommand { json_file, pattern }) => {
-                let tests_json = json_file.or_else(|| self.tests_json.clone());
+                let tests_json = json_file
+                    .or_else(|| self.tests_json.clone())
+                    .context("tests.json was not provided and could not be found")
+                    .context("failed to get URLs to list")?;
                 let mut urls =
                     get_fuzzer_urls(&tests_json).context("failed to get URLs to list")?;
                 if urls.is_empty() {

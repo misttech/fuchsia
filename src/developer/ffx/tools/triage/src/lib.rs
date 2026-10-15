@@ -11,7 +11,6 @@ use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, deferred};
 use fuchsia_triage::{
     ActionResultFormatter, ActionTagDirective, TriageOutput, analyze, analyze_structured,
 };
-use std::env;
 use std::io::Write;
 use std::path::PathBuf;
 use target_holders::toolbox;
@@ -67,8 +66,7 @@ async fn triage_impl(
 ) -> Result<()> {
     let TriageCommand { config, data, tags, exclude_tags } = cmd;
 
-    let current_dir = env::current_dir()?;
-    let config_files = config::get_or_default_config_files(context, config, current_dir).await?;
+    let config_files = config::get_or_default_config_files(context, config).await?;
 
     let data_directory = match data {
         Some(d) => PathBuf::from(d),
