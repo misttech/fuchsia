@@ -4,11 +4,13 @@
 
 #![recursion_limit = "256"]
 
-use fidl::endpoints::SynchronousProxy;
+use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_hardware_adb as fadb;
 use fuchsia_async as fasync;
+use fuchsia_component::client::Service;
 use fuchsia_inspect as inspect;
-use futures_util::StreamExt;
+use futures::{FutureExt, StreamExt, pin_mut};
+use futures_util as _;
 use starnix_core::power::{create_proxy_for_wake_events_counter_zero, mark_proxy_message_handled};
 use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
@@ -540,46 +542,154 @@ pub enum AdbProxyMode {
     WakeContainer,
 }
 
-fn connect_to_device(
+async fn connect_to_device(
     proxy: AdbProxyMode,
-) -> Result<
-    (fadb::DeviceSynchronousProxy, fadb::UsbAdbImpl_SynchronousProxy, Option<zx::Counter>),
-    Errno,
-> {
-    let dir = std::fs::read_dir(ADB_DIRECTORY).map_err(|_| errno!(EINVAL))?;
+) -> Result<(fadb::DeviceSynchronousProxy, fadb::UsbAdbImpl_Proxy, Option<zx::Counter>), Errno> {
+    let service = Service::open(fadb::ServiceMarker).map_err(|_| errno!(EINVAL))?;
+    let instances = service.enumerate().await.map_err(|_| errno!(EINVAL))?;
 
-    for entry in dir.flatten() {
-        let Ok(path) = entry.path().join("adb").into_os_string().into_string() else {
+    for instance in instances {
+        let Ok(device_proxy) = instance.connect_to_adb() else {
             continue;
         };
-
-        let (client_channel, server_channel) = zx::Channel::create();
-        if fdio::service_connect(&path, server_channel).is_err() {
-            continue;
-        }
-        let device_proxy = fadb::DeviceSynchronousProxy::new(client_channel);
 
         let (adb_proxy, server_end) =
             fidl::endpoints::create_sync_proxy::<fadb::UsbAdbImpl_Marker>();
-        let (adb_proxy, message_counter) = match proxy {
-            AdbProxyMode::None => (adb_proxy, None),
+        let (adb_channel, message_counter) = match proxy {
+            AdbProxyMode::None => (adb_proxy.into_channel(), None),
             AdbProxyMode::WakeContainer => {
-                let (adb_proxy, message_counter) = create_proxy_for_wake_events_counter_zero(
+                let (channel, message_counter) = create_proxy_for_wake_events_counter_zero(
                     adb_proxy.into_channel(),
                     "adb".to_string(),
                 );
-                let adb_proxy = fadb::UsbAdbImpl_SynchronousProxy::from_channel(adb_proxy);
-                (adb_proxy, Some(message_counter))
+                (channel, Some(message_counter))
             }
         };
 
-        let deadline = zx::MonotonicInstant::after(zx::Duration::from_seconds(5));
-        if let Ok(Ok(())) = device_proxy.start_adb(server_end, deadline) {
+        let timer =
+            fasync::Timer::new(zx::MonotonicInstant::after(zx::Duration::from_seconds(5))).fuse();
+        let start_fut = device_proxy.start_adb(server_end).fuse();
+        pin_mut!(timer, start_fut);
+        let start_ok = futures::select! {
+            res = start_fut => matches!(res, Ok(Ok(()))),
+            _ = timer => false,
+        };
+
+        if start_ok {
+            let Ok(channel) = device_proxy.into_channel() else {
+                continue;
+            };
+            let device_proxy = fadb::DeviceSynchronousProxy::new(channel.into_zx_channel());
+            let adb_proxy =
+                fadb::UsbAdbImpl_Proxy::new(fidl::AsyncChannel::from_channel(adb_channel));
             return Ok((device_proxy, adb_proxy, message_counter));
         }
     }
 
     error!(EBUSY)
+}
+
+async fn manage_adb_connection(
+    read_commands: async_channel::Receiver<ReadCommand>,
+    write_commands: async_channel::Receiver<WriteCommand>,
+    state: Arc<LockDepMutex<FunctionFsState, FunctionFsStateLock>>,
+    stats: Arc<FunctionFsStats>,
+    session_id: u64,
+) {
+    let mut watcher = match Service::open(fadb::ServiceMarker) {
+        Ok(service) => service.watch().await.ok(),
+        Err(_) => None,
+    };
+
+    loop {
+        // Verify that the session is still active.
+        {
+            let state_locked = state.lock();
+            if state_locked.session_id != session_id
+                || !state_locked.has_input_output_endpoints
+                || state_locked.num_control_file_objects == 0
+            {
+                return;
+            }
+        }
+
+        // Try connecting to the ADB device asynchronously.
+        if let Ok((device_proxy, adb_proxy, message_counter)) =
+            connect_to_device(AdbProxyMode::WakeContainer).await
+        {
+            {
+                let mut state_locked = state.lock();
+                if state_locked.session_id != session_id || !state_locked.has_input_output_endpoints
+                {
+                    let deadline = zx::MonotonicInstant::after(zx::Duration::from_seconds(5));
+                    if let Err(e) = device_proxy.stop_adb(deadline) {
+                        log_warn!("Failed to stop adb driver after session cancelled: {e:?}");
+                    }
+                    return;
+                }
+                state_locked.device_proxy = Some(device_proxy);
+            }
+
+            handle_adb(
+                adb_proxy,
+                message_counter,
+                read_commands.clone(),
+                write_commands.clone(),
+                Arc::clone(&state),
+                Arc::clone(&stats),
+                session_id,
+            )
+            .await;
+
+            {
+                let mut state_locked = state.lock();
+                let _ = state_locked.device_proxy.take();
+            }
+        } else {
+            // Sleep 500ms unconditionally when retrying a failed connection.
+            fasync::Timer::new(zx::MonotonicInstant::after(zx::Duration::from_millis(500))).await;
+        }
+
+        // Check if session ended before waiting for the next connection.
+        {
+            let state_locked = state.lock();
+            if state_locked.session_id != session_id
+                || !state_locked.has_input_output_endpoints
+                || state_locked.num_control_file_objects == 0
+            {
+                return;
+            }
+        }
+
+        // If no ADB instances currently exist, park on the watcher until an instance appears.
+        let has_instances = match Service::open(fadb::ServiceMarker) {
+            Ok(service) => {
+                service.enumerate().await.map(|instances| !instances.is_empty()).unwrap_or(false)
+            }
+            Err(_) => false,
+        };
+        if !has_instances {
+            if let Some(w) = watcher.as_mut() {
+                match w.next().await {
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) | None => {
+                        // Watcher stream ended or errored; re-open service watcher.
+                        watcher = match Service::open(fadb::ServiceMarker) {
+                            Ok(service) => service.watch().await.ok(),
+                            Err(_) => None,
+                        };
+                    }
+                }
+            } else {
+                fasync::Timer::new(zx::MonotonicInstant::after(zx::Duration::from_millis(500)))
+                    .await;
+                watcher = match Service::open(fadb::ServiceMarker) {
+                    Ok(service) => service.watch().await.ok(),
+                    Err(_) => None,
+                };
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -608,9 +718,7 @@ impl FunctionFsRootDir {
         if state.has_input_output_endpoints {
             return Ok(());
         }
-        let (device_proxy, adb_proxy, message_counter) =
-            connect_to_device(AdbProxyMode::WakeContainer)?;
-        state.device_proxy = Some(device_proxy);
+
         state.session_id = state.session_id.wrapping_add(1);
         let session_id = state.session_id;
 
@@ -627,18 +735,16 @@ impl FunctionFsRootDir {
         });
         state.record_event("BIND");
         state.waiters.notify_fd_events(FdEvents::POLLIN);
+        state.waiters.notify_all();
+        state.has_input_output_endpoints = true;
+        state.record_event("ENDPOINTS_CREATED");
 
         let state_copy = Arc::clone(&self.state);
         let stats_copy = Arc::clone(&self.stats);
-        // Spawn our future that will handle all of the ADB messages.
+        // Spawn background worker to watch for USB ADB hardware service and manage connection lifecycle.
         kernel.kthreads.spawn_future(
             move || async move {
-                let adb_proxy = fadb::UsbAdbImpl_Proxy::new(fidl::AsyncChannel::from_channel(
-                    adb_proxy.into_channel(),
-                ));
-                handle_adb(
-                    adb_proxy,
-                    message_counter,
+                manage_adb_connection(
                     read_command_receiver,
                     write_command_receiver,
                     state_copy,
@@ -650,8 +756,6 @@ impl FunctionFsRootDir {
             "functionfs_adb_worker",
         );
 
-        state.has_input_output_endpoints = true;
-        state.record_event("ENDPOINTS_CREATED");
         Ok(())
     }
 
@@ -679,7 +783,7 @@ impl FunctionFsRootDir {
         if state.num_control_file_objects == 0 {
             state.session_id = state.session_id.wrapping_add(1);
             // When all control endpoints are closed, the filesystem resets to its initial state.
-            if let Some(device_proxy) = state.device_proxy.as_ref() {
+            if let Some(device_proxy) = state.device_proxy.take() {
                 // Use a bounded 5-second deadline to prevent close_control_file / adbd exit
                 // from hanging indefinitely if the ADB driver daemon or FIDL channel is hung
                 // or unbinding during a role switch.
@@ -1669,5 +1773,90 @@ mod tests {
         while exec.run_until_stalled(&mut test_fut).is_pending() {
             assert!(exec.wake_next_timer().is_some(), "Executor stalled with no pending timers");
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_create_endpoints_without_hardware_service() {
+        starnix_core::testing::spawn_kernel_and_run_sync(|current_task| {
+            let inspector = inspect::Inspector::default();
+            let rootdir = FunctionFsRootDir::new(inspector.root());
+
+            let result = rootdir.create_endpoints(current_task.kernel());
+            assert_eq!(result, Ok(()));
+            assert!(rootdir.state.lock().has_input_output_endpoints);
+            assert!(rootdir.state.lock().adb_read_channel.is_some());
+            assert!(rootdir.state.lock().adb_write_channel.is_some());
+            assert_eq!(
+                rootdir.state.lock().event_queue.front().map(|e| e.type_),
+                Some(usb_functionfs_event_type_FUNCTIONFS_BIND as u8)
+            );
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_connect_to_device_without_hardware_service() {
+        let result = connect_to_device(AdbProxyMode::None).await;
+        assert!(result.is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_on_control_closed_clears_device_proxy() {
+        let inspector = inspect::Inspector::default();
+        let rootdir = FunctionFsRootDir::new(inspector.root());
+
+        let (client_channel, _server_channel) = zx::Channel::create();
+        let device_proxy = fadb::DeviceSynchronousProxy::new(client_channel);
+        {
+            let mut state = rootdir.state.lock();
+            state.num_control_file_objects = 1;
+            state.device_proxy = Some(device_proxy);
+        }
+
+        rootdir.on_control_closed();
+
+        let state = rootdir.state.lock();
+        assert_eq!(state.num_control_file_objects, 0);
+        assert!(state.device_proxy.is_none(), "device_proxy should be taken by on_control_closed");
+    }
+
+    #[fuchsia::test]
+    async fn test_session_change_stops_device_proxy() {
+        let inspector = inspect::Inspector::default();
+        let rootdir = FunctionFsRootDir::new(inspector.root());
+
+        let (client_channel, server_channel) = zx::Channel::create();
+        let device_proxy = fadb::DeviceSynchronousProxy::new(client_channel);
+
+        // Simulate session_id changed while connecting
+        let session_id = 1;
+        {
+            let mut state = rootdir.state.lock();
+            state.session_id = 2; // session_id changed!
+            state.has_input_output_endpoints = true;
+        }
+
+        // When checking session_id after connect_to_device:
+        {
+            let mut state_locked = rootdir.state.lock();
+            if state_locked.session_id != session_id || !state_locked.has_input_output_endpoints {
+                let deadline = zx::MonotonicInstant::after(zx::Duration::from_seconds(1));
+                let _ = device_proxy.stop_adb(deadline);
+            } else {
+                state_locked.device_proxy = Some(device_proxy);
+            }
+        }
+
+        // Verify stop_adb request was sent on server_channel
+        let mut stream = fadb::DeviceRequestStream::from_channel(fidl::AsyncChannel::from_channel(
+            server_channel,
+        ));
+        match stream.next().await {
+            Some(Ok(fadb::DeviceRequest::StopAdb { responder })) => {
+                responder.send(Ok(())).expect("send StopAdb response");
+            }
+            other => panic!("Expected StopAdb request, got {other:?}"),
+        }
+        assert!(rootdir.state.lock().device_proxy.is_none());
     }
 }
