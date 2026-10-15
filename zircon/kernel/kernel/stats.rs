@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::mem::offset_of;
+use percpu_bindings as bindings;
+
 unsafe extern "C" {
     fn cpp_cpu_stats_inc_reschedules();
     fn cpp_cpu_stats_inc_context_switches();
@@ -18,6 +21,74 @@ unsafe extern "C" {
     fn cpp_cpu_stats_inc_reschedule_ipis();
     fn cpp_cpu_stats_inc_generic_ipis();
 }
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CpuStats {
+    pub last_updated_instant: i64,
+    pub normalized_busy_time: i64,
+    pub idle_time: i64,
+    pub reschedules: u64,
+    pub context_switches: u64,
+    pub preempts: u64,
+    pub yields: u64,
+    pub interrupts: u64,
+    pub timer_ints: u64,
+    pub timers: u64,
+    pub perf_ints: u64,
+    pub syscalls: u64,
+    pub page_faults: u64,
+    pub reschedule_ipis: u64,
+    pub generic_ipis: u64,
+    pub active_energy_consumption_nj: u64,
+    pub idle_energy_consumption_nj: u64,
+}
+
+zr::static_assert!(core::mem::size_of::<CpuStats>() == 136);
+zr::static_assert!(core::mem::align_of::<CpuStats>() == 8);
+zr::static_assert!(core::mem::size_of::<CpuStats>() == core::mem::size_of::<bindings::cpu_stats>());
+zr::static_assert!(
+    core::mem::align_of::<CpuStats>() == core::mem::align_of::<bindings::cpu_stats>()
+);
+zr::static_assert!(
+    offset_of!(CpuStats, last_updated_instant)
+        == offset_of!(bindings::cpu_stats, last_updated_instant)
+);
+zr::static_assert!(
+    offset_of!(CpuStats, normalized_busy_time)
+        == offset_of!(bindings::cpu_stats, normalized_busy_time)
+);
+zr::static_assert!(offset_of!(CpuStats, idle_time) == offset_of!(bindings::cpu_stats, idle_time));
+zr::static_assert!(
+    offset_of!(CpuStats, reschedules) == offset_of!(bindings::cpu_stats, reschedules)
+);
+zr::static_assert!(
+    offset_of!(CpuStats, context_switches) == offset_of!(bindings::cpu_stats, context_switches)
+);
+zr::static_assert!(offset_of!(CpuStats, preempts) == offset_of!(bindings::cpu_stats, preempts));
+zr::static_assert!(offset_of!(CpuStats, yields) == offset_of!(bindings::cpu_stats, yields));
+zr::static_assert!(offset_of!(CpuStats, interrupts) == offset_of!(bindings::cpu_stats, interrupts));
+zr::static_assert!(offset_of!(CpuStats, timer_ints) == offset_of!(bindings::cpu_stats, timer_ints));
+zr::static_assert!(offset_of!(CpuStats, timers) == offset_of!(bindings::cpu_stats, timers));
+zr::static_assert!(offset_of!(CpuStats, perf_ints) == offset_of!(bindings::cpu_stats, perf_ints));
+zr::static_assert!(offset_of!(CpuStats, syscalls) == offset_of!(bindings::cpu_stats, syscalls));
+zr::static_assert!(
+    offset_of!(CpuStats, page_faults) == offset_of!(bindings::cpu_stats, page_faults)
+);
+zr::static_assert!(
+    offset_of!(CpuStats, reschedule_ipis) == offset_of!(bindings::cpu_stats, reschedule_ipis)
+);
+zr::static_assert!(
+    offset_of!(CpuStats, generic_ipis) == offset_of!(bindings::cpu_stats, generic_ipis)
+);
+zr::static_assert!(
+    offset_of!(CpuStats, active_energy_consumption_nj)
+        == offset_of!(bindings::cpu_stats, active_energy_consumption_nj)
+);
+zr::static_assert!(
+    offset_of!(CpuStats, idle_energy_consumption_nj)
+        == offset_of!(bindings::cpu_stats, idle_energy_consumption_nj)
+);
 
 /// Increment the reschedule counter for the current CPU.
 #[inline(always)]

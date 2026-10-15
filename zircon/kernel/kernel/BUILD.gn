@@ -412,6 +412,7 @@ kernel_bindgen_crate("owned-wait-queue-bindings") {
 kernel_rust_mod("kernel-rs") {
   output_name = "kernel"
   source_root = "mod.rs"
+
   sources = [
     "align.rs",
     "bits.rs",
@@ -446,12 +447,15 @@ kernel_rust_mod("kernel-rs") {
     ":wait-queue-bindings",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
+    "//src/lib/ffl",
     "//src/lib/kalloc",
+    "//src/lib/kstring",
     "//src/lib/ksync",
     "//src/lib/lockdep/rust:lockdep",
     "//src/lib/zr",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/kconcurrent:kconcurrent_rs",
     "//zircon/kernel/lib/object-constants:object-constants-rs",

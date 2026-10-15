@@ -418,87 +418,27 @@ size_t Scheduler::GetRunnableTasks() const {
 // See fbl/wavl_tree_best_node_observer.h for an explanation of how the
 // augmented invariant is maintained.
 Thread* Scheduler::FindEarliestEligibleThread(RunQueue* run_queue, SchedTime eligible_time) {
-  return FindEarliestEligibleThread(run_queue, eligible_time,
-                                    [](const auto& iter) { return true; });
+  Thread* out = rust_kernel_run_queue_find_earliest_eligible_thread(run_queue, eligible_time,
+                                                                    nullptr, nullptr);
+  if (out != nullptr) {
+    AssertInScheduler(*out);
+  }
+  return out;
 }
 
 template <typename Predicate>
 Thread* Scheduler::FindEarliestEligibleThread(RunQueue* run_queue, SchedTime eligible_time,
                                               Predicate&& predicate) {
-  const auto scheduler_state = [this](const Thread& t)
-                                   TA_REQ(this->queue_lock_) -> const SchedulerState& {
-    AssertInScheduler(t);
-    return t.scheduler_state();
-  };
-  const auto subtree_state = [this](const Thread& t) TA_REQ(
-                                 this->queue_lock_) -> const SchedulerState::SubtreeInvariants& {
-    AssertInScheduler(t);
-    return t.scheduler_state().subtree_invariants_;
-  };
-
-  // Early out if there is no eligible thread.
-  if (run_queue->is_empty() || scheduler_state(run_queue->front()).start_time_ > eligible_time) {
-    return nullptr;
+  Thread* out = rust_kernel_run_queue_find_earliest_eligible_thread(
+      run_queue, eligible_time,
+      [](const Thread* iter, const void* ctx) {
+        return (*static_cast<ktl::remove_reference_t<Predicate>*>(const_cast<void*>(ctx)))(iter);
+      },
+      &predicate);
+  if (out != nullptr) {
+    AssertInScheduler(*out);
   }
-
-  // Deduces either Predicate& or const Predicate&, preserving the const
-  // qualification of the predicate.
-  decltype(auto) accept = ktl::forward<Predicate>(predicate);
-
-  auto node = run_queue->root();
-  auto subtree = run_queue->end();
-  auto path = run_queue->end();
-
-  // Descend the tree, with |node| following the path from the root to a leaf,
-  // such that the path partitions the tree into two parts: the nodes on the
-  // left represent eligible tasks, while the nodes on the right represent tasks
-  // that are not eligible. Eligible tasks are both in the left partition and
-  // along the search path, tracked by |path|.
-  while (node) {
-    const SchedulerState& node_state = scheduler_state(*node);
-
-    if (node_state.start_time_ <= eligible_time) {
-      if (!path || scheduler_state(*path).finish_time_ > node_state.finish_time_) {
-        path = node;
-      }
-
-      if (auto left = node.left(); !subtree || (left && (subtree_state(*subtree).min_finish_time >
-                                                         subtree_state(*left).min_finish_time))) {
-        subtree = left;
-      }
-
-      node = node.right();
-    } else {
-      node = node.left();
-    }
-  }
-
-  if (!subtree) {
-    return path && accept(path) ? path.CopyPointer() : nullptr;
-  }
-
-  const SchedTime subtree_min_finish_time = subtree_state(*subtree).min_finish_time;
-  if ((subtree_min_finish_time >= scheduler_state(*path).finish_time_) && accept(path)) {
-    return path.CopyPointer();
-  }
-
-  // Find the node with the earliest finish time among the descendants of the
-  // subtree with the smallest minimum finish time.
-  node = subtree;
-  do {
-    if ((subtree_min_finish_time == scheduler_state(*node).finish_time_) && accept(node)) {
-      return node.CopyPointer();
-    }
-
-    if (auto left = node.left();
-        left && (subtree_state(*node).min_finish_time == subtree_state(*left).min_finish_time)) {
-      node = left;
-    } else {
-      node = node.right();
-    }
-  } while (node);
-
-  return nullptr;
+  return out;
 }
 
 Scheduler* Scheduler::Get() { return Get(arch_curr_cpu_num()); }

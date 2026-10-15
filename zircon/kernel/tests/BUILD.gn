@@ -112,6 +112,7 @@ if (toolchain_environment == "kernel") {
       "range_check_tests.cc",
       "relaxed_atomic_tests.cc",
       "relocation_tests.cc",
+      "scheduler_run_queue_tests.cc",
       "scheduler_state_tests.cc",
       "sleep_tests.cc",
       "spinner.cc",

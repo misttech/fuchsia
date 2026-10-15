@@ -308,6 +308,9 @@ variant("kernel_config") {
   if (futex_block_tracing_enabled) {
     rustflags += [ "--cfg=futex_block_tracing_enabled" ]
   }
+  if (experimental_force_enable_new_wakeup_accounting) {
+    rustflags += [ "--cfg=experimental_force_new_wakeup_accounting" ]
+  }
 
   if (kernel_extra_defines + [
         "ENABLE_ENTROPY_COLLECTOR_TEST=1",
@@ -403,7 +406,13 @@ config("scheduler") {
     "SCHEDULER_LOCK_SPIN_TRACING_ENABLED=$scheduler_lock_spin_tracing_enabled",
     "WAIT_QUEUE_DEPTH_TRACING_ENABLED=$wait_queue_depth_tracing_enabled",
   ]
-  rustflags = []
+  rustflags = [ "--cfg=scheduler_tracing_level=\"$scheduler_tracing_level\"" ]
+  if (scheduler_queue_tracing_enabled) {
+    rustflags += [ "--cfg=scheduler_queue_tracing_enabled" ]
+  }
+  if (scheduler_extra_invariant_validation) {
+    rustflags += [ "--cfg=scheduler_extra_invariant_validation" ]
+  }
   if (scheduler_lock_spin_tracing_enabled) {
     rustflags += [ "--cfg=scheduler_lock_spin_tracing_enabled" ]
   }

@@ -37,9 +37,9 @@ pub type GuestStats = bindings::guest_stats;
 pub type guest_stats = bindings::guest_stats;
 
 /// Type alias for `cpu_stats`.
-pub type CpuStats = bindings::cpu_stats;
+pub use crate::kernel::stats::CpuStats;
 #[allow(non_camel_case_types)]
-pub type cpu_stats = bindings::cpu_stats;
+pub type cpu_stats = CpuStats;
 
 /// An opaque type representing the C++ `DpcRunner` class.
 #[repr(transparent)]

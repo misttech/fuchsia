@@ -8,14 +8,16 @@
 #include <lib/fxt/interned_string.h>
 #include <lib/kconcurrent/chainlock.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
+#include <lib/stall.h>
 #include <zircon/types.h>
 
 #include <arch/regs.h>
 #include <kernel/deadline.h>
 #include <kernel/ffi.h>
+#include <kernel/mp.h>
 #include <kernel/restricted.h>
 #include <kernel/restricted_state.h>
-#include <kernel/scheduler_state.h>
+#include <kernel/scheduler.h>
 #include <kernel/thread.h>
 #include <kernel/thread_ffi.h>
 #include <ktl/memory.h>
@@ -58,6 +60,21 @@ static_assert(static_cast<int>(ThreadStallState::Stalling) == 3);
 // a 16-byte pair of atomics (lock token and contention state) with 8-byte alignment.
 static_assert(sizeof(ChainLock) == 16);
 static_assert(alignof(ChainLock) == 8);
+
+static_assert(sizeof(SchedulerState::WaitQueueInheritedSchedulerState) == 64,
+              "WaitQueueInheritedSchedulerState size mismatch");
+static_assert(alignof(SchedulerState::WaitQueueInheritedSchedulerState) == 8,
+              "WaitQueueInheritedSchedulerState alignment mismatch");
+static_assert(offsetof(SchedulerState::WaitQueueInheritedSchedulerState, ipvs) == 0,
+              "WaitQueueInheritedSchedulerState ipvs offset mismatch");
+static_assert(offsetof(SchedulerState::WaitQueueInheritedSchedulerState, start_time) == 32,
+              "WaitQueueInheritedSchedulerState start_time offset mismatch");
+static_assert(offsetof(SchedulerState::WaitQueueInheritedSchedulerState, finish_time) == 40,
+              "WaitQueueInheritedSchedulerState finish_time offset mismatch");
+static_assert(offsetof(SchedulerState::WaitQueueInheritedSchedulerState, time_slice_ns) == 48,
+              "WaitQueueInheritedSchedulerState time_slice_ns offset mismatch");
+static_assert(offsetof(SchedulerState::WaitQueueInheritedSchedulerState, time_slice_used_ns) == 56,
+              "WaitQueueInheritedSchedulerState time_slice_used_ns offset mismatch");
 
 ThreadStallState cpp_thread_memory_stall_state(const Thread* thread);
 void cpp_thread_set_memory_stall_state(Thread* thread, ThreadStallState value);
@@ -114,6 +131,13 @@ void cpp_thread_current_memory_allocation_state_disable();
 bool cpp_thread_current_memory_allocation_state_is_enabled();
 void cpp_thread_current_signal_policy_exception(uint32_t policy_exception_code,
                                                 uint32_t policy_exception_data);
+void cpp_thread_preempts_pending_add(Thread* thread, cpu_mask_t mask);
+cpu_mask_t cpp_thread_preempts_pending(const Thread* thread);
+void cpp_thread_preempts_pending_clear(Thread* thread);
+bool cpp_thread_preempt_evaluate_timeslice_extension(Thread* thread);
+uint32_t cpp_thread_preempt_eager_resched_disable_count(const Thread* thread);
+void cpp_thread_set_ready(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS;
+Thread* cpp_unblock_list_pop_back(Thread::UnblockList* list);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE Thread* cpp_thread_create_default(const char* name, thread_start_routine entry,
@@ -458,6 +482,87 @@ FFI_ALWAYS_INLINE uint64_t cpp_thread_lock_flow_id(const Thread* thread) {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uint64_t cpp_thread_take_next_lock_flow_id(Thread* thread) {
   return thread->TakeNextLockFlowId();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_preempts_pending_add(Thread* thread, cpu_mask_t mask) {
+  thread->preemption_state().preempts_pending_add(mask);
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE cpu_mask_t cpp_thread_preempts_pending(const Thread* thread) {
+  return thread->preemption_state().preempts_pending();
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_preempts_pending_clear(Thread* thread) {
+  thread->preemption_state().preempts_pending_clear();
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_preempt_evaluate_timeslice_extension(Thread* thread) {
+  return thread->preemption_state().EvaluateTimesliceExtension();
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint32_t cpp_thread_preempt_eager_resched_disable_count(const Thread* thread) {
+  return thread->preemption_state().EagerReschedDisableCount();
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_set_ready(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
+  thread->set_ready();
+}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Thread* cpp_unblock_list_pop_back(Thread::UnblockList* list) {
+  return list->pop_back();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_thread_get_queue_node(Thread* t) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &t->scheduler_queue_state().run_queue_node();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE SchedulerState* cpp_thread_get_scheduler_state(Thread* t)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &t->scheduler_state();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE SchedulerState::WaitQueueInheritedSchedulerState* cpp_owq_get_inherited_state(
+    OwnedWaitQueue* owq) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return owq->inherited_scheduler_state_storage();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const SchedulerState::WaitQueueInheritedSchedulerState*
+cpp_owq_get_inherited_state_const(const OwnedWaitQueue* owq) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return owq->inherited_scheduler_state_storage();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE SchedUtilization cpp_scheduler_get_normalized_utilization(const Scheduler* sched)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return sched->normalized_utilization();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_is_idle(const Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread->IsIdle();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_has_migrate_fn(const Thread* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread->has_migrate_fn();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_migrate_pending(const Thread* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread->migrate_pending();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_stall_accumulator_apply_context_switch(
+    Thread* current_thread, Thread* next_thread) TA_NO_THREAD_SAFETY_ANALYSIS {
+  StallAccumulator::ApplyContextSwitch(current_thread, next_thread);
 }
 
 }  // extern "C"

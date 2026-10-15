@@ -217,6 +217,11 @@ pub struct FxtRef {
 // LINT.ThenChange(//zircon/kernel/kernel/thread_ffi.cc:FxtRef)
 
 /// An opaque type representing the C++ `Thread` class.
+///
+/// # Safety Invariant
+///
+/// Any `&Thread` or `&mut Thread` reference must point to a valid, initialized
+/// C++ `Thread` instance.
 #[repr(C, align(8))]
 pub struct Thread {
     // Safety invariant: `_facade` is zero-sized and private so safe code cannot construct a

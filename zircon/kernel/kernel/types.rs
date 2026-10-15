@@ -46,6 +46,13 @@ pub struct Koid(pub u64);
 #[allow(non_camel_case_types)]
 pub type cpu_mask_t = u32;
 
+/// Atomic counterpart of [`cpu_mask_t`] for lock-free CPU mask bookkeeping.
+///
+/// Mirrors `ktl::atomic<cpu_mask_t>`. The assertion below keeps this alias in
+/// sync with the width of `cpu_mask_t`.
+pub type AtomicCpuMask = core::sync::atomic::AtomicU32;
+zr::static_assert!(core::mem::size_of::<AtomicCpuMask>() == core::mem::size_of::<cpu_mask_t>());
+
 #[allow(non_camel_case_types)]
 pub type cpu_num_t = u32;
 
@@ -111,4 +118,17 @@ pub const fn lowest_cpu_set(mask: cpu_mask_t) -> cpu_num_t {
         return 0;
     }
     mask.trailing_zeros()
+}
+
+/// Removes one CPU from `mask` and returns its ID, or `INVALID_CPU` if `mask` is empty.
+///
+/// Mirrors `remove_cpu_from_mask()` from `zircon/kernel/include/kernel/cpu.h`.
+#[inline]
+pub const fn remove_cpu_from_mask(mask: &mut cpu_mask_t) -> cpu_num_t {
+    if *mask == 0 {
+        return INVALID_CPU;
+    }
+    let index_of_lowest_set_bit = mask.trailing_zeros();
+    *mask &= !cpu_num_to_mask(index_of_lowest_set_bit);
+    index_of_lowest_set_bit
 }

@@ -44,6 +44,31 @@
 struct percpu;
 struct cpu_stats;
 
+struct RunQueueIterator {
+  Thread* current;
+};
+static_assert(sizeof(RunQueueIterator) == 8 && alignof(RunQueueIterator) == 8);
+
+extern "C" {
+void* cpp_thread_get_queue_node(Thread* t);
+void rust_kernel_run_queue_insert(void* rq, Thread* thread);
+Thread* rust_kernel_run_queue_erase(void* rq, Thread* thread);
+Thread* rust_kernel_run_queue_find_earliest_eligible_thread(const void* rq, SchedTime eligible_time,
+                                                            bool (*predicate)(const Thread*,
+                                                                              const void*),
+                                                            const void* context);
+size_t rust_kernel_run_queue_size(const void* rq);
+bool rust_kernel_run_queue_is_empty(const void* rq);
+Thread* rust_kernel_run_queue_front(const void* rq);
+RunQueueIterator rust_kernel_run_queue_iterator_create(const void* rq);
+bool rust_kernel_run_queue_iterator_is_valid(const RunQueueIterator* iter);
+Thread* rust_kernel_run_queue_iterator_get(const RunQueueIterator* iter);
+void rust_kernel_run_queue_iterator_next(RunQueueIterator* iter);
+Thread* rust_kernel_run_queue_root(const void* rq);
+void rust_kernel_run_queue_init(void* rq);
+void rust_kernel_run_queue_destroy(void* rq);
+}
+
 // Ensure this define has a value when not defined globally by the build system.
 #ifndef SCHEDULER_TRACING_LEVEL
 #define SCHEDULER_TRACING_LEVEL 0
@@ -80,10 +105,20 @@ constexpr zx_cpu_performance_scale_t ToUserPerformanceScale(SchedProcessingRate 
           .fractional_part = static_cast<uint32_t>(fractional)};
 }
 
+class Scheduler;
+extern "C" {
+SchedUtilization cpp_scheduler_get_normalized_utilization(const Scheduler* sched);
+void rust_kernel_scheduler_state_recompute_effective_profile(SchedulerState* state);
+int32_t rust_kernel_effective_profile_get_weight_or_packed_deadline_params(
+    SchedulerState::EffectiveProfile* ep);
+void rust_kernel_scheduler_get_projected_cpu_stats(cpu_num_t cpu, cpu_stats* stats);
+}
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.
 class Scheduler {
  public:
+  class RunQueue;
+
   // Returns true if new scheduler wakeup accounting is enabled either by boot
   // option or gn arg.
   static bool EnableNewWakeupAccounting();
@@ -173,6 +208,10 @@ class Scheduler {
   // Returns the lock-free value of the estimated queue time for the CPU this
   // scheduler is associated with.
   SchedDuration exported_queue_time_ns() const { return exported_queue_time_ns_.load(); }
+
+  SchedUtilization normalized_utilization() const TA_REQ(queue_lock_) {
+    return power_level_control_.normalized_deadline_utilization();
+  }
 
   // Returns the lock-free value of the estimated deadline utilization for the
   // CPU this scheduler is associated with.
@@ -603,6 +642,7 @@ class Scheduler {
 
  private:
   friend struct Thread;
+  friend void* ::cpp_thread_get_queue_node(Thread* t);
 
   // Allow percpu to init our cpu number and performance scale.
   friend struct percpu;
@@ -1152,54 +1192,88 @@ class Scheduler {
 
   // Traits type to adapt the WAVLTree to Thread with node state in the
   // scheduler_state member.
-  struct TaskTraits {
-    using KeyType = SchedulerState::KeyType;
-    static KeyType GetKey(const Thread& thread) TA_NO_THREAD_SAFETY_ANALYSIS {
-      return thread.scheduler_state().key();
+ public:
+  class RunQueue {
+   public:
+    RunQueue() { rust_kernel_run_queue_init(opaque_state_); }
+    ~RunQueue() { rust_kernel_run_queue_destroy(opaque_state_); }
+
+    RunQueue(const RunQueue&) = delete;
+    RunQueue& operator=(const RunQueue&) = delete;
+    RunQueue(RunQueue&&) = delete;
+    RunQueue& operator=(RunQueue&&) = delete;
+
+    void insert(Thread* thread) { rust_kernel_run_queue_insert(opaque_state_, thread); }
+    Thread* erase(Thread& thread) { return rust_kernel_run_queue_erase(opaque_state_, &thread); }
+    bool is_empty() const { return rust_kernel_run_queue_is_empty(opaque_state_); }
+    size_t size() const { return rust_kernel_run_queue_size(opaque_state_); }
+    Thread& front() {
+      Thread* t = rust_kernel_run_queue_front(opaque_state_);
+      DEBUG_ASSERT(t != nullptr);
+      return *t;
     }
-    static bool LessThan(KeyType a, KeyType b) { return a < b; }
-    static bool EqualTo(KeyType a, KeyType b) { return a == b; }
-    static auto& node_state(Thread& thread) TA_NO_THREAD_SAFETY_ANALYSIS {
-      return thread.scheduler_queue_state().run_queue_node();
+    const Thread& front() const {
+      Thread* t = rust_kernel_run_queue_front(opaque_state_);
+      DEBUG_ASSERT(t != nullptr);
+      return *t;
     }
+    const Thread* croot() const { return rust_kernel_run_queue_root(opaque_state_); }
+
+    class iterator {
+     public:
+      iterator() = default;
+      explicit iterator(RunQueueIterator iter) : iter_(iter) {}
+
+      bool IsValid() const { return rust_kernel_run_queue_iterator_is_valid(&iter_); }
+
+      Thread& operator*() const {
+        Thread* t = rust_kernel_run_queue_iterator_get(&iter_);
+        DEBUG_ASSERT(t != nullptr);
+        return *t;
+      }
+      Thread* operator->() const { return rust_kernel_run_queue_iterator_get(&iter_); }
+
+      iterator& operator++() {
+        rust_kernel_run_queue_iterator_next(&iter_);
+        return *this;
+      }
+
+      iterator operator++(int) {
+        iterator temp = *this;
+        rust_kernel_run_queue_iterator_next(&iter_);
+        return temp;
+      }
+
+      bool operator==(const iterator& other) const {
+        bool self_valid = IsValid();
+        bool other_valid = other.IsValid();
+        if (!self_valid && !other_valid) {
+          return true;
+        }
+        if (self_valid != other_valid) {
+          return false;
+        }
+        return rust_kernel_run_queue_iterator_get(&iter_) ==
+               rust_kernel_run_queue_iterator_get(&other.iter_);
+      }
+
+      bool operator!=(const iterator& other) const { return !(*this == other); }
+
+     private:
+      RunQueueIterator iter_{};
+    };
+
+    iterator begin() const {
+      return iterator(rust_kernel_run_queue_iterator_create(opaque_state_));
+    }
+
+    iterator end() const { return iterator{}; }
+
+   private:
+    alignas(8) uint8_t opaque_state_[32];
   };
 
-  // Observer that maintains the subtree invariant min_finish_time and
-  // min_weight as nodes are added to and removed from the run queue.
-  struct SubtreeInvariantTraits {
-    using SubtreeInvariants = SchedulerState::SubtreeInvariants;
-
-    static SubtreeInvariants GetNodeValue(const Thread& node) TA_NO_THREAD_SAFETY_ANALYSIS {
-      const SchedulerState& scheduler_state = node.scheduler_state();
-      const EffectiveProfile& effective_profile = scheduler_state.effective_profile();
-      const SchedWeight min_weight = effective_profile.weight_or(SchedWeight::Max());
-
-      return {.min_finish_time = scheduler_state.finish_time_, .min_weight = min_weight};
-    }
-
-    static SubtreeInvariants GetSubtreeValue(const Thread& node) TA_NO_THREAD_SAFETY_ANALYSIS {
-      return node.scheduler_state().subtree_invariants_;
-    }
-
-    static SubtreeInvariants CombineValues(SubtreeInvariants subtree, SubtreeInvariants node) {
-      return {.min_finish_time = ktl::min(subtree.min_finish_time, node.min_finish_time),
-              .min_weight = ktl::min(subtree.min_weight, node.min_weight)};
-    }
-
-    static void SetSubtreeValue(Thread& node,
-                                SubtreeInvariants value) TA_NO_THREAD_SAFETY_ANALYSIS {
-      node.scheduler_state().subtree_invariants_ = value;
-    }
-
-    static void ResetSubtreeValue(Thread& target) {}
-  };
-
-  using SubtreeObserver = fbl::WAVLTreeAugmentedInvariantObserver<SubtreeInvariantTraits>;
-
-  // Alias of the WAVLTree type for the run queue.
-  using RunQueue = fbl::WAVLTree<TaskTraits::KeyType, Thread*, TaskTraits, fbl::DefaultObjectTag,
-                                 fbl::SizeOrder::Constant, TaskTraits, SubtreeObserver>;
-
+ private:
   // Finds the next eligible thread in the given run queue.
   //
   // Note: Any Thread* returned by this method may only be used as long as the
@@ -1270,6 +1344,9 @@ class Scheduler {
   // disposition other than Enqueued. Updates a kcounter to track the rate of
   // updates that race with lock juggling.
   static void CountUpdateInTransition();
+
+  static_assert(sizeof(RunQueue) == 32);
+  static_assert(alignof(RunQueue) == 8);
 
   // Protects run queues and associated metadata for this Scheduler instance.
   // The queue lock is the bottom most lock in the system for the CPU it is

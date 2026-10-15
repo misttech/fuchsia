@@ -63,6 +63,13 @@ macro_rules! impl_relaxed_atomic {
                 self.wrapped.store(desired, ::core::sync::atomic::Ordering::Relaxed)
             }
 
+            /// Stores a value into the atomic integer, returning the previous value, with relaxed
+            /// ordering.
+            #[inline]
+            pub fn swap(&self, desired: $prim_type) -> $prim_type {
+                self.wrapped.swap(desired, ::core::sync::atomic::Ordering::Relaxed)
+            }
+
             /// Adds to the current value, returning the previous value, with relaxed ordering.
             #[inline]
             pub fn fetch_add(&self, value: $prim_type) -> $prim_type {

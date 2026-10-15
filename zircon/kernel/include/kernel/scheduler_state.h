@@ -257,6 +257,15 @@ class SchedulerState {
       } fair;
       SchedDeadlineParams deadline;
     };
+    static void AssertLayout() {
+      static_assert(sizeof(BaseProfile) == 32);
+      static_assert(alignof(BaseProfile) == 8);
+      static_assert(offsetof(BaseProfile, discipline) == 0);
+      static_assert(offsetof(BaseProfile, inheritable) == 4);
+      static_assert(offsetof(BaseProfile, critical) == 5);
+      static_assert(offsetof(BaseProfile, fair) == 8);
+      static_assert(offsetof(BaseProfile, deadline) == 8);
+    }
   };
 
   enum class ProfileDirtyFlag {
@@ -332,8 +341,7 @@ class SchedulerState {
     ProfileDirtyFlag dirty_flags_{ProfileDirtyFlag::Clean};
   };
 
-  struct EffectiveProfile
-      : public EffectiveProfileDirtyTracker<kSchedulerExtraInvariantValidation> {
+  struct EffectiveProfile {
     EffectiveProfile() = default;
 
     EffectiveProfile(const EffectiveProfile&) = default;
@@ -353,6 +361,18 @@ class SchedulerState {
         critical_ = base_profile.critical;
       }
     }
+
+    static inline constexpr bool kDirtyTrackingEnabled = kSchedulerExtraInvariantValidation;
+    // Defined out-of-line after the EffectiveProfileDirtyTracker<true>
+    // specializations below, which must precede their first instantiation.
+    inline void MarkBaseProfileChanged();
+    inline void MarkInheritedProfileChanged();
+    void Clean() { dirty_tracker_.Clean(); }
+    void AssertDirtyState(ProfileDirtyFlag expected) const {
+      dirty_tracker_.AssertDirtyState(expected);
+    }
+    void AssertDirty() const { dirty_tracker_.AssertDirty(); }
+    ProfileDirtyFlag dirty_flags() const { return dirty_tracker_.dirty_flags(); }
 
     constexpr SchedDiscipline discipline() const {
       return weight_ >= kMinFairWeight ? SchedDiscipline::Fair : SchedDiscipline::Deadline;
@@ -398,22 +418,7 @@ class SchedulerState {
     // where CCCC is the capacity and DDDD is the relative deadline (period),
     // with a precision of 10us. This is useful for visualization in Perfetto,
     // which only supports 32bit signed priority values.
-    constexpr int32_t GetWeightOrPackedDeadlineParams() {
-      if (weight_ >= kMinFairWeight || weight_ <= kMaxDiagnosticWeight) {
-        return static_cast<int32_t>(weight_.raw_value());
-      }
-
-      const int32_t clamped_scaled_capacity =
-          ktl::clamp(static_cast<int32_t>(capacity_ns_.raw_value() / 10'000), 1, 9'999);
-      const int32_t clamped_scaled_deadline =
-          ktl::clamp(static_cast<int32_t>(deadline_ns_.raw_value() / 10'000), 1, 9'999);
-
-      const int32_t diagnostic_value =
-          -((clamped_scaled_capacity * 10'000) + clamped_scaled_deadline);
-      weight_ = SchedWeight::FromRaw(diagnostic_value);
-
-      return diagnostic_value;
-    }
+    int32_t GetWeightOrPackedDeadlineParams();
 
    private:
     // Internal weight values greater than or equal to zero indicate a fair
@@ -438,6 +443,20 @@ class SchedulerState {
     SchedCompactDuration deadline_ns_{0};
     SchedUtilization utilization_{0};
     bool critical_{false};
+    [[no_unique_address]] EffectiveProfileDirtyTracker<kSchedulerExtraInvariantValidation>
+        dirty_tracker_{};
+
+    static void AssertLayout() {
+      static_assert(sizeof(EffectiveProfile) == 32);
+      static_assert(alignof(EffectiveProfile) == 8);
+      static_assert(offsetof(EffectiveProfile, weight_) == 0);
+      static_assert(offsetof(EffectiveProfile, capacity_ns_) == 8);
+      static_assert(offsetof(EffectiveProfile, deadline_ns_) == 12);
+      static_assert(offsetof(EffectiveProfile, utilization_) == 16);
+      static_assert(offsetof(EffectiveProfile, critical_) == 24);
+      static_assert(!kSchedulerExtraInvariantValidation ||
+                    offsetof(EffectiveProfile, dirty_tracker_) == 28);
+    }
   };
 
   // Values stored in the SchedulerState of Thread instances which tracks the
@@ -463,6 +482,14 @@ class SchedulerState {
       DEBUG_ASSERT_MSG(uncapped_utilization == 0 || min_deadline < SchedDuration::Max(),
                        "uncapped_utilization=%s min_deadline=%" PRId64,
                        ffl::Format(uncapped_utilization).c_str(), min_deadline.raw_value());
+    }
+    static void AssertLayout() {
+      static_assert(sizeof(InheritedProfileValues) == 32);
+      static_assert(alignof(InheritedProfileValues) == 8);
+      static_assert(offsetof(InheritedProfileValues, total_weight) == 0);
+      static_assert(offsetof(InheritedProfileValues, uncapped_utilization) == 8);
+      static_assert(offsetof(InheritedProfileValues, min_deadline) == 16);
+      static_assert(offsetof(InheritedProfileValues, critical_count) == 24);
     }
   };
 
@@ -515,6 +542,16 @@ class SchedulerState {
         ASSERT(ipvs.total_weight == SchedWeight{0});
         AssertDynamicParametersAreReset();
       }
+    }
+
+    static void AssertLayout() {
+      static_assert(sizeof(WaitQueueInheritedSchedulerState) == 64);
+      static_assert(alignof(WaitQueueInheritedSchedulerState) == 8);
+      static_assert(offsetof(WaitQueueInheritedSchedulerState, ipvs) == 0);
+      static_assert(offsetof(WaitQueueInheritedSchedulerState, start_time) == 32);
+      static_assert(offsetof(WaitQueueInheritedSchedulerState, finish_time) == 40);
+      static_assert(offsetof(WaitQueueInheritedSchedulerState, time_slice_ns) == 48);
+      static_assert(offsetof(WaitQueueInheritedSchedulerState, time_slice_used_ns) == 56);
     }
 
     InheritedProfileValues ipvs{};
@@ -603,6 +640,7 @@ class SchedulerState {
   // Allow tests to observe/modify our state.
   friend class LoadBalancerTest;
   friend struct WaitQueueOrderingTests;
+  friend class SchedulerRunQueueTestHelper;
   friend class unittest::ThreadEffectiveProfileObserver;
   friend Thread;
 
@@ -701,6 +739,35 @@ class SchedulerState {
   // The set of CPUs the thread should run on if possible. The thread may be
   // assigned to CPUs outside of this set if necessary.
   cpu_mask_t soft_affinity_{CPU_MASK_ALL};
+  static void AssertLayout() {
+    static_assert(sizeof(SubtreeInvariants) == 16);
+    static_assert(alignof(SubtreeInvariants) == 8);
+    static_assert(offsetof(SubtreeInvariants, min_finish_time) == 0);
+    static_assert(offsetof(SubtreeInvariants, min_weight) == 8);
+
+    static_assert(sizeof(SchedulerState) == 224);
+    static_assert(alignof(SchedulerState) == 8);
+    static_assert(offsetof(SchedulerState, start_time_) == 0);
+    static_assert(offsetof(SchedulerState, finish_time_) == 8);
+    static_assert(offsetof(SchedulerState, activation_count_) == 16);
+    static_assert(offsetof(SchedulerState, subtree_invariants_) == 24);
+    static_assert(offsetof(SchedulerState, state_) == 40);
+    static_assert(offsetof(SchedulerState, base_profile_) == 48);
+    static_assert(offsetof(SchedulerState, inherited_profile_values_) == 80);
+    static_assert(offsetof(SchedulerState, effective_profile_) == 112);
+    static_assert(offsetof(SchedulerState, time_slice_ns_) == 144);
+    static_assert(offsetof(SchedulerState, time_slice_used_ns_) == 152);
+    static_assert(offsetof(SchedulerState, runtime_ns_) == 160);
+    static_assert(offsetof(SchedulerState, expected_runtime_ns_) == 168);
+    static_assert(offsetof(SchedulerState, banked_runtime_ns_) == 176);
+    static_assert(offsetof(SchedulerState, estimated_energy_consumption_nj) == 184);
+    static_assert(offsetof(SchedulerState, last_started_running_) == 192);
+    static_assert(offsetof(SchedulerState, flow_id_) == 200);
+    static_assert(offsetof(SchedulerState, curr_cpu_) == 208);
+    static_assert(offsetof(SchedulerState, last_cpu_) == 212);
+    static_assert(offsetof(SchedulerState, hard_affinity_) == 216);
+    static_assert(offsetof(SchedulerState, soft_affinity_) == 220);
+  }
 };
 
 // SchedulerQueueState tracks the association with a scheduler and run queue. To
@@ -947,6 +1014,13 @@ class SchedulerQueueState {
   // Flag indicating whether this thread is associated with a specific CPU's
   // scheduler and bookkeeping.
   bool active_{false};
+  static void AssertLayout() {
+    static_assert(sizeof(SchedulerQueueState) == 40);
+    static_assert(alignof(SchedulerQueueState) == 8);
+    static_assert(offsetof(SchedulerQueueState, run_queue_node_) == 0);
+    static_assert(offsetof(SchedulerQueueState, stolen_by_) == 32);
+    static_assert(offsetof(SchedulerQueueState, active_) == 36);
+  }
 };
 
 FBL_ENABLE_ENUM_BITS(SchedulerState::ProfileDirtyFlag)
@@ -959,6 +1033,14 @@ inline void SchedulerState::EffectiveProfileDirtyTracker<true>::MarkBaseProfileC
 template <>
 inline void SchedulerState::EffectiveProfileDirtyTracker<true>::MarkInheritedProfileChanged() {
   dirty_flags_ |= ProfileDirtyFlag::InheritedDirty;
+}
+
+inline void SchedulerState::EffectiveProfile::MarkBaseProfileChanged() {
+  dirty_tracker_.MarkBaseProfileChanged();
+}
+
+inline void SchedulerState::EffectiveProfile::MarkInheritedProfileChanged() {
+  dirty_tracker_.MarkInheritedProfileChanged();
 }
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_STATE_H_
