@@ -11,7 +11,7 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 use pin_init::{PinInit, pin_data, pinned_drop};
 use thread_lock_guard_bindings as lock_guard_bindings;
-use zr::Opaque;
+use zr::{Opaque, OpaqueFacade};
 use zx_status::Status;
 use zx_types::{zx_instant_mono_t, zx_status_t};
 
@@ -80,6 +80,7 @@ unsafe extern "C" {
     fn cpp_thread_preempt_disable_count() -> u32;
     fn cpp_thread_eager_resched_disable_count() -> u32;
     fn cpp_thread_preempt_set_pending();
+    fn cpp_thread_preempt_is_enabled() -> bool;
     fn cpp_thread_preempt();
     fn cpp_thread_current_sleep_etc(
         deadline: *const crate::kernel::deadline::Deadline,
@@ -218,9 +219,18 @@ pub struct FxtRef {
 /// An opaque type representing the C++ `Thread` class.
 #[repr(C, align(8))]
 pub struct Thread {
-    // Safety invariant: `_private` is zero-sized and private so safe code cannot construct a
-    // `Thread` by value; any `&Thread` reference points to a live, initialized `Thread` instance.
-    _private: [u8; 0],
+    // Safety invariant: `_facade` is zero-sized and private so safe code cannot construct a
+    // `Thread` by value; any `&Thread` reference points to a live, initialized `Thread` instance,
+    // and `OpaqueFacade` marks `Thread` as `!Freeze` and `!Unpin` for FFI mutation.
+    _facade: OpaqueFacade,
+}
+
+impl Thread {
+    /// Domain-specific conversion: returns raw pointer for [`Thread`].
+    #[inline]
+    pub fn as_raw(&self) -> *mut Self {
+        core::ptr::from_ref(self).cast_mut()
+    }
 }
 
 // SAFETY: `cpp_thread_get_lock` returns the thread's embedded `ChainLock`, which guards its
@@ -231,14 +241,9 @@ unsafe impl ChainLocked for Thread {
     fn lock(&self) -> &ClassedChainLock<ThreadLockClass> {
         // SAFETY: Validity: by `Thread`'s safety invariant, `self` points to a live, initialized
         // `Thread` for the lifetime of `&self`, and `cpp_thread_get_lock` returns a non-null
-        // pointer to its embedded `ChainLock`; the `cast_mut` only satisfies the shim's signature,
-        // it does not mutate the thread. Class binding (`from_chain_lock`): this lock guards the
-        // thread's `ThreadLockClass` fields.
-        unsafe {
-            ClassedChainLock::from_chain_lock(&*cpp_thread_get_lock(
-                core::ptr::from_ref(self).cast_mut(),
-            ))
-        }
+        // pointer to its embedded `ChainLock`. Class binding (`from_chain_lock`): this lock guards
+        // the thread's `ThreadLockClass` fields.
+        unsafe { ClassedChainLock::from_chain_lock(&*cpp_thread_get_lock(self.as_raw())) }
     }
 }
 
@@ -784,6 +789,46 @@ pub fn preempt_set_pending() {
     // SAFETY: Calling this FFI function safely marks a pending preemption on the current thread's
     // preemption state.
     unsafe { cpp_thread_preempt_set_pending() }
+}
+
+/// Returns `true` if preemption is currently enabled on the current thread.
+#[inline]
+pub fn preempt_is_enabled() -> bool {
+    // SAFETY: Calling this FFI function safely queries the current thread's preemption state.
+    unsafe { cpp_thread_preempt_is_enabled() }
+}
+
+/// Zero-sized capability token proving that preemption is disabled on the current thread.
+///
+/// Corresponds to C++ `preempt_disabled_token`. This token is `!Send` and `!Sync` because
+/// preemption state is CPU- and thread-local.
+#[derive(Debug)]
+pub struct PreemptDisabledToken {
+    // Safety invariant: Preemption is disabled on the current thread (`!preempt_is_enabled()`) for
+    // the lifetime of this token, and it is `!Send` and `!Sync`.
+    _private: PhantomData<*mut ()>,
+}
+
+zr::static_assert!(size_of::<PreemptDisabledToken>() == 0);
+zr::static_assert!(align_of::<PreemptDisabledToken>() == 1);
+
+impl PreemptDisabledToken {
+    /// Creates a new capability token proving that preemption is disabled on the current thread.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that preemption is currently disabled on the current thread
+    /// (`!preempt_is_enabled()`) and remains disabled for the lifetime of the returned token.
+    #[inline]
+    pub const unsafe fn new() -> Self {
+        Self { _private: PhantomData }
+    }
+
+    /// Asserts in debug builds that preemption is currently disabled on the current thread.
+    #[inline]
+    pub fn assert_held(&self) {
+        debug_assert!(!preempt_is_enabled());
+    }
 }
 
 /// Sets a timeslice extension if one is not already set.

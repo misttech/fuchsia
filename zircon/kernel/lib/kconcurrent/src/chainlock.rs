@@ -12,6 +12,7 @@ use concurrent::TransactionOption as Option;
 
 use crate::ktrace_rs::InternedString;
 
+use super::chainlock_proof::ClassedChainLock;
 use super::chainlock_transaction::KernelTransactionHooks;
 
 /// Produce trace records documenting the CLT contention overhead if we have lock contention
@@ -79,6 +80,47 @@ zr::static_assert!(size_of::<ChainLock>() == 16);
 zr::static_assert!(align_of::<ChainLock>() == 8);
 zr::static_assert!(size_of::<ChainLockGuard<'static>>() == 16);
 zr::static_assert!(align_of::<ChainLockGuard<'static>>() == 8);
+
+/// Asserts that `lock` is not currently held by the active transaction on the current CPU.
+///
+/// # Safety-usable invariant
+///
+/// If this function returns normally, `lock` is not currently held by an active
+/// [`ChainLockTransaction`] on the current CPU.
+#[inline]
+#[track_caller]
+pub fn assert_lock_not_held<C>(lock: &ClassedChainLock<C>) {
+    assert!({
+        if crate::arch_rs::ints_disabled() && ChainLockTransaction::active().is_some() {
+            // SAFETY: Interrupts are disabled and `ChainLockTransaction::active().is_some()`
+            // confirmed a transaction is currently registered on the current CPU; `token` does not
+            // escape this block.
+            let token = unsafe { ChainLockTransaction::mark_active() };
+            !lock.is_held(&token)
+        } else {
+            true
+        }
+    });
+}
+
+/// Asserts in debug builds that a [`ChainLockTransaction`] is currently active on the current CPU.
+#[inline]
+pub fn assert_transaction_active(_clt_token: &ChainLockTransactionToken) {
+    debug_assert!(crate::arch_rs::ints_disabled());
+    debug_assert!(ChainLockTransaction::active().is_some());
+}
+
+/// Asserts that no [`ChainLockTransaction`] is currently active on the current CPU.
+///
+/// # Safety-usable invariant
+///
+/// If this function returns normally, no [`ChainLockTransaction`] is currently active on the
+/// current CPU.
+#[inline]
+#[track_caller]
+pub fn assert_no_transaction_active() {
+    assert!(!crate::arch_rs::ints_disabled() || ChainLockTransaction::active().is_none());
+}
 
 /// Acquires both `lock1` and `lock2`, returning `true` if both were acquired or `false` if neither
 /// stays held and the caller should back off.

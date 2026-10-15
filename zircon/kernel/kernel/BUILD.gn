@@ -281,6 +281,9 @@ kernel_bindgen_crate("wait-queue-bindings") {
     "ForceInheritance",
   ]
   type_blocklist = [
+    "Deadline",
+    "Thread",
+    "Timer",
     "WaitQueueCollection_BlockedThreadTreeTraits",
     "WaitQueueCollection_MinRelativeDeadlineTraits.*",
     "WaitQueueCollection_PrimaryKey",
@@ -288,6 +291,7 @@ kernel_bindgen_crate("wait-queue-bindings") {
     "WaitQueueBase_.*",
     "WaitQueue_.*",
     "SchedDuration",
+    "zx_instant_mono_t",
     "zx_status_t",
   ]
   function_blocklist = [
@@ -304,7 +308,11 @@ kernel_bindgen_crate("wait-queue-bindings") {
   ]
   raw_lines = [
     "#![no_std]",
-    "pub use zx_types::{zx_duration_mono_t as SchedDuration, zx_instant_mono_t as WaitQueueCollection_PrimaryKey, zx_status_t};",
+    "pub use zx_types::{zx_duration_mono_t as SchedDuration, zx_instant_mono_t, zx_status_t};",
+    "pub use zx_types::zx_instant_mono_t as WaitQueueCollection_PrimaryKey;",
+    "pub type Deadline = core::ffi::c_void;",
+    "pub type Thread = core::ffi::c_void;",
+    "pub type Timer = core::ffi::c_void;",
   ]
 }
 

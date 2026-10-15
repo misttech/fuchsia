@@ -14,12 +14,14 @@
 #include <fbl/macros.h>
 #include <fbl/wavl_tree_best_node_observer.h>
 #include <kernel/deadline.h>
+#include <kernel/ffi.h>
 #include <kernel/preempt_disabled_token.h>
 #include <kernel/scheduler_state.h>
 #include <kernel/timer.h>
 
 struct Thread;
 class WaitQueueBase;
+class WaitQueue;
 
 // When blocking this enum indicates the kind of resource ownership that is being waited for
 // that is causing the block.
@@ -36,6 +38,46 @@ enum class Interruptible : bool { No, Yes };
 
 // Whether to force base profile inheritance.
 enum class ForceInheritance : bool { No, Yes };
+
+extern "C" {
+void cpp_wait_queue_base_init(ffi::Uninitialized<WaitQueueBase>* wait_queue, uint32_t magic);
+uint32_t cpp_wait_queue_base_magic(const WaitQueueBase* wait_queue);
+bool cpp_wait_queue_base_is_empty(const WaitQueueBase* wait_queue);
+uint32_t cpp_wait_queue_base_count(const WaitQueueBase* wait_queue);
+zx_status_t cpp_wait_queue_base_unblock_thread(WaitQueueBase* wait_queue, Thread* t,
+                                               zx_status_t wait_queue_error);
+Thread* cpp_wait_queue_base_peek_front(WaitQueueBase* wait_queue);
+zx_status_t cpp_wait_queue_base_block_etc_preamble(WaitQueueBase* wait_queue,
+                                                   Thread* current_thread, const Deadline* deadline,
+                                                   uint32_t signal_mask, ResourceOwnership reason,
+                                                   Interruptible interruptible);
+zx_status_t cpp_wait_queue_base_block_etc_postamble(WaitQueueBase* wait_queue,
+                                                    Thread* current_thread,
+                                                    const Deadline* deadline);
+void cpp_wait_queue_base_dequeue(WaitQueueBase* wait_queue, Thread* t,
+                                 zx_status_t wait_queue_error);
+void cpp_wait_queue_base_validate_queue(WaitQueueBase* wait_queue);
+void cpp_wait_queue_base_timeout_handler(Timer* timer, zx_instant_mono_t now, void* arg);
+void cpp_wait_queue_base_update_blocked_thread_effective_profile(WaitQueueBase* wait_queue,
+                                                                 Thread* t);
+
+void cpp_wait_queue_init(ffi::Uninitialized<WaitQueue>* wait_queue);
+zx_status_t cpp_wait_queue_block(WaitQueue* wait_queue, Thread* current_thread,
+                                 const Deadline* deadline, Interruptible interruptible);
+zx_status_t cpp_wait_queue_block_instant(WaitQueue* wait_queue, Thread* current_thread,
+                                         zx_instant_mono_t deadline, Interruptible interruptible);
+zx_status_t cpp_wait_queue_block_etc(WaitQueue* wait_queue, Thread* current_thread,
+                                     const Deadline* deadline, uint32_t signal_mask,
+                                     ResourceOwnership reason, Interruptible interruptible);
+bool cpp_wait_queue_wake_one(WaitQueue* wait_queue, zx_status_t wait_queue_error);
+void cpp_wait_queue_wake_all(WaitQueue* wait_queue, zx_status_t wait_queue_error);
+bool cpp_wait_queue_wake_one_locked(WaitQueue* wait_queue, zx_status_t wait_queue_error,
+                                    bool* out_woken);
+bool cpp_wait_queue_wake_all_locked(WaitQueue* wait_queue, zx_status_t wait_queue_error,
+                                    uint32_t* out_woken);
+void cpp_wait_queue_dequeue_thread(WaitQueue* wait_queue, Thread* t, zx_status_t wait_queue_error);
+void cpp_wait_queue_move_thread(WaitQueue* source, WaitQueue* dest, Thread* t);
+}  // extern "C"
 
 // The collection of threads currently blocked in a wait queue.
 class WaitQueueCollection {
@@ -229,6 +271,21 @@ class WaitQueueBase : public ChainLockable {
   friend struct BrwLockOps;
   friend struct WaitQueueLockOps;
   friend class Scheduler;
+  friend void cpp_wait_queue_base_init(ffi::Uninitialized<WaitQueueBase>* wait_queue,
+                                       uint32_t magic);
+  friend Thread* cpp_wait_queue_base_peek_front(WaitQueueBase* wait_queue);
+  friend zx_status_t cpp_wait_queue_base_block_etc_preamble(
+      WaitQueueBase* wait_queue, Thread* current_thread, const Deadline* deadline,
+      uint32_t signal_mask, ResourceOwnership reason, Interruptible interruptible);
+  friend zx_status_t cpp_wait_queue_base_block_etc_postamble(WaitQueueBase* wait_queue,
+                                                             Thread* current_thread,
+                                                             const Deadline* deadline);
+  friend void cpp_wait_queue_base_dequeue(WaitQueueBase* wait_queue, Thread* t,
+                                          zx_status_t wait_queue_error);
+  friend void cpp_wait_queue_base_validate_queue(WaitQueueBase* wait_queue);
+  friend void cpp_wait_queue_base_timeout_handler(Timer* timer, zx_instant_mono_t now, void* arg);
+  friend void cpp_wait_queue_base_update_blocked_thread_effective_profile(WaitQueueBase* wait_queue,
+                                                                          Thread* t);
 
   explicit constexpr WaitQueueBase(uint32_t magic) : magic_(magic) {}
   ~WaitQueueBase();
@@ -341,17 +398,13 @@ class WaitQueue : public WaitQueueBase {
       TA_REQ(get_lock(), ChainLockable::GetLock(*t));
 
  protected:
+  friend void cpp_wait_queue_move_thread(WaitQueue* source, WaitQueue* dest, Thread* t);
+
   explicit constexpr WaitQueue(uint32_t magic) : WaitQueueBase(magic) {}
 
   // Move the specified thread from the source wait queue to the dest wait queue.
   static void MoveThread(WaitQueue* source, WaitQueue* dest, Thread* t)
       TA_REQ(source->get_lock(), dest->get_lock(), ChainLockable::GetLock(*t));
 };
-
-#include <kernel/ffi.h>
-
-extern "C" {
-void cpp_wait_queue_init(ffi::Uninitialized<WaitQueue>* wait_queue);
-}  // extern "C"
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_WAIT_H_
