@@ -11,15 +11,9 @@
 // TODO(https://fxbug.dev/417553411): See about saving/restoring other
 // architectural state including, sctlr2_el1 and tcr2_el1.
 
-// int64_t psci_do_suspend(psci_call_proc psci_call_routine,
-//                         uint32_t power_state,
-//                         paddr_t entry,
-//                         psci_cpu_resume_context* context);
-.function psci_do_suspend, global
-  // x0 - psci_call_routine
-  // w1 - power_state
-  // x2 - entry
-  // x3 - context
+// Saves register state into the psci_cpu_resume_context pointed to by
+// \context_reg.  Clobbers x4-x16, so \context_reg must not be one of them.
+.macro save_resume_context context_reg
   mrs x4, daif
   mrs x5, sctlr_el1
   mrs x6, tcr_el1
@@ -36,21 +30,33 @@
 
   // Note, we're not saving ttbr0_el1 or ttbr1_el1 because we are relying on the
   // caller of |psci_do_resume| to restore those from global variables.
-  stp x4, x5, [x3, (0 * 16)]
-  stp x6, x7, [x3, (1 * 16)]
-  stp x8, x9, [x3, (2 * 16)]
-  stp x10, x11, [x3, (3 * 16)]
-  stp x12, x13, [x3, (4 * 16)]
-  stp x14, x15, [x3, (5 * 16)]
-  stp x16, xzr, [x3, (6 * 16)]
+  stp x4, x5, [\context_reg, (0 * 16)]
+  stp x6, x7, [\context_reg, (1 * 16)]
+  stp x8, x9, [\context_reg, (2 * 16)]
+  stp x10, x11, [\context_reg, (3 * 16)]
+  stp x12, x13, [\context_reg, (4 * 16)]
+  stp x14, x15, [\context_reg, (5 * 16)]
+  stp x16, xzr, [\context_reg, (6 * 16)]
 
-  stp x18, x19, [x3, (7 * 16)]
-  stp x20, x21, [x3, (8 * 16)]
-  stp x22, x23, [x3, (9 * 16)]
-  stp x24, x25, [x3, (10 * 16)]
-  stp x26, x27, [x3, (11 * 16)]
-  stp x28, x29, [x3, (12 * 16)]
-  stp lr, xzr, [x3, (13 * 16)]
+  stp x18, x19, [\context_reg, (7 * 16)]
+  stp x20, x21, [\context_reg, (8 * 16)]
+  stp x22, x23, [\context_reg, (9 * 16)]
+  stp x24, x25, [\context_reg, (10 * 16)]
+  stp x26, x27, [\context_reg, (11 * 16)]
+  stp x28, x29, [\context_reg, (12 * 16)]
+  stp lr, xzr, [\context_reg, (13 * 16)]
+.endm
+
+// int64_t psci_do_suspend(psci_call_proc psci_call_routine,
+//                         uint32_t power_state,
+//                         paddr_t entry,
+//                         psci_cpu_resume_context* context);
+.function psci_do_suspend, global
+  // x0 - psci_call_routine
+  // w1 - power_state
+  // x2 - entry
+  // x3 - context
+  save_resume_context x3
 
   // We're about to call psci_call_routine(PSCI64_CPU_SUSPEND, power_state,
   // entry, context), which will either return or branch to |entry|.  Before
