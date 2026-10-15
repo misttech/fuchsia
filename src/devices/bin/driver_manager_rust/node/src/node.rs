@@ -650,6 +650,16 @@ impl Node {
         matches!(&*self.state.borrow(), NodeState::DriverComponent { .. })
     }
 
+    pub fn is_driver_running(&self) -> bool {
+        if self.shutdown_state() != ShutdownState::Running {
+            return false;
+        }
+        matches!(
+            &*self.state.borrow(),
+            NodeState::DriverComponent(component) if component.state == DriverState::Running
+        )
+    }
+
     pub fn evaluate_rematch_flags(
         &self,
         rematch_flags: fdd::RestartRematchFlags,

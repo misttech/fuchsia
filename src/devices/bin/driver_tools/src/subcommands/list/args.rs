@@ -15,7 +15,11 @@ use argh::{ArgsInfo, FromArgs};
 
 To list only loaded drivers:
 
-    $ driver list --loaded",
+    $ driver list --loaded
+
+To list only loaded and running drivers:
+
+    $ driver list --running",
     error_code(1, "Failed to connect to the driver development service")
 )]
 pub struct ListCommand {
@@ -26,6 +30,10 @@ pub struct ListCommand {
     /// only list loaded drivers
     #[argh(switch, long = "loaded")]
     pub loaded: bool,
+
+    /// only list drivers that are loaded and currently running
+    #[argh(switch, long = "running")]
+    pub running: bool,
 
     /// if this exists, the user will be prompted for a component to select.
     #[argh(switch, short = 's', long = "select")]

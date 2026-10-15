@@ -606,6 +606,7 @@ async fn create_device_info(node: &Rc<Node>) -> Result<fdd::NodeInfo, zx::Status
         moniker: Some(node.make_component_moniker()),
         bound_driver_url: Some(node.driver_url()),
         quarantined: Some(node.is_quarantined()),
+        is_running: Some(node.is_driver_running()),
         child_ids: if child_ids.is_empty() { None } else { Some(child_ids) },
         parent_ids: if parent_ids.is_empty() { None } else { Some(parent_ids) },
         driver_host_koid,

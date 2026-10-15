@@ -81,6 +81,7 @@ zx::result<fdd::wire::NodeInfo> CreateDeviceInfo(fidl::AnyArena& allocator,
   device_info.topological_path(fidl::StringView(allocator, node->MakeTopologicalPath()));
 
   device_info.quarantined(node->quarantined());
+  device_info.is_running(node->is_running());
   device_info.bound_driver_url(fidl::StringView(allocator, node->driver_url()));
 
   SetNodeInfoBuilderNodeProperties(allocator, *node, device_info);

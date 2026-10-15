@@ -47,6 +47,10 @@ type NodeInfo = table {
     // TODO(https://fxbug.dev/500119481): Remove this field once all clients are
     // migrated away from devfs.
     12: topological_path string:NODE_MONIKER_MAX;
+
+    /// Whether the driver bound to this node has completed starting and is currently running.
+    @available(added=HEAD)
+    13: is_running bool;
 };
 
 /// Information about a node binding to either a driver or a composite.

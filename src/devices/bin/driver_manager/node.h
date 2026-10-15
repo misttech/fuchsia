@@ -558,6 +558,14 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     return std::holds_alternative<DriverComponent>(state_);
   }
 
+  bool is_running() const {
+    if (node_shutdown_coordinator_ && node_shutdown_coordinator_->IsShuttingDown()) {
+      return false;
+    }
+    auto* driver_component = std::get_if<DriverComponent>(&state_);
+    return driver_component && driver_component->state == DriverState::kRunning;
+  }
+
   // Exposed for testing.
   const std::vector<std::shared_ptr<Resource>>& provided_resources() const {
     return provided_resources_;

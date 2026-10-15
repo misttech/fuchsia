@@ -662,10 +662,15 @@ TEST_F(NodeShutdownTest, WaitBindBeforeShutdown) {
   AddChildNodeAndStartDriver("node_a", "node_a_b");
   AddChildNodeAndStartDriver("node_a_b", "node_a_b_a");
 
+  ASSERT_TRUE(GetNode("node_a")->is_bound());
+  ASSERT_FALSE(GetNode("node_a")->is_running());
+
   // Complete bind successfully for node_a.
   node_manager->driver_host().InvokeStartCallback("node_a", zx::ok());
+  ASSERT_TRUE(GetNode("node_a")->is_running());
 
   InvokeRemoveNode("node_a");
+  ASSERT_FALSE(GetNode("node_a")->is_running());
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_b", NodeState::kWaitingOnDriverBind},
                 {"node_a_b_a", NodeState::kWaitingOnDriverBind}});

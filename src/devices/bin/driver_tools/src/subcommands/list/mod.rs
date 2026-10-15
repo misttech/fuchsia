@@ -29,7 +29,7 @@ pub async fn list(
     let empty: [String; 0] = [];
     let driver_info = fuchsia_driver_dev::get_driver_info(&driver_development_proxy, &empty);
 
-    let driver_info = if cmd.loaded {
+    let driver_info = if cmd.loaded || cmd.running {
         // Query devices and create a hash set of loaded drivers.
         let device_info = fuchsia_driver_dev::get_device_info(
             &driver_development_proxy,
@@ -41,7 +41,17 @@ pub async fn list(
         let (driver_info, device_info) = join!(driver_info, device_info);
 
         let loaded_driver_set: HashSet<String> = HashSet::from_iter(
-            device_info?.into_iter().filter_map(|device_info| device_info.bound_driver_url),
+            device_info?
+                .into_iter()
+                .filter(|device_info| {
+                    if cmd.running {
+                        device_info.is_running.unwrap_or(false)
+                            && device_info.driver_host_koid.is_some()
+                    } else {
+                        true
+                    }
+                })
+                .filter_map(|device_info| device_info.bound_driver_url),
         );
 
         // Filter the driver list by the hash set.
@@ -140,6 +150,94 @@ mod tests {
         Ok(())
     }
 
+    async fn run_node_info_iterator_server(
+        mut node_infos: Vec<fdd::NodeInfo>,
+        iterator: ServerEnd<fdd::NodeInfoIteratorMarker>,
+    ) -> Result<()> {
+        let mut iterator = iterator.into_stream();
+        while let Some(res) = iterator.next().await {
+            let request = res.unwrap();
+            match request {
+                fdd::NodeInfoIteratorRequest::GetNext { responder } => {
+                    responder.send(&node_infos).unwrap();
+                    node_infos.clear();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn mock_driver_infos() -> Vec<fdf::DriverInfo> {
+        vec![
+            fdf::DriverInfo {
+                name: Some("running".to_owned()),
+                url: Some("fuchsia-pkg://fuchsia.com/running#meta/running.cm".to_owned()),
+                ..Default::default()
+            },
+            fdf::DriverInfo {
+                name: Some("binding".to_owned()),
+                url: Some("fuchsia-pkg://fuchsia.com/binding#meta/binding.cm".to_owned()),
+                ..Default::default()
+            },
+            fdf::DriverInfo {
+                name: Some("starting".to_owned()),
+                url: Some("fuchsia-pkg://fuchsia.com/starting#meta/starting.cm".to_owned()),
+                ..Default::default()
+            },
+            fdf::DriverInfo {
+                name: Some("quarantined".to_owned()),
+                url: Some("fuchsia-pkg://fuchsia.com/quarantined#meta/quarantined.cm".to_owned()),
+                ..Default::default()
+            },
+            fdf::DriverInfo {
+                name: Some("unloaded".to_owned()),
+                url: Some("fuchsia-pkg://fuchsia.com/unloaded#meta/unloaded.cm".to_owned()),
+                ..Default::default()
+            },
+        ]
+    }
+
+    fn mock_node_infos() -> Vec<fdd::NodeInfo> {
+        vec![
+            fdd::NodeInfo {
+                bound_driver_url: Some(
+                    "fuchsia-pkg://fuchsia.com/running#meta/running.cm".to_owned(),
+                ),
+                driver_host_koid: Some(12345),
+                is_running: Some(true),
+                quarantined: Some(false),
+                ..Default::default()
+            },
+            fdd::NodeInfo {
+                bound_driver_url: Some(
+                    "fuchsia-pkg://fuchsia.com/binding#meta/binding.cm".to_owned(),
+                ),
+                driver_host_koid: Some(12345),
+                is_running: Some(false),
+                quarantined: Some(false),
+                ..Default::default()
+            },
+            fdd::NodeInfo {
+                bound_driver_url: Some(
+                    "fuchsia-pkg://fuchsia.com/starting#meta/starting.cm".to_owned(),
+                ),
+                driver_host_koid: None,
+                is_running: Some(false),
+                quarantined: Some(false),
+                ..Default::default()
+            },
+            fdd::NodeInfo {
+                bound_driver_url: Some(
+                    "fuchsia-pkg://fuchsia.com/quarantined#meta/quarantined.cm".to_owned(),
+                ),
+                driver_host_koid: None,
+                is_running: Some(false),
+                quarantined: Some(true),
+                ..Default::default()
+            },
+        ]
+    }
+
     #[fuchsia::test]
     async fn test_list_all() {
         #[cfg(feature = "fdomain")]
@@ -179,6 +277,93 @@ mod tests {
         assert_eq!(
             output,
             "foo                 : fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm\n"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_list_loaded() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = ListCommand::from_args(&["list"], &["--loaded"]).unwrap();
+
+        let output = test_list(
+            #[cfg(feature = "fdomain")]
+            client,
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetDriverInfo {
+                        driver_filter: _,
+                        iterator,
+                        control_handle: _,
+                    } => run_driver_info_iterator_server(mock_driver_infos(), iterator)
+                        .await
+                        .context("Failed to run driver info iterator server")?,
+                    fdd::ManagerRequest::GetNodeInfo {
+                        node_filter: _,
+                        iterator,
+                        exact_match: _,
+                        control_handle: _,
+                    } => run_node_info_iterator_server(mock_node_infos(), iterator)
+                        .await
+                        .context("Failed to run node info iterator server")?,
+                    _ => {}
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            output,
+            concat!(
+                "running             : fuchsia-pkg://fuchsia.com/running#meta/running.cm\n",
+                "binding             : fuchsia-pkg://fuchsia.com/binding#meta/binding.cm\n",
+                "starting            : fuchsia-pkg://fuchsia.com/starting#meta/starting.cm\n",
+                "quarantined         : fuchsia-pkg://fuchsia.com/quarantined#meta/quarantined.cm\n",
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_list_running() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = ListCommand::from_args(&["list"], &["--running"]).unwrap();
+
+        let output = test_list(
+            #[cfg(feature = "fdomain")]
+            client,
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetDriverInfo {
+                        driver_filter: _,
+                        iterator,
+                        control_handle: _,
+                    } => run_driver_info_iterator_server(mock_driver_infos(), iterator)
+                        .await
+                        .context("Failed to run driver info iterator server")?,
+                    fdd::ManagerRequest::GetNodeInfo {
+                        node_filter: _,
+                        iterator,
+                        exact_match: _,
+                        control_handle: _,
+                    } => run_node_info_iterator_server(mock_node_infos(), iterator)
+                        .await
+                        .context("Failed to run node info iterator server")?,
+                    _ => {}
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            output,
+            "running             : fuchsia-pkg://fuchsia.com/running#meta/running.cm\n"
         );
     }
 
