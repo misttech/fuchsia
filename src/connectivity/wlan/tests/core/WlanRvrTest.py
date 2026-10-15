@@ -1,18 +1,32 @@
-#!/usr/bin/env python3
-#
-# Copyright 2025 The Fuchsia Authors
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
+import asyncio
 import itertools
 import logging
-import time
 from dataclasses import dataclass
+from datetime import timedelta
 from enum import StrEnum, auto, unique
 
-from antlion.controllers.fuchsia_device import FuchsiaDevice
-from attenuator import Attenuator, get_attenuators_for_device
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
-from iperf.iperf_server import IPerfResult
+import fuchsia_wlan_base_test
+import honeydew.affordances.connectivity.wlan.core as wlan_core
+from attenuator import (
+    Attenuator,
+    get_attenuators_for_device,
+)
+from honeydew.affordances.connectivity.netstack.errors import (
+    HoneydewNetstackError,
+)
+from honeydew.affordances.connectivity.netstack.types import PortClass
+from honeydew.affordances.connectivity.wlan.utils.errors import (
+    HoneydewWlanError,
+)
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+)
+from honeydew.transports.ffx.types import MachineFormat
+from iperf.iperf_server import IPerfResult, IPerfServerOverSsh
 from legacy_access_point.ap_lib.hostapd_ap_preset import create_ap_preset
 from legacy_access_point.ap_lib.hostapd_security import (
     Security as HostapdSecurity,
@@ -21,7 +35,6 @@ from legacy_access_point.ap_lib.radvd_config import RadvdConfig
 from libs.validation import MapValidator
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
-from mobly.records import TestResultRecord
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
@@ -37,8 +50,9 @@ from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
 
+logger = logging.getLogger(__name__)
+
 REPORTING_SPEED_UNITS = "Mbps"
-DAD_TIMEOUT_SEC = 30
 
 
 @unique
@@ -72,10 +86,11 @@ def write_csv_rvr_data(
     test_name: str, csv_path: str, results: list[RateByRange]
 ) -> None:
     """Writes the CSV data for the RvR test
+
     Args:
         test_name: The name of test that was run.
         csv_path: Where to put the csv file.
-        csv_data: A dictionary of the data to be put in the csv file.
+        results: A list of RateByRange results to be put in the csv file.
     """
     csv_file_name = f"{csv_path}rvr_throughput_vs_attn_{test_name}.csv"
     with open(csv_file_name, "w+") as csv_fileId:
@@ -86,19 +101,24 @@ def write_csv_rvr_data(
             csv_fileId.write(f"{res.relative_attn},{res.throughput}\n")
 
 
-class WlanRvrTest(base_test.WifiBaseTest):
+class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Tests running WLAN RvR.
 
     Test Bed Requirement:
-    * One Android device or Fuchsia device
+    * One Fuchsia device
     * One Access Point
     * One attenuator
     * One Linux iPerf Server
     """
 
+    phy: wlan_core.Phy
+    iperf_server: IPerfServerOverSsh
+    attenuators: list[Attenuator]
+    attenuators_2g: list[Attenuator]
+    attenuators_5g: list[Attenuator]
+
     def __init__(self, configs: TestRunConfig) -> None:
         super().__init__(configs)
-        self.log = logging.getLogger()
         self.rvr_graph_summary: list[object] = []
 
         params = MapValidator(self.user_params["rvr_settings"])
@@ -111,45 +131,8 @@ class WlanRvrTest(base_test.WifiBaseTest):
             bool, "reverse_rvr_after_forward", False
         )
         self.iperf_flags = params.get(str, "iperf_flags", "-i 1")
-        self.iperf_flags += f" -t {self.dwell_time_in_secs} -J"
 
-        self.fuchsia_device, self.dut = self.get_dut_type(FuchsiaDevice)
-
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-            self.iperf_server = self.openwrt_ap.iperf_server
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            if len(self.iperf_servers) == 0:
-                raise signals.TestAbortClass(
-                    "Requires at least one iperf server"
-                )
-            self.iperf_server = self.iperf_servers[0]
-        else:
-            raise signals.TestAbortClass("Requires at least one access point")
-
-        ap_controller_type = "OpenWrtAP" if self.openwrt_aps else "AccessPoint"
-        self.attenuators_2g = get_attenuators_for_device(
-            self.controller_configs[ap_controller_type][0].get(
-                "Attenuator", []
-            ),
-            self.attenuators,
-            "attenuator_ports_wifi_2g",
-        )
-        self.attenuators_5g = get_attenuators_for_device(
-            self.controller_configs[ap_controller_type][0].get(
-                "Attenuator", []
-            ),
-            self.attenuators,
-            "attenuator_ports_wifi_5g",
-        )
-
-        if self.iperf_clients:
-            self.dut_iperf_client = self.iperf_clients[0]
-        else:
-            self.dut_iperf_client = self.dut.create_iperf_client()
-
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         test_params: list[TestParams] = []
         securities: list[Security] = [SecurityOpen(), SecurityWpa2()]
 
@@ -192,100 +175,68 @@ class WlanRvrTest(base_test.WifiBaseTest):
             self._test_rvr, generate_test_name, [(p,) for p in test_params]
         )
 
-    def setup_test(self) -> None:
-        super().setup_test()
-        self.iperf_server.start()
-        self.dut.disconnect()
-        if self.access_point:
-            self.access_point.stop_all_aps()
+    async def setup_class(self) -> None:
+        await super().setup_class()
 
-    def teardown_test(self) -> None:
-        self.cleanup_tests()
-        super().teardown_test()
+        if self.openwrt_ap is None and self.access_point is None:
+            raise signals.TestAbortClass("Requires at least one access point")
 
-    def on_fail(self, record: TestResultRecord) -> None:
-        super().on_fail(record)
-        self.cleanup_tests()
+        self.phy = await self.dut.wlan_core.ensure_single_phy()
+        await self.phy.set_country(
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
+        )
+        self.iperf_server = await self.setup_iperf_server()
 
-    def cleanup_tests(self) -> None:
-        """Cleans up all the dangling pieces of the tests, for example, the
-        iperf server, radvd, all the currently running APs, and the various
-        clients running during the tests.
-        """
-        self.download_logs()
-        self.iperf_server.stop()
-        self.dut.disconnect()
-        if self.access_point:
-            self.access_point.stop_all_aps()
+        if not self.attenuators:
+            raise signals.TestAbortClass("Requires at least one attenuator")
 
-    def _wait_for_iperf_ipv4_addr(self) -> str:
-        """Wait for an IPv4 addresses to become available on the iperf server.
-
-        Returns:
-           The private IPv4 address of the iperf server.
-
-        Raises:
-            TestFailure: If unable to acquire a IPv4 address.
-        """
-        ip_address_checker_counter = 0
-        ip_address_checker_max_attempts = 3
-        while ip_address_checker_counter < ip_address_checker_max_attempts:
-            self.iperf_server.renew_test_interface_ip_address()
-            iperf_server_ip_addresses = (
-                self.iperf_server.get_interface_ip_addresses(
-                    self.iperf_server.test_interface
-                )
-            )
-            self.log.info(f"IPerf server IP info: {iperf_server_ip_addresses}")
-
-            if not iperf_server_ip_addresses["ipv4_private"]:
-                self.log.warning(
-                    "Unable to get the iperf server IPv4 "
-                    "address. Retrying..."
-                )
-                ip_address_checker_counter += 1
-                time.sleep(1)
-                continue
-
-            return iperf_server_ip_addresses["ipv4_private"][0]
-
-        raise signals.TestFailure("IPv4 address not available on iperf server.")
-
-    def _wait_for_iperf_dad(self) -> str:
-        """Wait for Duplicate Address Detection to resolve so that an
-        private-local IPv6 address is available for test.
-
-        Returns:
-            A string containing the private-local IPv6 address of the iperf server.
-
-        Raises:
-            TestFailure: If unable to acquire an IPv6 address.
-        """
-        now = time.time()
-        start = now
-        elapsed = now - start
-
-        while elapsed < DAD_TIMEOUT_SEC:
-            addrs = self.iperf_server.get_interface_ip_addresses(
-                self.iperf_server.test_interface
-            )
-            now = time.time()
-            elapsed = now - start
-            if addrs["ipv6_private_local"]:
-                # DAD has completed
-                addr = addrs["ipv6_private_local"][0]
-                self.log.info(
-                    f'DAD on iperf server resolved with "{addr}" after {elapsed}s'
-                )
-                return addr
-            time.sleep(1)
-
-        raise signals.TestFailure(
-            "Iperf server unable to acquire a private-local IPv6 address for testing "
-            f"after {elapsed}s"
+        ap_controller_type = (
+            "OpenWrtAP" if self.openwrt_ap is not None else "AccessPoint"
+        )
+        self.attenuators_2g = get_attenuators_for_device(
+            self.controller_configs[ap_controller_type][0].get(
+                "Attenuator", []
+            ),
+            self.attenuators,
+            "attenuator_ports_wifi_2g",
+        )
+        self.attenuators_5g = get_attenuators_for_device(
+            self.controller_configs[ap_controller_type][0].get(
+                "Attenuator", []
+            ),
+            self.attenuators,
+            "attenuator_ports_wifi_5g",
         )
 
-    def run_rvr(
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        self.iperf_server.start()
+        await self.dut.wlan_core.destroy_all_ifaces()
+        if self.access_point is not None:
+            self.access_point.stop_all_aps()
+
+    async def teardown_test(self) -> None:
+        self.iperf_server.stop()
+        await self.dut.wlan_core.destroy_all_ifaces()
+        if self.access_point is not None:
+            self.access_point.stop_all_aps()
+        await super().teardown_test()
+
+    async def teardown_class(self) -> None:
+        for attenuator in getattr(self, "attenuators", []):
+            attenuator.set_atten(0)
+        await super().teardown_class()
+
+    async def _wait_for_dut_ip(self, ip_version: IPVersion) -> None:
+        netstack_iface = await self.dut.netstack.wait_for_interface(
+            PortClass.WLAN_CLIENT
+        )
+        if ip_version is IPVersion.V4:
+            await self.dut.netstack.wait_for_ipv4_addr(netstack_iface.id_)
+        elif ip_version is IPVersion.V6:
+            await self.dut.netstack.wait_for_ipv6_addr(netstack_iface.id_)
+
+    async def run_rvr(
         self,
         ssid: str,
         security: Security,
@@ -294,18 +245,18 @@ class WlanRvrTest(base_test.WifiBaseTest):
         traffic_dir: TrafficDirection,
         ip_version: IPVersion,
     ) -> list[RateByRange]:
-        """Setups and runs the RvR test
+        """Sets up and runs the RvR test.
 
         Args:
             ssid: The SSID for the client to associate to.
-            security: Security of the AP
-            password: Password of the AP
-            band: 2g or 5g
-            traffic_dir: rx or tx, bi is not supported by iperf3
-            ip_version: 4 or 6
+            security: Security of the AP.
+            password: Password of the AP.
+            band: 2g or 5g.
+            traffic_dir: rx or tx, bi is not supported by iperf3.
+            ip_version: ipv4 or ipv6.
 
         Returns:
-            The bokeh graph data.
+            The RateByRange results.
         """
         match band:
             case Band.BAND_2G:
@@ -316,15 +267,18 @@ class WlanRvrTest(base_test.WifiBaseTest):
         for rvr_attenuator in rvr_attenuators:
             rvr_attenuator.set_atten(self.starting_attn)
 
+        iface = await self.phy.create_client_iface()
+        fidl_sec = security.to_fidl_wlan_internal()
+
         # Attempt association to the AP multiple times. This makes the test more
         # resilient to AP flakes that may result in the DUT not being able to
         # find the network in its scan results.
         associate_counter = 0
         associate_max_attempts = 3
         while associate_counter < associate_max_attempts:
-            self.dut.disconnect()
+            await iface.disconnect()
 
-            if self.openwrt_ap:
+            if self.openwrt_ap is not None:
                 channel = (
                     DEFAULT_2G_CHANNEL
                     if band == Band.BAND_2G
@@ -345,7 +299,7 @@ class WlanRvrTest(base_test.WifiBaseTest):
                     ]
                 )
                 self.openwrt_ap.configure_wifi(config)
-            elif self.access_point:
+            elif self.access_point is not None:
                 self.access_point.stop_all_aps()
                 legacy_security = HostapdSecurity(
                     security_mode=ConfigMapper.to_hostapd_security(security),
@@ -368,46 +322,51 @@ class WlanRvrTest(base_test.WifiBaseTest):
                     setup_bridge=True,
                 )
 
-            if self.dut.associate(
-                ssid,
-                target_pwd=password,
-                target_security=ConfigMapper.to_hostapd_security(security),
-                check_connectivity=False,
-            ):
+            try:
+                await iface.scan_and_connect(
+                    ssid=ssid,
+                    password=password,
+                    security=fidl_sec,
+                )
                 break
-            else:
+            except HoneydewWlanError as e:
+                logger.warning(
+                    f"Association attempt {associate_counter + 1} failed: {e}"
+                )
                 associate_counter += 1
         else:
             asserts.fail(
                 f"Unable to associate at starting attenuation: {self.starting_attn}"
             )
 
-        match ip_version:
-            case IPVersion.V4:
-                iperf_server_ip_address = self._wait_for_iperf_ipv4_addr()
-            case IPVersion.V6:
-                self.log.info(
-                    "Waiting for iperf server to complete Duplicate "
-                    "Address Detection..."
-                )
-                iperf_server_ip_address = self._wait_for_iperf_dad()
+        await self._wait_for_dut_ip(ip_version)
+        if self.openwrt_ap is None:
+            self.iperf_server.renew_test_interface_ip_address()
+        addr_type = (
+            "ipv4_private"
+            if ip_version is IPVersion.V4
+            else "ipv6_private_local"
+        )
+        iperf_server_ip_address = self.iperf_server.get_addr(addr_type)
 
-        results = self.rvr_loop(
-            traffic_dir,
-            rvr_attenuators,
-            iperf_server_ip_address,
-            ip_version,
-            ssid,
+        results = await self.rvr_loop(
+            iface=iface,
+            traffic_dir=traffic_dir,
+            rvr_attenuators=rvr_attenuators,
+            iperf_server_ip_address=iperf_server_ip_address,
+            ip_version=ip_version,
+            ssid=ssid,
             security=security,
             password=password,
             reverse=False,
         )
         if self.reverse_rvr_after_forward:
-            results = results + self.rvr_loop(
-                traffic_dir,
-                rvr_attenuators,
-                iperf_server_ip_address,
-                ip_version,
+            results = results + await self.rvr_loop(
+                iface=iface,
+                traffic_dir=traffic_dir,
+                rvr_attenuators=rvr_attenuators,
+                iperf_server_ip_address=iperf_server_ip_address,
+                ip_version=ip_version,
                 ssid=ssid,
                 security=security,
                 password=password,
@@ -416,8 +375,9 @@ class WlanRvrTest(base_test.WifiBaseTest):
 
         return results
 
-    def rvr_loop(
+    async def rvr_loop(
         self,
+        iface: wlan_core.ClientIface,
         traffic_dir: TrafficDirection,
         rvr_attenuators: list[Attenuator],
         iperf_server_ip_address: str,
@@ -428,23 +388,7 @@ class WlanRvrTest(base_test.WifiBaseTest):
         reverse: bool,
     ) -> list[RateByRange]:
         """The loop that goes through each attenuation level and runs the iperf
-        throughput pair.
-        Args:
-            traffic_dir: The traffic direction from the perspective of the DUT.
-            rvr_attenuators: A list of attenuators to set.
-            iperf_server_ip_address: The IP address of the iperf server.
-            ssid: The ssid of the wireless network that the should associated
-                to.
-            password: Password of the wireless network.
-            reverse: Whether to run RvR test starting from the highest
-                attenuation and going to the lowest.  This is run after the
-                normal low attenuation to high attenuation RvR test.
-            throughput: The list of throughput data for the test.
-            relative_attn: The list of attenuation data for the test.
-
-        Returns:
-            throughput: The list of throughput data for the test.
-            relative_attn: The list of attenuation data for the test.
+        throughput measurement.
         """
         starting_attn = self.starting_attn
         ending_attn = self.ending_attn
@@ -453,37 +397,38 @@ class WlanRvrTest(base_test.WifiBaseTest):
             starting_attn = self.ending_attn
             ending_attn = self.starting_attn
             step_size_in_db = step_size_in_db * -1
-            self.dut.disconnect()
+            await iface.disconnect()
 
         results: list[RateByRange] = []
 
         for step in range(starting_attn, ending_attn, step_size_in_db):
             try:
                 for attenuator in rvr_attenuators:
-                    self.log.info(
+                    logger.info(
                         f"Setting relative attenuation of {attenuator.instrument.address} "
                         f"to {step} dB"
                     )
                     attenuator.set_atten(step)
             except ValueError as e:
-                self.log.error(
+                logger.error(
                     f"{step} is beyond the max or min of the testbed "
                     f"attenuator's capability. Stopping. {e}"
                 )
                 break
 
-            self.log.info(f"Running iperf at relative attenuation of {step} dB")
+            logger.info(f"Running iperf at relative attenuation of {step} dB")
 
-            throughput = self._run_iperf(
-                traffic_dir,
-                iperf_server_ip_address,
-                ip_version,
-                ssid,
-                security,
-                password,
-                reverse,
+            throughput = await self._run_iperf(
+                iface=iface,
+                traffic_dir=traffic_dir,
+                iperf_server_ip_address=iperf_server_ip_address,
+                ip_version=ip_version,
+                ssid=ssid,
+                security=security,
+                password=password,
+                reverse=reverse,
             )
-            self.log.info(
+            logger.info(
                 f"Iperf traffic complete. {traffic_dir} traffic received at "
                 f"{throughput} {REPORTING_SPEED_UNITS} at relative attenuation "
                 f"of {step} db"
@@ -492,8 +437,9 @@ class WlanRvrTest(base_test.WifiBaseTest):
 
         return results
 
-    def _run_iperf(
+    async def _run_iperf(
         self,
+        iface: wlan_core.ClientIface,
         traffic_dir: TrafficDirection,
         iperf_server_ip_address: str,
         ip_version: IPVersion,
@@ -502,117 +448,126 @@ class WlanRvrTest(base_test.WifiBaseTest):
         password: str | None,
         reverse: bool,
     ) -> float:
-        iperf_flags = self.iperf_flags
-        if traffic_dir is TrafficDirection.RX:
-            iperf_flags = f"{self.iperf_flags} -R"
-
-        if not self.dut.is_connected():
+        status = await iface.status()
+        if status.connected is None:
             if reverse:
                 # In reverse mode, we're going from a high attenuation (weak
-                # signal) to a low attenuation (strong signal).  It's expected
+                # signal) to a low attenuation (strong signal). It's expected
                 # that the DUT is not connected to the AP at the high
                 # attenuation level(s), so if we're disconnected here, we
                 # should try to associate.
-                self.log.info(f"Trying to associate")
-                if self.dut.associate(
-                    ssid,
-                    target_pwd=password,
-                    target_security=ConfigMapper.to_hostapd_security(security),
-                    check_connectivity=False,
-                ):
-                    self.log.info("Successfully associated.")
+                logger.info("Trying to associate")
+                try:
+                    await iface.scan_and_connect(
+                        ssid=ssid,
+                        password=password,
+                        security=security.to_fidl_wlan_internal(),
+                    )
+                    logger.info("Successfully associated.")
                     try:
-                        self.log.debug("Getting DUT IP address")
-                        assert self.dut_iperf_client.test_interface is not None
-                        if ip_version is IPVersion.V4:
-                            self.fuchsia_device.wait_for_ipv4_addr(
-                                self.dut_iperf_client.test_interface
-                            )
-                        elif ip_version is IPVersion.V6:
-                            self.fuchsia_device.wait_for_ipv6_addr(
-                                self.dut_iperf_client.test_interface
-                            )
-                    except ConnectionError:
-                        self.log.info(
+                        logger.debug("Getting DUT IP address")
+                        await self._wait_for_dut_ip(ip_version)
+                    except HoneydewNetstackError:
+                        logger.info(
                             f"Association succeeded, but unable to get DUT IP address. Marking a 0 {REPORTING_SPEED_UNITS} "
                             "for throughput. Skipping running traffic and disconnecting."
                         )
                         # Disconnect the DUT, so that we have a fresh attempt
                         # to get an IP at the next iteration of this reverse
                         # test.
-                        self.dut.disconnect()
+                        await iface.disconnect()
                         return 0
-                else:
-                    self.log.info(
+                except HoneydewWlanError:
+                    logger.info(
                         f"Association failed. Marking a 0 {REPORTING_SPEED_UNITS} "
                         "for throughput. Skipping running traffic."
                     )
                     return 0
             else:
-                self.log.info(
+                logger.info(
                     f"Device no longer associated. Marking a 0 {REPORTING_SPEED_UNITS} "
                     "for throughput. Skipping running traffic."
                 )
                 return 0
 
-        self.log.debug("Pinging iperf server from DUT")
-        ping_result = self.dut.ping(iperf_server_ip_address)
-        if not ping_result.success:
-            self.log.info(
+        logger.debug("Pinging iperf server from DUT")
+        try:
+            ping_result = await self.dut.netstack.ping(
+                iperf_server_ip_address,
+                interval=timedelta(milliseconds=100),
+            )
+            ping_ok = ping_result.any_pings_received
+        except HoneydewNetstackError as e:
+            logger.debug(f"Ping failed with error: {e}")
+            ping_ok = False
+
+        if not ping_ok:
+            logger.info(
                 f'Iperf server "{iperf_server_ip_address}" is not pingable. '
                 f"Marking a 0 {REPORTING_SPEED_UNITS} for throughput. "
                 "Skipping running traffic."
             )
-            self.log.debug(f"{iperf_server_ip_address} pingable: {ping_result}")
             return 0
 
-        self.log.info(f'Iperf server "{iperf_server_ip_address}" is pingable.')
+        logger.info(f'Iperf server "{iperf_server_ip_address}" is pingable.')
 
         match traffic_dir:
             case TrafficDirection.TX:
-                self.log.info(
+                logger.info(
                     f"Running traffic from DUT to iperf server ({iperf_server_ip_address})"
                 )
             case TrafficDirection.RX:
-                self.log.info(
+                logger.info(
                     f"Running traffic from iperf server ({iperf_server_ip_address}) to DUT"
                 )
 
+        args = [
+            "--client",
+            iperf_server_ip_address,
+            *self.iperf_flags.split(),
+            "--time",
+            str(self.dwell_time_in_secs),
+            "--json",
+        ]
+        if traffic_dir is TrafficDirection.RX:
+            args.append("--reverse")
+
+        cmd = f"iperf3 {' '.join(args)}"
+        iperf_timeout = float(self.dwell_time_in_secs * 2)
         try:
-            iperf_tag = "decreasing"
-            if reverse:
-                iperf_tag = "increasing"
-            iperf_results_file = self.dut_iperf_client.start(
-                iperf_server_ip_address,
-                iperf_flags,
-                f"{iperf_tag}_{traffic_dir}_{self.starting_attn}",
-                timeout=(self.dwell_time_in_secs * 2),
+            output = await asyncio.to_thread(
+                self.dut.ffx.run,
+                cmd=["target", "ssh", cmd],
+                timeout=iperf_timeout,
+                log_status_on_failure=False,
+                machine=MachineFormat.RAW,
             )
-        except TimeoutError as e:
-            iperf_results_file = None
-            self.log.error(
-                f"Iperf traffic timed out. Marking 0 {REPORTING_SPEED_UNITS} for "
-                f"throughput. {e}"
+        except Exception as e:
+            self.iperf_server.stop()
+            self.iperf_server.start()
+            logger.error(
+                f"Iperf traffic failed or timed out. Marking 0 {REPORTING_SPEED_UNITS} "
+                f"for throughput: {e}"
             )
             return 0
 
-        if not iperf_results_file:
+        if not output:
             return 0
 
         try:
             iperf_results = IPerfResult(
-                iperf_results_file,
+                output,
                 reporting_speed_units=REPORTING_SPEED_UNITS,
             )
             if iperf_results.error:
                 self.iperf_server.stop()
                 self.iperf_server.start()
-                self.log.error(f"Errors in iperf logs:\n{iperf_results.error}")
+                logger.error(f"Errors in iperf logs:\n{iperf_results.error}")
             if iperf_results.avg_send_rate:
                 return iperf_results.avg_send_rate
 
-            self.log.error(
-                '"avg_send_rate" not found in iPerf3 results file. Marking 0 '
+            logger.error(
+                '"avg_send_rate" not found in iPerf3 results. Marking 0 '
                 f"{REPORTING_SPEED_UNITS} for throughput."
                 f"\n{iperf_results.get_json()}"
             )
@@ -620,25 +575,25 @@ class WlanRvrTest(base_test.WifiBaseTest):
         except ValueError as e:
             self.iperf_server.stop()
             self.iperf_server.start()
-            self.log.error(
-                f"No data in iPerf3 file. Marking 0 {REPORTING_SPEED_UNITS} "
+            logger.error(
+                f"No data in iPerf3 output. Marking 0 {REPORTING_SPEED_UNITS} "
                 f"for throughput: {e}"
             )
             return 0
         except Exception as e:
             self.iperf_server.stop()
             self.iperf_server.start()
-            self.log.error(
+            logger.error(
                 f"Unknown exception. Marking 0 {REPORTING_SPEED_UNITS} for "
                 f"throughput: {e}"
             )
             return 0
 
-    def _test_rvr(self, t: TestParams) -> None:
+    async def _test_rvr(self, t: TestParams) -> None:
         ssid = AccessPointConfig.random_string(20)
-        if self.access_point:
+        if self.access_point is not None:
             self.access_point.stop_all_aps()
-        results = self.run_rvr(
+        results = await self.run_rvr(
             ssid,
             security=t.security,
             password=t.password,
