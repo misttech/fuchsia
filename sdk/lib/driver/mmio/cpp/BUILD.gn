@@ -46,7 +46,10 @@ test("mmio-unittest") {
     ":cpp",
     "//sdk/lib/driver/mmio/testing/cpp",
     "//src/devices/testing/fake-bti",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
+    "//src/sys/test_runners/gtest:death_test",
+    "//third_party/googletest:gtest",
   ]
 }
 

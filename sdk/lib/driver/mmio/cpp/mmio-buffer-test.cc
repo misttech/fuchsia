@@ -22,7 +22,8 @@ int g_hw_mb_count = 0;
 #include <limits>
 #include <optional>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
+#include <src/lib/testing/predicates/status.h>
 
 namespace {
 
@@ -104,13 +105,13 @@ TEST(MmioBuffer, UnalignedOffsetInitRelease) {
   ASSERT_OK(mb.status_value());
 
   // Ensure the map was successful.
-  ASSERT_EQ(1, VmoNumMappings(vmo));
+  ASSERT_EQ(1u, VmoNumMappings(vmo));
 
   mb->reset();
   EXPECT_FALSE(mb->get_vmo()->is_valid());
 
   // Ensure the unmap was successful.
-  ASSERT_EQ(0, VmoNumMappings(vmo));
+  ASSERT_EQ(0u, VmoNumMappings(vmo));
 }
 
 TEST(MmioBuffer, UnalignedSizeInitRelease) {
@@ -123,13 +124,13 @@ TEST(MmioBuffer, UnalignedSizeInitRelease) {
   ASSERT_OK(mb.status_value());
 
   // Ensure the map was successful.
-  ASSERT_EQ(1, VmoNumMappings(vmo));
+  ASSERT_EQ(1u, VmoNumMappings(vmo));
 
   mb->reset();
   EXPECT_FALSE(mb->get_vmo()->is_valid());
 
   // Ensure the unmap was successful.
-  ASSERT_EQ(0, VmoNumMappings(vmo));
+  ASSERT_EQ(0u, VmoNumMappings(vmo));
 }
 
 TEST(MmioBuffer, CppLifecycle) {
@@ -146,7 +147,7 @@ TEST(MmioBuffer, CppLifecycle) {
   }
 
   // This should fault because the dtor of MmioBuffer unmapped the range.
-  ASSERT_DEATH(([&ptr]() { MmioWrite8(0xA5, ptr); }));
+  ASSERT_DEATH(MmioWrite8(0xA5, ptr), "");
 }
 
 TEST(MmioBuffer, MoveAssignment) {
@@ -176,8 +177,8 @@ TEST(MmioBuffer, MoveAssignment) {
   }
 
   // Both ptr1 and ptr2 should fault now after destruction.
-  ASSERT_DEATH(([&ptr1]() { MmioWrite8(0xA5, ptr1); }));
-  ASSERT_DEATH(([&ptr2]() { MmioWrite8(0xA5, ptr2); }));
+  ASSERT_DEATH(MmioWrite8(0xA5, ptr1), "");
+  ASSERT_DEATH(MmioWrite8(0xA5, ptr2), "");
 }
 
 TEST(MmioBuffer, AlreadyMapped) {
@@ -214,8 +215,8 @@ TEST(MmioBuffer, AlreadySetVmoCachePolicy) {
 }
 
 TEST(MmioBuffer, TestMmioBuffer) {
-  ASSERT_DEATH([]() { fdf_testing::CreateMmioBuffer(0); });
-  ASSERT_DEATH([]() { fdf_testing::CreateMmioBuffer(std::numeric_limits<size_t>::max()); });
+  ASSERT_DEATH(fdf_testing::CreateMmioBuffer(0), "");
+  ASSERT_DEATH(fdf_testing::CreateMmioBuffer(std::numeric_limits<size_t>::max()), "");
 
   size_t size = zx_system_get_page_size();
   auto buffer = fdf_testing::CreateMmioBuffer(size);
@@ -234,7 +235,7 @@ TEST(MmioBuffer, TestMmioBufferWithVmo) {
   size_t size = zx_system_get_page_size();
   ASSERT_OK(zx::vmo::create(size, 0, &vmo));
 
-  ASSERT_DEATH([]() { fdf_testing::CreateMmioBuffer(zx::vmo(ZX_HANDLE_INVALID)); });
+  ASSERT_DEATH(fdf_testing::CreateMmioBuffer(zx::vmo(ZX_HANDLE_INVALID)), "");
 
   auto buffer = fdf_testing::CreateMmioBuffer(std::move(vmo));
   ASSERT_EQ(size, buffer.get_size());
@@ -400,14 +401,14 @@ TEST(MmioBuffer, DirectReset) {
   EXPECT_EQ(1u, VmoNumMappings(vmo_dup));
 
   buffer->reset();
-  EXPECT_EQ(nullptr, buffer->get());
+  EXPECT_EQ(buffer->get(), nullptr);
   EXPECT_EQ(0u, buffer->get_size());
   EXPECT_FALSE(buffer->get_vmo()->is_valid());
   EXPECT_EQ(0u, VmoNumMappings(vmo_dup));
 
   // Calling reset() again is a no-op.
   buffer->reset();
-  EXPECT_EQ(nullptr, buffer->get());
+  EXPECT_EQ(buffer->get(), nullptr);
   EXPECT_EQ(0u, buffer->get_size());
   EXPECT_FALSE(buffer->get_vmo()->is_valid());
   EXPECT_EQ(0u, VmoNumMappings(vmo_dup));
@@ -441,10 +442,10 @@ TEST(MmioView, ViewBounds) {
   auto buffer = fdf_testing::CreateMmioBuffer(size);
 
   // Overflowing view size assertions.
-  ASSERT_DEATH([&]() { buffer.View(16, buffer.get_size() - 16 + 1); });
+  ASSERT_DEATH(buffer.View(16, buffer.get_size() - 16 + 1), "");
 
   // Boundary View(get_size()) behavior: single-arg View asserts offset < get_size().
-  ASSERT_DEATH([&]() { buffer.View(buffer.get_size()); });
+  ASSERT_DEATH(buffer.View(buffer.get_size()), "");
 
   // Two-arg View(get_size(), 0) is valid: offset <= get_size() and size <= get_size() - offset.
   auto empty_view = buffer.View(buffer.get_size(), 0);
@@ -497,7 +498,7 @@ TEST(MmioBuffer, SetMmioBufferOps) {
     auto src = fdf_testing::CreateMmioBuffer(std::move(vmo));
     MMIO_PTR void* orig_vaddr = src.get();
     auto swapped = fdf::SetMmioBufferOps(std::move(src), fdf::MmioBuffer::GetDefaultOps());
-    EXPECT_EQ(nullptr, src.get());
+    EXPECT_EQ(src.get(), nullptr);
     EXPECT_EQ(orig_vaddr, swapped.get());
     EXPECT_EQ(1u, VmoNumMappings(vmo_dup));
   }
