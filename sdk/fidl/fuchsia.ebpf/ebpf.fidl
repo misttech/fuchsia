@@ -55,6 +55,9 @@ type MapFlags = flexible bits : uint32 {
 
     /// Clones the storage when the parent socket is cloned. Equivalent to `BPF_F_CLONE`.
     CLONE = 16;
+
+    /// Programs can only read from the map. Equivalent to `BPF_F_RDONLY_PROG`.
+    PROG_READ_ONLY = 32;
 };
 
 /// Schema of an eBPF map.

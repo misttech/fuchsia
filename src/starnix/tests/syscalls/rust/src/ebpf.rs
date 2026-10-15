@@ -17,13 +17,14 @@ mod ebpf_test {
     use std::net::UdpSocket;
     use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
     use std::os::unix::net::UnixStream;
+    use std::ptr::null_mut;
     use std::time::Duration;
     use test_case::test_case;
     use zerocopy::{FromBytes, Immutable, IntoBytes};
 
     macro_rules! root_required {
         () => {
-            // geteuid() is always safe to call.
+            // SAFETY: geteuid() is always safe.
             let euid = unsafe { libc::geteuid() };
             if euid != 0 {
                 eprintln!("eBPF tests require root privileges, skipping");
@@ -47,9 +48,7 @@ mod ebpf_test {
                 std::mem::size_of_val(attr),
             )
         };
-        (result >= 0)
-            .then_some(result as i32)
-            .ok_or_else(|| std::io::Error::from_raw_os_error(-result as i32))
+        (result >= 0).then_some(result as i32).ok_or_else(std::io::Error::last_os_error)
     }
 
     fn gettid() -> linux_uapi::pid_t {
@@ -296,6 +295,9 @@ mod ebpf_test {
     const TARGET_COOKIE_MAP_NAME: &str = "target_cookie";
     const COUNT_MAP_NAME: &str = "count";
     const TEST_RESULT_MAP_NAME: &str = "test_result";
+    const RO_ARRAY_MAP_NAME: &str = "ro_array_map";
+    const RO_HASH_MAP_NAME: &str = "ro_hash_map";
+    const RO_MMAP_MAP_NAME: &str = "ro_mmap_map";
 
     // LINT.IfChange
     #[repr(C)]
@@ -414,18 +416,19 @@ mod ebpf_test {
         }
     }
 
+    #[derive(Debug)]
     struct LoadedProgram {
         prog_fd: OwnedFd,
         attach_type: linux_uapi::bpf_attach_type,
     }
 
     impl LoadedProgram {
-        fn new(
+        fn try_new(
             name: &str,
             prog_type: linux_uapi::bpf_prog_type,
             attach_type: linux_uapi::bpf_attach_type,
             maps: &mut MapSet,
-        ) -> Self {
+        ) -> Result<Self, std::io::Error> {
             let ProgramDefinition { mut code, maps: map_defs } =
                 ebpf_loader::load_ebpf_program("data/ebpf_test_progs.o", ".text", name)
                     .expect("Failed to load program");
@@ -450,10 +453,19 @@ mod ebpf_test {
                 }
             }
 
-            let prog_fd =
-                bpf_prog_load(code, prog_type, attach_type).expect("Failed to load program");
+            let prog_fd = bpf_prog_load(code, prog_type, attach_type)?;
 
-            Self { prog_fd, attach_type }
+            Ok(Self { prog_fd, attach_type })
+        }
+
+        fn new(
+            name: &str,
+            prog_type: linux_uapi::bpf_prog_type,
+            attach_type: linux_uapi::bpf_attach_type,
+            maps: &mut MapSet,
+        ) -> Self {
+            Self::try_new(name, prog_type, attach_type, maps)
+                .unwrap_or_else(|e| panic!("Failed to load program {name}: {e:?}"))
         }
 
         fn attach(&self) -> AttachedProgram {
@@ -1581,5 +1593,119 @@ mod ebpf_test {
             bpf_map_lookup_elem(clone_map_fd.as_fd(), accepted_socket.as_raw_fd())
                 .expect("Failed to lookup clone map on accepted");
         assert_eq!(accepted_val, 43);
+    }
+
+    #[test]
+    #[serial]
+    fn ebpf_read_only_prog_map() {
+        root_required!();
+
+        let mut maps = MapSet::new();
+
+        // Program reading from lookup pointer of read-only map must pass
+        // verification.
+        let _read_prog = LoadedProgram::try_new(
+            "test_read_only_prog_map_read",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER,
+            0,
+            &mut maps,
+        )
+        .expect("reading from read-only map must pass verification");
+
+        // Userspace write (update) should succeed on ProgReadOnly map.
+        let ro_map_fd = maps.find(RO_ARRAY_MAP_NAME, linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY);
+        let key = 0u32;
+        let value = [0x55u8; 64];
+        bpf_map_update_elem(ro_map_fd, key, value).expect("Userspace update should succeed");
+
+        // Userspace read (lookup) should succeed and match the written value.
+        let read_value: [u8; 64] =
+            bpf_map_lookup_elem(ro_map_fd, key).expect("Userspace lookup should succeed");
+        assert_eq!(value, read_value);
+
+        // Program using a read-only hash map should also succeed.
+        let _hash_prog = LoadedProgram::try_new(
+            "test_read_only_prog_hash_map_read",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER,
+            0,
+            &mut maps,
+        )
+        .expect("program using read-only hash map must load successfully");
+        let _ro_hash_fd = maps.find(RO_HASH_MAP_NAME, linux_uapi::bpf_map_type_BPF_MAP_TYPE_HASH);
+    }
+
+    #[test]
+    #[serial]
+    fn ebpf_read_only_prog_mmap() {
+        root_required!();
+
+        let mut maps = MapSet::new();
+        let _mmap_prog = LoadedProgram::try_new(
+            "test_read_only_prog_mmap",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER,
+            0,
+            &mut maps,
+        )
+        .expect("program using mmapable read-only map must load successfully");
+
+        let map_fd = maps.find(RO_MMAP_MAP_NAME, linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY);
+        let page_size = getpagesize();
+
+        // SAFETY: Calling mmap() with valid arguments.
+        let call_mmap = |prot| unsafe {
+            libc::mmap(null_mut(), page_size, prot, libc::MAP_SHARED, map_fd.as_raw_fd(), 0)
+        };
+
+        // 1. Writable mmap should fail with EACCES.
+        let res = call_mmap(libc::PROT_READ | libc::PROT_WRITE);
+        assert_eq!(res, libc::MAP_FAILED);
+        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::EACCES));
+
+        // 2. Read-only mmap should succeed.
+        let addr = call_mmap(libc::PROT_READ);
+        assert_ne!(addr, libc::MAP_FAILED);
+
+        // 3. mprotect to writable should fail with EACCES.
+        // SAFETY: Calling mprotect() with valid arguments.
+        let mprotect_res =
+            unsafe { libc::mprotect(addr, page_size, libc::PROT_READ | libc::PROT_WRITE) };
+        assert_eq!(mprotect_res, -1);
+        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::EACCES));
+
+        // SAFETY: Calling munmap() with valid arguments.
+        let munmap_res = unsafe { libc::munmap(addr, page_size) };
+        assert_eq!(munmap_res, 0);
+    }
+
+    #[test]
+    #[serial]
+    fn ebpf_read_only_prog_map_invalid_types() {
+        root_required!();
+
+        // SK_STORAGE with BPF_F_RDONLY_PROG should fail with EINVAL.
+        let invalid_sk_result = bpf_map_create(&MapDefinition {
+            name: Some("invalid_ro_sk".into()),
+            schema: ebpf::MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                key_size: 4,
+                value_size: 4,
+                max_entries: 0,
+                flags: ebpf::MapFlags::ProgReadOnly | ebpf::MapFlags::NoPrealloc,
+            },
+        });
+        assert_eq!(invalid_sk_result.unwrap_err().raw_os_error(), Some(libc::EINVAL));
+
+        // RINGBUF with BPF_F_RDONLY_PROG should fail with EINVAL.
+        let invalid_ringbuf_result = bpf_map_create(&MapDefinition {
+            name: Some("invalid_ro_ringbuf".into()),
+            schema: ebpf::MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+                key_size: 0,
+                value_size: 0,
+                max_entries: 4096,
+                flags: ebpf::MapFlags::ProgReadOnly,
+            },
+        });
+        assert_eq!(invalid_ringbuf_result.unwrap_err().raw_os_error(), Some(libc::EINVAL));
     }
 }

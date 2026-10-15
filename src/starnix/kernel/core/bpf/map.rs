@@ -189,7 +189,8 @@ impl BpfMap {
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
         let mut state = self.state.lock();
-        if state.is_frozen {
+        let writable = prot.contains(ProtectionFlags::WRITE);
+        if state.is_frozen && writable {
             return error!(EPERM);
         }
 
@@ -197,44 +198,11 @@ impl BpfMap {
         match self.schema.map_type {
             bpf_map_type_BPF_MAP_TYPE_RINGBUF => {
                 // Only the first page of a ring buffer can be mapped as writable.
-                if length > page_size && prot.contains(ProtectionFlags::WRITE) {
+                if length > page_size && writable {
                     return error!(EPERM);
                 }
                 if length > 2 * page_size + 2 * self.schema.max_entries as usize {
                     return error!(EINVAL);
-                }
-                if length <= page_size && prot.contains(ProtectionFlags::WRITE) {
-                    if let Some(memory) = state.memory_object.as_ref() {
-                        return Ok(memory.clone());
-                    }
-                    let consumer_vmo = self
-                        .vmo()
-                        .create_child(
-                            zx::VmoChildOptions::SLICE,
-                            page_size as u64,
-                            page_size as u64,
-                        )
-                        .map_err(|_| errno!(EIO))?;
-                    let memory = Arc::new(MemoryObject::from(consumer_vmo));
-                    state.memory_object = Some(memory.clone());
-                    Ok(memory)
-                } else {
-                    if let Some(memory) = state.readonly_memory_object.as_ref() {
-                        return Ok(memory.clone());
-                    }
-                    let clone_size = 2 * page_size + self.schema.max_entries as usize;
-                    let vmo_dup = self
-                        .vmo()
-                        .create_child(
-                            zx::VmoChildOptions::SLICE | zx::VmoChildOptions::NO_WRITE,
-                            page_size as u64,
-                            clone_size as u64,
-                        )
-                        .map_err(|_| errno!(EIO))?
-                        .into();
-                    let memory = Arc::new(MemoryObject::RingBuf(vmo_dup));
-                    state.readonly_memory_object = Some(memory.clone());
-                    Ok(memory)
                 }
             }
 
@@ -251,22 +219,61 @@ impl BpfMap {
                     return error!(EINVAL);
                 }
 
-                if let Some(memory) = state.memory_object.as_ref() {
-                    return Ok(memory.clone());
+                if self.schema.flags.contains(MapFlags::ProgReadOnly) && writable {
+                    return error!(EACCES);
                 }
-                let vmo_dup: zx::Vmo = self
-                    .vmo()
-                    .as_handle_ref()
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .map_err(|_| errno!(EIO))?
-                    .into();
-                let memory = Arc::new(MemoryObject::from(vmo_dup));
-                state.memory_object = Some(memory.clone());
-                Ok(memory)
             }
 
-            _ => error!(ENODEV),
+            _ => return error!(ENODEV),
+        };
+
+        let memory_object =
+            if writable { &mut state.memory_object } else { &mut state.readonly_memory_object };
+        if let Some(memory) = memory_object.as_ref() {
+            return Ok(memory.clone());
         }
+
+        let new_memory_object = match self.schema.map_type {
+            bpf_map_type_BPF_MAP_TYPE_RINGBUF => {
+                if writable {
+                    MemoryObject::from(
+                        self.vmo()
+                            .create_child(
+                                zx::VmoChildOptions::SLICE,
+                                page_size as u64,
+                                page_size as u64,
+                            )
+                            .map_err(|_| errno!(EIO))?,
+                    )
+                } else {
+                    let clone_size = 2 * page_size + self.schema.max_entries as usize;
+                    MemoryObject::RingBuf(
+                        self.vmo()
+                            .create_child(
+                                zx::VmoChildOptions::SLICE | zx::VmoChildOptions::NO_WRITE,
+                                page_size as u64,
+                                clone_size as u64,
+                            )
+                            .map_err(|_| errno!(EIO))?
+                            .into(),
+                    )
+                }
+            }
+
+            bpf_map_type_BPF_MAP_TYPE_ARRAY => {
+                let rights = if writable {
+                    zx::Rights::SAME_RIGHTS
+                } else {
+                    self.vmo().basic_info().map_err(|_| errno!(EIO))?.rights - zx::Rights::WRITE
+                };
+                MemoryObject::from(self.vmo().duplicate_handle(rights).map_err(|_| errno!(EIO))?)
+            }
+            _ => return error!(ENODEV),
+        };
+
+        let memory = Arc::new(new_memory_object);
+        *memory_object = Some(memory.clone());
+        Ok(memory)
     }
 }
 

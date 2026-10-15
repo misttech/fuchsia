@@ -451,3 +451,57 @@ int test_ringbuf_reserve_overflow_sock(struct bpf_sock* sock) {
   bpf_map_update_elem(&test_result, &zero, &result, 0);
   return 1;
 }
+
+SECTION("maps")
+struct bpf_map_def ro_array_map = {
+    .type = BPF_MAP_TYPE_ARRAY,
+    .key_size = sizeof(int),
+    .value_size = 64,
+    .max_entries = 1,
+    .map_flags = BPF_F_RDONLY_PROG,
+};
+
+SECTION("maps")
+struct bpf_map_def ro_hash_map = {
+    .type = BPF_MAP_TYPE_HASH,
+    .key_size = sizeof(int),
+    .value_size = sizeof(int),
+    .max_entries = 10,
+    .map_flags = BPF_F_RDONLY_PROG,
+};
+
+SECTION("maps")
+struct bpf_map_def ro_mmap_map = {
+    .type = BPF_MAP_TYPE_ARRAY,
+    .key_size = sizeof(int),
+    .value_size = 4096,
+    .max_entries = 1,
+    .map_flags = BPF_F_MMAPABLE | BPF_F_RDONLY_PROG,
+};
+
+int test_read_only_prog_map_read(struct __sk_buff* skb) {
+  int key = 0;
+  int* val = bpf_map_lookup_elem(&ro_array_map, &key);
+  if (val) {
+    return *val;
+  }
+  return 0;
+}
+
+int test_read_only_prog_hash_map_read(struct __sk_buff* skb) {
+  int key = 0;
+  int* val = bpf_map_lookup_elem(&ro_hash_map, &key);
+  if (val) {
+    return *val;
+  }
+  return 0;
+}
+
+int test_read_only_prog_mmap(struct __sk_buff* skb) {
+  int key = 0;
+  int* val = bpf_map_lookup_elem(&ro_mmap_map, &key);
+  if (val) {
+    return *val;
+  }
+  return 0;
+}

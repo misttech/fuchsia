@@ -78,7 +78,6 @@
                 "BpfMapTest.MapReadOnly",
                 "BpfMapTest.RingBufferWrapAround",
                 "BpfMapTest.GetObjFile",
-                "BpfMapTest.FreezeMmapInteraction",
                 "BpfMapTest.PinAccessCheck",
 
                 // WONTFIX(https://fxbug.dev/436978535): These look for the "all" subdirectory,

@@ -743,11 +743,12 @@ TEST_F(BpfMapTest, FreezeMmapInteraction) {
   ASSERT_TRUE(mmap_rw_result.is_error());
   EXPECT_EQ(mmap_rw_result.error_value(), EPERM);
 
-  // Also check read-only mmap
+  // Read-only mmap on a frozen map should succeed, and upgrading to PROT_WRITE should fail.
   auto mmap_ro_result = test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ, MAP_SHARED,
                                                       mappable_map_fd.get(), 0);
-  ASSERT_TRUE(mmap_ro_result.is_error());
-  EXPECT_EQ(mmap_ro_result.error_value(), EPERM);
+  ASSERT_TRUE(mmap_ro_result.is_ok()) << strerror(mmap_ro_result.error_value());
+  EXPECT_EQ(mprotect(mmap_ro_result->mapping(), getpagesize(), PROT_READ | PROT_WRITE), -1);
+  EXPECT_EQ(errno, EACCES);
 }
 
 TEST_F(BpfMapTest, LockTest) {

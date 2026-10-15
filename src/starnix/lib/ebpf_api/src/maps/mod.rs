@@ -78,7 +78,8 @@ const SUPPORTED_FLAGS: MapFlags = MapFlags::NoPrealloc
     .union(MapFlags::SyscallReadOnly)
     .union(MapFlags::SyscallWriteOnly)
     .union(MapFlags::Mmapable)
-    .union(MapFlags::Clone);
+    .union(MapFlags::Clone)
+    .union(MapFlags::ProgReadOnly);
 
 fn map_flags_from_fidl(flags: febpf::MapFlags) -> MapFlags {
     let mut r = MapFlags::empty();
@@ -96,6 +97,9 @@ fn map_flags_from_fidl(flags: febpf::MapFlags) -> MapFlags {
     }
     if flags.contains(febpf::MapFlags::CLONE) {
         r = r | MapFlags::Clone;
+    }
+    if flags.contains(febpf::MapFlags::PROG_READ_ONLY) {
+        r = r | MapFlags::ProgReadOnly;
     }
     r
 }
@@ -121,6 +125,9 @@ fn map_flags_to_fidl(flags: MapFlags) -> Result<febpf::MapFlags, MapError> {
     if flags.contains(MapFlags::Clone) {
         r = r | febpf::MapFlags::CLONE;
     }
+    if flags.contains(MapFlags::ProgReadOnly) {
+        r = r | febpf::MapFlags::PROG_READ_ONLY;
+    }
     Ok(r)
 }
 
@@ -142,6 +149,14 @@ fn validate_map_flags(schema: &MapSchema) -> Result<(), MapError> {
 
     // `CLONE` is valid only for socket storage maps.
     if flags.contains(MapFlags::Clone) && schema.map_type != bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
+        return Err(MapError::InvalidParam);
+    }
+
+    // `ProgReadOnly` is not valid for socket storage or ring buffer maps.
+    if flags.contains(MapFlags::ProgReadOnly)
+        && (schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE
+            || schema.map_type == bpf_map_type_BPF_MAP_TYPE_RINGBUF)
+    {
         return Err(MapError::InvalidParam);
     }
 
@@ -255,6 +270,8 @@ impl Map {
         }
 
         let schema = map_schema_from_fidl(fidl_schema);
+
+        validate_map_flags(&schema)?;
 
         let map_impl = create_map_impl(&schema, vmo)?;
         Ok(PinnedMap(Arc::pin(Self { schema, map_impl })))
@@ -389,11 +406,7 @@ fn create_map_impl(
         // these
         bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_DEVMAP_HASH");
-            // `BPF_F_RDONLY_PROG` is not yet implemented, but it's always set
-            // for `DEVMAP` maps.
-            let schema =
-                MapSchema { flags: schema.flags.difference(MapFlags::ProgReadOnly), ..*schema };
-            Ok(Box::pin(hashmap::HashMap::new(&schema, vmo)?))
+            Ok(Box::pin(hashmap::HashMap::new(schema, vmo)?))
         }
         bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_PERCPU_HASH");
@@ -881,5 +894,68 @@ mod test {
 
         // Last key returns InvalidKey.
         assert_eq!(map.get_next_key(Some(&second)), Err(MapError::InvalidKey));
+    }
+
+    #[fuchsia::test]
+    fn test_prog_read_only_map() {
+        let array_schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_ARRAY,
+            key_size: 4,
+            value_size: 4,
+            max_entries: 4,
+            flags: MapFlags::ProgReadOnly,
+        };
+        let array_map = Map::new(array_schema, "test_array").unwrap();
+        assert!(array_map.schema.flags.contains(MapFlags::ProgReadOnly));
+        let array_fidl = array_map.share().expect("Failed to share array map");
+        let shared_array =
+            Map::new_shared(array_fidl).expect("Failed to initialize shared array map");
+        assert!(shared_array.schema.flags.contains(MapFlags::ProgReadOnly));
+
+        let hash_schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_HASH,
+            key_size: 4,
+            value_size: 4,
+            max_entries: 4,
+            flags: MapFlags::ProgReadOnly,
+        };
+        let hash_map = Map::new(hash_schema, "test_hash").unwrap();
+        assert!(hash_map.schema.flags.contains(MapFlags::ProgReadOnly));
+        let hash_fidl = hash_map.share().expect("Failed to share hash map");
+        let shared_hash = Map::new_shared(hash_fidl).expect("Failed to initialize shared hash map");
+        assert!(shared_hash.schema.flags.contains(MapFlags::ProgReadOnly));
+
+        // Invalid on SK_STORAGE.
+        let sk_storage_schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+            key_size: 4,
+            value_size: 4,
+            max_entries: 0,
+            flags: MapFlags::ProgReadOnly | MapFlags::NoPrealloc,
+        };
+        assert_eq!(Map::new(sk_storage_schema, "test_sk").err(), Some(MapError::InvalidParam));
+
+        // Invalid on RINGBUF.
+        let ringbuf_schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+            key_size: 0,
+            value_size: 0,
+            max_entries: 4096,
+            flags: MapFlags::ProgReadOnly,
+        };
+        assert_eq!(Map::new(ringbuf_schema, "test_rb").err(), Some(MapError::InvalidParam));
+
+        // Invalid flags rejected in Map::new_shared.
+        let ringbuf_valid_schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+            key_size: 0,
+            value_size: 0,
+            max_entries: 4096,
+            flags: MapFlags::empty(),
+        };
+        let valid_rb = Map::new(ringbuf_valid_schema, "test_rb_valid").unwrap();
+        let mut shared_rb = valid_rb.share().expect("Failed to share ringbuf");
+        shared_rb.schema.as_mut().unwrap().flags |= febpf::MapFlags::PROG_READ_ONLY;
+        assert_eq!(Map::new_shared(shared_rb).err(), Some(MapError::InvalidParam));
     }
 }
