@@ -185,9 +185,8 @@ impl DwSpiDeviceInner {
             .await?
             .map_err(|s| anyhow::Error::new(s).context("Failed to toggle reset"))?;
 
-        self.init_registers();
-
         self.select_pin_states("default").await?;
+        self.init_registers();
 
         Ok(())
     }
@@ -251,9 +250,9 @@ impl DwSpiDeviceInner {
             .await?
             .map_err(|s| anyhow::Error::new(s).context("Failed to toggle reset"))?;
 
-        self.init_registers();
-
         self.select_pin_states("default").await?;
+
+        self.init_registers();
 
         self.suspended = false;
         Ok(())
