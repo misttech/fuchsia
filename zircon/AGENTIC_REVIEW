@@ -1,0 +1,12 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Zircon C++ to Rust porting rubric and FBL intrusive container porting patterns.
+conditional_capability_groups {
+  path_expression: "....rs"
+  path_expression: "....cc"
+  path_expression: "....h"
+  review_capability_skills: "zircon/skills/cpp-to-rust-rubric/SKILL.md"
+  review_capability_skills: "zircon/skills/fbl-intrusive-porting/SKILL.md"
+}
