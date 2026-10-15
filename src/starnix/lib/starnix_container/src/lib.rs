@@ -26,7 +26,7 @@ use assembly_config_schema::product_settings::{StarnixFileOperation, StarnixFile
 use depfile::Depfile;
 pub use repackage::repackage_starnix_containers;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct StarnixContainerGenerator {
     /// Name of the starnix container.
     pub name: String,
@@ -52,7 +52,7 @@ pub struct StarnixContainerGenerator {
     pub file_overrides: Vec<StarnixFileOverride>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ImageOverridesResult {
     /// Inodes that were skipped (removed or overwritten) in the original image.
     pub skipped_inodes: std::collections::HashSet<u64>,
@@ -60,7 +60,7 @@ pub struct ImageOverridesResult {
     pub new_files: Vec<(u64, Utf8PathBuf)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct StarnixContainerRepackager {
     /// Name of the starnix container.
     pub name: String,
@@ -84,7 +84,7 @@ pub const S_IFMT: u16 = 0xf000;
 impl StarnixContainerGenerator {
     // Build the StarnixContainer
     fn add_ext4_image(
-        self,
+        &self,
         name: impl AsRef<Utf8Path>,
         outdir: impl AsRef<Utf8Path>,
         image_path: impl AsRef<Utf8Path>,
@@ -139,7 +139,7 @@ impl StarnixContainerGenerator {
     }
 
     fn add_ramdisks(
-        self,
+        &self,
         name: impl AsRef<Utf8Path>,
         outdir: impl AsRef<Utf8Path>,
         ramdisk_paths: &[impl AsRef<Utf8Path>],
@@ -244,7 +244,7 @@ impl StarnixContainerGenerator {
     }
 
     fn add_to_odm(
-        self,
+        &self,
         src: &fuchsia_pkg::BlobInfo,
         dst: &[&str],
         odm_writer: &mut Writer,
@@ -257,7 +257,7 @@ impl StarnixContainerGenerator {
     }
 
     fn clone_package(
-        self,
+        &self,
         manifest_path: &Utf8PathBuf,
         outdir: &String,
         deps: &mut Depfile,
@@ -293,27 +293,27 @@ impl StarnixContainerGenerator {
 
         // Bootstrap the package builder with the contents of the base package, but update the
         // internal and published names.
-        let mut builder = self.clone().clone_package(&self.base, &self.outdir.to_string(), deps)?;
+        let mut builder = self.clone_package(&self.base, &self.outdir.to_string(), deps)?;
         builder.name(&self.name);
         builder.published_name(&self.name);
         builder.manifest_blobs_relative_to(fuchsia_pkg::RelativeTo::File);
 
         if !self.ramdisk.is_empty() {
             let ramdisk_files =
-                self.clone().add_ramdisks("ramdisk", &self.outdir, &self.ramdisk, &mut builder)?;
+                self.add_ramdisks("ramdisk", &self.outdir, &self.ramdisk, &mut builder)?;
             deps.add_inputs(&self.ramdisk);
             deps.add_outputs(ramdisk_files.into_values());
         }
 
         let system_files =
-            self.clone().add_ext4_image("system", &self.outdir, &self.system, &mut builder)?;
+            self.add_ext4_image("system", &self.outdir, &self.system, &mut builder)?;
         deps.add_input(&self.system);
         deps.add_outputs(system_files.into_values());
 
         // Combine the vendor image with the system image.
         if let Some(vendor_path) = &self.vendor {
             let vendor_files =
-                self.clone().add_ext4_image("vendor", &self.outdir, &vendor_path, &mut builder)?;
+                self.add_ext4_image("vendor", &self.outdir, &vendor_path, &mut builder)?;
             deps.add_input(vendor_path);
             deps.add_outputs(vendor_files.into_values());
         }
@@ -358,7 +358,7 @@ impl StarnixContainerGenerator {
             // If a HAL manifest contains `init_rc`, copy that file to
             // `etc/init/{hal_package_name}.rc` in the ODM filesystem.
             if let Some(blob) = hal_manifest.init_rc {
-                deps.add_input(self.clone().add_to_odm(
+                deps.add_input(self.add_to_odm(
                     &blob,
                     &["etc", "init", &format!("{hal_package_name}.rc")],
                     &mut odm_writer,
@@ -367,7 +367,7 @@ impl StarnixContainerGenerator {
             // If a HAL manifest contains `vintf_manifest`, copy that file to
             // `etc/vintf/manifest/{hal_package_name}.xml` in the ODM filesystem.
             if let Some(blob) = hal_manifest.vintf_manifest {
-                deps.add_input(self.clone().add_to_odm(
+                deps.add_input(self.add_to_odm(
                     &blob,
                     &["etc", "vintf", "manifest", &format!("{hal_package_name}.xml")],
                     &mut odm_writer,
