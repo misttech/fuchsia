@@ -575,10 +575,6 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
   if (serial_number_offer.has_value()) {
     offers.push_back(std::move(serial_number_offer.value()));
   }
-  std::optional usb_phy_offer = usb_phy_metadata_server_.CreateOffer();
-  if (usb_phy_offer.has_value()) {
-    offers.push_back(std::move(usb_phy_offer.value()));
-  }
 
   auto child = AddChild("dwc3", properties, offers);
   if (child.is_error()) {
@@ -651,14 +647,34 @@ zx::result<bool> GetBool(const fuchsia_driver_metadata::Dictionary& dict, std::s
 }  // namespace
 
 zx::result<> Dwc3::LoadMetadata(fdf::PDev& pdev) {
+  zx::result phy_meta = fdf_metadata::GetMetadataIfExists<fphy::Metadata>(incoming(), "dwc3-phy");
+  if (phy_meta.is_error()) {
+    fdf::error("Failed to retrieve usb-phy metadata: {}", phy_meta.status_string());
+    return phy_meta.take_error();
+  }
+  if (phy_meta.value().has_value() && phy_meta.value()->usb_phy_modes().has_value()) {
+    bool has_usb3 = false;
+    bool has_usb2 = false;
+    for (const auto& mode : *phy_meta.value()->usb_phy_modes()) {
+      if (mode.protocol() == fphy::ProtocolVersion::kUsb30) {
+        has_usb3 = true;
+      } else if (mode.protocol() == fphy::ProtocolVersion::kUsb20) {
+        has_usb2 = true;
+      }
+    }
+    if (has_usb2 && !has_usb3) {
+      max_speed_ = fdescriptor::UsbSpeed::kHigh;
+    }
+  }
+
   zx::result meta = pdev.GetFidlMetadata<fuchsia_driver_metadata::Dictionary>(
       "fuchsia.driver.metadata.Dictionary");
   if (meta.is_error()) {
-    if (meta.error_value() == ZX_ERR_NOT_FOUND) {
-      return zx::ok();
+    if (meta.error_value() != ZX_ERR_NOT_FOUND) {
+      fdf::error("Failed to retrieve driver metadata: {}", meta.status_string());
+      return meta.take_error();
     }
-    fdf::error("Failed to retrieve driver metadata: {}", meta.status_string());
-    return meta.take_error();
+    return zx::ok();
   }
 
   zx::result interrupt_moderation_us_res = GetUint32(*meta, "interrupt-moderation-us");
@@ -725,13 +741,6 @@ zx_status_t Dwc3::AcquirePDevResources() {
   pdev_ = fdf::PDev{std::move(pdev_client_end.value())};
 
   if (zx::result result = LoadMetadata(pdev_); result.is_error()) {
-    return result.status_value();
-  }
-
-  if (zx::result result =
-          usb_phy_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev_);
-      result.is_error()) {
-    fdf::error("Failed to forward usb-phy metadata: {}", result);
     return result.status_value();
   }
 
@@ -1012,6 +1021,12 @@ zx_status_t Dwc3::ResetHw() {
   TRACE_DURATION("dwc3", "Dwc3::ResetHw");
   auto* mmio = get_mmio();
 
+  // In High-Speed only mode, the SuperSpeed PIPE3 clock is unpowered; force internal 3.0 logic
+  // domains onto the USB 2.0 UTMI clock before issuing a core reset so DCTL.CSFTRST can complete.
+  if (max_speed_ == fdescriptor::UsbSpeed::kHigh) {
+    GUCTL1::Get().ReadFrom(mmio).set_DEV_FORCE_20_CLK_FOR_30_CLK(1).WriteTo(mmio);
+  }
+
   // Clear the run/stop bit and request a software reset.
   DCTL::Get().ReadFrom(mmio).set_RUN_STOP(0).set_CSFTRST(1).WriteTo(mmio);
 
@@ -1060,6 +1075,12 @@ void Dwc3::ConfigureCoreRegisters() {
 
   if (poll_end_xfer_) {
     GUCTL2::Get().ReadFrom(mmio).set_Rst_actbitlater(1).WriteTo(mmio);
+  }
+
+  // In High-Speed only mode, the SuperSpeed PIPE3 clock is unpowered; force internal 3.0 logic
+  // domains onto the USB 2.0 UTMI clock so core operations and soft resets succeed.
+  if (max_speed_ == fdescriptor::UsbSpeed::kHigh) {
+    GUCTL1::Get().ReadFrom(mmio).set_DEV_FORCE_20_CLK_FOR_30_CLK(1).WriteTo(mmio);
   }
 
   if (supports_gfladj_ && (fladj_.has_value() || fladj_refclk_lpm_sel_)) {
@@ -1116,13 +1137,22 @@ void Dwc3::StartPeripheralMode() {
       .set_SS_TX_DE_EMPHASIS(1)
       .WriteTo(mmio);
 
-  // TODO(johngro): This is the number of receive buffers.  Why do we set it to 16?
+  // In High-Speed only mode, the SuperSpeed PIPE3 clock is unpowered; force internal 3.0 logic
+  // domains onto the USB 2.0 UTMI clock so core operations and soft resets succeed.
+  if (max_speed_ == fdescriptor::UsbSpeed::kHigh) {
+    GUCTL1::Get().ReadFrom(mmio).set_DEV_FORCE_20_CLK_FOR_30_CLK(1).WriteTo(mmio);
+  }
+
+  // Maximum SuperSpeed OUT burst size (NumP, max 16) advertised in USB 3.x ACK/ERDY headers;
+  // ignored by hardware when operating in USB 2.0 High-Speed mode.
   constexpr uint32_t nump = 16;
+  const uint32_t devspd =
+      (max_speed_ == fdescriptor::UsbSpeed::kHigh) ? DCFG::DEVSPD_HIGH : DCFG::DEVSPD_SUPER;
   DCFG::Get()
       .ReadFrom(mmio)
-      .set_NUMP(nump)                  // number of receive buffers
-      .set_DEVSPD(DCFG::DEVSPD_SUPER)  // max speed is 5Gbps USB3.1
-      .set_DEVADDR(0)                  // device address is 0
+      .set_NUMP(nump)      // number of SuperSpeed receive burst buffers
+      .set_DEVSPD(devspd)  // max speed based on PHY metadata
+      .set_DEVADDR(0)      // device address is 0
       .WriteTo(mmio);
 
   // Program the location of the event buffer, then enable event delivery.

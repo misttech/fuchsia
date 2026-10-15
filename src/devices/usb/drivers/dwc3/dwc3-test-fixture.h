@@ -565,6 +565,10 @@ class Environment : public fdf_testing::Environment {
     SetDriverMetadata(std::nullopt, fladj, refclk_lpm_sel);
   }
 
+  void SetPhyMetadata(fuchsia_hardware_usb_phy::Metadata metadata) {
+    phy_metadata_ = std::move(metadata);
+  }
+
   zx::result<> Serve(fdf::OutgoingDirectory& directory) override {
     auto* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
@@ -591,6 +595,11 @@ class Environment : public fdf_testing::Environment {
     result = directory.AddService<fphy::ConnectionWatcherService>(
         usb_phy_.GetConnectionWatcherInstanceHandler(dispatcher), "dwc3-phy");
     EXPECT_TRUE(result.is_ok());
+
+    if (phy_metadata_.has_value()) {
+      result = phy_metadata_server_.Serve(directory, dispatcher, *phy_metadata_);
+      EXPECT_TRUE(result.is_ok());
+    }
 
     result =
         directory.AddService<fclock::Service>(clock_xo_.CreateInstanceHandler(dispatcher), "xo");
@@ -637,6 +646,7 @@ class Environment : public fdf_testing::Environment {
       reg_region_[i * kRegSize].SetWriteCallback([](uint64_t value) {});
     }
     serve_platform_mocks_ = true;
+    phy_metadata_.reset();
   }
 
   ddk_fake::FakeMmioRegRegion& reg_region() { return reg_region_; }
@@ -659,6 +669,8 @@ class Environment : public fdf_testing::Environment {
 
  private:
   fdf_fake::FakePDev pdev_;
+  std::optional<fuchsia_hardware_usb_phy::Metadata> phy_metadata_;
+  fdf_metadata::MetadataServer<fuchsia_hardware_usb_phy::Metadata> phy_metadata_server_{"dwc3-phy"};
   ddk_fake::FakeMmioRegRegion reg_region_{kRegSize, kRegCount};
   FakePath path_;
   FakeUsbPhy usb_phy_;

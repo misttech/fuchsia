@@ -91,6 +91,11 @@ class Dwc3 : public fdf::DriverBase2,
 
   inspect::ComponentInspector& inspector() { return *inspector_; }
 
+  fuchsia_hardware_usb_descriptor::UsbSpeed max_speed() const { return max_speed_; }
+  void set_max_speed_for_testing(fuchsia_hardware_usb_descriptor::UsbSpeed speed) {
+    max_speed_ = speed;
+  }
+
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
                          ConnectToEndpointCompleter::Sync& completer) override;
 
@@ -640,7 +645,6 @@ class Dwc3 : public fdf::DriverBase2,
       mac_address_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>
       serial_number_metadata_server_;
-  fdf_metadata::MetadataServer<fuchsia_hardware_usb_phy::Metadata> usb_phy_metadata_server_;
 
   std::shared_ptr<fdf::Namespace> incoming_;
   std::optional<dwc3_config::Config> config_;
@@ -672,6 +676,9 @@ class Dwc3 : public fdf::DriverBase2,
 
   uint32_t num_in_eps_ = 0;
   uint32_t num_out_eps_ = 0;
+
+  fuchsia_hardware_usb_descriptor::UsbSpeed max_speed_{
+      fuchsia_hardware_usb_descriptor::UsbSpeed::kSuper};
 
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state);
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state, uint8_t address);

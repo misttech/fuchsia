@@ -1831,4 +1831,56 @@ TEST_F(UnmanagedTestFixture, ResetHwRestoresPrtcapdirDevice) {
   EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
 
+TEST_F(UnmanagedTestFixture, Usb2OnlyModeConfiguredFromPhyMetadata) {
+  auto guctl1_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto dcfg_val = std::make_shared<std::atomic<uint32_t>>(0);
+
+  dut_.RunInEnvironmentTypeContext([guctl1_val, dcfg_val](Environment& env) {
+    fphy::Metadata metadata;
+    std::vector<fphy::UsbPhyMode> modes;
+    modes.push_back(fphy::UsbPhyMode{{
+        .protocol = fphy::ProtocolVersion::kUsb20,
+        .dr_mode = fphy::Mode::kPeripheral,
+        .is_otg_capable = false,
+    }});
+    metadata.usb_phy_modes() = std::move(modes);
+    env.SetPhyMetadata(std::move(metadata));
+
+    env.reg_region()[GUCTL1::Get().addr()].SetWriteCallback(
+        [guctl1_val](uint64_t val) { guctl1_val->store(static_cast<uint32_t>(val)); });
+    env.reg_region()[DCFG::Get().addr()].SetWriteCallback(
+        [dcfg_val](uint64_t val) { dcfg_val->store(static_cast<uint32_t>(val)); });
+  });
+
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_OK(start);
+  dut_.runtime().RunUntilIdle();
+  ASSERT_OK(WaitForPhy());
+
+  dut_.RunInDriverContext(
+      [](Dwc3& drv) { EXPECT_EQ(drv.max_speed(), fdescriptor::UsbSpeed::kHigh); });
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_OK(dci_service.status_value());
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+  ASSERT_OK(dci->StartController().status());
+
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kHigh);
+
+  dut_.runtime().RunUntil([&]() {
+    return dut_.RunInDriverContext<bool>(
+        [](Dwc3& drv) { return Dwc3TestHelper::GetPowerOn(drv) && Dwc3TestHelper::IsActive(drv); });
+  });
+
+  EXPECT_EQ(GUCTL1::Get().FromValue(guctl1_val->load()).DEV_FORCE_20_CLK_FOR_30_CLK(), 1u);
+  EXPECT_EQ(DCFG::Get().FromValue(dcfg_val->load()).DEVSPD(), DCFG::DEVSPD_HIGH);
+
+  TearDownAndPowerOffDriver();
+}
+
 }  // namespace dwc3

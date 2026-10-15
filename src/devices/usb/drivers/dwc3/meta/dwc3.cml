@@ -22,7 +22,6 @@
         { service: "fuchsia.hardware.usb.dci.UsbDciService" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
         { service: "fuchsia.boot.metadata.SerialNumberMetadata" },
-        { service: "fuchsia.hardware.usb.phy.Metadata" },
         { service: "fuchsia.hardware.usb.policy.Service" },
     ],
     use: [
@@ -51,6 +50,10 @@
         { service: "fuchsia.hardware.reset.Service" },
         { service: "fuchsia.hardware.usb.phy.ConnectionWatcherService" },
         {
+            service: "fuchsia.hardware.usb.phy.Metadata",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.hardware.usb.phy.Service",
             availability: "optional",
         },
@@ -71,10 +74,6 @@
         },
         {
             service: "fuchsia.boot.metadata.SerialNumberMetadata",
-            from: "self",
-        },
-        {
-            service: "fuchsia.hardware.usb.phy.Metadata",
             from: "self",
         },
         {
