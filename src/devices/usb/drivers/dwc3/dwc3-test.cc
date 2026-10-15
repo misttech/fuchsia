@@ -1883,4 +1883,61 @@ TEST_F(UnmanagedTestFixture, Usb2OnlyModeConfiguredFromPhyMetadata) {
   TearDownAndPowerOffDriver();
 }
 
+TEST_F(UnmanagedTestFixture, FailedConnectPowersDownNotifiesPhyAndRearmsWatcher) {
+  ASSERT_OK(dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                  dwc3_config::Config cfg;
+                  cfg.enable_suspend() = false;
+                  cfg.bypass_platform_extension() = true;
+                  args.config(cfg.ToVmo());
+                })
+                .status_value());
+  ASSERT_OK(WaitForPhy());
+
+  zx::eventpair lease_client, lease_peer;
+  ASSERT_OK(zx::eventpair::create(0, &lease_client, &lease_peer));
+
+  size_t disconnected_reports_before = 0;
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    disconnected_reports_before = env.usb_phy().disconnected_reports();
+    env.usb_phy().completion()->Reset();
+  });
+
+  // Force DCTL.CSFTRST to stay asserted so ResetHw() times out on connect.
+  stuck_reset_test_.store(true);
+  auto clear_stuck_reset = fit::defer([this]() { stuck_reset_test_.store(false); });
+
+  dut_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.usb_phy().TriggerConnection(true, std::move(lease_client)); });
+  dut_.runtime().RunUntilIdle();
+
+  // Watcher must re-arm and PHY must receive ConnectStatusChanged(false) with core off.
+  ASSERT_OK(WaitForPhy());
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t reports = 0;
+        dut_.RunInEnvironmentTypeContext(
+            [&](Environment& env) { reports = env.usb_phy().disconnected_reports(); });
+        return reports == disconnected_reports_before + 1;
+      },
+      zx::duration::infinite()));
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    EXPECT_EQ(env.usb_phy().connected_reports(), 0u);
+    EXPECT_EQ(env.usb_phy().disconnected_reports(), disconnected_reports_before + 1);
+  });
+
+  dut_.RunInDriverContext([](Dwc3& drv) {
+    EXPECT_FALSE(Dwc3TestHelper::GetPowerOn(drv));
+    EXPECT_FALSE(Dwc3TestHelper::HasConnectionLease(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetConnectFailures(drv), 1u);
+  });
+
+  zx_signals_t observed = 0;
+  EXPECT_OK(lease_peer.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite(), &observed));
+  EXPECT_NE(observed & ZX_EVENTPAIR_PEER_CLOSED, 0u);
+
+  stuck_reset_test_.store(false);
+  EXPECT_OK(dut_.StopDriver().status_value());
+}
+
 }  // namespace dwc3

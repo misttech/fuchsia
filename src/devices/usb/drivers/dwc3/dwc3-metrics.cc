@@ -42,6 +42,7 @@ void Dwc3Metrics::Init() {
   cmd_act_timeouts_ = 0;
   platform_extension_errors_ = 0;
   phy_rpc_errors_ = 0;
+  connect_failures_ = 0;
 }
 
 // Lazily produce the Inspect data.
@@ -173,6 +174,7 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
     runtime_node.RecordUint("cmd_act_timeouts", cmd_act_timeouts_);
     runtime_node.RecordUint("platform_extension_errors", platform_extension_errors_);
     runtime_node.RecordUint("phy_rpc_errors", phy_rpc_errors_);
+    runtime_node.RecordUint("connect_failures", connect_failures_);
     root.Record(std::move(runtime_node));
 
     auto endpoints_node = root.CreateChild("endpoints");

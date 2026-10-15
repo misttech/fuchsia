@@ -346,6 +346,7 @@ class Dwc3TestHelper {
   }
   static void HandleResetEvent(Dwc3& drv) { drv.HandleResetEvent(); }
   static uint8_t GetEp0TestMode(const Dwc3& drv) { return drv.ep0_.test_mode; }
+  static uint64_t GetConnectFailures(const Dwc3& drv) { return drv.metrics_.connect_failures(); }
 
   static bool IsSharedFifoEmpty(Dwc3& drv) { return drv.ep0_.shared_fifo.IsEmpty(); }
 

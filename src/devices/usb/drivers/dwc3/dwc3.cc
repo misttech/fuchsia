@@ -2040,8 +2040,10 @@ void Dwc3::ApplyConnectStatusChanged(bool connected, fit::callback<void()> on_do
     if (platform_extension_) {
       if (zx::result result = platform_extension_->Resume(); result.is_error()) {
         metrics_.RecordPlatformExtensionError();
+        metrics_.RecordConnectFailure();
         link_connected_ = false;
         PowerDownCore();
+        NotifyPhyConnectStatus(false);
         if (on_done) {
           on_done();
         }
@@ -2060,9 +2062,11 @@ void Dwc3::ApplyConnectStatusChanged(bool connected, fit::callback<void()> on_do
     if (core_stayed_powered) {
       if (zx_status_t status = ResetHw(); status != ZX_OK) {
         fdf::error("Failed to reset hardware on connect: {}", zx_status_get_string(status));
+        metrics_.RecordConnectFailure();
         link_connected_ = false;
         power_on_ = true;
         PowerDownCore();
+        NotifyPhyConnectStatus(false);
         if (on_done) {
           on_done();
         }

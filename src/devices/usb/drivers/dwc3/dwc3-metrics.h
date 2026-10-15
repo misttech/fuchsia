@@ -75,10 +75,12 @@ class Dwc3Metrics {
   void RecordCmdActTimeout() { cmd_act_timeouts_++; }
   void RecordPlatformExtensionError() { platform_extension_errors_++; }
   void RecordPhyRpcError() { phy_rpc_errors_++; }
+  void RecordConnectFailure() { connect_failures_++; }
 
   uint64_t phy_rpc_errors() const { return phy_rpc_errors_; }
   uint64_t hw_reset_timeouts() const { return hw_reset_timeouts_; }
   uint64_t dci_disconnect_stall_count() const { return dci_disconnect_stall_count_; }
+  uint64_t connect_failures() const { return connect_failures_; }
 
   void UpdateMaxEventBatch(uint32_t batch_size) {
     if (batch_size > max_event_batch_size_) {
@@ -106,6 +108,7 @@ class Dwc3Metrics {
   uint64_t cmd_act_timeouts_{0};
   uint64_t platform_extension_errors_{0};
   uint64_t phy_rpc_errors_{0};
+  uint64_t connect_failures_{0};
 
   std::deque<EventLogEntry> event_history_;
   static constexpr size_t kEventHistoryCapacity = 50;
