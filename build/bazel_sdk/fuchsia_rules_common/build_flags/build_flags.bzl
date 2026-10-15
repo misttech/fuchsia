@@ -111,13 +111,7 @@ BUILD_FLAGS_ATTRS = {
         default = [],
     ),
     "rustflags": attr.string_list(
-        doc = "List of Rust compiler flags. Note that as a special case, `-Clink-arg=<arg>` " +
-              "used as input will be changed to `-Clink-arg=-Wl,<arg>` if <arg> does not " +
-              "already begin with `-Wl,`. This is needed because GN invokes lld directly while " +
-              "Bazel invokes clang++ to link Rust binaries, the latter requires the prefix " +
-              "to properly pass the argument to the real linker. This automatic translation " +
-              "helps keeping GN config() and equivalent Bazel build_flags() target definitions " +
-              "closer.",
+        doc = "List of Rust compiler flags.",
         default = [],
     ),
     "subflags": attr.label_list(

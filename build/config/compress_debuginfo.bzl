@@ -9,19 +9,12 @@ This supports any string value set in args.gn, or changed per platform.
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@fuchsia_rules_common//build_flags:providers.bzl", "BuildFlagsInfo")
-load(
-    "//build/bazel/rules:current_platform_info.bzl",
-    "CURRENT_PLATFORM_INFO_ATTRS",
-    "get_current_platform_info",
-)
 
 def _compress_debuginfo_build_flags_impl(ctx):
     # LINT.IfChange(compress_debuginfo)
     cflags = []
     ldflags = []
     rustflags = []
-
-    current_platform = get_current_platform_info(ctx)
 
     compress_debuginfo = ctx.attr._flag[BuildSettingInfo].value
     if compress_debuginfo != "none":
@@ -32,13 +25,9 @@ def _compress_debuginfo_build_flags_impl(ctx):
         # asmflags = cflags
         ldflags = cflags
 
-        # rustc driver invokes LLD directly when targeting Fuchsia, so we need to
-        # use the linker spelling of this flag, whereas on other targets rustc
-        # invokes Clang so we use the same spelling as for C/C++.
-        if current_platform.os == "fuchsia":
-            rustflags = ["-Clink-arg=--compress-debug-sections={}".format(compress_debuginfo)]
-        else:
-            rustflags = ["-Clink-arg={}".format(gzflag)]
+        # Unlike GN, Bazel's @rules_rust invokes the Clang driver as the linker
+        # on both Fuchsia and host platforms, so we use the Clang flag spelling.
+        rustflags = ["-Clink-arg={}".format(gzflag)]
 
     # LINT.ThenChange(BUILD.gn:compress_debuginfo)
     return [
@@ -59,5 +48,5 @@ compress_debuginfo_build_flags = rule(
             default = "//build/bazel/config/variables:compress_debuginfo",
             providers = [BuildSettingInfo],
         ),
-    } | CURRENT_PLATFORM_INFO_ATTRS,
+    },
 )

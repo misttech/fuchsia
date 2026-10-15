@@ -23,8 +23,8 @@ rustc_binary(
 build_flags(
     name = "beads_rust_linker_args_build_flags",
     rustflags = [
-        "-Clink-arg=--build-id=md5",
-        "-Clink-arg=--hash-style=sysv",
+        "-Clink-arg=-Wl,--build-id=md5",
+        "-Clink-arg=-Wl,--hash-style=sysv",
     ],
 )
 

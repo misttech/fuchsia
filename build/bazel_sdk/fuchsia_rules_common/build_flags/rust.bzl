@@ -78,24 +78,6 @@ _final_rust_build_flags = rule(
     ],
 )
 
-def _adjust_rustflag(rustflag):
-    """Adjust a single rustflag value for minor GN and Bazel differences."""
-    if rustflag.startswith("-Clink-arg="):
-        # The Bazel Rust toolchain invokes clang to linking, while
-        # the GN one invokes lld directly. Ensure -Wl, is always
-        # used at the start of the link argument to avoid errors
-        # complaining about invalid options. For example
-        # -Clink-arg=foo --> -Clink-arg=-Wl,foo
-        #
-        # Doing this here automatically makes it easier to keep
-        # GN config()s and their equivalent Bazel build_flags()
-        # definitions in sync.
-        link_arg = rustflag[len("-Clink-arg="):]
-        if not link_arg.startswith("-Wl,"):
-            return "-Clink-arg=-Wl," + link_arg
-
-    return rustflag
-
 def _compute_build_flags_for_rust_action(build_flags_infos, action_kind):
     """Compute the list of build flags for a given action kind.
 
@@ -110,7 +92,7 @@ def _compute_build_flags_for_rust_action(build_flags_infos, action_kind):
     result = []
     if action_kind == ACTION_KIND_RUST_COMPILE:
         for info in build_flags_infos:
-            result += [_adjust_rustflag(flag) for flag in info.rustflags]
+            result.extend(info.rustflags)
         for info in build_flags_infos:
             result.extend(["-Lnative={}".format(lib_dir) for lib_dir in info.lib_dirs])
     else:
