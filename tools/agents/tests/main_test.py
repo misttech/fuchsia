@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from agents import main
-from agents.commands import hooks, setup
+from agents.commands import setup
 from agents_testing.base import BaseTestCase
 
 
@@ -54,22 +54,6 @@ class MainCliTest(BaseTestCase):
             mock_run.assert_called_once()
             args = mock_run.call_args[0][0]
             self.assertEqual(args.allow, ["grant1"])
-            self.assertTrue(args.dry_run)
-
-    def test_hooks_help_flag(self) -> None:
-        parser = main.create_parser()
-        with self.assertRaises(SystemExit) as cm:
-            parser.parse_args(["hooks", "--help"])
-        self.assertEqual(cm.exception.code, 0)
-
-    def test_hooks_subcommand_dispatch(self) -> None:
-        with mock.patch.object(
-            hooks, "run_disable", return_value=0
-        ) as mock_disable:
-            exit_code = main.main(["hooks", "disable", "--dry-run"])
-            self.assertEqual(exit_code, 0)
-            mock_disable.assert_called_once()
-            args = mock_disable.call_args[0][0]
             self.assertTrue(args.dry_run)
 
 

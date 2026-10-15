@@ -609,7 +609,7 @@ class SetupCommandTest(BaseTestCase):
                         self.assertIn(expected_stderr, self.stderr)
 
     def test_setup_no_git_hooks_flag_skips_install(self) -> None:
-        """Verify --no-git-hooks skips hook installation and actively uninstalls existing hooks."""
+        """Verify --no-git-hooks skips hook installation."""
         config_path = self.mock_root / "config.json"
         parser = argparse.ArgumentParser()
         setup.add_arguments(parser)
@@ -624,18 +624,11 @@ class SetupCommandTest(BaseTestCase):
                 "--no-git-hooks",
             ]
         )
-        with (
-            mock.patch("agents.lib.githooks.install_git_hooks") as mock_install,
-            mock.patch(
-                "agents.lib.githooks.uninstall_git_hooks",
-                return_value=githooks.HookOperationResult(modified=[]),
-            ) as mock_uninstall,
-        ):
+        with mock.patch(
+            "agents.lib.githooks.install_git_hooks"
+        ) as mock_install:
             self.assertEqual(setup.run(args), 0)
             mock_install.assert_not_called()
-            mock_uninstall.assert_called_once_with(
-                self.fuchsia_dir, dry_run=False
-            )
 
     def test_setup_reset_git_hooks(self) -> None:
         """Verify git hooks uninstallation during reset across configurations."""
