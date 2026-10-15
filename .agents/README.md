@@ -1,10 +1,11 @@
 # Agent configuration guide
 
-This guide explains how to configure skills for agents in the Fuchsia project.
+This guide explains how to configure skills and dynamic workflows for agents in
+the Fuchsia project.
 
-The Fuchsia project maintains agents' "global" skills in `//.agents/skills` in
-`fuchsia.git`. However, you can also manage your own skill configurations using
-`skills.json` files.
+The Fuchsia project maintains agents' global skills in `//.agents/skills` and
+saved dynamic workflows in `//.agents/workflows` in `fuchsia.git`. You can also
+manage your own skill configurations using `skills.json` files.
 
 As you add a new skill to the Fuchsia codebase, follow these guidelines:
 
@@ -124,3 +125,46 @@ For example, to add multiple skill paths and list the resulting configuration:
 fx manage-skills --add=//src/devices/skills --add=//docs/skills
 fx manage-skills --list
 ```
+
+## Dynamic workflows (`//.agents/workflows/`)
+
+A **dynamic workflow** is a saved Python orchestration script executed by the
+`run_workflow` tool that coordinates multiple child agents and tool calls across
+sequential or parallel phases (`phase`, `parallel`, `pipeline`, `agent`, and
+`call_tool`). For full documentation on authoring and running dynamic workflows,
+see `go/jetski-workflows`.
+
+### Directory layout
+
+Saved workflows live under `//.agents/workflows/<workflow-name>/` and contain:
+
+* **`workflow.json`**: The workflow manifest defining `name`, `description`,
+  `entry` (defaults to `workflow.py`), and an optional `args` JSON Schema that
+  validates input arguments before execution.
+* **`workflow.py`**: The Python script that orchestrates child agents, each
+  returning a JSON Schema-validated result in its own isolated conversation.
+
+Workflows under `//.agents/workflows/<workflow-name>/` are automatically
+discovered and exposed as `/<workflow-name>` slash commands (for example,
+`/evaluate-review-skills`).
+
+### When to create a workflow vs. a skill
+
+* **Create a Skill (`SKILL.md`)** when you want to teach an agent **domain
+  knowledge, coding or code-review rubrics, or interactive tool procedures**:
+  * Code-review checklists and subsystem guidelines loaded by `/review` (via
+    `AGENTIC_REVIEW`) or Gerrit AI review (`CRACS`).
+  * CLI tool usage guides (such as `fx test`, `fx gh`, or debugger commands) and
+    interactive triage runbooks where a single agent reasons step-by-step in the
+    main conversation.
+  * Skills are discovered semantically on demand or invoked via `/<skill-name>`.
+* **Create a Dynamic Workflow (`workflow.json` + `workflow.py`)** when the
+  **orchestration control flow itself should be deterministic Python code**:
+  * **Parallel fan-out / map-reduce (`parallel`)**: Auditing or transforming
+    many files, packages, or skills concurrently using isolated child agents
+    without bloating the main conversation's context window.
+  * **Staged pipelines (`pipeline`) and verification loops**: Chaining
+    deterministic phases (for example, `Discover` $\rightarrow$ `Evaluate in
+    Parallel` $\rightarrow$ `Adversarial Audit` $\rightarrow$ `Report`) where
+    every child agent must return structured JSON matching a strict schema.
+

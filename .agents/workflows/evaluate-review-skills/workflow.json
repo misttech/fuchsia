@@ -1,0 +1,50 @@
+{
+    "name": "evaluate-review-skills",
+    "description": "Discover in-tree SKILL.md files across the Fuchsia checkout (including any vendor/* sub-repositories when present), evaluate unregistered skills in parallel for suitability in local /review (AGENTIC_REVIEW) and Gerrit CRACS (agent_configs.textproto), and cross-check recommendations.",
+    "entry": "workflow.py",
+    "args": {
+        "type": "object",
+        "properties": {
+            "workspace_root": {
+                "type": "string",
+                "description": "Optional Fuchsia checkout root directory (defaults to current workspace directory)."
+            },
+            "repo": {
+                "type": "string",
+                "default": "all",
+                "description": "Repository to scan: 'all' (fuchsia.git plus any present vendor/* git repos, default), 'fuchsia', or a relative sub-repo path such as 'vendor/google'."
+            },
+            "path_prefix": {
+                "type": "string",
+                "description": "Optional repo-relative path prefix to restrict skill discovery (e.g. 'src/storage' or 'build')."
+            },
+            "only_unregistered": {
+                "type": "boolean",
+                "default": true,
+                "description": "If true (default), only evaluate skills not yet referenced in any existing AGENTIC_REVIEW or agent_configs.textproto."
+            },
+            "since_date": {
+                "type": "string",
+                "default": "2025-01-01",
+                "description": "Start date (YYYY-MM-DD) for measuring git commit volume in target directories."
+            },
+            "min_commits": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 20,
+                "description": "Minimum commit count since since_date required in target files/directories to recommend AGENTIC_REVIEW."
+            },
+            "max_concurrency": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16,
+                "default": 6,
+                "description": "Maximum number of parallel skill evaluator agents to run concurrently."
+            },
+            "report_path": {
+                "type": "string",
+                "description": "Optional absolute path to write the Markdown evaluation report."
+            }
+        }
+    }
+}
