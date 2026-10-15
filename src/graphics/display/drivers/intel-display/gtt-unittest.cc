@@ -124,30 +124,6 @@ TEST_F(GttTest, InitGttWithFramebufferOffset) {
   EXPECT_EQ(kPageSize, region->size());
 }
 
-TEST_F(GttTest, SetupForMexec) {
-  Configure2MbGtt(pci_);
-  fdf::MmioBuffer mmio = fdf_testing::CreateMmioBuffer(kTableSize, ZX_CACHE_POLICY_CACHED);
-  fdf::MmioView table = mmio.View(0);
-
-  Gtt gtt;
-  EXPECT_OK(gtt.Init(pci_, std::move(mmio), 0));
-
-  // Assign an arbitrary page-aligned number as the stolen framebuffer address.
-  const uintptr_t kStolenFbMemory = kPageSize * 2;
-  const uint32_t kFbPages = ZX_ROUNDUP(1024, kPageSize) / kPageSize;
-  gtt.SetupForMexec(kStolenFbMemory, kFbPages);
-
-  for (size_t i = 0; i < kFbPages; i++) {
-    ASSERT_EQ(kStolenFbMemory | 0x01, table.Read64(i * sizeof(uint64_t)));
-  }
-
-  // The mapping for the remaining pages should remain untouched.
-  uint64_t kBusPhysicalAddr = FAKE_BTI_PHYS_ADDR + 1;
-  for (size_t i = kFbPages; i < kTableSize / sizeof(uint64_t); i++) {
-    ASSERT_EQ(kBusPhysicalAddr, table.Read64(i * sizeof(uint64_t)));
-  }
-}
-
 }  // namespace
 
 }  // namespace intel_display

@@ -12,14 +12,8 @@
 #include <string.h>
 
 #include "board-info.h"
-#include "netboot.h"
 
 namespace netsvc {
-namespace {
-
-size_t NETBOOT_FILENAME_PREFIX_LEN() { return strlen(NETBOOT_FILENAME_PREFIX); }
-
-}  // namespace
 
 FileApi::FileApi(bool is_zedboot, std::unique_ptr<NetCopyInterface> netcp,
                  fidl::ClientEnd<fuchsia_sysinfo::SysInfo> sysinfo)
@@ -35,7 +29,6 @@ FileApi::FileApi(bool is_zedboot, std::unique_ptr<NetCopyInterface> netcp,
 ssize_t FileApi::OpenRead(const char* filename, zx::duration) {
   is_write_ = false;
   strlcpy(filename_, filename, sizeof(filename_));
-  netboot_file_ = nullptr;
   size_t file_size;
 
   if (is_zedboot_ && !strcmp(filename_, NETBOOT_BOARD_INFO_FILENAME)) {
@@ -54,13 +47,7 @@ tftp_status FileApi::OpenWrite(const char* filename, size_t size, zx::duration t
   is_write_ = true;
   strlcpy(filename_, filename, sizeof(filename_));
 
-  if (is_zedboot_ && !strncmp(filename_, NETBOOT_FILENAME_PREFIX, NETBOOT_FILENAME_PREFIX_LEN())) {
-    type_ = NetfileType::kNetboot;
-    netboot_file_ = netboot_get_buffer(filename_, size);
-    if (netboot_file_ != nullptr) {
-      return TFTP_NO_ERROR;
-    }
-  } else if (is_zedboot_ && !strcmp(filename_, NETBOOT_BOARD_NAME_FILENAME)) {
+  if (is_zedboot_ && !strcmp(filename_, NETBOOT_BOARD_NAME_FILENAME)) {
     printf("netsvc: Running board name validation\n");
     type_ = NetfileType::kBoardInfo;
     return TFTP_NO_ERROR;
@@ -106,15 +93,6 @@ tftp_status FileApi::Write(const void* data, size_t* length, off_t offset) {
     return TFTP_ERR_INVALID_ARGS;
   }
   switch (type_) {
-    case NetfileType::kNetboot: {
-      nbfile_t* nb_file = netboot_file_;
-      if ((static_cast<size_t>(offset) > nb_file->size) || (offset + *length) > nb_file->size) {
-        return TFTP_ERR_INVALID_ARGS;
-      }
-      memcpy(nb_file->data + offset, data, *length);
-      nb_file->offset = offset + *length;
-      return TFTP_NO_ERROR;
-    }
     case NetfileType::kBoardInfo: {
       zx::result status = CheckBoardName(sysinfo_, reinterpret_cast<const char*>(data), *length);
       if (status.is_error()) {

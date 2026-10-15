@@ -31,10 +31,7 @@ pub trait SystemPower {
     /// Executes a system power control command (e.g. reboot, shutdown).
     fn system_powerctl(&self, cmd: u32) -> Result<(), zx::Status>;
 
-    /// Performs an mexec boot into a new kernel.
-    fn mexec_boot(&self) -> Result<(), anyhow::Error>;
-
-    /// Returns true if the necessary power and mexec resources are available.
+    /// Returns true if the necessary power resource is available.
     fn has_resources(&self) -> bool;
 
     /// Exits the process.
@@ -44,12 +41,11 @@ pub trait SystemPower {
 /// Real implementation of [`SystemPower`] that makes actual system calls.
 pub struct RealSystemPower {
     power_resource: Option<zx::Resource>,
-    mexec_resource: Option<zx::Resource>,
 }
 
 impl RealSystemPower {
-    pub fn new(power_resource: Option<zx::Resource>, mexec_resource: Option<zx::Resource>) -> Self {
-        Self { power_resource, mexec_resource }
+    pub fn new(power_resource: Option<zx::Resource>) -> Self {
+        Self { power_resource }
     }
 }
 
@@ -68,15 +64,8 @@ impl SystemPower for RealSystemPower {
         })
     }
 
-    fn mexec_boot(&self) -> Result<(), anyhow::Error> {
-        let Some(mexec_resource) = &self.mexec_resource else {
-            return Err(anyhow::anyhow!("No mexec resource"));
-        };
-        mexec_boot::mexec_boot(zx::Unowned::new(mexec_resource)).map_err(|e| anyhow::anyhow!(e))
-    }
-
     fn has_resources(&self) -> bool {
-        self.power_resource.is_some() && self.mexec_resource.is_some()
+        self.power_resource.is_some()
     }
 
     fn exit(&self, status: i32) {
@@ -91,9 +80,6 @@ impl<T: SystemPower + ?Sized> SystemPower for Rc<T> {
     }
     fn system_powerctl(&self, cmd: u32) -> Result<(), zx::Status> {
         (**self).system_powerctl(cmd)
-    }
-    fn mexec_boot(&self) -> Result<(), anyhow::Error> {
-        (**self).mexec_boot()
     }
     fn has_resources(&self) -> bool {
         (**self).has_resources()
@@ -169,12 +155,6 @@ fn get_power_resource() -> Result<zx::Resource, anyhow::Error> {
     Ok(resource)
 }
 
-fn get_mexec_resource() -> Result<zx::Resource, anyhow::Error> {
-    let client = connect_to_protocol_sync::<fkernel::MexecResourceMarker>()?;
-    let resource = client.get(zx::MonotonicInstant::INFINITE)?;
-    Ok(resource)
-}
-
 async fn get_system_power_state() -> fsystem_state::SystemPowerState {
     let client = match connect_to_protocol::<fsystem_state::SystemStateTransitionMarker>() {
         Ok(c) => c,
@@ -201,15 +181,10 @@ impl ShutdownManager<RealSystemPower> {
                 info!("Failed to get power resource, assuming test environment: {}", e)
             })
             .ok();
-        let mexec_resource = get_mexec_resource()
-            .inspect_err(|e| {
-                info!("Failed to get mexec resource, assuming test environment: {}", e)
-            })
-            .ok();
         let log_flush = connect_to_protocol::<fdiagnostics::LogFlusherMarker>()
             .inspect_err(|e| error!("Failed to connect to LogFlusher: {}", e))
             .ok();
-        Self::new(node_remover, RealSystemPower::new(power_resource, mexec_resource), log_flush)
+        Self::new(node_remover, RealSystemPower::new(power_resource), log_flush)
     }
 }
 
@@ -241,7 +216,7 @@ impl<P: SystemPower + 'static> ShutdownManager<P> {
                 );
                 let strong_manager_clone = strong_manager.clone();
                 strong_manager.scope.spawn_local(async move {
-                    strong_manager_clone.execute_shutdown_strategy(true).await;
+                    strong_manager_clone.execute_shutdown_strategy().await;
                 });
             }
         }));
@@ -364,7 +339,7 @@ impl<P: SystemPower + 'static> ShutdownManager<P> {
             assert_eq!(internal_state.state, State::BootStopping);
             internal_state.state = State::Stopped;
         }
-        self.execute_shutdown_strategy(false).await;
+        self.execute_shutdown_strategy().await;
         let mut internal_state = self.internal_state.borrow_mut();
         for sender in internal_state.boot_shutdown_complete_callbacks.drain(..) {
             let _ = sender.send(Ok(()));
@@ -426,9 +401,9 @@ impl<P: SystemPower + 'static> ShutdownManager<P> {
         rx.await.unwrap_or(Err(zx::Status::INTERNAL))
     }
 
-    async fn execute_shutdown_strategy(&self, node_removal_timed_out: bool) {
+    async fn execute_shutdown_strategy(&self) {
         if !self.system_power.has_resources() {
-            warn!("Invalid Power/mexec resources. Assuming test.");
+            warn!("Invalid Power resource. Assuming test.");
             let internal_state = self.internal_state.borrow();
             if internal_state.lifecycle_stop {
                 info!("Exiting driver manager gracefully");
@@ -439,7 +414,7 @@ impl<P: SystemPower + 'static> ShutdownManager<P> {
 
         let shutdown_system_state = self.system_power.get_system_power_state().await;
         info!("Suspend fallback with flags {:?}", shutdown_system_state);
-        let mut what = "zx_system_powerctl";
+        let what = "zx_system_powerctl";
 
         info!("Flushing logs.");
         if let Some(log_flush) = &self.log_flush
@@ -450,7 +425,7 @@ impl<P: SystemPower + 'static> ShutdownManager<P> {
 
         info!("Executing powerctl.");
         let status = match shutdown_system_state {
-            fsystem_state::SystemPowerState::Reboot => {
+            fsystem_state::SystemPowerState::Reboot | fsystem_state::SystemPowerState::Mexec => {
                 self.system_power.system_powerctl(ZX_SYSTEM_POWERCTL_REBOOT)
             }
             fsystem_state::SystemPowerState::RebootBootloader => {
@@ -476,30 +451,6 @@ impl<P: SystemPower + 'static> ShutdownManager<P> {
             }
             fsystem_state::SystemPowerState::Poweroff => {
                 self.system_power.system_powerctl(ZX_SYSTEM_POWERCTL_SHUTDOWN)
-            }
-
-            fsystem_state::SystemPowerState::Mexec => {
-                if node_removal_timed_out {
-                    // If drivers failed to shut down cleanly, some drivers/hardware may still have
-                    // active DMA mapped. Proceeding with mexec (a soft reboot) would boot into the
-                    // new kernel without a hardware reset, allowing active DMA to overwrite the new
-                    // kernel's memory (leading to a sandbox escape). Fall back to a hard reboot
-                    // instead to reset the hardware and quiesce DMA.
-                    error!(
-                        "Timed out waiting for nodes to be removed, rebooting instead of using mexec"
-                    );
-                    self.system_power.system_powerctl(ZX_SYSTEM_POWERCTL_REBOOT)
-                } else {
-                    info!("About to mexec...");
-                    match self.system_power.mexec_boot() {
-                        Ok(()) => Ok(()),
-                        Err(e) => {
-                            error!("mexec_boot failed: {}", e);
-                            what = "zx_system_mexec";
-                            Err(zx::Status::INTERNAL)
-                        }
-                    }
-                }
             }
             fsystem_state::SystemPowerState::FullyOn
             | fsystem_state::SystemPowerState::SuspendRam => {
@@ -580,9 +531,6 @@ mod tests {
         system_powerctl_cmd: RefCell<Option<u32>>,
         system_powerctl_tx: RefCell<Option<oneshot::Sender<()>>>,
         system_powerctl_rx: RefCell<Option<oneshot::Receiver<()>>>,
-        mexec_called: RefCell<bool>,
-        mexec_tx: RefCell<Option<oneshot::Sender<()>>>,
-        mexec_rx: RefCell<Option<oneshot::Receiver<()>>>,
         exit_called: RefCell<bool>,
         exit_tx: RefCell<Option<oneshot::Sender<()>>>,
         exit_rx: RefCell<Option<oneshot::Receiver<()>>>,
@@ -591,7 +539,6 @@ mod tests {
     impl MockSystemPower {
         fn new(state: fsystem_state::SystemPowerState) -> Self {
             let (p_tx, p_rx) = oneshot::channel();
-            let (m_tx, m_rx) = oneshot::channel();
             let (e_tx, e_rx) = oneshot::channel();
             Self {
                 state,
@@ -599,9 +546,6 @@ mod tests {
                 system_powerctl_cmd: RefCell::new(None),
                 system_powerctl_tx: RefCell::new(Some(p_tx)),
                 system_powerctl_rx: RefCell::new(Some(p_rx)),
-                mexec_called: RefCell::new(false),
-                mexec_tx: RefCell::new(Some(m_tx)),
-                mexec_rx: RefCell::new(Some(m_rx)),
                 exit_called: RefCell::new(false),
                 exit_tx: RefCell::new(Some(e_tx)),
                 exit_rx: RefCell::new(Some(e_rx)),
@@ -611,12 +555,6 @@ mod tests {
         // Blocks until the shutdown manager calls `system_powerctl()`.
         async fn wait_for_system_powerctl(&self) {
             let rx = self.system_powerctl_rx.borrow_mut().take().unwrap();
-            let _ = rx.await;
-        }
-
-        // Blocks until the shutdown manager calls `mexec_boot()`.
-        async fn wait_for_mexec_boot(&self) {
-            let rx = self.mexec_rx.borrow_mut().take().unwrap();
             let _ = rx.await;
         }
 
@@ -637,14 +575,6 @@ mod tests {
             *self.system_powerctl_called.borrow_mut() = true;
             *self.system_powerctl_cmd.borrow_mut() = Some(cmd);
             if let Some(tx) = self.system_powerctl_tx.borrow_mut().take() {
-                let _ = tx.send(());
-            }
-            Ok(())
-        }
-
-        fn mexec_boot(&self) -> Result<(), anyhow::Error> {
-            *self.mexec_called.borrow_mut() = true;
-            if let Some(tx) = self.mexec_tx.borrow_mut().take() {
                 let _ = tx.send(());
             }
             Ok(())
@@ -737,44 +667,11 @@ mod tests {
         assert!(*fake_log_flusher.flushed.borrow());
     }
 
-    // Verifies the shutdown manager correctly removes all nodes when stopping and calls
-    // `mexec_boot()` when in the mexec power-system state.
+    // Verifies that if the node remover times out then the system still reboots.
     #[fuchsia::test]
-    async fn test_mexec_normal() {
+    async fn test_reboot_timeout() {
         run_shutdown_manager_test(
-            fsystem_state::SystemPowerState::Mexec,
-            |lifecycle_proxy, node_remover, system_power| async move {
-                // Tell the shutdown manager to stop and shutdown all nodes.
-                lifecycle_proxy.stop().unwrap();
-
-                // Wait for the node remover to receive the request to shutdown all nodes.
-                node_remover.wait_for_shutdown_all_request().await;
-
-                // Complete the node-removal request.
-                node_remover.complete_shutdown_all();
-
-                // Wait for the shutdown manager to complete and call `mexec_boot()`.
-                system_power.wait_for_mexec_boot().await;
-
-                // Wait for the shutdown manager to exit.
-                system_power.wait_for_exit().await;
-
-                // The shutdown manager should call `mexec_boot()` and not `system_powerctl()`
-                // because its system-power state was set to mexec.
-                assert!(*system_power.mexec_called.borrow());
-                assert!(!*system_power.system_powerctl_called.borrow());
-                assert!(*system_power.exit_called.borrow());
-            },
-        )
-        .await;
-    }
-
-    // Verifies that if the node remover times out then the system falls back to a system reboot
-    // instead of mexec.
-    #[fuchsia::test]
-    async fn test_mexec_timeout() {
-        run_shutdown_manager_test(
-            fsystem_state::SystemPowerState::Mexec,
+            fsystem_state::SystemPowerState::Reboot,
             |lifecycle_proxy, node_remover, system_power| async move {
                 // Tell the shutdown manager to stop and shutdown all nodes.
                 lifecycle_proxy.stop().unwrap();
@@ -791,14 +688,12 @@ mod tests {
                 // Wait for the shutdown manager to exit.
                 system_power.wait_for_exit().await;
 
-                // Node remover timed out and so `system_powerctl()` should be called instead of
-                // `mexec_boot()`.
+                // Node remover timed out and so `system_powerctl()` should still be called.
                 assert!(*system_power.system_powerctl_called.borrow());
                 assert_eq!(
                     Some(ZX_SYSTEM_POWERCTL_REBOOT),
                     *system_power.system_powerctl_cmd.borrow()
                 );
-                assert!(!*system_power.mexec_called.borrow());
                 assert!(*system_power.exit_called.borrow());
             },
         )
@@ -833,7 +728,6 @@ mod tests {
                     Some(ZX_SYSTEM_POWERCTL_REBOOT),
                     *system_power.system_powerctl_cmd.borrow()
                 );
-                assert!(!*system_power.mexec_called.borrow());
                 assert!(*system_power.exit_called.borrow());
             },
         )

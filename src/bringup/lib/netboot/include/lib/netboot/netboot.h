@@ -25,20 +25,14 @@
 
 #define NETBOOT_COMMAND_ACK               0   // arg=0 or -err, NETBOOT_READ: data=data
 #define NETBOOT_COMMAND_EXECUTE           1   // arg=0, data=command
-#define NETBOOT_COMMAND_SEND_FILE         2   // arg=size, data=filename
-#define NETBOOT_COMMAND_DATA              3   // arg=offset, data=data
-#define NETBOOT_COMMAND_BOOT              4   // arg=0
 #define NETBOOT_COMMAND_QUERY             5   // arg=0, data=hostname (or "*")
 #define NETBOOT_COMMAND_SHELL_CMD         6   // arg=0, data=command string
 #define NETBOOT_COMMAND_OPEN              7   // arg=O_RDONLY|O_WRONLY, data=filename
 #define NETBOOT_COMMAND_READ              8   // arg=blocknum
 #define NETBOOT_COMMAND_WRITE             9   // arg=blocknum, data=data
 #define NETBOOT_COMMAND_CLOSE             10  // arg=0
-#define NETBOOT_COMMAND_LAST_DATA         11  // arg=offset, data=data
 #define NETBOOT_COMMAND_REBOOT            12  // arg=0
 #define NETBOOT_COMMAND_GET_ADVERT        13  // arg=0
-
-#define NETBOOT_COMMAND_FILE_RECEIVED      0x70000001 // arg=size
 
 #define NETBOOT_COMMAND_ADVERTISE          0x77777777
 
@@ -55,10 +49,6 @@
 #define NETBOOT_VERSION_CURRENT NETBOOT_VERSION_1_3
 
 #define NETBOOT_MAX_NODENAME_LEN 64
-
-#define NETBOOT_FILENAME_PREFIX "<<netboot>>"
-#define NETBOOT_KERNEL_FILENAME NETBOOT_FILENAME_PREFIX "kernel.bin"
-#define NETBOOT_CMDLINE_FILENAME NETBOOT_FILENAME_PREFIX "cmdline"
 
 #define NETBOOT_IMAGE_PREFIX "<<image>>"
 #define NETBOOT_FVM_SPARSE_HOST_FILENAME "sparse.fvm"

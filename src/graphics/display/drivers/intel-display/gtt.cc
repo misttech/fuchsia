@@ -147,17 +147,6 @@ zx_status_t Gtt::AllocRegion(uint32_t length, uint32_t align_pow2,
   return ZX_OK;
 }
 
-void Gtt::SetupForMexec(uintptr_t stolen_fb, uint32_t length) {
-  const size_t page_size = zx_system_get_page_size();
-  // Just clobber everything to get the bootloader framebuffer to work.
-  unsigned pte_idx = 0;
-  for (unsigned i = 0; i < ZX_ROUNDUP(length, page_size) / page_size; i++, stolen_fb += page_size) {
-    uint64_t pte = gen_pte_encode(stolen_fb);
-    buffer_->Write<uint64_t>(pte, get_pte_offset(pte_idx++));
-  }
-  buffer_->Read<uint32_t>(get_pte_offset(pte_idx - 1));  // Posting read
-}
-
 GttRegionImpl::GttRegionImpl(Gtt* gtt, RegionAllocator::Region::UPtr region)
     : region_(std::move(region)), gtt_(gtt) {}
 GttRegionImpl::~GttRegionImpl() { ClearRegion(); }

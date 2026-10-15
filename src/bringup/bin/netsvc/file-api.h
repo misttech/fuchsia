@@ -10,7 +10,6 @@
 
 #include <tftp/tftp.h>
 
-#include "src/bringup/bin/netsvc/netboot.h"
 #include "src/bringup/bin/netsvc/netcp.h"
 
 namespace netsvc {
@@ -20,9 +19,8 @@ namespace netsvc {
 // Reads only implements netcp. Specifically it enables reading of files in
 // global /data.
 //
-// Writes come in 4 flavors:
+// Writes come in 3 flavors:
 // * netcp: Ability to write to global /data.
-// * netboot: Mexec into image once write completes.
 // * paving: Writes boot partions, or FVM.
 // * board name validation: Validates that board name sent matches current
 //   board.
@@ -65,7 +63,6 @@ class FileApi : public FileApiInterface {
   enum class NetfileType {
     kUnknown,    // No reads/writes currently in progress.
     kNetCopy,    // A file in /data
-    kNetboot,    // A bootfs file
     kBoardInfo,  // A file containing the board name.
                  // Expected to return error if it doesn't match the current board name.
   };
@@ -81,9 +78,6 @@ class FileApi : public FileApiInterface {
 
   // Used when type_ == NetfileType::kNetCopy.
   std::unique_ptr<NetCopyInterface> netcp_;
-
-  // Only valid when type_ == NetfileType::kNetboot.
-  nbfile_t* netboot_file_ = nullptr;
 };
 
 }  // namespace netsvc

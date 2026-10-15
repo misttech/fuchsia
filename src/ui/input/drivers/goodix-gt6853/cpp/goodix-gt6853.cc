@@ -409,7 +409,7 @@ zx_status_t Gt6853Device::UpdateFirmwareAndConfig() {
       return status;
     }
   } else {
-    zxlogf(INFO, "No device metadata, assuming mexec and preserving controller state");
+    zxlogf(INFO, "No device metadata, preserving controller state");
     firmware_status_.Set("skipped");
     config_status_.Set("skipped");
   }

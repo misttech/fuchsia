@@ -84,8 +84,7 @@ class TestShutdownManager : public driver_manager::ShutdownManager {
         node_remover_(std::move(mock_remover)),
         state_(state),
         received_shutdown_all_request_(std::make_shared<libsync::Completion>()),
-        system_powerctl_called_(std::make_shared<libsync::Completion>()),
-        mexec_boot_called_(std::make_shared<libsync::Completion>()) {
+        system_powerctl_called_(std::make_shared<libsync::Completion>()) {
     node_remover_->set_received_shutdown_all_request_completion(received_shutdown_all_request_);
   }
 
@@ -101,11 +100,9 @@ class TestShutdownManager : public driver_manager::ShutdownManager {
   std::shared_ptr<libsync::Completion> system_powerctl_completion() {
     return system_powerctl_called_;
   }
-  std::shared_ptr<libsync::Completion> mexec_boot_completion() { return mexec_boot_called_; }
 
   bool system_powerctl_called() const { return system_powerctl_called_->signaled(); }
   std::optional<uint32_t> system_powerctl_cmd() const { return system_powerctl_cmd_; }
-  bool mexec_boot_called() const { return mexec_boot_called_->signaled(); }
 
  private:
   fuchsia_system_state::SystemPowerState GetSystemPowerState() override { return state_; }
@@ -113,11 +110,6 @@ class TestShutdownManager : public driver_manager::ShutdownManager {
   zx_status_t SystemPowerctl(uint32_t cmd) override {
     system_powerctl_cmd_ = cmd;
     system_powerctl_called_->Signal();
-    return ZX_OK;
-  }
-
-  zx_status_t MexecBoot() override {
-    mexec_boot_called_->Signal();
     return ZX_OK;
   }
 
@@ -138,30 +130,12 @@ class TestShutdownManager : public driver_manager::ShutdownManager {
 
   // Completion signal for when the shutdown manager has called `system_powerctl()`.
   std::shared_ptr<libsync::Completion> system_powerctl_called_;
-
-  // Completion signal for when the shutdown manager has called `mexec_boot()`.
-  std::shared_ptr<libsync::Completion> mexec_boot_called_;
 };
 
 class FakePowerResource : public fidl::WireServer<fuchsia_kernel::PowerResource> {
  public:
   explicit FakePowerResource(zx::resource resource) : resource_(std::move(resource)) {}
   ~FakePowerResource() override {}
-  void Get(GetCompleter::Sync& completer) override {
-    ZX_ASSERT(resource_.is_valid());
-    zx::resource clone;
-    ZX_ASSERT(resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK);
-    completer.Reply(std::move(clone));
-  }
-
- private:
-  zx::resource resource_;
-};
-
-class FakeMexecResource : public fidl::WireServer<fuchsia_kernel::MexecResource> {
- public:
-  explicit FakeMexecResource(zx::resource resource) : resource_(std::move(resource)) {}
-  ~FakeMexecResource() override {}
   void Get(GetCompleter::Sync& completer) override {
     ZX_ASSERT(resource_.is_valid());
     zx::resource clone;
@@ -232,8 +206,7 @@ class SvcRedirection {
 // The incoming namespace provided to the shutdown manager.
 class Incoming {
  public:
-  Incoming(zx::resource power, zx::resource mexec)
-      : power_(std::move(power)), mexec_(std::move(mexec)) {}
+  explicit Incoming(zx::resource power) : power_(std::move(power)) {}
   ~Incoming() {}
 
   void Serve(async_dispatcher_t* dispatcher) {
@@ -242,12 +215,6 @@ class Incoming {
     zx::result<> status = outgoing_->AddUnmanagedProtocol<fuchsia_kernel::PowerResource>(
         [this, dispatcher](fidl::ServerEnd<fuchsia_kernel::PowerResource> server_end) {
           fidl::BindServer(dispatcher, std::move(server_end), &power_);
-        });
-    ZX_ASSERT(status.is_ok());
-
-    status = outgoing_->AddUnmanagedProtocol<fuchsia_kernel::MexecResource>(
-        [this, dispatcher](fidl::ServerEnd<fuchsia_kernel::MexecResource> server_end) {
-          fidl::BindServer(dispatcher, std::move(server_end), &mexec_);
         });
     ZX_ASSERT(status.is_ok());
 
@@ -279,7 +246,6 @@ class Incoming {
 
  private:
   FakePowerResource power_;
-  FakeMexecResource mexec_;
   FakeLogFlusher log_flusher_;
   std::optional<component::OutgoingDirectory> outgoing_;
   fidl::ClientEnd<fuchsia_io::Directory> root_client_;
@@ -291,8 +257,7 @@ class ShutdownManagerTest : public ::testing::Test {
     ZX_ASSERT(incoming_loop_.StartThread("incoming-thread") == ZX_OK);
     ZX_ASSERT(shutdown_manager_loop_.StartThread("shutdown-manager-thread") == ZX_OK);
 
-    incoming_.emplace(incoming_loop_.dispatcher(), std::in_place, CreateDummyResource(),
-                      CreateDummyResource());
+    incoming_.emplace(incoming_loop_.dispatcher(), std::in_place, CreateDummyResource());
   }
 
   void SetUp() override {
@@ -364,13 +329,6 @@ class ShutdownManagerTest : public ::testing::Test {
     completion->Wait();
   }
 
-  // Blocks until the shutdown manager calls `mexec_boot()`.
-  void WaitForMexecBoot() {
-    std::shared_ptr<libsync::Completion> completion = shutdown_manager_->SyncCall(
-        [](TestShutdownManager* m) { return m->mexec_boot_completion(); });
-    completion->Wait();
-  }
-
   async_dispatcher_t* shutdown_manager_dispatcher() { return shutdown_manager_loop_.dispatcher(); }
 
  private:
@@ -383,36 +341,10 @@ class ShutdownManagerTest : public ::testing::Test {
   SvcRedirection svc_redirection_;
 };
 
-// Verifies the shutdown manager correctly removes all nodes when stopping and calls `mexec_boot()`
-// when in the mexec power-system state.
-TEST_F(ShutdownManagerTest, MexecNormal) {
+// Verifies that if the node remover times out then the system still reboots.
+TEST_F(ShutdownManagerTest, RebootOnTimeout) {
   fidl::WireSyncClient<fuchsia_process_lifecycle::Lifecycle> client =
-      StartShutdownManager(fuchsia_system_state::SystemPowerState::kMexec);
-
-  // Tell the shutdown manager to stop and shutdown all nodes.
-  fidl::OneWayStatus stop_result = client->Stop();
-  ASSERT_TRUE(stop_result.ok()) << stop_result.FormatDescription();
-
-  // Wait for the node remover to receive the request to shutdown all nodes.
-  WaitForShutdownAllRequest();
-
-  // Complete the node-removal request.
-  TriggerAllNodesRemoved();
-
-  // The shutdown manager should call `mexec_boot()` and not `system_powerctl()` because its
-  // system-power state was set to mexec.
-  WaitForMexecBoot();
-  AssertShutdownManager([](TestShutdownManager* manager) {
-    EXPECT_TRUE(manager->mexec_boot_called());
-    EXPECT_FALSE(manager->system_powerctl_called());
-  });
-}
-
-// Verifies that if the node remover times out then the system falls back to a system reboot instead
-// of mexec.
-TEST_F(ShutdownManagerTest, MexecFallbackToRebootOnTimeout) {
-  fidl::WireSyncClient<fuchsia_process_lifecycle::Lifecycle> client =
-      StartShutdownManager(fuchsia_system_state::SystemPowerState::kMexec);
+      StartShutdownManager(fuchsia_system_state::SystemPowerState::kReboot);
 
   // Tell the shutdown manager to stop and shutdown all nodes.
   fidl::OneWayStatus stop_result = client->Stop();
@@ -424,10 +356,9 @@ TEST_F(ShutdownManagerTest, MexecFallbackToRebootOnTimeout) {
   // Pretend that the node remover timed out trying to remove all the nodes.
   TriggerNodeRemovalTimedOut();
 
-  // Node remover timed out and so `system_powerctl()` should be called instead of `mexec_boot()`.
+  // Node remover timed out and so `system_powerctl()` should still be called.
   WaitForSystemPowerctl();
   AssertShutdownManager([](TestShutdownManager* manager) {
-    EXPECT_FALSE(manager->mexec_boot_called());
     EXPECT_TRUE(manager->system_powerctl_called());
     EXPECT_EQ(ZX_SYSTEM_POWERCTL_REBOOT, manager->system_powerctl_cmd());
   });
@@ -452,7 +383,6 @@ TEST_F(ShutdownManagerTest, Reboot) {
   // The shutdown manager should call `system_powerctl(ZX_SYSTEM_POWERCTL_REBOOT)`.
   WaitForSystemPowerctl();
   AssertShutdownManager([](TestShutdownManager* manager) {
-    EXPECT_FALSE(manager->mexec_boot_called());
     EXPECT_TRUE(manager->system_powerctl_called());
     EXPECT_EQ(ZX_SYSTEM_POWERCTL_REBOOT, manager->system_powerctl_cmd());
   });

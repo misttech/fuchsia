@@ -4,9 +4,7 @@
 
 group("lib") {
   deps = [
-    "mexec",
     "netboot",
-
     # "userboot",   # all testonly for now, will be listed here later
   ]
 }

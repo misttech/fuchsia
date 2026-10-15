@@ -885,7 +885,7 @@ zx_status_t Sysmem::RegisterSecureMemInternal(
           std::lock_guard checker(*loop_checker_);
           if (*close_is_abort && secure_mem_) {
             // The server end of this channel (the securemem driver) is the driver that
-            // listens for suspend(mexec) so that soft reboot can succeed.  If that driver has
+            // listens for suspend so that reboot can succeed.  If that driver has
             // failed, intentionally force a hard reboot here to get back to a known-good state.
             //
             // TODO(https://fxbug.dev/42180331): When there's any more direct/immediate way to
@@ -1076,7 +1076,7 @@ zx_status_t Sysmem::RegisterSecureMemInternal(
 // This call allows us to tell the difference between expected vs. unexpected close of the tee_
 // channel.
 zx_status_t Sysmem::UnregisterSecureMemInternal() {
-  // By this point, the securemem driver's suspend(mexec) has already prepared for mexec.
+  // By this point, the securemem driver's suspend has already prepared for shutdown.
   //
   // In this path, the server end of the channel hasn't closed yet, but will be closed shortly after
   // return from UnregisterSecureMem().

@@ -43,8 +43,8 @@ void SimpleDriver::DdkInit(ddk::InitTxn txn) {
 
 void SimpleDriver::DdkSuspend(ddk::SuspendTxn txn) {
   zxlogf(INFO,
-         "DdkSuspend() invoked. This is only called in the Driver Framework's reboot, shutdown, "
-         "or mexec codepaths. If it's invoked, then DdkUnbind() and DdkRelease() won't be called. "
+         "DdkSuspend() invoked. This is only called in the Driver Framework's reboot or shutdown "
+         "codepaths. If it's invoked, then DdkUnbind() and DdkRelease() won't be called. "
          "Typically used to unmap DMA regions and unpin all DMA-related VMOs.");
   txn.Reply(ZX_OK, 0);
 }

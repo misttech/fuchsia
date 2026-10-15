@@ -91,8 +91,6 @@ uint8_t PowerStateToSuspendReason(fdm::SystemPowerState power_state) {
       return DEVICE_SUSPEND_REASON_REBOOT_RECOVERY;
     case fdm::SystemPowerState::kRebootBootloader:
       return DEVICE_SUSPEND_REASON_REBOOT_BOOTLOADER;
-    case fdm::SystemPowerState::kMexec:
-      return DEVICE_SUSPEND_REASON_MEXEC;
     case fdm::SystemPowerState::kPoweroff:
       return DEVICE_SUSPEND_REASON_POWEROFF;
     case fdm::SystemPowerState::kSuspendRam:

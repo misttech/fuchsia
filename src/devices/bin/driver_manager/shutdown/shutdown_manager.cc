@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <fidl/fuchsia.system.state/cpp/common_types_format.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/mexec_boot/mexec_boot.h>
 #include <zircon/processargs.h>  // PA_LIFECYCLE
 #include <zircon/syscalls/system.h>
 
@@ -28,21 +27,6 @@ fit::callback<void(zx_status_t)> ToCallback(SyncCompleter& completer) {
 // be present.
 zx::result<zx::resource> get_power_resource() {
   zx::result client_end = component::Connect<fuchsia_kernel::PowerResource>();
-  if (client_end.is_error()) {
-    return client_end.take_error();
-  }
-  fidl::WireResult result = fidl::WireCall(client_end.value())->Get();
-  if (!result.ok()) {
-    return zx::error(result.status());
-  }
-  return zx::ok(std::move(result.value().resource));
-}
-
-// Get the mexec resource from the mexec resource service. Not receiving the
-// startup handle is logged, but not fatal.  In test environments, it would not
-// be present.
-zx::result<zx::resource> get_mexec_resource() {
-  zx::result client_end = component::Connect<fuchsia_kernel::MexecResource>();
   if (client_end.is_error()) {
     return client_end.take_error();
   }
@@ -89,15 +73,9 @@ ShutdownManager::ShutdownManager(NodeRemover* node_remover, async_dispatcher_t* 
   zx::result log_flush = component::Connect<fuchsia_diagnostics::LogFlusher>();
   ZX_ASSERT(log_flush.is_ok());
   log_flush_ = std::move(log_flush.value());
-  if (zx::result mexec_resource = get_mexec_resource(); mexec_resource.is_error()) {
-    fdf_log::info("Failed to get mexec resource, assuming test environment and continuing ({})",
-                  mexec_resource.status_string());
-  } else {
-    mexec_resource_ = std::move(mexec_resource.value());
-  }
   node_remover_->SetOnRemovalTimeoutCallback([&]() {
     fdf_log::info("Timed out waiting for nodes to be removed, issuing syscall to reboot/shutdown");
-    ExecuteShutdownStrategy(/*node_removal_timed_out=*/true);
+    ExecuteShutdownStrategy();
   });
 }
 
@@ -162,7 +140,7 @@ void ShutdownManager::OnPackageShutdownComplete() {
 void ShutdownManager::OnBootShutdownComplete() {
   ZX_ASSERT(shutdown_state_ == State::kBootStopping);
   shutdown_state_ = State::kStopped;
-  ExecuteShutdownStrategy(/*node_removal_timed_out=*/false);
+  ExecuteShutdownStrategy();
   for (auto& callback : boot_shutdown_complete_callbacks_) {
     callback(ZX_OK);
   }
@@ -242,13 +220,13 @@ void ShutdownManager::SignalBootShutdown(fit::callback<void(zx_status_t)> cb) {
   }
 }
 
-void ShutdownManager::ExecuteShutdownStrategy(bool node_removal_timed_out) {
+void ShutdownManager::ExecuteShutdownStrategy() {
   auto shutdown_system_state = GetSystemPowerState();
   fdf_log::info("Suspend fallback with flags {}", shutdown_system_state);
   const char* what = "zx_system_powerctl";
   zx_status_t status = ZX_OK;
-  if (!mexec_resource_.is_valid() || !power_resource_.is_valid()) {
-    fdf_log::warn("Invalid Power/mexec resources. Assuming test.");
+  if (!power_resource_.is_valid()) {
+    fdf_log::warn("Invalid Power resource. Assuming test.");
     if (lifecycle_stop_) {
       Exit(0);
     }
@@ -263,6 +241,7 @@ void ShutdownManager::ExecuteShutdownStrategy(bool node_removal_timed_out) {
   fdf_log::info("Executing powerctl.");
   switch (shutdown_system_state) {
     case SystemPowerState::kReboot:
+    case SystemPowerState::kMexec:
       status = SystemPowerctl(ZX_SYSTEM_POWERCTL_REBOOT);
       break;
     case SystemPowerState::kRebootBootloader:
@@ -291,23 +270,6 @@ void ShutdownManager::ExecuteShutdownStrategy(bool node_removal_timed_out) {
     case SystemPowerState::kPoweroff:
       status = SystemPowerctl(ZX_SYSTEM_POWERCTL_SHUTDOWN);
       break;
-    case SystemPowerState::kMexec: {
-      if (node_removal_timed_out) {
-        // If drivers failed to shut down cleanly, some drivers/hardware may still have active DMA
-        // mapped. Proceeding with mexec (a soft reboot) would boot into the new kernel without a
-        // hardware reset, allowing active DMA to overwrite the new kernel's memory (leading to a
-        // sandbox escape). Fall back to a hard reboot instead to reset the hardware and quiesce
-        // DMA.
-        fdf_log::error(
-            "Timed out waiting for nodes to be removed, rebooting instead of using mexec");
-        status = SystemPowerctl(ZX_SYSTEM_POWERCTL_REBOOT);
-      } else {
-        fdf_log::info("About to mexec...");
-        status = MexecBoot();
-        what = "zx_system_mexec";
-      }
-      break;
-    }
     case SystemPowerState::kFullyOn:
     case SystemPowerState::kSuspendRam:
       fdf_log::error("Unexpected shutdown state requested: {}", shutdown_system_state);
@@ -332,8 +294,6 @@ void ShutdownManager::ExecuteShutdownStrategy(bool node_removal_timed_out) {
 zx_status_t ShutdownManager::SystemPowerctl(uint32_t cmd) {
   return zx_system_powerctl(power_resource_.get(), cmd, nullptr);
 }
-
-zx_status_t ShutdownManager::MexecBoot() { return mexec_boot(mexec_resource_.get()); }
 
 void ShutdownManager::Exit(int status) { exit(status); }
 

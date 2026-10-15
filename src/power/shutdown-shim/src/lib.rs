@@ -9,7 +9,7 @@ use crate::shutdown_watcher::ShutdownWatcher;
 use anyhow::{Context, format_err};
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminMexecRequest, AdminRequest, AdminRequestStream, AdminShutdownResponder,
+    AdminRequest, AdminRequestStream, AdminShutdownResponder,
     RebootMethodsWatcherRegisterRequestStream, ShutdownAction, ShutdownOptions, ShutdownReason,
     ShutdownWatcherRegisterRequestStream,
 };
@@ -200,34 +200,13 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                 AdminRequest::SuspendToRam { responder } => {
                     let target_state = SystemPowerState::SuspendRam;
                     set_system_power_state(target_state);
-                    let res = self.forward_command(target_state, None, None).await;
+                    let res = self.forward_command(target_state, None).await;
                     let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
-                AdminRequest::Mexec { responder, kernel_zbi, data_zbi } => {
-                    let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
-                    let res = async move {
-                        let target_state = SystemPowerState::Mexec;
-                        {
-                            // Duplicate the VMOs now, as forwarding the mexec request to power-manager
-                            // will consume them.
-                            let kernel_zbi =
-                                kernel_zbi.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-                            let data_zbi = data_zbi.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-
-                            set_system_power_state(SystemPowerState::Mexec);
-                            set_mexec_kernel_zbi(kernel_zbi);
-                            set_mexec_data_zbi(data_zbi);
-                        }
-
-                        self.forward_command(
-                            target_state,
-                            None,
-                            Some(AdminMexecRequest { kernel_zbi, data_zbi }),
-                        )
-                        .await
-                    }
-                    .await;
-                    let _ = responder.send(res.map_err(|s| s.into_raw()));
+                AdminRequest::Mexec { responder, .. } => {
+                    // TODO(https://fxbug.dev/573204187): Delete once Admin.Mexec is gone
+                    // from all supported API levels.
+                    let _ = responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()));
                 }
             }
         }
@@ -285,20 +264,7 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                     let _ = responder.send(state.power_state);
                 }
                 SystemStateTransitionRequest::GetMexecZbis { responder } => {
-                    let mut state = (*SYSTEM_STATE).lock();
-                    if state.power_state != SystemPowerState::Mexec {
-                        let _ = responder.send(Err(zx::Status::BAD_STATE.into_raw()));
-                        continue;
-                    }
-                    let kernel_zbi = std::mem::replace(
-                        &mut state.mexec_kernel_zbi,
-                        zx::NullableHandle::invalid().into(),
-                    );
-                    let data_zbi = std::mem::replace(
-                        &mut state.mexec_data_zbi,
-                        zx::NullableHandle::invalid().into(),
-                    );
-                    let _ = responder.send(Ok((kernel_zbi, data_zbi)));
+                    let _ = responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()));
                 }
             }
         }
@@ -314,14 +280,13 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
         println!("[shutdown-shim] shutdown with options [{:?}]", options);
         let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
         set_system_power_state(target_state);
-        self.forward_command(target_state, options, None).await
+        self.forward_command(target_state, options).await
     }
 
     async fn forward_command(
         &self,
         fallback_state: SystemPowerState,
         options: Option<ShutdownOptionsWrapper>,
-        _mexec_request: Option<AdminMexecRequest>,
     ) -> Result<(), zx::Status> {
         println!("[shutdown-shim] entering {:?} state", fallback_state);
         // Return if shutdown is already pending
@@ -431,17 +396,11 @@ impl<D: Directory + AsRefDirectory> collaborative_reboot::RebootActuator for Pro
 
 struct SystemState {
     power_state: SystemPowerState,
-    mexec_kernel_zbi: zx::Vmo,
-    mexec_data_zbi: zx::Vmo,
 }
 
 impl SystemState {
     fn new() -> Self {
-        Self {
-            power_state: SystemPowerState::FullyOn,
-            mexec_kernel_zbi: zx::NullableHandle::invalid().into(),
-            mexec_data_zbi: zx::NullableHandle::invalid().into(),
-        }
+        Self { power_state: SystemPowerState::FullyOn }
     }
 }
 
@@ -451,14 +410,4 @@ static SYSTEM_STATE: LazyLock<Mutex<SystemState>> =
 fn set_system_power_state(new: SystemPowerState) {
     let mut s = (*SYSTEM_STATE).lock();
     s.power_state = new;
-}
-
-fn set_mexec_kernel_zbi(new: zx::Vmo) {
-    let mut s = (*SYSTEM_STATE).lock();
-    s.mexec_kernel_zbi = new;
-}
-
-fn set_mexec_data_zbi(new: zx::Vmo) {
-    let mut s = (*SYSTEM_STATE).lock();
-    s.mexec_data_zbi = new;
 }

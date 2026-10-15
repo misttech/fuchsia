@@ -92,7 +92,6 @@ class Gtt {
   zx_status_t Init(const ddk::Pci& pci, fdf::MmioBuffer buffer, uint32_t fb_offset);
   zx_status_t AllocRegion(uint32_t length, uint32_t align_pow2,
                           std::unique_ptr<GttRegionImpl>* region_out);
-  void SetupForMexec(uintptr_t stolen_fb, uint32_t length);
 
   uint64_t size() const { return gfx_mem_size_; }
 

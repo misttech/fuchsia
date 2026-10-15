@@ -229,8 +229,7 @@ AmlRam::~AmlRam() {
 
 void AmlRam::DdkSuspend(ddk::SuspendTxn txn) {
   // TODO(cpu): First put the device into txn.requested_state().
-  if (txn.suspend_reason() & (DEVICE_SUSPEND_REASON_POWEROFF | DEVICE_SUSPEND_REASON_MEXEC |
-                              DEVICE_SUSPEND_REASON_REBOOT)) {
+  if (txn.suspend_reason() & (DEVICE_SUSPEND_REASON_POWEROFF | DEVICE_SUSPEND_REASON_REBOOT)) {
     // Do any additional cleanup that is needed while shutting down the driver.
     Shutdown();
   }

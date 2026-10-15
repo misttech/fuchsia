@@ -90,7 +90,6 @@ class ShutdownManager : public fidl::WireServer<fuchsia_process_lifecycle::Lifec
   // Virtual for testing.
   virtual fuchsia_system_state::SystemPowerState GetSystemPowerState();
   virtual zx_status_t SystemPowerctl(uint32_t cmd);
-  virtual zx_status_t MexecBoot();
   virtual void Exit(int status);
 
   // Signal state for when devfs and fshost are shutdown.
@@ -145,9 +144,7 @@ class ShutdownManager : public fidl::WireServer<fuchsia_process_lifecycle::Lifec
 
   // Execute the shutdown strategy set in shutdown_system_state_.
   // This should be done after all attempts at shutting down drivers has been made.
-  //
-  // `node_removal_timed_out` is only used during a mexec reboot.
-  void ExecuteShutdownStrategy(bool node_removal_timed_out);
+  void ExecuteShutdownStrategy();
 
   // Called when one of our connections is dropped.
   void OnUnbound(const char* connection, fidl::UnbindInfo info);
@@ -174,7 +171,7 @@ class ShutdownManager : public fidl::WireServer<fuchsia_process_lifecycle::Lifec
   std::vector<fit::callback<void()>> shutdown_lease_acquired_callbacks_;
 
   async_dispatcher_t* dispatcher_;
-  zx::resource mexec_resource_, power_resource_;
+  zx::resource power_resource_;
   fidl::ClientEnd<fuchsia_diagnostics::LogFlusher> log_flush_;
   // Tracks if we received a stop signal from the fuchsia_process_lifecycle::Lifecycle channel.
   bool lifecycle_stop_ = false;

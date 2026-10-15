@@ -41,19 +41,17 @@ const (
 
 // Commands supported by the netboot protocol.
 const (
-	cmdAck      = uint32(0)  // ack
-	cmdCommand  = uint32(1)  // command
-	cmdSendFile = uint32(2)  // send file
-	cmdData     = uint32(3)  // data
-	cmdBoot     = uint32(4)  // boot command
-	cmdQuery    = uint32(5)  // query command
-	cmdShell    = uint32(6)  // shell command
-	cmdOpen     = uint32(7)  // open file
-	cmdRead     = uint32(8)  // read data
-	cmdWrite    = uint32(9)  // write data
-	cmdClose    = uint32(10) // close file
-	cmdLastData = uint32(11) //
-	cmdReboot   = uint32(12) // reboot command
+	cmdAck     = uint32(0) // ack
+	cmdCommand = uint32(1) // command
+	// 2-4 is reserved.
+	cmdQuery = uint32(5)  // query command
+	cmdShell = uint32(6)  // shell command
+	cmdOpen  = uint32(7)  // open file
+	cmdRead  = uint32(8)  // read data
+	cmdWrite = uint32(9)  // write data
+	cmdClose = uint32(10) // close file
+	// 11 is reserved.
+	cmdReboot = uint32(12) // reboot command
 )
 
 // Client implements the netboot protocol.
@@ -532,21 +530,6 @@ func (n *Client) Beacon() (*net.UDPAddr, error) {
 	defer conn.Close()
 	addr, _, err := n.beacon(conn)
 	return addr, err
-}
-
-// Boot sends a boot packet to the address.
-func (n *Client) Boot(addr *net.UDPAddr) error {
-	n.Cookie++
-	msg := &netbootHeader{
-		Magic:  magic,
-		Cookie: n.Cookie,
-		Cmd:    cmdBoot,
-		Arg:    0,
-	}
-	if err := sendPacket(msg, addr, n.ServerPort); err != nil {
-		return fmt.Errorf("send boot command: %v\n", err)
-	}
-	return nil
 }
 
 // Reboot sends a reboot packet the address.

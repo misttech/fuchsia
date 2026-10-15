@@ -67,10 +67,6 @@ acpi::status<UniquePtr<ACPI_DEVICE_INFO>> GetObjectInfo(ACPI_HANDLE obj) {
 
 zx_status_t acpi_suspend(zx_device_t* device, bool enable_wake, uint8_t suspend_reason) {
   switch (suspend_reason & DEVICE_MASK_SUSPEND_REASON) {
-    case DEVICE_SUSPEND_REASON_MEXEC: {
-      AcpiTerminate();
-      return ZX_OK;
-    }
     case DEVICE_SUSPEND_REASON_REBOOT:
       // Don't do anything, we expect the higher layers to execute the reboot.
       return ZX_OK;

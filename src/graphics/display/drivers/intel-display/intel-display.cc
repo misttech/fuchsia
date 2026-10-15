@@ -1954,61 +1954,6 @@ void Controller::PrepareStopOnPowerOn(fdf::StopCompleter completer) {
 void Controller::PrepareStopOnPowerStateTransition(
     fuchsia_system_state::SystemPowerState power_state, fdf::StopCompleter completer) {
   // TODO(https://fxbug.dev/42119483): Implement the suspend hook based on suspendtxn
-  if (power_state == fuchsia_system_state::SystemPowerState::kMexec) {
-    zx::result<FramebufferInfo> fb_status = GetFramebufferInfo(framebuffer_info_);
-    if (fb_status.is_error()) {
-      completer(zx::ok());
-      return;
-    }
-
-    // The bootloader framebuffer is most likely at the start of the display
-    // controller's bar 2. Try to get that buffer working again across the
-    // mexec by mapping gfx stolen memory to gaddr 0.
-
-    auto bdsm_reg = registers::BaseDsm::Get().FromValue(0);
-    zx_status_t status = pci_.ReadConfig32(bdsm_reg.kAddr, bdsm_reg.reg_value_ptr());
-    if (status != ZX_OK) {
-      fdf::trace("Failed to read dsm base");
-      completer(zx::ok());
-      return;
-    }
-
-    // The Intel docs say that the first page should be reserved for the gfx
-    // hardware, but a lot of BIOSes seem to ignore that.
-    uintptr_t fb = bdsm_reg.base_phys_addr() << bdsm_reg.base_phys_addr_shift;
-    const auto& fb_info = fb_status.value();
-    {
-      fbl::AutoLock lock(&gtt_lock_);
-      gtt_.SetupForMexec(fb, fb_info.size);
-    }
-
-    // It may be tempting to try to map the framebuffer and clear it here.
-    // However, on Tiger Lake, mapping the framebuffer BAR after setting up
-    // the display engine will cause the device to crash and reboot.
-    // See https://fxbug.dev/42072946.
-
-    {
-      fbl::AutoLock lock(&display_lock_);
-      for (auto& display : display_devices_) {
-        if (display->pipe() == nullptr) {
-          continue;
-        }
-        // TODO(https://fxbug.dev/42106271): Reset/scale the display to ensure the buffer displays
-        // properly
-        registers::PipeRegs pipe_regs(display->pipe()->pipe_id());
-
-        auto plane_stride = pipe_regs.PlaneSurfaceStride(0).ReadFrom(mmio_space());
-        plane_stride.set_stride(width_in_tiles(display::ImageTilingType::kLinear,
-                                               static_cast<int>(fb_info.width),
-                                               fb_info.bytes_per_pixel));
-        plane_stride.WriteTo(mmio_space());
-
-        auto plane_surface = pipe_regs.PlaneSurface(0).ReadFrom(mmio_space());
-        plane_surface.set_surface_base_addr(0);
-        plane_surface.WriteTo(mmio_space());
-      }
-    }
-  }
   completer(zx::ok());
 }
 

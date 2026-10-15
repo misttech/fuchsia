@@ -220,26 +220,6 @@ async fn test_poweroff(is_power_framework_available: bool) -> Result<(), Error> 
         .await
 }
 
-#[test_case(true; "with_power_framework")]
-#[test_case(false; "without_power_framework")]
-#[fuchsia::test]
-async fn test_mexec(is_power_framework_available: bool) -> Result<(), Error> {
-    let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
-    let shim_statecontrol: fstatecontrol::AdminProxy =
-        realm_instance.root.connect_to_protocol_at_exposed_dir()?;
-
-    let _task = fasync::Task::spawn(async move {
-        let kernel_zbi = zx::Vmo::create(0).unwrap();
-        let data_zbi = zx::Vmo::create(0).unwrap();
-        shim_statecontrol.mexec(kernel_zbi, data_zbi).await.expect_err(
-            "the shutdown shim should close the channel when manual shutdown driving is complete",
-        );
-    });
-
-    verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
-        .await
-}
-
 #[test_matrix(
     [true, false],
     [RebootReason2::SystemUpdate, RebootReason2::OutOfMemory, RebootReason2::SessionFailure]

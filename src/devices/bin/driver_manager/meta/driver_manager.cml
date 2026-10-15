@@ -21,7 +21,6 @@
             // test
             protocol: [
                 "fuchsia.boot.WriteOnlyLog",
-                "fuchsia.kernel.MexecResource",
                 "fuchsia.kernel.PowerResource",
                 "fuchsia.scheduler.RoleManager",
             ],

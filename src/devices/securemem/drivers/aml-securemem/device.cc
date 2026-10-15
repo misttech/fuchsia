@@ -169,7 +169,7 @@ void AmlogicSecureMemDevice::SysmemSecureMemServerOnUnbound(bool is_success) {
     LOG(ERROR, "fuchsia::sysmem::Tee channel close !is_success - DRM playback will fail");
   } else {
     // If is_success, that means the sysmem_secure_mem_server_ is being shut down
-    // intentionally before any channel close.  So far, we only do this for suspend(mexec).
+    // intentionally before any channel close.  So far, we only do this for suspend.
     // See the initiation logic in AmlogicSecureMemDevice::DdkSuspend.
     ZX_DEBUG_ASSERT(is_clean_server_close_started_);
   }
