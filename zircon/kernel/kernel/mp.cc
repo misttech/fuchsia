@@ -376,7 +376,20 @@ zx_status_t mp_unplug_cpu_mask_single_locked(cpu_num_t cpu_id, zx_instant_mono_t
 
   // Request to take the target offline.
   status = percpu_to_unplug.idle_power_thread.TransitionActiveToOffline(deadline).status;
-  if (status != ZX_OK) {
+
+  // The request may fail after the target has already gone offline (e.g. if the
+  // platform did not report that it was powered off before |deadline|).  Once
+  // the target is offline, it is no longer processing tasks and its TimerQueue
+  // and DpcRunner must still be migrated, or they would be stranded.
+  //
+  // Note that if the transition itself timed out, the request remains pending
+  // and the target may still go offline after the check below, in which case
+  // its TimerQueue and DpcRunner are not migrated.  This is not expected in
+  // practice, since it requires the target's idle/power thread to be unable to
+  // run before |deadline|.
+  const bool offline = percpu_to_unplug.idle_power_thread.pending_power_work().current() ==
+                       IdlePowerThread::State::Offline;
+  if (status != ZX_OK && !offline) {
     return status;
   }
 
@@ -386,6 +399,9 @@ zx_status_t mp_unplug_cpu_mask_single_locked(cpu_num_t cpu_id, zx_instant_mono_t
   current_percpu.timer_queue.TransitionOffCpu(percpu_to_unplug.timer_queue);
   current_percpu.dpc_runner.TransitionOffCpu(percpu_to_unplug.dpc_runner);
 
+  if (status != ZX_OK) {
+    return status;
+  }
   return platform_mp_cpu_unplug(cpu_id);
 }
 

@@ -25,6 +25,7 @@
 #include <kernel/percpu.h>
 #include <kernel/scheduler.h>
 #include <kernel/thread.h>
+#include <ktl/algorithm.h>
 #include <ktl/atomic.h>
 #include <ktl/utility.h>
 #include <lk/init.h>
@@ -62,6 +63,47 @@ ktl::unique_ptr<SuspendWakeupTimer> IdlePowerThread::resume_timer_;
 namespace {
 
 constexpr bool kEnableRunloopTracing = false;
+
+// How long to sleep between polls when waiting for a CPU to reach some state (e.g. waiting for the
+// platform to report that it is powered off).
+constexpr zx_duration_mono_t kCpuStatePollInterval = ZX_USEC(200);
+
+// How often to log a message while still waiting for a CPU to power off.
+constexpr zx_duration_mono_t kCpuPowerOffWaitLogInterval = ZX_SEC(5);
+
+// Waits until the platform reports (via platform_get_cpu_state) that |cpu| is powered off or
+// stopped, or until |timeout_at|.
+//
+// Returns ZX_OK once the platform reports that |cpu| is powered off or stopped, ZX_ERR_TIMED_OUT if
+// |timeout_at| passes first, or the error returned by platform_get_cpu_state (e.g.
+// ZX_ERR_NOT_SUPPORTED if the platform cannot report CPU power state).
+//
+// Logs a message periodically while waiting so that a platform which never reports the CPU powered
+// off does not cause a silent hang (e.g. if |timeout_at| is ZX_TIME_INFINITE).
+zx_status_t WaitForCpuPowerOff(cpu_num_t cpu, zx_instant_mono_t timeout_at) {
+  const zx_instant_mono_t start = current_mono_time();
+  zx_instant_mono_t log_at = zx_time_add_duration(start, kCpuPowerOffWaitLogInterval);
+  while (true) {
+    const zx::result<power_cpu_state> state = platform_get_cpu_state(cpu);
+    if (state.is_error()) {
+      return state.error_value();
+    }
+    if (state.value() == power_cpu_state::OFF || state.value() == power_cpu_state::STOPPED) {
+      return ZX_OK;
+    }
+
+    const zx_instant_mono_t now = current_mono_time();
+    if (now >= timeout_at) {
+      return ZX_ERR_TIMED_OUT;
+    }
+    if (now >= log_at) {
+      dprintf(INFO, "Still waiting for CPU %u to power off after %" PRId64 " ms (state %d)\n", cpu,
+              zx_time_sub_time(now, start) / ZX_MSEC(1), static_cast<int>(state.value()));
+      log_at = zx_time_add_duration(now, kCpuPowerOffWaitLogInterval);
+    }
+    Thread::Current::Sleep(ktl::min(zx_time_add_duration(now, kCpuStatePollInterval), timeout_at));
+  }
+}
 
 constexpr const fxt::InternedString& ToInternedString(IdlePowerThread::State state) {
   using fxt::operator""_intern;
@@ -269,6 +311,23 @@ int IdlePowerThread::Run(void* arg) {
       // END WARNING: Pending preemptions is safe again.
     }
   }
+}
+
+IdlePowerThread::TransitionResult IdlePowerThread::TransitionActiveToOffline(
+    zx_instant_mono_t timeout_at) {
+  Guard<Mutex> guard{TransitionLock::Get()};
+  const TransitionResult result = TransitionFromTo(State::Active, State::Offline, timeout_at);
+  if (result.status != ZX_OK) {
+    return result;
+  }
+
+  // Wait until the platform reports that the CPU is actually powered off. If the platform does not
+  // support querying CPU power state, return immediately.
+  const zx_status_t status = WaitForCpuPowerOff(this_cpu_, timeout_at);
+  if (status == ZX_OK || status == ZX_ERR_NOT_SUPPORTED) {
+    return result;
+  }
+  return {status, result.starting_state};
 }
 
 IdlePowerThread::TransitionResult IdlePowerThread::TransitionFromTo(State expected_state,

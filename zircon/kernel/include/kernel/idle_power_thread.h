@@ -101,16 +101,26 @@ class IdlePowerThread final {
 
   // Requests to transition from Active to Offline.
   //
+  // After the transition completes, waits until the platform reports (via platform_get_cpu_state)
+  // that the CPU is powered off or stopped.  If the platform does not support querying CPU power
+  // state, this wait is skipped.  If the platform never reports that the CPU is powered off, this
+  // waits until |timeout_at| (i.e. indefinitely, if |timeout_at| is ZX_TIME_INFINITE), logging a
+  // message periodically.
+  //
   // Returns:
   //   - {ZX_OK, Active} if the transition was successful.
   //   - {ZX_OK, Offline} if the current state was already Offline.
   //   - {ZX_ERR_BAD_STATE, current state} if the current state was not Active or Offline.
   //   - {ZX_ERR_TIMED_OUT, Active} if the current state was Active and transition timeout expired.
+  //     Note that in this case the request is not withdrawn (once the CPU's idle/power thread has
+  //     begun to take it offline, it cannot be stopped), so the CPU may still go Offline later.
+  //   - {ZX_ERR_TIMED_OUT, starting state} if the transition completed, but the timeout expired
+  //     before the platform reported that the CPU was powered off.  Note that in this case, the
+  //     CPU's state is Offline.
+  //   - {error, starting state} if the transition completed, but querying the CPU's power state
+  //     failed with |error|.  Note that in this case, the CPU's state is Offline.
   TransitionResult TransitionActiveToOffline(zx_instant_mono_t timeout_at = ZX_TIME_INFINITE)
-      TA_EXCL(TransitionLock::Get()) {
-    Guard<Mutex> guard{TransitionLock::Get()};
-    return TransitionFromTo(State::Active, State::Offline, timeout_at);
-  }
+      TA_EXCL(TransitionLock::Get());
 
   // Requests to transition from Offline to Active.
   //
