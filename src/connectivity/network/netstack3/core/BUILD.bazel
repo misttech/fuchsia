@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(loom)
+# The loom crate documentation recommends compiling with optimizations since
+# the number of iterations can be large enough to make tests unreasonably slow
+# otherwise.
+build_flags(
+    name = "loom",
+    rustflags = [
+        "--cfg=loom",
+        "-Copt-level=2",
+    ],
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+)
+# LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.gn:loom)

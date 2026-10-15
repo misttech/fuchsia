@@ -273,6 +273,7 @@ fuchsia_unittest_package("netstack3-core-test-package") {
   deps = [ ":netstack3-core-instrumented_test" ]
 }
 
+# LINT.IfChange(loom)
 config("loom") {
   rustflags = [ "--cfg=loom" ]
 
@@ -281,6 +282,8 @@ config("loom") {
   # otherwise.
   configs = [ "//build/config:optimize_moderate" ]
 }
+
+# LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.bazel:loom)
 
 config("benchmark") {
   rustflags = [ "--cfg=benchmark" ]

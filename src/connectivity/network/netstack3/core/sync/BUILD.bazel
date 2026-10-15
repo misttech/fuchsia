@@ -1,0 +1,144 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/rust:rustc_check_cfg_build_flags.bzl", "rustc_check_cfg_build_flags")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_check_cfg_build_flags(
+    name = "check_cfg_flags",
+    cfgs = [
+        "loom",
+        "test",
+    ],
+    features = [
+        "recursive-lock-panic",
+        "rc-debug-names",
+        "testutils",
+        "instrumented",
+    ],
+)
+
+_COMMON_SRCS = [
+    "src/lib.rs",
+    "src/rc.rs",
+]
+
+_COMMON_BUILD_FLAGS = [
+    ":check_cfg_flags",
+    "//build/config/rust/lints:deny_unused_results",
+    "//src/connectivity/network/netstack3:netstack3_configs",
+]
+
+# @bazel2gn:transformer=deps
+_COMMON_PROC_MACRO_DEPS = ["//third_party/rust_crates/vendor:derivative"]
+
+# @bazel2gn:transformer=deps
+_COMMON_DEPS = [
+    "//src/connectivity/lib/net-types",
+    "//src/connectivity/network/netstack3/core/lock-order",
+]
+
+rustc_library(
+    name = "netstack3-sync",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS,
+)
+
+rustc_library(
+    name = "netstack3-sync-instrumented",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_features = [
+        "recursive-lock-panic",
+        "rc-debug-names",
+    ],
+    crate_name = "netstack3_sync",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS,
+)
+
+rustc_library(
+    name = "netstack3-sync-testutils",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_features = [
+        "testutils",
+        "instrumented",
+    ],
+    crate_name = "netstack3_sync",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS,
+)
+
+rustc_library(
+    name = "netstack3-sync-loom",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + ["//src/connectivity/network/netstack3/core:loom"],
+    crate_features = [
+        "rc-debug-names",
+        "testutils",
+    ],
+    crate_name = "netstack3_sync",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS + ["//third_party/rust_crates/vendor:loom"],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "netstack3-sync_test",
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate = ":netstack3-sync",
+    edition = "2024",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "netstack3-sync-instrumented_test",
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate = ":netstack3-sync-instrumented",
+    edition = "2024",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "netstack3-sync-instrumented_host_test",
+    binary_name = "netstack3-sync-instrumented_test",
+    visibility = ["//visibility:public"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "netstack3-sync-instrumented-package",
+    package_name = "netstack3-sync-instrumented",
+    unit_tests = [":netstack3-sync-instrumented_test"],
+    visibility = ["//visibility:public"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "netstack3-sync-package",
+    package_name = "netstack3-sync",
+    unit_tests = [":netstack3-sync_test"],
+    visibility = ["//visibility:public"],
+)
