@@ -218,7 +218,6 @@ impl IsLocalAddr for IpAddr {
 
 impl IsLocalAddr for Ipv4Addr {
     fn is_local_addr(&self) -> bool {
-        // TODO(https://fxbug.dev/42136483): add the various RFC reserved addresses and ranges too
         match self.octets() {
             [10, _, _, _] => true,
             [127, _, _, 1] => true,
@@ -632,7 +631,6 @@ fn select_mcast_interfaces(
 
 /// get_mcast_interfaces retrieves all local interfaces that are local
 /// multicast enabled. See McastInterface for more detials.
-// TODO(https://fxbug.dev/42121315): This needs to be e2e tested.
 pub fn get_mcast_interfaces() -> Result<Vec<McastInterface>, NetExtError> {
     Ok(select_mcast_interfaces(&mut getifaddrs()?))
 }

@@ -255,7 +255,6 @@ impl AsyncWrite for UdpNetworkInterface {
 pub async fn open(addr: SocketAddr) -> Result<UdpNetworkInterface, crate::FastbootTransportError> {
     let mut to_sock: SocketAddr = addr.clone();
     if to_sock.port() == 0 {
-        // TODO(https://fxbug.dev/42159161): get the port from the mdns packet
         to_sock.set_port(HOST_PORT);
     }
     let socket = make_sender_socket(to_sock).await?;

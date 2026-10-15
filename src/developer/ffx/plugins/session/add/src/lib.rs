@@ -96,7 +96,6 @@ pub async fn add_impl(
     writer.machine(&CommandStatus::Ok { message: None })?;
 
     if cmd.interactive {
-        // TODO(https://fxbug.dev/42058904) wait for either ctrl+c or the controller to close
         if !writer.is_machine() {
             writeln!(writer, "Waiting for Ctrl+C before terminating element...")?;
         }

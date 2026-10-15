@@ -113,7 +113,6 @@ pub struct MdnsBindEvent {
 #[derive(Debug)]
 pub struct CachedTarget {
     target: MdnsTargetInfo,
-    // TODO(https://fxbug.dev/42165549)
     #[allow(unused)]
     eviction_task: Option<Task<()>>,
 }

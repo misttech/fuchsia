@@ -120,9 +120,6 @@ pub struct FfxToolFiles {
 /// atom collection is used to locate the host and companion tools. This is done to avoid building
 ///  the complete IDK and results in dramatically reduced build times for common developer workflows.
 ///  When using SdkRoot in-tree, the root should be the $root_build_dir.
-///
-/// TODO(https://fxbug.dev/397989792) tracks removing this hard coded default path for in-tree IDK usage.
-///
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SdkRoot {
     /// Full SDK root is actually referring to the root directory of an IDK.  This means it

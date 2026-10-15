@@ -107,8 +107,6 @@ pub(crate) fn create_directories(
     std::fs::create_dir_all(&metrics_path)
         .map_err(|e| IsolateError::CreateDir(metrics_path.clone(), e))?;
 
-    // TODO(287694118): See if we should get isolate-dir itself to deal with metrics isolation.
-
     // Mark that analytics are disabled
     std::fs::write(metrics_path.join("analytics-status"), "0")
         .map_err(|e| IsolateError::WriteFile(metrics_path.join("analytics-status"), e))?;
@@ -205,7 +203,7 @@ impl Isolate {
             std::env::var("FUCHSIA_DEVICE_ADDR").ok().filter(|addr| !addr.is_empty())
         {
             // When run in infra, disable mdns discovery.
-            // TODO(https://fxbug.dev/42121155): Remove when we have proper network isolation.
+            // TODO(b/272081962): Remove when we have proper network isolation.
             target_addr = Option::Some(Cow::Owned(addr + ":0"));
             mdns_discovery = false;
         }
@@ -282,10 +280,6 @@ impl Isolate {
             env_context.has_no_environment(),
         )?;
 
-        // NOTE: config values from this Isolate might not be found correctly,
-        // due to issues with caching.  Until this is fixed (TODO(https://fxbug.dev/42075364)),
-        // callers should call `ffx_config::cache_invalidate()` if they will be
-        // querying config values, e.g. "log.dir".
         Ok(Isolate { tmpdir, log_dir, env_ctx })
     }
 

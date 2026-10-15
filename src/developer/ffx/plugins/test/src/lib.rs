@@ -102,7 +102,6 @@ impl FfxMain for TestTool {
 
     type Error = ::fho::Error;
 
-    // TODO(https://fxbug.dev/42078544): use Writer when it becomes possible.
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let remote_control =
             self.rcs.await.map_err(|e| ffx_error_with_code!(*SETUP_FAILED_CODE, "{:?}", e))?;

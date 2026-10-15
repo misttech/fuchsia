@@ -65,7 +65,7 @@ async fn test_target_flash_gigaboot(ctx: TestContext) {
 /// This also re-flashes the image once it is in product mode
 #[fixture(emulator_fixture)]
 #[fuchsia::test]
-#[ignore] // TODO(https://fxbug.dev/387543611, https://fxbug.dev/42083467): Re-enable
+#[ignore] // TODO(b/387543611): Re-enable
 async fn test_target_flash_from_product(ctx: TestContext) {
     let isolate = ctx.isolate();
 
@@ -201,7 +201,7 @@ async fn test_target_bootloader_info(ctx: TestContext) {
 
 #[fixture(emulator_fixture)]
 #[fuchsia::test]
-#[ignore] // TODO(https://fxbug.dev/387543611, https://fxbug.dev/42083467): Re-enable
+#[ignore] // TODO(b/387543611): Re-enable
 async fn test_target_bootloader_info_from_product(ctx: TestContext) {
     let isolate = ctx.isolate();
 

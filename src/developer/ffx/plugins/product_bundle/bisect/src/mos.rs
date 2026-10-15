@@ -98,9 +98,6 @@ where
                 print_fn("Running automated broken link-finding script...");
                 print_fn("=======================================================\n");
 
-                // TODO(https://fxbug.dev/495619145): Investigate ways to
-                // gracefully handle failure conditions without having to
-                // hardcode script paths into the tool like this.
                 let script_path = fuchsia_dir.map(|d| {
                     d.join(
                         "vendor/google/scripts/ffx/plugins/product_bundle/bisect/find_broken_links/find_broken_link.py",

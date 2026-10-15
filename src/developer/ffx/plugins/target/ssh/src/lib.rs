@@ -77,7 +77,6 @@ impl FfxMain for SshTool {
 /// If we're running in an isolated environment against an emulator with user networking,
 /// pretend we're connecting to localhost because user networking is implemented as a port on the
 /// host machine.
-// TODO(https://fxbug.dev/42077822) this should not be required
 fn get_addr(ctx: &EnvironmentContext, addr: TargetIpAddr) -> fho::Result<TargetIpAddr> {
     fn is_in_ipv4_10_net(ip: IpAddr) -> bool {
         match ip {

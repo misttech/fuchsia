@@ -15,8 +15,6 @@ rustc_library("lib") {
     ":*",
     "//src/developer/ffx/lib/diagnostics/checks:*",
     "//src/developer/ffx/lib/fastboot/connection_factory:*",
-
-    # TODO(https://fxbug.dev/404090546): Refactor FlashManifestVersion to a smaller crate
     "//src/developer/ffx/plugins/product/create:*",
     "//src/developer/ffx/plugins/target/bootloader:*",
     "//src/developer/ffx/plugins/target/fastboot:*",

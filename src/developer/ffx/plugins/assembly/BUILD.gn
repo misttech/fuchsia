@@ -105,9 +105,6 @@ rustc_library("ffx_assembly") {
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:tempfile",
   ]
-
-  # TODO(https://fxbug.dev/356474618): re-enable and fix existing lints
-  # configs = [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
 ffx_tool("ffx_assembly_tool") {

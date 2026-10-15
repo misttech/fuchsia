@@ -71,7 +71,7 @@ pub(crate) fn get_host_tool(context: &EnvironmentContext, name: &str) -> Result<
     // Attempts to get a host tool from the SDK manifest. If it fails, falls
     // back to attempting to derive the path to the host tool binary by simply checking
     // for its existence in `ffx`'s directory.
-    // TODO(https://fxbug.dev/42181753): When issues around including aemu in the sdk are resolved, this
+    // TODO(b/289524702): When issues around including aemu in the sdk are resolved, this
     // hack can be removed.
     match ffx_config::get_host_tool(context, name) {
         Ok(path) => Ok(path),
@@ -196,10 +196,10 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                             "Using existing file for {:?}",
                             output_path.file_name().unwrap()
                         );
-                        // TODO(https://fxbug.dev/42063890): Make a decision to reuse zbi with no modifications or not.
-                        // There is the potential that the ssh keys have changed, or the ip address
-                        // of the host interface has changed, which will cause the connection
-                        // to the emulator instance to fail.
+                        // Note: If reusing the ZBI without modifications, there is the potential
+                        // that the ssh keys have changed, or the ip address of the host interface
+                        // has changed, which will cause the connection to the emulator instance to
+                        // fail.
                     } else {
                         // Add the authorized public keys to the zbi image to enable SSH access to
                         // the guest. Also, in the GPT case, bake in the kernel command line parameters.
@@ -1257,9 +1257,8 @@ pub(crate) mod tests {
         .await;
 
         // Staging of GPT images is only expected work when mkfs-msdosfs is guaranteed to be found.
-        // TODO(https://fxbug.dev/377317738): When make-fuchsia-vol is guaranteed to create the
-        // required FAT EFI partition successfully in out-of-tree configurations, the following
-        // block can be removed.
+        // When make-fuchsia-vol is guaranteed to create the required FAT EFI partition
+        // successfully in out-of-tree configurations, the following block can be removed.
         if disk_image_format == DiskImageFormat::Gpt {
             if let EnvironmentKind::InTree { .. } = env.context.env_kind() {
                 log::debug!("Test running in-tree, DiskImageFormat::Gpt is expected to work.");
@@ -1448,9 +1447,8 @@ pub(crate) mod tests {
         .await;
 
         // Staging of GPT images is only expected work when mkfs-msdosfs is guaranteed to be found.
-        // TODO(https://fxbug.dev/377317738): When make-fuchsia-vol is guaranteed to create the
-        // required FAT EFI partition successfully in out-of-tree configurations, the following
-        // block can be removed.
+        // When make-fuchsia-vol is guaranteed to create the required FAT EFI partition
+        // successfully in out-of-tree configurations, the following block can be removed.
         if disk_image_format == DiskImageFormat::Gpt {
             if let EnvironmentKind::InTree { .. } = env.context.env_kind() {
                 log::debug!("Test running in-tree, DiskImageFormat::Gpt is expected to work.");

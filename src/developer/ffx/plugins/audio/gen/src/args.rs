@@ -8,7 +8,6 @@ use ffx_core::ffx_command;
 use fuchsia_audio::Format;
 use std::time::Duration;
 
-/// TODO(https://fxbug.dev/42061172) - Add support for writing infinite files.
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(

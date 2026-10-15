@@ -307,7 +307,6 @@ impl FfxMain for FlashTool {
 
 fn preflight_checks<W: Write>(cmd: &FlashCommand, mut writer: W) -> Result<(), PreflightError> {
     if cmd.manifest_path.is_some() {
-        // TODO(https://fxbug.dev/42076631)
         writeln!(writer, "{}WARNING:{} specifying the flash manifest via a positional argument is deprecated. Use the --manifest flag instead (https://fxbug.dev/42076631)", color::Fg(color::Red), style::Reset)
             .map_err(PreflightError::Writer)?;
     }

@@ -19,7 +19,6 @@ bootloader.timeout=5"#;
 
 /// Default image size for emulator runs (20 GiB).
 // By default, the image will be resized to 20G.
-// TODO(https://fxbug.dev/380879811): Calculate this dynamically.
 pub const DEFAULT_EMU_DISK_SIZE: u64 = 20 * 1024 * 1024 * 1024;
 
 /// Holds the args needed to construct a full GPT disk image
@@ -85,7 +84,7 @@ impl FuchsiaFullDiskImageBuilder {
     }
 
     pub fn build(self, context: &EnvironmentContext) -> Result<()> {
-        // TODO(https://fxbug.dev/380065101): When we have a fake make-fuchsia-vol, this should be
+        // When we have a fake make-fuchsia-vol, this should be
         // removed to increase test coverage.
         if context.exe_kind() == ExecutableKind::Test {
             log::debug!(

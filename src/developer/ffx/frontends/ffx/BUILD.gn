@@ -75,7 +75,6 @@ ffx("ffx") {
 }
 
 _ffx_e2e_config = [
-  # TODO(https://fxbug.dev/42165781): remove log.level=DEBUG when we no longer have flake
   "--config",
   "log.level=DEBUG",
   "--config",
@@ -125,8 +124,6 @@ host_test("ffx-e2e-with-target") {
     "//src/developer/ffx/plugins/self-test:ffx_selftest_tool_test_data",
   ]
 
-  # TODO(https://fxbug.dev/42138890): split additional dimensions such as multi-device
-  # mac + device, etc.
   environments = [
     # XXX(https://fxbug.dev/42143551): support arm64 HTI tests
     # emu_env,

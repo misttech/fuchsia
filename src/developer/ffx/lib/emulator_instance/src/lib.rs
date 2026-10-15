@@ -222,9 +222,8 @@ pub struct GuestConfig {
     pub secure_bootloader_arm64: Option<PathBuf>,
 
     /// Path to the product bundle from where the emulator is staged.
-    /// TODO(https://fxbug.dev/381263769): Note that this is passed to make-fuchsia-vol for
-    /// constructing GPT images until a better solution is in place. Please avoid using it, as it
-    /// may go away without warning.
+    /// Note that this is passed to make-fuchsia-vol for constructing GPT images until a better
+    /// solution is in place. Please avoid using it, as it may go away without warning.
     #[serde(default)]
     pub product_bundle_path: Option<PathBuf>,
 

@@ -196,8 +196,6 @@ async fn connect_and_stream<P: ArchiveAccessorConnector>(
     Ok(local)
 }
 
-// TODO(https://fxbug.dev/42080003): Remove this once Overnet
-// has support for reconnect handling.
 async fn connect_to_target(
     stream_mode: &mut fdomain_fuchsia_diagnostics::StreamMode,
     prev_boot_id: Option<u64>,
@@ -276,11 +274,8 @@ where
     };
     let disable_reconnect = cmd.disable_reconnect();
     let mut stream_mode = get_stream_mode(cmd.clone())?;
-    // TODO(https://fxbug.dev/42080003): Add support for reconnect handling to Overnet.
     // This plugin needs special logic to handle reconnects as logging should tolerate
     // a device rebooting and remaining in a consistent state (automatically) after the reboot.
-    // Eventually we should have direct support for this in Overnet, but for now we have to
-    // handle reconnects manually.
     let mut prev_boot_id = None;
     let is_ai = is_invoked_by_agent(&env);
     loop {

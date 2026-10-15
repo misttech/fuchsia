@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 // Used to interact with the input interface.
-// TODO(https://fxbug.dev/42144965): Support multiple devices.
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;

@@ -251,8 +251,8 @@ async fn device_play(
             ring_buffer_element_id,
         })),
         gain_settings: Some(fac::GainSettings {
-            mute: None, // TODO(https://fxbug.dev/42072218)
-            gain: None, // TODO(https://fxbug.dev/42072218)
+            mute: None,
+            gain: None,
             ..Default::default()
         }),
         active_channels_bitmask: channel_bitmask,

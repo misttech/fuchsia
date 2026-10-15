@@ -1769,7 +1769,7 @@ async fn get_registry_info(
 
     let registry_info = RegistryInfo {
         device_info,
-        // TODO(https://fxbug.dev/329150383): Support plug_state/plug_time for ADR devices
+        // plug_state/plug_time is not currently supported for ADR devices.
         plug_event: None,
         signal_processing,
     };

@@ -657,7 +657,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
         }
     };
 
-    // TODO(https://fxbug.dev/571125224): Temporarily disable streaming flash to unbrick devices.
+    // Temporarily disable streaming flash to unbrick devices (see b/571125224).
     if false && let Ok(true) = try_flash_stream().await {
         return Ok(());
     }
@@ -872,7 +872,7 @@ pub async fn flash_partitions<F: FileResolver + Sync, P: Partition, T: FastbootI
     min_timeout_secs: u64,
     flash_timeout_rate_mb_per_second: f64,
 ) -> Result<()> {
-    // TODO(https://fxbug.dev/571125224): Temporarily disable streaming flash to unbrick devices.
+    // Temporarily disable streaming flash to unbrick devices (see b/571125224).
     if false
         && let Ok(segment_size) =
             get_hex_int::<u32>(STREAM_SEGMENT_SIZE, fastboot_interface).await.map(u64::from)

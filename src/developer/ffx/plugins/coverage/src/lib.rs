@@ -91,7 +91,6 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
     let symbol_index = SymbolIndex::load_aggregate(&symbol_index_path)?;
     let bin_files = profdata_runner.find_binaries(&symbol_index, &profraws)?;
 
-    // TODO(https://fxbug.dev/42182448): find a better place to put merged.profdata.
     let merged_profile = cmd.test_output_dir.join("merged.profdata");
     profdata_runner
         .merge_profraws(&profraws, &merged_profile, &bin_files)
@@ -289,8 +288,6 @@ impl ProfdataRunner {
 }
 
 /// Finds debug file in local .build-id directories from symbol index.
-//
-// TODO(https://fxbug.dev/42051063): replace this with llvm-debuginfod-find when it's available.
 fn find_debug_file(symbol_index: &SymbolIndex, binary_id: &str) -> Result<PathBuf> {
     if binary_id.len() > 2 {
         // For simplicity always return the first match. Note this is not always safe.

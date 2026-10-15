@@ -14,9 +14,8 @@ pub mod raw {
     /// type.
     ///
     /// Some notable points:
-    ///   * The peer_owner_koid is currently unimplemented
-    ///     (https://fxbug.dev/42138321), so the value is calculated
-    ///     by the process_explorer component.
+    ///   * The peer_owner_koid is currently unimplemented, so the value is
+    ///     calculated by the process_explorer component.
     ///     See more details about its implementation at
     ///     src/developer/process_explorer/process_data.h
     #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Debug)]

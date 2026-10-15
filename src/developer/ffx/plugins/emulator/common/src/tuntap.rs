@@ -8,7 +8,6 @@ use mockall::automock;
 use nix::ifaddrs::{InterfaceAddress, InterfaceAddressIterator, getifaddrs};
 use nix::net::if_::InterfaceFlags;
 
-// TODO(https://fxbug.dev/42050691): Make this configurable.
 // The interface name, "qemu", provided here used to be provided by the qemu
 // executable when it was left for qemu to start the upscript. Since we need
 // to time the sudo prompt and the socket creation, we now launch the script

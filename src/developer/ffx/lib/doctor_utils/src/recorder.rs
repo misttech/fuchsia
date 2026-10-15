@@ -29,7 +29,7 @@ impl DoctorRecorder {
         Self { resource: HashMap::new(), source_files: vec![] }
     }
 
-    #[allow(clippy::unused_io_amount)] // TODO(https://fxbug.dev/42177039)
+    #[allow(clippy::unused_io_amount)]
     fn copy_file(
         &self,
         source: &PathBuf,

@@ -60,7 +60,6 @@ pub fn repo_spec_to_backend(
             )))
         }
         RepositorySpec::Gcs { .. } => {
-            // FIXME(https://fxbug.dev/42181388): Implement support for daemon-side GCS repositories.
             log::error!("Trying to register a GCS repository, but that's not supported yet");
             Err(RepositoryError::UnknownRepositorySpec)
         }
@@ -389,11 +388,6 @@ pub fn create_repo_host(
     // However, if it's not a loopback address, then configure the device to
     // communicate by way of the ssh host's address. This is helpful when the
     // device can access the repository only through a specific interface.
-
-    // FIXME(https://fxbug.dev/42168560): Once the tunnel bug is fixed, we may
-    // want to default all traffic going through the tunnel. Consider
-    // creating an ffx config variable to decide if we want to always
-    // tunnel, or only tunnel if the server is on a loopback address.
 
     // IPv6 addresses can contain a ':', IPv4 cannot.
     let repo_host = if host_address.contains(':') {

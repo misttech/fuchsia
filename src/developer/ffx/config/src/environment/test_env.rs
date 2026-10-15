@@ -331,11 +331,8 @@ impl TestEnvBuilder {
 /// You must hold the returned object object for the duration of the test.
 /// Not doing so will result in strange behaviour.
 ///
-/// FIXME(https://fxbug.dev/411199300): This function inherits environment
-/// variables from the real test environment.
+/// Note: This function inherits environment variables from the real test
+/// environment.
 pub fn test_init() -> Result<TestEnv> {
-    // TODO(https://fxbug.dev/411199300): Use `test_env()` when we don't need to
-    // implicitly inherit environment variables from the real test environment
-    // environment anymore.
     test_builder_with_envs().build()
 }

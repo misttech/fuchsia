@@ -68,8 +68,8 @@ pub async fn verify(cmd: &Command, recovery: bool) -> Result<HashSet<PathBuf>> {
 
     let bootfs_packages = artifacts.get_bootfs_packages()?;
 
-    // TODO(https://fxbug.dev/42179754) After the first bootfs package is migrated to a component, an
-    // absence of a bootfs package index is an error.
+    // An absence of a bootfs package index is an error if there are blobs in
+    // the bootfs.
     if bootfs_packages.is_none() {
         if non_blob_files.len() != total_bootfs_file_count {
             return Err(anyhow!(
