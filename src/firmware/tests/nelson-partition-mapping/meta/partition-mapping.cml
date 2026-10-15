@@ -12,11 +12,9 @@
     },
     use: [
         {
-            directory: "dev-class",
+            directory: "debug_block",
             rights: [ "r*" ],
-            path: "/dev/class/block",
-            subdir: "block",
+            path: "/debug_block",
         },
-        { protocol: "fuchsia.hardware.block.partition.Partition" },
     ],
 }

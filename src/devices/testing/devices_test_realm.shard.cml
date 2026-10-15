@@ -110,5 +110,12 @@
             to: [ "#devices-tests" ],
             rights: [ "r*" ],
         },
+        {
+            directory: "debug_block",
+            from: "parent",
+            to: "#devices-tests",
+            rights: [ "r*" ],
+            availability: "optional",
+        },
     ],
 }

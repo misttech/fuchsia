@@ -30,21 +30,19 @@
 
 #include "src/lib/fsl/io/device_watcher.h"
 
-namespace fuchsia_partition = fuchsia_storage_block;
-
 using device_watcher::RecursiveWaitForFile;
 
-#define DEV_BLOCK "/dev/class/block"
+#define BLOCK_DIR "/debug_block"
 
 class PartitionMappingTest : public zxtest::Test {
  protected:
   static void ScanBlockAndValidateMapping(
       const std::unordered_map<std::string, std::string>& mapping) {
-    fbl::unique_fd devfs_root(open(DEV_BLOCK, O_RDONLY));
-    ASSERT_TRUE(devfs_root);
+    fbl::unique_fd block_dir(open(BLOCK_DIR, O_RDONLY));
+    ASSERT_TRUE(block_dir);
 
     struct dirent* de;
-    DIR* dir = opendir(DEV_BLOCK);
+    DIR* dir = opendir(BLOCK_DIR);
     ASSERT_NOT_NULL(dir);
     auto cleanup = fit::defer([&dir]() { closedir(dir); });
 
@@ -53,9 +51,10 @@ class PartitionMappingTest : public zxtest::Test {
         continue;
       }
 
-      zx::result channel = RecursiveWaitForFile(devfs_root.get(), de->d_name);
-      EXPECT_OK(channel.status_value(), "%s/%s", DEV_BLOCK, de->d_name);
-      fidl::ClientEnd<fuchsia_partition::Partition> client_end(std::move(channel.value()));
+      std::string path = std::string(de->d_name) + "/fuchsia.storage.block.Block";
+      zx::result channel = RecursiveWaitForFile(block_dir.get(), path.c_str());
+      EXPECT_OK(channel.status_value(), "%s/%s", BLOCK_DIR, path.c_str());
+      fidl::ClientEnd<fuchsia_storage_block::Block> client_end(std::move(channel.value()));
 
       std::string partition_name = GetLabel(client_end);
 
@@ -66,7 +65,7 @@ class PartitionMappingTest : public zxtest::Test {
     }
   }
 
-  static std::string GetType(const fidl::ClientEnd<fuchsia_partition::Partition>& client_end) {
+  static std::string GetType(const fidl::ClientEnd<fuchsia_storage_block::Block>& client_end) {
     auto guid_resp = fidl::WireCall(client_end)->GetTypeGuid();
     if (guid_resp.ok() && guid_resp->status == ZX_OK && guid_resp->guid) {
       return gpt::KnownGuid::TypeDescription(guid_resp->guid->value.data());
@@ -74,7 +73,7 @@ class PartitionMappingTest : public zxtest::Test {
     return {};
   }
 
-  static std::string GetLabel(const fidl::ClientEnd<fuchsia_partition::Partition>& client_end) {
+  static std::string GetLabel(const fidl::ClientEnd<fuchsia_storage_block::Block>& client_end) {
     auto name_resp = fidl::WireCall(client_end)->GetName();
     if (name_resp.ok() && name_resp->status == ZX_OK) {
       return std::string(name_resp->name.data(), name_resp->name.size());
