@@ -456,7 +456,11 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
             per_target_rdeps[actual_name] = set(combined)
 
     for t in bazel_targets:
+        if t in non_gn_synced_targets:
+            continue
         for sub_t in bazel_targets:
+            if sub_t in non_gn_synced_targets:
+                continue
             if sub_t != t and sub_t.startswith(t + "_"):
                 combined = per_target_rdeps[t] | per_target_rdeps[sub_t]
                 per_target_rdeps[t] = set(combined)
@@ -733,8 +737,7 @@ for rel_path in sorted(candidate_files):
             if val in preexisting_vis:
                 continue
             if val == "//visibility:public":
-                is_exported_test = func_name in ("fx_test", "fx_unittest_package") or func_name.startswith("wrap_host_")
-                if not rel_path.startswith("build/bazel_sdk/") and not is_exported_test:
+                if not rel_path.startswith("build/bazel_sdk/"):
                     if len(target_rdeps) == 0 and not has_macro_injected_rdeps:
                         rem = f"Omit 'visibility' on '{target_name}' (default private) as no external packages depend on it, and re-run fx bazel2gn."
                     elif is_globally_used or has_macro_injected_rdeps:

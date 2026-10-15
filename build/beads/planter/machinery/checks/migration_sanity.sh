@@ -767,23 +767,20 @@ for pkg_dir in sorted(candidate_dirs):
                     "in GN although this checkout has `//build/bazel/rules/testing:fx_test.bzl`."
                 ),
                 "remediation": (
-                    f"Migrate it as in \"Migrating Tests\" of the coder instructions (like //src/developer/build_info): "
-                    f"in '{bazel_rel}' add "
+                    f"Migrate it as in \"Migrating Tests\" of the coder instructions: in '{bazel_rel}' declare "
                     + (
-                        "`with_unit_tests = \"fuchsia\"` (with `# @bazel2gn:skip`) on the `rustc_*` target or a `rustc_test`, "
+                        "an explicit `# @bazel2gn:skip` `rustc_test(...)`, "
                         if is_rust
-                        else "`fx_cc_binary(testonly = True)` for the test executable, "
+                        else "`fx_cc_binary(testonly = True, tags = [\"manual\"])` for the test executable, "
                     )
-                    + "`fx_packaged_binary(testonly = True)`, `fx_component_manifest` with a new `meta/<component>.cml` "
-                    + (
-                        "(`//src/sys/test_runners/rust/default.shard.cml` + `syslog/client.shard.cml`), "
-                        if is_rust
-                        else "(gtest/zxtest/ELF runner shard + `syslog/client.shard.cml`), "
-                    )
-                    + "`fx_test_component`, "
-                    f"`fx_package(package_name = \"{gn_pkg_name}\", test_components = [...])` and `fx_test` (each with "
-                    "`# @bazel2gn:skip` in a dual-build package); then replace the GN package and executable with "
-                    f"`bazel_test_suite(\"{gname}\") {{ target_tests = [ \"//{pkg_dir}:<fx_test>\" ] }}` listed in "
+                    + f"and package it with `# @bazel2gn:skip` `fx_unittest_package(name = \"{gname}\", "
+                    + (f"package_name = \"{gn_pkg_name}\", " if gn_pkg_name != gname else "")
+                    + "unit_tests = [\":<test_bin>\"])` "
+                    "(or `fx_unittest_component` + `fx_package` + `fx_test` when packaging extra `resource()`s/components; "
+                    "only unroll into `fx_packaged_binary` + `fx_component_manifest` + `fx_test_component` + `fx_package` + `fx_test` "
+                    "with a `meta/<component>.cml` when the test requires a custom `.cml` manifest or non-default capability shards); "
+                    "then replace the GN package and executable with "
+                    f"`bazel_test_suite(\"{gname}\") {{ target_tests = [ \"//{pkg_dir}:{gname}\" ] }}` listed in "
                     "`group(\"tests\")`. If a real blocker keeps it in GN, name it in the summary and dispute this finding."
                 ),
             })
@@ -1168,9 +1165,57 @@ def get_defs_bzl_reexports(mod_label):
     return result
 
 
-# 4. rust_unit_test_layout: Rust unit tests in BUILD.bazel are explicit rustc_test
-#    targets (host/device differences via select()), always `# @bazel2gn:skip`, with
-#    the device side exposed through fx_test_component/fx_package/fx_test.
+# 4. rust_unit_test_layout & unrolled_unittest_package: Rust unit tests in BUILD.bazel
+#    are explicit rustc_test targets (host/device differences via select()), always
+#    `# @bazel2gn:skip`, with the device side exposed through fx_unittest_package
+#    (or fx_unittest_component + fx_package + fx_test when packaging extra resources;
+#    unrolled fx_packaged_binary + fx_component_manifest + fx_test_component is only
+#    allowed when the test requires a custom .cml manifest).
+HAS_FX_UNITTEST_PACKAGE = os.path.isfile(
+    os.path.join(workdir, "build/bazel/rules/testing/fx_unittest_package.bzl")
+)
+STANDARD_UNITTEST_CML_SHARDS = {
+    "//src/sys/test_runners/rust/default.shard.cml",
+    "//src/sys/test_runners/gtest/default.shard.cml",
+    "//src/sys/test_runners/gtest/zxtest.shard.cml",
+    "//sdk/lib/sys/testing/elf_test_runner.shard.cml",
+    "sys/testing/elf_test_runner.shard.cml",
+    "syslog/use.shard.cml",
+    "//sdk/lib/syslog/use.shard.cml",
+    "syslog/client.shard.cml",
+    "//sdk/lib/syslog/client.shard.cml",
+    "syslog/offer.shard.cml",
+    "//sdk/lib/syslog/offer.shard.cml",
+}
+
+
+def is_standard_unittest_cml(cml_abs):
+    try:
+        raw = open(cml_abs, encoding="utf-8").read()
+    except Exception:
+        return False
+    # Strip /* ... */ and // ... comments outside string literals
+    cleaned = re.sub(
+        r'("(?:\\.|[^"\\])*")|/\*.*?\*/|//[^\n]*',
+        lambda m: m.group(1) if m.group(1) is not None else "",
+        raw,
+        flags=re.S,
+    )
+    cleaned = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)\s*:", r'\1"\2":', cleaned)
+    cleaned = re.sub(r",\s*([\]}])", r"\1", cleaned)
+    try:
+        data = json.loads(cleaned)
+    except Exception:
+        return False
+    if not isinstance(data, dict) or not (set(data.keys()) <= {"include", "program"}):
+        return False
+    prog = data.get("program", {})
+    if not isinstance(prog, dict) or not (set(prog.keys()) <= {"binary"}):
+        return False
+    inc = data.get("include", [])
+    if not isinstance(inc, list) or not all(isinstance(s, str) and s in STANDARD_UNITTEST_CML_SHARDS for s in inc):
+        return False
+    return True
 RUST_TEST_FLAGS = ("with_unit_tests", "with_host_unit_tests")
 for pkg_dir in sorted(candidate_dirs):
     bazel_abs = os.path.join(workdir, pkg_dir, "BUILD.bazel")
@@ -1261,12 +1306,12 @@ for pkg_dir in sorted(candidate_dirs):
                 ),
                 "remediation": (
                     f"Remove `{flag}` (and `test_deps`) from `{tname}` and declare an explicit "
-                    "`rustc_test` (load from //build/bazel/rules/rust:rustc_test.bzl) preceded by `# @bazel2gn:skip`, "
+                    "`rustc_test` (load from `//build/bazel/rules/rust:rustc_test.bzl`) preceded by `# @bazel2gn:skip`, "
                     "expressing host vs Fuchsia differences with `select()`. For the Fuchsia side add "
-                    "`fx_packaged_binary` (testonly) + `fx_test_component` + `fx_package(test_components = [...])` "
-                    "+ `fx_test` per docs/development/build/bazel_concepts/tests.md. Keep the GN test targets "
-                    "(rustc_test / with_unit_tests and fuchsia_unittest_package) hand-written above the "
-                    "BAZEL2GN SENTINEL in BUILD.gn so GN still builds both host and target tests."
+                    "`# @bazel2gn:skip` `fx_unittest_package` (load from `//build/bazel/rules/testing:fx_unittest_package.bzl`; "
+                    "or `fx_unittest_component` + `fx_package` + `fx_test` "
+                    "when packaging extra resources; only unroll into `fx_packaged_binary` + `fx_component_manifest` + "
+                    "`fx_test_component` when a custom `.cml` is needed), and export it in `BUILD.gn` via `bazel_test_suite`."
                 ),
             })
         if rule == "rustc_test":
@@ -1281,8 +1326,9 @@ for pkg_dir in sorted(candidate_dirs):
                     "line": node.lineno,
                     "message": f"`rustc_test(name = \"{tname}\")` in '{bazel_rel}' lacks `# @bazel2gn:skip`.",
                     "remediation": (
-                        f"Add `# @bazel2gn:skip` directly above `rustc_test(name = \"{tname}\")` and keep the "
-                        "equivalent GN test definition above the BAZEL2GN SENTINEL in BUILD.gn."
+                        f"Add `# @bazel2gn:skip` directly above `rustc_test(name = \"{tname}\")` and export the test "
+                        "through `fx_unittest_package` (device) / `wrap_host_rust_test` (host) and a `bazel_test_suite` "
+                        "in BUILD.gn."
                     ),
                 })
     device_tests = [t for t in rust_tests if not t[2]]
@@ -1296,18 +1342,20 @@ for pkg_dir in sorted(candidate_dirs):
             "line": tline,
             "message": (
                 f"`rustc_test(name = \"{tname}\")` in '{bazel_rel}' is not host-only but the package declares "
-                "no `fx_test`, so the Fuchsia (target-side) test is missing."
+                "no `fx_unittest_package` or `fx_test`, so the Fuchsia (target-side) test is missing."
             ),
             "remediation": (
-                "Add `fx_packaged_binary(testonly = True)`, `fx_component_manifest`, `fx_test_component`, "
-                "`fx_package(test_components = [...])` and `fx_test` (all `# @bazel2gn:skip`) per "
-                "docs/development/build/bazel_concepts/tests.md, or restrict the test with "
-                "`target_compatible_with = HOST_OS_CONSTRAINTS` if GN only built it for the host."
+                f"Add `fx_unittest_package(name = \"<test-pkg>\", unit_tests = [\":{tname}\"])` "
+                "(preceded by `# @bazel2gn:skip` in a dual-build package; "
+                "use `fx_unittest_component` + `fx_package` + `fx_test` if packaging extra resources, or unroll into "
+                "`fx_packaged_binary` + `fx_component_manifest` + `fx_test_component` only if a custom `.cml` is needed), "
+                "or restrict the test with `target_compatible_with = HOST_OS_CONSTRAINTS` if GN only built it for the host."
             ),
         })
 
-    # Test target hygiene: package-private plumbing, public GN-exported entry
-    # points, no "manual" tag, crate deps reused, <crate>_host_test naming.
+    # Test target hygiene: package-private plumbing, no "manual" tag, crate deps
+    # reused, <crate>_host_test naming, and no unrolled unit-test manifests when
+    # fx_unittest_package / fx_unittest_component suffices.
     calls = {}
     for node in btree.body:
         if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
@@ -1323,6 +1371,104 @@ for pkg_dir in sorted(candidate_dirs):
         if isinstance(v, ast.List):
             return [e.value for e in v.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
         return []
+
+    def str_val(v):
+        return v.value if isinstance(v, ast.Constant) and isinstance(v.value, str) else None
+
+    if HAS_FX_UNITTEST_PACKAGE:
+        for tname, (rule, kws, line) in calls.items():
+            if rule != "fx_test_component":
+                continue
+            cm_ref = (
+                str_val(kws.get("compiled_manifest") or kws.get("component_manifest") or kws.get("manifest")) or ""
+            ).lstrip(":")
+            if not cm_ref or cm_ref not in calls or calls[cm_ref][0] != "fx_component_manifest":
+                continue
+            cm_kws = calls[cm_ref][1]
+            manifest_rel = str_val(cm_kws.get("manifest"))
+            if not manifest_rel:
+                continue
+            cml_rel = os.path.normpath(os.path.join(pkg_dir, manifest_rel))
+            cml_abs = os.path.join(workdir, cml_rel)
+            if not os.path.isfile(cml_abs):
+                continue
+            # Pre-existing .cml manifests in git at change_base are intentional custom manifests.
+            if (
+                subprocess.call(
+                    ["git", "-C", workdir, "cat-file", "-e", f"{change_base}:{cml_rel}"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                == 0
+            ):
+                continue
+            if not is_standard_unittest_cml(cml_abs):
+                continue
+            comp_deps = [d.lstrip(":") for d in str_list(kws.get("deps"))]
+            pkg_bins = [d for d in comp_deps if d in calls and calls[d][0] == "fx_packaged_binary"]
+            extra_comp_deps = [d for d in comp_deps if d not in pkg_bins]
+            raw_bin = (
+                (str_val(calls[pkg_bins[0]][1].get("binary")) or f":{pkg_bins[0]}")
+                if pkg_bins
+                else ":<test_bin>"
+            )
+            enclosing_pkg = None
+            enclosing_pkg_kws = {}
+            for pname, (prule, pkws, _) in calls.items():
+                if prule == "fx_package" and (f":{tname}" in str_list(pkws.get("test_components")) or tname in str_list(pkws.get("test_components"))):
+                    enclosing_pkg = pname
+                    enclosing_pkg_kws = pkws
+                    break
+            enclosing_test = None
+            if enclosing_pkg:
+                for xname, (xrule, xkws, _) in calls.items():
+                    if xrule == "fx_test" and (str_val(xkws.get("package")) or "").lstrip(":") == enclosing_pkg:
+                        enclosing_test = xname
+                        break
+            has_extra_pkg_items = bool(
+                extra_comp_deps
+                or str_list(enclosing_pkg_kws.get("resources"))
+                or str_list(enclosing_pkg_kws.get("components"))
+                or str_list(enclosing_pkg_kws.get("subpackages"))
+                or str_list(enclosing_pkg_kws.get("tools"))
+            )
+            target_test_name = enclosing_test or enclosing_pkg or tname
+            if has_extra_pkg_items:
+                rem = (
+                    f"Delete the newly added standard unit-test manifest '{cml_rel}' (`git rm -f {cml_rel}`) and "
+                    f"replace `fx_packaged_binary`, `fx_component_manifest(\"{cm_ref}\")`, and "
+                    f"`fx_test_component(\"{tname}\")` in '{bazel_rel}' with "
+                    f"`fx_unittest_component(name = \"{tname}\", binary = \"{raw_bin}\")` "
+                    "(load from `//build/bazel/rules/testing:fx_unittest_component.bzl`, moving any `resource()` deps into "
+                    "`fx_package(resources = [...])`), or attach `resource()` targets via `data = [...]` on "
+                    f"`{raw_bin}` and replace the entire package/test chain with "
+                    f"`fx_unittest_package(name = \"{target_test_name}\", unit_tests = [\"{raw_bin}\"])`."
+                )
+            else:
+                rem = (
+                    f"Delete the newly added standard unit-test manifest '{cml_rel}' (`git rm -f {cml_rel}`) and "
+                    f"replace the unrolled `fx_packaged_binary`, `fx_component_manifest(\"{cm_ref}\")`, "
+                    f"`fx_test_component(\"{tname}\")`, `fx_package`, and `fx_test` in '{bazel_rel}' with a single "
+                    f"`fx_unittest_package(name = \"{target_test_name}\", unit_tests = [\"{raw_bin}\"])` "
+                    "(load from `//build/bazel/rules/testing:fx_unittest_package.bzl`, preceded by `# @bazel2gn:skip` in a "
+                    "dual-build package). Also revert any `exports_files` edits in `src/sys/test_runners/` or "
+                    "`sdk/lib/` that were only added for the deleted `.cml`."
+                )
+            findings.append({
+                "source": "migration_sanity",
+                "category": "unrolled_unittest_package",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": line,
+                "message": (
+                    f"`fx_test_component(name = \"{tname}\")` in '{bazel_rel}' unrolls `fx_packaged_binary` + "
+                    f"`fx_component_manifest` with a newly added manifest '{cml_rel}' that only uses standard "
+                    "unit-test runner/syslog shards and `program.binary`. Unit tests must default to "
+                    "`fx_unittest_package` (or `fx_unittest_component`) and only use the unrolled rules when a "
+                    "custom `.cml` manifest is required."
+                ),
+                "remediation": rem,
+            })
 
     def is_true(v):
         return isinstance(v, ast.Constant) and v.value is True
@@ -1362,18 +1508,12 @@ for pkg_dir in sorted(candidate_dirs):
         return str_list(kws.get("visibility")) if "visibility" in kws else None
 
     for tname, (rule, kws, line) in calls.items():
-        exported = rule in ("fx_test", "fx_unittest_package") or rule.startswith("wrap_host_")
         plumbing = (rule in ("rustc_test", "fx_test_component", "fx_unittest_component")
                     or (rule in ("fx_packaged_binary", "fx_component_manifest") and is_true(kws.get("testonly")))
                     or (rule == "fx_package" and "test_components" in kws))
-        if exported:
-            if vis_of(kws) != ["//visibility:public"]:
-                hygiene(line, f"GN-exported test entry point `{rule}(name = \"{tname}\")` lacks public visibility.",
-                        "Set `visibility = [\"//visibility:public\"]` on the fx_test, fx_unittest_package, and the wrap_host_* host "
-                        "test (the only test targets GN and fx test reference).")
-        elif plumbing and vis_of(kws) not in ([":__pkg__"], ["//visibility:private"]):
+        if plumbing and vis_of(kws) not in (None, [":__pkg__"], ["//visibility:private"]):
             hygiene(line, f"Test target `{rule}(name = \"{tname}\")` is not restricted to its package.",
-                    "Set `visibility = [\"//visibility:private\"]`: only the fx_test, fx_unittest_package, and wrap_host_* targets are public.")
+                    "Omit `visibility` (defaulting to package-private) on internal test plumbing targets.")
         if rule.startswith("wrap_host_"):
             bn = kws.get("binary_name")
             test = bn.value if isinstance(bn, ast.Constant) and isinstance(bn.value, str) else None
