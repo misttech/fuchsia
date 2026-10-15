@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::dispatcher::Dispatcher;
+use super::port_dispatcher::PortDispatcher;
 
 unsafe extern "C" {
     pub(crate) fn cpp_dispatcher_on_zero_handles(dispatcher: *const Dispatcher);
@@ -72,4 +73,10 @@ unsafe extern "C" {
         dispatcher: *const Dispatcher,
         handle: *const core::ffi::c_void,
     );
+    pub(crate) fn cpp_dispatcher_cancel_by_key(
+        dispatcher: *const Dispatcher,
+        handle: *const core::ffi::c_void,
+        port: *const PortDispatcher,
+        key: u64,
+    ) -> bool;
 }

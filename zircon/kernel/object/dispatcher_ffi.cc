@@ -115,4 +115,10 @@ FFI_ALWAYS_INLINE void cpp_dispatcher_cancel(Dispatcher* disp, const void* handl
   disp->Cancel(handle);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_dispatcher_cancel_by_key(Dispatcher* disp, const void* handle,
+                                                    const void* port, uint64_t key) {
+  return disp->CancelByKey(handle, port, key);
+}
+
 }  // extern "C"

@@ -13,6 +13,8 @@
 
 static_assert(sizeof(PortInterruptPacket) == kPortInterruptPacketSize);
 static_assert(alignof(PortInterruptPacket) == kPortInterruptPacketAlign);
+static_assert(sizeof(zx_port_packet_t) == 48);
+static_assert(alignof(zx_port_packet_t) == 8);
 
 extern "C" {
 
@@ -65,6 +67,30 @@ FFI_ALWAYS_INLINE bool cpp_port_dispatcher_queue_interrupt_packet(PortDispatcher
 FFI_ALWAYS_INLINE bool cpp_port_dispatcher_remove_interrupt_packet(PortDispatcher* port,
                                                                    PortInterruptPacket* packet) {
   return port->RemoveInterruptPacket(packet);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_port_dispatcher_queue_user(PortDispatcher* port,
+                                                             const zx_port_packet_t* packet) {
+  return port->QueueUser(*packet);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_port_dispatcher_dequeue(PortDispatcher* port,
+                                                          const Deadline* deadline,
+                                                          zx_port_packet_t* packet) {
+  return port->Dequeue(*deadline, packet);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_port_dispatcher_cancel_queued(PortDispatcher* port, const void* handle,
+                                                         uint64_t key) {
+  return port->CancelQueued(handle, key);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_port_dispatcher_cancel_key(PortDispatcher* port, uint64_t key) {
+  return port->CancelKey(key);
 }
 
 }  // extern "C"

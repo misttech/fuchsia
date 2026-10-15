@@ -6,12 +6,50 @@
 
 use super::KernelHandle;
 use super::dispatcher::impl_dispatcher_facade;
+use super::handle::HandleRef;
+use crate::kernel::deadline::Deadline;
 use core::mem::MaybeUninit;
 use object_constants_rs as object_constants;
 use pin_init::{PinInit, pin_data};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zr::OpaqueBytes;
 use zx_status::Status;
-use zx_types::{ZX_OBJ_TYPE_PORT, zx_instant_boot_t, zx_rights_t, zx_status_t};
+use zx_types::{ZX_OBJ_TYPE_PORT, zx_instant_boot_t, zx_port_packet_t, zx_rights_t, zx_status_t};
+
+/// Raw ABI-compatible representation of `zx_port_packet_t` with `packet_type` as a plain `u32` so
+/// that copying arbitrary user bytes in `zx_port_queue` cannot construct an invalid Rust enum
+/// discriminant.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+pub struct RawPortPacket {
+    pub key: u64,
+    pub packet_type: u32,
+    pub status: i32,
+    pub union: [u8; 32],
+}
+
+zr::static_assert_size_and_align!(
+    RawPortPacket,
+    core::mem::size_of::<zx_port_packet_t>(),
+    core::mem::align_of::<zx_port_packet_t>(),
+);
+const _: () = {
+    assert!(
+        core::mem::offset_of!(RawPortPacket, key) == core::mem::offset_of!(zx_port_packet_t, key)
+    );
+    assert!(
+        core::mem::offset_of!(RawPortPacket, packet_type)
+            == core::mem::offset_of!(zx_port_packet_t, packet_type)
+    );
+    assert!(
+        core::mem::offset_of!(RawPortPacket, status)
+            == core::mem::offset_of!(zx_port_packet_t, status)
+    );
+    assert!(
+        core::mem::offset_of!(RawPortPacket, union)
+            == core::mem::offset_of!(zx_port_packet_t, union)
+    );
+};
 
 unsafe extern "C" {
     fn cpp_port_dispatcher_create(
@@ -40,6 +78,21 @@ unsafe extern "C" {
         port: *mut PortDispatcher,
         packet: *mut PortInterruptPacket,
     ) -> bool;
+    fn cpp_port_dispatcher_queue_user(
+        port: *mut PortDispatcher,
+        packet: *const RawPortPacket,
+    ) -> zx_status_t;
+    fn cpp_port_dispatcher_dequeue(
+        port: *mut PortDispatcher,
+        deadline: *const Deadline,
+        packet: *mut MaybeUninit<RawPortPacket>,
+    ) -> zx_status_t;
+    fn cpp_port_dispatcher_cancel_queued(
+        port: *mut PortDispatcher,
+        handle: *const core::ffi::c_void,
+        key: u64,
+    ) -> bool;
+    fn cpp_port_dispatcher_cancel_key(port: *mut PortDispatcher, key: u64) -> zx_status_t;
 }
 
 /// Opaque wrapper for the C++ `PortInterruptPacket` intrusive node.
@@ -124,6 +177,11 @@ impl_dispatcher_facade!(
 );
 
 impl PortDispatcher {
+    #[inline]
+    fn as_ffi_mut(&self) -> *mut Self {
+        core::ptr::from_ref(self).cast_mut()
+    }
+
     /// Creates a new `PortDispatcher` with `options`.
     pub fn create(options: u32) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         // SAFETY: `cpp_port_dispatcher_create` initializes both out parameters on `ZX_OK`.
@@ -148,7 +206,7 @@ impl PortDispatcher {
         // synchronizes access to `packet` using `PortDispatcher::spinlock_`.
         unsafe {
             cpp_port_dispatcher_queue_interrupt_packet(
-                (self as *const Self).cast_mut(),
+                self.as_ffi_mut(),
                 packet.as_mut_ptr(),
                 timestamp,
             )
@@ -160,10 +218,48 @@ impl PortDispatcher {
         // SAFETY: `self` and `packet` are valid pointers; `PortDispatcher::RemoveInterruptPacket`
         // synchronizes access to `packet` using `PortDispatcher::spinlock_`.
         unsafe {
-            cpp_port_dispatcher_remove_interrupt_packet(
-                (self as *const Self).cast_mut(),
-                packet.as_mut_ptr(),
-            )
+            cpp_port_dispatcher_remove_interrupt_packet(self.as_ffi_mut(), packet.as_mut_ptr())
         }
+    }
+
+    /// Queues a user packet on this port.
+    #[inline]
+    pub fn queue_user(&self, packet: &RawPortPacket) -> Result<(), Status> {
+        // SAFETY: `self` and `packet` are valid references, and `RawPortPacket` has the exact same
+        // size and alignment as C++ `zx_port_packet_t`.
+        let status = unsafe { cpp_port_dispatcher_queue_user(self.as_ffi_mut(), packet) };
+        Status::ok(status)
+    }
+
+    /// Dequeues a packet from this port, waiting up to `deadline`.
+    #[inline]
+    pub fn dequeue<'a>(
+        &self,
+        deadline: &Deadline,
+        packet: &'a mut MaybeUninit<RawPortPacket>,
+    ) -> Result<&'a mut RawPortPacket, Status> {
+        // SAFETY: `self`, `deadline`, and `packet` are valid pointers, and `RawPortPacket` has the
+        // exact same size and alignment as C++ `zx_port_packet_t`.
+        let status = unsafe { cpp_port_dispatcher_dequeue(self.as_ffi_mut(), deadline, packet) };
+        Status::ok(status)?;
+        // SAFETY: `cpp_port_dispatcher_dequeue` fully initializes `packet` on `ZX_OK`.
+        Ok(unsafe { packet.assume_init_mut() })
+    }
+
+    /// Returns `true` if at least one packet matching `handle` and `key` was removed from the
+    /// queue.
+    #[inline]
+    pub fn cancel_queued(&self, handle: HandleRef<'_>, key: u64) -> bool {
+        // SAFETY: `self` is a valid `PortDispatcher` reference and `handle` is a valid `HandleRef`
+        // protected by the handle table lock.
+        unsafe { cpp_port_dispatcher_cancel_queued(self.as_ffi_mut(), handle.as_ptr(), key) }
+    }
+
+    /// Cancels all pending waits and packets registered with `key`.
+    #[inline]
+    pub fn cancel_key(&self, key: u64) -> Result<(), Status> {
+        // SAFETY: `self` is a valid `PortDispatcher` reference.
+        let status = unsafe { cpp_port_dispatcher_cancel_key(self.as_ffi_mut(), key) };
+        Status::ok(status)
     }
 }

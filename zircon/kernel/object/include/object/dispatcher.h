@@ -49,6 +49,8 @@ zx_status_t cpp_dispatcher_set_name(Dispatcher* disp, const char* name, size_t l
 uint32_t cpp_dispatcher_current_handle_count(const Dispatcher* disp);
 bool cpp_dispatcher_is_waitable(const Dispatcher* disp);
 void cpp_dispatcher_cancel(Dispatcher* disp, const void* handle);
+bool cpp_dispatcher_cancel_by_key(Dispatcher* disp, const void* handle, const void* port,
+                                  uint64_t key);
 }
 
 template <typename T>

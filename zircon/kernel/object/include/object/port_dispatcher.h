@@ -356,6 +356,11 @@ bool cpp_port_dispatcher_can_bind_to_interrupt(const PortDispatcher* port);
 bool cpp_port_dispatcher_queue_interrupt_packet(PortDispatcher* port, PortInterruptPacket* packet,
                                                 zx_instant_boot_t timestamp);
 bool cpp_port_dispatcher_remove_interrupt_packet(PortDispatcher* port, PortInterruptPacket* packet);
+zx_status_t cpp_port_dispatcher_queue_user(PortDispatcher* port, const zx_port_packet_t* packet);
+zx_status_t cpp_port_dispatcher_dequeue(PortDispatcher* port, const Deadline* deadline,
+                                        zx_port_packet_t* packet);
+bool cpp_port_dispatcher_cancel_queued(PortDispatcher* port, const void* handle, uint64_t key);
+zx_status_t cpp_port_dispatcher_cancel_key(PortDispatcher* port, uint64_t key);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PORT_DISPATCHER_H_
