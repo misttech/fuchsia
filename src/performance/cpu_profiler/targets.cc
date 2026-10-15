@@ -198,7 +198,8 @@ zx::result<std::vector<zx_koid_t>> profiler::GetChildrenTids(const zx::process& 
   return zx::ok(std::move(tids));
 }
 
-zx::result<profiler::ProcessTarget> profiler::MakeProcessTargetWithoutModules(zx::process process) {
+zx::result<profiler::ProcessTarget> profiler::MakeProcessTargetWithoutModules(zx::process process,
+                                                                              bool full_process) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   zx_info_handle_basic_t handle_info;
   zx_status_t res =
@@ -212,6 +213,11 @@ zx::result<profiler::ProcessTarget> profiler::MakeProcessTargetWithoutModules(zx
   if (zx_status_t status = process.get_property(ZX_PROP_NAME, name, sizeof(name));
       status != ZX_OK) {
     name[0] = '\0';
+  }
+
+  if (!full_process) {
+    return zx::ok(profiler::ProcessTarget{
+        std::move(process), handle_info.koid, std::string(name), {}, /*full_process=*/false});
   }
 
   zx::result<std::vector<zx_koid_t>> children = GetChildrenTids(process);
@@ -237,10 +243,11 @@ zx::result<profiler::ProcessTarget> profiler::MakeProcessTargetWithoutModules(zx
 }
 
 zx::result<profiler::ProcessTarget> profiler::MakeProcessTarget(zx::process process,
-                                                                elf_search::Searcher& searcher) {
+                                                                elf_search::Searcher& searcher,
+                                                                bool full_process) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   zx::result<profiler::ProcessTarget> process_target =
-      MakeProcessTargetWithoutModules(std::move(process));
+      MakeProcessTargetWithoutModules(std::move(process), full_process);
   if (process_target.is_error()) {
     return process_target.take_error();
   }

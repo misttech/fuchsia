@@ -80,6 +80,7 @@ class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
   virtual ~Sampler() = default;
 
  protected:
+  zx::result<> WatchTargets();
   zx::result<> WatchTarget(const JobTarget& target);
   virtual void AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid,
                          zx::thread t);

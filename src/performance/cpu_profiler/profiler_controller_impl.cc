@@ -90,43 +90,27 @@ zx::result<> PopulateTargets(profiler::TargetTree& tree, TaskFinder::FoundTasks&
       continue;
     }
 
-    // If we have a thread, we need to know what its parent process is
-    // and then get a handle to it. Unfortunately, the "easiest" way to
-    // do this is to walk the job tree again.
-    TaskFinder finder;
-    finder.AddProcess(handle_info.related_koid);
-    zx::result<TaskFinder::FoundTasks> found_tasks = finder.FindHandles();
-    if (found_tasks.is_error()) {
-      continue;
-    }
-    if (found_tasks->processes.size() != 1) {
-      FX_LOGS(ERROR) << "Found the wrong number of processes for thread: " << thread.get();
-      return zx::error(ZX_ERR_NOT_FOUND);
-    }
-    auto [pid, process] = std::move(found_tasks->processes[0]);
-
-    char name[ZX_MAX_NAME_LEN];
-    if (zx_status_t status = process.get_property(ZX_PROP_NAME, name, sizeof(name));
-        status != ZX_OK) {
-      name[0] = '\0';
-    }
-    profiler::ProcessTarget process_target{std::move(process), pid, std::string(name),
-                                           std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
-    FX_LOGS(DEBUG) << "Collecting process modules for process " << pid << ".";
-    zx::result<std::map<std::vector<std::byte>, profiler::Module>> modules =
-        profiler::GetProcessModules(process_target.handle, searcher);
-    if (modules.is_error()) {
-      return zx::error(modules.error_value());
-    }
-    for (const auto& [build_id, module] : *modules) {
-      process_target.unwinder_data->modules.emplace_back(module.vaddr,
-                                                         &process_target.unwinder_data->memory,
-                                                         unwinder::Module::AddressMode::kProcess);
-    }
-
-    if (zx::result<> res = tree.AddProcess(std::move(process_target)); res.is_error()) {
-      // If the process already exists, then we'll just append to the existing one below
-      if (res.status_value() != ZX_ERR_ALREADY_EXISTS) {
+    const zx_koid_t pid = handle_info.related_koid;
+    if (tree.GetProcess(std::span<const zx_koid_t>{}, pid).is_error()) {
+      // If we have a thread, we need to know what its parent process is
+      // and then get a handle to it. Unfortunately, the "easiest" way to
+      // do this is to walk the job tree again.
+      TaskFinder finder;
+      finder.AddProcess(pid);
+      zx::result<TaskFinder::FoundTasks> found_tasks = finder.FindHandles();
+      if (found_tasks.is_error()) {
+        continue;
+      }
+      if (found_tasks->processes.size() != 1) {
+        FX_LOGS(ERROR) << "Found the wrong number of processes for thread: " << thread.get();
+        return zx::error(ZX_ERR_NOT_FOUND);
+      }
+      zx::result<profiler::ProcessTarget> process_target = profiler::MakeProcessTarget(
+          std::move(found_tasks->processes[0].second), searcher, /*full_process=*/false);
+      if (process_target.is_error()) {
+        return process_target.take_error();
+      }
+      if (zx::result<> res = tree.AddProcess(std::move(*process_target)); res.is_error()) {
         FX_PLOGS(ERROR, res.status_value()) << "Failed to add process target";
         return res;
       }
@@ -137,7 +121,7 @@ zx::result<> PopulateTargets(profiler::TargetTree& tree, TaskFinder::FoundTasks&
             tree.AddThread(pid, profiler::ThreadTarget{.handle = std::move(thread),
                                                        .tid = koid,
                                                        .name = std::move(thread_name)});
-        res.is_error()) {
+        res.is_error() && res.status_value() != ZX_ERR_ALREADY_EXISTS) {
       FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread target: " << koid;
       return res;
     }

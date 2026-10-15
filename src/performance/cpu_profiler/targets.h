@@ -72,16 +72,20 @@ struct UnwinderData {
 
 struct ProcessTarget {
   ProcessTarget(zx::process process, zx_koid_t pid, std::string name,
-                std::unordered_map<zx_koid_t, ThreadTarget> threads)
+                std::unordered_map<zx_koid_t, ThreadTarget> threads, bool full_process = true)
       : handle(std::move(process)),
         pid(pid),
         name(std::move(name)),
+        full_process(full_process),
         threads(std::move(threads)),
         unwinder_data(std::make_unique<UnwinderData>(handle.borrow())) {}
 
   zx::process handle;
   zx_koid_t pid;
   std::string name;
+  // Whether the whole process is targeted (including any new threads it spawns), as opposed to
+  // only the specific threads in `threads`.
+  bool full_process = true;
   std::unordered_map<zx_koid_t, ThreadTarget> threads;
   std::unique_ptr<UnwinderData> unwinder_data;
   mutable std::vector<zx_info_maps_t> cached_mappings;
@@ -95,12 +99,15 @@ zx::result<std::map<std::vector<std::byte>, profiler::Module>> GetProcessModules
 // Return the koids of the threads currently in `process`.
 zx::result<std::vector<zx_koid_t>> GetChildrenTids(const zx::process& process);
 
-// Given a process, create a process target containing it and all its threads
+// Given a process, create a process target containing it and (when `full_process` is true) all its
+// threads.
 zx::result<profiler::ProcessTarget> MakeProcessTarget(zx::process process,
-                                                      elf_search::Searcher& searcher);
+                                                      elf_search::Searcher& searcher,
+                                                      bool full_process = true);
 
 // Like MakeProcessTarget, but without looking up the process's modules, which can be slow.
-zx::result<profiler::ProcessTarget> MakeProcessTargetWithoutModules(zx::process process);
+zx::result<profiler::ProcessTarget> MakeProcessTargetWithoutModules(zx::process process,
+                                                                    bool full_process = true);
 
 struct JobTarget {
   explicit JobTarget(zx::job job, zx_koid_t job_id, std::span<const zx_koid_t> ancestry)

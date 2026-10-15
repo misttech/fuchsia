@@ -41,6 +41,7 @@ class TestSampler : public profiler::Sampler {
   using Sampler::ScheduleCacheModules;
   profiler::TargetTree& targets() { return targets_; }
   const auto& contexts() const { return contexts_; }
+  const auto& process_watchers() const { return process_watchers_; }
 };
 
 // Jobs and processes started in a target job after the target tree was populated must be added to
@@ -273,6 +274,34 @@ TEST(SamplerTest, GetChildrenTidsOverInitialBufferSize) {
   for (zx_koid_t expected : expected_tids) {
     EXPECT_TRUE(tid_set.contains(expected));
   }
+}
+
+// When a ProcessTarget only holds explicitly targeted threads (`full_process == false`),
+// Sampler::Start must not watch the process or add its other threads.
+TEST(SamplerTest, StartDoesNotAddOtherThreadsForThreadOnlyTarget) {
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+  zx::process self;
+  ASSERT_EQ(ZX_OK, zx::process::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &self));
+  const zx_koid_t pid = GetKoid(self);
+
+  zx::result<profiler::ProcessTarget> process_target =
+      profiler::MakeProcessTargetWithoutModules(std::move(self), /*full_process=*/false);
+  ASSERT_TRUE(process_target.is_ok());
+  EXPECT_TRUE(process_target->threads.empty());
+
+  profiler::TargetTree tree;
+  ASSERT_TRUE(tree.AddProcess(std::move(*process_target)).is_ok());
+  auto sampler = fxl::MakeRefCounted<TestSampler>(
+      loop.dispatcher(), std::move(tree), std::vector<fuchsia_cpu_profiler::SamplingConfig>{});
+
+  ASSERT_TRUE(sampler->Start(0).is_ok());
+  ASSERT_TRUE(sampler->Stop().is_ok());
+
+  EXPECT_TRUE(sampler->process_watchers().empty());
+  zx::result<profiler::ProcessTarget*> target =
+      sampler->targets().GetProcess(std::span<const zx_koid_t>{}, pid);
+  ASSERT_TRUE(target.is_ok());
+  EXPECT_TRUE((*target)->threads.empty());
 }
 
 }  // namespace

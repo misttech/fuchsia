@@ -44,53 +44,13 @@ bool IsAarch32(const T& state) {
 
 zx::result<> StackSampler::Start(size_t buffer_size_mb) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
-
-  // TODO(https://fxbug.dev/468419097): Deduplicate watcher code.
-  // Watch the target jobs first, so that we're told about any process that starts from here on, and
-  // then pick up the processes that started while the session was being configured.
-  if (auto res = targets_.ForEachJob([this](const JobTarget& target) {
-        if (zx::result res = WatchTarget(target); res.is_error()) {
-          FX_PLOGS(WARNING, res.status_value())
-              << "Failed to watch job [" << target.job_id << "] and its children";
-        }
-        return zx::ok();
-      });
-      res.is_error()) {
+  if (zx::result<> res = WatchTargets(); res.is_error()) {
     return res;
   }
-  AddProcessesStartedSinceConfigure();
-
-  zx::result<> res = targets_.ForEachProcess([this](std::span<const zx_koid_t> job_path,
-                                                    const ProcessTarget& p) -> zx::result<> {
-    TRACE_DURATION("cpu_profiler", "StackSampler::Start/ForEachProcess");
-    std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
-    if (!p.modules.empty()) {
-      contexts_.try_emplace(p.pid, p.modules);
-    } else {
-      ScheduleCacheModules(saved_path, p.pid);
-    }
+  (void)targets_.ForEachProcess([](std::span<const zx_koid_t>, const ProcessTarget& p) {
     (void)RefreshMappings(p);
-
-    auto process_watcher = std::make_unique<ProcessWatcher>(
-        p.handle.borrow(),
-        [saved_path, this](zx_koid_t pid, zx_koid_t tid, zx::thread t) {
-          AddThread(saved_path, pid, tid, std::move(t));
-        },
-        [saved_path, this](zx_koid_t pid, zx_koid_t tid) { RemoveThread(saved_path, pid, tid); });
-
-    auto [it, emplaced] = process_watchers_.emplace(p.pid, std::move(process_watcher));
-    if (emplaced) {
-      if (zx::result watch_result = it->second->Watch(dispatcher_); watch_result.is_error()) {
-        FX_PLOGS(WARNING, watch_result.status_value()) << "Failed to watch process: " << p.pid;
-      }
-    }
-    AddThreadsStartedSinceConfigure(job_path, p);
     return zx::ok();
   });
-
-  if (res.is_error()) {
-    return res;
-  }
 
   return zx::make_result(sample_task_.Post(dispatcher_));
 }

@@ -136,59 +136,9 @@ zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
   sample_buffer_.resize((max_size + sizeof(uint64_t) - 1) / sizeof(uint64_t));
 
   FX_LOGS(DEBUG) << "Attaching to known tasks and watching for new ones.";
-  // Watch the target jobs first, so that we're told about any process that starts from here on, and
-  // then pick up the processes that started while the session was being configured.
-  zx::result watch_result =
-      targets_.ForEachJob([this](const JobTarget& target) { return WatchTarget(target); });
-  if (watch_result.is_error()) {
-    return watch_result;
-  }
-  AddProcessesStartedSinceConfigure();
-
-  zx::result known_threads_res = targets_.ForEachProcess(
-      [this](std::span<const zx_koid_t> job_path, const ProcessTarget& p) -> zx::result<> {
-        TRACE_DURATION("cpu_profiler", "KernelSampler::Start/ForEachProcess");
-
-        std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
-
-        // Before we start sampling the thread, make sure we've recorded information about its
-        // process. Reuse the modules found while configuring the session if we have them: looking
-        // them up again for every process can take many seconds for large targets.
-        if (!p.modules.empty()) {
-          contexts_.try_emplace(p.pid, p.modules);
-        } else {
-          ScheduleCacheModules(saved_path, p.pid);
-        }
-
-        auto process_watcher = std::make_unique<ProcessWatcher>(
-            p.handle.borrow(),
-            [saved_path, this](zx_koid_t pid, zx_koid_t tid, zx::thread t) {
-              AddThread(saved_path, pid, tid, std::move(t));
-            },
-            [saved_path, this](zx_koid_t pid, zx_koid_t tid) {
-              RemoveThread(saved_path, pid, tid);
-            });
-
-        auto [it, emplaced] = process_watchers_.emplace(p.pid, std::move(process_watcher));
-        if (emplaced) {
-          zx::result watch_result = it->second->Watch(dispatcher_);
-          if (watch_result.is_error()) {
-            if (watch_result.error_value() == ZX_ERR_BAD_STATE) {
-              FX_LOGS(DEBUG) << "Process terminated before being watched.";
-            } else {
-              FX_PLOGS(ERROR, watch_result.status_value()) << "Failed to watch process: " << p.pid;
-              job_watchers_.clear();
-              process_watchers_.clear();
-              return watch_result.take_error();
-            }
-          }
-        }
-        AddThreadsStartedSinceConfigure(job_path, p);
-        return zx::ok();
-      });
-  if (known_threads_res.is_error()) {
-    FX_PLOGS(ERROR, known_threads_res.error_value()) << "Failed to set up all known processes.";
-    return known_threads_res;
+  if (zx::result<> res = WatchTargets(); res.is_error()) {
+    FX_PLOGS(ERROR, res.error_value()) << "Failed to set up all known processes.";
+    return res;
   }
 
   zx::result<> res = session_->Start();

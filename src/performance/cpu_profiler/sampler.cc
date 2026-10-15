@@ -177,7 +177,7 @@ zx::result<> profiler::Sampler::WatchTarget(const JobTarget& target) {
   return zx::ok();
 }
 
-zx::result<> profiler::Sampler::Start(size_t buffer_size_mb /* unused, we buffer in memory */) {
+zx::result<> profiler::Sampler::WatchTargets() {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   // When we start, we want to recursively attach to each process and job we've found. In addition,
   // we want to set up a notification for new jobs and processes so that if any watched task creates
@@ -198,15 +198,19 @@ zx::result<> profiler::Sampler::Start(size_t buffer_size_mb /* unused, we buffer
   }
   AddProcessesStartedSinceConfigure();
 
-  zx::result<> res = targets_.ForEachProcess([this](std::span<const zx_koid_t> job_path,
-                                                    const ProcessTarget& p) -> zx::result<> {
-    TRACE_DURATION("cpu_profiler", "Sampler::Start/ForEachProcess");
+  return targets_.ForEachProcess([this](std::span<const zx_koid_t> job_path,
+                                        const ProcessTarget& p) -> zx::result<> {
+    TRACE_DURATION("cpu_profiler", "Sampler::WatchTargets/ForEachProcess");
     std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
 
     if (!p.modules.empty()) {
       contexts_.try_emplace(p.pid, p.modules);
     } else {
       ScheduleCacheModules(saved_path, p.pid);
+    }
+
+    if (!p.full_process) {
+      return zx::ok();
     }
 
     auto process_watcher = std::make_unique<ProcessWatcher>(
@@ -227,8 +231,11 @@ zx::result<> profiler::Sampler::Start(size_t buffer_size_mb /* unused, we buffer
     AddThreadsStartedSinceConfigure(job_path, p);
     return zx::ok();
   });
+}
 
-  if (res.is_error()) {
+zx::result<> profiler::Sampler::Start(size_t buffer_size_mb /* unused, we buffer in memory */) {
+  TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
+  if (zx::result<> res = WatchTargets(); res.is_error()) {
     return res;
   }
 
@@ -475,6 +482,9 @@ void profiler::Sampler::AddProcessesStartedSinceConfigure() {
 void profiler::Sampler::AddThreadsStartedSinceConfigure(std::span<const zx_koid_t> job_path,
                                                         const ProcessTarget& process) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
+  if (!process.full_process) {
+    return;
+  }
   zx::result<std::vector<zx_koid_t>> tids = GetChildrenTids(process.handle);
   if (tids.is_error()) {
     return;
