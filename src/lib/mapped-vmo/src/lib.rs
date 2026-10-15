@@ -25,6 +25,7 @@ pub use truncated_immutable::{Error as TruncatedImmutableMappingError, Truncated
 #[derive(Debug)]
 pub struct Mapping {
     buffer: SharedBuffer,
+    vmar: zx::Vmar,
 }
 
 impl Deref for Mapping {
@@ -80,8 +81,22 @@ impl Mapping {
         size: usize,
         flags: zx::VmarFlags,
     ) -> Result<Self, zx::Status> {
+        Self::create_from_vmo_with_vmar(vmo, &vmar_root_self(), size, flags)
+    }
+
+    /// Create a `Mapping` from an existing VMO in the specified `vmar`.
+    ///
+    /// Requires that the VMO was not created with the `RESIZABLE`
+    /// option, and returns `ZX_ERR_NOT_SUPPORTED` otherwise.
+    pub fn create_from_vmo_with_vmar(
+        vmo: &zx::Vmo,
+        vmar: &zx::Vmar,
+        size: usize,
+        flags: zx::VmarFlags,
+    ) -> Result<Self, zx::Status> {
+        let vmar = vmar.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let flags = flags | zx::VmarFlags::REQUIRE_NON_RESIZABLE;
-        let addr = vmar_root_self().map(0, &vmo, 0, size, flags)?;
+        let addr = vmar.map(0, vmo, 0, size, flags)?;
 
         // Safety:
         //
@@ -94,7 +109,7 @@ impl Mapping {
         //   the `Mapping` itself
         // - The underlying VMO is non-resizeable.
         let buffer = unsafe { SharedBuffer::new(addr as *mut u8, size) };
-        Ok(Mapping { buffer })
+        Ok(Mapping { buffer, vmar })
     }
 
     /// Return the size of the mapping.
@@ -115,7 +130,7 @@ impl Drop for Mapping {
         // have all been invalidated at this point. The memory is
         // therefore safe to unmap.
         unsafe {
-            let _ = vmar_root_self().unmap(addr, size);
+            let _ = self.vmar.unmap(addr, size);
         }
     }
 }
@@ -148,6 +163,30 @@ mod tests {
             let mapping = Mapping::create_from_vmo(&vmo, size, flags).unwrap();
             assert_eq!(size, mapping.len());
         }
+    }
+
+    #[test]
+    fn test_create_from_vmo_with_vmar() {
+        let size = PAGE_SIZE;
+        let flags = zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE;
+        let (child_vmar, _base) = vmar_root_self()
+            .allocate(
+                0,
+                size,
+                zx::VmarFlags::CAN_MAP_READ
+                    | zx::VmarFlags::CAN_MAP_WRITE
+                    | zx::VmarFlags::CAN_MAP_SPECIFIC,
+            )
+            .unwrap();
+        let vmo = zx::Vmo::create(size as u64).unwrap();
+        let mapping = Mapping::create_from_vmo_with_vmar(&vmo, &child_vmar, size, flags).unwrap();
+        assert_eq!(size, mapping.len());
+
+        let s = b"Hello custom VMAR";
+        mapping.write(s);
+        let mut buf = [0u8; 17];
+        vmo.read(&mut buf, 0).unwrap();
+        assert_eq!(s, &buf);
     }
 
     #[test]
