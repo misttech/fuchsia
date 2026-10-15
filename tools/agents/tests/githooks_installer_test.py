@@ -42,28 +42,6 @@ class GitHooksInstallerTest(GitWorkspaceTestCase):
         self.assertIn("exec", content)
         self.assertIn(script_path, content)
         self.assertIn("pre-commit", content)
-        self.assertIn('if [ "pre-commit" = "pre-commit" ]; then', content)
-        self.assertIn("FUCHSIA_FORCE_HOOKS", content)
-        self.assertIn("ANTIGRAVITY_AGENT", content)
-
-    def test_install_git_hook_commit_msg(self) -> None:
-        script_path = "/path/to/script.py"
-        args = ["commit-msg"]
-        installed = installer.install_git_hook(
-            self.test_dir,
-            hook_name="commit-msg",
-            script_path=script_path,
-            script_args=args,
-            dry_run=False,
-        )
-        hook_path = self.hook_fragment_path("commit-msg")
-        self.assertEqual(installed, hook_path)
-        self.assertTrue(hook_path.is_file())
-
-        content = hook_path.read_text(encoding="utf-8")
-        self.assertIn("exec", content)
-        self.assertIn(script_path, content)
-        self.assertIn('if [ "commit-msg" = "pre-commit" ]; then', content)
 
     def test_install_git_hook_dry_run(self) -> None:
         script_path = "/path/to/script.py"

@@ -47,23 +47,9 @@ class AgentDetectionTest(unittest.TestCase):
                 runner.is_invoked_by_agent(env={"ANTIGRAVITY_AGENT": val})
             )
 
-    def test_is_invoked_by_agent_force_hooks(self) -> None:
-        for val in ("1", "true", "yes", "y", "on"):
-            self.assertTrue(
-                runner.is_invoked_by_agent(env={"FUCHSIA_FORCE_HOOKS": val})
-            )
-        for val in ("0", "false", "no", "n", "off", ""):
-            self.assertFalse(
-                runner.is_invoked_by_agent(env={"FUCHSIA_FORCE_HOOKS": val})
-            )
-
 
 class RunnerTest(GitWorkspaceTestCase):
     """Unit tests for githooks runner."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        self.patch_environ(FUCHSIA_FORCE_HOOKS="1")
 
     def make_mock_reporter(
         self,
@@ -362,44 +348,10 @@ class RunnerTest(GitWorkspaceTestCase):
                 "agents.lib.git_staging.run_staged_pipeline",
                 return_value=git_staging.PipelineResult(success=True),
             ):
-                with mock.patch.dict(
-                    os.environ, {"FUCHSIA_FORCE_HOOKS": "1"}, clear=True
-                ):
+                with mock.patch.dict(os.environ, {}, clear=True):
                     ret = githooks.run_pre_commit_hook(repo_dir=self.test_dir)
                     self.assertEqual(ret, 0)
                     mock_create.assert_called_once_with()
-
-    def test_run_pre_commit_hook_skips_for_human(self) -> None:
-        mock_fmt = mock.MagicMock()
-        action = adapters.HookAction(
-            name="mock_fmt", action_fn=mock_fmt, is_mutating=True
-        )
-        reporter = mock.MagicMock(spec=ConsoleReporter)
-        ret = githooks.run_pre_commit_hook(
-            repo_dir=self.test_dir,
-            actions=[action],
-            reporter=reporter,
-            is_agent=False,
-        )
-        self.assertEqual(ret, 0)
-        mock_fmt.assert_not_called()
-        reporter.on_error.assert_not_called()
-
-    def test_run_pre_commit_hook_skips_when_not_invoked_by_agent(self) -> None:
-        self.patch_environ(clear=True)
-        mock_fmt = mock.MagicMock()
-        action = adapters.HookAction(
-            name="mock_fmt", action_fn=mock_fmt, is_mutating=True
-        )
-        reporter = mock.MagicMock(spec=ConsoleReporter)
-        ret = githooks.run_pre_commit_hook(
-            repo_dir=self.test_dir,
-            actions=[action],
-            reporter=reporter,
-        )
-        self.assertEqual(ret, 0)
-        mock_fmt.assert_not_called()
-        reporter.on_error.assert_not_called()
 
     def test_run_pre_commit_hook_forwards_reporter_to_format_code_action(
         self,

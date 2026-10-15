@@ -62,8 +62,6 @@ def is_invoked_by_agent(
 ) -> bool:
     """Detects whether the process was invoked by an automated AI agent."""
     target_env = env if env is not None else os.environ
-    if _is_env_truthy("FUCHSIA_FORCE_HOOKS", env=target_env):
-        return True
     return any(_is_env_truthy(var, env=target_env) for var in AGENT_ENV_VARS)
 
 
@@ -79,9 +77,6 @@ def run_pre_commit_hook(
         return 0
 
     is_agent = is_invoked_by_agent() if is_agent is None else is_agent
-    if not is_agent:
-        return 0
-
     active_reporter = reporter or ConsoleReporter()
 
     target_dir = repo_dir if repo_dir is not None else Path.cwd()

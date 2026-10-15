@@ -57,20 +57,7 @@ AGENT_FRAGMENT_TEMPLATE = """#!/bin/sh
 # @managed-by: fx agents
 # ==============================================================================
 
-case "$FUCHSIA_SKIP_HOOKS" in
-  1|true|yes|on) exit 0 ;;
-esac
-
-if [ "{hook_name}" = "pre-commit" ]; then
-  case "$FUCHSIA_FORCE_HOOKS" in
-    1|true|yes|on) ;;
-    *)
-      if [ -z "$ANTIGRAVITY_AGENT" ] && [ -z "$GEMINI_CLI" ] && [ -z "$ANTIGRAVITY_EDITOR_APP_ROOT" ]; then
-        exit 0
-      fi
-      ;;
-  esac
-fi
+[ "$FUCHSIA_SKIP_HOOKS" = "1" ] && exit 0
 
 find_fuchsia_root() {{
   DIR="$1"
@@ -141,7 +128,7 @@ def install_git_hook(
         else ""
     )
     final_fragment_content = AGENT_FRAGMENT_TEMPLATE.format(
-        script_path=script_path, args_str=args_str, hook_name=hook_name
+        script_path=script_path, args_str=args_str
     )
 
     agent_fragment.write_text(final_fragment_content, encoding="utf-8")

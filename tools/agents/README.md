@@ -125,23 +125,18 @@ the Jiri universal hook dispatcher without overwriting custom developer or team 
 
 ### Human vs. AI Agent Commit Behavior
 
-The hooks check whether a commit is invoked by an AI coding agent (via environment variables
-`ANTIGRAVITY_AGENT`, `GEMINI_CLI`, or `ANTIGRAVITY_EDITOR_APP_ROOT`) to avoid adding latency to
-interactive human workflows:
+Formatting and linting run for everyone. The hooks check whether a commit is run by a human or an
+AI agent (via environment variables) to decide how strict commit message validation is and which
+linters to run:
 
-| Commit Invocation                        | Pre-Commit Hook (Formatting & Linting)                                                   | Commit-Msg Hook (Subject & Footer Format)                                         |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| **Human Developer** (Interactive)        | **Skipped** (0s overhead). Can be forced via `FUCHSIA_FORCE_HOOKS=1`.                    | **Advisory Warnings**: Non-blocking warnings for style/length; commits succeed.    |
-| **AI Coding Agent** (`GEMINI_CLI`, etc.) | **Enforced**: Staged files auto-formatted (`fx format-code`) and lint-checked (`fx lint`). | **Strict Rejection**: Non-compliant commit messages fail (`--strict`).             |
+| Commit Invocation                        | Commit Message Style                                                            | Formatting & Linting Behavior                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Human Developer** (Interactive)        | **Advisory Warnings**: Non-blocking warnings for style/length; commits succeed. | Fully staged files auto-formatted, auto-fixed by `fx lint`, and re-staged. Slow linters (`check_licenses`) are skipped. |
+| **AI Coding Agent** (`GEMINI_CLI`, etc.) | **Strict Rejection**: Non-compliant commit messages fail (`--strict`).          | Same, but the full linter set runs so automated changes are CQ-clean before upload.                      |
 
 ### Opt-Outs & Bypasses
 
-1. **Forcing Hooks for Humans**:
-   ```bash
-   # Run pre-commit formatting and linting on human commits:
-   FUCHSIA_FORCE_HOOKS=1 git commit ...
-   ```
-2. **Skip Hooks During Setup**:
+1. **Skip Hooks During Setup**:
    ```bash
    # Configure permissions without installing Git hooks:
    fx agents setup --no-git-hooks
@@ -149,14 +144,14 @@ interactive human workflows:
    # Reset permissions while leaving Git hooks installed:
    fx agents setup --reset --no-git-hooks
    ```
-3. **Per-Commit Bypass**:
+2. **Per-Commit Bypass**:
    ```bash
    # Standard Git flag (skips pre-commit and commit-msg natively):
    git commit -n
    # or
    git commit --no-verify
    ```
-4. **Environment Variable Bypass (Scripts / CI)**:
+3. **Environment Variable Bypass (Scripts / CI)**:
    ```bash
    FUCHSIA_SKIP_HOOKS=1 git commit ...
    ```

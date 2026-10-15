@@ -39,14 +39,6 @@ def find_fuchsia_dir(start_dir: pathlib.Path | None = None) -> pathlib.Path:
         root = _search_upwards_for_root(start_dir)
         if root is not None:
             return root
-        try:
-            common_dir = _git_rev_parse(start_dir, "--git-common-dir")
-            common_path = (start_dir / common_dir).resolve()
-            root = _search_upwards_for_root(common_path.parent)
-            if root is not None:
-                return root
-        except Exception:
-            pass
         raise RuntimeError(
             f"Could not locate Fuchsia root directory from start directory: {start_dir}"
         )

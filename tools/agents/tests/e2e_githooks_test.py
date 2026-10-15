@@ -28,7 +28,9 @@ def _find_bundled_tool(relative_path: str) -> pathlib.Path | None:
         root cannot be located or the tool file does not exist.
     """
     try:
-        fuchsia_dir = paths.find_fuchsia_dir()
+        fuchsia_dir = paths.find_fuchsia_dir(
+            pathlib.Path(__file__).resolve().parent
+        )
     except RuntimeError:
         return None
     candidate = fuchsia_dir / relative_path
@@ -269,7 +271,9 @@ class RealHooksWorkspaceFixture:
 
         tools_dir = root / "tools"
         tools_dir.mkdir(parents=True, exist_ok=True)
-        fuchsia_root = paths.find_fuchsia_dir()
+        fuchsia_root = paths.find_fuchsia_dir(
+            pathlib.Path(__file__).resolve().parent
+        )
         shutil.copytree(
             fuchsia_root / "tools" / "agents",
             tools_dir / "agents",
@@ -421,7 +425,7 @@ class E2EGitHooksTest(unittest.TestCase):
         )
 
     def test_e2e_pre_commit_formats_and_restages(self) -> None:
-        """Verifies that pre-commit skips for human and auto-formats for agent."""
+        """Verifies that pre-commit auto-formats and re-stages for both human and agent commits."""
         workspace = self.fixture.create_isolated_workspace()
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
 
@@ -436,19 +440,26 @@ class E2EGitHooksTest(unittest.TestCase):
             "Test: none\n"
             "Change-Id: I0000000000000000000000000000000000000020\n"
         )
-        # 1. Human developer commit: pre-commit hook is skipped; file is committed unformatted
+        expected_formatted = (
+            '{\n    "unformatted": true,\n    "key": "value"\n}\n'
+        )
+
+        # 1. Human developer commit: pre-commit hook runs, auto-formats and re-stages
         human_result = self._run_git(
             "commit", "-m", commit_message, cwd=workspace
         )
         self.assertEqual(
             human_result.returncode,
             0,
-            f"Human commit should succeed: {human_result.stderr}\n{human_result.stdout}",
+            f"Human commit should succeed with auto-formatting: {human_result.stderr}\n{human_result.stdout}",
         )
         show_json_human = self._run_git(
             "show", "HEAD:src/foo.json", cwd=workspace, check=True
         )
-        self.assertEqual(show_json_human.stdout, unformatted_content)
+        self.assertEqual(show_json_human.stdout, expected_formatted)
+        self.assertEqual(
+            foo_json.read_text(encoding="utf-8"), expected_formatted
+        )
 
         # 2. Stage another unformatted file for agent commit
         bar_json = workspace / "src" / "bar.json"
@@ -469,9 +480,6 @@ class E2EGitHooksTest(unittest.TestCase):
             f"Agent commit should succeed with auto-formatting: {agent_result.stderr}\n{agent_result.stdout}",
         )
 
-        expected_formatted = (
-            '{\n    "unformatted": true,\n    "key": "value"\n}\n'
-        )
         show_json = self._run_git(
             "show", "HEAD:src/bar.json", cwd=workspace, check=True
         )
@@ -486,7 +494,7 @@ class E2EGitHooksTest(unittest.TestCase):
         self.assertEqual(status_result.stdout.strip(), "")
 
     def test_e2e_pre_commit_blocks_partial_staging_conflict(self) -> None:
-        """Verifies that a partially staged file with formatting violations blocks agent commit."""
+        """Verifies that a partially staged file with formatting violations blocks commits."""
         workspace = self.fixture.create_isolated_workspace()
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
 
@@ -506,28 +514,34 @@ class E2EGitHooksTest(unittest.TestCase):
             "Test: none\n"
             "Change-Id: I0000000000000000000000000000000000000031\n"
         )
-        result = self._run_git(
-            "commit",
-            "-m",
-            commit_message,
-            cwd=workspace,
-            extra_env={"ANTIGRAVITY_AGENT": "1"},
-        )
-        self.assertEqual(
-            result.returncode,
-            1,
-            "Commit must fail when partially staged file has formatting violations",
-        )
-
-        self.assertEqual(foo_json.read_text(encoding="utf-8"), unstaged_content)
-        show_index = self._run_git(
-            "show", ":src/foo.json", cwd=workspace, check=True
-        )
-        self.assertEqual(show_index.stdout, staged_content)
-        self.assertIn(
-            "Formatting or check failure on partially staged files",
-            result.stderr + result.stdout,
-        )
+        for actor, extra_env in (
+            ("human", None),
+            ("agent", {"ANTIGRAVITY_AGENT": "1"}),
+        ):
+            with self.subTest(actor=actor):
+                result = self._run_git(
+                    "commit",
+                    "-m",
+                    commit_message,
+                    cwd=workspace,
+                    extra_env=extra_env,
+                )
+                self.assertEqual(
+                    result.returncode,
+                    1,
+                    "Commit must fail when partially staged file has formatting violations",
+                )
+                self.assertEqual(
+                    foo_json.read_text(encoding="utf-8"), unstaged_content
+                )
+                show_index = self._run_git(
+                    "show", ":src/foo.json", cwd=workspace, check=True
+                )
+                self.assertEqual(show_index.stdout, staged_content)
+                self.assertIn(
+                    "Formatting or check failure on partially staged files",
+                    result.stderr + result.stdout,
+                )
 
     def test_e2e_commit_msg_enforcement(self) -> None:
         """Verifies commit_msg_checker runs: warnings pass for humans, fail closed for agents."""
@@ -609,7 +623,6 @@ class E2EGitHooksTest(unittest.TestCase):
             "-m",
             commit_message,
             cwd=worktree_dir,
-            extra_env={"ANTIGRAVITY_AGENT": "1"},
             remove_env=("FUCHSIA_DIR",),
         )
         self.assertEqual(
@@ -634,7 +647,7 @@ class E2EGitHooksTest(unittest.TestCase):
         self.assertEqual(status_result.stdout.strip(), "")
 
     def test_e2e_commit_blocks_on_lint_failure(self) -> None:
-        """Verifies that lint failures block agent and forced commits, but skip human commits."""
+        """Verifies that lint failures block both human and agent commits."""
         workspace = self.fixture.create_isolated_workspace(with_hooks=True)
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
 
@@ -649,8 +662,8 @@ class E2EGitHooksTest(unittest.TestCase):
             "Change-Id: I0000000000000000000000000000000000000077\n"
         )
 
-        with self.subTest(actor="human_skips_lint"):
-            # Human developer commit skips pre-commit linting (succeeds).
+        with self.subTest(actor="human_failing_lint"):
+            # Human developer commit with a failing linter is blocked.
             human_result = self._run_git(
                 "commit",
                 "-m",
@@ -658,15 +671,11 @@ class E2EGitHooksTest(unittest.TestCase):
                 cwd=workspace,
                 extra_env={"FAIL_MOCK_LINT": "1"},
             )
-            self.assertEqual(
-                human_result.returncode,
-                0,
-                f"Human commit should skip pre-commit linting: {human_result.stderr}",
+            self.assertNotEqual(human_result.returncode, 0)
+            self.assertIn(
+                "Mock lint failure on modified files",
+                human_result.stderr + human_result.stdout,
             )
-
-        # Stage a modification so the staging pipeline has files to evaluate.
-        target_file.write_text('{\n    "valid": false\n}\n', encoding="utf-8")
-        self._run_git("add", "src/foo.json", cwd=workspace, check=True)
 
         with self.subTest(actor="agent_failing_lint"):
             # AI coding agent commit with a failing linter is blocked.
@@ -683,21 +692,6 @@ class E2EGitHooksTest(unittest.TestCase):
                 agent_result.stderr + agent_result.stdout,
             )
 
-        with self.subTest(actor="forced_failing_lint"):
-            # Forced hook commit (FUCHSIA_FORCE_HOOKS=1) with a failing linter is blocked.
-            forced_result = self._run_git(
-                "commit",
-                "-m",
-                commit_message,
-                cwd=workspace,
-                extra_env={"FUCHSIA_FORCE_HOOKS": "1", "FAIL_MOCK_LINT": "1"},
-            )
-            self.assertNotEqual(forced_result.returncode, 0)
-            self.assertIn(
-                "Mock lint failure on modified files",
-                forced_result.stderr + forced_result.stdout,
-            )
-
         with self.subTest(actor="passing_lint"):
             # Commit succeeds once the linters pass.
             ok_result = self._run_git(
@@ -705,7 +699,6 @@ class E2EGitHooksTest(unittest.TestCase):
                 "-m",
                 commit_message,
                 cwd=workspace,
-                extra_env={"GEMINI_CLI": "1"},
             )
             self.assertEqual(ok_result.returncode, 0)
 
