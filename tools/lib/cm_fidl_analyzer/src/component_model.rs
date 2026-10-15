@@ -906,7 +906,7 @@ impl ComponentModelForAnalyzer {
                     .now_or_never()
                     .expect("future was not ready immediately")
                 {
-                    Ok(source) => source_to_value(&config.default, source)?,
+                    Ok(source) => self.source_to_value(&config.default, source)?,
                     Err(e)
                         if config.availability == Availability::Transitional
                             && e.as_zx_status() == zx_status::Status::NOT_FOUND =>
@@ -942,35 +942,50 @@ impl ComponentModelForAnalyzer {
         }
         Ok(configs)
     }
-}
 
-fn source_to_value(
-    default: &Option<cm_rust::ConfigValue>,
-    source: CapabilitySource,
-) -> Result<Option<cm_rust::ConfigValue>, RoutingError> {
-    let moniker = source.source_moniker();
-    let cap = match source {
-        CapabilitySource::Void(_) => {
-            return Ok(default.clone());
-        }
-        CapabilitySource::Capability(CapabilityToCapabilitySource {
-            source_capability, ..
-        }) => source_capability,
-        CapabilitySource::Component(ComponentSource { capability, .. }) => capability,
-        o => {
-            let type_name =
-                o.type_name().map(|t| t.to_string()).unwrap_or_else(|| "<unknown>".to_string());
-            return Err(RoutingError::unsupported_route_source(moniker, type_name));
-        }
-    };
+    fn source_to_value(
+        &self,
+        default: &Option<cm_rust::ConfigValue>,
+        source: CapabilitySource,
+    ) -> Result<Option<cm_rust::ConfigValue>, RoutingError> {
+        let moniker = source.source_moniker();
+        let cap = match source {
+            CapabilitySource::Void(_) => {
+                return Ok(default.clone());
+            }
+            CapabilitySource::Capability(CapabilityToCapabilitySource {
+                source_capability,
+                ..
+            }) => source_capability,
+            CapabilitySource::Component(ComponentSource { capability, .. }) => capability,
+            o => {
+                let type_name =
+                    o.type_name().map(|t| t.to_string()).unwrap_or_else(|| "<unknown>".to_string());
+                return Err(RoutingError::unsupported_route_source(moniker, type_name));
+            }
+        };
 
-    let cap = match cap {
-        ComponentCapability::Config(c) => c,
-        c => {
-            return Err(RoutingError::unsupported_capability_type(moniker, c.type_name()));
+        let name = match cap {
+            ComponentCapability::Config(name) => name,
+            c => {
+                return Err(RoutingError::unsupported_capability_type(moniker, c.type_name()));
+            }
+        };
+        let ExtendedMoniker::ComponentInstance(ref source_moniker) = moniker else {
+            return Err(RoutingError::unsupported_route_source(moniker, "component manager"));
+        };
+        let instance = self.instances.get(source_moniker).ok_or_else(|| {
+            RoutingError::from(ComponentInstanceError::instance_not_found(source_moniker.clone()))
+        })?;
+        for capability in instance.decl.capabilities.iter() {
+            if let cm_rust::CapabilityDecl::Config(c) = capability {
+                if c.name == name {
+                    return Ok(Some(c.value.clone()));
+                }
+            }
         }
-    };
-    Ok(Some(cap.value))
+        Ok(Some(cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(true))))
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -23,7 +23,7 @@ use futures::future::BoxFuture;
 use log::warn;
 use moniker::Moniker;
 use router_error::RouterError;
-use routing::resolving::{ComponentAddress, ResolverError};
+use routing::resolving::{ComponentAddress, ResolvedComponent, ResolverError};
 use runtime_capabilities::{Dictionary, Routable, Router, WeakInstanceToken};
 use std::sync::Arc;
 
@@ -236,12 +236,12 @@ fn add_pkg_dir(component: &Arc<ComponentInstance>, dict: &Dictionary) {
     assert!(prev.is_none(), "conflict with pkg directory in framework dictionary");
 }
 
-/// Re-resolve an already resolved component to retrieve its component
-/// declaration. This allows us to save memory by dropping the component decl
-/// from the ResolvedInstanceState of a component.
-pub(crate) async fn resolve_with_pinned_url(
+/// Re-resolve an already resolved component to retrieve its `ResolvedComponent`.
+/// This allows us to save memory by dropping the component decl and structured
+/// configuration from the `ResolvedInstanceState` of a component.
+pub(crate) async fn resolve_component_with_pinned_url(
     component: &Arc<ComponentInstance>,
-) -> Result<cm_rust::ComponentDecl, ResolveError> {
+) -> Result<ResolvedComponent, ResolveError> {
     let mut address;
     let mut package;
     {
@@ -339,7 +339,16 @@ pub(crate) async fn resolve_with_pinned_url(
             return Err(ResolveError::ReresolveFailed { url: component.url().clone(), err });
         }
     };
-    Ok(component_info.decl)
+    Ok(component_info)
+}
+
+/// Re-resolve an already resolved component to retrieve its component
+/// declaration. This allows us to save memory by dropping the component decl
+/// from the ResolvedInstanceState of a component.
+pub(crate) async fn resolve_with_pinned_url(
+    component: &Arc<ComponentInstance>,
+) -> Result<cm_rust::ComponentDecl, ResolveError> {
+    Ok(resolve_component_with_pinned_url(component).await?.decl)
 }
 
 #[derive(Debug)]

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::framework::{controller, resolve_with_pinned_url};
+use crate::framework::{controller, resolve_component_with_pinned_url};
 use crate::model::actions::{Action, ActionKey};
 use crate::model::component::instance::{
     InstanceState, ResolvedInstanceState, StartedInstanceState,
@@ -192,6 +192,7 @@ async fn do_start(
         mut program_input_dict,
         storage_service_use_decls,
         decl,
+        reresolved_config_values,
     ) = {
         trace::duration!("component_manager", "Actions::Start::resolve_runner", "moniker" => component.moniker.as_str());
 
@@ -214,17 +215,19 @@ async fn do_start(
             let needs_reresolve = maybe_decl.is_none() && !resolved_state.elided_decl;
             (maybe_decl, needs_reresolve)
         };
-        let decl = match maybe_decl {
-            Some(decl) => Some(decl),
+        let (decl, reresolved_config_values) = match maybe_decl {
+            Some(decl) => (Some(decl), None),
             None if needs_reresolve => {
-                Some(resolve_with_pinned_url(component).await.map_err(|err| {
-                    StartActionError::ResolveActionError {
-                        moniker: component.moniker.clone(),
-                        err: Box::new(ActionError::from(ResolveActionError::from(err))),
-                    }
-                })?)
+                let resolved =
+                    resolve_component_with_pinned_url(component).await.map_err(|err| {
+                        StartActionError::ResolveActionError {
+                            moniker: component.moniker.clone(),
+                            err: Box::new(ActionError::from(ResolveActionError::from(err))),
+                        }
+                    })?;
+                (Some(resolved.decl), resolved.config_values)
             }
-            None => None,
+            None => (None, None),
         };
         let resolved_state = component
             .lock_resolved_state()
@@ -257,6 +260,7 @@ async fn do_start(
             resolved_state.sandbox.program_input.namespace(),
             storage_service_use_decls,
             decl,
+            reresolved_config_values,
         )
     };
     let runner = match runner_router {
@@ -328,38 +332,27 @@ async fn do_start(
         fdecl::OnTerminate::None => {}
     }
 
-    let encoded_config = match decl.as_ref().and_then(|d| d.config.as_ref().map(|c| (d, c))) {
+    let encoded_config = match decl.as_ref() {
         None => None,
-        Some((decl, config_decl)) => match config_decl.value_source {
-            cm_rust::ConfigValueSource::PackagePath(_) => {
-                let Some(mut config) = resolved_component.config.clone() else {
-                    return Err(StartActionError::StructuredConfigError {
-                        moniker: component.moniker.clone(),
-                        err: StructuredConfigError::ConfigValuesMissing,
-                    });
-                };
-                update_config_fields(Arc::make_mut(&mut config), decl, &component)
-                    .with(&abortable_scope)
-                    .await
-                    .map_err(abort_error)??;
-                update_component_config(&component, config.clone()).await?;
-                Some(encode_config(config, &component.moniker).await?)
-            }
-            cm_rust::ConfigValueSource::Capabilities(_) => {
-                let config = create_config_with_capabilities(decl, &component)
-                    .with(&abortable_scope)
-                    .await
-                    .map_err(abort_error)??;
-                match config {
-                    Some(c) => {
-                        let arc_config = Arc::new(c);
-                        update_component_config(&component, Arc::clone(&arc_config)).await?;
-                        Some(encode_config(arc_config, &component.moniker).await?)
-                    }
-                    None => None,
+        Some(decl) => {
+            let config = resolve_config(
+                component,
+                decl,
+                resolved_component.config,
+                reresolved_config_values,
+            )
+            .with(&abortable_scope)
+            .await
+            .map_err(abort_error)??;
+            match config {
+                Some(config) => {
+                    #[cfg(test)]
+                    update_component_config(component, Arc::new(config.clone())).await?;
+                    Some(encode_config(config, &component.moniker).await?)
                 }
+                None => None,
             }
-        },
+        }
     };
     let start_context = StartContext {
         runner,
@@ -510,8 +503,9 @@ async fn start_component(
         state.replace(|instance_state| match instance_state {
             #[cfg(not(test))]
             InstanceState::Resolved(mut resolved) => {
-                // Drop the decl now that it's no longer needed.
+                // Drop the decl and config now that they're no longer needed.
                 resolved.resolved_component.decl = None;
+                resolved.resolved_component.config = None;
                 InstanceState::Started(resolved, started)
             }
             #[cfg(test)]
@@ -626,6 +620,7 @@ fn has_config_capabilities(decl: &cm_rust::ComponentDecl) -> bool {
 }
 
 /// Update the component's configuration fields.
+#[cfg(test)]
 async fn update_component_config(
     component: &Arc<ComponentInstance>,
     config: Arc<ConfigFields>,
@@ -633,6 +628,44 @@ async fn update_component_config(
     let mut resolved_state = component.lock_resolved_state().await.unwrap();
     resolved_state.resolved_component.config = Some(config);
     Ok(())
+}
+
+/// Resolves the structured configuration fields for `component`, routing any
+/// configuration capabilities and applying parent and developer overrides.
+pub(crate) async fn resolve_config(
+    component: &Arc<ComponentInstance>,
+    decl: &cm_rust::ComponentDecl,
+    cached_config: Option<Arc<ConfigFields>>,
+    reresolved_config_values: Option<cm_rust::ConfigValuesData>,
+) -> Result<Option<ConfigFields>, StartActionError> {
+    let Some(ref config_decl) = decl.config else {
+        return Ok(None);
+    };
+    match config_decl.value_source {
+        cm_rust::ConfigValueSource::PackagePath(_) => {
+            let mut config = match cached_config {
+                Some(config) => Arc::unwrap_or_clone(config),
+                None => {
+                    let values = reresolved_config_values.ok_or_else(|| {
+                        StartActionError::StructuredConfigError {
+                            moniker: component.moniker.clone(),
+                            err: StructuredConfigError::ConfigValuesMissing,
+                        }
+                    })?;
+                    ConfigFields::resolve(config_decl, values, component.config_parent_overrides())
+                        .map_err(|err| StartActionError::StructuredConfigError {
+                            moniker: component.moniker.clone(),
+                            err: StructuredConfigError::ConfigResolutionFailed(err),
+                        })?
+                }
+            };
+            update_config_fields(&mut config, decl, component).await?;
+            Ok(Some(config))
+        }
+        cm_rust::ConfigValueSource::Capabilities(_) => {
+            create_config_with_capabilities(decl, component).await
+        }
+    }
 }
 
 async fn create_config_with_capabilities(
@@ -741,11 +774,11 @@ async fn update_config_fields(
 
 /// Encode the configuration into a VMO.
 async fn encode_config(
-    config: Arc<ConfigFields>,
+    config: ConfigFields,
     moniker: &Moniker,
 ) -> Result<fmem::Data, StartActionError> {
     let (vmo, size) = (|| {
-        let encoded = (*config).clone().encode_as_fidl_struct();
+        let encoded = config.encode_as_fidl_struct();
         let size = encoded.len() as u64;
         let vmo = Vmo::create(size)?;
         vmo.write(&encoded, 0)?;

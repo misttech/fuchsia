@@ -365,7 +365,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 }
             }
             let source = CapabilitySource::Component(ComponentSource {
-                capability: ComponentCapability::from(capability.clone()),
+                capability: ComponentCapability::Config(c.name.clone()),
                 moniker: component.moniker().clone(),
             });
             let router = Router::new(ConfigRouter { data, source: source.clone() });

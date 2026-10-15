@@ -586,7 +586,32 @@ pub enum ComponentCapability {
     Service(ServiceDecl),
     EventStream(EventStreamDecl),
     Dictionary(DictionaryDecl),
-    Config(ConfigurationDecl),
+    #[cfg_attr(feature = "serde", serde(with = "serde_config_name"))]
+    Config(Name),
+}
+
+#[cfg(feature = "serde")]
+mod serde_config_name {
+    use cm_types::Name;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize)]
+    struct ConfigNameRef<'a> {
+        name: &'a Name,
+    }
+
+    #[derive(Deserialize)]
+    struct ConfigNameOwned {
+        name: Name,
+    }
+
+    pub fn serialize<S: Serializer>(name: &Name, serializer: S) -> Result<S::Ok, S::Error> {
+        ConfigNameRef { name }.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Name, D::Error> {
+        Ok(ConfigNameOwned::deserialize(deserializer)?.name)
+    }
 }
 
 impl ComponentCapability {
@@ -633,7 +658,7 @@ impl ComponentCapability {
             ComponentCapability::Protocol(protocol) => Some(&protocol.name),
             ComponentCapability::Directory(directory) => Some(&directory.name),
             ComponentCapability::Runner(runner) => Some(&runner.name),
-            ComponentCapability::Config(config) => Some(&config.name),
+            ComponentCapability::Config(name) => Some(name),
             ComponentCapability::Resolver(resolver) => Some(&resolver.name),
             ComponentCapability::Service(service) => Some(&service.name),
             ComponentCapability::EventStream(event) => Some(&event.name),
@@ -722,8 +747,14 @@ impl From<CapabilityDecl> for ComponentCapability {
             CapabilityDecl::Resolver(c) => ComponentCapability::Resolver(c),
             CapabilityDecl::EventStream(c) => ComponentCapability::EventStream(c),
             CapabilityDecl::Dictionary(c) => ComponentCapability::Dictionary(c),
-            CapabilityDecl::Config(c) => ComponentCapability::Config(c),
+            CapabilityDecl::Config(c) => ComponentCapability::Config(c.name),
         }
+    }
+}
+
+impl From<ConfigurationDecl> for ComponentCapability {
+    fn from(config: ConfigurationDecl) -> Self {
+        Self::Config(config.name)
     }
 }
 
@@ -740,7 +771,6 @@ impl TryInto<CapabilityDecl> for ComponentCapability {
             Self::Resolver(c) => Ok(CapabilityDecl::Resolver(c)),
             Self::EventStream(c) => Ok(CapabilityDecl::EventStream(c)),
             Self::Dictionary(c) => Ok(CapabilityDecl::Dictionary(c)),
-            Self::Config(c) => Ok(CapabilityDecl::Config(c)),
             _ => Err(()),
         }
     }

@@ -24,8 +24,7 @@ use capability_source::{
 };
 use cm_config::RuntimeConfig;
 use cm_rust::{
-    CapabilityTypeName, ComponentDecl, ConfigSingleValue, ConfigValue, ConfigurationDecl,
-    DeliveryType, DictionaryDecl, FidlIntoNative, ProtocolDecl,
+    CapabilityTypeName, ComponentDecl, DeliveryType, DictionaryDecl, FidlIntoNative, ProtocolDecl,
 };
 use cm_types::{Name, Path, RelativePath};
 use fidl::endpoints::DiscoverableProtocolMarker;
@@ -368,10 +367,7 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
                 CapabilityTypeName::Config => {
                     let router = new_debug_only_specific_router::<Data>(
                         CapabilitySource::Component(ComponentSource {
-                            capability: ComponentCapability::from(ConfigurationDecl {
-                                name: capability_name.clone(),
-                                value: ConfigValue::Single(ConfigSingleValue::Bool(true)),
-                            }),
+                            capability: ComponentCapability::Config(capability_name.clone()),
                             moniker: self.component.moniker.clone(),
                         }),
                     );

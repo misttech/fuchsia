@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::framework::resolve_with_pinned_url;
+use crate::framework::{resolve_component_with_pinned_url, resolve_with_pinned_url};
+use crate::model::actions::start::resolve_config;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::namespace::create_namespace;
 use crate::model::storage::admin_protocol::StorageAdmin;
@@ -302,16 +303,35 @@ async fn get_structured_config(
         .await
         .map_err(|_| fsys::GetStructuredConfigError::InstanceNotFound)?;
 
-    let state = instance.lock_state().await;
+    let (maybe_decl, cached_config) = {
+        let state = instance.lock_state().await;
+        let resolved = state
+            .get_resolved_state()
+            .ok_or(fsys::GetStructuredConfigError::InstanceNotResolved)?;
+        if resolved.elided_decl {
+            return Err(fsys::GetStructuredConfigError::NoConfig);
+        }
+        if let Some(config) = resolved.config() {
+            return Ok((**config).clone().into());
+        }
+        (resolved.decl().cloned(), resolved.config().cloned())
+    };
 
-    let arc_config = state
-        .get_resolved_state()
-        .ok_or(fsys::GetStructuredConfigError::InstanceNotResolved)?
-        .config()
+    let (decl, reresolved_config_values) = match maybe_decl {
+        Some(decl) => (decl, None),
+        None => {
+            let resolved = resolve_component_with_pinned_url(&instance)
+                .await
+                .map_err(|_| fsys::GetStructuredConfigError::NoConfig)?;
+            (resolved.decl, resolved.config_values)
+        }
+    };
+
+    let config = resolve_config(&instance, &decl, cached_config, reresolved_config_values)
+        .await
+        .map_err(|_| fsys::GetStructuredConfigError::NoConfig)?
         .ok_or(fsys::GetStructuredConfigError::NoConfig)?;
-
-    let config = (**arc_config).clone().into();
-    Ok(config)
+    Ok(config.into())
 }
 
 async fn construct_namespace(

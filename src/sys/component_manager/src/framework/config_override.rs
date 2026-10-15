@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::framework::resolve_with_pinned_url;
 use crate::sandbox_util::take_handle_as_stream;
 use cm_rust::FidlIntoNative;
 use fidl::endpoints::ProtocolMarker;
-use fidl_fuchsia_component_decl as fcdecl;
 use fidl_fuchsia_sys2 as fsys;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
@@ -66,19 +66,38 @@ async fn set_structured_config(
         .await
         .map_err(|_| fsys::ConfigOverrideError::InstanceNotFound)?;
 
-    let state = instance.lock_state().await;
+    let maybe_decl = {
+        let state = instance.lock_state().await;
+        let resolved =
+            state.get_resolved_state().ok_or(fsys::ConfigOverrideError::InstanceNotResolved)?;
+        if resolved.elided_decl {
+            return Err(fsys::ConfigOverrideError::NoConfig);
+        }
+        if let Some(arc_config) = resolved.config() {
+            for field in fields {
+                arc_config
+                    .fields
+                    .iter()
+                    .find(|f| *f.key == *field.key)
+                    .ok_or(fsys::ConfigOverrideError::KeyNotFound)?;
+                instance.context.add_config_developer_override(moniker.clone(), field).await;
+            }
+            return Ok(());
+        }
+        resolved.decl().cloned()
+    };
 
-    let arc_config = state
-        .get_resolved_state()
-        .ok_or(fsys::ConfigOverrideError::InstanceNotResolved)?
-        .config()
-        .ok_or(fsys::ConfigOverrideError::NoConfig)?;
-
-    let config: fcdecl::ResolvedConfig = (**arc_config).clone().into();
+    let decl = match maybe_decl {
+        Some(decl) => decl,
+        None => resolve_with_pinned_url(&instance)
+            .await
+            .map_err(|_| fsys::ConfigOverrideError::NoConfig)?,
+    };
+    let config_decl = decl.config.as_ref().ok_or(fsys::ConfigOverrideError::NoConfig)?;
 
     for field in fields {
         // Verify a field with this key has been declared for the component.
-        config
+        config_decl
             .fields
             .iter()
             .find(|f| *f.key == *field.key)
