@@ -19,6 +19,11 @@
 
 namespace {
 
+constexpr size_t kUnpaddedMsbcFrameBytes = 57;
+constexpr size_t kScoPaddedMsbcFrameBytes = 58;
+constexpr size_t kMsbcPcmBatchBytes = 240;  // 15 blocks * 8 subbands * 2 bytes/sample
+constexpr uint8_t kMsbcSyncword = 0xAD;
+
 fuchsia::media::FormatDetails MakeValidSbcDecoderFormatDetails() {
   SbcCodecInfo codec_info = {
       .sampling_frequency = kSbcSamplingFrequency44100Hz,
@@ -37,6 +42,98 @@ fuchsia::media::FormatDetails MakeValidSbcDecoderFormatDetails() {
   format_details.set_mime_type("audio/sbc");
   format_details.set_oob_bytes(std::move(oob_bytes));
   return format_details;
+}
+
+fuchsia::media::FormatDetails MakeValidMsbcDecoderFormatDetails() {
+  // Matches bt-hfp CodecId::MSBC::oob_bytes(): 16 kHz, Mono, 16 blocks, 8 subbands, Loudness,
+  // bitpool 26.
+  SbcCodecInfo codec_info = {
+      .sampling_frequency = kSbcSamplingFrequency16000Hz,
+      .channel_mode = kSbcChannelModeMono,
+      .block_length = 0b0001,     // 16 blocks
+      .subbands = 0b01,           // 8 subbands
+      .allocation_method = 0b01,  // Loudness
+      .min_bitpool_value = 26,
+      .max_bitpool_value = 26,
+  };
+  std::vector<uint8_t> oob_bytes(sizeof(SbcCodecInfo));
+  std::memcpy(oob_bytes.data(), &codec_info, sizeof(SbcCodecInfo));
+
+  fuchsia::media::FormatDetails format_details;
+  format_details.set_format_details_version_ordinal(0);
+  format_details.set_mime_type("audio/msbc");
+  format_details.set_oob_bytes(std::move(oob_bytes));
+  return format_details;
+}
+
+fuchsia::media::FormatDetails MakeValidMsbcEncoderFormatDetails() {
+  fuchsia::media::PcmFormat pcm;
+  pcm.pcm_mode = fuchsia::media::AudioPcmMode::LINEAR;
+  pcm.bits_per_sample = 16;
+  pcm.frames_per_second = 16000;
+  pcm.channel_map = {fuchsia::media::AudioChannelId::LF};
+
+  fuchsia::media::AudioUncompressedFormat uncompressed;
+  uncompressed.set_pcm(std::move(pcm));
+
+  fuchsia::media::AudioFormat audio;
+  audio.set_uncompressed(std::move(uncompressed));
+
+  fuchsia::media::DomainFormat domain;
+  domain.set_audio(std::move(audio));
+
+  fuchsia::media::EncoderSettings encoder_settings;
+  encoder_settings.set_msbc(fuchsia::media::MSbcEncoderSettings{});
+
+  fuchsia::media::FormatDetails format_details;
+  format_details.set_format_details_version_ordinal(0);
+  format_details.set_domain(std::move(domain));
+  format_details.set_encoder_settings(std::move(encoder_settings));
+  return format_details;
+}
+
+// Encodes one 15-block * 8-subband = 120-sample (240-byte) 16 kHz mono PCM frame into a 57-byte
+// mSBC frame (starting with OI_SBC_MSBC_SYNCWORD = 0xAD).
+std::vector<uint8_t> EncodeSingleMsbcFrame() {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  CodecAdapterSbcEncoder encoder(lock, &events);
+
+  auto format_details = MakeValidMsbcEncoderFormatDetails();
+  encoder.CoreCodecInit(format_details);
+  ZX_ASSERT(events.fail_codec_count() == 0u);
+
+  auto output_buffers = Buffers({512});
+  auto output_packets = Packets(1);
+  encoder.CoreCodecAddBuffer(kOutputPort, output_buffers.ptr(0));
+  output_packets.ptr(0)->SetIsNew(false);
+  encoder.CoreCodecRecycleOutputPacket(output_packets.ptr(0));
+
+  encoder.CoreCodecStartStream();
+  encoder.CoreCodecQueueInputFormatDetails(format_details);
+  events.WaitForOutputConstraintsChangeCount(1);
+  encoder.CoreCodecMidStreamOutputBufferReConfigFinish();
+
+  auto input_buffers = Buffers({kMsbcPcmBatchBytes});
+  std::memset(input_buffers.ptr(0)->base(), 0, kMsbcPcmBatchBytes);
+  auto input_packets = Packets(1);
+  CodecPacket* input_packet = input_packets.ptr(0);
+  input_packet->SetBuffer(input_buffers.ptr(0));
+  input_packet->SetStartOffset(0);
+  input_packet->SetValidLengthBytes(kMsbcPcmBatchBytes);
+
+  encoder.CoreCodecQueueInputPacket(input_packet);
+  encoder.CoreCodecQueueInputEndOfStream();
+  events.WaitForOutputEosCount(1);
+  ZX_ASSERT(events.fail_codec_count() == 0u);
+  ZX_ASSERT(events.output_packet_count() == 1u);
+
+  CodecPacket* out_packet = output_packets.ptr(0);
+  ZX_ASSERT(out_packet->valid_length_bytes() == kUnpaddedMsbcFrameBytes);
+  const uint8_t* begin = out_packet->buffer()->base() + out_packet->start_offset();
+  std::vector<uint8_t> msbc_frame(begin, begin + out_packet->valid_length_bytes());
+  encoder.CoreCodecStopStream();
+  return msbc_frame;
 }
 
 fuchsia::media::FormatDetails MakeValidSbcEncoderFormatDetails() {
@@ -115,6 +212,82 @@ TEST(CodecAdapterSbcDecoderTest, EmptyStreamEndOfStreamAndPostStopOutputConstrai
   EXPECT_EQ(events.fail_codec_count(), 0u);
   EXPECT_EQ(events.output_eos_count(), 2u);
   EXPECT_EQ(events.output_packet_count(), 0u);
+  decoder.CoreCodecStopStream();
+}
+
+TEST(CodecAdapterSbcDecoderTest, MsbcEmptyStreamEndOfStreamDecodeAndPostStopOutputConstraints) {
+  std::vector<uint8_t> msbc_frame = EncodeSingleMsbcFrame();
+  ASSERT_EQ(msbc_frame.size(), kUnpaddedMsbcFrameBytes);
+  ASSERT_EQ(msbc_frame[0], kMsbcSyncword);
+
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  CodecAdapterSbcDecoder decoder(lock, &events);
+
+  auto format_details = MakeValidMsbcDecoderFormatDetails();
+  decoder.CoreCodecInit(format_details);
+  ASSERT_EQ(events.fail_codec_count(), 0u);
+
+  // Stream 1: Queue EndOfStream immediately without any FormatDetails or Packet.
+  decoder.CoreCodecStartStream();
+  decoder.CoreCodecQueueInputEndOfStream();
+  events.WaitForOutputEosCount(1);
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+  EXPECT_EQ(events.output_eos_count(), 1u);
+  decoder.CoreCodecStopStream();
+
+  // Stream 2: Queue "audio/msbc" FormatDetails, decode one 58-byte SCO-padded mSBC frame (57-byte
+  // mSBC frame + 1 zero padding byte), and verify OI_CODEC_SBC_DecoderConfigureMSbc() ran (plain
+  // SBC mode would reject syncword 0xAD with OI_CODEC_SBC_NO_SYNCWORD).
+  auto output_buffers = Buffers({512});
+  auto output_packets = Packets(1);
+  decoder.CoreCodecAddBuffer(kOutputPort, output_buffers.ptr(0));
+  output_packets.ptr(0)->SetIsNew(false);
+  decoder.CoreCodecRecycleOutputPacket(output_packets.ptr(0));
+
+  decoder.CoreCodecStartStream();
+  decoder.CoreCodecQueueInputFormatDetails(format_details);
+  events.WaitForOutputConstraintsChangeCount(1);
+  decoder.CoreCodecMidStreamOutputBufferReConfigFinish();
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+
+  auto input_buffers = Buffers({kScoPaddedMsbcFrameBytes});
+  std::memcpy(input_buffers.ptr(0)->base(), msbc_frame.data(), msbc_frame.size());
+  input_buffers.ptr(0)->base()[msbc_frame.size()] = 0;  // 1-byte SCO padding
+
+  auto input_packets = Packets(1);
+  CodecPacket* input_packet = input_packets.ptr(0);
+  input_packet->SetBuffer(input_buffers.ptr(0));
+  input_packet->SetStartOffset(0);
+  input_packet->SetValidLengthBytes(kScoPaddedMsbcFrameBytes);
+
+  decoder.CoreCodecQueueInputPacket(input_packet);
+  decoder.CoreCodecQueueInputEndOfStream();
+  events.WaitForOutputEosCount(2);
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+  EXPECT_EQ(events.output_packet_count(), 1u);
+  // 15 blocks * 8 subbands * 1 channel * 2 bytes/sample = 240 bytes of PCM output.
+  EXPECT_EQ(output_packets.ptr(0)->valid_length_bytes(), kMsbcPcmBatchBytes);
+  decoder.CoreCodecRecycleOutputPacket(output_packets.ptr(0));
+  decoder.CoreCodecStopStream();
+
+  // Between streams: CoreCodecGetBufferCollectionConstraints2(kOutputPort) must succeed even
+  // though context_ was reset by CleanUpAfterStream().
+  fuchsia::media::StreamBufferConstraints stream_constraints;
+  fuchsia::media::StreamBufferPartialSettings partial_settings;
+  auto constraints = decoder.CoreCodecGetBufferCollectionConstraints2(
+      kOutputPort, stream_constraints, partial_settings);
+  ASSERT_TRUE(constraints.buffer_memory_constraints().has_value());
+  // (16 bits / 8) * SBC_MAX_SAMPLES_PER_FRAME (128) * SBC_MAX_CHANNELS (2) = 512 bytes.
+  EXPECT_EQ(constraints.buffer_memory_constraints()->min_size_bytes(), 512u);
+
+  // Stream 3: Queue EndOfStream without FormatDetails or Packet after a configured stream.
+  decoder.CoreCodecStartStream();
+  decoder.CoreCodecQueueInputEndOfStream();
+  events.WaitForOutputEosCount(3);
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+  EXPECT_EQ(events.output_eos_count(), 3u);
+  EXPECT_EQ(events.output_packet_count(), 1u);
   decoder.CoreCodecStopStream();
 }
 

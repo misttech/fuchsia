@@ -215,6 +215,7 @@ CodecAdapterLc3Decoder::CodecAdapterLc3Decoder(std::mutex& lock,
     : CodecAdapterSWImpl(lock, codec_adapter_events) {}
 
 std::pair<fuchsia::media::FormatDetails, size_t> CodecAdapterLc3Decoder::OutputFormatDetails() {
+  std::lock_guard<std::mutex> lock(lock_);
   ZX_DEBUG_ASSERT(codec_params_);
   fuchsia::media::PcmFormat out;
   out.pcm_mode = fuchsia::media::AudioPcmMode::LINEAR;
@@ -428,14 +429,16 @@ CodecAdapterLc3Decoder::InputLoopStatus CodecAdapterLc3Decoder::ProcessFormatDet
         decoder_size);
   }
 
-  codec_params_.emplace(Lc3DecoderParams{
-      .decoders = std::move(decoders),
-      .dt_us = frame_us,
-      .sr_hz = sampling_freq,
-      .nbytes = nbytes,
-      .channels = std::move(channels),
-  });
-
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    codec_params_.emplace(Lc3DecoderParams{
+        .decoders = std::move(decoders),
+        .dt_us = frame_us,
+        .sr_hz = sampling_freq,
+        .nbytes = nbytes,
+        .channels = std::move(channels),
+    });
+  }
   InitChunkInputStream(format_details);
   return kOk;
 }

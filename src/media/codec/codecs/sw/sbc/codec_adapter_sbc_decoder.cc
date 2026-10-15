@@ -122,10 +122,14 @@ void CodecAdapterSbcDecoder::CleanUpAfterStream() {
     output_packet_ = nullptr;
   }
   output_offset_ = 0;
-  context_ = std::nullopt;
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    context_ = std::nullopt;
+  }
 }
 
 std::pair<fuchsia::media::FormatDetails, size_t> CodecAdapterSbcDecoder::OutputFormatDetails() {
+  std::lock_guard<std::mutex> lock(lock_);
   FX_DCHECK(context_);
 
   fuchsia::media::AudioUncompressedFormat uncompressed;
@@ -262,24 +266,32 @@ CodecAdapterSbcDecoder::InputLoopStatus CodecAdapterSbcDecoder::CreateContext(
   auto output_pcm_format = DecodeCodecInfo(format_details.oob_bytes());
 
   uint8_t channels = static_cast<uint8_t>(output_pcm_format.channel_map.size());
-  context_ = {.output_format = output_pcm_format};
-  OI_STATUS status = OI_CODEC_SBC_DecoderReset(&context_->context, context_->context_data,
-                                               sizeof(context_->context_data), channels,
-                                               /*pcmStride=*/channels, /*enhanced=*/false);
-  if (!OI_SUCCESS(status)) {
-    events_->onCoreCodecFailCodec("Failed to reset SBC decoder");
-    return kShouldTerminate;
-  }
-  if (format_details.mime_type() == kMsbcMimeType) {
-    status = OI_CODEC_SBC_DecoderConfigureMSbc(&context_->context);
-    if (!OI_SUCCESS(status)) {
-      events_->onCoreCodecFailCodec("Failed to set mSBC on decoder");
-      return kShouldTerminate;
-    }
-  }
+  const char* fail_message = nullptr;
   {
     std::lock_guard<std::mutex> lock(lock_);
-    min_output_buffer_size_ = context_->max_pcm_chunk_size();
+    // We create Context in place without moving or copying because it has internal pointers to
+    // other parts of itself.
+    context_.emplace(std::move(output_pcm_format));
+    OI_STATUS status = OI_CODEC_SBC_DecoderReset(&context_->context, context_->context_data,
+                                                 sizeof(context_->context_data), channels,
+                                                 /*pcmStride=*/channels, /*enhanced=*/false);
+    if (!OI_SUCCESS(status)) {
+      context_ = std::nullopt;
+      fail_message = "Failed to reset SBC decoder";
+    } else if (format_details.mime_type() == kMsbcMimeType) {
+      status = OI_CODEC_SBC_DecoderConfigureMSbc(&context_->context);
+      if (!OI_SUCCESS(status)) {
+        context_ = std::nullopt;
+        fail_message = "Failed to set mSBC on decoder";
+      }
+    }
+    if (!fail_message) {
+      min_output_buffer_size_ = context_->max_pcm_chunk_size();
+    }
+  }
+  if (fail_message) {
+    events_->onCoreCodecFailCodec(fail_message);
+    return kShouldTerminate;
   }
   return kOk;
 }

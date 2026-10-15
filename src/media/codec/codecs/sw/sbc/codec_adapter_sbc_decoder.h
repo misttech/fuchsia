@@ -53,18 +53,28 @@ class CodecAdapterSbcDecoder : public CodecAdapterSW<fit::deferred_action<fit::c
   // Loops for the lifetime of a stream.
   void ProcessInputLoop() override;
 
-  void CleanUpAfterStream() override;
+  void CleanUpAfterStream() __TA_EXCLUDES(lock_) override;
 
-  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails() override;
+  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails()
+      __TA_EXCLUDES(lock_) override;
 
  private:
   struct Context {
-    OI_CODEC_SBC_DECODER_CONTEXT context;
-    uint32_t context_data[CODEC_DATA_WORDS(SBC_MAX_CHANNELS, SBC_CODEC_FAST_FILTER_BUFFERS)];
+    explicit Context(fuchsia::media::PcmFormat format) : output_format(std::move(format)) {}
+    ~Context() = default;
+    // OI_CODEC_SBC_DecoderReset() stores interior pointers into `context_data` inside
+    // `context.common`, so `Context` cannot be safely copied or moved once initialized.
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
+    Context(Context&&) = delete;
+    Context& operator=(Context&&) = delete;
+
+    OI_CODEC_SBC_DECODER_CONTEXT context{};
+    uint32_t context_data[CODEC_DATA_WORDS(SBC_MAX_CHANNELS, SBC_CODEC_FAST_FILTER_BUFFERS)]{};
 
     fuchsia::media::PcmFormat output_format;
 
-    uint32_t max_pcm_chunk_size() {
+    uint32_t max_pcm_chunk_size() const {
       return (output_format.bits_per_sample / 8) * SBC_MAX_SAMPLES_PER_FRAME * SBC_MAX_CHANNELS;
     }
   };
@@ -86,7 +96,8 @@ class CodecAdapterSbcDecoder : public CodecAdapterSW<fit::deferred_action<fit::c
   ///     Octet1: Block Length (b4-7), Subbands (b2-3), Allocation Method (b0-1)
   ///     Octet2: Minimum Bitpool Value [2,250]
   ///     Octet3: Maximum Bitpool Value [2,250]
-  InputLoopStatus CreateContext(const fuchsia::media::FormatDetails& format_details);
+  InputLoopStatus CreateContext(const fuchsia::media::FormatDetails& format_details)
+      __TA_EXCLUDES(lock_);
 
   // Attempts to decode input packet. Reports failures through `events_`.
   InputLoopStatus DecodeInput(const CodecPacket* input_packet);
@@ -104,6 +115,11 @@ class CodecAdapterSbcDecoder : public CodecAdapterSW<fit::deferred_action<fit::c
   // If any data is queued, send it and clear output packet/buffer/offset.
   void SendQueuedOutput();
 
+  // See the Threading / Locking Rules comment on `CodecAdapterSW::input_processing_thread_`:
+  // - `std::optional` engagement and stream-invariant format state (`output_format`) are populated
+  //   under `lock_` in `CreateContext()` and reset under `lock_` in `CleanUpAfterStream()`.
+  // - Per-chunk decoder working state (`context`, `context_data`) is mutated without `lock_` on
+  //   `input_processing_thread_` during `DecodeInput()`.
   std::optional<Context> context_;
   // Minimum output buffer size from the most recent `CreateContext()` call, retained across
   // `CleanUpAfterStream()` so `CoreCodecGetBufferCollectionConstraints2(kOutputPort)` can succeed

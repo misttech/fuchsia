@@ -46,9 +46,10 @@ class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::c
   // Loops for the lifetime of a stream.
   void ProcessInputLoop() override;
 
-  void CleanUpAfterStream() override;
+  void CleanUpAfterStream() __TA_EXCLUDES(lock_) override;
 
-  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails() override;
+  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails()
+      __TA_EXCLUDES(lock_) override;
 
  private:
   struct Context {
@@ -105,7 +106,8 @@ class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::c
 
   // Attempts to create a context from format details. Reports failures through
   // `events_`.
-  InputLoopStatus CreateContext(const fuchsia::media::FormatDetails& format_details);
+  InputLoopStatus CreateContext(const fuchsia::media::FormatDetails& format_details)
+      __TA_EXCLUDES(lock_);
 
   // Attempts to encode input packet. Reports failures through `events_`.
   InputLoopStatus EncodeInput(const CodecPacket* input_packet);
@@ -117,6 +119,12 @@ class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::c
 
   uint8_t* NextOutputBlock();
 
+  // See the Threading / Locking Rules comment on `CodecAdapterSW::input_processing_thread_`:
+  // - `std::optional` engagement and stream-invariant format state (`channel_mode`,
+  //   `input_format`, `is_msbc`, `precomputed_sbc_frame_length`) are populated under `lock_` in
+  //   `CreateContext()` and reset under `lock_` in `CleanUpAfterStream()`.
+  // - Per-chunk encoder working state (`params`) is mutated without `lock_` on
+  //   `input_processing_thread_` during `EncodeInput()`.
   std::optional<Context> context_;
   // Minimum output buffer size from the most recent `CreateContext()` call, retained across
   // `CleanUpAfterStream()` so `CoreCodecGetBufferCollectionConstraints2(kOutputPort)` can succeed

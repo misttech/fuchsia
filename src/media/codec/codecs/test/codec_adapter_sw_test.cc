@@ -46,9 +46,10 @@ class CodecAdapterSWDummy : public CodecAdapterSW<fit::deferred_action<fit::clos
  protected:
   virtual void ProcessInputLoop() override {}
 
-  virtual void CleanUpAfterStream() override {}
+  void CleanUpAfterStream() __TA_EXCLUDES(lock_) override {}
 
-  virtual std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails() override {
+  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails()
+      __TA_EXCLUDES(lock_) override {
     return {fuchsia::media::FormatDetails(), 0};
   }
 };

@@ -78,6 +78,7 @@ CodecAdapterLc3Encoder::CodecAdapterLc3Encoder(std::mutex& lock,
     : CodecAdapterSWImpl(lock, codec_adapter_events) {}
 
 std::pair<fuchsia::media::FormatDetails, size_t> CodecAdapterLc3Encoder::OutputFormatDetails() {
+  std::lock_guard<std::mutex> lock(lock_);
   ZX_DEBUG_ASSERT(codec_params_);
   fuchsia::media::AudioCompressedFormatLc3 lc3;
   fuchsia::media::AudioCompressedFormat compressed_format;
@@ -143,7 +144,11 @@ CodecAdapterLc3Encoder::InputLoopStatus CodecAdapterLc3Encoder::ProcessFormatDet
     return kShouldTerminate;
   }
 
-  codec_params_.emplace(CreateEncoderParams(format_details));
+  auto encoder_params = CreateEncoderParams(format_details);
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    codec_params_.emplace(std::move(encoder_params));
+  }
   InitChunkInputStream(format_details);
   return kOk;
 }

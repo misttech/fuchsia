@@ -14,9 +14,10 @@ class CodecAdapterCvsdEncoder : public CodecAdapterSWImpl<CvsdParams> {
   ~CodecAdapterCvsdEncoder() = default;
 
  protected:
-  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails() override;
+  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails()
+      __TA_EXCLUDES(lock_) override;
   CodecAdapterCvsdEncoder::InputLoopStatus ProcessFormatDetails(
-      const fuchsia::media::FormatDetails& format_details) override;
+      const fuchsia::media::FormatDetails& format_details) __TA_EXCLUDES(lock_) override;
   int ProcessInputChunkData(const uint8_t* input_data, size_t input_data_size,
                             uint8_t* output_buffer, size_t output_buffer_size) override;
 

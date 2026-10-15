@@ -31,6 +31,7 @@ CodecAdapterCvsdEncoder::CodecAdapterCvsdEncoder(std::mutex& lock,
     : CodecAdapterSWImpl(lock, codec_adapter_events) {}
 
 std::pair<fuchsia::media::FormatDetails, size_t> CodecAdapterCvsdEncoder::OutputFormatDetails() {
+  std::lock_guard<std::mutex> lock(lock_);
   ZX_DEBUG_ASSERT(codec_params_);
   fuchsia::media::AudioCompressedFormatCvsd cvsd;
   fuchsia::media::AudioCompressedFormat compressed_format;
@@ -75,8 +76,12 @@ CodecAdapterCvsdEncoder::InputLoopStatus CodecAdapterCvsdEncoder::ProcessFormatD
         input_format.frames_per_second);
   }
 
-  InitCvsdParams(codec_params_);
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    InitCvsdParams(codec_params_);
+  }
   InitChunkInputStream(format_details);
+
   return kOk;
 }
 

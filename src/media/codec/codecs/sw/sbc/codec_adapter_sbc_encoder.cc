@@ -119,7 +119,10 @@ void CodecAdapterSbcEncoder::CleanUpAfterStream() {
     output_packet_ = nullptr;
   }
   output_offset_ = 0;
-  context_ = std::nullopt;
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    context_ = std::nullopt;
+  }
   chunk_input_stream_.reset();
 
   // SBC_Encoder_Init resets internal filter state (EncMaxShiftCounter, ShiftCounter,
@@ -129,6 +132,7 @@ void CodecAdapterSbcEncoder::CleanUpAfterStream() {
 }
 
 std::pair<fuchsia::media::FormatDetails, size_t> CodecAdapterSbcEncoder::OutputFormatDetails() {
+  std::lock_guard<std::mutex> lock(lock_);
   FX_DCHECK(context_);
   fuchsia::media::AudioCompressedFormatSbc sbc;
   fuchsia::media::AudioCompressedFormat compressed_format;
@@ -312,16 +316,19 @@ CodecAdapterSbcEncoder::InputLoopStatus CodecAdapterSbcEncoder::CreateContext(
 
   const uint64_t bytes_per_second =
       input_format.frames_per_second * sizeof(uint16_t) * input_format.channel_map.size();
-  context_ = {
-      {.channel_mode = channel_mode,
-       .input_format = input_format,
-       .is_msbc = is_msbc,
-       .params = params,
-       .precomputed_sbc_frame_length = Context::ComputeSbcFrameLength(channel_mode, params)}};
+  const size_t sbc_frame_length = Context::ComputeSbcFrameLength(channel_mode, params);
+  ZX_ASSERT(sbc_frame_length <= std::numeric_limits<uint32_t>::max());
+  Context context{
+      .channel_mode = channel_mode,
+      .input_format = input_format,
+      .is_msbc = is_msbc,
+      .params = params,
+      .precomputed_sbc_frame_length = sbc_frame_length,
+  };
   {
     std::lock_guard<std::mutex> lock(lock_);
-    ZX_ASSERT(context_->sbc_frame_length() <= std::numeric_limits<uint32_t>::max());
-    min_output_buffer_size_ = static_cast<uint32_t>(context_->sbc_frame_length());
+    context_.emplace(std::move(context));
+    min_output_buffer_size_ = static_cast<uint32_t>(sbc_frame_length);
   }
   chunk_input_stream_.emplace(
       context_->pcm_batch_size(),

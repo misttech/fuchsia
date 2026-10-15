@@ -140,7 +140,8 @@ class CodecAdapterSWImpl : public CodecAdapterSW<fit::deferred_action<fit::closu
     }
   }
 
-  void InitChunkInputStream(const fuchsia::media::FormatDetails& format_details) {
+  void InitChunkInputStream(const fuchsia::media::FormatDetails& format_details)
+      __TA_EXCLUDES(lock_) {
     {
       std::lock_guard<std::mutex> lock(lock_);
       min_output_buffer_size_ = safemath::checked_cast<uint32_t>(MinOutputBufferSize());
@@ -241,7 +242,7 @@ class CodecAdapterSWImpl : public CodecAdapterSW<fit::deferred_action<fit::closu
         });
   }
 
-  void CleanUpAfterStream() override {
+  void CleanUpAfterStream() __TA_EXCLUDES(lock_) override {
     if (output_item_) {
       if (output_item_->buffer) {
         auto base = output_item_->buffer->base();
@@ -264,8 +265,8 @@ class CodecAdapterSWImpl : public CodecAdapterSW<fit::deferred_action<fit::closu
   // `codec_params_` should be initialized in this method, followed by calling
   // `InitChunkInputStream()` so that `chunk_input_stream_` and `min_output_buffer_size_` are
   // initialized.
-  virtual InputLoopStatus ProcessFormatDetails(
-      const fuchsia::media::FormatDetails& format_details) = 0;
+  virtual InputLoopStatus ProcessFormatDetails(const fuchsia::media::FormatDetails& format_details)
+      __TA_EXCLUDES(lock_) = 0;
 
   // Processes the data from input data. If processing was successful, returns the number
   // of output data bytes produced. If an error occurred, it returns -1.
@@ -282,6 +283,11 @@ class CodecAdapterSWImpl : public CodecAdapterSW<fit::deferred_action<fit::closu
   // processing a single input chunk.
   //
   // `codec_params_` is guaranteed to be populated when `CodecAdapterSWImpl` calls this method.
+  // `OutputFormatDetails()` runs on `input_processing_thread_` when reached through
+  // `CoreCodecGetOutputFormat()`, and holds `lock_` when calling this method so that direct
+  // callers such as tests, and any future off-thread caller, are safe. Because this method is
+  // called both with `lock_` held and without `lock_` held (on `input_processing_thread_`),
+  // implementations must not acquire `lock_`.
   // Implementations of `BufferCollectionConstraints(kOutputPort)` should read
   // `min_output_buffer_size_` rather than calling this method if the size depends on
   // `codec_params_`.
@@ -304,10 +310,21 @@ class CodecAdapterSWImpl : public CodecAdapterSW<fit::deferred_action<fit::closu
   virtual TimestampExtrapolator CreateTimestampExtrapolator(
       const fuchsia::media::FormatDetails& format_details) = 0;
 
-  // Reset codec params. Default behaviour is to reset it to null option.
-  virtual void ResetCodecParams() { codec_params_ = std::nullopt; }
+  // Reset `codec_params_` to `std::nullopt` under `lock_`.
+  void ResetCodecParams() __TA_EXCLUDES(lock_) {
+    std::lock_guard<std::mutex> lock(lock_);
+    codec_params_ = std::nullopt;
+  }
 
   // Parameters required for actual codec work.
+  //
+  // See the Threading / Locking Rules comment on `CodecAdapterSW::input_processing_thread_`:
+  // - `std::optional` engagement and stream-invariant format fields are populated under `lock_` in
+  //   `ProcessFormatDetails()` and reset under `lock_` in `ResetCodecParams()` (called from
+  //   `CleanUpAfterStream()`).
+  // - Per-chunk working state inside `CodecParams` (e.g. CVSD `accumulator`, `step_size`, and
+  //   `historic_bits`; LC3 `aligned_input_scratch` and encoder/decoder state) is mutated without
+  //   `lock_` on `input_processing_thread_` during `ProcessInputChunkData()`.
   std::optional<CodecParams> codec_params_;
 
   // Minimum output buffer size from the most recent `InitChunkInputStream()` call (during

@@ -27,9 +27,10 @@ class CodecAdapterFfmpegDecoder : public CodecAdapterSW<AvCodecContext::AVFrameP
   // Loops for the lifetime of a stream.
   void ProcessInputLoop() override;
 
-  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails() override;
+  std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails()
+      __TA_EXCLUDES(lock_) override;
 
-  void CleanUpAfterStream() override;
+  void CleanUpAfterStream() __TA_EXCLUDES(lock_) override;
 
  private:
   static void FfmpegFreeBufferCallback(void* ctx, uint8_t* base);

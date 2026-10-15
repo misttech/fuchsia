@@ -27,6 +27,7 @@ CodecAdapterCvsdDecoder::CodecAdapterCvsdDecoder(std::mutex& lock,
     : CodecAdapterSWImpl(lock, codec_adapter_events) {}
 
 std::pair<fuchsia::media::FormatDetails, size_t> CodecAdapterCvsdDecoder::OutputFormatDetails() {
+  std::lock_guard<std::mutex> lock(lock_);
   ZX_DEBUG_ASSERT(codec_params_);
   fuchsia::media::PcmFormat out;
   out.pcm_mode = fuchsia::media::AudioPcmMode::LINEAR;
@@ -56,7 +57,10 @@ CodecAdapterCvsdDecoder::InputLoopStatus CodecAdapterCvsdDecoder::ProcessFormatD
     return kShouldTerminate;
   }
 
-  InitCvsdParams(codec_params_);
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    InitCvsdParams(codec_params_);
+  }
   InitChunkInputStream(format_details);
   return kOk;
 }
