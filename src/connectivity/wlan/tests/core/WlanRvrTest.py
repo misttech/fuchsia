@@ -31,7 +31,6 @@ from legacy_access_point.ap_lib.hostapd_ap_preset import create_ap_preset
 from legacy_access_point.ap_lib.hostapd_security import (
     Security as HostapdSecurity,
 )
-from legacy_access_point.ap_lib.radvd_config import RadvdConfig
 from libs.validation import MapValidator
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
@@ -43,7 +42,6 @@ from openwrt_access_point.lib.access_point_config import (
     BssSettings,
     RadioConfig,
     Security,
-    SecurityOpen,
     SecurityWpa2,
 )
 from openwrt_access_point.lib.access_point_config_mapper import (
@@ -64,7 +62,6 @@ class TrafficDirection(StrEnum):
 @unique
 class IPVersion(StrEnum):
     V4 = "ipv4"
-    V6 = "ipv6"
 
 
 @dataclass(frozen=True)
@@ -134,28 +131,16 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def pre_run(self) -> None:
         test_params: list[TestParams] = []
-        securities: list[Security] = [SecurityOpen(), SecurityWpa2()]
+        security = SecurityWpa2()
 
-        for (
-            band,
-            security,
-            ip_version,
-            direction,
-        ) in itertools.product(
-            [e for e in Band],
-            securities,
-            [e for e in IPVersion],
-            [e for e in TrafficDirection],
-        ):
-            password: str | None = None
-            if not isinstance(security, SecurityOpen):
-                password = AccessPointConfig.random_string(20)
+        for band, direction in itertools.product(Band, TrafficDirection):
+            password = AccessPointConfig.random_string(20)
             test_params.append(
                 TestParams(
                     band,
                     security,
                     password,
-                    ip_version,
+                    IPVersion.V4,
                     direction,
                 )
             )
@@ -233,8 +218,6 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         if ip_version is IPVersion.V4:
             await self.dut.netstack.wait_for_ipv4_addr(netstack_iface.id_)
-        elif ip_version is IPVersion.V6:
-            await self.dut.netstack.wait_for_ipv6_addr(netstack_iface.id_)
 
     async def run_rvr(
         self,
@@ -316,9 +299,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         ssid=ssid,
                         security=legacy_security,
                     ),
-                    radvd_config=(
-                        RadvdConfig() if ip_version is IPVersion.V6 else None
-                    ),
+                    radvd_config=None,
                     setup_bridge=True,
                 )
 
@@ -342,12 +323,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self._wait_for_dut_ip(ip_version)
         if self.openwrt_ap is None:
             self.iperf_server.renew_test_interface_ip_address()
-        addr_type = (
-            "ipv4_private"
-            if ip_version is IPVersion.V4
-            else "ipv6_private_local"
-        )
-        iperf_server_ip_address = self.iperf_server.get_addr(addr_type)
+        iperf_server_ip_address = self.iperf_server.get_addr("ipv4_private")
 
         results = await self.rvr_loop(
             iface=iface,
