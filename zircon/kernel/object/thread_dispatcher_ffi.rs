@@ -7,11 +7,12 @@
 use super::channel_dispatcher::MessageWaiter;
 use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
-use super::thread_dispatcher::{CoreThreadObservation, ThreadDispatcher};
+use super::thread_dispatcher::{CoreThreadObservation, ThreadDispatcher, ThreadDispatcherState};
 use core::mem::MaybeUninit;
+use fbl::RefPtr;
 use zx_types::{
     zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_info_thread_stats_t,
-    zx_info_thread_t, zx_rights_t, zx_status_t, zx_vaddr_t,
+    zx_info_thread_t, zx_koid_t, zx_rights_t, zx_status_t, zx_vaddr_t,
 };
 
 unsafe extern "C" {
@@ -70,22 +71,36 @@ unsafe extern "C" {
         obs: *mut CoreThreadObservation,
     );
 
-    /// Creates a new ThreadDispatcher.
+    /// Allocates and constructs a ThreadDispatcher.
     ///
     /// # Safety
     ///
     /// `process` must point to a valid `ProcessDispatcher` whose reference count was transferred.
-    /// `name_ptr` must point to at least `name_len` readable bytes.
-    /// `out_handle` must point to valid uninitialized memory for a `KernelHandle<ThreadDispatcher>`.
-    /// `out_rights` must point to valid uninitialized memory for a `zx_rights_t`.
-    pub(crate) fn cpp_thread_dispatcher_create(
+    /// `out_handle` must point to valid uninitialized memory for a
+    /// `KernelHandle<ThreadDispatcher>`.
+    pub(crate) fn cpp_thread_dispatcher_alloc(
         process: *mut ProcessDispatcher,
         flags: u32,
-        name_ptr: *const core::ffi::c_char,
-        name_len: usize,
         out_handle: *mut MaybeUninit<KernelHandle<ThreadDispatcher>>,
-        out_rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
+
+    /// Stores the lower level kernel thread on a ThreadDispatcher.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid `ThreadDispatcher`, and `core_thread` must point to a
+    /// valid kernel `Thread`.
+    pub(crate) fn cpp_thread_dispatcher_set_core_thread(
+        thread: *mut ThreadDispatcher,
+        core_thread: *mut crate::kernel::thread::Thread,
+    );
+
+    /// Enters userspace on a newly created thread. Does not return.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid `ThreadDispatcher`.
+    pub(crate) fn cpp_thread_start_routine_entry(thread: *mut core::ffi::c_void) -> i32;
 
     /// Initializes a ThreadDispatcher.
     ///
@@ -275,15 +290,6 @@ unsafe extern "C" {
     #[allow(improper_ctypes)]
     pub fn cpp_thread_dispatcher_get_current_message_waiter() -> *mut MessageWaiter;
 
-    /// Returns the process that owns `thread`.
-    ///
-    /// # Safety
-    ///
-    /// `thread` must point to a valid `ThreadDispatcher`.
-    pub(crate) fn cpp_thread_dispatcher_process(
-        thread: *const ThreadDispatcher,
-    ) -> *const ProcessDispatcher;
-
     /// Returns a pointer to the thread's `Exceptionate`.
     ///
     /// # Safety
@@ -292,4 +298,81 @@ unsafe extern "C" {
     pub(crate) fn cpp_thread_dispatcher_exceptionate(
         thread: *mut ThreadDispatcher,
     ) -> *mut super::exceptionate::Exceptionate;
+}
+
+// Exported FFI functions for C++ callers:
+
+/// Creates a new ThreadDispatcher.
+///
+/// # Safety
+///
+/// `process` must point to a valid `ProcessDispatcher` whose reference count was transferred.
+/// `name_ptr` must point to at least `name_len` readable bytes.
+/// `out_handle` and `out_rights` must point to valid uninitialized memory.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_dispatcher_create(
+    process: *mut ProcessDispatcher,
+    flags: u32,
+    name_ptr: *const core::ffi::c_char,
+    name_len: usize,
+    out_handle: *mut MaybeUninit<KernelHandle<ThreadDispatcher>>,
+    out_rights: *mut MaybeUninit<zx_rights_t>,
+) -> zx_status_t {
+    // SAFETY: The caller transferred a reference count on `process`.
+    let process_ref = unsafe { RefPtr::from_raw(process) };
+    // SAFETY: The caller guarantees `name_ptr` points to `name_len` readable bytes
+    // whenever `name_len > 0`.
+    let name_slice = unsafe { zr::slice_from_raw_parts(name_ptr.cast(), name_len) };
+    match ThreadDispatcher::create(process_ref, flags, name_slice) {
+        Ok((handle, rights)) => {
+            // SAFETY: The caller guarantees both out pointers are valid for writes.
+            unsafe {
+                (*out_handle).write(handle);
+                (*out_rights).write(rights);
+            }
+            zx_types::ZX_OK
+        }
+        Err(status) => status.into_raw(),
+    }
+}
+
+/// Initializes `ThreadDispatcherState` in-place.
+///
+/// # Safety
+///
+/// `state` must point to valid uninitialized memory for `ThreadDispatcherState`.
+/// `process` must point to a valid `ProcessDispatcher` carrying an acquired refcount.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_dispatcher_state_init(
+    state: *mut ThreadDispatcherState,
+    disp: &ThreadDispatcher,
+    process: *mut ProcessDispatcher,
+) {
+    // SAFETY: The caller transferred a reference count on `process` and guarantees `state`
+    // points to uninitialized storage of the right size and alignment.
+    unsafe {
+        let process_ref = RefPtr::from_raw(process);
+        let _ =
+            pin_init::PinInit::__pinned_init(ThreadDispatcherState::init(disp, process_ref), state);
+    }
+}
+
+/// Returns the related process koid for this thread.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_dispatcher_get_related_koid(thread: &ThreadDispatcher) -> zx_koid_t {
+    thread.get_related_koid()
+}
+
+/// Returns the parent process of this thread.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_dispatcher_get_process(
+    thread: &ThreadDispatcher,
+) -> *mut ProcessDispatcher {
+    thread.process() as *const ProcessDispatcher as *mut ProcessDispatcher
+}
+
+/// Asserts that the thread dispatcher's canary is valid.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_dispatcher_assert_canary(thread: &ThreadDispatcher) {
+    thread.assert_canary();
 }

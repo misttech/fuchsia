@@ -36,54 +36,35 @@
 
 #define LOCAL_TRACE 0
 
-KCOUNTER(dispatcher_thread_create_count, "dispatcher.thread.create")
-KCOUNTER(dispatcher_thread_destroy_count, "dispatcher.thread.destroy")
-
 // static
 zx_status_t ThreadDispatcher::Create(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags,
                                      ktl::string_view name,
                                      KernelHandle<ThreadDispatcher>* out_handle,
                                      zx_rights_t* out_rights) {
-  // Create the user-mode thread and attach it to the process and lower level thread.
-  fbl::AllocChecker ac;
-  auto user_thread = fbl::AdoptRef(new (&ac) ThreadDispatcher(process, flags));
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
+  ffi::Uninitialized<KernelHandle<ThreadDispatcher>> handle;
+  ffi::Uninitialized<zx_rights_t> rights;
+  zx_status_t status = rust_thread_dispatcher_create(fbl::ExportToRawPtr(&process), flags,
+                                                     name.data(), name.size(), &handle, &rights);
+  if (status == ZX_OK) {
+    *out_handle = ktl::move(handle.Get());
+    *out_rights = rights.Get();
   }
-
-  // The default profile for user mode threads is a fair profile with default
-  // weight which is not inherited by default.
-  const SchedulerState::BaseProfile profile{DEFAULT_PRIORITY, false};
-
-  // Create the lower level thread and attach it to the scheduler.
-  Thread* core_thread = Thread::Create(name, StartRoutine, user_thread.get(), profile);
-  if (!core_thread) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  // We haven't yet compeleted initialization of |user_thread|, and
-  // references to it haven't possibly escaped this thread. We can
-  // safely set |core_thread_| outside the lock.
-  [&user_thread, &core_thread]()
-      TA_NO_THREAD_SAFETY_ANALYSIS { user_thread->core_thread_ = core_thread; }();
-
-  // The syscall layer will call Initialize(), which used to be called here.
-
-  *out_rights = default_rights();
-  *out_handle = KernelHandle(ktl::move(user_thread));
-  return ZX_OK;
+  return status;
 }
 
+// |flags| is accepted for symmetry with Create() but is unused.
 ThreadDispatcher::ThreadDispatcher(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags)
-    : process_(ktl::move(process)), exceptionate_(ZX_EXCEPTION_CHANNEL_TYPE_THREAD) {
-  LTRACE_ENTRY_OBJ;
-  kcounter_add(dispatcher_thread_create_count, 1);
+    : Dispatcher(0u), exceptionate_(ZX_EXCEPTION_CHANNEL_TYPE_THREAD) {
+  DISPATCHER_VERIFY_OFFSET(ThreadDispatcher, kThreadDispatcherStateOffset);
+  rust_thread_dispatcher_state_init(&opaque_storage_, this, fbl::ExportToRawPtr(&process));
+}
+
+Lock<CriticalMutex>* ThreadDispatcher::get_lock() const {
+  return rust_thread_dispatcher_state_get_lock(&opaque_storage_);
 }
 
 ThreadDispatcher::~ThreadDispatcher() {
   LTRACE_ENTRY_OBJ;
-
-  kcounter_add(dispatcher_thread_destroy_count, 1);
 
   DEBUG_ASSERT_MSG(!HasStartedLocked() || IsDyingOrDeadLocked(),
                    "Thread %p killed in bad state: %s\n", this,
@@ -92,7 +73,7 @@ ThreadDispatcher::~ThreadDispatcher() {
   if (state_.lifecycle() != ThreadState::Lifecycle::INITIAL) {
     // We grew the pool in Initialize(), which transitioned the thread from its
     // inintial state.
-    process_->futex_context().ShrinkFutexStatePool();
+    process()->futex_context().ShrinkFutexStatePool();
   }
 
   // If MakeRunnable hasn't been called, then our core_thread_ has never run and
@@ -102,6 +83,9 @@ ThreadDispatcher::~ThreadDispatcher() {
     core_thread_->Forget();
     core_thread_ = nullptr;
   }
+
+  // Runs last so that the code above can still reach the parent process through the Rust state.
+  rust_thread_dispatcher_state_destroy(&opaque_storage_);
 }
 
 // complete initialization of the thread object outside of the constructor
@@ -109,7 +93,7 @@ zx_status_t ThreadDispatcher::Initialize() {
   LTRACE_ENTRY_OBJ;
 
   // Make sure we contribute a FutexState object to our process's futex state.
-  auto result = process_->futex_context().GrowFutexStatePool();
+  auto result = process()->futex_context().GrowFutexStatePool();
   if (result != ZX_OK) {
     return result;
   }
@@ -117,7 +101,7 @@ zx_status_t ThreadDispatcher::Initialize() {
   Guard<CriticalMutex> guard{get_lock()};
   // Associate the proc's address space with this thread. All threads start off with the normal
   // address space as their active aspace.
-  VmAspace* aspace = process_->normal_aspace();
+  VmAspace* aspace = process()->normal_aspace();
   aspace->AttachToThread(core_thread_);
   // we've entered the initialized state
   SetStateLocked(ThreadState::Lifecycle::INITIALIZED);
@@ -125,7 +109,7 @@ zx_status_t ThreadDispatcher::Initialize() {
 }
 
 zx_status_t ThreadDispatcher::set_name(const char* name, size_t len) {
-  canary_.Assert();
+  AssertCanary();
 
   Guard<CriticalMutex> thread_guard{get_lock()};
   if (core_thread_ == nullptr) {
@@ -139,7 +123,7 @@ zx_status_t ThreadDispatcher::set_name(const char* name, size_t len) {
 }
 
 zx_status_t ThreadDispatcher::get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const {
-  canary_.Assert();
+  AssertCanary();
 
   memset(out_name, 0, ZX_MAX_NAME_LEN);
 
@@ -153,13 +137,13 @@ zx_status_t ThreadDispatcher::get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const 
 
 // start a thread
 zx_status_t ThreadDispatcher::Start(const EntryState& entry, bool ensure_initial_thread) {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
   // add ourselves to the process, which may fail if the process is in a dead state.
   // If the process is live then it will call our StartRunning routine.
-  return process_->AddInitializedThread(this, ensure_initial_thread, entry);
+  return process()->AddInitializedThread(this, ensure_initial_thread, entry);
 }
 
 zx_status_t ThreadDispatcher::MakeRunnable(const EntryState& entry, bool suspended) {
@@ -207,7 +191,7 @@ zx_status_t ThreadDispatcher::MakeRunnable(const EntryState& entry, bool suspend
 }
 
 void ThreadDispatcher::Kill() {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -234,7 +218,7 @@ void ThreadDispatcher::Kill() {
 }
 
 zx_status_t ThreadDispatcher::Suspend() {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -272,7 +256,7 @@ zx_status_t ThreadDispatcher::Suspend() {
 }
 
 void ThreadDispatcher::Resume() {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -302,7 +286,7 @@ void ThreadDispatcher::Resume() {
 }
 
 zx_status_t ThreadDispatcher::RestrictedKick() {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -348,7 +332,7 @@ bool ThreadDispatcher::HasStartedLocked() const {
 }
 
 void ThreadDispatcher::ExitingCurrent() {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -366,7 +350,7 @@ void ThreadDispatcher::ExitingCurrent() {
   //
   // Thread exit exceptions don't currently provide an iframe.
   arch_exception_context_t context{};
-  HandleSingleShotException(process_->debug_exceptionate(), ZX_EXCP_THREAD_EXITING, context);
+  HandleSingleShotException(process()->debug_exceptionate(), ZX_EXCP_THREAD_EXITING, context);
 
   // Mark the thread as dead. Do this before removing the thread from the
   // process because if this is the last thread then the process will be
@@ -401,7 +385,7 @@ void ThreadDispatcher::ExitingCurrent() {
   exceptionate_.Shutdown();
 
   // remove ourselves from our parent process's view
-  process_->RemoveThread(this);
+  process()->RemoveThread(this);
 
   LTRACE_EXIT_OBJ;
 }
@@ -469,11 +453,12 @@ int ThreadDispatcher::StartRoutine(void* arg) {
 
   // Notify job debugger if attached.
   if (t->is_initial_thread_) {
-    t->process_->OnProcessStartForJobDebugger(t, &context);
+    t->process()->OnProcessStartForJobDebugger(t, &context);
   }
 
   // Notify debugger if attached.
-  t->HandleSingleShotException(t->process_->debug_exceptionate(), ZX_EXCP_THREAD_STARTING, context);
+  t->HandleSingleShotException(t->process()->debug_exceptionate(), ZX_EXCP_THREAD_STARTING,
+                               context);
 
   arch_disable_ints();
   arch_iframe_process_pending_signals(&iframe);
@@ -484,7 +469,7 @@ int ThreadDispatcher::StartRoutine(void* arg) {
 }
 
 void ThreadDispatcher::SetStateLocked(ThreadState::Lifecycle lifecycle) {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACEF("thread %p: state %u (%s)\n", this, static_cast<unsigned int>(lifecycle),
           ThreadLifecycleToString(lifecycle));
@@ -513,7 +498,7 @@ void ThreadDispatcher::SetStateLocked(ThreadState::Lifecycle lifecycle) {
 }
 
 bool ThreadDispatcher::InExceptionLocked() {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
   DEBUG_ASSERT(get_lock()->lock().IsHeld());
@@ -521,7 +506,7 @@ bool ThreadDispatcher::InExceptionLocked() {
 }
 
 bool ThreadDispatcher::SuspendedOrInExceptionLocked() {
-  canary_.Assert();
+  AssertCanary();
   return state_.lifecycle() == ThreadState::Lifecycle::SUSPENDED || InExceptionLocked();
 }
 
@@ -573,7 +558,7 @@ static zx_thread_state_t ThreadLifecycleToState(ThreadState::Lifecycle lifecycle
 }
 
 zx_info_thread_t ThreadDispatcher::GetInfoForUserspace() const {
-  canary_.Assert();
+  AssertCanary();
 
   zx_info_thread_t info = {};
 
@@ -599,7 +584,7 @@ zx_info_thread_t ThreadDispatcher::GetInfoForUserspace() const {
 }
 
 zx_status_t ThreadDispatcher::GetStatsForUserspace(zx_info_thread_stats_t* info) {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -617,28 +602,28 @@ zx_status_t ThreadDispatcher::GetStatsForUserspace(zx_info_thread_stats_t* info)
 }
 
 TaskRuntimeStats ThreadDispatcher::GetCompensatedTaskRuntimeStats() const {
-  canary_.Assert();
+  AssertCanary();
   return runtime_stats_.GetCompensatedTaskRuntimeStats();
 }
 
 void ThreadDispatcher::UpdateRuntimeStats(thread_state new_state) {
-  canary_.Assert();
+  AssertCanary();
   DEBUG_ASSERT(arch_ints_disabled());
   runtime_stats_.Update(new_state, ThreadRuntimeStats::NoIrqSave);
 }
 
 void ThreadDispatcher::AddPageFaultTicks(zx_duration_mono_ticks_t ticks) {
-  canary_.Assert();
+  AssertCanary();
   runtime_stats_.AddPageFaultTicks(ticks);
 }
 
 void ThreadDispatcher::AddLockContentionTicks(zx_duration_mono_ticks_t ticks) {
-  canary_.Assert();
+  AssertCanary();
   runtime_stats_.AddLockContentionTicks(ticks);
 }
 
 zx_status_t ThreadDispatcher::GetExceptionReport(zx_exception_report_t* report) {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
   Guard<CriticalMutex> guard{get_lock()};
@@ -656,14 +641,14 @@ zx_status_t ThreadDispatcher::GetExceptionReport(zx_exception_report_t* report) 
 }
 
 Exceptionate* ThreadDispatcher::exceptionate() {
-  canary_.Assert();
+  AssertCanary();
   return &exceptionate_;
 }
 
 zx_status_t ThreadDispatcher::HandleException(Exceptionate* exceptionate,
                                               fbl::RefPtr<ExceptionDispatcher> exception,
                                               bool* sent) {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -720,7 +705,7 @@ zx_status_t ThreadDispatcher::HandleException(Exceptionate* exceptionate,
 bool ThreadDispatcher::HandleSingleShotException(Exceptionate* exceptionate,
                                                  zx_excp_type_t exception_type,
                                                  const arch_exception_context_t& arch_context) {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -738,7 +723,7 @@ bool ThreadDispatcher::HandleSingleShotException(Exceptionate* exceptionate,
       ExceptionDispatcher::Create(fbl::RefPtr(this), exception_type, &report, &arch_context);
   if (!exception) {
     printf("KERN: failed to allocate memory for exception type %u in thread %lu.%lu\n",
-           exception_type, process_->get_koid(), get_koid());
+           exception_type, process()->get_koid(), get_koid());
     return false;
   }
 
@@ -784,7 +769,7 @@ zx_status_t ThreadDispatcher::ReadStateGeneric(F get_state_func, user_out_ptr<vo
 
 zx_status_t ThreadDispatcher::ReadState(zx_thread_state_topic_t state_kind,
                                         user_out_ptr<void> buffer, size_t buffer_size) {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -835,7 +820,7 @@ zx_status_t ThreadDispatcher::WriteStateGeneric(F set_state_func, user_in_ptr<co
 
 zx_status_t ThreadDispatcher::WriteState(zx_thread_state_topic_t state_kind,
                                          user_in_ptr<const void> buffer, size_t buffer_size) {
-  canary_.Assert();
+  AssertCanary();
 
   LTRACE_ENTRY_OBJ;
 
@@ -900,10 +885,4 @@ const char* ThreadLifecycleToString(ThreadState::Lifecycle lifecycle) {
       return "dead";
   }
   return "unknown";
-}
-
-zx_koid_t ThreadDispatcher::get_related_koid() const {
-  canary_.Assert();
-
-  return process_->get_koid();
 }

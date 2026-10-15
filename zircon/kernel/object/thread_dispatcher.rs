@@ -1,4 +1,4 @@
-// Copyright 2026 The Fuchsia Authors
+// Copyright 2016 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
@@ -8,7 +8,7 @@ use super::channel_dispatcher::MessageWaiter;
 use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher_ffi::{
-    cpp_sys_thread_legacy_yield, cpp_sys_thread_raise_exception, cpp_thread_dispatcher_create,
+    cpp_sys_thread_legacy_yield, cpp_sys_thread_raise_exception, cpp_thread_dispatcher_alloc,
     cpp_thread_dispatcher_current, cpp_thread_dispatcher_exit_current,
     cpp_thread_dispatcher_get_current_message_waiter, cpp_thread_dispatcher_get_exception_report,
     cpp_thread_dispatcher_get_info_for_userspace, cpp_thread_dispatcher_get_runtime_stats,
@@ -19,25 +19,94 @@ use super::thread_dispatcher_ffi::{
     cpp_thread_dispatcher_lock_release, cpp_thread_dispatcher_read_state,
     cpp_thread_dispatcher_release_core_thread_observation, cpp_thread_dispatcher_restricted_kick,
     cpp_thread_dispatcher_resume, cpp_thread_dispatcher_set_base_profile,
-    cpp_thread_dispatcher_set_soft_affinity, cpp_thread_dispatcher_start,
-    cpp_thread_dispatcher_suspend, cpp_thread_dispatcher_write_state,
+    cpp_thread_dispatcher_set_core_thread, cpp_thread_dispatcher_set_soft_affinity,
+    cpp_thread_dispatcher_start, cpp_thread_dispatcher_suspend, cpp_thread_dispatcher_write_state,
+    cpp_thread_start_routine_entry,
 };
-use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
+use crate::counters::define_kcounter;
+use crate::kernel::scheduler_state::{DEFAULT_PRIORITY, SchedulerStateBaseProfile};
 use crate::kernel::thread::{Thread, ThreadPtr};
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
-use ksync::LockToken;
+use debug::ltrace_entry_obj;
+use fbl::{Canary, RefPtr};
+use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
+use object_constants_rs as object_constants;
+use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_info_thread_stats_t,
-    zx_info_thread_t, zx_rights_t, zx_vaddr_t,
+    ZX_OBJ_TYPE_THREAD, zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t,
+    zx_info_thread_stats_t, zx_info_thread_t, zx_rights_t, zx_vaddr_t,
 };
 
 pub use crate::kernel::types::cpu_mask_t;
 
-crate::object::dispatcher::impl_dispatcher_facade!(
+const LOCAL_TRACE: u32 = 0;
+
+define_kcounter!(DISPATCHER_THREAD_CREATE_COUNT, "dispatcher.thread.create", Sum);
+define_kcounter!(DISPATCHER_THREAD_DESTROY_COUNT, "dispatcher.thread.destroy", Sum);
+
+/// Internal state storage for `ThreadDispatcher`.
+///
+/// The remaining `ThreadDispatcher` fields are still C++; they migrate here as the methods
+/// that use them move to Rust.
+#[guarded]
+#[pin_data(PinnedDrop)]
+#[repr(C)]
+pub struct ThreadDispatcherState {
+    canary: Canary<{ fbl::magic(b"THRD") }>,
+
+    /// A ref pointer back to the parent process.
+    process: RefPtr<ProcessDispatcher>,
+
+    #[mutex]
+    lock: KMutex<RawCriticalMutex>,
+}
+
+zr::static_assert_size_and_align!(
+    ThreadDispatcherState,
+    object_constants::kThreadDispatcherStateSize,
+    object_constants::kThreadDispatcherStateAlign,
+);
+
+impl ThreadDispatcherState {
+    /// Initializes the `ThreadDispatcherState` in-place.
+    ///
+    /// `dispatcher` is the enclosing `ThreadDispatcher`.
+    pub fn init(
+        dispatcher: &ThreadDispatcher,
+        process: RefPtr<ProcessDispatcher>,
+    ) -> impl PinInit<Self, core::convert::Infallible> {
+        pin_init!(Self {
+            canary: {
+                // Creation side effects (trace logging and incrementing the creation counter)
+                // live inside the initializer so that they run only when it is applied rather
+                // than when the `PinInit` is constructed: a `PinInit` dropped without being
+                // applied would otherwise bump the create counter with no matching destroy.
+                ltrace_entry_obj!(dispatcher);
+                DISPATCHER_THREAD_CREATE_COUNT.add(1);
+                Canary::new()
+            },
+            process,
+            lock <- KMutex::init(),
+        })
+    }
+}
+
+#[pinned_drop]
+impl PinnedDrop for ThreadDispatcherState {
+    fn drop(self: core::pin::Pin<&mut Self>) {
+        let this = self.project();
+        this.canary.assert();
+        DISPATCHER_THREAD_DESTROY_COUNT.add(1);
+    }
+}
+
+crate::object::dispatcher::impl_dispatcher_facade_with_state!(
     pub struct ThreadDispatcher,
-    zx_types::ZX_OBJ_TYPE_THREAD
+    ThreadDispatcherState,
+    ZX_OBJ_TYPE_THREAD,
+    object_constants::kThreadDispatcherStateOffset
 );
 
 zr::static_assert!(core::mem::size_of::<ThreadDispatcher>() == 0);
@@ -86,10 +155,13 @@ impl core::ops::Deref for CurrentMessageWaiter {
     }
 }
 
+/// Default rights for a thread handle.
+pub const DEFAULT_RIGHTS: zx_rights_t = zx_types::ZX_DEFAULT_THREAD_RIGHTS;
+
 impl ThreadDispatcher {
     /// Returns default rights for a thread handle.
     pub const fn default_rights() -> zx_rights_t {
-        zx_types::ZX_DEFAULT_THREAD_RIGHTS
+        DEFAULT_RIGHTS
     }
 
     /// Returns a wrapper that dereferences to the current [`ThreadDispatcher`].
@@ -111,27 +183,62 @@ impl ThreadDispatcher {
         CurrentMessageWaiter { ptr }
     }
 
+    /// Asserts that the dispatcher state is valid.
+    pub fn assert_canary(&self) {
+        self.state().canary.assert();
+    }
+
+    /// Returns a reference to the parent process.
+    pub fn process(&self) -> &ProcessDispatcher {
+        self.assert_canary();
+        &self.state().process
+    }
+
+    /// Returns the koid of the parent process.
+    pub fn get_related_koid(&self) -> zx_types::zx_koid_t {
+        self.process().get_koid()
+    }
+
     /// Creates a new child `ThreadDispatcher` under the given parent process.
     pub fn create(
-        process: fbl::RefPtr<ProcessDispatcher>,
+        process: RefPtr<ProcessDispatcher>,
         flags: u32,
         name: &[u8],
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let process_raw = fbl::RefPtr::into_raw(process) as *mut _;
-        // SAFETY: `process_raw` is a valid pointer carrying an acquired refcount, and
-        // `cpp_thread_dispatcher_create` initializes `handle` and `rights` on success.
+        // Create the user-mode thread and attach it to the process and lower level thread.
+        let process_raw = RefPtr::into_raw(process).cast_mut();
+        // SAFETY: `process_raw` is a valid pointer carrying an acquired refcount.
+        let handle = unsafe {
+            KernelHandle::create(|out| cpp_thread_dispatcher_alloc(process_raw, flags, out))
+        }?;
+
+        let user_thread = &**handle.dispatcher() as *const Self as *mut Self;
+
+        // The default profile for user mode threads is a fair profile with default
+        // weight which is not inherited by default.
+        let profile = SchedulerStateBaseProfile::fair(DEFAULT_PRIORITY, false);
+
+        // Create the lower level thread and attach it to the scheduler.
+        // SAFETY: `user_thread` is valid for the lifetime of `handle`.
+        let core_thread = unsafe {
+            crate::kernel::thread::create_with_profile(
+                name,
+                rust_thread_start_routine,
+                user_thread.cast::<c_void>(),
+                &profile,
+            )?
+        };
+
+        // We haven't yet completed initialization of `user_thread`, and references to it
+        // haven't possibly escaped this thread. We can safely set `core_thread` outside the
+        // lock.
+        // SAFETY: `user_thread` and `core_thread` are valid pointers.
         unsafe {
-            KernelHandle::create_with_rights(|handle_out, rights_out| {
-                cpp_thread_dispatcher_create(
-                    process_raw,
-                    flags,
-                    name.as_ptr().cast(),
-                    name.len(),
-                    handle_out,
-                    rights_out,
-                )
-            })
+            cpp_thread_dispatcher_set_core_thread(user_thread, core_thread.as_raw());
         }
+
+        // The syscall layer will call initialize().
+        Ok((handle, Self::default_rights()))
     }
 
     /// Initializes a newly created `ThreadDispatcher`.
@@ -342,13 +449,6 @@ impl ThreadDispatcher {
         Status::ok(status)
     }
 
-    /// Returns a reference to the process that owns this thread.
-    pub fn process(&self) -> &ProcessDispatcher {
-        // SAFETY: `self` is a valid `ThreadDispatcher`, which holds a `RefPtr<ProcessDispatcher>`
-        // for its entire lifetime.
-        unsafe { &*super::thread_dispatcher_ffi::cpp_thread_dispatcher_process(self as *const _) }
-    }
-
     /// Returns the thread's `Exceptionate`.
     pub fn exceptionate(&self) -> &super::exceptionate::Exceptionate {
         // SAFETY: `self` is a valid `ThreadDispatcher`, which owns `exceptionate_` for its entire
@@ -386,15 +486,14 @@ impl ThreadDispatcher {
 }
 
 /// Lock class tag for a [`ThreadDispatcher`]'s dispatcher lock (C++
-/// `ThreadDispatcher::get_lock()`).
+/// `ThreadDispatcher::get_lock()`), which is the `lock` field of [`ThreadDispatcherState`].
 ///
 /// A [`LockToken`] of this class is the Rust analogue of C++'s `TA_REQ(get_lock())`: it proves
 /// that *some* `ThreadDispatcher`'s dispatcher lock is held by the current thread. Because a
 /// `LockToken` is per lock class rather than per lock instance, it does not prove *which*
 /// `ThreadDispatcher`'s lock is held; methods taking such a token remain `unsafe` and require the
 /// caller to guarantee that the token came from the lock of the instance being operated on.
-#[derive(Debug, Default)]
-pub struct ThreadDispatcherLockClass;
+pub type ThreadDispatcherLockClass = ThreadDispatcherStateLockClass;
 
 /// Optional RAII guard for a [`ThreadDispatcher`]'s critical mutex, mirroring C++
 /// `NullLockPolicy` / `Guard<CriticalMutex>::NullLock`.
@@ -518,7 +617,7 @@ impl Blocked {
     pub const PAGER: Self = Self(9);
 }
 
-/// RAII helper that sets the current thread's `blocked_reason_` and restores it on drop.
+/// RAII helper that sets the current thread's `blocked_reason` and restores it on drop.
 pub struct AutoBlocked {
     prev_reason: Blocked,
 }
@@ -551,3 +650,60 @@ impl Drop for AutoBlocked {
 
 zr::static_assert!(core::mem::size_of::<Blocked>() == 4);
 zr::static_assert!(core::mem::align_of::<Blocked>() == 4);
+
+/// Trampoline entry routine called by `Thread::Create`.
+///
+/// The body stays in C++ because it builds the architecture-specific iframe and performs the
+/// `arch_enter_uspace()` transition.
+extern "C" fn rust_thread_start_routine(arg: *mut c_void) -> i32 {
+    // SAFETY: `arg` is the `ThreadDispatcher` pointer handed to `create_with_profile`, and the
+    // core thread cannot run before that dispatcher exists.
+    unsafe { cpp_thread_start_routine_entry(arg) }
+}
+
+/// In-tree kernel unit tests for `ThreadDispatcher`.
+#[cfg(ktest)]
+#[unittest::suite(name = "thread_dispatcher_rust")]
+mod tests {
+    use super::super::job_dispatcher::JobDispatcher;
+    use super::super::process_dispatcher::ProcessDispatcher;
+    use super::ThreadDispatcher;
+    use unittest::{expect_eq, expect_ok};
+
+    /// Tests creating and destroying a thread without initializing it.
+    #[test]
+    fn test_create_destroy_thread_no_init() {
+        let root_job = JobDispatcher::create_root_job();
+        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
+            ProcessDispatcher::create(root_job, b"k-ut-p0", 0).expect("process created");
+        let (thread_handle, rights) =
+            ThreadDispatcher::create(proc_handle.dispatcher().clone(), 0, b"k-ut-t0")
+                .expect("thread created");
+        expect_eq!(rights, ThreadDispatcher::default_rights());
+        expect_eq!(
+            thread_handle.dispatcher().get_related_koid(),
+            proc_handle.dispatcher().get_koid()
+        );
+        expect_eq!(
+            thread_handle.dispatcher().process().get_koid(),
+            proc_handle.dispatcher().get_koid()
+        );
+        expect_eq!(thread_handle.dispatcher().get_type(), zx_types::ZX_OBJ_TYPE_THREAD);
+        expect_eq!(thread_handle.dispatcher().is_current(), false);
+        thread_handle.dispatcher().assert_canary();
+    }
+
+    /// Tests creating, initializing, and destroying a thread.
+    #[test]
+    fn test_create_init_destroy_thread() {
+        let root_job = JobDispatcher::create_root_job();
+        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
+            ProcessDispatcher::create(root_job, b"k-ut-p1", 0).expect("process created");
+        let (thread_handle, rights) =
+            ThreadDispatcher::create(proc_handle.dispatcher().clone(), 0, b"k-ut-t1")
+                .expect("thread created");
+        expect_eq!(rights, ThreadDispatcher::default_rights());
+        expect_ok!(thread_handle.dispatcher().initialize());
+        thread_handle.dispatcher().assert_canary();
+    }
+}

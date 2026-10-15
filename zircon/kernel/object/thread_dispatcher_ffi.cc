@@ -9,6 +9,7 @@
 #include <lib/object-constants.h>
 #include <lib/user_copy/user_ptr.h>
 
+#include <fbl/alloc_checker.h>
 #include <kernel/ffi.h>
 #include <object/channel_dispatcher.h>
 #include <object/process_dispatcher.h>
@@ -91,20 +92,28 @@ FFI_ALWAYS_INLINE void cpp_thread_dispatcher_release_core_thread_observation(
   obs->Release();
 }
 
-zx_status_t cpp_thread_dispatcher_create(
-    ProcessDispatcher* process, uint32_t flags, const char* name_ptr, size_t name_len,
-    ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle,
-    ffi::Uninitialized<zx_rights_t>* out_rights) {
-  KernelHandle<ThreadDispatcher> handle;
-  zx_rights_t rights;
-  zx_status_t status =
-      ThreadDispatcher::Create(fbl::ImportFromRawPtr(process), flags,
-                               ktl::string_view(name_ptr, name_len), &handle, &rights);
-  if (status == ZX_OK) {
-    out_handle->Initialize(ktl::move(handle));
-    out_rights->Initialize(rights);
+zx_status_t cpp_thread_dispatcher_alloc(
+    ProcessDispatcher* process, uint32_t flags,
+    ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle) {
+  fbl::RefPtr<ProcessDispatcher> process_ref = fbl::ImportFromRawPtr(process);
+  fbl::AllocChecker ac;
+  auto user_thread = fbl::AdoptRef(new (&ac) ThreadDispatcher(ktl::move(process_ref), flags));
+  if (!ac.check()) {
+    return ZX_ERR_NO_MEMORY;
   }
-  return status;
+  out_handle->Initialize(KernelHandle<ThreadDispatcher>(ktl::move(user_thread)));
+  return ZX_OK;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dispatcher_set_core_thread(ThreadDispatcher* thread,
+                                                             Thread* core_thread) {
+  thread->set_core_thread(core_thread);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE int cpp_thread_start_routine_entry(void* thread) {
+  return ThreadDispatcher::StartRoutine(thread);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -239,12 +248,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_get_exception_report(
 FFI_ALWAYS_INLINE ChannelDispatcher::MessageWaiter*
 cpp_thread_dispatcher_get_current_message_waiter() {
   return ThreadDispatcher::GetCurrent()->GetMessageWaiter();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE const ProcessDispatcher* cpp_thread_dispatcher_process(
-    const ThreadDispatcher* thread) {
-  return thread->process();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

@@ -213,4 +213,19 @@ constexpr size_t kPortInterruptPacketAlign = 8;
 constexpr size_t kFutexContextStorageSize = 56;
 constexpr size_t kFutexContextStorageAlign = 8;
 
+// Size, alignment, and offset for ThreadDispatcherState.
+//
+// The offset is large because most of ThreadDispatcher's fields are still C++ and precede
+// opaque_storage_; it shrinks as those fields migrate into the Rust state.
+//
+// It is also configuration dependent, unlike every other dispatcher here, whose state sits
+// immediately after the Dispatcher base. Three lockdep-instrumented locks live in the C++
+// fields that precede opaque_storage_ - runtime_stats_'s SeqLock, exceptionate_'s mutex, and
+// core_thread_lock_ - and each grows by one lock class id when lockdep is enabled, moving
+// opaque_storage_ later by 3 * kLockClassIdSize bytes. The base offset is taken from the
+// compiler, not computed by hand.
+constexpr size_t kThreadDispatcherStateSize = 64;
+constexpr size_t kThreadDispatcherStateAlign = 8;
+constexpr size_t kThreadDispatcherStateOffset = 416 + (3 * kLockClassIdSize);
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_
