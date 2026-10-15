@@ -203,6 +203,24 @@ impl VirtualConsoleViewAssistant {
         font_size: f32,
         dpi: BTreeSet<u32>,
     ) -> Result<ViewAssistantPtr, Error> {
+        Ok(Box::new(Self::create(
+            app_sender,
+            view_key,
+            color_scheme,
+            round_scene_corners,
+            font_size,
+            dpi,
+        )?))
+    }
+
+    pub fn create(
+        app_sender: &AppSender,
+        view_key: ViewKey,
+        color_scheme: ColorScheme,
+        round_scene_corners: bool,
+        font_size: f32,
+        dpi: BTreeSet<u32>,
+    ) -> Result<VirtualConsoleViewAssistant, Error> {
         let cell_size = Size::new(8.0, 16.0);
         let tab_width = MIN_TAB_WIDTH;
         let scene_details = None;
@@ -233,7 +251,7 @@ impl VirtualConsoleViewAssistant {
         let power_button_press_handler =
             RepeatedButtonPressHandler::new(ConsumerControlButton::Power);
 
-        Ok(Box::new(VirtualConsoleViewAssistant {
+        Ok(VirtualConsoleViewAssistant {
             app_sender: app_sender.clone(),
             view_key,
             color_scheme,
@@ -250,14 +268,42 @@ impl VirtualConsoleViewAssistant {
             active_pointer_id,
             start_pointer_location,
             power_button_press_handler,
-        }))
+        })
+    }
+
+    pub fn handle_ownership_change(&mut self, owned: bool) -> Result<(), Error> {
+        self.owns_display = owned;
+        if !owned {
+            self.active_pointer_id = None;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn owns_display(&self) -> bool {
+        self.owns_display
+    }
+
+    #[cfg(test)]
+    pub fn active_terminal_id(&self) -> u32 {
+        self.active_terminal_id
+    }
+
+    #[cfg(test)]
+    pub fn active_pointer_id(&self) -> Option<input::pointer::PointerId> {
+        self.active_pointer_id.clone()
+    }
+
+    #[cfg(test)]
+    fn new_assistant_for_test() -> Result<VirtualConsoleViewAssistant, Error> {
+        let app_sender = AppSender::new_for_testing_purposes_only();
+        let dpi: BTreeSet<u32> = [160, 320, 480, 640].iter().cloned().collect();
+        Self::create(&app_sender, Default::default(), ColorScheme::default(), false, 14.0, dpi)
     }
 
     #[cfg(test)]
     fn new_for_test() -> Result<ViewAssistantPtr, Error> {
-        let app_sender = AppSender::new_for_testing_purposes_only();
-        let dpi: BTreeSet<u32> = [160, 320, 480, 640].iter().cloned().collect();
-        Self::new(&app_sender, Default::default(), ColorScheme::default(), false, 14.0, dpi)
+        Ok(Box::new(Self::new_assistant_for_test()?))
     }
 
     // Resize all terminals for 'new_size'.
@@ -675,12 +721,39 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
         Ok(())
     }
 
+    fn handle_input_event(
+        &mut self,
+        context: &mut ViewAssistantContext,
+        event: &input::Event,
+    ) -> Result<(), Error> {
+        if !self.owns_display {
+            return Ok(());
+        }
+        match &event.event_type {
+            input::EventType::Mouse(mouse_event) => {
+                self.handle_mouse_event(context, event, mouse_event)
+            }
+            input::EventType::Touch(touch_event) => {
+                self.handle_touch_event(context, event, touch_event)
+            }
+            input::EventType::Keyboard(keyboard_event) => {
+                self.handle_keyboard_event(context, event, keyboard_event)
+            }
+            input::EventType::ConsumerControl(consumer_control_event) => {
+                self.handle_consumer_control_event(context, event, consumer_control_event)
+            }
+        }
+    }
+
     fn handle_consumer_control_event(
         &mut self,
         context: &mut ViewAssistantContext,
         event: &input::Event,
         consumer_control_event: &input::consumer_control::Event,
     ) -> Result<(), Error> {
+        if !self.owns_display {
+            return Ok(());
+        }
         self.handle_device_control_consumer_control_event(
             context,
             consumer_control_event,
@@ -695,11 +768,11 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
         _event: &input::Event,
         keyboard_event: &input::keyboard::Event,
     ) -> Result<(), Error> {
-        if self.handle_device_control_keyboard_event(context, keyboard_event)? {
+        if !self.owns_display {
             return Ok(());
         }
 
-        if !self.owns_display {
+        if self.handle_device_control_keyboard_event(context, keyboard_event)? {
             return Ok(());
         }
 
@@ -820,8 +893,7 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
     }
 
     fn ownership_changed(&mut self, owned: bool) -> Result<(), Error> {
-        self.owns_display = owned;
-        Ok(())
+        self.handle_ownership_change(owned)
     }
 }
 
@@ -916,5 +988,176 @@ mod tests {
         handler.handle_button_event(&FUNCTION_EVENT_UP, 1_300_000_000);
         assert_eq!(handler.press_durations_ns, vec![100_000_000]);
         assert_eq!(handler.down_times_ns, vec![1_000_000_000]);
+    }
+
+    #[test]
+    fn test_ownership_change_and_input_gating() -> Result<(), Error> {
+        let mut assistant = VirtualConsoleViewAssistant::new_assistant_for_test()?;
+        assert!(assistant.owns_display());
+
+        // Add two terminals so we can test terminal switching.
+        let term0 = Terminal::new("term0".to_string(), ColorScheme::default(), 1024, None);
+        let term1 = Terminal::new("term1".to_string(), ColorScheme::default(), 1024, None);
+        let status = TerminalStatus { has_output: false, at_top: true, at_bottom: true };
+        assistant.terminals.insert(0, (term0, status));
+        assistant.terminals.insert(1, (term1, status));
+        assert_eq!(assistant.active_terminal_id(), 0);
+
+        // When owns_display is changed to false.
+        assistant.ownership_changed(false)?;
+        assert!(!assistant.owns_display());
+
+        let mut context = ViewAssistantContext::new_for_testing();
+        let dummy_input_event = input::Event {
+            event_time: 100,
+            device_id: input::DeviceId("test-device".to_string()),
+            event_type: input::EventType::Keyboard(input::keyboard::Event {
+                phase: input::keyboard::Phase::Pressed,
+                hid_usage: 0x2b, // Tab
+                modifiers: input::Modifiers { alt: true, ..Default::default() },
+                code_point: None,
+            }),
+        };
+
+        // Key event: Alt-Tab should switch terminal when owns_display is true,
+        // but must be ignored when owns_display is false.
+        let key_event = input::keyboard::Event {
+            phase: input::keyboard::Phase::Pressed,
+            hid_usage: 0x2b, // Tab
+            modifiers: input::Modifiers { alt: true, ..Default::default() },
+            code_point: None,
+        };
+        assistant.handle_keyboard_event(&mut context, &dummy_input_event, &key_event)?;
+        assert_eq!(assistant.active_terminal_id(), 0);
+
+        // handle_input_event should also be ignored when owns_display is false.
+        assistant.handle_input_event(&mut context, &dummy_input_event)?;
+        assert_eq!(assistant.active_terminal_id(), 0);
+
+        // Pointer event: Down should be ignored when owns_display is false.
+        let pointer_down_event = input::pointer::Event {
+            phase: input::pointer::Phase::Down(carnelian::IntPoint::new(10, 10)),
+            pointer_id: input::pointer::PointerId::Mouse(input::DeviceId(
+                "test-device".to_string(),
+            )),
+        };
+        assistant.handle_pointer_event(&mut context, &dummy_input_event, &pointer_down_event)?;
+        assert_eq!(assistant.active_pointer_id(), None);
+
+        // When ownership is regained (owns_display = true).
+        assistant.ownership_changed(true)?;
+        assert!(assistant.owns_display());
+
+        // Alt-Tab should now switch active terminal.
+        assistant.handle_keyboard_event(&mut context, &dummy_input_event, &key_event)?;
+        assert_eq!(assistant.active_terminal_id(), 1);
+
+        // Pointer down should now be tracked.
+        assistant.handle_pointer_event(&mut context, &dummy_input_event, &pointer_down_event)?;
+        assert_eq!(
+            assistant.active_pointer_id(),
+            Some(input::pointer::PointerId::Mouse(input::DeviceId("test-device".to_string())))
+        );
+
+        // Ownership lost again should reset in-flight pointer state.
+        assistant.ownership_changed(false)?;
+        assert!(!assistant.owns_display());
+        assert_eq!(assistant.active_pointer_id(), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_terminal_scrollback_gating() -> Result<(), Error> {
+        let mut assistant = VirtualConsoleViewAssistant::new_assistant_for_test()?;
+        let term = Terminal::new("term".to_string(), ColorScheme::default(), 1024, None);
+        let status = TerminalStatus { has_output: false, at_top: true, at_bottom: true };
+        assistant.terminals.insert(0, (term, status));
+
+        // Process lines in active terminal to create scrollback history.
+        if let Some((terminal, _)) = assistant.terminals.get_mut(&0) {
+            let term = terminal.clone_term();
+            let mut parser = term.borrow_mut();
+            for i in 0..50 {
+                parser.process(format!("line {}\r\n", i).as_bytes());
+            }
+        }
+        assistant.scroll_active_terminal(Scroll::Bottom);
+        let offset_at_bottom = assistant.terminals.get(&0).unwrap().0.display_offset();
+        assert_eq!(offset_at_bottom, 0);
+
+        let mut context = ViewAssistantContext::new_for_testing();
+        let dummy_input_event = input::Event {
+            event_time: 100,
+            device_id: input::DeviceId("test-device".to_string()),
+            event_type: input::EventType::Keyboard(input::keyboard::Event {
+                phase: input::keyboard::Phase::Pressed,
+                hid_usage: 0x4b, // PageUp
+                modifiers: input::Modifiers { shift: true, ..Default::default() },
+                code_point: None,
+            }),
+        };
+
+        // When owns_display is false, Shift-PageUp scrollback must be ignored.
+        assistant.ownership_changed(false)?;
+        let page_up_event = input::keyboard::Event {
+            phase: input::keyboard::Phase::Pressed,
+            hid_usage: 0x4b, // PageUp
+            modifiers: input::Modifiers { shift: true, ..Default::default() },
+            code_point: None,
+        };
+        assistant.handle_keyboard_event(&mut context, &dummy_input_event, &page_up_event)?;
+        assert_eq!(assistant.terminals.get(&0).unwrap().0.display_offset(), 0);
+
+        // When owns_display is true, Shift-PageUp scrollback must be processed.
+        assistant.ownership_changed(true)?;
+        assistant.handle_keyboard_event(&mut context, &dummy_input_event, &page_up_event)?;
+        assert!(assistant.terminals.get(&0).unwrap().0.display_offset() > 0);
+
+        // When a character key is pressed while owns_display is true, it scrolls to bottom.
+        let char_event = input::keyboard::Event {
+            phase: input::keyboard::Phase::Pressed,
+            hid_usage: 0x04, // 'a'
+            modifiers: Default::default(),
+            code_point: Some(97),
+        };
+        assistant.handle_keyboard_event(&mut context, &dummy_input_event, &char_event)?;
+        assert_eq!(assistant.terminals.get(&0).unwrap().0.display_offset(), 0);
+
+        // Test pointer scrolling when owns_display is false vs true.
+        let pointer_down = input::pointer::Event {
+            phase: input::pointer::Phase::Down(carnelian::IntPoint::new(10, 10)),
+            pointer_id: input::pointer::PointerId::Mouse(input::DeviceId(
+                "test-device".to_string(),
+            )),
+        };
+        let pointer_move = input::pointer::Event {
+            phase: input::pointer::Phase::Moved(carnelian::IntPoint::new(10, 50)),
+            pointer_id: input::pointer::PointerId::Mouse(input::DeviceId(
+                "test-device".to_string(),
+            )),
+        };
+        let pointer_up = input::pointer::Event {
+            phase: input::pointer::Phase::Up,
+            pointer_id: input::pointer::PointerId::Mouse(input::DeviceId(
+                "test-device".to_string(),
+            )),
+        };
+
+        // When owns_display is false, pointer scroll must be ignored.
+        assistant.ownership_changed(false)?;
+        assistant.handle_pointer_event(&mut context, &dummy_input_event, &pointer_down)?;
+        assistant.handle_pointer_event(&mut context, &dummy_input_event, &pointer_move)?;
+        assistant.handle_pointer_event(&mut context, &dummy_input_event, &pointer_up)?;
+        assert_eq!(assistant.terminals.get(&0).unwrap().0.display_offset(), 0);
+
+        // When owns_display is true, pointer scroll must be processed.
+        assistant.ownership_changed(true)?;
+        assistant.handle_pointer_event(&mut context, &dummy_input_event, &pointer_down)?;
+        assistant.handle_pointer_event(&mut context, &dummy_input_event, &pointer_move)?;
+        assistant.handle_pointer_event(&mut context, &dummy_input_event, &pointer_up)?;
+        assert!(assistant.terminals.get(&0).unwrap().0.display_offset() > 0);
+
+        Ok(())
     }
 }
