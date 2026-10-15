@@ -400,16 +400,6 @@
         "instance_id": "HpKxt69R7MJT4KU3HqHjC86B3IihyI1a3PPmOYFNyC4C"
     },
     {
-        "package": "fuchsia/third_party/binutils-gdb/linux-amd64",
-        "version": "git_revision:b8a175b415454df6a039ba0b5d2ff13c3c180275",
-        "instance_id": "Guq6fDaHRYI6eSJlkPKHCG0Xzp7uLP4BGSEu9mHHy10C"
-    },
-    {
-        "package": "fuchsia/third_party/binutils-gdb/linux-arm64",
-        "version": "git_revision:b8a175b415454df6a039ba0b5d2ff13c3c180275",
-        "instance_id": "4LI_YHOf3nIQ7Thh3epX4AMMfUIjLE6yqsJG0P75u6QC"
-    },
-    {
         "package": "fuchsia/third_party/black/linux-amd64",
         "version": "version:2@23.10.0.1",
         "instance_id": "4qoXh0ci2TZuemXlmI-ijJrDxhf1M2sppgQQy5oysKEC"

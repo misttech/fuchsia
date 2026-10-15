@@ -115,12 +115,6 @@ the build directory, using the matche's name with a ".lst" suffix.""",
         default=False,
     )
     parser.add_argument(
-        "-G",
-        "--gnu",
-        action="store_true",
-        help="Use GNU objdump rather than llvm-objdump.",
-    )
-    parser.add_argument(
         "-P",
         "--objdump-path",
         help="Use objdump binary at the specified path.",
@@ -141,9 +135,6 @@ the build directory, using the matche's name with a ".lst" suffix.""",
 
     if args.objdump_path:
         objdump_path = Path(args.objdump_path)
-    elif args.gnu:
-        prebuilt_binutils_dir = getenv("PREBUILT_BINUTILS_DIR")
-        objdump_path = Path(prebuilt_binutils_dir) / "bin" / "objdump"
     else:
         prebuilt_clang_dir = getenv("PREBUILT_CLANG_DIR")
         objdump_path = Path(prebuilt_clang_dir) / "bin" / "llvm-objdump"
@@ -160,9 +151,7 @@ the build directory, using the matche's name with a ".lst" suffix.""",
         objdump_args.append("--reloc")
     if args.demangle:
         objdump_args.append("--demangle")
-
-    # Enable inlined function display support when using llvm-objdump.
-    if args.inlined_funcs and not args.gnu:
+    if args.inlined_funcs:
         objdump_args.append("--debug-inlined-funcs=limits-only")
 
     build_dir = Path(getenv("FUCHSIA_BUILD_DIR"))
