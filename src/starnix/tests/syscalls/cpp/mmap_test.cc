@@ -1052,6 +1052,67 @@ TEST_F(MapGrowsdownTest, Grow) {
   SAFE_SYSCALL(munmap(constraint_mapping, gap_to_next_mapping));
 }
 
+std::optional<size_t> ReadVmStkKb() {
+  std::string status;
+  if (!files::ReadFileToString("/proc/self/status", &status)) {
+    return std::nullopt;
+  }
+  for (const auto& line :
+       fxl::SplitString(status, "\n", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty)) {
+    if (cpp20::starts_with(line, "VmStk:")) {
+      size_t value = 0;
+      if (sscanf(line.data(), "VmStk: %zu kB", &value) == 1) {
+        return value;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<size_t> ReadMainStackVmaSizeKb() {
+  std::string maps;
+  if (!files::ReadFileToString("/proc/self/maps", &maps)) {
+    return std::nullopt;
+  }
+  auto info = test_helper::find_memory_mapping(
+      [](const test_helper::MemoryMapping& mapping) { return mapping.pathname == "[stack]"; },
+      maps);
+  if (!info.has_value()) {
+    return std::nullopt;
+  }
+  return (info->end - info->start) / 1024;
+}
+
+TEST_F(MapGrowsdownTest, VmStkUpdatesOnGrowAndUnmap) {
+  const size_t page_size_kb = page_size() / 1024;
+
+  const std::optional<size_t> main_stack_kb = ReadMainStackVmaSizeKb();
+  ASSERT_TRUE(main_stack_kb.has_value());
+  EXPECT_GT(*main_stack_kb, 0u);
+
+  const std::optional<size_t> initial_vm_stk_kb = ReadVmStkKb();
+  ASSERT_TRUE(initial_vm_stk_kb.has_value());
+  // Initial VmStk includes the main thread's [stack] VMA plus the 2-page MAP_GROWSDOWN mapping
+  // created in MapGrowsdownTest::SetUp().
+  EXPECT_EQ(*initial_vm_stk_kb, *main_stack_kb + 2 * page_size_kb);
+
+  // Touch 4 pages below the initial 2-page MAP_GROWSDOWN mapping to grow it by 4 pages.
+  intptr_t grow_offset = initial_grows_down_low_offset() - 4 * page_size();
+  WriteAtOffset(grow_offset);
+  ASSERT_EQ(ReadAtOffset(grow_offset), '\0');
+
+  const std::optional<size_t> grown_vm_stk_kb = ReadVmStkKb();
+  ASSERT_TRUE(grown_vm_stk_kb.has_value());
+  EXPECT_EQ(*grown_vm_stk_kb, *initial_vm_stk_kb + 4 * page_size_kb);
+
+  // Unmap the entire 6-page MAP_GROWSDOWN region (2 initial + 4 grown pages).
+  ASSERT_THAT(munmap(OffsetToAddress(grow_offset), 6 * page_size()), SyscallSucceeds());
+
+  const std::optional<size_t> after_unmap_vm_stk_kb = ReadVmStkKb();
+  ASSERT_TRUE(after_unmap_vm_stk_kb.has_value());
+  EXPECT_EQ(*after_unmap_vm_stk_kb, *main_stack_kb);
+}
+
 TEST_F(MapGrowsdownTest, TouchPageAbove) {
   // The page immediately above the MAP_GROWSDOWN region is unmapped so issuing a read should SEGV.
   ASSERT_TRUE(TestThatReadSegfaults(grows_down_high_offset()));

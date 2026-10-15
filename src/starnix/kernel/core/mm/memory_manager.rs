@@ -4935,7 +4935,12 @@ impl MemoryManager {
         let state = self.state.read();
 
         let mut stats = MemoryStats::default();
-        stats.vm_stack = state.stack_size;
+        stats.vm_stack = state
+            .mappings
+            .iter()
+            .filter(|(_, m)| m.flags().contains(MappingFlags::GROWSDOWN))
+            .map(|(range, _)| range.end - range.start)
+            .sum();
 
         self.with_zx_mappings(current_task, |zx_mappings| {
             for zx_mapping in zx_mappings {
@@ -7036,6 +7041,44 @@ mod tests {
             ));
             assert!(mm.state.read().mappings.get(fault_addr).is_some());
         })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_growsdown_vm_stack_stats() {
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let mm = current_task.mm().unwrap();
+                let page_size = *PAGE_SIZE as usize;
+
+                assert_eq!(mm.get_stats(&current_task).vm_stack, 0);
+
+                // Regular anonymous mapping does not count toward vm_stack, even when adjacent to a
+                // MAP_GROWSDOWN mapping.
+                let _regular_addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+                assert_eq!(mm.get_stats(&current_task).vm_stack, 0);
+
+                let growsdown_addr = map_memory_growsdown(&current_task, *PAGE_SIZE);
+                assert_eq!(mm.get_stats(&current_task).vm_stack, page_size);
+
+                // Extend the MAP_GROWSDOWN mapping downward by 2 pages.
+                let extended_low = (growsdown_addr - 2 * *PAGE_SIZE).unwrap();
+                assert_matches!(
+                    mm.extend_growsdown_mapping_to_address(extended_low, false),
+                    Ok(true)
+                );
+                assert_eq!(mm.get_stats(&current_task).vm_stack, 3 * page_size);
+
+                // Unmap the entire 3-page MAP_GROWSDOWN region.
+                mm.unmap(extended_low, 3 * page_size).unwrap();
+                assert_eq!(mm.get_stats(&current_task).vm_stack, 0);
+            },
+            // Production containers configure `cached_zx_map_info_bytes` in
+            // `container_config.shard.cml`, whereas `KernelFeatures::default()` in unit tests sets
+            // it to 0 (which would cause `MapInfoCache::get_or_init` in `get_stats` to fail when
+            // allocating a 0-length `PageBuf`).
+            KernelFeatures { cached_zx_map_info_bytes: *PAGE_SIZE as u32, ..Default::default() },
+        )
         .await;
     }
 
