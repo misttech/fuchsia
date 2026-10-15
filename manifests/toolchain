@@ -16,7 +16,7 @@
          TODO(mcgrathr): repo/bot link about provenance
     -->
     <package name="fuchsia/third_party/clang/${platform}"
-             version="git_revision:3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revision:32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64,windows-amd64"
              path="prebuilt/third_party/clang/{{.OS}}-{{.Arch}}"/>
     <!-- The linux-arm64 version is needed for running on arm64 bots, but the build
@@ -24,7 +24,7 @@
          from `fx roll-compiler` first.
     -->
     <package name="fuchsia/third_party/clang/linux-arm64"
-             version="git_revision:3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revision:32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64"
              attributes="clang-arm64"
              path="prebuilt/third_party/clang/linux-arm64"/>
@@ -68,7 +68,7 @@
     -->
     <!-- mac platforms added to support CIPD tagging -->
     <package name="fuchsia/third_party/rust/host/${platform}"
-             version="git_revisions:c26ce708de5d14682647895d2f3caf38f70b5aa6,3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revisions:42cfc04deaa723bc21611f3f9d7c8651be6300df,32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64,windows-amd64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
 
@@ -77,21 +77,21 @@
     -->
     <!-- mac platforms added to support CIPD tagging -->
     <package name="fuchsia/third_party/rust/target/fuchsia"
-             version="git_revisions:c26ce708de5d14682647895d2f3caf38f70b5aa6,3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revisions:42cfc04deaa723bc21611f3f9d7c8651be6300df,32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <!-- mac platforms added to support CIPD tagging -->
     <package name="fuchsia/third_party/rust/target/aarch64-apple-darwin"
-             version="git_revisions:c26ce708de5d14682647895d2f3caf38f70b5aa6,3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revisions:42cfc04deaa723bc21611f3f9d7c8651be6300df,32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <!-- mac platforms added to support CIPD tagging -->
     <package name="fuchsia/third_party/rust/target/aarch64-unknown-linux-gnu"
-             version="git_revisions:c26ce708de5d14682647895d2f3caf38f70b5aa6,3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revisions:42cfc04deaa723bc21611f3f9d7c8651be6300df,32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <package name="fuchsia/third_party/rust/target/riscv64gc-unknown-linux-gnu"
-             version="git_revisions:c26ce708de5d14682647895d2f3caf38f70b5aa6,3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revisions:42cfc04deaa723bc21611f3f9d7c8651be6300df,32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <!-- mac platforms added to support CIPD tagging -->
@@ -101,12 +101,12 @@
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <!-- mac platforms added to support CIPD tagging -->
     <package name="fuchsia/third_party/rust/target/x86_64-apple-darwin"
-             version="git_revisions:c26ce708de5d14682647895d2f3caf38f70b5aa6,3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revisions:42cfc04deaa723bc21611f3f9d7c8651be6300df,32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <!-- mac platforms added to support CIPD tagging -->
     <package name="fuchsia/third_party/rust/target/x86_64-unknown-linux-gnu"
-             version="git_revisions:c26ce708de5d14682647895d2f3caf38f70b5aa6,3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
+             version="git_revisions:42cfc04deaa723bc21611f3f9d7c8651be6300df,32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
 
@@ -200,19 +200,19 @@
     <!--   LLVM libraries -->
     <!--   For Linux, download both arm64 and amd64 versions. -->
     <package name="fuchsia/third_party/llvm/linux-arm64"
-             version="git_revision:d80b9a5e358de107da3a58730c89e512daffd9a7"
+             version="git_revision:32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/linux-arm64"/>
     <package name="fuchsia/third_party/llvm/linux-amd64"
-             version="git_revision:d80b9a5e358de107da3a58730c89e512daffd9a7"
+             version="git_revision:32e6b5082d000a0da4a5af148d63f30d29e95a18"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/linux-x64"/>
     <package name="fuchsia/third_party/llvm/fuchsia-amd64"
-             version="git_revision:5891d2c6e70db348cd7fab759bc03e85939a4601,30.20260127.4.1"
+             version="git_revision:5891d2c6e70db348cd7fab759bc03e85939a4601,33.20261013.1.1"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/fuchsia-x64"/>
     <package name="fuchsia/third_party/llvm/fuchsia-arm64"
-             version="git_revision:5891d2c6e70db348cd7fab759bc03e85939a4601,30.20260127.4.1"
+             version="git_revision:5891d2c6e70db348cd7fab759bc03e85939a4601,33.20261013.1.1"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/fuchsia-arm64"/>
 
