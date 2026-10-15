@@ -129,18 +129,6 @@ pub fn is_identities_only(context: &EnvironmentContext) -> Result<Option<bool>, 
     Ok(None)
 }
 
-fn apply_identities_only(
-    config: &mut SshConfig,
-    context: &EnvironmentContext,
-) -> Result<(), SshCommandError> {
-    const SSH_IDENTITIES_ONLY: &str = "ssh.identities-only";
-    if let Ok(identities_only) = context.get::<bool, _>(SSH_IDENTITIES_ONLY) {
-        log::debug!("ssh.identities-only retrieved via config: {}", identities_only);
-        config.set("IdentitiesOnly", if identities_only { "yes" } else { "no" })?;
-    }
-    Ok(())
-}
-
 async fn build_ssh_command_with_ssh_path(
     ssh_path: &str,
     addr: ScopedSocketAddr,
@@ -184,6 +172,7 @@ fn get_addr_port(addr: &ScopedSocketAddr) -> (String, String) {
 }
 
 async fn spawn_controlmaster(
+    env: &EnvironmentContext,
     ssh_path: &str,
     controlmaster_dir: PathBuf,
     ssh_keys: &[String],
@@ -217,6 +206,10 @@ async fn spawn_controlmaster(
     }
 
     let mut c = Command::new(ssh_path);
+    // Avoid inheriting SSH_AUTH_SOCK from the process environment unless explicitly configured via
+    // ssh.auth-sock.
+    c.env_remove("SSH_AUTH_SOCK");
+    apply_auth_sock(&mut c, env);
     // Enable ControlMaster
     c.arg("-M");
     // ControlMaster path
@@ -350,6 +343,7 @@ async fn get_controlmaster_path(
                 return Err(ManageSshControlMasterError::ControlMasterDirNotSpecified);
             };
             let path = Box::pin(spawn_controlmaster(
+                env,
                 ssh_path,
                 controlmaster_dir.into(),
                 &ssh_keys,
@@ -402,7 +396,6 @@ async fn build_ssh_command_with_ssh_config_and_env(
     // setup in use.
     c.env_remove("SSH_AUTH_SOCK");
     apply_auth_sock(&mut c, env);
-    apply_identities_only(config, env)?;
     c.args(["-F", "none"]);
     c.args(config.to_args());
 
@@ -844,5 +837,66 @@ mod test {
                 SpawnControlMasterError::SocketPathTooLong { .. }
             ))
         ));
+    }
+
+    #[fuchsia::test]
+    async fn test_spawn_controlmaster_auth_sock() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let cm_dir = temp.path().join("cm");
+        let recorded_sock = temp.path().join("recorded_sock");
+        let mock_ssh = temp.path().join("mock_ssh.sh");
+
+        let script = format!(
+            "#!/bin/sh\nprintf '%s' \"${{SSH_AUTH_SOCK:-<unset>}}\" > \"{}\"\nexit 0\n",
+            recorded_sock.display()
+        );
+        std::fs::write(&mock_ssh, script).unwrap();
+        std::fs::set_permissions(&mock_ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let ssh_keys = vec!["key".to_string()];
+
+        // 1. When ssh.auth-sock is not set in config, SSH_AUTH_SOCK is cleared for ControlMaster.
+        let env_unset = ffx_config::test_env()
+            .user_config("ssh.controlmaster.mode", "managed")
+            .user_config("ssh.controlmaster.dir", cm_dir.to_string_lossy().to_string())
+            .build()
+            .unwrap();
+        get_controlmaster_path(
+            &env_unset.context,
+            mock_ssh.to_str().unwrap(),
+            &scoped_addr,
+            &ssh_keys,
+            &SshConfig::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&recorded_sock).unwrap(), "<unset>");
+
+        // 2. When ssh.auth-sock is set in config, SSH_AUTH_SOCK is passed to ControlMaster.
+        let expected_sock = temp.path().join("custom_auth.sock");
+        std::fs::write(&expected_sock, "").unwrap();
+        let env_set = ffx_config::test_env()
+            .user_config("ssh.controlmaster.mode", "managed")
+            .user_config("ssh.controlmaster.dir", cm_dir.to_string_lossy().to_string())
+            .user_config("ssh.auth-sock", expected_sock.to_string_lossy().to_string())
+            .build()
+            .unwrap();
+        get_controlmaster_path(
+            &env_set.context,
+            mock_ssh.to_str().unwrap(),
+            &scoped_addr,
+            &ssh_keys,
+            &SshConfig::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&recorded_sock).unwrap(),
+            expected_sock.to_string_lossy()
+        );
     }
 }
