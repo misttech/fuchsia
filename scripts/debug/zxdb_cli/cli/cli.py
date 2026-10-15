@@ -27,6 +27,7 @@ from cli.commands import (
     threads,
     variables,
     wait_for_event,
+    watch_cmd,
 )
 from cli.commands.base import BaseCommand
 from daemon_manager.manager import UDS_PATH
@@ -81,6 +82,7 @@ async def main(args: list[str]) -> int:
         threads.Command,
         variables.Command,
         wait_for_event.Command,
+        watch_cmd.Command,
         # keep-sorted end
     ]
     for cmd_class in command_classes:

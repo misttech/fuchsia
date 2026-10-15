@@ -37,6 +37,7 @@ if (is_host) {
       "commands/threads.py",
       "commands/variables.py",
       "commands/wait_for_event.py",
+      "commands/watch_cmd.py",
     ]
     deps = [
       "//scripts/debug/zxdb_cli/daemon_manager",

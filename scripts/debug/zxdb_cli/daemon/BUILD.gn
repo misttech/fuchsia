@@ -41,6 +41,7 @@ if (is_host) {
       "handlers/threads.py",
       "handlers/variables.py",
       "handlers/wait_for_event.py",
+      "handlers/watch_req.py",
       "state.py",
     ]
     deps = [

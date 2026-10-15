@@ -55,6 +55,7 @@ async def handle(
             threads=threads,
             processes={p.id: p.name for p in daemon.processes.values()},
             breakpoints=breakpoints or None,
+            watchpoints=daemon.active_watchpoints or None,
         )
         return Response(
             success=True,

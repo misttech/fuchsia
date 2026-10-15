@@ -41,6 +41,7 @@ if (is_host) {
       "protocol/threads.py",
       "protocol/variables.py",
       "protocol/wait_for_event.py",
+      "protocol/watch_request.py",
     ]
     library_deps = [
       "//src/lib/debug/dap/python:lib",

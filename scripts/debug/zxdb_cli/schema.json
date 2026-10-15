@@ -965,6 +965,115 @@
                 ],
                 "title": "WaitForEventRequest",
                 "type": "object"
+            },
+            "WatchRequest": {
+                "description": "Request to set or delete a data breakpoint (watchpoint) on a variable,\nexpression, or memory address.\n\n`name` is the variable or expression to watch when setting a watchpoint,\nor the `data_id` of the watchpoint to remove when `delete=True`. Active\nwatchpoints, including both their `data_id` and `expression`, are listed\nin `get-state`.\n\nWhen setting a watchpoint, `thread_id` and `access_type` are required\n(`frame_index` is optional, defaulting to 0) to identify the target process\nand stack frame for evaluation. If the thread is running, the daemon\nautomatically pauses it first.\n\nTo watch a memory address, pass a dereferenced pointer expression\n(e.g., `*(uint32_t*)0x1234`).\nTo clear all active watchpoints, set `clear=True`.",
+                "properties": {
+                    "command": {
+                        "const": "watch",
+                        "default": "watch",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "name": {
+                        "default": "",
+                        "title": "Name",
+                        "type": "string"
+                    },
+                    "thread_id": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Thread Id"
+                    },
+                    "frame_index": {
+                        "default": 0,
+                        "title": "Frame Index",
+                        "type": "integer"
+                    },
+                    "access_type": {
+                        "anyOf": [
+                            {
+                                "enum": [
+                                    "write",
+                                    "readWrite"
+                                ],
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Access Type"
+                    },
+                    "condition": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Condition"
+                    },
+                    "hit_condition": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Hit Condition"
+                    },
+                    "delete": {
+                        "default": false,
+                        "title": "Delete",
+                        "type": "boolean"
+                    },
+                    "clear": {
+                        "default": false,
+                        "title": "Clear",
+                        "type": "boolean"
+                    }
+                },
+                "title": "WatchRequest",
+                "type": "object"
             }
         },
         "discriminator": {
@@ -986,7 +1095,8 @@
                 "stop": "#/$defs/StopRequest",
                 "threads": "#/$defs/ThreadsRequest",
                 "variables": "#/$defs/VariablesRequest",
-                "wait-for-event": "#/$defs/WaitForEventRequest"
+                "wait-for-event": "#/$defs/WaitForEventRequest",
+                "watch": "#/$defs/WatchRequest"
             },
             "propertyName": "command"
         },
@@ -1044,6 +1154,9 @@
             },
             {
                 "$ref": "#/$defs/WaitForEventRequest"
+            },
+            {
+                "$ref": "#/$defs/WatchRequest"
             }
         ]
     },
@@ -1206,6 +1319,21 @@
                         ],
                         "default": null,
                         "title": "Breakpoints"
+                    },
+                    "watchpoints": {
+                        "anyOf": [
+                            {
+                                "additionalProperties": {
+                                    "$ref": "#/$defs/WatchpointInfo"
+                                },
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Watchpoints"
                     }
                 },
                 "required": [
@@ -1387,6 +1515,85 @@
                     "total_frames"
                 ],
                 "title": "ThreadStackTraceResponse",
+                "type": "object"
+            },
+            "WatchpointInfo": {
+                "description": "Information about an active data breakpoint (watchpoint).\n\n`verified` and `message` reflect the latest status reported by zxdb, either\nfrom the `setDataBreakpoints` response or from a later asynchronous\n`breakpoint` \"changed\" event.",
+                "properties": {
+                    "data_id": {
+                        "title": "Data Id",
+                        "type": "string"
+                    },
+                    "expression": {
+                        "title": "Expression",
+                        "type": "string"
+                    },
+                    "thread_id": {
+                        "title": "Thread Id",
+                        "type": "integer"
+                    },
+                    "frame_index": {
+                        "title": "Frame Index",
+                        "type": "integer"
+                    },
+                    "access_type": {
+                        "enum": [
+                            "write",
+                            "readWrite"
+                        ],
+                        "title": "Access Type",
+                        "type": "string"
+                    },
+                    "condition": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Condition"
+                    },
+                    "hit_condition": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Hit Condition"
+                    },
+                    "verified": {
+                        "default": false,
+                        "title": "Verified",
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Message"
+                    }
+                },
+                "required": [
+                    "data_id",
+                    "expression",
+                    "thread_id",
+                    "frame_index",
+                    "access_type"
+                ],
+                "title": "WatchpointInfo",
                 "type": "object"
             }
         },

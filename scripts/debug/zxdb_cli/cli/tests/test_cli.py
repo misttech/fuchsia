@@ -34,6 +34,7 @@ from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
+from shared.protocol.watch_request import WatchRequest
 
 
 class TestCLI(unittest.IsolatedAsyncioTestCase):
@@ -899,6 +900,155 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(AsyncBacktraceRequest(pid=1234))
+
+    @patch("cli.cli.send_command")
+    async def test_watch_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "watch",
+                "-t",
+                "1",
+                "--frame-index",
+                "2",
+                "-a",
+                "readWrite",
+                "my_var",
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            WatchRequest(
+                name="my_var",
+                thread_id=1,
+                frame_index=2,
+                access_type="readWrite",
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_watch_aliases(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        for alias in [
+            "watchpoint",
+            "data-breakpoint",
+            "setDataBreakpoints",
+            "set-data-breakpoints",
+            "set_data_breakpoints",
+        ]:
+            mock_send.reset_mock()
+            exit_code = await main([alias, "-t", "1", "-a", "write", "my_var"])
+            self.assertEqual(exit_code, 0, f"Failed for alias: {alias}")
+            mock_send.assert_called_once_with(
+                WatchRequest(name="my_var", thread_id=1, access_type="write")
+            )
+
+    @patch("cli.cli.send_command")
+    async def test_watch_delete(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["watch", "-d", "1001:0x1234:4"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            WatchRequest(
+                name="1001:0x1234:4",
+                delete=True,
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_watch_clear(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["watch", "--clear"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(WatchRequest(name="", clear=True))
+
+    @patch("cli.cli.send_command")
+    async def test_watch_invalid_args(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        cases = [
+            (["watch"], "expression is required"),
+            (["watch", "-d"], "data_id is required"),
+            (["watch", "-a", "write", "my_var"], "-t/--thread-id"),
+            (["watch", "-t", "1", "my_var"], "-a/--access-type"),
+        ]
+        for argv, expected in cases:
+            mock_send.reset_mock()
+            stderr = StringIO()
+            with contextlib.redirect_stderr(stderr):
+                exit_code = await main(argv)
+            self.assertEqual(exit_code, 2, f"Failed for: {argv}")
+            self.assertIn(expected, stderr.getvalue())
+            mock_send.assert_not_called()
+
+    async def test_watch_rejects_read_access_type(self) -> None:
+        with contextlib.redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit):
+                await main(["watch", "-t", "1", "-a", "read", "my_var"])
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_watch(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "watch", "name": "my_var", "thread_id": 1,'
+                ' "frame_index": 2, "access_type": "write"}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            WatchRequest(
+                name="my_var",
+                thread_id=1,
+                frame_index=2,
+                access_type="write",
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_watch_delete_and_clear(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "watch", "name": "1001:0x1234:4", "delete": true}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            WatchRequest(name="1001:0x1234:4", delete=True)
+        )
+
+        mock_send.reset_mock()
+        exit_code = await main(
+            ["--json", '{"command": "watch", "clear": true}']
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(WatchRequest(clear=True))
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_watch_invalid(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        cases = [
+            ('{"command": "watch", "name": "my_var", "thread_id": 1}', 2),
+            (
+                '{"command": "watch", "name": "my_var", "access_type": "write"}',
+                2,
+            ),
+            (
+                '{"command": "watch", "name": "my_var", "thread_id": 1,'
+                ' "access_type": "read"}',
+                1,
+            ),
+        ]
+        for payload, expected_code in cases:
+            mock_send.reset_mock()
+            with contextlib.redirect_stderr(StringIO()):
+                exit_code = await main(["--json", payload])
+            self.assertEqual(exit_code, expected_code, f"Failed for: {payload}")
+            mock_send.assert_not_called()
 
 
 class TestSendCommand(unittest.IsolatedAsyncioTestCase):

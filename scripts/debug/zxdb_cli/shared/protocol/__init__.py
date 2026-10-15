@@ -33,6 +33,7 @@ from shared.protocol.get_state import (
     GetStateRequest,
     GetStateResponse,
     ThreadInfo,
+    WatchpointInfo,
 )
 from shared.protocol.hello import HelloRequest
 from shared.protocol.next_request import NextRequest
@@ -49,6 +50,7 @@ from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
+from shared.protocol.watch_request import WatchRequest
 
 RequestType = Annotated[
     AsyncBacktraceRequest
@@ -68,7 +70,8 @@ RequestType = Annotated[
     | StopRequest
     | ThreadsRequest
     | VariablesRequest
-    | WaitForEventRequest,
+    | WaitForEventRequest
+    | WatchRequest,
     Field(discriminator="command"),
 ]
 
@@ -87,6 +90,7 @@ __all__ = [
     "Response",
     "T_Resp",
     "ThreadInfo",
+    "WatchpointInfo",
     "GetStateResponse",
     "ProcessStackTraceResponse",
     "ThreadStackTraceResponse",
@@ -119,6 +123,7 @@ __all__ = [
     "ThreadsRequest",
     "VariablesRequest",
     "WaitForEventRequest",
+    "WatchRequest",
 ]
 
 _ResponseSchema = create_model(

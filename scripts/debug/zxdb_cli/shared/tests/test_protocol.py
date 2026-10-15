@@ -36,6 +36,7 @@ from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
+from shared.protocol.watch_request import WatchRequest
 from zxdb_dap import AsyncTaskNode
 
 
@@ -350,6 +351,71 @@ class TestResponseTypeAndDeserialization(unittest.TestCase):
         )
         with self.assertRaises(ValidationError):
             deserialize_response(json_line, req)
+
+    def test_make_watch_request(self) -> None:
+        req = make_request(
+            {
+                "command": "watch",
+                "name": "my_var",
+                "thread_id": 1,
+                "frame_index": 2,
+                "access_type": "readWrite",
+            }
+        )
+        self.assertIsInstance(req, WatchRequest)
+        assert isinstance(req, WatchRequest)
+        self.assertEqual(req.name, "my_var")
+        self.assertEqual(req.thread_id, 1)
+        self.assertEqual(req.frame_index, 2)
+        self.assertEqual(req.access_type, "readWrite")
+        self.assertFalse(req.delete)
+
+        with self.assertRaises(ValidationError):
+            make_request(
+                {
+                    "command": "watch",
+                    "name": "my_var",
+                    "thread_id": 1,
+                    "access_type": "read",
+                }
+            )
+
+        del_req = make_request(
+            {
+                "command": "watch",
+                "name": "1001:0x1234:4",
+                "delete": True,
+            }
+        )
+        self.assertIsInstance(del_req, WatchRequest)
+        assert isinstance(del_req, WatchRequest)
+        self.assertEqual(del_req.name, "1001:0x1234:4")
+        self.assertTrue(del_req.delete)
+
+    def test_deserialize_get_state_with_watchpoints(self) -> None:
+        req = GetStateRequest()
+        json_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"threads": [{"id": 1, "name": "t1"}], "processes": null, '
+            '"breakpoints": null, "watchpoints": {"1001:0x1234:4": '
+            '{"data_id": "1001:0x1234:4", "expression": "my_var", '
+            '"thread_id": 1, "frame_index": 0, "access_type": "write", '
+            '"verified": true, "message": null}}}}'
+        )
+        resp = deserialize_response(json_line, req)
+        self.assertTrue(resp.success)
+        self.assertIsInstance(resp.body, GetStateResponse)
+        assert resp.body is not None
+        self.assertIsNotNone(resp.body.watchpoints)
+        assert resp.body.watchpoints is not None
+        wp = resp.body.watchpoints["1001:0x1234:4"]
+        self.assertEqual(wp.data_id, "1001:0x1234:4")
+        self.assertEqual(wp.expression, "my_var")
+        self.assertEqual(wp.thread_id, 1)
+        self.assertEqual(wp.frame_index, 0)
+        self.assertEqual(wp.access_type, "write")
+        self.assertTrue(wp.verified)
+        self.assertIsNone(wp.message)
 
 
 if __name__ == "__main__":

@@ -33,15 +33,18 @@ from daemon.handlers import (
     threads,
     variables,
     wait_for_event,
+    watch_req,
 )
 from daemon.state import Process, Thread
 from ffx_cmd.lib import FfxCmd
 from pydap.client import READER_STOPPED_EVENT
+from pydap.dap_types import Breakpoint
 from pydap.models import InitializeArguments, PauseArguments
 from shared.protocol import (
     BaseRequest,
     Response,
     T_Resp,
+    WatchpointInfo,
     deserialize_request,
     serialize,
 )
@@ -181,6 +184,11 @@ class Daemon:
         self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
         self.event_waiter = DapEventWaiter()
         self.active_breakpoints: dict[str, set[int]] = {}
+        self.active_watchpoints: dict[str, WatchpointInfo] = {}
+        # Maps zxdb breakpoint ids to watchpoint data_ids. zxdb reassigns ids on
+        # every setDataBreakpoints call, so this is rebuilt from each response.
+        # Used to route async `breakpoint` events; not exposed to clients.
+        self.watchpoint_ids_by_bp_id: dict[int, str] = {}
         self.stop_event = asyncio.Event()
         self.shutdown_complete_event = asyncio.Event()
         self.dap_ready_event = asyncio.Event()
@@ -226,6 +234,7 @@ class Daemon:
             threads,
             variables,
             wait_for_event,
+            watch_req,
             # keep-sorted end
         ]
         for mod in handlers:
@@ -628,11 +637,46 @@ class Daemon:
         if process:
             for tid in list(process.threads.keys()):
                 self.threads.pop(tid, None)
+        prefix = f"{process_id}:"
+        removed_ids = [
+            data_id
+            for data_id in self.active_watchpoints
+            if data_id.startswith(prefix)
+        ]
+        for data_id in removed_ids:
+            self.active_watchpoints.pop(data_id, None)
+        self.watchpoint_ids_by_bp_id = {
+            bp_id: data_id
+            for bp_id, data_id in self.watchpoint_ids_by_bp_id.items()
+            if data_id in self.active_watchpoints
+        }
 
     def clear_all_processes(self) -> None:
         """Clears all cached process and thread state."""
         self.processes.clear()
         self.threads.clear()
+        self.active_watchpoints.clear()
+        self.watchpoint_ids_by_bp_id.clear()
+
+    def set_watchpoints(
+        self,
+        watchpoints: dict[str, WatchpointInfo],
+        breakpoints: list[Breakpoint],
+    ) -> None:
+        """Replaces the active watchpoints after a successful setDataBreakpoints.
+
+        `breakpoints` is the response array, which DAP guarantees to be in the
+        same order as the request built from `watchpoints`. zxdb recreates every
+        data breakpoint on each call and assigns new ids, so the status of every
+        watchpoint and the id map are refreshed, not just the changed entry.
+        """
+        self.watchpoint_ids_by_bp_id = {}
+        for wp, bp in zip(watchpoints.values(), breakpoints):
+            wp.verified = bp.verified
+            wp.message = bp.message
+            if bp.id is not None:
+                self.watchpoint_ids_by_bp_id[bp.id] = wp.data_id
+        self.active_watchpoints = watchpoints
 
     def update_resumed_threads(
         self,
@@ -658,6 +702,27 @@ class Daemon:
             # only relevant for Continue.
             for p in self.processes.values():
                 p.resume()
+
+    def _handle_breakpoint_changed(self, body: dict[str, Any]) -> None:
+        """Handles DAP `breakpoint` events with reason "changed".
+
+        zxdb sends these asynchronously when a breakpoint's install status
+        changes after the original setDataBreakpoints response, e.g. when
+        DebugAgent later fails to install a hardware watchpoint. Updates the
+        matching watchpoint so get-state reflects the current status.
+        """
+        if body.get("reason") != "changed":
+            return
+        bp = body.get("breakpoint") or {}
+        bp_id = bp.get("id")
+        if bp_id is None:
+            return
+        data_id = self.watchpoint_ids_by_bp_id.get(bp_id)
+        wp = self.active_watchpoints.get(data_id) if data_id else None
+        if wp is None:
+            return
+        wp.verified = bool(bp.get("verified", False))
+        wp.message = bp.get("message")
 
     # TODO(https://fxbug.dev/545555364): Support event validation in this _process_events function.
     async def _process_events(self) -> None:
@@ -723,6 +788,8 @@ class Daemon:
                                 process_id=process_id,
                                 is_stopped=is_stopped,
                             )
+                case "breakpoint":
+                    self._handle_breakpoint_changed(body)
                 case "process":
                     pid = body.get("systemProcessId")
                     name = str(body.get("name") or "")
