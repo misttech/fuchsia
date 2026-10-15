@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -97,9 +98,14 @@ func (b *legacyFfxCmdBuilder) command(ffxPath string, args []string) []string {
 }
 
 func (b *legacyFfxCmdBuilder) commandWithConfigs(ffxPath string, args []string, configs map[string]any) []string {
+	keys := make([]string, 0, len(configs))
+	for key := range configs {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
 	configArgs := []string{}
-	for key, val := range configs {
-		configArgs = append(configArgs, []string{"-c", fmt.Sprintf("%s=%v", key, val)}...)
+	for _, key := range keys {
+		configArgs = append(configArgs, "-c", fmt.Sprintf("%s=%v", key, configs[key]))
 	}
 	args = append(configArgs, args...)
 	return append([]string{ffxPath, "--isolate-dir", b.isolateDir}, args...)
@@ -181,17 +187,20 @@ func (b *strictFfxCmdBuilder) commandWithConfigs(ffxPath string, args []string, 
 	// TODO(slgrady): Eventually use the specific configs required for
 	// particular commands. Unfortunately that information is not
 	// available from ffx yet.
+	mergedConfigs := make(map[string]any)
 	b.configs.Range(func(k, v any) bool {
-		key := k.(string)
-		// The caller may have already provided the config
-		if _, exists := configs[key]; !exists {
-			cmd = append(cmd, "-c", fmt.Sprintf("%s=%v", key, v))
-		}
+		mergedConfigs[k.(string)] = v
 		return true
 	})
+	maps.Copy(mergedConfigs, configs)
 
-	for k, v := range configs {
-		cmd = append(cmd, "-c", fmt.Sprintf("%s=%v", k, v))
+	keys := make([]string, 0, len(mergedConfigs))
+	for k := range mergedConfigs {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		cmd = append(cmd, "-c", fmt.Sprintf("%s=%v", k, mergedConfigs[k]))
 	}
 	return append(cmd, args...)
 }
@@ -658,7 +667,7 @@ func (f *ffxInvoker) run(ctx context.Context) error {
 	}
 	cmd := f.cmd()
 	if err := f.ffx.runner.RunCommand(ctx, cmd); err != nil {
-		return fmt.Errorf("%s (%s): %w", constants.CommandFailedMsg, cmd.String(), err)
+		return fmt.Errorf("%s (ffx %s): %w", constants.CommandFailedMsg, strings.Join(f.args, " "), err)
 	}
 	return nil
 }
@@ -779,10 +788,11 @@ func (f *FFXInstance) GetLastRebootReason(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("getting reboot reason is not supported on emulator targets (b/496577711)")
 	}
 
-	stdout, err := f.RunAndGetOutput(ctx, "--target", f.target, "--machine", "json", "target", "show")
-	if err != nil {
+	i := f.invoker([]string{"--machine", "json", "target", "show"}).setTarget(f.target).setCaptureOutput()
+	if err := i.run(ctx); err != nil {
 		return "", fmt.Errorf("ffx target show failed: %w", err)
 	}
+	stdout := strings.TrimSpace(i.output.String())
 
 	var showInfo struct {
 		Target struct {

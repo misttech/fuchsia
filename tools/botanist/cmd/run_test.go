@@ -524,3 +524,23 @@ func TestConnectToSSHRetryOnTimeout(t *testing.T) {
 		}
 	})
 }
+
+func TestExecuteSkipSetupPropagatesTestrunnerError(t *testing.T) {
+	var logBuf bytes.Buffer
+	logCtx := logger.WithLogger(context.Background(), logger.NewLogger(logger.DebugLevel, color.NewColor(color.ColorNever), &logBuf, &logBuf, ""))
+
+	cmd := &RunCommand{
+		skipSetup: true,
+		timeout:   10 * time.Minute,
+	}
+	err := cmd.execute(logCtx, []string{filepath.Join(t.TempDir(), "nonexistent-tests.json")})
+	if err == nil {
+		t.Fatal("expected execute to fail for nonexistent tests.json")
+	}
+	if strings.Contains(err.Error(), "testrunner with flags:") {
+		t.Errorf("expected error not to contain raw testrunnerOptions dump, got: %v", err)
+	}
+	if !strings.Contains(logBuf.String(), "testrunner with flags:") {
+		t.Errorf("expected debug log to contain testrunner flags, got: %s", logBuf.String())
+	}
+}

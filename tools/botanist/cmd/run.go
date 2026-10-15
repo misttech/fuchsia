@@ -521,7 +521,8 @@ func (r *RunCommand) execute(ctx context.Context, args []string) error {
 
 	if r.skipSetup {
 		if err := testrunner.SetupAndExecute(ctx, r.testrunnerOptions, testsPath); err != nil {
-			return fmt.Errorf("testrunner with flags: %v, with timeout: %s, failed: %w", r.testrunnerOptions, r.timeout, err)
+			logger.Debugf(ctx, "testrunner with flags: %v, with timeout: %s, failed: %s", r.testrunnerOptions, r.timeout, err)
+			return err
 		}
 		return nil
 	}
@@ -840,7 +841,8 @@ func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarg
 	r.testrunnerOptions.TestbedConfig = testbedConfig
 
 	if err := testrunner.SetupAndExecute(ctx, r.testrunnerOptions, testsPath); err != nil {
-		return fmt.Errorf("testrunner with flags: %v, with timeout: %s, failed: %w", r.testrunnerOptions, r.timeout, err)
+		logger.Debugf(ctx, "testrunner with flags: %v, with timeout: %s, failed: %s", r.testrunnerOptions, r.timeout, err)
+		return err
 	}
 	return nil
 }

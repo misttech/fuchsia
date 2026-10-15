@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -197,5 +198,92 @@ func TestEmuStartConsoleDryRunError(t *testing.T) {
 	})
 	if err == nil {
 		t.Errorf("expected EmuStartConsole to fail when --dry-run fails, got nil error and cmd %v", cmd)
+	}
+}
+
+func TestLegacyFfxCmdBuilderDeterministicConfigs(t *testing.T) {
+	builder := newLegacyFfxCmdBuilder("/tmp/isolate", "/tmp/config")
+	got := builder.commandWithConfigs("/bin/ffx", []string{"target", "show"}, map[string]any{
+		"z.key": "zval",
+		"a.key": "aval",
+		"m.key": "mval",
+	})
+	want := []string{
+		"/bin/ffx", "--isolate-dir", "/tmp/isolate",
+		"-c", "a.key=aval",
+		"-c", "m.key=mval",
+		"-c", "z.key=zval",
+		"target", "show",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("commandWithConfigs() = %v, want %v", got, want)
+	}
+}
+
+func TestStrictFfxCmdBuilderDeterministicConfigs(t *testing.T) {
+	builder := newStrictFfxCmdBuilder("/tmp/ffx.log")
+	if err := builder.setConfigMap(
+		map[string]any{"user.key": "uval", "shared.key": "from_user"},
+		map[string]any{"z.key": "zval", "a.key": "aval", "shared.key": "from_global"},
+	); err != nil {
+		t.Fatalf("setConfigMap failed: %s", err)
+	}
+	got := builder.commandWithConfigs("/bin/ffx", []string{"target", "show"}, map[string]any{
+		"m.key":      "mval",
+		"shared.key": "from_call",
+	})
+	want := []string{
+		"/bin/ffx", "-o", "/tmp/ffx.log", "--strict", "--machine", "json",
+		"-c", "a.key=aval",
+		"-c", "m.key=mval",
+		"-c", "shared.key=from_call",
+		"-c", "user.key=uval",
+		"-c", "z.key=zval",
+		"target", "show",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("commandWithConfigs() = %v, want %v", got, want)
+	}
+}
+
+func TestFFXInvokerErrorOmitsConfigAndOutputPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	ffxPath := filepath.Join(tmpDir, "ffx")
+	script := "#!/bin/bash\nif [[ \"$*\" == *\"check-ssh-keys\"* ]]; then\n  exit 0\nfi\nexit 1\n"
+	if err := os.WriteFile(ffxPath, []byte(script), os.ModePerm); err != nil {
+		t.Fatalf("failed to write mock ffx tool: %s", err)
+	}
+	ctx := context.Background()
+	sshKeys := SSHInfo{
+		SshPriv: filepath.Join(tmpDir, "privKey"),
+		SshPub:  filepath.Join(tmpDir, "pubKey"),
+	}
+	ffx, err := NewFFXInstance(ctx, ffxPath, tmpDir, []string{}, "fuchsia-54b2-030e-eb1c", &sshKeys, filepath.Join(tmpDir, "out"), UseFFXStrict)
+	if err != nil {
+		t.Fatalf("NewFFXInstance failed: %s", err)
+	}
+
+	waitErr := ffx.TargetWait(ctx, "-t", "90")
+	if waitErr == nil {
+		t.Fatal("expected TargetWait to fail")
+	}
+	wantWaitPrefix := "FFX command failed (ffx --config log.level=debug target wait -t 90):"
+	if !strings.HasPrefix(waitErr.Error(), wantWaitPrefix) {
+		t.Errorf("TargetWait error = %q, want prefix %q", waitErr.Error(), wantWaitPrefix)
+	}
+	if strings.Contains(waitErr.Error(), tmpDir) || strings.Contains(waitErr.Error(), "fuchsia-54b2-030e-eb1c") {
+		t.Errorf("TargetWait error should not contain temp paths or target nodename, got %q", waitErr.Error())
+	}
+
+	_, rebootErr := ffx.GetLastRebootReason(ctx)
+	if rebootErr == nil {
+		t.Fatal("expected GetLastRebootReason to fail")
+	}
+	wantRebootSubstr := "ffx target show failed: FFX command failed (ffx --machine json target show):"
+	if !strings.Contains(rebootErr.Error(), wantRebootSubstr) {
+		t.Errorf("GetLastRebootReason error = %q, want substring %q", rebootErr.Error(), wantRebootSubstr)
+	}
+	if strings.Contains(rebootErr.Error(), tmpDir) || strings.Contains(rebootErr.Error(), "fuchsia-54b2-030e-eb1c") {
+		t.Errorf("GetLastRebootReason error should not contain temp paths or target nodename, got %q", rebootErr.Error())
 	}
 }
