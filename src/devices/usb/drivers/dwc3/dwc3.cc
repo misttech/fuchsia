@@ -956,9 +956,12 @@ void Dwc3::ReleaseResources() {
   // Now go ahead and release any buffers we may have pinned.
   ep0_.buffer.reset();
   ep0_.shared_fifo.Release();
+  ep0_.out.queued_trbs = 0;
+  ep0_.in.queued_trbs = 0;
 
   for (UserEndpoint& uep : user_endpoints_) {
     uep.fifo.Release();
+    uep.ep.queued_trbs = 0;
   }
 
   event_fifo_.Release();
@@ -1050,8 +1053,13 @@ zx_status_t Dwc3::ResetHw() {
 
   ConfigureCoreRegisters();
 
-  ep0_.out.stale_starts_to_end = 0;
-  ep0_.in.stale_starts_to_end = 0;
+  for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
+    ep->stale_starts_to_end = 0;
+    if (ep0_.shared_fifo.TotalSlots() > 0 && ep->queued_trbs > 0) {
+      ep0_.shared_fifo.SkipTrbs(ep->queued_trbs);
+      ep->queued_trbs = 0;
+    }
+  }
   for (UserEndpoint& uep : user_endpoints_) {
     uep.ep.stale_starts_to_end = 0;
     uep.ep.stale_cancels_to_ignore = 0;
@@ -1661,6 +1669,7 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
       async_completer.Reply(result.take_error());
       return;
     }
+    uep->ep.queued_trbs = 0;
 
     uep->ep.max_packet_size = max_packet_size;
     uep->ep.type = ep_type;
@@ -1880,26 +1889,13 @@ void Dwc3::UserEpReset(UserEndpoint& uep) {
 void Dwc3::Ep0Reset() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Reset");
   ep0_.setup_generation++;
-  if (is_active()) {
-    for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
-      if (ep->transfer_state == Endpoint::TransferState::kStartingSingle) {
-        ep->stale_starts_to_end++;
-      } else if (ep->TransferStateIsActive() && ep->rsrc_id != Endpoint::kInvalidResourceId) {
-        CmdEpEndTransfer(*ep, /*cmd_ioc=*/false);
-      }
-    }
-  }
-  ep0_.out.transfer_state = Endpoint::TransferState::kIdle;
-  ep0_.out.rsrc_id = Endpoint::kInvalidResourceId;
-  ep0_.in.transfer_state = Endpoint::TransferState::kIdle;
-  ep0_.in.rsrc_id = Endpoint::kInvalidResourceId;
+  Ep0CancelTransfers();
   EpReset(ep0_.out);
   EpReset(ep0_.in);
   ep0_.cur_setup = {};
   ep0_.cur_speed = fdescriptor::wire::UsbSpeed::kUndefined;
   ep0_.test_mode = 0;
   ep0_.state = Ep0::State::None;
-  ep0_.shared_fifo.Clear();
 }
 
 bool Dwc3::IsEndpointIdle(const UserEndpoint& uep) const {

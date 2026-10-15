@@ -42,7 +42,19 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
         return status.take_error();
       }
     } else {
-      Reset();
+      const size_t len = (last_ - first_) * sizeof(dwc3_trb_t);
+      if (auto status = buffer_->ExecuteWriteOps(
+              0, len,
+              [&](uint8_t* ptr) {
+                auto trbs = reinterpret_cast<dwc3_trb_t*>(ptr);
+                for (size_t i = 0; i < static_cast<size_t>(last_ - first_); i++) {
+                  trbs[i].control = 0;
+                }
+              });
+          status.is_error()) {
+        fdf::error("ExecuteWriteOps failed: {}", status);
+        return status.take_error();
+      }
     }
     trb_sizes_ = std::make_unique<uint32_t[]>(TotalSlots());
     return zx::ok();
@@ -87,24 +99,16 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
     Fifo::Advance(read_);
   }
 
-  void Reset() {
-    if (!buffer_) {
-      return;
+  // Retires `count` active TRBs from the ring after hardware DMA on those descriptors has ended,
+  // clearing TRB_HWO, flushing the descriptor write to memory, and advancing `read_`.
+  void SkipTrbs(size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+      ZX_ASSERT_MSG(!IsEmpty(), "Skipping more TRBs than queued in FIFO (%zu/%zu)", i, count);
+      dwc3_trb_t* trb = current_read();
+      trb->control &= ~TRB_HWO;
+      Write(trb);
+      AdvanceRead();
     }
-    const size_t len = (last_ - first_) * sizeof(dwc3_trb_t);
-    if (auto status = buffer_->ExecuteWriteOps(
-            0, len,
-            [&](uint8_t* ptr) {
-              auto trbs = reinterpret_cast<dwc3_trb_t*>(ptr);
-              for (size_t i = 0; i < static_cast<size_t>(last_ - first_); i++) {
-                trbs[i].control = 0;
-              }
-            });
-        status.is_error()) {
-      fdf::error("ExecuteWriteOps failed: {}", status);
-    }
-    write_ = first_;
-    read_ = write_;
   }
 
   size_t MaxAvailableSlots() const { return TotalSlots() - 1; }

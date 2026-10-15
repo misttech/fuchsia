@@ -83,8 +83,7 @@ void Dwc3::HandleEpEvent(uint32_t event) {
                  (event & DEPEVT_XFER_NOT_READY_REASON) ? "XferActive" : "XferNotActive");
       if (ep_num == 0 && (event & DEPEVT_XFER_NOT_READY_REASON)) {
         // The host has abandoned the transfer, stall and reset.
-        ep0_.shared_fifo.Clear();
-        EpSetStall(ep0_.out, true);
+        Ep0EndAndStall(ep0_.out);
         Ep0QueueSetup();
         break;
       }
@@ -323,6 +322,11 @@ void Dwc3::StopEvents() {
         .WriteTo(mmio);
   }
 
+  if (ep0_.out.stale_starts_to_end > 0 || ep0_.in.stale_starts_to_end > 0) {
+    ep0_.shared_fifo.SkipTrbs(ep0_.out.queued_trbs + ep0_.in.queued_trbs);
+    ep0_.out.queued_trbs = 0;
+    ep0_.in.queued_trbs = 0;
+  }
   for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
     const bool had_stale = ep->stale_starts_to_end > 0;
     ep->stale_starts_to_end = 0;

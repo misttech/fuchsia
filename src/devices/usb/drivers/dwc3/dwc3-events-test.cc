@@ -74,6 +74,8 @@ TEST_F(Dwc3EventsTest, HandleDisconnectEvent) {
     ep.transfer_state = Endpoint::TransferState::kActiveOngoing;
     Dwc3TestHelper::SetControllerStarted(drv, true);
     ep.rsrc_id = 1;
+    // One TRB was handed to the (fake) controller above.
+    ep.queued_trbs = 1;
     uep->server->active_reqs.push(decltype(uep->server->active_reqs)::value_type{
         .request = usb::FidlRequest(
             std::move(fuchsia_hardware_usb_request::Request().defer_completion(false))),

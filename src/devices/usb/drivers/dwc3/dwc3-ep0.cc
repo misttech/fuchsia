@@ -40,6 +40,8 @@ zx_status_t Dwc3::Ep0Init() {
   if (zx::result result = ep0_.shared_fifo.Init(bti_, /*cached=*/true); result.is_error()) {
     return result.error_value();
   }
+  ep0_.out.queued_trbs = 0;
+  ep0_.in.queued_trbs = 0;
 
   const std::array eps{&ep0_.out, &ep0_.in};
   for (Endpoint* ep : eps) {
@@ -69,15 +71,7 @@ void Dwc3::Ep0Start() {
 void Dwc3::Ep0QueueSetup() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0QueueSetup");
   ep0_.setup_generation++;
-  if (is_active()) {
-    for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
-      if (ep->transfer_state == Endpoint::TransferState::kStartingSingle) {
-        ep->stale_starts_to_end++;
-      }
-    }
-  }
-  ep0_.in.transfer_state = Endpoint::TransferState::kIdle;
-  ep0_.out.transfer_state = Endpoint::TransferState::kIdle;
+  Ep0CancelTransfers();
   ep0_.test_mode = 0;
   if (auto status = ep0_.buffer->CacheFlushInvalidate(0, sizeof(fdescriptor::wire::UsbSetup));
       status.is_error()) {
@@ -108,9 +102,18 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
   TRACE_DURATION("dwc3", "Dwc3::HandleEp0TransferCompleteEvent", "ep_num", ep_num);
   ZX_ASSERT(is_ep0_num(ep_num));
   auto& ep = (ep_num == kEp0Out) ? ep0_.out : ep0_.in;
+  auto& other_ep = (ep_num == kEp0Out) ? ep0_.in : ep0_.out;
   ep.transfer_state = Endpoint::TransferState::kIdle;
   ep.rsrc_id = Endpoint::kInvalidResourceId;
-  ep.stale_starts_to_end = 0;
+  if (ep0_.out.stale_starts_to_end > 0 || ep0_.in.stale_starts_to_end > 0) {
+    const size_t live_trbs = (ep.queued_trbs > 0) ? 1 : 0;
+    const size_t stale_trbs = (ep.queued_trbs - live_trbs) + other_ep.queued_trbs;
+    ep0_.shared_fifo.SkipTrbs(stale_trbs);
+    ep.queued_trbs = live_trbs;
+    other_ep.queued_trbs = 0;
+    ep0_.out.stale_starts_to_end = 0;
+    ep0_.in.stale_starts_to_end = 0;
+  }
 
   // Only DataOut and DataIn states need TRB read.
   dwc3_trb_t trb{};
@@ -122,11 +125,8 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       return;
     }
   }
-  // Only advance the shared FIFO read pointer if the FIFO is not empty upon
-  // receiving EP0 completion interrupts. When stall recovery (Ep0EndAndStall)
-  // clears the TRB ring (read_ == write_), advancing unconditionally triggers
-  // underflow logs.
-  if (!ep0_.shared_fifo.IsEmpty()) {
+  if (ep.queued_trbs > 0) {
+    ep.queued_trbs--;
     ep0_.shared_fifo.AdvanceRead();
   }
 
@@ -311,16 +311,14 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
       if ((stage == DEPEVT_XFER_NOT_READY_STAGE_DATA) ||
           (stage == DEPEVT_XFER_NOT_READY_STAGE_STATUS)) {
         // Stall if we receive XferNotReady(Data/Status) while waiting for setup to complete
-        ep0_.shared_fifo.Clear();
-        EpSetStall(ep0_.out, true);
+        Ep0EndAndStall(ep0_.out);
         Ep0QueueSetup();
       }
       break;
     case Ep0::State::TwoStage:
       ZX_ASSERT(stage);  // Must be 1 or 2.
       if (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA) {
-        ep0_.shared_fifo.Clear();
-        EpSetStall(ep0_.out, true);
+        Ep0EndAndStall(ep0_.out);
         Ep0QueueSetup();
       } else {
         ep0_.state = Ep0::State::WaitFidl;
@@ -329,8 +327,7 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
     case Ep0::State::WaitHost:
       ZX_ASSERT(stage);  // Must be 1 or 2.
       if (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA) {
-        ep0_.shared_fifo.Clear();
-        EpSetStall(ep0_.out, true);
+        Ep0EndAndStall(ep0_.out);
         Ep0QueueSetup();
       } else {
         EpStartSingleTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
@@ -377,15 +374,35 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
   }
 }
 
-void Dwc3::Ep0EndAndStall(Endpoint& ep) {
-  ep0_.shared_fifo.Clear();
-  if (is_active() && ep.transfer_state == Endpoint::TransferState::kStartingSingle) {
-    ep.stale_starts_to_end++;
-  } else if (ep.rsrc_id != Endpoint::kInvalidResourceId) {
-    CmdEpEndTransfer(ep, /*cmd_ioc=*/false);
+void Dwc3::Ep0CancelTransfers() {
+  for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
+    if (is_active()) {
+      if (ep->transfer_state == Endpoint::TransferState::kStartingSingle) {
+        ep->stale_starts_to_end++;
+      } else if (ep->TransferStateIsActive() && ep->rsrc_id != Endpoint::kInvalidResourceId) {
+        CmdEpEndTransfer(*ep, /*cmd_ioc=*/false);
+      }
+    }
+    ep->transfer_state = Endpoint::TransferState::kIdle;
+    ep->rsrc_id = Endpoint::kInvalidResourceId;
   }
-  ep.rsrc_id = Endpoint::kInvalidResourceId;
-  ep.transfer_state = Endpoint::TransferState::kIdle;
+  // While a DEPSTRTXFER is still in flight on either EP0 direction (stale_starts_to_end > 0), the
+  // controller may still be fetching the TRB at the head of ep0_.shared_fifo: leave it alone until
+  // all stale starts have been ended (HandleEpTransferStartedEvent) or the event ring is stopped
+  // (StopEvents()).
+  if (ep0_.out.stale_starts_to_end == 0 && ep0_.in.stale_starts_to_end == 0) {
+    for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
+      ep0_.shared_fifo.SkipTrbs(ep->queued_trbs);
+      ep->queued_trbs = 0;
+    }
+    ZX_ASSERT_MSG(ep0_.shared_fifo.IsEmpty(),
+                  "EP0 shared FIFO leaked %zu active TRBs after Ep0CancelTransfers",
+                  ep0_.shared_fifo.GetActiveCount());
+  }
+}
+
+void Dwc3::Ep0EndAndStall(Endpoint& ep) {
+  Ep0CancelTransfers();
   EpSetStall(ep, true);
 }
 
@@ -395,8 +412,7 @@ void Dwc3::HandleEp0Setup(size_t length) {
   fdescriptor::wire::UsbSetup setup = ep0_.cur_setup;
 
   auto fail = [this]() {
-    ep0_.shared_fifo.Clear();
-    EpSetStall(ep0_.out, true);
+    Ep0EndAndStall(ep0_.out);
     Ep0QueueSetup();
   };
 
@@ -452,8 +468,7 @@ void Dwc3::HandleEp0Setup(size_t length) {
 
 void Dwc3::DoControlCall(fdescriptor::wire::UsbSetup setup, size_t length) {
   auto fail = [this]() {
-    ep0_.shared_fifo.Clear();
-    EpSetStall(ep0_.out, true);
+    Ep0EndAndStall(ep0_.out);
     Ep0QueueSetup();
   };
   if (!dci_intf_.is_valid()) {

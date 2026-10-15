@@ -273,6 +273,7 @@ class Dwc3 : public fdf::DriverBase2,
     uint64_t command_failures{0};
     uint32_t stale_starts_to_end{0};
     uint32_t stale_cancels_to_ignore{0};
+    size_t queued_trbs{0};
     uint8_t usb_endpoint_address{0};
 
     bool TransferStateIsActive() const {
@@ -489,8 +490,10 @@ class Dwc3 : public fdf::DriverBase2,
   void DoControlCall(fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, size_t length);
   void HandleEp0TransferCompleteEvent(uint8_t ep_num);
   void HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage);
-  // This method clears the fifo, ends any ongoing transfers, and stalls the endpoint.
-  // It's used in preparation of gracefully restarting a failed control transfer.
+  // Cancels any active or starting transfers on EP0 IN/OUT and retires uncompleted TRBs.
+  void Ep0CancelTransfers();
+  // Ends any ongoing transfers, retires uncompleted TRBs, and stalls the endpoint.
+  // Used in preparation for gracefully restarting a failed control transfer.
   void Ep0EndAndStall(Endpoint& ep);
 
   // General EP stuff

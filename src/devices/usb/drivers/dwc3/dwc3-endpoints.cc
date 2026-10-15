@@ -76,6 +76,7 @@ void Dwc3::EpStartSingleTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_
   trb->control = type | TRB_LST | TRB_IOC | TRB_HWO;
   zx_paddr_t trb_phys = fifo.Write(trb, 1);
 
+  ep.queued_trbs++;
   ep.transfer_state = Endpoint::TransferState::kStartingSingle;
   CmdEpStartTransfer(ep, trb_phys);
 }
@@ -167,10 +168,15 @@ void Dwc3::EpServer::RemoveRequests(zx_status_t reason) {
 
   size_t active_count = uep_->fifo.GetActiveCount();
   ZX_DEBUG_ASSERT_MSG(active_count == pending_trbs, "%zu == %zu", active_count, pending_trbs);
+  ZX_DEBUG_ASSERT_MSG(uep_->ep.queued_trbs == pending_trbs,
+                      "queued_trbs (%zu) != pending_trbs (%zu) on ep %u", uep_->ep.queued_trbs,
+                      pending_trbs, uep_->ep.ep_num);
 
-  if (uep_->fifo.TotalSlots() > 0) {
-    uep_->fifo.Reset();
-  }
+  uep_->fifo.SkipTrbs(pending_trbs);
+  uep_->ep.queued_trbs = 0;
+  ZX_ASSERT_MSG(uep_->fifo.IsEmpty(),
+                "Endpoint %u FIFO leaked %zu active TRBs after RemoveRequests", uep_->ep.ep_num,
+                uep_->fifo.GetActiveCount());
   pending_cancel_reason.reset();
   uep_->ep.transfer_state = Endpoint::TransferState::kIdle;
   uep_->ep.rsrc_id = Endpoint::kInvalidResourceId;
@@ -394,6 +400,7 @@ Dwc3::QueueRequestResult Dwc3::QueueNextRequest(UserEndpoint& uep, bool is_singl
   first_trb->control = first_trb_control;
   zx_paddr_t first_trb_phys = uep.fifo.Write(first_trb, 1);
 
+  uep.ep.queued_trbs += total_trbs;
   uep.server->active_reqs.push(EpServer::RequestState{
       .request = std::move(pending_req),
       .total_trbs = total_trbs,
@@ -443,8 +450,7 @@ void Dwc3::UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer) {
   // request upon ending the transfer.
 
   if (start_transfer) {
-    // Reset the FIFO to a clear state if we're starting a new transfer.
-    uep.fifo.Reset();
+    ZX_DEBUG_ASSERT(uep.fifo.IsEmpty());
   } else if (uep.ep.rsrc_id == Endpoint::kInvalidResourceId) {
     // We haven't received a resource ID yet from a started transfer. Can't
     // proceed.
@@ -545,15 +551,19 @@ void Dwc3::UserEpCompleteTransfers(UserEndpoint& uep) {
     uint32_t remaining = TRB_BUFSIZ(trb.status);
     size_t actual = trb_size > remaining ? trb_size - remaining : 0;
     current_req.completed_trbs++;
+    ZX_DEBUG_ASSERT(uep.ep.queued_trbs > 0);
+    uep.ep.queued_trbs--;
     current_req.completed_bytes += actual;
     uep.fifo.AdvanceRead();
 
     if (uep.ep.IsOutput() && (remaining > 0 || (trb.status & TRB_SPR) != 0)) {
       while (current_req.completed_trbs < current_req.total_trbs) {
-        dwc3_trb_t* trailing_trb = uep.fifo.current_read();
-        trailing_trb->control &= ~TRB_HWO;
-        uep.fifo.Write(trailing_trb, 1);
-        uep.fifo.AdvanceRead();
+        ZX_ASSERT_MSG(!uep.fifo.IsEmpty(),
+                      "Software/Hardware desync: expected %zu TRBs, found empty FIFO at %zu",
+                      current_req.total_trbs, current_req.completed_trbs);
+        uep.fifo.SkipTrbs(1);
+        ZX_DEBUG_ASSERT(uep.ep.queued_trbs > 0);
+        uep.ep.queued_trbs--;
         current_req.completed_trbs++;
       }
     }
@@ -591,25 +601,36 @@ void Dwc3::HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id) {
   TRACE_DURATION("dwc3", "Dwc3::HandleEpTransferStartedEvent", "ep_num", ep_num, "rsrc_id",
                  rsrc_id);
   if (is_ep0_num(ep_num)) {
-    auto& ep = (ep_num == kEp0Out) ? ep0_.out : ep0_.in;
-    if (ep.stale_starts_to_end > 0) {
-      ep.stale_starts_to_end--;
-      Endpoint stale_ep(ep.ep_num);
+    Endpoint& ep0_dir = (ep_num == kEp0Out) ? ep0_.out : ep0_.in;
+    if (ep0_dir.stale_starts_to_end > 0) {
+      ep0_dir.stale_starts_to_end--;
+      Endpoint stale_ep(ep0_dir.ep_num);
       stale_ep.rsrc_id = rsrc_id;
       CmdEpEndTransfer(stale_ep, /*cmd_ioc=*/false);
-      if (ep.stale_starts_to_end == 0 && !ep.enabled) {
-        EpEnable(ep, false);
+      ep0_.shared_fifo.SkipTrbs(1);
+      ZX_DEBUG_ASSERT(ep0_dir.queued_trbs > 0);
+      ep0_dir.queued_trbs--;
+      if (ep0_.out.stale_starts_to_end == 0 && ep0_.in.stale_starts_to_end == 0) {
+        for (Endpoint* ep0 : {&ep0_.out, &ep0_.in}) {
+          const size_t live_trbs = (ep0->transfer_state == Endpoint::TransferState::kIdle) ? 0 : 1;
+          ZX_DEBUG_ASSERT(ep0->queued_trbs >= live_trbs);
+          ep0_.shared_fifo.SkipTrbs(ep0->queued_trbs - live_trbs);
+          ep0->queued_trbs = live_trbs;
+        }
+      }
+      if (ep0_dir.stale_starts_to_end == 0 && !ep0_dir.enabled) {
+        EpEnable(ep0_dir, false);
       }
       return;
     }
-    if (ep.transfer_state != Endpoint::TransferState::kStartingSingle) {
-      Endpoint stale_ep(ep.ep_num);
+    if (ep0_dir.transfer_state != Endpoint::TransferState::kStartingSingle) {
+      Endpoint stale_ep(ep0_dir.ep_num);
       stale_ep.rsrc_id = rsrc_id;
       CmdEpEndTransfer(stale_ep, /*cmd_ioc=*/false);
       return;
     }
-    ep.rsrc_id = rsrc_id;
-    ep.transfer_state = Endpoint::TransferState::kActiveSingle;
+    ep0_dir.rsrc_id = rsrc_id;
+    ep0_dir.transfer_state = Endpoint::TransferState::kActiveSingle;
     return;
   }
 
@@ -686,12 +707,12 @@ void Dwc3::HandleEpTransferEndedEvent(uint8_t ep_num) {
   }
   fdf::debug("Dwc3::HandleEpTransferEndedEvent ep {}", ep_num);
 
+  size_t pending_trbs = 0;
   if (uep->server) {
     // Reason may not be set if the endpoint is reset/halted from under us, fallback to
     // IO_REFUSED.
     zx_status_t reason = uep->server->pending_cancel_reason.value_or(ZX_ERR_IO_REFUSED);
     uep->server->pending_cancel_reason.reset();
-    size_t pending_trbs = 0;
     while (!uep->server->active_reqs.empty()) {
       auto& request_state = uep->server->active_reqs.front();
       pending_trbs += request_state.total_trbs - request_state.completed_trbs;
@@ -701,10 +722,17 @@ void Dwc3::HandleEpTransferEndedEvent(uint8_t ep_num) {
     uep->server->SendCompletions();
     size_t active_count = uep->fifo.GetActiveCount();
     ZX_ASSERT_MSG(active_count == pending_trbs, "%ld == %ld", active_count, pending_trbs);
+    ZX_DEBUG_ASSERT_MSG(uep->ep.queued_trbs == pending_trbs,
+                        "queued_trbs (%zu) != pending_trbs (%zu) on ep %u", uep->ep.queued_trbs,
+                        pending_trbs, uep->ep.ep_num);
 
     uep->server->FlushCancelCompleters(ZX_OK);
   }
-  uep->fifo.Clear();
+  uep->fifo.SkipTrbs(pending_trbs);
+  uep->ep.queued_trbs = 0;
+  ZX_ASSERT_MSG(uep->fifo.IsEmpty(),
+                "Endpoint %u FIFO leaked %zu active TRBs after HandleEpTransferEndedEvent", ep_num,
+                uep->fifo.GetActiveCount());
   uep->ep.transfer_state = Endpoint::TransferState::kIdle;
   uep->ep.rsrc_id = Endpoint::kInvalidResourceId;
   if (!uep->ep.enabled) {

@@ -27,24 +27,6 @@ class Fifo {
   virtual zx::result<> Init(zx::bti& bti, bool cached) {
     return zx::make_result(InitBuffer(bti, cached).status_value());
   }
-  // WARNING: DO NOT CALL THIS FUNCTION DURING NORMAL DRIVER OPERATION!
-  //
-  // Unilaterally resetting the FIFO pointers (`read_ = write_`) without
-  // coordinating with the hardware controller causes hardware/software
-  // desynchronization. Hardware DMA may still own pending TRBs (with the HWO
-  // bit set) or have cached descriptor addresses. Overwriting or clearing TRBs
-  // without gracefully canceling transfers leads to DMA corruption, missing
-  // completion callbacks for USB function drivers, and hardware lockups.
-  //
-  // In normal operation, transfers must be gracefully canceled so that hardware
-  // and software remain in lockstep and completion callbacks are properly
-  // retired.
-  //
-  // This function MUST ONLY be called during extreme hardware recovery cases,
-  // such as after a full controller soft reset (DCTL.CSFTRST), core quiesce /
-  // power-off, or a complete USB bus reset where hardware endpoint state has
-  // been completely reset by the controller.
-  void Clear() { read_ = write_; }
   virtual void Release() {
     first_ = write_ = read_ = last_ = nullptr;
     buffer_.reset();

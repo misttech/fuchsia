@@ -154,4 +154,57 @@ TEST_P(TrbFifoTest, ReInitDifferentCacheOptionReallocatesBuffer) {
   CheckLinkTRB();
 }
 
+TEST_P(TrbFifoTest, SkipTrbsClearsHwoAndAdvancesReadWithoutRewindingWrite) {
+  dwc3_trb_t* trb0 = fifo_.AdvanceWrite();
+  trb0->control = TRB_TRBCTL_NORMAL | TRB_IOC | TRB_HWO;
+  fifo_.Write(trb0);
+
+  dwc3_trb_t* trb1 = fifo_.AdvanceWrite();
+  trb1->control = TRB_TRBCTL_NORMAL | TRB_IOC | TRB_HWO;
+  fifo_.Write(trb1);
+
+  dwc3_trb_t* expected_write = fifo_.write_;
+  ASSERT_EQ(fifo_.GetActiveCount(), 2u);
+
+  fifo_.SkipTrbs(2);
+
+  EXPECT_TRUE(fifo_.IsEmpty());
+  EXPECT_EQ(fifo_.read_, expected_write);
+  EXPECT_EQ(fifo_.write_, expected_write);
+  EXPECT_EQ(trb0->control & TRB_HWO, 0u);
+  EXPECT_EQ(trb1->control & TRB_HWO, 0u);
+}
+
+TEST_P(TrbFifoTest, SkipTrbsWrapsAcrossLinkTrb) {
+  for (size_t i = 0; i < fifo_.TotalSlots() - 1; ++i) {
+    fifo_.AdvanceWrite();
+    fifo_.AdvanceRead();
+  }
+  ASSERT_EQ(fifo_.write_, fifo_.last_ - 1);
+  ASSERT_EQ(fifo_.read_, fifo_.last_ - 1);
+  ASSERT_TRUE(fifo_.IsEmpty());
+
+  dwc3_trb_t* trb0 = fifo_.AdvanceWrite();
+  ASSERT_EQ(trb0, fifo_.last_ - 1);
+  trb0->control = TRB_TRBCTL_NORMAL | TRB_CHN | TRB_HWO;
+  fifo_.Write(trb0);
+
+  dwc3_trb_t* trb1 = fifo_.AdvanceWrite();
+  ASSERT_EQ(trb1, fifo_.first_);
+  trb1->control = TRB_TRBCTL_NORMAL | TRB_IOC | TRB_HWO;
+  fifo_.Write(trb1);
+
+  ASSERT_EQ(fifo_.write_, fifo_.first_ + 1);
+  ASSERT_EQ(fifo_.GetActiveCount(), 2u);
+
+  fifo_.SkipTrbs(2);
+
+  EXPECT_TRUE(fifo_.IsEmpty());
+  EXPECT_EQ(fifo_.read_, fifo_.first_ + 1);
+  EXPECT_EQ(fifo_.write_, fifo_.first_ + 1);
+  EXPECT_EQ(trb0->control & TRB_HWO, 0u);
+  EXPECT_EQ(trb1->control & TRB_HWO, 0u);
+  CheckLinkTRB();
+}
+
 }  // namespace dwc3

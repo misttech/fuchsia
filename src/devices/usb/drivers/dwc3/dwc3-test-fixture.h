@@ -263,6 +263,14 @@ class Dwc3TestHelper {
     return uep ? uep->ep.enabled : false;
   }
 
+  static size_t GetEpQueuedTrbs(const Dwc3& drv, uint8_t ep_num) {
+    if (ep_num < 2) {
+      return ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).queued_trbs;
+    }
+    const auto* uep = const_cast<Dwc3&>(drv).get_user_endpoint(ep_num);
+    return uep ? uep->ep.queued_trbs : 0;
+  }
+
   static Dwc3::UserEndpoint* GetUserEndpoint(Dwc3& drv, uint8_t ep_num) {
     return drv.get_user_endpoint(ep_num);
   }
@@ -327,14 +335,18 @@ class Dwc3TestHelper {
   static uint64_t GetEp0InTotalBytes(const Dwc3& drv) { return drv.ep0_.in.total_bytes; }
   static dwc3_trb_t* GetCurrentReadTrb(Dwc3& drv) { return drv.ep0_.shared_fifo.current_read(); }
   static void PushTrbToSharedFifo(Dwc3& drv, const dwc3_trb_t& trb) {
+    drv.Ep0CancelTransfers();
     dwc3_trb_t* ptr = drv.ep0_.shared_fifo.AdvanceWrite();
     *ptr = trb;
     drv.ep0_.shared_fifo.Write(ptr);
+    ((drv.ep0_.state == Dwc3::Ep0::State::DataIn || drv.ep0_.state == Dwc3::Ep0::State::WaitZlpIn)
+         ? drv.ep0_.in
+         : drv.ep0_.out)
+        .queued_trbs++;
   }
   static void HandleResetEvent(Dwc3& drv) { drv.HandleResetEvent(); }
   static uint8_t GetEp0TestMode(const Dwc3& drv) { return drv.ep0_.test_mode; }
 
-  static void ClearSharedFifo(Dwc3& drv) { drv.ep0_.shared_fifo.Clear(); }
   static bool IsSharedFifoEmpty(Dwc3& drv) { return drv.ep0_.shared_fifo.IsEmpty(); }
 
   static void BindDciInterface(Dwc3& drv,
