@@ -343,7 +343,7 @@ func (sdk SDKProperties) GetAvailableImagesContext(ctx context.Context, version 
 	var successfulBucket bool
 	for _, b := range buckets {
 		url := fmt.Sprintf("gs://%v/development/%v/images*", b, version)
-		args := []string{"ls", url}
+		args := []string{"storage", "ls", url}
 		output, err := runGSUtil(ctx, args)
 		if err != nil {
 			latestErr = err

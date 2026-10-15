@@ -1399,7 +1399,7 @@ func TestFakeSDKCommon(t *testing.T) {
 	// Check the command line
 	cmd, args := args[0], args[1:]
 	switch filepath.Base(cmd) {
-	case "gsutil":
+	case "gcloud":
 		fakeGSUtil(args)
 	case "ffx":
 		fakeFfxTarget(args)
@@ -1418,10 +1418,11 @@ func TestFakeSDKCommon(t *testing.T) {
 func fakeGSUtil(args []string) {
 	expected := []string{}
 
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Expected arguments to gsutil\n")
+	if len(args) < 2 || args[0] != "storage" {
+		fmt.Fprintf(os.Stderr, "Expected arguments to gcloud storage\n")
 		os.Exit(1)
 	}
+	args = args[1:]
 	switch args[0] {
 	case "ls":
 		switch args[1] {

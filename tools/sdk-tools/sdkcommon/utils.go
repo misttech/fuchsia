@@ -22,12 +22,12 @@ func runGSUtil(ctx context.Context, args []string) (string, error) {
 		log = cLog
 	}
 
-	path, err := ExecLookPath("gsutil")
+	path, err := ExecLookPath("gcloud")
 	if err != nil {
-		return "", fmt.Errorf("could not find gsutil on path: %v", err)
+		return "", fmt.Errorf("could not find gcloud on path: %v", err)
 	}
 	cmd := ExecCommandContext(ctx, path, args...)
-	log.Debugf("About to run gsutil command: %v", cmd)
+	log.Debugf("About to run gcloud storage command: %v", cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitError *exec.ExitError
@@ -94,7 +94,7 @@ func GCSFileExists(gcsPath string) (string, error) {
 }
 
 func GCSFileExistsContext(ctx context.Context, gcsPath string) (string, error) {
-	args := []string{"ls", gcsPath}
+	args := []string{"storage", "ls", gcsPath}
 	return runGSUtil(ctx, args)
 }
 
@@ -103,7 +103,7 @@ func GCSCopy(gcsSource string, localDest string) (string, error) {
 }
 
 func GCSCopyContext(ctx context.Context, gcsSource string, localDest string) (string, error) {
-	args := []string{"cp", gcsSource, localDest}
+	args := []string{"storage", "cp", gcsSource, localDest}
 	return runGSUtil(ctx, args)
 }
 
