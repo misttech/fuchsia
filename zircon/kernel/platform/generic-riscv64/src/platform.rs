@@ -172,6 +172,18 @@ pub extern "C" fn rust_platform_suspend_cpu(_allow_domain_power_down: bool) -> R
     Err(Status::NOT_SUPPORTED)
 }
 
+/// Whether this platform supports `platform_suspend_system`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_platform_supports_suspend_system() -> bool {
+    false
+}
+
+/// Suspending the system is not supported on this platform.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_platform_suspend_system() -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
+}
+
 /// Queries the power state of `cpu_id` from the SEE, into `out_state`.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_platform_get_cpu_state(

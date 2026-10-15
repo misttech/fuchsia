@@ -67,7 +67,7 @@ source_set("tests") {
   sources = [
     "debug_tests.cc",
     "efi_test.cc",
-    "suspend_cpu_tests.cc",
+    "suspend_tests.cc",
   ]
   deps = [
     ":platform",

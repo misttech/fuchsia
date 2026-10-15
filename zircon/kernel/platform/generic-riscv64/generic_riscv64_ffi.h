@@ -31,6 +31,8 @@ void rust_platform_panic_start(bool halt_other_cpus);
 void rust_platform_halt_cpu(void) __NO_RETURN;
 bool rust_platform_supports_suspend_cpu(void);
 zx_status_t rust_platform_suspend_cpu(bool allow_domain_power_down);
+bool rust_platform_supports_suspend_system(void);
+zx_status_t rust_platform_suspend_system(void);
 zx_status_t rust_platform_get_cpu_state(cpu_num_t cpu_id, power_cpu_state* out_state);
 // `suggested_action` is a platform_halt_action and `reason` a zircon_crash_reason_t.
 void rust_platform_specific_halt(uint32_t suggested_action, uint32_t reason,

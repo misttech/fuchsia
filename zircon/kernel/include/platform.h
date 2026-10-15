@@ -129,6 +129,35 @@ enum class PlatformAllowDomainPowerDown : bool { No, Yes };
 // layer (perhaps within |platform_suspend_cpu|).
 zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain);
 
+// Returns true iff this platform supports |platform_suspend_system|.
+bool platform_supports_suspend_system();
+
+// Suspend the entire system from the boot CPU after all secondary CPUs have
+// been powered off.
+//
+// Prior to calling this function, it's critical to set up some kind of
+// interrupt that will wake the boot CPU and resume execution.
+//
+// Prior to calling, all secondary CPUs must be powered off, interrupts must be
+// disabled, preemption must be disabled, and the caller must be running on the
+// boot CPU.
+//
+// The calling thread must be a kernel-only thread.  Because this routine saves
+// only the minimum required register state, it is an error to call this
+// function on a thread that has a "user half" (ThreadDispatcher).
+//
+// Returns ZX_OK on success.  Note that this does not necessarily mean that the
+// system actually suspended (e.g. it may return immediately if an interrupt is
+// pending).
+//
+// Returns ZX_ERR_NOT_SUPPORTED if unsupported on this platform.
+//
+// Returns ZX_ERR_BAD_STATE, without suspending, if any secondary CPU is online
+// or the platform cannot confirm that every secondary CPU has powered off.
+//
+// May return other errors if the platform rejects the request.
+zx_status_t platform_suspend_system();
+
 // Returns true if this system has a debug serial port that is enabled
 bool platform_serial_enabled();
 

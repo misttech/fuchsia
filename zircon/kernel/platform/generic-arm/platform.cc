@@ -85,6 +85,9 @@ static ktl::atomic<int> halted;
 // Whether this platform implementation supports CPU suspend.
 static bool cpu_suspend_supported = false;
 
+// Whether this platform implementation supports system suspend.
+static bool system_suspend_supported = false;
+
 namespace {
 
 lazy_init::LazyInit<MappedCrashlog, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
@@ -151,6 +154,8 @@ void platform_halt_cpu(void) {
 }
 
 bool platform_supports_suspend_cpu() { return cpu_suspend_supported; }
+
+bool platform_supports_suspend_system() { return system_suspend_supported; }
 
 // TODO(https://fxbug.dev/417558115): Expand to include a deadline parameter
 // that's used to wake the CPU based on the boot time clock.
@@ -244,6 +249,71 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
           current_boot_time());
 
   return result.status_value();
+}
+
+zx_status_t platform_suspend_system() {
+  LTRACEF("platform_suspend_system cpu-%u current_boot_time=%ld\n", arch_curr_cpu_num(),
+          current_boot_time());
+
+  DEBUG_ASSERT(!Thread::Current::Get()->preemption_state().PreemptIsEnabled());
+  DEBUG_ASSERT(arch_ints_disabled());
+  DEBUG_ASSERT(arch_curr_cpu_num() == BOOT_CPU_ID);
+  // Make sure this thread is a kernel-only thread.
+  // Otherwise, we might need to save and restore some vector/floating-point
+  // state if we are going to power down.
+  DEBUG_ASSERT(Thread::Current::Get()->user_thread() == nullptr);
+
+  if (!system_suspend_supported) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  // A secondary CPU may have been brought online concurrently with the caller's suspend operation,
+  // so treat this as an error rather than asserting.
+  if (const cpu_mask_t online = mp_get_online_mask(); online != cpu_num_to_mask(BOOT_CPU_ID)) {
+    dprintf(INFO, "platform_suspend_system: secondary CPUs are online (online mask %#x)\n", online);
+    return ZX_ERR_BAD_STATE;
+  }
+
+  // It is critical that every other CPU has finished powering off (i.e. completed CPU_OFF) before
+  // calling SYSTEM_SUSPEND.  Verify that the PSCI implementation agrees before proceeding.
+  for (cpu_num_t cpu_id = 0; cpu_id < arch_max_num_cpus(); ++cpu_id) {
+    if (cpu_id == BOOT_CPU_ID) {
+      continue;
+    }
+    const zx::result<power_cpu_state> state = platform_get_cpu_state(cpu_id);
+    if (state.is_error() || state.value() != power_cpu_state::OFF) {
+      dprintf(INFO, "platform_suspend_system: cpu-%u is not off (status %d, state %d)\n", cpu_id,
+              state.status_value(), state.is_ok() ? static_cast<int>(state.value()) : -1);
+      return ZX_ERR_BAD_STATE;
+    }
+  }
+
+  // Note that unlike platform_suspend_cpu, this does not call platform_serial_prepare_for_suspend
+  // or clocks_and_pmic_prepare_for_suspend (or their wakeup counterparts).  Suspending the debug
+  // UART is usermode's responsibility (see zx_debug_suspend), and the only platform which
+  // implements the clocks and PMIC hooks (moonflower) does not support PSCI SYSTEM_SUSPEND.
+  lockup_percpu_shutdown();
+  platform_suspend_timer_curr_cpu();
+  suspend_interrupts_curr_cpu();
+
+  LTRACEF("platform_suspend_system for cpu-%u, current_boot_time=%ld, suspending...\n",
+          arch_curr_cpu_num(), current_boot_time());
+  // The following call may not return for an arbitrarily long time.
+  const zx_status_t suspend_status = psci_system_suspend();
+  LTRACEF("psci_system_suspend for cpu-%u, status %d\n", arch_curr_cpu_num(), suspend_status);
+
+  DEBUG_ASSERT(arch_ints_disabled());
+
+  zx_status_t status = resume_interrupts_curr_cpu();
+  DEBUG_ASSERT_MSG(status == ZX_OK, "resume_interrupts_curr_cpu: %d", status);
+  status = platform_resume_timer_curr_cpu();
+  DEBUG_ASSERT_MSG(status == ZX_OK, "platform_resume_timer_curr_cpu: %d", status);
+  lockup_percpu_init();
+
+  LTRACEF("platform_suspend_system for cpu-%u current_boot_time=%ld, done\n", arch_curr_cpu_num(),
+          current_boot_time());
+
+  return suspend_status;
 }
 
 zx_status_t platform_start_cpu(cpu_num_t cpu_id, uint64_t mpid, uint64_t context) {
@@ -481,6 +551,14 @@ void platform_init(void) {
   }
   dprintf(INFO, "platform_suspend_cpu support %s\n",
           cpu_suspend_supported ? "enabled" : "disabled");
+
+  // Like platform_suspend_cpu, platform_suspend_system relies on the interrupt controller being
+  // able to suspend and resume the current CPU's interrupt state (see suspend_interrupts_curr_cpu),
+  // which is not supported on all platforms (e.g. GICv2).  Platforms which enable CPU suspend are
+  // assumed to support it, so only enable system suspend when CPU suspend is also enabled.
+  system_suspend_supported = cpu_suspend_supported && psci_is_system_suspend_supported();
+  dprintf(INFO, "platform_suspend_system support %s\n",
+          system_suspend_supported ? "enabled" : "disabled");
 
   topology_cpu_init();
 }

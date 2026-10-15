@@ -62,6 +62,10 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
   return rust_platform_suspend_cpu(allow_domain == PlatformAllowDomainPowerDown::Yes);
 }
 
+bool platform_supports_suspend_system() { return rust_platform_supports_suspend_system(); }
+
+zx_status_t platform_suspend_system() { return rust_platform_suspend_system(); }
+
 zx::result<power_cpu_state> platform_get_cpu_state(cpu_num_t cpu_id) {
   power_cpu_state state{};
   if (zx_status_t status = rust_platform_get_cpu_state(cpu_id, &state); status != ZX_OK) {
