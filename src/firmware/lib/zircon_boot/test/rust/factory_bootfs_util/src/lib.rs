@@ -49,15 +49,15 @@ pub unsafe extern "C" fn get_bootfs_file_payload(
                 bootfs_vmo.write(&item.bytes, 0).unwrap();
 
                 // Create a bootfs parser from the vmo
-                let bootfs_parser = BootfsParser::create_from_vmo(bootfs_vmo).unwrap();
+                let bootfs_parser = BootfsParser::create_from_vmo(&bootfs_vmo).unwrap();
 
                 // Find the file
-                match bootfs_parser.iter().find(|bootfs_item_result| {
+                match bootfs_parser.iter(&bootfs_vmo).find(|bootfs_item_result| {
                     bootfs_item_result.as_ref().unwrap().name == file_name_str
                 }) {
                     Some(bootfs_file) => {
                         // Retrieve the payload and see if output buffer size can fit.
-                        let file_payload = bootfs_file.unwrap().payload.unwrap();
+                        let file_payload = bootfs_file.unwrap().payload;
                         let read_len: &mut size_t = &mut *out_size;
                         if *read_len < file_payload.len().try_into().unwrap() {
                             return 1;

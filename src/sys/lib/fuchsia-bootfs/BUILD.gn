@@ -12,7 +12,7 @@ rustc_library("fuchsia-bootfs") {
 
   deps = [
     "//sdk/rust/zx",
-    "//third_party/rust_crates:byteorder",
+    "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
   ]

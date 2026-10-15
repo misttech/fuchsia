@@ -49,27 +49,19 @@ async fn parse_bootfs<'a>(vmo: zx::Vmo) -> Arc<directory::immutable::Simple> {
     let mut tree_builder = TreeBuilder::empty_dir();
     let mut has_invalid_factory_data = false;
 
-    match BootfsParser::create_from_vmo(vmo) {
-        Ok(parser) => parser.iter().for_each(|result| match result {
+    match BootfsParser::create_from_vmo(&vmo) {
+        Ok(parser) => parser.iter(&vmo).for_each(|result| match result {
             Ok(entry) => {
                 log::info!("Found {} in factory bootfs", entry.name);
 
                 let name = entry.name;
                 let path_parts: Vec<&str> = name.split("/").collect();
-                let payload = entry.payload;
-                tree_builder
-                    .add_entry(
-                        &path_parts,
-                        read_only(payload.unwrap_or_else(|| {
-                            log::error!("Failed to buffer bootfs entry {}", name);
-                            has_invalid_factory_data = true;
-                            Vec::new()
-                        })),
-                    )
-                    .unwrap_or_else(|err| {
+                tree_builder.add_entry(&path_parts, read_only(entry.payload)).unwrap_or_else(
+                    |err| {
                         log::error!("Failed to add bootfs entry {} to directory: {}", name, err);
                         has_invalid_factory_data = true;
-                    });
+                    },
+                );
             }
             Err(err) => {
                 log::error!("BootfsParser: {}", err);

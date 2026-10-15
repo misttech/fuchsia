@@ -6,7 +6,7 @@ use anyhow::{Error, anyhow, bail};
 use elf_parse::{Elf64Headers, SegmentType};
 use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_ldsvc as fuchsia_ldsvc;
-use fuchsia_bootfs::BootfsParser;
+use fuchsia_bootfs::{BootfsParser, ZeroCopyBootfsEntry};
 use fuchsia_ldsvc::loader::{Clone, Config, LoadObject};
 use fuchsia_ldsvc::{Loader, LoaderLoadObjectResponse, LoaderServerHandler};
 use fuchsia_runtime::{HandleInfo, HandleType};
@@ -242,6 +242,30 @@ fn create_bootfs_file_vmo(
         .map_err(Into::into)
 }
 
+/// Finds a BOOTFS entry whose path equals `parts` joined by `'/'` (or ends with `'/'` followed by
+/// `parts` joined by `'/'` when nested under a `userboot.root` prefix).
+fn find_bootfs_entry<'a>(
+    bootfs_parser: &'a BootfsParser,
+    parts: &[&str],
+) -> Option<ZeroCopyBootfsEntry<'a>> {
+    bootfs_parser.zero_copy_iter().filter_map(Result::ok).find(|e| {
+        let mut rest = e.name;
+        for (i, &part) in parts.iter().rev().enumerate() {
+            if i > 0 {
+                let Some(r) = rest.strip_suffix('/') else {
+                    return false;
+                };
+                rest = r;
+            }
+            let Some(r) = rest.strip_suffix(part) else {
+                return false;
+            };
+            rest = r;
+        }
+        rest.is_empty() || rest.ends_with('/')
+    })
+}
+
 /// Loads and executes the target binary (and its ELF interpreter if dynamically linked)
 /// from the provided BOOTFS VMO into a new child process under `handles.root_job`.
 ///
@@ -272,8 +296,7 @@ pub async fn launch_program(
     let reserved_vmar = reserve_low_address_space(&child_vmar)?;
     let child_thread = child_process.create_thread(program_name.as_bytes())?;
 
-    let bootfs_parser =
-        BootfsParser::create_from_vmo(bootfs_vmo.duplicate_handle(Rights::SAME_RIGHTS)?)?;
+    let bootfs_parser = BootfsParser::create_from_vmo(&bootfs_vmo)?;
 
     let entry = bootfs_parser
         .zero_copy_iter()
@@ -301,20 +324,12 @@ pub async fn launch_program(
     {
         let mut interp_bytes = vec![0u8; interp_hdr.filesz as usize];
         program_vmo.read(&mut interp_bytes, interp_hdr.offset as u64)?;
-        let interp_str = str::from_utf8(&interp_bytes)?.trim_end_matches('\0');
-        let interp_path = if interp_str.starts_with('/') {
-            interp_str.trim_start_matches('/')
-        } else if !interp_str.starts_with("lib/") {
-            &format!("lib/{}", interp_str)
-        } else {
-            interp_str
-        };
+        let interp_str =
+            str::from_utf8(&interp_bytes)?.trim_end_matches('\0').trim_start_matches('/');
+        let interp_name = interp_str.strip_prefix("lib/").unwrap_or(interp_str);
 
-        let interp_entry = bootfs_parser
-            .zero_copy_iter()
-            .filter_map(Result::ok)
-            .find(|e| e.name == interp_path || e.name.ends_with(&format!("/{}", interp_path)))
-            .ok_or_else(|| anyhow!("Interpreter '{}' not found in bootfs", interp_path))?;
+        let interp_entry = find_bootfs_entry(&bootfs_parser, &["lib", interp_name])
+            .ok_or_else(|| anyhow!("Interpreter 'lib/{interp_name}' not found in bootfs"))?;
 
         let interp_vmo = create_bootfs_file_vmo(
             &bootfs_vmo,
@@ -322,7 +337,7 @@ pub async fn launch_program(
             interp_entry.size,
             &vmex_resource,
         )?;
-        interp_vmo.set_name(&Name::new_lossy(&interp_path))?;
+        interp_vmo.set_name(&Name::new_lossy(interp_entry.name))?;
 
         if let Some(ref mut bootfs_entries) = bootfs_entries {
             if let Ok(vmo_dup) = interp_vmo.duplicate_handle(Rights::SAME_RIGHTS) {
@@ -466,8 +481,6 @@ pub async fn launch_program(
 
     if let Some(ldsvc_server) = loader_server {
         writeln!(log, "Serving loader service for child process...")?;
-        let bootfs_parser =
-            BootfsParser::create_from_vmo(bootfs_vmo.duplicate_handle(Rights::SAME_RIGHTS)?)?;
         let server = UserbootLoaderServer::new(
             bootfs_parser,
             bootfs_vmo,
@@ -533,19 +546,12 @@ impl LoaderServerHandler<Channel> for UserbootLoaderServer {
         responder: Responder<LoadObject, Channel>,
     ) {
         let name = &request.payload().object_name;
-        let find_file = |path: &str| {
-            self.bootfs_parser
-                .zero_copy_iter()
-                .filter_map(Result::ok)
-                .find(|e| e.name == path || e.name.ends_with(&format!("/{path}")))
-        };
-
         let mut found = None;
         if !self.subdir.is_empty() {
-            found = find_file(&format!("lib/{}/{}", self.subdir, name));
+            found = find_bootfs_entry(&self.bootfs_parser, &["lib", &self.subdir, name]);
         }
         if found.is_none() && (!self.exclusive || self.subdir.is_empty()) {
-            found = find_file(&format!("lib/{name}"));
+            found = find_bootfs_entry(&self.bootfs_parser, &["lib", name]);
         }
 
         let lib_vmo = found.as_ref().and_then(|entry| {
@@ -975,5 +981,37 @@ mod tests {
         assert_eq!(handles.vdso_vmo.get_name().unwrap(), "vdso/stable");
         assert_eq!(handles.zbi_vmo.get_name().unwrap(), "zbi");
         assert_eq!(handles.startup_handles.len(), 2);
+    }
+
+    #[fuchsia::test]
+    fn test_find_bootfs_entry() {
+        let bootfs = create_bootfs_vmo(&[
+            ("ld.so.1", b"root_file"),
+            ("lib/asan/libc.so", b"asan_libc"),
+            ("lib/ld.so.1", b"interp"),
+            ("my_lib/foo.so", b"wrong_prefix"),
+            ("zbi-test/lib/asan/libfoo.so", b"prefixed_asan"),
+            ("zbi-test/lib/libbar.so", b"prefixed_lib"),
+        ]);
+        let parser = BootfsParser::create_from_vmo(&bootfs).unwrap();
+
+        // Exact matches at root of bootfs.
+        let entry = find_bootfs_entry(&parser, &["lib", "ld.so.1"]).unwrap();
+        assert_eq!(entry.name, "lib/ld.so.1");
+
+        let entry = find_bootfs_entry(&parser, &["lib", "asan", "libc.so"]).unwrap();
+        assert_eq!(entry.name, "lib/asan/libc.so");
+
+        // Suffix matches under a prefix directory.
+        let entry = find_bootfs_entry(&parser, &["lib", "asan", "libfoo.so"]).unwrap();
+        assert_eq!(entry.name, "zbi-test/lib/asan/libfoo.so");
+
+        let entry = find_bootfs_entry(&parser, &["lib", "libbar.so"]).unwrap();
+        assert_eq!(entry.name, "zbi-test/lib/libbar.so");
+
+        // Non-matches: partial component prefix or missing directory component.
+        assert!(find_bootfs_entry(&parser, &["lib", "foo.so"]).is_none());
+        assert!(find_bootfs_entry(&parser, &["lib", "other", "libc.so"]).is_none());
+        assert!(find_bootfs_entry(&parser, &["other", "ld.so.1"]).is_none());
     }
 }

@@ -110,11 +110,7 @@ impl BootfsSvc {
     }
 
     fn new_internal(bootfs: zx::Vmo) -> Result<Self, BootfsError> {
-        let bootfs_dup = bootfs
-            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-            .map_err(BootfsError::DuplicateHandle)?
-            .into();
-        let parser = BootfsParser::create_from_vmo(bootfs_dup)?;
+        let parser = BootfsParser::create_from_vmo(&bootfs)?;
         Ok(Self {
             next_inode: FIRST_INODE_VALUE,
             parser,
@@ -157,11 +153,8 @@ impl BootfsSvc {
     ) -> Result<Vec<u8>, BootfsError> {
         for entry in self.parser.zero_copy_iter() {
             let entry = entry?;
-            assert!(entry.payload.is_none()); // Using the zero copy iterator.
             if entry.name == config_path {
-                let mut buffer = vec![0; usize::try_from(entry.size)?];
-                self.bootfs.read(&mut buffer, entry.offset).map_err(BootfsError::Vmo)?;
-                return Ok(buffer);
+                return self.bootfs.read_to_vec(entry.offset, entry.size).map_err(BootfsError::Vmo);
             }
         }
         Err(BootfsError::MissingEntry { name: config_path.to_string() })
@@ -260,7 +253,6 @@ impl BootfsSvc {
 
         for entry in self.parser.zero_copy_iter() {
             let entry = entry?;
-            assert!(entry.payload.is_none()); // Using the zero copy iterator.
 
             let vmo_range = aligned_range(entry.offset.try_into()?, entry.size.try_into()?)?;
             let vmo = match seen_ranges.get(&vmo_range) {
@@ -453,7 +445,7 @@ mod tests {
     }
 
     fn parsed_payload(entry: &BootfsEntry) -> String {
-        String::from_utf8(entry.payload.clone().unwrap()).unwrap()
+        String::from_utf8(entry.payload.clone()).unwrap()
     }
 
     // Test that bootfs entries are all parsed into true copy VMOs and inserted
@@ -462,7 +454,11 @@ mod tests {
     async fn bootfs_is_parsed_and_decommitted() {
         let bootfs_vmo = read_file_to_vmo(BASIC_BOOTFS_UNCOMPRESSED_FILE);
         let bootfs_svc = BootfsSvc::new_internal(bootfs_vmo).unwrap();
-        let entries = bootfs_svc.parser.iter().map(|e| e.unwrap()).collect::<Vec<BootfsEntry>>();
+        let entries = bootfs_svc
+            .parser
+            .iter(&bootfs_svc.bootfs)
+            .map(|e| e.unwrap())
+            .collect::<Vec<BootfsEntry>>();
 
         // Save a copy of the Bootfs handle so we can check that this region is
         // decommitted later.
@@ -485,7 +481,7 @@ mod tests {
         for entry in &entries {
             let file = open_file_to_read(&boot_proxy, &entry.name).await;
             let contents = fuchsia_fs::file::read(&file).await.unwrap();
-            assert_eq!(entry.payload.as_ref().unwrap(), &contents);
+            assert_eq!(&entry.payload, &contents);
             // Assert that the VMO handle backing the file is a fully-owned VMO
             // (i.e. it does not have a parent VMO).
             let vmo = file.get_backing_memory(fio::VmoFlags::READ).await.unwrap().unwrap();
@@ -521,7 +517,11 @@ mod tests {
     async fn shared_bootfs_offsets() {
         let bootfs_vmo = read_file_to_vmo(BASIC_BOOTFS_UNCOMPRESSED_FILE);
         let bootfs_svc = BootfsSvc::new_internal(bootfs_vmo).unwrap();
-        let entries = bootfs_svc.parser.iter().map(|e| e.unwrap()).collect::<Vec<BootfsEntry>>();
+        let entries = bootfs_svc
+            .parser
+            .iter(&bootfs_svc.bootfs)
+            .map(|e| e.unwrap())
+            .collect::<Vec<BootfsEntry>>();
 
         // `entry1` is just an empty file, so the offset for this entry is the
         // same as `entry2`, even if the entry.size of `entry1` is 0 and the
@@ -565,7 +565,11 @@ mod tests {
     async fn shared_bootfs_ranges() {
         let bootfs_vmo = read_file_to_vmo(BASIC_BOOTFS_UNCOMPRESSED_FILE);
         let bootfs_svc = BootfsSvc::new_internal(bootfs_vmo).unwrap();
-        let entries = bootfs_svc.parser.iter().map(|e| e.unwrap()).collect::<Vec<BootfsEntry>>();
+        let entries = bootfs_svc
+            .parser
+            .iter(&bootfs_svc.bootfs)
+            .map(|e| e.unwrap())
+            .collect::<Vec<BootfsEntry>>();
 
         // `entry1` and `entry2` share the same parsed VMO offset and size under
         // different named entries.
@@ -616,7 +620,11 @@ mod tests {
         let bootfs_vmo = read_file_to_vmo(BASIC_BOOTFS_UNCOMPRESSED_FILE);
         let bootfs_vmo_handle = bootfs_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let bootfs_svc = BootfsSvc::new_internal(bootfs_vmo).unwrap();
-        let entries = bootfs_svc.parser.iter().map(|e| e.unwrap()).collect::<Vec<BootfsEntry>>();
+        let entries = bootfs_svc
+            .parser
+            .iter(&bootfs_svc.bootfs)
+            .map(|e| e.unwrap())
+            .collect::<Vec<BootfsEntry>>();
 
         // `entry1` and `entry2` share the same parsed VMO offset and size under
         // different named entries.
