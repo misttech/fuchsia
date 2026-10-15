@@ -36,6 +36,7 @@ class LocalDriver(base.BaseDriver):
         output_path: Optional[str] = None,
         config_path: Optional[str] = None,
         params_path: Optional[str] = None,
+        ssh_path: Optional[str] = None,
         target_address_type: Optional[str] = None,
         ap_ip: Optional[str] = None,
         ap_ssh_port: Optional[int] = None,
@@ -50,6 +51,7 @@ class LocalDriver(base.BaseDriver):
           output_path: absolute path to directory for storing Mobly test output.
           config_path: absolute path to the Mobly test config file.
           params_path: absolute path to the Mobly test params file.
+          ssh_path: absolute path to the SSH binary.
           target_address_type: Whether to use the fuchsia device's name, serial
             number,  or ip for host-target interactions when using FFX and
             Fuchsia-Controller transports.
@@ -65,6 +67,7 @@ class LocalDriver(base.BaseDriver):
         )
         self._multi_device = multi_device
         self._config_path = config_path
+        self._ssh_path = ssh_path
 
         ffx_config = honeydew_config.get("transports", {}).get("ffx", {})
         ssh_auth_sock = ffx_config.get("ssh_auth_sock") or ffx_config.get(
@@ -268,6 +271,7 @@ class LocalDriver(base.BaseDriver):
             mobly_controllers=mobly_controllers,
             test_params_dict={},
             botanist_honeydew_map={},
+            ssh_path=self._ssh_path,
         )
         return config
 

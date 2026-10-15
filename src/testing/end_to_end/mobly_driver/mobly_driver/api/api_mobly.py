@@ -19,6 +19,7 @@ MOBLY_CONTROLLER_FUCHSIA_DEVICE: str = "FuchsiaDevice"
 SSH_PATH_KEY: str = "ssh_binary_path"
 SSH_CONFIG_KEY: str = "ssh_config"
 SSH_HOST_KEY: str = "host"
+SSH_PORT_KEY: str = "port"
 SSH_USER_KEY: str = "user"
 SSH_IDENTITY_FILE_KEY: str = "identity_file"
 HONEYDEW_CONFIG_KEY: str = "honeydew_config"
@@ -252,6 +253,10 @@ def new_testbed_config(
                 SSH_USER_KEY: controller.pop("user", "root"),
                 SSH_IDENTITY_FILE_KEY: controller.pop("ssh_key"),
             }
+            if SSH_PORT_KEY in controller:
+                controller[SSH_CONFIG_KEY][SSH_PORT_KEY] = controller.pop(
+                    SSH_PORT_KEY
+                )
             if ssh_path:
                 controller[SSH_CONFIG_KEY][SSH_PATH_KEY] = ssh_path
             if "attenuator" in controller:

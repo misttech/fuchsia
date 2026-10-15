@@ -71,6 +71,7 @@ class DriverFactory:
                 multi_device=self._multi_device,
                 config_path=self._config_path,
                 params_path=self._params_path,
+                ssh_path=self._ssh_path,
                 target_address_type=self._target_address_type,
                 ap_ip=self._ap_ip,
                 ap_ssh_port=self._ap_ssh_port,

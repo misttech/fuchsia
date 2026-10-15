@@ -285,6 +285,7 @@ class ApiMoblyTest(unittest.TestCase):
                         {
                             "type": "AccessPoint",
                             "ip": "192.168.42.11",
+                            "port": 2222,
                             "user": "root",
                             "ssh_key": "some/key/path",
                             "nodename": "access-point-1234-5678-9abc",
@@ -309,6 +310,7 @@ class ApiMoblyTest(unittest.TestCase):
                                         },
                                         "ssh_config": {
                                             "host": "192.168.42.11",
+                                            "port": 2222,
                                             "user": "root",
                                             "identity_file": "some/key/path",
                                         },

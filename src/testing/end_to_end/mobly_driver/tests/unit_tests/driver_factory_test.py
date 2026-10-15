@@ -70,8 +70,11 @@ class DriverFactoryTest(unittest.TestCase):
     def test_get_driver_with_ssh_key_success(self) -> None:
         """Test case to ensure ssh_key is passed to LocalDriver"""
         ssh_key = "/path/to/ssh/key"
+        ssh_path = "/path/to/ssh"
         factory = driver_factory.DriverFactory(
-            honeydew_config=_HONEYDEW_CONFIG, ssh_key=ssh_key
+            honeydew_config=_HONEYDEW_CONFIG,
+            ssh_path=ssh_path,
+            ssh_key=ssh_key,
         )
         test_env = {
             base.TEST_OUTDIR_ENV: "log/path",
@@ -80,4 +83,5 @@ class DriverFactoryTest(unittest.TestCase):
             driver = factory.get_driver()
         self.assertIsInstance(driver, local.LocalDriver)
         assert isinstance(driver, local.LocalDriver)
+        self.assertEqual(driver._ssh_path, ssh_path)
         self.assertEqual(driver._ssh_key, ssh_key)

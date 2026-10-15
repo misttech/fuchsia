@@ -528,6 +528,7 @@ class LocalDriverTest(unittest.TestCase):
         driver = local.LocalDriver(
             honeydew_config=_HONEYDEW_CONFIG,
             output_path="output/path",
+            ssh_path="/path/to/ssh",
             ap_ip="192.168.1.1",
             ap_ssh_port=2222,
             ap_ssh_key="/path/to/key",
@@ -535,6 +536,9 @@ class LocalDriverTest(unittest.TestCase):
         driver.generate_test_config()
 
         mock_new_tb_config.assert_called_once()
+        self.assertEqual(
+            mock_new_tb_config.call_args.kwargs["ssh_path"], "/path/to/ssh"
+        )
         controllers = mock_new_tb_config.call_args.kwargs["mobly_controllers"]
         self.assertEqual(2, len(controllers))
         ap_config = controllers[1]
