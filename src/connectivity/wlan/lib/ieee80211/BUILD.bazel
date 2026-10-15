@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "ieee80211",
+    srcs = [
+        "src/bssid.rs",
+        "src/lib.rs",
+        "src/mac_addr.rs",
+        "src/ssid.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/wlan:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:arbitrary",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "ieee80211_test",
+    crate = ":ieee80211",
+    edition = "2024",
+    visibility = ["//visibility:private"],
+)
+
+fx_unittest_package(
+    name = "ieee80211-tests",
+    unit_tests = [":ieee80211_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
