@@ -186,8 +186,8 @@ impl AsyncWrite for UdpNetworkInterface {
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
         if self.write_task.is_none() {
-            // TODO(https://fxbug.dev/42159159): unfortunately the Task requires the 'static lifetime so we have to
-            // copy the bytes and move them into the async block.
+            // The write task requires a 'static lifetime, so we packetize and copy the bytes
+            // before moving them into the async block.
             let packets = self.create_fastboot_packets(buf).map_err(|e| {
                 std::io::Error::other(format!("Could not create fastboot packets: {}", e))
             })?;
