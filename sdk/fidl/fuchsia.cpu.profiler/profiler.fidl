@@ -63,8 +63,16 @@ type CallgraphStrategy = flexible enum : uint8 {
     FRAME_POINTER = 4;
 };
 
+/// Default number of bytes of stack memory captured per sample when
+/// `CallgraphConfig.stack_size` is omitted.
+const DEFAULT_STACK_SIZE uint64 = 16384; // 16 KiB
+
 type CallgraphConfig = table {
     1: strategy CallgraphStrategy;
+    /// Maximum number of bytes of stack memory to capture per sample when
+    /// using a strategy that copies stack memory (e.g. `CallgraphStrategy.DWARF`).
+    /// If omitted, the profiler uses `DEFAULT_STACK_SIZE`.
+    2: stack_size uint64;
 };
 
 type Sample = table {

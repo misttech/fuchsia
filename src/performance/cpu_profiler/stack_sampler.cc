@@ -15,6 +15,7 @@
 #include <zircon/syscalls/debug.h>
 #include <zircon/syscalls/object.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <cstring>
@@ -26,7 +27,8 @@
 
 namespace profiler {
 
-constexpr size_t kStackCaptureSize = 4096ul * 4;  // 16 kib
+constexpr size_t kDefaultStackCaptureSize = fuchsia_cpu_profiler::kDefaultStackSize;
+constexpr size_t kMaxStackCaptureSize = 4096ul * 16;  // 64 kib
 
 #if defined(__aarch64__)
 // CPSR/SPSR M[4]: set when a thread is executing in AArch32 mode.
@@ -145,6 +147,18 @@ uint64_t StackSampler::GetRestrictedSP(const zx_restricted_state_t& restricted_s
 #endif
 }
 
+size_t StackSampler::GetStackCaptureSize() const {
+  if (!sample_specs_.empty() && sample_specs_[0].sample().has_value() &&
+      sample_specs_[0].sample()->callgraph().has_value() &&
+      sample_specs_[0].sample()->callgraph()->stack_size().has_value()) {
+    uint64_t requested = sample_specs_[0].sample()->callgraph()->stack_size().value();
+    if (requested > 0) {
+      return static_cast<size_t>(std::min<uint64_t>(requested, kMaxStackCaptureSize));
+    }
+  }
+  return kDefaultStackCaptureSize;
+}
+
 void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBase* task,
                                   zx_status_t status) {
   zx::ticks start_time = zx::ticks::now();
@@ -153,8 +167,10 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
     return;
   }
 
-  (void)targets_.ForEachProcess([this](std::span<const zx_koid_t>,
-                                       const ProcessTarget& target) -> zx::result<> {
+  const size_t stack_capture_size = GetStackCaptureSize();
+  (void)targets_.ForEachProcess([this, stack_capture_size](
+                                    std::span<const zx_koid_t>,
+                                    const ProcessTarget& target) -> zx::result<> {
     TRACE_DURATION("cpu_profiler", "StackSampler::CollectSamples/ForEachProcess");
 
     for (const auto& [tid, thread] : target.threads) {
@@ -252,7 +268,7 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
       }
 
       BufferedStackMemory stack_memory(target.handle.borrow(), {}, target.cached_mappings);
-      stack_memory.CaptureStack(sp, kStackCaptureSize);
+      stack_memory.CaptureStack(sp, stack_capture_size);
 
       if (thread.restricted_state_addr.has_value()) {
         uint64_t restricted_base = thread.restricted_state_addr.value();
@@ -264,7 +280,7 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
           if (!stack_memory.ReadBytes(restricted_base, sizeof(restricted_state), &restricted_state)
                    .has_err()) {
             sp = GetRestrictedSP(restricted_state);
-            stack_memory.CaptureStack(sp, kStackCaptureSize);
+            stack_memory.CaptureStack(sp, stack_capture_size);
           } else {
             thread.restricted_state_addr.reset();
           }
