@@ -1,0 +1,171 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+@available(added=HEAD)
+library fuchsia.hardware.pci.root;
+
+using fuchsia.hardware.pci;
+using zx;
+
+/// Used to indicate within a routing entry that there is no parent bridge or
+/// port device; it is connected directly at the root.
+const IRQ_ROUTING_NO_PARENT uint8 = 0xFF;
+/// An entry corresponds to all functions for the given device.
+const IRQ_ROUTING_ALL_FUNCTIONS uint8 = 0xF;
+
+type AddressSpace = strict enum : uint8 {
+    MEMORY = 0;
+    IO = 1;
+};
+
+/// Intentionally close to an ACPI _PRT entry. Endpoints directly on a root
+/// complex carry IRQ_ROUTING_NO_PARENT in the port fields; for anything behind
+/// a root port or bridge those fields hold the upstream port address. Each pin
+/// value is a legacy interrupt vector that can be passed to
+/// `Root.GetLegacyInterrupt`.
+type IrqRoutingEntry = struct {
+    port_device_id uint8;
+    port_function_id uint8;
+    device_id uint8;
+    pins array<uint8, fuchsia.hardware.pci.LEGACY_INTERRUPT_COUNT>;
+};
+
+type MsiAllocationInfo = struct {
+    target_addr uint64;
+    target_data uint32;
+    irq_count uint32;
+};
+
+/// BDF addresses of devices populated by platform firmware (ACPI or devicetree).
+type ParentBdfs = strict union {
+    1: acpi vector<fuchsia.hardware.pci.Bdf>:MAX;
+    2: devicetree vector<fuchsia.hardware.pci.Bdf>:MAX;
+};
+
+/// Static description of a PCI root. Handles are obtained through the
+/// dedicated `Root` getters rather than carried here.
+type PlatformInfo = struct {
+    name string:8;
+    start_bus_num uint8;
+    end_bus_num uint8;
+    segment_group uint16;
+    irq_routing vector<IrqRoutingEntry>:MAX;
+    parent_bdfs ParentBdfs:optional;
+};
+
+/// Everything a PCI root provider exposes except config-space access. Every
+/// provider serves this.
+closed protocol Root {
+    strict GetBti(struct {
+        bdf fuchsia.hardware.pci.Bdf;
+        index uint32;
+    }) -> (resource struct {
+        bti zx.Handle:BTI;
+    }) error zx.Status;
+
+    strict GetPlatformInfo() -> (struct {
+        info PlatformInfo;
+    }) error zx.Status;
+
+    /// Returns the MMIO configuration access mechanism for this root.
+    /// `is_extended` is true for an ECAM (4 KiB of config space per function)
+    /// and false for a legacy CAM (256 bytes per function). Returns
+    /// ZX_ERR_NOT_SUPPORTED when the root has no MMIO config space, in which
+    /// case config space is reached through the `Config` protocol.
+    strict GetCam() -> (resource struct {
+        vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP>;
+        is_extended bool;
+    }) error zx.Status;
+
+    /// Returns the interrupt for a legacy vector named in
+    /// `PlatformInfo.irq_routing`. Returns ZX_ERR_NOT_FOUND for a vector the
+    /// root does not provide.
+    strict GetLegacyInterrupt(struct {
+        vector uint32;
+    }) -> (resource struct {
+        interrupt zx.Handle:INTERRUPT;
+    }) error zx.Status;
+
+    strict GetAddressSpace(struct {
+        in_base uint64;
+        size uint64;
+        type AddressSpace;
+        low bool;
+    }) -> (resource struct {
+        base uint64;
+        resource zx.Handle:RESOURCE;
+        token zx.Handle:EVENTPAIR;
+    }) error zx.Status;
+
+    strict AllocateMsi(struct {
+        msi_count uint32;
+        can_target_64bit bool;
+    }) -> (resource struct {
+        /// Usually an MSI allocation. Controllers that deliver MSIs internally
+        /// (GooglePciroot) may return a placeholder handle of another type, or
+        /// none.
+        allocation zx.Handle:optional;
+        info MsiAllocationInfo;
+    }) error zx.Status;
+
+    strict GetMsiHandle(resource struct {
+        allocation zx.Handle:optional;
+        options uint32;
+        msi_id uint16;
+        cfg_vmo zx.Handle:<VMO, zx.Rights.MAP, optional>;
+        cfg_offset uint64;
+    }) -> (resource struct {
+        interrupt zx.Handle:INTERRUPT;
+    }) error zx.Status;
+};
+
+/// Config-space access proxied through the provider, for roots that cannot
+/// expose an MMIO CAM. A provider that can expose one does not serve this.
+closed protocol Config {
+    strict Read8(struct {
+        address fuchsia.hardware.pci.Bdf;
+        offset uint16;
+    }) -> (struct {
+        value uint8;
+    }) error zx.Status;
+
+    strict Read16(struct {
+        address fuchsia.hardware.pci.Bdf;
+        offset uint16;
+    }) -> (struct {
+        value uint16;
+    }) error zx.Status;
+
+    strict Read32(struct {
+        address fuchsia.hardware.pci.Bdf;
+        offset uint16;
+    }) -> (struct {
+        value uint32;
+    }) error zx.Status;
+
+    strict Write8(struct {
+        address fuchsia.hardware.pci.Bdf;
+        offset uint16;
+        value uint8;
+    }) -> () error zx.Status;
+
+    strict Write16(struct {
+        address fuchsia.hardware.pci.Bdf;
+        offset uint16;
+        value uint16;
+    }) -> () error zx.Status;
+
+    strict Write32(struct {
+        address fuchsia.hardware.pci.Bdf;
+        offset uint16;
+        value uint32;
+    }) -> () error zx.Status;
+};
+
+service RootService {
+    root client_end:Root;
+};
+
+service ConfigService {
+    config client_end:Config;
+};
