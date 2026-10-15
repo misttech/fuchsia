@@ -19,7 +19,7 @@ import threading
 import time
 from typing import IO
 
-from antlion import context, utils
+from antlion import utils
 from libs.commands import nmcli
 from libs.commands.command import (
     LinuxCommand,
@@ -332,9 +332,9 @@ class IPerfServerBase(object):
 
     @property
     def log_path(self) -> str:
-        current_context = context.get_current_context()
+        # Set by Mobly in base_test.BaseTestClass.run.
         full_out_dir = os.path.join(
-            current_context.get_full_output_path(), f"IPerfServer{self.port}"
+            getattr(logging, "log_path"), f"IPerfServer{self.port}"
         )
 
         # Ensure the directory exists.

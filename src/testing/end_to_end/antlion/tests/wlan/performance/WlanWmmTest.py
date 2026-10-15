@@ -9,7 +9,6 @@ import operator
 import time
 from typing import Any
 
-from antlion import context
 from antlion.test_utils.abstract_devices import wmm_transceiver
 from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
 from antlion.test_utils.fuchsia import wmm_test_cases
@@ -539,7 +538,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
             )
             return
 
-        output_path = context.get_current_context().get_base_output_path()
+        output_path = self.log_path
         output_file_name = "%s/WlanWmmTest/%s.html" % (
             output_path,
             self.current_test_info.name,

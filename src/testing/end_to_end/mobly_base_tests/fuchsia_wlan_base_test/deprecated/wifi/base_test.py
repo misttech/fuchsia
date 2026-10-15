@@ -13,7 +13,7 @@ from typing import Protocol, TypedDict, TypeVar
 import attenuator
 import fuchsia_async_extension
 import openwrt_access_point
-from antlion import context, controllers
+from antlion import controllers
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.pdu import PduDevice
 from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
@@ -253,7 +253,7 @@ class WifiBaseTest(BaseTestClass):
         Using the current TestClassContext and TestCaseContext this method pulls
         the DHCP and hostapd logs and outputs them to the correct path.
         """
-        current_path = context.get_current_context().get_full_output_path()
+        current_path = self.log_path
         if hasattr(self, "access_points"):
             for access_point in self.access_points:
                 access_point.download_ap_logs(current_path)

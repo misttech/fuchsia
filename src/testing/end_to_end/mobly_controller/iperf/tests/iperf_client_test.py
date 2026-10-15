@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import unittest
@@ -50,16 +51,17 @@ class IPerfClientModuleTest(unittest.TestCase):
 class IPerfClientBaseTest(unittest.TestCase):
     """Tests iperf.iperf_client.IPerfClientBase."""
 
-    @mock.patch("antlion.context.get_current_context")
     @mock.patch("os.makedirs")
     def test_get_full_file_path_creates_parent_directory(
-        self, mock_makedirs: mock.Mock, mock_get_context: mock.Mock
+        self, mock_makedirs: mock.Mock
     ) -> None:
-        mock_get_context.return_value.get_full_output_path.return_value = (
-            "/tmp/unit_test_garbage"
-        )
-
-        full_file_path = IPerfClientBase._get_full_file_path("0")
+        with mock.patch.object(
+            logging,
+            "log_path",
+            "/tmp/unit_test_garbage",
+            create=True,
+        ):
+            full_file_path = IPerfClientBase._get_full_file_path("0")
 
         self.assertTrue(
             mock_makedirs.called, "Did not attempt to create a directory."

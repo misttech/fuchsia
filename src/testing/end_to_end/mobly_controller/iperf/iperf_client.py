@@ -14,7 +14,6 @@ import subprocess
 import threading
 from abc import ABC, abstractmethod
 
-from antlion import context
 from antlion.capabilities.ssh import SSHConfig
 from antlion.controllers.fuchsia_lib.ssh import SSHProvider
 from libs.commands.date import LinuxDateCommand
@@ -104,9 +103,9 @@ class IPerfClientBase(ABC):
         Args:
             tag: The tag passed in to the server run.
         """
-        current_context = context.get_current_context()
+        # Set by Mobly in base_test.BaseTestClass.run.
         full_out_dir = os.path.join(
-            current_context.get_full_output_path(), "iperf_client_files"
+            getattr(logging, "log_path"), "iperf_client_files"
         )
 
         with IPerfClientBase.__log_file_lock:
