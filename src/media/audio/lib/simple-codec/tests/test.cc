@@ -2,14 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async-loop/loop.h>
+#include <lib/async-testing/dispatcher_stub.h>
+#include <lib/async/cpp/task.h>
+#include <lib/async/sequence_id.h>
 #include <lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <lib/simple-codec/simple-codec-client.h>
 #include <lib/simple-codec/simple-codec-server.h>
 #include <lib/sync/completion.h>
 
 #include <array>
+#include <atomic>
+#include <memory>
+#include <thread>
 
 #include <zxtest/zxtest.h>
 
@@ -79,6 +87,10 @@ class TestCodec : public SimpleCodecServer {
   uint64_t GetGainPeId() { return SimpleCodecServer::GetGainPeId(); }
   uint64_t GetMutePeId() { return SimpleCodecServer::GetMutePeId(); }
   uint64_t GetAgcPeId() { return SimpleCodecServer::GetAgcPeId(); }
+  // Binds |channel| through |dispatcher|, which must forward to dispatcher().
+  zx_status_t BindClientOn(zx::channel channel, async_dispatcher_t* dispatcher) {
+    return BindClient(std::move(channel), dispatcher);
+  }
 
  private:
   GainState gain_state_ = {};
@@ -181,6 +193,123 @@ class TestCodecWithSignalProcessing final : public SimpleCodecServer,
   GainState gain_state_ = {};
   bool agl_mode_ = false;
   std::optional<fidl::Binding<signal_fidl::SignalProcessing>> signal_processing_binding_;
+};
+
+// Forwards every operation to its target dispatcher, except that the first BeginWait() blocks after
+// it has been forwarded, until Resume() is called. This holds open the window between a binding
+// starting to wait on its channel and the code that bound it continuing.
+class PausingDispatcher final : public async::DispatcherStub {
+ public:
+  void set_target(async_dispatcher_t* target) { target_ = target; }
+
+  zx::time Now() override { return zx::time(async_now(target_)); }
+  zx_status_t BeginWait(async_wait_t* wait) override {
+    zx_status_t status = async_begin_wait(target_, wait);
+    if (status == ZX_OK && !paused_once_.exchange(true)) {
+      sync_completion_signal(&paused_);
+      sync_completion_wait(&resume_, ZX_TIME_INFINITE);
+    }
+    return status;
+  }
+  zx_status_t CancelWait(async_wait_t* wait) override { return async_cancel_wait(target_, wait); }
+  zx_status_t PostTask(async_task_t* task) override { return async_post_task(target_, task); }
+  zx_status_t CancelTask(async_task_t* task) override { return async_cancel_task(target_, task); }
+  zx_status_t GetSequenceId(async_sequence_id_t* out_sequence_id, const char** out_error) override {
+    return async_get_sequence_id(target_, out_sequence_id, out_error);
+  }
+  zx_status_t CheckSequenceId(async_sequence_id_t sequence_id, const char** out_error) override {
+    return async_check_sequence_id(target_, sequence_id, out_error);
+  }
+
+  void WaitUntilPaused() { sync_completion_wait(&paused_, ZX_TIME_INFINITE); }
+  void Resume() { sync_completion_signal(&resume_); }
+
+ private:
+  async_dispatcher_t* target_ = nullptr;
+  std::atomic<bool> paused_once_ = false;
+  sync_completion_t paused_;
+  sync_completion_t resume_;
+};
+
+// Tracks the outcome of one pipelined request.
+struct PipelinedReply {
+  // Returns true if the request completed within |timeout|, with or without a reply.
+  bool Completed(zx::duration timeout) {
+    return sync_completion_wait(&done, timeout.get()) == ZX_OK;
+  }
+  // Waits for the request to complete and returns whether it got a reply.
+  bool Succeeded() {
+    sync_completion_wait(&done, ZX_TIME_INFINITE);
+    return ok.load();
+  }
+
+  sync_completion_t done;
+  std::atomic<bool> ok = false;
+};
+
+struct PipelinedReplies {
+  PipelinedReply elements;
+  PipelinedReply gain;
+  PipelinedReply mute;
+  PipelinedReply agc;
+  PipelinedReply topologies;  // Requested last: its completion implies all were dispatched.
+};
+
+// Returns a callback that records the outcome of the request tracked by |reply|, keeping |replies|
+// (which owns |reply|) alive for as long as the callback exists.
+auto RecordOutcome(std::shared_ptr<PipelinedReplies> replies, PipelinedReply* reply) {
+  return [replies = std::move(replies), reply](auto& result) {
+    reply->ok = result.ok();
+    sync_completion_signal(&reply->done);
+  };
+}
+
+// Client side of a codec connection whose requests are all written before any server accepts the
+// connection: SignalProcessingConnect on the codec channel, then GetElements, a first
+// WatchElementState for the gain, mute and AGC elements, and GetTopologies on the new
+// SignalProcessing channel. This is a superset of what SimpleCodecClient::SetCodec() writes before
+// its first reply (SignalProcessingConnect and GetElements), so every request races the binding.
+class PipelinedClient {
+ public:
+  PipelinedClient(async_dispatcher_t* dispatcher, TestCodec& codec)
+      : replies_(std::make_shared<PipelinedReplies>()) {
+    auto codec_endpoints = fidl::Endpoints<fuchsia_hardware_audio::Codec>::Create();
+    auto signal_endpoints =
+        fidl::Endpoints<fuchsia_hardware_audio_signalprocessing::SignalProcessing>::Create();
+    codec_client_ = std::move(codec_endpoints.client);
+    codec_server_ = codec_endpoints.server.TakeChannel();
+    connect_status_ = fidl::WireCall(codec_client_)
+                          ->SignalProcessingConnect(std::move(signal_endpoints.server))
+                          .status();
+    signal_client_.Bind(std::move(signal_endpoints.client), dispatcher,
+                        fidl::ObserveTeardown([this] { sync_completion_signal(&torn_down_); }));
+    signal_client_->GetElements().ThenExactlyOnce(RecordOutcome(replies_, &replies_->elements));
+    signal_client_->WatchElementState(codec.GetGainPeId())
+        .ThenExactlyOnce(RecordOutcome(replies_, &replies_->gain));
+    signal_client_->WatchElementState(codec.GetMutePeId())
+        .ThenExactlyOnce(RecordOutcome(replies_, &replies_->mute));
+    signal_client_->WatchElementState(codec.GetAgcPeId())
+        .ThenExactlyOnce(RecordOutcome(replies_, &replies_->agc));
+    signal_client_->GetTopologies().ThenExactlyOnce(RecordOutcome(replies_, &replies_->topologies));
+  }
+
+  ~PipelinedClient() {
+    // Close the SignalProcessing channel before the codec channel.
+    signal_client_.AsyncTeardown();
+    sync_completion_wait(&torn_down_, ZX_TIME_INFINITE);
+  }
+
+  zx_status_t connect_status() const { return connect_status_; }
+  zx::channel TakeServerChannel() { return std::move(codec_server_); }
+  PipelinedReplies& replies() { return *replies_; }
+
+ private:
+  std::shared_ptr<PipelinedReplies> replies_;
+  fidl::ClientEnd<fuchsia_hardware_audio::Codec> codec_client_;
+  zx::channel codec_server_;
+  zx_status_t connect_status_ = ZX_ERR_INTERNAL;
+  sync_completion_t torn_down_;
+  fidl::WireSharedClient<fuchsia_hardware_audio_signalprocessing::SignalProcessing> signal_client_;
 };
 
 TEST_F(SimpleCodecTest, ChannelConnection) {
@@ -735,6 +864,170 @@ TEST_F(SimpleCodecTest, RebindClient) {
       break;
     }
   }
+}
+
+// Verifies pipelined requests are not served until binding is set up, then all get replies.
+TEST_F(SimpleCodecTest, PipelinedRequestsWaitForBinding) {
+  // The connection is bound through a dispatcher that pauses right after the binding starts
+  // waiting on its channel. Declared first: the codec's binding may refer to it until release.
+  PausingDispatcher pausing;
+  auto fake_parent = MockDevice::FakeRootParent();
+
+  ASSERT_OK(SimpleCodecServer::CreateAndAddToDdk<TestCodec>(fake_parent.get()));
+  auto* child_dev = fake_parent->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  auto codec = child_dev->GetDeviceContext<TestCodec>();
+  pausing.set_target(codec->dispatcher());
+
+  async::Loop client_loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_OK(client_loop.StartThread("simple-codec-test-client"));
+  PipelinedClient client(client_loop.dispatcher(), *codec);
+  ASSERT_OK(client.connect_status());
+
+  // Accept the connection from a thread other than the codec's loop thread.
+  std::thread connector([codec, &pausing, channel = client.TakeServerChannel()]() mutable {
+    EXPECT_OK(codec->BindClientOn(std::move(channel), &pausing));
+  });
+  pausing.WaitUntilPaused();
+  // No request may be served while the binding is still being set up. Probe the first request,
+  // GetElements, whose handling takes no lock and does not depend on per-instance state. This is
+  // the test's only timeout, since it checks that something does not happen.
+  bool served_while_binding = client.replies().elements.Completed(zx::msec(500));
+  pausing.Resume();
+  connector.join();
+  EXPECT_FALSE(served_while_binding);
+
+  // Every pipelined request, including each first WatchElementState, must be answered.
+  EXPECT_TRUE(client.replies().elements.Succeeded());
+  EXPECT_TRUE(client.replies().gain.Succeeded());
+  EXPECT_TRUE(client.replies().mute.Succeeded());
+  EXPECT_TRUE(client.replies().agc.Succeeded());
+  EXPECT_TRUE(client.replies().topologies.Succeeded());
+}
+
+// Verifies requests pipelined before an off-loop CodecConnect() all get replies.
+TEST_F(SimpleCodecTest, PipelinedRequestsBeforeCodecConnect) {
+  auto fake_parent = MockDevice::FakeRootParent();
+
+  ASSERT_OK(SimpleCodecServer::CreateAndAddToDdk<TestCodec>(fake_parent.get()));
+  auto* child_dev = fake_parent->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  auto codec = child_dev->GetDeviceContext<TestCodec>();
+
+  async::Loop client_loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_OK(client_loop.StartThread("simple-codec-test-client"));
+  PipelinedClient client(client_loop.dispatcher(), *codec);
+  ASSERT_OK(client.connect_status());
+
+  // Accept the connection from a thread other than the codec's loop thread, as drivers do.
+  std::thread connector([codec, channel = client.TakeServerChannel()]() mutable {
+    EXPECT_OK(codec->CodecConnect(std::move(channel)));
+  });
+  connector.join();
+
+  // Every pipelined request, including each first WatchElementState, must be answered.
+  EXPECT_TRUE(client.replies().elements.Succeeded());
+  EXPECT_TRUE(client.replies().gain.Succeeded());
+  EXPECT_TRUE(client.replies().mute.Succeeded());
+  EXPECT_TRUE(client.replies().agc.Succeeded());
+  EXPECT_TRUE(client.replies().topologies.Succeeded());
+}
+
+// Verifies that connecting an invalid channel is rejected instead of leaving an unbound instance.
+TEST_F(SimpleCodecTest, CodecConnectRejectsInvalidChannel) {
+  auto fake_parent = MockDevice::FakeRootParent();
+
+  ASSERT_OK(SimpleCodecServer::CreateAndAddToDdk<TestCodec>(fake_parent.get()));
+  auto* child_dev = fake_parent->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  auto codec = child_dev->GetDeviceContext<TestCodec>();
+
+  EXPECT_EQ(codec->CodecConnect(zx::channel()), ZX_ERR_INVALID_ARGS);
+}
+
+// Verifies CodecConnect() fails and closes the channel once the codec's loop is shut down.
+TEST_F(SimpleCodecTest, CodecConnectAfterLoopShutdownClosesChannel) {
+  auto fake_parent = MockDevice::FakeRootParent();
+
+  ASSERT_OK(SimpleCodecServer::CreateAndAddToDdk<TestCodec>(fake_parent.get()));
+  auto* child_dev = fake_parent->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  auto codec = child_dev->GetDeviceContext<TestCodec>();
+
+  // DdkRelease() shuts the loop down again when the device is released, which is then a no-op.
+  async_loop_shutdown(async_loop_from_dispatcher(codec->dispatcher()));
+
+  zx::channel channel_remote, channel_local;
+  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
+  EXPECT_EQ(codec->CodecConnect(std::move(channel_remote)), ZX_ERR_BAD_STATE);
+  // The task that owned the channel was destroyed before CodecConnect() returned.
+  zx_signals_t observed = 0;
+  EXPECT_OK(channel_local.wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed));
+  EXPECT_TRUE(observed & ZX_CHANNEL_PEER_CLOSED);
+}
+
+// Verifies a connection whose binding fails is closed and the codec still serves new clients.
+TEST_F(SimpleCodecTest, CodecConnectBindFailureClosesChannel) {
+  auto fake_parent = MockDevice::FakeRootParent();
+
+  ASSERT_OK(SimpleCodecServer::CreateAndAddToDdk<TestCodec>(fake_parent.get()));
+  auto* child_dev = fake_parent->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  auto codec = child_dev->GetDeviceContext<TestCodec>();
+
+  // Without ZX_RIGHT_WAIT the binding cannot wait on the channel, so Bind() fails on the loop.
+  zx::channel channel_remote, channel_local, channel_no_wait;
+  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
+  ASSERT_OK(channel_remote.replace(ZX_RIGHTS_IO | ZX_RIGHT_TRANSFER, &channel_no_wait));
+  ASSERT_OK(codec->CodecConnect(std::move(channel_no_wait)));
+  zx_signals_t observed = 0;
+  EXPECT_OK(channel_local.wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), &observed));
+  EXPECT_TRUE(observed & ZX_CHANNEL_PEER_CLOSED);
+
+  // The failed instance was erased without breaking the codec: a new client gets replies.
+  async::Loop client_loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_OK(client_loop.StartThread("simple-codec-test-client"));
+  PipelinedClient client(client_loop.dispatcher(), *codec);
+  ASSERT_OK(client.connect_status());
+  ASSERT_OK(codec->CodecConnect(client.TakeServerChannel()));
+  EXPECT_TRUE(client.replies().elements.Succeeded());
+  EXPECT_TRUE(client.replies().gain.Succeeded());
+  EXPECT_TRUE(client.replies().topologies.Succeeded());
+}
+
+// Verifies a connection still pending at release is closed, so its client sees PEER_CLOSED.
+TEST_F(SimpleCodecTest, PendingConnectionClosedOnRelease) {
+  // Declared first, so that it outlives the codec's loop and the task below that signals it.
+  sync_completion_t loop_busy;
+  auto fake_parent = MockDevice::FakeRootParent();
+
+  ASSERT_OK(SimpleCodecServer::CreateAndAddToDdk<TestCodec>(fake_parent.get()));
+  auto* child_dev = fake_parent->GetLatestChild();
+  ASSERT_NOT_NULL(child_dev);
+  auto codec = child_dev->GetDeviceContext<TestCodec>();
+
+  // Keep the codec's loop busy until its shutdown starts, so that work queued behind this task is
+  // still pending when the loop shuts down.
+  async_loop_t* codec_loop = async_loop_from_dispatcher(codec->dispatcher());
+  ASSERT_OK(async::PostTask(codec->dispatcher(), [codec_loop, &loop_busy] {
+    sync_completion_signal(&loop_busy);
+    while (async_loop_get_state(codec_loop) != ASYNC_LOOP_SHUTDOWN) {
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+  }));
+  sync_completion_wait(&loop_busy, ZX_TIME_INFINITE);
+
+  zx::channel channel_remote, channel_local;
+  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
+  ASSERT_OK(codec->CodecConnect(std::move(channel_remote)));
+
+  // Shuts the codec's loop down and deletes the codec.
+  child_dev->ReleaseOp();
+
+  // The task that owned the channel was destroyed before ReleaseOp() returned.
+  zx_signals_t observed = 0;
+  EXPECT_OK(channel_local.wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed));
+  EXPECT_TRUE(observed & ZX_CHANNEL_PEER_CLOSED);
 }
 
 }  // namespace

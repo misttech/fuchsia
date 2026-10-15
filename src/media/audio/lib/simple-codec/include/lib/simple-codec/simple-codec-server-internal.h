@@ -37,6 +37,13 @@ class SimpleCodecServerInternal {
   uint64_t GetMutePeId() { return kMutePeId; }
   uint64_t GetAgcPeId() { return kAgcPeId; }
 
+  // Serves |channel| as a new client connection. The connection's instance is constructed,
+  // registered and bound by a task posted to |dispatcher|, which must run on loop_'s thread (null
+  // means loop_->dispatcher()), so requests already queued in |channel| are never dispatched to a
+  // partially constructed or unregistered instance. Protected so that tests can pass a dispatcher
+  // that forwards to loop_'s.
+  zx_status_t BindClient(zx::channel channel, async_dispatcher_t* dispatcher = nullptr);
+
  private:
   using Codec = ::fuchsia::hardware::audio::Codec;
 
@@ -48,7 +55,6 @@ class SimpleCodecServerInternal {
   static constexpr uint64_t kMutePeId = 2;
   static constexpr uint64_t kAgcPeId = 3;
 
-  zx_status_t BindClient(zx::channel channel, async_dispatcher_t* dispatcher = nullptr);
   void OnUnbound(SimpleCodecServerInstance<T>* instance);
 
   void Reset(Codec::ResetCallback callback, SimpleCodecServerInstance<T>* instance);
@@ -106,15 +112,20 @@ class SimpleCodecServerInstance
       public fuchsia::hardware::audio::signalprocessing::SignalProcessing,
       public fbl::DoublyLinkedListable<std::unique_ptr<SimpleCodecServerInstance<T>>> {
  public:
-  SimpleCodecServerInstance(zx::channel channel, async_dispatcher_t* dispatcher,
-                            SimpleCodecServerInternal<T>* parent)
-      : parent_(parent), binding_(this, std::move(channel), dispatcher) {
-    binding_.set_error_handler([&](zx_status_t status) { OnUnbound(); });
+  // Constructs an instance that does not serve any channel until Bind() is called.
+  explicit SimpleCodecServerInstance(SimpleCodecServerInternal<T>* parent)
+      : parent_(parent), binding_(this) {
+    binding_.set_error_handler([this](zx_status_t status) { OnUnbound(); });
   }
 
  private:
   friend class SimpleCodecServerInternal<T>;
 
+  // Starts serving |channel|. Must be called on |dispatcher|'s thread, once this instance is fully
+  // constructed and registered with |parent_|, because requests may be dispatched immediately.
+  zx_status_t Bind(zx::channel channel, async_dispatcher_t* dispatcher) {
+    return binding_.Bind(std::move(channel), dispatcher);
+  }
   void OnUnbound() { parent_->OnUnbound(this); }
   void GainStateUpdated(fuchsia::hardware::audio::GainState gain_state);
 

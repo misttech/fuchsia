@@ -10,6 +10,9 @@ test("simple-codec-unittest-bin") {
   sources = [ "test.cc" ]
   deps = [
     "//sdk/banjo/fuchsia.hardware.audio:fuchsia.hardware.audio_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing_cpp",
+    "//sdk/lib/async:async-cpp",
+    "//sdk/lib/async-testing",
     "//sdk/lib/inspect/testing/cpp:zxtest",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddktl",
@@ -25,5 +28,8 @@ fuchsia_unittest_package("audio_lib_simple_codec_unittests") {
   deps = [ ":simple-codec-unittest-bin" ]
   test_specs = {
     environments = basic_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
   }
 }

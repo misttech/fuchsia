@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/async/cpp/task.h>
+#include <lib/ddk/debug.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/simple-codec/simple-codec-server.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
 
 #include <algorithm>
 #include <memory>
@@ -130,13 +133,33 @@ SimpleCodecServerInternal<T>::SimpleCodecServerInternal() {
 template <class T>
 zx_status_t SimpleCodecServerInternal<T>::BindClient(zx::channel channel,
                                                      async_dispatcher_t* dispatcher) {
-  // Acquire the lock before creating the new instance in case OnUnbound is called before the
-  // instance has been added to the list.
-  fbl::AutoLock lock(&instances_lock_);
-  auto instance = std::make_unique<SimpleCodecServerInstance<SimpleCodecServer>>(std::move(channel),
-                                                                                 dispatcher, this);
-  instances_.push_back(std::move(instance));
-  return ZX_OK;
+  if (!channel.is_valid()) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  if (dispatcher == nullptr) {
+    dispatcher = loop_->dispatcher();
+  }
+  // Callers run on the driver's dispatcher, not on loop_'s thread, and clients usually write
+  // requests into |channel| before the connection gets here. An HLCPP binding dispatches requests
+  // as soon as it is bound, so constructing and binding an instance here could let loop_'s thread
+  // serve those requests while the instance is still being constructed (e.g. losing the reply to
+  // the first WatchElementState). Instead, construct, register and only then bind the instance on
+  // |dispatcher|'s thread. If the loop shuts down before this task runs, the task is dropped and
+  // |channel| is closed, so the client sees PEER_CLOSED.
+  return async::PostTask(dispatcher, [this, dispatcher, channel = std::move(channel)]() mutable {
+    auto instance = std::make_unique<SimpleCodecServerInstance<T>>(this);
+    SimpleCodecServerInstance<T>* instance_ptr = instance.get();
+    {
+      fbl::AutoLock lock(&instances_lock_);
+      instances_.push_back(std::move(instance));
+    }
+    zx_status_t status = instance_ptr->Bind(std::move(channel), dispatcher);
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "Failed to bind codec connection: %s", zx_status_get_string(status));
+      fbl::AutoLock lock(&instances_lock_);
+      instances_.erase(*instance_ptr);
+    }
+  });
 }
 
 template <class T>
