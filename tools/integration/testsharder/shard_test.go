@@ -629,6 +629,42 @@ func TestMakeShards(t *testing.T) {
 		}
 		assertEqual(t, expected, actual)
 	})
+
+	t.Run("shards with product bundles", func(t *testing.T) {
+		spec1 := spec(1, env1)
+		spec1.ProductBundle = "pb1"
+		spec2 := spec(2, env1)
+		spec2.ProductBundle = "pb2"
+		actual, err := MakeShards([]build.TestSpec{spec1, spec2}, nil, basicOpts, nil)
+		if err != nil {
+			t.Fatalf("MakeShards failed: %v", err)
+		}
+		test1 := makeTest(1, "fuchsia")
+		test1.ProductBundle = "pb1"
+		test2 := makeTest(2, "fuchsia")
+		test2.ProductBundle = "pb2"
+		expected := []*Shard{
+			{
+				Name:          environmentName(env1) + "-pb1",
+				ProductBundle: "pb1",
+				Tests:         []Test{test1},
+				Env:           populateEnvDefaults(env1, "x64", false),
+				ExpectsSSH:    true,
+				HostCPU:       GetHostCPU(env1, false),
+				EnvName:       makeEnvName(env1.Dimensions.DeviceType(), env1.Dimensions.OS(), basicOpts.DefaultCPU),
+			},
+			{
+				Name:          environmentName(env1) + "-pb2",
+				ProductBundle: "pb2",
+				Tests:         []Test{test2},
+				Env:           populateEnvDefaults(env1, "x64", false),
+				ExpectsSSH:    true,
+				HostCPU:       GetHostCPU(env1, false),
+				EnvName:       makeEnvName(env1.Dimensions.DeviceType(), env1.Dimensions.OS(), basicOpts.DefaultCPU),
+			},
+		}
+		assertEqual(t, expected, actual)
+	})
 }
 
 func TestMakeShardNamesUnique(t *testing.T) {

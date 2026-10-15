@@ -5,6 +5,8 @@
 package testsharder
 
 import (
+	"strings"
+
 	"go.fuchsia.dev/fuchsia/tools/build"
 )
 
@@ -26,10 +28,18 @@ func NewTestDurationsMap(durations []build.TestDuration) TestDurationsMap {
 }
 
 // Get returns the duration data for a given test. If the test is not included
-// in the durations map, the default duration data is returned instead.
-func (m TestDurationsMap) Get(test Test) build.TestDuration {
-	if testData, ok := m[test.Test.Name]; ok {
+// in the durations map, it falls back to looking up the base test name without
+// the "-<product_bundle>" suffix (if applicable) before returning the default
+// duration data.
+func (m TestDurationsMap) Get(t Test) build.TestDuration {
+	if testData, ok := m[t.Test.Name]; ok {
 		return testData
+	}
+	if t.ProductBundle != "" {
+		baseName := strings.TrimSuffix(t.Test.Name, "-"+t.ProductBundle)
+		if testData, ok := m[baseName]; ok {
+			return testData
+		}
 	}
 	return m[defaultDurationKey]
 }

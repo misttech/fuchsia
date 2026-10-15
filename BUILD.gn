@@ -90,10 +90,15 @@ declare_args() {
   host_labels = []
 
   # A file containing historical test duration data for this build
-  # configuration, used used by testsharder to evenly split tests across
+  # configuration, used by testsharder to evenly split tests across
   # shards. It should be set for any builds where testsharder will be run
   # afterwards.
   test_durations_file = ""
+
+  # A file containing default historical test duration data across all build
+  # configurations, used as a fallback for individual tests missing from
+  # test_durations_file.
+  default_test_durations_file = ""
 
   # Extra idk_archive() labels to be uploaded to the artifacts store. This is an
   # extension mechanism for IDK bits outside of the main repository.
@@ -1459,8 +1464,16 @@ compiled_action("test-list") {
 build_api_module("test_durations") {
   testonly = true
   contents = []
-  if (test_durations_file != "") {
-    contents = read_file(test_durations_file, "json")
+
+  # testsharder's NewTestDurationsMap overwrites earlier entries with later
+  # ones, so append builder-specific durations after default durations so they
+  # take precedence.
+  if (default_test_durations_file != "") {
+    contents += read_file(default_test_durations_file, "json")
+  }
+  if (test_durations_file != "" &&
+      test_durations_file != default_test_durations_file) {
+    contents += read_file(test_durations_file, "json")
   }
 }
 

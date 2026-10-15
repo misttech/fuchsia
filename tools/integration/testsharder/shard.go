@@ -421,7 +421,7 @@ func MakeShards(specs []build.TestSpec, testListEntries map[string]build.TestLis
 					EnvName:           envName,
 				}
 			}
-			test := Test{Test: spec.Test, Runs: 1}
+			test := Test{Test: spec.Test, Runs: 1, ProductBundle: spec.ProductBundle}
 			testListEntry, exists := testListEntries[spec.Test.Name]
 			if exists {
 				test.updateFromTestList(testListEntry)

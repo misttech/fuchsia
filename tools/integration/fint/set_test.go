@@ -536,10 +536,14 @@ func TestGenArgs(t *testing.T) {
 		{
 			name: "test durations file",
 			staticSpec: &fintpb.Static{
-				TestDurationsFile: "test_durations/foo.json",
+				TestDurationsFile:        "test_durations/foo.json",
+				DefaultTestDurationsFile: "test_durations/default.json",
 			},
 			checkoutFiles: []string{"test_durations/foo.json"},
-			expectedArgs:  []string{`test_durations_file="test_durations/foo.json"`},
+			expectedArgs: []string{
+				`default_test_durations_file="test_durations/default.json"`,
+				`test_durations_file="test_durations/foo.json"`,
+			},
 		},
 		{
 			name: "fall back to default test durations file",
@@ -547,7 +551,8 @@ func TestGenArgs(t *testing.T) {
 				TestDurationsFile:        "test_durations/foo.json",
 				DefaultTestDurationsFile: "test_durations/default.json",
 			},
-			expectedArgs: []string{`test_durations_file="test_durations/default.json"`},
+			expectedArgs:   []string{`test_durations_file="test_durations/default.json"`},
+			unexpectedArgs: []string{`default_test_durations_file="test_durations/default.json"`},
 		},
 		{
 			name: "product",

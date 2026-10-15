@@ -62,6 +62,11 @@ type Test struct {
 
 	// Whether an empty set of test cases counts as success or failure
 	NoCasesEqualsSuccess bool `json:"no_cases_equals_success,omitempty"`
+
+	// ProductBundle is the name of the product bundle describing the system
+	// against which the test should be run. It is already serialized on the
+	// enclosing Shard, so omit it from Test JSON serialization.
+	ProductBundle string `json:"-"`
 }
 
 func (t *Test) applyModifier(m TestModifier, s *Shard) {

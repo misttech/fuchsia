@@ -366,6 +366,8 @@ func genArgs(
 		}
 		if !exists {
 			testDurationsFile = staticSpec.DefaultTestDurationsFile
+		} else if staticSpec.DefaultTestDurationsFile != "" {
+			vars["default_test_durations_file"] = staticSpec.DefaultTestDurationsFile
 		}
 		vars["test_durations_file"] = testDurationsFile
 	}
