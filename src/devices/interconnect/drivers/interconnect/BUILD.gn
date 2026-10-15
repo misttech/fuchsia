@@ -28,6 +28,8 @@ fuchsia_rust_driver("driver") {
   output_name = "interconnect"
   with_unit_tests = true
 
+  configs += [ "//build/config/rust:bootfs" ]
+
   sources = [
     "src/graph.rs",
     "src/lib.rs",
