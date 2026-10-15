@@ -15,6 +15,7 @@ test_suite(
         "//src/connectivity/bluetooth/lib/bt-avdtp:bt-avdtp-tests",
         "//src/connectivity/bluetooth/lib/bt-avrcp-vol-control:bt-avrcp-vol-control-tests",
         "//src/connectivity/bluetooth/lib/bt-fidl-mocks:bt-fidl-mocks-tests",
+        "//src/connectivity/bluetooth/lib/bt-gatt-fuchsia:bt-gatt-fuchsia-tests",
         "//src/connectivity/bluetooth/lib/bt-obex:bt-obex-tests",
         "//src/connectivity/bluetooth/lib/bt-obex/objects:bt-obex-objects-tests",
         "//src/connectivity/bluetooth/lib/bt-rfcomm:bt-rfcomm-lib-tests",

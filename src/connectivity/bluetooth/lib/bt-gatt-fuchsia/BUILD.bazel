@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "bt-gatt-fuchsia",
+    srcs = [
+        "src/lib.rs",
+        "src/periodic_advertising.rs",
+        "src/pii.rs",
+        "src/test.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__pkg__",
+        "//src/connectivity/bluetooth/tools/bt-le-broadcast-assistant:__pkg__",
+        "//src/connectivity/bluetooth/tools/bt-le-central:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
+        "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_rust",
+        "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/lib/async-utils",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:bt-common",
+        "//third_party/rust_crates/vendor:bt-gatt",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:uuid",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "bt-gatt-fuchsia_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bt-gatt-fuchsia",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = ["//src/lib/fuchsia"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "bt-gatt-fuchsia-tests",
+    package_name = "bt-gatt-fuchsia-tests",
+    unit_tests = [":bt-gatt-fuchsia_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)

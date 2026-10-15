@@ -35,7 +35,6 @@ group("tests") {
   deps = [
     "battery-client:tests",
     "bt-a2dp:tests",
-    "bt-gatt-fuchsia:tests",
     "bt-hfp:tests",
     "bt-map:tests",
     "fidl:tests",
