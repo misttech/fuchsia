@@ -5,47 +5,25 @@
 #ifndef LIB_DRIVER_MMIO_CPP_MMIO_PINNED_BUFFER_H_
 #define LIB_DRIVER_MMIO_CPP_MMIO_PINNED_BUFFER_H_
 
-#include <lib/driver/mmio/cpp/mmio-ops.h>
+#include <lib/zx/pmt.h>
 #include <zircon/assert.h>
-#include <zircon/process.h>
 
-__BEGIN_CDECLS
-
-typedef struct {
-  const mmio_buffer_t* mmio;
-  zx_handle_t pmt;
-  // |paddr| points to the content starting at |mmio->offset| in |mmio->vmo|.
-  zx_paddr_t paddr;
-} mmio_pinned_buffer_t;
-
-// Returns a pinned buffer if successful. |buffer| must outlive |out|.
-//
-// Example usage: A device needs access to another device's MMIO space.
-zx_status_t mmio_buffer_pin(mmio_buffer_t* buffer, zx_handle_t bti, mmio_pinned_buffer_t* out);
-
-// Unpins the buffer.
-void mmio_buffer_unpin(mmio_pinned_buffer_t* buffer);
-
-__END_CDECLS
-
-#ifdef __cplusplus
-
-#include <algorithm>
+#include <utility>
 
 namespace fdf {
 
-// MmioPinnedBuffer is wrapper around mmio_pinned_buffer_t.
+// MmioPinnedBuffer maintains a pinned region of MMIO memory.
 class MmioPinnedBuffer {
  public:
   // DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE
   MmioPinnedBuffer(const MmioPinnedBuffer&) = delete;
   MmioPinnedBuffer& operator=(const MmioPinnedBuffer&) = delete;
 
-  explicit MmioPinnedBuffer(mmio_pinned_buffer_t pinned) : pinned_(pinned) {
-    ZX_ASSERT(pinned_.paddr != 0);
+  explicit MmioPinnedBuffer(zx_paddr_t paddr, zx::pmt pmt) : pmt_(std::move(pmt)), paddr_(paddr) {
+    ZX_ASSERT(paddr_ != 0);
   }
 
-  ~MmioPinnedBuffer() { mmio_buffer_unpin(&pinned_); }
+  ~MmioPinnedBuffer() { reset(); }
 
   MmioPinnedBuffer(MmioPinnedBuffer&& other) { transfer(std::move(other)); }
 
@@ -58,22 +36,24 @@ class MmioPinnedBuffer {
   }
 
   void reset() {
-    mmio_buffer_unpin(&pinned_);
-    memset(&pinned_, 0, sizeof(pinned_));
+    if (pmt_.is_valid()) {
+      pmt_.unpin();
+    }
+    paddr_ = 0;
   }
 
-  zx_paddr_t get_paddr() const { return pinned_.paddr; }
+  zx_paddr_t get_paddr() const { return paddr_; }
 
  private:
   void transfer(MmioPinnedBuffer&& other) {
-    pinned_ = other.pinned_;
-    memset(&other.pinned_, 0, sizeof(other.pinned_));
+    pmt_ = std::move(other.pmt_);
+    paddr_ = other.paddr_;
+    other.paddr_ = 0;
   }
-  mmio_pinned_buffer_t pinned_;
+  zx::pmt pmt_;
+  zx_paddr_t paddr_ = 0;
 };
 
 }  // namespace fdf
-
-#endif
 
 #endif  // LIB_DRIVER_MMIO_CPP_MMIO_PINNED_BUFFER_H_

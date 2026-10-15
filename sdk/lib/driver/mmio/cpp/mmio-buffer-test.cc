@@ -55,55 +55,52 @@ size_t PinnedVmoCount(const zx::bti& bti) {
   return count;
 }
 
-TEST(MmioBuffer, CInit) {
+TEST(MmioBuffer, CreateInit) {
   const size_t vmo_sz = zx_system_get_page_size();
   zx::vmo vmo = CreateVmo(vmo_sz);
-  mmio_buffer_t mb = {};
 
-  // |buffer| is invalid.
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, mmio_buffer_init(nullptr, 0, vmo_sz, DuplicateVmo(vmo).get(),
-                                                  ZX_CACHE_POLICY_UNCACHED));
-  // |offset is invalid.
+  auto create_status = [&](zx_off_t offset, size_t size, zx::vmo v, uint32_t policy) {
+    return fdf::MmioBuffer::Create(offset, size, std::move(v), policy).status_value();
+  };
+
+  // |offset| is invalid.
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, create_status(std::numeric_limits<zx_off_t>::max(), vmo_sz,
+                                               DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED));
   ASSERT_EQ(ZX_ERR_OUT_OF_RANGE,
-            mmio_buffer_init(&mb, -1, vmo_sz, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_UNCACHED));
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, mmio_buffer_init(&mb, vmo_sz + 1, vmo_sz, DuplicateVmo(vmo).get(),
-                                                  ZX_CACHE_POLICY_UNCACHED));
+            create_status(vmo_sz + 1, vmo_sz, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED));
   // |size| is invalid
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS, create_status(0, 0, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED));
   ASSERT_EQ(ZX_ERR_INVALID_ARGS,
-            mmio_buffer_init(&mb, 0, 0, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_UNCACHED));
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, mmio_buffer_init(&mb, 0, vmo_sz + 1, DuplicateVmo(vmo).get(),
-                                                  ZX_CACHE_POLICY_UNCACHED));
-  // |size| + |offset| are collectively invalid.
+            create_status(vmo_sz / 2, 0, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED));
   ASSERT_EQ(ZX_ERR_OUT_OF_RANGE,
-            mmio_buffer_init(&mb, vmo_sz + 1 / 2, vmo_sz / 2, DuplicateVmo(vmo).get(),
-                             ZX_CACHE_POLICY_UNCACHED));
+            create_status(0, vmo_sz + 1, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED));
+  // |size| + |offset| are collectively invalid.
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, create_status((vmo_sz / 2) + 1, vmo_sz / 2, DuplicateVmo(vmo),
+                                               ZX_CACHE_POLICY_UNCACHED));
 
   // |vmo| is invalid
-  ASSERT_EQ(ZX_ERR_BAD_HANDLE,
-            mmio_buffer_init(&mb, 0, vmo_sz, ZX_HANDLE_INVALID, ZX_CACHE_POLICY_UNCACHED));
+  ASSERT_EQ(ZX_ERR_BAD_HANDLE, create_status(0, vmo_sz, zx::vmo(), ZX_CACHE_POLICY_UNCACHED));
   // |cache_policy| is invalid.
   ASSERT_EQ(ZX_ERR_INVALID_ARGS,
-            mmio_buffer_init(&mb, 0, vmo_sz, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_MASK + 1));
+            create_status(0, vmo_sz, DuplicateVmo(vmo), ZX_CACHE_POLICY_MASK + 1));
 
-  ASSERT_OK(mmio_buffer_init(&mb, 0, vmo_sz, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_UNCACHED));
-  mmio_buffer_release(&mb);
-  ASSERT_EQ(mb.vmo, ZX_HANDLE_INVALID);
+  ASSERT_OK(create_status(0, vmo_sz, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED));
 }
 
 TEST(MmioBuffer, UnalignedOffsetInitRelease) {
   const size_t vmo_sz = zx_system_get_page_size();
   zx::vmo vmo = CreateVmo(vmo_sz);
-  mmio_buffer_t mb = {};
 
   // Unaligned offset.
-  ASSERT_OK(mmio_buffer_init(&mb, vmo_sz / 2, vmo_sz / 2, DuplicateVmo(vmo).get(),
-                             ZX_CACHE_POLICY_UNCACHED));
+  zx::result<fdf::MmioBuffer> mb =
+      fdf::MmioBuffer::Create(vmo_sz / 2, vmo_sz / 2, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED);
+  ASSERT_OK(mb.status_value());
 
   // Ensure the map was successful.
   ASSERT_EQ(1, VmoNumMappings(vmo));
 
-  mmio_buffer_release(&mb);
-  ASSERT_EQ(ZX_HANDLE_INVALID, mb.vmo);
+  mb->reset();
+  EXPECT_FALSE(mb->get_vmo()->is_valid());
 
   // Ensure the unmap was successful.
   ASSERT_EQ(0, VmoNumMappings(vmo));
@@ -112,17 +109,17 @@ TEST(MmioBuffer, UnalignedOffsetInitRelease) {
 TEST(MmioBuffer, UnalignedSizeInitRelease) {
   const size_t vmo_sz = zx_system_get_page_size();
   zx::vmo vmo = CreateVmo(vmo_sz);
-  mmio_buffer_t mb = {};
 
   // Unaligned size.
-  ASSERT_OK(
-      mmio_buffer_init(&mb, 0, vmo_sz / 2, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_UNCACHED));
+  zx::result<fdf::MmioBuffer> mb =
+      fdf::MmioBuffer::Create(0, vmo_sz / 2, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED);
+  ASSERT_OK(mb.status_value());
 
   // Ensure the map was successful.
   ASSERT_EQ(1, VmoNumMappings(vmo));
 
-  mmio_buffer_release(&mb);
-  ASSERT_EQ(ZX_HANDLE_INVALID, mb.vmo);
+  mb->reset();
+  EXPECT_FALSE(mb->get_vmo()->is_valid());
 
   // Ensure the unmap was successful.
   ASSERT_EQ(0, VmoNumMappings(vmo));
@@ -179,35 +176,34 @@ TEST(MmioBuffer, MoveAssignment) {
 TEST(MmioBuffer, AlreadyMapped) {
   const size_t vmo_sz = zx_system_get_page_size();
   zx::vmo vmo = CreateVmo(vmo_sz);
-  mmio_buffer_t mb1 = {};
-  mmio_buffer_t mb2 = {};
 
-  ASSERT_OK(mmio_buffer_init(&mb1, 0, vmo_sz, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_UNCACHED));
+  zx::result<fdf::MmioBuffer> mb1 =
+      fdf::MmioBuffer::Create(0, vmo_sz, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED);
+  ASSERT_OK(mb1.status_value());
   // A second mapping with a different cache policy should fail.
-  ASSERT_EQ(ZX_ERR_BAD_STATE,
-            mmio_buffer_init(&mb2, 0, vmo_sz, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_CACHED));
-  // The same cache policy should be fine in a second mmio_buffer.
-  ASSERT_EQ(ZX_OK,
-            mmio_buffer_init(&mb2, 0, vmo_sz, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_UNCACHED));
-  mmio_buffer_release(&mb1);
-  mmio_buffer_release(&mb2);
+  ASSERT_EQ(
+      ZX_ERR_BAD_STATE,
+      fdf::MmioBuffer::Create(0, vmo_sz, DuplicateVmo(vmo), ZX_CACHE_POLICY_CACHED).status_value());
+  // The same cache policy should be fine in a second MmioBuffer.
+  ASSERT_EQ(ZX_OK, fdf::MmioBuffer::Create(0, vmo_sz, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED)
+                       .status_value());
 }
 
 TEST(MmioBuffer, AlreadySetVmoCachePolicy) {
   const size_t vmo_sz = zx_system_get_page_size();
   uint32_t policy = ZX_CACHE_POLICY_UNCACHED_DEVICE;
   zx::vmo vmo = CreateVmoWithPolicy(vmo_sz, policy);
-  mmio_buffer_t mb1 = {};
-  mmio_buffer_t mb2 = {};
 
-  // Since the VMO isn't mapped yet the mmio_buffer_t policy can differ.
-  ASSERT_OK(mmio_buffer_init(&mb1, 0, vmo_sz, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_UNCACHED));
+  // Since the VMO isn't mapped yet the MmioBuffer policy can differ.
+  zx::result<fdf::MmioBuffer> mb1 =
+      fdf::MmioBuffer::Create(0, vmo_sz, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED);
+  ASSERT_OK(mb1.status_value());
   // Trying to map with another policy will fail.
-  ASSERT_EQ(ZX_ERR_BAD_STATE, mmio_buffer_init(&mb2, 0, vmo_sz, DuplicateVmo(vmo).get(), policy));
-  // A second mmio_buffer_t with the existing policy will succeed.
-  ASSERT_OK(mmio_buffer_init(&mb2, 0, vmo_sz, DuplicateVmo(vmo).get(), ZX_CACHE_POLICY_UNCACHED));
-  mmio_buffer_release(&mb1);
-  mmio_buffer_release(&mb2);
+  ASSERT_EQ(ZX_ERR_BAD_STATE,
+            fdf::MmioBuffer::Create(0, vmo_sz, DuplicateVmo(vmo), policy).status_value());
+  // A second MmioBuffer with the existing policy will succeed.
+  ASSERT_OK(fdf::MmioBuffer::Create(0, vmo_sz, DuplicateVmo(vmo), ZX_CACHE_POLICY_UNCACHED)
+                .status_value());
 }
 
 TEST(MmioBuffer, TestMmioBuffer) {
@@ -279,6 +275,174 @@ TEST(MmioPinnedBuffer, MoveAssignment) {
   EXPECT_EQ(0u, PinnedVmoCount(bti));
 }
 
+TEST(MmioBuffer, Pin) {
+  zx::bti bti;
+  ASSERT_OK(fake_bti_create(bti.reset_and_get_address()));
+
+  const size_t page_size = zx_system_get_page_size();
+  const size_t half_page = page_size / 2;
+  zx::vmo vmo = CreateVmo(page_size * 2);
+  zx::result<fdf::MmioBuffer> buffer = fdf::MmioBuffer::Create(half_page, page_size, std::move(vmo),
+                                                               ZX_CACHE_POLICY_UNCACHED_DEVICE);
+  ASSERT_OK(buffer.status_value());
+
+  // Buffer at half-page offset -> paddr == FAKE_BTI_PHYS_ADDR + page / 2.
+  // Test zx::result<MmioPinnedBuffer> overload.
+  zx::result<fdf::MmioPinnedBuffer> pinned_res = buffer->Pin(bti);
+  ASSERT_OK(pinned_res.status_value());
+  EXPECT_EQ(pinned_res->get_paddr(), FAKE_BTI_PHYS_ADDR + half_page);
+
+  EXPECT_EQ(1u, PinnedVmoCount(bti));
+
+  // Assert the pinned VMO offset and size for the unaligned case.
+  fake_bti_pinned_vmo_info_t pinned_info = {};
+  size_t count = 0;
+  ASSERT_OK(fake_bti_get_pinned_vmos(bti.get(), &pinned_info, 1, &count));
+  zx::vmo pinned_vmo(pinned_info.vmo);
+  EXPECT_EQ(1u, count);
+  EXPECT_EQ(0u, pinned_info.offset);
+  EXPECT_EQ(page_size * 2, pinned_info.size);
+
+  // Test reset() unpins.
+  pinned_res->reset();
+  EXPECT_EQ(0u, PinnedVmoCount(bti));
+
+  // Test std::optional<MmioPinnedBuffer>* overload.
+  std::optional<fdf::MmioPinnedBuffer> opt_pinned;
+  ASSERT_OK(buffer->Pin(bti, &opt_pinned));
+  ASSERT_TRUE(opt_pinned.has_value());
+  EXPECT_EQ(opt_pinned->get_paddr(), FAKE_BTI_PHYS_ADDR + half_page);
+
+  EXPECT_EQ(1u, PinnedVmoCount(bti));
+
+  // Pin on a View(offset).
+  const size_t view_offset = page_size / 4;
+  fdf::MmioView view = buffer->View(view_offset);
+
+  zx::result<fdf::MmioPinnedBuffer> view_pinned = view.Pin(bti);
+  ASSERT_OK(view_pinned.status_value());
+  EXPECT_EQ(view_pinned->get_paddr(), FAKE_BTI_PHYS_ADDR + half_page + view_offset);
+
+  std::optional<fdf::MmioPinnedBuffer> opt_view_pinned;
+  ASSERT_OK(view.Pin(bti, &opt_view_pinned));
+  ASSERT_TRUE(opt_view_pinned.has_value());
+  EXPECT_EQ(opt_view_pinned->get_paddr(), FAKE_BTI_PHYS_ADDR + half_page + view_offset);
+
+  EXPECT_EQ(3u, PinnedVmoCount(bti));
+
+  // The view pin is page-rounded to offset 0 and size 2 pages.
+  fake_bti_pinned_vmo_info_t view_pinned_infos[3] = {};
+  ASSERT_OK(fake_bti_get_pinned_vmos(bti.get(), view_pinned_infos, 3, &count));
+  zx::vmo view_pinned_vmos[3] = {
+      zx::vmo(view_pinned_infos[0].vmo),
+      zx::vmo(view_pinned_infos[1].vmo),
+      zx::vmo(view_pinned_infos[2].vmo),
+  };
+  EXPECT_EQ(3u, count);
+  EXPECT_EQ(0u, view_pinned_infos[1].offset);
+  EXPECT_EQ(page_size * 2, view_pinned_infos[1].size);
+  EXPECT_EQ(0u, view_pinned_infos[2].offset);
+  EXPECT_EQ(page_size * 2, view_pinned_infos[2].size);
+
+  // Destruction unpins all.
+  opt_pinned.reset();
+  opt_view_pinned.reset();
+  view_pinned->reset();
+  EXPECT_EQ(0u, PinnedVmoCount(bti));
+}
+
+TEST(MmioView, LifecycleLeavesParentMappingIntact) {
+  const size_t size = zx_system_get_page_size();
+  zx::vmo vmo = CreateVmo(size);
+  zx::vmo vmo_dup = DuplicateVmo(vmo);
+
+  zx::result<fdf::MmioBuffer> buffer =
+      fdf::MmioBuffer::Create(0, size, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
+  ASSERT_OK(buffer.status_value());
+  EXPECT_EQ(1u, VmoNumMappings(vmo_dup));
+
+  // Destroying a view leaves the parent mapping intact.
+  {
+    auto view = buffer->View(0);
+    view.Write32(0x12345678, 0);
+  }
+  EXPECT_EQ(1u, VmoNumMappings(vmo_dup));
+  EXPECT_EQ(0x12345678u, buffer->Read32(0));
+  buffer->Write32(0x87654321, 0);
+  EXPECT_EQ(0x87654321u, buffer->Read32(0));
+
+  // Resetting a view leaves the parent mapping intact.
+  {
+    auto view = buffer->View(0);
+    view.reset();
+    EXPECT_FALSE(view.get_vmo()->is_valid());
+  }
+  EXPECT_EQ(1u, VmoNumMappings(vmo_dup));
+  buffer->Write32(0xAABBCCDD, 0);
+  EXPECT_EQ(0xAABBCCDDu, buffer->Read32(0));
+}
+
+TEST(MmioBuffer, DirectReset) {
+  const size_t vmo_sz = zx_system_get_page_size();
+  zx::vmo vmo = CreateVmo(vmo_sz);
+  zx::vmo vmo_dup = DuplicateVmo(vmo);
+
+  zx::result<fdf::MmioBuffer> buffer =
+      fdf::MmioBuffer::Create(0, vmo_sz, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
+  ASSERT_OK(buffer.status_value());
+  EXPECT_EQ(1u, VmoNumMappings(vmo_dup));
+
+  buffer->reset();
+  EXPECT_EQ(nullptr, buffer->get());
+  EXPECT_EQ(0u, buffer->get_size());
+  EXPECT_FALSE(buffer->get_vmo()->is_valid());
+  EXPECT_EQ(0u, VmoNumMappings(vmo_dup));
+
+  // Calling reset() again is a no-op.
+  buffer->reset();
+  EXPECT_EQ(nullptr, buffer->get());
+  EXPECT_EQ(0u, buffer->get_size());
+  EXPECT_FALSE(buffer->get_vmo()->is_valid());
+  EXPECT_EQ(0u, VmoNumMappings(vmo_dup));
+}
+
+TEST(MmioBuffer, AdoptingConstructorUnmapsOnDestruction) {
+  const size_t size = zx_system_get_page_size();
+  zx::vmo vmo = CreateVmo(size);
+  zx::vmo vmo_dup = DuplicateVmo(vmo);
+
+  uintptr_t vaddr = 0;
+  ASSERT_OK(
+      zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, size, &vaddr));
+  EXPECT_EQ(1u, VmoNumMappings(vmo_dup));
+
+  {
+    fdf::MmioBuffer buffer(std::move(vmo), reinterpret_cast<MMIO_PTR void*>(vaddr), 0, size);
+    EXPECT_EQ(vaddr, reinterpret_cast<uintptr_t>(buffer.get()));
+    EXPECT_EQ(size, buffer.get_size());
+    EXPECT_EQ(1u, VmoNumMappings(vmo_dup));
+    buffer.Write32(0xA5A5A5A5, 0);
+    EXPECT_EQ(0xA5A5A5A5u, buffer.Read32(0));
+  }
+
+  // The buffer owns the mapping it adopted.
+  EXPECT_EQ(0u, VmoNumMappings(vmo_dup));
+}
+
+TEST(MmioView, ViewBounds) {
+  size_t size = zx_system_get_page_size();
+  auto buffer = fdf_testing::CreateMmioBuffer(size);
+
+  // Overflowing view size assertions.
+  ASSERT_DEATH([&]() { buffer.View(16, buffer.get_size() - 16 + 1); });
+
+  // Boundary View(get_size()) behavior: single-arg View asserts offset < get_size().
+  ASSERT_DEATH([&]() { buffer.View(buffer.get_size()); });
+
+  // Two-arg View(get_size(), 0) is valid: offset <= get_size() and size <= get_size() - offset.
+  auto empty_view = buffer.View(buffer.get_size(), 0);
+  EXPECT_EQ(0u, empty_view.get_size());
+}
 TEST(MmioBuffer, SetMmioBufferOps) {
   size_t size = zx_system_get_page_size();
   auto buffer = fdf_testing::CreateMmioBuffer(size);
@@ -308,6 +472,11 @@ TEST(MmioBuffer, SetMmioBufferOps) {
   EXPECT_EQ(expected_vaddr, buffer.get());
   EXPECT_EQ(expected_size, buffer.get_size());
   EXPECT_EQ(0x42, buffer.Read8(0));
+  EXPECT_TRUE(read_called);
+
+  read_called = false;
+  fdf::MmioView direct_view(buffer, 0);
+  EXPECT_EQ(0x42, direct_view.Read8(0));
   EXPECT_TRUE(read_called);
 
   // Test resetting back to default ops.

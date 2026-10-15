@@ -7,6 +7,7 @@
 
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
+#include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 
 namespace fdf {
@@ -15,47 +16,42 @@ namespace fdf {
 // mmio buffer it is created from.
 class MmioView : public MmioBuffer {
  public:
-  MmioView(const mmio_buffer_t& mmio, zx_off_t offset,
-           const MmioBufferOps* ops = &internal::kDefaultOps, const void* ctx = nullptr)
-      : MmioBuffer(
-            mmio_buffer_t{
-                .vaddr = static_cast<MMIO_PTR uint8_t*>(mmio.vaddr) + offset,
-                .offset = mmio.offset + offset,
-                .size = mmio.size - offset,
-                .vmo = mmio.vmo,
-            },
-            ops, ctx) {
-    ZX_ASSERT(offset < mmio.size);
+  MmioView(const MmioBuffer& mmio, zx_off_t offset)
+      : MmioView(mmio, offset, mmio.ops(), mmio.ctx()) {}
+
+  MmioView(const MmioBuffer& mmio, zx_off_t offset, const MmioBufferOps* ops,
+           const void* ctx = nullptr)
+      : MmioBuffer(zx::vmo(), static_cast<MMIO_PTR uint8_t*>(mmio.get()) + offset,
+                   mmio.get_offset() + offset, mmio.get_size() - offset, ops, ctx) {
+    unowned_vmo() = mmio.get_vmo();
+    ZX_ASSERT(offset < mmio.get_size());
   }
 
-  MmioView(const mmio_buffer_t& mmio, zx_off_t offset, size_t size,
-           const MmioBufferOps* ops = &internal::kDefaultOps, const void* ctx = nullptr)
-      : MmioBuffer(
-            mmio_buffer_t{
-                .vaddr = static_cast<MMIO_PTR uint8_t*>(mmio.vaddr) + offset,
-                .offset = mmio.offset + offset,
-                .size = size,
-                .vmo = mmio.vmo,
-            },
-            ops, ctx) {
-    ZX_ASSERT(size + offset <= mmio.size);
+  MmioView(const MmioBuffer& mmio, zx_off_t offset, size_t size)
+      : MmioView(mmio, offset, size, mmio.ops(), mmio.ctx()) {}
+
+  MmioView(const MmioBuffer& mmio, zx_off_t offset, size_t size, const MmioBufferOps* ops,
+           const void* ctx = nullptr)
+      : MmioBuffer(zx::vmo(), static_cast<MMIO_PTR uint8_t*>(mmio.get()) + offset,
+                   mmio.get_offset() + offset, size, ops, ctx) {
+    unowned_vmo() = mmio.get_vmo();
+    ZX_ASSERT(offset <= mmio.get_size() && size <= mmio.get_size() - offset);
   }
 
-  MmioView(const MmioView& mmio) : MmioBuffer(mmio.mmio_, mmio.ops_, mmio.ctx_) {}
-
-  virtual ~MmioView() override {
-    // Prevent unmap operation from occurring.
-    mmio_.vmo = ZX_HANDLE_INVALID;
+  MmioView(const MmioView& mmio)
+      : MmioBuffer(zx::vmo(), mmio.get(), mmio.get_offset(), mmio.get_size(), mmio.ops(),
+                   mmio.ctx()) {
+    unowned_vmo() = mmio.get_vmo();
   }
 };
 
 // These can't be defined inside the class because they need MmioView
 // to be completely defined first.
 
-inline MmioView MmioBuffer::View(zx_off_t off) const { return MmioView(mmio_, off, ops_, ctx_); }
+inline MmioView MmioBuffer::View(zx_off_t off) const { return MmioView(*this, off, ops_, ctx_); }
 
 inline MmioView MmioBuffer::View(zx_off_t off, size_t size) const {
-  return MmioView(mmio_, off, size, ops_, ctx_);
+  return MmioView(*this, off, size, ops_, ctx_);
 }
 
 }  // namespace fdf

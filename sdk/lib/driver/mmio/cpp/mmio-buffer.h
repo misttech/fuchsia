@@ -5,133 +5,22 @@
 #ifndef LIB_DRIVER_MMIO_CPP_MMIO_BUFFER_H_
 #define LIB_DRIVER_MMIO_CPP_MMIO_BUFFER_H_
 
+#ifdef __cplusplus
+
 #include <lib/driver/mmio/cpp/mmio-ops.h>
 #include <lib/driver/mmio/cpp/mmio-pinned-buffer.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
-#include <stdint.h>
-#include <zircon/assert.h>
-#include <zircon/process.h>
-#include <zircon/syscalls.h>
-
-__BEGIN_CDECLS
-
-// TODO(https://fxbug.dev/441711303): These methods are here temporarily to migrate cleanly to the
-// SDK directory without being able to use dependent CLs in gerrit. They will be removed in a
-// subsequent CL that removes mmio_buffer_t entirely.
-#define MMIO_ROUNDUP(a, b)      \
-  ({                            \
-    const __typeof(a) _a = (a); \
-    const __typeof(b) _b = (b); \
-    ((_a + _b - 1) / _b * _b);  \
-  })
-#define MMIO_ROUNDDOWN(a, b)    \
-  ({                            \
-    const __typeof(a) _a = (a); \
-    const __typeof(b) _b = (b); \
-    _a - (_a % _b);             \
-  })
-
-// Takes raw mmio resources, and maps it into address space. |offset| is the
-// offset from the beginning of |vmo| where the mmio region begins. |size|
-// specifies the size of the mmio region. |offset| + |size| must be less than
-// or equal to the size of |vmo|.
-// Always consumes |vmo|, including in error cases.
-__EXPORT inline zx_status_t mmio_buffer_init(mmio_buffer_t* buffer, zx_off_t offset, size_t size,
-                                             zx_handle_t vmo, uint32_t cache_policy) {
-  if (!buffer) {
-    zx_handle_close(vmo);
-    return ZX_ERR_INVALID_ARGS;
-  }
-  // |zx_vmo_set_cache_policy| will always return an error if it encounters a
-  // VMO that has already been mapped. To enable tests where a VMO may be mapped
-  // and modified already by a test fixture we only set the cache policy of a
-  // provided VMO if the requested cache policy does not match the VMO's current
-  // cache policy.
-  zx_info_vmo_t info = {};
-  zx_status_t status = zx_object_get_info(vmo, ZX_INFO_VMO, &info, sizeof(info), NULL, NULL);
-  if (status != ZX_OK) {
-    zx_handle_close(vmo);
-    return status;
-  }
-
-  if (info.cache_policy != cache_policy) {
-    status = zx_vmo_set_cache_policy(vmo, cache_policy);
-    if (status != ZX_OK) {
-      zx_handle_close(vmo);
-      return status;
-    }
-  }
-
-  uint64_t result = 0;
-  if (add_overflow(offset, size, &result) || result > info.size_bytes) {
-    zx_handle_close(vmo);
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  uintptr_t vaddr;
-  const size_t vmo_offset = MMIO_ROUNDDOWN(offset, zx_system_get_page_size());
-  const size_t page_offset = offset - vmo_offset;
-  const size_t vmo_size = MMIO_ROUNDUP(size + page_offset, zx_system_get_page_size());
-
-  status = zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_MAP_RANGE, 0,
-                       vmo, vmo_offset, vmo_size, &vaddr);
-  if (status != ZX_OK) {
-    zx_handle_close(vmo);
-    return status;
-  }
-
-  buffer->vmo = vmo;
-  buffer->vaddr = (MMIO_PTR void*)(vaddr + page_offset);
-  buffer->offset = offset;
-  buffer->size = size;
-
-  return ZX_OK;
-}
-
-// Takes a physical region, and maps it into address space. |base| and |size|
-// must be page aligned.
-// Callee retains ownership of |resource|.
-zx_status_t inline mmio_buffer_init_physical(mmio_buffer_t* buffer, zx_paddr_t base, size_t size,
-                                             zx_handle_t resource, uint32_t cache_policy) {
-  zx_handle_t vmo;
-  zx_status_t status = zx_vmo_create_physical(resource, base, size, &vmo);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  // |base| is guaranteed to be page aligned.
-  return mmio_buffer_init(buffer, 0, size, vmo, cache_policy);
-}
-
-// Unmaps the mmio region.
-__EXPORT inline void mmio_buffer_release(mmio_buffer_t* buffer) {
-  if (buffer->vmo != ZX_HANDLE_INVALID) {
-    // Recalculate the original mapping size and address returned from
-    // zx_vmar_map.
-    //
-    // When offset is not page aligned, the vaddr field contains the mapped
-    // address + page_offset.
-    //
-    // The size field holds the original requested size, but the mapping was for
-    // (size + page_offset) rounded up to the next multiple of page_size.
-    const size_t vmo_offset = MMIO_ROUNDDOWN(buffer->offset, zx_system_get_page_size());
-    const size_t page_offset = buffer->offset - vmo_offset;
-    const size_t vmo_size = MMIO_ROUNDUP(buffer->size + page_offset, zx_system_get_page_size());
-
-    zx_vmar_unmap(zx_vmar_root_self(), (uintptr_t)buffer->vaddr - (uintptr_t)page_offset, vmo_size);
-    zx_handle_close(buffer->vmo);
-    buffer->vmo = ZX_HANDLE_INVALID;
-  }
-}
-
-__END_CDECLS
-
-#ifdef __cplusplus
-
 #include <lib/zx/bti.h>
+#include <lib/zx/pmt.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
+#include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
+#include <stdint.h>
+#include <zircon/assert.h>
+#include <zircon/compiler.h>
+#include <zircon/process.h>
+#include <zircon/syscalls.h>
 
 #include <optional>
 #include <utility>
@@ -141,25 +30,34 @@ namespace fdf {
 // Forward declaration.
 class MmioView;
 
-// MmioBuffer is wrapper around mmio_block_t.
+// MmioBuffer represents and manages a mapped MMIO region.
 class MmioBuffer {
+  friend class MmioView;
   friend MmioBuffer SetMmioBufferOps(MmioBuffer&& buffer, const MmioBufferOps* ops,
                                      const void* ctx);
 
  public:
-  // DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE
   MmioBuffer(const MmioBuffer&) = delete;
   MmioBuffer& operator=(const MmioBuffer&) = delete;
 
   static const MmioBufferOps* GetDefaultOps();
 
-  MmioBuffer(mmio_buffer_t mmio, const MmioBufferOps* ops = GetDefaultOps(),
-             const void* ctx = nullptr)
-      : mmio_(mmio), ops_(ops ? ops : GetDefaultOps()), ctx_(ctx) {
-    ZX_ASSERT(mmio_.vaddr != nullptr);
+  // Adopts an existing mapping of |vmo| at |vaddr|. The buffer takes ownership of the mapping and
+  // unmaps it from the root VMAR on destruction or reset(). If |vmo| is invalid, the buffer does
+  // not own the mapping and never unmaps it. When |ops| is null, the default ops are used and |ctx|
+  // is ignored.
+  MmioBuffer(zx::vmo vmo, MMIO_PTR void* vaddr, zx_off_t offset, size_t size,
+             const MmioBufferOps* ops = GetDefaultOps(), const void* ctx = nullptr)
+      : vmo_(std::move(vmo)),
+        vaddr_(vaddr),
+        offset_(offset),
+        size_(size),
+        ops_(ops ? ops : GetDefaultOps()),
+        ctx_(ctx) {
+    ZX_ASSERT(vaddr_ != nullptr);
   }
 
-  virtual ~MmioBuffer() { mmio_buffer_release(&mmio_); }
+  virtual ~MmioBuffer() { reset(); }
 
   MmioBuffer(MmioBuffer&& other) { transfer(std::move(other)); }
 
@@ -171,48 +69,93 @@ class MmioBuffer {
     return *this;
   }
 
-  __attribute__((warn_unused_result)) mmio_buffer_t release() {
-    mmio_buffer_t result = mmio_;
-    memset(&mmio_, 0, sizeof(mmio_));
-    return result;
-  }
-
+  // Maps |size| bytes of |vmo| starting at |offset| into the root VMAR. |offset| is the offset from
+  // the beginning of |vmo| where the mmio region begins. |size| specifies the size of the mmio
+  // region. |offset| + |size| must be less than or equal to the size of |vmo|.
   static zx::result<MmioBuffer> Create(zx_off_t offset, size_t size, zx::vmo vmo,
                                        uint32_t cache_policy) {
-    mmio_buffer_t mmio;
-    zx_status_t status = mmio_buffer_init(&mmio, offset, size, vmo.release(), cache_policy);
+    zx_info_vmo_t info = {};
+    zx_status_t status = vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr);
     if (status != ZX_OK) {
       return zx::error(status);
     }
-    return zx::ok(MmioBuffer(mmio));
+
+    // |zx_vmo_set_cache_policy| will always return an error if it encounters a
+    // VMO that has already been mapped. To enable tests where a VMO may be mapped
+    // and modified already by a test fixture we only set the cache policy of a
+    // provided VMO if the requested cache policy does not match the VMO's current
+    // cache policy.
+    if (info.cache_policy != cache_policy) {
+      status = vmo.set_cache_policy(cache_policy);
+      if (status != ZX_OK) {
+        return zx::error(status);
+      }
+    }
+
+    uint64_t result = 0;
+    if (add_overflow(offset, size, &result) || result > info.size_bytes) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    if (size == 0) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+
+    uintptr_t vaddr;
+    const PageAlignedRange range = GetPageAlignedRange(offset, size);
+
+    status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_MAP_RANGE, 0,
+                                        vmo, range.vmo_offset, range.vmo_size, &vaddr);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    return zx::ok(MmioBuffer(
+        std::move(vmo), reinterpret_cast<MMIO_PTR void*>(vaddr + range.page_offset), offset, size));
   }
 
   void reset() {
-    mmio_buffer_release(&mmio_);
-    memset(&mmio_, 0, sizeof(mmio_));
+    if (vaddr_ != nullptr && vmo_.is_valid()) {
+      const PageAlignedRange range = GetPageAlignedRange(offset_, size_);
+      zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(vaddr_) - range.page_offset,
+                                   range.vmo_size);
+      vmo_.reset();
+    }
+    unowned_vmo_ = zx::unowned_vmo();
+    vaddr_ = nullptr;
+    offset_ = 0;
+    size_ = 0;
   }
 
-  MMIO_PTR void* get() const { return mmio_.vaddr; }
-  zx_off_t get_offset() const { return mmio_.offset; }
-  size_t get_size() const { return mmio_.size; }
-  zx::unowned_vmo get_vmo() const { return zx::unowned_vmo(mmio_.vmo); }
+  MMIO_PTR void* get() const { return vaddr_; }
+  zx_off_t get_offset() const { return offset_; }
+  size_t get_size() const { return size_; }
+  zx::unowned_vmo get_vmo() const {
+    if (vmo_.is_valid()) {
+      return zx::unowned_vmo(vmo_);
+    }
+    return zx::unowned_vmo(unowned_vmo_);
+  }
 
   zx_status_t Pin(const zx::bti& bti, std::optional<MmioPinnedBuffer>* pinned_buffer) {
-    mmio_pinned_buffer_t pinned;
-    zx_status_t status = mmio_buffer_pin(&mmio_, bti.get(), &pinned);
-    if (status == ZX_OK) {
-      *pinned_buffer = MmioPinnedBuffer(pinned);
+    auto result = Pin(bti);
+    if (result.is_ok()) {
+      *pinned_buffer = std::move(result.value());
     }
-    return status;
+    return result.status_value();
   }
 
   zx::result<MmioPinnedBuffer> Pin(const zx::bti& bti) {
-    mmio_pinned_buffer_t pinned;
-    zx_status_t status = mmio_buffer_pin(&mmio_, bti.get(), &pinned);
+    zx_paddr_t paddr;
+    zx::pmt pmt;
+    const uint32_t options = ZX_BTI_PERM_WRITE | ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS;
+    const PageAlignedRange range = GetPageAlignedRange(offset_, size_);
+
+    zx_status_t status =
+        bti.pin(options, *get_vmo(), range.vmo_offset, range.vmo_size, &paddr, 1, &pmt);
     if (status != ZX_OK) {
       return zx::error(status);
     }
-    return zx::ok(MmioPinnedBuffer(pinned));
+    return zx::ok(MmioPinnedBuffer(paddr + range.page_offset, std::move(pmt)));
   }
 
   // Provides a slice view into the mmio.
@@ -362,17 +305,45 @@ class MmioBuffer {
   }
 
  protected:
-  mmio_buffer_t mmio_;
-  const MmioBufferOps* ops_;
-  const void* ctx_;
+  const MmioBufferOps* ops() const { return ops_; }
+  const void* ctx() const { return ctx_; }
+  zx::unowned_vmo& unowned_vmo() { return unowned_vmo_; }
 
  private:
+  struct PageAlignedRange {
+    size_t vmo_offset;
+    size_t page_offset;
+    size_t vmo_size;
+  };
+  static PageAlignedRange GetPageAlignedRange(zx_off_t offset, size_t size) {
+    const size_t page_size = zx_system_get_page_size();
+    const size_t vmo_offset = offset - (offset % page_size);
+    const size_t page_offset = offset - vmo_offset;
+    const size_t vmo_size = ((size + page_offset + page_size - 1) / page_size) * page_size;
+    return {.vmo_offset = vmo_offset, .page_offset = page_offset, .vmo_size = vmo_size};
+  }
+
   void transfer(MmioBuffer&& other) {
-    mmio_ = other.mmio_;
+    vmo_ = std::move(other.vmo_);
+    unowned_vmo_ = other.unowned_vmo_;
+    vaddr_ = other.vaddr_;
+    offset_ = other.offset_;
+    size_ = other.size_;
     ops_ = other.ops_;
     ctx_ = other.ctx_;
-    memset(&other.mmio_, 0, sizeof(other.mmio_));
+    other.unowned_vmo_ = zx::unowned_vmo();
+    other.vaddr_ = nullptr;
+    other.offset_ = 0;
+    other.size_ = 0;
   }
+
+  zx::vmo vmo_;
+  zx::unowned_vmo unowned_vmo_;
+  MMIO_PTR void* vaddr_ = nullptr;
+  zx_off_t offset_ = 0;
+  size_t size_ = 0;
+  const MmioBufferOps* ops_ = nullptr;
+  const void* ctx_ = nullptr;
 };
 
 // Returns the MmioBuffer with its mapping retained but using the provided MmioBufferOps and
@@ -391,6 +362,6 @@ inline MmioBuffer SetMmioBufferOps(MmioBuffer&& buffer,
 
 #include <lib/driver/mmio/cpp/mmio-internal.h>
 
-#endif
+#endif  // __cplusplus
 
 #endif  // LIB_DRIVER_MMIO_CPP_MMIO_BUFFER_H_

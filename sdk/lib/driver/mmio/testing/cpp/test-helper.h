@@ -6,6 +6,7 @@
 
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -13,20 +14,21 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
+#include <utility>
+
 namespace fdf_testing {
-// This provides a helper to quickly create an MmioBuffer for use in tests.
-// TODO(https://fxbug.dev/42067247): This use of mmio_buffer_t is temporary to ease the
-// transition of clients over to MmioBuffer, and can be switched over once we
-// have no unmigrated users touching MmioBufferOps.
+
+// Creates an MmioBuffer backed by a new VMO, for use in tests.
 inline fdf::MmioBuffer CreateMmioBuffer(
     size_t size, uint32_t cache_policy = ZX_CACHE_POLICY_UNCACHED_DEVICE,
     const ::fdf::MmioBufferOps* ops = ::fdf::MmioBuffer::GetDefaultOps(),
     const void* ctx = nullptr) {
   zx::vmo vmo;
   ZX_ASSERT(zx::vmo::create(/*size=*/size, 0, &vmo) == ZX_OK);
-  mmio_buffer_t mmio{};
-  ZX_ASSERT(mmio_buffer_init(&mmio, 0, size, vmo.release(), cache_policy) == ZX_OK);
-  return fdf::MmioBuffer(mmio, ops, ctx);
+  zx::result<fdf::MmioBuffer> result =
+      fdf::MmioBuffer::Create(0, size, std::move(vmo), cache_policy);
+  ZX_ASSERT(result.is_ok());
+  return fdf::SetMmioBufferOps(std::move(result.value()), ops, ctx);
 }
 
 inline fdf::MmioBuffer CreateMmioBuffer(
@@ -36,9 +38,10 @@ inline fdf::MmioBuffer CreateMmioBuffer(
   zx_info_vmo_t info{};
   ZX_ASSERT(vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), /*actual_count=*/0, /*avail_count=*/0) ==
             ZX_OK);
-  mmio_buffer_t mmio{};
-  ZX_ASSERT(mmio_buffer_init(&mmio, 0, info.size_bytes, vmo.release(), cache_policy) == ZX_OK);
-  return fdf::MmioBuffer(mmio, ops, ctx);
+  zx::result<fdf::MmioBuffer> result =
+      fdf::MmioBuffer::Create(0, info.size_bytes, std::move(vmo), cache_policy);
+  ZX_ASSERT(result.is_ok());
+  return fdf::SetMmioBufferOps(std::move(result.value()), ops, ctx);
 }
 
 }  // namespace fdf_testing

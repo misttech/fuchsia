@@ -5,25 +5,10 @@
 #ifndef LIB_DRIVER_MMIO_CPP_MMIO_OPS_H_
 #define LIB_DRIVER_MMIO_CPP_MMIO_OPS_H_
 
-#include <lib/mmio-ptr/mmio-ptr.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <zircon/compiler.h>
 #include <zircon/types.h>
 
-__BEGIN_CDECLS
-
-typedef struct {
-  // |vaddr| points to the content starting at |offset| in |vmo|.
-  MMIO_PTR void* vaddr;
-  zx_off_t offset;
-  size_t size;
-  zx_handle_t vmo;
-} mmio_buffer_t;
-
-__END_CDECLS
-
-#ifdef __cplusplus
 namespace fdf {
 
 class MmioBuffer;
@@ -44,6 +29,5 @@ struct MmioBufferOps {
                       size_t size);
 };
 }  // namespace fdf
-#endif
 
 #endif  // LIB_DRIVER_MMIO_CPP_MMIO_OPS_H_

@@ -10,12 +10,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/assert.h>
-#include <zircon/compiler.h>
 #include <zircon/types.h>
 
 #include "mmio-ops.h"
-
-#ifdef __cplusplus
 
 #if defined(__aarch64__)
 #define mmio_hw_mb() __asm__ volatile("dmb sy" : : : "memory")
@@ -105,7 +102,5 @@ static constexpr MmioBufferOps kDefaultOps = {
 namespace fdf {
 inline const MmioBufferOps* MmioBuffer::GetDefaultOps() { return &internal::kDefaultOps; }
 }  // namespace fdf
-
-#endif
 
 #endif  // LIB_DRIVER_MMIO_CPP_MMIO_INTERNAL_H_

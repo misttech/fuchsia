@@ -38,7 +38,6 @@ sdk_source_set("cpp") {
     # <lib/driver/mmio/cpp/mmio-buffer.h> has #include <lib/zx/result.h>.
     "//zircon/system/ulib/zx",
   ]
-  sources = [ "mmio-buffer.cc" ]
 }
 
 test("mmio-unittest") {

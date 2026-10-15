@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include <lib/driver/mock-mmio/cpp/globally-ordered-region.h>
+#include <lib/zx/result.h>
 #include <zircon/assert.h>
 
 #include <cinttypes>
 #include <cstdint>
+#include <utility>
 
 namespace mock_mmio {
 
@@ -16,9 +18,10 @@ fdf::MmioBuffer CreateMmioBuffer(size_t size, uint32_t cache_policy, const fdf::
                                  void* ctx) {
   zx::vmo vmo;
   ZX_ASSERT(zx::vmo::create(/*size=*/size, 0, &vmo) == ZX_OK);
-  mmio_buffer_t mmio{};
-  ZX_ASSERT(mmio_buffer_init(&mmio, 0, size, vmo.release(), cache_policy) == ZX_OK);
-  return fdf::MmioBuffer(mmio, ops, ctx);
+  zx::result<fdf::MmioBuffer> result =
+      fdf::MmioBuffer::Create(0, size, std::move(vmo), cache_policy);
+  ZX_ASSERT(result.is_ok());
+  return fdf::SetMmioBufferOps(std::move(result.value()), ops, ctx);
 }
 
 int SizeInt(GloballyOrderedRegion::Size access_size) { return static_cast<int>(access_size); }

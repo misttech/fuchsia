@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 #include <lib/driver/mock-mmio/cpp/region.h>
+#include <lib/zx/result.h>
+
+#include <utility>
 
 namespace mock_mmio {
 
@@ -18,9 +21,10 @@ fdf::MmioBuffer Region::GetMmioBuffer() {
   // TODO(https://fxbug.dev/335906001): This creates an unneeded VMO for now.
   zx::vmo vmo;
   ZX_ASSERT(zx::vmo::create(/*size=*/size, 0, &vmo) == ZX_OK);
-  mmio_buffer_t mmio{};
-  ZX_ASSERT(mmio_buffer_init(&mmio, 0, size, vmo.release(), ZX_CACHE_POLICY_CACHED) == ZX_OK);
-  return fdf::MmioBuffer(mmio, &Region::kMockMmioOps, this);
+  zx::result<fdf::MmioBuffer> result =
+      fdf::MmioBuffer::Create(0, size, std::move(vmo), ZX_CACHE_POLICY_CACHED);
+  ZX_ASSERT(result.is_ok());
+  return fdf::SetMmioBufferOps(std::move(result.value()), &Region::kMockMmioOps, this);
 }
 
 void Region::CheckOffset(zx_off_t offsets) const {
