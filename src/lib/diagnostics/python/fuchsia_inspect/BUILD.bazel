@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+py_library(
+    name = "fuchsia_inspect",
+    srcs = [
+        "__init__.py",
+        "lib.py",
+    ],
+    imports = [".."],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//scripts/lib/ffx_cmd:__pkg__",
+        "//src/testing/end_to_end/honeydew:__pkg__",
+    ],
+)
+
+host_py_test(
+    name = "python_inspect_test",
+    srcs = ["tests/test_inspect.py"],
+    main = "tests/test_inspect.py",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_args = ["-v"],
+    visibility = ["//src/lib/diagnostics:__pkg__"],
+    deps = [":fuchsia_inspect"],
+)

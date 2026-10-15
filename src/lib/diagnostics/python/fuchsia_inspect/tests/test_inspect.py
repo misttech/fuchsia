@@ -164,3 +164,7 @@ class TestInspect(unittest.TestCase):
                 json.loads(MISSING_MONIKER)
             ),
         )
+
+
+if __name__ == "__main__":
+    unittest.main()
