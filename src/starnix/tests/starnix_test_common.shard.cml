@@ -248,6 +248,12 @@
             from: "#cobalt",
             to: [ "#timekeeper" ],
         },
+        {
+            config: "fuchsia.time.config.TimeSourceEndpointUrl",
+            from: "void",
+            to: [ "#timekeeper" ],
+            availability: "optional",
+        },
     ],
     environments: [
         {

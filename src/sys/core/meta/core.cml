@@ -804,6 +804,12 @@
             to: "#timekeeper",
         },
         {
+            config: "fuchsia.time.config.TimeSourceEndpointUrl",
+            from: "parent",
+            to: "#timekeeper",
+            availability: "optional",
+        },
+        {
             protocol: [
                 "fuchsia.tracing.perfetto.ProducerConnector",
                 "fuchsia.tracing.provider.Registry",

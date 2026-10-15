@@ -142,6 +142,7 @@
                 "fuchsia.system-updater.ExcessiveUpdateDurationSeconds",
                 "fuchsia.system-updater.ManifestPublicKeys",
                 "fuchsia.time.config.HasWakeAlarms",
+                "fuchsia.time.config.TimeSourceEndpointUrl",
                 "fuchsia.time.config.WritableUTCTime",
                 "fuchsia.ui.AttachA11yView",
                 "fuchsia.ui.DisplayPixelDensity",

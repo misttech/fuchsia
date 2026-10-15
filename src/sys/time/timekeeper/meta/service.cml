@@ -109,6 +109,31 @@
             from: "parent",
             to: "#timesource",
         },
+        {
+            config: "fuchsia.time.config.TimeSourceEndpointUrl",
+            from: "parent",
+            to: "#timesource",
+            availability: "optional",
+        },
+        {
+            config: [
+                "fuchsia.time.config.FirstRttTimeFactor",
+                "fuchsia.time.config.HttpsdateUseFakeSampler",
+                "fuchsia.time.config.HttpsdateUsePullApi",
+                "fuchsia.time.config.HttpsTimeoutSec",
+                "fuchsia.time.config.IsMonitorTimeSource",
+                "fuchsia.time.config.MaxAttemptsUrgencyHigh",
+                "fuchsia.time.config.MaxAttemptsUrgencyLow",
+                "fuchsia.time.config.MaxAttemptsUrgencyMedium",
+                "fuchsia.time.config.NumPollsUrgencyHigh",
+                "fuchsia.time.config.NumPollsUrgencyLow",
+                "fuchsia.time.config.NumPollsUrgencyMedium",
+                "fuchsia.time.config.StandardDeviationBoundPercentage",
+            ],
+            from: "void",
+            to: "#timesource",
+            availability: "optional",
+        },
     ],
 
     // See the `capabilities` section for details.

@@ -113,6 +113,51 @@ async fn build_test_realm() -> Result<(RealmInstance, fcomponent::RealmProxy), E
         .unwrap();
 
     builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.time.config.HttpsdateUseFakeSampler".parse().unwrap(),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(true)),
+        }))
+        .await?;
+    let mut custom_config_route = Route::new()
+        .capability(Capability::configuration("fuchsia.time.config.HttpsdateUseFakeSampler"));
+    for cap in [
+        "fuchsia.time.config.MaxAttemptsUrgencyHigh",
+        "fuchsia.time.config.MaxAttemptsUrgencyLow",
+        "fuchsia.time.config.MaxAttemptsUrgencyMedium",
+        "fuchsia.time.config.NumPollsUrgencyHigh",
+        "fuchsia.time.config.NumPollsUrgencyLow",
+        "fuchsia.time.config.NumPollsUrgencyMedium",
+    ] {
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: cap.parse().unwrap(),
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint32(1)),
+            }))
+            .await?;
+        custom_config_route = custom_config_route.capability(Capability::configuration(cap));
+    }
+    builder
+        .add_route(
+            custom_config_route.from(Ref::self_()).to(Ref::collection(TIME_SOURCE_COLLECTION)),
+        )
+        .await?;
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration("fuchsia.time.config.FirstRttTimeFactor"))
+                .capability(Capability::configuration("fuchsia.time.config.HttpsTimeoutSec"))
+                .capability(Capability::configuration("fuchsia.time.config.HttpsdateUsePullApi"))
+                .capability(Capability::configuration("fuchsia.time.config.IsMonitorTimeSource"))
+                .capability(Capability::configuration(
+                    "fuchsia.time.config.StandardDeviationBoundPercentage",
+                ))
+                .capability(Capability::configuration("fuchsia.time.config.TimeSourceEndpointUrl"))
+                .from(Ref::void())
+                .to(Ref::collection(TIME_SOURCE_COLLECTION)),
+        )
+        .await?;
+
+    builder
         .add_route(
             Route::new()
                 .capability(Capability::protocol_by_name("fuchsia.component.Realm"))

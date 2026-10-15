@@ -137,28 +137,16 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
             .field("rtc_allow_setting_past_utc", String::from(config.rtc_allow_setting_past_utc))?
             .field("serve_fuchsia_time_alarms", serve_fuchsia_time_alarms)?;
 
-        let mut time_source_config_builder = builder
-            .package("httpsdate-time-source-pull")
-            .component("meta/httpsdate_time_source.cm")
-            .context("while finding the time source component")?;
-
         // Refer to //src/sys/time/httpsdate_time_source/meta/service.cml
-        // for details.
-        time_source_config_builder
-            .field("use_fake_sampler", false)?
-            .field("https_timeout_sec", 10)?
-            .field("standard_deviation_bound_percentage", 30)?
-            .field("first_rtt_time_factor", 5)?
-            .field("use_pull_api", true)?
-            .field("max_attempts_urgency_low", 3)?
-            .field("num_polls_urgency_low", 7)?
-            .field("max_attempts_urgency_medium", 3)?
-            .field("num_polls_urgency_medium", 5)?
-            .field("max_attempts_urgency_high", 3)?
-            .field("num_polls_urgency_high", 3)?
-            .field("time_source_endpoint_url", &*config.time_source_endpoint_url)?
-            // timekeeper will set this to true for monitor time sources.
-            .field("is_monitor_time_source", false)?;
+        // for details. Other httpsdate_time_source config fields use their
+        // .cml defaults.
+        builder.set_config_capability(
+            "fuchsia.time.config.TimeSourceEndpointUrl",
+            Config::new(
+                ConfigValueType::String { max_size: 1024 },
+                (&*config.time_source_endpoint_url).into(),
+            ),
+        )?;
 
         if has_hrtimer && matches!(context.build_type, BuildType::Eng) {
             match context.feature_set_level {

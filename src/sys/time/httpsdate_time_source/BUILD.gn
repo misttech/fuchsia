@@ -84,15 +84,11 @@ fuchsia_unittest_package("httpsdate-time-source-tests") {
 }
 
 fuchsia_package("httpsdate-time-source") {
-  deps = [
-    ":httpsdate-config-values",
-    ":service",
-  ]
+  deps = [ ":service" ]
 }
 
 fuchsia_package("httpsdate-time-source-pull") {
   deps = [ ":service" ]
-  validate_structured_config = false
 }
 
 group("tests") {
