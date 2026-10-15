@@ -76,11 +76,11 @@ implementation.
    - `install_git_hooks` creates `.git/hooks/<hook_name>.d/` and writes or updates
      `10-fuchsia-agent.sh`.
    - It does NOT touch or overwrite `.git/hooks/<hook_name>`.
-2. **Uninstallation / Reset (`fx agents setup --reset`)**:
+2. **Uninstallation / Reset (`fx agents setup --no-git-hooks` or `fx agents setup --reset`)**:
    - Uses `uninstall_git_hooks` to delete only `.git/hooks/<hook_name>.d/10-fuchsia-agent.sh`.
    - Leaves the `.git/hooks/<hook_name>` wrappers and `<hook_name>.d/` directory intact.
    - Any user or team scripts in `<hook_name>.d/` continue executing without disruption.
-   - You can inspect the status with `get_git_hooks_status`.
+   - You can inspect the status with `fx agents setup --status` (`get_git_hooks_status`).
 
 ---
 
@@ -203,8 +203,9 @@ Hooks can be bypassed using standard Git flags, environment variables, or `fx ag
    - `fx agents setup --status`: Displays current configuration and reports Git hook configuration
      across all checkout repositories.
    - `--git-hooks` / `--no-git-hooks`: CLI flags for `fx agents setup` controlling Git hook
-     installation across checkout repositories (default: `--git-hooks`). Passing `--no-git-hooks`
-     configures agent permissions and profiles without installing or modifying Git hooks.
+     management across checkout repositories (default: `--git-hooks`). Passing `--no-git-hooks`
+     configures agent permissions and profiles while skipping hook installation and actively
+     uninstalling any existing `10-fuchsia-agent.sh` hooks across checkout repositories.
    - `fx agents setup --reset` removes `10-fuchsia-agent.sh` while leaving dispatcher and user
      scripts intact.
    - `fx agents setup --reset --no-git-hooks`: Resets Fuchsia-managed rules and configuration while

@@ -136,10 +136,16 @@ linters to run:
 
 ### Opt-Outs & Bypasses
 
-1. **Skip Hooks During Setup**:
+1. **Manage or Disable Hooks via Setup**:
    ```bash
-   # Configure permissions without installing Git hooks:
+   # Configure permissions and uninstall existing agent Git hooks across checkout repos:
    fx agents setup --no-git-hooks
+
+   # Re-enable and install agent Git hooks (default):
+   fx agents setup --git-hooks
+
+   # Inspect active configuration and Git hook status:
+   fx agents setup --status
 
    # Reset permissions while leaving Git hooks installed:
    fx agents setup --reset --no-git-hooks
