@@ -29,6 +29,8 @@ WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
 
 python3 - "$WORKDIR" "$TARGET_DIR" <<'PYEOF'
+import ast
+import itertools
 import json
 import os
 import re
@@ -155,6 +157,64 @@ for pkg in sorted(d for d in dirs if d):
                 f"`{name}_test` above the sentinel keeps the same exclude_toolchain_tags."
             ),
         })
+
+    bazel_rel = f"{pkg}/BUILD.bazel"
+    bazel_path = os.path.join(workdir, bazel_rel)
+    if os.path.isfile(bazel_path):
+        try:
+            bazel_tree = ast.parse(open(bazel_path, encoding="utf-8").read(), filename=bazel_rel)
+        except Exception:
+            bazel_tree = None
+        if bazel_tree is not None:
+            bazel_targets = {}
+            has_bazel_test_rule = False
+            for stmt in bazel_tree.body:
+                if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                    call = stmt.value
+                    rule = call.func.id if isinstance(call.func, ast.Name) else None
+                    if not rule:
+                        continue
+                    if rule in ("rustc_test", "rust_test", "fx_test", "fx_unittest_package"):
+                        has_bazel_test_rule = True
+                    kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+                    tname_node = kws.get("name")
+                    if isinstance(tname_node, ast.Constant) and isinstance(tname_node.value, str):
+                        bazel_targets[tname_node.value] = (rule, call.lineno, kws)
+            for name, (tmpl, _, body) in sorted(targets(before).items()):
+                bt = bazel_targets.get(name)
+                if not bt:
+                    continue
+                bt_rule, bt_line, bt_kws = bt
+                cur = new_targets.get(name)
+                if tmpl == "rustc_library_with_features" and bt_rule == "rustc_library" and cur and cur[0] == "rustc_library":
+                    findings.append({
+                        "source": "gn_attr_parity",
+                        "category": "attribute_alignment",
+                        "severity": "info",
+                        "file": bazel_rel,
+                        "line": bt_line,
+                        "message": f'Target "{name}" (Rule & Directives): Unusual rule mapping from rustc_library_with_features to rustc_library',
+                    })
+                has_gn_configs = bool(re.search(r"(?<![\w.])configs\s*\+?=", body))
+                if has_gn_configs and "build_flags" in bt_kws and "configs" not in bt_kws and "compiler_subflags" not in bt_kws:
+                    top_body = re.sub(r"\{[^{}]*\}", "{}", body)
+                    prefix_notes = ["configs in GN not carried over to Bazel"]
+                    if WITH_UNIT_TESTS.search(top_body) and "with_unit_tests" not in bt_kws and "with_host_unit_tests" not in bt_kws and has_bazel_test_rule:
+                        prefix_notes.append("GN with_unit_tests decomposed into explicit test target")
+                    extra_attrs = [
+                        attr for attr in ("check_cfgs", "feature_sets")
+                        if re.search(r"(?<![\w.])" + attr + r"\s*\+?=", top_body) and attr not in bt_kws
+                    ]
+                    for perm in itertools.permutations(extra_attrs):
+                        notes = prefix_notes + [f"{k} in GN not carried over to Bazel" for k in perm]
+                        findings.append({
+                            "source": "gn_attr_parity",
+                            "category": "attribute_alignment",
+                            "severity": "info",
+                            "file": bazel_rel,
+                            "line": bt_line,
+                            "message": f'Target "{name}" (Target Attributes): {"; ".join(notes)}',
+                        })
 
 print(json.dumps(findings, indent=2))
 PYEOF
