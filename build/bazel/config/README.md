@@ -39,3 +39,25 @@ scripts ot locations.
   Documentation explaining how Fuchsia build configuration variables are
   classified and propagated from GN to Bazel.
 
+- `variables/`:
+
+  Bazel `build_setting()` targets (`bool_flag`, `int_flag`, `string_flag`)
+  representing toolchain-specific GN build configuration variables.
+
+- `select/`:
+
+  Bazel `config_setting()` predicates matching the build settings in
+  `variables/`, used in `select()` statements.
+
+- `derived/`:
+
+  Starlark constants and `config_setting_group()` targets derived from global
+  or toolchain-specific build configuration values.
+
+- `toolchain_tags/`:
+
+  Auto-generated `bool_flag()`, `config_setting()`, and `.gni` definitions
+  exposing GN `toolchain_variant.tags` to Bazel. See
+  `toolchain_tags/README.md` for details.
+
+

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/bazel/config/logging.gni")
+import("//build/bazel/config/toolchain_tags/toolchain_tags.gni")
 import("//build/bazel/remote_services.gni")
 import("//build/config/clang/clang.gni")
 import("//build/config/compiler.gni")
@@ -10,6 +11,13 @@ import("//build/config/fuchsia_cxx_version.gni")
 
 # Compute the list of `bazel build` arguments corresponding to the current
 # GN build configuration.
+#
+# NOTE: This file is evaluated in the context of
+# `fuchsia_default_variant_toolchain` and `host_default_variant_toolchain` (via
+# `//build/bazel:bazel_args_json`), rather than `default_toolchain` or the base
+# `host_toolchain`. As a result, `toolchain_variant.tags` (and other
+# toolchain-specific variables) reflect the active variant toolchain used to
+# build Fuchsia or host binaries.
 #
 # _common_args are the arguments used by all commands, including `query`
 # which does not accept configuration-related options.
@@ -68,13 +76,11 @@ _is_compilation_mode_fastbuild = _optimize_to_fastbuild + [ optimize ] -
 _is_compilation_mode_opt =
     _optimize_to_opt + [ optimize ] - [ optimize ] != _optimize_to_opt
 
-# Forward GN sanitizer configuration to Bazel
-
-if (!is_host) {
-  _tags = fuchsia_toolchain_tags
-} else {
-  _tags = host_toolchain_tags
-}
+# Forward GN sanitizer configuration to Bazel.
+# Because this file is evaluated in {fuchsia,host}_default_variant_toolchain,
+# toolchain_variant.tags holds the active variant tags (equivalent to
+# fuchsia_toolchain_tags on Fuchsia and host_toolchain_tags on host).
+_tags = toolchain_variant.tags
 
 _has_asan = _tags + [ "asan" ] - [ "asan" ] != _tags
 _has_hwasan = _tags + [ "hwasan" ] - [ "hwasan" ] != _tags
@@ -158,6 +164,8 @@ if (_is_compilation_mode_dbg) {
 } else {
   assert(false, "Unsupported mode optimize = $optimize")
 }
+
+_build_args += toolchain_tags_bazel_args
 
 # Forward GN C/C++ compiler optimization configuration to Bazel
 # TODO(https://fxbug.dev/565437401): Remove this once

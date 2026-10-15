@@ -107,6 +107,7 @@ if (is_host) {
       "bazel/bazel_idk/prebuild_info.py",
       "bazel/bazel_sdk/compare_bazel_sdks.py",
       "bazel/bazel_sdk/idk_to_bazel_sdk.py",
+      "bazel/config/toolchain_tags/update.py",
       "bazel/debug_symbols/tests/check_debug_binaries.py",
       "bazel/drivers/verify_driver_package.py",
       "bazel/examples/hello_python/bin.py",

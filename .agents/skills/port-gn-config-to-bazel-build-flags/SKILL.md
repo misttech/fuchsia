@@ -14,6 +14,7 @@ description: >
 
 This skill describes how to port Fuchsia GN `config()` and `compiler_config()`
 target definitions into equivalent Bazel `build_flags()` targets. It applies to:
+
 - **Default toolchain configs** listed as missing in
   `@fuchsia_build_info//default_build_flags/BUILD.bazel`
   (`bazel-repos/fuchsia_build_info+/default_build_flags/BUILD.bazel`).
@@ -83,10 +84,13 @@ independent of the target build configuration:
 **Mandatory Comment Rule**: Whenever you simplify a GN `if (...)` branch using
 one or more of these invariants, add a comment directly above the
 `build_flags()` definition stating the assumed invariant(s), for example:
+
 ```python
 # NOTE: This assumes is_gcc=false && is_pecoff=false in Bazel.
 ```
+
 or:
+
 ```python
 # NOTE: This assumes is_kernel=false && zircon_toolchain=false in Bazel.
 ```
@@ -110,24 +114,29 @@ When a `config()` branches on target OS or CPU variables (`current_os`,
 `select()` expressions on `build_flags()` attributes:
 
 1.  **OS Conditions (`current_os`, `is_fuchsia`, `is_linux`, `is_host`)**:
-   - `is_fuchsia` or `current_os == "fuchsia"`:
+    - `is_fuchsia` or `current_os == "fuchsia"`:
+
      ```python
      select({
          "@platforms//os:fuchsia": [...],
          "//conditions:default": [],
      })
      ```
-   - `is_linux` or `current_os == "linux"`:
+
+    - `is_linux` or `current_os == "linux"`:
+
      ```python
      select({
          "@platforms//os:linux": [...],
          "//conditions:default": [],
      })
      ```
-   - `is_host`: Use `//build/bazel/platforms:is_host_os` (defined in
-     `//build/bazel/platforms/BUILD.bazel` using
-     `build_config.host_platform_os_constraint`, matching `HOST_OS_CONSTRAINTS`
-     from `//build/bazel/platforms:constraints.bzl`):
+
+    - `is_host`: Use `//build/bazel/platforms:is_host_os` (defined in
+      `//build/bazel/platforms/BUILD.bazel` using
+      `build_config.host_platform_os_constraint`, matching `HOST_OS_CONSTRAINTS`
+      from `//build/bazel/platforms:constraints.bzl`):
+
      ```python
      select({
          "//build/bazel/platforms:is_host_os": [...],
@@ -136,27 +145,28 @@ When a `config()` branches on target OS or CPU variables (`current_os`,
      ```
 
 2.  **CPU Conditions (`current_cpu`)**:
-   - `current_cpu == "x64"` -> `"@platforms//cpu:x86_64"`
-   - `current_cpu == "arm64"` -> `"@platforms//cpu:arm64"`
-   - `current_cpu == "riscv64"` -> `"@platforms//cpu:riscv64"`
+    - `current_cpu == "x64"` -> `"@platforms//cpu:x86_64"`
+    - `current_cpu == "arm64"` -> `"@platforms//cpu:arm64"`
+    - `current_cpu == "riscv64"` -> `"@platforms//cpu:riscv64"`
 
 3.  **Combined `(current_os, current_cpu)` Conditions (e.g., `rust_target`)**:
-   - `//build/bazel/platforms/BUILD.bazel` provides composite `config_setting`
-     targets for every `(os, cpu)` pair:
-     - `//build/bazel/platforms:is_fuchsia_x64`
-     - `//build/bazel/platforms:is_fuchsia_arm64`
-     - `//build/bazel/platforms:is_fuchsia_riscv64`
-     - `//build/bazel/platforms:is_linux_x64`
-     - `//build/bazel/platforms:is_linux_arm64`
-   - Reusable `select()` dictionaries for platform-dependent flag lists can be
-     placed in `//build/bazel/config/derived/<name>.bzl`. Because `select()` is
-     not recognized in the top-level context of `.bzl` files (only in `BUILD`
-     files or functions/macros evaluated during `BUILD` loading), define the
-     top-level constant as a dictionary suffixed with `__select_args` to clarify
-     that it must go into a `select()` statement at the call site. Note also
-     that in Bazel Starlark, `select()` operates on list attributes
-     (`list[str]`) rather than interpolating inside a string, so each dictionary
-     value should be a flag list:
+    - `//build/bazel/platforms/BUILD.bazel` provides composite `config_setting`
+      targets for every `(os, cpu)` pair:
+      - `//build/bazel/platforms:is_fuchsia_x64`
+      - `//build/bazel/platforms:is_fuchsia_arm64`
+      - `//build/bazel/platforms:is_fuchsia_riscv64`
+      - `//build/bazel/platforms:is_linux_x64`
+      - `//build/bazel/platforms:is_linux_arm64`
+    - Reusable `select()` dictionaries for platform-dependent flag lists can be
+      placed in `//build/bazel/config/derived/<name>.bzl`. Because `select()` is
+      not recognized in the top-level context of `.bzl` files (only in `BUILD`
+      files or functions/macros evaluated during `BUILD` loading), define the
+      top-level constant as a dictionary suffixed with `__select_args` to
+      clarify that it must go into a `select()` statement at the call site. Note
+      also that in Bazel Starlark, `select()` operates on list attributes
+      (`list[str]`) rather than interpolating inside a string, so each
+      dictionary value should be a flag list:
+
      ```python
      # //build/bazel/config/derived/rust_target.bzl
      rust_target_flags__select_args = {
@@ -167,7 +177,9 @@ When a `config()` branches on target OS or CPU variables (`current_os`,
          "//build/bazel/platforms:is_linux_arm64": ["--target", "aarch64-unknown-linux-gnu"],
      }
      ```
-     Then pass the dictionary to `select()` in `BUILD.bazel`:
+
+      Then pass the dictionary to `select()` in `BUILD.bazel`:
+
      ```python
      load("//build/bazel/config/derived:rust_target.bzl", "rust_target_flags__select_args")
 
@@ -179,16 +191,38 @@ When a `config()` branches on target OS or CPU variables (`current_os`,
      ```
 
 4.  **`compiler_config()` `linker_flags` Expansion**:
-   - In `//build/config/compiler_config.gni`, setting `linker_flags = [ ... ]`
-     adds `["-Wl," + ",".join(linker_flags)]` to `ldflags` and branches on `if
-     (is_fuchsia)` when populating `rustflags`:
-     - On Fuchsia (`is_fuchsia == true`): `["-Clink-arg=<flag>", ...]`
-     - On Host (`is_fuchsia == false`): `["-Clink-arg=-Wl,<flag1>,<flag2>",
-       ...]`
-   - If a `compiler_config()` has non-empty `linker_flags`, its `rustflags` can
-     either use `select({"@platforms//os:fuchsia": ..., "//conditions:default":
-     ...})` (or if `select()` is avoided in purely global default flags, wait
-     until platform-aware `select()` flags are enabled).
+    - In `//build/config/compiler_config.gni`, setting `linker_flags = [ ... ]`
+      adds `["-Wl," + ",".join(linker_flags)]` to `ldflags` and branches on `if
+      (is_fuchsia)` when populating `rustflags`:
+      - On Fuchsia (`is_fuchsia == true`): `["-Clink-arg=<flag>", ...]`
+      - On Host (`is_fuchsia == false`): `["-Clink-arg=-Wl,<flag1>,<flag2>",
+        ...]`
+    - If a `compiler_config()` has non-empty `linker_flags`, its `rustflags` can
+      either use `select({"@platforms//os:fuchsia": ..., "//conditions:default":
+      ...})` (or if `select()` is avoided in purely global default flags, wait
+      until platform-aware `select()` flags are enabled).
+
+5.  **Toolchain-Specific GN Variables (`optimize`, `debuginfo`, `dwarf_version`,
+    `compress_debuginfo`, `is_profile`)**:
+    - Exposed as Bazel `build_setting()` flags in
+      `//build/bazel/config/variables:<varname>` (populated by
+      `//build/bazel/config/bazel_args.gni`) with matching `config_setting()`
+      predicates in `//build/bazel/config/select/<varname>:<value>`.
+    - See `//build/bazel/config/BUILD_CONFIGURATION_VARIABLES.md` for details.
+
+6.  **GN Toolchain Variant Tags (`toolchain_variant.tags` and
+    `toolchain_variant.instrumented`)**:
+    - Exposed via `//build/bazel/config/toolchain_tags/<tag>:{true,false}`
+      (where `toolchain_variant.instrumented` is equivalent to the
+      `"instrumented"` tag:
+      `//build/bazel/config/toolchain_tags/instrumented:true`).
+    - For composite conditions (e.g. `toolchain_variant.instrumented ||
+      is_lto`), use `selects.config_setting_group(match_any = [...])` from
+      `@bazel_skylib//lib:selects.bzl`.
+    - If a required tag from `//build/toolchain/variant_tags.gni` is not yet
+      present under `//build/bazel/config/toolchain_tags/`, add it to
+      `DEFAULT_TAGS_LIST` in `//build/bazel/config/toolchain_tags/update.py` and
+      re-run the script.
 
 ---
 
@@ -197,21 +231,19 @@ When a `config()` branches on target OS or CPU variables (`current_os`,
 Some `config()` definitions depend on low-level GN / Ninja mechanics that have
 no direct Bazel equivalent and require a distinct Bazel-specific design:
 
-1.  **`toolchain_variant` and `toolchain_environment`**:
-   - Fields such as `toolchain_variant.is_pic_default` (e.g., in
-     `//build/config/linux:default-pie`), `toolchain_variant.tags`,
-     `toolchain_variant.instrumented`, or `toolchain_environment` (e.g., in
-     `//build/config/compiler.gni`'s computation of `optimize`) are low-level
-     details of how GN models build variants via separate toolchain instances.
-   - Do not attempt to expose `toolchain_variant` through
-     `gn_build_variables_for_bazel`; these require a dedicated Bazel
-     variant/mode mechanism.
+1.  **Other `toolchain_variant` fields and `toolchain_environment`**:
+    - Fields such as `toolchain_variant.is_pic_default` (e.g., in
+      `//build/config/linux:default-pie`) or `toolchain_environment` are
+      low-level details of how GN models companion `-shared` or environment
+      toolchains.
+    - Do not attempt to expose `toolchain_variant` through
+      `gn_build_variables_for_bazel`.
 2.  **GN / Ninja Output Directory Variables (`root_gen_dir`, `root_out_dir`,
     `root_build_dir`)**:
-   - Configs such as `//build/config:default_include_dirs` (`include_dirs =
-     ["//", root_gen_dir]`) or `//build/config/linux:sysroot`
-     (`rebase_path(sysroot, root_build_dir)`) depend on Ninja's output directory
-     layout and cannot be ported 1-to-1 to `build_flags()`.
+    - Configs such as `//build/config:default_include_dirs` (`include_dirs =
+      ["//", root_gen_dir]`) or `//build/config/linux:sysroot`
+      (`rebase_path(sysroot, root_build_dir)`) depend on Ninja's output
+      directory layout and cannot be ported 1-to-1 to `build_flags()`.
 
 ---
 
@@ -223,14 +255,16 @@ one of two patterns:
 ### Pattern A: Variable Defined in `declare_args()`
 
 1.  **Ensure the `declare_args()` block is in a `.gni` file**:
-   - `//build/bazel/BUILD.gn` cannot `import()` a `BUILD.gn` file. If the
-     variable is declared in a `BUILD.gn` file (e.g. `//build/config/BUILD.gn`),
-     move its declaration into a `.gni` file already imported by that `BUILD.gn`
-     file (such as `//build/config/compiler.gni` or `//build/rust/config.gni`).
+    - `//build/bazel/BUILD.gn` cannot `import()` a `BUILD.gn` file. If the
+      variable is declared in a `BUILD.gn` file (e.g.
+      `//build/config/BUILD.gn`), move its declaration into a `.gni` file
+      already imported by that `BUILD.gn` file (such as
+      `//build/config/compiler.gni` or `//build/rust/config.gni`).
 2.  **Export in `//build/bazel/BUILD.gn`**:
-   - Add an entry to `generated_file("gn_build_variables_for_bazel")` in
-     `//build/bazel/BUILD.gn` with `# LINT.IfChange` / `#
-     LINT.ThenChange(<gni_file>)`:
+    - Add an entry to `generated_file("gn_build_variables_for_bazel")` in
+      `//build/bazel/BUILD.gn` with `# LINT.IfChange` / `#
+      LINT.ThenChange(<gni_file>)`:
+
      ```gn
      # LINT.IfChange
      declaration = "//build/toolchain/ccache.gni"
@@ -246,13 +280,15 @@ one of two patterns:
 
      # LINT.ThenChange(//build/toolchain/ccache.gni)
      ```
-   - Supported `type` values: `"bool"`, `"string"`, `"string_or_false"` (maps
-     `false` to `""` and integers/strings to `"<value>"`), `"array_of_strings"`,
-     and `"path"`.
+
+    - Supported `type` values: `"bool"`, `"string"`, `"string_or_false"` (maps
+      `false` to `""` and integers/strings to `"<value>"`),
+      `"array_of_strings"`, and `"path"`.
 3.  **Load in `BUILD.bazel`**:
-   ```python
-   load("@fuchsia_build_info//:args.bzl", "use_ccache")
-   ```
+
+    ```python
+    load("@fuchsia_build_info//:args.bzl", "use_ccache")
+    ```
 
 ### Pattern B: Variable Derived from Other Global Variables
 
@@ -260,21 +296,24 @@ one of two patterns:
     `gn_build_variables_for_bazel` (Pattern A).
 2.  Create `//build/bazel/config/derived/<variable_name>.bzl` duplicating the GN
     logic, with bidirectional `LINT.IfChange` / `LINT.ThenChange` annotations:
-   ```python
-   load("@fuchsia_build_info//:args.bzl", "experimental_cxx_version")
 
-   # LINT.IfChange(fuchsia_cxx_version)
-   _default_cxx_version = 23
+    ```python
+    load("@fuchsia_build_info//:args.bzl", "experimental_cxx_version")
 
-   fuchsia_cxx_version = (
-       int(experimental_cxx_version) if experimental_cxx_version else _default_cxx_version
-   )
-   # LINT.ThenChange(//build/config/fuchsia_cxx_version.gni:fuchsia_cxx_version)
-   ```
+    # LINT.IfChange(fuchsia_cxx_version)
+    _default_cxx_version = 23
+
+    fuchsia_cxx_version = (
+        int(experimental_cxx_version) if experimental_cxx_version else _default_cxx_version
+    )
+    # LINT.ThenChange(//build/config/fuchsia_cxx_version.gni:fuchsia_cxx_version)
+    ```
+
 3.  Load in `BUILD.bazel`:
-   ```python
-   load("//build/bazel/config/derived:fuchsia_cxx_version.bzl", "fuchsia_cxx_version")
-   ```
+
+    ```python
+    load("//build/bazel/config/derived:fuchsia_cxx_version.bzl", "fuchsia_cxx_version")
+    ```
 
 ---
 
@@ -301,13 +340,17 @@ build_flags(
 ## 5. Step 4: Verification Workflow
 
 1.  **Format modified GN and Bazel files**:
-   ```bash
-   fx format-code --files=path/to/BUILD.bazel,path/to/BUILD.gn
-   ```
+
+    ```bash
+    fx format-code --files=path/to/BUILD.bazel,path/to/BUILD.gn
+    ```
+
 2.  **Run Command-Line Equivalence Verification**:
-   ```bash
-   fx build //build/beads:tests
-   ```
-   - Regenerates `@fuchsia_build_info//default_build_flags/BUILD.bazel` and
-     verifies that normalized compiler/linker command lines match between GN and
-     Bazel.
+
+    ```bash
+    fx build //build/beads:tests
+    ```
+
+    - Regenerates `@fuchsia_build_info//default_build_flags/BUILD.bazel` and
+      verifies that normalized compiler/linker command lines match between GN
+      and Bazel.
