@@ -96,6 +96,8 @@ pub enum BoardFeature {
     UfsPci,
     /// Universal Flash Storage over Platform Device support.
     UfsPdev,
+    /// USB Bus driver support.
+    UsbBus,
     /// USB Host mode support.
     UsbHost,
     /// USB Peripheral/Device mode support.
@@ -163,6 +165,7 @@ impl AsRef<str> for BoardFeature {
             Self::SuspendingToken => "fuchsia::suspending_token",
             Self::UfsPci => "fuchsia::ufs_pci",
             Self::UfsPdev => "fuchsia::ufs_pdev",
+            Self::UsbBus => "fuchsia::usb_bus",
             Self::UsbHost => "fuchsia::usb_host",
             Self::UsbPeripheralSupport => "fuchsia::usb_peripheral_support",
             Self::UtcStartAtStartup => "fuchsia::utc_start_at_startup",

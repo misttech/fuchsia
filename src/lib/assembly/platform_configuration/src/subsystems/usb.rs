@@ -35,7 +35,11 @@ impl DefineSubsystemConfiguration<(&UsbConfig, &PlatformStarnixConfig)> for UsbS
             builder.platform_bundle("xhci_driver")?;
         }
         if context.board_config.provides_feature(BoardFeature::UsbHost) {
+            builder.platform_bundle("usb_bus_driver")?;
             builder.platform_bundle("usb_host_drivers")?;
+        }
+        if context.board_config.provides_feature(BoardFeature::UsbBus) {
+            builder.platform_bundle("usb_bus_driver")?;
         }
         let enable_policy = usb.enable_policy.unwrap_or(
             matches!(
@@ -107,5 +111,83 @@ impl DefineSubsystemConfiguration<(&UsbConfig, &PlatformStarnixConfig)> for UsbS
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::subsystems::ConfigurationBuilderImpl;
+    use assembly_config_schema::board_config::BoardConfig;
+    use camino::Utf8Path;
+    use tempfile::tempdir;
+
+    fn setup_test_context<'a>(
+        board_config: &'a BoardConfig,
+        gendir_path: &'a Utf8Path,
+    ) -> ConfigurationContext<'a> {
+        ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config,
+            gendir: gendir_path.to_path_buf(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        }
+    }
+
+    #[test]
+    fn test_usb_features_usb_bus_and_xhci() {
+        let board_config = BoardConfig {
+            provided_features: vec![
+                BoardFeature::Xhci.as_ref().to_string(),
+                BoardFeature::UsbBus.as_ref().to_string(),
+            ],
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let context = setup_test_context(&board_config, gendir_path);
+        let usb_config = UsbConfig::default();
+        let starnix_config = PlatformStarnixConfig::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = UsbSubsystem::define_configuration(
+            &context,
+            &(&usb_config, &starnix_config),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+
+        let completed = builder.build();
+        assert!(completed.bundles.contains("xhci_driver"));
+        assert!(completed.bundles.contains("usb_bus_driver"));
+        assert!(!completed.bundles.contains("usb_host_drivers"));
+    }
+
+    #[test]
+    fn test_usb_host_feature_includes_usb_bus() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::UsbHost.as_ref().to_string()],
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let context = setup_test_context(&board_config, gendir_path);
+        let usb_config = UsbConfig::default();
+        let starnix_config = PlatformStarnixConfig::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = UsbSubsystem::define_configuration(
+            &context,
+            &(&usb_config, &starnix_config),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+
+        let completed = builder.build();
+        assert!(completed.bundles.contains("usb_bus_driver"));
+        assert!(completed.bundles.contains("usb_host_drivers"));
+        assert!(!completed.bundles.contains("xhci_driver"));
     }
 }

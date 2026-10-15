@@ -352,6 +352,12 @@ group("xhci_driver") {
       [ "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/xhci:package" ]
 }
 
+group("usb_bus_driver") {
+  deps = [
+    "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-bus:package",
+  ]
+}
+
 group("fake_battery_driver") {
   deps = [ "//bundles/assembly/bazel_inputs/src/power/testing/fake-battery:fake_battery" ]
 }

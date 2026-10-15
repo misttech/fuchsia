@@ -85,6 +85,7 @@ bringup_platform_aib_names = [
     "bus_pci_driver",
     "realtek_8211f_driver",
     "xhci_driver",
+    "usb_bus_driver",
     "sdhci_driver",
     "cqhci_driver",
 

@@ -496,11 +496,6 @@ assembly_input_bundle(
     drivers = [
         {
             "set": "bootfs",
-            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-bus:package",
-            "driver_components": ["meta/usb-bus.cm"],
-        },
-        {
-            "set": "bootfs",
             "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/usb:package",
             "driver_components": ["meta/bt-transport-usb.cm"],
         },
@@ -728,6 +723,19 @@ assembly_input_bundle(
             "set": "bootfs",
             "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/xhci:package",
             "driver_components": ["meta/xhci.cm"],
+        },
+    ],
+)
+
+# AIB for the usb-bus driver
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "usb_bus_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-bus:package",
+            "driver_components": ["meta/usb-bus.cm"],
         },
     ],
 )
