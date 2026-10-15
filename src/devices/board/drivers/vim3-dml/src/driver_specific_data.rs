@@ -10,14 +10,9 @@ use fidl_fuchsia_hardware_sdmmc;
 /// Maps child device names (defined in DML) to helper functions that construct and
 /// serialize their driver-specific metadata.
 pub static VIM3_DRIVER_METADATA: dml_config::parser::DriverSpecificMetadata = phf::phf_map! {
+    // TODO(https://fxbug.dev/573663675): Fix the nna metadata in DML.
     "nna-ff100000" => &[
         ("0", get_aml_nna_metadata),
-    ],
-    "pwm_a-regulator" => &[
-        ("fuchsia.hardware.vreg.VregMetadata", get_pwm_a_regulator_metadata),
-    ],
-    "pwm_a0_d-regulator" => &[
-        ("fuchsia.hardware.vreg.VregMetadata", get_pwm_a0_d_regulator_metadata),
     ],
     "usb-ff400000" => &[
         ("fuchsia.hardware.usb.dwc2.Metadata", get_dwc2_metadata),
@@ -57,28 +52,6 @@ fn get_aml_nna_metadata() -> anyhow::Result<Vec<u8>> {
     // A311D_NNA_SRAM_BASE
     let sram_base: u64 = 0xFF000000;
     Ok(sram_base.to_le_bytes().to_vec())
-}
-
-fn get_pwm_a_regulator_metadata() -> anyhow::Result<Vec<u8>> {
-    let metadata = fidl_fuchsia_hardware_vreg::VregMetadata {
-        name: Some("vreg-pwm-big".to_string()),
-        min_voltage_uv: Some(690000),
-        voltage_step_uv: Some(1000),
-        num_steps: Some(361),
-        ..Default::default()
-    };
-    fidl::persist(&metadata).context("Failed to serialize pwm_a regulator metadata")
-}
-
-fn get_pwm_a0_d_regulator_metadata() -> anyhow::Result<Vec<u8>> {
-    let metadata = fidl_fuchsia_hardware_vreg::VregMetadata {
-        name: Some("vreg-pwm-little".to_string()),
-        min_voltage_uv: Some(690000),
-        voltage_step_uv: Some(1000),
-        num_steps: Some(361),
-        ..Default::default()
-    };
-    fidl::persist(&metadata).context("Failed to serialize pwm_a0_d regulator metadata")
 }
 
 fn get_dwc2_metadata() -> anyhow::Result<Vec<u8>> {

@@ -4,6 +4,7 @@
 
 #include "src/devices/power/drivers/aml-pwm-regulator/aml-pwm-regulator.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -12,6 +13,7 @@
 #include <string>
 
 #include <bind/fuchsia/cpp/bind.h>
+#include <src/devices/power/drivers/aml-pwm-regulator/aml-pwm-regulator_parser.h>
 
 namespace aml_pwm_regulator {
 
@@ -161,12 +163,35 @@ zx::result<> AmlPwmRegulatorDriver::Start(fdf::DriverContext context) {
     return pdev_client.take_error();
   }
   fdf::PDev pdev{std::move(pdev_client.value())};
-  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_vreg::VregMetadata>();
-  if (metadata_result.is_error()) {
-    fdf::error("Failed to get metadata: {}", metadata_result);
-    return metadata_result.take_error();
+  fuchsia_hardware_vreg::VregMetadata metadata;
+  auto dict_result = pdev.GetFidlMetadata<fuchsia_driver_metadata::Dictionary>(
+      "fuchsia.hardware.vreg.VregMetadata");
+  if (dict_result.is_ok()) {
+    auto parsed = aml_pwm_regulator_metadata::Aml_pwm_regulatorMetadata::Parse(dict_result.value());
+    if (!parsed.has_value()) {
+      fdf::error("Failed to parse VregMetadata from Dictionary");
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    if (parsed->vreg_name.has_value()) {
+      metadata.name(*parsed->vreg_name);
+    }
+    if (parsed->min_voltage_uv.has_value()) {
+      metadata.min_voltage_uv(*parsed->min_voltage_uv);
+    }
+    if (parsed->voltage_step_uv.has_value()) {
+      metadata.voltage_step_uv(*parsed->voltage_step_uv);
+    }
+    if (parsed->num_steps.has_value()) {
+      metadata.num_steps(*parsed->num_steps);
+    }
+  } else {
+    zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_vreg::VregMetadata>();
+    if (metadata_result.is_error()) {
+      fdf::error("Failed to get metadata: {}", metadata_result);
+      return metadata_result.take_error();
+    }
+    metadata = std::move(metadata_result.value());
   }
-  const auto& metadata = metadata_result.value();
 
   // Validate
   if (!metadata.name().has_value()) {

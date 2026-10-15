@@ -12,6 +12,10 @@ fuchsia_driver_dml("aml-pwm-regulator-dml") {
   driver_name = "aml-pwm-regulator"
 }
 
+fuchsia_driver_dml_cpp_parser("aml-pwm-regulator-metadata") {
+  dml_label = ":aml-pwm-regulator-dml"
+}
+
 driver_bind_rules("aml-pwm-regulator-bind") {
   bind_output = "aml-pwm-regulator.bindbc"
   dml_label = ":aml-pwm-regulator-dml"
@@ -29,7 +33,11 @@ source_set("common") {
     "aml-pwm-regulator.cc",
     "aml-pwm-regulator.h",
   ]
-  deps = [ "//sdk/lib/driver/platform-device/cpp" ]
+  deps = [
+    ":aml-pwm-regulator-metadata",
+    "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
+    "//sdk/lib/driver/platform-device/cpp",
+  ]
   public_deps = [
     ":aml-pwm-regulator-bind",
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",

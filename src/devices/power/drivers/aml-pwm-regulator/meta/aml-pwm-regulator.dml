@@ -13,6 +13,18 @@
     },
     capabilities: [
         { service: "fuchsia.hardware.vreg.Service" },
+        {
+            driver_config: "fuchsia.hardware.vreg.VregMetadata",
+            properties: {
+                vreg_name: {
+                    type: "string",
+                    max_size: 64,
+                },
+                min_voltage_uv: { type: "uint32" },
+                voltage_step_uv: { type: "uint32" },
+                num_steps: { type: "uint32" },
+            },
+        },
     ],
     use: [
         {

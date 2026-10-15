@@ -91,6 +91,16 @@
             },
         },
         {
+            name: "vreg-pwm-big",
+            from: "#self",
+            to: "#pwm_a-regulator",
+            driver_config: "fuchsia.hardware.vreg.VregMetadata",
+            vreg_name: "vreg-pwm-big",
+            min_voltage_uv: 690000,
+            voltage_step_uv: 1000,
+            num_steps: 361,
+        },
+        {
             name: "pwm",
             service: "fuchsia.hardware.pwm.Service",
             from: "#pwm-ffd1b000",
@@ -99,6 +109,16 @@
                 channel: 9,
                 period_ns: 1250,
             },
+        },
+        {
+            name: "vreg-pwm-little",
+            from: "#self",
+            to: "#pwm_a0_d-regulator",
+            driver_config: "fuchsia.hardware.vreg.VregMetadata",
+            vreg_name: "vreg-pwm-little",
+            min_voltage_uv: 690000,
+            voltage_step_uv: 1000,
+            num_steps: 361,
         },
         {
             name: "pin-states-0",
