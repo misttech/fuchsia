@@ -42,6 +42,7 @@ EXCLUDED_GLOBAL_VIS_PREFIXES = (
     "build/bazel2gn/",
     "build/images/",
     "build/config/rust/lints/",
+    "third_party/rust_crates/",
 )
 
 candidate_files = set()
@@ -288,7 +289,7 @@ for fpath in sorted(matched_files):
         with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
             raw = f.read()
         no_comments = re.sub(r"#[^\n]*", "", raw)
-        stripped = re.sub(r"visibility\s*\+?=\s*\[[^\]]*\]", "", no_comments, flags=re.DOTALL)
+        stripped = re.sub(r"(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]", "", no_comments, flags=re.DOTALL)
         file_cache[fpath] = (no_comments, stripped)
     except Exception:
         pass

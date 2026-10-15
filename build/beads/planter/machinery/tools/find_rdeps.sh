@@ -216,7 +216,7 @@ for fpath in sorted(set(files)):
     except Exception:
         continue
     no_comments = re.sub(r"#[^\n]*", "", content)
-    stripped = re.sub(r"visibility\s*\+?=\s*\[[^\]]*\]", "", no_comments, flags=re.DOTALL)
+    stripped = re.sub(r"(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]", "", no_comments, flags=re.DOTALL)
 
     rel_sub = None
     if target_pkg.startswith(pkg + "/"):

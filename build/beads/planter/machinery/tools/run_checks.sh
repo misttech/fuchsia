@@ -284,10 +284,10 @@ if list_only:
 enabled = [s for s in specs if s["enabled"]]
 disabled = [s for s in specs if not s["enabled"]]
 if only:
-    known = {s["name"] for s in specs}
+    known = {s["name"] for s in specs} | {"review_diff"}
     unknown = [n for n in only if n not in known]
     if unknown:
-        usage_error(f"unknown check(s): {', '.join(unknown)}; checks: {', '.join(s['name'] for s in specs)}")
+        usage_error(f"unknown check(s): {', '.join(unknown)}; checks: {', '.join(s['name'] for s in specs)}, review_diff")
     wanted = set(only)
     enabled = [s for s in enabled if s["name"] in wanted]
     disabled = [s for s in disabled if s["name"] in wanted]
@@ -560,6 +560,12 @@ def commit_msg_only_since_upload():
     if not uploaded_commit or not workdir:
         return False
     try:
+        head_sha = subprocess.check_output(
+            ["git", "-C", workdir, "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        if not head_sha or head_sha == uploaded_commit:
+            return False
         up_tree = subprocess.check_output(
             ["git", "-C", workdir, "rev-parse", f"{uploaded_commit}^{{tree}}"],
             stderr=subprocess.DEVNULL, text=True,
@@ -582,11 +588,56 @@ def commit_msg_only_since_upload():
                 stderr=subprocess.DEVNULL, text=True,
             ).splitlines() if u.strip()
         ]
-        if any(any(u == d or u.startswith(d + "/") for d in target_dirs) for u in untracked):
+        if untracked:
             return False
         return True
     except Exception:
         return False
+
+
+def find_planter_bin():
+    import shutil
+    p = shutil.which("planter")
+    if p:
+        return p
+    cand = os.path.expanduser("~/.local/bin/planter")
+    if os.path.isfile(cand) and os.access(cand, os.X_OK):
+        return cand
+    return None
+
+
+def run_review_diff(existing_findings):
+    planter_bin = find_planter_bin()
+    if not planter_bin or not workdir:
+        return None
+    env = dict(os.environ)
+    env.update(
+        {
+            "PLANTER_WORKDIR": workdir,
+            "PLANTER_TARGET_DIRS": " ".join(target_dirs),
+            "PLANTER_CHANGE_BASE": change_base,
+        }
+    )
+    out, _, _ = execute(
+        [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
+        workdir,
+        env,
+        "review_diff",
+    )
+    findings, parsed_ok = parse_findings(out.strip())
+    if not parsed_ok:
+        return []
+    seen = {(f["category"], f["file"], f["line"], f["message"]) for f in existing_findings}
+    results = []
+    for f in findings:
+        f["source"] = "review_diff"
+        f["severity"] = normalize_severity(f["severity"])
+        key = (f["category"], f["file"], f["line"], f["message"])
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(f)
+    return results
 
 
 COMMIT_MSG_CHECKS = {"confidentiality_check", "cq_reachability", "commit_message_format", "build_verification"}
@@ -619,6 +670,12 @@ try:
         findings = run_check(spec)
         rows.append((spec, findings, time.monotonic() - started))
         all_findings.extend(findings)
+    if not commit_msg_only and (not only or "review_diff" in only):
+        started = time.monotonic()
+        diff_findings = run_review_diff(all_findings)
+        if diff_findings is not None:
+            rows.append(({"name": "review_diff", "enabled": True}, diff_findings, time.monotonic() - started))
+            all_findings.extend(diff_findings)
 except KeyboardInterrupt:
     log("interrupted")
     sys.exit(130)

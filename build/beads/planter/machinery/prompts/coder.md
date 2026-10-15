@@ -298,13 +298,13 @@ fuchsia and host). Do NOT run full product builds by hand as well. From `$PLANTE
    `fx bazel build --config=fuchsia_platform //<dir>:all` and runs with `fx test <package_name>`
    only when a device or emulator is available. `build_verification` runs the exported host tests.
 3. As your last step, run `run_checks.sh` without flags once after your final edit; it must exit
-   0 (unless a check finding is a false positive or contradicts `coder.md`/playbooks/Bazel rules,
-   in which case leave the intended code in place and report the finding in `disputed_findings`).
-   Planter reuses that passing result when the working tree is unchanged, so do not edit
-   anything after it. If you encountered any conflict or outdated guidance between `coder.md`,
-   playbooks, helper tools, or check remediations during your turn (even if you worked around it
-   so `run_checks.sh` exited 0), report it in `disputed_findings` (`source`, `category`, `file`,
-   `reason`) so Planter surfaces it and updates the machinery.
+   0 (unless a blocking check finding is STILL failing and is a false positive or contradicts
+   `coder.md`/playbooks/Bazel rules, in which case leave the intended code in place and report the
+   failing finding in `disputed_findings`). Do NOT list check findings that already pass or
+   non-blocking INFO notes in `disputed_findings`. Planter reuses that passing result when the
+   working tree is unchanged, so do not edit anything after it. Only if `coder.md`, a playbook, a
+   helper tool, or a check remediation gave contradictory instructions that forced a workaround,
+   report it with `"category": "machinery_conflict"` in `disputed_findings`.
 4. Record in `test_footers` (and any commit `Test:` footer) ONLY commands you ran that exited 0,
    at most 3 lines (`commit_message_format` reports the expected footer form).
 5. Commit messages and `summary` must be ASCII-only with no internal paths/domains/emails/names,

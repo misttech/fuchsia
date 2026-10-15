@@ -111,6 +111,7 @@ EXCLUDED_GLOBAL_DIRS = (
     "build/bazel2gn",
     "build/images",
     "build/config/rust/lints",
+    "third_party/rust_crates",
 )
 
 # bazel2gn still translates these rules into GN, so in a dual-build BUILD.bazel they need

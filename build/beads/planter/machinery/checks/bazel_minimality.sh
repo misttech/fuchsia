@@ -176,16 +176,34 @@ allowed_gni_files, allowed_lint_pkgs = referenced_shared_configs()
 
 
 def references_in_scope_package_at_base(norm: str) -> bool:
-    """True when `norm` at `change_base` referenced an in-scope migrated package (e.g. `@gn_targets//.../<pkg>` or `//<pkg>`)."""
+    """True when `norm` (or its package's BUILD.gn at `change_base`) references an in-scope migrated package."""
     in_scope = list(target_dirs) + sorted(dependency_dirs)
     if not in_scope:
         return False
-    base_txt = "\n".join(git_lines(["show", f"{change_base}:{norm}"]))
-    if not base_txt:
+    pkg_dir = os.path.dirname(norm).strip("/")
+    if pkg_dir.endswith("/meta"):
+        pkg_dir = os.path.dirname(pkg_dir).strip("/")
+    candidates = [norm]
+    if pkg_dir:
+        for alt in (os.path.join(pkg_dir, "BUILD.gn"), os.path.join(pkg_dir, "BUILD.bazel")):
+            if alt not in candidates:
+                candidates.append(alt)
+    texts = []
+    for cand in candidates:
+        base_txt = "\n".join(git_lines(["show", f"{change_base}:{cand}"]))
+        if base_txt:
+            texts.append(base_txt)
+        try:
+            with open(os.path.join(workdir, cand), encoding="utf-8") as f:
+                texts.append(f.read())
+        except OSError:
+            pass
+    if not texts:
         return False
+    combined = "\n".join(texts)
     for td in in_scope:
         pat = r'(?:@gn_targets//(?:[^\s"\':]+/)?|//)' + re.escape(td) + r'(?=[:"/\s\'])'
-        if re.search(pat, base_txt):
+        if re.search(pat, combined):
             return True
     return False
 
@@ -202,7 +220,7 @@ def is_allowed_scope(path: str) -> bool:
             return True
     if is_shared_bazel_rule_file(norm):
         return references_in_scope_package_at_base(norm)
-    if (os.path.basename(norm) in ("BUILD.bazel", "BUILD", "BUILD.gn") or norm.endswith((".bzl", ".gni"))) and references_in_scope_package_at_base(norm):
+    if (os.path.basename(norm) in ("BUILD.bazel", "BUILD", "BUILD.gn") or norm.endswith((".bzl", ".gni", ".cml"))) and references_in_scope_package_at_base(norm):
         return True
     if norm in allowed_gni_files:
         return True
