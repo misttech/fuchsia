@@ -62,6 +62,16 @@ impl EventSignal {
         std::mem::swap(&mut self.set_next, &mut self.clear_next);
         Ok(())
     }
+
+    // Returns the signal mask combining the next expected signal bit and `shutdown_sig`.
+    pub(crate) fn current_mask(&self, shutdown_sig: zx::Signals) -> zx::Signals {
+        self.set_next | shutdown_sig
+    }
+
+    // Toggles the active and alternate signal bits after the current signal has been observed.
+    pub(crate) fn advance(&mut self) {
+        std::mem::swap(&mut self.set_next, &mut self.clear_next);
+    }
 }
 
 #[cfg(test)]

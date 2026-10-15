@@ -34,6 +34,7 @@ rustc_library(
         "//sdk/rust/zx",
         "//src/lib/fuchsia-async",
         "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
         "//src/storage/lib/ptr_slice",
         "//third_party/rust_crates/vendor:zerocopy",
     ],

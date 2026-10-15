@@ -121,48 +121,60 @@ impl DeliveryQueueProvider for TestVmoProvider {
     }
 }
 
+const NUM_DELIVERY_THREADS: usize = 2;
+
 pub struct DeliveryQueueProcessor {
     delivery_vmo: zx::Vmo,
-    delivery_thread: Option<std::thread::JoinHandle<()>>,
+    delivery_threads: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl DeliveryQueueProcessor {
     pub fn spawn(
-        mut receiver: vmo_fifo::Receiver<RawDeliveryCommand>,
+        receiver: vmo_fifo::Receiver<RawDeliveryCommand>,
         provider: Arc<dyn DeliveryQueueProvider>,
         delivery_vmo: zx::Vmo,
     ) -> Result<Self, Error> {
         let delivery_vmo_clone = delivery_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+        let receiver = Arc::new(receiver);
+        let mut delivery_threads = Vec::with_capacity(NUM_DELIVERY_THREADS);
 
-        let thread = std::thread::spawn(move || {
-            while let Ok(msg) = receiver.peek() {
-                let raw_cmd = RawDeliveryCommand {
-                    opcode: msg.opcode,
-                    read_alignment: msg.read_alignment,
-                    key: msg.key,
-                    target_offset: msg.target_offset,
-                    length: msg.length,
-                    offset: msg.offset,
-                };
-
-                match DeliveryCommand::try_from(raw_cmd) {
-                    Ok(cmd) => {
+        for _ in 0..NUM_DELIVERY_THREADS {
+            let receiver = receiver.clone();
+            let provider = provider.clone();
+            let thread = std::thread::spawn(move || {
+                while let Ok((msg, maybe_cmd)) = receiver.claim_with(|msg| {
+                    match DeliveryCommand::try_from(**msg) {
+                        // Process `RegisterBlob` before releasing the claim lock so that any
+                        // subsequent `Data` commands for this blob claimed by other worker threads
+                        // observe the initialized Merkle verifier.
+                        Ok(cmd @ DeliveryCommand::RegisterBlob { .. }) => {
+                            if let Err(e) = Self::handle_delivery(cmd, msg, &*provider) {
+                                log::warn!("Failed to handle delivery command: {:?}", e);
+                            }
+                            None
+                        }
+                        Ok(cmd) => Some(cmd),
+                        Err(e) => {
+                            log::warn!("Invalid delivery command opcode: {:?}", e);
+                            None
+                        }
+                    }
+                }) {
+                    if let Some(cmd) = maybe_cmd {
                         if let Err(e) = Self::handle_delivery(cmd, &msg, &*provider) {
                             log::warn!("Failed to handle delivery command: {:?}", e);
                         }
                     }
-                    Err(e) => {
-                        log::warn!("Invalid delivery command opcode: {:?}", e);
+                    if let Err(e) = msg.pop() {
+                        log::warn!("Failed to pop delivery message: {:?}", e);
+                        break;
                     }
                 }
-                if let Err(e) = msg.pop() {
-                    log::warn!("Failed to pop delivery message: {:?}", e);
-                    break;
-                }
-            }
-        });
+            });
+            delivery_threads.push(thread);
+        }
 
-        Ok(Self { delivery_vmo: delivery_vmo_clone, delivery_thread: Some(thread) })
+        Ok(Self { delivery_vmo: delivery_vmo_clone, delivery_threads })
     }
 
     pub fn delivery_vmo(&self) -> &zx::Vmo {
@@ -215,7 +227,7 @@ impl DeliveryQueueProcessor {
 impl Drop for DeliveryQueueProcessor {
     fn drop(&mut self) {
         let _ = self.delivery_vmo.signal(zx::Signals::empty(), vmo_fifo::SIG_SHUTDOWN);
-        if let Some(thread) = self.delivery_thread.take() {
+        for thread in self.delivery_threads.drain(..) {
             let _ = thread.join();
         }
     }

@@ -7,6 +7,7 @@ pub use ring_allocator::AllocationToken;
 use ring_allocator::RingAllocator;
 
 mod signal;
+use fuchsia_sync::Mutex;
 pub use signal::SIG_SHUTDOWN;
 use signal::{
     EventSignal, SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1, SIG_SPACE_AVAILABLE_0,
@@ -714,14 +715,52 @@ impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> Drop for AsyncPayloadBuf
     }
 }
 
+const PORT_KEY_SIGNAL: u64 = 1;
+const PORT_KEY_WAKE: u64 = 2;
+
+struct ReceiverState {
+    claim_index: u64,
+    committed_read_index: u64,
+    last_claim_write_index: u64,
+    completed_slots: Box<[bool]>,
+    data_available: EventSignal,
+    space_available: EventSignal,
+    wait_async_armed: bool,
+    shutting_down: bool,
+    sleeping_workers: usize,
+    active_workers: usize,
+}
+
+impl ReceiverState {
+    // Creates a new `ReceiverState` with the given slot `capacity` and starting `initial_index`.
+    fn new(capacity: u32, initial_index: u64) -> Self {
+        Self {
+            claim_index: initial_index,
+            committed_read_index: initial_index,
+            last_claim_write_index: initial_index,
+            completed_slots: vec![false; capacity as usize].into_boxed_slice(),
+            data_available: EventSignal::new(SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1),
+            space_available: EventSignal::new(SIG_SPACE_AVAILABLE_0, SIG_SPACE_AVAILABLE_1),
+            wait_async_armed: false,
+            shutting_down: false,
+            sleeping_workers: 0,
+            active_workers: 0,
+        }
+    }
+}
+
 /// A receiver endpoint for a VMO-backed FIFO queue.
 pub struct Receiver<T> {
     inner: SharedQueue<T>,
-    cached_read_index: u64,
+    port: zx::Port,
+    state: Mutex<ReceiverState>,
 }
 
 pub struct Message<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> {
-    receiver: &'a mut Receiver<T>,
+    receiver: &'a Receiver<T>,
+    slot_index: u64,
+    claimed: bool,
+    popped: bool,
     item: T,
 }
 
@@ -748,44 +787,45 @@ impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> Message<'a, T> {
         self.receiver.payload_slice(vmo_offset, len)
     }
 
+    /// Returns a raw mutable slice pointer to the specified payload region in the shared VMO.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `vmo_offset + len` exceeds the bounds of the VMO.
+    pub fn payload_mut_slice(&mut self, vmo_offset: u32, len: u32) -> MutPtrByteSlice<'_> {
+        // SAFETY: Each `Message` represents an exclusive claim over its payload range until
+        // `pop()` retires the slot.
+        unsafe { self.receiver.payload_mut_slice_unchecked(vmo_offset, len) }
+    }
+
     /// Commit the read, freeing the slot.
-    pub fn pop(self) -> Result<(), zx::Status> {
-        // Note that the `WAITER` flag in `read_index` may have been set by the writer if the queue
-        // became full, in which case the `compare_exchange_weak` will fail and we will retry. This
-        // case doesn't happen often, however, so we optimistically use `cached_read_index` to
-        // reduce the number of atomic loads for the common path.
-        let mut curr_read_head = State(self.receiver.cached_read_index);
-        loop {
-            let next_read_head = curr_read_head.clear_waiter_and_increment();
-            match self.receiver.inner.read_head_atomic().compare_exchange_weak(
-                curr_read_head.0,
-                next_read_head.0,
-                // `Ordering::Release`: ensure the reader has finished reading the old data from the
-                // VMO before the writer sees this new index and overwrites the slot.
-                Ordering::Release,
-                // `Ordering::Relaxed`: swap failed (most likely due to WAITER flag being modified -
-                // the reader didn't publish anything), so no memory barriers are needed before
-                // retrying.
-                Ordering::Relaxed,
-            ) {
-                Ok(prev_read_head) => {
-                    self.receiver.cached_read_index = next_read_head.index();
-                    // Wake the writer if they fell asleep waiting for a free slot.
-                    if State(prev_read_head).has_waiter() {
-                        let vmo = self.receiver.inner.mapping.vmo();
-                        self.receiver.inner.space_available.signal(vmo)?;
-                    }
-                    return Ok(());
-                }
-                Err(actual) => curr_read_head = State(actual),
-            }
+    pub fn pop(mut self) -> Result<(), zx::Status> {
+        self.pop_internal()
+    }
+
+    // Marks this message as popped and retires `self.slot_index` in the receiver.
+    fn pop_internal(&mut self) -> Result<(), zx::Status> {
+        if self.popped {
+            return Ok(());
+        }
+        self.popped = true;
+        self.receiver.retire_slot(self.slot_index, self.claimed)
+    }
+}
+
+impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> Drop for Message<'a, T> {
+    fn drop(&mut self) {
+        if self.claimed && !self.popped {
+            let _ = self.pop_internal();
         }
     }
 }
 
 impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
     pub fn new(vmo: zx::Vmo, capacity: u32) -> Result<Self, zx::Status> {
-        Ok(Self { inner: SharedQueue::new(vmo, capacity)?, cached_read_index: 0 })
+        let inner = SharedQueue::new(vmo, capacity)?;
+        let port = zx::Port::create();
+        Ok(Self { inner, port, state: Mutex::new(ReceiverState::new(capacity, 0)) })
     }
 
     // Creates a Receiver that initializes its cached index from the provided VMO. This is solely
@@ -793,8 +833,9 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
     #[cfg(test)]
     fn new_from_populated_vmo(vmo: zx::Vmo, capacity: u32) -> Result<Self, zx::Status> {
         let inner = SharedQueue::new(vmo, capacity)?;
-        let cached_read_index = inner.read_index();
-        Ok(Self { inner, cached_read_index })
+        let initial_index = inner.read_index();
+        let port = zx::Port::create();
+        Ok(Self { inner, port, state: Mutex::new(ReceiverState::new(capacity, initial_index)) })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -819,57 +860,218 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
 
     /// Peek at the next message without incrementing the read index.
     pub fn peek(&mut self) -> Result<Message<'_, T>, zx::Status> {
-        let read_idx = self.cached_read_index;
+        self.next_internal(false, |_| ()).map(|(msg, ())| msg)
+    }
 
-        // `Ordering::Acquire`: guarantees the writer has finished writing the new data to the
-        // VMO before the reader attempts to read it.
-        let mut curr_write_head = self.inner.load_write_head(Ordering::Acquire);
+    /// Claims the next message from the queue for concurrent processing across a pool of threads.
+    pub fn claim(&self) -> Result<Message<'_, T>, zx::Status> {
+        self.next_internal(true, |_| ()).map(|(msg, ())| msg)
+    }
 
+    /// Claims the next message from the queue and invokes `on_claim` before releasing the queue's
+    /// claim lock, allowing ordered setup steps (such as blob registration) to complete before
+    /// subsequent messages are claimed by other worker threads.
+    pub fn claim_with<F, R>(&self, on_claim: F) -> Result<(Message<'_, T>, R), zx::Status>
+    where
+        F: FnOnce(&mut Message<'_, T>) -> R,
+    {
+        self.next_internal(true, on_claim)
+    }
+
+    /// Notifies the receiver that the current worker thread (after popping its message) is about to
+    /// perform an operation that may block waiting for a subsequent message on this queue. If all
+    /// other workers are sleeping and unread messages were already queued before the waiter flag
+    /// was armed, wakes a sleeping worker to process them.
+    pub fn will_maybe_reenter(&self) {
+        let state = self.state.lock();
+        if state.active_workers == 0
+            && state.sleeping_workers > 0
+            && state.claim_index != state.last_claim_write_index
+        {
+            let _ = self.port.queue(&zx::Packet::from_user_packet(
+                PORT_KEY_WAKE,
+                0,
+                zx::UserPacket::from_u8_array([0; 32]),
+            ));
+        }
+    }
+
+    // Waits for the next available message in the FIFO, optionally advancing `claim_index` and
+    // running `on_claim` while holding `self.state`.
+    fn next_internal<F, R>(
+        &self,
+        claim: bool,
+        on_claim: F,
+    ) -> Result<(Message<'_, T>, R), zx::Status>
+    where
+        F: FnOnce(&mut Message<'_, T>) -> R,
+    {
+        let mut state = self.state.lock();
         loop {
-            if read_idx != curr_write_head.index() {
-                let slot_ptr = self.inner.get_slot_ptr(read_idx);
+            // `Ordering::Acquire`: guarantees the writer has finished writing the new data to the
+            // VMO before the reader attempts to read it.
+            let mut curr_write_head = self.inner.load_write_head(Ordering::Acquire);
+            if state.claim_index != curr_write_head.index() {
+                let slot_index = state.claim_index;
+                let slot_ptr = self.inner.get_slot_ptr(slot_index);
                 // SAFETY: `slot_ptr` enforces VMO bounds. The `Acquire` ordering guarantees the
                 // sender has fully completed writing before we read. Furthermore, `T: FromBytes`
-                // ensures any arbitrary bits provided by Fxfs safely map to a valid Rust struct.
-                let msg = unsafe { std::ptr::read(slot_ptr) };
-                return Ok(Message { receiver: self, item: msg });
+                // ensures any arbitrary bits provided by the peer safely map to a valid struct.
+                let item = unsafe { std::ptr::read(slot_ptr) };
+                if claim {
+                    state.claim_index = (state.claim_index + 1) & State::INDEX_MASK;
+                    state.active_workers += 1;
+                }
+
+                let mut msg =
+                    Message { receiver: self, slot_index, claimed: claim, popped: false, item };
+                let res = on_claim(&mut msg);
+
+                // If another worker thread is still asleep, re-arm `HAS_WAITER` and `wait_async`
+                // so that if more items are pushed while this thread is busy processing `msg`,
+                // the sender will signal the VMO and wake the sleeping worker.
+                if claim {
+                    while state.sleeping_workers > 0
+                        && !state.wait_async_armed
+                        && !state.shutting_down
+                    {
+                        let asleep_write_head = curr_write_head.with_waiter();
+                        match self.inner.write_head_atomic().compare_exchange_weak(
+                            curr_write_head.0,
+                            asleep_write_head.0,
+                            Ordering::Relaxed,
+                            Ordering::Acquire,
+                        ) {
+                            Ok(_) => {
+                                let vmo = self.inner.mapping.vmo();
+                                let mask = state.data_available.current_mask(SIG_SHUTDOWN);
+                                vmo.wait_async(
+                                    &self.port,
+                                    PORT_KEY_SIGNAL,
+                                    mask,
+                                    zx::WaitAsyncOpts::empty(),
+                                )?;
+                                state.wait_async_armed = true;
+                            }
+                            Err(actual) => curr_write_head = State(actual),
+                        }
+                    }
+                    state.last_claim_write_index = curr_write_head.index();
+                }
+
+                return Ok((msg, res));
+            }
+
+            if state.shutting_down {
+                return Err(zx::Status::CANCELED);
             }
 
             // The queue is empty. Inform the writer that we are going to sleep and waiting for a
             // signal when new items are pushed.
-            let asleep_write_head = curr_write_head.with_waiter();
-            match self.inner.write_head_atomic().compare_exchange_weak(
-                curr_write_head.0,
-                asleep_write_head.0,
-                // `Ordering::Relaxed`: We are just publishing a sleep signal. There is no
-                // accompanying VMO data payload that requires a memory barrier to be made visible
-                // to the writer.
-                Ordering::Relaxed,
-                // `Ordering::Acquire`: exchange failed (writer likely pushed an item) - the updated
-                // state is loaded here. This Acquire barrier ensures the writer fully completed
-                // writing the pushed item before we perform any operations.
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    // Successfully marked reader as asleep. Sleep until the writer signals that new
-                    // items have been pushed.
-                    let vmo = self.inner.mapping.vmo();
-                    match self.inner.data_available.wait(vmo, SIG_SHUTDOWN) {
-                        Ok(()) => curr_write_head = self.inner.load_write_head(Ordering::Acquire),
-                        Err(zx::Status::CANCELED) => {
-                            // The Sender has shut down. Check one last time if they pushed items
-                            // just before dying. If the queue is truly empty, return CANCELED.
-                            curr_write_head = self.inner.load_write_head(Ordering::Acquire);
-                            if read_idx == curr_write_head.index() {
-                                return Err(zx::Status::CANCELED);
-                            }
+            if !state.wait_async_armed {
+                let asleep_write_head = curr_write_head.with_waiter();
+                if self
+                    .inner
+                    .write_head_atomic()
+                    .compare_exchange_weak(
+                        curr_write_head.0,
+                        asleep_write_head.0,
+                        // `Ordering::Relaxed`: We are just publishing a sleep signal.
+                        Ordering::Relaxed,
+                        // `Ordering::Acquire`: exchange failed (writer likely pushed an item).
+                        Ordering::Acquire,
+                    )
+                    .is_err()
+                {
+                    continue;
+                }
+
+                let vmo = self.inner.mapping.vmo();
+                let mask = state.data_available.current_mask(SIG_SHUTDOWN);
+                vmo.wait_async(&self.port, PORT_KEY_SIGNAL, mask, zx::WaitAsyncOpts::empty())?;
+                state.wait_async_armed = true;
+            }
+
+            state.sleeping_workers += 1;
+            drop(state);
+
+            let wait_res = self.port.wait(zx::MonotonicInstant::INFINITE);
+            state = self.state.lock();
+            state.sleeping_workers -= 1;
+            let packet = wait_res?;
+
+            if packet.key() == PORT_KEY_SIGNAL {
+                state.wait_async_armed = false;
+                if let zx::PacketContents::SignalOne(signals) = packet.contents() {
+                    let observed = signals.observed();
+                    if observed.contains(state.data_available.current_mask(zx::Signals::empty())) {
+                        state.data_available.advance();
+                    }
+                    if observed.contains(SIG_SHUTDOWN) && !state.shutting_down {
+                        state.shutting_down = true;
+                        for _ in 0..state.sleeping_workers {
+                            let _ = self.port.queue(&zx::Packet::from_user_packet(
+                                PORT_KEY_WAKE,
+                                0,
+                                zx::UserPacket::from_u8_array([0; 32]),
+                            ));
                         }
-                        Err(e) => return Err(e),
                     }
                 }
-                Err(actual) => curr_write_head = State(actual),
             }
         }
+    }
+
+    // Records `slot_index` as completed and advances the shared `read_head` across all contiguous
+    // completed slots from `committed_read_index`.
+    fn retire_slot(&self, slot_index: u64, claimed: bool) -> Result<(), zx::Status> {
+        let mut state = self.state.lock();
+        if claimed {
+            state.active_workers -= 1;
+        } else if state.claim_index == slot_index {
+            state.claim_index = (state.claim_index + 1) & State::INDEX_MASK;
+        }
+        let cap = self.inner.capacity() as u64;
+        state.completed_slots[(slot_index % cap) as usize] = true;
+        let mut advanced = false;
+        loop {
+            let committed_slot = (state.committed_read_index % cap) as usize;
+            if !state.completed_slots[committed_slot] {
+                break;
+            }
+            state.completed_slots[committed_slot] = false;
+            state.committed_read_index = (state.committed_read_index + 1) & State::INDEX_MASK;
+            advanced = true;
+        }
+
+        if advanced {
+            let target_read_index = state.committed_read_index;
+            let mut curr_read_head = self.inner.load_read_head(Ordering::Relaxed);
+            loop {
+                let next_read_head = State(target_read_index);
+                match self.inner.read_head_atomic().compare_exchange_weak(
+                    curr_read_head.0,
+                    next_read_head.0,
+                    // `Ordering::Release`: ensure the reader has finished reading the old data from
+                    // the VMO before the writer sees this new index and overwrites the slot.
+                    Ordering::Release,
+                    // `Ordering::Relaxed`: swap failed (most likely due to WAITER flag being
+                    // modified).
+                    Ordering::Relaxed,
+                ) {
+                    Ok(prev_read_head) => {
+                        // Wake the writer if they fell asleep waiting for a free slot.
+                        if State(prev_read_head).has_waiter() {
+                            let vmo = self.inner.mapping.vmo();
+                            state.space_available.signal(vmo)?;
+                        }
+                        break;
+                    }
+                    Err(actual) => curr_read_head = State(actual),
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Returns a raw slice pointer to the specified payload region.
@@ -895,6 +1097,35 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
             PtrByteSlice::new(slice)
         }
     }
+
+    /// Returns a raw mutable slice pointer to the specified payload region.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `vmo_offset + len` exceeds the bounds of the VMO.
+    pub fn payload_mut_slice(&mut self, vmo_offset: u32, len: u32) -> MutPtrByteSlice<'_> {
+        // SAFETY: `&mut self` guarantees exclusive access on the receiver side.
+        unsafe { self.payload_mut_slice_unchecked(vmo_offset, len) }
+    }
+
+    // Returns a raw mutable slice pointer to `[vmo_offset .. vmo_offset + len)` in the payload
+    // region. The caller must ensure exclusive access to that payload subrange.
+    unsafe fn payload_mut_slice_unchecked(&self, vmo_offset: u32, len: u32) -> MutPtrByteSlice<'_> {
+        // SAFETY:
+        // 1. `self.inner.addr()` is a valid base pointer to a mapped VMO memory space active
+        //    for the entire lifetime of this instance.
+        // 2. The explicit assertion guarantees that `offset + len` physically fits within
+        //    the bounded VMO boundaries, preventing out-of-bounds pointer derivation.
+        // 3. Returning a `MutPtrByteSlice` wrapper instead of a native `&mut [u8]` avoids violating
+        //    Rust's strict aliasing rules for shared memory, thereby preventing Undefined Behavior.
+        unsafe {
+            let offset = self.inner.payload_region_offset() + vmo_offset as usize;
+            assert!(offset + len as usize <= self.inner.vmo_size(), "Payload out of bounds");
+            let dest_ptr = (self.inner.addr() + offset) as *mut u8;
+            let slice = std::ptr::slice_from_raw_parts_mut(dest_ptr, len as usize);
+            MutPtrByteSlice::new(slice)
+        }
+    }
 }
 
 impl<T> Receiver<T> {
@@ -912,6 +1143,7 @@ impl<T> Drop for Receiver<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
 
@@ -1475,5 +1707,60 @@ mod tests {
         // more than the capacity.
         let result = sender.reserve_payload((page_size + 10) as usize).await;
         assert_eq!(result.err(), Some(zx::Status::NO_MEMORY));
+    }
+
+    #[fuchsia::test]
+    fn test_concurrent_claim_out_of_order_retire() {
+        let vmo = zx::Vmo::create(65536).expect("VMO creation failed");
+        let vmo_dup =
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("VMO duplicate_handle failed");
+
+        let mut sender = SyncSender::<TestMessage>::new(vmo, 8, 8).expect("Sender creation failed");
+        let receiver =
+            Arc::new(Receiver::<TestMessage>::new(vmo_dup, 8).expect("Receiver creation failed"));
+
+        sender.push(TestMessage { val: 10 }).expect("push 1 failed");
+        sender.push(TestMessage { val: 20 }).expect("push 2 failed");
+
+        let msg1 = receiver.claim().expect("claim 1 failed");
+        let msg2 = receiver.claim().expect("claim 2 failed");
+        assert_eq!(msg1.val, 10);
+        assert_eq!(msg2.val, 20);
+        assert_eq!(receiver.index(), 0);
+
+        // Retire slot 1 before slot 0: committed read_index must remain 0 until slot 0 finishes.
+        msg2.pop().expect("pop 2 failed");
+        assert_eq!(receiver.index(), 0);
+
+        // Retiring slot 0 advances committed read_index to 2.
+        msg1.pop().expect("pop 1 failed");
+        assert_eq!(receiver.index(), 2);
+
+        // Verify a pool of 2 worker threads can concurrently drain items and shut down cleanly.
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let mut threads = Vec::new();
+        for _ in 0..2 {
+            let rx = receiver.clone();
+            let seen = seen.clone();
+            threads.push(std::thread::spawn(move || {
+                while let Ok(msg) = rx.claim() {
+                    seen.lock().push(msg.val);
+                    msg.pop().expect("pop failed");
+                }
+            }));
+        }
+
+        for i in 0..100 {
+            sender.push(TestMessage { val: i }).expect("push failed");
+        }
+        drop(sender);
+
+        for t in threads {
+            t.join().expect("worker panicked");
+        }
+
+        let mut results = seen.lock().clone();
+        results.sort_unstable();
+        assert_eq!(results, (0..100).collect::<Vec<u32>>());
     }
 }
