@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import json
+import os
 import subprocess
 import sys
 from typing import Any
@@ -72,6 +73,7 @@ def run(args: Any, pool: WorktreePool) -> None:
 
     symlink_path = pool.worktrees_dir / task_name
     if symlink_path != wt.path:
+        pool.worktrees_dir.mkdir(parents=True, exist_ok=True)
         if symlink_path.is_symlink() or symlink_path.exists():
             symlink_path.unlink()
         symlink_path.symlink_to(wt.name)
@@ -86,6 +88,7 @@ def run(args: Any, pool: WorktreePool) -> None:
             )
         )
     else:
-        print(
-            f"Successfully created worktree '.jiri_root/worktrees/{task_name}'"
-        )
+        # Relative to the main checkout, e.g. `.jiri_root/worktrees/<task>`
+        # by default or `../fuchsia-worktrees/<task>` for a sibling pool.
+        display_path = os.path.relpath(symlink_path, pool.fuchsia_dir)
+        print(f"Successfully created worktree '{display_path}'")

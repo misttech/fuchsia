@@ -206,10 +206,11 @@ layers:
 `WorktreePool` (`worktree_pool.py`) resolves the primary Fuchsia checkout root
 (`FUCHSIA_DIR`) and reads `.jiri_root/worktrees_registry` to discover all
 provisioned physical worktrees. When you invoke `fx worktree` from inside a
-worktree, `WorktreePool` automatically traverses upward out of
-`.jiri_root/worktrees/<slot>` to locate the main checkout. When provisioning a
-new slot without an explicit name, `WorktreePool` generates a random
-`<adjective>-<noun>` identifier (such as `warm-lagoon` or `amber-badger`).
+worktree, `WorktreePool` follows the `<worktree><parent_root>` entry that jiri
+writes to the worktree's `.jiri_root/config` to locate the main checkout. When
+provisioning a new slot without an explicit name, `WorktreePool` generates a
+random `<adjective>-<noun>` identifier (such as `warm-lagoon` or
+`amber-badger`).
 
 A `Worktree` instance (`worktree.py`) represents each physical checkout rooted
 at `.jiri_root/worktrees/<slot-name>`. `Worktree` manages two filesystem
@@ -258,6 +259,21 @@ backups under `.jiri_root/`. The following directory tree shows how
                     ├── .ninja_log # Used for last-build elapsed time
                     └── last_ninja_build_success.stamp
 ```
+
+The pool directory defaults to `.jiri_root/worktrees/`. To keep the pool
+elsewhere, for example so that file watchers such as Watchman treat each
+worktree as its own project root instead of ignoring it under `.jiri_root/`,
+configure it in the main checkout with jiri. A relative path is relative to the
+checkout root:
+
+```bash
+jiri init -worktrees-dir=../fuchsia-worktrees
+```
+
+`WorktreePool` reads the setting from `<worktrees_dir>` in the main checkout's
+`.jiri_root/config`. Only slots directly inside the configured directory belong
+to the pool, so remove existing slots with `fx worktree pool remove` before
+changing it.
 
 ### Build Directory and GN Arguments Lifecycle
 

@@ -5,6 +5,7 @@
 import os
 import random
 import secrets
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from utils import run_jiri
@@ -91,6 +92,39 @@ NOUNS = (
     "valley",
 )
 
+# Pool directory used when `.jiri_root/config` doesn't set `worktrees_dir`,
+# relative to the main checkout's root. Matches jiri's default.
+DEFAULT_WORKTREES_DIR = ".jiri_root/worktrees"
+
+
+def _read_jiri_config(checkout: Path) -> ET.Element | None:
+    """Parses `<checkout>/.jiri_root/config`, or returns None if unreadable."""
+    try:
+        return ET.parse(checkout / ".jiri_root" / "config").getroot()
+    except (OSError, ET.ParseError):
+        return None
+
+
+def _find_main_checkout(checkout: Path) -> Path:
+    """Returns the main checkout that `checkout` is a worktree of.
+
+    Jiri records a worktree's parent checkout as `<worktree><parent_root>` in
+    the worktree's `.jiri_root/config`. A checkout without one is a main
+    checkout, so it's returned as is.
+    """
+    seen = set()
+    # `seen` guards against a corrupt config whose parents form a cycle.
+    while checkout not in seen:
+        seen.add(checkout)
+        config = _read_jiri_config(checkout)
+        parent = None
+        if config is not None:
+            parent = config.findtext("worktree/parent_root")
+        if not parent:
+            break
+        checkout = Path(parent).resolve()
+    return checkout
+
 
 class WorktreePool:
     def __init__(self, fuchsia_dir: str | None = None):
@@ -101,17 +135,20 @@ class WorktreePool:
                 Path(__file__).resolve().parent.parent.parent.parent
             )
 
-        self.fuchsia_dir = Path(fuchsia_dir).resolve()
-
-        if (
-            self.fuchsia_dir.parent.name == "worktrees"
-            and self.fuchsia_dir.parent.parent.name == ".jiri_root"
-        ):
-            self.fuchsia_dir = self.fuchsia_dir.parent.parent.parent
+        # When run from inside a worktree, operate on the pool of the main
+        # checkout it belongs to.
+        self.fuchsia_dir = _find_main_checkout(Path(fuchsia_dir).resolve())
 
         self.jiri_root = self.fuchsia_dir / ".jiri_root"
         self.registry_file = self.jiri_root / "worktrees_registry"
-        self.worktrees_dir = self.jiri_root / "worktrees"
+
+        # Configured with `jiri init -worktrees-dir=<path>`. A relative path
+        # is relative to the main checkout's root.
+        config = _read_jiri_config(self.fuchsia_dir)
+        worktrees_dir = DEFAULT_WORKTREES_DIR
+        if config is not None:
+            worktrees_dir = config.findtext("worktrees_dir") or worktrees_dir
+        self.worktrees_dir = (self.fuchsia_dir / worktrees_dir).resolve()
 
     def get_worktrees(self) -> list[Worktree]:
         if not self.registry_file.exists():
@@ -122,6 +159,14 @@ class WorktreePool:
                 line = line.strip()
                 if line:
                     path = Path(line)
+                    # worktrees_dir only decides where fx worktree provisions
+                    # slots. The jiri registry lists every worktree of the
+                    # checkout, including ones created elsewhere (e.g. with
+                    # `jiri worktree add <path>`, which takes any path) and
+                    # slots left over from before worktrees_dir changed;
+                    # those aren't pool slots.
+                    if path.resolve().parent != self.worktrees_dir:
+                        continue
                     worktrees.append(
                         Worktree(path.name, path, self.fuchsia_dir)
                     )

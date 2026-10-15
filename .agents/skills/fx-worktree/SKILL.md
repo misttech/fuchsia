@@ -24,8 +24,9 @@ AI agents and developers interact with `fx worktree` using conventions matching
 # Claim a worktree slot from the pool for your task (automatically syncs)
 fx worktree add <task-name>
 
-# Work inside the allocated directory alias
-cd .jiri_root/worktrees/<task-name>
+# Work inside the allocated directory alias (.jiri_root/worktrees/<task-name>
+# unless the pool directory is configured elsewhere)
+cd "$(fx worktree locate <task-name>)"
 
 # When work is submitted or complete, return the checkout to the pool
 fx worktree remove <task-name>
@@ -79,7 +80,9 @@ fx worktree remove <task-name>
 ### Pool Capacity Management (`fx worktree pool`)
 
 These administrative commands manage physical checkouts on disk under
-`.jiri_root/worktrees/`.
+`.jiri_root/worktrees/`. Users can move the pool elsewhere with
+`jiri init -worktrees-dir=<path>` (relative to the checkout root, e.g.
+`../fuchsia-worktrees`); paths below assume the default.
 
 - **List pool inventory**:
 
