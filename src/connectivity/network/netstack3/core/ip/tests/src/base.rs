@@ -10,7 +10,7 @@ use core::num::{NonZeroU8, NonZeroU16, NonZeroUsize};
 use core::time::Duration;
 
 use ip_test_macro::ip_test;
-use net_declare::{net_ip_v4, net_ip_v6};
+use net_declare::{net_ip_v4, net_ip_v6, net_mac};
 use net_types::ethernet::Mac;
 use net_types::ip::{
     AddrSubnet, GenericOverIp, Ip, IpAddr, IpAddress, IpInvariant, IpVersion, Ipv4, Ipv4Addr, Ipv6,
@@ -38,11 +38,11 @@ use packet_formats::ip::{
 use packet_formats::ipv4::options::Ipv4Option;
 use packet_formats::ipv4::{Ipv4PacketBuilder, Ipv4PacketBuilderWithOptions};
 use packet_formats::ipv6::ext_hdrs::{
-    ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData,
+    ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, IPV6_FRAGMENT_EXT_HDR_LEN,
 };
 use packet_formats::ipv6::{
-    Ipv6PacketBuilder, Ipv6PacketBuilderBeforeFragment, Ipv6PacketBuilderWithFragmentHeader,
-    Ipv6PacketBuilderWithHbhOptions,
+    IPV6_FIXED_HDR_LEN, Ipv6Packet, Ipv6PacketBuilder, Ipv6PacketBuilderBeforeFragment,
+    Ipv6PacketBuilderWithFragmentHeader, Ipv6PacketBuilderWithHbhOptions,
 };
 use packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame;
 use packet_formats::udp::UdpPacketBuilder;
@@ -651,6 +651,156 @@ fn test_ip_packet_reassembly_not_needed<I: TestIpExt + IpExt>() {
 
     // Make sure the packet got dispatched.
     IpCounterExpectations::<I>::expect_dispatched(1).assert_counters(&ctx.core_ctx(), &device);
+}
+
+/// Builds an IPv6 atomic fragment (Fragment Offset and M flag both zero) whose
+/// Fragmentable Part consists of an 8-byte Destination Options extension header
+/// containing the 6-byte `dest_opts_option`, with no following header.
+fn ipv6_atomic_fragment_with_dest_opts(dest_opts_option: [u8; 6]) -> Buf<Vec<u8>> {
+    // Destination Options header: Next Header = No Next Header, Hdr Ext Len =
+    // 0, followed by the provided option.
+    let body: Vec<u8> =
+        [Ipv6Proto::NoNextHeader.into(), 0].into_iter().chain(dest_opts_option).collect();
+
+    let builder = Ipv6PacketBuilderWithFragmentHeader::new(
+        Ipv6PacketBuilder::new(
+            TEST_ADDRS_V6.remote_ip,
+            TEST_ADDRS_V6.local_ip,
+            64,
+            Ipv6Proto::Other(Ipv6ExtHdrType::DestinationOptions.into()),
+        ),
+        FragmentOffset::ZERO,
+        /* more_fragments */ false,
+        /* identification */ 5,
+    );
+    wrap_body(builder, body)
+}
+
+// Test that an atomic fragment whose Fragmentable Part begins with an
+// extension header is processed as a fully reassembled packet and
+// dispatched to the upper layer.
+#[test]
+fn test_ipv6_atomic_fragment_with_dest_opts() {
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(TEST_ADDRS_V6).build();
+    let device: DeviceId<_> = device_ids[0].clone().into();
+
+    // PadN option with 4 bytes of padding.
+    const PADN: [u8; 6] = [1, 4, 0, 0, 0, 0];
+    ctx.test_api().receive_ip_packet::<Ipv6, _>(
+        &device,
+        Some(LocalFrameDestination::Individual { local: () }),
+        ipv6_atomic_fragment_with_dest_opts(PADN),
+    );
+
+    // Make sure the packet got dispatched.
+    IpCounterExpectations::<Ipv6>::expect_dispatched(1).assert_counters(&ctx.core_ctx(), &device);
+}
+
+// Test that the options in an extension header following the Fragment
+// header of an atomic fragment are processed.
+#[test]
+fn test_ipv6_atomic_fragment_with_dest_opts_unrecognized_option() {
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(TEST_ADDRS_V6).build();
+    let device: DeviceId<_> = device_ids[0].clone().into();
+
+    // Unrecognized option type with action = discard & send ICMP.
+    // According to RFC 8200:
+    //
+    //   The Option Type identifiers are internally encoded such that their
+    //   highest-order 2 bits specify the action that must be taken if the
+    //   processing IPv6 node does not recognize the Option Type:
+    //
+    //      10 - discard the packet and, regardless of whether or not the
+    //      packet's Destination Address was a multicast address, send an
+    //      ICMP Parameter Problem, Code 2, message to the packet's
+    //      Source Address, pointing to the unrecognized Option Type.
+    let unrecognized_option = [0b1000_0000, 4, 0, 0, 0, 0];
+    ctx.test_api().receive_ip_packet::<Ipv6, _>(
+        &device,
+        Some(LocalFrameDestination::Individual { local: () }),
+        ipv6_atomic_fragment_with_dest_opts(unrecognized_option),
+    );
+
+    let frames = ctx.bindings_ctx.take_ethernet_frames();
+    let (_dev, frame) = assert_matches!(&frames[..], [frame] => frame);
+    // The option type is located after the IPv6 fixed header, the Fragment
+    // header and the Destination Options' Next Header and Hdr Ext Len fields.
+    const DEST_OPTS_NEXT_HEADER_AND_HDR_EXT_LEN: usize = 2;
+    let option_type_offset =
+        IPV6_FIXED_HDR_LEN + IPV6_FRAGMENT_EXT_HDR_LEN + DEST_OPTS_NEXT_HEADER_AND_HDR_EXT_LEN;
+    verify_icmp_for_unrecognized_ext_hdr_option(
+        Icmpv6ParameterProblemCode::UnrecognizedIpv6Option,
+        u32::try_from(option_type_offset).unwrap(),
+        &frame[..],
+    );
+}
+
+// Test that a forwarded atomic fragment has its Fragment header removed,
+// and that a Packet Too Big error is sent if the original atomic fragment
+// (including its Fragment header) does not fit in the outbound MTU.
+#[test_case(0; "fits")]
+#[test_case(4; "fits only without fragment header")]
+fn test_ipv6_forward_atomic_fragment(bytes_over_mtu: usize) {
+    const MTU: usize = 1280;
+
+    let fake_config = Ipv6::TEST_ADDRS;
+    let mut dispatcher_builder = FakeCtxBuilder::with_addrs(fake_config.clone());
+    let extra_ip = UnicastAddr::new(Ipv6::get_other_ip_address(7).get()).unwrap();
+    let extra_mac = UnicastAddr::new(net_mac!("00:11:22:33:44:55")).unwrap();
+    dispatcher_builder.add_ndp_table_entry(0, extra_ip, extra_mac);
+    dispatcher_builder.add_ndp_table_entry(
+        0,
+        extra_mac.to_ipv6_link_local().addr().get(),
+        extra_mac,
+    );
+    let (mut ctx, device_ids) = dispatcher_builder.build();
+
+    let device: DeviceId<_> = device_ids[0].clone().into();
+    ctx.test_api().set_unicast_forwarding_enabled::<Ipv6>(&device, true);
+    let frame_dst = LocalFrameDestination::Individual { local: () };
+
+    // An atomic fragment from some node destined to a remote on this
+    // network, arriving locally.
+    let atomic_fragment_len = MTU + bytes_over_mtu;
+    let body_len = atomic_fragment_len - IPV6_FIXED_HDR_LEN - IPV6_FRAGMENT_EXT_HDR_LEN;
+    let mut rng = new_rng(70812476915813);
+    let body: Vec<u8> = core::iter::repeat_with(|| rng.random()).take(body_len).collect();
+    let builder = Ipv6PacketBuilderWithFragmentHeader::new(
+        Ipv6PacketBuilder::new(extra_ip, fake_config.remote_ip, 64, Ipv6Proto::NoNextHeader),
+        FragmentOffset::ZERO,
+        /* more_fragments */ false,
+        /* identification */ 5,
+    );
+    let buf = wrap_body(builder, body.clone());
+    assert_eq!(buf.as_ref().len(), atomic_fragment_len);
+    ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), buf);
+
+    let Ctx { core_ctx, bindings_ctx } = &mut ctx;
+    let frames = bindings_ctx.take_ethernet_frames();
+    let (_dev, frame) = assert_matches!(&frames[..], [frame] => frame);
+    if bytes_over_mtu == 0 {
+        assert_eq!(core_ctx.common_icmp::<Ipv6>().tx_counters.packet_too_big.get(), 0);
+        let mut buffer = Buf::new(&frame[..], ..);
+        let _frame =
+            buffer.parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::NoCheck).unwrap();
+        let packet = buffer.parse::<Ipv6Packet<_>>().unwrap();
+        assert_eq!(packet.src_ip(), extra_ip.get());
+        assert_eq!(packet.dst_ip(), fake_config.remote_ip.get());
+        assert_eq!(packet.proto(), Ipv6Proto::NoNextHeader);
+        assert_eq!(packet.iter_extension_hdrs().count(), 0);
+        assert_eq!(packet.body(), &body[..]);
+    } else {
+        assert_eq!(core_ctx.common_icmp::<Ipv6>().tx_counters.packet_too_big.get(), 1);
+        let (_, _, _, _, _, message, code) =
+            parse_icmp_packet_in_ip_packet_in_ethernet_frame::<Ipv6, _, Icmpv6PacketTooBig, _>(
+                &frame[..],
+                EthernetFrameLengthCheck::NoCheck,
+                |_| {},
+            )
+            .unwrap();
+        assert_eq!(code, IcmpZeroCode);
+        assert_eq!(message, Icmpv6PacketTooBig::new(u32::try_from(MTU).unwrap()));
+    }
 }
 
 #[ip_test(I)]
