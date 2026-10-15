@@ -337,6 +337,23 @@ generated_file("gn_build_variables_for_bazel") {
   # LINT.ThenChange(//build/config/fuchsia/get_platform_version.py)
   # END platform_version.gni
 
+  # LINT.IfChange(current_build_target_api_level)
+  declaration = "//build/config/fuchsia/target_api_level.gni"
+  import(declaration)
+
+  # GN supports both an integer and a string. Ensure the level is a string as
+  # required by Bazel.
+  contents += [
+    {
+      name = "current_build_target_api_level"
+      value = "${current_build_target_api_level}"
+      type = "string"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//build/config/fuchsia/target_api_level.gni)
+
   # LINT.IfChange
   declaration = "//build/testing/config.gni"
   import(declaration)

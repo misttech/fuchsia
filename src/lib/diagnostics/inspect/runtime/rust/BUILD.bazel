@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_build_info//:args.bzl", "current_build_target_api_level")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# NOTE: `lib_test` and `inspect-runtime-tests` remain in BUILD.gn above the
+# sentinel because `inspect_test_component` uses
+# `fuchsia_structured_config_rust_lib` and `fuchsia_structured_config_values`,
+# which do not have Bazel rules yet, and `lib_test` depends on
+# `//src/lib/diagnostics/reader/rust`, `//src/lib/fuchsia-component-test`, and
+# `//src/sys/lib/component-events`.
+# TODO(https://fxbug.dev/42161852): Remove this dep during post-migration cleanup.
+#
+# Restrict visibility to local targets. Clients looking to use the
+# inspect_runtime library should depend on `:rust` or, in rare circumstances,
+# `:unchecked_includes`.
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/lib.rs",
+        "src/service.rs",
+    ],
+    crate_name = "inspect_runtime",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component/client",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:pin-project",
+    ] + ([
+        # `thiserror` is only used by `EscrowError`, which is compiled out when
+        # IDK sub-builds target a numbered API level.
+        "//third_party/rust_crates/vendor:thiserror",
+    ] if current_build_target_api_level == "PLATFORM" or current_build_target_api_level == "HEAD" else []),
+)
