@@ -1,0 +1,34 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:fidl-contrib_test` and `:fidl_contrib_rust_lib_tests`) stay
+# in BUILD.gn because they use RealmBuilder via GN-only
+# `//src/lib/fuchsia-component-test` (which packages
+# `//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component`).
+rustc_library(
+    name = "fidl-contrib",
+    srcs = [
+        "src/lib.rs",
+        "src/protocol_connector.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/location/emergency:__pkg__",
+        "//src/power/power-manager:__pkg__",
+        "//src/sys/pkg/bin:__subpackages__",
+        "//src/sys/time/httpsdate_time_source:__pkg__",
+        "//src/sys/time/timekeeper:__pkg__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
