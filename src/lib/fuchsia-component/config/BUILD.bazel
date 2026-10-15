@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "config",
+    srcs = ["src/lib.rs"],
+    crate_name = "fuchsia_component_config",
+    edition = "2024",
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
