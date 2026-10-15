@@ -447,7 +447,7 @@ TEST(RebootReasonItemTest, BootconfigUnknownReason) {
 }
 
 TEST(RebootReasonItemTest, PmicBrownoutReasons) {
-  constexpr std::array<std::string_view, 9> kBrownoutCmdlines = {
+  constexpr std::array<std::string_view, 10> kBrownoutCmdlines = {
       "androidboot.bootreason=reboot,uvlo,pmic,main",
       "androidboot.bootreason=reboot,uvlo,pmic,sub",
       "androidboot.bootreason=reboot,uvlo,pmic,if",
@@ -457,6 +457,7 @@ TEST(RebootReasonItemTest, PmicBrownoutReasons) {
       "androidboot.bootreason=reboot,ocp3,pmic,if,usb",
       "androidboot.bootreason=reboot,sys_ldo_ok,pmic,main",
       "androidboot.bootreason=reboot,master_dc,reset",
+      "androidboot.bootreason=reboot,auto_fship,pmic,if",
   };
 
   std::array<std::byte, 512> image_buffer;

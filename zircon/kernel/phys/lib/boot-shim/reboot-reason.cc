@@ -57,6 +57,8 @@ constexpr auto kRebootReasons = std::to_array<RebootReasonMap>({
     {.prefix = "reboot,sys_ldo_ok,pmic", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
     {.prefix = "reboot,smpl_timeout,pmic", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
     {.prefix = "reboot,master_dc,reset", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
+    // The PMIC cut power and entered ship mode because the battery was depleted.
+    {.prefix = "reboot,auto_fship,pmic", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
     {.prefix = "reboot,longkey", .value = ZBI_HW_REBOOT_REASON_USER_HARD_RESET},
 });
 

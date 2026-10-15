@@ -92,6 +92,7 @@ fn is_specific_bootloader_bootreason(reason: &str) -> bool {
         "reboot,sys_ldo_ok",
         "reboot,smpl_timeout",
         "reboot,longkey",
+        "reboot,auto_fship,pmic",
     ];
     SPECIFIC_PREFIXES.iter().any(|prefix| reason.starts_with(prefix))
 }
@@ -222,6 +223,7 @@ mod tests {
             "reboot,sys_ldo_ok,pmic,main",
             "reboot,smpl_timeout,pmic,main",
             "reboot,longkey,s2",
+            "reboot,auto_fship,pmic,if",
         ] {
             assert!(
                 is_specific_bootloader_bootreason(specific),
