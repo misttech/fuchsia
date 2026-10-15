@@ -136,9 +136,50 @@ using PsciCpuSuspendResult = zx::result<CpuPoweredDown>;
 // prepared to handle (typically with a retry).
 PsciCpuSuspendResult psci_cpu_suspend(uint32_t power_state);
 
+// Enters a PSCI SYSTEM_SUSPEND state.
+//
+// Prior to calling, all other CPUs must be powered off, interrupts must be
+// disabled, preemption must be disabled, and the caller must be running on the
+// boot CPU.
+//
+// The calling thread must be a kernel-only thread.  Because this routine saves
+// only the minimum required register state, it is an error to call this
+// function on a thread that has a "user half" (ThreadDispatcher).
+//
+// Only the calling CPU's register state is saved and restored (as for
+// psci_cpu_suspend).  Any system-level state which may be lost while the system
+// is suspended (e.g. interrupt controller distributor state, or peripheral
+// state) is the caller's responsibility.
+//
+// Returns ZX_OK if the call succeeded.  Note that this does not necessarily
+// mean that the system actually suspended; PSCI implementations may return
+// success without suspending (e.g. Trusted Firmware-A does so when an interrupt
+// is pending).
+//
+// Returns ZX_ERR_NOT_SUPPORTED if SYSTEM_SUSPEND is not supported on this
+// platform.
+//
+// Returns ZX_ERR_INVALID_ARGS if the parameters were rejected by PSCI.
+//
+// Returns ZX_ERR_ACCESS_DENIED if the request was denied by PSCI.  Note that
+// some PSCI implementations (e.g. Trusted Firmware-A) return PSCI_DENIED, not
+// PSCI_ALREADY_ON, if another CPU is still powered on.
+//
+// Returns ZX_ERR_BAD_STATE if PSCI reported that another CPU was still powered
+// on (PSCI_ALREADY_ON).
+//
+// Panics if PSCI reports any other error (e.g. PSCI_INVALID_ADDRESS, which
+// would indicate a kernel bug).
+//
+// TODO(https://fxbug.dev/568438295): Determine whether GIC distributor state
+// must be saved and restored by the caller on platforms which lose it during
+// SYSTEM_SUSPEND.
+zx_status_t psci_system_suspend();
+
 // Holds register state to be saved/restored across a suspend/resume cycle.
 //
-// Must be kept in sync with |psci_do_suspend| and |psci_do_resume|.
+// Must be kept in sync with |psci_do_suspend|, |psci_do_system_suspend|, and
+// |psci_do_resume|.
 struct psci_cpu_resume_context {
   uint64_t regs[2 * 14]{};
 };
@@ -165,6 +206,9 @@ bool psci_is_set_suspend_mode_supported();
 // Returns true iff PSCI version is 1.0 or better, and CPU_SUSPEND is supported,
 // and we have valid ZBI-supplied power_state configuration.
 bool psci_is_cpu_suspend_supported();
+
+// Returns true iff PSCI version is 1.0 or better and SYSTEM_SUSPEND is supported.
+bool psci_is_system_suspend_supported();
 
 #endif  // !__ASSEMBLER__
 

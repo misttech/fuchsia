@@ -23,6 +23,7 @@
 namespace {
 
 bool psci_set_suspend_mode_supported = false;
+bool psci_system_suspend_supported = false;
 
 // The number of PSCI CPU_SUSPEND calls that completed successfully and resulted in a powered down
 // state.
@@ -37,6 +38,23 @@ KCOUNTER(counter_psci_cpu_suspend_invalid_parameters, "psci.cpu_suspend.invalid_
 
 // The number of PSCI CPU_SUSPEND calls that failed with PSCI_DENIED.
 KCOUNTER(counter_psci_cpu_suspend_denied, "psci.cpu_suspend.psci_denied")
+
+// The number of PSCI SYSTEM_SUSPEND calls that completed successfully and resulted in a powered
+// down state.
+KCOUNTER(counter_psci_system_suspend_powered_down, "psci.system_suspend.ok.powered_down")
+
+// The number of PSCI SYSTEM_SUSPEND calls that completed successfully, but where state was retained
+// (i.e. did not reach a powered down state for whatever reason).
+KCOUNTER(counter_psci_system_suspend_retained, "psci.system_suspend.ok.retained")
+
+// The number of PSCI SYSTEM_SUSPEND calls that failed with PSCI_INVALID_PARAMETERS.
+KCOUNTER(counter_psci_system_suspend_invalid_parameters, "psci.system_suspend.invalid_parameters")
+
+// The number of PSCI SYSTEM_SUSPEND calls that failed with PSCI_DENIED.
+KCOUNTER(counter_psci_system_suspend_denied, "psci.system_suspend.psci_denied")
+
+// The number of PSCI SYSTEM_SUSPEND calls that failed with PSCI_ALREADY_ON.
+KCOUNTER(counter_psci_system_suspend_already_on, "psci.system_suspend.already_on")
 
 uint64_t shutdown_args[3] = {0, 0, 0};
 uint64_t reboot_args[3] = {0, 0, 0};
@@ -213,6 +231,15 @@ void parse_cpu_suspend_power_states(ktl::span<const zbi_dcfg_arm_psci_cpu_suspen
 // Implemented in assembly.
 extern "C" int64_t psci_do_suspend(psci_call_proc psci_call, uint32_t power_state, paddr_t entry,
                                    psci_cpu_resume_context* context);
+
+// Like |psci_do_suspend|, but issues PSCI SYSTEM_SUSPEND (entry, context)
+// rather than CPU_SUSPEND.  The return value is interpreted the same way: if it
+// is greater than zero, the system did in fact suspend and the calling CPU
+// resumed execution at |entry| before returning to the caller.
+//
+// Implemented in assembly.
+extern "C" int64_t psci_do_system_suspend(psci_call_proc psci_call, paddr_t entry,
+                                          psci_cpu_resume_context* context);
 extern "C" zx_status_t psci_do_resume(psci_cpu_resume_context* context) __NO_RETURN;
 
 zx_status_t psci_system_off() {
@@ -293,6 +320,52 @@ PsciCpuSuspendResult psci_cpu_suspend(uint32_t power_state) {
   };
 }
 
+zx_status_t psci_system_suspend() {
+  LTRACE_ENTRY;
+
+  DEBUG_ASSERT(arch_ints_disabled());
+
+  if (!psci_is_system_suspend_supported()) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  const paddr_t entry_pa = KernelPhysicalAddressOf<arm64_secondary_resume_start>();
+  psci_cpu_resume_context context{};
+
+  LTRACEF("cpu %u, psci_call_routine 0x%" PRIx64 ", entry 0x%" PRIx64 ", context %p\n",
+          arch_curr_cpu_num(), reinterpret_cast<uintptr_t>(do_psci_call), entry_pa, &context);
+  const int64_t result = psci_do_system_suspend(do_psci_call, entry_pa, &context);
+
+  if (result > 0) {
+    // We took the "long way" and restored CPU context from a powerdown state.
+    kcounter_add(counter_psci_system_suspend_powered_down, 1);
+    return ZX_OK;
+  }
+
+  switch (result) {
+    case PSCI_SUCCESS:
+      kcounter_add(counter_psci_system_suspend_retained, 1);
+      return ZX_OK;
+    case PSCI_INVALID_PARAMETERS:
+      kcounter_add(counter_psci_system_suspend_invalid_parameters, 1);
+      return ZX_ERR_INVALID_ARGS;
+    case PSCI_DENIED:
+      kcounter_add(counter_psci_system_suspend_denied, 1);
+      return ZX_ERR_ACCESS_DENIED;
+    case PSCI_ALREADY_ON:
+      kcounter_add(counter_psci_system_suspend_already_on, 1);
+      return ZX_ERR_BAD_STATE;
+    default:
+      // Any other result (e.g. PSCI_INVALID_ADDRESS, if |entry_pa| were bad)
+      // indicates a kernel bug, so deliberately panic rather than return an
+      // error.
+      panic("cpu %u, psci_call_routine 0x%" PRIx64 ", entry 0x%" PRIx64
+            ", context %p, result %" PRId64 "\n",
+            arch_curr_cpu_num(), reinterpret_cast<uintptr_t>(do_psci_call), entry_pa, &context,
+            result);
+  }
+}
+
 int64_t psci_get_affinity_info(uint64_t mpid) {
   return static_cast<int64_t>(do_psci_call(PSCI64_AFFINITY_INFO, mpid, 0, 0));
 }
@@ -357,6 +430,8 @@ bool psci_is_set_suspend_mode_supported() { return psci_set_suspend_mode_support
 
 bool psci_is_cpu_suspend_supported() { return gPowerStates.target_cpu.has_value(); }
 
+bool psci_is_system_suspend_supported() { return psci_system_suspend_supported; }
+
 void PsciInit(const zbi_dcfg_arm_psci_driver_t& config,
               ktl::span<const zbi_dcfg_arm_psci_cpu_suspend_state_t> psci_cpu_suspend_config) {
   do_psci_call = (config.use_hvc && arm64_get_boot_el() < 2) ? psci_hvc_call : psci_smc_call;
@@ -404,7 +479,8 @@ void PsciInit(const zbi_dcfg_arm_psci_driver_t& config,
     probe_feature(PSCI64_CPU_FREEZE, "CPU_FREEZE");
     probe_feature(PSCI64_CPU_DEFAULT_SUSPEND, "CPU_DEFAULT_SUSPEND");
     probe_feature(PSCI64_NODE_HW_STATE, "NODE_HW_STATE");
-    probe_feature(PSCI64_SYSTEM_SUSPEND, "SYSTEM_SUSPEND");
+    psci_system_suspend_supported =
+        probe_feature(PSCI64_SYSTEM_SUSPEND, "SYSTEM_SUSPEND").has_value();
     psci_set_suspend_mode_supported =
         probe_feature(PSCI64_PSCI_SET_SUSPEND_MODE, "PSCI_SET_SUSPEND_MODE").has_value();
     probe_feature(PSCI64_PSCI_STAT_RESIDENCY, "PSCI_STAT_RESIDENCY");

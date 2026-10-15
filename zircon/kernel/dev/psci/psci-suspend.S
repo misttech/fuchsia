@@ -70,6 +70,28 @@
   ret
 .end_function
 
+// int64_t psci_do_system_suspend(psci_call_proc psci_call_routine,
+//                                paddr_t entry,
+//                                psci_cpu_resume_context* context);
+.function psci_do_system_suspend, global
+  // x0 - psci_call_routine
+  // x1 - entry
+  // x2 - context
+  save_resume_context x2
+
+  // We're about to call psci_call_routine(PSCI64_SYSTEM_SUSPEND, entry,
+  // context, 0), which will either return or branch to |entry|.  Before
+  // issuing the call, stash the lr on the stack so that we can restore it after
+  // the PSCI call returns and then return to *our* caller.
+  mov x5, x0
+  movlit w0, PSCI64_SYSTEM_SUSPEND
+  mov x3, xzr
+  push_regs lr, xzr
+  blr x5
+  pop_regs lr, xzr
+  ret
+.end_function
+
 // void psci_do_resume(psci_cpu_resume_context* context);
 //
 // Caller is expected to have enabled caches and mmu (including setting up
