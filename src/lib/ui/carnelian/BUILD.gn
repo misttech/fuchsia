@@ -6,12 +6,8 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
-import("//src/lib/vulkan/layers.gni")
 
 declare_args() {
-  # Include the vulkan validation layers in carnelian examples.
-  carnelian_enable_vulkan_validation = is_debug
-
   # Point this to the location of external image files to be included as extras
   carnelian_static_images_extras = []
 
@@ -20,9 +16,6 @@ declare_args() {
 
   # Point this to the location of external txt files to be included as extras
   carnelian_static_txts_extras = []
-
-  # Include a config in the example packages to attempt to use Spinel
-  use_spinel_for_carnelian_examples = false
 
   # Include a config in the example packages to attempt to use view mode
   # direct.
@@ -120,10 +113,6 @@ rustc_library("carnelian") {
   ]
 
   inputs = [ "//prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf" ]
-
-  if (carnelian_enable_vulkan_validation) {
-    features = [ "vulkan-validation" ]
-  }
 
   configs += [ ":carnelian-performance" ]
 }
@@ -350,10 +339,7 @@ rustc_binary("textgrid") {
 
 fuchsia_unittest_package("carnelian-render-tests") {
   manifest = "meta/carnelian_lib_test.cml"
-  deps = [
-    ":carnelian_test",
-    "//src/lib/vulkan:vulkan_validation_layers",
-  ]
+  deps = [ ":carnelian_test" ]
 }
 
 fuchsia_unittest_package("carnelian-tests") {
@@ -492,21 +478,9 @@ resource("direct_config") {
   outputs = [ "data/config/carnelian.toml" ]
 }
 
-# TODO: add example that makes use of a pre-copy shader.
-# resource("shaders") {
-#  sources = [
-#    "src/render/shaders/copy.comp.spv",
-#  ]
-#  outputs = [ "data/shaders/{{source_file_part}}" ]
-# }
-
-# A custom template for carnelian examples to support
-# dynamic enabling of the vulkan validation layers
+# A custom template for carnelian examples
 template("carnelian_example") {
   example_deps = invoker.deps
-  if (carnelian_enable_vulkan_validation) {
-    example_deps += [ "//src/lib/vulkan/validation_layers" ]
-  }
   if (use_direct_for_carnelian_examples) {
     example_deps += [ ":direct_config" ]
   }

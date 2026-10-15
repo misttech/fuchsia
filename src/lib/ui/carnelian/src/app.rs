@@ -117,9 +117,6 @@ pub struct Config {
     /// The minimum interval between keyboard repeat events, in
     /// milliseconds, when running without Scenic.
     pub keyboard_autorepeat_fast_interval: std::time::Duration,
-    #[serde(default)]
-    /// Whether to try to use hardware rendering (Spinel).
-    pub use_spinel: bool,
     /// Client priority when connecting to the display coordinator. If not set,
     /// the client will use the priority value for primary clients.
     #[serde(default)]
@@ -174,7 +171,6 @@ impl Default for Config {
             keyboard_autorepeat: keyboard_autorepeat_default(),
             keyboard_autorepeat_slow_interval: keyboard_autorepeat_slow_interval_default(),
             keyboard_autorepeat_fast_interval: keyboard_autorepeat_fast_interval_default(),
-            use_spinel: false,
             client_priority: None,
             view_mode: ViewMode::default(),
             display_rotation: DisplayRotation::Deg0,

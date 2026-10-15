@@ -17,8 +17,6 @@ application is a Carnelian app.
 A single Carnelian application binary can run in either mode.
 
 In order to provide this flexibility, Carnelian provides a 2D rendering model that is backed by
-[Spinel](https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/graphics/lib/compute/spinel/)
-when Vulkan compute resources are available and
-[Forma](https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/graphics/lib/compute/forma/)
-when they are not. It also provides certain services for the Core product, like reading from mouse
+[Forma](https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/graphics/lib/compute/forma/).
+It also provides certain services for the Core product, like reading from mouse
 and keyboard, which are not otherwise available.

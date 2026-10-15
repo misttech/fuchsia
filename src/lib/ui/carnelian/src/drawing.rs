@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 //! Functions for drawing in Carnelian
-//! Carnelian uses the Render abstraction over Forma and Spinel
+//! Carnelian uses the Render abstraction over Forma
 //! to put pixels on screen. The items in this module are higher-
 //! level drawing primitives.
 

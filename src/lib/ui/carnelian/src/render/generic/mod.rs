@@ -23,7 +23,7 @@ pub mod forma;
 
 pub use self::forma::Forma;
 
-/// Either Spinel or Forma. Zero-sized.
+/// Rendering backend (Forma). Zero-sized.
 pub trait Backend: Copy + Debug + Default + Eq + Hash + Ord + Sized + 'static {
     /// Buffer-backed image that can be used for rendering or storing pixel data.
     type Image: Copy + Debug + Eq + Hash + Ord;
@@ -428,18 +428,7 @@ pub(crate) mod tests {
         }
     }
 
-    // Currently, render API tests are only run if a compatible Vulkan driver is found. This means
-    // that these tests will be skipped on CI, but be able to run manually through the
-    // `carnelian_tests` component.
-    fn has_vk_instance() -> bool {
-        false
-    }
-
     pub(crate) fn run(f: impl Fn()) {
-        if !has_vk_instance() {
-            return;
-        }
-
         let mut executor = fasync::LocalExecutor::default();
         let f = async { f() };
         executor.run_singlethreaded(f);

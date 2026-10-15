@@ -622,21 +622,13 @@ From //src/camera/debug.gni:6
 
 From //src/camera/bin/camera-gym/BUILD.gn:13
 
-### carnelian_enable_vulkan_validation
-
-Include the vulkan validation layers in carnelian examples.
-
-**Current value (from the default):** `false`
-
-From //src/lib/ui/carnelian/BUILD.gn:13
-
 ### carnelian_static_images_extras
 
 Point this to the location of external image files to be included as extras
 
 **Current value (from the default):** `[]`
 
-From //src/lib/ui/carnelian/BUILD.gn:16
+From //src/lib/ui/carnelian/BUILD.gn:12
 
 ### carnelian_static_rives_extras
 
@@ -644,7 +636,7 @@ Point this to the location of external rive files to be included as extras
 
 **Current value (from the default):** `[]`
 
-From //src/lib/ui/carnelian/BUILD.gn:19
+From //src/lib/ui/carnelian/BUILD.gn:15
 
 ### carnelian_static_txts_extras
 
@@ -652,7 +644,7 @@ Point this to the location of external txt files to be included as extras
 
 **Current value (from the default):** `[]`
 
-From //src/lib/ui/carnelian/BUILD.gn:22
+From //src/lib/ui/carnelian/BUILD.gn:18
 
 ### channel_message_body_tracing_enabled
 
@@ -4374,60 +4366,6 @@ Valid values: "cpp", "rust"
 **Current value (from the default):** `"cpp"`
 
 From //src/ui/input/drivers/goodix-gt92xx/BUILD.gn:16
-
-### graphics_compute_generate_debug_shaders
-
-
-Set to true in your args.gn file to generate pre-processed and
-auto-formatted shaders under the "debug" sub-directory of HotSort
-and Spinel target generation output directories.
-
-These are never used, but can be reviewed manually to verify the
-impact of configuration parameters, or when modifying a compute
-shader.
-
-Example results:
-
-  out/default/
-    gen/src/graphics/lib/compute/
-       hotsort/targets/hs_amd_gcn3_u64/
-          comp/
-            hs_transpose.comp -> unpreprocessed shader
-          debug/
-            hs_transpose.glsl -> preprocessed shader
-
-
-**Current value (from the default):** `true`
-
-From //src/graphics/lib/compute/gn/glsl_shader_rules.gni:29
-
-### graphics_compute_generate_spirv_debug_info
-
-
-If you're using GPU-assisted validation then it's useful to
-include debug info in combination with skipping the spirv-opt and
-spirv-reduce pass.
-
-
-**Current value (from the default):** `false`
-
-From //src/graphics/lib/compute/gn/glsl_shader_rules.gni:47
-
-### graphics_compute_skip_spirv_opt
-
-
-At times we may want to compare the performance of unoptimized
-vs. optimized shaders.  On desktop platforms, use of spirv-opt
-doesn't appear to provide major performance improvements but it
-significantly reduces the size of the SPIR-V modules.
-
-Disabling the spirv-opt pass may also be useful in identifying and
-attributing code generation bugs.
-
-
-**Current value (from the default):** `false`
-
-From //src/graphics/lib/compute/gn/glsl_shader_rules.gni:40
 
 ### grpc_use_static_linking
 
@@ -9387,7 +9325,7 @@ direct.
 
 **Current value (from the default):** `false`
 
-From //src/lib/ui/carnelian/BUILD.gn:29
+From //src/lib/ui/carnelian/BUILD.gn:22
 
 ### use_gio
 
@@ -9469,14 +9407,6 @@ git clone https://chromium.googlesource.com/chromium/third_party/ffmpeg third_pa
 **Current value (from the default):** `true`
 
 From //src/media/lib/ffmpeg/ffmpeg_args.gni:31
-
-### use_spinel_for_carnelian_examples
-
-Include a config in the example packages to attempt to use Spinel
-
-**Current value (from the default):** `false`
-
-From //src/lib/ui/carnelian/BUILD.gn:25
 
 ### use_swiftshader_vulkan_icd_on_host
 

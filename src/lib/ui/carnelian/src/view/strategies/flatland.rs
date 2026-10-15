@@ -11,7 +11,7 @@ use crate::render::generic::{self, Backend};
 use crate::render::{self, ContextInner};
 use crate::view::strategies::base::{FlatlandParams, ViewStrategy, ViewStrategyPtr};
 use crate::view::{UserInputMessage, ViewAssistantContext, ViewAssistantPtr, ViewDetails, ViewKey};
-use anyhow::{Context, Error, Result, ensure};
+use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use euclid::size2;
@@ -94,16 +94,11 @@ impl Plumber {
         collection_id: u32,
         first_image_id: u64,
     ) -> Result<Plumber, Error> {
-        let use_spinel = Config::get().use_spinel;
-
-        ensure!(use_spinel == false, "Spinel support is disabled");
-
-        let usage = if use_spinel { FrameUsage::Gpu } else { FrameUsage::Cpu };
         let mut buffer_allocator = BufferCollectionAllocator::new(
             size.width,
             size.height,
             pixel_format,
-            usage,
+            FrameUsage::Cpu,
             buffer_count,
         )?;
 

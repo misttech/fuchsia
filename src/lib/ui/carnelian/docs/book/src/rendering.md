@@ -11,10 +11,8 @@ then passing the composition to the render
 [Context](https://fuchsia-docs.firebaseapp.com/rust/carnelian/render/struct.Context.html)'s
 [render](https://fuchsia-docs.firebaseapp.com/rust/carnelian/render/struct.Context.html#method.render) method.
 
-Behind the render interface are two possible rendering libraries;
-[Forma](https://fuchsia-docs.firebaseapp.com/rust/forma/index.html), a CPU renderer, and
-[Spinel](https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/graphics/lib/compute/spinel),
-a GPU renderer.
+Behind the render interface is
+[Forma](https://fuchsia-docs.firebaseapp.com/rust/forma/index.html), a CPU renderer.
 
 ## Notes
 
@@ -27,7 +25,3 @@ not fully compatible with the rest of the features of render.
 Carnelian does have support for loading vector content from [Rive](https://rive.app) files, which is the best way to
 load graphics assets at the time of this writing. The Rive editor available at the Rive home page can import vector
 formats and produce Rive files.
-
-## Concerns
-
-Spinel is not currently integrated into Carnelian in order to make simpler a large Spinel refactoring.

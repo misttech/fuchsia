@@ -314,19 +314,15 @@ impl DisplayDirectViewStrategy {
         display: &Display,
     ) -> Result<DisplayResources, Error> {
         let app_config = Config::get();
-        let use_spinel = app_config.use_spinel;
-
-        ensure!(use_spinel == false, "Spinel support is disabled");
 
         let display_rotation = app_config.display_rotation;
         let unsize = size.floor().to_u32();
 
-        let usage = if use_spinel { FrameUsage::Gpu } else { FrameUsage::Cpu };
         let mut buffer_allocator = BufferCollectionAllocator::new(
             unsize.width,
             unsize.height,
             pixel_format.into(),
-            usage,
+            FrameUsage::Cpu,
             render_frame_count,
         )?;
 

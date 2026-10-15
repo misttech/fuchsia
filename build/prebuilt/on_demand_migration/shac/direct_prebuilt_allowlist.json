@@ -170,7 +170,6 @@
     "src/graphics/examples/vkproto/init_only/BUILD.gn": 1,
     "src/graphics/examples/vkproto/onscreen/BUILD.gn": 1,
     "src/graphics/examples/vkproto/test/BUILD.gn": 1,
-    "src/graphics/lib/compute/spinel-vk-rs/bindgen.sh": 1,
     "src/lib/debug/dap/python/BUILD.gn": 1,
     "src/lib/debug/dap/python/zxdb/BUILD.gn": 1,
     "src/lib/fdio/rust/bindgen.sh": 1,
