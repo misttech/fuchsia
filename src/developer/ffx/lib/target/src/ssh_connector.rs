@@ -222,20 +222,35 @@ impl SshConnector {
             BUFFER_SIZE,
             cmd.stdout.take().expect("process should have stdout"),
         );
-        let mut stderr = BufReader::with_capacity(
+        let stderr = BufReader::with_capacity(
             BUFFER_SIZE,
             cmd.stderr.take().expect("process should have stderr"),
-        );
+        )
+        .lines();
+        let (error_sender, errors_receiver) = async_channel::unbounded();
+        let stderr_ctx = self.env_context.clone();
+        let main_task =
+            Task::local(async move { read_stderr(stderr, error_sender, &stderr_ctx).await });
         let mut ack = [0u8; 3];
         match stdout.read_exact(&mut ack).await {
             Ok(_) => (),
             Err(e) => {
-                let mut stderr_content = String::new();
                 if e.kind() == ErrorKind::UnexpectedEof {
-                    let _ = stderr.read_to_string(&mut stderr_content).await;
+                    main_task.await;
+                } else {
+                    drop(main_task);
                 }
                 if let Some(cmd) = self.fdomain_cmd.take() {
                     let _ = try_ssh_cmd_cleanup(cmd).await;
+                }
+
+                let mut stderr_content = String::new();
+                if e.kind() == ErrorKind::UnexpectedEof {
+                    while let Ok(ConnectionStreamError::Forwarded(err)) = errors_receiver.try_recv()
+                    {
+                        stderr_content.push_str(&err.to_string());
+                        stderr_content.push('\n');
+                    }
                 }
 
                 if stderr_content.is_empty() {
@@ -261,6 +276,7 @@ impl SshConnector {
         }
 
         if ack != *b"OK\n" {
+            drop(main_task);
             if let Some(cmd) = self.fdomain_cmd.take() {
                 let _ = try_ssh_cmd_cleanup(cmd).await;
             }
@@ -269,16 +285,11 @@ impl SshConnector {
             ));
         }
         let stdin = cmd.stdin.take().expect("process should have stdin");
-        let stderr = stderr.lines();
-        let (error_sender, errors_receiver) = async_channel::unbounded();
-        let stderr_ctx = self.env_context.clone();
-        let stderr_reader = async move { read_stderr(stderr, error_sender, &stderr_ctx).await };
-        let main_task = Some(Task::local(stderr_reader));
         Ok(FDomainConnection {
             output: Box::new(stdout),
             input: Box::new(stdin),
             errors: errors_receiver,
-            main_task,
+            main_task: Some(main_task),
         })
     }
 }
@@ -717,5 +728,114 @@ done
             "Expected FDomain connection, got {:?}",
             conn
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_connect_drains_large_stderr_before_stdout() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Write >128 KB of debug lines to stderr before producing stdout or exiting,
+        // exceeding typical OS pipe buffer capacities (8 KB - 64 KB).
+        let mock_ssh_script = r#"#!/bin/bash
+PORT=""
+IS_FDOMAIN=false
+HAS_LOG_ID=false
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+  if [[ "${args[i]}" == "-p" ]]; then
+    PORT="${args[i+1]}"
+  fi
+  if [[ "${args[i]}" == "fdomain_runner" ]]; then
+    IS_FDOMAIN=true
+  fi
+  if [[ "${args[i]}" == "--log-id" ]]; then
+    HAS_LOG_ID=true
+  fi
+done
+
+yes "debug1: verbose ssh handshake output line padding to sixty four!" | head -n 2500 >&2
+
+case "$PORT" in
+  "2201")
+    printf "OK\n"
+    sleep 3600
+    ;;
+  "2202")
+    if $IS_FDOMAIN; then
+      echo "fdomain_runner: not found" >&2
+      exit 127
+    elif $HAS_LOG_ID; then
+      echo "Unrecognized argument: --log-id" >&2
+      exit 1
+    else
+      printf "++ 127.0.0.1 1234 127.0.0.1 22 ++\n"
+      sleep 3600
+    fi
+    ;;
+  "2203")
+    echo "ssh: connect to host 127.0.0.1 port 2203: Connection refused" >&2
+    exit 255
+    ;;
+  "2204")
+    # Exit without non-debug stderr (simulating EOF after verbose handshake)
+    exit 255
+    ;;
+  *)
+    echo "Unknown port $PORT" >&2
+    exit 1
+    ;;
+esac
+"#;
+        let ssh_path = write_mock_ssh(&tmp, mock_ssh_script);
+        let priv_key_path = tmp.path().join("fake_key");
+        File::create(&priv_key_path).unwrap();
+
+        let test_env = TestEnvBuilder::default()
+            .user_config("ssh.path", ssh_path.to_str().unwrap())
+            .user_config("ssh.priv", priv_key_path.to_str().unwrap())
+            .user_config("ssh.controlmaster.mode", "none")
+            .build()
+            .unwrap();
+
+        // 1. FDomain succeeds with >128 KB stderr before "OK\n"
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2201".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect().await;
+            assert!(res.is_ok(), "Expected Ok for FDomain with large stderr, got {:?}", res);
+            assert!(matches!(res.unwrap(), TargetConnection::FDomain(_)));
+        }
+
+        // 2. Fallback to Overnet succeeds when both FDomain and Overnet emit >128 KB stderr
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2202".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect().await;
+            assert!(
+                res.is_ok(),
+                "Expected Ok for Overnet fallback with large stderr, got {:?}",
+                res
+            );
+            assert!(matches!(res.unwrap(), TargetConnection::Overnet(_)));
+        }
+
+        // 3. Connection refused after >128 KB debug stderr is still classified as NonFatal
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2203".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect_via_fdomain().await;
+            assert!(matches!(res, Err(TargetConnectionError::NonFatal(_))), "Got {:?}", res);
+        }
+
+        // 4. EOF with only debug stderr lines (no actual error message) is classified as NonFatal
+        {
+            let target_addr: SocketAddr = "127.0.0.1:2204".parse().unwrap();
+            let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+            let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+            let res = connector.connect_via_fdomain().await;
+            assert!(matches!(res, Err(TargetConnectionError::NonFatal(_))), "Got {:?}", res);
+        }
     }
 }

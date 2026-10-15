@@ -13,7 +13,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Duration;
-use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdout};
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -33,7 +33,7 @@ struct LegacyCompatInfo {
 
 pub const BUFSIZE: usize = 1024;
 pub struct LineBuffer {
-    buffer: [u8; BUFSIZE],
+    buffer: Box<[u8; BUFSIZE]>,
     pos: usize,
 }
 
@@ -41,7 +41,7 @@ pub struct LineBuffer {
 //    "++ 192.168.1.1 1234 10.0.0.1 22 ++\n"
 impl LineBuffer {
     pub fn new() -> Self {
-        Self { buffer: [0; BUFSIZE], pos: 0 }
+        Self { buffer: Box::new([0; BUFSIZE]), pos: 0 }
     }
 
     pub fn line(&self) -> &[u8] {
@@ -260,7 +260,33 @@ pub async fn parse_ssh_output(
     stderr: &mut BufReader<ChildStderr>,
     ctx: &EnvironmentContext,
 ) -> std::result::Result<(HostAddr, Option<u64>), PipeError> {
-    let res = match parse_ssh_connection(stdout, ctx).await.context("reading ssh connection") {
+    let mut stderr_err = None;
+    let conn_res = {
+        let mut parse_stdout = std::pin::pin!(parse_ssh_connection(stdout, ctx));
+        let drain_stderr = async {
+            let log_file = ssh_log_file(ctx);
+            let mut line = String::new();
+            while let Ok(n) = stderr.read_line(&mut line).await {
+                if n == 0 {
+                    break;
+                }
+                let trimmed = line.trim_end_matches(['\r', '\n']).to_string();
+                line.clear();
+                if let Some(file) = log_file {
+                    write_ssh_log("E", &trimmed, file);
+                }
+                if stderr_err.is_none() {
+                    stderr_err = ssh_stderr_to_pipe_error(&trimmed);
+                }
+            }
+        };
+        tokio::select! {
+            biased;
+            _ = drain_stderr => parse_stdout.await,
+            res = &mut parse_stdout => res,
+        }
+    };
+    let res = match conn_res.context("reading ssh connection") {
         Ok((addr, overnet_id)) => {
             if overnet_id.is_none() {
                 log::info!(
@@ -284,6 +310,8 @@ pub async fn parse_ssh_output(
     // Check for early exit.
     if let (Some(addr), overnet_id) = res {
         Ok((addr, overnet_id))
+    } else if let Some(err) = stderr_err {
+        Err(err)
     } else {
         // If we failed to parse the ssh connection, there might be information in stderr
         // We seem to always come here even if the error above was successfully parsed because we
