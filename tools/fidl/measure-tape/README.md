@@ -16,18 +16,31 @@ and maximize throughput.
 
 ## Build integration
 
-To add a measure tape to your project, use the `measure_tape` template:
+To add a measure tape to your project in Bazel (`BUILD.bazel`), use the
+`measure_tape` macro:
+
+```bzl
+load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
+
+measure_tape(
+    name = "measure_tape_for_targettype",
+    fidls = [":fuchsia.your.library"],
+    target_binding = "hlcpp",
+    target_types = ["fuchsia.your.library/TargetType"],
+)
+```
+
+Or in GN (`BUILD.gn`), use the `measure_tape` template:
 
 ```gn
+import("//tools/fidl/measure-tape/measure_tape.gni")
+
 measure_tape("measure_tape_for_targettype") {
   target_binding = "hlcpp"
   target_types = [ "fuchsia.your.library/TargetType" ]
   fidls = [ ":fuchsia.your.library" ]
 }
 ```
-
-_This template must be imported with
-`import("//tools/fidl/measure-tape/measure_tape.gni")`._
 
  * `target_binding` key indicates what bindings to generate.
    Valid values are currently "hlcpp" and "rust".

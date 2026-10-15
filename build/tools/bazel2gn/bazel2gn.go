@@ -465,7 +465,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 	switch attrName {
 	case "visibility":
 		transformers = append(transformers, bazelVisibilityToGN)
-	case "deps", "test_deps", "proc_macro_deps", "link_deps", "args_deps", "plugin_deps":
+	case "deps", "test_deps", "proc_macro_deps", "link_deps", "args_deps", "plugin_deps", "fidls":
 		transformers = append(transformers, bazelDepToGN)
 	case "public_deps":
 		transformers = append(transformers, bazelDepToGN)

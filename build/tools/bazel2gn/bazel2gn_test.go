@@ -380,6 +380,56 @@ rust_proto_library("foo_proto") {
 	]
 }`,
 		},
+		{
+			name: "Measure tapes",
+			bazel: `load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
+
+measure_tape(
+	name = "hlcpp_measure_tape_for_foo",
+	fidls = [
+		":fuchsia.foo",
+		"//sdk/fidl/fuchsia.math",
+	],
+	target_binding = "hlcpp",
+	target_types = [
+		"fuchsia.foo/Foo",
+		"fuchsia.foo/Bar",
+	],
+)
+
+measure_tape(
+	name = "rust_measure_tape_for_foo",
+	fidls = ["//sdk/fidl/fuchsia.foo"],
+	target_binding = "rust",
+	target_types = ["fuchsia.foo/Foo"],
+	testonly = True,
+	visibility = ["//visibility:public"],
+)`,
+			wantGN: `measure_tape("hlcpp_measure_tape_for_foo") {
+	fidls = [
+		":fuchsia.foo",
+		"//sdk/fidl/fuchsia.math",
+	]
+	target_binding = "hlcpp"
+	target_types = [
+		"fuchsia.foo/Foo",
+		"fuchsia.foo/Bar",
+	]
+}
+measure_tape("rust_measure_tape_for_foo") {
+	fidls = [
+		"//sdk/fidl/fuchsia.foo",
+	]
+	target_binding = "rust"
+	target_types = [
+		"fuchsia.foo/Foo",
+	]
+	testonly = true
+	visibility = [
+		"*",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

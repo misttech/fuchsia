@@ -2,20 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//tools/fidl/measure-tape/measure_tape.gni")
-
-measure_tape("hlcpp_measure_tape_for_case") {
-  fidls = [ "//sdk/fidl/fuchsia.test" ]
-  target_types = [ "fuchsia.test/Case" ]
-  target_binding = "hlcpp"
-}
-
-measure_tape("rust_measure_tape_for_case") {
-  fidls = [ "//sdk/fidl/fuchsia.test" ]
-  target_types = [ "fuchsia.test/Case" ]
-  target_binding = "rust"
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -49,4 +35,20 @@ fidl("fuchsia.test") {
   stable = true
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
+}
+measure_tape("hlcpp_measure_tape_for_case") {
+  fidls = [ ":fuchsia.test" ]
+  target_binding = "hlcpp"
+  target_types = [ "fuchsia.test/Case" ]
+}
+measure_tape("rust_measure_tape_for_case") {
+  fidls = [ ":fuchsia.test" ]
+  target_binding = "rust"
+  target_types = [ "fuchsia.test/Case" ]
+  visibility = [
+    ":*",
+    "//src/diagnostics/tests/inspect-system:*",
+    "//src/microfuchsia/tee/testing/enumeration_test_adapter:*",
+    "//src/sys/test_runners/*",
+  ]
 }

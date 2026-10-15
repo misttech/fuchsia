@@ -21,6 +21,8 @@ import("//build/fidl/toolchain.gni")
 #   target_types (required)
 #     A list of fully qualified FIDL types for which to generate a measuring
 #     tape.
+#
+# LINT.IfChange
 template("measure_tape") {
   assert(defined(invoker.target_binding))
   assert(defined(invoker.fidls))
@@ -142,3 +144,4 @@ template("measure_tape") {
     forward_variables_from(invoker, [ "testonly" ])
   }
 }
+# LINT.ThenChange(//tools/fidl/measure-tape/measure_tape.bzl)

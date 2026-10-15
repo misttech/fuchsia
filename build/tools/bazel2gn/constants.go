@@ -101,6 +101,7 @@ var bazelRuleToGNTemplate = map[string]string{
 
 	// FIDL
 	"fidl_library":        "fidl",
+	"measure_tape":        "measure_tape",
 	"zither_fidl_library": "fidl",
 
 	// Components

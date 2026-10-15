@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -18,5 +19,24 @@ fidl_library(
     visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",
+    ],
+)
+
+measure_tape(
+    name = "hlcpp_measure_tape_for_case",
+    fidls = [":fuchsia.test"],
+    target_binding = "hlcpp",
+    target_types = ["fuchsia.test/Case"],
+)
+
+measure_tape(
+    name = "rust_measure_tape_for_case",
+    fidls = [":fuchsia.test"],
+    target_binding = "rust",
+    target_types = ["fuchsia.test/Case"],
+    visibility = [
+        "//src/diagnostics/tests/inspect-system:__pkg__",
+        "//src/microfuchsia/tee/testing/enumeration_test_adapter:__pkg__",
+        "//src/sys/test_runners:__subpackages__",
     ],
 )
