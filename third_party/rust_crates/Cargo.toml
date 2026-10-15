@@ -61,7 +61,7 @@ bt-vcs = "0.0.1"
 bumpalo = { version = "3.20.3", features = [ "collections" ] }
 byteorder = "1.5.0"
 bytes = "1.12.1"
-camino = { version = "1.2.5", features = ["proptest1", "serde1"] }
+camino = { version = "1.2.6", features = ["proptest1", "serde1"] }
 cbc = "0.2.1"
 cfg-if = "1.0.4"
 chacha20 = { version = "0.10.2", features = ["rng"] }
@@ -632,7 +632,7 @@ existing_gn_target = "//third_party/boringssl/rust:bssl-sys"
 [gn.package.bstr."1.13.1"]
 reviewed_features = [ "std", "alloc" ]
 
-[gn.package.camino."1.2.5"]
+[gn.package.camino."1.2.6"]
 rustflags = [
   "--cfg=absolute_path",
   "--cfg=os_str_bytes",

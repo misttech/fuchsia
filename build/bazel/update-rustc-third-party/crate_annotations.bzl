@@ -61,7 +61,7 @@ CRATE_ANNOTATIONS = {
     ],
     "camino": [
         crate.annotation(
-            version = "1.2.5",
+            version = "1.2.6",
             rustc_flags = [
                 "--cfg=absolute_path",
                 "--cfg=os_str_bytes",

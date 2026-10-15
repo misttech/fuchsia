@@ -478,14 +478,14 @@ alias(
 )
 
 alias(
-    name = "camino-1.2.5",
-    actual = "//third_party/rust_crates/vendor/camino-1.2.5:camino",
+    name = "camino-1.2.6",
+    actual = "//third_party/rust_crates/vendor/camino-1.2.6:camino",
     tags = ["manual"],
 )
 
 alias(
     name = "camino",
-    actual = "//third_party/rust_crates/vendor/camino-1.2.5:camino",
+    actual = "//third_party/rust_crates/vendor/camino-1.2.6:camino",
     tags = ["manual"],
 )
 
