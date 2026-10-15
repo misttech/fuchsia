@@ -184,25 +184,6 @@ failure_mode_checks:
   log_types: ["serialLogType"]
 # LINT.ThenChange(/src/storage/fxfs/platform/src/fuchsia/fxblob/writer.rs:blob_write_failure)
 
-# For https://fxbug.dev/328273002.
-# This detects critical process failures for tests that depend on mexec.
-- kind: "string_in_log"
-  string: "critical to root job killed with"
-  log_types: ["swarmingOutputType"]
-  except_blocks:
-  # Mobly tests tend to be e2e tests that sometimes reboot the
-  # target, leading to expected job failures.
-  # LINT.IfChange(mobly_test_start)
-  - start_string: "======== Mobly config content ========"
-  # LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py:mobly_test_start)
-  # LINT.IfChange(mobly_test_end)
-    end_string: "[=====MOBLY RESULTS=====]"
-  # LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py:mobly_test_end)
-  - start_string: "=== RUN   TestKillCriticalProcess"
-    end_string: "--- PASS: TestKillCriticalProcess"
-  - start_string: "=== RUN   TestOOMHard"
-    end_string: "--- PASS: TestOOMHard"
-
 # For https://fxbug.dev/343550891.
 # LINT.IfChange(watchdog_tefmo)
 - kind: "string_in_log"

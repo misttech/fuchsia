@@ -10,7 +10,6 @@ import("//build/testing/boot_tests/boot_test.gni")
 import("//build/testing/boot_tests/kernel_zbi_test.gni")
 import("//build/zbi/kernel_cmdline.gni")
 import("//build/zbi/zbi_input.gni")
-import("//src/bringup/lib/mexec/testing/zbi_test.gni")
 import("//zircon/kernel/kernel_package.gni")
 import("//zircon/kernel/lib/code-patching/code-patching.gni")
 import("//zircon/kernel/params.gni")
@@ -747,28 +746,7 @@ group("phys-test") {
 }
 
 if (current_toolchain == default_toolchain) {
-  # We create mexec-chainloading variations of all of the phys ZBI tests.
   test_deps = []
-  if (target_cpu != "riscv64") {  # TODO(mcgrathr): No mexec on riscv64 (yet?).
-    foreach(test,
-            [
-              "zbi-backtrace-test",
-              "zbi-hello-world-test",
-              "zbi-memory-test",
-              "zbi-phys-unittests",
-              "zbi-handoff-entropy-test",
-              "zbi-decompress-test",
-            ]) {
-      mexec_zbi_test("mexec-$test") {
-        child_zbi = ":$test($phys_toolchain)"
-        child_zbi_file =
-            get_label_info(child_zbi, "target_out_dir") + "/$test.zbi"
-      }
-
-      test_deps += [ ":mexec-$test" ]
-    }
-  }
-
   if (qemu_linuxboot_embed != []) {
     test_deps += [ ":linuxboot-embed-test" ]
   }
