@@ -12,6 +12,7 @@ library_headers("headers") {
   ]
 }
 
+# LINT.IfChange
 static_library("lz4") {
   public_deps = [ ":headers" ]
 
@@ -52,6 +53,8 @@ static_library("lz4") {
     "//build/config:Wno-missing-prototypes",
   ]
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 group("tests") {
   testonly = true

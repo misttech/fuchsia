@@ -1,0 +1,79 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_license//rules:license.bzl", "license")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = [":license"])
+
+license(
+    name = "license",
+    license_kinds = [
+        "@rules_license//licenses/spdx:BSD-2-Clause",
+    ],
+    license_text = "src/LICENSE",
+)
+
+# Bazel-only build of the GN static_library("lz4") in BUILD.gn, which
+# stays in GN Because we can't sync `config -=` with bazel2gn.
+#
+# TODO(https://fxbug.dev/566963647): Use build flags to express configs
+# and sync with bazel2gn.
+# LINT.IfChange
+fx_cc_library(
+    name = "lz4",
+    srcs = [
+        "src/lib/lz4.c",
+        "src/lib/lz4frame.c",
+        "src/lib/lz4hc.c",
+        "src/lib/lz4hc.h",
+        "src/lib/xxhash.c",
+        "src/lib/xxhash.h",
+    ],
+    hdrs = [
+        "include/lz4/lz4.h",
+        "include/lz4/lz4frame.h",
+
+        # The include/lz4 headers above include these by relative path.
+        "src/lib/lz4.h",
+        "src/lib/lz4frame.h",
+    ],
+    # Flags of the GN configs "//build/config:optimize_speed",
+    # "//build/config:Wno-implicit-fallthrough",
+    # "//build/config:Wno-missing-declarations" and
+    # "//build/config:Wno-missing-prototypes".
+    copts = [
+        "-O3",
+        "-Wno-implicit-fallthrough",
+        "-Wno-missing-prototypes",
+        "-Wno-missing-variable-declarations",
+    ],
+    # Like GN removing "//build/config:default_optimize", also drop the
+    # size-tuned ML inliner of optimized builds, which "-O3" does not undo.
+    features = ["-ml_inliner"],
+    includes = ["include"],
+    local_defines = [
+        "XXH_NAMESPACE=LZ4_",
+
+        # Preempt the default that will break symbols out of hidden visibility.
+        "LZ4LIB_VISIBILITY=",
+
+        # lz4frame.h doesn't let you just predefine LZ4FLIB_API like you can
+        # LZ4LIB_VISIBILITY, so this kludge works with how its macros are
+        # defined so the //third_party/lz4/src sources don't need to be touched.
+        "LZ4_DLL_IMPORT=1",
+        "__declspec(x)=",
+
+        # Upstream lz4.c disables LZ4_FAST_DEC_LOOP for non-Apple aarch64 Clang
+        # builds (see https://github.com/lz4/lz4/pull/707). Enabling it
+        # significantly improves decompression performance on the ARM64 CPUs that
+        # Fuchsia targets.
+        "LZ4_FAST_DEC_LOOP=1",
+    ],
+    # lz4hc.c does `#include "lz4.c"`, so lz4.c must also be a declared input
+    # of the (sandboxed) compile actions.
+    textual_hdrs = ["src/lib/lz4.c"],
+    visibility = ["//third_party/lz4/rust:__pkg__"],
+)
+# LINT.ThenChange(BUILD.gn)
