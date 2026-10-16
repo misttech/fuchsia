@@ -95,6 +95,13 @@ TEST_F(PciRootHostTests, SubPageMmioAllocationIsPageAligned) {
   EXPECT_EQ(alloc3.value(), kPreassignedPage);
   EXPECT_EQ(ZX_ERR_NOT_FOUND,
             root_host().AllocateMmio32Window(kPreassignedPage, 0x40, &res4, &ep4).status_value());
+
+  // A preassigned MMIO request at a non-page-aligned base must be rejected.
+  zx::resource out_resource;
+  zx::eventpair out_endpoint;
+  auto unaligned_result = root_host().AllocateMmio32Window(kWindowBase + (page_size() * 4) + 0x100,
+                                                           0x100, &out_resource, &out_endpoint);
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS, unaligned_result.status_value());
 }
 
 TEST_F(PciRootHostTests, Mcfg) {

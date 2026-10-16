@@ -73,7 +73,14 @@ zx::result<zx_paddr_t> PciRootHost::Allocate(AllocationType type, uint32_t kind,
 
   ProcessQueue();
   if (rsrc_kind == ZX_RSRC_KIND_MMIO) {
-    size = fbl::round_up<size_t>(size, zx_system_get_page_size());
+    const uint64_t page_size = zx_system_get_page_size();
+    // Return an error if an existing base isn't page aligned so the bus driver will reallocate.
+    // This can happen with IO bars on architectures that back them with MMIO (arm64, riscv64, to
+    // name a couple).
+    if (base % page_size != 0) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    size = fbl::round_up<size_t>(size, page_size);
   }
   // If |base| is set then we have been requested to find address space starting
   // at a given |base|. If it's zero then we just need a region big enough for
