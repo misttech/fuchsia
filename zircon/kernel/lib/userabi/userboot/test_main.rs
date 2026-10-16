@@ -3,22 +3,20 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, anyhow};
-use bootfs::get_bootfs_vmo;
+use bootfs::{ZbiItemIterator, get_bootfs_vmo};
 use cmdline::{ProgramInfo, parse_cmdline};
 use fidl_next::fuchsia::create_channel;
 use fidl_next_fuchsia_boot as fuchsia_boot;
 use fidl_next_fuchsia_io as fuchsia_io;
 use fuchsia_async::OnSignals;
 use fuchsia_runtime::{HandleInfo, HandleType};
-use mapped_vmo::ImmutableMapping;
 use process_builder::StartupHandle;
 use program::{SystemHandles, launch_program};
 use std::fmt::Write as _;
 use userboot::{Log, take_system_handles};
-use zbi::{ZbiContainer, ZbiType};
-use zerocopy::IntoBytes as _;
+use zbi::ZbiType;
 use zx::sys::{ZX_SYSTEM_POWERCTL_SHUTDOWN, zx_system_powerctl};
-use zx::{Rights, Signals};
+use zx::{Rights, Signals, Vmo};
 
 const BOOT_TEST_SUCCESS_STRING: &str = env!("BOOT_TEST_SUCCESS_STRING");
 
@@ -59,11 +57,14 @@ fn parse_option(key: &str, value: &str, opts: &mut Options) -> bool {
     }
 }
 
-fn get_options(container: &ZbiContainer<&[u8]>, log: &mut Log) -> Result<Options, Error> {
+fn get_options(zbi_vmo: &Vmo, log: &mut Log) -> Result<Options, Error> {
     let mut options = Options::default();
-    for item in container.iter() {
+    for item in ZbiItemIterator::new(zbi_vmo)? {
+        let item = item?;
         if item.header.type_ == ZbiType::CmdLine as u32 {
-            if let Ok(cmdline) = str::from_utf8(item.payload.as_bytes()) {
+            let payload =
+                zbi_vmo.read_to_vec::<u8>(item.payload_offset, item.header.length.into())?;
+            if let Ok(cmdline) = str::from_utf8(&payload) {
                 writeln!(log, "CMDLINE {}", cmdline)?;
                 parse_cmdline(cmdline, log, &mut options, parse_option)?;
             }
@@ -102,14 +103,8 @@ async fn run(log: &mut Log) -> Result<(), Error> {
         .as_ref()
         .map(|p| p.duplicate_handle(Rights::SAME_RIGHTS))
         .transpose()?;
-    let (options, bootfs_vmo) = {
-        let zbi = ImmutableMapping::create_from_vmo(&handles.zbi_vmo, true)?;
-        let container =
-            ZbiContainer::parse(&zbi[..]).map_err(|e| anyhow!("Failed to parse ZBI: {e:?}"))?;
-        let options = get_options(&container, log)?;
-        let bootfs_vmo = get_bootfs_vmo(&container, false, log)?;
-        (options, bootfs_vmo)
-    };
+    let options = get_options(&handles.zbi_vmo, log)?;
+    let bootfs_vmo = get_bootfs_vmo(&handles.zbi_vmo, false, log)?;
 
     let (userboot_client, userboot_server) = create_channel::<fuchsia_boot::Userboot>();
     let userboot_client = userboot_client.spawn();

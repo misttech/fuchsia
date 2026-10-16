@@ -105,6 +105,7 @@ rustc_binary("userboot-rust.executable") {
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust_next",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust_next",
     "//sdk/lib/c/stubs",
+    "//sdk/rust/zx",
     "//src/bringup/lib/userboot/rust",
     "//src/bringup/lib/userboot/rust:bootfs",
     "//src/bringup/lib/userboot/rust:cmdline",
@@ -113,10 +114,8 @@ rustc_binary("userboot-rust.executable") {
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/mapped-vmo",
     "//src/lib/process_builder",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:zerocopy",
   ]
 
   exclude_toolchain_tags = [
@@ -148,10 +147,8 @@ rustc_binary("userboot-test-rust.executable") {
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/mapped-vmo",
     "//src/lib/process_builder",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:zerocopy",
   ]
 
   exclude_toolchain_tags = [
