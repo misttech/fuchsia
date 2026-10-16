@@ -1,4 +1,1 @@
-# Temporary ownership while working through https://fxbug.dev/566304584.
-annizhang@google.com
-awolter@google.com
-jcecil@google.com
+include /build/GIT_CLONE_FUCHSIA_OWNERS
