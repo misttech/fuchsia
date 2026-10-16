@@ -141,8 +141,6 @@
                 "SeccompTest.BpfUnknownCodeUpperBitsRejected",
 
                 // TODO(https://fxbug.dev/498681252)
-                "EpollTest.PipeReadFullTriggerEpollOutWithEpollET",
-                "EpollTest.PipeWritesNonemptyTriggerEpollInWithEpollET",
                 "PipeTest.PolloutFragmentation",
 
                 // TODO(https://fxbug.dev/369889180): Remount rw to ro should fail with open files.

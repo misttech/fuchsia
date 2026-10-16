@@ -362,4 +362,52 @@ TEST(PipeTest, ZombieMultiThreadedWriter) {
   EXPECT_THAT(read(pipe_rd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(0));
 }
 
+TEST(PipeTest, PartialReadWakesBlockedWriter) {
+  int pipe_fds[2];
+  SAFE_SYSCALL(pipe2(pipe_fds, 0));
+  fbl::unique_fd pipe_rd(pipe_fds[0]);
+  fbl::unique_fd pipe_wr(pipe_fds[1]);
+
+  const int page_size = getpagesize();
+  SAFE_SYSCALL(fcntl(pipe_wr.get(), F_SETPIPE_SZ, 2 * page_size));
+  std::vector<char> fill(2 * page_size, 'A');
+  ASSERT_EQ(write(pipe_wr.get(), fill.data(), fill.size()), 2 * page_size);
+
+  std::thread reader([&pipe_rd, page_size]() {
+    usleep(20000);
+    // Read one page, leaving the pipe non-empty while freeing space for the blocked writer.
+    std::vector<char> buf(page_size);
+    EXPECT_EQ(read(pipe_rd.get(), buf.data(), buf.size()), page_size);
+  });
+
+  const char extra[] = "WXYZ";
+  EXPECT_EQ(write(pipe_wr.get(), extra, 4), 4);
+  reader.join();
+}
+
+TEST(PipeTest, PollHupWithoutPollinOnEmptyClosedPipe) {
+  int pipe_fds[2];
+  SAFE_SYSCALL(pipe2(pipe_fds, 0));
+  fbl::unique_fd pipe_rd(pipe_fds[0]);
+  fbl::unique_fd pipe_wr(pipe_fds[1]);
+
+  ASSERT_EQ(write(pipe_wr.get(), "data", 4), 4);
+  pipe_wr.reset();
+
+  pollfd pfd = {
+      .fd = pipe_rd.get(),
+      .events = POLLIN,
+      .revents = 0,
+  };
+  ASSERT_EQ(poll(&pfd, 1, 0), 1);
+  EXPECT_EQ(pfd.revents, POLLIN | POLLHUP);
+
+  char buf[4];
+  ASSERT_EQ(read(pipe_rd.get(), buf, 4), 4);
+
+  pfd.revents = 0;
+  ASSERT_EQ(poll(&pfd, 1, 0), 1);
+  EXPECT_EQ(pfd.revents, POLLHUP);
+}
+
 }  // namespace
