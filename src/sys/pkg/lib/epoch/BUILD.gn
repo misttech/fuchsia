@@ -2,10 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_unittest_package("epoch-tests") {
-  deps = [ ":epoch_test" ]
+bazel_test_suite("epoch-tests") {
+  target_tests = [ "//src/sys/pkg/lib/epoch:epoch-tests" ]
 }
 
 group("tests") {
@@ -45,11 +45,6 @@ rustc_library("epoch") {
   ]
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  test_deps = [
-    "//third_party/rust_crates:proptest",
-    "//third_party/rust_crates:serde_json",
-  ]
-  version = "0.1.0"
   visibility = [
     ":*",
     "//src/developer/ffx/plugins/assembly/*",
@@ -57,6 +52,5 @@ rustc_library("epoch") {
     "//src/lib/assembly/update_package/*",
     "//src/sys/pkg/*",
   ]
-  with_unit_tests = true
   deps = [ "//third_party/rust_crates:serde" ]
 }

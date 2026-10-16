@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -14,19 +16,31 @@ rustc_library(
     ],
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        "//third_party/rust_crates/vendor:proptest",
-        "//third_party/rust_crates/vendor:serde_json",
-    ],
-    version = "0.1.0",
     visibility = [
         "//src/developer/ffx/plugins/assembly:__subpackages__",
         "//src/lib/assembly/product_bundle:__subpackages__",
         "//src/lib/assembly/update_package:__subpackages__",
         "//src/sys/pkg:__subpackages__",
     ],
-    with_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:serde",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "epoch_test",
+    crate = ":epoch",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//third_party/rust_crates/vendor:proptest",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "epoch-tests",
+    unit_tests = [":epoch_test"],
 )
