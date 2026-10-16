@@ -10,9 +10,10 @@
 
 namespace driver_runtime {
 
-AsyncIrq::AsyncIrq(async_irq_t* original_irq, Dispatcher& dispatcher)
+AsyncIrq::AsyncIrq(async_irq_t* original_irq, Dispatcher& dispatcher, bool is_always_on)
     : async_irq_t{{ASYNC_STATE_INIT}, &AsyncIrq::Handler, original_irq->object},
-      original_irq_(original_irq) {
+      original_irq_(original_irq),
+      is_always_on_(is_always_on) {
   // Store a pointer to our IRQ wrapper, so |UnbindIrq| can back map from the user's IRQ object.
   original_irq_->state.reserved[0] = reinterpret_cast<uintptr_t>(this);
 }
@@ -56,27 +57,32 @@ bool AsyncIrq::Unbind() {
 
 std::unique_ptr<driver_runtime::CallbackRequest> AsyncIrq::CreateCallbackRequest(
     Dispatcher& dispatcher, bool locked) __TA_NO_THREAD_SAFETY_ANALYSIS {
-  auto async_dispatcher = dispatcher.GetAsyncDispatcher();
+  auto* async_dispatcher =
+      is_always_on_ ? fdf_dispatcher_get_async_dispatcher(dispatcher.GetAlwaysOnDispatcher())
+                    : dispatcher.GetAsyncDispatcher();
 
   // TODO(https://fxbug.dev/42052990): We should consider something more efficient than creating a
   // callback request each time the irq is triggered. This is complex due to an AsyncIrq not having
   // a 1:1 mapping to interrupt callbacks, and we cannot easily return ownership of a
   // |CallbackRequest| after dispatching it. See https://fxbug.dev/42052990 for a longer
   // explanation.
-  auto callback_request =
-      std::make_unique<driver_runtime::CallbackRequest>(CallbackRequest::RequestType::kIrq);
+  auto callback_request = std::make_unique<driver_runtime::CallbackRequest>(
+      is_always_on_ ? CallbackRequest::RequestType::kAlwaysOnIrq
+                    : CallbackRequest::RequestType::kIrq);
   callback_request->set_handle(original_irq_->object);
 
-  bool is_wake = false;
-  if (locked) {
-    is_wake = dispatcher.IsWakeVectorLocked(original_irq_->object, 0);
-  } else {
-    fbl::AutoLock lock(&dispatcher.callback_lock_);
-    is_wake = dispatcher.IsWakeVectorLocked(original_irq_->object, 0);
-  }
+  if (!is_always_on_) {
+    bool is_wake = false;
+    if (locked) {
+      is_wake = dispatcher.IsWakeVectorLocked(original_irq_->object, 0);
+    } else {
+      fbl::AutoLock lock(&dispatcher.callback_lock_);
+      is_wake = dispatcher.IsWakeVectorLocked(original_irq_->object, 0);
+    }
 
-  if (is_wake) {
-    callback_request->set_request_type(CallbackRequest::RequestType::kWakeIrq);
+    if (is_wake) {
+      callback_request->set_request_type(CallbackRequest::RequestType::kWakeIrq);
+    }
   }
 
   driver_runtime::Callback callback =
@@ -145,8 +151,9 @@ zx_status_t EventWaiter::BeginWaitWithRef(std::unique_ptr<EventWaiter> event,
   return BeginWait(std::move(event), async_dispatcher);
 }
 
-AsyncWait::AsyncWait(async_wait_t* original_wait, Dispatcher& dispatcher)
-    : CallbackRequest(CallbackRequest::RequestType::kWait),
+AsyncWait::AsyncWait(async_wait_t* original_wait, Dispatcher& dispatcher, bool is_always_on)
+    : CallbackRequest(is_always_on ? CallbackRequest::RequestType::kAlwaysOnWait
+                                   : CallbackRequest::RequestType::kWait),
       async_wait_t{{ASYNC_STATE_INIT},
                    &AsyncWait::Handler,
                    original_wait->object,
@@ -156,7 +163,9 @@ AsyncWait::AsyncWait(async_wait_t* original_wait, Dispatcher& dispatcher)
   // Use one of the async_wait_t's reserved fields to stash a pointer to the AsyncWait object.
   original_wait_->state.reserved[0] = reinterpret_cast<uintptr_t>(this);
 
-  auto async_dispatcher = dispatcher.GetAsyncDispatcher();
+  auto* async_dispatcher =
+      is_always_on ? fdf_dispatcher_get_async_dispatcher(dispatcher.GetAlwaysOnDispatcher())
+                   : dispatcher.GetAsyncDispatcher();
   driver_runtime::Callback callback =
       [this, async_dispatcher](std::unique_ptr<driver_runtime::CallbackRequest> callback_request,
                                zx_status_t status) {

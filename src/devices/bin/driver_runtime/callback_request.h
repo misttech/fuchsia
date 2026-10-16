@@ -42,6 +42,7 @@ class CallbackRequest
     kOther,
     kWakeIrq,
     kWakeWait,
+    kAlwaysOnIrq,
     kAlwaysOnTask,
     kAlwaysOnWait,
     kAlwaysOnOther,
@@ -51,8 +52,8 @@ class CallbackRequest
       : request_type_(request_type) {}
 
   static bool IsAlwaysOn(RequestType type) {
-    return type == RequestType::kAlwaysOnTask || type == RequestType::kAlwaysOnWait ||
-           type == RequestType::kAlwaysOnOther;
+    return type == RequestType::kAlwaysOnIrq || type == RequestType::kAlwaysOnTask ||
+           type == RequestType::kAlwaysOnWait || type == RequestType::kAlwaysOnOther;
   }
 
   bool IsAlwaysOn() const { return IsAlwaysOn(request_type_); }

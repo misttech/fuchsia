@@ -17,5 +17,5 @@ pub use fdf_core::handle::*;
 pub use libasync::{
     AfterDeadline, AsAsyncDispatcherRef, AsyncDispatcher, AsyncDispatcherRef,
     DispatcherInterruptExt, DispatcherTimerExt, GetAsyncDispatcher, JoinHandle, OnDispatcher,
-    OnInterrupt, Task,
+    OnInterrupt, OnSignals, Task,
 };

@@ -171,7 +171,8 @@ impl ScopeDispatcher {
         // Note also that we will not allow any new items to be added to the queues after the
         // shutdown flag has been set, so we don't have to worry about new things being added at
         // this point.
-        for next_wait in self.pending_waits.lock().get_all_waits() {
+        let waits_to_cancel = self.pending_waits.lock().drain_all();
+        for next_wait in waits_to_cancel {
             next_wait.run(self.clone(), null(), Err(Status::CANCELED));
         }
         let irqs_to_cancel = self.pending_irqs.lock().drain_all();

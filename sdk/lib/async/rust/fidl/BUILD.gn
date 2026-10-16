@@ -35,9 +35,9 @@ rustc_library("fidl") {
   visibility = [
     "//examples/*",
     "//sdk/lib/async/rust/*",
-    "//sdk/lib/driver/component/rust/*",
-    "//sdk/lib/driver/runtime/rust/fidl/*",
+    "//sdk/lib/driver/*",
     "//src/ui/lib/input_pipeline/*",
+    "//vendor/*",
   ]
 }
 

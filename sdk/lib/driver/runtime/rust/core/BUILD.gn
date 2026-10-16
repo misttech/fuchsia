@@ -22,6 +22,7 @@ rustc_library("core") {
   ]
 
   test_deps = [
+    "//sdk/lib/async/rust",
     "//src/devices/bin/driver_runtime",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",

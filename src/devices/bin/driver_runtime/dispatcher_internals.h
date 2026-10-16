@@ -19,7 +19,7 @@ namespace driver_runtime {
 // Public so it can be referenced by the DispatcherCoordinator.
 class AsyncIrq : public async_irq_t, public fbl::DoublyLinkedListable<std::unique_ptr<AsyncIrq>> {
  public:
-  AsyncIrq(async_irq_t* original_irq, Dispatcher& dispatcher);
+  AsyncIrq(async_irq_t* original_irq, Dispatcher& dispatcher, bool is_always_on = false);
   ~AsyncIrq();
 
   static zx_status_t Bind(std::unique_ptr<AsyncIrq> irq, Dispatcher& dispatcher)
@@ -59,6 +59,7 @@ class AsyncIrq : public async_irq_t, public fbl::DoublyLinkedListable<std::uniqu
   fbl::RefPtr<Dispatcher> dispatcher_ __TA_GUARDED(&lock_);
 
   async_irq_t* original_irq_;
+  bool is_always_on_ = false;
 
   zx_packet_interrupt_t interrupt_packet_ = {};
 };
@@ -134,7 +135,7 @@ class AsyncWait
       public fbl::ContainableBaseClasses<fbl::TaggedDoublyLinkedListable<
           std::unique_ptr<AsyncWait>, AsyncWaitTag, fbl::NodeOptions::AllowMultiContainerUptr>> {
  public:
-  AsyncWait(async_wait_t* original_wait, Dispatcher& dispatcher);
+  AsyncWait(async_wait_t* original_wait, Dispatcher& dispatcher, bool is_always_on = false);
   ~AsyncWait();
 
   static zx_status_t BeginWait(std::unique_ptr<AsyncWait> wait, Dispatcher& dispatcher)

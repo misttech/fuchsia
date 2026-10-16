@@ -111,6 +111,32 @@ impl MetadataServer {
 
         Some(offer)
     }
+
+    /// Like [`MetadataServer::serve`], but serves connections on `dispatcher` instead of a
+    /// fuchsia-async scope.
+    ///
+    /// The handler keeps a refcounted [`libasync::AsyncDispatcher`] rather than `dispatcher`
+    /// itself, so `dispatcher` doesn't have to be `'static`. Connections that arrive after the
+    /// dispatcher shuts down are closed.
+    pub fn serve_on<O>(
+        &self,
+        fs: &mut ServiceFs<O>,
+        dispatcher: impl libasync::GetAsyncDispatcher,
+        instance_name: impl Into<String>,
+    ) -> Option<fdf::Offer>
+    where
+        O: ServiceObjTrait,
+    {
+        let data = self.data.clone()?;
+        let handler =
+            MetadataDispatcherHandler { data, dispatcher: dispatcher.get_async_dispatcher() };
+
+        let offer = ServiceOffer::<fmetadata::Service>::new_with_name(self.name.clone())
+            .add_default_named_next(fs, instance_name, handler)
+            .build_zircon_offer_next();
+
+        Some(offer)
+    }
 }
 
 pub struct MetadataHandler {
@@ -128,8 +154,33 @@ impl fmetadata::ServiceHandler for MetadataHandler {
     }
 }
 
+struct MetadataDispatcherHandler {
+    data: Arc<Vec<u8>>,
+    dispatcher: libasync::AsyncDispatcher,
+}
+
+impl fmetadata::ServiceHandler for MetadataDispatcherHandler {
+    fn metadata(&self, server_end: ServerEnd<fmetadata::Metadata>) {
+        let data = self.data.clone();
+        libasync_fidl::AsyncChannel::server_from_zx_channel_on_dispatcher(
+            server_end,
+            self.dispatcher.clone(),
+        )
+        .spawn(MetadataServerImpl { data });
+    }
+}
+
 struct MetadataServerImpl {
     data: Arc<Vec<u8>>,
+}
+
+impl<T: fidl_next::Transport> fmetadata::MetadataServerHandler<T> for MetadataServerImpl {
+    async fn get_persisted_metadata(
+        &mut self,
+        responder: Responder<fmetadata::metadata::GetPersistedMetadata, T>,
+    ) {
+        let _ = responder.respond(self.data.as_slice()).await;
+    }
 }
 
 impl fmetadata::MetadataLocalServerHandler for MetadataServerImpl {
@@ -144,7 +195,11 @@ impl fmetadata::MetadataLocalServerHandler for MetadataServerImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_fuchsia_driver_metadata::MetadataMarker;
+    use fidl_fuchsia_io as fio;
     use futures::StreamExt;
+    use libasync::AsAsyncDispatcherRef;
+    use libasync_scope_dispatcher::ScopeDispatcher;
 
     #[fuchsia::test]
     async fn forward_from_incoming_serves_metadata() {
@@ -218,5 +273,28 @@ mod tests {
         let result =
             MetadataServer::new("test.MissingMetadata").forward_from_incoming(&incoming).await;
         assert_eq!(result.err(), Some(zx::Status::NOT_FOUND));
+    }
+
+    #[fuchsia::test]
+    async fn serve_on_borrowed_dispatcher() {
+        let dispatcher = ScopeDispatcher::new();
+        let server = MetadataServer { data: Some(Arc::new(vec![1, 2, 3])), name: "test".into() };
+        let mut fs = ServiceFs::new();
+        // A borrowed `AsyncDispatcherRef<'_>` is enough; `serve_on` takes its own refcount.
+        assert!(
+            server.serve_on(&mut fs, dispatcher.as_async_dispatcher_ref(), "default").is_some()
+        );
+
+        let (dir, dir_server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        fs.serve_connection(dir_server).unwrap();
+        let _fs = fasync::Task::local(fs.collect::<()>());
+
+        let metadata = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
+            MetadataMarker,
+        >(&dir, "svc/test/default/metadata")
+        .unwrap();
+        assert_eq!(metadata.get_persisted_metadata().await.unwrap(), Ok(vec![1, 2, 3]));
+
+        dispatcher.shutdown().await;
     }
 }

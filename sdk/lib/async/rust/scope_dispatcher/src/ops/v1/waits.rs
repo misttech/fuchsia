@@ -55,8 +55,8 @@ impl PendingWaits {
     }
 
     // Returns all the outstanding waits for cancellation.
-    pub fn get_all_waits(&mut self) -> impl Iterator<Item = Wait> {
-        self.waits.drain().map(|(wait, _)| wait)
+    pub fn drain_all(&mut self) -> Vec<Wait> {
+        self.waits.drain().map(|(wait, _)| wait).collect()
     }
 }
 

@@ -140,7 +140,7 @@ extern const async_ops_t g_veneer_ops = {
         .bind_irq =
             [](async_dispatcher_t* dispatcher, async_irq_t* irq) {
               auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
-              return veneer->dispatcher->BindIrq(irq);
+              return veneer->dispatcher->BindIrq(irq, true /* is_always_on */);
             },
         .unbind_irq =
             [](async_dispatcher_t* dispatcher, async_irq_t* irq) {
@@ -527,14 +527,12 @@ zx_status_t Dispatcher::BeginWait(async_wait_t* wait, bool is_always_on) {
   }
   // TODO(92740): we should do something more efficient rather than creating a new
   // AsyncWait each time.
-  auto async_wait = std::make_unique<AsyncWait>(wait, *this);
+  auto async_wait = std::make_unique<AsyncWait>(wait, *this, is_always_on);
   async_wait->set_handle(wait->object);
   async_wait->set_signals(wait->trigger);
 
   if (IsWakeVectorLocked(wait->object, wait->trigger)) {
     async_wait->set_request_type(CallbackRequest::RequestType::kWakeWait);
-  } else if (is_always_on) {
-    async_wait->set_request_type(CallbackRequest::RequestType::kAlwaysOnWait);
   }
 
   return AsyncWait::BeginWait(std::move(async_wait), *this);
@@ -715,9 +713,14 @@ void Dispatcher::Timer::Handler() {
 }
 
 zx_status_t Dispatcher::PostTask(async_task_t* task, bool is_always_on) {
+  auto* async_dispatcher = is_always_on
+                               ? fdf_dispatcher_get_async_dispatcher(GetAlwaysOnDispatcher())
+                               : GetAsyncDispatcher();
   driver_runtime::Callback callback =
-      [this, task](std::unique_ptr<driver_runtime::CallbackRequest> callback_request,
-                   zx_status_t status) { task->handler(this, task, status); };
+      [async_dispatcher, task](std::unique_ptr<driver_runtime::CallbackRequest> callback_request,
+                               zx_status_t status) {
+        task->handler(async_dispatcher, task, status);
+      };
 
   const zx::time now = zx::clock::get_monotonic();
   if (zx::time(task->deadline) <= now) {
@@ -764,7 +767,7 @@ zx_status_t Dispatcher::QueuePacket(async_receiver_t* receiver, const zx_packet_
   return async_queue_packet(process_shared_dispatcher_, receiver, data);
 }
 
-zx_status_t Dispatcher::BindIrq(async_irq_t* irq) {
+zx_status_t Dispatcher::BindIrq(async_irq_t* irq, bool is_always_on) {
   if (unsynchronized()) {
     // TODO(https://fxbug.dev/42052791): support interrupts on unsynchronized dispatchers.
     return ZX_ERR_NOT_SUPPORTED;
@@ -774,7 +777,7 @@ zx_status_t Dispatcher::BindIrq(async_irq_t* irq) {
   if (!IsRunningLocked()) {
     return ZX_ERR_BAD_STATE;
   }
-  auto async_irq = std::make_unique<AsyncIrq>(irq, *this);
+  auto async_irq = std::make_unique<AsyncIrq>(irq, *this, is_always_on);
   return AsyncIrq::Bind(std::move(async_irq), *this);
 }
 
@@ -918,6 +921,7 @@ fit::result<NonInlinedReason> Dispatcher::ShouldInline(
   // will be empty, but we still want to consider it not reentrant and directly
   // call into the driver.
   bool is_global_loop_callback = (req_type == CallbackRequest::RequestType::kIrq) ||
+                                 (req_type == CallbackRequest::RequestType::kAlwaysOnIrq) ||
                                  (req_type == CallbackRequest::RequestType::kWait) ||
                                  (req_type == CallbackRequest::RequestType::kAlwaysOnWait) ||
                                  (req_type == CallbackRequest::RequestType::kWakeIrq) ||

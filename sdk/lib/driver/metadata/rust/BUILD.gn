@@ -18,6 +18,8 @@ rustc_library("rust") {
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/lib/async/rust",
+    "//sdk/lib/async/rust/fidl",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
@@ -28,14 +30,15 @@ rustc_library("rust") {
     "//third_party/rust_crates:thiserror",
   ]
 
+  test_deps = [
+    "//sdk/lib/async/rust/scope_dispatcher",
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:futures",
+  ]
+
   sources = [
     "src/lib.rs",
     "src/serde.rs",
-  ]
-
-  test_deps = [
-    "//src/lib/fuchsia",
-    "//third_party/rust_crates:futures",
   ]
 }
 

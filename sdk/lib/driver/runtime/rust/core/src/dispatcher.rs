@@ -528,6 +528,14 @@ pub trait OnDriverDispatcher: OnDispatcher {
         }
     }
 
+    /// Returns the Always-On interface of this driver dispatcher.
+    fn always_on_dispatcher(&self) -> AsyncDispatcher {
+        let dispatcher = self.get_async_dispatcher();
+        let dispatcher_ref =
+            DriverDispatcherRef::from_async_dispatcher(dispatcher.as_async_dispatcher_ref());
+        AsyncDispatcher::new(&dispatcher_ref.always_on_dispatcher())
+    }
+
     /// Registers a wake vector event with this driver dispatcher.
     fn register_wake_vector(
         &self,
@@ -917,5 +925,85 @@ mod tests {
                 let _reg_drop = dispatcher.register_wake_vector(&event, signals).unwrap();
             }
         });
+    }
+
+    #[test]
+    fn always_on_dispatcher_runs_task_and_irq_while_suspended() {
+        ensure_driver_env();
+
+        let (shutdown_tx, shutdown_rx) = mpsc::channel();
+        let mut dispatcher = null_mut();
+        let mut observer = ShutdownObserver::new(move |dispatcher| {
+            assert!(!unsafe { fdf_env_dispatcher_has_queued_tasks(dispatcher.0.0.as_ptr()) });
+            shutdown_tx.send(()).unwrap();
+        })
+        .into_ptr();
+        let driver_ptr = &mut observer as *mut _ as *mut c_void;
+        let name = "always_on_test";
+        let res = unsafe {
+            fdf_env_dispatcher_create_with_owner(
+                driver_ptr,
+                DispatcherBuilder::ALLOW_THREAD_BLOCKING,
+                name.as_ptr() as *const c_char,
+                name.len(),
+                "".as_ptr() as *const c_char,
+                0,
+                observer,
+                &mut dispatcher,
+            )
+        };
+        assert_eq!(res, ZX_OK);
+        let dispatcher_owner = Dispatcher(NonNull::new(dispatcher).unwrap());
+        let dispatcher = AsyncDispatcher::new(&dispatcher_owner);
+        let always_on = dispatcher.always_on_dispatcher();
+
+        #[repr(C)]
+        struct SuspendCompleter {
+            base: fdf_env_suspend_completer_t,
+            tx: mpsc::Sender<()>,
+        }
+        unsafe extern "C" fn on_suspended(completer: *mut fdf_env_suspend_completer_t) {
+            let completer = unsafe { &*(completer as *const SuspendCompleter) };
+            completer.tx.send(()).unwrap();
+        }
+        let (suspend_tx, suspend_rx) = mpsc::channel();
+        let mut completer = SuspendCompleter {
+            base: fdf_env_suspend_completer_t { handler: Some(on_suspended) },
+            tx: suspend_tx,
+        };
+        unsafe {
+            fdf_env_driver_suspend(driver_ptr, &mut completer.base);
+        }
+        suspend_rx.recv().unwrap();
+
+        let (normal_tx, normal_rx) = mpsc::channel();
+        dispatcher.spawn(async move {
+            normal_tx.send(()).unwrap();
+        });
+
+        let (always_on_tx, always_on_rx) = mpsc::channel();
+        let irq = zx::Interrupt::create_virtual().unwrap();
+        let mut on_irq = libasync::OnInterrupt::new_on(
+            always_on.clone(),
+            irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        );
+        always_on.spawn(async move {
+            let _ = on_irq.next().await.unwrap().unwrap();
+            always_on_tx.send(()).unwrap();
+        });
+        irq.trigger(zx::BootInstant::from_nanos(1234)).unwrap();
+
+        // Always-on task and interrupt run while the driver dispatcher is suspended.
+        always_on_rx.recv().unwrap();
+        // Normal task remains queued on sleep_queue_ while suspended.
+        assert!(normal_rx.try_recv().is_err());
+
+        unsafe {
+            fdf_env_driver_resume(driver_ptr);
+        }
+        normal_rx.recv().unwrap();
+
+        drop(dispatcher_owner);
+        shutdown_rx.recv().unwrap();
     }
 }

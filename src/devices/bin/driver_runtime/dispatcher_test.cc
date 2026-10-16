@@ -4160,3 +4160,90 @@ TEST_F(DispatcherTest, WakeVectorAndAlwaysOnCppApi) {
   dispatcher->ShutdownAsync();
   shutdown_completion.Wait();
 }
+
+TEST_F(DispatcherTest, IrqDuringSuspendOnAlwaysOnDispatcher) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  async_dispatcher_t* async_dispatcher = dispatcher->async_dispatcher();
+  ASSERT_NOT_NULL(async_dispatcher);
+
+  fdf_dispatcher_t* always_on_dispatcher =
+      fdf_dispatcher_get_always_on_dispatcher(dispatcher->get());
+  ASSERT_NOT_NULL(always_on_dispatcher);
+
+  async_dispatcher_t* always_on_async = fdf_dispatcher_get_async_dispatcher(always_on_dispatcher);
+  ASSERT_NOT_NULL(always_on_async);
+
+  zx::interrupt normal_irq_object;
+  ASSERT_OK(zx::interrupt::create(zx::resource(0), 0, ZX_INTERRUPT_VIRTUAL, &normal_irq_object));
+
+  zx::interrupt always_on_irq_object;
+  ASSERT_OK(zx::interrupt::create(zx::resource(0), 0, ZX_INTERRUPT_VIRTUAL, &always_on_irq_object));
+
+  std::atomic_bool normal_irq_ran = false;
+  async::Irq normal_irq(normal_irq_object.get(), 0,
+                        [&](async_dispatcher_t* dispatcher_arg, async::Irq* irq_arg,
+                            zx_status_t status, const zx_packet_interrupt_t* interrupt) {
+                          if (status == ZX_OK) {
+                            EXPECT_EQ(dispatcher_arg, async_dispatcher);
+                            normal_irq_ran = true;
+                            normal_irq_object.ack();
+                          }
+                        });
+  ASSERT_OK(normal_irq.Begin(async_dispatcher));
+
+  libsync::Completion always_on_irq_done;
+  async::Irq always_on_irq(always_on_irq_object.get(), 0,
+                           [&](async_dispatcher_t* dispatcher_arg, async::Irq* irq_arg,
+                               zx_status_t status, const zx_packet_interrupt_t* interrupt) {
+                             if (status == ZX_OK) {
+                               EXPECT_EQ(dispatcher_arg, always_on_async);
+                               always_on_irq_object.ack();
+                               always_on_irq_done.Signal();
+                             }
+                           });
+  ASSERT_OK(always_on_irq.Begin(always_on_async));
+
+  StartAdditionalManagedThread();
+
+  // Suspend the driver.
+  libsync::Completion suspend_completion;
+  g_suspend_completion = &suspend_completion;
+
+  fdf_env_suspend_completer_t completer = {
+      .handler = [](fdf_env_suspend_completer_t* c) { g_suspend_completion->Signal(); },
+  };
+
+  fdf_env_driver_suspend(fake_driver, &completer);
+  suspend_completion.Wait();
+
+  // Trigger both IRQs while suspended.
+  ASSERT_OK(normal_irq_object.trigger(0, zx::time_boot()));
+  ASSERT_OK(always_on_irq_object.trigger(0, zx::time_boot()));
+
+  // The always-on IRQ must fire while the dispatcher is suspended.
+  ASSERT_OK(always_on_irq_done.Wait(zx::time::infinite()));
+
+  // The normal IRQ must NOT have fired yet.
+  zx::nanosleep(zx::deadline_after(zx::msec(50)));
+  ASSERT_FALSE(normal_irq_ran);
+
+  // Resume the driver and verify the normal IRQ fires.
+  fdf_env_driver_resume(fake_driver);
+
+  libsync::Completion task_done;
+  ASSERT_OK(async::PostTask(async_dispatcher, [&] { task_done.Signal(); }));
+  ASSERT_OK(task_done.Wait(zx::time::infinite()));
+  ASSERT_TRUE(normal_irq_ran);
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+
+  g_suspend_completion = nullptr;
+}
