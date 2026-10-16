@@ -164,9 +164,9 @@ mod test {
     }
 
     fn check_file_content(output: &str, path: &str, content: &str) -> Result<()> {
-        // TODO(vol): can pass File, to this function, but fatfs crashes if seek pos != 0
+        // TODO(https://fxbug.dev/570677224): can pass File, to this function, but fatfs crashes if seek pos != 0
         let volume = File::open(output)?;
-        // TODO(vol): can pass FileSystem to the function if I can figure how to pass type
+        // TODO(https://fxbug.dev/570677224): can pass FileSystem to the function if I can figure how to pass type
         // parameters. Write trait seems like required for FileSystem, but File doesn't
         // privide it.
         let fs = fatfs::FileSystem::new(volume, fatfs::FsOptions::new())?;

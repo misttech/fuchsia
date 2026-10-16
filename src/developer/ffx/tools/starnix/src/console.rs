@@ -83,7 +83,7 @@ async fn run_console(
     let (local_console_out, remote_console_out) = controller.domain().create_stream_socket();
     let binary_path = argv[0].clone();
     let (cols, rows) = termion::terminal_size().bug_context("getting terminal size")?;
-    let (x_pixels, y_pixels) = (0, 0); // TODO: Need a newer termion for `terminal_size_pixels()`.
+    let (x_pixels, y_pixels) = (0, 0); // TODO(https://fxbug.dev/570676615): Need a newer termion for `terminal_size_pixels()`.
     let exit_future = controller
         .spawn_console(fstarcontainer::ControllerSpawnConsoleRequest {
             console_in: Some(remote_console_in),

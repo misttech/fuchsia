@@ -122,7 +122,7 @@ D3BlobTreeMap.prototype.init = function() {
       .style('margin', 0)
       .style('box-shadow', '5px 5px 5px #888');
   this._layout = this._createTreeMapLayout();
-  this._setData(tree_data); // TODO: Don't use global 'tree_data'
+  this._setData(tree_data); // TODO(https://fxbug.dev/570676584): Don't use global 'tree_data'
 }
 
 /**

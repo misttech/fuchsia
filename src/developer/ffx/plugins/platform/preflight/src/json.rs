@@ -19,7 +19,7 @@ pub struct JsonCheckResult {
     mitigation: Option<String>,
 }
 
-// TODO(thatguy): Consider implementing Serialize for existing types instead of
+// TODO(https://fxbug.dev/570676709): Consider implementing Serialize for existing types instead of
 // using intermediary structs.
 pub fn results_to_json(results: &Vec<PreflightCheckResult>) -> anyhow::Result<JsonResult> {
     let check_results: Vec<_> = results

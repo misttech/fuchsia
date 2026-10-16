@@ -927,7 +927,7 @@ impl Interpreter {
                         let compiled = visitor.visit(Node::Program(s));
                         let (mut frame, invalid_ids) = {
                             let mut global_variables = self.global_variables.lock().unwrap();
-                            // TODO: There's a complicated bug here where only the last
+                            // TODO(https://fxbug.dev/570676894): There's a complicated bug here where only the last
                             // declaration of a variable determines the mutability for the
                             // whole run of this compilation unit. We could fix it by not
                             // reusing slots for multiple declarations.

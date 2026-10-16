@@ -228,7 +228,7 @@ impl<'a> Iterator for PriorityIterator<'a> {
 /// the file couldn't be read.
 ///
 /// If the JSON is malformed, it will just get overwritten if set is ever used.
-/// (TODO: Validate above assumptions)
+/// (TODO(https://fxbug.dev/570676317): Validate above assumptions)
 fn read_json<T: DeserializeOwned>(file: impl Read) -> Option<T> {
     serde_json::from_reader(file).ok()
 }

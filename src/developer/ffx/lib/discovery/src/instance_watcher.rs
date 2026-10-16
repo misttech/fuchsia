@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use notify::PollWatcher as RecommendedWatcher;
 #[cfg(not(target_os = "macos"))]
 use notify::RecommendedWatcher;
-// TODO: Extract process liveness checking into a shared host process utility
+// TODO(https://fxbug.dev/570677042): Extract process liveness checking into a shared host process utility
 // library across ffx (e.g. //src/developer/ffx/lib/process) instead of
 // duplicating this logic across emulator_instance, pkg, target/discover,
 // and discovery.

@@ -70,7 +70,7 @@ struct BlobInstance {
 
 #[derive(Clone)]
 struct BudgetBlobs {
-    // TODO(samans): BudgetResult is supposed to represent the result of size checker and should
+    // TODO(https://fxbug.dev/570676904): BudgetResult is supposed to represent the result of size checker and should
     // not be used here.
     /// Budget to which one the blobs applies.
     budget: BudgetResult,

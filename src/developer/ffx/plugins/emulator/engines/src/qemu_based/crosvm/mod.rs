@@ -208,7 +208,7 @@ impl EmulatorEngine for CrosvmEngine {
     }
 
     fn attach(&self, _console: EngineConsoleType) -> Result<()> {
-        // TODO(surajmalhotra): Support attaching to the console later.
+        // TODO(https://fxbug.dev/570676799): Support attaching to the console later.
         return_bug!("Attach not implemented for crosvm engine");
     }
 

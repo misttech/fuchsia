@@ -472,7 +472,7 @@ impl FromStr for TargetAddr {
 }
 
 impl TargetAddr {
-    // TODO(colnnelson): clean up with wrapper types for `scope` and `port` to
+    // TODO(https://fxbug.dev/570676953): clean up with wrapper types for `scope` and `port` to
     // avoid the "zero is default" legacy.
     pub fn new(ip: IpAddr, scope_id: u32, port: u16) -> Self {
         match ip {

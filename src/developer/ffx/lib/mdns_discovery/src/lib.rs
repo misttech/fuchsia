@@ -479,7 +479,7 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
         if v4_listen_socket.upgrade().is_none() {
             match make_listen_socket((MDNS_MCAST_V4, mdns_port).into()) {
                 Ok(sock) => {
-                    // TODO(awdavies): Networking tests appear to fail when
+                    // TODO(https://fxbug.dev/570677204): Networking tests appear to fail when
                     // using IPv6. Only propagates the port binding event for
                     // IPv4.
                     let _ = propagate_bind_event(&sock, &mdns_protocol).await;
@@ -561,7 +561,7 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                 let mut addr = *addr;
                 addr.set_port(0);
 
-                // TODO(raggi): remove duplicate joins, log unexpected errors
+                // TODO(https://fxbug.dev/570677342): remove duplicate joins, log unexpected errors
                 if let SocketAddr::V4(addr) = addr {
                     if let Some(sock) = v4_listen_socket.upgrade() {
                         let _ = sock.join_multicast_v4(MDNS_MCAST_V4, *addr.ip());

@@ -77,7 +77,7 @@ pub struct RunCommand {
     #[argh(positional)]
     pub test_args: Vec<String>,
 
-    // TODO(satsukiu): once stable, document the format
+    // TODO(https://fxbug.dev/570677223): once stable, document the format
     /// read test url and options from the specified file instead of from the
     /// command line.
     /// May not be used in conjunction with `test_args`, `--count`,

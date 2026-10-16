@@ -1221,7 +1221,7 @@ impl Visitor {
             let capture_map = capture_map.clone();
 
             async move {
-                // TODO: If we import in a nested block this will do the whole
+                // TODO(https://fxbug.dev/570676159): If we import in a nested block this will do the whole
                 // import including file loading every single time we loop
                 // through that block. Not ideal?
                 let (fs_root, pwd) = {

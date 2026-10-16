@@ -152,7 +152,7 @@ impl UnlockCredentials {
             .map_err(|e| FfxFastbootError::FileOpen { path: pik_cert_file, source: e })?;
         let pik_size = pik_file
             .metadata()
-            .await? // TODO map metadata error if needed, it uses ? which works via From<io::Error>
+            .await? // TODO(https://fxbug.dev/570676633): map metadata error if needed, it uses ? which works via From<io::Error>
             .len();
         if pik_size as usize != EXPECTED_CERTIFICATE_SIZE {
             return Err(FfxFastbootError::InvalidCertificateLength {

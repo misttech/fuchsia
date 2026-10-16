@@ -25,13 +25,13 @@ type TargetVSockCtx = struct {
     namespace TargetVSockNamespace;
 };
 
-// TODO(awdavies): Add serial number.
+// TODO(https://fxbug.dev/570676870): Add serial number.
 type TargetIpAddrInfo = strict union {
     1: ip TargetIp;
     2: ip_port TargetIpPort;
 };
 
-// TODO(awdavies): Add serial number.
+// TODO(https://fxbug.dev/570676870): Add serial number.
 type TargetAddrInfo = strict union {
     1: ip TargetIp;
     2: ip_port TargetIpPort;
@@ -41,7 +41,7 @@ type TargetAddrInfo = strict union {
     4: uart string:1024;
 };
 
-// TODO(awdavies): Add more target states once they're more well defined.
+// TODO(https://fxbug.dev/570676380): Add more target states once they're more well defined.
 type TargetState = strict enum {
     UNKNOWN = 1;
     DISCONNECTED = 2;
