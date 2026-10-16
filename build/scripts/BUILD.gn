@@ -31,6 +31,11 @@ if (is_host) {
     sources = [ "signal_utils.py" ]
   }
 
+  python_library("pstree_lib") {
+    sources = [ "pstree.py" ]
+    library_deps = [ "//build/profile:procfs" ]
+  }
+
   python_library("ninjatrace2json_lib") {
     sources = [ "ninjatrace2json.py" ]
   }
@@ -64,6 +69,11 @@ if (is_host) {
     deps = [ ":signal_utils_lib" ]
   }
 
+  python_build_time_tests("pstree_test") {
+    tests = [ "pstree_test.py" ]
+    deps = [ ":pstree_lib" ]
+  }
+
   python_build_time_tests("ninjatrace2json_test") {
     tests = [ "ninjatrace2json_test.py" ]
     deps = [ ":ninjatrace2json_lib" ]
@@ -76,6 +86,7 @@ group("tests") {
     ":main_build_test($host_toolchain)",
     ":ninjatrace2json_test($host_toolchain)",
     ":properties_test($host_toolchain)",
+    ":pstree_test($host_toolchain)",
     ":service_profile_test($host_toolchain)",
     ":signal_utils_test($host_toolchain)",
   ]
