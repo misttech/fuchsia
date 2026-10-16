@@ -218,8 +218,7 @@
         {
             "paths": [
                 "prebuilt/go.mod",
-                "build/checkout.gni",
-                "build/cipd.gni"
+                "build/checkout.gni"
             ],
             "description": "This is a part of the Fuchsia project,"
         },

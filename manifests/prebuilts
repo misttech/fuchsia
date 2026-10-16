@@ -297,7 +297,6 @@
              version="version:35.1"
              path="prebuilt/connectivity/wlan/firmware/broadcom/brcmfmac"
              platforms="linux-amd64,linux-arm64"
-             flag="build/cipd.gni|internal_access = true|internal_access = false"
              internal="true"/>
     <!--   Broadcom bluetooth firmware -->
     <package name="fuchsia_internal/firmware/bluetooth/broadcom"

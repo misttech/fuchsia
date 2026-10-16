@@ -1,0 +1,12 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Jiri writes //.jiri_root/prebuilt.json to record whether internal packages
+# were fetched.
+if (path_exists("//.jiri_root/prebuilt.json")) {
+  _prebuilt_json = read_file("//.jiri_root/prebuilt.json", "json")
+  internal_access = _prebuilt_json.internal_access
+} else {
+  internal_access = false
+}
