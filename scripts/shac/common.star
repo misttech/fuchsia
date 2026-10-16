@@ -44,12 +44,8 @@ def compiled_tool_path(ctx, tool_name):
             "%s-%s" % (tool["os"], tool["cpu"]) == cipd_platform_name(ctx)
         ):
             exe_path = build_dir + "/" + tool["path"]
-            res = os_exec(
-                ctx,
-                ["/usr/bin/test", "-f", exe_path],
-                raise_on_failure = False,
-            ).wait()
-            if res.retcode != 0:
+            info = ctx.io.stat(exe_path)
+            if not info or not info.is_file:
                 label = tool["label"].split("(")[0]
                 fail(
                     "Tool '%s' has not been built yet.\n" % tool_name +

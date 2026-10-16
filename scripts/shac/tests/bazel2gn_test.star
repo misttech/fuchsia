@@ -27,10 +27,12 @@ def _run(files, retcode = 1, stderr = "", expected_bazel2gn_cmd = _WITH_DIRECTOR
     """Runs the check with a mocked bazel2gn, which must match `expected_bazel2gn_cmd`."""
     return testing.run(
         _verify_bazel2gn,
-        files = files | {"out/tool_paths.json": _TOOL_PATHS},
+        files = files | {
+            "out/bazel2gn": testing.file(affected = False),
+            "out/tool_paths.json": _TOOL_PATHS,
+        },
         vars = _VARS,
         exec_mocks = [
-            testing.exec_mock(cmd = ["/usr/bin/test", "-f", testing.any_args]),
             testing.exec_mock(
                 cmd = expected_bazel2gn_cmd,
                 retcode = retcode,
