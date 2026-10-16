@@ -173,14 +173,18 @@
         "none",
         "-nodefaults",
     {{else}}
+        {{! Both engines pin the NIC to PCI slot 4, so that it has the same PCI topological
+            path, /00_04_0/, whichever engine runs the guest and whatever other devices are on
+            the bus, because some products identify it by that path in their netcfg policy. See
+            the same device in emulator_flags.json.template. }}
         {{#if (eq host.networking "tap")}}
             "-netdev",
             "type=tap,ifname=qemu,id=net0,script=no,downscript=no",
             "-device",
             {{#if (eq device.cpu.architecture "riscv64")}}
-                "virtio-net-pci,vectors=8,romfile=,netdev=net0,mac={{runtime.mac_address}}",
+                "virtio-net-pci,vectors=8,romfile=,netdev=net0,mac={{runtime.mac_address}},addr=0x4",
             {{else}}
-            "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}}",
+                "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}},addr=0x4",
             {{/if}}
         {{else}}
             {{!-- host.networking must be "user"}}
@@ -190,7 +194,7 @@
                 ,hostfwd=tcp::{{this.host}}-:{{this.guest}}
             {{~/each~}}",
             "-device",
-            "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}}",
+            "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}},addr=0x4",
         {{/if}}
     {{/if}}
     {{#if runtime.headless}}

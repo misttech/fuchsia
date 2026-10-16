@@ -185,14 +185,24 @@
             "none",
             "-nodefaults",
         {{else}}
+            {{! QEMU gives a device without an address the next free PCI slot, so the slot of
+                the NIC would depend on the devices which come before it: the qemu engine would
+                put it in slot 3, after the disk and the pointing device, and AEMU in slot 4,
+                since its audio controller takes slot 1 ahead of them. Both engines pin it to
+                slot 4, so that it has the same PCI topological path, /00_04_0/, whichever
+                engine runs the guest and whatever other devices are on the bus: some products
+                identify the NIC which Fuchsia manages by that path in their netcfg policy, and
+                don't provision it anywhere else. Slot 4 is free at this point, since at most
+                three devices, AEMU's audio controller, the disk and the pointing device, come
+                before the NIC. }}
             {{#if (eq host.networking "tap")}}
                 "-netdev",
                 "type=tap,ifname=qemu,id=net0,script=no,downscript=no",
                 "-device",
                 {{#if (eq device.cpu.architecture "riscv64")}}
-                    "virtio-net-pci,vectors=8,romfile=,netdev=net0,mac={{runtime.mac_address}}",
+                    "virtio-net-pci,vectors=8,romfile=,netdev=net0,mac={{runtime.mac_address}},addr=0x4",
                 {{else}}
-                "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}}",
+                    "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}},addr=0x4",
                 {{/if}}
             {{else}}
                 {{!-- host.networking must be "user"}}
@@ -202,7 +212,7 @@
                     ,hostfwd=tcp::{{this.host}}-:{{this.guest}}
                 {{~/each~}}",
                 "-device",
-                "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}}",
+                "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}},addr=0x4",
             {{/if}}
         {{/if}}
         {{#if (eq runtime.engine_type "qemu")}}

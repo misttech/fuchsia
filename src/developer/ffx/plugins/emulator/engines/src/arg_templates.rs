@@ -826,6 +826,103 @@ mod tests {
         assert_eq!(sorted_actual, expected);
     }
 
+    /// Returns the configuration of a guest with the given CPU architecture, which is run by the
+    /// given engine, with the given kind of networking.
+    fn networked_config(
+        architecture: sdk_metadata::CpuArchitecture,
+        engine_type: emulator_instance::EngineType,
+        networking: NetworkingMode,
+    ) -> EmulatorConfiguration {
+        EmulatorConfiguration {
+            guest: GuestConfig {
+                disk_image: Some(DiskImage::Fxfs("/path/to/fxfs.blk".into())),
+                kernel_image: Some(PathBuf::from("/path/to/kernel")),
+                ..Default::default()
+            },
+            host: HostConfig { networking, ..Default::default() },
+            device: DeviceConfig {
+                cpu: VirtualCpu { architecture, count: 2 },
+                ..Default::default()
+            },
+            runtime: emulator_instance::RuntimeConfig {
+                engine_type,
+                mac_address: "52:54:47:5e:82:ef".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Returns the `-device` argument which attaches the guest's network interface.
+    fn nic_device(flags: &FlagData) -> &str {
+        flags
+            .args
+            .windows(2)
+            .find(|pair| pair[0] == "-device" && pair[1].starts_with("virtio-net-pci,"))
+            .map(|pair| pair[1].as_str())
+            .unwrap_or_else(|| panic!("no virtio-net-pci device in {:?}", flags.args))
+    }
+
+    #[fuchsia::test]
+    fn test_default_template_nic_pci_slot() {
+        // Both engines pin the NIC to PCI slot 4, so that it has the same topological path
+        // whichever engine runs the guest, and whatever other devices are on the bus.
+        for engine_type in
+            [emulator_instance::EngineType::Qemu, emulator_instance::EngineType::Femu]
+        {
+            for networking in [NetworkingMode::Tap, NetworkingMode::User] {
+                let config = networked_config(
+                    sdk_metadata::CpuArchitecture::X64,
+                    engine_type,
+                    networking.clone(),
+                );
+                let flags = process_flag_template(&config).expect("ok processing");
+                assert_eq!(
+                    nic_device(&flags),
+                    "virtio-net-pci,vectors=8,netdev=net0,mac=52:54:47:5e:82:ef,addr=0x4",
+                    "{engine_type:?} engine, {networking:?} networking"
+                );
+            }
+        }
+
+        // The NIC of a riscv64 guest, which has no option ROM, is pinned as well.
+        let config = networked_config(
+            sdk_metadata::CpuArchitecture::Riscv64,
+            emulator_instance::EngineType::Qemu,
+            NetworkingMode::Tap,
+        );
+        let flags = process_flag_template(&config).expect("ok processing");
+        assert_eq!(
+            nic_device(&flags),
+            "virtio-net-pci,vectors=8,romfile=,netdev=net0,mac=52:54:47:5e:82:ef,addr=0x4"
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_efi_template_nic_pci_slot() {
+        for engine_type in
+            [emulator_instance::EngineType::Qemu, emulator_instance::EngineType::Femu]
+        {
+            for networking in [NetworkingMode::Tap, NetworkingMode::User] {
+                let mut config = networked_config(
+                    sdk_metadata::CpuArchitecture::X64,
+                    engine_type,
+                    networking.clone(),
+                );
+                config.guest.kernel_image = Some(PathBuf::from("/path/to/some.efi"));
+                assert!(config.guest.is_efi());
+
+                // The NIC is in the same slot as with the default template.
+                let flags = process_flag_template(&config).expect("ok processing");
+                assert_eq!(
+                    nic_device(&flags),
+                    "virtio-net-pci,vectors=8,netdev=net0,mac=52:54:47:5e:82:ef,addr=0x4",
+                    "{engine_type:?} engine, {networking:?} networking"
+                );
+            }
+        }
+    }
+
     #[fuchsia::test]
     fn test_efi_template_efi_kernel() {
         let config = EmulatorConfiguration {
