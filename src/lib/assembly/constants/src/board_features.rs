@@ -27,8 +27,9 @@ pub enum BoardFeature {
     /// monikers it lists (today Iris's `uart-db61000`). Other boards must add theirs there.
     DebugUartSuspend,
     /// Request the deep system suspend state (`ZX_SYSTEM_SUSPEND_OPTION_DEEP`) when suspending.
-    /// Routed as `fuchsia.power.DeepSuspendEnabled` to the generic-suspend driver; only has an
-    /// effect when suspend is enabled.
+    /// Routed as `fuchsia.power.DeepSuspendEnabled` to suspend drivers (e.g. generic-suspend);
+    /// only has an effect when suspend is enabled. Products can disable it with
+    /// `platform.power.deep_suspend_enabled`.
     DeepSuspend,
     /// Eager startup for power-manager component.
     EagerPowerManager,

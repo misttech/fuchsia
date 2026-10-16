@@ -7,7 +7,7 @@ use camino::Utf8PathBuf;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Platform configuration options for the starnix area.
+/// Platform configuration options for the power area.
 #[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
 #[serde(default, deny_unknown_fields)]
 pub struct PowerConfig {
@@ -19,6 +19,15 @@ pub struct PowerConfig {
     /// Defaults to 'true'.
     #[serde(skip_serializing_if = "bool::clone")]
     pub gpu_power_management_enabled: bool,
+
+    /// Whether the platform may use the deep system suspend state. Gates the
+    /// `fuchsia.power.DeepSuspendEnabled` config capability, which suspend drivers (e.g.
+    /// generic-suspend, and board drivers that enforce deep-suspend dependencies) consume. Only
+    /// takes effect if the board provides the `fuchsia::deep_suspend` feature and
+    /// `suspend_enabled` is true. Products can set this to false to disable deep suspend.
+    /// Defaults to 'true'.
+    #[serde(skip_serializing_if = "bool::clone")]
+    pub deep_suspend_enabled: bool,
 
     /// Deprecated and ignored. Storage power management is enabled by the
     /// `fuchsia::storage_power_management` and `fuchsia::suspending_token`
@@ -49,6 +58,7 @@ impl Default for PowerConfig {
         Self {
             suspend_enabled: false,
             gpu_power_management_enabled: true,
+            deep_suspend_enabled: true,
             storage_power_management_enabled: None,
             enable_non_hermetic_testing: false,
             metrics_logging_config: None,
@@ -91,6 +101,22 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&disabled_config).unwrap(),
             serde_json::json!({ "gpu_power_management_enabled": false })
+        );
+    }
+
+    #[test]
+    fn test_deep_suspend_enabled_default_and_override() {
+        let default_config: PowerConfig = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(default_config.deep_suspend_enabled);
+
+        let disabled_config: PowerConfig = serde_json::from_value(serde_json::json!({
+            "deep_suspend_enabled": false,
+        }))
+        .unwrap();
+        assert!(!disabled_config.deep_suspend_enabled);
+        assert_eq!(
+            serde_json::to_value(&disabled_config).unwrap(),
+            serde_json::json!({ "deep_suspend_enabled": false })
         );
     }
 }

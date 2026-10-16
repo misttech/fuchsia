@@ -195,7 +195,9 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             "fuchsia.power.DeepSuspendEnabled",
             Config::new(
                 ConfigValueType::Bool,
-                context.board_config.provides_feature(BoardFeature::DeepSuspend).into(),
+                (config.deep_suspend_enabled
+                    && context.board_config.provides_feature(BoardFeature::DeepSuspend))
+                .into(),
             ),
         )?;
 
@@ -279,44 +281,57 @@ mod tests {
     use crate::common::ConfigurationBuilderImpl;
     use assembly_config_schema::BoardConfig;
 
-    #[test]
-    fn test_deep_suspend_disabled_by_default() {
-        let context = ConfigurationContext::default_for_tests();
-        let mut builder = ConfigurationBuilderImpl::default();
-        PowerManagementSubsystem::define_configuration(
-            &context,
-            &PowerConfig::default(),
-            &mut builder,
-        )
-        .unwrap();
-        let config = builder.build();
-        assert_eq!(
-            config.configuration_capabilities.get("fuchsia.power.DeepSuspendEnabled"),
-            Some(&Config::new_bool(false))
-        );
-    }
-
-    #[test]
-    fn test_deep_suspend_enabled_by_board_feature() {
-        let board_config = BoardConfig {
-            provided_features: vec![BoardFeature::DeepSuspend.as_ref().to_string()],
-            ..Default::default()
-        };
+    /// Asserts that `fuchsia.power.DeepSuspendEnabled` is set to `expected` for a board providing
+    /// `provided_features` and the given product `power_config`.
+    fn assert_deep_suspend_capability(
+        provided_features: Vec<String>,
+        power_config: &PowerConfig,
+        expected: bool,
+    ) {
+        let board_config = BoardConfig { provided_features, ..Default::default() };
         let context = ConfigurationContext {
             board_config: &board_config,
             ..ConfigurationContext::default_for_tests()
         };
         let mut builder = ConfigurationBuilderImpl::default();
-        PowerManagementSubsystem::define_configuration(
-            &context,
-            &PowerConfig::default(),
-            &mut builder,
-        )
-        .unwrap();
+        PowerManagementSubsystem::define_configuration(&context, power_config, &mut builder)
+            .unwrap();
         let config = builder.build();
         assert_eq!(
             config.configuration_capabilities.get("fuchsia.power.DeepSuspendEnabled"),
-            Some(&Config::new_bool(true))
+            Some(&Config::new_bool(expected))
+        );
+    }
+
+    #[test]
+    fn test_deep_suspend_disabled_without_board_feature() {
+        assert_deep_suspend_capability(vec![], &PowerConfig::default(), false);
+    }
+
+    #[test]
+    fn test_deep_suspend_enabled_by_board_feature() {
+        assert_deep_suspend_capability(
+            vec![BoardFeature::DeepSuspend.as_ref().to_string()],
+            &PowerConfig::default(),
+            true,
+        );
+    }
+
+    #[test]
+    fn test_deep_suspend_disabled_by_product_despite_board_feature() {
+        assert_deep_suspend_capability(
+            vec![BoardFeature::DeepSuspend.as_ref().to_string()],
+            &PowerConfig { deep_suspend_enabled: false, ..Default::default() },
+            false,
+        );
+    }
+
+    #[test]
+    fn test_deep_suspend_disabled_by_product_without_board_feature() {
+        assert_deep_suspend_capability(
+            vec![],
+            &PowerConfig { deep_suspend_enabled: false, ..Default::default() },
+            false,
         );
     }
 }
