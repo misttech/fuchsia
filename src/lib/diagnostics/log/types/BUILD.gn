@@ -46,7 +46,7 @@ rustc_library("types") {
   with_unit_tests = true
   deps = []
   deps += [
-    "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+    "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust_common",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
   ]

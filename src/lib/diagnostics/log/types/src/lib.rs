@@ -11,7 +11,7 @@ use std::{cmp, fmt};
 #[cfg(fuchsia_api_level_less_than = "27")]
 use fidl_fuchsia_diagnostics as fdiagnostics;
 #[cfg(fuchsia_api_level_at_least = "27")]
-use fidl_fuchsia_diagnostics_types as fdiagnostics;
+use fidl_fuchsia_diagnostics_types_common as fdiagnostics;
 
 #[cfg(feature = "serde")]
 #[doc(hidden)]

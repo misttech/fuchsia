@@ -23,7 +23,7 @@ rustc_library(
     visibility = ["//visibility:public"],
     with_host_unit_tests = True,
     deps = [
-        "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+        "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust_common",
         "//third_party/rust_crates/vendor:log",
         "//third_party/rust_crates/vendor:thiserror",
     ] + select({
