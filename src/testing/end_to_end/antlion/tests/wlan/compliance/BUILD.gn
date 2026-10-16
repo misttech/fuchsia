@@ -10,7 +10,7 @@ assert(is_host, "antlion tests only supported for host testing")
 antlion_host_test("wlan_security_type_test") {
   main_source = "SecurityTypeTest.py"
   environments = wlan_ap_envs
-  timeout_secs = 1800
+  timeout_secs = 660
   libraries = [
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
     "//src/testing/end_to_end/honeydew",
