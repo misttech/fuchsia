@@ -10,7 +10,8 @@ set -euo pipefail
 #    BUILD.bazel (e.g., fx_cc_library, cc_library, rustc_library, go_library, fidl_library)
 #    annotated with `# @bazel2gn:skip` when BUILD.gn is present (especially reference or
 #    bitrot-prevention libraries depended upon by `group("tests")` or duplicated above the
-#    `## BAZEL2GN SENTINEL` marker in BUILD.gn).
+#    `## BAZEL2GN SENTINEL` marker in BUILD.gn), except package-private `testonly = True`
+#    helper targets whose only consumers are Bazel-only tests in the same package.
 # 2. duplicate_target_above_sentinel (error): flags any convertible target in BUILD.gn defined
 #    above `## BAZEL2GN SENTINEL` when a target of the same name is defined in BUILD.bazel or
 #    should be generated below the sentinel by `fx bazel2gn`. GN tests (`rustc_test`, `go_test`)
@@ -27,12 +28,13 @@ set -euo pipefail
 #    test runner shard, `fx_packaged_binary` of the `rustc_*` `:<name>_test` or a `rustc_test`).
 #    Tests whose language is unknown never trigger it.
 # 4. test_generated_by_bazel2gn (error): tests move to Bazel and must not be translated to GN.
-#    bazel2gn still translates `rustc_test`, `go_test`, `fidlgentest_go_test`, `test_suite`
-#    and the `with_unit_tests`/`with_host_unit_tests`/`test_deps` attributes of `rustc_*`
-#    targets, so in a dual-build package this flags any of those without `# @bazel2gn:skip`.
-#    `host_*_test` and `fx_*` rules are never translated, so they aren't flagged. Also flags
-#    a generated section of BUILD.gn that contains `with_unit_tests`, `test_deps`,
-#    `rustc_test(` or `go_test(`.
+#    bazel2gn still translates `rustc_test`, `go_test`, `fidlgentest_go_test`, `test_suite`,
+#    the `with_unit_tests`/`with_host_unit_tests`/`test_deps` attributes of `rustc_*` targets,
+#    and package-private `testonly = True` helper targets (such as test-only `fidl_library` or
+#    helper libraries) whose only consumers are Bazel tests, so in a dual-build package this
+#    flags any of those without `# @bazel2gn:skip`. `host_*_test` and `fx_*` rules are never
+#    translated, so they aren't flagged. Also flags a generated section of BUILD.gn that
+#    contains `with_unit_tests`, `test_deps`, `rustc_test(` or `go_test(`.
 # 5. defs_bzl_reexport_load (error): flags any BUILD.bazel `load()` from a `*:defs.bzl` file
 #    (such as `//build/bazel/rules/rust:defs.bzl` or `@rules_cc//cc:defs.bzl`) of a symbol that
 #    `defs.bzl` only re-exports from another `.bzl` file in the same directory. Symbols defined
@@ -81,15 +83,20 @@ CONVERTIBLE_BAZEL_RULES = {
     "zither_fidl_library",
 }
 
+# Plain GN `shared_library()` is intentionally excluded: `build/tools/bazel2gn/constants.go`
+# maps `cc_library` and `fx_cc_library` only to `static_library` or `source_set` (and
+# `idk_cc_shared_library` / `cc_shared_library_zx` only to `sdk_shared_library` / `zx_library`),
+# so a plain `shared_library()` in a dual-build package has no bazel2gn equivalent and must
+# remain above `## BAZEL2GN SENTINEL` to preserve GN target type parity.
 CONVERTIBLE_GN_TEMPLATES = {
     "static_library",
     "source_set",
-    "shared_library",
     "executable",
     "library_headers",
     "rustc_library",
     "rustc_binary",
     "rustc_macro",
+    "rustc_dylib",
     "go_library",
     "go_binary",
     "python_library",
@@ -175,7 +182,7 @@ for p in changed:
             candidate_dirs.add(d)
 
 
-def parse_bazel_targets(bazel_path):
+def parse_bazel_targets(bazel_path, pkg_dir=""):
     try:
         text = open(bazel_path, encoding="utf-8").read()
     except Exception:
@@ -199,13 +206,18 @@ def parse_bazel_targets(bazel_path):
         unit_tests = False
         unit_tests_refs = []
         host_only = False
+        testonly = False
+        vis_items = []
+        dep_refs = set()
+        gn_dep_refs = set()
         unskipped_test_attrs = []
         for kw in call.keywords:
             if kw.arg == "target_compatible_with":
                 tcw_seg = ast.get_source_segment(text, kw.value) or ""
                 if "HOST_OS_CONSTRAINTS" in tcw_seg or "HOST_CONSTRAINTS" in tcw_seg:
                     host_only = True
-            if kw.arg in UNIT_TEST_ATTRS and not has_skip_comment(lines, kw.lineno):
+            attr_skipped = kw.arg in UNIT_TEST_ATTRS and has_skip_comment(lines, kw.lineno)
+            if kw.arg in UNIT_TEST_ATTRS and not attr_skipped:
                 val = kw.value
                 empty = (isinstance(val, ast.Constant) and val.value in (None, False, "none")) or (
                     isinstance(val, ast.List) and not val.elts
@@ -214,6 +226,12 @@ def parse_bazel_targets(bazel_path):
                     unskipped_test_attrs.append((kw.arg, kw.lineno))
             if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 tname = kw.value.value
+            elif kw.arg == "testonly" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                testonly = True
+            elif kw.arg == "visibility" and isinstance(kw.value, ast.List):
+                for elt in kw.value.elts:
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                        vis_items.append(elt.value)
             elif kw.arg == "binary" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 binary_ref = kw.value.value.lstrip(":")
             elif kw.arg == "package_name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
@@ -227,6 +245,19 @@ def parse_bazel_targets(bazel_path):
                     unit_tests_refs.append(kw.value.value.lstrip(":"))
             elif kw.arg in ("with_unit_tests", "with_host_unit_tests") and isinstance(kw.value, ast.Constant):
                 unit_tests = unit_tests or kw.value.value is True or kw.value.value in ("fuchsia", "host", "both")
+            if kw.arg not in ("name", "visibility", "package_name"):
+                for sub in ast.walk(kw.value):
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                        sval = sub.value
+                        local_ref = None
+                        if sval.startswith(":"):
+                            local_ref = sval[1:]
+                        elif pkg_dir and sval.startswith(f"//{pkg_dir}:"):
+                            local_ref = sval.split(":", 1)[1]
+                        if local_ref:
+                            dep_refs.add(local_ref)
+                            if not attr_skipped:
+                                gn_dep_refs.add(local_ref)
         if not tname:
             continue
         start_line = node.lineno
@@ -253,13 +284,166 @@ def parse_bazel_targets(bazel_path):
             "unit_tests": unit_tests,
             "unit_tests_refs": unit_tests_refs,
             "host_only": host_only,
+            "testonly": testonly,
+            "vis_items": vis_items,
+            "dep_refs": dep_refs,
+            "gn_dep_refs": gn_dep_refs,
             "unskipped_test_attrs": unskipped_test_attrs,
         })
     return targets
 
 
-# GN-only target attributes bazel2gn cannot emit; such a target stays hand-written above the sentinel.
-GN_ONLY_ATTR_RE = re.compile(r"(?<![\w.])(?:exclude_toolchain_tags\s*\+?=|configs\s*-=|disable_syslog_backend\s*=)")
+# Check whether a convertible Bazel target is a package-private testonly helper
+# whose only consumers are Bazel-only test targets in the same package (leaving any
+# bazel2gn-generated GN target orphaned in BUILD.gn).
+def is_bazel_only_private_test_dep(
+    target, bazel_targets, gn_info, pkg_dir, packaged_binaries, gn_kept_pkg_test_deps=()
+):
+    tname = target["name"]
+    if not target.get("testonly"):
+        return False
+    vis = target.get("vis_items") or []
+    priv_vis = {"//visibility:private", ":__pkg__", f"//{pkg_dir}:__pkg__"}
+    if not vis or not all(v in priv_vis for v in vis):
+        return False
+    if tname in gn_kept_pkg_test_deps:
+        return False
+    if gn_info:
+        if tname in gn_info["pre_targets"]:
+            return False
+        ref_pat = re.compile(
+            r'"(?::|//'
+            + re.escape(pkg_dir)
+            + r':)'
+            + re.escape(tname)
+            + r'(?:_[A-Za-z0-9_]+)?(?:"|\()'
+        )
+        if ref_pat.search(gn_info["pre_text"]):
+            return False
+    has_bazel_test_consumer = False
+    for other in bazel_targets:
+        if other["name"] == tname:
+            continue
+        is_gn_converted_consumer = (
+            other["skip_line"] is None
+            and other["rule"] in CONVERTIBLE_BAZEL_RULES
+            and other["name"] not in packaged_binaries
+            and other["rule"] not in BAZEL2GN_TEST_RULES
+        )
+        if is_gn_converted_consumer and any(
+            r == tname or r.startswith(tname + "_")
+            for r in other.get("gn_dep_refs", ())
+        ):
+            return False
+        if any(
+            r == tname or r.startswith(tname + "_")
+            for r in other.get("dep_refs", ())
+        ):
+            has_bazel_test_consumer = True
+    return has_bazel_test_consumer
+
+
+# GN-only target attributes and constructs bazel2gn cannot emit; such a target stays
+# hand-written above the sentinel.
+GN_ONLY_ATTR_RE = re.compile(
+    r"(?<![\w.])(?:exclude_toolchain_tags\s*\+?=|configs\s*-=|disable_syslog_backend\s*=)"
+)
+GN_BLOCKED_CONSTRUCT_RE = re.compile(
+    r"\b(?:loadable_module|fuchsia_structured_config_[a-z0-9_]+)\s*\("
+    r"|\(\$[a-zA-Z0-9_]*toolchain\)"
+)
+
+
+# Check whether a pre-sentinel GN target is a testonly binary packaged by a GN test
+# package or component above the sentinel (never converted below the sentinel by bazel2gn).
+def is_packaged_testonly_gn_binary(gname, gtmpl, gbody, pre_targets, bazel_names):
+    if gtmpl not in ("executable", "rustc_binary", "go_binary", "python_binary"):
+        return False
+    if gname in bazel_names or not re.search(r"\btestonly\s*=\s*true\b", gbody):
+        return False
+    pkg_tmpls = (
+        "fuchsia_unittest_package",
+        "fuchsia_test_package",
+        "fuchsia_test_component",
+        "fuchsia_unittest_component",
+        "fuchsia_component",
+        "bootfs_test",
+    )
+    ref_re = re.compile(r'":' + re.escape(gname) + r'(?:"|\()')
+    return any(
+        ptmpl in pkg_tmpls and ref_re.search(pbody)
+        for ptmpl, _, pbody in pre_targets.values()
+    )
+
+
+# Inspect a pre-sentinel GN target's local and external dependencies for unmigrated
+# packages, declare_args() packages, and GN-only constructs that block Bazel conversion.
+def inspect_gn_target_deps(gbody, pkg_dir, pre_targets, bazel_names):
+    unmigrated_deps = []
+    declare_args_deps = []
+    gn_blocked_dep = False
+    vis_re = re.compile(r"\bvisibility\s*\+?=\s*\[[^\]]*\]")
+    local_ref_re = re.compile(
+        r'"(?::([A-Za-z0-9_.-]+)|//'
+        + re.escape(pkg_dir)
+        + r'(?::([A-Za-z0-9_.-]+))?)"'
+    )
+    seen_local = set()
+    body_queue = [gbody]
+    while body_queue:
+        cur_body = vis_re.sub("", re.sub(r"#[^\n]*", "", body_queue.pop(0)))
+        for lm in local_ref_re.finditer(cur_body):
+            lname = lm.group(1) or lm.group(2) or os.path.basename(pkg_dir)
+            if lname in seen_local or lname in bazel_names or lname not in pre_targets:
+                continue
+            seen_local.add(lname)
+            ltmpl, _, lbody = pre_targets[lname]
+            if (
+                GN_ONLY_ATTR_RE.search(lbody)
+                or GN_BLOCKED_CONSTRUCT_RE.search(lbody)
+                or (ltmpl not in CONVERTIBLE_GN_TEMPLATES and ltmpl != "group")
+            ):
+                gn_blocked_dep = True
+            else:
+                body_queue.append(lbody)
+        for dm in re.finditer(r'"//([^":(\s]+)(?::[^"(\s]+)?"', cur_body):
+            dep_pkg = dm.group(1).strip("/")
+            if (
+                not dep_pkg
+                or dep_pkg == pkg_dir
+                or dep_pkg.startswith(("build/", "prebuilt/", "third_party/", "out/"))
+            ):
+                continue
+            dep_gn = os.path.join(workdir, dep_pkg, "BUILD.gn")
+            dep_bazel = os.path.join(workdir, dep_pkg, "BUILD.bazel")
+            if os.path.isfile(dep_gn) and not os.path.isfile(dep_bazel):
+                if f"//{dep_pkg}" not in unmigrated_deps:
+                    unmigrated_deps.append(f"//{dep_pkg}")
+                try:
+                    dep_gn_txt = open(dep_gn, encoding="utf-8").read()
+                    if "declare_args(" in dep_gn_txt and f"//{dep_pkg}" not in declare_args_deps:
+                        declare_args_deps.append(f"//{dep_pkg}")
+                    if GN_ONLY_ATTR_RE.search(dep_gn_txt) or GN_BLOCKED_CONSTRUCT_RE.search(
+                        dep_gn_txt
+                    ):
+                        gn_blocked_dep = True
+                    else:
+                        for sub_dm in re.finditer(
+                            r'"//([^":(\s]+)(?::[^"(\s]+)?"', dep_gn_txt
+                        ):
+                            sub_pkg = sub_dm.group(1).strip("/")
+                            sub_gn = os.path.join(workdir, sub_pkg, "BUILD.gn")
+                            sub_bazel = os.path.join(workdir, sub_pkg, "BUILD.bazel")
+                            if os.path.isfile(sub_gn) and not os.path.isfile(sub_bazel):
+                                sub_txt = open(sub_gn, encoding="utf-8").read()
+                                if GN_ONLY_ATTR_RE.search(
+                                    sub_txt
+                                ) or GN_BLOCKED_CONSTRUCT_RE.search(sub_txt):
+                                    gn_blocked_dep = True
+                                    break
+                except Exception:
+                    pass
+    return unmigrated_deps, declare_args_deps, gn_blocked_dep
 
 
 def has_skip_comment(lines, lineno):
@@ -334,7 +518,7 @@ for pkg_dir in sorted(candidate_dirs):
     if not os.path.isfile(bazel_abs):
         continue
 
-    bazel_targets = parse_bazel_targets(bazel_abs)
+    bazel_targets = parse_bazel_targets(bazel_abs, pkg_dir)
     gn_info = parse_gn_file(gn_abs) if os.path.isfile(gn_abs) else None
     packaged_binaries = {
         t["binary_ref"]
@@ -356,14 +540,24 @@ for pkg_dir in sorted(candidate_dirs):
                 and gn_info["pre_targets"][tname][0] in CONVERTIBLE_GN_TEMPLATES
             )
             ref_in_pre_gn = rule in CONVERTIBLE_BAZEL_RULES and bool(
-                re.search(r'":' + re.escape(tname) + r'(?:"|\()', gn_info["pre_text"])
+                re.search(
+                    r'"(?::|//' + re.escape(pkg_dir) + r':)' + re.escape(tname) + r'(?:_[A-Za-z0-9_]+)?(?:"|\()',
+                    gn_info["pre_text"],
+                )
             )
             if tname in packaged_binaries and not in_pre_gn and not ref_in_pre_gn:
                 continue
             if rule == "rustc_test":
                 continue
-            if in_pre_gn and GN_ONLY_ATTR_RE.search(gn_info["pre_targets"][tname][2]):
-                continue  # bazel2gn cannot emit its GN-only attributes (see gn_attr_parity).
+            if is_bazel_only_private_test_dep(
+                t, bazel_targets, gn_info, pkg_dir, packaged_binaries
+            ):
+                continue
+            if tname in gn_info["pre_targets"] and (
+                gn_info["pre_targets"][tname][0] not in CONVERTIBLE_GN_TEMPLATES
+                or GN_ONLY_ATTR_RE.search(gn_info["pre_targets"][tname][2])
+            ):
+                continue  # bazel2gn cannot emit its GN-only template or attributes (see gn_attr_parity).
             if t["skip_line"] is not None and (
                 rule in CONVERTIBLE_BAZEL_RULES or in_pre_gn or ref_in_pre_gn
             ):
@@ -440,55 +634,13 @@ for pkg_dir in sorted(candidate_dirs):
                     })
                 continue
             if gtmpl in CONVERTIBLE_GN_TEMPLATES and not GN_ONLY_ATTR_RE.search(gbody):
-                if (
-                    gtmpl == "executable"
-                    and re.search(r"\btestonly\s*=\s*true\b", gbody)
-                    and gname not in bazel_names
-                    and any(
-                        ptmpl in ("fuchsia_unittest_package", "fuchsia_test_package", "fuchsia_test_component", "bootfs_test")
-                        and re.search(r'":' + re.escape(gname) + r'(?:"|\()', pbody)
-                        for ptmpl, _, pbody in gn_info["pre_targets"].values()
-                    )
+                if is_packaged_testonly_gn_binary(
+                    gname, gtmpl, gbody, gn_info["pre_targets"], bazel_names
                 ):
                     continue
-                unmigrated_deps = []
-                declare_args_deps = []
-                gn_blocked_dep = False
-                for dm in re.finditer(r'"//([^":(\s]+)(?::[^"(\s]+)?"', gbody):
-                    dep_pkg = dm.group(1).strip("/")
-                    if (
-                        not dep_pkg
-                        or dep_pkg == pkg_dir
-                        or dep_pkg.startswith(("build/", "prebuilt/", "third_party/", "out/"))
-                    ):
-                        continue
-                    dep_gn = os.path.join(workdir, dep_pkg, "BUILD.gn")
-                    dep_bazel = os.path.join(workdir, dep_pkg, "BUILD.bazel")
-                    if os.path.isfile(dep_gn) and not os.path.isfile(dep_bazel):
-                        if f"//{dep_pkg}" not in unmigrated_deps:
-                            unmigrated_deps.append(f"//{dep_pkg}")
-                        try:
-                            dep_gn_txt = open(dep_gn, encoding="utf-8").read()
-                            if "declare_args(" in dep_gn_txt and f"//{dep_pkg}" not in declare_args_deps:
-                                declare_args_deps.append(f"//{dep_pkg}")
-                            if GN_ONLY_ATTR_RE.search(dep_gn_txt) or re.search(
-                                r"\bloadable_module\s*\(|\(\$[a-zA-Z0-9_]*toolchain\)", dep_gn_txt
-                            ):
-                                gn_blocked_dep = True
-                            else:
-                                for sub_dm in re.finditer(r'"//([^":(\s]+)(?::[^"(\s]+)?"', dep_gn_txt):
-                                    sub_pkg = sub_dm.group(1).strip("/")
-                                    sub_gn = os.path.join(workdir, sub_pkg, "BUILD.gn")
-                                    sub_bazel = os.path.join(workdir, sub_pkg, "BUILD.bazel")
-                                    if os.path.isfile(sub_gn) and not os.path.isfile(sub_bazel):
-                                        sub_txt = open(sub_gn, encoding="utf-8").read()
-                                        if GN_ONLY_ATTR_RE.search(sub_txt) or re.search(
-                                            r"\bloadable_module\s*\(|\(\$[a-zA-Z0-9_]*toolchain\)", sub_txt
-                                        ):
-                                            gn_blocked_dep = True
-                                            break
-                        except Exception:
-                            pass
+                unmigrated_deps, declare_args_deps, gn_blocked_dep = inspect_gn_target_deps(
+                    gbody, pkg_dir, gn_info["pre_targets"], bazel_names
+                )
                 if (
                     gname not in bazel_names
                     and gn_blocked_dep
@@ -743,11 +895,21 @@ for pkg_dir in sorted(candidate_dirs):
                             for cl in re.findall(r'"([^"]+)"', cm.group(1)):
                                 if cl.startswith(":") and "(" not in cl:
                                     pkg_test_deps.add(cl[1:])
-                owner = gn_info["pre_targets"].get(local) or gn_info["pre_targets"].get(re.sub(r"_test$", "", local))
+                owner = gn_info["pre_targets"].get(local) or gn_info["pre_targets"].get(
+                    re.sub(r"_test$", "", local)
+                )
                 if owner:
                     seed_texts.append(owner[2])
                     if GN_ONLY_ATTR_RE.search(owner[2]):
                         blockers.append("GN-only attributes (see gn_attr_parity)")
+                    _, _, owner_blocked = inspect_gn_target_deps(
+                        owner[2],
+                        pkg_dir,
+                        gn_info["pre_targets"],
+                        {t["name"] for t in bazel_targets},
+                    )
+                    if owner_blocked:
+                        blockers.append("GN-blocked dependency")
             # Unknown or unbuildable tests never trigger it.
             langs = {test_language(l) for l in labels}
             if "rust" in langs and depends_on_rustc_dylib(seed_texts):
@@ -805,6 +967,29 @@ for pkg_dir in sorted(candidate_dirs):
                         f"Put `# @bazel2gn:skip` directly above `{t['rule']}(name = \"{t['name']}\")`, export the test "
                         "through a hand-written `bazel_test_suite` above the sentinel (package it with `fx_test` if it "
                         f"runs on a device), and re-run `fx bazel2gn -d {pkg_dir}`."
+                    ),
+                })
+            elif (
+                t["rule"] in CONVERTIBLE_BAZEL_RULES
+                and t["skip_line"] is None
+                and is_bazel_only_private_test_dep(
+                    t, bazel_targets, gn_info, pkg_dir, packaged_binaries, gn_kept_pkg_test_deps
+                )
+            ):
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "test_generated_by_bazel2gn",
+                    "severity": "error",
+                    "file": bazel_rel,
+                    "line": t["line"],
+                    "message": (
+                        f"Package-private test-only target `{t['rule']}(name = \"{t['name']}\")` in '{bazel_rel}' "
+                        "is only consumed by Bazel tests in the same package, but has no `# @bazel2gn:skip`, so "
+                        f"bazel2gn generates an orphaned GN target in '{gn_rel}'."
+                    ),
+                    "remediation": (
+                        f"Put `# @bazel2gn:skip` directly above `{t['rule']}(name = \"{t['name']}\")` in "
+                        f"'{bazel_rel}' and re-run `fx bazel2gn -d {pkg_dir}`."
                     ),
                 })
             if t["rule"] in RUST_UNIT_TEST_OWNERS and (t["name"] + "_test") not in gn_kept_pkg_test_deps:

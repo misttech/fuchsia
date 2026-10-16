@@ -79,6 +79,8 @@ FX_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/test
 GN_TEST_TEMPLATES = {
     "fuchsia_unittest_package",
     "fuchsia_test_package",
+    "fuchsia_unittest_component",
+    "fuchsia_test_component",
     "fuchsia_test",
     "python_host_test",
     "host_test",

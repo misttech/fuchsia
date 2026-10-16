@@ -44,6 +44,7 @@ gn_file = os.path.join(workdir, target_pkg, "BUILD.gn")
 bazel_targets = []
 package_targets = set()
 non_gn_synced_targets = set()
+testonly_targets = set()
 alias_map = {}
 
 BAZEL_NON_GN_SYNCED_RULES = {
@@ -77,13 +78,21 @@ if os.path.isfile(bazel_file):
                 )
                 tname = None
                 actual = None
+                is_to = False
                 for kw in node.keywords:
                     if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                         tname = kw.value.value
                     elif kw.arg == "actual" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                         actual = kw.value.value
+                    elif kw.arg == "testonly":
+                        if isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                            is_to = True
+                        elif isinstance(kw.value, ast.Name) and kw.value.id in ("True", "true"):
+                            is_to = True
                 if tname:
                     bazel_targets.append(tname)
+                    if is_to:
+                        testonly_targets.add(tname)
                     if func in ("fx_package", "fuchsia_package", "fx_unittest_package"):
                         package_targets.add(tname)
                     if func in BAZEL_NON_GN_SYNCED_RULES:
@@ -96,12 +105,12 @@ if os.path.isfile(bazel_file):
 CONVERTIBLE_GN_TEMPLATES = {
     "static_library",
     "source_set",
-    "shared_library",
     "executable",
     "library_headers",
     "rustc_library",
     "rustc_binary",
     "rustc_macro",
+    "rustc_dylib",
     "rustc_test",
     "go_library",
     "go_binary",
@@ -413,7 +422,14 @@ def is_globally_used_target(rdep_pkgs):
     areas = {get_pkg_area(p) for p in pkgs if get_pkg_area(p)}
     return len(areas) >= 6 and (len(narrow) > 15 or len(pkgs) >= 20)
 
-def recommend_visibility(rdep_pkgs):
+is_test_pkg = (
+    target_pkg.startswith("src/testing/")
+    or target_pkg.startswith("src/lib/testing/")
+    or target_pkg.startswith("testing/")
+    or "/testing/" in target_pkg
+)
+
+def recommend_visibility(rdep_pkgs, is_test_support=False):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
     narrow = recommend_narrow_visibility(pkgs)
     globally_used = is_globally_used_target(pkgs)
@@ -423,6 +439,8 @@ def recommend_visibility(rdep_pkgs):
             return ["//:__subpackages__"]
         if len(rollup) <= len(narrow):
             return rollup
+    if is_test_support and len(get_distinct_areas(pkgs)) >= 2:
+        return ["//:__subpackages__"]
     return narrow
 
 print(json.dumps({
@@ -430,7 +448,7 @@ print(json.dumps({
     "true_rdep_packages": sorted({f"//{sanitize_rdep_pkg(p)}" for p in true_rdep_packages}),
     "distinct_rdep_areas": get_distinct_areas(true_rdep_packages),
     "is_globally_used": is_globally_used_target(true_rdep_packages),
-    "recommended_visibility": recommend_visibility(true_rdep_packages),
+    "recommended_visibility": recommend_visibility(true_rdep_packages, is_test_support=is_test_pkg or any(t in testonly_targets for t in bazel_targets)),
     "per_target_rdeps": {
         t: sorted({f"//{sanitize_rdep_pkg(p)}" for p in rset}) for t, rset in per_target_rdeps.items()
     },
@@ -438,7 +456,7 @@ print(json.dumps({
         t: is_globally_used_target(rset) for t, rset in per_target_rdeps.items()
     },
     "per_target_recommended_visibility": {
-        t: recommend_visibility(rset) for t, rset in per_target_rdeps.items()
+        t: recommend_visibility(rset, is_test_support=is_test_pkg or t in testonly_targets) for t, rset in per_target_rdeps.items()
     },
     "per_target_area_rollup_visibility": {
         t: recommend_area_rollup_visibility(rset) for t, rset in per_target_rdeps.items()

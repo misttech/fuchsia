@@ -55,8 +55,11 @@ change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
 git_cmds = [
     ["git", "-C", workdir, "diff", "--name-only", change_base, "--", "*BUILD.bazel"],
     ["git", "-C", workdir, "diff", "--cached", "--name-only", "--", "*BUILD.bazel"],
-    ["git", "-C", workdir, "ls-files", "--others", "--exclude-standard", "--", "*BUILD.bazel"],
 ]
+if target_dir:
+    git_cmds.append(["git", "-C", workdir, "ls-files", "--others", "--exclude-standard", "--", f"{target_dir}/*BUILD.bazel"])
+else:
+    git_cmds.append(["git", "-C", workdir, "ls-files", "--others", "--exclude-standard", "--", "*BUILD.bazel"])
 for cmd in git_cmds:
     try:
         out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
@@ -216,7 +219,7 @@ def is_globally_used_target(rdep_pkgs, pkg_path):
     areas = get_distinct_areas(pkgs, pkg_path)
     return len(areas) >= 6 and (len(narrow) > 15 or len(pkgs) >= 20)
 
-def recommend_visibility(rdep_pkgs, pkg_path):
+def recommend_visibility(rdep_pkgs, pkg_path, is_test_support=False):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
     narrow = recommend_narrow_visibility(pkgs, pkg_path)
     globally_used = is_globally_used_target(pkgs, pkg_path)
@@ -226,6 +229,8 @@ def recommend_visibility(rdep_pkgs, pkg_path):
             return ["//:__subpackages__"]
         if len(rollup) <= len(narrow):
             return rollup
+    if is_test_support and len(get_distinct_areas(pkgs, pkg_path)) >= 2:
+        return ["//:__subpackages__"]
     return narrow
 
 def get_orig_gn_visibility_scopes(pkg_path):
@@ -651,19 +656,42 @@ for rel_path in sorted(candidate_files):
 
         target_name = None
         vis_kw = None
+        is_testonly = False
         for kw in node.keywords:
             if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 target_name = kw.value.value
             elif kw.arg == "visibility":
                 vis_kw = kw
+            elif kw.arg == "testonly":
+                if isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                    is_testonly = True
+                elif isinstance(kw.value, ast.Name) and kw.value.id in ("True", "true"):
+                    is_testonly = True
 
         if not target_name:
             continue
 
+        is_test_rule = (
+            func_name in (
+                "host_rustc_test", "host_test", "wrap_host_rust_test",
+                "fx_test", "fx_unittest_package", "fx_test_package",
+                "rustc_test", "rust_test", "cc_test", "fx_cc_test", "go_test",
+            )
+            or func_name.startswith("wrap_host_")
+            or func_name.endswith("_test")
+        )
+        is_test_support_pkg = (
+            rel_path.startswith("src/testing/")
+            or rel_path.startswith("src/lib/testing/")
+            or rel_path.startswith("testing/")
+            or "/testing/" in rel_path
+        )
+        allow_broad_test_vis = is_testonly or is_test_support_pkg or is_test_rule
+
         target_rdeps = per_target_rdeps.get(target_name, true_rdeps)
         narrow_vis = recommend_narrow_visibility(target_rdeps, pkg_path)
         area_rollup_vis = recommend_area_rollup_visibility(target_rdeps, pkg_path)
-        rec_target_vis = recommend_visibility(target_rdeps, pkg_path)
+        rec_target_vis = recommend_visibility(target_rdeps, pkg_path, is_test_support=allow_broad_test_vis)
         is_globally_used = is_globally_used_target(target_rdeps, pkg_path)
         distinct_areas = get_distinct_areas(target_rdeps, pkg_path)
 
@@ -802,41 +830,48 @@ for rel_path in sorted(candidate_files):
 
         findings_before_target = len(findings)
         max_rollup_entries = 15 if is_globally_used else max(15, len(area_rollup_vis))
-        allow_broad_rollup = (is_globally_used or len(narrow_vis) > 5 or len(distinct_areas) >= 3) and len(entries) <= max_rollup_entries
+        allow_broad_rollup = (is_globally_used or len(narrow_vis) > 5 or len(distinct_areas) >= 3 or allow_broad_test_vis) and len(entries) <= max_rollup_entries
         top_level_subpkgs = []
         for val, lineno in entries:
             if val in preexisting_vis:
                 continue
             if val == "//visibility:public":
-                if not rel_path.startswith("build/bazel_sdk/"):
-                    if len(target_rdeps) == 0 and not has_macro_injected_rdeps:
-                        rem = f"Omit 'visibility' on '{target_name}' (default private) as no external packages depend on it, and re-run fx bazel2gn."
-                    elif is_globally_used or has_macro_injected_rdeps:
-                        rem = (
-                            f"Never use '//visibility:public' when migrating GN targets to Bazel (per "
-                            f"determining_bazel_visibility/SKILL.md). Replace '//visibility:public' with "
-                            f"subsystem-scoped visibility {json.dumps(rec_target_vis)} (or "
-                            f"[\"//:__subpackages__\"] for foundational tree-wide libraries) and re-run fx bazel2gn."
-                        )
-                    else:
-                        rem = (
-                            f"Never use '//visibility:public' when migrating GN targets to Bazel (per "
-                            f"determining_bazel_visibility/SKILL.md). Replace '//visibility:public' with "
-                            f"tightly-scoped caller visibility: {json.dumps(rec_target_vis)} and re-run fx bazel2gn."
-                        )
-                    findings.append({
-                        "source": "visibility_audit",
-                        "category": "overbroad_public_visibility",
-                        "severity": "error",
-                        "file": rel_path,
-                        "line": lineno,
-                        "message": (
-                            f"Target '{target_name}' uses '//visibility:public', which is disallowed outside "
-                            f"//build/bazel_sdk/... ({len(target_rdeps)} package(s) across {len(distinct_areas)} "
-                            f"area(s) depend on '{target_name}')."
-                        ),
-                        "remediation": rem,
-                    })
+                if is_test_rule or rel_path.startswith("build/bazel_sdk/"):
+                    continue
+                if allow_broad_test_vis:
+                    rem = (
+                        f"Never use '//visibility:public' when migrating GN targets to Bazel (per "
+                        f"determining_bazel_visibility/SKILL.md). Replace '//visibility:public' with "
+                        f"[\"//:__subpackages__\"] for test support libraries and re-run fx bazel2gn."
+                    )
+                elif len(target_rdeps) == 0 and not has_macro_injected_rdeps:
+                    rem = f"Omit 'visibility' on '{target_name}' (default private) as no external packages depend on it, and re-run fx bazel2gn."
+                elif is_globally_used or has_macro_injected_rdeps:
+                    rem = (
+                        f"Never use '//visibility:public' when migrating GN targets to Bazel (per "
+                        f"determining_bazel_visibility/SKILL.md). Replace '//visibility:public' with "
+                        f"subsystem-scoped visibility {json.dumps(rec_target_vis)} (or "
+                        f"[\"//:__subpackages__\"] for foundational tree-wide libraries) and re-run fx bazel2gn."
+                    )
+                else:
+                    rem = (
+                        f"Never use '//visibility:public' when migrating GN targets to Bazel (per "
+                        f"determining_bazel_visibility/SKILL.md). Replace '//visibility:public' with "
+                        f"tightly-scoped caller visibility: {json.dumps(rec_target_vis)} and re-run fx bazel2gn."
+                    )
+                findings.append({
+                    "source": "visibility_audit",
+                    "category": "overbroad_public_visibility",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": lineno,
+                    "message": (
+                        f"Target '{target_name}' uses '//visibility:public', which is disallowed outside "
+                        f"//build/bazel_sdk/... ({len(target_rdeps)} package(s) across {len(distinct_areas)} "
+                        f"area(s) depend on '{target_name}')."
+                    ),
+                    "remediation": rem,
+                })
                 continue
             if val in (":__pkg__", f"//{pkg_path}:__pkg__"):
                 findings.append({
@@ -849,7 +884,7 @@ for rel_path in sorted(candidate_files):
                     "remediation": f"Remove '{val}' from visibility."
                 })
             elif val == "//:__subpackages__":
-                if not is_globally_used and not has_macro_injected_rdeps:
+                if not is_globally_used and not has_macro_injected_rdeps and not allow_broad_test_vis:
                     findings.append({
                         "source": "visibility_audit",
                         "category": "disguised_public_visibility",
@@ -910,7 +945,7 @@ for rel_path in sorted(candidate_files):
 
                     if depth == 1:
                         top_level_subpkgs.append((val, lineno))
-                        if prefix in BANNED_TOP_LEVEL_SUBPKGS and not is_globally_used and not allow_broad_rollup:
+                        if prefix in BANNED_TOP_LEVEL_SUBPKGS and not is_globally_used and not allow_broad_rollup and not allow_broad_test_vis:
                             findings.append({
                                 "source": "visibility_audit",
                                 "category": "overbroad_top_level_subpackages_visibility",
@@ -927,24 +962,25 @@ for rel_path in sorted(candidate_files):
                             continue
 
                     if prefix in BANNED_UMBRELLA_SUBPKGS:
-                        findings.append({
-                            "source": "visibility_audit",
-                            "category": "overbroad_subpackages_visibility",
-                            "severity": "error",
-                            "file": rel_path,
-                            "line": lineno,
-                            "message": f"Target '{target_name}' grants multi-domain umbrella wildcard '{val}' in visibility ('//{prefix} seems too wide').",
-                            "remediation": (
-                                f"Replace '{val}' with {json.dumps(rec_target_vis)}."
-                                if is_globally_used
-                                else (
-                                    f"Replace '{val}' with specific library/package visibility entries: {json.dumps(replacement)}."
-                                    if replacement
-                                    else f"Remove '{val}' from visibility (no true reverse dependencies exist under '//{prefix}')."
-                                )
-                            ),
-                        })
-                        continue
+                        if not allow_broad_test_vis:
+                            findings.append({
+                                "source": "visibility_audit",
+                                "category": "overbroad_subpackages_visibility",
+                                "severity": "error",
+                                "file": rel_path,
+                                "line": lineno,
+                                "message": f"Target '{target_name}' grants multi-domain umbrella wildcard '{val}' in visibility ('//{prefix} seems too wide').",
+                                "remediation": (
+                                    f"Replace '{val}' with {json.dumps(rec_target_vis)}."
+                                    if is_globally_used or allow_broad_test_vis
+                                    else (
+                                        f"Replace '{val}' with specific library/package visibility entries: {json.dumps(replacement)}."
+                                        if replacement
+                                        else f"Remove '{val}' from visibility (no true reverse dependencies exist under '//{prefix}')."
+                                    )
+                                ),
+                            })
+                            continue
 
                     if len(covered_rdeps) == 0:
                         if not has_macro_injected_rdeps:
