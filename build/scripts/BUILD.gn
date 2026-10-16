@@ -16,6 +16,7 @@ if (is_host) {
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
       "//build/rbe:build_summary",
+      "//build/rbe:casfs",
       "//build/rbe:rbe_profile",
       "//build/rbe:rbe_settings",
       "//build/resultstore:rs_profile",

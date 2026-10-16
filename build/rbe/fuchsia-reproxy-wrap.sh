@@ -35,6 +35,7 @@ readonly default_config="$script_dir"/fuchsia-reproxy.cfg
 readonly gcertauth_config="$script_dir"/fuchsia-reproxy-gcertauth.cfg
 readonly select_auth_script="$project_root"/build/auth/select_auth_method.py
 readonly build_summary_script="$script_dir"/build_summary.py
+readonly casfs_script="$script_dir"/casfs.py
 
 # location of reclient binaries relative to output directory where build is run
 reclient_bindir="$project_root_rel"/prebuilt/third_party/reclient/"$HOST_PLATFORM"
@@ -286,6 +287,13 @@ else
   build_uuid="${FX_BUILD_UUID}"
 fi
 
+# main_build.py sets FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE to 0 or 1,
+# but resolve it via casfs.py when invoked standalone.
+if [[ "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "0" && "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "1" ]]
+then
+  FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE="$("$python" -S "$casfs_script")"
+fi
+
 # These environment variables take precedence over those found in --cfg.
 readonly rewrapper_log_dir="$reproxy_logdir/rewrapper-logs"
 mkdir -p "$rewrapper_log_dir"
@@ -301,6 +309,7 @@ rewrapper_env=(
   RBE_proxy_log_dir="$reproxy_logdir"
   # Identify which build each remote action request comes from.
   RBE_invocation_id="user:$build_uuid"
+  FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE="$FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE"
 )
 
 # Check authentication.

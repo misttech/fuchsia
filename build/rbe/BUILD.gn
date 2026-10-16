@@ -16,6 +16,7 @@ group("tests") {
     ":bbtool_test($host_toolchain)",
     ":build_summary_test($host_toolchain)",
     ":cas_test($host_toolchain)",
+    ":casfs_test($host_toolchain)",
     ":cl_utils_test($host_toolchain)",
     ":cxx_link_remote_wrapper_test($host_toolchain)",
     ":cxx_remote_wrapper_test($host_toolchain)",
@@ -131,6 +132,15 @@ if (is_host) {
   python_build_time_tests("cas_test") {
     tests = [ "cas_test.py" ]
     deps = [ ":cas" ]
+  }
+
+  python_library("casfs") {
+    sources = [ "casfs.py" ]
+  }
+
+  python_build_time_tests("casfs_test") {
+    tests = [ "casfs_test.py" ]
+    deps = [ ":casfs" ]
   }
 
   python_library("bbtool") {

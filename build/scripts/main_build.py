@@ -41,7 +41,7 @@ if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
 from build.auth import gcloud
-from build.rbe import build_summary, rbe_profile, rbe_settings
+from build.rbe import build_summary, casfs, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
 from build.scripts import properties, signal_utils
 
@@ -156,6 +156,7 @@ class FuchsiaBuildConfig(object):
 
     Fields:
       rbe: if True, build uses RBE
+      rbe_casfs: if True, virtualize RBE outputs on casfs instead of downloading them
       resultstore: "all", "none", "ninja", or "bazel"
       profile: if True, collect system profile during build
       tui: if True, enable terminal UI for monitoring build
@@ -194,15 +195,22 @@ class FuchsiaBuildConfig(object):
     log_dir: pathlib.Path | None = None
     timeout: str | None = None
     timeout_grace_period: str | None = None
+    rbe_casfs: bool = False
 
     @staticmethod
     def from_args(
-        args: argparse.Namespace, default_resultstore: str | None = None
+        args: argparse.Namespace,
+        default_resultstore: str | None = None,
+        default_rbe_casfs: bool = False,
     ) -> "FuchsiaBuildConfig":
         resultstore_val = args.resultstore or default_resultstore or "none"
+        rbe_casfs_val = (
+            args.rbe_casfs if args.rbe_casfs is not None else default_rbe_casfs
+        )
 
         return FuchsiaBuildConfig(
             rbe=args.rbe,
+            rbe_casfs=rbe_casfs_val,
             resultstore=resultstore_val,
             profile=args.profile,
             tui=args.tui,
@@ -861,13 +869,17 @@ class FuchsiaBuildContext(object):
         if local_pref:
             resultstore_pref = local_pref
 
+        rbe_casfs_pref = casfs.load(source_dir, environ).virtualize
+
         return FuchsiaBuildContext(
             source_dir=source_dir,
             out_dir=out_dir,
             build_dir=args.build_dir,
             env=environ,
             config=FuchsiaBuildConfig.from_args(
-                args, default_resultstore=resultstore_pref
+                args,
+                default_resultstore=resultstore_pref,
+                default_rbe_casfs=rbe_casfs_pref,
             ),
         )
 
@@ -1494,6 +1506,10 @@ class BuildInvocation(object):
         build_env["FX_INTERNAL_RESULTSTORE_BAZEL"] = resultstore_bazel
         # LINT.ThenChange(//build/bazel/wrapper.bazel.sh:resultstore_bazel_env_vars)
 
+        build_env[casfs.ENV_CASFS_VIRTUALIZE] = (
+            "1" if self.context.config.rbe_casfs else "0"
+        )
+
         build_env.update(self.context.build_service_env)
 
         return build_env
@@ -1919,6 +1935,22 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         "--rbe", type=properties.str_to_bool, nargs="?", const=True
     )
     parser.add_argument("--no-rbe", action="store_false", dest="rbe")
+
+    parser.add_argument(
+        "--rbe-casfs",
+        type=properties.str_to_bool,
+        nargs="?",
+        const=True,
+        default=None,
+        help="Virtualize RBE build artifacts on casfs instead of downloading them "
+        f"(can also be set via {casfs.ENV_CASFS_VIRTUALIZE}).",
+    )
+    parser.add_argument(
+        "--no-rbe-casfs",
+        action="store_false",
+        dest="rbe_casfs",
+        help="Disable RBE artifact virtualization on casfs.",
+    )
 
     parser.add_argument(
         "--resultstore",

@@ -186,6 +186,7 @@ host_script_test_data("fx_bash_tests") {
         "//build/profile/profile_wrap.sh",
         "//build/profile/hardware_profiler.py",
         "//build/profile/procfs.py",
+        "//build/rbe/casfs.py",
         "//build/rbe/fuchsia-reproxy-wrap.sh",
         "//build/rbe/rbe_profile.py",
         "//build/rbe/rbe_settings.py",

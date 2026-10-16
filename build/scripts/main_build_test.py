@@ -37,7 +37,7 @@ if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
 from build.auth import gcloud
-from build.rbe import build_summary, rbe_profile, rbe_settings
+from build.rbe import build_summary, casfs, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
 from build.scripts import main_build, signal_utils
 
@@ -515,6 +515,46 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                     ctx.config.resultstore,
                     expected,
                     f"Failed precedence: args={args}, global={global_val}, local={local_val}",
+                )
+
+    def test_rbe_casfs_precedence_hierarchy(self) -> None:
+        # (args, env_val, config_val, expected_result)
+        test_cases: list[tuple[list[str], str | None, bool | None, bool]] = [
+            # Case A: No config file, no env, no flag -> defaults to False
+            ([], None, None, False),
+            # Case B: .fx/config/rbe_casfs present -> True
+            ([], None, True, True),
+            # Case C: Env FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE=1 overrides config False -> True
+            ([], "1", False, True),
+            # Case D: Env FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE=0 overrides config True -> False
+            ([], "0", True, False),
+            # Case E: CLI --rbe-casfs=true overrides env and config -> True
+            (["--rbe-casfs=true"], "0", False, True),
+            # Case F: CLI --no-rbe-casfs overrides env and config -> False
+            (["--no-rbe-casfs"], "1", True, False),
+            # Case G: CLI --rbe-casfs=false overrides env and config -> False
+            (["--rbe-casfs=false"], "1", True, False),
+        ]
+
+        for args, env_val, config_val, expected in test_cases:
+            environ = {"FUCHSIA_DIR": "/tmp/fuchsia"}
+            if env_val is not None:
+                environ[casfs.ENV_CASFS_VIRTUALIZE] = env_val
+            full_args = ["--build-dir", "out/default"] + args + ["ninja"]
+            parsed_args = main_build._MAIN_ARG_PARSER.parse_args(full_args)
+
+            with mock.patch.object(
+                casfs,
+                "_load_preference",
+                return_value=config_val,
+            ):
+                ctx = main_build.FuchsiaBuildContext.from_args(
+                    parsed_args, environ
+                )
+                self.assertEqual(
+                    ctx.config.rbe_casfs,
+                    expected,
+                    f"Failed precedence: args={args}, env={env_val}, config={config_val}",
                 )
 
     def test_log_dir_argument_parsing(self) -> None:
@@ -1326,6 +1366,21 @@ class BuildInvocationTest(MainBuildTestBase):
             self.assertEqual(
                 env["FX_INTERNAL_RESULTSTORE_BAZEL"], "resultstore_infra"
             )
+
+    def test_get_build_env_rbe_casfs(self) -> None:
+        context_disabled = self.create_context(rbe_casfs=False)
+        context_disabled.env = {"USER": "fuchsia-user"}
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context_disabled)
+            env = invocation.get_build_env()
+            self.assertEqual(env[casfs.ENV_CASFS_VIRTUALIZE], "0")
+
+        context_enabled = self.create_context(rbe_casfs=True)
+        context_enabled.env = {"USER": "fuchsia-user"}
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context_enabled)
+            env = invocation.get_build_env()
+            self.assertEqual(env[casfs.ENV_CASFS_VIRTUALIZE], "1")
 
     def test_get_build_env_proxy_socket_propagation(self) -> None:
         """Verifies that remote_proxy_socket and resultstore_proxy_socket propagate correct environment variables."""
