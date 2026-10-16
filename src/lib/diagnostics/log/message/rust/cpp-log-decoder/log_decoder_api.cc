@@ -121,7 +121,7 @@ fpromise::result<fuchsia::logger::LogMessage, std::string> ToFidlLogMessage(
     }
     tags.emplace_back(tag_view);
   }
-  if (!moniker_tag.empty() && !has_moniker_tag) {
+  if (!moniker_tag.empty() && moniker_tag != "." && !has_moniker_tag) {
     tags.insert(tags.begin(), std::string(moniker_tag));
   }
   fuchsia::logger::LogMessage ret = {

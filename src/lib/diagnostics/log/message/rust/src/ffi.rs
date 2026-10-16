@@ -274,8 +274,10 @@ impl<'a> CPPLogMessageBuilder<'a> {
 
         let moniker_tag: CppString<'a> = match &self.moniker {
             Some(moniker) => match moniker.split('/').next_back() {
-                Some(name) => BumpaloString::from_str_in(name, allocator).into_bump_str().into(),
-                None => CppString::default(),
+                Some(name) if name != "." => {
+                    BumpaloString::from_str_in(name, allocator).into_bump_str().into()
+                }
+                _ => CppString::default(),
             },
             None => CppString::default(),
         };
@@ -811,6 +813,23 @@ mod test {
         };
         let msg = builder.build();
         assert_eq!(&*msg.moniker_tag, "foo");
+
+        let root_builder = CPPLogMessageBuilder {
+            severity: 0x30,
+            tags: BumpaloVec::new_in(&allocator),
+            pid: None,
+            tid: None,
+            dropped: 0,
+            file: None,
+            line: None,
+            moniker: Some(BumpaloString::from_str_in(".", &allocator)),
+            message: None,
+            timestamp: 0,
+            kvps: BumpaloVec::new_in(&allocator),
+            allocator: &allocator,
+        };
+        let root_msg = root_builder.build();
+        assert_eq!(&*root_msg.moniker_tag, "");
     }
 
     #[fuchsia::test]

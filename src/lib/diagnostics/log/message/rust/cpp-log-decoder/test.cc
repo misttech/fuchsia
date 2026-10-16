@@ -135,6 +135,50 @@ TEST(LogDecoderApi, ToFidlLogMessageMonikerTag) {
   fuchsia_free_log_messages(messages);
 }
 
+TEST(LogDecoderApi, ToFidlLogMessageRootMonikerOmitsDotTag) {
+  constexpr char kTestMoniker[] = ".";
+  constexpr char kTestUrl[] = "fuchsia-pkg://fuchsia.com/root#meta/root.cm";
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  auto buffer = builder.WithMsg("hello root").WithFile("root.cc", 10).Build();
+  buffer.WriteKeyValue("tag", "integration_test");
+  std::span<const uint8_t> span = buffer.EndRecord();
+  // Allocate a buffer large enough for the FXT log record followed by the extended attribution
+  // metadata appended by Archivist: a 16-byte header (4-byte moniker length, 4-byte component URL
+  // length, and 8-byte rolled-out logs count) plus the 8-byte aligned moniker and URL strings.
+  std::vector<uint8_t> new_buffer(span.size() + 4 + 4 + 8 + ((sizeof(kTestMoniker) - 1 + 7) & ~7) +
+                                  ((sizeof(kTestUrl) - 1 + 7) & ~7));
+  // Copy the encoded FXT log record into the start of the buffer.
+  memcpy(new_buffer.data(), span.data(), span.size());
+  size_t current_offset = span.size();
+  uint32_t moniker_len = sizeof(kTestMoniker) - 1;
+  uint32_t url_len = sizeof(kTestUrl) - 1;
+  uint64_t rolled_out_logs = 0;
+  // Append the 16-byte extended metadata header: moniker_len, url_len, and rolled_out_logs.
+  memcpy(new_buffer.data() + current_offset, &moniker_len, 4);
+  current_offset += 4;
+  memcpy(new_buffer.data() + current_offset, &url_len, 4);
+  current_offset += 4;
+  memcpy(new_buffer.data() + current_offset, &rolled_out_logs, 8);
+  current_offset += 8;
+  // Append the moniker and component URL strings, each padded to an 8-byte boundary.
+  memcpy(new_buffer.data() + current_offset, kTestMoniker, moniker_len);
+  current_offset += (moniker_len + 7) & ~7;
+  memcpy(new_buffer.data() + current_offset, kTestUrl, url_len);
+  current_offset += (url_len + 7) & ~7;
+
+  auto messages =
+      fuchsia_decode_log_messages_to_struct(new_buffer.data(), current_offset, true, nullptr);
+  ASSERT_EQ(messages.messages.len, 1u);
+  const LogMessage* raw_msg = messages.messages.ptr[0];
+  auto fidl_res = ToFidlLogMessage(*raw_msg);
+  ASSERT_TRUE(fidl_res.is_ok());
+  auto fidl_msg = fidl_res.take_value();
+  ASSERT_EQ(fidl_msg.tags.size(), 1u);
+  EXPECT_EQ(fidl_msg.tags[0], "integration_test");
+  EXPECT_EQ(fidl_msg.msg, "[root.cc(10)] hello root");
+  fuchsia_free_log_messages(messages);
+}
+
 TEST(LogDecoder, HandlesInvalidInput) {
   // A simple invalid byte sequence. A valid log message would have a different structure.
   const uint8_t invalid_data[] = {0xDE, 0xAD, 0xBE, 0xEF};
