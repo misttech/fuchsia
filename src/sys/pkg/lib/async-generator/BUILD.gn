@@ -2,10 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_unittest_package("async-generator-tests") {
-  deps = [ ":async-generator_test" ]
+bazel_test_suite("async-generator-tests") {
+  target_tests = [ "//src/sys/pkg/lib/async-generator:async-generator-tests" ]
 }
 
 group("tests") {
@@ -40,15 +40,13 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 rustc_library("async-generator") {
   sources = [ "src/lib.rs" ]
-  crate_name = "async_generator"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   visibility = [
     ":*",
-    "//src/connectivity/policy/http-client/*",
+    "//src/connectivity/policy/http-client:*",
     "//src/sys/pkg/*",
   ]
-  with_unit_tests = true
   deps = [
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:pin-project",

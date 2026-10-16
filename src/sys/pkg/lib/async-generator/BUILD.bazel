@@ -2,23 +2,37 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
 rustc_library(
     name = "async-generator",
     srcs = ["src/lib.rs"],
-    crate_name = "async_generator",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     visibility = [
-        "//src/connectivity/policy/http-client:__subpackages__",
+        "//src/connectivity/policy/http-client:__pkg__",
         "//src/sys/pkg:__subpackages__",
     ],
-    with_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:pin-project",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "async-generator_test",
+    crate = ":async-generator",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "async-generator-tests",
+    unit_tests = [":async-generator_test"],
 )
