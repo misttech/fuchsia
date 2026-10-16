@@ -344,6 +344,14 @@ impl RemoteBinderConnection {
         })
     }
 
+    pub fn unregister_current_thread(&self, current_task: &CurrentTask) {
+        if let Ok(binder_process) = self.binder_connection.proc() {
+            release_after!(binder_process, current_task.kernel(), {
+                binder_process.lock().unregister_thread(current_task, &current_task.tid);
+            });
+        }
+    }
+
     pub fn close(&self, kernel: &Kernel) {
         self.binder_connection.close(kernel);
     }
