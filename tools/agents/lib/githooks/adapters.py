@@ -84,28 +84,31 @@ class HookAction:
     remediation_cmd_fn: Callable[[Sequence[str]], Sequence[str]] | None = None
 
 
-def _resolve_fx_cmd(context: HookContext, purpose: str) -> str | None:
+def _resolve_fx_cmd(
+    context: HookContext, cmd: str, purpose: str
+) -> list[str] | None:
     """Resolves the `fx` executable, reporting to the console when missing.
 
-    Prefers the in-tree `scripts/fx` over any `fx` on `PATH` so hooks always
-    run the tooling belonging to the checkout being committed to.
+    Prefers the in-tree `tools/devshell/<cmd>` over any `fx` on `PATH` so hooks
+    always run the tooling belonging to the checkout being committed to.
 
     Args:
         context: HookContext with repo_root, is_agent, and reporter.
+        cmd: The `fx` subcommand name (e.g. "format-code" or "lint").
         purpose: Description of the skipped work, used in the warning message.
 
     Returns:
-        Path to the `fx` executable, or None if it could not be resolved.
+        Command prefix for `cmd`, or None if it could not be resolved.
     """
     try:
-        candidate = find_fuchsia_dir(context.repo_root) / "scripts" / "fx"
+        candidate = find_fuchsia_dir(context.repo_root) / "tools/devshell" / cmd
         if candidate.is_file():
-            return str(candidate)
+            return [str(candidate)]
     except RuntimeError:
         pass
 
     if shutil.which("fx"):
-        return "fx"
+        return ["fx", cmd]
 
     if context.is_agent:
         context.reporter.on_error(
@@ -158,11 +161,11 @@ def format_code_action(
     if not files:
         return True
 
-    fx_cmd = _resolve_fx_cmd(context, "code formatting")
+    fx_cmd = _resolve_fx_cmd(context, "format-code", "code formatting")
     if fx_cmd is None:
         return not context.is_agent
 
-    cmd = [fx_cmd, "format-code", f"--files={','.join(files)}"]
+    cmd = [*fx_cmd, f"--files={','.join(files)}"]
     if _run_reporting_errors(context, cmd) is None:
         return False
 
@@ -207,7 +210,7 @@ def lint_code_action(
     if not files:
         return True
 
-    fx_cmd = _resolve_fx_cmd(context, "lint checks")
+    fx_cmd = _resolve_fx_cmd(context, "lint", "lint checks")
     if fx_cmd is None:
         return not context.is_agent
 
@@ -216,7 +219,7 @@ def lint_code_action(
         if context.is_agent
         else (*HUMAN_SKIPPED_LINTERS, *ALWAYS_SKIPPED_LINTERS)
     )
-    base_cmd = [fx_cmd, "lint", f"--skip={','.join(skipped)}"]
+    base_cmd = [*fx_cmd, f"--skip={','.join(skipped)}"]
     files_arg = f"--files={','.join(files)}"
 
     if not context.check_only:

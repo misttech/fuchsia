@@ -176,9 +176,9 @@ class FormatCodeActionTest(BaseTestCase):
     def test_format_code_action_resolves_fx_from_scripts_when_not_in_path(
         self,
     ) -> None:
-        scripts_dir = self.test_dir / "scripts"
+        scripts_dir = self.test_dir / "tools" / "devshell"
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        fx_script = scripts_dir / "fx"
+        fx_script = scripts_dir / "format-code"
         fx_script.touch()
 
         ctx = adapters.HookContext(
@@ -193,16 +193,16 @@ class FormatCodeActionTest(BaseTestCase):
             ok = adapters.format_code_action(ctx, ["foo.py"])
             self.assertTrue(ok)
             mock_cmd.assert_called_once_with(
-                [str(fx_script), "format-code", "--files=foo.py"],
+                [str(fx_script), "--files=foo.py"],
                 cwd=self.test_dir,
             )
 
     def test_format_code_action_prioritizes_scripts_fx_over_ambient_path(
         self,
     ) -> None:
-        scripts_dir = self.test_dir / "scripts"
+        scripts_dir = self.test_dir / "tools" / "devshell"
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        fx_script = scripts_dir / "fx"
+        fx_script = scripts_dir / "format-code"
         fx_script.touch()
 
         ctx = adapters.HookContext(
@@ -217,7 +217,7 @@ class FormatCodeActionTest(BaseTestCase):
             ok = adapters.format_code_action(ctx, ["foo.py"])
             self.assertTrue(ok)
             mock_cmd.assert_called_once_with(
-                [str(fx_script), "format-code", "--files=foo.py"],
+                [str(fx_script), "--files=foo.py"],
                 cwd=self.test_dir,
             )
 
@@ -464,9 +464,9 @@ class LintCodeActionTest(BaseTestCase):
     def test_lint_code_action_prioritizes_scripts_fx_over_ambient_path(
         self,
     ) -> None:
-        scripts_dir = self.test_dir / "scripts"
+        scripts_dir = self.test_dir / "tools" / "devshell"
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        fx_script = scripts_dir / "fx"
+        fx_script = scripts_dir / "lint"
         fx_script.touch()
 
         ctx = adapters.HookContext(
@@ -486,7 +486,6 @@ class LintCodeActionTest(BaseTestCase):
                     mock.call(
                         [
                             str(fx_script),
-                            "lint",
                             "--skip=clang_tidy,python_format",
                             "--fix",
                             "--files=foo.py",
@@ -496,7 +495,6 @@ class LintCodeActionTest(BaseTestCase):
                     mock.call(
                         [
                             str(fx_script),
-                            "lint",
                             "--skip=clang_tidy,python_format",
                             "--files=foo.py",
                         ],
