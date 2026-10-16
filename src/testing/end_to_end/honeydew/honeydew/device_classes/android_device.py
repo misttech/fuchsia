@@ -9,6 +9,7 @@ capabilities (including self.adb) directly via inheritance.
 """
 
 import contextlib
+import ipaddress
 import logging
 import re
 import types
@@ -116,6 +117,29 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         )
         self.initialize()
 
+    def _is_pontis_target(self) -> bool:
+        """Returns True if the target device is connected via Pontis."""
+        target_addr: custom_types.TargetAddr | None = self._device_info.ip_port
+        if target_addr is None:
+            try:
+                target_addr = self.ffx.get_target_address()
+            except Exception as err:
+                _LOGGER.debug(
+                    "Failed to get target address from FFX for %s: %s",
+                    self.device_name,
+                    err,
+                )
+                return False
+
+        if isinstance(target_addr, custom_types.IpPort) and isinstance(
+            target_addr.ip, ipaddress.IPv6Address
+        ):
+            scope_id: str | None = target_addr.ip.scope_id
+            if scope_id is not None and "pontis" in scope_id.lower():
+                return True
+
+        return False
+
     @properties.Transport
     def adb(self) -> adb_transport.Adb:
         """Returns the ADB transport object configured to use su_root methods.
@@ -150,12 +174,23 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         # server implementations are removed and all Lacewing tests use
         # Honeydew's ADB transport.
         if not enabled:
-            _LOGGER.warning(
-                "User has requested to not enable the ADB transport for '%s'",
+            _LOGGER.info(
+                "ADB transport is not enabled for '%s'",
                 self.device_name,
             )
             raise errors.NotEnabledError(
-                f"User has requested to not enable the ADB transport for '{self.device_name}'"
+                f"ADB transport is not enabled for '{self.device_name}'"
+            )
+
+        # TODO(b/572903114): Enable ADB on Pontis targets once ADB-over-TCP is
+        # supported.
+        if self._is_pontis_target():
+            _LOGGER.info(
+                "ADB transport is disabled for '%s' as it is connected via Pontis",
+                self.device_name,
+            )
+            raise errors.NotEnabledError(
+                f"ADB transport is disabled for '{self.device_name}' as it is connected via Pontis"
             )
 
         serial_number: str | None = self._device_info.serial_number

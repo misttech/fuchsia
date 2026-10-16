@@ -179,6 +179,89 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(errors.NotEnabledError):
                 _ = ad_obj.adb
 
+    def test_is_pontis_target_device_info_ip_port(self) -> None:
+        """Test case for _is_pontis_target() using device_info.ip_port."""
+        orig_device_info = self.ad_obj._device_info
+        try:
+            self.ad_obj._device_info = custom_types.DeviceInfo(
+                name=_INPUT_ARGS["device_name"],
+                serial_number="12345678",
+                ip_port=custom_types.IpPort(
+                    ip=ipaddress.IPv6Address(
+                        "fe80::bcd3:bbce:3ee9:4d87%pontis"
+                    ),
+                    port=8022,
+                ),
+                serial_socket=_INPUT_ARGS["device_serial_socket"],
+            )
+            self.assertTrue(self.ad_obj._is_pontis_target())
+
+            self.ad_obj._device_info = custom_types.DeviceInfo(
+                name=_INPUT_ARGS["device_name"],
+                serial_number="12345678",
+                ip_port=custom_types.IpPort(
+                    ip=ipaddress.IPv4Address("192.168.1.2"),
+                    port=8022,
+                ),
+                serial_socket=_INPUT_ARGS["device_serial_socket"],
+            )
+            self.assertFalse(self.ad_obj._is_pontis_target())
+        finally:
+            self.ad_obj._device_info = orig_device_info
+
+    def test_is_pontis_target_ffx_fallback(self) -> None:
+        """Test case for _is_pontis_target() falling back to FFX get_target_address."""
+        orig_device_info = self.ad_obj._device_info
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number="12345678",
+            ip_port=None,
+            serial_socket=_INPUT_ARGS["device_serial_socket"],
+        )
+        try:
+            with mock.patch.object(
+                ffx.FFX,
+                "get_target_address",
+                return_value=custom_types.IpPort(
+                    ip=ipaddress.IPv6Address(
+                        "fe80::bcd3:bbce:3ee9:4d87%pontis"
+                    ),
+                    port=None,
+                ),
+                autospec=True,
+            ):
+                self.assertTrue(self.ad_obj._is_pontis_target())
+
+            with mock.patch.object(
+                ffx.FFX,
+                "get_target_address",
+                side_effect=ffx_errors.FfxCommandError("FFX error"),
+                autospec=True,
+            ):
+                self.assertFalse(self.ad_obj._is_pontis_target())
+        finally:
+            self.ad_obj._device_info = orig_device_info
+
+    def test_adb_transport_disabled_on_pontis(self) -> None:
+        """Test case to make sure AndroidDevice raises NotEnabledError on Pontis targets."""
+        orig_device_info = self.ad_obj._device_info
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number="12345678",
+            ip_port=custom_types.IpPort(
+                ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
+                port=8022,
+            ),
+            serial_socket=_INPUT_ARGS["device_serial_socket"],
+        )
+        self.ad_obj.__dict__.pop("adb", None)
+        try:
+            with self.assertRaises(errors.NotEnabledError):
+                _ = self.ad_obj.adb
+        finally:
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj.__dict__.pop("adb", None)
+
     @mock.patch.object(
         adb_transport.Adb,
         "check_connection",
@@ -451,6 +534,48 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(ffx.FFX, "check_connection", autospec=True)
+    def test_health_check_adb_disabled_on_pontis(
+        self,
+        mock_ffx_check_connection: mock.Mock,
+        mock_fc_check_connection: mock.Mock,
+        mock_sl4f_check_connection: mock.Mock,
+    ) -> None:
+        """Testcase for AndroidDevice.health_check() when target is connected via Pontis."""
+        orig_device_info = self.ad_obj._device_info
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number="12345678",
+            ip_port=custom_types.IpPort(
+                ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
+                port=8022,
+            ),
+            serial_socket=_INPUT_ARGS["device_serial_socket"],
+        )
+        self.ad_obj.__dict__.pop("adb", None)
+        try:
+            self.ad_obj.health_check()
+
+            mock_ffx_check_connection.assert_called_once_with(self.ad_obj.ffx)
+            mock_fc_check_connection.assert_called_once_with(
+                self.ad_obj.fuchsia_controller
+            )
+            mock_sl4f_check_connection.assert_not_called()
+            self.assertNotIn("adb", self.ad_obj.__dict__)
+        finally:
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj.__dict__.pop("adb", None)
+
+    @mock.patch.object(
+        sl4f_transport.SL4F,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fc_transport.FuchsiaController,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(ffx.FFX, "check_connection", autospec=True)
     def test_health_check_adb_disabled(
         self,
         mock_ffx_check_connection: mock.Mock,
@@ -572,6 +697,35 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_adb_verify_supported.assert_called_once()
         mock_super_on_device_boot.assert_not_called()
         self.ad_obj.__dict__.pop("adb", None)
+
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "on_device_boot",
+        autospec=True,
+    )
+    async def test_on_device_boot_adb_disabled_on_pontis(
+        self,
+        mock_super_on_device_boot: mock.Mock,
+    ) -> None:
+        """Testcase for AndroidDevice.on_device_boot() when target is connected via Pontis."""
+        orig_device_info = self.ad_obj._device_info
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number="12345678",
+            ip_port=custom_types.IpPort(
+                ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
+                port=8022,
+            ),
+            serial_socket=_INPUT_ARGS["device_serial_socket"],
+        )
+        self.ad_obj.__dict__.pop("adb", None)
+        try:
+            await self.ad_obj.on_device_boot()
+            mock_super_on_device_boot.assert_called_once_with(self.ad_obj)
+            self.assertNotIn("adb", self.ad_obj.__dict__)
+        finally:
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj.__dict__.pop("adb", None)
 
     @mock.patch.object(
         fuchsia_device.FuchsiaDevice,
