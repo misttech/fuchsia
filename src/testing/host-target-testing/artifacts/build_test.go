@@ -5,7 +5,11 @@
 package artifacts
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
+
+	pmBuild "go.fuchsia.dev/fuchsia/src/testing/host-target-testing/build"
 )
 
 func TestParseBlobFetchMode(t *testing.T) {
@@ -83,4 +87,59 @@ func TestBlobFetchModeFlag(t *testing.T) {
 	if err := mode.Set("unknown"); err == nil {
 		t.Fatalf("expected error setting invalid mode, got nil")
 	}
+}
+
+func TestProxyBlobStoreLockBlob(t *testing.T) {
+	store := &proxyBlobStore{}
+	merkleA := pmBuild.MerkleRoot{1}
+	merkleB := pmBuild.MerkleRoot{2}
+
+	// Different merkles can be locked concurrently without blocking each other.
+	unlockA := store.lockBlob(merkleA)
+	unlockB := store.lockBlob(merkleB)
+
+	store.mu.Lock()
+	if len(store.locks) != 2 {
+		t.Fatalf("expected 2 active locks, got %d", len(store.locks))
+	}
+	store.mu.Unlock()
+
+	// Locking the same merkle (merkleA) should block until unlockA is called.
+	var enteredSecondA atomic.Bool
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		unlockA2 := store.lockBlob(merkleA)
+		enteredSecondA.Store(true)
+		unlockA2()
+	}()
+
+	// Wait until the goroutine registers its waiter on merkleA.
+	for {
+		store.mu.Lock()
+		refs := store.locks[merkleA].refs
+		store.mu.Unlock()
+		if refs == 2 {
+			break
+		}
+	}
+
+	if enteredSecondA.Load() {
+		t.Fatalf("second lockBlob(merkleA) should not acquire lock while first is held")
+	}
+
+	unlockB()
+	unlockA()
+	wg.Wait()
+
+	if !enteredSecondA.Load() {
+		t.Fatalf("second lockBlob(merkleA) did not complete")
+	}
+
+	store.mu.Lock()
+	if len(store.locks) != 0 {
+		t.Fatalf("expected all locks to be cleaned up, got %d", len(store.locks))
+	}
+	store.mu.Unlock()
 }

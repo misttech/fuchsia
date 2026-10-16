@@ -26,13 +26,14 @@ import (
 var _ FFXToolImpl = (*ffxDaemon)(nil)
 
 type ffxDaemon struct {
-	ffxToolPath         string
-	runDir              RunDir
-	supportsPackageBlob *bool
-	supportsDirect      bool
-	target              string
-	subtoolsSearchPath  string
-	logLevel            string
+	ffxToolPath           string
+	runDir                RunDir
+	supportsPackageBlobMu sync.Mutex
+	supportsPackageBlob   *bool
+	supportsDirect        bool
+	target                string
+	subtoolsSearchPath    string
+	logLevel              string
 }
 
 var directSupportCache sync.Map
@@ -445,6 +446,9 @@ func (f *ffxDaemon) RepositoryPublish(ctx context.Context, repoDir string, packa
 }
 
 func (f *ffxDaemon) SupportsPackageBlob(ctx context.Context) bool {
+	f.supportsPackageBlobMu.Lock()
+	defer f.supportsPackageBlobMu.Unlock()
+
 	if f.supportsPackageBlob == nil {
 		_, err := f.runFFXCmd(ctx, "package", "blob", "--help")
 		supportsPackageBlob := err == nil

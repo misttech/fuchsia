@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
@@ -25,12 +26,13 @@ import (
 var _ FFXToolImpl = (*ffxStrict)(nil)
 
 type ffxStrict struct {
-	ffxToolPath         string
-	runDir              RunDir
-	supportsPackageBlob *bool
-	ffxInstance         *ffxutil.FFXInstance
-	hasPlaceholderKey   bool
-	logLevel            string
+	ffxToolPath           string
+	runDir                RunDir
+	supportsPackageBlobMu sync.Mutex
+	supportsPackageBlob   *bool
+	ffxInstance           *ffxutil.FFXInstance
+	hasPlaceholderKey     bool
+	logLevel              string
 }
 
 func newFfxStrict(ctx context.Context, ffxToolPath string, runDir RunDir, subtoolsSearchPath string) (*ffxStrict, error) {
@@ -511,6 +513,9 @@ func (f *ffxStrict) RepositoryPublish(ctx context.Context, repoDir string, packa
 }
 
 func (f *ffxStrict) SupportsPackageBlob(ctx context.Context) bool {
+	f.supportsPackageBlobMu.Lock()
+	defer f.supportsPackageBlobMu.Unlock()
+
 	if f.supportsPackageBlob == nil {
 		_, err := f.runFFXCmd(ctx, "package", "blob", "--help")
 		supportsPackageBlob := err == nil

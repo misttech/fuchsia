@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 
@@ -466,11 +467,46 @@ func (b *ArtifactsBuild) GetPackageRepository(
 	return b.packages, nil
 }
 
+type blobLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
 type proxyBlobStore struct {
 	b        *ArtifactsBuild
 	ffx      *ffx.FFXTool
 	blobsDir string
 	blobType *int
+	// mu protects locks so on-demand blob fetching and decompression in
+	// BlobPath are synchronized per merkle root.
+	mu    sync.Mutex
+	locks map[pmBuild.MerkleRoot]*blobLock
+}
+
+// lockBlob grabs the blob lock, and returns a function that unlocks the blob.
+func (fs *proxyBlobStore) lockBlob(merkle pmBuild.MerkleRoot) func() {
+	fs.mu.Lock()
+	if fs.locks == nil {
+		fs.locks = make(map[pmBuild.MerkleRoot]*blobLock)
+	}
+	l, ok := fs.locks[merkle]
+	if !ok {
+		l = &blobLock{}
+		fs.locks[merkle] = l
+	}
+	l.refs++
+	fs.mu.Unlock()
+
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		fs.mu.Lock()
+		l.refs--
+		if l.refs == 0 {
+			delete(fs.locks, merkle)
+		}
+		fs.mu.Unlock()
+	}
 }
 
 func (fs *proxyBlobStore) PrefetchBlobs(
@@ -518,6 +554,16 @@ func (fs *proxyBlobStore) BlobPath(ctx context.Context, deliveryBlobType *int, m
 	}
 
 	// First, try to read the blob from the directory
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+
+	// The file didn't exist when we checked, so grab the per-blob lock.
+	unlock := fs.lockBlob(merkle)
+	defer unlock()
+
+	// We could have raced with another thread that fetched or decompressed the blob, so see if it
+	// exists now.
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
