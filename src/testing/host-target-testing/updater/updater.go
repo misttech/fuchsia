@@ -407,7 +407,7 @@ func (u *SystemUpdater) Update(
 	updatePackageUrl := fmt.Sprintf("fuchsia-pkg://%s/%s", repoName, dstUpdate.Path())
 	logger.Infof(ctx, "Downloading OTA %q", updatePackageUrl)
 
-	if err := c.ForceInstall(ctx, ffxTool, target, fmt.Sprintf("%q", updatePackageUrl)); err != nil {
+	if err := c.ForceInstall(ctx, ffxTool, target, updatePackageUrl); err != nil {
 		logger.Errorf(ctx, "failed to run system updater via ffx: %w, retrying via /bin/update", err)
 		cmd := []string{
 			"/bin/update",
