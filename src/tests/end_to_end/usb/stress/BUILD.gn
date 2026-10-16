@@ -141,6 +141,7 @@ if (is_host) {
       disconnect_duration_sec = 1
     }
     local_config_source = "UsbDisconnectTestbed.yaml"
+    product_bundle = "minimal.sorrel"
     environments = [
       iris_env,
       sorrel_env,

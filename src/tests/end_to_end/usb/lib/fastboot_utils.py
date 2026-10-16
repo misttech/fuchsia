@@ -10,8 +10,8 @@ import fidl_fuchsia_hardware_power_statecontrol as fhp_statecontrol
 from honeydew import errors
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.fuchsia_device import fuchsia_device
+from honeydew.transports.fastboot import types as fastboot_types
 from honeydew.typing import custom_types as honeydew_types
-from honeydew.utils import host_shell
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -28,10 +28,7 @@ async def reboot_to_fastboot_mode(
         dut: Honeydew FuchsiaDevice instance.
         usb_power_hub: Optional USB Power Hub fixture.
         usb_port: Optional port number on the USB power hub.
-        timeout_sec: Timeout in seconds applied per stage, not as a total budget.
-            In the worst case (initial FIDL wait timeout, FFX fallback reboot,
-            second wait timeout), this function can wait up to `2 * timeout_sec + 15`s.
-            Callers should size GN test target timeout_secs accordingly.
+        timeout_sec: Timeout in seconds for waiting for fastboot mode.
     """
     # Ensure USB power is turned ON before rebooting so bootloader sees VBUS
     if usb_power_hub:
@@ -65,66 +62,54 @@ async def reboot_to_fastboot_mode(
         )
     except Exception as e:
         _LOGGER.debug(
-            "Reboot command raised exception (expected if device rebooted quickly): %s",
+            "Reboot command raised exception (expected if device rebooted "
+            "quickly): %s",
             e,
         )
 
     _LOGGER.info("Waiting for device to enter fastboot mode...")
+    dut.fastboot.wait_for_fastboot_mode(timeout=float(timeout_sec))
+
+
+async def _boot_from_fastboot_to_fuchsia(
+    dut: fuchsia_device.FuchsiaDevice,
+    method: fastboot_types.BootToFuchsiaMethod,
+    timeout_sec: int,
+) -> None:
+    """Boots DUT from Fastboot to Fuchsia, tolerating expected USB PHY reset
+    link drops.
+    """
     try:
-        dut.fastboot.wait_for_fastboot_mode(timeout=timeout_sec)
-    except errors.HoneydewTimeoutError:
-        _LOGGER.warning(
-            "Device did not enter fastboot mode after FIDL shutdown. Attempting fallback via FFX reboot..."
-        )
-        try:
-            dut.ffx.notify_intentional_disconnect()
-            dut.ffx.run(
-                cmd=["target", "reboot", "--bootloader"],
-                log_status_on_failure=False,
-                timeout=15,
+        await dut.fastboot.boot_to_fuchsia_mode(method=method)
+    except errors.FuchsiaDeviceError as err:
+        err_msg = str(err.__cause__ or err).lower()
+        if (
+            "status read failed" in err_msg
+            or "protocol error" in err_msg
+            or "no error" in err_msg
+            or "device not found" in err_msg
+            or "write to device failed" in err_msg
+            or "no such file or directory" in err_msg
+        ):
+            _LOGGER.info(
+                "Ignoring expected fastboot USB link drop during %s: %s",
+                method,
+                err,
             )
-        except Exception as e:
-            _LOGGER.debug("FFX reboot to bootloader exception: %s", e)
-        dut.fastboot.wait_for_fastboot_mode(timeout=timeout_sec)
-
-    # Populate fastboot_node_id if needed
-    if not dut.fastboot._fastboot_node_id:
-        try:
-            fb_devices_output = (
-                host_shell.run(cmd=[dut.fastboot._fastboot_binary, "devices"])
-                or ""
+            dut.fastboot.wait_for_fuchsia_mode(timeout=float(timeout_sec))
+            await asyncio.wait_for(
+                dut.wait_for_online(), timeout=float(timeout_sec)
             )
-            discovered_serials: list[str] = []
-            for line in fb_devices_output.strip().split("\n"):
-                tokens = line.split()
-                if len(tokens) >= 2 and tokens[1] == "fastboot":
-                    discovered_serials.append(tokens[0])
-
-            if len(discovered_serials) > 1:
-                _LOGGER.warning(
-                    "Multiple devices detected in fastboot mode: %s; selecting %s",
-                    discovered_serials,
-                    discovered_serials[0],
-                )
-
-            if discovered_serials:
-                dut.fastboot._fastboot_node_id = discovered_serials[0]
-                _LOGGER.info(
-                    "Discovered fastboot node ID from fastboot devices: %s",
-                    dut.fastboot._fastboot_node_id,
-                )
-        except Exception as e:
-            _LOGGER.debug(
-                "Could not resolve fastboot serial from fastboot devices: %s",
-                e,
-            )
+            await dut.on_device_boot()
+        else:
+            raise
 
 
 async def recover_to_fuchsia_mode(
     dut: fuchsia_device.FuchsiaDevice,
     usb_power_hub: usb_power_hub.UsbPowerHub | None = None,
     usb_port: int | None = None,
-    timeout_sec: int = 60,
+    timeout_sec: int = 120,
 ) -> None:
     """Ensures DUT is rebooted out of Fastboot and restored back to Fuchsia.
 
@@ -132,54 +117,44 @@ async def recover_to_fuchsia_mode(
         dut: Honeydew FuchsiaDevice instance.
         usb_power_hub: Optional USB Power Hub fixture.
         usb_port: Optional port number on the USB power hub.
-        timeout_sec: Timeout in seconds applied per stage, not as a total budget.
-            When rebooting from fastboot to Fuchsia, waiting for boot_to_fuchsia_mode
-            and waiting for online each use timeout_sec (up to `2 * timeout_sec` total).
-            Callers should size GN test target timeout_secs accordingly.
-
-    Note on reconciliation:
-        If the DUT was in Fastboot mode, it is rebooted to Fuchsia, waited for online up to
-        timeout_sec, and on_device_boot() is invoked (raising FuchsiaDeviceError on timeout).
-        If the DUT was not in Fastboot mode (e.g. already in Fuchsia or auto-rebooted), it is
-        waited for online up to 15s and on_device_boot() is called to refresh device state;
-        on failure, a warning is logged and health_check() is run as fallback.
+        timeout_sec: Timeout in seconds for waiting for Fuchsia mode.
     """
     _LOGGER.info("Ensuring device is booted back to Fuchsia...")
     if usb_power_hub:
         usb_power_hub.power_on(port=usb_port)
 
-    was_in_fastboot = False
-    try:
-        if dut.fastboot.is_in_fastboot_mode():
-            was_in_fastboot = True
-            _LOGGER.info(
-                "Device is in Fastboot mode; issuing fastboot reboot to Fuchsia..."
-            )
-            await asyncio.wait_for(
-                dut.fastboot.boot_to_fuchsia_mode(),
-                timeout=timeout_sec,
-            )
-    except Exception as e:
-        _LOGGER.warning("fastboot reboot to Fuchsia command error (%s).", e)
+    # Allow 2s settling delay for USB enumeration and endpoints to stabilize.
+    await asyncio.sleep(2)
 
-    if was_in_fastboot:
-        _LOGGER.info("Waiting for device to come back online in Fuchsia...")
+    if dut.fastboot.is_in_fastboot_mode():
+        _LOGGER.info("Device is in Fastboot mode; issuing fastboot continue...")
         try:
-            await asyncio.wait_for(dut.wait_for_online(), timeout=timeout_sec)
-        except asyncio.TimeoutError as e:
-            raise errors.FuchsiaDeviceError(
-                f"Timed out waiting for device to come online in Fuchsia after {timeout_sec}s"
-            ) from e
-        await dut.on_device_boot()
-        _LOGGER.info("Device is successfully back online in Fuchsia.")
-    else:
-        try:
-            await asyncio.wait_for(dut.wait_for_online(), timeout=15)
-            await dut.on_device_boot()
+            await _boot_from_fastboot_to_fuchsia(
+                dut, fastboot_types.BootToFuchsiaMethod.CONTINUE, timeout_sec
+            )
             _LOGGER.info("Device is successfully back online in Fuchsia.")
+            return
         except Exception as e:
             _LOGGER.warning(
-                "Device failed to come online or complete boot handling (%s); falling back to health check.",
+                "fastboot continue failed (%s); attempting fallback reboot...",
                 e,
             )
-            dut.health_check()
+            await _boot_from_fastboot_to_fuchsia(
+                dut, fastboot_types.BootToFuchsiaMethod.REBOOT, timeout_sec
+            )
+            _LOGGER.info("Device successfully rebooted to Fuchsia.")
+            return
+
+    try:
+        await asyncio.wait_for(
+            dut.wait_for_online(), timeout=float(timeout_sec)
+        )
+        await dut.on_device_boot()
+        _LOGGER.info("Device is successfully back online in Fuchsia.")
+    except (errors.HoneydewError, asyncio.TimeoutError) as e:
+        _LOGGER.warning(
+            "Device failed to come online or complete boot handling (%s); "
+            "falling back to health check.",
+            e,
+        )
+        dut.health_check()
