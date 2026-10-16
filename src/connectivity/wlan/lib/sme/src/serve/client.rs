@@ -38,6 +38,7 @@ pub fn serve(
     >,
     inspector: fuchsia_inspect::Inspector,
     inspect_node: fuchsia_inspect::Node,
+    power_manager: Arc<dyn wlan_power_manager::SyncPowerManager>,
 ) -> (MlmeSink, MlmeStream, impl Future<Output = Result<(), anyhow::Error>>) {
     let wpa3_supported =
         security_support.mfp.as_ref().is_some_and(|mfp| mfp.supported.unwrap_or(false))
@@ -56,6 +57,7 @@ pub fn serve(
         inspect_node,
         security_support,
         spectrum_management_support,
+        power_manager,
     );
     let fut = async move {
         let sme = Arc::new(Mutex::new(sme));
@@ -792,6 +794,7 @@ mod tests {
             inspector.root().create_child("sme"),
             wlan_common::test_utils::fake_features::fake_security_support(),
             wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty(),
+            Arc::new(()),
         );
         let sme = Mutex::new(sme);
 
@@ -881,6 +884,7 @@ mod tests {
             inspector.root().create_child("sme"),
             wlan_common::test_utils::fake_features::fake_security_support(),
             wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty(),
+            Arc::new(()),
         );
         let sme = Mutex::new(sme);
 
@@ -924,6 +928,7 @@ mod tests {
             inspector.root().create_child("sme"),
             wlan_common::test_utils::fake_features::fake_security_support(),
             wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty(),
+            Arc::new(()),
         );
         let sme = Mutex::new(sme);
 
@@ -963,6 +968,7 @@ mod tests {
             inspector.root().create_child("sme"),
             wlan_common::test_utils::fake_features::fake_security_support(),
             wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty(),
+            Arc::new(()),
         );
         let sme = Mutex::new(sme);
 

@@ -18,5 +18,6 @@
             service: "fuchsia.wlan.softmac.Service",
             generate_bind_rule: false,
         },
+        { protocol: "fuchsia.power.system.ActivityGovernor" },
     ],
 }

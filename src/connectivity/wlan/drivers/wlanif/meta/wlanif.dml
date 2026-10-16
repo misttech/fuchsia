@@ -15,5 +15,6 @@
             service: "fuchsia.wlan.fullmac.Service",
             generate_bind_rule: false,
         },
+        { protocol: "fuchsia.power.system.ActivityGovernor" },
     ],
 }

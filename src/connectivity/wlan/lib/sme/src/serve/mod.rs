@@ -171,6 +171,7 @@ pub fn create_sme(
     spectrum_management_support: fidl_common::SpectrumManagementSupport,
     inspector: fuchsia_inspect::Inspector,
     generic_sme_request_stream: <fidl_sme::GenericSmeMarker as fidl::endpoints::ProtocolMarker>::RequestStream,
+    power_manager: Arc<dyn wlan_power_manager::SyncPowerManager>,
 ) -> Result<
     (MlmeStream, Pin<Box<impl Future<Output = Result<(), anyhow::Error>> + use<>>>),
     anyhow::Error,
@@ -192,6 +193,7 @@ pub fn create_sme(
                 telemetry_endpoint_receiver,
                 inspector,
                 inspect_node,
+                power_manager,
             );
             (
                 SmeServer::Client(sender),
@@ -347,6 +349,7 @@ mod tests {
             fake_spectrum_management_support_empty(),
             inspector,
             generic_sme_stream,
+            Arc::new(()),
         );
 
         assert!(result.is_err());
@@ -367,6 +370,7 @@ mod tests {
             fake_spectrum_management_support_empty(),
             inspector,
             generic_sme_stream,
+            Arc::new(()),
         )
         .unwrap();
         let mut serve_fut = pin!(serve_fut);
@@ -413,6 +417,7 @@ mod tests {
             fake_spectrum_management_support_empty(),
             inspector.clone(),
             generic_sme_stream,
+            Arc::new(()),
         )?;
         let mut serve_fut = Box::pin(serve_fut);
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);

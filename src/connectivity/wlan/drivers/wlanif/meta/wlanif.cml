@@ -18,6 +18,7 @@
     },
     capabilities: [],
     use: [
+        { protocol: "fuchsia.power.system.ActivityGovernor" },
         { service: "fuchsia.wlan.fullmac.Service" },
     ],
     expose: [],

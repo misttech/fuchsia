@@ -4,13 +4,15 @@
 
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_power_system as fidl_power_system;
 use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
 use fuchsia_sync::Mutex;
-use log::{error, info};
+use log::{error, info, warn};
 use std::sync::Arc;
 use wlan_ffi_transport::completers::Completer;
 use wlan_fullmac_mlme::FullmacMlmeHandle;
 use wlan_fullmac_mlme::device::FullmacDevice;
+use wlan_power_manager::{DeviceSyncPowerManager, SyncPowerManager};
 use zx::Status;
 
 struct WlanifDriver {
@@ -60,14 +62,36 @@ impl Driver for WlanifDriver {
             node_clone.lock().take();
         });
 
-        let mlme_handle =
-            match wlan_fullmac_mlme::start_and_serve_on_separate_thread(device, completer).await {
-                Ok(handle) => handle,
+        let sync_power_manager: Arc<dyn SyncPowerManager> =
+            match context.incoming.connect_protocol::<fidl_power_system::ActivityGovernorProxy>() {
+                Ok(ag_proxy) => match ag_proxy.into_channel() {
+                    Ok(channel) => Arc::new(DeviceSyncPowerManager::new(Some(
+                        fidl_power_system::ActivityGovernorSynchronousProxy::new(channel.into()),
+                    ))),
+                    Err(e) => {
+                        warn!("Failed to convert ActivityGovernorProxy into channel: {:?}", e);
+                        Arc::new(DeviceSyncPowerManager::new(None))
+                    }
+                },
                 Err(e) => {
-                    error!("Failed to start FullMAC MLME: {:?}", e);
-                    return Err(Status::INTERNAL.into());
+                    warn!("Failed to connect to ActivityGovernor: {:?}", e);
+                    Arc::new(DeviceSyncPowerManager::new(None))
                 }
             };
+
+        let mlme_handle = match wlan_fullmac_mlme::start_and_serve_on_separate_thread(
+            device,
+            completer,
+            sync_power_manager,
+        )
+        .await
+        {
+            Ok(handle) => handle,
+            Err(e) => {
+                error!("Failed to start FullMAC MLME: {:?}", e);
+                return Err(Status::INTERNAL.into());
+            }
+        };
 
         Ok(Self { _node: node, mlme_handle: Mutex::new(Some(mlme_handle)), stop_called })
     }

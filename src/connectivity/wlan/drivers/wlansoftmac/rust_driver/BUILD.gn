@@ -20,6 +20,7 @@ rustc_library("wlansoftmac-rust") {
     "//src/connectivity/wlan/lib/fidl-ext:wlan-fidl-ext",
     "//src/connectivity/wlan/lib/ieee80211",
     "//src/connectivity/wlan/lib/mlme/rust:wlan-mlme",
+    "//src/connectivity/wlan/lib/power_manager",
     "//src/connectivity/wlan/lib/sme:wlan-sme",
     "//src/connectivity/wlan/lib/trace:wlan-trace",
     "//src/lib/diagnostics/inspect/rust",

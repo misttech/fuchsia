@@ -61,7 +61,8 @@ zx::result<std::unique_ptr<SoftmacBridge>> SoftmacBridge::New(
     fdf::StartCompleter start_completer, fit::callback<void(zx_status_t)> shutdown_completer,
     fdf::SharedClient<fuchsia_wlan_softmac::WlanSoftmac>&& softmac_client,
     std::shared_ptr<std::mutex> ethernet_proxy_lock, ddk::EthernetIfcProtocolClient* ethernet_proxy,
-    std::optional<uint32_t>* cached_ethernet_status) {
+    std::optional<uint32_t>* cached_ethernet_status,
+    fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> activity_governor_client) {
   WLAN_TRACE_DURATION();
   auto softmac_bridge = std::unique_ptr<SoftmacBridge>(
       new SoftmacBridge(std::move(node_client), std::move(softmac_client),
@@ -150,7 +151,8 @@ zx::result<std::unique_ptr<SoftmacBridge>> SoftmacBridge::New(
           .ctx = softmac_bridge.get(),
           .transfer = &SoftmacBridge::WlanTx,
       },
-      softmac_bridge_endpoints->client.TakeHandle().release());
+      softmac_bridge_endpoints->client.TakeHandle().release(),
+      activity_governor_client.TakeChannel().release());
 
   if (start_result != ZX_OK) {
     return fit::error(start_result);

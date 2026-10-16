@@ -14,6 +14,7 @@ use futures::channel::oneshot::{self, Canceled};
 use futures::{Future, FutureExt, StreamExt};
 use log::{error, info, warn};
 use std::pin::Pin;
+use std::sync::Arc;
 use wlan_ffi_transport::completers::Completer;
 use wlan_ffi_transport::{EthernetTx, WlanRx};
 use wlan_fidl_ext::{ResponderExt, SendResultExt, WithName};
@@ -51,6 +52,7 @@ const INSPECT_VMO_SIZE_BYTES: usize = 1000 * 1024;
 pub async fn start_and_serve<F, D: DeviceOps + 'static>(
     start_completer: Completer<F>,
     device: D,
+    power_manager: Arc<dyn wlan_power_manager::SyncPowerManager>,
 ) -> Result<(), zx::Status>
 where
     F: FnOnce(zx::sys::zx_status_t) + 'static,
@@ -59,15 +61,21 @@ where
     let (driver_event_sink, driver_event_stream) = DriverEventSink::new();
 
     let (mlme_init_sender, mlme_init_receiver) = oneshot::channel();
-    let StartedDriver { softmac_ifc_bridge_request_stream, mlme, sme } =
-        match start(mlme_init_sender, driver_event_sink.clone(), driver_event_stream, device).await
-        {
-            Err(status) => {
-                start_completer.reply(Err(status));
-                return Err(status);
-            }
-            Ok(x) => x,
-        };
+    let StartedDriver { softmac_ifc_bridge_request_stream, mlme, sme } = match start(
+        mlme_init_sender,
+        driver_event_sink.clone(),
+        driver_event_stream,
+        device,
+        power_manager,
+    )
+    .await
+    {
+        Err(status) => {
+            start_completer.reply(Err(status));
+            return Err(status);
+        }
+        Ok(x) => x,
+    };
 
     start_completer.reply(Ok(()));
 
@@ -92,6 +100,7 @@ async fn start<D: DeviceOps + 'static>(
     driver_event_sink: DriverEventSink,
     driver_event_stream: mpsc::UnboundedReceiver<DriverEvent>,
     mut device: D,
+    power_manager: Arc<dyn wlan_power_manager::SyncPowerManager>,
 ) -> Result<
     StartedDriver<
         Pin<Box<dyn Future<Output = Result<(), Error>>>>,
@@ -150,6 +159,7 @@ async fn start<D: DeviceOps + 'static>(
         spectrum_management_support,
         inspector,
         generic_sme_request_stream,
+        power_manager,
     ) {
         Ok((mlme_request_stream, sme)) => (mlme_request_stream, sme),
         Err(e) => {
@@ -725,6 +735,7 @@ mod tests {
                     driver_event_sink.clone(),
                     driver_event_stream,
                     fake_device,
+                    Arc::new(()),
                 )),
                 Self { mlme_init_receiver: Box::pin(mlme_init_receiver), driver_event_sink },
             )
@@ -1245,6 +1256,7 @@ mod tests {
                 start_complete_sender.send(status).expect("Failed to signal start complete.")
             }),
             fake_device.clone(),
+            Arc::new(()),
         );
         let mut start_and_serve_fut = Box::pin(start_and_serve_fut);
 

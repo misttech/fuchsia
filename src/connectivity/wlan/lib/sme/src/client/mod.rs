@@ -62,6 +62,7 @@ mod internal {
         pub att_id: ConnectionAttemptId,
         pub(crate) inspect: Arc<inspect::SmeTree>,
         pub security_support: fidl_common::SecuritySupport,
+        pub power_manager: Arc<dyn wlan_power_manager::SyncPowerManager>,
     }
 }
 
@@ -684,6 +685,7 @@ impl ClientSme {
         inspect_node: fuchsia_inspect::Node,
         security_support: fidl_common::SecuritySupport,
         spectrum_management_support: fidl_common::SpectrumManagementSupport,
+        power_manager: Arc<dyn wlan_power_manager::SyncPowerManager>,
     ) -> (Self, MlmeSink, MlmeStream, timer::EventStream<Event>) {
         let device_info = Arc::new(info);
         let (mlme_sink, mlme_stream) = mpsc::unbounded();
@@ -713,6 +715,7 @@ impl ClientSme {
                     att_id: 0,
                     inspect,
                     security_support,
+                    power_manager,
                 },
             },
             MlmeSink::new(mlme_sink),
@@ -1771,6 +1774,7 @@ mod tests {
             sme_root_node,
             fake_security_support(),
             fake_spectrum_management_support_empty(),
+            Arc::new(()),
         );
         assert_eq!(ClientSmeStatus::Idle, sme.status());
 
@@ -2473,6 +2477,7 @@ mod tests {
             sme_root_node,
             fake_security_support(),
             fake_spectrum_management_support_empty(),
+            Arc::new(()),
         );
         (client_sme, mlme_stream, time_stream)
     }

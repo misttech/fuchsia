@@ -45,12 +45,24 @@ pub struct EstablishingRsna {
     pub handshake_complete: bool,
     // If empty, indicates that we have received confirms for all keys we've installed.
     pub pending_key_ids: std::collections::HashSet<u16>,
+    pub _wake_lease: Option<wlan_power_manager::WakeLease>,
 }
 
 #[derive(Debug)]
 pub struct LinkUp {
     pub protection: Protection,
     pub since: zx::MonotonicInstant,
+}
+
+#[derive(Debug)]
+pub struct LinkUpReconfiguring {
+    pub link_up: LinkUp,
+    // Failsafe timeout that transitions `LinkUpReconfiguring` back to `LinkUp`
+    // if MLME never confirms the transmitted EAPOL frame or key installation.
+    pub completion_timeout: Option<EventHandle>,
+    pub eapol_conf_pending: bool,
+    pub pending_key_ids: std::collections::HashSet<u16>,
+    pub _wake_lease: Option<wlan_power_manager::WakeLease>,
 }
 
 statemachine!(
@@ -60,7 +72,25 @@ statemachine!(
     // If the association does not use an Rsna, we move directly from Init to LinkUp.
     Init => [EstablishingRsna, LinkUp],
     EstablishingRsna => LinkUp,
+    LinkUp => LinkUpReconfiguring,
+    LinkUpReconfiguring => LinkUp,
 );
+
+#[derive(Debug)]
+enum LinkUpReconfigureProgressed {
+    Complete(LinkUp),
+    InProgress(LinkUpReconfiguring),
+}
+
+impl LinkUpReconfiguring {
+    fn try_complete(self) -> LinkUpReconfigureProgressed {
+        if !self.eapol_conf_pending && self.pending_key_ids.is_empty() {
+            LinkUpReconfigureProgressed::Complete(self.link_up)
+        } else {
+            LinkUpReconfigureProgressed::InProgress(self)
+        }
+    }
+}
 
 #[derive(Debug)]
 enum RsnaStatus {
@@ -71,6 +101,7 @@ enum RsnaStatus {
         new_retransmission_timeout: Option<EventHandle>,
         handshake_complete: bool,
         sent_keys: Vec<u16>,
+        eapol_conf_pending: bool,
     },
 }
 
@@ -153,6 +184,7 @@ impl LinkState {
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
     pub fn new(
         protection: Protection,
+        wake_lease: Option<wlan_power_manager::WakeLease>,
         context: &mut Context,
     ) -> Result<Self, EstablishRsnaFailureReason> {
         let mut rsna = match protection {
@@ -169,6 +201,7 @@ impl LinkState {
             error!("could not start Supplicant: {}", e);
             EstablishRsnaFailureReason::StartSupplicantFailed
         })?;
+        let rsna_status = process_rsna_updates(context, None, update_sink, None);
         let state = State::new(Init).transition_to(EstablishingRsna {
             rsna,
             rsna_completion_timeout: Some(context.timer.schedule(event::RsnaCompletionTimeout)),
@@ -176,9 +209,10 @@ impl LinkState {
             rsna_retransmission_timeout: None,
             handshake_complete: false,
             pending_key_ids: Default::default(),
+            _wake_lease: wake_lease,
         });
         let (transition, state) = state.release_data();
-        match process_rsna_updates(context, None, update_sink, None) {
+        match rsna_status {
             RsnaStatus::Unchanged => Ok(transition.to(state).into()),
             // RSNA progress during start() should only be trivial.
             RsnaStatus::Progressed {
@@ -186,6 +220,7 @@ impl LinkState {
                 new_retransmission_timeout: None,
                 handshake_complete: false,
                 sent_keys,
+                eapol_conf_pending: false,
             } if sent_keys.is_empty() => {
                 // Normally, we call both on_rsna_progressed() and
                 // try_establish(). Here, we omit try_establish() since it is not
@@ -211,6 +246,11 @@ impl LinkState {
                 let (_, state) = state.release_data();
                 let connected_duration = now() - state.since;
                 (state.protection, Some(connected_duration))
+            }
+            Self::LinkUpReconfiguring(state) => {
+                let (_, state) = state.release_data();
+                let connected_duration = now() - state.link_up.since;
+                (state.link_up.protection, Some(connected_duration))
             }
             // We always transition to EstablishingRsna or LinkUp on initialization
             // and never transition back
@@ -244,6 +284,7 @@ impl LinkState {
                         new_retransmission_timeout,
                         sent_keys,
                         handshake_complete,
+                        eapol_conf_pending: _,
                     } => {
                         match state
                             .on_rsna_progressed(
@@ -277,20 +318,66 @@ impl LinkState {
                         // Timeout is ignored because only one RX frame is
                         // needed in the exchange, so we are not waiting for
                         // another one.
-                        // sent_keys is ignored because we're not waiting for key installations
-                        // to complete the RSNA.
                         RsnaStatus::Progressed {
-                            ap_responsive: _,
+                            ap_responsive,
                             new_retransmission_timeout: _,
                             handshake_complete: _,
-                            sent_keys: _,
-                        } => {}
+                            sent_keys,
+                            eapol_conf_pending,
+                        } => {
+                            if eapol_conf_pending || !sent_keys.is_empty() {
+                                let reconfiguring = LinkUpReconfiguring {
+                                    link_up: state,
+                                    completion_timeout: ap_responsive,
+                                    eapol_conf_pending,
+                                    pending_key_ids: sent_keys.into_iter().collect(),
+                                    _wake_lease: context
+                                        .power_manager
+                                        .take_wake_lease("sme-eapol-rekey"),
+                                };
+                                return Ok(transition.to(reconfiguring).into());
+                            }
+                        }
                         // Once re-keying is supported, the RSNA can fail in
                         // LinkUp as well and cause deauthentication.
                         s => error!("unexpected RsnaStatus in LinkUp state: {:?}", s),
                     };
                 }
                 Ok(transition.to(state).into())
+            }
+            Self::LinkUpReconfiguring(state) => {
+                let (transition, mut state) = state.release_data();
+                if let Protection::Rsna(rsna) | Protection::LegacyWpa(rsna) =
+                    &mut state.link_up.protection
+                {
+                    match process_eapol_event(context, rsna, &eapol_event) {
+                        RsnaStatus::Unchanged => {}
+                        // This can happen when there's a GTK rotation.
+                        // Timeout is ignored because only one RX frame is
+                        // needed in the exchange, so we are not waiting for
+                        // another one.
+                        RsnaStatus::Progressed {
+                            ap_responsive,
+                            new_retransmission_timeout: _,
+                            handshake_complete: _,
+                            sent_keys,
+                            eapol_conf_pending,
+                        } => {
+                            state.eapol_conf_pending |= eapol_conf_pending;
+                            state.pending_key_ids.extend(sent_keys);
+                            state.completion_timeout = ap_responsive.or(state.completion_timeout);
+                        }
+                        s => error!("unexpected RsnaStatus in LinkUpReconfiguring state: {:?}", s),
+                    };
+                }
+                match state.try_complete() {
+                    LinkUpReconfigureProgressed::Complete(link_up) => {
+                        Ok(transition.to(link_up).into())
+                    }
+                    LinkUpReconfigureProgressed::InProgress(reconfiguring) => {
+                        Ok(transition.to(reconfiguring).into())
+                    }
+                }
             }
             // We always transition to EstablishingRsna or LinkUp on initialization
             // and never transition back
@@ -312,12 +399,15 @@ impl LinkState {
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
     pub fn on_eapol_conf(
-        self,
+        mut self,
         eapol_conf: fidl_mlme::EapolConfirm,
         bss: &BssDescription,
         state_change_msg: &mut Option<StateChangeContext>,
         context: &mut Context,
     ) -> Result<Self, EstablishRsnaFailureReason> {
+        if let Self::LinkUpReconfiguring(state) = &mut self {
+            state.eapol_conf_pending = false;
+        }
         self.on_eapol_event(eapol_conf, process_eapol_conf, bss, state_change_msg, context)
     }
 
@@ -349,6 +439,20 @@ impl LinkState {
                     }
                     RsnaProgressed::InProgress(still_establishing_rsna) => {
                         Ok(transition.to(still_establishing_rsna).into())
+                    }
+                }
+            }
+            Self::LinkUpReconfiguring(state) => {
+                let (transition, mut state) = state.release_data();
+                for key_result in set_keys_conf.results {
+                    let _ = state.pending_key_ids.remove(&key_result.key_id);
+                }
+                match state.try_complete() {
+                    LinkUpReconfigureProgressed::Complete(link_up) => {
+                        Ok(transition.to(link_up).into())
+                    }
+                    LinkUpReconfigureProgressed::InProgress(reconfiguring) => {
+                        Ok(transition.to(reconfiguring).into())
                     }
                 }
             }
@@ -399,6 +503,7 @@ impl LinkState {
                             new_retransmission_timeout,
                             sent_keys,
                             handshake_complete,
+                            eapol_conf_pending: _,
                         } => {
                             let still_establishing_rsna = state.on_rsna_progressed(
                                 ap_responsive,
@@ -413,6 +518,18 @@ impl LinkState {
                 _ => Ok(state.into()),
             },
             Self::LinkUp(state) => Ok(state.into()),
+            Self::LinkUpReconfiguring(state) => {
+                let (transition, state) = state.release_data();
+                if matches!(event, Event::RsnaResponseTimeout(RsnaResponseTimeout {})) {
+                    warn!(
+                        "RSNA response timeout expired during LinkUpReconfiguring: {}ms",
+                        event::RSNA_RESPONSE_TIMEOUT_MILLIS
+                    );
+                    Ok(transition.to(state.link_up).into())
+                } else {
+                    Ok(transition.to(state).into())
+                }
+            }
             // We always transition to EstablishingRsna or LinkUp on initialization
             // and never transition back
             #[expect(clippy::unreachable)]
@@ -592,6 +709,7 @@ fn process_rsna_updates(
     let mut new_retransmission_timeout = None;
     let mut handshake_complete = false;
     let mut sent_keys = vec![];
+    let mut eapol_conf_pending = false;
     for update in updates {
         match update {
             // ESS Security Association requests to send an EAPOL frame.
@@ -603,6 +721,7 @@ fn process_rsna_updates(
                         return RsnaStatus::Failed(EstablishRsnaFailureReason::InternalError);
                     }
                     Some(bssid) => {
+                        eapol_conf_pending = true;
                         send_eapol_frame(context, bssid, sta_addr, frame, expect_response)
                     }
                 }
@@ -648,5 +767,6 @@ fn process_rsna_updates(
         new_retransmission_timeout,
         handshake_complete,
         sent_keys,
+        eapol_conf_pending,
     }
 }

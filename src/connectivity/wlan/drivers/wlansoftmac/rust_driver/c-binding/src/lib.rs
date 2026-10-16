@@ -47,6 +47,8 @@ static LOGGER_ONCE: Once = Once::new();
 ///   - This function cannot guarantee `shutdown_completer` points to a valid object when
 ///     `run_shutdown_completer` is called.
 ///   - This function cannot guarantee `wlan_softmac_bridge_client_handle` is a valid handle.
+///   - This function cannot guarantee `activity_governor_client_handle` is a valid handle or
+///     `ZX_HANDLE_INVALID`.
 ///
 /// By calling this function, the caller promises the following:
 ///
@@ -57,6 +59,7 @@ static LOGGER_ONCE: Once = Once::new();
 ///   - The `shutdown_completer` pointer will point to a valid object at least until
 ///     `run_shutdown_completer` is called.
 ///   - The `wlan_softmac_bridge_client_handle` is a valid handle.
+///   - The `activity_governor_client_handle` is a valid handle or `ZX_HANDLE_INVALID`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn start_bridged_wlansoftmac(
     start_completer: *mut c_void,
@@ -72,6 +75,7 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
     ethernet_rx: FfiEthernetRx,
     wlan_tx: FfiWlanTx,
     wlan_softmac_bridge_client_handle: zx::sys::zx_handle_t,
+    activity_governor_client_handle: zx::sys::zx_handle_t,
 ) -> zx::sys::zx_status_t {
     // The Fuchsia syslog must not be initialized from Rust more than once per process. In the case
     // of MLME, that means we can only call it once for both the client and ap modules. Ensure this
@@ -156,9 +160,25 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
             fidl_softmac::WlanSoftmacBridgeProxy::new(channel)
         };
         let device = Device::new(wlan_softmac_bridge_proxy, ethernet_rx, wlan_tx);
+        let power_manager: std::sync::Arc<dyn wlan_power_manager::SyncPowerManager> =
+            if activity_governor_client_handle == zx::sys::ZX_HANDLE_INVALID {
+                std::sync::Arc::new(wlan_power_manager::DeviceSyncPowerManager::new(None))
+            } else {
+                // Safety: This is safe because the caller promises
+                // `activity_governor_client_handle` is a valid handle if not `ZX_HANDLE_INVALID`.
+                let handle =
+                    unsafe { fidl::NullableHandle::from_raw(activity_governor_client_handle) };
+                let channel = fidl::Channel::from(handle);
+                let proxy =
+                    fidl_fuchsia_power_system::ActivityGovernorSynchronousProxy::new(channel);
+                std::sync::Arc::new(wlan_power_manager::DeviceSyncPowerManager::new(Some(proxy)))
+            };
 
-        let result =
-            executor.run_singlethreaded(wlansoftmac_rust::start_and_serve(start_completer, device));
+        let result = executor.run_singlethreaded(wlansoftmac_rust::start_and_serve(
+            start_completer,
+            device,
+            power_manager,
+        ));
         shutdown_completer.reply(result);
     });
 

@@ -4,6 +4,7 @@
 
 #include "softmac_driver.h"
 
+#include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.softmac/cpp/driver/fidl.h>
 #include <fidl/fuchsia.wlan.softmac/cpp/fidl.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
@@ -106,12 +107,21 @@ void SoftmacDriver::Start(fdf::DriverContext context, fdf::StartCompleter comple
   softmac_client_.Bind(*std::move(softmac_client), driver_dispatcher()->get());
   fdf::info("Connected to WlanSoftmac service.");
 
+  fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> activity_governor_client;
+  if (auto result = incoming->Connect<fuchsia_power_system::ActivityGovernor>(); result.is_ok()) {
+    activity_governor_client = *std::move(result);
+  } else {
+    fdf::warn("Failed to connect to ActivityGovernor: {}", result.status_string());
+  }
+
   compat::DeviceServer::BanjoConfig banjo_config;
   banjo_config.callbacks[ZX_PROTOCOL_ETHERNET_IMPL] = banjo_server_.callback();
 
   compat_server_.Begin(
       incoming, outgoing(), context.node_name(), "compat-server",
-      [&, completer = std::move(completer)](zx::result<> compat_server_init_result) mutable {
+      [&, completer = std::move(completer),
+       activity_governor_client =
+           std::move(activity_governor_client)](zx::result<> compat_server_init_result) mutable {
         if (compat_server_init_result.is_error()) {
           fdf::error("Compat Server initialization failed: {}",
                      compat_server_init_result.status_string());
@@ -133,7 +143,8 @@ void SoftmacDriver::Start(fdf::DriverContext context, fdf::StartCompleter comple
         request.controller(std::move(controller_endpoints.server));
 
         node_client_->AddChild(std::move(request))
-            .Then([this, completer = std::move(completer)](
+            .Then([this, completer = std::move(completer),
+                   activity_governor_client = std::move(activity_governor_client)](
                       fidl::Result<fuchsia_driver_framework::Node::AddChild> result) mutable {
               if (result.is_error()) {
                 fdf::error("Failed to add ethernet device child: {}",
@@ -169,7 +180,7 @@ void SoftmacDriver::Start(fdf::DriverContext context, fdf::StartCompleter comple
                 auto softmac_bridge = SoftmacBridge::New(
                     node_client_.Clone(), std::move(start_completer), std::move(shutdown_completer),
                     softmac_client_.Clone(), ethernet_proxy_lock_, &ethernet_proxy_,
-                    &cached_ethernet_status_);
+                    &cached_ethernet_status_, std::move(activity_governor_client));
                 if (softmac_bridge.is_error()) {
                   fdf::error("Failed to create SoftmacBridge: {}", softmac_bridge.status_string());
                   return;

@@ -34,8 +34,10 @@ use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
 use log::{error, info, warn};
+use std::sync::Arc;
 use wlan_common::sink::UnboundedSink;
 use wlan_ffi_transport::completers::Completer;
+use wlan_power_manager::SyncPowerManager;
 use wlan_sme::serve::create_sme;
 
 #[derive(thiserror::Error, Debug)]
@@ -157,6 +159,7 @@ const INSPECT_VMO_SIZE_BYTES: usize = 1000 * 1024;
 pub async fn start_and_serve_on_separate_thread<F, D: DeviceOps + Send + 'static>(
     device: D,
     shutdown_completer: Completer<F>,
+    power_manager: Arc<dyn SyncPowerManager>,
 ) -> anyhow::Result<FullmacMlmeHandle>
 where
     F: FnOnce(zx::sys::zx_status_t) + 'static,
@@ -182,6 +185,7 @@ where
             driver_event_stream,
             inspector,
             startup_sender,
+            power_manager,
         );
         let result = executor.run(future);
         shutdown_completer.reply(result);
@@ -232,9 +236,12 @@ async fn start_and_serve<D: DeviceOps + Send + 'static>(
     driver_event_stream: mpsc::UnboundedReceiver<FullmacDriverEvent>,
     inspector: Inspector,
     startup_sender: oneshot::Sender<Result<(), FullmacMlmeError>>,
+    power_manager: Arc<dyn SyncPowerManager>,
 ) -> Result<(), zx::Status> {
     let StartedDriver { mlme_main_loop_fut, sme_fut } =
-        match start(device, driver_event_stream, driver_event_sender, inspector).await {
+        match start(device, driver_event_stream, driver_event_sender, inspector, power_manager)
+            .await
+        {
             Ok(initialized_mlme) => {
                 if let Err(e) = startup_sender.send(Ok(())) {
                     error!("Failed to send startup response: {:?}", e);
@@ -276,6 +283,7 @@ async fn start<D: DeviceOps + Send + 'static>(
     driver_event_stream: mpsc::UnboundedReceiver<FullmacDriverEvent>,
     driver_event_sender: mpsc::UnboundedSender<FullmacDriverEvent>,
     inspector: Inspector,
+    power_manager: Arc<dyn SyncPowerManager>,
 ) -> Result<StartedDriver, FullmacMlmeError> {
     let (fullmac_ifc_client_end, fullmac_ifc_request_stream) =
         fidl::endpoints::create_request_stream();
@@ -336,6 +344,7 @@ async fn start<D: DeviceOps + Send + 'static>(
         spectrum_management_support,
         inspector,
         generic_sme_stream,
+        power_manager,
     )
     .map_err(FullmacMlmeError::FailedToCreateSme)?;
 
@@ -567,6 +576,7 @@ mod tests {
                 driver_event_stream,
                 inspector,
                 startup_sender,
+                Arc::new(()),
             ));
 
             let test_helper = TestHelper {

@@ -6,6 +6,7 @@
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_WLANSOFTMAC_SOFTMAC_BRIDGE_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/driver/fidl.h>
+#include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.softmac/cpp/driver/fidl.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -34,7 +35,8 @@ class SoftmacBridge : public fidl::Server<fuchsia_wlan_softmac::WlanSoftmacBridg
       fdf::SharedClient<fuchsia_wlan_softmac::WlanSoftmac>&& softmac_client,
       std::shared_ptr<std::mutex> ethernet_proxy_lock,
       ddk::EthernetIfcProtocolClient* ethernet_proxy,
-      std::optional<uint32_t>* cached_ethernet_status);
+      std::optional<uint32_t>* cached_ethernet_status,
+      fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> activity_governor_client);
   void StopBridgedDriver(fit::callback<void()> completer);
   ~SoftmacBridge() override;
 

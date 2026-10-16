@@ -79,6 +79,8 @@ typedef struct {
  *   - This function cannot guarantee `shutdown_completer` points to a valid object when
  *     `run_shutdown_completer` is called.
  *   - This function cannot guarantee `wlan_softmac_bridge_client_handle` is a valid handle.
+ *   - This function cannot guarantee `activity_governor_client_handle` is a valid handle or
+ *     `ZX_HANDLE_INVALID`.
  *
  * By calling this function, the caller promises the following:
  *
@@ -89,11 +91,13 @@ typedef struct {
  *   - The `shutdown_completer` pointer will point to a valid object at least until
  *     `run_shutdown_completer` is called.
  *   - The `wlan_softmac_bridge_client_handle` is a valid handle.
+ *   - The `activity_governor_client_handle` is a valid handle or `ZX_HANDLE_INVALID`.
  */
 extern "C" zx_status_t start_bridged_wlansoftmac(
     void *start_completer, void (*run_start_completer)(void *start_completer, zx_status_t status),
     void *shutdown_completer,
     void (*run_shutdown_completer)(void *shutdown_completer, zx_status_t status),
-    ethernet_rx_t ethernet_rx, wlan_tx_t wlan_tx, zx_handle_t wlan_softmac_bridge_client_handle);
+    ethernet_rx_t ethernet_rx, wlan_tx_t wlan_tx, zx_handle_t wlan_softmac_bridge_client_handle,
+    zx_handle_t activity_governor_client_handle);
 
 #endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_WLANSOFTMAC_RUST_DRIVER_C_BINDING_BINDINGS_H_

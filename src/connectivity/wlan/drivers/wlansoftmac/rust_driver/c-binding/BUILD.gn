@@ -12,12 +12,14 @@ rustc_staticlib("wlansoftmac-c") {
   edition = "2024"
 
   deps = [
+    "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_rust",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/rust/zx",
     "//src/connectivity/wlan/drivers/wlansoftmac/rust_driver:wlansoftmac-rust",
     "//src/connectivity/wlan/lib/ffi-transport:wlan-ffi-transport",
     "//src/connectivity/wlan/lib/mlme/rust:wlan-mlme",
+    "//src/connectivity/wlan/lib/power_manager",
     "//src/connectivity/wlan/lib/trace:wlan-trace",
     "//src/lib/diagnostics/log/rust:no_startup_handle",
     "//src/lib/fidl/rust/fidl",

@@ -22,6 +22,7 @@ rustc_library("wlan-sme") {
     "//src/connectivity/wlan/lib/common/rust:wlan-common",
     "//src/connectivity/wlan/lib/eapol",
     "//src/connectivity/wlan/lib/ieee80211",
+    "//src/connectivity/wlan/lib/power_manager",
     "//src/connectivity/wlan/lib/rsn:wlan-rsn",
     "//src/connectivity/wlan/lib/statemachine:wlan-statemachine",
     "//src/lib/diagnostics/inspect/contrib/rust",
@@ -36,6 +37,7 @@ rustc_library("wlan-sme") {
 
   test_deps = [
     "//src/connectivity/wlan/lib/fcg-crypto:wlan-fcg-crypto",
+    "//src/connectivity/wlan/lib/power_manager:power_manager_testing",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

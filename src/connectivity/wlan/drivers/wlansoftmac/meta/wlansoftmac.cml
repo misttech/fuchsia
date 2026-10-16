@@ -19,6 +19,7 @@
     },
     capabilities: [],
     use: [
+        { protocol: "fuchsia.power.system.ActivityGovernor" },
         { service: "fuchsia.wlan.softmac.Service" },
     ],
     expose: [],
