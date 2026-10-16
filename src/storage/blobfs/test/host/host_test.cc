@@ -605,5 +605,24 @@ TEST(BlobfsHostTest, WriteBlobThatRequiresMultipleExtentsIsCorrect) {
   EXPECT_TRUE(checker.Check());
 }
 
+TEST(BlobfsHostTest, DuplicateMerkleRootFailsFsck) {
+  std::unique_ptr<Blobfs> blobfs = CreateBlobfs(/*block_count=*/500);
+  ASSERT_TRUE(blobfs);
+  AddUncompressedBlob(/*data_size=*/1024, *blobfs, BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  AddUncompressedBlob(/*data_size=*/2048, *blobfs, BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+
+  auto node0 = blobfs->GetNode(0);
+  ASSERT_TRUE(node0.is_ok());
+  ASSERT_TRUE(node0->header.IsAllocated());
+  auto node1 = blobfs->GetNode(1);
+  ASSERT_TRUE(node1.is_ok());
+  ASSERT_TRUE(node1->header.IsAllocated());
+
+  memcpy(node1->merkle_root_hash, node0->merkle_root_hash, sizeof(node1->merkle_root_hash));
+
+  BlobfsChecker checker(blobfs.get());
+  EXPECT_FALSE(checker.Check());
+}
+
 }  // namespace
 }  // namespace blobfs

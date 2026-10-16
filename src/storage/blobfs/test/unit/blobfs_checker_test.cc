@@ -503,5 +503,26 @@ TEST_F(BlobfsCheckerTest, CorruptExtentCountInExtentContainer) {
   ASSERT_STATUS(setup_.Mount(std::move(device)), ZX_ERR_IO_DATA_INTEGRITY);
 }
 
+TEST_F(BlobfsCheckerTest, DuplicateMerkleRoot) {
+  Digest digest0, digest1;
+  AddRandomBlob(1024, nullptr, nullptr, &digest0);
+  AddRandomBlob(1024, nullptr, nullptr, &digest1);
+  EXPECT_OK(Sync());
+
+  auto blob0 = GetBlob(*blobfs(), digest0);
+  ASSERT_OK(blob0);
+  auto blob1 = GetBlob(*blobfs(), digest1);
+  ASSERT_OK(blob1);
+
+  auto node0 = blobfs()->GetNode(blob0->Ino());
+  ASSERT_OK(node0);
+  auto node1 = blobfs()->GetNode(blob1->Ino());
+  ASSERT_OK(node1);
+  memcpy(node1->merkle_root_hash, node0->merkle_root_hash, sizeof(node1->merkle_root_hash));
+
+  BlobfsChecker checker(blobfs());
+  EXPECT_FALSE(checker.Check());
+}
+
 }  // namespace
 }  // namespace blobfs

@@ -13,7 +13,9 @@
 #include <cstdint>
 #include <ios>
 #include <iterator>
+#include <map>
 
+#include "src/lib/digest/digest.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/iterator/allocated_extent_iterator.h"
@@ -48,6 +50,7 @@ bool BlobfsChecker::CheckBackupSuperblock() {
 
 bool BlobfsChecker::TraverseInodeBitmap() {
   bool valid = true;
+  std::map<Digest, unsigned> seen_digests;
   for (unsigned n = 0; n < blobfs_->info_.inode_count; n++) {
     auto inode = blobfs_->GetNode(n);
     ZX_ASSERT_MSG(inode.is_ok(), "Failed to get node %u: status=%d", n, inode.status_value());
@@ -84,6 +87,13 @@ bool BlobfsChecker::TraverseInodeBitmap() {
       }
 
       bool blob_valid = true;
+
+      Digest digest(inode->merkle_root_hash);
+      if (auto [it, inserted] = seen_digests.emplace(digest, n); !inserted) {
+        FX_LOGS(ERROR) << "check: duplicate merkle root " << digest << " at inodes " << it->second
+                       << " and " << n;
+        blob_valid = false;
+      }
 
       auto extents = AllocatedExtentIterator::Create(blobfs_->GetNodeFinder(), n);
       ZX_ASSERT_MSG(extents.is_ok(), "Failed to create extent iterator for inode %u: status=%d", n,
