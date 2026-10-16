@@ -9,20 +9,18 @@ import("//zircon/kernel/kernel_rust_mod.gni")
 kernel_rust_mod("watchdog-rs") {
   output_name = "pdev_watchdog"
   source_root = "watchdog.rs"
-  sources = [ "watchdog.rs" ]
+  sources = [
+    "console.rs",
+    "watchdog.rs",
+  ]
   deps = [
     "//sdk/rust/zx-status",
+    "//src/lib/kprint",
     "//zircon/kernel/lib/debug",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 source_set("hw_watchdog") {
-  sources = [ "console.cc" ]
-  deps = [
-    ":watchdog-rs",
-    "//zircon/kernel/lib/arch",
-    "//zircon/kernel/lib/console",
-    "//zircon/kernel/lib/debuglog",
-  ]
+  deps = [ ":watchdog-rs" ]
 }

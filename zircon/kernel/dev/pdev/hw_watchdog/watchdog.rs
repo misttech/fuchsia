@@ -6,6 +6,12 @@
 //
 // Ported from zircon/kernel/dev/pdev/hw_watchdog/hw_watchdog.cc
 
+// The console command is only built at LK_DEBUGLEVEL > 1, i.e. level 2.
+#[cfg(lk_debuglevel = "2")]
+pub mod console;
+#[cfg(not(lk_debuglevel = "2"))]
+use kprint as _;
+
 use crate::platform_rs::timer::{DurationBoot, InstantBoot};
 use core::cell::UnsafeCell;
 use core::sync::atomic::Ordering;
