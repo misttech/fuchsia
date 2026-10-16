@@ -9,6 +9,7 @@ use fidl_fuchsia_pkg_http as fpkg_http;
 use fuchsia_inspect as finspect;
 use fuchsia_inspect::NumericProperty as _;
 use fuchsia_sync::Mutex;
+use fuchsia_trace as ftrace;
 use http_uri_ext::HttpUriExt as _;
 use log::warn;
 use std::borrow::Cow;
@@ -29,6 +30,7 @@ pub(crate) struct Params {
 pub(crate) struct QueueContext {
     blob_base_url: http::Uri,
     conflict_behavior: ConflictBehavior,
+    parent_trace_id: ftrace::Id,
 }
 
 /// How the blob fetcher should behave when asked to fetch a blob that is already in blobfs.
@@ -41,8 +43,12 @@ pub(crate) enum ConflictBehavior {
 }
 
 impl QueueContext {
-    pub(crate) fn new(blob_base_url: http::Uri, conflict_behavior: ConflictBehavior) -> Self {
-        Self { blob_base_url, conflict_behavior }
+    pub(crate) fn new(
+        blob_base_url: http::Uri,
+        conflict_behavior: ConflictBehavior,
+        parent_trace_id: ftrace::Id,
+    ) -> Self {
+        Self { blob_base_url, conflict_behavior, parent_trace_id }
     }
 }
 
@@ -84,6 +90,17 @@ impl BlobFetcher {
                 let blobfs_client = blobfs_client.clone();
                 let inspect = Arc::clone(&inspect);
                 async move {
+                    let trace_id = ftrace::Id::new();
+                    let guard = ftrace::async_enter!(
+                        trace_id,
+                        c"app",
+                        c"fetch blob",
+                        // Async tracing does not support multiple concurrent child durations, so we
+                        // create a new top-level duration and attach the parent duration as
+                        // metadata.
+                        "parent_trace_id" => u64::from(context.parent_trace_id),
+                        "hash" => blob_id.to_string().as_str()
+                    );
                     let inspect_fetch = inspect.start_fetch(&blob_id, &context);
                     let res = fetch_blob_with_retry(
                         blob_id,
@@ -92,9 +109,13 @@ impl BlobFetcher {
                         &blobfs_client,
                         &http_client,
                         &inspect_fetch,
+                        trace_id,
                     )
                     .await;
                     inspect.end_fetch(inspect_fetch, &res);
+                    if let Some(o) = guard {
+                        o.end(&[ftrace::ArgValue::of("result", format!("{res:?}").as_str())])
+                    }
                     res.map_err(Arc::new)
                 }
             },
@@ -134,7 +155,7 @@ impl BlobFetcher {
 /// uncompressed size of the blob, or None if the blob did not need to be downloaded.
 async fn fetch_blob_with_retry(
     blob_id: pkg::BlobId,
-    QueueContext { blob_base_url, conflict_behavior }: QueueContext,
+    QueueContext { blob_base_url, conflict_behavior, parent_trace_id: _ }: QueueContext,
     Params {
         header_network_timeout,
         body_network_timeout,
@@ -143,9 +164,11 @@ async fn fetch_blob_with_retry(
     blobfs_client: &blobfs::Client,
     http_client: &fidl_connector::ServiceReconnector<fpkg_http::ClientMarker>,
     inspect: &InspectFetch,
+    trace_id: ftrace::Id,
 ) -> Result<Option<u64>, FetchError> {
     match conflict_behavior {
         ConflictBehavior::AskBlobfs => {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"pre-check presence");
             if blobfs_client.blob_present_and_up_to_date(&blob_id.into()).await {
                 return Ok(None);
             }
@@ -158,41 +181,72 @@ async fn fetch_blob_with_retry(
         .map_err(|source| FetchError::BlobUrl { source, base_url: error_base, blob_id })?;
     fuchsia_backoff::retry_or_first_error(retry::blob_fetch(), || async move {
         inspect.attempt();
-        let blob = blobfs_client
-            .open_blob_for_write(&blob_id.into(), true)
-            .await
-            .map_err(FetchError::CreateBlob)?;
-        let bytes_downloaded = http_client
-            .connect()
-            .map_err(FetchError::ConnectToHttpClient)?
-            .download_blob(
-                &blob_url.to_string(),
-                blob,
-                header_network_timeout.into_nanos(),
-                body_network_timeout.into_nanos(),
-                download_resumption_attempts_limit,
-            )
-            .await
-            .map_err(FetchError::DownloadBlobFidl)?
-            .map_err(FetchError::DownloadBlob)?;
-        // Recheck presence to catch the client lying about writing the blob, but accept
-        // NeedsOverwrite (unlike in the pre-write check) because the incoming blob may not have
-        // been intended by the remote blobstore to pass blobfs' up-to-date requirements. This
-        // check can be tightened to UpToDate if we implement more thorough blob format negotiation.
-        use blobfs::BlobStatus::*;
-        match blobfs_client
-            .blob_status(&blob_id.into())
-            .await
-            .map_err(FetchError::PostWriteStatusCheck)?
+        let blob = {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"open blob");
+            blobfs_client
+                .open_blob_for_write(&blob_id.into(), true)
+                .await
+                .map_err(FetchError::CreateBlob)?
+        };
+        let guard = ftrace::async_enter!(trace_id, c"app", c"download blob");
+        let res = download_blob(
+            http_client,
+            blob_url,
+            blob,
+            header_network_timeout,
+            body_network_timeout,
+            download_resumption_attempts_limit,
+        )
+        .await;
+        if let Some(o) = guard {
+            o.end(&[ftrace::ArgValue::of("result", format!("{res:?}").as_str())])
+        }
+        let download_size = res?;
         {
-            UpToDate | NeedsOverwrite => (),
-            Absent => {
-                return Err(FetchError::BlobAbsentAfterWrite);
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"post-check presence");
+            // Recheck presence to catch the client lying about writing the blob, but accept
+            // NeedsOverwrite (unlike in the pre-write check) because the incoming blob may not have
+            // been intended by the remote blobstore to pass blobfs' up-to-date requirements. This
+            // check can be tightened to UpToDate if we implement blob format negotiation.
+            use blobfs::BlobStatus::*;
+            match blobfs_client
+                .blob_status(&blob_id.into())
+                .await
+                .map_err(FetchError::PostWriteStatusCheck)?
+            {
+                UpToDate | NeedsOverwrite => (),
+                Absent => {
+                    return Err(FetchError::BlobAbsentAfterWrite);
+                }
             }
         }
-        Ok(Some(bytes_downloaded))
+        Ok(Some(download_size))
     })
     .await
+}
+
+async fn download_blob(
+    http_client: &fidl_connector::ServiceReconnector<fpkg_http::ClientMarker>,
+    blob_url: &http::Uri,
+    blob: fidl::endpoints::ClientEnd<fidl_fuchsia_fxfs::BlobWriterMarker>,
+    header_network_timeout: zx::BootDuration,
+    body_network_timeout: zx::BootDuration,
+    download_resumption_attempts_limit: u32,
+) -> Result<u64, FetchError> {
+    let bytes_downloaded = http_client
+        .connect()
+        .map_err(FetchError::ConnectToHttpClient)?
+        .download_blob(
+            &blob_url.to_string(),
+            blob,
+            header_network_timeout.into_nanos(),
+            body_network_timeout.into_nanos(),
+            download_resumption_attempts_limit,
+        )
+        .await
+        .map_err(FetchError::DownloadBlobFidl)?
+        .map_err(FetchError::DownloadBlob)?;
+    Ok(bytes_downloaded)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -301,7 +355,7 @@ impl Inspect {
     }
 
     fn start_fetch(&self, blob_id: &pkg::BlobId, context: &QueueContext) -> InspectFetch {
-        let QueueContext { blob_base_url, conflict_behavior } = context;
+        let QueueContext { blob_base_url, conflict_behavior, parent_trace_id: _ } = context;
         let node = self.active.create_child(
             self.fetch_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(),
         );

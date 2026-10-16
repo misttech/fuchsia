@@ -12,6 +12,7 @@ use fidl_fuchsia_pkg_ext as fpkg_ext;
 use fidl_fuchsia_pkg_resolution as fpkg_resolution;
 use fuchsia_inspect as finspect;
 use fuchsia_sync::Mutex;
+use fuchsia_trace as ftrace;
 use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::{error, warn};
@@ -236,13 +237,24 @@ impl Resolver {
         let inspect = self.inspect_active.create_child(
             self.request_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(),
         );
-        let res = self.resolve(url, &inspect).await;
-        inspect.record_string(
-            "result",
-            res.as_ref().err().map_or(Cow::Borrowed("success"), |e| {
-                format!("error: {}", crate::stringify_error(e)).into()
-            }),
+        let trace_id = ftrace::Id::new();
+        let guard = ftrace::async_enter!(
+            trace_id,
+            c"app",
+            c"full resolve",
+            "url" => url.to_string().as_ref(),
+            // An async duration cannot have multiple concurrent child async durations so we include
+            // the id as metadata to manually determine the relationship.
+            "trace_id" => u64::from(trace_id)
         );
+        let res = self.resolve(url, &inspect, trace_id).await;
+        let result_str = res.as_ref().err().map_or(Cow::Borrowed("success"), |e| {
+            format!("error: {}", crate::stringify_error(e)).into()
+        });
+        if let Some(o) = guard {
+            o.end(&[ftrace::ArgValue::of("result", result_str.as_ref())]);
+        }
+        inspect.record_string("result", result_str);
         inspect.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
         self.move_inspect_node_to_recent(inspect);
         res
@@ -252,19 +264,24 @@ impl Resolver {
         &self,
         url: &AbsolutePackageUrl,
         inspect: &finspect::Node,
+        trace_id: ftrace::Id,
     ) -> Result<Arc<crate::root_dir::CachedRootDir>, Error> {
         inspect.record_int("start_boot_ns", zx::BootInstant::get().into_nanos());
         inspect.record_string("url", url.to_string());
-        let (pkg_id, blob_source) = self.lookup(url, inspect).await?;
+        let (pkg_id, blob_source) = {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"lookup");
+            self.lookup(url, inspect).await?
+        };
         inspect.record_string("hash", pkg_id.to_string());
         inspect.record_string("blob_source", format!("{blob_source:?}"));
         if let Some(root_dir) = self.open_packages.get(&pkg_id) {
             return Ok(root_dir);
         }
         if let Some(blob_source) = blob_source {
+            ftrace::async_instant!(trace_id, c"app", c"enqueue fetch");
             return self
                 .package_fetcher
-                .fetch_with_open_package_tracking(pkg_id, blob_source)
+                .fetch_with_open_package_tracking(pkg_id, blob_source, trace_id)
                 .await
                 .map_err(Error::PackageFetcher);
         }

@@ -5,6 +5,7 @@
 use fidl_fuchsia_pkg as fpkg;
 use fuchsia_inspect as finspect;
 use fuchsia_inspect::NumericProperty as _;
+use fuchsia_trace as ftrace;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -29,6 +30,7 @@ enum MaybeCachedRootDir {
 struct QueueContext {
     blob_source: http::Uri,
     gc_protection: fpkg::GcProtection,
+    trace_id: ftrace::Id,
 }
 
 impl work_queue::TryMerge for QueueContext {
@@ -38,6 +40,9 @@ impl work_queue::TryMerge for QueueContext {
     // versions of the blobs, e.g. different compression levels.
     fn try_merge(&mut self, other: Self) -> Result<(), Self> {
         if self.gc_protection == other.gc_protection && self.blob_source == other.blob_source {
+            ftrace::async_instant!(
+                other.trace_id, c"app", c"merged fetch", "merge target" => u64::from(self.trace_id)
+            );
             Ok(())
         } else {
             Err(other)
@@ -82,6 +87,7 @@ impl PackageFetcher {
                         &root_dir_factory,
                         &open_packages,
                         inspect,
+                        context.trace_id,
                     )
                     .await
                 }
@@ -94,8 +100,12 @@ impl PackageFetcher {
         &self,
         pkg_id: fuchsia_hash::Hash,
         blob_source: http::Uri,
+        trace_id: ftrace::Id,
     ) -> Result<Arc<crate::CachedRootDir>, Arc<Error>> {
-        match self.fetch(pkg_id, blob_source, fpkg::GcProtection::OpenPackageTracking).await? {
+        match self
+            .fetch(pkg_id, blob_source, fpkg::GcProtection::OpenPackageTracking, trace_id)
+            .await?
+        {
             MaybeCachedRootDir::Cached(root_dir) => Ok(root_dir),
             MaybeCachedRootDir::Uncached(_) => {
                 unreachable!("QueueContext::try_merge does not merge different GcProtections")
@@ -107,8 +117,9 @@ impl PackageFetcher {
         &self,
         pkg_id: fuchsia_hash::Hash,
         blob_source: http::Uri,
+        trace_id: ftrace::Id,
     ) -> Result<Arc<crate::RootDir>, Arc<Error>> {
-        match self.fetch(pkg_id, blob_source, fpkg::GcProtection::Retained).await? {
+        match self.fetch(pkg_id, blob_source, fpkg::GcProtection::Retained, trace_id).await? {
             MaybeCachedRootDir::Uncached(root_dir) => Ok(root_dir),
             MaybeCachedRootDir::Cached(_) => {
                 unreachable!("QueueContext::try_merge does not merge different GcProtections")
@@ -121,9 +132,10 @@ impl PackageFetcher {
         pkg_id: fuchsia_hash::Hash,
         blob_source: http::Uri,
         gc_protection: fpkg::GcProtection,
+        trace_id: ftrace::Id,
     ) -> Result<MaybeCachedRootDir, Arc<Error>> {
         self.sender
-            .push(pkg_id, QueueContext { blob_source, gc_protection })
+            .push(pkg_id, QueueContext { blob_source, gc_protection, trace_id })
             .await
             .map_err(Error::PushQueue)?
     }
@@ -139,7 +151,15 @@ async fn fetch(
     root_dir_factory: &crate::root_dir::RootDirFactory,
     open_packages: &crate::RootDirCache,
     inspect: finspect::Node,
+    trace_id: ftrace::Id,
 ) -> Result<MaybeCachedRootDir, Arc<Error>> {
+    let _guard = ftrace::async_enter!(
+        trace_id,
+        c"app",
+        c"fetch",
+        "hash" => pkg_id.to_string().as_str(),
+        "gc_protection" => format!("{gc_protection:?}").as_str()
+    );
     let gc_guard = package_index.write().await.start_writing(pkg_id, gc_protection);
     let fetch_ret = fetch_impl(
         pkg_id,
@@ -151,6 +171,7 @@ async fn fetch(
         root_dir_factory,
         open_packages,
         inspect,
+        trace_id,
     )
     .await;
     let stop_ret = package_index.write().await.stop_writing(gc_guard);
@@ -174,6 +195,7 @@ async fn fetch_impl(
     root_dir_factory: &crate::root_dir::RootDirFactory,
     open_packages: &crate::RootDirCache,
     inspect: finspect::Node,
+    trace_id: ftrace::Id,
 ) -> Result<MaybeCachedRootDir, Error> {
     inspect.record_int("start_boot_ns", zx::BootInstant::get().into_nanos());
     inspect.record_string("package_hash", pkg_id.to_string());
@@ -185,12 +207,20 @@ async fn fetch_impl(
     let context = crate::blob_fetcher::QueueContext::new(
         blob_source,
         crate::blob_fetcher::ConflictBehavior::AskBlobfs,
+        trace_id,
     );
     let mut ret = None;
     while let Some(blob_id) = queue.pop_front() {
         // The blob fetcher performs this check as well, but check here to avoid blocking the fetch
         // of an already cached package on a full blob fetch queue.
-        if !blobfs_client.blob_present_and_up_to_date(&blob_id).await {
+        let present_and_up_to_date = {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"check meta.far presence");
+            blobfs_client.blob_present_and_up_to_date(&blob_id).await
+        };
+        if !present_and_up_to_date {
+            let _guard = ftrace::async_enter!(
+                trace_id, c"app", c"fetch meta.far", "hash" => blob_id.to_string().as_str()
+            );
             let _: Option<u64> = blob_fetcher
                 .push(blob_id.into(), context.clone())
                 .await
@@ -198,10 +228,13 @@ async fn fetch_impl(
                 .map_err(Error::BlobFetch)?;
         }
         inspect_outstanding.subtract(1);
-        let root_dir = root_dir_factory
-            .create(blob_id)
-            .await
-            .map_err(|source| Error::CreatingRootDir { source, pkg: blob_id })?;
+        let root_dir = {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"create root dir");
+            root_dir_factory
+                .create(blob_id)
+                .await
+                .map_err(|source| Error::CreatingRootDir { source, pkg: blob_id })?
+        };
         let subpackages = root_dir
             .subpackages()
             .await
@@ -226,17 +259,24 @@ async fn fetch_impl(
             .add_blobs(pkg_id, content.clone(), gc_protection)
             .map_err(Error::ProtectBlobs)?;
         let mut missing_content = vec![];
-        for content_id in content.into_iter() {
-            if !blobfs_client.blob_present_and_up_to_date(&content_id).await {
-                missing_content.push(content_id);
+        {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"check content blob presence");
+            for content_id in content.into_iter() {
+                if !blobfs_client.blob_present_and_up_to_date(&content_id).await {
+                    missing_content.push(content_id);
+                }
             }
         }
         inspect_outstanding.add(missing_content.len() as u64);
-        for fut in
-            blob_fetcher.push_all(missing_content.into_iter().map(|h| (h.into(), context.clone())))
-        {
-            let _: Option<u64> = fut.await.map_err(Error::BlobPush)?.map_err(Error::BlobFetch)?;
-            inspect_outstanding.subtract(1);
+        if !missing_content.is_empty() {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"fetch content blobs");
+            for fut in blob_fetcher
+                .push_all(missing_content.into_iter().map(|h| (h.into(), context.clone())))
+            {
+                let _: Option<u64> =
+                    fut.await.map_err(Error::BlobPush)?.map_err(Error::BlobFetch)?;
+                inspect_outstanding.subtract(1);
+            }
         }
         ret.get_or_insert(root_dir);
     }

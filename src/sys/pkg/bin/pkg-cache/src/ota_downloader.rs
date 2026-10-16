@@ -6,6 +6,7 @@ use anyhow::{Context as _, anyhow};
 use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext as fpkg_ext;
 use fidl_fuchsia_pkg_internal as fpkg_internal;
+use fuchsia_trace as ftrace;
 use futures::stream::TryStreamExt as _;
 use log::warn;
 use std::sync::Arc;
@@ -67,6 +68,7 @@ async fn fetch_blob(
                     true => crate::blob_fetcher::ConflictBehavior::Overwrite,
                     false => crate::blob_fetcher::ConflictBehavior::AskBlobfs,
                 },
+                ftrace::Id::new(),
             ),
         )
         .await

@@ -10,9 +10,11 @@ use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext as fpkg_ext;
 use fuchsia_inspect as finspect;
 use fuchsia_sync::Mutex;
+use fuchsia_trace as ftrace;
 use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::{error, warn};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 // Packages resolved during OTA never need to be executed.
@@ -166,28 +168,12 @@ impl Resolver {
         dir: ServerEnd<fio::DirectoryMarker>,
         inspect: &finspect::Node,
     ) -> Result<fpkg::ResolutionContext, Error> {
-        self.resolve_with_context_impl(
-            &PackageUrl::parse(package_url).map_err(Error::InvalidUrl)?,
-            context,
-            dir,
-            inspect,
-        )
-        .await
-    }
-
-    async fn resolve_with_context_impl(
-        &self,
-        package_url: &PackageUrl,
-        context: fpkg::ResolutionContext,
-        dir: ServerEnd<fio::DirectoryMarker>,
-        inspect: &finspect::Node,
-    ) -> Result<fpkg::ResolutionContext, Error> {
-        match package_url {
+        match &PackageUrl::parse(package_url).map_err(Error::InvalidUrl)? {
             PackageUrl::Absolute(url) => {
                 if !context.bytes.is_empty() {
                     return Err(Error::ContextWithAbsoluteUrl);
                 }
-                self.resolve_impl(url, dir, inspect).await
+                self.resolve_manage_tracing(url, dir, inspect).await
             }
             PackageUrl::Relative(url) => self.resolve_subpackage(url, context, dir, inspect).await,
         }
@@ -199,35 +185,74 @@ impl Resolver {
         dir: ServerEnd<fio::DirectoryMarker>,
         inspect: &finspect::Node,
     ) -> Result<fpkg::ResolutionContext, Error> {
-        self.resolve_impl(&url.parse().map_err(Error::InvalidUrl)?, dir, inspect).await
+        self.resolve_manage_tracing(&url.parse().map_err(Error::InvalidUrl)?, dir, inspect).await
     }
 
-    pub(crate) async fn resolve_impl(
+    async fn resolve_manage_tracing(
         &self,
         url: &AbsolutePackageUrl,
         dir: ServerEnd<fio::DirectoryMarker>,
         inspect: &finspect::Node,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        let trace_id = ftrace::Id::new();
+        let guard = ftrace::async_enter!(
+            trace_id,
+            c"app",
+            c"ota resolve",
+            "url" => url.to_string().as_ref(),
+            // An async duration cannot have multiple concurrent child async durations so we include
+            // the id as metadata to manually determine the relationship.
+            "trace_id" => u64::from(trace_id)
+        );
+        let res = self.resolve_impl(url, dir, inspect, trace_id).await;
+        if let Some(o) = guard {
+            o.end(&[ftrace::ArgValue::of(
+                "result",
+                res.as_ref()
+                    .err()
+                    .map_or(Cow::Borrowed("success"), |e| {
+                        format!("error: {}", crate::stringify_error(e)).into()
+                    })
+                    .as_ref(),
+            )])
+        }
+        res
+    }
+
+    async fn resolve_impl(
+        &self,
+        url: &AbsolutePackageUrl,
+        dir: ServerEnd<fio::DirectoryMarker>,
+        inspect: &finspect::Node,
+        trace_id: ftrace::Id,
     ) -> Result<fpkg::ResolutionContext, Error> {
         inspect.record_int("start_boot_ns", zx::BootInstant::get().into_nanos());
         let _end_inspect = scopeguard::guard(&inspect, |inspect| {
             inspect.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
         });
         inspect.record_string("url", url.to_string());
-        let (fpkg::BlobId { merkle_root }, http_blob_dir) = self
-            .authority
-            .connect()
-            .map_err(Error::ConnectToAuthority)?
-            .lookup(&fpkg::PackageUrl { url: url.as_unpinned().to_string() })
-            .await
-            .map_err(Error::AuthorityFidl)?
-            .map_err(Error::Authority)?;
+        let (fpkg::BlobId { merkle_root }, http_blob_dir) = {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"lookup");
+            self.authority
+                .connect()
+                .map_err(Error::ConnectToAuthority)?
+                .lookup(&fpkg::PackageUrl { url: url.as_unpinned().to_string() })
+                .await
+                .map_err(Error::AuthorityFidl)?
+                .map_err(Error::Authority)?
+        };
         // TODO(https://fxbug.dev/519687989): Stop allowing pinned URLs to override authorities.
         let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
         inspect.record_string("hash", pkg_id.to_string());
         inspect.record_string("blob_source", &http_blob_dir);
+        ftrace::async_instant!(trace_id, c"app", c"enqueue fetch");
         let root_dir = self
             .package_fetcher
-            .fetch_retained(pkg_id, http_blob_dir.parse().map_err(Error::InvalidBlobDirUri)?)
+            .fetch_retained(
+                pkg_id,
+                http_blob_dir.parse().map_err(Error::InvalidBlobDirUri)?,
+                trace_id,
+            )
             .await
             .map_err(Error::PackageFetcher)?;
         let hash = *root_dir.hash();
