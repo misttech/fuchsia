@@ -3076,6 +3076,40 @@ mod vmo_rs {
         }
     }
 
+    /// Tests that a page request outliving a contiguous VMO does not touch freed VmCowPages.
+    #[test]
+    fn vmo_contiguous_page_request_outlives_vmo_test() {
+        // Regression test for https://fxbug.dev/565516649. A PageRequest holds a reference to the
+        // PageSource and therefore the PhysicalPageProvider; if it outlives the contiguous VMO the
+        // provider is destroyed after the VmCowPages and must not dereference it.
+        let _scanner_disable = AutoVmScannerDisable::new();
+        let _loaning_guard = ScopedLoaningEnabled::new(true);
+
+        let alloc_size = 4 * PAGE_SIZE;
+        // Declared outside the VMO's scope so that it is dropped after the VMO.
+        stack_pin_init!(let page_request = MultiPageRequest::new());
+        {
+            let vmo = unwrap_ok!(VmObjectPaged::create_contiguous(ALLOC_FLAG_ANY, alloc_size, 0));
+            // Decommit page 0 so that it is loaned and absent from the VMO.
+            assert_ok!(vmo.decommit_range(0, PAGE_SIZE));
+            // Fault the absent page. The PhysicalPageProvider always operates asynchronously, so
+            // this must return SHOULD_WAIT and leave page_request holding a reference to the
+            // PageSource.
+            // SAFETY: Test owns the VMO and the page request, meeting all underlying safety
+            // obligations.
+            let status =
+                unsafe { vmo.get_page(0, fault::flag::SW_FAULT, Some(page_request.as_mut())) };
+            assert_err!(status.map(|_| ()), Status::SHOULD_WAIT);
+            // Dropping the VMO runs the dead transition (detach + close of the page source) and
+            // frees the VmCowPages, while the PageSource/PhysicalPageProvider stay alive via
+            // page_request.
+            drop(vmo);
+        }
+        // Cancelling (and then dropping) page_request releases the last PageSource reference and
+        // runs ~PhysicalPageProvider after ~VmCowPages.
+        page_request.cancel_requests();
+    }
+
     /// Tests eviction hints on a VMO.
     #[test]
     fn vmo_eviction_hints_test() {

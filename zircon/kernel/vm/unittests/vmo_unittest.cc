@@ -877,6 +877,43 @@ bool vmo_contiguous_decommit_enabled_test() {
   END_TEST;
 }
 
+// Regression test for https://fxbug.dev/565516649. A PageRequest holds a reference to the
+// PageSource and therefore the PhysicalPageProvider; if it outlives the contiguous VMO the
+// provider is destroyed after the VmCowPages and must not dereference it.
+bool vmo_contiguous_page_request_outlives_vmo_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
+  PhysicalPageBorrowingConfig::Get().set_loaning_enabled(true);
+  auto cleanup = fit::defer([loaning_was_enabled] {
+    PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
+  });
+
+  constexpr size_t kAllocSize = 4 * kPageSize;
+  // Declared outside the VMO's scope so that it is destroyed after the VMO.
+  __UNINITIALIZED MultiPageRequest page_request;
+  {
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, kAllocSize,
+                                              /*alignment_log2=*/0, &vmo));
+    // Decommit page 0 so that it is loaned and absent from the VMO.
+    ASSERT_OK(vmo->DecommitRange(0, kPageSize));
+    // Fault the absent page. The PhysicalPageProvider always operates asynchronously, so this
+    // must return SHOULD_WAIT and leave page_request holding a reference to the PageSource.
+    ASSERT_EQ(ZX_ERR_SHOULD_WAIT,
+              vmo->GetPage(0, VMM_PF_FLAG_SW_FAULT, &page_request, nullptr, nullptr));
+    // Dropping the VMO runs the dead transition (detach + close of the page source) and frees
+    // the VmCowPages, while the PageSource/PhysicalPageProvider stay alive via page_request.
+  }
+  // Destroying page_request drops the last PageSource reference and runs
+  // ~PhysicalPageProvider after ~VmCowPages.
+  page_request.CancelRequests();
+
+  END_TEST;
+}
+
 // Creates a vm object, maps it, precommitted.
 bool vmo_precommitted_map_test() {
   BEGIN_TEST;
@@ -5545,6 +5582,7 @@ VM_UNITTEST(vmo_create_contiguous_test)
 VM_UNITTEST(vmo_contiguous_decommit_test)
 VM_UNITTEST(vmo_contiguous_decommit_disabled_test)
 VM_UNITTEST(vmo_contiguous_decommit_enabled_test)
+VM_UNITTEST(vmo_contiguous_page_request_outlives_vmo_test)
 VM_UNITTEST(vmo_precommitted_map_test)
 VM_UNITTEST(vmo_demand_paged_map_test)
 VM_UNITTEST(vmo_dropped_ref_test)

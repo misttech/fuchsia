@@ -92,6 +92,12 @@ pub struct PhysicalPageProvider {
     size: u64,
 
     /// Same write-once discipline as `phys_base`.
+    ///
+    /// The pointee is only guaranteed live while the `VmCowPages` is still attached to us (the
+    /// remaining deref sites, `free_pages`, `on_detach` and `wait_on_event`, each document why
+    /// that holds). It must never be dereferenced in `drop`: a `PageRequest` can keep our
+    /// `PageSource` (and hence us) alive past the `VmCowPages` lifetime
+    /// (https://fxbug.dev/565516649).
     cow_pages: AtomicPtr<CppVmCowPages>,
 
     /// Same write-once discipline as `phys_base`.
@@ -281,9 +287,6 @@ impl PhysicalPageProvider {
             //
             // Note that nothing enforces that invariant: we hold no reference on the pointee
             // and nothing clears `cow_pages` when the `VmCowPages` is destroyed.
-            // TODO(https://fxbug.dev/565516649): Give the provider an ownership stake in
-            // `cow_pages`, or cache this value at init time, so this does not rely on an
-            // unchecked invariant.
             unsafe { VmCowPages::from_raw_ref(cow_pages) }.should_delay_reuse_on_free()
         };
         // SAFETY: `pages` contains valid allocated pages that we own.
@@ -850,26 +853,14 @@ impl PinnedDrop for PhysicalPageProvider {
         this.unloan_range(0, this.size, free_list.as_mut());
         assert_eq!(free_list.iter().count() as u64, this.size / (::page::SIZE as u64));
 
-        let cow_pages = *this.as_mut().project().cow_pages.get_mut();
-        let delay_reuse = if cow_pages.is_null() {
-            PmmOptDelayReuse::Default
-        } else {
-            // SAFETY: This is not sound, and is deliberate from the Zircon-in-Rust port.
-            //
-            // Nothing clears `cow_pages` when the associated `VmCowPages` is destroyed, and we
-            // hold no reference on it here, so by the time the provider is dropped this pointer
-            // may already be dangling.
-            //
-            // This is long-standing behaviour of the provider that predates this code. It is left
-            // alone so that the ownership model can be fixed on its own rather than as a side
-            // effect of an unrelated change.
-            // TODO(https://fxbug.dev/565516649): Give the provider an ownership stake in
-            // `cow_pages`, or cache this value at init time, and then delete this comment.
-            unsafe { VmCowPages::from_raw_ref(cow_pages) }.should_delay_reuse_on_free()
-        };
+        // The `VmCowPages` may already have been destroyed, as a `PageRequest` can hold a reference
+        // to our `PageSource` (and hence to us) beyond the `VmCowPages` lifetime, so `cow_pages`
+        // must not be dereferenced here (https://fxbug.dev/565516649). Unconditionally request
+        // delayed reuse: contiguous VMOs are used for DMA in practice, so `ever_pinned_` is almost
+        // certainly set anyway.
         // SAFETY: Returning loaned pages to PMM.
         unsafe {
-            pmm::node().free_list(free_list, delay_reuse);
+            pmm::node().free_list(free_list, PmmOptDelayReuse::Yes);
         }
     }
 }
