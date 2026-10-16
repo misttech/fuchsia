@@ -70,7 +70,7 @@ root:
       procedure_1:
         le_id = ""
         bredr_id = ""
-        state = (Started, PasskeyChecked, PairingComplete, AccountKeyWritten)
+        state = (AwaitingPasskey, AwaitingPairingComplete, AwaitingAccountKey, AwaitingPersonalizedName, Completed)
         type = (Initial, Subsequent, Retroactive, PersonalizedName)
       procedure_2:
       finished_procedures:

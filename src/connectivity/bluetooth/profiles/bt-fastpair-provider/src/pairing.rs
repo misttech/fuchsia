@@ -77,18 +77,32 @@ impl PairingDelegateOwner {
 #[derive(Debug)]
 enum ProcedureState {
     /// The procedure has been initialized - e.g the peer has sent a key-based pairing GATT request.
-    /// For `Initial` and `Subsequent` procedures, the procedure is waiting for the Seeker's
-    /// passkey to identify the Seeker's in-progress pairing request.
-    /// Because pairing requests are only accepted once the Seeker's passkey is matched, a
-    /// successful pairing in this state means the resulting bond is unauthenticated.
-    Started,
+    /// Waiting for the Seeker's passkey to identify and accept its in-progress pairing request.
+    /// Entry state for `Initial` and `Subsequent` procedures.
+    AwaitingPasskey,
     /// The Seeker's passkey was matched with an in-progress pairing request, which was accepted.
-    PasskeyChecked,
+    /// Waiting for Classic/LE pairing to complete (`OnPairingComplete`).
+    AwaitingPairingComplete,
     /// Classic/LE pairing was successfully completed.
-    PairingComplete,
-    /// The Account Key has been written. The peer is expected to write this key after pairing is
-    /// complete (e.g. In the `PairingComplete` state).
-    AccountKeyWritten,
+    /// Waiting for the Seeker to write an Account Key.
+    /// Entry state for `Retroactive` procedures.
+    AwaitingAccountKey,
+    /// Mandatory pairing steps are complete; waiting for a personalized name write before
+    /// completing the procedure.
+    /// Entry state for `PersonalizedNameWrite` procedures.
+    AwaitingPersonalizedName,
+    /// All steps of the pairing procedure have completed.
+    Completed,
+}
+
+impl ProcedureState {
+    fn initial(pairing_type: PairingType) -> Self {
+        match pairing_type {
+            PairingType::Initial | PairingType::Subsequent => Self::AwaitingPasskey,
+            PairingType::Retroactive => Self::AwaitingAccountKey,
+            PairingType::PersonalizedNameWrite => Self::AwaitingPersonalizedName,
+        }
+    }
 }
 
 #[derive(Default, Debug)]
@@ -151,7 +165,7 @@ impl Procedure {
             bredr_id: None,
             key,
             pairing_type,
-            state: ProcedureState::Started,
+            state: ProcedureState::initial(pairing_type),
             timer: Some(timer),
             inspect_node: ProcedureInspect::default(),
         }
@@ -163,10 +177,7 @@ impl Procedure {
             .bredr_id
             .set(&self.bredr_id.map_or_else(|| "".to_string(), |id| format!("{id}")));
         self.inspect_node.state.set(&format!("{:?}", self.state));
-    }
-
-    fn inspect_node(&self) -> &inspect::Node {
-        &self.inspect_node.inspect_node
+        self.inspect_node.inspect_node.record_string("type", format!("{:?}", self.pairing_type));
     }
 
     /// Moves the procedure to the new pairing `state` and resets the deadline for the procedure.
@@ -184,23 +195,14 @@ impl Procedure {
         self.inspect_node.bredr_id.set(&format!("{id}"));
     }
 
-    fn is_started(&self) -> bool {
-        matches!(self.state, ProcedureState::Started)
-    }
-
     /// Returns true if the procedure is waiting for the Seeker's passkey to complete Classic/LE
     /// pairing.
-    fn awaits_pairing(&self) -> bool {
-        self.is_started()
-            && matches!(self.pairing_type, PairingType::Initial | PairingType::Subsequent)
+    fn awaits_passkey(&self) -> bool {
+        matches!(self.state, ProcedureState::AwaitingPasskey)
     }
 
-    fn is_complete(&self) -> bool {
-        // The procedure can be completed if either
-        // 1) the peer has written the Account Key
-        // 2) the peer is doing a personalized name write
-        matches!(self.state, ProcedureState::AccountKeyWritten)
-            || self.pairing_type == PairingType::PersonalizedNameWrite
+    fn awaits_personalized_name(&self) -> bool {
+        matches!(self.state, ProcedureState::AwaitingPersonalizedName)
     }
 }
 
@@ -404,10 +406,10 @@ impl PairingManagerInspect {
 /// ownership.
 ///
 /// The `PairingManager` supports the handling of Fast Pair pairing procedures with multiple peers.
-/// However, there can only be one active procedure per remote peer. When the pairing procedure
-/// completes, (e.g `Procedure::is_complete`), it will remain in the set of active
-/// `procedures` until either explicitly removed via `PairingManager::complete_pairing_procedure` or
-/// evicted after meeting the time deadline.
+/// However, there can only be one active procedure per remote peer. When the mandatory steps of a
+/// pairing procedure complete (e.g. `Procedure::awaits_personalized_name`), it will remain in the
+/// set of active `procedures` until either explicitly removed via
+/// `PairingManager::complete_pairing_procedure` or evicted after meeting the time deadline.
 ///
 /// Pairing requests received while Fast Pair owns the Pairing Delegate are not immediately
 /// associated with a procedure. The request may come from a different PeerId than the one that
@@ -548,7 +550,7 @@ impl PairingManager {
 
     /// Rejects and removes all pending pairing requests if no procedure can claim them.
     fn maybe_clear_pending_requests(&mut self) {
-        if !self.procedures.inner().values().any(|p| p.awaits_pairing()) {
+        if !self.procedures.inner().values().any(|p| p.awaits_passkey()) {
             self.clear_pending_requests();
         }
     }
@@ -615,28 +617,11 @@ impl PairingManager {
             return Err(Error::internal(&format!("Pairing with {le_id} already in progress")));
         }
 
-        self.new_procedure(le_id, key, pairing_type);
-        match pairing_type {
-            PairingType::Initial | PairingType::Subsequent => {
-                self.claim_delegate()?;
-            }
-            PairingType::Retroactive | PairingType::PersonalizedNameWrite => {
-                // Classic/LE pairing has already completed so there is no need to claim the Pairing
-                // Delegate nor go through the regular pairing stages of the Procedure.
-                let _ = self
-                    .procedures
-                    .inner()
-                    .get_mut(&le_id)
-                    .expect("just added")
-                    .transition(ProcedureState::PairingComplete);
-            }
+        if matches!(pairing_type, PairingType::Initial | PairingType::Subsequent) {
+            self.claim_delegate()?;
         }
-        self.procedures
-            .inner()
-            .get_mut(&le_id)
-            .expect("just added")
-            .inspect_node()
-            .record_string("type", &format!("{pairing_type:?}"));
+
+        self.new_procedure(le_id, key, pairing_type);
         Ok(())
     }
 
@@ -660,7 +645,7 @@ impl PairingManager {
     // does specify this ordering, this may not always be the case in practice.
     pub fn compare_passkey(&mut self, le_id: PeerId, gatt_passkey: u32) -> Result<u32, Error> {
         debug!(le_id:%, gatt_passkey:%; "Comparing passkey");
-        if !self.procedures.inner().get(&le_id).is_some_and(|p| p.awaits_pairing()) {
+        if !self.procedures.inner().get(&le_id).is_some_and(|p| p.awaits_passkey()) {
             return Err(Error::internal(&format!("Unexpected passkey response for {le_id}")));
         }
 
@@ -680,7 +665,7 @@ impl PairingManager {
             // procedure (Step 16.2), and return its passkey to be notified (Step 14).
             [] => {
                 let sole_procedure =
-                    self.procedures.inner().values().filter(|p| p.awaits_pairing()).count() == 1;
+                    self.procedures.inner().values().filter(|p| p.awaits_passkey()).count() == 1;
                 let sole_request = if self.pending_requests.inner().len() == 1 {
                     // Grab the known single pending pairing request.
                     self.pending_requests.inner().keys().next().copied()
@@ -714,7 +699,7 @@ impl PairingManager {
 
         let mut request = self.pending_requests.remove(&request_id).expect("just found");
         let procedure = self.procedures.inner().get_mut(&le_id).expect("just checked");
-        let _ = procedure.transition(ProcedureState::PasskeyChecked);
+        let _ = procedure.transition(ProcedureState::AwaitingPairingComplete);
         // The pairing request shares the Seeker's LE PeerId if it was made over LE, or if the
         // system already associates the peer's LE and BR/EDR identities.
         if request_id != le_id {
@@ -738,14 +723,11 @@ impl PairingManager {
             .procedures
             .inner()
             .get_mut(&le_id)
-            .filter(|p| {
-                matches!(p.state, ProcedureState::PairingComplete)
-                    && p.pairing_type != PairingType::PersonalizedNameWrite
-            })
+            .filter(|p| matches!(p.state, ProcedureState::AwaitingAccountKey))
             .ok_or_else(|| {
                 Error::internal(&format!("Procedure with {le_id} is not in the correct state"))
             })?;
-        let _ = procedure.transition(ProcedureState::AccountKeyWritten);
+        let _ = procedure.transition(ProcedureState::AwaitingPersonalizedName);
         Ok(())
     }
 
@@ -753,11 +735,15 @@ impl PairingManager {
     /// upstream client.
     /// Returns Error if there is no such finished procedure or if the pairing handoff failed.
     pub fn complete_pairing_procedure(&mut self, le_id: PeerId) -> Result<(), Error> {
-        if !self.procedures.inner().get(&le_id).is_some_and(|p| p.is_complete()) {
-            return Err(Error::internal(&format!(
-                "Procedure with {le_id} is not in the correct state"
-            )));
-        };
+        let procedure = self
+            .procedures
+            .inner()
+            .get_mut(&le_id)
+            .filter(|p| p.awaits_personalized_name())
+            .ok_or_else(|| {
+                Error::internal(&format!("Procedure with {le_id} is not in the correct state"))
+            })?;
+        let _ = procedure.transition(ProcedureState::Completed);
 
         // Procedure is in the correct (finished) state and we can clean up and try to give the
         // delegate back to the upstream client. The inspect data is saved.
@@ -844,7 +830,7 @@ impl PairingManager {
         // PeerId), but it is not waiting for a pairing request. Invalidates the current pairing
         // procedure and rejects the pairing request.
         if let Some((le_id, procedure)) =
-            self.find_procedure(le_or_bredr_id).filter(|(_, p)| !p.awaits_pairing())
+            self.find_procedure(le_or_bredr_id).filter(|(_, p)| !p.awaits_passkey())
         {
             warn!(
                 le_or_bredr_id:%, le_id:%, procedure_state:? = procedure.state;
@@ -855,9 +841,9 @@ impl PairingManager {
             return Ok(());
         }
 
-        // There is no Fast Pair procedure awaiting pairing (i.e. an Initial or Subsequent
-        // procedure in the Started state). Rejects the pairing request.
-        if !self.procedures.inner().values().any(|p| p.awaits_pairing()) {
+        // There is no Fast Pair procedure awaiting pairing (i.e. a procedure in the
+        // `AwaitingPasskey` state). Rejects the pairing request.
+        if !self.procedures.inner().values().any(|p| p.awaits_passkey()) {
             warn!(
                 le_or_bredr_id:%;
                 "Couldn't match pairing request with inflight Fast Pair procedure"
@@ -920,13 +906,13 @@ impl PairingManager {
 
         match procedure.state {
             // The pairing request was accepted after the Seeker's passkey was matched.
-            ProcedureState::PasskeyChecked => {
-                let _ = procedure.transition(ProcedureState::PairingComplete);
+            ProcedureState::AwaitingPairingComplete => {
+                let _ = procedure.transition(ProcedureState::AwaitingAccountKey);
                 Ok(Some(le_id))
             }
             // Pairing requests are only accepted in Fast Pair once the Seeker's passkey is matched.
             // The resulting bond is not spec-compliant and is removed.
-            ProcedureState::Started => {
+            ProcedureState::AwaitingPasskey => {
                 // a procedure is always created through LE and can be matched using the LE PeerId
                 debug_assert_eq!(le_id, le_or_bredr_id);
                 warn!(le_id:%; "Pairing completed without Fast Pair authentication. Removing bond");
@@ -936,7 +922,9 @@ impl PairingManager {
             }
             // Pairing was already completed - the bond is either authenticated through passkey
             // comparison or is a Retroactive or PersonalizedNameWrite request.
-            ProcedureState::PairingComplete | ProcedureState::AccountKeyWritten => {
+            ProcedureState::AwaitingAccountKey
+            | ProcedureState::AwaitingPersonalizedName
+            | ProcedureState::Completed => {
                 warn!(le_id:%, procedure_state:? = procedure.state; "Unexpected pairing success for Fast Pair procedure");
                 self.cancel_pairing_procedure(&le_id)?;
                 Ok(None)
@@ -1643,54 +1631,78 @@ pub(crate) mod tests {
     }
 
     #[fuchsia::test]
-    async fn unexpected_procedure_updates_is_error() {
-        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+    async fn new_procedure_claim_delegate_error_does_not_insert_procedure() {
+        let (mut manager, _mock) = MockPairing::new_with_manager().await;
+        // One-way FIDL calls ignore `PEER_CLOSED`, so use a channel without `WRITE` rights to
+        // make `set_pairing_delegate` fail when claiming the Pairing Delegate.
+        let (client_ch, _server_ch) = zx::Channel::create();
+        let read_only_ch = client_ch
+            .replace_handle(zx::Rights::READ | zx::Rights::WAIT)
+            .expect("can remove write right");
+        manager.pairing = PairingProxy::from_channel(fasync::Channel::from_channel(read_only_ch));
 
         let id = PeerId(123);
-        // Can't compare passkey for a procedure that doesn't exist.
-        assert_matches!(manager.compare_passkey(id, 555666), Err(Error::Internal(_)));
-        // Can't complete a procedure that doesn't exist.
-        assert_matches!(manager.complete_pairing_procedure(id), Err(Error::Internal(_)));
-
-        // Start a new procedure.
         assert_matches!(
             manager.new_pairing_procedure(id, keys::tests::example_aes_key(), PairingType::Initial),
-            Ok(_)
+            Err(Error::Fidl(_))
+        );
+        assert_matches!(manager.key_for_procedure(&id), None);
+    }
+
+    #[fuchsia::test]
+    async fn unexpected_procedure_updates_is_error() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+        let id = PeerId(123);
+
+        // No active procedure: all updates fail.
+        assert_matches!(manager.compare_passkey(id, 555666), Err(Error::Internal(_)));
+        assert_matches!(manager.account_key_write(id), Err(Error::Internal(_)));
+        assert_matches!(manager.complete_pairing_procedure(id), Err(Error::Internal(_)));
+
+        // State: `AwaitingPasskey`.
+        // `account_key_write` and `complete_pairing_procedure` are invalid; `compare_passkey` also
+        // fails until a pairing request is pending.
+        assert_matches!(
+            manager.new_pairing_procedure(id, keys::tests::example_aes_key(), PairingType::Initial),
+            Ok(())
         );
         mock.expect_set_pairing_delegate().await;
-
-        // Comparing passkeys or completing the procedure before pairing begins is an error.
         assert_matches!(manager.compare_passkey(id, 555666), Err(Error::Internal(_)));
+        assert_matches!(manager.account_key_write(id), Err(Error::Internal(_)));
         assert_matches!(manager.complete_pairing_procedure(id), Err(Error::Internal(_)));
-        // Peer makes a pairing request, which is matched by the passkey comparison.
+
+        // State: `AwaitingPairingComplete` (after matching passkey).
+        // All GATT procedure updates fail while waiting for `OnPairingComplete`.
         let request_fut = mock.make_pairing_request(id, 555666);
         assert_matches!(manager.select_next_some().now_or_never(), None);
-        assert_matches!(manager.compare_passkey(id, 555666), Ok(_));
-        let result = request_fut.await.expect("fidl response");
-        assert_eq!(result, (true, 555666));
-        // Trying to compare passkeys again is an error.
+        assert_matches!(manager.compare_passkey(id, 555666), Ok(555666));
+        assert_eq!(request_fut.await.expect("fidl response"), (true, 555666));
         assert_matches!(manager.compare_passkey(id, 555666), Err(Error::Internal(_)));
-        // Can't complete the procedure when pairing is in progress.
+        assert_matches!(manager.account_key_write(id), Err(Error::Internal(_)));
         assert_matches!(manager.complete_pairing_procedure(id), Err(Error::Internal(_)));
 
-        // Put the procedure in the `PairingComplete` state.
+        // State: `AwaitingAccountKey` (after `OnPairingComplete`).
+        // Only `account_key_write` is valid next.
         let _ = mock
             .downstream_delegate_client
             .on_pairing_complete(&id.into(), true)
             .expect("valid fidl request");
-        let result = manager.select_next_some().await;
-        assert_eq!(result, id);
-
-        // Trying to compare passkeys or complete the procedure is an error.
+        assert_eq!(manager.select_next_some().await, id);
         assert_matches!(manager.compare_passkey(id, 555666), Err(Error::Internal(_)));
         assert_matches!(manager.complete_pairing_procedure(id), Err(Error::Internal(_)));
 
-        // Put the procedure in the terminal `AccountKeyWritten` state. Procedure can be completed.
-        assert_matches!(manager.account_key_write(id), Ok(_));
-        // Trying to compare passkey or signal an account key write again is an Error.
+        // State: `AwaitingPersonalizedName` (after `account_key_write`).
+        // Only `complete_pairing_procedure` is valid next.
+        assert_matches!(manager.account_key_write(id), Ok(()));
         assert_matches!(manager.compare_passkey(id, 555666), Err(Error::Internal(_)));
-        assert_matches!(manager.account_key_write(id), Err(_));
-        assert_matches!(manager.complete_pairing_procedure(id), Ok(_));
+        assert_matches!(manager.account_key_write(id), Err(Error::Internal(_)));
+
+        // State: `Completed` (after `complete_pairing_procedure`).
+        // The procedure is removed and all further updates fail.
+        assert_matches!(manager.complete_pairing_procedure(id), Ok(()));
+        assert_matches!(manager.compare_passkey(id, 555666), Err(Error::Internal(_)));
+        assert_matches!(manager.account_key_write(id), Err(Error::Internal(_)));
+        assert_matches!(manager.complete_pairing_procedure(id), Err(Error::Internal(_)));
     }
 
     // TODO(https://fxbug.dev/42053956): This test will be obsolete if the PairingManager is resilient to
@@ -1865,7 +1877,7 @@ pub(crate) mod tests {
         mock.expect_set_pairing_delegate().await;
 
         // A pairing request is immediately rejected since there is no procedure awaiting pairing
-        // (i.e. an Initial or Subsequent procedure in the Started state) to claim it.
+        // (i.e. a procedure in the `AwaitingPasskey` state) to claim it.
         let request_fut = mock.make_pairing_request(PeerId(456), 555666);
         assert_matches!(manager.select_next_some().now_or_never(), None);
         assert_eq!(request_fut.await.expect("fidl response"), (false, 0));
@@ -2095,7 +2107,7 @@ pub(crate) mod tests {
         let _ = exec.run_until_stalled(&mut procedure).expect_pending("deadline not reached");
 
         // Transitioning the procedure should reset the timer.
-        let _ = procedure.transition(ProcedureState::PasskeyChecked);
+        let _ = procedure.transition(ProcedureState::AwaitingPairingComplete);
         let _ = exec.run_until_stalled(&mut procedure).expect_pending("deadline not reached");
 
         // Even though the original deadline was met, the procedure should still be active since it
@@ -2427,7 +2439,7 @@ pub(crate) mod tests {
         mock.expect_set_pairing_delegate().await;
 
         // Personalized name write procedures are for already-bonded peers and start in
-        // `PairingComplete`.
+        // `AwaitingPersonalizedName`.
         let le_id = PeerId(123);
         assert_matches!(
             manager.new_pairing_procedure(
@@ -2584,7 +2596,7 @@ pub(crate) mod tests {
         let id = PeerId(123);
         let example_procedure_node = pairing_inspect.record_new_procedure(id, "procedure_1");
         example_procedure_node.bredr_id.set("123");
-        example_procedure_node.state.set("AccountKeyWritten");
+        example_procedure_node.state.set("AwaitingPersonalizedName");
         assert_data_tree!(@executor exec, inspect, root: {
             pairing: {
                 owner: "Upstream",
@@ -2592,13 +2604,14 @@ pub(crate) mod tests {
                 procedure_1: {
                     le_id: "000000000000007b",
                     bredr_id: "123",
-                    state: "AccountKeyWritten",
+                    state: "AwaitingPersonalizedName",
                 }
             }
         });
 
         // Procedure finishes some time later.
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
+        example_procedure_node.state.set("Completed");
         pairing_inspect.record_finished_procedure(id, fasync::MonotonicInstant::now());
         assert_data_tree!(@executor exec, inspect, root: {
             pairing: {
@@ -2608,7 +2621,7 @@ pub(crate) mod tests {
                         procedure_1: {
                             le_id: "000000000000007b",
                             bredr_id: "123",
-                            state: "AccountKeyWritten",
+                            state: "Completed",
                             pairing_time_seconds: 5u64,
                         }
                     }
@@ -2625,7 +2638,7 @@ pub(crate) mod tests {
                         procedure_1: {
                             le_id: "000000000000007b",
                             bredr_id: "123",
-                            state: "AccountKeyWritten",
+                            state: "Completed",
                             pairing_time_seconds: 5u64,
                         }
                     }
