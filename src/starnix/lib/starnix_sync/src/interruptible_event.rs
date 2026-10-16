@@ -89,12 +89,12 @@ const REQUEUED: i32 = 4;
 /// A guard object to enforce that clients call `begin_wait` before `block_until`.
 #[must_use = "call block_until to advance the event state machine"]
 pub struct EventWaitGuard<'a> {
-    event: &'a InterruptibleEvent,
+    event: &'a Arc<InterruptibleEvent>,
 }
 
 impl<'a> EventWaitGuard<'a> {
     /// The underlying event associated with this guard.
-    pub fn event(&self) -> &'a InterruptibleEvent {
+    pub fn event(&self) -> &'a Arc<InterruptibleEvent> {
         self.event
     }
 
@@ -161,7 +161,7 @@ impl InterruptibleEvent {
     ///
     /// Once called, this function cannot be called again until `block_until` returns. Otherwise,
     /// this function will panic.
-    pub fn begin_wait(&self) -> EventWaitGuard<'_> {
+    pub fn begin_wait<'a>(self: &'a Arc<Self>) -> EventWaitGuard<'a> {
         self.requeue_target.store(READY, Ordering::Relaxed);
         self.futex
             .compare_exchange(READY, WAITING, Ordering::AcqRel, Ordering::Relaxed)
@@ -675,26 +675,5 @@ mod test {
 
         event.notify();
         blocked_thread.join().unwrap();
-    }
-
-    #[test]
-    fn test_stack_allocated_wait_notify_and_interrupt() {
-        let event = InterruptibleEvent::default();
-        let guard = event.begin_wait();
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                event.notify();
-            });
-            guard.block_until(None, zx::MonotonicInstant::INFINITE).expect("failed to be notified");
-        });
-
-        let guard = event.begin_wait();
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                event.interrupt();
-            });
-            let result = guard.block_until(None, zx::MonotonicInstant::INFINITE);
-            assert_eq!(result, Err(WakeReason::Interrupted));
-        });
     }
 }

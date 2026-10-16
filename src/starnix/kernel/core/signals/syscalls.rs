@@ -11,8 +11,8 @@ use crate::signals::{
     restore_from_signal_handler, send_signal,
 };
 use crate::task::{
-    CurrentTask, Pid, ProcessEntryRef, ProcessSelector, Task, TaskMutableState, ThreadGroup,
-    ThreadGroupLifecycleWaitValue, WaitResult, WaitableChildResult, Waiter,
+    CurrentTask, Pid, ProcessEntryRef, ProcessSelector, RunState, Task, TaskMutableState,
+    ThreadGroup, ThreadGroupLifecycleWaitValue, WaitResult, WaitableChildResult, Waiter,
 };
 use crate::vfs::{FdFlags, FdNumber};
 use fuchsia_rcu::RcuReadScope;
@@ -20,7 +20,7 @@ use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef};
 use starnix_uapi::{tid_t, uapi};
 
 use starnix_logging::track_stub;
-use starnix_sync::InterruptibleEvent;
+use starnix_sync::{InterruptibleEvent, WakeReason};
 use starnix_syscalls::SyscallResult;
 use starnix_types::time::{duration_from_timespec, timeval_from_duration};
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno, ErrnoResultExt};
@@ -668,9 +668,15 @@ pub fn sys_rt_tgsigqueueinfo(
 /// # Returns
 /// This function never returns `Ok(())` under normal circumstances. It always returns `Err(EINTR)`.
 pub fn sys_pause(current_task: &CurrentTask) -> Result<(), Errno> {
-    let event = InterruptibleEvent::default();
+    let event = InterruptibleEvent::new();
     let guard = event.begin_wait();
-    let result = current_task.block_until(guard, zx::MonotonicInstant::INFINITE);
+    let result = current_task.run_in_state(RunState::Event(event.clone()), || {
+        match guard.block_until(None, zx::MonotonicInstant::INFINITE) {
+            Err(WakeReason::Interrupted) => error!(ERESTARTNOHAND),
+            Err(WakeReason::DeadlineExpired) => panic!("blocking forever cannot time out"),
+            Ok(()) => Ok(()),
+        }
+    });
     // ERESTARTNOHAND is mapped to EINTR if interrupted by signal delivery.
     result.map_eintr(|| errno!(ERESTARTNOHAND))
 }

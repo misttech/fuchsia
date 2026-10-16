@@ -534,27 +534,8 @@ impl CurrentTask {
     /// the task and the given `callback` actually blocks the task.
     ///
     /// This function can only be called in the `RunState::Running` state and cannot set the
-    /// run state to `RunState::Running` or `RunState::Event` (use [`Self::block_until`] for
-    /// `InterruptibleEvent`). For this reason, this function cannot be reentered.
+    /// run state to `RunState::Running`. For this reason, this function cannot be reentered.
     pub fn run_in_state<F, T>(&self, run_state: RunState, callback: F) -> Result<T, Errno>
-    where
-        F: FnOnce() -> Result<T, Errno>,
-    {
-        assert!(!matches!(run_state, RunState::Event(_)), "use block_until for RunState::Event");
-        // SAFETY: `run_state` is not `RunState::Event`.
-        unsafe { self.run_in_state_internal(run_state, callback) }
-    }
-
-    /// Internal implementation of [`Self::run_in_state`] that also accepts [`RunState::Event`].
-    ///
-    /// # Safety
-    /// If `run_state` is `RunState::Event(event_ref)`, `event_ref` must point to a live
-    /// `InterruptibleEvent` that outlives this call.
-    unsafe fn run_in_state_internal<F, T>(
-        &self,
-        run_state: RunState,
-        callback: F,
-    ) -> Result<T, Errno>
     where
         F: FnOnce() -> Result<T, Errno>,
     {
@@ -580,18 +561,23 @@ impl CurrentTask {
             } else if state.is_interrupt_pending() {
                 return error!(EINTR);
             }
-            // SAFETY: Upheld by the caller of `run_in_state_internal`.
-            let _ = unsafe { state.set_run_state(run_state.clone()) };
+            state.set_run_state(run_state.clone());
         }
 
-        let _reset_run_state = scopeguard::guard((), |()| {
-            let mut state = self.write();
-            // SAFETY: `RunState::Running` is always valid.
-            let prev_run_state = unsafe { state.set_run_state(RunState::Running) };
-            assert_eq!(prev_run_state, run_state, "SignalState run state changed while waiting!");
-        });
         let _waiting_guard = crate::task::ThreadLockupDetector::pause_tracking();
-        callback()
+        let result = callback();
+
+        {
+            let mut state = self.write();
+            assert_eq!(
+                state.run_state(),
+                run_state,
+                "SignalState run state changed while waiting!"
+            );
+            state.set_run_state(RunState::Running);
+        };
+
+        result
     }
 
     pub fn block_until(
@@ -617,18 +603,12 @@ impl CurrentTask {
         new_owner: Option<&zx::Thread>,
         deadline: zx::MonotonicInstant,
     ) -> Result<(), Errno> {
-        // SAFETY: `guard.event()` outlives this `run_in_state_internal` call, which resets
-        // `run_state` back to `RunState::Running` under `self.write()` (via `scopeguard::guard`)
-        // before returning.
-        unsafe {
-            let run_state = RunState::Event(crate::task::EventRef::new(guard.event()));
-            self.run_in_state_internal(run_state, move || {
-                guard.block_until(new_owner, deadline).map_err(|e| match e {
-                    WakeReason::Interrupted => errno!(EINTR),
-                    WakeReason::DeadlineExpired => errno!(ETIMEDOUT),
-                })
+        self.run_in_state(RunState::Event(guard.event().clone()), move || {
+            guard.block_until(new_owner, deadline).map_err(|e| match e {
+                WakeReason::Interrupted => errno!(EINTR),
+                WakeReason::DeadlineExpired => errno!(ETIMEDOUT),
             })
-        }
+        })
     }
 
     /// Determine namespace node indicated by the dir_fd.
