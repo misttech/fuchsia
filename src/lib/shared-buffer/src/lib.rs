@@ -108,15 +108,22 @@ use core::ops::{Bound, Range, RangeBounds};
 use core::ptr;
 use core::sync::atomic::{Ordering, fence};
 
-// A buffer with no ownership or reference semantics. It is the caller's
-// responsibility to wrap this type in a type which provides ownership or
-// reference semantics, and to only call methods when apporpriate.
-#[derive(Debug)]
-struct SharedBufferInner {
-    // invariant: '(buf as usize) + len' doesn't overflow usize
-    buf: *mut u8,
-    len: usize,
+mod sealed {
+    // A buffer with no ownership or reference semantics. It is the caller's
+    // responsibility to wrap this type in a type which provides ownership or
+    // reference semantics, and to only call methods when appropriate.
+    #[derive(Debug)]
+    pub struct SharedBufferInner {
+        // invariant: '(buf as usize) + len' doesn't overflow usize
+        pub(super) buf: *mut u8,
+        pub(super) len: usize,
+    }
+
+    pub trait AsSharedBufferInner {
+        fn as_inner(&self) -> &SharedBufferInner;
+    }
 }
+use sealed::SharedBufferInner;
 
 impl SharedBufferInner {
     fn read_at(&self, offset: usize, dst: &mut [u8]) -> usize {
@@ -147,6 +154,41 @@ impl SharedBufferInner {
         } else {
             panic!("byte offset {} out of range for SharedBuffer of length {}", offset, self.len);
         }
+    }
+
+    fn copy_from_at(
+        &self,
+        dst_offset: usize,
+        src: &SharedBufferInner,
+        src_offset: usize,
+        len: usize,
+    ) -> usize {
+        let Some(dst_avail) = overlap(dst_offset, len, self.len) else {
+            panic!(
+                "destination byte offset {} out of range for SharedBuffer of length {}",
+                dst_offset, self.len
+            );
+        };
+        let Some(src_avail) = overlap(src_offset, len, src.len) else {
+            panic!(
+                "source byte offset {} out of range for SharedBuffer of length {}",
+                src_offset, src.len
+            );
+        };
+        let to_copy = dst_avail.min(src_avail);
+        if to_copy > 0 {
+            let dst_base = offset_from(self.buf, dst_offset);
+            let src_base = offset_from(src.buf, src_offset);
+            // SAFETY: Since `overlap` returned `Some` for both `self` and
+            // `src`, `dst_offset + to_copy <= self.len` and
+            // `src_offset + to_copy <= src.len`. Combined with the invariant
+            // that `(buf as usize) + len` does not overflow `usize`, neither
+            // `offset_from` nor the `to_copy`-byte copy can overflow, both
+            // regions are valid for `to_copy` bytes, and `ptr::copy` permits
+            // overlapping ranges.
+            unsafe { ptr::copy(src_base, dst_base, to_copy) };
+        }
+        to_copy
     }
 
     fn slice<R: RangeBounds<usize>>(&self, range: R) -> SharedBufferInner {
@@ -366,6 +408,41 @@ impl SharedBuffer {
     #[inline]
     pub fn write_at(&self, offset: usize, src: &[u8]) -> usize {
         self.inner.write_at(offset, src)
+    }
+
+    /// Copy bytes from a `SharedBuffer` or slice into this buffer at an offset.
+    ///
+    /// Copy up to `len` bytes starting at `src_offset` in `src` into `self`
+    /// starting at `dst_offset`, returning how many bytes were copied. `src`
+    /// may refer to the same underlying memory as `self` (overlapping regions
+    /// are handled safely). The only thing that can cause fewer bytes to be
+    /// copied than requested is if there are fewer than `len` bytes available
+    /// starting at `dst_offset` in `self` or starting at `src_offset` in `src`.
+    ///
+    /// Since `copy_from_at` reads from `src` and writes to `self`, a call to
+    /// `copy_from_at` is only guaranteed to happen after an operation on `src`
+    /// or before an operation on `self` in another thread or process if the
+    /// mechanism used to signal the other process has well-defined memory
+    /// ordering semantics. Otherwise, `src.acquire_writes()` must be called
+    /// before `copy_from_at` (after receiving a signal from the other process
+    /// that `src` may be read) and `self.release_writes()` must be called after
+    /// `copy_from_at` (before signalling the other process that `self` may be
+    /// read). See the `acquire_writes` and `release_writes` documentation for
+    /// more details.
+    ///
+    /// # Panics
+    ///
+    /// `copy_from_at` panics if `dst_offset` is greater than the length of
+    /// `self` or `src_offset` is greater than the length of `src`.
+    #[inline]
+    pub fn copy_from_at<B: AsSharedBuffer + ?Sized>(
+        &self,
+        dst_offset: usize,
+        src: &B,
+        src_offset: usize,
+        len: usize,
+    ) -> usize {
+        self.inner.copy_from_at(dst_offset, src.as_inner(), src_offset, len)
     }
 
     /// Acquire all writes performed by the other process.
@@ -767,6 +844,41 @@ impl<'a> SharedBufferSliceMut<'a> {
         self.inner.write_at(offset, src)
     }
 
+    /// Copy bytes from a `SharedBuffer` or slice into this buffer at an offset.
+    ///
+    /// Copy up to `len` bytes starting at `src_offset` in `src` into `self`
+    /// starting at `dst_offset`, returning how many bytes were copied. `src`
+    /// may refer to the same underlying memory as `self` (overlapping regions
+    /// are handled safely). The only thing that can cause fewer bytes to be
+    /// copied than requested is if there are fewer than `len` bytes available
+    /// starting at `dst_offset` in `self` or starting at `src_offset` in `src`.
+    ///
+    /// Since `copy_from_at` reads from `src` and writes to `self`, a call to
+    /// `copy_from_at` is only guaranteed to happen after an operation on `src`
+    /// or before an operation on `self` in another thread or process if the
+    /// mechanism used to signal the other process has well-defined memory
+    /// ordering semantics. Otherwise, `src.acquire_writes()` must be called
+    /// before `copy_from_at` (after receiving a signal from the other process
+    /// that `src` may be read) and `self.release_writes()` must be called after
+    /// `copy_from_at` (before signalling the other process that `self` may be
+    /// read). See the `acquire_writes` and `release_writes` documentation for
+    /// more details.
+    ///
+    /// # Panics
+    ///
+    /// `copy_from_at` panics if `dst_offset` is greater than the length of
+    /// `self` or `src_offset` is greater than the length of `src`.
+    #[inline]
+    pub fn copy_from_at<B: AsSharedBuffer + ?Sized>(
+        &self,
+        dst_offset: usize,
+        src: &B,
+        src_offset: usize,
+        len: usize,
+    ) -> usize {
+        self.inner.copy_from_at(dst_offset, src.as_inner(), src_offset, len)
+    }
+
     /// Acquire all writes performed by the other process.
     ///
     /// On some systems (such as Fuchsia, currently), the communication
@@ -913,6 +1025,41 @@ unsafe impl<'a> Sync for SharedBufferSlice<'a> {}
 unsafe impl<'a> Send for SharedBufferSliceMut<'a> {}
 unsafe impl<'a> Sync for SharedBufferSliceMut<'a> {}
 
+/// A shared buffer or slice that can be used as the source of a copy operation.
+pub trait AsSharedBuffer: sealed::AsSharedBufferInner {}
+
+impl sealed::AsSharedBufferInner for SharedBuffer {
+    #[inline]
+    fn as_inner(&self) -> &SharedBufferInner {
+        &self.inner
+    }
+}
+impl AsSharedBuffer for SharedBuffer {}
+
+impl sealed::AsSharedBufferInner for SharedBufferSlice<'_> {
+    #[inline]
+    fn as_inner(&self) -> &SharedBufferInner {
+        &self.inner
+    }
+}
+impl AsSharedBuffer for SharedBufferSlice<'_> {}
+
+impl sealed::AsSharedBufferInner for SharedBufferSliceMut<'_> {
+    #[inline]
+    fn as_inner(&self) -> &SharedBufferInner {
+        &self.inner
+    }
+}
+impl AsSharedBuffer for SharedBufferSliceMut<'_> {}
+
+impl<T: core::ops::Deref<Target: AsSharedBuffer> + ?Sized> sealed::AsSharedBufferInner for T {
+    #[inline]
+    fn as_inner(&self) -> &SharedBufferInner {
+        (**self).as_inner()
+    }
+}
+impl<T: core::ops::Deref<Target: AsSharedBuffer> + ?Sized> AsSharedBuffer for T {}
+
 #[cfg(test)]
 mod tests {
     use core::{mem, ptr};
@@ -949,6 +1096,25 @@ mod tests {
         // starting at offset 4, there are only 4 bytes left, so we only read 4
         // bytes
         assert_eq!(buf.read_at(4, &mut bytes[..]), 4);
+
+        // copy directly between two SharedBuffers, slices, and overlapping regions
+        let mut dst_memory = [0u8; 8];
+        let mut dst_buf = unsafe { buf_from_ref(&mut dst_memory) };
+        assert_eq!(dst_buf.copy_from_at(2, &buf, 1, 5), 5);
+        assert_eq!(dst_memory, [0, 0, 6, 5, 4, 3, 2, 0]);
+
+        let src_slice = buf.slice(2..6);
+        let dst_slice_mut = dst_buf.slice_mut(1..7);
+        assert_eq!(dst_slice_mut.copy_from_at(0, &src_slice, 1, 3), 3);
+        assert_eq!(dst_memory, [0, 4, 3, 2, 4, 3, 2, 0]);
+
+        // overlapping copy within the same buffer
+        assert_eq!(dst_buf.copy_from_at(2, &dst_buf, 1, 4), 4);
+        assert_eq!(dst_memory, [0, 4, 4, 3, 2, 4, 2, 0]);
+
+        // zero-length copy on an empty buffer does not dereference null
+        let empty_buf = unsafe { SharedBuffer::new(ptr::null_mut(), 0) };
+        assert_eq!(empty_buf.copy_from_at(0, &empty_buf, 0, 0), 0);
     }
 
     #[test]
@@ -1075,6 +1241,22 @@ mod tests {
         let buf = unsafe { SharedBuffer::new(ptr::null_mut(), 10) };
         // "byte index 11 out of range for SharedBuffer of length 10"
         buf.slice(0..11);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "destination byte offset 11 out of range for SharedBuffer of length 10"
+    )]
+    fn test_panic_copy_from_at_dst() {
+        let buf = unsafe { SharedBuffer::new(ptr::null_mut(), 10) };
+        buf.copy_from_at(11, &buf, 0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "source byte offset 11 out of range for SharedBuffer of length 10")]
+    fn test_panic_copy_from_at_src() {
+        let buf = unsafe { SharedBuffer::new(ptr::null_mut(), 10) };
+        buf.copy_from_at(0, &buf, 11, 0);
     }
 
     #[test]
