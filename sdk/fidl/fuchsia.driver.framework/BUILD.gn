@@ -33,6 +33,7 @@ fidl("fuchsia.driver.framework") {
     "driver.fidl",
     "driver_info.fidl",
     "driver_start_args.fidl",
+    "health.fidl",
     "overview.fidl",
     "topology.fidl",
   ]

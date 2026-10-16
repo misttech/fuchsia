@@ -1,0 +1,157 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+library fuchsia.driver.framework;
+
+using zx;
+
+/// Specifies the depth and latency budget of a driver health check.
+type HealthCheckRequest = flexible enum : uint32 {
+    /// Software-only liveness: dispatcher responsive, locks acquirable,
+    /// in-memory state consistent. No bus I/O (I2C/SPI/DSI); MMIO reads only
+    /// if the block is known to be powered and clocked. Must never return
+    /// `UNAVAILABLE`. Recommended: < 1ms. Deadline (enforced by driver-host):
+    /// 250ms.
+    PING = 1;
+
+    /// Bounded, non-destructive hardware reads or progress windows (wait one
+    /// frame period for a TE/VSync edge, read a status register over
+    /// I2C/DSI). Must not clear read-on-clear registers or disturb active DMA
+    /// or scanout. Recommended: < 25ms. Deadline: 2s.
+    FAST = 2;
+
+    /// Extended self-test / BIST. May interrupt active I/O for the duration of
+    /// the check but must restore prior state. Only issued on explicit
+    /// operator request (ffx / lab tests), never during framework-initiated
+    /// sweeps. Recommended: < 10s. Deadline: 2min.
+    DEEP = 3;
+};
+
+/// Operational health status reported for a driver or condition.
+type HealthStatus = flexible enum {
+    /// Driver and hardware are operating within normal parameters.
+    OK = 1;
+    /// Driver is functioning but experiencing elevated errors, resource leaks,
+    /// or quality degradation.
+    DEGRADED = 2;
+    /// Driver or underlying hardware is wedged, unresponsive, or failed initialization.
+    UNHEALTHY = 3;
+};
+
+/// Error codes returned when a health check cannot be completed.
+type HealthCheckError = flexible enum {
+    /// The driver did not respond within the level's deadline (dispatcher wedged).
+    TIMEOUT = 1;
+    /// Internal framework or transport error while routing the check.
+    INTERNAL_ERROR = 2;
+    /// The driver or requested `HealthCheckRequest` level is not supported.
+    NOT_SUPPORTED = 3;
+    /// The driver is not in the RUNNING state (e.g., Starting, Stopping, Suspended).
+    INVALID_STATE = 4;
+    /// The requested level cannot be evaluated right now: hardware powered
+    /// off, suspended, not yet initialized, or transiently busy. Consumers
+    /// must treat this as no information, not as unhealthy. `PING` must never
+    /// return this.
+    UNAVAILABLE = 5;
+    /// A bus, MMIO, or transport error occurred while performing the check
+    /// itself.
+    COMMUNICATION_ERROR = 6;
+    /// No bound node matched the requested moniker (returned by
+    /// `fuchsia.driver.development/Manager.RunHealthCheck`).
+    NOT_FOUND = 7;
+};
+
+/// Diagnostic value returned in a HealthCheckResponse.
+type HealthDiagnosticValue = flexible union {
+    1: string_value string:256;
+    2: int_value int64;
+    3: uint_value uint64;
+    4: bool_value bool;
+    /// Boot-timeline instant, e.g. time of the last interrupt or input report.
+    5: timestamp zx.InstantBoot;
+};
+
+/// Key-value diagnostic property captured during a driver health check.
+type HealthDiagnosticItem = struct {
+    key string:64;
+    value HealthDiagnosticValue;
+};
+
+/// One condition detected by a driver health check.
+type HealthCondition = table {
+    /// Severity of this condition. Consumers treat an omitted or unrecognized
+    /// value as `UNHEALTHY`, so always set it.
+    1: status HealthStatus;
+    /// Short machine-readable token (e.g. "DSI_CRI_FIFO_WEDGED",
+    /// "TE_INTERRUPT_STALLED"). Must be unique within a response.
+    2: reason_code string:128;
+    /// Human-readable detail for this condition.
+    3: message string:1024;
+    /// Diagnostic values specific to this condition.
+    4: diagnostics vector<HealthDiagnosticItem>:32;
+    /// Boot-timeline instant at which this condition was first observed.
+    5: first_observed zx.InstantBoot;
+    /// Boot-timeline instant at which this condition was most recently
+    /// observed.
+    6: last_observed zx.InstantBoot;
+    /// Number of times this condition has been observed since
+    /// `first_observed`.
+    7: occurrence_count uint64;
+};
+
+/// Response returned by a driver health check.
+type HealthCheckResponse = table {
+    /// Diagnostic key-value telemetry for the driver as a whole (power mode,
+    /// activity counters, last-event timestamps), as opposed to a single
+    /// condition.
+    1: diagnostics vector<HealthDiagnosticItem>:32;
+
+    /// Active fault or warning conditions. Absent or empty when the driver is
+    /// healthy (`HealthStatus.OK`). Overall driver status is the maximum
+    /// severity across `conditions` (`UNHEALTHY > DEGRADED > OK`), or `OK` if
+    /// absent or empty.
+    2: conditions vector<HealthCondition>:16;
+};
+
+/// Payload of a proactive health alert emitted by a driver via `OnHealthAlert`.
+/// "Upstream" is what the driver depends on (parents: buses, clocks, power
+/// domains, composite parents). "Downstream" is what depends on the driver
+/// (children / consumers).
+type HealthAlert = flexible union {
+    /// The driver detected an internal hardware or software fault, or
+    /// recovered from a previously reported fault (when `conditions` is empty).
+    /// Edge-triggered: send when the driver's overall status worsens
+    /// (OK->DEGRADED, DEGRADED->UNHEALTHY) and again with empty `conditions`
+    /// when it recovers; never per occurrence of an already-reported condition.
+    1: self_fault HealthCheckResponse;
+
+    /// The driver cannot make progress because an upstream dependency
+    /// (parent/bus/clock/power/register provider) is unresponsive or invalid.
+    2: upstream_neighbor_fault HealthCheckResponse;
+
+    /// The driver cannot make progress because a downstream consumer
+    /// (child/client) is wedged or failing to drain queues/buffers.
+    3: downstream_neighbor_fault HealthCheckResponse;
+};
+
+/// Protocol composed into `Driver` for performing active health checks and
+/// receiving proactive health alerts.
+@transport("Driver")
+open protocol Health {
+    /// Requests the driver to perform a self-diagnostic check.
+    ///
+    /// The Driver Host never issues `HealthCheck` between `Driver.Suspend` and
+    /// the completion of `Driver.Resume`, answering
+    /// `HealthCheckError.INVALID_STATE` itself while the driver is suspended or
+    /// transitioning power states.
+    flexible HealthCheck(struct {
+        request HealthCheckRequest;
+    }) -> (HealthCheckResponse) error HealthCheckError;
+
+    /// Proactively emitted by the driver when it detects an asynchronous
+    /// self-fault or suspects an upstream/downstream neighbor.
+    flexible -> OnHealthAlert(struct {
+        alert HealthAlert;
+    });
+};
