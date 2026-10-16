@@ -1,0 +1,102 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "timekeeper",
+    hdrs = ["clock.h"],
+    visibility = [
+        "//src/camera/lib/cobalt_logger:__pkg__",
+        "//src/cobalt/bin/system-metrics:__pkg__",
+        "//src/developer/forensics:__subpackages__",
+        "//src/ui/tests/integration_input_tests:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = ["//zircon/system/ulib/zx"],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "system",
+    hdrs = ["system_clock.h"],
+    visibility = [
+        "//src/camera/lib/cobalt_logger:__pkg__",
+        "//src/cobalt/bin/system-metrics:__pkg__",
+        "//src/developer/forensics:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        ":timekeeper",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "testing",
+    testonly = True,
+    srcs = [
+        "async_test_clock.cc",
+        "monotonic_test_clock_base.cc",
+        "test_clock.cc",
+        "test_loop_test_clock.cc",
+    ],
+    hdrs = [
+        "async_test_clock.h",
+        "monotonic_test_clock_base.h",
+        "test_clock.h",
+        "test_loop_test_clock.h",
+    ],
+    visibility = [
+        "//src/cobalt/bin/system-metrics:__pkg__",
+        "//src/developer/forensics:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        ":timekeeper",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-testing",
+        "//sdk/lib/fit",
+    ],
+    alwayslink = True,
+)
+
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "timekeeper_lib_unittests",
+    testonly = True,
+    srcs = [
+        "async_test_clock_unittest.cc",
+        "system_clock_unittest.cc",
+        "test_clock_unittest.cc",
+        "test_loop_test_clock_unittest.cc",
+    ],
+    tags = ["manual"],
+    visibility = [
+        "//src/camera/lib/cobalt_logger:__pkg__",
+        "//src/cobalt/bin/system-metrics:__pkg__",
+        "//src/developer/forensics:__subpackages__",
+        "//src/ui/tests/integration_input_tests:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        ":system",
+        ":testing",
+        "//sdk/lib/async-testing",
+        "//src/lib/fxl/test:gtest_main",
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gtest
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "timekeeper_lib_tests",
+    environments = ["//build/testing/environments:emu_env"],
+    unit_tests = [":timekeeper_lib_unittests"],
+)

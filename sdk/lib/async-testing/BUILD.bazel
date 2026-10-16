@@ -34,6 +34,7 @@ idk_cc_source_library_zx(
     visibility = [
         "//src/lib/callback:__pkg__",
         "//src/lib/testing/loop_fixture:__pkg__",
+        "//src/lib/timekeeper:__pkg__",
     ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = [
         # <lib/async-testing/dispatcher_stub.h> has
