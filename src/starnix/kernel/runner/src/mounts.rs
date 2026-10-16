@@ -9,6 +9,7 @@ use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::{FileSystemHandle, FileSystemOptions, FsString};
+use starnix_logging::log_info;
 
 use starnix_uapi::mount_flags::{MountFlags, MountpointFlags};
 
@@ -44,26 +45,38 @@ impl MountAction {
     pub fn from_spec(
         current_task: &CurrentTask,
         pkg: &fio::DirectorySynchronousProxy,
-        spec: &str,
-    ) -> Result<MountAction, Error> {
-        let (spec, options) = MountSpec::parse(spec)?;
+        spec_str: &str,
+    ) -> Result<Option<MountAction>, Error> {
+        let (spec, options) = MountSpec::parse(spec_str)?;
         let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
 
         let fs = match spec.fs_type.as_slice() {
             // The remote_bundle file system is available only via the mounts declaration in CML.
             b"remote_bundle" => {
-                RemoteBundle::new_fs_in_base(current_task.kernel(), pkg, options, rights)?
+                RemoteBundle::new_fs_in_base(current_task.kernel(), pkg, options, rights)
             }
 
             // Mounts a subdirectory of the container's `/pkg`.
             b"remote_pkg_subdir" => {
-                new_remotefs_in_root(current_task.kernel(), pkg, options, rights)?
+                new_remotefs_in_root(current_task.kernel(), pkg, options, rights)
+                    .map_err(Error::from)
             }
 
-            _ => current_task.create_filesystem(spec.fs_type.as_ref(), options)?,
+            _ => {
+                current_task.create_filesystem(spec.fs_type.as_ref(), options).map_err(Error::from)
+            }
         };
 
-        Ok(spec.into_action(fs))
+        let fs = match fs {
+            Ok(fs) => fs,
+            Err(err) if spec.nofail => {
+                log_info!("Skipping mount {spec_str:?} due to nofail: {err:#}");
+                return Ok(None);
+            }
+            Err(err) => return Err(err),
+        };
+
+        Ok(Some(spec.into_action(fs)))
     }
 }
 
@@ -71,6 +84,7 @@ struct MountSpec {
     mount_point: FsString,
     fs_type: FsString,
     flags: MountFlags,
+    nofail: bool,
 }
 
 impl MountSpec {
@@ -86,9 +100,10 @@ impl MountSpec {
 
         let mut params = MountParams::parse(iter.next().unwrap_or_default().into())?;
         let flags = params.remove_mount_flags();
+        let nofail = params.remove(b"nofail").is_some();
 
         Ok((
-            MountSpec { fs_type: fs_type.into(), mount_point: mount_point.into(), flags },
+            MountSpec { fs_type: fs_type.into(), mount_point: mount_point.into(), flags, nofail },
             FileSystemOptions {
                 source: fs_src.into(),
                 flags: flags.file_system_flags().into(),
@@ -99,5 +114,31 @@ impl MountSpec {
 
     fn into_action(self, fs: FileSystemHandle) -> MountAction {
         MountAction { path: self.mount_point, fs, flags: self.flags.mountpoint_flags() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[::fuchsia::test]
+    fn test_parse_mount_spec_nofail() {
+        let (spec, options) =
+            MountSpec::parse("/product:remote_bundle:data/product:nodev,relatime,nofail").unwrap();
+        assert_eq!(spec.mount_point, "/product");
+        assert_eq!(spec.fs_type, "remote_bundle");
+        assert_eq!(spec.flags, MountFlags::NODEV | MountFlags::RELATIME);
+        assert!(spec.nofail);
+        assert_eq!(options.source, "data/product");
+        assert!(options.params.is_empty());
+
+        let (spec, options) =
+            MountSpec::parse("/vendor:remote_bundle:data/vendor:nodev,relatime").unwrap();
+        assert_eq!(spec.mount_point, "/vendor");
+        assert_eq!(spec.fs_type, "remote_bundle");
+        assert_eq!(spec.flags, MountFlags::NODEV | MountFlags::RELATIME);
+        assert!(!spec.nofail);
+        assert_eq!(options.source, "data/vendor");
+        assert!(options.params.is_empty());
     }
 }

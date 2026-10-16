@@ -259,11 +259,14 @@ pub async fn start_component(
                         current_task.fs().chdir(current_task, cwd)?;
 
                         for mount in &program.component_mounts {
-                            let action = MountAction::from_spec(current_task, &pkg, mount)
+                            let Some(action) = MountAction::from_spec(current_task, &pkg, mount)
                                 .map_err(|e| {
                                     log_error!("Error while mounting the filesystems: {e:?}");
                                     errno!(EINVAL)
-                                })?;
+                                })?
+                            else {
+                                continue;
+                            };
                             let mount_point =
                                 current_task.lookup_path_from_root(action.path.as_ref())?;
                             mount_record.lock().mount(

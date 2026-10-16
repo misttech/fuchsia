@@ -1056,8 +1056,11 @@ fn mount_filesystems(
         start_info.program.mounts.iter().chain(start_info.config.additional_mounts.iter());
     let _ = mounts_iter.next();
     for mount_spec in mounts_iter {
-        let action = MountAction::from_spec(system_task, pkg_dir_proxy, mount_spec)
-            .with_source_context(|| format!("creating filesystem from spec: {}", mount_spec))?;
+        let Some(action) = MountAction::from_spec(system_task, pkg_dir_proxy, mount_spec)
+            .with_source_context(|| format!("creating filesystem from spec: {}", mount_spec))?
+        else {
+            continue;
+        };
         let mount_point = system_task
             .lookup_path_from_root(action.path.as_ref())
             .with_source_context(|| format!("lookup path from root: {}", action.path))?;
