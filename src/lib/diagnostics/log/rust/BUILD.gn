@@ -80,7 +80,7 @@ not_needed([ "LIB_PROC_MACRO_DEPS" ])
 
 LIB_DEPS = []
 LIB_DEPS += [
-  "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+  "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust_common",
   "//src/lib/diagnostics/log/types",
   "//src/lib/fuchsia-sync",
   "//third_party/rust_crates:log",

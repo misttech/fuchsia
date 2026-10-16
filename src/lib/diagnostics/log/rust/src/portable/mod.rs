@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 use crate::{PublishOptions, Severity};
-use fidl_fuchsia_diagnostics_types as fdiagnostics;
+use fidl_fuchsia_diagnostics_types_common as fdiagnostics;
 use fuchsia_sync::Mutex;
 use std::collections::HashSet;
 use std::io::Write;

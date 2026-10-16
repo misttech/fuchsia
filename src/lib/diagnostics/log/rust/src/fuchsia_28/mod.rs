@@ -16,7 +16,7 @@ use thiserror::Error;
 #[cfg(fuchsia_api_level_less_than = "27")]
 use fidl_fuchsia_diagnostics::Interest;
 #[cfg(fuchsia_api_level_at_least = "27")]
-use fidl_fuchsia_diagnostics_types::Interest;
+use fidl_fuchsia_diagnostics_types_common::Interest;
 
 mod filter;
 mod sink;
