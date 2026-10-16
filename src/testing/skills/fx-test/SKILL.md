@@ -118,8 +118,8 @@ jq -s 'group_by(.id)[] | {name: (map(.payload.test_suite_started.name) | map(sel
 
 #### C. Extract and symbolize output (stdout/stderr) of failed suites
 This query locates the child execution tasks of any failed suites and retrieves
-their stdout/stderr stream, piping it to `fx ffx debug symbolize` to resolve
-any backtraces automatically:
+their stdout/stderr stream, piping it to `fx ffx debug symbolize` to resolve any
+backtraces automatically:
 ```bash
 jq -r -s '
   (map(select(.payload.test_suite_started != null)) | map({key: (.id|tostring), value: .payload.test_suite_started.name}) | from_entries) as $suite_names |
@@ -143,8 +143,8 @@ jq -r '.data.suites[] | "* Suite: \(.name) (\(.outcome))\n" + (.cases[] | "  - \
 ```
 
 ### 5. Clean up temporary files
-After completing your analysis and extracting any needed information, remove
-the temporary directory to keep the workspace clean:
+After completing your analysis and extracting any needed information, remove the
+temporary directory to keep the workspace clean:
 ```bash
 rm -rf "$TEST_RUN_DIR"
 ```

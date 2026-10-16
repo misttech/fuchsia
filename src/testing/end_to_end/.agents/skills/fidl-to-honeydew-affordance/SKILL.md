@@ -1,22 +1,27 @@
 ---
 name: fidl-to-honeydew-affordance
 description: >
-  Guide for translating FIDL protocols and data types in sdk/fidl into Honeydew
-  affordances following the asynchronous Fuchsia Controller and WLAN affordance
-  architectural patterns.
+  Guide for translating FIDL protocols and data types in sdk/fidl into
+  Honeydew affordances following the asynchronous Fuchsia Controller and WLAN
+  affordance architectural patterns.
 ---
 
 # Translating FIDLs into Honeydew Affordances
 
-This skill provides a standardized methodology for translating Fuchsia FIDL definitions (under `sdk/fidl/`) into robust, ergonomic, and asynchronous Python affordances in Honeydew (`src/testing/end_to_end/honeydew/affordances/`).
+This skill provides a standardized methodology for translating Fuchsia FIDL
+definitions (under `sdk/fidl/`) into robust, ergonomic, and asynchronous Python
+affordances in Honeydew (`src/testing/end_to_end/honeydew/affordances/`).
 
-It follows the modern Honeydew architectural conventions demonstrated in `affordances/connectivity/wlan/` (such as `wlan_policy` and `wlan_core`) and `affordances/drivers/battery/`.
+It follows the modern Honeydew architectural conventions demonstrated in
+`affordances/connectivity/wlan/` (such as `wlan_policy` and `wlan_core`) and
+`affordances/drivers/battery/`.
 
 ---
 
 ## 1. Honeydew Affordance Architectural Pattern
 
-A complete Honeydew affordance translating a FIDL protocol typically consists of the following modular structure:
+A complete Honeydew affordance translating a FIDL protocol typically consists of
+the following modular structure:
 
 ```
 src/testing/end_to_end/honeydew/honeydew/affordances/<domain>/<affordance_name>/
@@ -33,8 +38,12 @@ src/testing/end_to_end/honeydew/honeydew/affordances/<domain>/<affordance_name>/
 ```
 
 In addition, the affordance is integrated into:
-- `src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py`: Expose the affordance via an `@properties.Affordance` property on `FuchsiaDevice`.
-- `src/testing/end_to_end/honeydew/BUILD.gn`: Add all source files to `sources`, the FIDL Python IR dependencies (`<fidl_target>_python`) to `honeydew_fidl_ir_and_deps`, and the unit tests to `group("unit_tests")`.
+- `src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py`:
+  Expose the affordance via an `@properties.Affordance` property on
+  `FuchsiaDevice`.
+- `src/testing/end_to_end/honeydew/BUILD.gn`: Add all source files to `sources`,
+  the FIDL Python IR dependencies (`<fidl_target>_python`) to
+  `honeydew_fidl_ir_and_deps`, and the unit tests to `group("unit_tests")`.
 
 ---
 
@@ -42,24 +51,34 @@ In addition, the affordance is integrated into:
 
 ### Step 1: Analyze the FIDL Specification
 Inspect `sdk/fidl/<library>/<file>.fidl` to identify:
-1. **Types (`struct`, `table`, `enum`, `union`)**: Note optional vs required fields, nested types, Zircon primitives (e.g., `zx.Duration`, `zx.Time`), and byte vectors.
-2. **Errors (`error <ErrorEnum>`)**: Note all error enum variants returned by methods.
-3. **Protocols & Methods**: Identify request-response calls, hanging-get watchers, event streams, and channel closures.
-4. **Discoverability & Transport**: Moniker/capability routing (e.g. `@discoverable`, devfs node path, or component expose/use).
+1.  **Types (`struct`, `table`, `enum`, `union`)**: Note optional vs required
+    fields, nested types, Zircon primitives (e.g., `zx.Duration`, `zx.Time`),
+    and byte vectors.
+2.  **Errors (`error <ErrorEnum>`)**: Note all error enum variants returned by
+    methods.
+3.  **Protocols & Methods**: Identify request-response calls, hanging-get
+    watchers, event streams, and channel closures.
+4.  **Discoverability & Transport**: Moniker/capability routing (e.g.
+    `@discoverable`, devfs node path, or component expose/use).
 
 ---
 
 ### Step 2: Define Data Types (`utils/types.py`)
 
-Honeydew decouples test code from raw FIDL bindings by wrapping FIDL tables and structs in immutable Python dataclasses:
+Honeydew decouples test code from raw FIDL bindings by wrapping FIDL tables and
+structs in immutable Python dataclasses:
 - Use `@dataclass(frozen=True)` for data structures.
-- Provide `@classmethod def from_fidl(cls, fidl: ...) -> Self` to parse FIDL structures into Python types.
-- Provide `def to_fidl(self) -> ...` if the affordance sends data back to the device.
+- Provide `@classmethod def from_fidl(cls, fidl: ...) -> Self` to parse FIDL
+  structures into Python types.
+- Provide `def to_fidl(self) -> ...` if the affordance sends data back to the
+  device.
 - Convert raw FIDL types into idiomatic Python types:
   - Byte vectors (`vector<uint8>` / `string`) $\to$ `str` or `bytes`.
   - `zx.Duration` (nanoseconds) $\to$ `datetime.timedelta`.
-  - FIDL flexible/strict enums $\to$ Python `enum.IntEnum` or validated attributes.
-  - Nested tables $\to$ nested dataclasses with `None` defaults for unset fields.
+  - FIDL flexible/strict enums $\to$ Python `enum.IntEnum` or validated
+    attributes.
+  - Nested tables $\to$ nested dataclasses with `None` defaults for unset
+    fields.
 
 #### Generic Pattern:
 ```python
@@ -104,9 +123,11 @@ class FooStatus:
 
 ### Step 3: Define Custom Exceptions (`utils/errors.py`)
 
-Create a domain-specific exception hierarchy inheriting from `honeydew.errors.HoneydewError`:
+Create a domain-specific exception hierarchy inheriting from
+`honeydew.errors.HoneydewError`:
 - Define a base exception for the affordance (e.g. `Honeydew<Affordance>Error`).
-- Define specific exceptions for protocol-level errors, state mismatches, device not found, or transport timeouts.
+- Define specific exceptions for protocol-level errors, state mismatches, device
+  not found, or transport timeouts.
 
 #### Generic Pattern:
 ```python
@@ -131,15 +152,20 @@ class FooDeviceNotFoundError(HoneydewFooError):
 ### Step 4: Implement Affordance Class (`__init__.py`)
 
 The main class should:
-1. Inherit from `AsyncLazyReady` to enable asynchronous lazy connection management.
-2. Accept standard dependencies in `__init__`: `device_name`, `ffx`, `fuchsia_controller`, `reboot_affordance`, `fuchsia_device_close`.
-3. Call `self.verify_supported()` in `__init__` (checking capabilities via `ffx component capability` or devfs).
-4. Register reboot and close hooks:
+1.  Inherit from `AsyncLazyReady` to enable asynchronous lazy connection
+    management.
+2.  Accept standard dependencies in `__init__`: `device_name`, `ffx`,
+    `fuchsia_controller`, `reboot_affordance`, `fuchsia_device_close`.
+3.  Call `self.verify_supported()` in `__init__` (checking capabilities via `ffx
+    component capability` or devfs).
+4.  Register reboot and close hooks:
    - `reboot_affordance.register_for_on_device_boot(self.make_ready)`
    - `fuchsia_device_close.register_for_on_device_close(self._close)`
-5. Implement `make_ready(self)` to connect to the FIDL proxy using `self._fc_transport.connect_device_proxy(...)` or devfs channel.
-6. Decorate public methods with `@ensure_ready`.
-7. Handle FIDL transport errors (`FcTransportStatus`, `ZxStatus`) and unwrap result unions.
+5.  Implement `make_ready(self)` to connect to the FIDL proxy using
+    `self._fc_transport.connect_device_proxy(...)` or devfs channel.
+6.  Decorate public methods with `@ensure_ready`.
+7.  Handle FIDL transport errors (`FcTransportStatus`, `ZxStatus`) and unwrap
+    result unions.
 
 #### Generic Pattern:
 ```python
@@ -231,7 +257,8 @@ class Foo(AsyncLazyReady):
 
 ### Step 5: Implement Unit Tests (`tests/unit_tests.py`) & GN (`tests/BUILD.gn`)
 
-Unit tests verify conversion logic, state management, and error handling in isolation:
+Unit tests verify conversion logic, state management, and error handling in
+isolation:
 - Inherit from `unittest.IsolatedAsyncioTestCase`.
 - Reset `GlobalHandleWaker()._reset_for_testing()` in `asyncSetUp()`.
 - Mock `FuchsiaController`, `FFX`, and the FIDL proxy.
@@ -254,8 +281,9 @@ python_host_test("unit_tests") {
 
 ### Step 6: Update Honeydew Wiring
 
-1. **`src/testing/end_to_end/honeydew/BUILD.gn`**:
-   - Add new source files to `sources` under `python_library("honeydew_no_testonly")`.
+1.  **`src/testing/end_to_end/honeydew/BUILD.gn`**:
+   - Add new source files to `sources` under
+     `python_library("honeydew_no_testonly")`.
    - Add FIDL Python bindings under `group("honeydew_fidl_ir_and_deps")`:
      ```gn
      "//sdk/fidl/<library>:<library>_python",
@@ -267,7 +295,7 @@ python_host_test("unit_tests") {
      ```gn
      "honeydew/affordances/<domain>/<name>/tests:unit_tests($host_toolchain)",
      ```
-2. **`src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py`**:
+2.  **`src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py`**:
    - Import the affordance module.
    - Expose via `@properties.Affordance`.
 
@@ -275,10 +303,15 @@ python_host_test("unit_tests") {
 
 ## 3. In-Tree Reference Implementations
 
-Refer to the following in-tree implementations for complete, production-grade examples:
-* **WLAN Affordances**: [`src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/`](//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/)
-* **Driver Battery Affordance**: [`src/testing/end_to_end/honeydew/honeydew/affordances/drivers/battery/`](//src/testing/end_to_end/honeydew/honeydew/affordances/drivers/battery/)
-  * `utils/types.py`: Mapping `fuchsia.hardware.power.battery` & `fuchsia.hardware.power.source` tables.
+Refer to the following in-tree implementations for complete, production-grade
+examples:
+* **WLAN Affordances**:
+  [`src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/`](//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/)
+* **Driver Battery Affordance**:
+  [`src/testing/end_to_end/honeydew/honeydew/affordances/drivers/battery/`](//src/testing/end_to_end/honeydew/honeydew/affordances/drivers/battery/)
+  * `utils/types.py`: Mapping `fuchsia.hardware.power.battery` &
+    `fuchsia.hardware.power.source` tables.
   * `utils/errors.py`: Mapping FIDL `fuchsia.hardware.power.source.Error` enums.
-  * `__init__.py`: Async battery affordance with `get_spec()`, `get_status()`, and hanging `watch()`.
+  * `__init__.py`: Async battery affordance with `get_spec()`, `get_status()`,
+    and hanging `watch()`.
   * `tests/unit_tests.py`: Mocked unit test suite.

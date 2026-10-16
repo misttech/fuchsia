@@ -7,14 +7,16 @@ description: >
 
 # Running Battery End-to-End Tests Locally
 
-This skill outlines how to configure the build, compile, and execute the Battery End-to-End (E2E) Mobly test (`//src/tests/end_to_end/battery:battery_test_fc`) against a local Fuchsia target (physical device or emulator).
+This skill outlines how to configure the build, compile, and execute the Battery
+End-to-End (E2E) Mobly test (`//src/tests/end_to_end/battery:battery_test_fc`)
+against a local Fuchsia target (physical device or emulator).
 
 ---
 
 ## 1. Prerequisites & Target Setup
 
-1. **Verify Target Connectivity**:
-   Confirm that your target Fuchsia device or emulator is detected by `ffx`:
+1.  **Verify Target Connectivity**: Confirm that your target Fuchsia device or
+    emulator is detected by `ffx`:
    ```bash
    ffx target list
    ```
@@ -23,7 +25,7 @@ This skill outlines how to configure the build, compile, and execute the Battery
    ffx target echo
    ```
 
-2. **Starting an Emulator (if no physical device is connected)**:
+2.  **Starting an Emulator (if no physical device is connected)**:
    ```bash
    ffx emu start --headless
    ```
@@ -68,22 +70,26 @@ fx test //src/tests/end_to_end/battery:battery_test_fc --e2e --output
 ```
 
 #### Key Flags:
-* `--e2e`: Designates the test as an end-to-end host test requiring an active Fuchsia device.
+* `--e2e`: Designates the test as an end-to-end host test requiring an active
+  Fuchsia device.
 * `--output`: Streams test execution and Mobly logs directly to stdout.
-* `-t <target_name>`: (Optional) Specify the target device name if multiple devices are running (e.g., `fx -t fuchsia-emulator test //src/tests/end_to_end/battery:battery_test_fc --e2e --output`).
+* `-t <target_name>`: (Optional) Specify the target device name if multiple
+  devices are running (e.g., `fx -t fuchsia-emulator test
+  //src/tests/end_to_end/battery:battery_test_fc --e2e --output`).
 
 ---
 
 ## 3. Troubleshooting & Diagnostics
 
-* **Device Capability Verification**:
-  The battery test requires the `fuchsia.hardware.power.battery.Service` capability. To verify if it is routed on the device:
+* **Device Capability Verification**: The battery test requires the
+  `fuchsia.hardware.power.battery.Service` capability. To verify if it is routed
+  on the device:
   ```bash
   ffx component capability fuchsia.hardware.power.battery.Service
   ```
 
-* **Device Logs**:
-  If the test fails during `get_status()`, dump the device-side system logs to inspect driver output:
+* **Device Logs**: If the test fails during `get_status()`, dump the device-side
+  system logs to inspect driver output:
   ```bash
   ffx log dump --severity DEBUG
   ```

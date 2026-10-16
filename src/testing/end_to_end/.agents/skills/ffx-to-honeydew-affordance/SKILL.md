@@ -2,23 +2,35 @@
 name: ffx-to-honeydew-affordance
 description: >
   Guide for translating FFX CLI commands, subtools, and component exploration
-  tools into robust Honeydew affordances following Lacewing architectural patterns.
+  tools into robust Honeydew affordances following Lacewing architectural
+  patterns.
 ---
 
 # Translating FFX Commands into Honeydew Affordances
 
-This skill provides a standardized methodology for translating `ffx` commands, subtools, and target-side CLI exploration tools into robust, ergonomic Python affordances in Honeydew (`src/testing/end_to_end/honeydew/honeydew/affordances/`).
+This skill provides a standardized methodology for translating `ffx` commands,
+subtools, and target-side CLI exploration tools into robust, ergonomic Python
+affordances in Honeydew
+(`src/testing/end_to_end/honeydew/honeydew/affordances/`).
 
-While [`fidl-to-honeydew-affordance`](../fidl-to-honeydew-affordance/SKILL.md) focuses on direct asynchronous FIDL proxies via Fuchsia Controller, this guide addresses **FFX-based affordances** that interact with host-side `ffx` tools or target-side exploration tools.
+While [`fidl-to-honeydew-affordance`](../fidl-to-honeydew-affordance/SKILL.md)
+focuses on direct asynchronous FIDL proxies via Fuchsia Controller, this guide
+addresses **FFX-based affordances** that interact with host-side `ffx` tools or
+target-side exploration tools.
 
 ---
 
 ## 1. When to Use an FFX-Based Affordance
 
 Use an FFX-based affordance when:
-* **No Direct FIDL Routing**: The service or test protocol is served inside an isolated driver or component namespace not routed to public service directories, requiring `ffx component explore --tools ...`.
-* **Standard FFX Subtools**: Fuchsia already provides high-level `ffx` subtools with built-in orchestration (e.g. `ffx session`, `ffx screenshot`, `ffx target`).
-* **Host-Side Operations**: The operation involves host file manipulation, data streaming, or host-orchestrated lifecycle events.
+* **No Direct FIDL Routing**: The service or test protocol is served inside an
+  isolated driver or component namespace not routed to public service
+  directories, requiring `ffx component explore --tools ...`.
+* **Standard FFX Subtools**: Fuchsia already provides high-level `ffx` subtools
+  with built-in orchestration (e.g. `ffx session`, `ffx screenshot`, `ffx
+  target`).
+* **Host-Side Operations**: The operation involves host file manipulation, data
+  streaming, or host-orchestrated lifecycle events.
 
 ---
 
@@ -45,7 +57,8 @@ src/testing/end_to_end/honeydew/honeydew/affordances/<domain>/<affordance_name>/
 
 ### Step 1: Define Custom Exceptions (`errors.py`)
 
-Create a domain-specific exception hierarchy inheriting from `honeydew.errors.HoneydewError`:
+Create a domain-specific exception hierarchy inheriting from
+`honeydew.errors.HoneydewError`:
 
 ```python
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
@@ -72,7 +85,8 @@ class MyFeatureStateError(HoneydewMyFeatureError):
 
 ### Step 2: Define Abstract Base Class Contract (`<name>.py`)
 
-Define the public interface inheriting from `honeydew.affordances.affordance.Affordance`:
+Define the public interface inheriting from
+`honeydew.affordances.affordance.Affordance`:
 
 ```python
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
@@ -116,10 +130,12 @@ class MyFeature(affordance.Affordance):
 ### Step 3: Implement the FFX Affordance (`<name>_using_ffx.py`)
 
 The implementation class must:
-1. Accept `device_name: str` and `ffx: ffx_transport.FFX` in `__init__()`.
-2. Accept optional lifecycle registries: `reboot_affordance` or `fuchsia_device_close` if cleanup is needed.
-3. Call `self.verify_supported()` inside `__init__()`.
-4. Catch `ffx_errors.FfxCommandError` and wrap it into your domain-specific exception.
+1.  Accept `device_name: str` and `ffx: ffx_transport.FFX` in `__init__()`.
+2.  Accept optional lifecycle registries: `reboot_affordance` or
+    `fuchsia_device_close` if cleanup is needed.
+3.  Call `self.verify_supported()` inside `__init__()`.
+4.  Catch `ffx_errors.FfxCommandError` and wrap it into your domain-specific
+    exception.
 
 #### Common FFX Execution Patterns:
 
@@ -201,10 +217,12 @@ def verify_supported(self) -> None:
 ```
 
 #### Moniker Resolution from Capability Output
-Fuchsia's `ffx component capability <name>` formats output as:
-`` `<moniker>` declared capability `<capability>` `` or `` `<moniker>` exposed capability `<capability>` from ... ``
+Fuchsia's `ffx component capability <name>` formats output as: `` `<moniker>`
+declared capability `<capability>` `` or `` `<moniker>` exposed capability
+`<capability>` from ... ``
 
-Cache the resolved moniker during `__init__` rather than querying FFX repeatedly on every method invocation:
+Cache the resolved moniker during `__init__` rather than querying FFX repeatedly
+on every method invocation:
 ```python
 def _parse_moniker_from_capability_output(self, output: str) -> str:
     """Parses the active component moniker from capability output."""
@@ -232,9 +250,12 @@ def _parse_moniker_from_capability_output(self, output: str) -> str:
 ### Step 5: Argument Serialization & Validation
 
 When mapping Python parameters to CLI flags:
-1. **Validate early**: Check ranges, valid bounds, and required parameter combinations in Python before executing host processes.
-2. **Convert Enums cleanly**: Format Python enum instances using `.name.lower()` or `.value`.
-3. **Omit None values**: Only append `--flag <value>` if the argument is provided, letting tool defaults take effect.
+1.  **Validate early**: Check ranges, valid bounds, and required parameter
+    combinations in Python before executing host processes.
+2.  **Convert Enums cleanly**: Format Python enum instances using
+    `.name.lower()` or `.value`.
+3.  **Omit None values**: Only append `--flag <value>` if the argument is
+    provided, letting tool defaults take effect.
 
 ```python
 cmd_args: list[str] = ["my-cli", "set"]
@@ -257,12 +278,14 @@ if current_ua is not None:
 ### Step 6: Lifecycle & Cleanup Hooks
 
 If the affordance modifies device state, spawns sessions, or produces artifacts:
-* Accept `fuchsia_device_close: affordances_capable.FuchsiaDeviceClose` and register a teardown hook:
+* Accept `fuchsia_device_close: affordances_capable.FuchsiaDeviceClose` and
+  register a teardown hook:
   ```python
   self._fuchsia_device_close = fuchsia_device_close
   self._fuchsia_device_close.register_for_on_device_close(self.cleanup)
   ```
-* Accept `reboot_affordance: affordances_capable.RebootCapableDevice` and register a post-boot reset handler:
+* Accept `reboot_affordance: affordances_capable.RebootCapableDevice` and
+  register a post-boot reset handler:
   ```python
   self._reboot_affordance = reboot_affordance
   self._reboot_affordance.register_for_on_device_boot(self._on_reboot)
@@ -272,10 +295,13 @@ If the affordance modifies device state, spawns sessions, or produces artifacts:
 
 ### Step 7: Unit Testing (`tests/unit_tests.py`)
 
-Unit tests should test the affordance in isolation without requiring a live Fuchsia device:
-* Mock `ffx_transport.FFX` using `mock.MagicMock(spec=ffx_transport.FFX, autospec=True)`.
+Unit tests should test the affordance in isolation without requiring a live
+Fuchsia device:
+* Mock `ffx_transport.FFX` using `mock.MagicMock(spec=ffx_transport.FFX,
+  autospec=True)`.
 * Verify exact CLI commands using `assert_called_with`.
-* Test capability verification, moniker parsing, error propagation, and argument validation.
+* Test capability verification, moniker parsing, error propagation, and argument
+  validation.
 
 #### Example `tests/BUILD.gn`:
 ```gn
@@ -345,14 +371,14 @@ class MyFeatureTests(unittest.TestCase):
 
 ### Step 8: Honeydew Integration & Device Registration
 
-1. **`src/testing/end_to_end/honeydew/BUILD.gn`**:
+1.  **`src/testing/end_to_end/honeydew/BUILD.gn`**:
    - Add new source files to `python_library("honeydew_no_testonly")` `sources`.
    - Add unit test target to `group("unit_tests")`:
      ```gn
      "honeydew/affordances/<domain>/<name>/tests:unit_tests($host_toolchain)",
      ```
 
-2. **`src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py`**:
+2.  **`src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py`**:
    - Import the affordance module:
      ```python
      from honeydew.affordances.<domain>.<name> import <name>, <name>_using_ffx
@@ -372,19 +398,26 @@ class MyFeatureTests(unittest.TestCase):
          )
      ```
 
-3. **`src/testing/end_to_end/honeydew/honeydew/fuchsia_device/tests/unit_tests/fuchsia_device_test.py`**:
-   - Add test case verifying that `self.fd_fc_obj.<name>` returns an instance of `<Name>UsingFfx`.
+3.  **`src/testing/end_to_end/honeydew/honeydew/fuchsia_device/tests/unit_tests/fuchsia_device_test.py`**:
+   - Add test case verifying that `self.fd_fc_obj.<name>` returns an instance of
+     `<Name>UsingFfx`.
 
 ---
 
 ## 4. In-Tree Reference Implementations
 
 Refer to the following in-tree implementations for concrete patterns:
-* **Injected CLI Tool via `component explore`**: [`src/testing/end_to_end/honeydew/honeydew/affordances/drivers/fake_battery/`](//src/testing/end_to_end/honeydew/honeydew/affordances/drivers/fake_battery/)
-  * Shows capability verification, dynamic moniker caching, argument serialization, and enum formatting.
-* **Session Lifecycle & Cleanup**: [`src/testing/end_to_end/honeydew/honeydew/affordances/session/`](//src/testing/end_to_end/honeydew/honeydew/affordances/session/)
-  * Shows subtool wrapper (`ffx session`), polling readiness, and `fuchsia_device_close` cleanup.
-* **Screenshot & File Transfer**: [`src/testing/end_to_end/honeydew/honeydew/affordances/ui/screenshot/`](//src/testing/end_to_end/honeydew/honeydew/affordances/ui/screenshot/)
+* **Injected CLI Tool via `component explore`**:
+  [`src/testing/end_to_end/honeydew/honeydew/affordances/drivers/fake_battery/`](//src/testing/end_to_end/honeydew/honeydew/affordances/drivers/fake_battery/)
+  * Shows capability verification, dynamic moniker caching, argument
+    serialization, and enum formatting.
+* **Session Lifecycle & Cleanup**:
+  [`src/testing/end_to_end/honeydew/honeydew/affordances/session/`](//src/testing/end_to_end/honeydew/honeydew/affordances/session/)
+  * Shows subtool wrapper (`ffx session`), polling readiness, and
+    `fuchsia_device_close` cleanup.
+* **Screenshot & File Transfer**:
+  [`src/testing/end_to_end/honeydew/honeydew/affordances/ui/screenshot/`](//src/testing/end_to_end/honeydew/honeydew/affordances/ui/screenshot/)
   * Shows `ffx target screenshot` host extraction.
-* **Minimal FFX Affordance**: [`src/testing/end_to_end/honeydew/honeydew/affordances/hello_world/`](//src/testing/end_to_end/honeydew/honeydew/affordances/hello_world/)
+* **Minimal FFX Affordance**:
+  [`src/testing/end_to_end/honeydew/honeydew/affordances/hello_world/`](//src/testing/end_to_end/honeydew/honeydew/affordances/hello_world/)
   * Canonical baseline for Honeydew affordances.
