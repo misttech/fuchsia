@@ -57,7 +57,7 @@
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <platform/halt_helper.h>
 #include <vm/handoff-end.h>
 #include <vm/physmap.h>

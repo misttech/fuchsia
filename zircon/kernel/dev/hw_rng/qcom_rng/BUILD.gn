@@ -14,7 +14,7 @@ source_set("qcom_rng") {
   sources = [ "qcom-rng.cc" ]
   deps = [
     "//zircon/kernel/dev/hw_rng",
-    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys/handoff",
     "//zircon/system/ulib/explicit-memory",
     "//zircon/system/ulib/hwreg",
   ]

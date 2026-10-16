@@ -68,8 +68,8 @@ if (toolchain_environment == "kernel.phys" ||
       ":phys",
       "//zircon/kernel/lib/code-patching",
       "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/phys:handoff",
       "//zircon/kernel/phys:handoff-prep.h",
+      "//zircon/kernel/phys/handoff",
     ]
     include_dirs = [ "//zircon/kernel/phys" ]
   }

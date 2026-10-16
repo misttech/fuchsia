@@ -37,7 +37,7 @@
 #include <ktl/atomic.h>
 #include <ktl/bit.h>
 #include <lk/main.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 
 #include "smccc.h"
 

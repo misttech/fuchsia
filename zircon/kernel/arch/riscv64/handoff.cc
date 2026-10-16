@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #include <kernel/ffi.h>
-#include <phys/arch/arch-handoff.h>
+#include <phys/handoff/handoff.h>
 
 // Accessors for the fields of `ArchPhysHandoff` that the Rust arch code needs.
 //

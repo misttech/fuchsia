@@ -125,7 +125,7 @@ if (toolchain_base_environment == "kernel") {
       "//zircon/kernel/lib/syscalls",
       "//zircon/kernel/lib/thread-stack",
       "//zircon/kernel/object",
-      "//zircon/kernel/phys:handoff",
+      "//zircon/kernel/phys/handoff",
       "//zircon/kernel/vm",
       "//zircon/system/ulib/affine",
       "//zircon/system/ulib/bitmap",

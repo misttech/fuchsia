@@ -83,8 +83,8 @@ const RISCV64_CSR_SENVCFG_CBZE: u64 = 1 << 7;
 
 /// Opaque handle to the C++ `ArchPhysHandoff` handed off from physboot.
 ///
-/// The C++ struct (`phys/arch/arch-handoff.h`) has `std::optional` members and so
-/// cannot be described in Rust; its fields are read through the
+/// The C++ struct (`phys/handoff/riscv64/handoff.h`) has `std::optional` members
+/// and so cannot be described in Rust; its fields are read through the
 /// `cpp_riscv64_handoff_*` accessors in `arch/riscv64/handoff.cc` instead of by
 /// mirroring the layout here.  All of them are read exactly once at boot.
 #[repr(C)]

@@ -22,7 +22,7 @@
 #include <ktl/utility.h>
 #include <phys/address-space.h>
 #include <phys/elf-image.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <phys/kernel-package.h>
 #include <phys/main.h>
 #include <phys/stdio.h>

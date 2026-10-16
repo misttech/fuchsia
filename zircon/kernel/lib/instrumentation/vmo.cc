@@ -13,7 +13,7 @@
 #include <ktl/iterator.h>
 #include <ktl/string_view.h>
 #include <object/vm_object_dispatcher.h>
-#include <phys/boot-constants.h>
+#include <phys/handoff/boot-constants.h>
 #include <vm/vm_object_paged.h>
 
 #include "private.h"

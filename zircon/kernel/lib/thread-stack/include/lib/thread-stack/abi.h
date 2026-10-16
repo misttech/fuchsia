@@ -10,7 +10,7 @@
 #include <lib/page/size.h>
 #include <stdint.h>
 
-#include <phys/zircon-abi-spec.h>
+#include <phys/handoff/zircon-abi-spec.h>
 
 namespace internal {
 

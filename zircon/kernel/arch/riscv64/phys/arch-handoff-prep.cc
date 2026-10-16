@@ -7,8 +7,8 @@
 #include <lib/code-patching/code-patches.h>
 #include <zircon/assert.h>
 
-#include <phys/arch/arch-handoff.h>
 #include <phys/arch/arch-phys-info.h>
+#include <phys/handoff/handoff.h>
 #include <phys/main.h>
 
 #include "handoff-prep.h"

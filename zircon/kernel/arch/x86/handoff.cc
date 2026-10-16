@@ -10,7 +10,7 @@
 #include <arch/x86/gdt.h>
 #include <arch/x86/idt.h>
 #include <arch/x86/mp.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <vm/handoff-end.h>
 
 __NO_SAFESTACK void ArchPostHandoffBootstrap(const ArchPhysHandoff* arch_handoff) {

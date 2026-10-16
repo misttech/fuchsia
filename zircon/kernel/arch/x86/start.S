@@ -13,7 +13,7 @@
 #include <arch/x86/registers.h>
 #include <lib/arch/asm.h>
 #include <lib/instrumentation/asan.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 
 // TODO(https://fxbug.dev/379891035): The only thing that happens now in this
 // routine, apart from jumping to lk_main(), is kASan setup. That should

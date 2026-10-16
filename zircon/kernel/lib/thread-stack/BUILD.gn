@@ -14,8 +14,8 @@ library_headers("headers") {
     # <lib/thread-stack.h> has #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
 
-    # <lib/thread-stack/abi.h> has #include <phys/zircon-abi-spec.h>
-    "//zircon/kernel/phys:zircon-abi-spec",
+    # <lib/thread-stack/abi.h> has #include <phys/handoff/zircon-abi-spec.h>
+    "//zircon/kernel/phys/handoff",
   ]
 }
 

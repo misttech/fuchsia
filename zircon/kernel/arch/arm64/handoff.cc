@@ -10,7 +10,7 @@
 
 #include <arch/arm64/mmu.h>
 #include <arch/arm64/mp.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <vm/handoff-end.h>
 
 void ArchPostHandoffBootstrap(const ArchPhysHandoff* arch_handoff) {

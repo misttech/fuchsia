@@ -62,7 +62,7 @@ static_library("crypto") {
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys/handoff",
     "//zircon/system/ulib/explicit-memory",
   ]
 }

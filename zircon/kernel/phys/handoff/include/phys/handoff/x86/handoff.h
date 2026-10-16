@@ -4,10 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_ARCH_X86_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
-#define ZIRCON_KERNEL_ARCH_X86_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
+#ifndef ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_X86_HANDOFF_H_
+#define ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_X86_HANDOFF_H_
 
-// Note: we refrain from using the ktl namespace as <phys/handoff.h> is
+// Note: we refrain from using the ktl namespace as <phys/handoff/handoff.h> is
 // expected to be compiled in the userboot toolchain.
 
 #include <zircon/tls.h>
@@ -35,4 +35,4 @@ static_assert(ZX_TLS_STACK_GUARD_OFFSET == offsetof(ArchTempThreadAbi, stack_gua
 
 static_assert(ZX_TLS_UNSAFE_SP_OFFSET == offsetof(ArchTempThreadAbi, unsafe_stack_pointer));
 
-#endif  // ZIRCON_KERNEL_ARCH_X86_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
+#endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_X86_HANDOFF_H_

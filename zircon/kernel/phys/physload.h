@@ -28,7 +28,7 @@
 // signature.  physload_module() provides an entry point function that calls
 // PhysLoadModuleMain.
 
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <phys/kernel-package.h>
 #include <phys/uart.h>
 

@@ -15,7 +15,7 @@
 #include <ktl/initializer_list.h>
 #include <ktl/span.h>
 
-// This is defined by each machine in <phys/arch/arch-handoff.h>.  It's
+// This is defined by each machine in <phys/handoff/arch-handoff.h>.  It's
 // computed in physboot by ArchPreparePatchInfo(), directly from machine
 // state and/or from state cached in gArchPhysInfo and the like.
 // ArchPatchCode can refer to its state as needed to control patching

@@ -19,7 +19,6 @@
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <ktl/type_traits.h>
-#include <phys/boot-constants.h>
 
 class DLog;
 
@@ -131,7 +130,7 @@ void dlog_init_early();
 zx_status_t dlog_shutdown(zx_instant_mono_t deadline);
 
 // Accessor to quickly determine if the debuglog bypass is enabled.
-inline bool dlog_bypass() { return kBootConstants.bypass_debuglog; }
+bool dlog_bypass();
 
 // Renders as many of the recent debug log entries as will fit into the memory
 // region specified by |target|.  Returns the number of bytes of target which

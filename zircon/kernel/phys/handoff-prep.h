@@ -26,13 +26,13 @@
 #include <ktl/utility.h>
 #include <phys/address-space.h>
 #include <phys/elf-image.h>
-#include <phys/handoff-ptr.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
+#include <phys/handoff/ptr.h>
+#include <phys/handoff/zircon-abi-spec.h>
 #include <phys/kernel-package.h>
 #include <phys/new.h>
 #include <phys/uart.h>
 #include <phys/zbitl-allocation.h>
-#include <phys/zircon-abi-spec.h>
 
 struct ArchPatchInfo;
 struct BootOptions;

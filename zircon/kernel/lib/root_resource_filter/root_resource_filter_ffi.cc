@@ -9,7 +9,7 @@
 #include <lib/memalloc/range.h>
 
 #include <ktl/optional.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <region-alloc/region.h>
 
 extern "C" void cpp_root_resource_filter_populate_finalized_ranges(

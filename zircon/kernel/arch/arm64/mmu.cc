@@ -38,7 +38,7 @@
 #include <ktl/atomic.h>
 #include <ktl/span.h>
 #include <lk/init.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <platform/timer.h>
 #include <vm/arch_vm_aspace.h>
 #include <vm/physmap.h>

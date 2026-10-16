@@ -1,0 +1,137 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/cpp/library_headers.gni")
+import("//build/toolchain/toolchain_environment.gni")
+import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_bindgen_crate.gni")
+
+library_headers("headers") {
+  headers = [
+    "phys/handoff/$zircon_cpu/handoff.h",
+    "phys/handoff/$zircon_cpu/heap.h",
+    "phys/handoff/boot-constants.h",
+    "phys/handoff/handoff.h",
+    "phys/handoff/heap.h",
+    "phys/handoff/ptr.h",
+    "phys/handoff/zircon-abi-spec.h",
+  ]
+
+  public_deps = [
+    # $zircon_cpu/handoff.h has #include <lib/zbi-format/driver-config.h>
+    # boot-constants.h has #include <lib/zbi-format/reboot.h>
+    "//sdk/lib/zbi-format",
+
+    # arm64/handoff.h has #include <lib/boot-options/arm64.h>
+    "//zircon/kernel/lib/boot-options:headers",
+
+    # handoff.h has #include <lib/arch/ticks.h>.
+    "//zircon/kernel/lib/arch:headers",
+
+    # handoff.h has #include <lib/memalloc/range.h>
+    "//zircon/kernel/phys/lib/memalloc:range.headers",
+
+    # handoff.h has #include <lib/uart/all.h>.
+    "//zircon/system/ulib/uart",
+
+    # handoff.h has #include <lib/crypto/entropy_pool.h>
+    "//zircon/kernel/lib/crypto:crypto-entropy-src.headers",
+
+    # handoff.h has #include <lib/elfldltl/layout.h>.
+    "//src/lib/elfldltl:headers",
+
+    # handoff.h has #include <lib/stdbind/optional.h>.
+    "//src/lib/stdbind:headers",
+  ]
+
+  if (toolchain_environment == "kernel") {
+    public_deps += [
+      # handoff.h has #include <object/handle.h>
+      "//zircon/kernel/object:headers",
+
+      # handoff.h has #include <fbl/ref_ptr.h>
+      "//zircon/system/ulib/fbl:headers",
+    ]
+  }
+
+  if (!is_kernel) {
+    public_deps += [ "//zircon/system/public" ]
+  }
+}
+
+source_set("handoff") {
+  public_deps = [ ":headers" ]
+}
+
+kernel_bindgen_crate("handoff-rs") {
+  crate_name = "handoff"
+
+  notice_year = "2026"
+
+  cpp = true
+  headers = [ "include/phys/handoff/handoff.h" ]
+  non_rust_deps = [ ":handoff" ]
+  deps = [ "//src/lib/stdbind:stdbind-rs" ]
+
+  # The layout of PhysHandoff is compilation-dependent and very load-bearing,
+  # so these tests represent an important regression stop against drift.
+  layout_tests = true
+
+  # It's a big struct and so explicit padding can make it difficult to inspect.
+  explicit_padding = false
+
+  # No functions needed at this time.
+  function_blocklist = [ ".*" ]
+
+  type_allowlist = [ "PhysHandoff" ]
+  type_blocklist = [
+    "stdbind::optional",  # Ready-made bindings swapped in instead
+  ]
+
+  opaque_types = [
+    "std::.*",
+    "uart::.*",
+    "crypto::.*",
+    "elfldltl::.*",
+  ]
+
+  # Always better.
+  rustified_enum = [ ".*" ]
+
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+
+  raw_lines = [
+    "#![no_std]",
+    "",
+    "use stdbind::Optional as stdbind_optional;",
+  ]
+
+  if (is_kernel) {
+    raw_lines += [
+      "",
+      "unsafe extern \"C\" { fn cpp_phys_handoff_get() -> *const PhysHandoff; }",
+      "",
+      "impl PhysHandoff {",
+      "    pub fn get() -> &'static Self { ",
+      "        // Safety: This pointer is set before the kernel proper boots.",
+      "        unsafe { cpp_phys_handoff_get().as_ref_unchecked() } ",
+      "    }",
+      "}",
+    ]
+  }
+
+  replacements = [
+    # Drop "k" prefixes since that's a C++-ism that doesn't help with
+    # readability on the Rust side.
+    [
+      "\bk([A-Z0-9])",
+      "\\1",
+    ],
+  ]
+}

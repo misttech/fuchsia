@@ -22,7 +22,7 @@
 #include <phys/allocation.h>
 #include <phys/boot-zbi.h>
 #include <phys/elf-image.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <phys/kernel-package.h>
 #include <phys/stdio.h>
 #include <phys/symbolize.h>

@@ -37,9 +37,9 @@
 #include <kernel/thread.h>
 #include <kernel/topology.h>
 #include <lk/init.h>
-#include <phys/boot-constants.h>
-#include <phys/handoff.h>
-#include <phys/zircon-abi-spec.h>
+#include <phys/handoff/boot-constants.h>
+#include <phys/handoff/handoff.h>
+#include <phys/handoff/zircon-abi-spec.h>
 #include <vm/init.h>
 #include <vm/vm.h>
 

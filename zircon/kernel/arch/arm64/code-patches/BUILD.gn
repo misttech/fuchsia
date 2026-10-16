@@ -13,8 +13,8 @@ if (toolchain_environment == "kernel.phys") {
     deps = [
       "//zircon/kernel/arch/arm64/phys:arch-phys-info",
       "//zircon/kernel/lib/code-patching",
-      "//zircon/kernel/phys:handoff",
       "//zircon/kernel/phys:symbolize",
+      "//zircon/kernel/phys/handoff",
     ]
     public_deps = [ ":headers" ]
   }

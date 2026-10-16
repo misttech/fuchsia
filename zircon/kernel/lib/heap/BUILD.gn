@@ -34,7 +34,7 @@ source_set("heap") {
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/virtual_alloc",
-    "//zircon/kernel/phys:arch-heap",
+    "//zircon/kernel/phys/handoff",
     "//zircon/kernel/vm:headers",
 
     # TODO(https://fxbug.dev/42128324): Remove headers when possible.

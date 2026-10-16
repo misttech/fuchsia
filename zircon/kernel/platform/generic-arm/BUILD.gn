@@ -48,7 +48,7 @@ source_set("generic-arm") {
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/lib/topology",
     "//zircon/kernel/object",
-    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys/handoff",
     "//zircon/kernel/phys/lib/memalloc:range",
     "//zircon/kernel/platform:headers",
     "//zircon/kernel/vm",

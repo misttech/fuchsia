@@ -24,7 +24,7 @@
 #include <dev/timer/armv7_mmio_timer.h>
 #include <ktl/type_traits.h>
 #include <ktl/variant.h>
-#include <phys/arch/arch-handoff.h>
+#include <phys/handoff/handoff.h>
 
 #include <ktl/enforce.h>
 

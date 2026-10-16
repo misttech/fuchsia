@@ -12,7 +12,7 @@
 
 __BEGIN_CDECLS
 
-// Forward declaration; defined in <phys/handoff.h>.
+// Forward declaration; defined in <phys/handoff/handoff.h>.
 struct PhysHandoff;
 
 // main entry point from boot assembly

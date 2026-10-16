@@ -366,8 +366,8 @@ if (current_toolchain == default_toolchain) {
       "//sdk/lib/zbi-format",
       "//zircon/kernel/lib/code-patching",
       "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/phys:handoff",
       "//zircon/kernel/phys:handoff-prep.h",
+      "//zircon/kernel/phys/handoff",
     ]
     include_dirs = [ "//zircon/kernel/phys" ]
   }

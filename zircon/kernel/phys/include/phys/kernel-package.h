@@ -15,7 +15,7 @@
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <phys/allocation.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 
 // The name of the kernel ZBI within a kernel package.
 constexpr ktl::string_view kKernelZbiName = "kernel.zbi";

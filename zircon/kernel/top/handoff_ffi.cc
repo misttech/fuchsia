@@ -7,8 +7,8 @@
 #include <stdint.h>
 
 #include <kernel/ffi.h>
-#include <phys/boot-constants.h>
-#include <phys/handoff.h>
+#include <phys/handoff/boot-constants.h>
+#include <phys/handoff/handoff.h>
 
 extern "C" {
 

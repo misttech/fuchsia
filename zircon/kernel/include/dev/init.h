@@ -9,10 +9,10 @@
 
 #include <lib/uart/all.h>
 
-// Forward-declared; fully declared in <phys/handoff.h>
+// Forward-declared; fully declared in <phys/handoff/handoff.h>
 struct PhysHandoff;
 
-// Forward-declared; fully declared in <phys/arch/arch-handoff.h>.
+// Forward-declared; fully declared in <phys/handoff/arch-handoff.h>.
 struct ArchPhysHandoff;
 
 // These routines initialize the kernel's drivers, as a function of the

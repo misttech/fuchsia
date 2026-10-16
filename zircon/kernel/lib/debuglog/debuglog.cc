@@ -26,7 +26,7 @@
 #include <ktl/atomic.h>
 #include <ktl/limits.h>
 #include <lk/init.h>
-#include <phys/boot-constants.h>
+#include <phys/handoff/boot-constants.h>
 #include <vm/vm.h>
 
 #include "debuglog_internal.h"
@@ -43,6 +43,8 @@ FILE gDlogSerialFile{[](ktl::string_view str) {
   dlog_serial_write(str);
   return static_cast<int>(str.size());
 }};
+
+bool dlog_bypass() { return kBootConstants.bypass_debuglog; }
 
 // The debuglog maintains a circular buffer of debuglog records,
 // consisting of a common header (dlog_header_t) followed by up

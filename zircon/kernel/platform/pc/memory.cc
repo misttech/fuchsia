@@ -29,7 +29,7 @@
 #include <lk/init.h>
 #include <object/handle.h>
 #include <object/resource_dispatcher.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <vm/vm.h>
 
 #include <ktl/enforce.h>

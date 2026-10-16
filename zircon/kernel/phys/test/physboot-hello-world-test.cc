@@ -13,9 +13,9 @@
 #include <zircon/assert.h>
 
 #include <phys/address-space.h>
-#include <phys/boot-constants.h>
-#include <phys/handoff.h>
-#include <phys/zircon-abi-spec.h>
+#include <phys/handoff/boot-constants.h>
+#include <phys/handoff/handoff.h>
+#include <phys/handoff/zircon-abi-spec.h>
 
 extern "C" constexpr ZirconAbiSpec kZirconAbiSpec = {
     .machine_stack =

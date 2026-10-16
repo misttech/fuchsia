@@ -27,7 +27,7 @@
 #include <fbl/vector.h>
 #include <kernel/thread.h>
 #include <ktl/array.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <vm/init.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>

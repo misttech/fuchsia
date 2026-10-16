@@ -27,9 +27,9 @@
 #include <lk/init.h>
 #include <object/handle.h>
 #include <object/vm_object_dispatcher.h>
-#include <phys/boot-constants.h>
-#include <phys/handoff.h>
-#include <phys/zircon-abi-spec.h>
+#include <phys/handoff/boot-constants.h>
+#include <phys/handoff/handoff.h>
+#include <phys/handoff/zircon-abi-spec.h>
 #include <platform/timer.h>
 #include <vm/handoff-end.h>
 #include <vm/kstack.h>

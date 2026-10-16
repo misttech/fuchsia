@@ -17,7 +17,7 @@
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <ktl/utility.h>
-#include <phys/boot-constants.h>
+#include <phys/handoff/boot-constants.h>
 #include <vm/vm_object_paged.h>
 
 #include "private.h"

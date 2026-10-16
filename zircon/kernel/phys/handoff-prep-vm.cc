@@ -19,8 +19,8 @@
 #include <ktl/string_view.h>
 #include <phys/address-space.h>
 #include <phys/allocation.h>
-#include <phys/arch/heap.h>
 #include <phys/elf-image.h>
+#include <phys/handoff/heap.h>
 #include <region-alloc/region.h>
 
 #include "handoff-prep.h"
@@ -326,7 +326,7 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
     // Thread ABI pointer.
     //
     // Static assertions of ArchTempThreadAbi fields respecting expected
-    // ZX_TLS_*_OFFSETs done in <phys/arch/arch-handoff.h>.
+    // ZX_TLS_*_OFFSETs done in <phys/handoff/handoff.h>.
     PhysHandoffTemporaryPtr<const ArchTempThreadAbi> handoff_thread_abi;
     fbl::AllocChecker ac;
     ArchTempThreadAbi* thread_abi = New(handoff_thread_abi, ac);

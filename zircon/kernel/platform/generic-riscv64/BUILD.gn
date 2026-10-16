@@ -38,7 +38,7 @@ source_set("generic-riscv64") {
     "//zircon/kernel/dev/interrupt/plic",
     "//zircon/kernel/dev/pdev/power",
     "//zircon/kernel/lib/topology",
-    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys/handoff",
     "//zircon/kernel/platform:headers",
     "//zircon/system/ulib/ram-crashlog",
   ]

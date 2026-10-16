@@ -4,10 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_ARCH_ARM64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
-#define ZIRCON_KERNEL_ARCH_ARM64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
+#ifndef ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_ARM64_HANDOFF_H_
+#define ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_ARM64_HANDOFF_H_
 
-// Note: we refrain from using the ktl namespace as <phys/handoff.h> is
+// Note: we refrain from using the ktl namespace as <phys/handoff/handoff.h> is
 // expected to be compiled in the userboot toolchain.
 
 #include <lib/arch/arm64/smccc.h>
@@ -19,7 +19,7 @@
 #include <optional>
 #include <variant>
 
-#include <phys/handoff-ptr.h>
+#include <phys/handoff/ptr.h>
 
 // The minimal memory region needed to encapsulate the C++ compiler thread ABI.
 struct ArchTempThreadAbi {
@@ -86,4 +86,4 @@ struct ArchPhysHandoff {
   Arm64AlternateVbar alternate_vbar = Arm64AlternateVbar::kNone;
 };
 
-#endif  // ZIRCON_KERNEL_ARCH_ARM64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
+#endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_ARM64_HANDOFF_H_

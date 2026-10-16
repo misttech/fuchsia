@@ -12,7 +12,7 @@
 #include <lib/zbi-format/driver-config.h>
 
 #include <ktl/optional.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 
 // Returns the |irq| number to be used for registering an IRQ Handler if such |irq_num| can be
 // translated.

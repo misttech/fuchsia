@@ -11,8 +11,7 @@
 
 #include <ktl/byte.h>
 #include <ktl/span.h>
-#include <phys/arch/arch-handoff.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 
 #include "handoff-prep.h"
 

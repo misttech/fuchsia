@@ -33,7 +33,7 @@ static_library("root_resource_filter") {
   sources = [ "root_resource_filter_ffi.cc" ]
   deps = [
     ":root_resource_filter_rs",
-    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys/handoff",
     "//zircon/kernel/phys/lib/memalloc",
     "//zircon/system/ulib/region-alloc:headers",
   ]

@@ -27,7 +27,7 @@
 #include <arch/x86/mmu_mem_types.h>
 #include <kernel/mp.h>
 #include <ktl/span.h>
-#include <phys/arch/arch-handoff.h>
+#include <phys/handoff/handoff.h>
 #include <vm/arch_vm_aspace.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>

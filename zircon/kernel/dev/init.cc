@@ -8,7 +8,7 @@
 #include <zircon/assert.h>
 
 #include <dev/init.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 
 void DriverHandoffEarly(const PhysHandoff& handoff) {
   UartDriverHandoffEarly(handoff.uart);

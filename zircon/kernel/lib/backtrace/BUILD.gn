@@ -12,7 +12,7 @@ static_library("backtrace") {
   complete_static_lib = true
 
   sources = [ "backtrace.cc" ]
-  deps = [ "//zircon/kernel/phys:boot-constants" ]
+  deps = [ "//zircon/kernel/phys/handoff" ]
 }
 
 library_headers("headers") {

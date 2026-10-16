@@ -12,7 +12,7 @@
 #include <ktl/algorithm.h>
 #include <ktl/limits.h>
 #include <ktl/span.h>
-#include <phys/boot-constants.h>
+#include <phys/handoff/boot-constants.h>
 #include <platform/mapped_crashlog.h>
 #include <ram-crashlog/ram-crashlog.h>
 

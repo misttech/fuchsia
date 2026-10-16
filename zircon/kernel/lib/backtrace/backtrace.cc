@@ -6,7 +6,7 @@
 
 #include "lib/backtrace.h"
 
-#include <phys/boot-constants.h>
+#include <phys/handoff/boot-constants.h>
 
 static constexpr const char* kFormat = "{{{bt:%zu:%p:%s}}}\n";
 static constexpr const char* kRa = "ra";

@@ -16,7 +16,7 @@
 #include <fbl/vector.h>
 #include <ktl/type_traits.h>
 #include <object/handle.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 
 // Forward declaration; defined in <vm/vm_object.h>
 class VmObject;

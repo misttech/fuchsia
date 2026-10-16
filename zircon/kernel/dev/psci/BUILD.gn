@@ -21,6 +21,6 @@ source_set("psci") {
     "//zircon/kernel/dev/pdev/power",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/counters",
-    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys/handoff",
   ]
 }

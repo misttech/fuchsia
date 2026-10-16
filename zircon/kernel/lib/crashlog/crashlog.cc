@@ -32,7 +32,7 @@
 #include <object/channel_dispatcher.h>
 #include <object/handle.h>
 #include <object/root_job_observer.h>
-#include <phys/boot-constants.h>
+#include <phys/handoff/boot-constants.h>
 #include <platform/timer.h>
 #include <vm/pmm.h>
 #include <vm/pmm_checker.h>

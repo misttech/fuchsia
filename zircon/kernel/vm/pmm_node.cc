@@ -13,7 +13,7 @@
 #include <lib/page/size.h>
 
 #include <kernel/scheduler.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <vm/compression.h>
 #include <vm/phys/arena.h>
 #include <vm/physmap.h>

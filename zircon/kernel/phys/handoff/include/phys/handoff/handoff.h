@@ -4,12 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_H_
-#define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_H_
+#ifndef ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_HANDOFF_H_
+#define ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_HANDOFF_H_
 
 #ifndef __ASSEMBLER__
 
-// Note: we refrain from using the ktl namespace as <phys/handoff.h> is
+// Note: we refrain from using the ktl namespace as <phys/handoff/handoff.h> is
 // expected to be compiled in the userboot toolchain.
 
 #include <inttypes.h>
@@ -35,9 +35,15 @@
 #include <string_view>
 #include <type_traits>
 
-#include <phys/arch/arch-handoff.h>
+#include <phys/handoff/ptr.h>
 
-#include "handoff-ptr.h"
+#if defined(__aarch64__)
+#include <phys/handoff/arm64/handoff.h>
+#elif defined(__riscv)
+#include <phys/handoff/riscv64/handoff.h>
+#elif defined(__x86_64__) || defined(__i386__)
+#include <phys/handoff/x86/handoff.h>
+#endif
 
 struct BootOptions;
 struct ralloc_region_t;
@@ -298,7 +304,7 @@ struct PhysElfImage {
 // for things that are only used temporarily to initialize other subsystems in
 // the kernel proper.  For things where the kernel proper would be just copying
 // from a PhysHandoff member directly into a global variable that never changes
-// after boot, it's better to use BootConstants (see <phys/boot-constants.h>).
+// after boot, it's better to use BootConstants (see <phys/handoff/boot-constants.h>).
 struct PhysHandoff {
   // Whether the given type represents physical memory that should be turned
   // into a VMO.
@@ -456,4 +462,4 @@ bool cpp_phys_handoff_platform_id(zbi_platform_id_t* out);
 
 #endif  // __ASSEMBLER__
 
-#endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_H_
+#endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_HANDOFF_H_

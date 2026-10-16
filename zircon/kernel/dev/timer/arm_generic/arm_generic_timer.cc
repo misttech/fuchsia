@@ -27,7 +27,7 @@
 #include <ktl/atomic.h>
 #include <ktl/limits.h>
 #include <lk/init.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <platform/timer.h>
 
 #include <ktl/enforce.h>

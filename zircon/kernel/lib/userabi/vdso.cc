@@ -19,7 +19,7 @@
 #include <kernel/mp.h>
 #include <ktl/array.h>
 #include <object/handle.h>
-#include <phys/boot-constants.h>
+#include <phys/handoff/boot-constants.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>

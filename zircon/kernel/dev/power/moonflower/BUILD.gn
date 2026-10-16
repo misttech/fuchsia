@@ -38,7 +38,7 @@ source_set("moonflower") {
     "//zircon/kernel/lib/debuglog",
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/power-management",
-    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys/handoff",
     "//zircon/system/ulib/ddk-platform-defs",
   ]
 }

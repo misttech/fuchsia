@@ -4,15 +4,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_BOOT_CONSTANTS_H_
-#define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_BOOT_CONSTANTS_H_
+#ifndef ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_BOOT_CONSTANTS_H_
+#define ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_BOOT_CONSTANTS_H_
 
 #include <lib/zbi-format/reboot.h>
 #include <stdint.h>
 
 #include <ktl/type_traits.h>
-
-#include "handoff-ptr.h"
+#include <phys/handoff/ptr.h>
 
 struct BootOptions;  // <lib/boot-options/boot-options.h>
 
@@ -26,8 +25,8 @@ struct BootOptions;  // <lib/boot-options/boot-options.h>
 // Things should be placed here only when they should be permanently accessible
 // as read-only global variables for the lifetime of the kernel proper after
 // boot.  Things that are only needed temporarily at boot to initialize other
-// kernel state are instead passed in PhysHandoff (see <phys/handoff.h>), which
-// is discarded after boot time.
+// kernel state are instead passed in PhysHandoff (see
+// <phys/handoff/handoff.h>), which is discarded after boot time.
 //
 // Since this header thus could be used by disparate parts of the kernel code,
 // its header dependencies should be kept to a minimum.
@@ -78,4 +77,4 @@ extern "C" constinit const BootConstants kBootConstants;
 
 extern "C" const uint8_t* cpp_boot_constants_kernel_version_ident(size_t* size);
 
-#endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_BOOT_CONSTANTS_H_
+#endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_BOOT_CONSTANTS_H_

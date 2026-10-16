@@ -10,7 +10,7 @@
 
 #include <ktl/ref.h>
 #include <ktl/string_view.h>
-#include <phys/boot-constants.h>
+#include <phys/handoff/boot-constants.h>
 #include <phys/symbolize.h>
 
 #include "handoff-prep.h"

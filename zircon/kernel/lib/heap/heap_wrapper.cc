@@ -27,7 +27,7 @@
 #include <fbl/intrusive_double_list.h>
 #include <kernel/spinlock.h>
 #include <kernel/thread.h>
-#include <phys/arch/heap.h>
+#include <phys/handoff/heap.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>

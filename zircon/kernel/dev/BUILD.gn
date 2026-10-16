@@ -8,7 +8,7 @@ source_set("init") {
   sources = [ "init.cc" ]
   deps = [
     "//zircon/kernel/lib/boot-options",
-    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys/handoff",
   ]
 }
 

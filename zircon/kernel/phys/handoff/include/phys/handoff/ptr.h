@@ -4,10 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_PTR_H_
-#define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_PTR_H_
+#ifndef ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_PTR_H_
+#define ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_PTR_H_
 
-// Note: we refrain from using the ktl namespace as <phys/handoff.h> is
+// Note: we refrain from using the ktl namespace as <phys/handoff/handoff.h> is
 // expected to be compiled in the userboot toolchain.
 
 #include <assert.h>
@@ -382,4 +382,4 @@ class MappedMmioRange : public PhysHandoffPhysicalSpan<volatile std::byte> {
   uint64_t paddr_ = 0;
 };
 
-#endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_PTR_H_
+#endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_PTR_H_

@@ -14,7 +14,7 @@
 #include <fbl/ref_ptr.h>
 #include <ktl/optional.h>
 #include <lk/init.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <platform/efi.h>
 #include <vm/vm.h>
 #include <vm/vm_address_region.h>

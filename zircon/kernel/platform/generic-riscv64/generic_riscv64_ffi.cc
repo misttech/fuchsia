@@ -19,7 +19,7 @@
 #include <ktl/iterator.h>
 #include <ktl/optional.h>
 #include <ktl/span.h>
-#include <phys/arch/arch-handoff.h>
+#include <phys/handoff/handoff.h>
 #include <platform/crashlog.h>
 #include <platform/mapped_crashlog.h>
 #include <platform/timer.h>

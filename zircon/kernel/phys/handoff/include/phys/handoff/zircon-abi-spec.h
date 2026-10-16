@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZIRCON_ABI_SPEC_H_
-#define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZIRCON_ABI_SPEC_H_
+#ifndef ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_ZIRCON_ABI_SPEC_H_
+#define ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_ZIRCON_ABI_SPEC_H_
 
 #include <lib/arch/asm.h>
 #include <stddef.h>
@@ -16,11 +16,10 @@
 #include <ktl/limits.h>
 #include <ktl/string_view.h>
 #include <ktl/type_traits.h>
+#include <phys/handoff/ptr.h>
 
-#include "handoff-ptr.h"
-
-struct BootConstants;  // <phys/boot-constants.h>
-struct PhysHandoff;    // <phys/handoff.h>
+struct BootConstants;  // <phys/handoff/boot-constants.h>
+struct PhysHandoff;    // <phys/handoff/handoff.h>
 struct ZirconAbiSpec;  // Defined below.
 
 extern "C" {
@@ -34,7 +33,7 @@ extern constinit const ZirconAbiSpec kZirconAbiSpec;
 // points to the kZirconAbiSpec struct and its .entry is the real entry point.
 [[noreturn, clang::cfi_unchecked_callee]] void PhysbootHandoff(PhysHandoff* handoff);
 
-// See <phys/boot-constants.h>.  This is "defined" in the kernel, so it resides
+// See <phys/handoff/boot-constants.h>.  This is "defined" in the kernel, so it resides
 // in the kernel's RODATA, but it's filled in by physboot before kernel entry.
 extern constinit const BootConstants kBootConstants;
 
@@ -144,4 +143,4 @@ struct ZirconAbiSpec {
 };
 static_assert(ktl::is_trivially_destructible_v<ZirconAbiSpec>);
 
-#endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZIRCON_ABI_SPEC_H_
+#endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_ZIRCON_ABI_SPEC_H_

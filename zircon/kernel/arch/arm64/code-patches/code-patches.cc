@@ -10,8 +10,8 @@
 #include <cstdint>
 
 #include <arch/code-patches/case-id.h>
-#include <phys/arch/arch-handoff.h>
 #include <phys/arch/arch-phys-info.h>
+#include <phys/handoff/handoff.h>
 #include <phys/symbolize.h>
 
 #include "../smccc.h"

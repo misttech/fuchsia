@@ -35,7 +35,7 @@
 #include <ktl/iterator.h>
 #include <ktl/limits.h>
 #include <lk/init.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <platform/pc.h>
 #include <platform/pc/hpet.h>
 #include <platform/pc/timer.h>

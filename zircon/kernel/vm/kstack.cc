@@ -19,7 +19,7 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
 #include <ktl/utility.h>
-#include <phys/zircon-abi-spec.h>
+#include <phys/handoff/zircon-abi-spec.h>
 #include <vm/vm.h>
 #include <vm/vm_address_region.h>
 #include <vm/vm_aspace.h>

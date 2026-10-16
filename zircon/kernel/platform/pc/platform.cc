@@ -40,7 +40,7 @@
 #include <kernel/cpu_distance_map.h>
 #include <ktl/algorithm.h>
 #include <lk/init.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <platform/crashlog.h>
 #include <platform/efi.h>
 #include <platform/efi_crashlog.h>

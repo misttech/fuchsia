@@ -4,10 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_ARCH_RISCV64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
-#define ZIRCON_KERNEL_ARCH_RISCV64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
+#ifndef ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_RISCV64_HANDOFF_H_
+#define ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_RISCV64_HANDOFF_H_
 
-// Note: we refrain from using the ktl namespace as <phys/handoff.h> is
+// Note: we refrain from using the ktl namespace as <phys/handoff/handoff.h> is
 // expected to be compiled in the userboot toolchain.
 
 #include <lib/arch/riscv64/feature.h>
@@ -50,4 +50,4 @@ struct ArchPhysHandoff {
   stdbind::optional<zbi_dcfg_riscv_generic_timer_driver_t> generic_timer_driver;
 };
 
-#endif  // ZIRCON_KERNEL_ARCH_RISCV64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
+#endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_RISCV64_HANDOFF_H_

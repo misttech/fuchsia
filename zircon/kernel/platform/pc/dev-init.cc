@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <dev/init.h>
-#include <phys/arch/arch-handoff.h>
+#include <phys/handoff/handoff.h>
 
 void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {}
 void PlatformDriverHandoffPostVm(const ArchPhysHandoff& arch_handoff) {}

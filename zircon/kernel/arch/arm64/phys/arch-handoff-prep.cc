@@ -14,9 +14,8 @@
 #include <ktl/optional.h>
 #include <ktl/span.h>
 #include <ktl/variant.h>
-#include <phys/arch/arch-handoff.h>
 #include <phys/arch/arch-phys-info.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 #include <phys/main.h>
 #include <phys/stdio.h>
 

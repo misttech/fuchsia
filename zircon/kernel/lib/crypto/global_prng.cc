@@ -29,7 +29,7 @@
 #include <ktl/utility.h>
 #include <lk/init.h>
 #include <openssl/sha.h>
-#include <phys/handoff.h>
+#include <phys/handoff/handoff.h>
 
 #include <ktl/enforce.h>
 
