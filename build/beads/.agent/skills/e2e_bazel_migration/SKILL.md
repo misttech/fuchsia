@@ -33,6 +33,9 @@ description: >
   strip the "http://b/". (e.g., "http://b/1234567", the buganizer ticket number
   is "1234567")
 
+* **status timestamp** : The current time in UTC, formatted as
+  `YYYY-MM-DD HH:MM UTC` (e.g., `2026-10-16 04:31 UTC`).
+
 * **auth check command** : The command in the "Command" section of the
   document at go/auth_check. It exits non-zero if the user's credentials expire
   within one hour. If the user specifies a different command in the prompt, use

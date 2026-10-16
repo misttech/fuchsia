@@ -22,5 +22,5 @@ The `<package_name>` is the GN label of the **migration package**.
 4. Review the commit message retrieved at the previous step based on the **commit message guidelines**. If there are review errors, fix them, amend the commit with updated commit message but keep the `Change-Id:` and Planter's `TAG:`, and run `git push origin HEAD:refs/for/main` to upload a new patchset.
    * If it fails to amend the commit or upload a new patchset, ignore the failure.
 
-5. Use "gsheets" skill: Update the "Migration Status" of **migration package** in the **control table** to "CL_created".
+5. Use "gsheets" skill: Update the "Migration Status" of **migration package** in the **control table** to "CL_created" and set "Last Status Update" to the **status timestamp**.
    * If it fails to update the **control table**, ignore the failure.

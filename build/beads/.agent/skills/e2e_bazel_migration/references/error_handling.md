@@ -4,7 +4,8 @@ This document handles error conditions (e.g., STOP). For non-error conditions, r
 
 ## Common Error Handling Steps For All Error Conditions
 * Use "gmail" skill: refer to the "Interrupted Notification Template" in the [Notification Templates](../assets/notification_templates.md) to draft the "Interrupted" notification and send it to the user.
-* Use the "gsheets" skill: in the **control table**, change "Migration Status" to "blocked".
+* Use the "gsheets" skill: in the **control table**, for the **migration package**, change "Migration Status" to "blocked", write the reason of the failed step to "Failure Reason", and set "Last Status Update" to the **status timestamp**.
+  * If no **migration package** has been selected yet, skip this step.
 
 
 ## Error Handling Steps specific to the "STOP and CLEANUP" Condition
