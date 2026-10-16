@@ -36,7 +36,7 @@ pub mod tests {
     use crate::model::actions::ActionsManager;
     use crate::model::testing::test_helpers::{component_decl_with_test_runner, ActionsTest};
     use crate::model::testing::test_hook::Lifecycle;
-    use cm_rust_testing::ComponentDeclBuilder;
+    use cm_rust_testing::{ChildBuilder, ComponentDeclBuilder, EnvironmentBuilder};
     use errors::ModelError;
     use futures::channel::oneshot;
     use futures::lock::Mutex;
@@ -92,6 +92,24 @@ pub mod tests {
                 .collect();
             assert_eq!(events, vec![Lifecycle::Stop(["a"].try_into().unwrap())],);
         }
+    }
+
+    #[fuchsia::test]
+    async fn stop_timeout_from_environment() {
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new()
+                    .environment(EnvironmentBuilder::new().name("env").stop_timeout(1234))
+                    .child(ChildBuilder::new().name("a").environment("env"))
+                    .build(),
+            ),
+            ("a", component_decl_with_test_runner()),
+        ];
+        let test = ActionsTest::new("root", components, None).await;
+        let component_a = test.look_up(["a"].try_into().unwrap()).await;
+        let resolved_state = component_a.lock_resolved_state().await.unwrap();
+        assert_eq!(resolved_state.sandbox.component_input.environment().stop_timeout(), Some(1234));
     }
 
     #[fuchsia::test]

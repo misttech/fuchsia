@@ -676,6 +676,9 @@ fn build_environment<C: ComponentInstanceInterface + 'static>(
         environment = sandbox.component_input.environment().shallow_copy();
     }
     environment.set_name(&environment_decl.name);
+    if let Some(stop_timeout_ms) = environment_decl.stop_timeout_ms {
+        environment.set_stop_timeout(stop_timeout_ms as i64);
+    }
     let debug_routers_and_targets =
         environment_decl.debug_capabilities.iter().map(|registration| {
             let cm_rust::DebugRegistration::Protocol(debug_protocol_registration) = registration;
