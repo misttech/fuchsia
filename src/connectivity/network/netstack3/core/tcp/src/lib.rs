@@ -44,7 +44,7 @@ pub use internal::counters::{
     CombinedTcpCounters, TcpCountersWithSocket, TcpCountersWithoutSocket,
 };
 pub use internal::settings::TcpSettings;
-pub use internal::socket::accept_queue::ListenerNotifier;
+pub use internal::socket::accept_queue::{AcceptQueueChange, ListenerNotifier};
 pub use internal::socket::demux::DualStackTcpSocketId;
 pub use internal::socket::diagnostics::{
     TcpSocketDiagnosticTuple, TcpSocketDiagnostics, TcpSocketDiagnosticsSeed,

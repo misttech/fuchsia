@@ -19,11 +19,26 @@ use netstack3_base::Inspector;
 use netstack3_base::sync::Mutex;
 use netstack3_hashmap::HashMap;
 
-/// A notifier used to tell Bindings about new pending connections for a single
-/// socket.
+/// A change that occurred on an [`AcceptQueue`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcceptQueueChange {
+    /// A pending connection completed the handshake and was added to the queue.
+    ConnectionAdded {
+        /// Whether the accept queue was empty before adding this connection.
+        was_empty: bool,
+    },
+    /// A connection was removed from the queue (via `accept` or reset/close).
+    ConnectionRemoved {
+        /// Whether the queue is now empty after removing this connection.
+        is_empty: bool,
+    },
+}
+
+/// A notifier used to tell Bindings about ready connections for a single
+/// listening socket.
 pub trait ListenerNotifier {
-    /// When the ready queue length has changed, signal to the Bindings.
-    fn new_incoming_connections(&mut self, num_ready: usize);
+    /// Called when the accept queue has changed.
+    fn accept_queue_changed(&mut self, change: AcceptQueueChange);
 }
 
 /// A thread-safe shareable accept queue.
@@ -93,7 +108,7 @@ where
     /// Returns the socket and its associated ready state if the queue was not
     /// empty.
     ///
-    /// `pop_ready` also hits the notifier with the new ready item count.
+    /// `pop_ready` also hits the notifier.
     pub(crate) fn pop_ready(&self) -> Option<(S, R)> {
         self.lock().pop_ready()
     }
@@ -188,7 +203,9 @@ where
         assert_matches!(all_sockets.remove(&socket), Some(EntryState::Ready));
         // Invariant: queue must be empty if notifier is none.
         let notifier = notifier.as_mut().unwrap();
-        notifier.new_incoming_connections(ready_queue.len());
+        notifier.accept_queue_changed(AcceptQueueChange::ConnectionRemoved {
+            is_empty: ready_queue.is_empty(),
+        });
         Some((socket, ready_state))
     }
 
@@ -246,8 +263,9 @@ where
             .expect("attempted to notify ready entry that was not in queue");
         let prev_state = core::mem::replace(entry, EntryState::Ready);
         assert_matches!(prev_state, EntryState::Pending);
+        let was_empty = ready_queue.is_empty();
         ready_queue.push_back((newly_ready.clone(), ready_state));
-        notifier.new_incoming_connections(ready_queue.len());
+        notifier.accept_queue_changed(AcceptQueueChange::ConnectionAdded { was_empty });
     }
 
     fn remove(&mut self, entry: &S) {
@@ -272,7 +290,9 @@ where
                 let after_len = ready_queue.len();
                 // Item must only be in ready queue once.
                 assert_eq!(after_len, before_len - 1);
-                notifier.new_incoming_connections(after_len);
+                notifier.accept_queue_changed(AcceptQueueChange::ConnectionRemoved {
+                    is_empty: ready_queue.is_empty(),
+                });
             }
         }
     }
@@ -302,6 +322,8 @@ mod tests {
     use assert_matches::assert_matches;
     use netstack3_hashmap::HashSet;
 
+    use super::AcceptQueueChange;
+
     #[test]
     fn push_ready_pop() {
         let mut queue = AcceptQueueInner::new(Notifier::default());
@@ -322,10 +344,35 @@ mod tests {
         assert_eq!(queue.len(), 1);
         assert_eq!(queue.ready_len(), 1);
         assert_eq!(queue.pending_len(), 0);
-        assert_eq!(queue.clear_notifier(), Some(1));
+        assert_eq!(
+            queue.clear_notifier(),
+            Some(AcceptQueueChange::ConnectionAdded { was_empty: true })
+        );
+
+        queue.push_pending(Socket(1));
+        queue.notify_ready(&Socket(1), Ready(3));
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.ready_len(), 2);
+        assert_eq!(queue.pending_len(), 0);
+        assert_eq!(
+            queue.clear_notifier(),
+            Some(AcceptQueueChange::ConnectionAdded { was_empty: false })
+        );
 
         assert_eq!(queue.pop_ready(), Some((Socket(0), Ready(2))));
-        assert_eq!(queue.clear_notifier(), Some(0));
+        assert_eq!(
+            queue.clear_notifier(),
+            Some(AcceptQueueChange::ConnectionRemoved { is_empty: false })
+        );
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.ready_len(), 1);
+        assert_eq!(queue.pending_len(), 0);
+
+        assert_eq!(queue.pop_ready(), Some((Socket(1), Ready(3))));
+        assert_eq!(
+            queue.clear_notifier(),
+            Some(AcceptQueueChange::ConnectionRemoved { is_empty: true })
+        );
         assert_eq!(queue.len(), 0);
         assert_eq!(queue.ready_len(), 0);
         assert_eq!(queue.pending_len(), 0);
@@ -360,7 +407,10 @@ mod tests {
         assert_eq!(queue.len(), 2);
         assert_eq!(queue.ready_len(), 1);
         assert_eq!(queue.pending_len(), 1);
-        assert_eq!(queue.clear_notifier(), Some(1));
+        assert_eq!(
+            queue.clear_notifier(),
+            Some(AcceptQueueChange::ConnectionAdded { was_empty: true })
+        );
 
         queue.remove(&s1);
         assert_eq!(queue.len(), 1);
@@ -372,7 +422,10 @@ mod tests {
         assert_eq!(queue.len(), 0);
         assert_eq!(queue.ready_len(), 0);
         assert_eq!(queue.pending_len(), 0);
-        assert_eq!(queue.clear_notifier(), Some(0));
+        assert_eq!(
+            queue.clear_notifier(),
+            Some(AcceptQueueChange::ConnectionRemoved { is_empty: true })
+        );
 
         // Removing already removed entry is a no-op.
         queue.remove(&s1);
@@ -389,12 +442,12 @@ mod tests {
     struct Ready(usize);
 
     #[derive(Default, Eq, PartialEq, Debug)]
-    struct Notifier(Option<usize>);
+    struct Notifier(Option<AcceptQueueChange>);
 
     type AcceptQueueInner = super::AcceptQueueInner<Socket, Ready, Notifier>;
 
     impl AcceptQueueInner {
-        fn clear_notifier(&mut self) -> Option<usize> {
+        fn clear_notifier(&mut self) -> Option<AcceptQueueChange> {
             let Self { notifier, .. } = self;
             let Notifier(v) = notifier.as_mut().unwrap();
             v.take()
@@ -402,9 +455,9 @@ mod tests {
     }
 
     impl super::ListenerNotifier for Notifier {
-        fn new_incoming_connections(&mut self, num_ready: usize) {
+        fn accept_queue_changed(&mut self, change: AcceptQueueChange) {
             let Self(n) = self;
-            assert_matches!(n.replace(num_ready), None);
+            assert_matches!(n.replace(change), None);
         }
     }
 }

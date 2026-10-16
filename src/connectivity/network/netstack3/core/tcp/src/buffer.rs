@@ -282,7 +282,7 @@ pub(crate) mod testutil {
     use netstack3_base::sync::Mutex;
     use netstack3_base::{FragmentedPayload, PayloadLen, WindowSize};
 
-    use crate::internal::socket::accept_queue::ListenerNotifier;
+    use crate::internal::socket::accept_queue::{AcceptQueueChange, ListenerNotifier};
 
     /// A circular buffer implementation.
     ///
@@ -690,7 +690,7 @@ pub(crate) mod testutil {
     }
 
     impl ListenerNotifier for ProvidedBuffers {
-        fn new_incoming_connections(&mut self, _: usize) {}
+        fn accept_queue_changed(&mut self, _: AcceptQueueChange) {}
     }
 
     #[derive(Clone, Copy, Debug)]

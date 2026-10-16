@@ -24,8 +24,8 @@ use netstack3_core::IpExt;
 use netstack3_core::device::{DeviceId, WeakDeviceId};
 use netstack3_core::socket::ShutdownType;
 use netstack3_core::tcp::{
-    self, AcceptError, BindError, BoundInfo, BufferSizes, ConnectError, ConnectionError,
-    ConnectionInfo, IntoBuffers, ListenError, ListenerNotifier, NoConnection,
+    self, AcceptError, AcceptQueueChange, BindError, BoundInfo, BufferSizes, ConnectError,
+    ConnectionError, ConnectionInfo, IntoBuffers, ListenError, ListenerNotifier, NoConnection,
     OriginalDestinationError, SetReuseAddrError, SocketAddr, SocketInfo, SocketOptions,
     TcpBindingsTypes, UnboundInfo,
 };
@@ -95,15 +95,26 @@ struct TaskSpawnData {
 }
 
 impl ListenerNotifier for UnconnectedSocketData {
-    fn new_incoming_connections(&mut self, count: usize) {
+    fn accept_queue_changed(&mut self, change: AcceptQueueChange) {
         let Self { zx_socket, .. } = self;
-        let (clear, set) = if count == 0 {
-            (ZXSIO_SIGNAL_INCOMING, zx::Signals::NONE)
-        } else {
-            (zx::Signals::NONE, ZXSIO_SIGNAL_INCOMING)
-        };
-
-        zx_socket.signal_peer(clear, set).expect("failed to signal for available connections")
+        match change {
+            AcceptQueueChange::ConnectionAdded { was_empty } => {
+                // Only signal the peer when the queue transitions from empty to
+                // non-empty to avoid redundant syscalls.
+                if was_empty {
+                    zx_socket
+                        .signal_peer(zx::Signals::NONE, ZXSIO_SIGNAL_INCOMING)
+                        .expect("failed to signal for available connections");
+                }
+            }
+            AcceptQueueChange::ConnectionRemoved { is_empty } => {
+                if is_empty {
+                    zx_socket
+                        .signal_peer(ZXSIO_SIGNAL_INCOMING, zx::Signals::NONE)
+                        .expect("failed to signal for available connections");
+                }
+            }
+        }
     }
 }
 
