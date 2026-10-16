@@ -2,21 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_unittest_package("mock-health-verification-tests") {
-  deps = [
-    ":mock-health-verification_test",
-    "//src/lib/fuchsia",
-  ]
+bazel_test_suite("mock-health-verification-tests") {
+  target_tests = [ "//src/sys/pkg/testing/mock-health-verification:mock-health-verification-tests" ]
 }
 
 group("hermetic_tests") {
   testonly = true
-  deps = [
-    ":mock-health-verification-tests",
-    "//src/lib/fuchsia",
-  ]
+  deps = [ ":mock-health-verification-tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -48,7 +42,6 @@ rustc_library("mock-health-verification") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  test_deps = [ "//src/lib/fuchsia" ]
   visibility = [
     ":*",
     "//src/sys/pkg/bin/system-update-committer:*",
@@ -58,7 +51,6 @@ rustc_library("mock-health-verification") {
     "//src/sys/pkg/tests/system-update-committer:*",
     "//vendor/google/*",
   ]
-  with_unit_tests = true
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
