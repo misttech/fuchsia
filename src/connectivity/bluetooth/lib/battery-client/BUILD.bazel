@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "battery-client",
+    srcs = [
+        "src/error.rs",
+        "src/lib.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:derivative"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/connectivity/bluetooth:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "battery-client_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":battery-client",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/lib/async-utils",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "battery-client-tests",
+    package_name = "battery-client-tests",
+    unit_tests = [":battery-client_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
