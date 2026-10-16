@@ -546,6 +546,9 @@ pub struct RustRescheduleResult {
     pub next_thread: *mut Thread,
 }
 
+/// Fixed-point type of the `Affine` slope.
+pub type Slope = FastFixed<i64, { Affine::K_PRECISION_BITS }>;
+
 /// `Affine` performs simple affine transformations between monotonic and variable timelines for
 /// variable bandwidth scheduling.
 #[repr(C)]
@@ -553,7 +556,73 @@ pub struct RustRescheduleResult {
 pub struct Affine {
     pub monotonic_reference_time: SchedTime,
     pub variable_reference_time: SchedTime,
-    pub slope: FastFixed<i64, 10>,
+    pub slope: Slope,
+}
+
+impl Default for Affine {
+    fn default() -> Self {
+        Self {
+            monotonic_reference_time: SchedTime::from_raw(0),
+            variable_reference_time: SchedTime::from_raw(0),
+            slope: Self::K_MAX_SLOPE,
+        }
+    }
+}
+
+impl Affine {
+    /// Number of fractional bits in `slope`. The C++ `kPrecision` is the
+    /// corresponding power of two, `1 << K_PRECISION_BITS`.
+    pub const K_PRECISION_BITS: usize = 10;
+    pub const K_MIN_SLOPE: Slope = Slope::from_raw(1);
+    pub const K_MAX_SLOPE: Slope = Slope::from_raw(1 << Self::K_PRECISION_BITS);
+
+    pub fn monotonic_to_variable(&self, monotonic: SchedTime) -> SchedTime {
+        self.multiply(monotonic - self.monotonic_reference_time) + self.variable_reference_time
+    }
+
+    pub fn variable_to_monotonic(&self, variable: SchedTime) -> SchedTime {
+        self.divide(variable - self.variable_reference_time) + self.monotonic_reference_time
+    }
+
+    pub fn monotonic_to_variable_in_place(&self, val: &mut SchedTime) {
+        *val = self.monotonic_to_variable(*val);
+    }
+
+    pub fn variable_to_monotonic_in_place(&self, val: &mut SchedTime) {
+        *val = self.variable_to_monotonic(*val);
+    }
+
+    pub fn change_slope_at_monotonic_time(&mut self, monotonic: SchedTime, slope: Slope) {
+        debug_assert!(slope >= Self::K_MIN_SLOPE && slope <= Self::K_MAX_SLOPE);
+        self.variable_reference_time = self.monotonic_to_variable(monotonic);
+        self.monotonic_reference_time = monotonic;
+        self.slope = slope;
+    }
+
+    pub fn snap(&mut self, monotonic: SchedTime, variable: SchedTime) {
+        self.monotonic_reference_time = core::cmp::max(monotonic, self.monotonic_reference_time);
+        self.variable_reference_time = core::cmp::max(variable, self.variable_reference_time);
+    }
+
+    fn multiply(&self, delta: SchedTime) -> SchedTime {
+        if self.slope != Self::K_MAX_SLOPE {
+            let shifted = delta.raw_value() / (1 << Self::K_PRECISION_BITS);
+            // Saturate like the `ffl` multiplication used by the C++ implementation.
+            let scaled = shifted.saturating_mul(self.slope.raw_value());
+            return SchedTime::from_raw(scaled);
+        }
+        delta
+    }
+
+    fn divide(&self, delta: SchedTime) -> SchedTime {
+        if self.slope != Self::K_MAX_SLOPE {
+            let scaled = delta.raw_value() / self.slope.raw_value();
+            // Saturate like the `ffl` multiplication used by the C++ implementation.
+            let shifted = scaled.saturating_mul(1 << Self::K_PRECISION_BITS);
+            return SchedTime::from_raw(shifted);
+        }
+        delta
+    }
 }
 
 /// Represents the key deadline scheduler parameters using fixed-point types.
@@ -2858,6 +2927,141 @@ impl Scheduler {
             "CPU" => Self::round_1000(rate)
         );
     }
+
+    /// Converts a time from the monotonic timeline to the variable timeline.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn monotonic_to_variable(&self, monotonic: SchedTime) -> SchedTime {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `fair_affine_transform`.
+        unsafe { (*self.state.get()).fair_affine_transform.monotonic_to_variable(monotonic) }
+    }
+
+    /// Converts a time from the variable timeline to the monotonic timeline.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn variable_to_monotonic(&self, variable: SchedTime) -> SchedTime {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `fair_affine_transform`.
+        unsafe { (*self.state.get()).fair_affine_transform.variable_to_monotonic(variable) }
+    }
+
+    /// Converts a time from the monotonic timeline to the variable timeline in place.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn monotonic_to_variable_in_place(&self, ref_time: &mut SchedTime) {
+        // SAFETY: The caller holds `queue_lock_`.
+        *ref_time = unsafe { self.monotonic_to_variable(*ref_time) };
+    }
+
+    /// Converts a time from the variable timeline to the monotonic timeline in place.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn variable_to_monotonic_in_place(&self, ref_time: &mut SchedTime) {
+        // SAFETY: The caller holds `queue_lock_`.
+        *ref_time = unsafe { self.variable_to_monotonic(*ref_time) };
+    }
+
+    /// Sets the fair period and updates its cached reciprocal.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn set_fair_period(&self, period: SchedDuration) {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to
+        // `fair_period` and `reciprocal_fair_period`.
+        unsafe {
+            let state = self.state.get();
+            (*state).fair_period = period;
+            (*state).reciprocal_fair_period =
+                SchedUtilization::from(SchedDuration::from_raw(1) / period);
+        }
+    }
+
+    /// Evaluates the fair bandwidth demand and updates the period scale, preventing fair bandwidth
+    /// time slices from becoming too small, and causing thrashing, by ensuring that threads with
+    /// the minimum weight in the queue get at least the minimum capacity.
+    ///
+    /// To guarantee that a fair bandwidth thread receives at least a minimum capacity, the
+    /// following relationship must hold:
+    ///
+    ///   w_min / w_total >= C_min / T_default
+    ///
+    /// Where:
+    ///
+    ///   w_min is the minimum weight of threads in the run queue and the active thread.
+    ///   w_total is the total weight of the run queue.
+    ///   C_min is the minimum capacity.
+    ///   T_default is the default fair task period.
+    ///
+    /// If this relationship does not hold, a scale factor is applied to expand the fair task period
+    /// and ensure that tasks with the minimum weight receive the minimum capacity:
+    ///
+    ///   s = C_min / T_default * w_total / w_min
+    ///
+    /// # Safety
+    /// The caller must hold this scheduler's `queue_lock_`. On the C++ side
+    /// `rust_state_` is `TA_GUARDED(queue_lock_)`, so holding the lock gives this
+    /// call exclusive access to the fair run queue and `fair_affine_transform`
+    /// for its duration.
+    unsafe fn update_fair_bandwidth_period(&self, now: SchedTime) {
+        // SAFETY: The caller holds `queue_lock_`, which guards `active_thread_weight`.
+        let active_thread_weight = unsafe { (*self.state.get()).active_thread_weight };
+
+        // Returns the minimum weight of the run queue, including the active thread.
+        let get_min_weight = || {
+            // SAFETY: The caller holds `queue_lock_`, so the fair run queue cannot
+            // change while this shared reference is live.
+            let fair_run_queue = unsafe { &*self.fair_run_queue() };
+            if fair_run_queue.is_empty() {
+                return active_thread_weight;
+            }
+            // Note that `root_cursor()` is only meaningful for a non-empty tree: the root
+            // pointer of an empty `WavlTree` is null rather than the sentinel.
+            let root = fair_run_queue.root_cursor().get().expect("non-empty run queue has a root");
+            // SAFETY: `root` is a live thread enqueued on this scheduler, and `queue_lock_`
+            // is held, which guards its `subtree_invariants`.
+            unsafe {
+                self.assert_in_run_queue(root);
+                core::cmp::min(
+                    active_thread_weight,
+                    (*cpp_thread_get_scheduler_state(core::ptr::from_ref(root).cast_mut()))
+                        .subtree_invariants
+                        .min_weight,
+                )
+            }
+        };
+
+        let min_weight = get_min_weight();
+        // SAFETY: Forwarded from the caller.
+        let weight_total = unsafe { self.weight_total() };
+
+        // `fair_affine_transform` is guarded by `queue_lock_`, which the caller holds.
+        // Access it through a raw pointer so that no reference is live across the
+        // calls to `set_fair_period`.
+        let affine = unsafe { &raw mut (*self.state.get()).fair_affine_transform };
+
+        if min_weight < weight_total * K_MIN_FAIR_UTILIZATION {
+            let min_utilization = SchedUtilization::from(min_weight / weight_total);
+            let slope = Slope::from(min_utilization / K_MIN_FAIR_UTILIZATION);
+            let slope = core::cmp::max(slope, Affine::K_MIN_SLOPE);
+
+            // SAFETY: `queue_lock_` is held (see above).
+            if unsafe { (*affine).slope } != slope {
+                // SAFETY: As above.
+                unsafe { (*affine).change_slope_at_monotonic_time(now, slope) };
+                let fair_period = SchedDuration::from(K_DEFAULT_FAIR_PERIOD / slope);
+                // SAFETY: Forwarded from the caller.
+                unsafe { self.set_fair_period(fair_period) };
+            }
+        } else if unsafe { (*affine).slope } != Affine::K_MAX_SLOPE {
+            // SAFETY: `queue_lock_` is held (see above).
+            unsafe { (*affine).change_slope_at_monotonic_time(now, Affine::K_MAX_SLOPE) };
+            // SAFETY: Forwarded from the caller.
+            unsafe { self.set_fair_period(K_DEFAULT_FAIR_PERIOD) };
+        }
+    }
 }
 
 // Traits implementations to adapt the WavlTree to Thread with node state in the
@@ -3274,6 +3478,19 @@ pub unsafe extern "C" fn rust_kernel_run_queue_root(rq: *const RunQueue) -> *mut
     if fbl::is_sentinel_ptr(root) { core::ptr::null_mut() } else { root }
 }
 
+/// Updates `sched`'s fair bandwidth period. See `Scheduler::update_fair_bandwidth_period`.
+///
+/// # Safety
+/// `sched` must point to a valid `Scheduler` whose `queue_lock_` is held by the current CPU.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_update_fair_bandwidth_period(
+    sched: *const Scheduler,
+    now: SchedTime,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).update_fair_bandwidth_period(now) };
+}
+
 /// Initializes a run queue in-place.
 ///
 /// # Safety
@@ -3557,4 +3774,98 @@ pub unsafe extern "C" fn rust_scheduler_enable_new_wakeup_accounting() -> bool {
 pub unsafe extern "C" fn rust_scheduler_validate_invariants_unconditional(sched: *const Scheduler) {
     // SAFETY: Forwarded from the caller.
     unsafe { (*sched).validate_invariants_unconditional() };
+}
+
+/// Kernel unit tests for Rust scheduler components.
+#[cfg(ktest)]
+#[unittest::suite(name = "scheduler_rust")]
+mod tests {
+    use super::{Affine, SchedTime, Slope};
+
+    // The kernel-side counterpart of `//zircon/kernel/lib/sched/affine-tests.cc`.
+    /// Verifies `Affine` timeline transformation properties.
+    #[test]
+    fn test_affine_properties() {
+        let error_limit: i64 = 1i64 << Affine::K_PRECISION_BITS;
+        let mut affine = Affine::default();
+
+        unittest::expect_eq!(affine.slope.raw_value(), Affine::K_MAX_SLOPE.raw_value());
+        unittest::expect_eq!(affine.monotonic_reference_time.raw_value(), 0);
+        unittest::expect_eq!(affine.variable_reference_time.raw_value(), 0);
+
+        let min_time = SchedTime::min();
+        let max_time = SchedTime::max();
+
+        // The timelines should be identical in the initial state.
+        unittest::expect_eq!(
+            affine.monotonic_to_variable(min_time).raw_value(),
+            min_time.raw_value()
+        );
+        unittest::expect_eq!(
+            affine.monotonic_to_variable(max_time).raw_value(),
+            max_time.raw_value()
+        );
+        unittest::expect_eq!(
+            affine.variable_to_monotonic(min_time).raw_value(),
+            min_time.raw_value()
+        );
+        unittest::expect_eq!(
+            affine.variable_to_monotonic(max_time).raw_value(),
+            max_time.raw_value()
+        );
+
+        // Deterministic PRNG (xorshift64*) for reproducible property testing in-kernel.
+        let mut rng_state: u64 = 0x853c_49e6_748f_ea9b ^ (Affine::K_PRECISION_BITS as u64);
+        let mut next_u64 = || -> u64 {
+            rng_state ^= rng_state >> 12;
+            rng_state ^= rng_state << 25;
+            rng_state ^= rng_state >> 27;
+            rng_state.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        };
+
+        for _ in 0..256 {
+            let x = SchedTime::from_raw(next_u64() as i64);
+            unittest::expect_eq!(affine.monotonic_to_variable(x).raw_value(), x.raw_value());
+            unittest::expect_eq!(affine.variable_to_monotonic(x).raw_value(), x.raw_value());
+        }
+
+        let interval_count: i64 = 200;
+        let interval_size = max_time.raw_value() / interval_count;
+        let min_slope_raw = Affine::K_MIN_SLOPE.raw_value();
+        let max_slope_raw = Affine::K_MAX_SLOPE.raw_value();
+        let slope_span = (max_slope_raw - min_slope_raw + 1) as u64;
+
+        let mut max_error: i64 = 0;
+        for i in 0..interval_count {
+            let interval_start = i * interval_size;
+            let interval_end = interval_start + interval_size - 1;
+            let span = (interval_end - interval_start + 1) as u64;
+            let reference_time = SchedTime::from_raw(interval_start + (next_u64() % span) as i64);
+
+            let slope = Slope::from_raw(min_slope_raw + (next_u64() % slope_span) as i64);
+
+            let previous_affine = affine;
+            affine.change_slope_at_monotonic_time(reference_time, slope);
+
+            unittest::expect_eq!(
+                previous_affine.monotonic_to_variable(reference_time).raw_value(),
+                affine.monotonic_to_variable(reference_time).raw_value()
+            );
+
+            let rem_span = (interval_end - reference_time.raw_value() + 1) as u64;
+            for _ in 0..8 {
+                let monotonic = SchedTime::from_raw(
+                    reference_time.raw_value() + (next_u64() % rem_span) as i64,
+                );
+                let variable_from_monotonic = affine.monotonic_to_variable(monotonic);
+                let monotonic_from_variable = affine.variable_to_monotonic(variable_from_monotonic);
+                let error = (monotonic_from_variable - monotonic).raw_value().abs();
+                if error > max_error {
+                    max_error = error;
+                }
+            }
+        }
+
+        unittest::expect_le!(max_error, error_limit);
+    }
 }

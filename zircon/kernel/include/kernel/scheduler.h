@@ -273,6 +273,7 @@ void cpp_scheduler_save_state_list_move(Scheduler* sched,
                                         ffi::Uninitialized<Thread::SaveStateList>* holder);
 Thread* cpp_save_state_list_pop(Thread::SaveStateList* holder);
 void cpp_save_state_list_destroy(Thread::SaveStateList* holder);
+void rust_scheduler_update_fair_bandwidth_period(const Scheduler* sched, SchedTime now);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.

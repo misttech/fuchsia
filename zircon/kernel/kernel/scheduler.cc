@@ -2917,58 +2917,8 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
       KTRACE_END_SCOPE(("start time", state->start_time_), ("finish time", state->finish_time_));
 }
 
-// Evaluates the fair bandwidth demand and updates the period scale, preventing fair bandwidth
-// time slices from becoming too small, and causing thrashing, by ensuring that threads with the
-// minimum weight in the queue get at least the minimum capacity.
-//
-// To guarantee that a fair bandwidth thread receives at least a minimum capacity, the following
-// relationship must hold:
-//
-//   w_min / w_total >= C_min / T_default
-//
-// Where:
-//
-//   w_min is the minimum weight of threads in the run queue and the active thread.
-//   w_total is the total weight of the run queue.
-//   C_min is the minimum capacity.
-//   T_default is the default fair task period.
-//
-// If this relationship does not hold, a scale factor is applied to expand the fair task period
-// and ensure that tasks with the minimum weight receive the minimum capacity:
-//
-//   s = C_min / T_default * w_total / w_min
-//
 void Scheduler::UpdateFairBandwidthPeriod(SchedTime now) {
-  // Returns the minimum weight of the run queue, including the active thread.
-  const auto get_min_weight = [this]() TA_REQ(queue_lock_) {
-    if (!rust_state_.fair_run_queue.is_empty()) {
-      const Thread& root = *rust_state_.fair_run_queue.croot();
-      AssertInRunQueue(root);
-      return ktl::min(rust_state_.active_thread_weight,
-                      root.scheduler_state().subtree_invariants_.min_weight);
-    }
-    return rust_state_.active_thread_weight;
-  };
-
-  const SchedWeight min_weight = get_min_weight();
-
-  if (min_weight < rust_state_.weight_total * kMinFairUtilization) {
-    const SchedUtilization min_utilization = min_weight / rust_state_.weight_total;
-    const Affine::Slope slope =
-        ktl::max<Affine::Slope>(min_utilization / kMinFairUtilization, Affine::kMinSlope);
-
-    if (rust_state_.fair_affine_transform.slope() != slope) {
-      rust_state_.fair_affine_transform.ChangeSlopeAtMonotonicTime(now, slope);
-      rust_state_.fair_period = kDefaultFairPeriod / slope;
-      rust_state_.reciprocal_fair_period = 1 / rust_state_.fair_period;
-    }
-  } else {
-    if (rust_state_.fair_affine_transform.slope() != Affine::kMaxSlope) {
-      rust_state_.fair_affine_transform.ChangeSlopeAtMonotonicTime(now, Affine::kMaxSlope);
-      rust_state_.fair_period = kDefaultFairPeriod;
-      rust_state_.reciprocal_fair_period = kReciprocalDefaultFairPeriod;
-    }
-  }
+  rust_scheduler_update_fair_bandwidth_period(this, now);
 }
 
 void Scheduler::AdjustFairBandwidth(Thread* thread, SchedTime now) {
