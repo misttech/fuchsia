@@ -7,6 +7,11 @@
 
 use anyhow::{Context, Error, anyhow, bail};
 use bstr::BString;
+use fidl_fuchsia_ui_composition as fuicomposition;
+use fidl_fuchsia_ui_input as fuiinput;
+use fidl_fuchsia_ui_input3 as fuiinput3;
+use fidl_fuchsia_ui_policy as fuipolicy;
+use fidl_fuchsia_ui_views as fuiviews;
 use starnix_consent_sync::init as consent_sync_init;
 use starnix_core::bpf::fs::BpfFs;
 use starnix_core::device::kobject::DeviceMetadata;
@@ -16,7 +21,7 @@ use starnix_core::fs::devtmpfs::dev_tmp_fs;
 use starnix_core::fs::fuchsia::{RemoteBundle, new_remote_fs, new_remote_vol};
 use starnix_core::fs::sysfs::sys_fs;
 use starnix_core::fs::tmpfs::tmp_fs;
-use starnix_core::task::Kernel;
+use starnix_core::task::{Kernel, ThreadLockupDetector};
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pipe::register_pipe_fs;
 use starnix_logging::log_error;
@@ -30,15 +35,15 @@ pub use starnix_modules_devpts::create_main_and_replica;
 use starnix_modules_devpts::{dev_pts_fs, tty_device_init};
 use starnix_modules_ext4::ExtFilesystem;
 use starnix_modules_fastrpc::fastrpc_device_init;
-pub use starnix_modules_framebuffer::{AspectRatio, Framebuffer};
+pub use starnix_modules_framebuffer::Framebuffer;
 use starnix_modules_functionfs::FunctionFs;
 use starnix_modules_fuse::{new_fuse_fs, new_fusectl_fs, open_fuse_device};
 use starnix_modules_gpu::gpu_device_init;
 use starnix_modules_gralloc::gralloc_device_init;
 use starnix_modules_hvdcp_opti::hvdcp_opti_init;
 use starnix_modules_inotify::inotify::inotify_init;
-pub use starnix_modules_input::uinput::register_uinput_device;
-pub use starnix_modules_input::{EventProxyMode, StartRelaysArgs, new_input_relay};
+use starnix_modules_input::uinput::register_uinput_device;
+use starnix_modules_input::{EventProxyMode, StartRelaysArgs, new_input_relay};
 use starnix_modules_kgsl::kgsl_device_init;
 pub use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_loop::{create_loop_control_device, loop_device_init};
@@ -52,7 +57,7 @@ use starnix_modules_procfs::proc_fs;
 use starnix_modules_pstore::pstore_fs;
 use starnix_modules_rtc::rtc_device_init;
 use starnix_modules_selinuxfs::selinux_fs;
-pub use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
+use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
 use starnix_modules_tracefs::trace_fs;
 use starnix_modules_tun::DevTun;
 use starnix_modules_wakeup_test::register_wakeup_test_device;
@@ -73,6 +78,7 @@ const DEFAULT_MODULES: &[&str] =
 pub fn validate_module(name: &str, args: Option<&[&str]>) -> Result<(), Error> {
     let validator: Option<fn(&[&str]) -> Result<(), Error>> = match name {
         "boot_notifier" => Some(starnix_modules_boot::validate_args),
+        "framebuffer" => Some(starnix_modules_framebuffer::validate_args),
         "magma" => Some(starnix_modules_magma::validate_args),
         "perfetto" => Some(starnix_modules_perfetto_consumer::validate_args),
         "thermal" => Some(starnix_modules_thermal::validate_args),
@@ -135,6 +141,12 @@ impl Modules {
                 device_mapper_init(kernel)?;
             }
             "fastrpc" => fastrpc_device_init(kernel),
+            "framebuffer" => init_framebuffer_module(
+                kernel,
+                args,
+                self.enable_visual_debugging,
+                &self.initial_view_id_annotation,
+            )?,
             "gfxstream" => gpu_device_init(kernel),
             // Note: `google_odpm` and `hvdcp_opti` both statically register `iio:device0`;
             // `Modules::validate` rejects enabling both simultaneously.
@@ -204,17 +216,30 @@ impl Modules {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Modules {
     entries: BTreeMap<String, Option<Vec<String>>>,
+    enable_visual_debugging: bool,
+    initial_view_id_annotation: String,
 }
 
 impl Default for Modules {
     fn default() -> Self {
         let entries =
             DEFAULT_MODULES.iter().map(|&module| (module.to_string(), Some(Vec::new()))).collect();
-        Self { entries }
+        Self { entries, enable_visual_debugging: false, initial_view_id_annotation: String::new() }
     }
 }
 
 impl Modules {
+    /// Sets container-level visual debugging and view annotation options used when the
+    /// `framebuffer` module is initialized.
+    pub fn set_framebuffer_config(
+        &mut self,
+        enable_visual_debugging: bool,
+        initial_view_id_annotation: String,
+    ) {
+        self.enable_visual_debugging = enable_visual_debugging;
+        self.initial_view_id_annotation = initial_view_id_annotation;
+    }
+
     /// Parses and registers a single module specification string (`"<module> [args...]"` or
     /// `"-<module>"`).
     pub fn add_spec(&mut self, spec: &str) -> Result<(), Error> {
@@ -330,6 +355,83 @@ impl Modules {
         }
         Ok(())
     }
+}
+
+fn init_framebuffer_module(
+    kernel: &Kernel,
+    args: &[&str],
+    enable_visual_debugging: bool,
+    initial_view_id_annotation: &str,
+) -> Result<(), Error> {
+    let framebuffer = Framebuffer::device_init(
+        kernel,
+        args,
+        enable_visual_debugging,
+        initial_view_id_annotation.to_string(),
+    )
+    .context("initializing framebuffer")?;
+
+    let (touch_source_client, touch_source_server) = fidl::endpoints::create_endpoints();
+    let (mouse_source_client, mouse_source_server) = fidl::endpoints::create_endpoints();
+    let view_bound_protocols = fuicomposition::ViewBoundProtocols {
+        touch_source_v2: Some(touch_source_server),
+        mouse_source_v2: Some(mouse_source_server),
+        ..Default::default()
+    };
+    let view_identity = fuiviews::ViewIdentityOnCreation::from(
+        fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair"),
+    );
+    let view_ref = fuchsia_scenic::duplicate_view_ref(&view_identity.view_ref)
+        .expect("Failed to dup view ref.");
+    let keyboard =
+        fuchsia_component::client::connect_to_protocol_sync::<fuiinput3::KeyboardMarker>()
+            .expect("Failed to connect to keyboard");
+    let registry_proxy = fuchsia_component::client::connect_to_protocol_sync::<
+        fuipolicy::DeviceListenerRegistryMarker,
+    >()
+    .context("Failed to connect to policy device listener registry")?;
+    let device_listener_registry = fuchsia_component::client::connect_to_protocol_sync::<
+        fuiinput::DeviceListenerRegistryMarker,
+    >()
+    .context("Failed to connect to device listener registry")?;
+
+    // `view_identity` and `view_bound_protocols` must be populated before
+    // `Framebuffer::start_server` is called.
+    *framebuffer.view_identity.lock() = Some(view_identity);
+    *framebuffer.view_bound_protocols.lock() = Some(view_bound_protocols);
+
+    let (display_width, display_height) = {
+        let framebuffer_info = framebuffer.info.read();
+        (framebuffer_info.xres as i32, framebuffer_info.yres as i32)
+    };
+
+    let (input_events_relay, input_events_relay_handle) = new_input_relay();
+    input_events_relay.start_relays(
+        kernel,
+        StartRelaysArgs {
+            event_proxy_mode: EventProxyMode::WakeContainer,
+            touch_source_client_end: touch_source_client,
+            keyboard_proxy: keyboard,
+            mouse_source_client_end: mouse_source_client,
+            view_ref,
+            registry_proxy,
+            device_listener_registry: Some(device_listener_registry),
+            display_width,
+            display_height,
+        },
+    );
+
+    register_uinput_device(kernel, input_events_relay_handle)?;
+
+    // Channel we use to inform the relay of changes to `touch_standby`
+    let (touch_standby_sender, touch_standby_receiver) =
+        ThreadLockupDetector::tracked_channel::<bool>();
+    let touch_policy_device = TouchPowerPolicyDevice::new(touch_standby_sender);
+    touch_policy_device.clone().register(kernel);
+    touch_policy_device.start_relay(kernel, touch_standby_receiver);
+
+    framebuffer.start_server(kernel, /* incoming_dir = */ None);
+    Ok(())
 }
 
 /// Initializes common devices in `Kernel`.

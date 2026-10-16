@@ -4,24 +4,15 @@
 
 use crate::ContainerStartInfo;
 use anyhow::{Context, Error, anyhow};
-use fidl_fuchsia_ui_composition as fuicomposition;
-use fidl_fuchsia_ui_input as fuiinput;
-use fidl_fuchsia_ui_input3 as fuiinput3;
-use fidl_fuchsia_ui_policy as fuipolicy;
-use fidl_fuchsia_ui_views as fuiviews;
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::block::add_mmc_block_device;
 use starnix_core::mm::MlockPinFlavor;
-use starnix_core::task::{Kernel, KernelFeatures, SystemLimits, ThreadLockupDetector};
+use starnix_core::task::{Kernel, KernelFeatures, SystemLimits};
 use starnix_features::Feature;
-use starnix_modules::{
-    AspectRatio, EventProxyMode, Framebuffer, Modules, StartRelaysArgs, TouchPowerPolicyDevice,
-    new_input_relay, register_uinput_device, validate_module,
-};
-use std::sync::Arc;
-
+use starnix_modules::{Framebuffer, Modules, validate_module};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
+use std::sync::Arc;
 
 /// A collection of parsed features, and their arguments.
 #[derive(Default, Debug)]
@@ -34,12 +25,6 @@ pub struct Features {
 
     /// Limits value passed to the kernel during the initialization.
     pub system_limits: SystemLimits,
-
-    /// Whether to enable a framebuffer device.
-    pub framebuffer: bool,
-
-    /// Display aspect ratio.
-    pub aspect_ratio: Option<AspectRatio>,
 
     /// This controls whether or not the default framebuffer background is black or colorful, to
     /// aid debugging.
@@ -116,8 +101,6 @@ impl Features {
                     },
                 system_limits,
                 selinux,
-                framebuffer,
-                aspect_ratio,
                 enable_visual_debugging,
                 container,
                 test_data,
@@ -137,20 +120,10 @@ impl Features {
                     "initial_view_id_annotation",
                     initial_view_id_annotation.as_str(),
                 );
-                inspect_node.record_bool("framebuffer", *framebuffer);
                 inspect_node.record_bool("container", *container);
                 inspect_node.record_bool("test_data", *test_data);
                 inspect_node.record_bool("custom_artifacts", *custom_artifacts);
                 inspect_node.record_bool("android_serialno", *android_serialno);
-                inspect_node.record_string(
-                    "aspect_ratio",
-                    aspect_ratio
-                        .as_ref()
-                        .map(|aspect_ratio| {
-                            format!("width: {} height: {}", aspect_ratio.width, aspect_ratio.height)
-                        })
-                        .unwrap_or_default(),
-                );
                 inspect_node.record_bool("rootfs_rw", *rootfs_rw);
                 inspect_node.record_bool("android_bootreason", *android_bootreason);
                 inspect_node.record_string("ping_group_range", {
@@ -222,6 +195,7 @@ pub fn parse_features(
     let mut modules = Modules::default();
 
     let mut legacy_boot_notifier_cpu_boost: Option<String> = None;
+    let mut legacy_aspect_ratio: Option<String> = None;
 
     for entry in start_info
         .program
@@ -235,16 +209,7 @@ pub fn parse_features(
             (Feature::AndroidSerialno, _) => features.android_serialno = true,
             (Feature::AndroidBootreason, _) => features.android_bootreason = true,
             (Feature::AspectRatio, Some(args)) => {
-                let e = anyhow!("Invalid aspect_ratio: {:?}", args);
-                let components: Vec<_> = args.split(':').collect();
-                if components.len() != 2 {
-                    return Err(e);
-                }
-                let width: u32 =
-                    components[0].parse().map_err(|_| anyhow!("Invalid aspect ratio width"))?;
-                let height: u32 =
-                    components[1].parse().map_err(|_| anyhow!("Invalid aspect ratio height"))?;
-                features.aspect_ratio = Some(AspectRatio { width, height });
+                legacy_aspect_ratio = Some(args);
             }
             (Feature::AspectRatio, None) => {
                 return Err(anyhow!(
@@ -259,6 +224,7 @@ pub fn parse_features(
                 | Feature::BootNotifier
                 | Feature::DataCollectionConsentSync
                 | Feature::Fastrpc
+                | Feature::Framebuffer
                 | Feature::Gfxstream
                 | Feature::GoogleOdpm
                 | Feature::Gralloc
@@ -279,7 +245,6 @@ pub fn parse_features(
                     "boot_notifier_cpu_boost feature must have an argument (e.g. \"boot_notifier_cpu_boost:60\")"
                 ));
             }
-            (Feature::Framebuffer, _) => features.framebuffer = true,
             (Feature::MagmaSupportedVendors, Some(arg)) => {
                 modules.add_with_args("magma", vec!["--supported-vendors".to_string(), arg]);
             }
@@ -360,6 +325,13 @@ pub fn parse_features(
         }
     }
 
+    if let Some(ratio) = legacy_aspect_ratio {
+        validate_module("framebuffer", Some(&["--aspect-ratio", &ratio]))?;
+        if modules.args("framebuffer") == Some(&[]) {
+            modules.add_with_args("framebuffer", vec!["--aspect-ratio".to_string(), ratio]);
+        }
+    }
+
     modules.validate()?;
 
     if *ui_visual_debugging_level > 0 {
@@ -391,88 +363,16 @@ pub fn parse_features(
     features.kernel.cached_zx_map_info_bytes = *cached_zx_map_info_bytes;
     features.kernel.dirent_cache_size = *dirent_cache_size;
     features.initial_view_id_annotation = initial_view_id_annotation.clone();
+    modules.set_framebuffer_config(
+        features.enable_visual_debugging,
+        features.initial_view_id_annotation.clone(),
+    );
 
     Ok((features, modules))
 }
 
 /// Runs container-level kernel features enabled in `features`.
 pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Result<(), Error> {
-    if features.framebuffer {
-        let framebuffer = Framebuffer::device_init(
-            kernel,
-            features.aspect_ratio,
-            features.enable_visual_debugging,
-            features.initial_view_id_annotation.clone(),
-        )
-        .context("initializing framebuffer")?;
-
-        let (touch_source_client, touch_source_server) = fidl::endpoints::create_endpoints();
-        let (mouse_source_client, mouse_source_server) = fidl::endpoints::create_endpoints();
-        let view_bound_protocols = fuicomposition::ViewBoundProtocols {
-            touch_source_v2: Some(touch_source_server),
-            mouse_source_v2: Some(mouse_source_server),
-            ..Default::default()
-        };
-        let view_identity = fuiviews::ViewIdentityOnCreation::from(
-            fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair"),
-        );
-        let view_ref = fuchsia_scenic::duplicate_view_ref(&view_identity.view_ref)
-            .expect("Failed to dup view ref.");
-        let keyboard =
-            fuchsia_component::client::connect_to_protocol_sync::<fuiinput3::KeyboardMarker>()
-                .expect("Failed to connect to keyboard");
-        let registry_proxy = fuchsia_component::client::connect_to_protocol_sync::<
-            fuipolicy::DeviceListenerRegistryMarker,
-        >()
-        .context("Failed to connect to policy device listener registry")?;
-        let device_listener_registry = fuchsia_component::client::connect_to_protocol_sync::<
-            fuiinput::DeviceListenerRegistryMarker,
-        >()
-        .context("Failed to connect to device listener registry")?;
-
-        // These need to be set before `Framebuffer::start_server` is called.
-        // `Framebuffer::start_server` is only called when the `framebuffer` component feature is
-        // enabled. The container is the runner for said components, and `run_container_features`
-        // is performed before the Container is fully initialized. Therefore, it's safe to set
-        // these values at this point.
-        //
-        // In the future, we would like to avoid initializing a framebuffer unconditionally on the
-        // Kernel, at which point this logic will need to change.
-        *framebuffer.view_identity.lock() = Some(view_identity);
-        *framebuffer.view_bound_protocols.lock() = Some(view_bound_protocols);
-
-        let (display_width, display_height) = {
-            let framebuffer_info = framebuffer.info.read();
-            (framebuffer_info.xres as i32, framebuffer_info.yres as i32)
-        };
-
-        let (input_events_relay, input_events_relay_handle) = new_input_relay();
-        input_events_relay.start_relays(
-            &kernel,
-            StartRelaysArgs {
-                event_proxy_mode: EventProxyMode::WakeContainer,
-                touch_source_client_end: touch_source_client,
-                keyboard_proxy: keyboard,
-                mouse_source_client_end: mouse_source_client,
-                view_ref,
-                registry_proxy,
-                device_listener_registry: Some(device_listener_registry),
-                display_width,
-                display_height,
-            },
-        );
-
-        register_uinput_device(kernel, input_events_relay_handle)?;
-
-        // Channel we use to inform the relay of changes to `touch_standby`
-        let (touch_standby_sender, touch_standby_receiver) =
-            ThreadLockupDetector::tracked_channel::<bool>();
-        let touch_policy_device = TouchPowerPolicyDevice::new(touch_standby_sender);
-        touch_policy_device.clone().register(kernel);
-        touch_policy_device.start_relay(&kernel, touch_standby_receiver);
-
-        framebuffer.start_server(kernel, None);
-    }
     if features.unified_tracing {
         kernel.trace_event_manager.init_trace_observer(kernel);
     }
@@ -532,6 +432,7 @@ mod tests {
             vec![
                 "ashmem".to_string(),
                 "boot_notifier --cpu-boost-secs 60".to_string(),
+                "framebuffer --aspect-ratio=9:16".to_string(),
                 "magma --supported-vendors 0x13B5,0x5143,0x8086".to_string(),
                 "perfetto --socket-path /dev/socket/traced_consumer".to_string(),
                 "thermal --cooling cpu,fcc=8".to_string(),
@@ -546,6 +447,10 @@ mod tests {
         assert_eq!(
             modules.args("boot_notifier"),
             Some(&["--cpu-boost-secs".to_string(), "60".to_string()][..])
+        );
+        assert_eq!(
+            modules.args("framebuffer"),
+            Some(&["--aspect-ratio".to_string(), "9:16".to_string()][..])
         );
         assert_eq!(
             modules.args("magma"),
@@ -568,6 +473,8 @@ mod tests {
                 "ashmem".to_string(),
                 "boot_notifier".to_string(),
                 "boot_notifier_cpu_boost:45".to_string(),
+                "framebuffer".to_string(),
+                "aspect_ratio:16:9".to_string(),
                 "magma_supported_vendors:0x13B5,0x8086".to_string(),
                 "perfetto:/dev/socket/traced_consumer".to_string(),
                 "thermal".to_string(),
@@ -582,6 +489,10 @@ mod tests {
         assert_eq!(
             modules.args("boot_notifier"),
             Some(&["--cpu-boost-secs".to_string(), "45".to_string()][..])
+        );
+        assert_eq!(
+            modules.args("framebuffer"),
+            Some(&["--aspect-ratio".to_string(), "16:9".to_string()][..])
         );
         assert_eq!(
             modules.args("magma"),
@@ -622,6 +533,8 @@ mod tests {
             vec![
                 "boot_notifier --cpu-boost-secs 60".to_string(),
                 "boot_notifier".to_string(),
+                "framebuffer --aspect-ratio=9:16".to_string(),
+                "framebuffer".to_string(),
                 "magma --supported-vendors 0x13B5".to_string(),
                 "magma".to_string(),
                 "thermal --cooling cpu,fcc=8".to_string(),
@@ -634,6 +547,10 @@ mod tests {
         assert_eq!(
             modules.args("boot_notifier"),
             Some(&["--cpu-boost-secs".to_string(), "60".to_string()][..])
+        );
+        assert_eq!(
+            modules.args("framebuffer"),
+            Some(&["--aspect-ratio".to_string(), "9:16".to_string()][..])
         );
         assert_eq!(
             modules.args("magma"),
@@ -692,12 +609,15 @@ mod tests {
             vec![
                 "boot_notifier".to_string(),
                 "boot_notifier_cpu_boost:45".to_string(),
+                "framebuffer".to_string(),
+                "aspect_ratio:16:9".to_string(),
                 "magma_supported_vendors:0x13B5".to_string(),
                 "perfetto:/dev/socket/old".to_string(),
                 "cooling:cpu".to_string(),
             ],
             vec![
                 "boot_notifier --cpu-boost-secs 120".to_string(),
+                "framebuffer --aspect-ratio=9:16".to_string(),
                 "magma --supported-vendors 0x8086".to_string(),
                 "perfetto --socket-path /dev/socket/new".to_string(),
                 "thermal --cooling fcc=8".to_string(),
@@ -709,6 +629,10 @@ mod tests {
         assert_eq!(
             modules.args("boot_notifier"),
             Some(&["--cpu-boost-secs".to_string(), "120".to_string()][..])
+        );
+        assert_eq!(
+            modules.args("framebuffer"),
+            Some(&["--aspect-ratio".to_string(), "9:16".to_string()][..])
         );
         assert_eq!(
             modules.args("magma"),
@@ -739,6 +663,9 @@ mod tests {
             "ashmem --unexpected",
             "boot_notifier --cpu-boost-secs=-1",
             "boot_notifier --unknown-flag",
+            "framebuffer --aspect-ratio=0:9",
+            "framebuffer --aspect-ratio=9:0",
+            "framebuffer --aspect-ratio=invalid",
             "magma --supported-vendors=not_hex",
             "perfetto --socket-path=",
             "thermal --cooling=",

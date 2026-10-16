@@ -7,6 +7,8 @@
 mod server;
 
 use crate::server::{FramebufferServer, init_viewport_scene, start_presentation_loop};
+use anyhow::anyhow;
+use argh::FromArgs;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_math as fmath;
 use fidl_fuchsia_ui_composition as fuicomposition;
@@ -50,10 +52,44 @@ fn get_display_size() -> Result<fmath::SizeU, Errno> {
     Ok(extent_in_px)
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AspectRatio {
-    pub width: u32,
-    pub height: u32,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct AspectRatio {
+    width: u32,
+    height: u32,
+}
+
+impl std::str::FromStr for AspectRatio {
+    type Err = anyhow::Error;
+
+    fn from_str(ratio: &str) -> Result<Self, Self::Err> {
+        let (width_str, height_str) =
+            ratio.split_once(':').ok_or_else(|| anyhow!("Invalid aspect_ratio: {ratio:?}"))?;
+        let width: u32 = width_str.parse().map_err(|_| anyhow!("Invalid aspect ratio width"))?;
+        let height: u32 = height_str.parse().map_err(|_| anyhow!("Invalid aspect ratio height"))?;
+        if width == 0 || height == 0 {
+            return Err(anyhow!("Aspect ratio dimensions must be non-zero: {ratio:?}"));
+        }
+        Ok(Self { width, height })
+    }
+}
+
+/// Configuration options for the `framebuffer` module.
+#[derive(FromArgs, Debug, Default)]
+struct FramebufferArgs {
+    /// display aspect ratio formatted as "width:height" (e.g. "9:16")
+    #[argh(option)]
+    aspect_ratio: Option<AspectRatio>,
+}
+
+fn parse_args(args: &[&str]) -> Result<Option<AspectRatio>, anyhow::Error> {
+    let parsed =
+        FramebufferArgs::from_args(&["framebuffer"], args).map_err(|e| anyhow!("{}", e.output))?;
+    Ok(parsed.aspect_ratio)
+}
+
+/// Validates `framebuffer` module configuration `args`.
+pub fn validate_args(args: &[&str]) -> Result<(), anyhow::Error> {
+    parse_args(args).map(|_| ())
 }
 
 pub struct Framebuffer {
@@ -68,18 +104,19 @@ pub struct Framebuffer {
 }
 
 impl Framebuffer {
-    /// Returns the current fraembuffer if one was created for this kernel.
+    /// Returns the current framebuffer if one was created for this kernel.
     pub fn get(kernel: &Kernel) -> Result<Arc<Self>, Errno> {
         kernel.expando.get_or_try_init(|| error!(EINVAL))
     }
 
-    /// Initialize the framebuffer device. Should only be called once per kernel.
+    /// Initializes the framebuffer device. Should only be called once per kernel.
     pub fn device_init(
         kernel: &Kernel,
-        aspect_ratio: Option<AspectRatio>,
+        args: &[&str],
         enable_visual_debugging: bool,
         initial_view_id_annotation: String,
-    ) -> Result<Arc<Framebuffer>, Errno> {
+    ) -> Result<Arc<Framebuffer>, anyhow::Error> {
+        let aspect_ratio = parse_args(args)?;
         let registry = &kernel.device_registry;
 
         let framebuffer = kernel.expando.get_or_try_init(|| {
