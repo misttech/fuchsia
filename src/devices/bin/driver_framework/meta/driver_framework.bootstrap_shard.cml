@@ -514,6 +514,7 @@
                 "fuchsia.hardware.nfc.Service",
                 "fuchsia.hardware.pci.DebugService",
                 "fuchsia.hardware.power.battery.Service",
+                "fuchsia.hardware.power.charger.DebugService",
                 "fuchsia.hardware.power.charger.Service",
                 "fuchsia.hardware.power.source.Service",
                 "fuchsia.hardware.power.suspend.SuspendService",
