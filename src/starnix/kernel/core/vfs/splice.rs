@@ -47,6 +47,9 @@ impl CopyOperand {
         user_offset: OffsetPtr,
     ) -> Result<Self, Errno> {
         let file = current_task.files().get(fd)?;
+        if !user_offset.is_null() && !file.is_seekable() {
+            return error!(ESPIPE);
+        }
         let maybe_offset = maybe_read_offset(current_task, user_offset)?;
         Ok(Self { file, user_offset, maybe_offset })
     }
@@ -176,15 +179,15 @@ pub fn splice(
     mut len: usize,
     flags: u32,
 ) -> Result<usize, Errno> {
+    if len == 0 {
+        return Ok(0);
+    }
+
     const KNOWN_FLAGS: u32 =
         uapi::SPLICE_F_MOVE | uapi::SPLICE_F_NONBLOCK | uapi::SPLICE_F_MORE | uapi::SPLICE_F_GIFT;
     if flags & !KNOWN_FLAGS != 0 {
         track_stub!(TODO("https://fxbug.dev/322875389"), "splice flags", flags & !KNOWN_FLAGS);
         return error!(EINVAL);
-    }
-
-    if len == 0 {
-        return Ok(0);
     }
 
     let non_blocking = flags & uapi::SPLICE_F_NONBLOCK != 0;
@@ -200,14 +203,6 @@ pub fn splice(
     // non-pipe endpoints check file_permission via their underlying read()/write() calls.
     if !operand_in.file.can_read() || !operand_out.file.can_write() {
         return error!(EBADF);
-    }
-
-    if operand_in.maybe_offset.is_some() && !operand_in.file.is_seekable() {
-        return error!(ESPIPE);
-    }
-
-    if operand_out.maybe_offset.is_some() && !operand_out.file.is_seekable() {
-        return error!(ESPIPE);
     }
 
     if operand_out.maybe_offset.is_some() && operand_out.file.offset.read() < 0 {

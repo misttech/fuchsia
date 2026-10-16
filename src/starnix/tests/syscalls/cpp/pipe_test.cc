@@ -410,4 +410,32 @@ TEST(PipeTest, PollHupWithoutPollinOnEmptyClosedPipe) {
   EXPECT_EQ(pfd.revents, POLLHUP);
 }
 
+TEST(PipeTest, ZeroLengthIoAndSplicePrecedence) {
+  int pipe_a[2];
+  int pipe_b[2];
+  SAFE_SYSCALL(pipe2(pipe_a, O_NONBLOCK));
+  SAFE_SYSCALL(pipe2(pipe_b, O_NONBLOCK));
+  fbl::unique_fd a_rd(pipe_a[0]);
+  fbl::unique_fd a_wr(pipe_a[1]);
+  fbl::unique_fd b_rd(pipe_b[0]);
+  fbl::unique_fd b_wr(pipe_b[1]);
+
+  // Zero-length read on an empty pipe returns 0 rather than EAGAIN.
+  char buf[1];
+  EXPECT_THAT(read(a_rd.get(), buf, 0), SyscallSucceedsWithValue(0));
+
+  // Passing a non-null invalid offset pointer for a pipe fd in splice fails with ESPIPE before
+  // dereferencing the pointer (EFAULT).
+  loff_t* bad_offset = reinterpret_cast<loff_t*>(0xdeadbeef);
+  EXPECT_THAT(splice(a_rd.get(), bad_offset, b_wr.get(), nullptr, 4, 0),
+              SyscallFailsWithErrno(ESPIPE));
+
+  // Zero-length splice returns 0 before validating flags or file descriptors.
+  EXPECT_THAT(splice(-1, nullptr, -1, nullptr, 0, ~0u), SyscallSucceedsWithValue(0));
+
+  // Zero-length write on a broken pipe returns 0 without raising SIGPIPE.
+  b_rd.reset();
+  EXPECT_THAT(write(b_wr.get(), "", 0), SyscallSucceedsWithValue(0));
+}
+
 }  // namespace

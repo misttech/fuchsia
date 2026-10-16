@@ -469,6 +469,9 @@ impl FileOps for PipeFileObject {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
+        if data.available() == 0 {
+            return Ok(0);
+        }
         file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             let mut pipe = self.pipe.lock();
             let was_writable = pipe.is_writable(uapi::PIPE_BUF as usize);
@@ -489,6 +492,9 @@ impl FileOps for PipeFileObject {
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
         debug_assert!(data.bytes_read() == 0);
+        if data.available() == 0 {
+            return Ok(0);
+        }
 
         let result = file.blocking_op(current_task, FdEvents::POLLOUT, None, || {
             let mut pipe = self.pipe.lock();
@@ -932,6 +938,9 @@ impl PipeFileObject {
             current_task.maximum_valid_address().ok_or_else(|| errno!(EINVAL))?,
             &mut iovec,
         )?;
+        if available == 0 {
+            return Ok(0);
+        }
         let mappings = current_task.mm()?.get_mappings_for_vmsplice(&iovec)?;
 
         let mut pipe =
@@ -969,6 +978,9 @@ impl PipeFileObject {
         non_blocking: bool,
     ) -> Result<usize, Errno> {
         let mut data = UserBuffersOutputBuffer::unified_new(current_task, iovec)?;
+        if data.available() == 0 {
+            return Ok(0);
+        }
         let mut pipe = self.lock_pipe_for_reading(current_task, self_file, non_blocking)?;
         let was_writable = pipe.is_writable(uapi::PIPE_BUF as usize);
         let actual = pipe.read(&mut data)?;
@@ -1125,6 +1137,45 @@ mod tests {
             assert_eq!(partial.data(), &fill[..page_size]);
 
             assert_eq!(writer_join().unwrap(), 4);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_zero_length_pipe_io_and_no_empty_message_enqueued() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let pipe_ops = pipe_out.downcast_file::<PipeFileObject>().unwrap();
+
+            // Zero-length read and vmsplice_to on an empty pipe return 0 without blocking or EAGAIN.
+            assert_eq!(pipe_out.read(&current_task, &mut VecOutputBuffer::new(0)).unwrap(), 0);
+            assert_eq!(
+                pipe_ops
+                    .vmsplice_to(&current_task, &pipe_out, UserBuffers::default(), true)
+                    .unwrap(),
+                0
+            );
+
+            // Zero-length write via `Pipe::write` does not enqueue an empty message in `MessageQueue`.
+            assert_eq!(pipe_ops.pipe.lock().write(&mut VecInputBuffer::new(b"")).unwrap(), 0);
+            assert_eq!(pipe_ops.pipe.lock().messages.peek_queue().len(), 0);
+
+            // Close the reader: zero-length write and vmsplice_from on a broken pipe return 0
+            // without EPIPE or SIGPIPE.
+            std::mem::drop(pipe_out);
+            current_task.trigger_delayed_releaser();
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"")).unwrap(), 0);
+            let pipe_in_ops = pipe_in.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(
+                pipe_in_ops
+                    .vmsplice_from(&current_task, &pipe_in, UserBuffers::default(), true)
+                    .unwrap(),
+                0
+            );
+            assert!(!current_task.write().signals_mut().has_queued(SIGPIPE));
         })
         .await;
     }

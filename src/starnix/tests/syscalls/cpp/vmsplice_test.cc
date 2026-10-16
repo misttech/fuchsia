@@ -572,4 +572,23 @@ TEST(VmspliceTest, TeeVmsplicedPayload) {
   EXPECT_THAT(read_a, testing::Each('V'));
 }
 
+TEST(VmspliceTest, ZeroLengthVmsplice) {
+  int raw_fds[kNumPipeEndsCount] = {};
+  ASSERT_EQ(pipe2(raw_fds, O_NONBLOCK), 0) << strerror(errno);
+  fbl::unique_fd pipe_rd(raw_fds[0]);
+  fbl::unique_fd pipe_wr(raw_fds[1]);
+
+  iovec empty_iov = {
+      .iov_base = nullptr,
+      .iov_len = 0,
+  };
+
+  // Zero-length vmsplice from an empty pipe returns 0 without EAGAIN.
+  EXPECT_EQ(vmsplice(pipe_rd.get(), &empty_iov, 1, SPLICE_F_NONBLOCK), 0);
+
+  // Close the read end; zero-length vmsplice into a broken pipe returns 0 without EPIPE or SIGPIPE.
+  pipe_rd.reset();
+  EXPECT_EQ(vmsplice(pipe_wr.get(), &empty_iov, 1, SPLICE_F_NONBLOCK), 0);
+}
+
 }  // namespace

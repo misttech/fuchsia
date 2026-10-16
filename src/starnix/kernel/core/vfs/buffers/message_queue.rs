@@ -420,7 +420,13 @@ impl<D: MessageData> MessageQueue<D> {
             message_ancillary_data,
         );
         if let Some(message) = filter(message) {
-            self.write_message(message);
+            if message.len() > 0
+                || !message.ancillary_data.is_empty()
+                || message.credentials.is_some()
+                || message.address.is_some()
+            {
+                self.write_message(message);
+            }
         }
         Ok(actual)
     }
