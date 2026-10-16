@@ -14,8 +14,11 @@ from pathlib import Path
 from agents.lib.paths import find_checkout_git_repos, get_hooks_dir
 
 __all__ = [
+    "DEFAULT_HOOK_NAMES",
     "HookOperationResult",
     "HookStatusResult",
+    "LEGACY_FRAGMENT_NAMES",
+    "LEGACY_HOOK_NAMES",
     "get_git_hooks_status",
     "install_git_hook",
     "install_git_hooks",
@@ -50,7 +53,8 @@ class HookStatusResult:
     configured_repos: int
 
 
-AGENT_FRAGMENT_NAME = "10-fuchsia-agent.sh"
+AGENT_FRAGMENT_NAME = "20-fuchsia-agent.sh"
+LEGACY_FRAGMENT_NAMES: tuple[str, ...] = ("10-fuchsia-agent.sh",)
 DEFAULT_HOOK_NAMES: tuple[str, ...] = ("pre-commit", "commit-msg")
 LEGACY_HOOK_NAMES: tuple[str, ...] = ("pre-push",)
 
@@ -123,6 +127,8 @@ def install_git_hook(
         return agent_fragment
 
     hook_d.mkdir(parents=True, exist_ok=True)
+    for legacy_name in LEGACY_FRAGMENT_NAMES:
+        (hook_d / legacy_name).unlink(missing_ok=True)
 
     args_str = (
         f" {' '.join(shlex.quote(a) for a in script_args)}"
@@ -158,14 +164,23 @@ def uninstall_git_hook(
     """
     if hooks_dir is None:
         hooks_dir = get_hooks_dir(repo_dir)
-    agent_fragment = hooks_dir / f"{hook_name}.d" / AGENT_FRAGMENT_NAME
+    hook_d = hooks_dir / f"{hook_name}.d"
+    agent_fragment = hook_d / AGENT_FRAGMENT_NAME
+    has_agent_fragment = agent_fragment.is_file()
+    legacy_fragments = [
+        hook_d / name
+        for name in LEGACY_FRAGMENT_NAMES
+        if (hook_d / name).is_file()
+    ]
 
-    if not agent_fragment.is_file():
+    if not has_agent_fragment and not legacy_fragments:
         return None
 
     if not dry_run:
-        agent_fragment.unlink()
-    return agent_fragment
+        agent_fragment.unlink(missing_ok=True)
+        for legacy_fragment in legacy_fragments:
+            legacy_fragment.unlink(missing_ok=True)
+    return agent_fragment if has_agent_fragment else legacy_fragments[0]
 
 
 def install_git_hooks(

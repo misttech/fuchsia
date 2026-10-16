@@ -140,7 +140,7 @@ tools/agents/
     footers).
 - **`installer.py`**: Installs, uninstalls, and checks status of Git hooks across repositories
   (`install_git_hooks`, `uninstall_git_hooks`, `get_git_hooks_status`) targeting
-  `.git/hooks/<hook_name>.d/10-fuchsia-agent.sh`.
+  `.git/hooks/<hook_name>.d/20-fuchsia-agent.sh`.
 - **`reporters.py`**: `ConsoleReporter` supporting colored UTF-8 symbols on interactive terminals
   and falling back to ASCII tags (`[FIXED]`, `[WARN]`, `[ERROR]`) on plain terminals.
 - **`runner.py`**: Hook CLI entrypoint executing `pre-commit` and `commit-msg` pipelines, handling

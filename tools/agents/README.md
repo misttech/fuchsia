@@ -105,7 +105,7 @@ Rules are stored in plain text files under `.agents/config/permissions/`:
 `fx agents setup` automatically manages Git hooks across all checkout repositories discovered in the
 Fuchsia source tree (including `//` and `//vendor/*`).
 
-Hooks are installed into `.git/hooks/<hook_name>.d/10-fuchsia-agent.sh`, integrating cleanly with
+Hooks are installed into `.git/hooks/<hook_name>.d/20-fuchsia-agent.sh`, integrating cleanly with
 the Jiri universal hook dispatcher without overwriting custom developer or team hooks.
 
 ### What the Hooks Do

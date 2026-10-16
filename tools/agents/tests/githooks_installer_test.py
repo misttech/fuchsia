@@ -17,7 +17,7 @@ class GitHooksInstallerTest(GitWorkspaceTestCase):
     def hook_fragment_path(
         self,
         hook_name: str,
-        filename: str = "10-fuchsia-agent.sh",
+        filename: str = "20-fuchsia-agent.sh",
         repo_dir: Path | None = None,
     ) -> Path:
         """Returns the canonical path to a hook fragment."""
@@ -247,6 +247,73 @@ class GitHooksInstallerTest(GitWorkspaceTestCase):
         )
         self.assertFalse(legacy_path.exists())
         self.assertIn(legacy_path, uninstalled.modified)
+
+    def test_install_git_hook_migrates_legacy_fragment(self) -> None:
+        legacy_path = self.hook_fragment_path(
+            "pre-commit", filename="10-fuchsia-agent.sh"
+        )
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_path.touch()
+        self.assertTrue(legacy_path.is_file())
+
+        dry_installed = installer.install_git_hook(
+            self.test_dir,
+            hook_name="pre-commit",
+            script_path="/path/to/script.py",
+            dry_run=True,
+        )
+        current_path = self.hook_fragment_path("pre-commit")
+        self.assertEqual(dry_installed, current_path)
+        self.assertTrue(legacy_path.is_file())
+        self.assertFalse(current_path.exists())
+
+        installed = installer.install_git_hook(
+            self.test_dir,
+            hook_name="pre-commit",
+            script_path="/path/to/script.py",
+            dry_run=False,
+        )
+        self.assertEqual(installed, current_path)
+        self.assertFalse(legacy_path.exists())
+        self.assertTrue(current_path.is_file())
+
+    def test_uninstall_git_hook_removes_legacy_fragment_only(self) -> None:
+        legacy_path = self.hook_fragment_path(
+            "pre-commit", filename="10-fuchsia-agent.sh"
+        )
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_path.touch()
+        self.assertTrue(legacy_path.is_file())
+
+        dry_removed = installer.uninstall_git_hook(
+            self.test_dir, hook_name="pre-commit", dry_run=True
+        )
+        self.assertEqual(dry_removed, legacy_path)
+        self.assertTrue(legacy_path.is_file())
+
+        removed = installer.uninstall_git_hook(
+            self.test_dir, hook_name="pre-commit", dry_run=False
+        )
+        self.assertEqual(removed, legacy_path)
+        self.assertFalse(legacy_path.exists())
+
+    def test_uninstall_git_hook_removes_both_current_and_legacy_fragments(
+        self,
+    ) -> None:
+        legacy_path = self.hook_fragment_path(
+            "pre-commit", filename="10-fuchsia-agent.sh"
+        )
+        current_path = self.hook_fragment_path("pre-commit")
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_path.touch()
+        current_path.touch()
+
+        removed = installer.uninstall_git_hook(
+            self.test_dir, hook_name="pre-commit", dry_run=False
+        )
+        self.assertEqual(removed, current_path)
+        self.assertFalse(current_path.exists())
+        self.assertFalse(legacy_path.exists())
 
 
 if __name__ == "__main__":

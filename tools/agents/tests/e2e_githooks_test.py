@@ -754,12 +754,12 @@ class E2EGitHooksTest(unittest.TestCase):
                 hooks_dir = repo / ".git" / "hooks"
                 self.assertTrue(
                     (
-                        hooks_dir / "pre-commit.d" / "10-fuchsia-agent.sh"
+                        hooks_dir / "pre-commit.d" / "20-fuchsia-agent.sh"
                     ).is_file()
                 )
                 self.assertTrue(
                     (
-                        hooks_dir / "commit-msg.d" / "10-fuchsia-agent.sh"
+                        hooks_dir / "commit-msg.d" / "20-fuchsia-agent.sh"
                     ).is_file()
                 )
 
@@ -776,12 +776,12 @@ class E2EGitHooksTest(unittest.TestCase):
                 hooks_dir = repo / ".git" / "hooks"
                 self.assertFalse(
                     (
-                        hooks_dir / "pre-commit.d" / "10-fuchsia-agent.sh"
+                        hooks_dir / "pre-commit.d" / "20-fuchsia-agent.sh"
                     ).exists()
                 )
                 self.assertFalse(
                     (
-                        hooks_dir / "commit-msg.d" / "10-fuchsia-agent.sh"
+                        hooks_dir / "commit-msg.d" / "20-fuchsia-agent.sh"
                     ).exists()
                 )
 

@@ -57,8 +57,8 @@ root hook wrappers (`pre-commit`, `commit-msg`).
   │
   └──► .git/hooks/pre-commit.d/
          ├── 05-author-check.sh         (Upstream Googler email check)
-         ├── 10-fuchsia-agent.sh        (Automated formatting & staging isolation)
          ├── 10-unstage-submodules.sh   (Submodule reset check)
+         ├── 20-fuchsia-agent.sh        (Automated formatting & staging isolation)
          └── 50-team-tool.sh            (Modular team/user scripts)
 ```
 
@@ -74,10 +74,10 @@ implementation.
    - Resolves hooks directory via `git rev-parse --git-path hooks` (ensuring compatibility with Git
      worktrees and subdirectories).
    - `install_git_hooks` creates `.git/hooks/<hook_name>.d/` and writes or updates
-     `10-fuchsia-agent.sh`.
+     `20-fuchsia-agent.sh`.
    - It does NOT touch or overwrite `.git/hooks/<hook_name>`.
 2. **Uninstallation / Reset (`fx agents setup --no-git-hooks` or `fx agents setup --reset`)**:
-   - Uses `uninstall_git_hooks` to delete only `.git/hooks/<hook_name>.d/10-fuchsia-agent.sh`.
+   - Uses `uninstall_git_hooks` to delete only `.git/hooks/<hook_name>.d/20-fuchsia-agent.sh`.
    - Leaves the `.git/hooks/<hook_name>` wrappers and `<hook_name>.d/` directory intact.
    - Any user or team scripts in `<hook_name>.d/` continue executing without disruption.
    - You can inspect the status with `fx agents setup --status` (`get_git_hooks_status`).
@@ -98,14 +98,14 @@ The Git staging and hook subsystem is split into three layers:
   - Terminal reporters (`ConsoleReporter`) and the hook CLI dispatcher (`runner.py`).
 - **Layer 3: Installer & Setup (`commands/setup.py`, `lib/githooks/installer.py`)**:
   - Discovers checkout repositories across `//` and `//vendor/*`.
-  - Idempotently installs and uninstalls `10-fuchsia-agent.sh` within `.git/hooks/<hook_name>.d/`.
+  - Idempotently installs and uninstalls `20-fuchsia-agent.sh` within `.git/hooks/<hook_name>.d/`.
 
 For the complete repository and test file layout, see
 [`tools/agents/DEVELOPMENT.md#directory-layout`](../DEVELOPMENT.md#directory-layout).
 
 ### 3.1 Standalone Hook Execution
 
-The `10-fuchsia-agent.sh` hook fragment exports `PYTHONPATH="$FUCHSIA_DIR/tools:$PYTHONPATH"` and
+The `20-fuchsia-agent.sh` hook fragment exports `PYTHONPATH="$FUCHSIA_DIR/tools:$PYTHONPATH"` and
 executes `$FUCHSIA_DIR/scripts/fuchsia-vendored-python`. This allows hooks to run during
 `git commit` without depending on Ninja/GN build artifacts or an active build directory.
 
@@ -199,14 +199,15 @@ Hooks can be bypassed using standard Git flags, environment variables, or `fx ag
 2. **Environment Variable Bypass (Scripts / CI)**:
    - `FUCHSIA_SKIP_HOOKS=1 git commit ...` (immediately exits 0 from the hook runner).
 3. **Configuration Options**:
-   - `fx agents setup` installs `.git/hooks/<hook_name>.d/10-fuchsia-agent.sh`.
+   - `fx agents setup` (or `fx agents setup --git-hooks`) installs
+     `.git/hooks/<hook_name>.d/20-fuchsia-agent.sh`.
    - `fx agents setup --status`: Displays current configuration and reports Git hook configuration
      across all checkout repositories.
    - `--git-hooks` / `--no-git-hooks`: CLI flags for `fx agents setup` controlling Git hook
      management across checkout repositories (default: `--git-hooks`). Passing `--no-git-hooks`
      configures agent permissions and profiles while skipping hook installation and actively
-     uninstalling any existing `10-fuchsia-agent.sh` hooks across checkout repositories.
-   - `fx agents setup --reset` removes `10-fuchsia-agent.sh` while leaving dispatcher and user
+     uninstalling any existing `20-fuchsia-agent.sh` hooks across checkout repositories.
+   - `fx agents setup --reset` removes `20-fuchsia-agent.sh` while leaving dispatcher and user
      scripts intact.
    - `fx agents setup --reset --no-git-hooks`: Resets Fuchsia-managed rules and configuration while
      preserving existing Git hooks intact (skips hook uninstallation).

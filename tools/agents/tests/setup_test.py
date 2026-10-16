@@ -512,14 +512,14 @@ class SetupCommandTest(BaseTestCase):
             / ".git"
             / "hooks"
             / "pre-commit.d"
-            / "10-fuchsia-agent.sh"
+            / "20-fuchsia-agent.sh"
         )
         commit_msg_hook = (
             self.fuchsia_dir
             / ".git"
             / "hooks"
             / "commit-msg.d"
-            / "10-fuchsia-agent.sh"
+            / "20-fuchsia-agent.sh"
         )
 
         cases = [
@@ -646,14 +646,14 @@ class SetupCommandTest(BaseTestCase):
             / ".git"
             / "hooks"
             / "pre-commit.d"
-            / "10-fuchsia-agent.sh"
+            / "20-fuchsia-agent.sh"
         )
         commit_msg_hook = (
             self.fuchsia_dir
             / ".git"
             / "hooks"
             / "commit-msg.d"
-            / "10-fuchsia-agent.sh"
+            / "20-fuchsia-agent.sh"
         )
 
         cases = [
