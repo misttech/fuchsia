@@ -666,6 +666,249 @@ class BuildArtifactsTest(unittest.TestCase):
                     )
 
 
+class ResolveAffectedTestNamesTest(unittest.TestCase):
+    """Tests the resolve_affected_test_names function."""
+
+    def test_resolve_affected_test_names(self) -> None:
+        specs = [
+            fint_build.TestSpec(
+                label="//src/foo:foo_test(//build/toolchain/fuchsia:x64)",
+                os="fuchsia",
+                cpu="x64",
+                path="",
+                name="fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",
+                package_label="//src/foo:foo_pkg(//build/toolchain/fuchsia:x64)",
+            ),
+            fint_build.TestSpec(
+                label="@@//src/bar:bar_test",
+                os="linux",
+                cpu="x64",
+                path="host_x64/bar_test",
+                name="host_x64/bar_test",
+                source_label="//src/bar:bar_test",
+            ),
+            fint_build.TestSpec(
+                label="//src/recovery/simulator:recovery_simulator_boot_test(//build/toolchain/fuchsia:x64)",
+                os="fuchsia",
+                cpu="x64",
+                path="",
+                name="recovery_simulator_boot_test",
+            ),
+        ]
+        cases = [
+            (
+                "exact label",
+                ["//src/foo:foo_test(//build/toolchain/fuchsia:x64)"],
+                ["fuchsia-pkg://fuchsia.com/foo#meta/foo.cm"],
+            ),
+            (
+                "package label without toolchain",
+                ["//src/foo:foo_pkg"],
+                ["fuchsia-pkg://fuchsia.com/foo#meta/foo.cm"],
+            ),
+            (
+                "bazel source label",
+                ["//src/bar:bar_test"],
+                ["host_x64/bar_test"],
+            ),
+            (
+                "test name",
+                ["host_x64/bar_test"],
+                ["host_x64/bar_test"],
+            ),
+            (
+                "never affected",
+                ["//src/recovery/simulator:recovery_simulator_boot_test"],
+                [],
+            ),
+            (
+                "unknown label passes through",
+                ["//src/unknown:test"],
+                ["//src/unknown:test"],
+            ),
+            (
+                "duplicates removed",
+                ["//src/foo:foo_test", "//src/foo:foo_pkg"],
+                ["fuchsia-pkg://fuchsia.com/foo#meta/foo.cm"],
+            ),
+        ]
+        for name, labels, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    fint_build.resolve_affected_test_names(specs, labels),
+                    expected,
+                )
+
+
+class FindAffectedTestsTest(unittest.TestCase):
+    """Tests the _find_affected_tests method on BuildContext."""
+
+    def _make_ctx(
+        self,
+        temp_path: pathlib.Path,
+        changed_files: list[str],
+    ) -> fint_build.BuildContext:
+        build_dir = temp_path / "build"
+        artifact_dir = temp_path / "artifact"
+        checkout_dir = temp_path / "checkout"
+        for d in (build_dir, artifact_dir, checkout_dir):
+            d.mkdir()
+        (build_dir / fint_build.TESTS_JSON).write_text(
+            json.dumps(
+                [
+                    {
+                        "test": {
+                            "label": "//src/foo:foo_test(//build/toolchain/fuchsia:x64)",
+                            "name": "foo_test",
+                            "os": "fuchsia",
+                            "cpu": "x64",
+                        }
+                    }
+                ]
+            )
+        )
+        context_spec = context_pb2.Context(
+            build_dir=str(build_dir),
+            artifact_dir=str(artifact_dir),
+            checkout_dir=str(checkout_dir),
+            changed_files=[
+                context_pb2.Context.ChangedFile(path=f) for f in changed_files
+            ],
+        )
+        return fint_build.BuildContext(
+            static_pb2.Static(),
+            context_spec,
+            fint_build.HostProperties(os="linux", cpu="x64"),
+        )
+
+    @mock.patch.object(subprocess, "run")
+    def test_success(self, mock_run: MagicMock) -> None:
+        files_list_contents: list[str] = []
+
+        def fake_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+            files_list = next(
+                a for a in cmd if a.startswith("--files-list=")
+            ).removeprefix("--files-list=")
+            files_list_contents.append(pathlib.Path(files_list).read_text())
+            return MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "test_targets": [
+                            {"label": "//src/foo:foo_test", "env": "device"},
+                        ],
+                        "build_not_affected": False,
+                    }
+                ),
+            )
+
+        mock_run.side_effect = fake_run
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            ctx = self._make_ctx(
+                temp_path, ["src/foo/foo.cc", "src/foo/BUILD.gn"]
+            )
+            result = fint_build.BuildExecution(command=["ninja"])
+            ctx._find_affected_tests(result)
+
+            self.assertEqual(result.affected_tests, ["foo_test"])
+            self.assertFalse(result.build_not_affected)
+            self.assertEqual(
+                files_list_contents, ["src/foo/foo.cc\nsrc/foo/BUILD.gn\n"]
+            )
+            cmd = mock_run.call_args.args[0]
+            self.assertEqual(
+                cmd[:4],
+                [
+                    str(temp_path / "checkout" / "build" / "api" / "client"),
+                    "--build-dir",
+                    str(temp_path / "build"),
+                    "affected_tests",
+                ],
+            )
+            self.assertEqual(cmd[-1], "--format=json")
+            # The temporary changed files list should be cleaned up.
+            self.assertEqual(list((temp_path / "artifact").iterdir()), [])
+
+    @mock.patch.object(subprocess, "run")
+    def test_build_not_affected(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"test_targets": [], "build_not_affected": True}),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ctx = self._make_ctx(pathlib.Path(temp_dir), ["README.md"])
+            result = fint_build.BuildExecution(command=["ninja"])
+            ctx._find_affected_tests(result)
+            self.assertEqual(result.affected_tests, [])
+            self.assertTrue(result.build_not_affected)
+
+    @mock.patch.object(subprocess, "run")
+    def test_no_changed_files(self, mock_run: MagicMock) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ctx = self._make_ctx(pathlib.Path(temp_dir), [])
+            result = fint_build.BuildExecution(command=["ninja"])
+            ctx._find_affected_tests(result)
+            mock_run.assert_not_called()
+            self.assertEqual(result.affected_tests, [])
+            self.assertFalse(result.build_not_affected)
+
+    @mock.patch.object(subprocess, "run")
+    def test_tool_failure(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ctx = self._make_ctx(pathlib.Path(temp_dir), ["src/foo/foo.cc"])
+            result = fint_build.BuildExecution(command=["ninja"])
+            with self.assertRaises(RuntimeError):
+                ctx._find_affected_tests(result)
+
+    @mock.patch.object(fint_build, "check_ninja_noop", return_value=0)
+    @mock.patch.object(fint_build, "run_gn_check", return_value=0)
+    def test_failure_sets_failure_summary(
+        self, mock_gn_check: MagicMock, mock_noop: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            ctx = self._make_ctx(temp_path, ["src/foo/foo.cc"])
+            result = fint_build.BuildExecution(command=["ninja"])
+            with (
+                mock.patch.object(
+                    fint_build.BuildContext, "_export_debug_symbols"
+                ),
+                mock.patch.object(
+                    fint_build.BuildContext,
+                    "_find_affected_tests",
+                    side_effect=RuntimeError("boom"),
+                ),
+            ):
+                ctx._run_post_ninja_checks(
+                    result, ["default"], temp_path / "build" / "stamp"
+                )
+            self.assertEqual(result.exit_code, 1)
+            self.assertEqual(
+                result.failure_summary, "Failed to find affected tests: boom"
+            )
+
+    def test_produce_build_artifacts_includes_affected_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            ctx = self._make_ctx(temp_path, [])
+            ctx.produce_build_artifacts(
+                42,
+                affected_tests=["foo_test", "bar_test"],
+                build_not_affected=True,
+            )
+            manifest = json.loads(
+                (
+                    temp_path / "artifact" / fint_build.BUILD_ARTIFACTS_JSON
+                ).read_text()
+            )
+            self.assertEqual(
+                manifest["affectedTests"], ["foo_test", "bar_test"]
+            )
+            self.assertTrue(manifest["buildNotAffected"])
+
+
 class ExportDebugSymbolsTest(unittest.TestCase):
     """Tests the _export_debug_symbols method on BuildContext."""
 
@@ -1350,6 +1593,21 @@ class NinjaBuildWrapTest(unittest.TestCase):
         self.assertEqual(spec.os, "linux")
         self.assertEqual(spec.cpu, "x64")
         self.assertEqual(spec.path, "host_test_1")
+        self.assertEqual(spec.name, "")
+
+        bazel_spec = fint_build.TestSpec.from_dict(
+            {
+                "test": {
+                    "label": "@@//src/foo:foo_test",
+                    "name": "host_x64/foo_test",
+                    "package_label": "//src/foo:pkg",
+                    "source_label": "//src/foo:foo_test",
+                }
+            }
+        )
+        self.assertEqual(bazel_spec.name, "host_x64/foo_test")
+        self.assertEqual(bazel_spec.package_label, "//src/foo:pkg")
+        self.assertEqual(bazel_spec.source_label, "//src/foo:foo_test")
 
         # Non-dict and missing key structures raise ValueError strictly
         with self.assertRaises(ValueError):

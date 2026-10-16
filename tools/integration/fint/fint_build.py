@@ -56,7 +56,7 @@ import subprocess
 import tempfile
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Generator, Iterable, TextIO
 
 from build.scripts import signal_utils
@@ -82,6 +82,7 @@ PREBUILT_BINARY_SETS_JSON = "prebuilt_binaries.json"
 FORCE_NONHERMETIC_REBUILD_SENTINEL = "force_nonhermetic_rebuild"
 LAST_NINJA_BUILD_SUCCESS_STAMP = "last_ninja_build_success.stamp"
 RUST_TARGET_MAPPING_JSON = "rust_target_mapping.json"
+TESTS_JSON = "tests.json"
 NINJATRACE2JSON_PY_RELATIVE_PATH = pathlib.Path(
     "build/scripts/ninjatrace2json.py"
 )
@@ -91,6 +92,17 @@ NINJA_BUILD_TRACE_GZ = "ninja_build_trace.json.gz"
 NINJATRACE_JSON_GZ = "ninjatrace.json.gz"
 BUILDSTATS_JSON_GZ = "buildstats.json.gz"
 
+# These tests use a system image as data, so they appear affected by a broad
+# range of changes, but they're almost never actually sensitive to said changes.
+# https://fxbug.dev/42146209 tracks generating this list automatically.
+# Keep in sync with neverAffectedTestLabels in affected.go.
+NEVER_AFFECTED_TEST_LABELS = frozenset(
+    [
+        "//src/recovery/simulator:recovery_simulator_boot_test",
+        "//src/recovery/simulator:recovery_simulator_serial_test",
+    ]
+)
+
 
 @dataclass
 class BuildExecution:
@@ -98,6 +110,11 @@ class BuildExecution:
 
     command: list[str]
     exit_code: int = 0
+    affected_tests: list[str] = field(default_factory=list)
+    build_not_affected: bool = False
+    # Set when a post-build step fails, so the failure summary doesn't blame
+    # the delegated build command.
+    failure_summary: str | None = None
 
 
 class Timer:
@@ -469,6 +486,9 @@ class TestSpec:
     os: str
     cpu: str
     path: str
+    name: str = ""
+    package_label: str = ""
+    source_label: str = ""
 
     @classmethod
     def from_dict(cls, data: JSONObject) -> "TestSpec":
@@ -483,18 +503,75 @@ class TestSpec:
         os_val = test_dict.get("os", "")
         cpu_val = test_dict.get("cpu", "")
         path_val = test_dict.get("path", "")
+        name = test_dict.get("name", "")
+        package_label = test_dict.get("package_label", "")
+        source_label = test_dict.get("source_label", "")
 
         if not (
             isinstance(label, str)
             and isinstance(os_val, str)
             and isinstance(cpu_val, str)
             and isinstance(path_val, str)
+            and isinstance(name, str)
+            and isinstance(package_label, str)
+            and isinstance(source_label, str)
         ):
             raise ValueError(
                 f"TestSpec has invalid field types: label={type(label).__name__}, "
-                f"os={type(os_val).__name__}, cpu={type(cpu_val).__name__}, path={type(path_val).__name__}"
+                f"os={type(os_val).__name__}, cpu={type(cpu_val).__name__}, path={type(path_val).__name__}, "
+                f"name={type(name).__name__}, package_label={type(package_label).__name__}, "
+                f"source_label={type(source_label).__name__}"
             )
-        return cls(label=label, os=os_val, cpu=cpu_val, path=path_val)
+        return cls(
+            label=label,
+            os=os_val,
+            cpu=cpu_val,
+            path=path_val,
+            name=name,
+            package_label=package_label,
+            source_label=source_label,
+        )
+
+
+def resolve_affected_test_names(
+    test_specs: Iterable[TestSpec], target_labels: Iterable[str]
+) -> list[str]:
+    """Maps labels from `build/api/client affected_tests` to tests.json names.
+
+    The affected_tests tool may return a test's GN label, package label, or
+    source label (Bazel tests have no package label), with or without a
+    toolchain suffix, so index tests by all of them. Labels that don't match
+    any test are passed through as-is, matching Go fint's behavior.
+    """
+
+    def strip_toolchain(label: str) -> str:
+        return label.split("(")[0]
+
+    tests_by_label: dict[str, list[str]] = {}
+    tests_by_no_toolchain_label: dict[str, list[str]] = {}
+    for spec in test_specs:
+        if strip_toolchain(spec.label) in NEVER_AFFECTED_TEST_LABELS:
+            continue
+        for label in (spec.label, spec.package_label, spec.source_label):
+            if label:
+                tests_by_label.setdefault(label, []).append(spec.name)
+                tests_by_no_toolchain_label.setdefault(
+                    strip_toolchain(label), []
+                ).append(spec.name)
+        tests_by_label.setdefault(spec.name, []).append(spec.name)
+
+    affected: list[str] = []
+    for label in target_labels:
+        no_toolchain = strip_toolchain(label)
+        if no_toolchain in NEVER_AFFECTED_TEST_LABELS:
+            continue
+        if label in tests_by_label:
+            affected.extend(tests_by_label[label])
+        elif no_toolchain in tests_by_no_toolchain_label:
+            affected.extend(tests_by_no_toolchain_label[no_toolchain])
+        else:
+            affected.append(label)
+    return list(dict.fromkeys(affected))
 
 
 @dataclass(frozen=True)
@@ -782,6 +859,11 @@ class BuildContext:
         return self.build_dir / "last_ninja_build_targets.txt"
 
     @property
+    def tests_json_path(self) -> pathlib.Path:
+        """Returns the absolute path to the tests.json build API module."""
+        return self.build_dir / TESTS_JSON
+
+    @property
     def rust_target_mapping_json_path(self) -> pathlib.Path:
         """Returns the absolute path to the Rust target mapping JSON file."""
         return self.build_dir / RUST_TARGET_MAPPING_JSON
@@ -915,6 +997,26 @@ class BuildContext:
                 )
             targets.append(ClippyTargetSpec.from_dict(item))
         return targets
+
+    @functools.cached_property
+    def test_specs(self) -> list[TestSpec]:
+        """Loads and returns the test specs from tests.json."""
+        if not self.tests_json_path.exists():
+            return []
+        try:
+            # Narrow the try clause strictly to loading/decoding the JSON file.
+            tests_data = load_json_list(self.tests_json_path)
+        except ValueError as e:
+            raise ValueError(f"Failed to decode {TESTS_JSON}: {e}")
+
+        specs = []
+        for item in tests_data:
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Expected dict entry inside {TESTS_JSON}, but got: {type(item).__name__}"
+                )
+            specs.append(TestSpec.from_dict(item))
+        return specs
 
     @functools.cached_property
     def generated_sources(self) -> JSONArray:
@@ -1127,6 +1229,14 @@ class BuildContext:
             result.exit_code = 1
             return
 
+        try:
+            self._find_affected_tests(result)
+        except (RuntimeError, ValueError) as e:
+            msg(f"Error: {e}", file=sys.stderr)
+            result.exit_code = 1
+            result.failure_summary = f"Failed to find affected tests: {e}"
+            return
+
     @contextmanager
     def wrap_bazel(
         self,
@@ -1176,6 +1286,61 @@ class BuildContext:
             raise RuntimeError(
                 f"export_last_build_debug_symbols failed with exit code {res.returncode}"
             )
+
+    def _find_affected_tests(self, result: BuildExecution) -> None:
+        """Populates result with the tests affected by the changed files.
+
+        The infra recipes use the affected tests to skip unaffected tests in
+        presubmit, and skip testing entirely if build_not_affected is set.
+        """
+        changed_files = [f.path for f in self.context_spec.changed_files]
+        # Without an artifact dir there's nowhere to report the results, and
+        # without changed files or tests there's nothing to analyze.
+        if not self.artifact_dir or not changed_files or not self.test_specs:
+            return
+
+        with tempfile.NamedTemporaryFile(
+            "w", dir=self.artifact_dir, prefix="changed_files_", suffix=".txt"
+        ) as files_list:
+            files_list.write("\n".join(changed_files) + "\n")
+            files_list.flush()
+            cmd = [
+                str(self.api_client_path),
+                "--build-dir",
+                str(self.build_dir),
+                "affected_tests",
+                f"--files-list={files_list.name}",
+                "--format=json",
+            ]
+            msg("Finding affected tests...")
+            if self.verbose:
+                msg(f"Command: {shlex.join(cmd)}")
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
+
+        if res.returncode != 0:
+            raise RuntimeError(
+                f"affected_tests failed with exit code {res.returncode}"
+            )
+        try:
+            output = json.loads(res.stdout)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Failed to decode affected_tests output: {e}")
+        if not isinstance(output, dict):
+            raise RuntimeError(
+                f"Expected JSON object from affected_tests, but got: {type(output).__name__}"
+            )
+
+        labels = [t["label"] for t in output.get("test_targets", [])]
+        result.affected_tests = resolve_affected_test_names(
+            self.test_specs, labels
+        )
+        result.build_not_affected = bool(
+            output.get("build_not_affected", False)
+        )
+        msg(
+            f"Found {len(result.affected_tests)} affected tests "
+            f"(build_not_affected={result.build_not_affected})"
+        )
 
     def _run_buildstats(self) -> pathlib.Path | None:
         """Runs the buildstats prebuilt tool on the raw trace to generate buildstats.json.gz (Step 2)."""
@@ -1290,6 +1455,8 @@ class BuildContext:
         duration_seconds: int,
         failure_summary: str | None = None,
         ninja_action_metrics_path: pathlib.Path | None = None,
+        affected_tests: Iterable[str] = (),
+        build_not_affected: bool = False,
     ) -> None:
         """Serializes and writes the build_artifacts.json manifest to the artifact directory."""
         if not self.artifact_dir:
@@ -1299,6 +1466,8 @@ class BuildContext:
         artifacts.ninja_duration_seconds = duration_seconds
         if failure_summary:
             artifacts.failure_summary = failure_summary
+        artifacts.affected_tests.extend(affected_tests)
+        artifacts.build_not_affected = build_not_affected
 
         # Collect Ninja action metrics if present
         action_metrics_file = (
@@ -1621,8 +1790,8 @@ def main(argv: list[str]) -> int:
                 f"Serializing build artifacts manifest to {ctx.context_spec.artifact_dir}...",
                 args.verbose,
             )
-            failure_summary = None
-            if run.exit_code != 0:
+            failure_summary = run.failure_summary
+            if run.exit_code != 0 and not failure_summary:
                 if args.ninja_error_logging_output:
                     failure_summary = parse_ninja_failures(
                         args.ninja_error_logging_output
@@ -1638,6 +1807,8 @@ def main(argv: list[str]) -> int:
                 duration_seconds,
                 failure_summary=failure_summary,
                 ninja_action_metrics_path=args.ninja_action_metrics_output,
+                affected_tests=run.affected_tests,
+                build_not_affected=run.build_not_affected,
             )
 
     return run.exit_code
