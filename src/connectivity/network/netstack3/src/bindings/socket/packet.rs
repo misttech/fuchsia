@@ -540,6 +540,7 @@ impl<'a> RequestHandler<'a> {
         // device sockets instead of using empty metadata.
         let ip_layer_metadata = DeviceIpLayerMetadata::from_tx_metadata_and_marks(
             CoreTxMetadata::default(),
+            // TODO(https://fxbug.dev/574457735): Support marks on packet sockets.
             Marks::default(),
         );
         let result = match device {
@@ -747,9 +748,11 @@ impl<'a> RequestHandler<'a> {
                     .unwrap_or_log("failed to respond");
             }
             fppacket::SocketRequest::SetMark { domain: _, mark: _, responder } => {
+                // TODO(https://fxbug.dev/574457735): Support marks on packet sockets.
                 responder.send(Err(fposix::Errno::Eopnotsupp)).unwrap_or_log("failed to respond")
             }
             fppacket::SocketRequest::GetMark { domain: _, responder } => {
+                // TODO(https://fxbug.dev/574457735): Support marks on packet sockets.
                 responder.send(Err(fposix::Errno::Eopnotsupp)).unwrap_or_log("failed to respond")
             }
             fppacket::SocketRequest::AttachBpfFilterUnsafe { code, responder } => {
