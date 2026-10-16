@@ -111,9 +111,8 @@ the Jiri universal hook dispatcher without overwriting custom developer or team 
 ### What the Hooks Do
 
 - **`pre-commit` (Safe Formatting, Staging Isolation & Static Analysis)**:
-  - **Fully Staged Files**: Automatically formatted using `fx format-code` and linted using
-    `fx lint --fix`, then re-staged (`git add`). Findings the linters cannot auto-fix block the
-    commit.
+  - **Fully Staged Files**: Automatically formatted using `fx format-code`, re-staged
+    (`git add`), and verified with `fx lint`. Lint findings block the commit.
   - **Partially Staged Files**: Checked in read-only mode under stash isolation. If formatting or
     lint issues exist, the commit is blocked with instructions on how to fix them so unstaged edits
     aren't overwritten.
@@ -131,7 +130,7 @@ linters to run:
 
 | Commit Invocation                        | Commit Message Style                                                            | Formatting & Linting Behavior                                                                                                              |
 | ---------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Human Developer** (Interactive)        | **Advisory Warnings**: Non-blocking warnings for style/length; commits succeed. | Fully staged files auto-formatted, auto-fixed by `fx lint`, and re-staged. Slow linters (`check_licenses`, `clang_tidy`, `python_format`) are skipped. |
+| **Human Developer** (Interactive)        | **Advisory Warnings**: Non-blocking warnings for style/length; commits succeed. | Fully staged files auto-formatted, re-staged, and checked by `fx lint`. Slow linters (`check_licenses`, `clang_tidy`, `python_format`) are skipped. |
 | **AI Coding Agent** (`GEMINI_CLI`, etc.) | **Strict Rejection**: Non-compliant commit messages fail (`--strict`).          | Same, but only `clang_tidy` and `python_format` are skipped so automated changes run `check_licenses` and are CQ-clean before upload.      |
 
 ### Opt-Outs & Bypasses

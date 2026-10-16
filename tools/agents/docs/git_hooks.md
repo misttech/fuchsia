@@ -17,12 +17,9 @@ unstaged edits:
 - **Automatic Formatting**: `fx format-code` formats fully staged files with automatic re-staging
   (`git add`). Partially staged files are evaluated strictly in read-only check mode under stash
   isolation.
-- **Static Analysis & Code Linting**: `fx lint` runs on staged files for every commit, validating
-  compliance with platform linters (GN format, fidl-lint, clippy, mdlint, etc.).
-  Fully staged files get two passes: an advisory `fx lint --fix` pass that applies automated
-  replacements (re-staged by the pipeline), followed by a check pass that gates the commit. The
-  second pass is required because `--fix` delegates to `shac fix`, which skips formatter checks and
-  exits 0 even when findings remain. Partially staged files run the check pass only, under stash
+- **Static Analysis & Code Linting**: `fx lint` runs as a single read-only check pass on staged
+  files for every commit after `fx format-code`, validating compliance with platform linters (GN
+  format, fidl-lint, clippy, mdlint, etc.). Partially staged files are checked under stash
   isolation. `clang_tidy` and `python_format` (`ALWAYS_SKIPPED_LINTERS`) are skipped on all commits:
   `clang_tidy` takes ~10-20s per C++ file, does not emit auto-fixes in shac, and only emits non-blocking
   warnings, while `python_format` takes ~1.1s per Python file and already runs during the preceding
@@ -260,7 +257,7 @@ When active runtime agent execution is detected:
 | **Stash Restoration Failure**                   | **Fail-Closed**                                             | Print recovery command; exit 1.                         | Prevent silent data loss or corrupted working trees.                                 |
 | **Code Syntax / Formatter Error**               | **Fail-Closed**                                             | Print formatter error; exit 1.                          | Catch broken code before creating commits.                                           |
 | **Partially Staged Formatting Error**           | **Fail-Closed**                                             | Print remediation hint; exit 1.                         | Avoid committing unformatted code or corrupting unstaged hunks.                      |
-| **Code Linting / Static Analysis (`fx lint`)**   | **Fail-Closed**                                             | Apply `--fix` where possible; reject commit on remaining findings. | Keep lint violations out of the tree; `FUCHSIA_SKIP_HOOKS=1` remains the escape hatch. |
+| **Code Linting / Static Analysis (`fx lint`)**   | **Fail-Closed**                                             | Reject commit on lint findings (`fx format-code` formats files first). | Keep lint violations out of the tree; `FUCHSIA_SKIP_HOOKS=1` remains the escape hatch. |
 | **Commit Message Warnings**                     | **Fail-Open** (Human)<br>**Fail-Closed** (Agent)            | Advisory warning for humans; error for agents.          | Warn human developers without blocking commits; block commits from automated agents. |
 
 ### 7.2 Performance Optimizations

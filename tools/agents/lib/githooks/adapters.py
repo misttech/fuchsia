@@ -186,14 +186,9 @@ def lint_code_action(
 ) -> bool:
     """Executes fx lint on target files.
 
-    Outside of check-only runs the linters are first invoked with `--fix` so
-    auto-fixable findings are applied in place and re-staged by the pipeline.
-    That pass is advisory only: `fx lint --fix` delegates to `shac fix`, which
-    skips formatter checks and exits 0 even when it leaves findings behind. A
-    second check-mode pass is what actually gates the commit.
-
-    Partially staged files are linted in check-only mode under stash isolation
-    to avoid clobbering unstaged hunks.
+    `fx format-code` (`shac fmt`) already formats staged files in the preceding
+    mutating pass, so `fx lint` runs as a single read-only check pass to gate
+    the commit on any remaining lint findings.
 
     `ALWAYS_SKIPPED_LINTERS` (e.g. `clang_tidy`) are skipped on all commits.
     Human commits additionally skip the linters in `HUMAN_SKIPPED_LINTERS` to
@@ -222,12 +217,6 @@ def lint_code_action(
     base_cmd = [*fx_cmd, f"--skip={','.join(skipped)}"]
     files_arg = f"--files={','.join(files)}"
 
-    if not context.check_only:
-        # Advisory pass: apply whatever `shac fix` can repair. Its exit code is
-        # deliberately ignored because it reports success even when findings
-        # remain; the check pass below is the real gate.
-        run_cmd([*base_cmd, "--fix", files_arg], cwd=context.repo_root)
-
     return _run_reporting_errors(context, [*base_cmd, files_arg]) is not None
 
 
@@ -244,7 +233,7 @@ DEFAULT_PRE_COMMIT_ACTIONS: tuple[HookAction, ...] = (
     HookAction(
         name="fx_lint",
         action_fn=lint_code_action,
-        is_mutating=True,
+        is_mutating=False,
         extensions=DEFAULT_FORMATTABLE_EXTENSIONS,
         remediation_cmd_fn=lambda files: [f"fx lint --files={','.join(files)}"],
     ),

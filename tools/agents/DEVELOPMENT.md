@@ -132,10 +132,9 @@ tools/agents/
 - **`adapters.py`**: Fuchsia-specific adapters bridging the staging engine with platform tools:
   - `fx format-code` adapter (mutating formatting on fully staged files, read-only verification on
     partially staged files).
-  - `fx lint` adapter (mutating: an advisory `--fix` pass applies automated replacements on fully
-    staged files, followed by a check pass that gates the commit; partially staged files run the
-    check pass only; skips `clang_tidy` and `python_format` on all commits via
-    `ALWAYS_SKIPPED_LINTERS` and `check_licenses` on human commits via `HUMAN_SKIPPED_LINTERS`).
+  - `fx lint` adapter (read-only check pass that gates the commit after `fx format-code`; skips
+    `clang_tidy` and `python_format` on all commits via `ALWAYS_SKIPPED_LINTERS` and
+    `check_licenses` on human commits via `HUMAN_SKIPPED_LINTERS`).
   - `commit_msg_checker.py` adapter (validating subject length, body wrapping, and required
     footers).
 - **`installer.py`**: Installs, uninstalls, and checks status of Git hooks across repositories
