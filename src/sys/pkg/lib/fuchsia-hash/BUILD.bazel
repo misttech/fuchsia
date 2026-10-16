@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -12,12 +14,8 @@ rustc_library(
         "src/iter.rs",
         "src/lib.rs",
     ],
-    crate_name = "fuchsia_hash",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        "//third_party/rust_crates/vendor:proptest",
-    ],
     visibility = [
         "//src/developer/ffx:__subpackages__",
         "//src/devices/bin/driver-index:__subpackages__",
@@ -26,12 +24,28 @@ rustc_library(
         "//src/security:__subpackages__",
         "//src/storage:__subpackages__",
         "//src/sys:__subpackages__",
-        "//vendor/google/starnix:__subpackages__",
+        "//vendor/google:__subpackages__",
     ],
-    with_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:hex",
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:thiserror",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fuchsia-hash_test",
+    crate = ":fuchsia-hash",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//third_party/rust_crates/vendor:proptest",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fuchsia-hash-tests",
+    unit_tests = [":fuchsia-hash_test"],
 )
