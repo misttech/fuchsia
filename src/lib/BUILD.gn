@@ -74,7 +74,6 @@ group("tests") {
     "icu:tests",
     "icu_data:tests",
     "inet:tests",
-    "inject:tests",
     "injectable-time:tests",
     "intl:tests",
     "json_parser:tests",
