@@ -919,18 +919,22 @@ func (c *Client) Flash(
 			fastbootTarget = serialNumber
 			logger.Infof(ctx, "Using serial number %s for fastboot target extracted in Product state", fastbootTarget)
 		} else {
-			entries, err := ffxTool.TargetList(ctx, "", 12*time.Second)
-			if err != nil {
-				return fmt.Errorf("failed to list devices in Fastboot state: %w", err)
-			}
-			for _, entry := range entries {
-				if entry.NodeName == fastbootTarget && entry.TargetState == "Fastboot" {
-					if entry.Serial != "" {
+			for attempt := 0; attempt < 5; attempt++ {
+				entries, err := ffxTool.TargetList(ctx, "", 12*time.Second)
+				if err != nil {
+					return fmt.Errorf("failed to list devices in Fastboot state: %w", err)
+				}
+				for _, entry := range entries {
+					if entry.NodeName == fastbootTarget && entry.TargetState == "Fastboot" && entry.Serial != "" {
 						fastbootTarget = entry.Serial
 						logger.Infof(ctx, "Found serial number %s for fastboot target", fastbootTarget)
 						break
 					}
 				}
+				if fastbootTarget != c.nodeName {
+					break
+				}
+				time.Sleep(c.flashRetrySleep)
 			}
 		}
 	}
