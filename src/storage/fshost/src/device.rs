@@ -140,6 +140,10 @@ impl VolumeServiceDevice {
     }
 
     async fn check_is_removable(&self) -> bool {
+        if self.parent == Parent::SystemPartitionTable {
+            return false;
+        }
+
         // Check 1: Self-reported removable media flag from block device info.
         if let Ok(info) = self.get_block_info().await {
             if info.flags.contains(DeviceFlag::REMOVABLE) {
@@ -159,6 +163,11 @@ impl VolumeServiceDevice {
             Ok(Ok(handle)) => handle,
             Ok(Err(status)) => {
                 log::warn!(status:?; "Failed to get node token for device");
+                return false;
+            }
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::NOT_FOUND =>
+            {
                 return false;
             }
             Err(err) => {
@@ -438,4 +447,75 @@ pub enum DeviceTag {
     /// instance, or an Fxblob instance).  Only set on recovery (and volumes within the container
     /// will not be bound).
     SystemContainerOnRecovery,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Device, Parent, VolumeServiceDevice};
+    use fidl_fuchsia_storage_block::{BlockInfo, BlockRequest, BlockRequestStream, DeviceFlag};
+    use futures::StreamExt;
+    use vfs::execution_scope::ExecutionScope;
+
+    #[fuchsia::test]
+    async fn volume_service_device_is_removable_missing_token() {
+        let service_dir = vfs::pseudo_directory! {
+            "000" => vfs::pseudo_directory! {
+                "volume" => vfs::service::host(move |mut stream: BlockRequestStream| async move {
+                    while let Some(Ok(request)) = stream.next().await {
+                        match request {
+                            BlockRequest::GetInfo { responder } => {
+                                let _ = responder.send(Ok(&BlockInfo {
+                                    block_count: 100,
+                                    block_size: 512,
+                                    max_transfer_size: 1024 * 1024,
+                                    flags: DeviceFlag::empty(),
+                                }));
+                            }
+                            req => panic!("Unexpected request: {req:?}"),
+                        }
+                    }
+                }),
+            },
+        };
+
+        let dir_proxy = vfs::directory::serve_read_only(service_dir, ExecutionScope::new());
+        let device = VolumeServiceDevice::new(
+            &dir_proxy,
+            "000".to_string(),
+            "source".to_string(),
+            Parent::Dev,
+        )
+        .await
+        .unwrap();
+        assert!(!device.is_removable().await);
+    }
+
+    #[fuchsia::test]
+    async fn volume_service_device_system_partition_table_not_removable() {
+        let service_dir = vfs::pseudo_directory! {
+            "000" => vfs::pseudo_directory! {
+                "volume" => vfs::service::host(move |mut stream: BlockRequestStream| async move {
+                    if let Some(request) = stream.next().await {
+                        match request {
+                            Ok(BlockRequest::GetInfo { .. }) => {
+                                panic!("GetInfo called unexpectedly");
+                            }
+                            req => panic!("Unexpected request: {req:?}"),
+                        }
+                    }
+                }),
+            },
+        };
+
+        let dir_proxy = vfs::directory::serve_read_only(service_dir, ExecutionScope::new());
+        let device = VolumeServiceDevice::new(
+            &dir_proxy,
+            "000".to_string(),
+            "source".to_string(),
+            Parent::SystemPartitionTable,
+        )
+        .await
+        .unwrap();
+        assert!(!device.is_removable().await);
+    }
 }
