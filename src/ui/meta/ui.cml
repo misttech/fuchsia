@@ -34,7 +34,7 @@
             to: [ "#scenic" ],
         },
         {
-            protocol: [ "fuchsia.ui.composition.internal.DisplayOwnership" ],
+            protocol: [ "fuchsia.ui.input.internal.InputOwnership" ],
             from: "#scenic",
             to: [ "#scene_manager" ],
         },

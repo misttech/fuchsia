@@ -19,7 +19,7 @@ in Chrome.
 
 Scenic sets aside a kernel [Event][ev] that it uses to signal whether
 it owns the display or not.  This Event can be obtained by calling
-[`fuchsia.ui.scenic/Scenic.GetDisplayOwnershipEvent`][doe].
+[`fuchsia.ui.input.internal/InputOwnership.GetEvent`][doe].
 
 The [DisplayOwnership struct][disp-own] watches this event to learn when
 Scenic loses and gains ownership of the display. When `DisplayOwnership` detects
@@ -53,7 +53,7 @@ as written today.
 [ev]: https://fuchsia.dev/fuchsia-src/reference/kernel_objects/event
 [scenic]: https://fuchsia.dev/fuchsia-src/development/graphics/scenic
 [vc]: https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0094_carnelian_virtcon
-[doe]: https://fuchsia.dev/reference/fidl/fuchsia.ui.scenic#Scenic.GetDisplayOwnershipEvent
+[doe]: https://fuchsia.dev/reference/fidl/fuchsia.ui.input.internal#InputOwnership.GetEvent
 [disp-own]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/ui/lib/input_pipeline/src/display_ownership.rs?q=%22struct%20DisplayOwnership%22
 [virtcon-no-cc]: https://cs.opensource.google/search?q=input::&sq=&ss=fuchsia%2Ffuchsia:src%2Fbringup%2Fbin%2Fvirtcon%2Fsrc%2F
 [recovery-cc]: https://cs.opensource.google/search?q=file:recovery%20consumercontrol&sq=&ss=fuchsia%2Ffuchsia

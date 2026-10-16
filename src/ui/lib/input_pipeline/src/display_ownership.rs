@@ -228,7 +228,7 @@ impl DisplayOwnership {
     /// Creates a new handler that watches `display_ownership_event` for events.
     ///
     /// The `display_ownership_event` is assumed to be an [Event] obtained from
-    /// `fuchsia.ui.input.internal.InputOwnership/GetEvent` (or legacy DisplayOwnership).
+    /// `fuchsia.ui.input.internal.InputOwnership/GetEvent`.
     pub fn new(
         display_ownership_event: impl AsHandleRef + 'static,
         input_handlers_node: &fuchsia_inspect::Node,
