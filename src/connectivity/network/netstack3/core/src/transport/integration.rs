@@ -98,8 +98,8 @@ where
             self.read_lock_and::<crate::lock_ordering::TcpAllSocketsSet<Ipv4>>();
         all_sockets.keys().for_each(|id| {
             let mut locked = locked.adopt(id);
-            let guard = locked
-                .read_lock_with::<crate::lock_ordering::TcpSocketState<Ipv4>, _>(|c| c.right());
+            let guard =
+                locked.lock_with::<crate::lock_ordering::TcpSocketState<Ipv4>, _>(|c| c.right());
             cb(id, &*guard);
         });
     }
@@ -125,8 +125,8 @@ where
             .transport
             .tcp_state::<Ipv4>();
         let mut locked = self.adopt(id);
-        let (mut socket_state, mut restricted) = locked
-            .write_lock_with_and::<crate::lock_ordering::TcpSocketState<Ipv4>, _>(|c| c.right());
+        let (mut socket_state, mut restricted) =
+            locked.lock_with_and::<crate::lock_ordering::TcpSocketState<Ipv4>, _>(|c| c.right());
         let mut restricted = restricted.cast_core_ctx();
         let maybe_dual_stack = MaybeDualStack::NotDualStack((&mut restricted, ()));
         cb(maybe_dual_stack, &mut socket_state, isn_generator, timestamp_offset_generator)
@@ -146,7 +146,7 @@ where
         // Acquire socket lock at the current level.
         let mut locked = self.adopt(id);
         let socket_state =
-            locked.read_lock_with::<crate::lock_ordering::TcpSocketState<Ipv4>, _>(|c| c.right());
+            locked.lock_with::<crate::lock_ordering::TcpSocketState<Ipv4>, _>(|c| c.right());
         cb(&socket_state, MaybeDualStack::NotDualStack(()))
     }
 }
@@ -189,8 +189,8 @@ where
             self.read_lock_and::<crate::lock_ordering::TcpAllSocketsSet<Ipv6>>();
         all_sockets.keys().for_each(|id| {
             let mut locked = locked.adopt(id);
-            let guard = locked
-                .read_lock_with::<crate::lock_ordering::TcpSocketState<Ipv6>, _>(|c| c.right());
+            let guard =
+                locked.lock_with::<crate::lock_ordering::TcpSocketState<Ipv6>, _>(|c| c.right());
             cb(id, &*guard);
         });
     }
@@ -216,8 +216,8 @@ where
             .transport
             .tcp_state::<Ipv6>();
         let mut locked = self.adopt(id);
-        let (mut socket_state, mut restricted) = locked
-            .write_lock_with_and::<crate::lock_ordering::TcpSocketState<Ipv6>, _>(|c| c.right());
+        let (mut socket_state, mut restricted) =
+            locked.lock_with_and::<crate::lock_ordering::TcpSocketState<Ipv6>, _>(|c| c.right());
         let mut restricted = restricted.cast_core_ctx();
         let maybe_dual_stack = MaybeDualStack::DualStack((&mut restricted, ()));
         cb(maybe_dual_stack, &mut socket_state, isn_generator, timestamp_offset_generator)
@@ -237,7 +237,7 @@ where
         // Acquire socket lock at the current level.
         let mut locked = self.adopt(id);
         let socket_state =
-            locked.read_lock_with::<crate::lock_ordering::TcpSocketState<Ipv6>, _>(|c| c.right());
+            locked.lock_with::<crate::lock_ordering::TcpSocketState<Ipv6>, _>(|c| c.right());
         cb(&socket_state, MaybeDualStack::DualStack(()))
     }
 }

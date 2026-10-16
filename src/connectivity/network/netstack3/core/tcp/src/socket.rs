@@ -50,7 +50,7 @@ use netstack3_base::socket::{
     SocketZonedAddrExt as _, UpdateSharingError,
 };
 use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged as _};
-use netstack3_base::sync::RwLock;
+use netstack3_base::sync::{Mutex, RwLock};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter as _, ContextPair, Control, CoreTimerContext,
     CoreTxMetadataContext, CtxPair, DeferredResourceRemovalContext, DeviceIdContext,
@@ -1578,7 +1578,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> Drop
         // held.
         let Self(map) = self;
         for TcpSocketId(rc) in map.keys() {
-            let guard = rc.locked_state.read();
+            let guard = rc.locked_state.lock();
             let accept_queue = match &(*guard).socket_state {
                 TcpSocketStateInner::Listener(Listener { accept_queue, .. }) => accept_queue,
                 _ => continue,
@@ -1630,7 +1630,9 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
 #[derive(Derivative)]
 #[derivative(Debug(bound = "D: Debug"))]
 pub struct ReferenceState<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> {
-    locked_state: RwLock<TcpSocketState<I, D, BT>>,
+    // TCP state doesn't have a meaningful difference between readers and
+    // writers to justify an RwLock, so we use a simple lock.
+    locked_state: Mutex<TcpSocketState<I, D, BT>>,
     counters: TcpCountersWithSocket<I>,
 }
 
@@ -1864,7 +1866,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocket
         socket_options: SocketOptions,
     ) -> (Self, PrimaryRc<I, D, BT>) {
         let primary = PrimaryRc::new(ReferenceState {
-            locked_state: RwLock::new(TcpSocketState {
+            locked_state: Mutex::new(TcpSocketState {
                 socket_state,
                 sharing: Default::default(),
                 ip_options: Default::default(),
@@ -1886,7 +1888,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocket
         let primary = PrimaryRc::new_cyclic(move |weak| {
             let socket_state = init(WeakTcpSocketId(weak));
             ReferenceState {
-                locked_state: RwLock::new(TcpSocketState {
+                locked_state: Mutex::new(TcpSocketState {
                     socket_state,
                     sharing,
                     ip_options: Default::default(),
@@ -2016,7 +2018,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> WeakTcpSo
 impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
     OrderedLockAccess<TcpSocketState<I, D, BT>> for TcpSocketId<I, D, BT>
 {
-    type Lock = RwLock<TcpSocketState<I, D, BT>>;
+    type Lock = Mutex<TcpSocketState<I, D, BT>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         let Self(rc) = self;
         OrderedLockRef::new(&rc.locked_state)
@@ -6747,12 +6749,12 @@ mod tests {
     impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocketId<I, D, BT> {
         fn get(&self) -> impl Deref<Target = TcpSocketState<I, D, BT>> + '_ {
             let Self(rc) = self;
-            rc.locked_state.read()
+            rc.locked_state.lock()
         }
 
         fn get_mut(&self) -> impl DerefMut<Target = TcpSocketState<I, D, BT>> + '_ {
             let Self(rc) = self;
-            rc.locked_state.write()
+            rc.locked_state.lock()
         }
     }
 
