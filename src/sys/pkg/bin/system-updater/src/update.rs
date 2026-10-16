@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error, anyhow};
-use async_trait::async_trait;
 use fetch_url::fetch_url;
 use fidl::endpoints::ProtocolMarker as _;
 use fidl_fuchsia_mem as fmem;
@@ -26,7 +25,6 @@ use include_str_from_working_dir::include_str_from_working_dir_env;
 use log::{error, info, warn};
 use std::collections::HashSet;
 use std::num::NonZeroU32;
-use std::pin::Pin;
 use std::time::Duration;
 use update_package::manifest::OtaManifest;
 
@@ -246,19 +244,14 @@ pub enum CommitAction {
 }
 
 /// A trait to update the system in the given `Environment` using the provided config options.
-#[async_trait(?Send)]
 pub trait Updater {
-    type UpdateStream<'a>: FusedStream<Item = fupdate_installer_ext::State>
-    where
-        Self: 'a;
-
     async fn update(
         &mut self,
         config: Config,
         env: Environment,
         reboot_controller: RebootController,
         cancel_receiver: oneshot::Receiver<()>,
-    ) -> (String, Self::UpdateStream<'_>);
+    ) -> (String, impl FusedStream<Item = fupdate_installer_ext::State>);
 }
 
 pub struct RealUpdater {
@@ -273,17 +266,14 @@ impl RealUpdater {
     }
 }
 
-#[async_trait(?Send)]
 impl Updater for RealUpdater {
-    type UpdateStream<'a> = Pin<Box<dyn FusedStream<Item = fupdate_installer_ext::State> + 'a>>;
-
     async fn update(
         &mut self,
         config: Config,
         env: Environment,
         reboot_controller: RebootController,
         cancel_receiver: oneshot::Receiver<()>,
-    ) -> (String, Self::UpdateStream<'_>) {
+    ) -> (String, impl FusedStream<Item = fupdate_installer_ext::State>) {
         let manifest_public_keys = self
             .structured_config
             .manifest_public_keys
@@ -302,7 +292,7 @@ impl Updater for RealUpdater {
         let excessive_update_duration =
             NonZeroU32::new(self.structured_config.excessive_update_duration_seconds)
                 .map(|d| Duration::from_secs(d.get().into()));
-        let (attempt_id, attempt) = update(
+        update(
             config,
             env,
             &mut self.history,
@@ -315,8 +305,7 @@ impl Updater for RealUpdater {
             cancel_receiver,
             &mut self.crash_reporter,
         )
-        .await;
-        (attempt_id, Box::pin(attempt))
+        .await
     }
 }
 

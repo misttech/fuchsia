@@ -535,7 +535,6 @@ impl SuspendState {
 mod tests {
     use super::*;
     use crate::update::ConfigBuilder;
-    use async_trait::async_trait;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use event_queue::ClosedClient;
     use fidl_fuchsia_update_installer_ext::{
@@ -544,7 +543,6 @@ mod tests {
     use fuchsia_inspect::Inspector;
     use fuchsia_sync::Mutex;
     use mpsc::{Receiver, Sender};
-    use std::pin::Pin;
     use std::sync::Arc;
     use std::task::Poll;
 
@@ -575,17 +573,14 @@ mod tests {
         }
     }
 
-    #[async_trait(?Send)]
     impl Updater for FakeUpdater {
-        type UpdateStream<'a> = mpsc::Receiver<State>;
-
         async fn update(
             &mut self,
             _config: Config,
             _env: Environment,
             _reboot_controller: RebootController,
             _cancel_receiver: oneshot::Receiver<()>,
-        ) -> (String, Self::UpdateStream<'_>) {
+        ) -> (String, impl FusedStream<Item = State>) {
             self.0.next().await.unwrap()
         }
     }
@@ -963,24 +958,21 @@ mod tests {
 
     struct CancelableUpdater;
 
-    #[async_trait(?Send)]
     impl Updater for CancelableUpdater {
-        type UpdateStream<'a> = Pin<Box<dyn FusedStream<Item = State>>>;
-
         async fn update(
             &mut self,
             _config: Config,
             _env: Environment,
             _reboot_controller: RebootController,
             cancel_receiver: oneshot::Receiver<()>,
-        ) -> (String, Self::UpdateStream<'_>) {
+        ) -> (String, impl FusedStream<Item = State>) {
             let stream = async_generator::generate(move |mut co| async move {
                 co.yield_(State::Prepare).await;
                 let () = cancel_receiver.await.expect("cancel sender should not be dropped");
                 co.yield_(State::Canceled).await;
             })
             .into_yielded();
-            ("my-attempt".to_string(), Box::pin(stream))
+            ("my-attempt".to_string(), stream)
         }
     }
 

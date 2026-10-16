@@ -4,7 +4,6 @@
 
 use super::paver;
 use anyhow::{Context, Error};
-use async_trait::async_trait;
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMarker as PowerStateControlMarker, AdminProxy as PowerStateControlProxy,
 };
@@ -17,7 +16,6 @@ use fidl_fuchsia_pkg_garbagecollector::ManagerProxy as SpaceManagerProxy;
 use fuchsia_component::client::connect_to_protocol;
 
 /// A trait to provide access to the current system image hash.
-#[async_trait]
 pub trait SystemInfo {
     /// Get the hash of the current system_image package, if there is one.
     async fn system_image_hash(&self) -> Result<Option<fuchsia_hash::Hash>, Error>;
@@ -98,7 +96,6 @@ pub(crate) async fn version() -> Result<Option<String>, Error> {
 #[derive(Debug)]
 pub struct NamespaceSystemInfo;
 
-#[async_trait]
 impl SystemInfo for NamespaceSystemInfo {
     async fn system_image_hash(&self) -> Result<Option<fuchsia_hash::Hash>, Error> {
         let proxy = if let Ok(proxy) =
@@ -123,7 +120,6 @@ impl SystemInfo for NamespaceSystemInfo {
 pub(crate) struct FakeSystemInfo(pub(crate) Option<fuchsia_hash::Hash>);
 
 #[cfg(test)]
-#[async_trait]
 impl SystemInfo for FakeSystemInfo {
     async fn system_image_hash(&self) -> Result<Option<fuchsia_hash::Hash>, Error> {
         Ok(self.0)
