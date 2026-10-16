@@ -149,6 +149,15 @@ async fn new_realm(
                 .to(Ref::parent()),
         )
         .await?;
+    // Expose the shim's SystemStateTransition so test cases can query the termination state.
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fdevicemanager::SystemStateTransitionMarker>())
+                .from(&shutdown_shim)
+                .to(Ref::parent()),
+        )
+        .await?;
     // Give the shim the component_manager mock, as it is always available to the shim in prod
     builder
         .add_route(
@@ -318,6 +327,66 @@ async fn test_shutdown_request_terminal_state_watchers(
 
     verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
         .await
+}
+
+/// Verifies that a shutdown request rejected with ALREADY_EXISTS, because another shutdown is
+/// already in progress, does not change the termination state of the in-progress shutdown.
+#[test_matrix(
+    [true, false],
+    [ShutdownAction::RebootToBootloader, ShutdownAction::RebootToRecovery, ShutdownAction::Poweroff]
+)]
+#[fuchsia::test]
+async fn test_concurrent_shutdown_request_keeps_termination_state(
+    is_power_framework_available: bool,
+    second_action: ShutdownAction,
+) -> Result<(), Error> {
+    let (realm_instance, mut recv_signals) = new_realm(is_power_framework_available).await?;
+
+    let first_client: fstatecontrol::AdminProxy =
+        realm_instance.root.connect_to_protocol_at_exposed_dir()?;
+    let _task = fasync::Task::spawn(async move {
+        first_client
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::CriticalDriverFailure]),
+                __source_breaking: SourceBreaking,
+            })
+            .await
+            .expect_err(
+                "the shutdown shim should close the channel when manual shutdown driving is complete",
+            );
+    });
+
+    // Wait until the first request is driving component shutdown. Hold on to the responder so
+    // the shim's SystemController request stays pending.
+    let _sys2_responder = loop {
+        match recv_signals.next().await {
+            Some(Signal::Sys2Shutdown(responder)) => break responder,
+            Some(Signal::ShutdownControlLease(_)) => continue,
+            None => panic!("mocks server closed the signal channel"),
+        }
+    };
+
+    // A second, conflicting request must be rejected...
+    let second_client: fstatecontrol::AdminProxy =
+        realm_instance.root.connect_to_protocol_at_exposed_dir()?;
+    let result = second_client
+        .shutdown(&ShutdownOptions {
+            action: Some(second_action),
+            reasons: Some(vec![ShutdownReason::StarnixContainerNoReason]),
+            __source_breaking: SourceBreaking,
+        })
+        .await?;
+    assert_eq!(result, Err(zx::Status::ALREADY_EXISTS.into_raw()));
+
+    // ...and must not change the termination state of the in-progress reboot.
+    let system_state: fdevicemanager::SystemStateTransitionProxy =
+        realm_instance.root.connect_to_protocol_at_exposed_dir()?;
+    assert_eq!(
+        system_state.get_termination_system_state().await?,
+        fdevicemanager::SystemPowerState::Reboot
+    );
+    Ok(())
 }
 
 #[test_case(true; "with_power_framework")]

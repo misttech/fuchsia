@@ -275,7 +275,6 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
     ) -> Result<(), zx::Status> {
         println!("[shutdown-shim] shutdown with options [{:?}]", options);
         let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
-        set_system_power_state(target_state);
         self.forward_command(target_state, options).await
     }
 
@@ -284,15 +283,22 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
         fallback_state: SystemPowerState,
         options: Option<ShutdownOptionsWrapper>,
     ) -> Result<(), zx::Status> {
-        println!("[shutdown-shim] entering {:?} state", fallback_state);
-        // Return if shutdown is already pending
+        // Return if shutdown is already pending. The termination state must only be updated by
+        // the request that wins this check, otherwise a rejected concurrent request could change
+        // the in-progress shutdown (e.g. turn a reboot into a reboot to bootloader).
         {
             let mut shutdown_pending = self.shutdown_pending.lock().await;
             if *shutdown_pending {
+                println!(
+                    "[shutdown-shim] ignoring {:?} request, shutdown already pending",
+                    fallback_state
+                );
                 return Err(zx::Status::ALREADY_EXISTS);
             }
             *shutdown_pending = true;
+            set_system_power_state(fallback_state);
         }
+        println!("[shutdown-shim] entering {:?} state", fallback_state);
 
         self.shutdown_watcher.handle_system_shutdown_message(options).await;
 
