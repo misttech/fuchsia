@@ -6,6 +6,8 @@
 
 //! Hypervisor subsystem.
 
+pub mod aspace;
+mod aspace_ffi;
 pub mod cpu;
 mod cpu_ffi;
 pub mod ktrace;

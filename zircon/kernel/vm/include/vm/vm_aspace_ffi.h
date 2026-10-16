@@ -25,6 +25,7 @@ VmAspace* cpp_vm_aspace_create_with_opts(vaddr_t base, size_t size, VmAspace::Ty
 VmAspace* cpp_vm_aspace_create_unified(VmAspace* shared, VmAspace* restricted, const char* name);
 VmAspace* cpp_vm_aspace_kernel_aspace();
 VmAddressRegion* cpp_vm_aspace_root_vmar(VmAspace* aspace);
+VmAddressRegion* cpp_vm_aspace_root_vmar_locked(VmAspace* aspace);
 vaddr_t cpp_vm_aspace_base(VmAspace* aspace);
 size_t cpp_vm_aspace_size(VmAspace* aspace);
 const char* cpp_vm_aspace_name(VmAspace* aspace);

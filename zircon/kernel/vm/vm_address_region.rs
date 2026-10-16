@@ -754,6 +754,29 @@ impl VmAddressRegion {
         }
         Ok(())
     }
+
+    /// Finds the child region or mapping containing `addr`.
+    pub fn find_region(&self, addr: VAddr) -> Option<RefPtr<VmAddressRegionOrMapping>> {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
+        let raw = unsafe { bindings::cpp_vm_address_region_find_region(self.as_ffi_ptr(), addr.0) };
+        // SAFETY: `raw` is null or an owned reference to a live `VmAddressRegionOrMapping`.
+        unsafe { RefPtr::try_from_raw(raw.cast()) }
+    }
+
+    /// Finds the child region or mapping containing `addr` while holding the aspace lock.
+    pub fn find_region_locked(
+        &self,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+        addr: VAddr,
+    ) -> Option<RefPtr<VmAddressRegionOrMapping>> {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion` and the aspace lock is
+        // held.
+        let raw = unsafe {
+            bindings::cpp_vm_address_region_find_region_locked(self.as_ffi_ptr(), addr.0)
+        };
+        // SAFETY: `raw` is null or an owned reference to a live `VmAddressRegionOrMapping`.
+        unsafe { RefPtr::try_from_raw(raw.cast()) }
+    }
 }
 
 /// Guard passed to [`VmEnumerator`] callbacks representing the held root `VmAspace` lock.

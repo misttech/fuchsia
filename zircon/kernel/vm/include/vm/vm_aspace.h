@@ -28,16 +28,13 @@ class VmAddressRegion;
 class VmMapping;
 class VmAddressRegionOrMapping;
 
-namespace hypervisor {
-class GuestPhysicalAspace;
-}  // namespace hypervisor
-
 class VmObject;
 
 class VmAspace;
 extern "C" void cpp_vm_aspace_free(VmAspace* aspace);
 extern "C" void* cpp_vm_aspace_lock(const VmAspace* aspace);
 extern "C" void* cpp_vm_aspace_region_lock(const VmAspace* aspace);
+extern "C" VmAddressRegion* cpp_vm_aspace_root_vmar_locked(VmAspace* aspace);
 
 class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCounted<VmAspace> {
  public:
@@ -230,12 +227,11 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   bool IsHighMemoryPriority() const;
 
  protected:
-  // Share the aspace lock with VmAddressRegion/VmMapping/GuestPhysicalAspace so they can serialize
+  // Share the aspace lock with VmAddressRegion/VmMapping so they can serialize
   // changes to the aspace.
   friend class VmAddressRegionOrMapping;
   friend class VmAddressRegion;
   friend class VmMapping;
-  friend class hypervisor::GuestPhysicalAspace;
   Lock<CriticalMutex>* lock() const TA_RET_CAP(lock_) { return &lock_; }
   Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(lock_) { return lock_; }
   Lock<CriticalMutex>* region_lock() const TA_RET_CAP(region_lock_) { return &region_lock_; }
@@ -275,6 +271,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   friend void ::cpp_vm_aspace_free(VmAspace* aspace);
   friend void* ::cpp_vm_aspace_lock(const VmAspace* aspace);
   friend void* ::cpp_vm_aspace_region_lock(const VmAspace* aspace);
+  friend VmAddressRegion* ::cpp_vm_aspace_root_vmar_locked(VmAspace* aspace);
 
   // complete initialization, may fail in OOM cases
   zx_status_t Init(ShareOpt share_opt);

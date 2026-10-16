@@ -13,7 +13,7 @@ use crate::kernel::types::PAddr;
 use core::ffi::{CStr, c_void};
 use core::ptr::{self, NonNull};
 use fbl::RefPtr;
-use ksync::{KMutex, LockClass, RawCriticalMutex};
+use ksync::{KMutex, LockClass, LockToken, RawCriticalMutex};
 use vm_aspace_bindings as bindings;
 use zx_status::Status;
 
@@ -300,6 +300,17 @@ impl VmAspace {
     pub fn root_vmar(&self) -> Option<RefPtr<VmAddressRegion>> {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`.
         unsafe { RefPtr::try_from_raw(bindings::cpp_vm_aspace_root_vmar(self.as_ffi_ptr()).cast()) }
+    }
+
+    /// Returns the root address region (`RootVmarLocked`) while holding the aspace lock.
+    pub fn root_vmar_locked(
+        &self,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> Option<RefPtr<VmAddressRegion>> {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace` and the aspace lock is held.
+        unsafe {
+            RefPtr::try_from_raw(bindings::cpp_vm_aspace_root_vmar_locked(self.as_ffi_ptr()).cast())
+        }
     }
 
     /// Sets the per-thread address space pointer to this address space.

@@ -59,6 +59,9 @@ VmMapping* cpp_vm_address_region_create_vm_mapping(
     VmAddressRegion* vmar, size_t mapping_offset, size_t size, uint8_t align_pow2,
     uint32_t vmar_flags, const VmObject* vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
     const char* name, vaddr_t* out_base, zx_status_t* out_status);
+VmAddressRegionOrMapping* cpp_vm_address_region_find_region(VmAddressRegion* vmar, vaddr_t addr);
+VmAddressRegionOrMapping* cpp_vm_address_region_find_region_locked(VmAddressRegion* vmar,
+                                                                   vaddr_t addr);
 
 void cpp_vm_address_region_enumerator_construct(
     ffi::Uninitialized<CppVmAddressRegionEnumerator>* out, VmAddressRegionEnumeratorType type,
@@ -87,6 +90,10 @@ zx_status_t cpp_vm_mapping_enumerate_protection_ranges_locked(
     cpp_vm_mapping_enumerate_protection_ranges_cb cb, void* ctx);
 VmMapping::FlagsRange cpp_vm_mapping_arch_mmu_flags_range_locked(const VmMapping* mapping,
                                                                  vaddr_t offset);
+arch_mmu_flags_t cpp_vm_mapping_arch_mmu_flags_locked(const VmMapping* mapping, vaddr_t offset);
+zx_status_t cpp_vm_mapping_page_fault_locked(VmMapping* mapping, vaddr_t va, uint32_t pf_flags,
+                                             size_t additional_pages,
+                                             MultiPageRequest* page_request, uint32_t* out_mapped);
 
 __END_CDECLS
 

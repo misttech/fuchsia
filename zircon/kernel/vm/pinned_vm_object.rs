@@ -12,6 +12,7 @@ use zx_status::Status;
 ///
 /// Matches the memory layout of the C++ `PinnedVmObject` class.
 #[repr(C)]
+#[derive(Default)]
 pub struct PinnedVmObject {
     vmo: Option<RefPtr<VmObject>>,
     offset: usize,

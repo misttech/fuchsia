@@ -18,6 +18,7 @@ __BEGIN_CDECLS
 void cpp_multi_page_request_construct(MultiPageRequest* req);
 void cpp_multi_page_request_destroy(MultiPageRequest* req);
 void cpp_multi_page_request_cancel_requests(MultiPageRequest* req);
+zx_status_t cpp_multi_page_request_wait(MultiPageRequest* req, bool suspendable);
 
 // PageRequest helpers
 uint32_t cpp_page_request_get_type(const PageRequest* request);

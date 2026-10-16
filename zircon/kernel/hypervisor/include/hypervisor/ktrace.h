@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 
-enum VcpuMeta : uint32_t {
+enum VcpuMeta : uint8_t {
   // Waits.
   VCPU_INTERRUPT,
   VCPU_PORT,
@@ -17,8 +17,9 @@ enum VcpuMeta : uint32_t {
   // Do not use.
   VCPU_META_COUNT,
 };
+static_assert(sizeof(VcpuMeta) == sizeof(uint8_t));
 
-enum VcpuExit : uint32_t {
+enum VcpuExit : uint8_t {
 #if ARCH_ARM64
   VCPU_UNDERFLOW_MAINTENANCE_INTERRUPT,
   VCPU_PHYSICAL_INTERRUPT,
@@ -51,16 +52,23 @@ enum VcpuExit : uint32_t {
   // Do not use.
   VCPU_EXIT_COUNT,
 };
+static_assert(sizeof(VcpuExit) == sizeof(uint8_t));
 
-enum VcpuBlockOp {
+enum VcpuBlockOp : uint8_t {
   VCPU_BLOCK,
   VCPU_UNBLOCK,
 };
+static_assert(sizeof(VcpuBlockOp) == sizeof(uint8_t));
 
-void ktrace_report_vcpu_meta();
-void ktrace_vcpu(VcpuBlockOp block_op, VcpuMeta meta);
-void ktrace_vcpu_exit(VcpuExit exit, uint64_t exit_address);
+extern "C" {
+void rust_ktrace_vcpu(VcpuBlockOp block_op, VcpuMeta meta);
+void rust_ktrace_vcpu_exit(VcpuExit exit, uint64_t exit_address);
+}
 
-extern "C" void cpp_ktrace_vcpu(VcpuBlockOp block_op, VcpuMeta meta);
+inline void ktrace_vcpu(VcpuBlockOp block_op, VcpuMeta meta) { rust_ktrace_vcpu(block_op, meta); }
+
+inline void ktrace_vcpu_exit(VcpuExit exit, uint64_t exit_address) {
+  rust_ktrace_vcpu_exit(exit, exit_address);
+}
 
 #endif  // ZIRCON_KERNEL_HYPERVISOR_INCLUDE_HYPERVISOR_KTRACE_H_

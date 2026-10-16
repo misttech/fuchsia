@@ -50,6 +50,10 @@ FFI_ALWAYS_INLINE void cpp_multi_page_request_cancel_requests(MultiPageRequest* 
   req->CancelRequests();
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_multi_page_request_wait(MultiPageRequest* req, bool suspendable) {
+  return req->Wait(suspendable);
+}
+
 // PageRequest accessors
 FFI_ALWAYS_INLINE uint32_t cpp_page_request_get_type(const PageRequest* request) {
   return static_cast<uint32_t>(PageProviderHelper::GetRequestType(request));

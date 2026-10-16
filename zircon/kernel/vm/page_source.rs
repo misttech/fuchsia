@@ -53,6 +53,12 @@ impl MultiPageRequest {
         pin_init_ffi!(init_shim)
     }
 
+    /// Waits on the currently active page request.
+    pub fn wait(self: Pin<&mut Self>, suspendable: bool) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a valid, pinned `MultiPageRequest`.
+        Status::ok(unsafe { bindings::cpp_multi_page_request_wait(self.as_raw(), suspendable) })
+    }
+
     /// Cancel all requests and have no active request.
     pub fn cancel_requests(self: Pin<&mut Self>) {
         // SAFETY: Calling C++ CancelRequests on the pinned instance does not move it.

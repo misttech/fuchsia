@@ -12,9 +12,7 @@ source_set("hypervisor") {
   public_deps = [ ":headers" ]
 
   sources = [
-    "aspace.cc",
     "guest_ffi.cc",
-    "ktrace.cc",
     "trap_map_ffi.cc",
     "vcpu_ffi.cc",
   ]
@@ -31,6 +29,8 @@ source_set("hypervisor") {
 
 kernel_rust_mod("hypervisor-rs") {
   sources = [
+    "aspace.rs",
+    "aspace_ffi.rs",
     "cpu.rs",
     "cpu_ffi.rs",
     "ktrace.rs",
@@ -48,6 +48,7 @@ kernel_rust_mod("hypervisor-rs") {
     "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/range_check:range_check_rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

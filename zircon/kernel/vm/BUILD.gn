@@ -738,6 +738,7 @@ kernel_bindgen_crate("vm-aspace-bindings") {
     "cpp_vm_aspace_region_lock",
     "cpp_vm_aspace_rename",
     "cpp_vm_aspace_root_vmar",
+    "cpp_vm_aspace_root_vmar_locked",
     "cpp_vm_aspace_size",
     "cpp_vm_aspace_soft_fault",
     "cpp_vm_aspace_soft_fault_in_range",
@@ -826,6 +827,8 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_address_region_enumerator_next",
     "cpp_vm_address_region_enumerator_pause",
     "cpp_vm_address_region_enumerator_resume",
+    "cpp_vm_address_region_find_region",
+    "cpp_vm_address_region_find_region_locked",
     "cpp_vm_address_region_free",
     "cpp_vm_address_region_or_mapping_state",
     "cpp_vm_address_region_protect",
@@ -834,6 +837,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_address_region_set_memory_priority",
     "cpp_vm_address_region_state",
     "cpp_vm_address_region_unmap",
+    "cpp_vm_mapping_arch_mmu_flags_locked",
     "cpp_vm_mapping_arch_mmu_flags_range_locked",
     "cpp_vm_mapping_debug_protect",
     "cpp_vm_mapping_debug_unmap",
@@ -843,6 +847,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_mapping_free",
     "cpp_vm_mapping_map_range",
     "cpp_vm_mapping_mark_mergeable",
+    "cpp_vm_mapping_page_fault_locked",
     "cpp_vm_mapping_state",
   ]
   type_allowlist = [
@@ -868,6 +873,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
   ]
   type_blocklist = [
     "CppVmAddressRegionEnumerator_.*",
+    "MultiPageRequest",
     "VmAspace",
     "VmAddressRegion_AttributionCounts",
     "VmAddressRegion_MapResult",
@@ -916,6 +922,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "pub use zx_types::{zx_status_t, zx_vaddr_t as vaddr_t};",
     "pub type fbl_RefPtr = core::ffi::c_void;",
     "pub type VmAspace = core::ffi::c_void;",
+    "pub type MultiPageRequest = core::ffi::c_void;",
   ]
   expect_lints = [ "non_camel_case_types" ]
 }
@@ -981,6 +988,7 @@ kernel_bindgen_crate("page-source-bindings") {
     "cpp_multi_page_request_construct",
     "cpp_multi_page_request_destroy",
     "cpp_multi_page_request_cancel_requests",
+    "cpp_multi_page_request_wait",
     "cpp_page_request_get_type",
     "cpp_page_request_get_offset",
     "cpp_page_request_get_len",

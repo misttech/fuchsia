@@ -39,6 +39,12 @@ FFI_ALWAYS_INLINE VmAddressRegion* cpp_vm_aspace_root_vmar(VmAspace* aspace) {
   return fbl::ExportToRawPtr(&vmar);
 }
 
+FFI_ALWAYS_INLINE VmAddressRegion* cpp_vm_aspace_root_vmar_locked(VmAspace* aspace)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  fbl::RefPtr<VmAddressRegion> vmar = aspace->RootVmarLocked();
+  return fbl::ExportToRawPtr(&vmar);
+}
+
 FFI_ALWAYS_INLINE vaddr_t cpp_vm_aspace_base(VmAspace* aspace) { return aspace->base(); }
 
 FFI_ALWAYS_INLINE size_t cpp_vm_aspace_size(VmAspace* aspace) { return aspace->size(); }

@@ -155,4 +155,14 @@ FFI_ALWAYS_INLINE void cpp_vm_address_region_enumerator_resume(
       break;
   }
 }
+FFI_ALWAYS_INLINE VmAddressRegionOrMapping* cpp_vm_address_region_find_region(VmAddressRegion* vmar,
+                                                                              vaddr_t addr) {
+  fbl::RefPtr<VmAddressRegionOrMapping> region = vmar->FindRegion(addr);
+  return fbl::ExportToRawPtr(&region);
+}
+FFI_ALWAYS_INLINE VmAddressRegionOrMapping* cpp_vm_address_region_find_region_locked(
+    VmAddressRegion* vmar, vaddr_t addr) TA_NO_THREAD_SAFETY_ANALYSIS {
+  fbl::RefPtr<VmAddressRegionOrMapping> region = vmar->FindRegionLocked(addr);
+  return fbl::ExportToRawPtr(&region);
+}
 }  // extern "C"

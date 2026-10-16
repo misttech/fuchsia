@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
+use super::page_source::MultiPageRequest;
 use super::vm_address_region::{LifeCycleState, VmAddressRegionOrMapping, flag};
 use super::vm_aspace::{VmAspaceLockClass, VmAspaceRegionLockClass};
 use super::vm_object::{VmObject, VmObjectLockClass};
@@ -14,6 +15,7 @@ use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
+use core::pin::Pin;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
 use debug::ltracef;
@@ -492,6 +494,41 @@ impl VmMapping {
     ) -> FlagsRange {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping` and the aspace lock is held.
         unsafe { bindings::cpp_vm_mapping_arch_mmu_flags_range_locked(self.as_ffi_ptr(), va) }
+    }
+
+    /// Returns the MMU flags for `offset` while holding the aspace lock.
+    pub fn arch_mmu_flags_locked(
+        &self,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+        offset: VAddr,
+    ) -> ArchMmuFlags {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping` and the aspace lock is held.
+        unsafe { bindings::cpp_vm_mapping_arch_mmu_flags_locked(self.as_ffi_ptr(), offset.0) }
+    }
+
+    /// Resolves a page fault on this mapping while holding the aspace lock.
+    pub fn page_fault_locked(
+        &self,
+        _token: &mut LockToken<'_, VmAspaceLockClass>,
+        va: VAddr,
+        pf_flags: u32,
+        additional_pages: usize,
+        page_request: Pin<&mut MultiPageRequest>,
+    ) -> (Result<(), Status>, u32) {
+        let mut mapped = 0u32;
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`, the aspace lock is held, and
+        // `page_request` is a pinned `MultiPageRequest`.
+        let status = unsafe {
+            bindings::cpp_vm_mapping_page_fault_locked(
+                self.as_ffi_ptr(),
+                va.0,
+                pf_flags,
+                additional_pages,
+                page_request.as_raw().cast(),
+                &mut mapped,
+            )
+        };
+        (Status::ok(status), mapped)
     }
     /// Informs the mapping that a write is going to be performed to the backing VMO.
     ///

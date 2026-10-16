@@ -61,4 +61,15 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping,
 FFI_ALWAYS_INLINE void cpp_vm_mapping_mark_mergeable(VmMapping* mapping) {
   VmMapping::MarkMergeable(fbl::ImportFromRawPtr(mapping));
 }
+FFI_ALWAYS_INLINE arch_mmu_flags_t cpp_vm_mapping_arch_mmu_flags_locked(
+    const VmMapping* mapping, vaddr_t offset) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return mapping->arch_mmu_flags_locked(offset);
+}
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_page_fault_locked(
+    VmMapping* mapping, vaddr_t va, uint32_t pf_flags, size_t additional_pages,
+    MultiPageRequest* page_request, uint32_t* out_mapped) TA_NO_THREAD_SAFETY_ANALYSIS {
+  auto [status, mapped] = mapping->PageFaultLocked(va, pf_flags, additional_pages, page_request);
+  *out_mapped = mapped;
+  return status;
+}
 }  // extern "C"

@@ -9,12 +9,41 @@
 
 #include <lib/zx/result.h>
 
+#include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <ktl/unique_ptr.h>
 #include <ktl/utility.h>
-#include <vm/pinned_vm_object.h>
 #include <vm/vm_address_region.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_object.h>
+
+namespace hypervisor {
+class GuestPtr;
+class GuestPhysicalAspace;
+}  // namespace hypervisor
+
+extern "C" {
+void rust_guest_ptr_reset(hypervisor::GuestPtr* guest_ptr);
+void* rust_guest_ptr_as(const hypervisor::GuestPtr* guest_ptr, size_t type_size);
+zx_status_t rust_guest_physical_aspace_create(hypervisor::GuestPhysicalAspace* out);
+void rust_guest_physical_aspace_destroy(hypervisor::GuestPhysicalAspace* gpa);
+size_t rust_guest_physical_aspace_size(const hypervisor::GuestPhysicalAspace* gpa);
+ArchVmAspace* rust_guest_physical_aspace_arch_aspace(hypervisor::GuestPhysicalAspace* gpa);
+VmAddressRegion* rust_guest_physical_aspace_root_vmar(const hypervisor::GuestPhysicalAspace* gpa);
+bool rust_guest_physical_aspace_is_mapped(const hypervisor::GuestPhysicalAspace* gpa,
+                                          zx_gpaddr_t guest_paddr);
+zx_status_t rust_guest_physical_aspace_map_interrupt_controller(
+    hypervisor::GuestPhysicalAspace* gpa, zx_gpaddr_t guest_paddr, zx_paddr_t host_paddr,
+    size_t len);
+zx_status_t rust_guest_physical_aspace_unmap_range(hypervisor::GuestPhysicalAspace* gpa,
+                                                   zx_gpaddr_t guest_paddr, size_t len);
+zx_status_t rust_guest_physical_aspace_page_fault(hypervisor::GuestPhysicalAspace* gpa,
+                                                  zx_gpaddr_t guest_paddr);
+zx_status_t rust_guest_physical_aspace_create_guest_ptr(hypervisor::GuestPhysicalAspace* gpa,
+                                                        zx_gpaddr_t guest_paddr, size_t len,
+                                                        const char* name,
+                                                        hypervisor::GuestPtr* out);
+}  // extern "C"
 
 namespace hypervisor {
 
@@ -23,66 +52,91 @@ namespace hypervisor {
 // portion of guest physical memory for faster access.
 class GuestPtr {
  public:
-  GuestPtr(fbl::RefPtr<VmMapping> mapping, PinnedVmObject&& pinned_vmo, zx_vaddr_t offset)
-      : mapping_(ktl::move(mapping)), pinned_vmo_(ktl::move(pinned_vmo)), offset_(offset) {}
+  GuestPtr() = default;
+  GuestPtr(GuestPtr&& other) noexcept : storage_(ktl::exchange(other.storage_, {})) {}
+  GuestPtr& operator=(GuestPtr&& other) noexcept {
+    if (this != &other) {
+      reset();
+      storage_ = ktl::exchange(other.storage_, {});
+    }
+    return *this;
+  }
   ~GuestPtr() { reset(); }
 
-  GuestPtr() = default;
-  GuestPtr(GuestPtr&&) noexcept = default;
-  GuestPtr& operator=(GuestPtr&&) noexcept = default;
   GuestPtr(const GuestPtr&) = delete;
   GuestPtr& operator=(const GuestPtr&) = delete;
 
-  void reset() {
-    if (mapping_) {
-      mapping_->Destroy();
-      mapping_.reset();
-    }
-    pinned_vmo_.reset();
-  }
+  void reset() { rust_guest_ptr_reset(this); }
 
   template <typename T>
   T* as() const {
-    if (offset_ + sizeof(T) > mapping_->size()) {
-      return nullptr;
-    }
-    return reinterpret_cast<T*>(mapping_->base() + offset_);
+    return static_cast<T*>(rust_guest_ptr_as(this, sizeof(T)));
   }
 
  private:
-  fbl::RefPtr<VmMapping> mapping_;
-  PinnedVmObject pinned_vmo_;
-  zx_vaddr_t offset_;
+  [[maybe_unused]] OpaqueStorage<40, 8> storage_{};
 };
+static_assert(sizeof(GuestPtr) == 40);
+static_assert(alignof(GuestPtr) == 8);
 
 class GuestPhysicalAspace {
  public:
-  static zx::result<GuestPhysicalAspace> Create();
-  ~GuestPhysicalAspace();
-
+  static zx::result<GuestPhysicalAspace> Create() {
+    GuestPhysicalAspace gpa;
+    if (zx_status_t status = rust_guest_physical_aspace_create(&gpa); status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok(ktl::move(gpa));
+  }
   GuestPhysicalAspace() = default;
-  GuestPhysicalAspace(GuestPhysicalAspace&&) = default;
-  GuestPhysicalAspace& operator=(GuestPhysicalAspace&&) = default;
+  GuestPhysicalAspace(GuestPhysicalAspace&& other) noexcept
+      : storage_(ktl::exchange(other.storage_, {})) {}
+  GuestPhysicalAspace& operator=(GuestPhysicalAspace&& other) noexcept {
+    if (this != &other) {
+      rust_guest_physical_aspace_destroy(this);
+      storage_ = ktl::exchange(other.storage_, {});
+    }
+    return *this;
+  }
+  ~GuestPhysicalAspace() { rust_guest_physical_aspace_destroy(this); }
 
   GuestPhysicalAspace(const GuestPhysicalAspace&) = delete;
   GuestPhysicalAspace& operator=(const GuestPhysicalAspace&) = delete;
 
-  size_t size() const { return physical_aspace_->size(); }
-  ArchVmAspace& arch_aspace() { return physical_aspace_->arch_aspace(); }
-  fbl::RefPtr<VmAddressRegion> RootVmar() const { return physical_aspace_->RootVmar(); }
+  size_t size() const { return rust_guest_physical_aspace_size(this); }
+  ArchVmAspace& arch_aspace() { return *rust_guest_physical_aspace_arch_aspace(this); }
+  fbl::RefPtr<VmAddressRegion> RootVmar() const {
+    return fbl::ImportFromRawPtr(rust_guest_physical_aspace_root_vmar(this));
+  }
 
-  bool IsMapped(zx_gpaddr_t guest_paddr) const;
-  zx::result<> MapInterruptController(zx_gpaddr_t guest_paddr, zx_paddr_t host_paddr, size_t len);
-  zx::result<> UnmapRange(zx_gpaddr_t guest_paddr, size_t len);
-  zx::result<> PageFault(zx_gpaddr_t guest_paddr);
-  zx::result<GuestPtr> CreateGuestPtr(zx_gpaddr_t guest_paddr, size_t len, const char* name);
+  bool IsMapped(zx_gpaddr_t guest_paddr) const {
+    return rust_guest_physical_aspace_is_mapped(this, guest_paddr);
+  }
+  zx::result<> MapInterruptController(zx_gpaddr_t guest_paddr, zx_paddr_t host_paddr, size_t len) {
+    return zx::make_result(
+        rust_guest_physical_aspace_map_interrupt_controller(this, guest_paddr, host_paddr, len));
+  }
+  zx::result<> UnmapRange(zx_gpaddr_t guest_paddr, size_t len) {
+    return zx::make_result(rust_guest_physical_aspace_unmap_range(this, guest_paddr, len));
+  }
+  zx::result<> PageFault(zx_gpaddr_t guest_paddr) {
+    return zx::make_result(rust_guest_physical_aspace_page_fault(this, guest_paddr));
+  }
+  zx::result<GuestPtr> CreateGuestPtr(zx_gpaddr_t guest_paddr, size_t len, const char* name) {
+    GuestPtr guest_ptr;
+    if (zx_status_t status =
+            rust_guest_physical_aspace_create_guest_ptr(this, guest_paddr, len, name, &guest_ptr);
+        status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok(ktl::move(guest_ptr));
+  }
 
  private:
-  fbl::RefPtr<VmMapping> FindMapping(zx_gpaddr_t guest_paddr) const
-      TA_REQ(physical_aspace_->lock());
-
-  fbl::RefPtr<VmAspace> physical_aspace_;
+  [[maybe_unused]] OpaqueStorage<sizeof(uintptr_t), alignof(uintptr_t)> storage_{};
 };
+static_assert(sizeof(GuestPhysicalAspace) == sizeof(uintptr_t));
+static_assert(alignof(GuestPhysicalAspace) == alignof(uintptr_t));
 
 }  // namespace hypervisor
 
