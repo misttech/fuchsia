@@ -899,7 +899,19 @@
             ]
         },
         {
+            "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_AfterFork_MprotectFailure",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_ParentAfterFork_MprotectFailure",
             "audit_expectations": [
                 "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
             ]
@@ -914,6 +926,12 @@
             "name": "MProtectTest.ExecStackInSignal",
             "audit_expectations": [
                 "avc:  denied  { execstack } for scontext=test_u:test_r:mprotect_execmem_test_t:s0 tcontext=test_u:test_r:mprotect_execmem_test_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "MProtectTest.ExecmodWithConcurrentWrites",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
             ]
         },
         {

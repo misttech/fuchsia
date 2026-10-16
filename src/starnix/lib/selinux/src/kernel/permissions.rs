@@ -957,6 +957,8 @@ macro_rules! file_class_permission_enum {
         $(#[$meta])* $name $(for $kernel_class)? {
             // keep-sorted start
 
+            /// Permission to make executable a file mapping that has been modified by copy-on-write.
+            ExecMod("execmod"),
             /// Permission to execute a file with domain transition.
             Execute("execute"),
             /// Permissions to create hard link.

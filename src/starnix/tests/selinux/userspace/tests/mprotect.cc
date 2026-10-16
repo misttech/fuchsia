@@ -8,7 +8,9 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <string>
+#include <thread>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
@@ -240,6 +242,10 @@ struct ExecmodTestParam {
   bool private_mapping = false;
   // Whether the test should modify the mapped memory.
   bool modify_mapping = false;
+  // Whether the mapping is made executable by a child process forked after the modification.
+  bool mprotect_after_fork = false;
+  // Whether the mapping is made executable after forking a child process, after the modification.
+  bool mprotect_in_parent_after_fork = false;
   // Whether mprotect is expected to succeed or not.
   bool expect_success = false;
   std::string TestSuffixGenerator() const {
@@ -258,6 +264,12 @@ struct ExecmodTestParam {
       suffix += "Modification_";
     } else {
       suffix += "NoModification_";
+    }
+    if (mprotect_after_fork) {
+      suffix += "AfterFork_";
+    }
+    if (mprotect_in_parent_after_fork) {
+      suffix += "ParentAfterFork_";
     }
     if (expect_success) {
       suffix += "MprotectSuccess";
@@ -297,11 +309,29 @@ TEST_P(MProtectExecmod, ExecMod) {
       static_cast<char *>(mapping->mapping())[0] = 'j';
     }
     // Try to make the mapping executable.
-    int result = mprotect(mapping->mapping(), pagesize, PROT_READ | PROT_EXEC);
-    if (param.expect_success) {
-      EXPECT_THAT(result, SyscallSucceeds());
+    auto try_mprotect = [&] {
+      int result = mprotect(mapping->mapping(), pagesize, PROT_READ | PROT_EXEC);
+      if (param.expect_success) {
+        EXPECT_THAT(result, SyscallSucceeds());
+      } else {
+        EXPECT_THAT(result, SyscallFailsWithErrno(EACCES));
+      }
+    };
+    if (param.mprotect_after_fork) {
+      // In a child process, which shares the modified pages.
+      test_helper::ForkHelper helper;
+      helper.RunInForkedProcess(try_mprotect);
+      EXPECT_TRUE(helper.WaitForChildren());
+    } else if (param.mprotect_in_parent_after_fork) {
+      // After forking a child process, while it shares the modified pages.
+      test_helper::EventFdSem sem(0);
+      test_helper::ForkHelper helper;
+      helper.RunInForkedProcess([&] { EXPECT_THAT(sem.Wait(), SyscallSucceeds()); });
+      try_mprotect();
+      EXPECT_THAT(sem.Notify(1), SyscallSucceeds());
+      EXPECT_TRUE(helper.WaitForChildren());
     } else {
-      EXPECT_THAT(result, SyscallFailsWithErrno(EACCES));
+      try_mprotect();
     }
   }));
 }
@@ -316,6 +346,17 @@ const auto kExecmodSuccessFailureValues = ::testing::Values(
                      .private_mapping = true,
                      .modify_mapping = true,
                      .expect_success = true},
+    // `execmod` is still required after `fork()`, which shares the modified pages.
+    ExecmodTestParam{.has_execmod_perm = false,
+                     .private_mapping = true,
+                     .modify_mapping = true,
+                     .mprotect_after_fork = true,
+                     .expect_success = false},
+    ExecmodTestParam{.has_execmod_perm = false,
+                     .private_mapping = true,
+                     .modify_mapping = true,
+                     .mprotect_in_parent_after_fork = true,
+                     .expect_success = false},
     // `execmod` not required if the mapping is not private.
     ExecmodTestParam{.has_execmod_perm = false,
                      .private_mapping = false,
@@ -330,6 +371,58 @@ INSTANTIATE_TEST_SUITE_P(MProtectExecmod, MProtectExecmod, kExecmodSuccessFailur
                          [](const testing::TestParamInfo<ExecmodTestParam> &info) {
                            return info.param.TestSuffixGenerator();
                          });
+
+// While a writable private file mapping is made executable, writes to it are temporarily blocked,
+// so that none can land between the `execmod` check and the protection change. This race itself
+// can't be tested deterministically. Instead, this checks that a thread that keeps writing to the
+// mapping is unaffected by the blocking: its write faults are retried rather than reported as
+// SIGSEGV, and write access is restored after the attempt is denied. The mapping was written
+// before the attempt, so the denial itself is deterministic.
+TEST(MProtectTest, ExecmodWithConcurrentWrites) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:mprotect_execmod_no_test_t:s0", [&] {
+    test_helper::ScopedTempDir temp_dir;
+    std::string file_path = temp_dir.path() + "/test_file";
+    ASSERT_TRUE(files::WriteFile(file_path, "hello"));
+    auto fd = fbl::unique_fd(open(file_path.c_str(), O_RDWR));
+    ASSERT_TRUE(fd.is_valid());
+
+    long pagesize = sysconf(_SC_PAGESIZE);
+    auto mapping = test_helper::ScopedMMap::MMap(nullptr, pagesize, PROT_READ | PROT_WRITE,
+                                                 MAP_PRIVATE, fd.get(), 0);
+    ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+    volatile char *page = static_cast<volatile char *>(mapping->mapping());
+
+    // Keep writing to the mapping from another thread.
+    std::atomic<bool> stop = false;
+    std::atomic<uint64_t> writes = 0;
+    std::thread writer([&] {
+      while (!stop) {
+        page[1] = 'j';
+        writes.fetch_add(1);
+      }
+    });
+    auto stop_writer = fit::defer([&] {
+      stop = true;
+      writer.join();
+    });
+    // Returns whether at least `count` writes were made within 10 seconds.
+    auto wait_for_writes = [&](uint64_t count) {
+      for (int i = 0; i < 10000 && writes < count; i++) {
+        usleep(/*usec=*/1000);
+      }
+      return writes >= count;
+    };
+    ASSERT_TRUE(wait_for_writes(/*count=*/1));
+
+    // The mapping was modified, so making it executable requires `execmod`.
+    EXPECT_THAT(mprotect(mapping->mapping(), pagesize, PROT_READ | PROT_EXEC),
+                SyscallFailsWithErrno(EACCES));
+
+    // The mapping is still writable.
+    EXPECT_TRUE(wait_for_writes(/*count=*/writes + 1));
+  }));
+}
 
 class MProtectExecstack : public testing::TestWithParam<std::pair<const char *, bool>> {};
 

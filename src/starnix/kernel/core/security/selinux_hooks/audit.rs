@@ -4,8 +4,8 @@
 
 use crate::task::{CurrentTask, Task};
 use crate::vfs::{
-    DirEntry, DirEntryHandle, FileObject, FileSystem, FsNode, FsStr, NamespaceNode,
-    PathWithReachability,
+    DirEntry, DirEntryHandle, FileHandle, FileObject, FileSystem, FsNode, FsNodeHandle, FsStr,
+    NamespaceNode, PathWithReachability,
 };
 use bstr::BStr;
 use fuchsia_rcu::RcuReadScope;
@@ -129,8 +129,20 @@ impl<'a> From<&'a FileObject> for Auditable<'a> {
     }
 }
 
+impl<'a> From<&'a FileHandle> for Auditable<'a> {
+    fn from(value: &'a FileHandle) -> Self {
+        Auditable::FileObject(value)
+    }
+}
+
 impl<'a> From<&'a FsNode> for Auditable<'a> {
     fn from(value: &'a FsNode) -> Self {
+        Auditable::FsNode(value)
+    }
+}
+
+impl<'a> From<&'a FsNodeHandle> for Auditable<'a> {
+    fn from(value: &'a FsNodeHandle) -> Self {
         Auditable::FsNode(value)
     }
 }

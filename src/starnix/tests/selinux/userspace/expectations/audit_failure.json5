@@ -14,9 +14,6 @@
         // the watch without auditing.
         "InotifyTest.WatchSocketDenied",
 
-        // TODO(https://fxbug.dev/409256444) - Check `execmod`.
-        "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
-
         // Starnix checks CAP_SYS_ADMIN without auditing in perf_event_open(), and skips the
         // capability check for a tracepoint on the calling task that excludes the kernel, so it
         // generates fewer perfmon/sys_admin capability denials than Linux does.

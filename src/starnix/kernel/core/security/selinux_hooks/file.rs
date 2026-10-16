@@ -336,6 +336,7 @@ pub(in crate::security) fn file_mprotect(
     mapping: &Mapping,
     prot: ProtectionFlags,
 ) -> Result<(), Errno> {
+    let mapping_options = mapping.flags().options();
     if !mapping.can_exec() && prot.contains(ProtectionFlags::EXEC) {
         let permission = match mapping.name() {
             MappingNameRef::Heap => Some(ProcessPermission::ExecHeap),
@@ -350,8 +351,6 @@ pub(in crate::security) fn file_mprotect(
             | MappingNameRef::File(_)
             | MappingNameRef::AioContext(_)
             | MappingNameRef::Ashmem(_) => {
-                // TODO(b/409256444): Check `execmod`
-
                 // `execstack` is checked when making executable a mapping that contains
                 // the stackpointer.
                 let stack_pointer_register =
@@ -373,8 +372,37 @@ pub(in crate::security) fn file_mprotect(
                 current_task.into(),
             )?;
         }
+
+        // `execmod` is checked when a private file mapping whose pages were modified via
+        // copy-on-write (e.g. by text relocations) is made executable. From the SELinux Notebook,
+        // "execmod: Make executable a file mapping that has been modified by copy-on-write. (Text
+        // relocation)".
+        if let MappingNameRef::File(file) = mapping.name() {
+            let node = file.node();
+            let FsNodeSidAndClass { sid: object_sid, class } =
+                fs_node_effective_sid_and_class(node);
+            if let FsNodeClass::File(file_class) = class
+                && !node.is_private()
+                && !mapping_options.contains(MappingOptions::SHARED)
+                // If this can't be determined, check `execmod` (like `fork()` assumes modifications).
+                && mapping.has_cow_modifications().unwrap_or(true)
+            {
+                let subject_sid = current_task_state(current_task).current_sid;
+                let file_object = file.file();
+                let fs = node.fs();
+                let audit_context =
+                    [current_task.into(), file_object.into(), fs.as_ref().into(), node.into()];
+                check_permission(
+                    &build_permission_check(current_task, security_server),
+                    current_task,
+                    subject_sid,
+                    object_sid,
+                    CommonFilePermission::ExecMod.for_class(file_class),
+                    (&audit_context).into(),
+                )?;
+            }
+        }
     }
-    let mapping_options = mapping.flags().options();
     // Mappings with anonymous memory may be named after a file (only `/dev/zero` does this). They
     // are checked as anonymous mappings, rather than against the file's node: `ANONYMOUS` on a
     // file mapping means that the memory is never the file's content.
