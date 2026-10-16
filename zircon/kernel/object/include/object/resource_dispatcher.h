@@ -43,8 +43,6 @@ zx_status_t rust_resource_dispatcher_get_name(const ResourceDispatcher* disp,
                                               char out_name[ZX_MAX_NAME_LEN]);
 void rust_resource_dispatcher_get_info(const ResourceDispatcher* disp,
                                        zx_info_resource_t* info_out);
-void rust_resource_dispatcher_dump_resources();
-void rust_resource_dispatcher_dump_allocators();
 }  // extern "C"
 
 class ResourceDispatcher final : public Dispatcher {

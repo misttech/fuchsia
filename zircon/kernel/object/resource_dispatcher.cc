@@ -6,7 +6,6 @@
 
 #include "object/resource_dispatcher.h"
 
-#include <lib/console.h>
 #include <lib/object-constants.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
@@ -42,17 +41,3 @@ zx_status_t ResourceDispatcher::InitializeAllocator(zx_rsrc_kind_t kind, uint64_
                                                     size_t size) {
   return rust_resource_dispatcher_initialize_allocator(kind, base, size);
 }
-
-namespace {
-
-int cmd_resource(int argc, const cmd_args* argv, uint32_t flags) {
-  rust_resource_dispatcher_dump_resources();
-  rust_resource_dispatcher_dump_allocators();
-  return true;
-}
-
-}  // namespace
-
-STATIC_COMMAND_START
-STATIC_COMMAND("resource", "Inspect physical address space resource allocations", &cmd_resource)
-STATIC_COMMAND_END(resource)

@@ -14,6 +14,10 @@ mod clock_dispatcher;
 mod clock_dispatcher_ffi;
 mod counter_dispatcher;
 mod counter_dispatcher_ffi;
+#[cfg(console_enabled)]
+mod diagnostics;
+#[cfg(console_enabled)]
+mod diagnostics_ffi;
 mod dispatcher;
 mod dispatcher_ffi;
 mod event_dispatcher;

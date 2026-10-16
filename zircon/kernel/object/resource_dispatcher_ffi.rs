@@ -13,9 +13,7 @@ use zx_types::{
 use region_alloc::Region;
 
 use super::handle::KernelHandle;
-use super::resource_dispatcher::{
-    ResourceDispatcher, ResourceDispatcherState, ResourceStorage, dump_allocators, dump_resources,
-};
+use super::resource_dispatcher::{ResourceDispatcher, ResourceDispatcherState, ResourceStorage};
 
 // C++ FFI declarations
 #[allow(improper_ctypes)]
@@ -27,7 +25,7 @@ unsafe extern "C" {
     /// `handle_out` must point to writable, uninitialized memory allocated for
     /// `KernelHandle<ResourceDispatcher>`. If `region` is non-null, it must point to a valid
     /// `Region` allocated for this resource.
-    pub fn cpp_resource_dispatcher_create(
+    pub(super) fn cpp_resource_dispatcher_create(
         kind: zx_rsrc_kind_t,
         base: u64,
         size: usize,
@@ -136,26 +134,4 @@ pub unsafe extern "C" fn rust_resource_dispatcher_get_info(
     unsafe {
         *info_out = info;
     }
-}
-
-/// Dumps all resources to the kernel console.
-///
-/// # Safety
-///
-/// This function is safe to call from C; it acquires the internal resource lock and safely
-/// traverses the resource list.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_resource_dispatcher_dump_resources() {
-    dump_resources();
-}
-
-/// Dumps all allocators to the kernel console.
-///
-/// # Safety
-///
-/// This function is safe to call from C; it acquires the internal resource lock and safely
-/// traverses the allocator list.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_resource_dispatcher_dump_allocators() {
-    dump_allocators();
 }

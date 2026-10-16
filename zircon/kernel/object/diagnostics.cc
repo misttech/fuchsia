@@ -7,7 +7,6 @@
 #include "object/diagnostics.h"
 
 #include <inttypes.h>
-#include <lib/console.h>
 #include <lib/ktrace.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +14,7 @@
 #include <zircon/types.h>
 
 #include <kernel/deadline.h>
+#include <kernel/ffi.h>
 #include <ktl/span.h>
 #include <object/fifo_dispatcher.h>
 #include <object/handle.h>
@@ -74,23 +74,6 @@ class JobWalker final : public JobEnumerator {
 template <typename JobCallbackType>
 JobWalker<JobCallbackType> MakeJobWalker(JobCallbackType cb) {
   return JobWalker<JobCallbackType>(cb);
-}
-
-void DumpProcessListKeyMap() {
-  printf("id  : process id number\n");
-  printf("#h  : total number of handles\n");
-  printf("#jb : number of job handles\n");
-  printf("#pr : number of process handles\n");
-  printf("#th : number of thread handles\n");
-  printf("#vo : number of vmo handles\n");
-  printf("#vm : number of virtual memory address region handles\n");
-  printf("#ch : number of channel handles\n");
-  printf("#ev : number of event and event pair handles\n");
-  printf("#po : number of port handles\n");
-  printf("#so: number of sockets\n");
-  printf("#tm : number of timers\n");
-  printf("#fi : number of fifos\n");
-  printf("#?? : number of all other handle types\n");
 }
 
 const char* ObjectTypeToString(zx_obj_type_t type) {
@@ -323,29 +306,6 @@ void DumpAllPeerDispatchers(zx_obj_type_t type) {
 
 const char kRightsHeader[] =
     "dup tr r w x map gpr spr enm des spo gpo sig sigp wt ins mj mp mt ap ms";
-void DumpHandleRightsKeyMap() {
-  printf("dup : ZX_RIGHT_DUPLICATE\n");
-  printf("tr  : ZX_RIGHT_TRANSFER\n");
-  printf("r   : ZX_RIGHT_READ\n");
-  printf("w   : ZX_RIGHT_WRITE\n");
-  printf("x   : ZX_RIGHT_EXECUTE\n");
-  printf("map : ZX_RIGHT_MAP\n");
-  printf("gpr : ZX_RIGHT_GET_PROPERTY\n");
-  printf("spr : ZX_RIGHT_SET_PROPERTY\n");
-  printf("enm : ZX_RIGHT_ENUMERATE\n");
-  printf("des : ZX_RIGHT_DESTROY\n");
-  printf("spo : ZX_RIGHT_SET_POLICY\n");
-  printf("gpo : ZX_RIGHT_GET_POLICY\n");
-  printf("sig : ZX_RIGHT_SIGNAL\n");
-  printf("sigp: ZX_RIGHT_SIGNAL_PEER\n");
-  printf("wt  : ZX_RIGHT_WAIT\n");
-  printf("ins : ZX_RIGHT_INSPECT\n");
-  printf("mj  : ZX_RIGHT_MANAGE_JOB\n");
-  printf("mp  : ZX_RIGHT_MANAGE_PROCESS\n");
-  printf("mt  : ZX_RIGHT_MANAGE_THREAD\n");
-  printf("ap  : ZX_RIGHT_APPLY_PROFILE\n");
-  printf("ms  : ZX_RIGHT_MANAGE_SOCKET\n");
-}
 
 bool HasRights(zx_rights_t rights, zx_rights_t desired) { return (rights & desired) == desired; }
 
@@ -1327,47 +1287,7 @@ void DumpProcessAddressSpace(zx_koid_t id) {
   pd->DumpAspace(true);
 }
 
-// Dumps an address space based on the arg.
-void DumpAddressSpace(const cmd_args* arg) {
-  if (strncmp(arg->str, "kernel", strlen(arg->str)) == 0) {
-    // The arg is a prefix of "kernel".
-    VmAspace::kernel_aspace()->Dump(true);
-  } else {
-    DumpProcessAddressSpace(arg->u);
-  }
-}
-
-void DumpHandleTable() {
-  printf("outstanding handles: %zu\n", Handle::diagnostics::OutstandingHandles());
-  Handle::diagnostics::DumpTableInfo();
-}
-
-size_t mwd_limit_bytes = 32 * MB;
-bool mwd_running;
-
-size_t hwd_limit = 1024;
-bool hwd_running;
-
-int hwd_thread(void* arg) {
-  static size_t previous_handle_count = 0u;
-
-  for (;;) {
-    auto handle_count = Handle::diagnostics::OutstandingHandles();
-    if (handle_count != previous_handle_count) {
-      if (handle_count > hwd_limit) {
-        printf("HandleWatchdog! %zu handles outstanding (greater than limit %zu)\n", handle_count,
-               hwd_limit);
-      } else if (previous_handle_count > hwd_limit) {
-        printf("HandleWatchdog! %zu handles outstanding (dropping below limit %zu)\n", handle_count,
-               hwd_limit);
-      }
-    }
-
-    previous_handle_count = handle_count;
-
-    Thread::Current::SleepRelative(ZX_SEC(1));
-  }
-}
+}  // namespace
 
 void DumpProcessMemoryUsage(const char* prefix, size_t min_bytes) {
   auto walker = MakeProcessWalker([&](ProcessDispatcher* process) {
@@ -1383,173 +1303,75 @@ void DumpProcessMemoryUsage(const char* prefix, size_t min_bytes) {
   GetRootJobDispatcher()->EnumerateChildrenRecursive(&walker);
 }
 
-int mwd_thread(void* arg) {
-  for (;;) {
-    Thread::Current::SleepRelative(ZX_SEC(1));
-    DumpProcessMemoryUsage("MemoryHog! ", mwd_limit_bytes);
-  }
+extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_process_list() { DumpProcessList(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_job_list() { DumpJobList(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_job_policies(zx_koid_t id) { DumpJobPolicies(id); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_process_handles(zx_koid_t id) { DumpProcessHandles(id); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_peer_dispatchers_by_koid(zx_obj_type_t type, zx_koid_t id) {
+  DumpPeerDispatchersByKoid(type, id);
 }
 
-int cmd_diagnostics(int argc, const cmd_args* argv, uint32_t flags) {
-  int rc = 0;
-
-  if (argc < 2) {
-    printf("not enough arguments:\n");
-  usage:
-    printf("%s ps                : list processes\n", argv[0].str);
-    printf("%s ps help           : print header label descriptions for 'ps'\n", argv[0].str);
-    printf("%s jobs              : list jobs\n", argv[0].str);
-    printf("%s jobpol <koid>     : print policies for given job\n", argv[0].str);
-    printf("%s mwd  <mb>         : memory watchdog\n", argv[0].str);
-    printf("%s ht   <pid>        : dump process handles\n", argv[0].str);
-    printf("%s hwd  <count>      : handle watchdog\n", argv[0].str);
-    printf("%s vmos <pid>|all|hidden|orphaned [-u?]\n", argv[0].str);
-    printf("                     : dump process/all/hidden/orphaned VMOs\n");
-    printf("                 -u? : fix all sizes to the named unit\n");
-    printf("                       where ? is one of [BkMGTPE]\n");
-    printf("%s cow-tree <vmo>    : dump the copy-on-write tree for a vmo koid\n", argv[0].str);
-    printf("%s kill <pid>        : kill process\n", argv[0].str);
-    printf("%s asd  <pid>|kernel : dump process/kernel address space\n", argv[0].str);
-    printf("%s htinfo            : handle table info\n", argv[0].str);
-    printf("%s koid <koid>       : list all handles for a koid\n", argv[0].str);
-    printf("%s koid help         : print header label descriptions for 'koid'\n", argv[0].str);
-    printf("%s ch   <koid>       : dump channels for pid or for all processes,\n", argv[0].str);
-    printf("                       or processes for channel koid\n");
-    printf("%s sock <koid>       : dump sockets for pid or for all processes,\n", argv[0].str);
-    printf("                       or processes for socket koid\n");
-    printf("%s fifo <koid>       : dump fifos for pid or for all processes,\n", argv[0].str);
-    printf("                       or processes for fifo koid\n");
-    printf("%s eventpair <koid>  : dump event pairs for pid or for all processes,\n", argv[0].str);
-    printf("                       or processes for eventpair koid\n");
-    printf("%s iob <koid>        : dump io buffers for pid or for all processes,\n", argv[0].str);
-    printf("                       or processes for io buffer koid\n");
-    return -1;
-  }
-
-  if (strcmp(argv[1].str, "mwd") == 0) {
-    if (argc == 3) {
-      mwd_limit_bytes = argv[2].u * MB;
-    }
-    if (!mwd_running) {
-      Thread* t = Thread::Create("mwd", mwd_thread, nullptr, DEFAULT_PRIORITY);
-      if (t) {
-        mwd_running = true;
-        t->Resume();
-      }
-    }
-  } else if (strcmp(argv[1].str, "ps") == 0) {
-    if ((argc == 3) && (strcmp(argv[2].str, "help") == 0)) {
-      DumpProcessListKeyMap();
-    } else {
-      DumpProcessList();
-    }
-  } else if (strcmp(argv[1].str, "jobs") == 0) {
-    DumpJobList();
-  } else if (strcmp(argv[1].str, "jobpol") == 0) {
-    if (argc < 3)
-      goto usage;
-    DumpJobPolicies(argv[2].u);
-  } else if (strcmp(argv[1].str, "hwd") == 0) {
-    if (argc == 3) {
-      hwd_limit = argv[2].u;
-    }
-    if (!hwd_running) {
-      Thread* t = Thread::Create("hwd", hwd_thread, nullptr, DEFAULT_PRIORITY);
-      if (t) {
-        hwd_running = true;
-        t->Resume();
-      }
-    }
-  } else if (strcmp(argv[1].str, "ht") == 0) {
-    if (argc < 3)
-      goto usage;
-    DumpProcessHandles(argv[2].u);
-  } else if (strcmp(argv[1].str, "ch") == 0) {
-    if (argc == 3) {
-      DumpPeerDispatchersByKoid(ZX_OBJ_TYPE_CHANNEL, argv[2].u);
-    } else {
-      DumpAllPeerDispatchers(ZX_OBJ_TYPE_CHANNEL);
-    }
-  } else if (strcmp(argv[1].str, "sock") == 0) {
-    if (argc == 3) {
-      DumpPeerDispatchersByKoid(ZX_OBJ_TYPE_SOCKET, argv[2].u);
-    } else {
-      DumpAllPeerDispatchers(ZX_OBJ_TYPE_SOCKET);
-    }
-  } else if (strcmp(argv[1].str, "fifo") == 0) {
-    if (argc == 3) {
-      DumpPeerDispatchersByKoid(ZX_OBJ_TYPE_FIFO, argv[2].u);
-    } else {
-      DumpAllPeerDispatchers(ZX_OBJ_TYPE_FIFO);
-    }
-  } else if (strcmp(argv[1].str, "eventpair") == 0) {
-    if (argc == 3) {
-      DumpPeerDispatchersByKoid(ZX_OBJ_TYPE_EVENTPAIR, argv[2].u);
-    } else {
-      DumpAllPeerDispatchers(ZX_OBJ_TYPE_EVENTPAIR);
-    }
-  } else if (strcmp(argv[1].str, "iob") == 0) {
-    if (argc == 3) {
-      DumpPeerDispatchersByKoid(ZX_OBJ_TYPE_IOB, argv[2].u);
-    } else {
-      DumpAllPeerDispatchers(ZX_OBJ_TYPE_IOB);
-    }
-  } else if (strcmp(argv[1].str, "vmos") == 0) {
-    if (argc < 3)
-      goto usage;
-    pretty::SizeUnit format_unit = pretty::SizeUnit::kAuto;
-    if (argc >= 4) {
-      if (!strncmp(argv[3].str, "-u", sizeof("-u") - 1)) {
-        format_unit = static_cast<pretty::SizeUnit>(argv[3].str[sizeof("-u") - 1]);
-      } else {
-        printf("dunno '%s'\n", argv[3].str);
-        goto usage;
-      }
-    }
-    if (strcmp(argv[2].str, "all") == 0) {
-      DumpAllVmObjects(/*hidden_only=*/false, format_unit);
-    } else if (strcmp(argv[2].str, "hidden") == 0) {
-      DumpAllVmObjects(/*hidden_only=*/true, format_unit);
-    } else if (strcmp(argv[2].str, "orphaned") == 0) {
-      DumpOrphanedSlices(format_unit);
-      DumpOrphanedMappedVmos(format_unit);
-    } else {
-      DumpProcessVmObjects(argv[2].u, format_unit);
-    }
-  } else if (strcmp(argv[1].str, "cow-tree") == 0) {
-    if (argc < 3)
-      goto usage;
-    DumpVmObjectCowTree(argv[2].u);
-  } else if (strcmp(argv[1].str, "kill") == 0) {
-    if (argc < 3)
-      goto usage;
-    KillProcess(argv[2].u);
-  } else if (strcmp(argv[1].str, "asd") == 0) {
-    if (argc < 3)
-      goto usage;
-    DumpAddressSpace(&argv[2]);
-  } else if (strcmp(argv[1].str, "htinfo") == 0) {
-    if (argc != 2)
-      goto usage;
-    DumpHandleTable();
-  } else if (strcmp(argv[1].str, "koid") == 0) {
-    if (argc < 3)
-      goto usage;
-
-    if (strcmp(argv[2].str, "help") == 0) {
-      DumpHandleRightsKeyMap();
-    } else {
-      DumpHandlesForKoid(argv[2].u);
-    }
-  } else {
-    printf("unrecognized subcommand '%s'\n", argv[1].str);
-    goto usage;
-  }
-  return rc;
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_all_peer_dispatchers(zx_obj_type_t type) {
+  DumpAllPeerDispatchers(type);
 }
 
-}  // namespace
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_all_vm_objects(bool hidden_only, char format_unit) {
+  DumpAllVmObjects(hidden_only, static_cast<pretty::SizeUnit>(format_unit));
+}
 
-STATIC_COMMAND_START
-STATIC_COMMAND("zx", "kernel object diagnostics", &cmd_diagnostics)
-STATIC_COMMAND_END(zx)
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_orphaned_slices(char format_unit) {
+  DumpOrphanedSlices(static_cast<pretty::SizeUnit>(format_unit));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_orphaned_mapped_vmos(char format_unit) {
+  DumpOrphanedMappedVmos(static_cast<pretty::SizeUnit>(format_unit));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_process_vm_objects(zx_koid_t id, char format_unit) {
+  DumpProcessVmObjects(id, static_cast<pretty::SizeUnit>(format_unit));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_vm_object_cow_tree(zx_koid_t id) { DumpVmObjectCowTree(id); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_kill_process(zx_koid_t id) { KillProcess(id); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_process_address_space(zx_koid_t id) { DumpProcessAddressSpace(id); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_process_memory_usage(const char* prefix, size_t min_bytes) {
+  DumpProcessMemoryUsage(prefix, min_bytes);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dump_handles_for_koid(zx_koid_t id) { DumpHandlesForKoid(id); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE size_t cpp_handle_diagnostics_outstanding_handles() {
+  return Handle::diagnostics::OutstandingHandles();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_handle_diagnostics_dump_table_info() {
+  Handle::diagnostics::DumpTableInfo();
+}
+
+}  // extern "C"

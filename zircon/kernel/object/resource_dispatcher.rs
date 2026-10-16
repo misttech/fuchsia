@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::counters::define_kcounter;
+#[cfg(console_enabled)]
 use core::ffi::CStr;
 use core::mem::MaybeUninit;
 use core::pin::Pin;
@@ -13,6 +14,7 @@ use fbl::{
     Canary, DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, RefPtr, UniquePtr,
 };
 use init::LkInitLevel;
+#[cfg(console_enabled)]
 use kprint::kprintln;
 use ksync::{
     KCell, KMutex, LockToken, PhantomMutex, RawCriticalMutex, declare_singleton_critical_mutex,
@@ -57,10 +59,12 @@ pub const fn is_valid_kind(kind: zx_rsrc_kind_t) -> bool {
     kind < ZX_RSRC_KIND_COUNT && kind != /*ZX_RSRC_KIND_ROOT*/ 3
 }
 
+#[cfg(console_enabled)]
 const KIND_LABELS: [&str; ZX_RSRC_KIND_COUNT as usize] =
     ["mmio", "irq", "ioport", "deprecated", "smc", "system"];
 
 /// Returns the string label for a resource kind.
+#[cfg(console_enabled)]
 fn kind_to_string(kind: zx_rsrc_kind_t) -> &'static str {
     assert!(kind < ZX_RSRC_KIND_COUNT);
     KIND_LABELS[kind as usize]
@@ -557,6 +561,7 @@ impl ResourceDispatcher {
 }
 
 /// Invokes `callback` for each active resource in storage.
+#[cfg(console_enabled)]
 fn for_each_resource_locked<F>(
     storage: &ResourceStorage,
     token: &LockToken<'_, ResourcesLock>,
@@ -574,7 +579,8 @@ where
 }
 
 /// Prints the active resources list to the kernel console.
-pub fn dump_resources() {
+#[cfg(console_enabled)]
+fn dump_resources() {
     lock!(let mut guard = ResourcesLock::lock());
     let token = guard.as_mut().token_mut();
     let storage = ResourceStorage::get();
@@ -589,9 +595,10 @@ pub fn dump_resources() {
         "size",
         "region"
     );
-    kprintln!(
-        "        -------------------------------------------------------------------------------------------"
-    );
+    kprintln!(concat!(
+        "        ------------------------------------------------",
+        "-------------------------------------------"
+    ));
 
     for kind in 0..ZX_RSRC_KIND_COUNT {
         let _ = for_each_resource_locked(storage, token, |r| {
@@ -650,16 +657,18 @@ pub fn dump_resources() {
 }
 
 /// Prints available allocator regions to the kernel console.
-pub fn dump_allocators() {
+#[cfg(console_enabled)]
+fn dump_allocators() {
     lock!(let mut guard = ResourcesLock::lock());
     let token = guard.as_mut().token_mut();
     let storage = ResourceStorage::get();
 
     kprintln!("Available regions:");
     kprintln!("{:>32s}  \t{:>8s}  region", "type", "size");
-    kprintln!(
-        "        -------------------------------------------------------------------------------------------"
-    );
+    kprintln!(concat!(
+        "        ------------------------------------------------",
+        "-------------------------------------------"
+    ));
 
     // SAFETY: `ResourcesLock` is the singleton lock synchronizing `ResourceStorage`.
     let storage_guard = unsafe { storage.guard_mu(token) };
@@ -688,6 +697,30 @@ pub fn dump_allocators() {
         });
     }
 }
+
+/// # Safety
+///
+/// Nothing: `argv` is never dereferenced. The function is `unsafe` only to match the console
+/// command signature.
+#[cfg(console_enabled)]
+unsafe extern "C" fn cmd_resource(
+    _argc: core::ffi::c_int,
+    _argv: *const crate::console::CmdArgs,
+    _flags: u32,
+) -> core::ffi::c_int {
+    dump_resources();
+    dump_allocators();
+    1
+}
+
+#[cfg(console_enabled)]
+crate::console::static_command!(
+    CMD_RESOURCE,
+    c"resource".as_ptr(),
+    c"Inspect physical address space resource allocations".as_ptr(),
+    cmd_resource,
+    crate::console::CMD_AVAIL_NORMAL
+);
 
 /// Kernel unit tests for ResourceDispatcher.
 #[cfg(ktest)]
