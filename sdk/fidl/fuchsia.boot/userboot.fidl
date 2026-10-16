@@ -23,6 +23,11 @@ type BootfsFileVmo = resource struct {
 /// TODO(https://fxbug.dev/354275371): Move handles not participating in the bootstrap process to this protocol.
 closed protocol Userboot {
 
+    /// Posts the uncompressed bootfs VMO.
+    strict PostBootfsVmo(resource struct {
+        bootfs zx.Handle:<VMO>;
+    });
+
     /// Posts a set of `BootfsFileVmo` that were used for launching the `userboot.next=` program and are no longer
     /// available in the big BootfsVmo.
     ///

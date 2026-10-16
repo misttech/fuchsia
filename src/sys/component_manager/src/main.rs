@@ -13,7 +13,9 @@
 
 use crate::bootfs::BootfsSvc;
 use crate::builtin::builtin_runner::BuiltinRunner;
-use crate::builtin_environment::{BuiltinEnvironment, BuiltinEnvironmentBuilder};
+use crate::builtin_environment::{
+    BuiltinEnvironment, BuiltinEnvironmentBuilder, UserbootPayload, drain_userboot,
+};
 use ::cm_logger::klog;
 use anyhow::Error;
 use cm_config::RuntimeConfig;
@@ -67,9 +69,14 @@ fn main() {
         unsafe { zx::NullableHandle::from_raw(dl_set_loader_service(zx::sys::ZX_HANDLE_INVALID)) };
     drop(ldsvc);
 
+    let mut userboot_payload = fasync::LocalExecutor::default()
+        .run_singlethreaded(drain_userboot())
+        .unwrap_or_else(|err| panic!("Failed to drain fuchsia.boot.Userboot: {}", err));
+
     let args = startup::Arguments::from_args()
         .unwrap_or_else(|err| panic!("{}\n{}", err, startup::Arguments::usage()));
-    let (runtime_config, bootfs_svc) = build_runtime_config(&args);
+    let (runtime_config, bootfs_svc) =
+        build_runtime_config(&args, userboot_payload.bootfs_vmo.take());
     let mut executor =
         fasync::SendExecutorBuilder::new().num_threads(runtime_config.num_threads).build();
 
@@ -94,13 +101,14 @@ fn main() {
     }
 
     let run_root_fut = async move {
-        let mut builtin_environment = match build_environment(runtime_config, bootfs_svc).await {
-            Ok(environment) => environment,
-            Err(error) => {
-                error!(error:%; "Component manager setup failed");
-                process::exit(1);
-            }
-        };
+        let mut builtin_environment =
+            match build_environment(runtime_config, bootfs_svc, userboot_payload).await {
+                Ok(environment) => environment,
+                Err(error) => {
+                    error!(error:%; "Component manager setup failed");
+                    process::exit(1);
+                }
+            };
 
         #[cfg(feature = "heapdump")]
         connect_to_heapdump(&builtin_environment);
@@ -145,9 +153,12 @@ fn connect_to_heapdump(builtin_environment: &BuiltinEnvironment) {
 /// Loads component_manager's config.
 ///
 /// This function panics on failure because the logger is not initialized yet.
-fn build_runtime_config(args: &startup::Arguments) -> (RuntimeConfig, Option<BootfsSvc>) {
+fn build_runtime_config(
+    args: &startup::Arguments,
+    bootfs_vmo: Option<zx::Vmo>,
+) -> (RuntimeConfig, Option<BootfsSvc>) {
     let bootfs_svc =
-        args.host_bootfs.then(|| BootfsSvc::new().expect("Failed to create Rust bootfs"));
+        args.host_bootfs.then(|| BootfsSvc::new(bootfs_vmo).expect("Failed to create Rust bootfs"));
     let config_bytes = if let Some(ref bootfs_svc) = bootfs_svc {
         // The Rust bootfs VFS has not been brought up yet, so to find the component manager's
         // config we must find the config's offset and size in the bootfs VMO, and read from it
@@ -189,6 +200,7 @@ fn build_runtime_config(args: &startup::Arguments) -> (RuntimeConfig, Option<Boo
 async fn build_environment(
     config: RuntimeConfig,
     bootfs_svc: Option<BootfsSvc>,
+    userboot_payload: UserbootPayload,
 ) -> Result<BuiltinEnvironment, Error> {
     let service_broker = BuiltinRunner::get_service_broker_program();
     let dispatcher = BuiltinRunner::get_dispatcher_program();
@@ -197,6 +209,7 @@ async fn build_environment(
     let add_to_env = true;
     let mut builder = BuiltinEnvironmentBuilder::new()
         .set_runtime_config(config)
+        .set_userboot_payload(userboot_payload)
         .create_utc_clock(&bootfs_svc)
         .await?
         .add_builtin_elf_runner(add_to_env)?

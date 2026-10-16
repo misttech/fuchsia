@@ -14,7 +14,7 @@ use program::{SystemHandles, launch_program};
 use std::fmt::Write as _;
 use userboot::{Log, take_system_handles};
 use zbi::ZbiType;
-use zx::Vmo;
+use zx::{Rights, Vmo};
 
 const DEFAULT_NEXT_BOOT: &str = "bin/component_manager+--boot";
 
@@ -101,7 +101,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
         program_name,
         &target_path,
         options.boot.next.split('+'),
-        bootfs_vmo,
+        bootfs_vmo.duplicate_handle(Rights::SAME_RIGHTS)?,
         handles,
         Some(&mut bootfs_entries),
         log,
@@ -109,6 +109,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
     .await
     .map_err(|e| anyhow!("launch_program failed: {e:?}"))?;
 
+    let _ = userboot_client.post_bootfs_vmo(bootfs_vmo).await;
     if !bootfs_entries.is_empty() {
         let files = bootfs_entries
             .into_iter()

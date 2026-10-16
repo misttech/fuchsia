@@ -114,11 +114,58 @@ pub static SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 pub const INSPECTOR_SIZE: usize = 350 * 1024;
 // LINT.ThenChange(/src/tests/end_to_end/diagnostics/diagnostics_test.py)
 
+#[derive(Default)]
+pub struct UserbootPayload {
+    pub svc_stash_provider: Option<Arc<SvcStashCapability>>,
+    pub bootfs_vmo: Option<zx::Vmo>,
+    pub bootfs_entries: Vec<fboot::BootfsFileVmo>,
+}
+
+/// Drains messages from `fuchsia.boot.Userboot` if `PA_USER0` was provided to this process.
+pub async fn drain_userboot() -> Result<UserbootPayload, Error> {
+    let userboot = take_startup_handle(HandleInfo::new(HandleType::User0, 0))
+        .map(zx::Channel::from)
+        .map(fasync::Channel::from_channel)
+        .map(fboot::UserbootRequestStream::from_channel);
+
+    let mut payload = UserbootPayload::default();
+    if let Some(mut userboot) = userboot {
+        while let Some(request) = userboot.try_next().await.inspect_err(|err| {
+            error!("Error extracting 'fuchsia.boot.Userboot' messages: {}", err);
+        })? {
+            match request {
+                UserbootRequest::PostStashSvc { stash_svc_endpoint, control_handle: _ } => {
+                    if payload.svc_stash_provider.is_some() {
+                        warn!(
+                            "Expected at most a single SvcStash, but more were found. Last entry will be preserved."
+                        );
+                    }
+                    payload.svc_stash_provider =
+                        Some(SvcStashCapability::new(stash_svc_endpoint.into_channel()));
+                }
+                UserbootRequest::PostBootfsVmo { bootfs, control_handle: _ } => {
+                    if payload.bootfs_vmo.is_some() {
+                        warn!(
+                            "Expected at most a single BootfsVmo, but more were found. Last entry will be preserved."
+                        );
+                    }
+                    payload.bootfs_vmo = Some(bootfs);
+                }
+                UserbootRequest::PostBootfsFiles { files, control_handle: _ } => {
+                    payload.bootfs_entries.extend(files);
+                }
+            }
+        }
+    }
+    Ok(payload)
+}
+
 pub struct BuiltinEnvironmentBuilder {
     // TODO(60804): Make component manager's namespace injectable here.
     runtime_config: Option<RuntimeConfig>,
     top_instance: Option<Arc<ComponentManagerInstance>>,
     bootfs_svc: Option<BootfsSvc>,
+    userboot_payload: UserbootPayload,
     builtin_runners: Vec<BuiltinRunnerData>,
     resolvers: Vec<(String, Arc<dyn Resolver + Send + Sync + 'static>)>,
     utc_clock: Option<Arc<UtcClock>>,
@@ -144,6 +191,7 @@ impl Default for BuiltinEnvironmentBuilder {
             runtime_config: None,
             top_instance: None,
             bootfs_svc: None,
+            userboot_payload: UserbootPayload::default(),
             builtin_runners: vec![],
             resolvers: vec![],
             utc_clock: None,
@@ -176,6 +224,11 @@ impl BuiltinEnvironmentBuilder {
 
     pub fn set_bootfs_svc(mut self, bootfs_svc: BootfsSvc) -> Self {
         self.bootfs_svc = Some(bootfs_svc);
+        self
+    }
+
+    pub fn set_userboot_payload(mut self, userboot_payload: UserbootPayload) -> Self {
+        self.userboot_payload = userboot_payload;
         self
     }
 
@@ -284,36 +337,8 @@ impl BuiltinEnvironmentBuilder {
             .runtime_config
             .ok_or_else(|| format_err!("Runtime config is required for BuiltinEnvironment."))?;
 
-        // Drain messages from `fuchsia.boot.Userboot`, and expose appropriate capabilities.
-        let userboot = take_startup_handle(HandleInfo::new(HandleType::User0, 0))
-            .map(zx::Channel::from)
-            .map(fasync::Channel::from_channel)
-            .map(fboot::UserbootRequestStream::from_channel);
-
-        let mut svc_stash_provider = None;
-        let mut bootfs_entries = Vec::new();
-        if let Some(userboot) = userboot {
-            let messages = userboot.try_collect::<Vec<UserbootRequest>>().await;
-            let mut messages = messages.inspect_err(|err| {
-                error!("Error extracting 'fuchsia.boot.Userboot' messages: {}", err);
-            })?;
-            while let Some(request) = messages.pop() {
-                match request {
-                    UserbootRequest::PostStashSvc { stash_svc_endpoint, control_handle: _ } => {
-                        if svc_stash_provider.is_some() {
-                            warn!(
-                                "Expected at most a single SvcStash, but more were found. Last entry will be preserved."
-                            );
-                        }
-                        svc_stash_provider =
-                            Some(SvcStashCapability::new(stash_svc_endpoint.into_channel()));
-                    }
-                    UserbootRequest::PostBootfsFiles { files, control_handle: _ } => {
-                        bootfs_entries.extend(files);
-                    }
-                }
-            }
-        }
+        let UserbootPayload { svc_stash_provider, bootfs_vmo: _, bootfs_entries } =
+            self.userboot_payload;
 
         let system_resource_handle =
             take_startup_handle(HandleType::SystemResource.into()).map(zx::Resource::from);

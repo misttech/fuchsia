@@ -6,7 +6,7 @@ use fidl_next::fuchsia::channel::Buffer;
 use fidl_next::wire::Uint64;
 use fidl_next::{AsDecoderExt as _, CHUNK_SIZE, Message, Method, Request};
 use fidl_next_fuchsia_boot::svc_stash::Store;
-use fidl_next_fuchsia_boot::userboot::{PostBootfsFiles, PostStashSvc};
+use fidl_next_fuchsia_boot::userboot::{PostBootfsFiles, PostBootfsVmo, PostStashSvc};
 use fidl_next_fuchsia_debugdata::publisher::Publish;
 use fuchsia_runtime::{HandleInfo, HandleType, take_startup_handle};
 use std::fmt::Write as _;
@@ -87,8 +87,9 @@ fn read_fidl_message(channel: &Channel) -> Message<Channel> {
     Message::<Channel>::decode(buffer).expect("failed to decode FIDL header")
 }
 
-fn drain_userboot(userboot: Channel) -> (Option<Channel>, Vec<BootfsFileVmo>) {
+fn drain_userboot(userboot: Channel) -> (Option<Channel>, Option<Vmo>, Vec<BootfsFileVmo>) {
     let mut stash_svc = None;
+    let mut bootfs_vmo = None;
     let mut entries = Vec::new();
     while is_channel_readable(&userboot) {
         let mut message = read_fidl_message(&userboot);
@@ -99,6 +100,12 @@ fn drain_userboot(userboot: Channel) -> (Option<Channel>, Vec<BootfsFileVmo>) {
                 .expect("failed to decode PostStashSvc request");
             let payload = Request::<PostStashSvc, Channel>::from_decoded(decoded).payload();
             stash_svc = Some(payload.stash_svc_endpoint.into_untyped());
+        } else if ordinal == PostBootfsVmo::ORDINAL {
+            let decoded = message
+                .into_decoded::<<PostBootfsVmo as Method>::Request>()
+                .expect("failed to decode PostBootfsVmo request");
+            let payload = Request::<PostBootfsVmo, Channel>::from_decoded(decoded).payload();
+            bootfs_vmo = Some(payload.bootfs);
         } else if ordinal == PostBootfsFiles::ORDINAL {
             let decoded = message
                 .into_decoded::<<PostBootfsFiles as Method>::Request>()
@@ -109,7 +116,7 @@ fn drain_userboot(userboot: Channel) -> (Option<Channel>, Vec<BootfsFileVmo>) {
             panic!("unexpected fuchsia.boot.Userboot ordinal: {ordinal}");
         }
     }
-    (stash_svc, entries)
+    (stash_svc, bootfs_vmo, entries)
 }
 
 /// Extracts the `fuchsia.boot.SvcStash` server channel from the startup
@@ -121,7 +128,7 @@ pub fn svc_stash() -> Channel {
         .expect("missing PA_USER0 startup handle")
         .into();
     assert!(!userboot.is_invalid());
-    let (stash_svc, _entries) = drain_userboot(userboot);
+    let (stash_svc, _bootfs_vmo, _entries) = drain_userboot(userboot);
     let stash_svc = stash_svc.expect("Userboot did not post a SvcStash endpoint");
     assert!(!stash_svc.is_invalid());
     stash_svc
@@ -151,7 +158,12 @@ pub fn bootfs_entries() -> Vec<BootfsFileVmo> {
         other => panic!("unexpected wait_one result waiting for userboot peer close: {other:?}"),
     }
 
-    let (_stash_svc, entries) = drain_userboot(userboot);
+    let (_stash_svc, bootfs_vmo, entries) = drain_userboot(userboot);
+    assert!(bootfs_vmo.is_some(), "Userboot did not post a BootfsVmo");
+    assert!(
+        take_startup_handle(HandleInfo::new(HandleType::BootfsVmo, 0)).is_none(),
+        "PA_VMO_BOOTFS should not be passed in startup handles when Userboot protocol is used"
+    );
     assert!(!entries.is_empty());
     entries
 }

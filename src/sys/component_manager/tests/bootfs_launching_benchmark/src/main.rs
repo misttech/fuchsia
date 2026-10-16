@@ -4,6 +4,7 @@
 
 use fidl::endpoints::{self, DiscoverableProtocolMarker};
 use fidl_fidl_examples_routing_echo as fecho;
+use fidl_fuchsia_boot as fboot;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_process as fprocess;
 use fuchsia_async as fasync;
@@ -72,9 +73,12 @@ impl ElfComponentLaunchTest {
         let mut executor = fasync::LocalExecutor::default();
 
         let vmo = read_file_to_vmo(ZBI_PATH);
+        let (userboot_client, userboot_server) =
+            endpoints::create_endpoints::<fboot::UserbootMarker>();
+        userboot_client.into_sync_proxy().post_bootfs_vmo(vmo).unwrap();
         let numbered_handles = vec![fprocess::HandleInfo {
-            handle: vmo.into_handle(),
-            id: HandleInfo::from(HandleType::BootfsVmo).as_raw(),
+            handle: userboot_server.into(),
+            id: HandleInfo::new(HandleType::User0, 0).as_raw(),
         }];
         let cm_url = format!("#meta/component_manager_{number_of_echo_connections}.cm");
         let instance = executor.run_singlethreaded(async move {

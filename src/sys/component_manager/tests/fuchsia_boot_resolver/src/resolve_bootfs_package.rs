@@ -7,8 +7,8 @@
 /// hermetic.
 use {
     fidl::endpoints,
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess,
-    fidl_fuchsia_sys2 as fsys,
+    fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio,
+    fidl_fuchsia_process as fprocess, fidl_fuchsia_sys2 as fsys,
     fuchsia_component_test::ScopedInstance,
     fuchsia_runtime::{HandleInfo, HandleType},
     std::{fs::File, io::Read},
@@ -29,9 +29,12 @@ fn read_file_to_vmo(path: &str) -> zx::Vmo {
 #[fuchsia::test]
 async fn package_resolution() {
     let vmo = read_file_to_vmo(ZBI_PATH);
+    let (userboot_client, userboot_server) =
+        endpoints::create_endpoints::<fboot::UserbootMarker>();
+    userboot_client.into_sync_proxy().post_bootfs_vmo(vmo).unwrap();
     let numbered_handles = vec![fprocess::HandleInfo {
-        handle: vmo.into_handle(),
-        id: HandleInfo::from(HandleType::BootfsVmo).as_raw(),
+        handle: userboot_server.into(),
+        id: HandleInfo::new(HandleType::User0, 0).as_raw(),
     }];
     let instance =
         ScopedInstance::new("coll".into(), "#meta/component_manager.cm".into()).await.unwrap();

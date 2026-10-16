@@ -120,6 +120,10 @@ async fn run(log: &mut Log) -> Result<(), Error> {
 
         let mut test_handles = handles.duplicate()?;
         test_handles.startup_handles.push(StartupHandle {
+            handle: bootfs_vmo.duplicate_handle(Rights::SAME_RIGHTS)?.into_handle().into(),
+            info: HandleInfo::new(HandleType::BootfsVmo, 0),
+        });
+        test_handles.startup_handles.push(StartupHandle {
             handle: svc_client.into_untyped().into_handle().into(),
             info: HandleInfo::new(HandleType::NamespaceDirectory, 0),
         });
@@ -159,7 +163,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
             program_name,
             &target_path,
             options.boot.next.split('+'),
-            bootfs_vmo,
+            bootfs_vmo.duplicate_handle(Rights::SAME_RIGHTS)?,
             handles,
             Some(&mut bootfs_entries),
             log,
@@ -167,6 +171,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
         .await
         .map_err(|e| anyhow!("launch_program {program_name} failed: {e:?}"))?;
 
+        let _ = userboot_client.post_bootfs_vmo(bootfs_vmo).await;
         if !bootfs_entries.is_empty() {
             let files = bootfs_entries
                 .into_iter()

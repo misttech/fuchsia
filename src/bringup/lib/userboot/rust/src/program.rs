@@ -480,10 +480,6 @@ pub async fn launch_program(
             info: HandleInfo::new(HandleType::BootdataVmo, 0),
         },
         StartupHandle {
-            handle: bootfs_vmo.duplicate_handle(Rights::SAME_RIGHTS)?.into_handle().into(),
-            info: HandleInfo::new(HandleType::BootfsVmo, 0),
-        },
-        StartupHandle {
             handle: system_log.to_handle(Rights::SAME_RIGHTS)?,
             info: HandleInfo::new(HandleType::FileDescriptor, FDIO_FLAG_USE_FOR_STDIO),
         },

@@ -102,10 +102,9 @@ pub struct BootfsSvc {
 }
 
 impl BootfsSvc {
-    pub fn new() -> Result<Self, BootfsError> {
-        let bootfs_handle = take_startup_handle(HandleType::BootfsVmo.into())
-            .ok_or(BootfsError::InvalidHandle { handle_type: HandleType::BootfsVmo })?;
-        let bootfs = zx::Vmo::from(bootfs_handle);
+    pub fn new(bootfs_vmo: Option<zx::Vmo>) -> Result<Self, BootfsError> {
+        let bootfs =
+            bootfs_vmo.ok_or(BootfsError::InvalidHandle { handle_type: HandleType::BootfsVmo })?;
         Self::new_internal(bootfs)
     }
 
