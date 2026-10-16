@@ -153,8 +153,6 @@ fn extract_icmp_event(ipv4_packet: &packet_formats::ipv4::Ipv4Packet<&[u8]>) -> 
 
 /// Returns the maximum payload length of a packet given the `mtu`.
 const fn max_icmp_payload_length(mtu: usize) -> usize {
-    // Based on the following logic:
-    // https://osscs.corp.google.com/fuchsia/fuchsia/+/main:third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/network/ipv4/ipv4.go;l=402;drc=42abed01bbe5e1fb34f17f64f63f6e7ba27a74c7
     // The max payload length is rounded down to the nearest number that is
     // divisible by 8 bytes.
     ((mtu

@@ -570,7 +570,6 @@ var goThirdPartyAggregateDeps = []string{
 	"//third_party/golibs:golang.org/x/crypto",
 	"//third_party/golibs:gonum.org/v1/gonum",
 	"//third_party/golibs:google.golang.org/protobuf",
-	"//third_party/golibs:gvisor.dev/gvisor",
 }
 
 // mustMergeMaps merges two input maps and return a new one with keys and values from

@@ -27,7 +27,6 @@ go_library(
         "//third_party/golibs/vendor/github.com/kr/fs",
         "//third_party/golibs/vendor/github.com/kr/pretty",
         "//third_party/golibs/vendor/github.com/pkg/sftp",
-        "//third_party/golibs/vendor/github.com/sasha-s/go-deadlock",
         "//third_party/golibs/vendor/github.com/spdx/tools-golang/spdx/common",
         "//third_party/golibs/vendor/github.com/spdx/tools-golang/spdx/v2_2",
         "//third_party/golibs/vendor/github.com/spf13/pflag",
@@ -35,7 +34,6 @@ go_library(
         "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf/data",
         "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf/pkg/keys",
         "//third_party/golibs/vendor/go.starlark.net/syntax",
-        "//third_party/golibs/vendor/go.uber.org/goleak",
         "//third_party/golibs/vendor/golang.org/x/crypto/openpgp",
         "//third_party/golibs/vendor/golang.org/x/crypto/ssh",
         "//third_party/golibs/vendor/golang.org/x/exp/maps",
@@ -57,31 +55,6 @@ go_library(
         "//third_party/golibs/vendor/google.golang.org/protobuf/types/known/structpb",
         "//third_party/golibs/vendor/google.golang.org/protobuf/types/known/timestamppb",
         "//third_party/golibs/vendor/gopkg.in/yaml.v2:yaml_v2",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/atomicbitops",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/buffer",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/log",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/checksum",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/faketime",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/header",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/ethernet",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/loopback",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/nested",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/packetsocket",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/pipe",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/sniffer",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/network/arp",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/network/ipv4",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/network/ipv6",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/stack",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/icmp",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/packet",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/raw",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/udp",
-        "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/waiter",
     ],
 )
 
@@ -153,11 +126,6 @@ alias(
 )
 
 alias(
-    name = "github.com/sasha-s/go-deadlock",
-    actual = "//third_party/golibs/vendor/github.com/sasha-s/go-deadlock",
-)
-
-alias(
     name = "github.com/spdx/tools-golang/spdx/common",
     actual = "//third_party/golibs/vendor/github.com/spdx/tools-golang/spdx/common",
 )
@@ -190,11 +158,6 @@ alias(
 alias(
     name = "go.starlark.net/syntax",
     actual = "//third_party/golibs/vendor/go.starlark.net/syntax",
-)
-
-alias(
-    name = "go.uber.org/goleak",
-    actual = "//third_party/golibs/vendor/go.uber.org/goleak",
 )
 
 alias(
@@ -300,129 +263,4 @@ alias(
 alias(
     name = "gopkg.in/yaml.v2",
     actual = "//third_party/golibs/vendor/gopkg.in/yaml.v2:yaml_v2",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/atomicbitops",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/atomicbitops",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/buffer",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/buffer",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/log",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/log",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/checksum",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/checksum",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/faketime",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/faketime",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/header",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/header",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/link/ethernet",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/ethernet",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/link/loopback",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/loopback",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/link/nested",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/nested",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/link/packetsocket",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/packetsocket",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/link/pipe",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/pipe",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/link/sniffer",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/link/sniffer",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/network/arp",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/network/arp",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/network/ipv4",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/network/ipv4",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/network/ipv6",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/network/ipv6",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/stack",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/stack",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/transport",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/transport/icmp",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/icmp",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/transport/packet",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/packet",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/transport/raw",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/raw",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/transport/tcp",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/tcpip/transport/udp",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/udp",
-)
-
-alias(
-    name = "gvisor.dev/gvisor/pkg/waiter",
-    actual = "//third_party/golibs/vendor/gvisor.dev/gvisor/pkg/waiter",
 )

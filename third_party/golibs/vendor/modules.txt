@@ -48,9 +48,6 @@ github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/empty
 github.com/golang/protobuf/ptypes/timestamp
-# github.com/google/btree v1.1.2
-## explicit; go 1.18
-github.com/google/btree
 # github.com/google/go-cmp v0.7.0
 ## explicit; go 1.21
 github.com/google/go-cmp/cmp
@@ -90,9 +87,6 @@ github.com/kr/pretty
 # github.com/kr/text v0.2.0
 ## explicit
 github.com/kr/text
-# github.com/petermattis/goid v0.0.0-20220824145935-af5520614cb6
-## explicit; go 1.17
-github.com/petermattis/goid
 # github.com/pkg/sftp v1.13.5
 ## explicit; go 1.15
 github.com/pkg/sftp
@@ -100,9 +94,6 @@ github.com/pkg/sftp/internal/encoding/ssh/filexfer
 # github.com/rogpeppe/go-internal v1.9.0
 ## explicit; go 1.17
 github.com/rogpeppe/go-internal/fmtsort
-# github.com/sasha-s/go-deadlock v0.3.1
-## explicit
-github.com/sasha-s/go-deadlock
 # github.com/sergi/go-diff v1.3.1
 ## explicit; go 1.12
 github.com/sergi/go-diff/diffmatchpatch
@@ -158,10 +149,6 @@ go.starlark.net/resolve
 go.starlark.net/starlark
 go.starlark.net/starlarkstruct
 go.starlark.net/syntax
-# go.uber.org/goleak v1.2.0
-## explicit; go 1.18
-go.uber.org/goleak
-go.uber.org/goleak/internal/stack
 # golang.org/x/crypto v0.33.0
 ## explicit; go 1.20
 golang.org/x/crypto/blowfish
@@ -230,9 +217,6 @@ golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
-# golang.org/x/time v0.5.0
-## explicit; go 1.18
-golang.org/x/time/rate
 # golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
 ## explicit; go 1.18
 golang.org/x/xerrors
@@ -403,55 +387,3 @@ google.golang.org/protobuf/types/pluginpb
 # gopkg.in/yaml.v2 v2.4.0
 ## explicit; go 1.15
 gopkg.in/yaml.v2
-# gvisor.dev/gvisor v0.0.0-20240326191126-eee56899b8fa
-## explicit; go 1.21.1
-gvisor.dev/gvisor/pkg/atomicbitops
-gvisor.dev/gvisor/pkg/bits
-gvisor.dev/gvisor/pkg/buffer
-gvisor.dev/gvisor/pkg/context
-gvisor.dev/gvisor/pkg/cpuid
-gvisor.dev/gvisor/pkg/gohacks
-gvisor.dev/gvisor/pkg/goid
-gvisor.dev/gvisor/pkg/linewriter
-gvisor.dev/gvisor/pkg/log
-gvisor.dev/gvisor/pkg/rand
-gvisor.dev/gvisor/pkg/refs
-gvisor.dev/gvisor/pkg/sleep
-gvisor.dev/gvisor/pkg/state
-gvisor.dev/gvisor/pkg/state/wire
-gvisor.dev/gvisor/pkg/sync
-gvisor.dev/gvisor/pkg/sync/locking
-gvisor.dev/gvisor/pkg/tcpip
-gvisor.dev/gvisor/pkg/tcpip/checksum
-gvisor.dev/gvisor/pkg/tcpip/faketime
-gvisor.dev/gvisor/pkg/tcpip/hash/jenkins
-gvisor.dev/gvisor/pkg/tcpip/header
-gvisor.dev/gvisor/pkg/tcpip/header/parse
-gvisor.dev/gvisor/pkg/tcpip/internal/tcp
-gvisor.dev/gvisor/pkg/tcpip/link/ethernet
-gvisor.dev/gvisor/pkg/tcpip/link/loopback
-gvisor.dev/gvisor/pkg/tcpip/link/nested
-gvisor.dev/gvisor/pkg/tcpip/link/packetsocket
-gvisor.dev/gvisor/pkg/tcpip/link/pipe
-gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo
-gvisor.dev/gvisor/pkg/tcpip/link/sniffer
-gvisor.dev/gvisor/pkg/tcpip/network/arp
-gvisor.dev/gvisor/pkg/tcpip/network/hash
-gvisor.dev/gvisor/pkg/tcpip/network/internal/fragmentation
-gvisor.dev/gvisor/pkg/tcpip/network/internal/ip
-gvisor.dev/gvisor/pkg/tcpip/network/internal/multicast
-gvisor.dev/gvisor/pkg/tcpip/network/ipv4
-gvisor.dev/gvisor/pkg/tcpip/network/ipv6
-gvisor.dev/gvisor/pkg/tcpip/ports
-gvisor.dev/gvisor/pkg/tcpip/seqnum
-gvisor.dev/gvisor/pkg/tcpip/stack
-gvisor.dev/gvisor/pkg/tcpip/transport
-gvisor.dev/gvisor/pkg/tcpip/transport/icmp
-gvisor.dev/gvisor/pkg/tcpip/transport/internal/network
-gvisor.dev/gvisor/pkg/tcpip/transport/internal/noop
-gvisor.dev/gvisor/pkg/tcpip/transport/packet
-gvisor.dev/gvisor/pkg/tcpip/transport/raw
-gvisor.dev/gvisor/pkg/tcpip/transport/tcp
-gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack
-gvisor.dev/gvisor/pkg/tcpip/transport/udp
-gvisor.dev/gvisor/pkg/waiter

@@ -62,7 +62,7 @@ for dir in $FUCHSIA_DIR $FUCHSIA_DIR/cobalt $FUCHSIA_DIR/third_party/syzkaller/s
     xargs dirname |
     sort | uniq |
     sed 's|^|./|' |
-    xargs "$GO" list -tags deadlock_detection -mod=readonly -e -f \
+    xargs "$GO" list -mod=readonly -e -f \
       '{{join .Imports "\n"}}{{"\n"}}{{join .TestImports "\n"}}{{"\n"}}{{join .XTestImports "\n"}}' |
     grep -vF go.fuchsia.dev/fuchsia/ |
     # Apparently we generate these normally checked-in files?
@@ -92,10 +92,6 @@ package imports
 import (\n%s\n)' "//$THIS_SCRIPT" "$IMPORTS_STR" | $GOFMT -s >imports.go
 
 if [ $UPDATE -eq 1 ]; then
-  # The following two lines used to be in the opposite order, which incorrectly
-  # caused `go get -u` to fetch gvisor from the default branch instead of the
-  # go branch.
-  $GO get -u gvisor.dev/gvisor@go
   $GO get -u
   # Starting with https://github.com/theupdateframework/go-tuf/commit/1e35084,
   # go-tuf/repo.go logs directly to stdout.
