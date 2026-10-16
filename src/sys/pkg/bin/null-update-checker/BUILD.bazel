@@ -2,6 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -10,4 +20,47 @@ exports_files(
         "meta/null_update_checker.system_update_shard.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "null_update_checker",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":null_update_checker_config",
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
+        "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
+        "//sdk/rust/zx",
+        "//src/lib/detect-stall",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# The GN build uses the `fuchsia_component_manifest("manifest")` target defined
+# above the bazel2gn sentinel in BUILD.gn instead.
+fx_component_manifest(
+    name = "manifest",
+    component_name = "null-update-checker",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+    ],
+    manifest = "meta/null-update-checker.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "null_update_checker_config",
+    cm_label = ":manifest",
 )
