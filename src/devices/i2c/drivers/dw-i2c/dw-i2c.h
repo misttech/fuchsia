@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
+#include <fidl/fuchsia.hardware.pin/cpp/wire.h>
 #include <fidl/fuchsia.hardware.powerdomain/cpp/wire.h>
 #include <fidl/fuchsia.hardware.reset/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
@@ -168,6 +169,10 @@ class DwI2c : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_i
   fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_regs_;
   fidl::WireSyncClient<fuchsia_hardware_reset::Reset> reset_;
   fidl::WireSyncClient<fuchsia_hardware_powerdomain::Domain> powerdomain_;
+  // Present when the board provides pin states for this controller. The pin configuration (e.g.
+  // the IP type selection of a shared I/O block) can be lost when the power domain is turned off,
+  // so the default state is selected again on resume.
+  std::optional<fidl::WireSyncClient<fuchsia_hardware_pin::PinStates>> pin_states_;
 };
 
 }  // namespace dw_i2c

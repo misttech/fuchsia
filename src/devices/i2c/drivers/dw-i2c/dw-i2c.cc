@@ -599,6 +599,13 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
     }
   }
 
+  // Pin states are optional; the board only provides them when the controller has pinctrl.
+  if (zx::result pin_states_client =
+          incoming->Connect<fuchsia_hardware_pin::PinStatesService::Device>("pin-states-0");
+      pin_states_client.is_ok()) {
+    pin_states_.emplace(std::move(pin_states_client.value()));
+  }
+
   if (zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev);
       result.is_error()) {
     fdf::error("Failed to forward and serve metadata: {}", result);
@@ -760,6 +767,20 @@ void DwI2c::SystemResume(std::optional<fuchsia_power_broker::LeaseToken> pe_leas
       fdf::error("Failed to deassert reset: {}", zx_status_get_string(result->error_value()));
       completer(result->take_error());
       return;
+    }
+  }
+
+  // The pin configuration may have been lost while the power domain was off. Select the default
+  // pin state again before touching the controller registers.
+  if (pin_states_) {
+    auto result = (*pin_states_)->SelectState("default");
+    if (!result.ok()) {
+      if (!result.is_peer_closed()) {
+        fdf::warn("Failed to send SelectState request: {}", result.status_string());
+      }
+    } else if (result->is_error()) {
+      fdf::warn("Failed to select default pin state: {}",
+                zx_status_get_string(result->error_value()));
     }
   }
 

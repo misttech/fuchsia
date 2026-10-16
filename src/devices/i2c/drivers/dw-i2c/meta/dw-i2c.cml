@@ -24,6 +24,10 @@
     ],
     use: [
         { service: "fuchsia.hardware.clock.Service" },
+        {
+            service: "fuchsia.hardware.pin.PinStatesService",
+            availability: "optional",
+        },
         { service: "fuchsia.hardware.powerdomain.Service" },
         { service: "fuchsia.hardware.reset.Service" },
     ],
