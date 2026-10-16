@@ -5,7 +5,7 @@
 use anyhow::{Error, anyhow};
 use bootfs::get_bootfs_vmo;
 use cmdline::{ProgramInfo, parse_cmdline};
-use fidl_next::{ClientEnd, ServerEnd};
+use fidl_next::fuchsia::create_channel;
 use fidl_next_fuchsia_boot as fuchsia_boot;
 use fidl_next_fuchsia_io as fuchsia_io;
 use fuchsia_async::OnSignals;
@@ -18,7 +18,7 @@ use userboot::{Log, take_system_handles};
 use zbi::{ZbiContainer, ZbiType};
 use zerocopy::IntoBytes as _;
 use zx::sys::{ZX_SYSTEM_POWERCTL_SHUTDOWN, zx_system_powerctl};
-use zx::{Channel, Rights, Signals};
+use zx::{Rights, Signals};
 
 const BOOT_TEST_SUCCESS_STRING: &str = env!("BOOT_TEST_SUCCESS_STRING");
 
@@ -80,11 +80,6 @@ fn get_options(container: &ZbiContainer<&[u8]>, log: &mut Log) -> Result<Options
     Ok(options)
 }
 
-fn create_endpoints<P>() -> (ClientEnd<P, Channel>, ServerEnd<P, Channel>) {
-    let (client, server) = Channel::create();
-    (ClientEnd::from_untyped(client), ServerEnd::from_untyped(server))
-}
-
 async fn wait_for_process(
     process: &zx::Process,
     program_name: &str,
@@ -116,16 +111,16 @@ async fn run(log: &mut Log) -> Result<(), Error> {
         (options, bootfs_vmo)
     };
 
-    let (userboot_client, userboot_server) = create_endpoints::<fuchsia_boot::Userboot>();
-    let (userboot_client, userboot_task) = userboot_client.spawn_full();
-    let (svc_stash_client, svc_stash_server) = create_endpoints::<fuchsia_boot::SvcStash>();
-    let (svc_stash_client, _svc_stash_task) = svc_stash_client.spawn_full();
+    let (userboot_client, userboot_server) = create_channel::<fuchsia_boot::Userboot>();
+    let userboot_client = userboot_client.spawn();
+    let (svc_stash_client, svc_stash_server) = create_channel::<fuchsia_boot::SvcStash>();
+    let svc_stash_client = svc_stash_client.spawn();
     let _ = userboot_client.post_stash_svc(svc_stash_server).await;
 
     if !options.test.next.is_empty() {
         let (program_name, target_path) = options.test.filename();
 
-        let (svc_client, svc_server) = create_endpoints::<fuchsia_io::Directory>();
+        let (svc_client, svc_server) = create_channel::<fuchsia_io::Directory>();
         let _ = svc_stash_client.store(svc_server).await;
 
         let mut test_handles = handles.duplicate()?;
@@ -152,7 +147,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
     if !options.boot.next.is_empty() {
         let (program_name, target_path) = options.boot.filename();
 
-        let (svc_client, svc_server) = create_endpoints::<fuchsia_io::Directory>();
+        let (svc_client, svc_server) = create_channel::<fuchsia_io::Directory>();
         let _ = svc_stash_client.store(svc_server).await;
 
         handles.startup_handles.push(StartupHandle {
@@ -184,9 +179,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
                 .collect::<Vec<_>>();
             let _ = userboot_client.post_bootfs_files(files).await;
         }
-        userboot_client.close();
         drop(userboot_client);
-        drop(userboot_task);
 
         if options.next_is_test {
             wait_for_process(&process, program_name, log).await?;

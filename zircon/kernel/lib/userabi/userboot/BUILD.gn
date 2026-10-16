@@ -102,14 +102,19 @@ rustc_binary("userboot-rust.executable") {
   source_root = "main.rs"
   sources = [ source_root ]
   deps = [
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust_next",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_next",
     "//sdk/lib/c/stubs",
     "//src/bringup/lib/userboot/rust",
     "//src/bringup/lib/userboot/rust:bootfs",
     "//src/bringup/lib/userboot/rust:cmdline",
     "//src/bringup/lib/userboot/rust:program",
     "//src/firmware/lib/zbi-rs",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-runtime",
     "//src/lib/mapped-vmo",
+    "//src/lib/process_builder",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:zerocopy",
   ]
@@ -149,5 +154,8 @@ rustc_binary("userboot-test-rust.executable") {
     "//third_party/rust_crates:zerocopy",
   ]
 
-  exclude_toolchain_tags = [ "uses-shadow" ]
+  exclude_toolchain_tags = [
+    "uses-shadow",
+    "uses-shlibs",
+  ]
 }
