@@ -2,18 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/compiled_action.gni")
 import("//build/testing/host_test_data.gni")
-
-# This rule is for executing unicode_gen_builder.
-compiled_action("generate_unicode_gen") {
-  tool = ":unicode_gen_builder"
-  outputs =
-      [ get_label_info(":unicode_gen", "target_gen_dir") + "/unicode_gen.rs" ]
-  inputs = [ "//prebuilt/third_party/ucd/UCD.zip" ]
-  args = [ rebase_path("//prebuilt/third_party/ucd/UCD.zip", root_build_dir) ] +
-         rebase_path(outputs, root_build_dir)
-}
 
 if (is_host) {
   host_test_data("ucd_zip") {
@@ -80,6 +69,15 @@ rustc_library("unicode_gen") {
   non_rust_deps = [ ":generate_unicode_gen" ]
   edition = "2024"
   deps = [ ":types" ]
+}
+compiled_action("generate_unicode_gen") {
+  sources = [ "//prebuilt/third_party/ucd/UCD.zip" ]
+  outputs = [ "$target_gen_dir/unicode_gen.rs" ]
+  args = [
+    rebase_path("//prebuilt/third_party/ucd/UCD.zip", root_build_dir),
+    rebase_path("$target_gen_dir/unicode_gen.rs", root_build_dir),
+  ]
+  tool = ":unicode_gen_builder"
 }
 if (is_host) {
   rustc_test("fxfs_unicode_test") {

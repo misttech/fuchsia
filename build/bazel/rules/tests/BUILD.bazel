@@ -96,6 +96,8 @@ filegroup(
         "//src/developer/build_info:build-info-service",
         # Tests `fx_package()` with a Rust binary.
         "//src/recovery/factory-reset-trigger",
+        # Tests `compiled_action()`.
+        "//src/sys/pkg/testing/invalid-fars:resource",
         # Tests `fx_test()`.
         "//build/bazel/rules/packages/tests:build_only_tests",
         # Tests `fx_package()`, `fx_test_component()`, `fx_test()`,

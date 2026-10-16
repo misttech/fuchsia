@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_rules_common//packages:resources.bzl", "fuchsia_package_resource_group")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules:compiled_action.bzl", "compiled_action")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
 
 package(default_applicable_licenses = ["//:license"])
@@ -16,5 +18,66 @@ rustc_binary(
     deps = [
         "//src/sys/pkg/lib/far/rust:fuchsia-archive",
         "//third_party/rust_crates/vendor:argh",
+    ],
+)
+
+compiled_action(
+    name = "generate-invalid-fars",
+    # LINT.IfChange(outs)
+    outs = [
+        "content-chunk-not-tightly-packed.far",
+        "content-chunk-not-zero-padded.far",
+        "content-chunk-offset-past-end-of-file.far",
+        "content-chunk-overlap.far",
+        "content-chunk-starts-early.far",
+        "content-chunk-starts-late.far",
+        "directory-chunk-length-not-a-multiple-of-32-bytes.far",
+        "directory-chunk-not-tightly-packed.far",
+        "directory-entries-not-sorted.far",
+        "directory-entries-with-same-name.far",
+        "directory-names-chunk-before-directory-chunk.far",
+        "directory-names-chunk-length-not-a-multiple-of-8-bytes.far",
+        "directory-names-chunk-not-tightly-packed.far",
+        "directory-names-chunk-overlaps-directory-chunk.far",
+        "directory-names-index-entry-before-directory-index-entry.far",
+        "duplicate-index-entries-of-unknown-type.far",
+        "index-entries-length-not-a-multiple-of-24-bytes.far",
+        "invalid-magic-bytes.far",
+        "name-with-dot-dot-segment.far",
+        "name-with-dot-segment.far",
+        "name-with-empty-segment.far",
+        "name-with-leading-slash.far",
+        "name-with-null-character.far",
+        "name-with-trailing-slash.far",
+        "no-directory-index-entry.far",
+        "no-directory-names-index-entry.far",
+        "no-index-entries.far",
+        "path-data-length-too-large.far",
+        "path-data-offset-too-large.far",
+        "second-content-chunk-starts-early.far",
+        "second-content-chunk-starts-late.far",
+        "two-directory-index-entries.far",
+        "two-directory-names-index-entries.far",
+        "zero-length-name.far",
+    ],
+    # LINT.ThenChange(BUILD.gn:outs)
+    args = [
+        "--output-dir",
+        "$(RULEDIR)",
+    ],
+    tool = ":generator",
+)
+
+# The GN equivalent is the hand-written `resource("resource")` in BUILD.gn.
+# @bazel2gn:skip
+fuchsia_package_resource_group(
+    name = "resource",
+    testonly = True,
+    srcs = [":generate-invalid-fars"],
+    basename_only = True,
+    dest = "data/invalid-fars",
+    visibility = [
+        "//build/bazel/rules/tests:__pkg__",
+        "//src/sys/pkg/lib/far:__subpackages__",
     ],
 )
