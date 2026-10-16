@@ -79,6 +79,4 @@ static_assert(ktl::is_standard_layout_v<BootConstants>);
 // way to optimize out (first) actual reads from the memory physboot wrote.
 extern "C" constinit const BootConstants kBootConstants;
 
-extern "C" const uint8_t* cpp_boot_constants_kernel_version_ident(size_t* size);
-
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_BOOT_CONSTANTS_H_

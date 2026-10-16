@@ -6,5 +6,3 @@
 
 pub mod debug;
 pub mod init;
-pub mod version;
-mod version_ffi;

@@ -7,17 +7,9 @@
 #include <stdint.h>
 
 #include <kernel/ffi.h>
-#include <phys/boot-constants.h>
 #include <phys/handoff.h>
 
 extern "C" {
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE const uint8_t* cpp_boot_constants_kernel_version_ident(size_t* size) {
-  std::string_view version = kBootConstants.kernel_version_ident.get();
-  *size = version.size();
-  return reinterpret_cast<const uint8_t*>(version.data());
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE const PhysHandoff* cpp_phys_handoff_get();

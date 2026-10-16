@@ -6,21 +6,13 @@
 
 import("//zircon/kernel/kernel_rust_mod.gni")
 
-config("ubsan_cfg") {
-  visibility = [ ":*" ]
-  if (is_ubsan) {
-    rustflags = [ "--cfg=ubsan" ]
-  }
-}
-
 source_set("debugcommands") {
   sources = [
     "debugcommands.cc",
-    "debugcommands_ffi.h",
     "undefined-behavior.cc",
   ]
-  public_deps = [ ":debugcommands-rs" ]
   deps = [
+    ":debugcommands-rs",
     "//zircon/kernel/lib/boot-options:boot-options-cli",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/page",
@@ -31,18 +23,6 @@ source_set("debugcommands") {
 }
 
 kernel_rust_mod("debugcommands-rs") {
-  sources = [
-    "debugcommands.rs",
-    "debugcommands_ffi.rs",
-    "undefined_behavior.rs",
-  ]
-  public_configs = [ ":ubsan_cfg" ]
-  deps = [
-    "//sdk/rust/zx-status",
-    "//src/lib/kprint",
-    "//src/lib/zr",
-    "//third_party/rust_crates:pin-init",
-    "//zircon/kernel/lib/boot-options:boot-options-rs",
-    "//zircon/kernel/lib/page",
-  ]
+  sources = [ "debugcommands.rs" ]
+  deps = [ "//src/lib/kprint" ]
 }

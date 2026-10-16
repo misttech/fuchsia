@@ -15,6 +15,7 @@ group("top") {
     ":main",
     ":rust_panic",
     ":top_rust",
+    ":version",
     "//zircon/kernel/arch:arch-rs",
     "//zircon/kernel/arch:ffi",
     "//zircon/kernel/arch/$zircon_cpu",
@@ -93,11 +94,16 @@ kernel_rust_mod("top_rust") {
     "debug.rs",
     "init.rs",
     "mod.rs",
-    "version.rs",
-    "version_ffi.rs",
   ]
+  deps = [ "//zircon/kernel/lib/init:init_rust" ]
+}
+
+source_set("version") {
+  visibility = [ ":*" ]
+  sources = [ "version.cc" ]
   deps = [
-    "//src/lib/kprint",
-    "//zircon/kernel/lib/init:init_rust",
+    "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/init",
+    "//zircon/kernel/phys:boot-constants",
   ]
 }

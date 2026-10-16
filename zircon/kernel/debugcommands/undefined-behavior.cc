@@ -13,11 +13,18 @@
 // from optimizing the operations away or throwing warnings.
 
 #include <inttypes.h>
+#include <lib/boot-options/boot-options.h>
+#include <lib/console.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "debugcommands_ffi.h"
+#include <ktl/algorithm.h>
+#include <ktl/iterator.h>
+#include <ktl/span.h>
+#include <ktl/string_view.h>
+
+#include <ktl/enforce.h>
 
 #if __has_feature(undefined_behavior_sanitizer)
 
@@ -167,24 +174,82 @@ void undefined_enum() {
   printf("load of invalid enum value: %d\n", b);
 }
 
+struct UndefinedBehaviorCommand {
+  ktl::string_view name;
+  void (*func)();
+  const char* description;
+  bool cannot_continue;
+};
+
+constexpr UndefinedBehaviorCommand kUbCommands[] = {
+    {"all", nullptr, "run each subcommand in turn (requires kernel.ubsan.panic=false)"},
+    {"array_oob", &array_oob, "array out of bounds access"},
+    {"invalid_builtin_clz", &invalid_builtin_clz, "call __builtin_clz with 0"},
+    {"invalid_builtin_ctz", &invalid_builtin_ctz, "call __builtin_ctz with 0"},
+    {"misaligned_ptr", &misaligned_ptr, "use a misaligned pointer"},
+    {"nonnull_return", &nonnull_return, "return nullptr from returns_nonnull function"},
+    {"nullability_return", &nullability_return, "return nullptr from _Nonnull function"},
+    {"overflow_ptr", &overflow_ptr, "pointer arithmetic that overflows"},
+    {"overflow_signed_int_add", &overflow_signed_int_add, "signed integer addition that overflows"},
+    {"overflow_signed_int_shift", &overflow_signed_int_shift,
+     "signed integer shift that overflows"},
+    {"unaligned_assumption", &unaligned_assumption, "make a wrong alignment assumption"},
+    {"undefined_enum", &undefined_enum, "use an undefined value in a enum"},
+    {"undefined_bool", &undefined_bool, "use a bool that is not true nor false"},
+    {"unreachable", &unreachable, "execute unreachable code.", true},
+};
+
+constexpr size_t kMaxCommandNameSize = [] {
+  size_t size = 0;
+  for (const auto& ub_cmd : kUbCommands) {
+    size = ktl::max(size, ub_cmd.name.size());
+  }
+  return size;
+}();
+
+int cmd_usage(const char* cmd_name) {
+  printf("usage:\n");
+  for (const auto& ub_cmd : kUbCommands) {
+    printf("%s %-*s : %s\n", cmd_name, static_cast<int>(kMaxCommandNameSize), ub_cmd.name.data(),
+           ub_cmd.description);
+  }
+  return ZX_ERR_INTERNAL;
+}
+
+int cmd_ub(int argc, const cmd_args* argv, uint32_t flags) {
+  const char* name = argv[0].str;
+  if (argc != 2) {
+    printf("Exactly one argument required.\n");
+    return cmd_usage(name);
+  }
+
+  ktl::string_view subcommand = argv[1].str;
+  for (const auto& ub_cmd : kUbCommands) {
+    if (ub_cmd.name == subcommand) {
+      if (ub_cmd.func) {
+        ub_cmd.func();
+      } else {
+        for (const auto& next_ub_cmd : ktl::span(kUbCommands).subspan(1)) {
+          if (BootOptions::Get()->ubsan_action == CheckFailAction::kOops &&
+              next_ub_cmd.cannot_continue) {
+            printf("*** Skipping `ub %s`, which cannot avoid panic ***\n", next_ub_cmd.name.data());
+          } else {
+            printf("*** ub %s\n", next_ub_cmd.name.data());
+            next_ub_cmd.func();
+          }
+        }
+      }
+      return 0;
+    }
+  }
+
+  return cmd_usage(name);
+}
+
+STATIC_COMMAND_START
+STATIC_COMMAND("ub", "trigger undefined behavior", &cmd_ub)
+STATIC_COMMAND_END(ub)
+
 }  // namespace
-
-extern "C" {
-
-void cpp_ub_array_oob() { array_oob(); }
-void cpp_ub_invalid_builtin_clz() { invalid_builtin_clz(); }
-void cpp_ub_invalid_builtin_ctz() { invalid_builtin_ctz(); }
-void cpp_ub_misaligned_ptr() { misaligned_ptr(); }
-void cpp_ub_nonnull_return() { nonnull_return(); }
-void cpp_ub_nullability_return() { nullability_return(); }
-void cpp_ub_overflow_ptr() { overflow_ptr(); }
-void cpp_ub_overflow_signed_int_add() { overflow_signed_int_add(); }
-void cpp_ub_overflow_signed_int_shift() { overflow_signed_int_shift(); }
-void cpp_ub_unaligned_assumption() { unaligned_assumption(); }
-void cpp_ub_undefined_enum() { undefined_enum(); }
-void cpp_ub_undefined_bool() { undefined_bool(); }
-void cpp_ub_unreachable() { unreachable(); }
-
-}  // extern "C"
 
 #endif  // __has_feature(undefined_behavior_sanitizer)
