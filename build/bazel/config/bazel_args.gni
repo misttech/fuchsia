@@ -157,6 +157,11 @@ _build_args += [
 
 # LINT.ThenChange(//build/config/compiler.gni:compress_debuginfo)
 
+# LINT.IfChange(debuginfo)
+_build_args += [ "--//build/bazel/config/variables:debuginfo=${debuginfo}" ]
+
+# LINT.ThenChange(//build/config/compiler.gni:debuginfo)
+
 # Forward GN C/C++ compiler optimization configuration to Bazel
 
 _build_args += [ "--//build/bazel/config/variables:optimize=${optimize}" ]

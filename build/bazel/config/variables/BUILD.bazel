@@ -41,6 +41,23 @@ string_flag(
 )
 # LINT.ThenChange(//build/config/compiler.gni:compress_debuginfo)
 
+# LINT.IfChange(debuginfo)
+string_flag(
+    name = "debuginfo",
+    build_setting_default = "debug",
+    values = [
+        "none",
+        "backtrace",
+        "debug",
+    ],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(
+#   //build/bazel/config/bazel_args.gni:debuginfo,
+#   //build/bazel/config/select/debuginfo/BUILD.bazel:debuginfo,
+#   //build/config/compiler.gni:debuginfo,
+# )
+
 # LINT.IfChange(valid_optimize_values)
 # The platform-specific "optimize" variable.
 string_flag(

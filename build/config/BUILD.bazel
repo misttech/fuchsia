@@ -130,6 +130,56 @@ dwarf_version_build_flags(
 )
 # LINT.ThenChange(BUILD.gn:dwarf_version)
 
+# LINT.IfChange(debuginfo_configs)
+
+# Each of the debuginfo_<level> configs below corresponds to a single setting
+# that controls the amount of debugging information used and is controlled by
+# the debuginfo argument. The default_debuginfo level is set to
+# debuginfo_{debuginfo} for convenience, but individual targets can override
+# their debuginfo level by manually applying one of the configs below.
+
+build_flags(
+    name = "debuginfo_none",
+    cflags = ["-g0"],
+    # NOTE: asmflags is not supported. Bazel uses cflags.
+    # asmflags = [ "-g0" ],
+    ldflags = ["-g0"],
+    rustflags = ["-Cdebuginfo=0"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "debuginfo_backtrace",
+    cflags = ["-g1"],
+    # NOTE: asmflags is not supported. Bazel uses cflags.
+    # asmflags = [ "-g1" ],
+    ldflags = ["-g1"],
+    rustflags = ["-Cdebuginfo=1"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "debuginfo_debug",
+    cflags = [
+        "-g3",
+
+        # Add command-line details to each TU's DW_AT_producer to aid build
+        # diagnosis working backwards from debug files.  Clang aliases this switch
+        # to -grecord-command-line, but both compilers accept this spelling for it.
+        "-grecord-gcc-switches",
+    ],
+    # NOTE: asmflags is not supported. Bazel uses cflags.
+    # asmflags = [ "-g3", "-grecord-gcc-switches" ],
+    ldflags = [
+        "-g3",
+        "-grecord-gcc-switches",
+    ],
+    rustflags = ["-Cdebuginfo=2"],
+    visibility = ["//visibility:public"],
+)
+
+# LINT.ThenChange(BUILD.gn:debuginfo_configs)
+
 # LINT.IfChange(compress_debuginfo)
 # Use a custom rule which produces a BuildFlagsInfo value that
 # depends on the toolchain-specific compress_debuginfo variable.
@@ -138,3 +188,27 @@ compress_debuginfo_build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(BUILD.gn:compress_debuginfo)
+
+# LINT.IfChange(default_debuginfo)
+build_flags(
+    name = "default_debuginfo",
+    # Assume is_gcc == false && is_pecoff == false && is_dwarf == true in Bazel.
+    cflags = [
+        # This option forces Clang to only emit class type information when
+        # constructors are emitted which can significantly reduce debug info
+        # size. Eventually, this option will enabled by default in Clang when
+        # -fno-standalone-debug is used.
+        "-Xclang",
+        "-debug-info-kind=constructor",
+    ],
+    subflags = select({
+        "//build/bazel/config/select/debuginfo:none": [":debuginfo_none"],
+        "//build/bazel/config/select/debuginfo:backtrace": [":debuginfo_backtrace"],
+        "//build/bazel/config/select/debuginfo:debug": [":debuginfo_debug"],
+    }) + [
+        ":dwarf_version",
+        ":compress_debuginfo",
+    ],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:default_debuginfo)
