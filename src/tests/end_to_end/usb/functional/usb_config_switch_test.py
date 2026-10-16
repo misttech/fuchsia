@@ -7,8 +7,9 @@
 Starting from the config the DUT boots with, e.g. `cdc,adb,vsock`, the test
 runs `usb-cli set-config` for every non-empty subset of those functions, in
 every order. After each switch it checks that the DUT reports the new config,
-that the host sees the right interfaces, and that CDC and ADB carry traffic.
-Finally it restores the starting config.
+that the host sees the right interfaces, that CDC and ADB carry traffic, and
+that `usb-cli diag` shows no health errors or stuck DWC3 endpoints. Finally it
+restores the starting config.
 
 `usb-cli` runs on the serial console, the only transport that survives a
 switch, so the Mobly config must provide `serial_socket`.
@@ -33,6 +34,7 @@ from usb_lib.usb_config import (
     FUNCTION_INTERFACES,
     FUNCTION_PIDS,
     GOOGLE_USB_VID,
+    KERNEL_LOG_RE,
     build_config_matrix,
     get_usb_config,
     parse_get_config,
@@ -55,6 +57,114 @@ _TRANSFER_SIZE_BYTES = 5 * 1024 * 1024
 # `/tmp` is an in-memory tmpfs, so ADB transfers don't hit flash storage.
 _ADB_REMOTE_PATH = "/tmp/usb_config_switch_test.bin"
 _ADB_ECHO_TOKEN = "usb_config_switch_test"
+
+# What `usb-cli` prints last when it succeeds, and when it fails.
+_USB_CLI_END_TOKENS = ("[usb-cli:DONE]", "usb-cli error:")
+# `usb-cli diag` prints the health dashboard, then this, then Inspect data.
+_DIAG_INSPECT_HEADER = "=== Device-Side USB Inspect Diagnostics ==="
+# Dashboard status tags for a disconnected, unconfigured, or broken device.
+_BAD_HEALTH_TAGS = (
+    "[ERROR]",
+    "[DISCONN]",
+    "[ENUMERATING]",
+    "[ADDRESS]",
+    "[SUSPENDED]",
+    "[UNKNOWN]",
+)
+# EP0 OUT and IN. Control endpoints stall by design to reject requests.
+_DWC3_EP0 = ("endpoint-0x00", "endpoint-0x01")
+
+
+def _get(node: Any, *names: str) -> dict[str, Any]:
+    """Returns `node[names[0]][names[1]]...` if that is a dict, else {}."""
+    for name in names:
+        node = node.get(name) if isinstance(node, dict) else None
+    return node if isinstance(node, dict) else {}
+
+
+def parse_dwc3_endpoints(output: str) -> dict[str, Any]:
+    """Returns the DWC3 `endpoints` Inspect node from `usb-cli diag` output.
+
+    `usb-cli` prints an Inspect node as "name:", then its properties as
+    "name: value", then its children, indenting each level by two spaces:
+
+        === Synopsys DWC3 Controller Diagnostics ===
+          dwc3:
+            endpoints:
+              endpoint-0x02:
+                enabled: true
+                type: 2 (Bulk)
+                trb_fifo:
+                  active_trbs:
+                    0:
+                      hardware_owned: true
+
+    This returns nested dicts, as in Inspect's JSON:
+    {"endpoint-0x02": {"enabled": True, "type": "2 (Bulk)", ...}}.
+    """
+    root: dict[str, Any] = {}
+    # The nodes from the root down to the current one, with their indents.
+    stack: list[tuple[int, dict[str, Any]]] = []
+    for line in KERNEL_LOG_RE.sub("", output).splitlines():
+        if line.lstrip().startswith("==="):
+            # A section header. Only read the DWC3 section.
+            stack = [(-1, root)] if "Synopsys DWC3" in line else []
+            continue
+        name, colon, value = line.strip().partition(":")
+        if not stack or not colon:
+            continue
+        indent = len(line) - len(line.lstrip())
+        while stack[-1][0] >= indent:
+            stack.pop()
+        node = stack[-1][1]
+        value = value.strip()
+        if value:
+            node[name] = {"true": True, "false": False}.get(value, value)
+        else:
+            node[name] = {}
+            stack.append((indent, node[name]))
+    return _get(root, "dwc3", "endpoints")
+
+
+def find_diag_problems(output: str) -> list[str]:
+    """Returns the health errors and stuck endpoints in `usb-cli diag`."""
+    dashboard = KERNEL_LOG_RE.sub("", output).split(_DIAG_INSPECT_HEADER)[0]
+    # E.g. "  [ERROR]       VSOCK:          Endpoint error".
+    errors = [
+        line.strip()
+        for line in dashboard.splitlines()
+        if any(tag in line for tag in _BAD_HEALTH_TAGS)
+    ]
+    return errors + find_stuck_endpoints(parse_dwc3_endpoints(output))
+
+
+def find_stuck_endpoints(endpoints: dict[str, Any]) -> list[str]:
+    """Returns which of the DWC3 `endpoints` look stuck.
+
+    An enabled endpoint is stuck if it is stalled, or if a TRB that the
+    hardware still owns comes before one that it has completed. The hardware
+    completes TRBs in order, so that older TRB will never complete.
+    """
+    if not endpoints:
+        return ["usb-cli diag shows no DWC3 endpoints"]
+    problems: list[str] = []
+    for name in sorted(endpoints):
+        endpoint = _get(endpoints, name)
+        if name in _DWC3_EP0 or endpoint.get("enabled") is not True:
+            continue
+        if endpoint.get("stalled") is True:
+            problems.append(f"{name} is stalled")
+        trbs = _get(endpoint, "trb_fifo", "active_trbs")
+        hwo: list[int] = []
+        # Oldest first. Skip any TRB that the serial console garbled.
+        for i in sorted((i for i in trbs if i.isdigit()), key=int):
+            owned = _get(trbs, i).get("hardware_owned")
+            if isinstance(owned, bool):
+                hwo.append(int(owned))
+        # Expect completed TRBs (0) before pending ones (1).
+        if hwo != sorted(hwo):
+            problems.append(f"{name} has TRB HWO bits {hwo}")
+    return problems
 
 
 @contextlib.contextmanager
@@ -212,6 +322,9 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
         if "adb" in config:
             with _expect_no_raises(f"[{label}] ADB traffic"):
                 self._check_adb_traffic()
+        # Last, so the rings have just carried traffic.
+        with _expect_no_raises(f"[{label}] usb-cli diag"):
+            self._check_diag(config)
 
     def _get_config(self) -> dict[str, Any]:
         """Runs `usb-cli get-config` and returns the JSON it prints."""
@@ -295,6 +408,44 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
     def _adb(self, *args: str) -> str:
         return self.dut.adb.run(
             list(args), timeout=_COMMAND_TIMEOUT_SEC, attempts=1
+        )
+
+    def _check_diag(self, config: list[str]) -> None:
+        """Checks that `usb-cli diag` shows no errors or stuck endpoints."""
+        output = self._usb_cli_diag(config)
+        problems = find_diag_problems(output)
+        if problems:
+            # Inspect reads the TRBs one by one while the hardware completes
+            # them, so a single read can be torn. Only trust a repeat.
+            time.sleep(1)
+            output = self._usb_cli_diag(config)
+            problems = find_diag_problems(output)
+        if problems:
+            _LOGGER.warning("usb-cli diag output: %s", output)
+        asserts.assert_false(problems, f"usb-cli diag: {problems}")
+
+    def _usb_cli_diag(self, config: list[str]) -> str:
+        """Runs `usb-cli diag` over SSH if CDC is up and works, else serial."""
+        if "cdc" in config:
+            try:
+                # SSH is faster, and kernel logs don't get mixed in.
+                return self.dut.ffx.run(
+                    ["target", "ssh", "usb-cli diag"],
+                    timeout=_COMMAND_TIMEOUT_SEC,
+                    log_output=False,
+                    machine=MachineFormat.RAW,
+                    disable_controlmaster=True,
+                )
+            except honeydew_errors.HoneydewError as e:
+                # E.g. a CDC endpoint is stuck. Serial doesn't use USB.
+                _LOGGER.warning(
+                    "usb-cli diag over SSH failed, so using serial: %s", e
+                )
+        return self.dut.serial.send_and_recv(
+            cmd="usb-cli diag",
+            stop_tokens=_USB_CLI_END_TOKENS,
+            timeout_sec=_COMMAND_TIMEOUT_SEC,
+            log_output=False,
         )
 
 
