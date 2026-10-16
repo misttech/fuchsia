@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Netstack3 architecture, Core/Bindings split, and static typing principles.
+conditional_capability_groups {
+  path_expression: "netstack3/....rs"
+  path_expression: "netstack3/....md"
+  review_capability_skills: "src/connectivity/network/.agents/skills/netstack3-docs/SKILL.md"
+  review_capability_skills: "src/connectivity/network/.agents/skills/netstack3-unit-tests/SKILL.md"
+}
+
+# Netstack3 testutil visibility and rustc_library_with_features GN pattern.
+conditional_capability_groups {
+  path_expression: "netstack3/....gn"
+  path_expression: "netstack3/....gni"
+  path_expression: "netstack3/....rs"
+  review_capability_skills: "src/connectivity/network/.agents/skills/netstack3-rust-testutils/SKILL.md"
+}
+
+# Netstack3 integration and FIDL compatibility tests.
+conditional_capability_groups {
+  path_expression: "tests/....rs"
+  path_expression: "tests/....gn"
+  path_expression: "tests/....cml"
+  path_expression: "tests/....json5"
+  review_capability_skills: "src/connectivity/network/.agents/skills/netstack3-integration-tests/SKILL.md"
+}
