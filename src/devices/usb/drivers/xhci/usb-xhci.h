@@ -72,6 +72,7 @@ class UsbXhci : public fdf::DriverBase2,
   UsbXhci() : fdf::DriverBase2(kDeviceName) {}
 
   zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
   ~UsbXhci() override;
 
   // Forces an immediate shutdown of the HCI
@@ -267,27 +268,47 @@ class UsbXhci : public fdf::DriverBase2,
     interrupter(target_interrupter).ring().ScheduleTask(std::move(promise));
   }
 
+  bool IsHaltedOrStopping() const {
+    return !running_ || !mmio_.has_value() ||
+           !USBCMD::Get(cap_length_).ReadFrom(&mmio_.value()).ENABLE() ||
+           USBSTS::Get(cap_length_).ReadFrom(&mmio_.value()).HCHalted();
+  }
+
   // Schedules the promise for execution and synchronously waits for it to complete
   template <typename V>
   zx_status_t RunSynchronously(uint16_t target_interrupter,
                                fpromise::promise<V, zx_status_t> promise) {
-    sync_completion_t completion;
-    zx_status_t completion_code;
-    auto continuation = promise.then([&](fpromise::result<V, zx_status_t>& result) {
+    struct SyncState {
+      sync_completion_t completion;
+      zx_status_t completion_code = ZX_ERR_IO_NOT_PRESENT;
+    };
+    auto state = std::make_shared<SyncState>();
+    auto continuation = promise.then([state](fpromise::result<V, zx_status_t>& result) {
       if (result.is_ok()) {
-        completion_code = ZX_OK;
-        sync_completion_signal(&completion);
+        state->completion_code = ZX_OK;
       } else {
-        completion_code = result.error();
-        sync_completion_signal(&completion);
+        state->completion_code = result.error();
       }
+      sync_completion_signal(&state->completion);
       return result;
     });
     ScheduleTask(target_interrupter, continuation.box());
     RunUntilIdle(target_interrupter);
-    sync_completion_wait(&completion, ZX_TIME_INFINITE);
-    return completion_code;
+    while (sync_completion_wait(&state->completion, zx::msec(5).get()) == ZX_ERR_TIMED_OUT) {
+      if (IsHaltedOrStopping()) {
+        AbortPendingCommands();
+        RunUntilIdle(target_interrupter);
+        if (sync_completion_wait(&state->completion, 0) != ZX_OK) {
+          return ZX_ERR_IO_NOT_PRESENT;
+        }
+        break;
+      }
+      RunUntilIdle(target_interrupter);
+    }
+    return state->completion_code;
   }
+
+  void AbortPendingCommands();
 
   // Creates a promise that resolves after a timeout
   fpromise::promise<void, zx_status_t> Timeout(uint16_t target_interrupter, zx::time deadline);
@@ -305,7 +326,9 @@ class UsbXhci : public fdf::DriverBase2,
   // Provides a barrier for promises.
   // After this method is invoked, all pending promises on the target interrupter will be flushed.
   void RunUntilIdle(uint16_t target_interrupter) {
-    interrupter(target_interrupter).ring().RunUntilIdle();
+    if (target_interrupter < interrupters_.size()) {
+      interrupter(target_interrupter).ring().RunUntilIdle();
+    }
   }
 
   // interrupter(uint32_t i): returns the interrupter with the corresponding index
@@ -475,6 +498,8 @@ class UsbXhci : public fdf::DriverBase2,
   ddk::UsbBusInterfaceProtocolClient bus_;
 
   // Pending DDK callbacks that need to be ran on the dedicated DDK interaction thread
+  fdf::SynchronizedDispatcher ddk_interaction_dispatcher_;
+  libsync::Completion ddk_interaction_shutdown_;
   std::optional<async::Executor> ddk_interaction_executor_;
 
   // Whether or not the HCI instance is currently active

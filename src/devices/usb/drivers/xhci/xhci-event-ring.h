@@ -112,6 +112,7 @@ class EventRing {
   void ScheduleTask(fpromise::promise<void, zx_status_t> promise);
 
   void RunUntilIdle();
+  void ClearPendingPortStatusChanges();
 
  private:
   void SchedulePortStatusChange(uint8_t port_id, bool preempt = false);
@@ -174,7 +175,6 @@ class EventRing {
   fbl::DoublyLinkedList<std::unique_ptr<TRBContext>> enumeration_queue_;
   // Whether or not we're currently enumerating a device
   bool enumerating_ = false;
-  synchronous_executor::synchronous_executor executor_;
 
   // Virtual address of the event ring dequeue pointer
   TRB* erdp_virt_ = nullptr;
@@ -235,6 +235,10 @@ class EventRing {
   std::optional<inspect::LinearUintHistogram> unhandled_events_;
 
   std::optional<trace_async_id_t> async_id_;
+
+  // Declared last so that any pending tasks on |executor_| are destroyed first
+  // while all other |EventRing| members are still valid.
+  synchronous_executor::synchronous_executor executor_;
 };
 }  // namespace usb_xhci
 

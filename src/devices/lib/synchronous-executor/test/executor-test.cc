@@ -128,4 +128,23 @@ TEST(SynchronousExecutorTests, AbandonedTasksGetProperlyCleanedUp) {
   ASSERT_EQ(cleanup_count, 1);
 }
 
+namespace {
+
+TEST(SynchronousExecutorTests, DestroyWithSuspendedBridgeConsumerAndCompleter) {
+  synchronous_executor executor;
+  fpromise::bridge<void, void> bridge;
+  fpromise::suspended_task suspended;
+
+  executor.schedule_task(bridge.consumer.promise());
+  executor.schedule_task(fpromise::make_promise(
+      [&suspended, completer = std::move(bridge.completer)](fpromise::context& context) mutable {
+        suspended = context.suspend_task();
+        return fpromise::pending();
+      }));
+
+  executor.run_until_idle();
+}
+
+}  // namespace
+
 }  // namespace synchronous_executor

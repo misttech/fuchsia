@@ -9,6 +9,26 @@
 
 namespace synchronous_executor {
 
+synchronous_executor::~synchronous_executor() {
+  // Drain and destroy all runnable and suspended tasks outside the lock before
+  // |scheduler_| is destroyed. Destroying a task that holds an
+  // |fpromise::completer| or |fpromise::consumer| can trigger
+  // |resolve_ticket()| on a sibling task in the same |fpromise::bridge|; if
+  // that happens inside |scheduler_.~scheduler()| while |std::map::~map()| is
+  // iterating over |tickets_|, |scheduler_.release_ticket()| re-enters
+  // |tickets_.erase()| and double-destroys the sibling task.
+  while (true) {
+    fpromise::subtle::scheduler::task_queue tasks;
+    {
+      std::scoped_lock lock(mutex_);
+      scheduler_.take_all_tasks(&tasks);
+    }
+    if (tasks.empty()) {
+      break;
+    }
+  }
+}
+
 void synchronous_executor::schedule_task(fpromise::pending_task task) {
   std::lock_guard<std::mutex> lock(mutex_);
   scheduler_.schedule_task(std::move(task));

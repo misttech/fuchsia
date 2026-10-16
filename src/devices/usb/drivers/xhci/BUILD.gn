@@ -107,5 +107,6 @@ group("tests") {
   deps = [
     ":usb_xhci_bind_test",
     "tests:unittests",
+    "//src/devices/lib/synchronous-executor:tests",
   ]
 }

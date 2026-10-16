@@ -495,6 +495,8 @@ void EventRing::ScheduleTask(fpromise::promise<void, zx_status_t> promise) {
 
 void EventRing::RunUntilIdle() { executor_.run_until_idle(); }
 
+void EventRing::ClearPendingPortStatusChanges() { executor_.run_until_idle(); }
+
 zx_status_t TransferRing::AllocateTRB(TRB** trb, State* state) {
   fbl::AutoLock _(&mutex_);
   if (state) {
@@ -1067,6 +1069,78 @@ TEST_F(XhciMmioHarness, CancelAllStopEndpointFails) {
 TEST_F(XhciMmioHarness, GetMaxDeviceCount) { ASSERT_EQ(GetMaxDeviceCount(), 34UL); }
 
 namespace {
+
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
+TEST_F(XhciMmioHarness, StopWithHCHaltedTimeout) {
+  constexpr auto kUsbSts = 8 * sizeof(uint32_t);
+  constexpr uint8_t kCapLength = 0x1c;
+  auto poll_count = std::make_shared<std::atomic<size_t>>(0);
+  driver_test().RunInEnvironmentTypeContext([&](XhciTestEnvironment& env) {
+    env.fake_device().region()[kUsbSts].SetReadCallback([=] {
+      poll_count->fetch_add(1, std::memory_order_relaxed);
+      // Simulate MMIO unmapping or unhalted controller where HCHalted remains 0.
+      auto sts = USBSTS::Get(kCapLength).FromValue(0);
+      sts.set_HCHalted(0);
+      return sts.reg_value();
+    });
+  });
+
+  libsync::Completion stop_done;
+  driver_test().driver()->Stop(fdf::StopCompleter([&](zx::result<> result) {
+    EXPECT_OK(result);
+    stop_done.Signal();
+  }));
+  stop_done.Wait();
+  EXPECT_GT(poll_count->load(std::memory_order_relaxed), 1u);
+}
+
+TEST_F(XhciMmioHarness, RunSynchronouslyDoesNotAbortPendingCommandsWhenRunning) {
+  // Queue a command TRB on the command ring via ConnectDevice.
+  ConnectDevice(1, USB_SPEED_HIGH);
+  auto cr = crcr_next();
+  ASSERT_NE(cr, nullptr);
+  EXPECT_EQ(Control::FromTRB(cr).Type(), Control::AddressDeviceCommand);
+
+  // Schedule a promise via RunSynchronously that takes 300ms to resolve while the controller is
+  // healthy and running (!IsHaltedOrStopping()).
+  fpromise::bridge<void, zx_status_t> slow_bridge;
+  std::thread completer_thread([completer = std::move(slow_bridge.completer)] mutable {
+    zx::nanosleep(zx::deadline_after(zx::msec(300)));
+    completer.complete_ok();
+  });
+
+  zx_status_t sync_status =
+      driver_test().driver()->RunSynchronously(0, slow_bridge.consumer.promise().box());
+  completer_thread.join();
+
+  // RunSynchronously must wait for the promise to complete with ZX_OK and must NOT abort pending
+  // commands on the command ring after 250ms while the controller is still running.
+  EXPECT_OK(sync_status);
+
+  CommandCompletionEvent event;
+  event.set_CompletionCode(CommandCompletionEvent::Success);
+  EXPECT_OK(CompleteCommand(cr, &event));
+
+  // Also verify that if the controller halts while RunSynchronously is waiting on a non-command
+  // promise, early return does not cause stack-use-after-return when the promise later resolves.
+  constexpr auto kUsbSts = 8 * sizeof(uint32_t);
+  constexpr uint8_t kCapLength = 0x1c;
+  driver_test().RunInEnvironmentTypeContext([&](XhciTestEnvironment& env) {
+    env.fake_device().region()[kUsbSts].SetReadCallback([=] {
+      auto sts = USBSTS::Get(kCapLength).FromValue(0);
+      sts.set_HCHalted(1);
+      return sts.reg_value();
+    });
+  });
+
+  fpromise::bridge<void, zx_status_t> halted_bridge;
+  EXPECT_EQ(driver_test().driver()->RunSynchronously(0, halted_bridge.consumer.promise().box()),
+            ZX_ERR_IO_NOT_PRESENT);
+  // Resolving the promise after RunSynchronously has returned must safely update heap-shared state
+  // without touching a popped stack frame.
+  halted_bridge.completer.complete_ok();
+  driver_test().driver()->RunUntilIdle(0);
+}
 
 TEST_F(XhciMmioHarness, DeviceOnlineUsesOneBasedPortIndex) {
   // GetPortState() uses 1-based port indexing matching the xHCI specification.

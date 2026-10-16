@@ -191,6 +191,10 @@ zx_status_t EventRing::AddSegment(bool initialization) {
 
 fpromise::promise<void, zx_status_t> EventRing::HandlePortStatusChangeEvent(uint8_t port_id) {
   auto sc = PORTSC::Get(cap_length_, port_id).ReadFrom(mmio_);
+  fdf::info(
+      "xhci: HandlePortStatusChangeEvent port={} PORTSC=0x{:08x} (CCS={} PED={} PR={} PLS={} Speed={} CSC={} PRC={})",
+      port_id, sc.reg_value(), sc.CCS(), sc.PED(), sc.PR(), static_cast<uint32_t>(sc.PLS()),
+      sc.PortSpeed(), sc.CSC(), sc.PRC());
   std::optional<fpromise::promise<void, zx_status_t>> pending_enumeration;
   // Read status bits
   bool needs_enum = false;
@@ -433,6 +437,26 @@ void EventRing::ScheduleTask(fpromise::promise<void, zx_status_t> promise) {
 }
 
 void EventRing::RunUntilIdle() { executor_.run_until_idle(); }
+
+void EventRing::ClearPendingPortStatusChanges() {
+  while (!enumeration_queue_.is_empty()) {
+    auto task = enumeration_queue_.pop_front();
+    if (task->completer.has_value()) {
+      task->completer->complete_error(ZX_ERR_IO_NOT_PRESENT);
+    }
+  }
+  enumerating_ = false;
+  if (hci_) {
+    const uint8_t port_count = hci_->GetPortCount();
+    for (uint8_t port_id = 1; port_id <= port_count; port_id++) {
+      auto wait = std::move(hci_->GetPortState(port_id).wait_for_port_status_change_);
+      if (wait && wait->completer.has_value()) {
+        wait->completer->complete_error(ZX_ERR_IO_NOT_PRESENT);
+      }
+    }
+  }
+  executor_.run_until_idle();
+}
 
 bool EventRing::StallWorkaroundForDefectiveHubs(std::unique_ptr<TRBContext>& context) {
   ZX_ASSERT(std::holds_alternative<Request>(*context->request));
@@ -697,6 +721,7 @@ void EventRing::HandlePortStatusChangeInterrupt() {
   // Section 6.4.2.3 (Port Status change TRB)
   auto change_event = static_cast<PortStatusChangeEvent*>(erdp_virt_);
   uint8_t port_id = static_cast<uint8_t>(change_event->PortID());
+  fdf::info("xhci: HandlePortStatusChangeInterrupt port={}", port_id);
   auto event = std::move(hci_->GetPortState(port_id).wait_for_port_status_change_);
   // Resume interrupted wait
   if (event) {

@@ -23,43 +23,39 @@ class Interrupter {
  public:
   Interrupter() = default;
 
-  ~Interrupter() {
-    if (dispatcher_.get()) {
-      zx_status_t cancel_status;
-      libsync::Completion cancel_completion;
-      zx_status_t post_task_status = async::PostTask(dispatcher_.async_dispatcher(), [&]() {
-        cancel_status = irq_handler_.Cancel();
-        cancel_completion.Signal();
-      });
-
-      if (post_task_status != ZX_OK) {
-        fdf::error("Failed to post the irq handler cancel task: {}",
-                   zx_status_get_string(post_task_status));
-      } else {
-        cancel_completion.Wait();
-        if (cancel_status != ZX_OK) {
-          fdf::error("Failed to cancel the irq handler: {}", zx_status_get_string(cancel_status));
-        }
-      }
-
-      dispatcher_.ShutdownAsync();
-      irq_shutdown_completion_.Wait();
-    }
-  }
+  ~Interrupter() { Stop(); }
 
   zx_status_t Init(uint16_t interrupter, size_t page_size, fdf::MmioBuffer* buffer,
                    const RuntimeRegisterOffset& offset, uint32_t erst_max,
                    DoorbellOffset doorbell_offset, UsbXhci* hci, HCCPARAMS1 hcc_params_1,
                    uint64_t* dcbaa);
 
+  // NOLINTNEXTLINE(readability-inconsistent-declaration-parameter-name)
   zx_status_t Start(const RuntimeRegisterOffset& offset, fdf::MmioView interrupter_regs);
 
   void Stop() {
-    if (!active_) {
-      // Already inactive;
-      return;
-    }
     active_ = false;
+    if (dispatcher_.get()) {
+      zx_status_t cancel_status = ZX_OK;
+      libsync::Completion cancel_completion;
+      zx_status_t post_task_status = async::PostTask(dispatcher_.async_dispatcher(), [&] {
+        cancel_status = irq_handler_.Cancel();
+        cancel_completion.Signal();
+      });
+      if (post_task_status != ZX_OK) {
+        fdf::error("Failed to post the irq handler cancel task: {}",
+                   zx_status_get_string(post_task_status));
+      } else {
+        cancel_completion.Wait();
+        if (cancel_status != ZX_OK && cancel_status != ZX_ERR_NOT_FOUND) {
+          fdf::error("Failed to cancel the irq handler: {}", zx_status_get_string(cancel_status));
+        }
+      }
+
+      dispatcher_.ShutdownAsync();
+      irq_shutdown_completion_.Wait();
+      dispatcher_ = fdf::SynchronizedDispatcher{};
+    }
   }
 
   EventRing& ring() { return event_ring_; }

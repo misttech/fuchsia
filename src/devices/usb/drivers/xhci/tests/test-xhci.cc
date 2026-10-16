@@ -22,7 +22,14 @@ zx::result<> UsbXhci::TestInit(void* test_harness) {
 
 zx::result<> UsbXhci::Start(fdf::DriverContext context) { return zx::ok(); }
 
-UsbXhci::~UsbXhci() {}
+void UsbXhci::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
+
+void UsbXhci::AbortPendingCommands() {}
+
+UsbXhci::~UsbXhci() {
+  device_state_.reset();
+  interrupters_.reset();
+}
 
 void UsbXhci::ConnectToEndpoint(ConnectToEndpointRequest& request,
                                 ConnectToEndpointCompleter::Sync& completer) {

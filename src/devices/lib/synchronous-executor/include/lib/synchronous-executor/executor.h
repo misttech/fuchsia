@@ -26,7 +26,7 @@ class synchronous_executor final : public fpromise::executor {
 
   // Destroys the executor along with all of its remaining scheduled tasks
   // that have yet to complete.
-  ~synchronous_executor() = default;
+  ~synchronous_executor() override;
 
   // Schedules a task for eventual execution by the executor.
   //

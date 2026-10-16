@@ -236,6 +236,7 @@ class EventRingHarness : public ::testing::Test {
 
   fdf_testing::ForegroundDriverTest<EmptyTestConfig>& driver_test() { return driver_test_; }
   PORTSC& port_sc() { return port_sc_; }
+  EventRing* event_ring() { return ring_; }
 
  private:
   fdf_testing::ForegroundDriverTest<EmptyTestConfig> driver_test_;
@@ -284,6 +285,7 @@ zx::result<> UsbXhci::Init(std::unique_ptr<dma_buffer::BufferFactory> buffer_fac
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
+  params_.set_MaxPorts(32);
   zx_status_t status = GetTestHarness<EventRingHarness>()->InitRing(&interrupters_[0].ring());
   if (status != ZX_OK) {
     return zx::error(status);
@@ -616,6 +618,24 @@ TEST_F(EventRingHarness, Ring0BringupFailsWhenNotRunning) {
   driver_test().driver()->SetRunningForTesting(false);
   driver_test().driver()->SignalBringupForTesting();
   EXPECT_STATUS(Ring0Bringup(), ZX_ERR_BAD_STATE);
+}
+
+TEST_F(EventRingHarness, DestroyWithPendingPortStatusChangeWait) {
+  ConnectDevice();
+  InsertPortStatusChangeEvent();
+  Interrupt();
+  ASSERT_TRUE(PortResetPending());
+  ASSERT_FALSE(HasCommand());
+}
+
+TEST_F(EventRingHarness, ClearPendingPortStatusChangesAbortsWait) {
+  ConnectDevice();
+  InsertPortStatusChangeEvent();
+  Interrupt();
+  ASSERT_TRUE(PortResetPending());
+  ASSERT_FALSE(HasCommand());
+  event_ring()->ClearPendingPortStatusChanges();
+  EXPECT_FALSE(driver_test().driver()->GetPortState(kPortNo).wait_for_port_status_change_);
 }
 
 }  // namespace
