@@ -2297,11 +2297,11 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("simplelog") {
-  public_deps = [ ":simplelog-v0_10_2" ]
+  public_deps = [ ":simplelog-v0_12_2" ]
 }
 
-group("simplelog-0.10.2") {
-  public_deps = [ ":simplelog-v0_10_2" ]
+group("simplelog-0.12.2") {
+  public_deps = [ ":simplelog-v0_12_2" ]
 }
 
 group("siphasher") {
@@ -22485,38 +22485,38 @@ rustc_library("simple-bytes-v0_2_14") {
   applicable_licenses = [ ":simple-bytes-v0_2_14.license" ]
 }
 
-license("simplelog-v0_10_2.license") {
+license("simplelog-v0_12_2.license") {
   public_package_name = "simplelog"
   license_files = [
-    "//third_party/rust_crates/vendor/simplelog-0.10.2/LICENSE.APACHE2",
-    "//third_party/rust_crates/vendor/simplelog-0.10.2/LICENSE.MIT",
+    "//third_party/rust_crates/vendor/simplelog-0.12.2/LICENSE.APACHE2",
+    "//third_party/rust_crates/vendor/simplelog-0.12.2/LICENSE.MIT",
   ]
 }
 
-rustc_library("simplelog-v0_10_2") {
+rustc_library("simplelog-v0_12_2") {
   crate_name = "simplelog"
-  source_root = "//third_party/rust_crates/vendor/simplelog-0.10.2/src/lib.rs"
-  output_name = "simplelog-21aad7a3c5a1179d"
+  source_root = "//third_party/rust_crates/vendor/simplelog-0.12.2/src/lib.rs"
+  output_name = "simplelog-6865747f6513fdb8"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_45" ]
   deps += [ ":log-v0_4_29" ]
+  deps += [ ":time-v0_3_55" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=21aad7a3c5a1179d",
-    "-Cextra-filename=-21aad7a3c5a1179d",
+    "-Cmetadata=6865747f6513fdb8",
+    "-Cextra-filename=-6865747f6513fdb8",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":simplelog-v0_10_2.license" ]
+  applicable_licenses = [ ":simplelog-v0_12_2.license" ]
 }
 
 license("siphasher-v1_0_3.license") {
@@ -23913,6 +23913,7 @@ rustc_library("time-v0_3_55") {
   deps += [ ":powerfmt-v0_2_1" ]
   deps += [ ":serde_core-v1_0_229" ]
   deps += [ ":time-core-v0_1_9" ]
+  deps += [ ":time-macros-v0_2_32($host_toolchain)" ]
 
   rustenv = []
 
@@ -23922,6 +23923,8 @@ rustc_library("time-v0_3_55") {
     "-Cextra-filename=-f6832e24a0571c23",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
+    "--cfg=feature=\"formatting\"",
+    "--cfg=feature=\"macros\"",
     "--cfg=feature=\"std\"",
   ]
 
@@ -23960,6 +23963,41 @@ rustc_library("time-core-v0_1_9") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":time-core-v0_1_9.license" ]
+}
+
+license("time-macros-v0_2_32.license") {
+  public_package_name = "time_macros"
+  license_files = [
+    "//third_party/rust_crates/vendor/time-macros-0.2.32/LICENSE-Apache",
+    "//third_party/rust_crates/vendor/time-macros-0.2.32/LICENSE-MIT",
+  ]
+}
+
+rustc_macro("time-macros-v0_2_32") {
+  crate_name = "time_macros"
+  source_root = "//third_party/rust_crates/vendor/time-macros-0.2.32/src/lib.rs"
+  output_name = "time_macros-2ae3e3329a38cd1e"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":num-conv-v0_2_2" ]
+  deps += [ ":time-core-v0_1_9" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=2ae3e3329a38cd1e",
+    "-Cextra-filename=-2ae3e3329a38cd1e",
+    "--cfg=feature=\"formatting\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":time-macros-v0_2_32.license" ]
 }
 
 license("tinystr-v0_8_4.license") {

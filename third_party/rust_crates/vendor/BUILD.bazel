@@ -2960,14 +2960,14 @@ alias(
 )
 
 alias(
-    name = "simplelog-0.10.2",
-    actual = "//third_party/rust_crates/vendor/simplelog-0.10.2:simplelog",
+    name = "simplelog-0.12.2",
+    actual = "//third_party/rust_crates/vendor/simplelog-0.12.2:simplelog",
     tags = ["manual"],
 )
 
 alias(
     name = "simplelog",
-    actual = "//third_party/rust_crates/vendor/simplelog-0.10.2:simplelog",
+    actual = "//third_party/rust_crates/vendor/simplelog-0.12.2:simplelog",
     tags = ["manual"],
 )
 
