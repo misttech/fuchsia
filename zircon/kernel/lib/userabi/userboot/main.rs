@@ -96,6 +96,8 @@ async fn run(log: &mut Log) -> Result<(), Error> {
         info: HandleInfo::new(HandleType::User0, 0),
     });
 
+    userboot_client.post_boot_handles_with(handles.take_boot_handles()?).await?;
+
     let mut bootfs_entries = Vec::new();
     let _process = launch_program(
         program_name,

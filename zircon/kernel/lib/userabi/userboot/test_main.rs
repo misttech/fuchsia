@@ -120,6 +120,14 @@ async fn run(log: &mut Log) -> Result<(), Error> {
 
         let mut test_handles = handles.duplicate()?;
         test_handles.startup_handles.push(StartupHandle {
+            handle: test_handles
+                .zbi_vmo
+                .duplicate_handle(Rights::SAME_RIGHTS)?
+                .into_handle()
+                .into(),
+            info: HandleInfo::new(HandleType::BootdataVmo, 0),
+        });
+        test_handles.startup_handles.push(StartupHandle {
             handle: bootfs_vmo.duplicate_handle(Rights::SAME_RIGHTS)?.into_handle().into(),
             info: HandleInfo::new(HandleType::BootfsVmo, 0),
         });
@@ -157,6 +165,8 @@ async fn run(log: &mut Log) -> Result<(), Error> {
             handle: userboot_server.into_untyped().into_handle().into(),
             info: HandleInfo::new(HandleType::User0, 0),
         });
+
+        userboot_client.post_boot_handles_with(handles.take_boot_handles()?).await?;
 
         let mut bootfs_entries = Vec::new();
         let process = launch_program(

@@ -10,7 +10,7 @@ use fuchsia_bootfs::{
     BootfsParser, BootfsParserError, zbi_bootfs_is_aligned, zbi_bootfs_page_align,
 };
 use fuchsia_component::client;
-use fuchsia_runtime::{HandleInfo, HandleType, take_startup_handle};
+use fuchsia_runtime::HandleType;
 use log::info;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -340,34 +340,6 @@ impl BootfsSvc {
             BootfsSvc::get_next_inode(&mut self.next_inode),
         );
         self.tree_builder.add_entry(&path_parts, dir_entry)?;
-
-        Ok(self)
-    }
-
-    /// Publish all VMOs of a given type provided to this process through its processargs
-    /// bootstrap message. An initial index can be provided to skip handles that were already
-    /// taken.
-    pub fn publish_kernel_vmos(
-        mut self,
-        handle_type: HandleType,
-        first_index: u16,
-    ) -> Result<Self, BootfsError> {
-        info!(
-            "[BootfsSvc] Adding kernel VMOs of type {:?} starting at index {}.",
-            handle_type, first_index
-        );
-        // The first handle may not be at index 0 if we have already taken it previously.
-        let mut index = first_index;
-        loop {
-            let vmo = take_startup_handle(HandleInfo::new(handle_type, index)).map(zx::Vmo::from);
-            match vmo {
-                Some(vmo) => {
-                    index += 1;
-                    self = self.publish_kernel_vmo(vmo)?;
-                }
-                None => break,
-            }
-        }
 
         Ok(self)
     }

@@ -5,6 +5,7 @@
 use anyhow::{Error, anyhow, bail};
 use elf_parse::{Elf64Headers, SegmentType};
 use fidl_next::{Request, Responder, ServerDispatcher, ServerEnd};
+use fidl_next_fuchsia_boot::UserbootPostBootHandlesRequest;
 use fidl_next_fuchsia_ldsvc as fuchsia_ldsvc;
 use fuchsia_bootfs::{
     BootfsParser, ZeroCopyBootfsEntry, zbi_bootfs_is_aligned, zbi_bootfs_page_align,
@@ -215,6 +216,33 @@ impl SystemHandles {
                 .collect::<Result<Vec<_>, Status>>()?,
         })
     }
+
+    /// Drains non-bootstrap resource and kernel file handles from `self.startup_handles`
+    /// and packages them with a duplicate of `self.zbi_vmo` for `fuchsia.boot.Userboot`.
+    pub fn take_boot_handles(&mut self) -> Result<UserbootPostBootHandlesRequest, Status> {
+        let mut out = UserbootPostBootHandlesRequest {
+            zbi_vmo: Some(self.zbi_vmo.duplicate_handle(Rights::SAME_RIGHTS)?),
+            ..Default::default()
+        };
+        let mut kernel_files = Vec::new();
+        let mut remaining = Vec::with_capacity(self.startup_handles.len());
+        for sh in self.startup_handles.drain(..) {
+            match sh.info.handle_type() {
+                HandleType::SystemResource => out.system_resource = Some(Resource::from(sh.handle)),
+                HandleType::MmioResource => out.mmio_resource = Some(Resource::from(sh.handle)),
+                HandleType::IrqResource => out.irq_resource = Some(Resource::from(sh.handle)),
+                HandleType::IoportResource => out.ioport_resource = Some(Resource::from(sh.handle)),
+                HandleType::SmcResource => out.smc_resource = Some(Resource::from(sh.handle)),
+                HandleType::KernelFileVmo => kernel_files.push(Vmo::from(sh.handle)),
+                _ => remaining.push(sh),
+            }
+        }
+        if !kernel_files.is_empty() {
+            out.kernel_files = Some(kernel_files);
+        }
+        self.startup_handles = remaining;
+        Ok(out)
+    }
 }
 
 /// Reserves the low half of the address space so initial process allocations
@@ -328,7 +356,7 @@ pub async fn launch_program(
         vmex_resource,
         power_resource: _,
         vdso_vmo,
-        zbi_vmo,
+        zbi_vmo: _,
         log: system_log,
         startup_handles,
     } = handles;
@@ -474,10 +502,6 @@ pub async fn launch_program(
         StartupHandle {
             handle: root_job.duplicate_handle(Rights::SAME_RIGHTS)?.into_handle().into(),
             info: HandleInfo::new(HandleType::DefaultJob, 0),
-        },
-        StartupHandle {
-            handle: zbi_vmo.duplicate_handle(Rights::SAME_RIGHTS)?.into_handle().into(),
-            info: HandleInfo::new(HandleType::BootdataVmo, 0),
         },
         StartupHandle {
             handle: system_log.to_handle(Rights::SAME_RIGHTS)?,

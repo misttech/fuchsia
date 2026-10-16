@@ -19,8 +19,6 @@ type BootfsFileVmo = resource struct {
 /// The userboot process will act as a client, pipelining requests containing information and/or handles that might
 /// be useful for the booted process. The booted process, or whoever processes the server endpoint of this protocol,
 /// will then process the pipelined requests from userboot.
-///
-/// TODO(https://fxbug.dev/354275371): Move handles not participating in the bootstrap process to this protocol.
 closed protocol Userboot {
 
     /// Posts the uncompressed bootfs VMO.
@@ -35,6 +33,24 @@ closed protocol Userboot {
     /// has been closed.
     strict PostBootfsFiles(resource struct {
         files vector<BootfsFileVmo>:zx.CHANNEL_MAX_MSG_HANDLES;
+    });
+
+    /// Posts non-bootstrap handles provided by the kernel to the booted process.
+    strict PostBootHandles(resource table {
+        /// ZBI (bootdata) VMO.
+        1: zbi_vmo zx.Handle:VMO;
+        /// Kernel file VMOs to be published under `/boot/kernel/`.
+        2: kernel_files vector<zx.Handle:VMO>:zx.CHANNEL_MAX_MSG_HANDLES;
+        /// System resource handle.
+        3: system_resource zx.Handle:RESOURCE;
+        /// MMIO resource handle.
+        4: mmio_resource zx.Handle:RESOURCE;
+        /// IRQ resource handle.
+        5: irq_resource zx.Handle:RESOURCE;
+        /// I/O port resource handle (x86_64).
+        6: ioport_resource zx.Handle:RESOURCE;
+        /// SMC resource handle (aarch64).
+        7: smc_resource zx.Handle:RESOURCE;
     });
 
     /// Posts `svc_stash` server endpoint. For more information refer to `fuchsia.boot.SvcStash`.

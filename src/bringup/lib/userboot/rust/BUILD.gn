@@ -46,6 +46,7 @@ rustc_library("program") {
   source_root = "src/program.rs"
   sources = [ source_root ]
   deps = [
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust_next",
     "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_rust_next",
     "//sdk/lib/c/rust",
     "//sdk/rust/zx",
