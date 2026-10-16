@@ -331,6 +331,74 @@ impl Updater for RealUpdater {
     }
 }
 
+async fn run_attempt_to_commit(
+    config: &Config,
+    env: &Environment,
+    concurrent_package_resolves: usize,
+    concurrent_blob_fetches: usize,
+    verify_existing_blobs: bool,
+    manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
+    mut cancel_receiver: oneshot::Receiver<()>,
+    co: &mut async_generator::Yield<fupdate_installer_ext::State>,
+    phase: &mut metrics::Phase,
+    target_version: &mut history::Version,
+) -> Result<Option<(state::WaitToReboot, update_package::UpdateMode)>, AttemptError> {
+    let attempt_res = {
+        let attempt_fut = match config.update_url.scheme_str() {
+            Some("http" | "https") => PackagelessAttempt {
+                config,
+                env,
+                concurrent_blob_fetches,
+                verify_existing_blobs,
+                manifest_public_keys,
+            }
+            .run(co, phase, target_version)
+            .left_future()
+            .fuse(),
+            _ => Attempt { config, env, concurrent_package_resolves }
+                .run(co, phase, target_version)
+                .right_future()
+                .fuse(),
+        };
+
+        futures::pin_mut!(attempt_fut);
+
+        futures::select! {
+            attempt_res = attempt_fut => attempt_res,
+            cancel_res = cancel_receiver => match cancel_res {
+                Ok(()) => Err(AttemptError::UpdateCanceled),
+                Err(e) => Err(AttemptError::CancelSenderDropped(e)),
+            },
+        }
+    };
+    // at this point the attempt has finished running, drop the receiver to indicate that
+    // the update can no longer be canceled.
+    drop(cancel_receiver);
+    let (state, mode, current_configuration) = attempt_res?;
+
+    if !config.options.should_commit {
+        state.enter_complete_but_not_active(co).await;
+        *phase = metrics::Phase::SuccessPendingReboot;
+        return Ok(None);
+    }
+
+    // Commit the update
+    let state = state.enter_commit(co).await;
+    *phase = metrics::Phase::ImageCommit;
+    match commit_images(&env.boot_manager, mode, current_configuration).await {
+        Ok(()) => {
+            // Success!
+            let state = state.enter_wait_to_reboot(co).await;
+            *phase = metrics::Phase::SuccessPendingReboot;
+            Ok(Some((state, mode)))
+        }
+        Err(e) => {
+            state.fail(co).await;
+            Err(AttemptError::Commit(e))
+        }
+    }
+}
+
 /// Updates the system in the given `Environment` using the provided config options.
 ///
 /// Reboot vs RebootDeferred behavior is determined in the following priority order:
@@ -350,7 +418,7 @@ async fn update(
     verify_existing_blobs: bool,
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
     excessive_update_duration: Option<Duration>,
-    mut cancel_receiver: oneshot::Receiver<()>,
+    cancel_receiver: oneshot::Receiver<()>,
     crash_reporter: crash_report::CrashReporter,
 ) -> (String, impl FusedStream<Item = fupdate_installer_ext::State>) {
     let attempt_fut = history.lock().start_update_attempt(
@@ -383,73 +451,25 @@ async fn update(
 
         let mut target_version = history::Version::default();
 
-        let attempt_res = {
-            let attempt_fut = match config.update_url.scheme_str() {
-                Some("http" | "https") => PackagelessAttempt {
-                    config: &config,
-                    env: &env,
-                    concurrent_blob_fetches,
-                    verify_existing_blobs,
-                    manifest_public_keys,
-                }
-                .run(&mut co, &mut phase, &mut target_version)
-                .left_future()
-                .fuse(),
-                _ => Attempt { config: &config, env: &env, concurrent_package_resolves }
-                    .run(&mut co, &mut phase, &mut target_version)
-                    .right_future()
-                    .fuse(),
-            };
-
-            futures::pin_mut!(attempt_fut);
-
-            let attempt_res = futures::select! {
-                attempt_res = attempt_fut => attempt_res,
-                cancel_res = cancel_receiver => {
-                    match cancel_res {
-                        Ok(()) => Err(AttemptError::UpdateCanceled),
-                        Err(e) => Err(AttemptError::CancelSenderDropped(e)),
-                    }
-                }
-            };
-            // at this point the attempt has finished running, drop the receiver to indicate that
-            // the update can no longer be canceled.
-            drop(cancel_receiver);
-            attempt_res
-        };
-        let attempt_res = match attempt_res {
-            Ok((state, mode, current_configuration)) => {
-                if !config.options.should_commit {
-                    state.enter_complete_but_not_active(&mut co).await;
-                    phase = metrics::Phase::SuccessPendingReboot;
-                    Ok(None)
-                } else {
-                    // Commit the update
-                    let state = state.enter_commit(&mut co).await;
-                    phase = metrics::Phase::ImageCommit;
-
-                    match commit_images(&env.boot_manager, mode, current_configuration).await {
-                        Ok(()) => {
-                            // Success!
-                            let state = state.enter_wait_to_reboot(&mut co).await;
-                            phase = metrics::Phase::SuccessPendingReboot;
-                            Ok(Some((state, mode)))
-                        }
-                        Err(e) => {
-                            state.fail(&mut co).await;
-                            Err(AttemptError::Commit(e))
-                        }
-                    }
-                }
-            }
-            Err(e) => Err(e),
-        };
+        let attempt_res = run_attempt_to_commit(
+            &config,
+            &env,
+            concurrent_package_resolves,
+            concurrent_blob_fetches,
+            verify_existing_blobs,
+            manifest_public_keys,
+            cancel_receiver,
+            &mut co,
+            &mut phase,
+            &mut target_version,
+        )
+        .await;
 
         let status_code = metrics::result_to_status_code(attempt_res.as_ref().map(|_| ()));
         // TODO(https://fxbug.dev/568366644): account for suspend duration.
         let update_duration = config.start_time_mono.elapsed();
-        let attempt_res = match attempt_res {
-            Ok(ok) => {
+        let wait_to_reboot = match attempt_res {
+            Ok(wait_to_reboot) => {
                 if let Some(threshold) = excessive_update_duration
                     && update_duration > threshold
                 {
@@ -460,7 +480,7 @@ async fn update(
                     );
                     crash_reporter.excessive_update_duration();
                 }
-                Some(ok)
+                wait_to_reboot
             }
             Err(e) => {
                 use crate::update::AttemptError::*;
@@ -497,7 +517,7 @@ async fn update(
         info!("flushing cobalt events");
         let () = flush_cobalt(cobalt_forwarder_task, COBALT_FLUSH_TIMEOUT).await;
 
-        let Some(Some((state, mode))) = attempt_res else {
+        let Some((state, mode)) = wait_to_reboot else {
             return target_version;
         };
 
