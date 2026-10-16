@@ -8,6 +8,9 @@ import("//build/config/compiler_config.gni")
 import("//build/config/profile/config.gni")
 import("//build/toolchain/variant.gni")
 
+# See //build/config/profile/README.md for the end-to-end GN and Bazel
+# coverage architecture and cross-tree file index.
+
 # Common flags for all coverage-based variants defined below.
 # IMPORTANT: This should not include any rust or linker flags!
 _coverage_c_family_flags = [
