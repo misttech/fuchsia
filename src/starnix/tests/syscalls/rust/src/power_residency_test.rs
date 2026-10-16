@@ -5,51 +5,64 @@
 //! Tests for the Starnix power residency sysfs files, as seen from userspace.
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const DEVICE_DIR: &str = "/sys/devices/platform/powerdashboard";
-const BUS_DEVICE_LINK: &str = "/sys/bus/platform/devices/powerdashboard";
-const RESIDENCY_FILES: [&str; 3] = ["lpcm_gmc0", "platform_power_residency", "pwrblk_dpu"];
+const RESIDENCY_DEVICE: &str = "powerdashboard";
+const POWER_STATE_STATS_DEVICE: &str = "cap_sysfs";
 
-/// How long to wait for the device to be added before failing.
+/// Each device and the files expected under it, in sorted order.
+const DEVICES: [(&str, &[&str]); 2] = [
+    (RESIDENCY_DEVICE, &["lpcm_gmc0", "platform_power_residency", "pwrblk_dpu"]),
+    (POWER_STATE_STATS_DEVICE, &["power_state_stats"]),
+];
+
+/// How long to wait for a device to be added before failing.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Returns the device directory, waiting up to [`DEVICE_TIMEOUT`] for the device to be added.
+fn bus_device_link(device: &str) -> PathBuf {
+    Path::new("/sys/bus/platform/devices").join(device)
+}
+
+/// Returns the directory for `device`, waiting up to [`DEVICE_TIMEOUT`] for it to be added.
 ///
-/// The device is only added once the kernel has queried the power stats provider, which happens
+/// Each device is only added once the kernel has queried the power stats provider, which happens
 /// in the background after the container starts. The bus link is added after the device
 /// directory has been populated, so waiting for it ensures that all of the files are present.
-fn device_dir() -> &'static Path {
+fn device_dir(device: &str) -> PathBuf {
+    let bus_link = bus_device_link(device);
     let deadline = Instant::now() + DEVICE_TIMEOUT;
-    while !Path::new(BUS_DEVICE_LINK).exists() {
+    while !bus_link.exists() {
         assert!(
             Instant::now() < deadline,
-            "{BUS_DEVICE_LINK} was not added within {DEVICE_TIMEOUT:?}; is the power stats \
-             provider running?"
+            "{} was not added within {DEVICE_TIMEOUT:?}; is the power stats provider running?",
+            bus_link.display()
         );
         std::thread::sleep(Duration::from_millis(10));
     }
-    Path::new(DEVICE_DIR)
+    Path::new("/sys/devices/platform").join(device)
 }
 
-fn read(file: &str) -> String {
-    std::fs::read_to_string(device_dir().join(file))
-        .unwrap_or_else(|e| panic!("failed to read {file}: {e}"))
+fn read(device: &str, file: &str) -> String {
+    std::fs::read_to_string(device_dir(device).join(file))
+        .unwrap_or_else(|e| panic!("failed to read {device}/{file}: {e}"))
 }
 
 #[test]
-fn device_is_on_platform_bus() {
-    let dir = device_dir();
-    let linked = std::fs::canonicalize(BUS_DEVICE_LINK).expect("failed to resolve bus link");
-    assert_eq!(linked, dir);
-    assert!(read("uevent").contains("SUBSYSTEM=platform\n"));
+fn devices_are_on_platform_bus() {
+    for (device, _) in DEVICES {
+        let dir = device_dir(device);
+        let linked =
+            std::fs::canonicalize(bus_device_link(device)).expect("failed to resolve bus link");
+        assert_eq!(linked, dir);
+        assert!(read(device, "uevent").contains("SUBSYSTEM=platform\n"));
+    }
 }
 
 #[test]
 fn perf_state_residency_is_reported() {
     assert_eq!(
-        read("lpcm_gmc0"),
+        read(RESIDENCY_DEVICE, "lpcm_gmc0"),
         "num_pf_states: 2\n\
          pf_state: 0\npf_entry_count: 11\npf_time_in_state: 2200000 (us)\n\n\
          pf_state: 1\npf_entry_count: 4\npf_time_in_state: 7000 (us)\n\n"
@@ -59,7 +72,7 @@ fn perf_state_residency_is_reported() {
 #[test]
 fn power_domain_residency_is_reported() {
     assert_eq!(
-        read("pwrblk_dpu"),
+        read(RESIDENCY_DEVICE, "pwrblk_dpu"),
         "\nSSWRP lpb\n\n\
          power_state: STATE_OFF\nentry_count: 3\ntime_in_state: 12000 (us)\n\
          last_entry_timestamp: 5000\nlast_exit_timestamp: 0\n\
@@ -71,7 +84,7 @@ fn power_domain_residency_is_reported() {
 #[test]
 fn platform_power_residency_is_reported() {
     assert_eq!(
-        read("platform_power_residency"),
+        read(RESIDENCY_DEVICE, "platform_power_residency"),
         "power_state: ACTIVE\nentry_count: 2\ntime_in_state_ms: 100\n\
          last_entry_timestamp_ticks: 38400\nlast_exit_timestamp_ticks: 0\n\n\
          power_state: IDLE\nentry_count: 0\ntime_in_state_ms: 0\n\
@@ -80,25 +93,41 @@ fn platform_power_residency_is_reported() {
 }
 
 #[test]
+fn power_state_stats_are_reported() {
+    assert_eq!(
+        read(POWER_STATE_STATS_DEVICE, "power_state_stats"),
+        "---\nstate: Cluster 0 off\nlast_entry_ts_ticks: 76800\nlast_exit_ts_ticks: 0\n\
+         total_state_residency_ms: 250\nlast_state_entry_counts: 6\n\
+         ---\nstate: Suspend\nlast_entry_ts_ticks: 0\nlast_exit_ts_ticks: 0\n\
+         total_state_residency_ms: 10\nlast_state_entry_counts: 1\n"
+    );
+}
+
+#[test]
 fn only_residency_entities_are_served() {
-    let mut files: Vec<_> = std::fs::read_dir(device_dir())
-        .expect("failed to read device directory")
-        .map(|entry| entry.expect("failed to read entry").file_name().into_string().unwrap())
-        .filter(|name| name != "uevent")
-        .collect();
-    files.sort();
-    assert_eq!(files, RESIDENCY_FILES);
+    for (device, expected_files) in DEVICES {
+        let mut files: Vec<_> = std::fs::read_dir(device_dir(device))
+            .expect("failed to read device directory")
+            .map(|entry| entry.expect("failed to read entry").file_name().into_string().unwrap())
+            .filter(|name| name != "uevent")
+            .collect();
+        files.sort();
+        assert_eq!(files, expected_files, "{device}");
+    }
 }
 
 #[test]
 fn residency_files_are_read_only() {
-    for file in RESIDENCY_FILES {
-        let path = device_dir().join(file);
-        let metadata = std::fs::metadata(&path)
-            .unwrap_or_else(|e| panic!("failed to get metadata for {file}: {e}"));
-        assert_eq!(metadata.permissions().mode() & 0o777, 0o444, "{file}");
-        // The test runs as root, which bypasses the mode bits, so also check that the files
-        // cannot be written.
-        assert!(std::fs::write(&path, "test").is_err(), "{file} is writable");
+    for (device, files) in DEVICES {
+        let dir = device_dir(device);
+        for &file in files {
+            let path = dir.join(file);
+            let metadata = std::fs::metadata(&path)
+                .unwrap_or_else(|e| panic!("failed to get metadata for {device}/{file}: {e}"));
+            assert_eq!(metadata.permissions().mode() & 0o777, 0o444, "{device}/{file}");
+            // The test runs as root, which bypasses the mode bits, so also check that the files
+            // cannot be written.
+            assert!(std::fs::write(&path, "test").is_err(), "{device}/{file} is writable");
+        }
     }
 }

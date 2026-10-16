@@ -69,6 +69,25 @@ fn reports() -> Vec<fpowerstats::Stats> {
                 },
             ],
         },
+        fpowerstats::Stats {
+            entity: "cap_power_state".to_string(),
+            state_residency_data: vec![
+                fpowerstats::StateResidency {
+                    id: 0,
+                    name: "Cluster 0 off".to_string(),
+                    entry_count: 6,
+                    total_time_ms: 250,
+                    last_entry_timestamp_ms: 2,
+                },
+                fpowerstats::StateResidency {
+                    id: 1,
+                    name: "Suspend".to_string(),
+                    entry_count: 1,
+                    total_time_ms: 10,
+                    last_entry_timestamp_ms: 0,
+                },
+            ],
+        },
         // Neither of these is served: one is not a residency entity, and the other's name is not
         // safe to use as a file name.
         fpowerstats::Stats { entity: "other".to_string(), state_residency_data: vec![] },
