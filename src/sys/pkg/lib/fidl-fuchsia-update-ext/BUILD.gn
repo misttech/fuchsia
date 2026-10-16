@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_unittest_package("fidl-fuchsia-update-ext-tests") {
-  deps = [ ":fidl-fuchsia-update-ext_test" ]
+bazel_test_suite("fidl-fuchsia-update-ext-tests") {
+  target_tests = [
+    "//src/sys/pkg/lib/fidl-fuchsia-update-ext:fidl-fuchsia-update-ext-tests",
+  ]
 }
 
 group("tests") {
@@ -47,27 +49,14 @@ rustc_library("fidl-fuchsia-update-ext") {
   if (is_fuchsia) {
     sources += [ "src/commit.rs" ]
   }
-  crate_name = "fidl_fuchsia_update_ext"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   proc_macro_deps = [ "//third_party/rust_crates:proptest-derive" ]
-  if (is_fuchsia) {
-    test_deps = [
-      "//src/lib/fidl/rust/fidl",
-      "//src/lib/fuchsia",
-      "//src/lib/fuchsia-async",
-      "//third_party/rust_crates:futures",
-    ]
-  } else {
-    test_deps = []
-  }
-  version = "0.0.1"
   visibility = [
     ":*",
-    "//src/developer/ffx/plugins/target/update/*",
+    "//src/developer/ffx/plugins/target/update:*",
     "//src/sys/pkg/*",
   ]
-  with_unit_tests = true
   deps = []
   deps += [
     "//sdk/fidl/fuchsia.update:fuchsia.update_rust_common",

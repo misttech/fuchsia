@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -17,27 +19,15 @@ rustc_library(
         ],
         "//conditions:default": [],
     }),
-    crate_name = "fidl_fuchsia_update_ext",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     proc_macro_deps = [
         "//third_party/rust_crates/vendor:proptest-derive",
     ],
-    test_deps = select({
-        "@platforms//os:fuchsia": [
-            "//src/lib/fidl/rust/fidl",
-            "//src/lib/fuchsia",
-            "//src/lib/fuchsia-async",
-            "//third_party/rust_crates/vendor:futures",
-        ],
-        "//conditions:default": [],
-    }),
-    version = "0.0.1",
     visibility = [
-        "//src/developer/ffx/plugins/target/update:__subpackages__",
+        "//src/developer/ffx/plugins/target/update:__pkg__",
         "//src/sys/pkg:__subpackages__",
     ],
-    with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.update:fuchsia.update_rust_common",
         "//src/sys/pkg/lib/event-queue",
@@ -52,4 +42,27 @@ rustc_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fidl_fuchsia_update_ext_lib_test",
+    crate = ":fidl-fuchsia-update-ext",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = select({
+        "@platforms//os:fuchsia": [
+            "//src/lib/fidl/rust/fidl",
+            "//src/lib/fuchsia",
+            "//src/lib/fuchsia-async",
+            "//third_party/rust_crates/vendor:futures",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fidl-fuchsia-update-ext-tests",
+    unit_tests = [":fidl_fuchsia_update_ext_lib_test"],
 )
