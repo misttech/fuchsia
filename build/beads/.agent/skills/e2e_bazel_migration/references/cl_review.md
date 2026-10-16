@@ -21,5 +21,5 @@ Based on the migrated target type, review the changes against the corresponding 
 
 1. After completing the review, refer to [Bazel Migration Review Result Template](../assets/review_result_template.md) to generate review result and use "fuchsia-gerrit-cli" skill to post the result to the reviewed CLs as resolved.
 
-2. Use the "gsheets" skill: In the **control table**, write the URL of the reviewed CL (e.g., `https://fuchsia-review.googlesource.com/c/fuchsia/+/<CL number>`) to the "Fuchsia Gerrit CL" column of the **migration package**, and set "Last Status Update" to the **status timestamp**.
+2. Use the "gsheets" skill: In the **control table**, write the URL of the reviewed CL (e.g., `https://fuchsia-review.googlesource.com/c/fuchsia/+/<CL number>`) to the "Fuchsia Gerrit CL" column of the **migration package**.
    * If it fails to update the **control table**, ignore the failure.

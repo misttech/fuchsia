@@ -13,13 +13,13 @@ Use the "gsheets" skill: In the **control table**, find the first row from the t
 For the **migration package**, update the "Owner" column to the current user to claim ownership.
 
 Wait for 5 seconds and then re-check the row whether the "Owner" column is the current user.
-   * If not, refer to [Find a package](#1-find-a-package) to find another package for the migration.
+   * If not, this package is no longer the **migration package**. Refer to [Find a package](#1-find-a-package) to find another package for the migration.
 
 
 ## 3. Check for an existing migration CL
 
 After the ownership of the **migration package** is claimed, use the "fuchsia-gerrit-cli" skill to check whether the **migration package** has already been migrated and a CL has been generated for it (e.g., search all CL states for changes whose subject contains `[bazel_migration]` and whose affected files include the `BUILD.gn` or `BUILD.bazel` of the **migration package** directory).
-   * If such a CL is found, use the "gsheets" skill to update the "Migration Status" column of the **migration package** to "migrated", set "Last Status Update" to the **status timestamp**, and then refer to [Find a package](#1-find-a-package) to find another package for the migration.
+   * If such a CL is found, use the "gsheets" skill to update the "Migration Status" column of the **migration package** to "migrated" and set "Last Status Update" to the **status timestamp**. This package is no longer the **migration package**. Refer to [Find a package](#1-find-a-package) to find another package for the migration.
    * Otherwise, continue to the next step.
 
 
