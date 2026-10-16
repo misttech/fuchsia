@@ -1389,6 +1389,14 @@ void rust_vm_mapping_set_currently_faulting(VmMapping* mapping, void* faulting);
 arch_mmu_flags_t rust_vm_mapping_first_region_arch_mmu_flags(const VmMapping* mapping);
 void rust_vm_mapping_set_first_region_arch_mmu_flags(VmMapping* mapping, arch_mmu_flags_t flags);
 void rust_vm_mapping_reset_object_locked(VmMapping* mapping);
+VmObject* rust_vm_mapping_vmo(const VmMapping* mapping);
+zx_status_t rust_vm_mapping_decommit_range(VmMapping* mapping, size_t offset, size_t len);
+bool rust_vm_mapping_object_range_to_vaddr_range(const VmMapping* mapping, uint64_t offset,
+                                                 uint64_t len, vaddr_t* base,
+                                                 uint64_t* virtual_len);
+uint64_t rust_vm_mapping_trimmed_object_range_locked(const VmMapping* mapping, uint64_t offset,
+                                                     uint64_t len);
+void rust_vm_mapping_dump_locked(const VmMapping* mapping, uint32_t depth, bool verbose);
 }
 
 inline void VmMapping::AssertCanary() const { rust_vm_mapping_assert_canary(this); }

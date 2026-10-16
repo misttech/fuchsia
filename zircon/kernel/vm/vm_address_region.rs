@@ -357,7 +357,7 @@ impl VmAddressRegionOrMapping {
     }
 
     #[inline]
-    fn state_locked(&self, _token: &LockToken<'_, VmAspaceLockClass>) -> LifeCycleState {
+    pub(super) fn state_locked(&self, _token: &LockToken<'_, VmAspaceLockClass>) -> LifeCycleState {
         // SAFETY: The aspace lock is held.
         unsafe { *self.state().life_cycle.get() }
     }

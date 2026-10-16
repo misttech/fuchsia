@@ -5,21 +5,27 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
-use super::vm_address_region::VmAddressRegionOrMapping;
-use super::vm_aspace::VmAspaceLockClass;
+use super::vm_address_region::{LifeCycleState, VmAddressRegionOrMapping, flag};
+use super::vm_aspace::{VmAspaceLockClass, VmAspaceRegionLockClass};
 use super::vm_object::{VmObject, VmObjectLockClass};
+use crate::kernel::types::VAddr;
+use ::page as kernel_page;
 use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
+use debug::ltracef;
 use fbl::{Canary, HasRefCount, Recyclable, RefCounted, RefPtr};
 use ksync::{KCell, LockToken};
 use vm_address_region_bindings as bindings;
 use vm_constants_rs as constants;
 use zr::Opaque;
 use zx_status::Status;
+use zx_types::zx_status_t;
+
+const LOCAL_TRACE: u32 = 0;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,6 +186,14 @@ impl VmMapping {
         *unsafe { self.state().mergeable.get_mut(token) } = mergeable;
     }
 
+    fn object_locked(
+        &self,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> &Option<RefPtr<VmObject>> {
+        // SAFETY: The aspace lock is held.
+        unsafe { &*self.state().object.get() }
+    }
+
     fn currently_faulting(&self, token: &LockToken<'_, VmObjectLockClass>) -> *mut c_void {
         // SAFETY: The object lock is held.
         *unsafe { self.state().currently_faulting.get(token) }
@@ -194,13 +208,227 @@ impl VmMapping {
         *unsafe { self.state().currently_faulting.get_mut(token) } = faulting;
     }
 
-    /// Convenience wrapper for vmo()->DecommitRange() with the necessary
+    /// Intended to be used from `VmEnumerator` callbacks where the `aspace` lock will be held.
+    pub fn vmo_locked(&self, token: &LockToken<'_, VmAspaceLockClass>) -> Option<RefPtr<VmObject>> {
+        self.object_locked(token).clone()
+    }
+
+    /// Returns the underlying VMO backing this mapping.
+    pub fn vmo(&self) -> Option<RefPtr<VmObject>> {
+        ksync::lock!(let guard = self.lock().lock());
+        self.vmo_locked(guard.token())
+    }
+
+    /// Convenience wrapper for `vmo().decommit_range()` with the necessary
     /// offset modification and locking.
     pub fn decommit_range(&self, offset: usize, len: usize) -> Result<(), Status> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        Status::ok(unsafe {
-            bindings::cpp_vm_mapping_decommit_range(self.as_ffi_ptr(), offset, len)
-        })
+        self.state().canary.assert();
+        ltracef!(
+            "{:p} [{:#x}+{:#x}], offset {:#x}, len {:#x}\n",
+            self as *const _,
+            self.base().0,
+            self.size(),
+            offset,
+            len
+        );
+
+        ksync::lock!(let guard = self.lock().lock());
+        let token = guard.token();
+        if self.state_locked(token) != LifeCycleState::Alive {
+            return Err(Status::BAD_STATE);
+        }
+        let end = offset.checked_add(len).ok_or(Status::OUT_OF_RANGE)?;
+        if end > self.size() {
+            return Err(Status::OUT_OF_RANGE);
+        }
+        // `VmObject::decommit_range` will typically call back into our instance's
+        // `VmMapping::aspace_unmap_locked_object`.
+        let object = self.object_locked(token).as_ref().unwrap();
+        object.decommit_range(self.object_offset() + offset as u64, len as u64)
+    }
+
+    /// Takes a range relative to the vmo and converts it into a virtual address range
+    /// relative to `aspace()`. Returns `Some((base, virtual_len))` if a non zero sized intersection
+    /// was found, `None` otherwise.
+    fn object_range_to_vaddr_range(
+        &self,
+        _token: &LockToken<'_, VmObjectLockClass>,
+        offset: u64,
+        len: u64,
+    ) -> Option<(VAddr, u64)> {
+        debug_assert!(kernel_page::is_aligned(offset as usize));
+        debug_assert!(kernel_page::is_aligned(len as usize));
+
+        // Zero sized ranges are considered to have no overlap.
+        if len == 0 {
+            return None;
+        }
+
+        // compute the intersection of the passed in vmo range and our mapping
+        let (offset_new, virtual_len) = range_check::get_intersect_offset_len(
+            self.object_offset(),
+            self.size() as u64,
+            offset,
+            len,
+        )?;
+
+        debug_assert!(virtual_len > 0 && virtual_len <= usize::MAX as u64);
+        debug_assert!(offset_new >= self.object_offset());
+
+        ltracef!("intersection offset {:#x}, len {:#x}\n", offset_new, virtual_len);
+
+        // make sure the `base` + `offset` is within our address space
+        // should be, according to the range stored in `base()` + `size()`
+        let (base, overflowed) =
+            self.base().0.overflowing_add((offset_new - self.object_offset()) as usize);
+        assert!(!overflowed);
+
+        // make sure we're only operating within our window
+        assert!(base >= self.base().0);
+        assert!((base + virtual_len as usize - 1) <= (self.base().0 + self.size() - 1));
+
+        Some((VAddr(base), virtual_len))
+    }
+
+    /// Returns the minimum of the requested map length, the size of the VMO or, if
+    /// `FAULT_BEYOND_STREAM_SIZE` is set, the page containing the stream size. `map_range` can be
+    /// trimmed to these lengths as it should not be considered an error to call `map_range` past
+    /// the VMO size in a resizable VMO or past the page containing the stream size in a
+    /// `FAULT_BEYOND_STREAM_SIZE` VMO.
+    fn trimmed_object_range_locked(
+        &self,
+        aspace_token: &LockToken<'_, VmAspaceLockClass>,
+        object_token: &LockToken<'_, VmObjectLockClass>,
+        offset: u64,
+        len: u64,
+    ) -> u64 {
+        let vmo_offset = self.object_offset() + offset;
+        let object = self.object_locked(aspace_token).as_ref().unwrap();
+        let vmo_size = object.size_locked(object_token);
+        if vmo_offset >= vmo_size {
+            return 0;
+        }
+
+        let mut trim_len = vmo_size - vmo_offset;
+
+        if (self.flags() & flag::FAULT_BEYOND_STREAM_SIZE) != 0 {
+            let paged = object.as_paged();
+            debug_assert!(paged.is_some());
+            // SAFETY: `paged` is `Some`.
+            let paged = unsafe { paged.unwrap_unchecked() };
+            debug_assert!(paged.lock_is_held());
+            let stream_size_res = paged.saturating_stream_size_locked(object_token);
+            // Creating a fault-beyond-stream-size mapping should have allocated a SSM.
+            debug_assert!(stream_size_res.is_some());
+            let stream_size = stream_size_res.unwrap();
+            debug_assert!(stream_size <= vmo_size);
+            if vmo_offset >= stream_size {
+                return 0;
+            }
+            trim_len = stream_size - vmo_offset;
+        }
+
+        core::cmp::min(trim_len, len)
+    }
+
+    /// Enumerates any different protection ranges that exist inside this mapping. The virtual range
+    /// specified by `base` and `size` must be within this mapping's base and size. The provided
+    /// callback is called in virtual address order for each protection type. `Status::NEXT` and
+    /// `Status::STOP` can be used to control iteration, with any other status becoming the return
+    /// value of this method.
+    pub fn enumerate_protection_ranges_locked<F>(
+        &self,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+        base: usize,
+        size: usize,
+        mut f: F,
+    ) -> Result<(), Status>
+    where
+        F: FnMut(usize, usize, ArchMmuFlags) -> Result<(), Status>,
+    {
+        unsafe extern "C" fn callback_shim<
+            F: FnMut(usize, usize, ArchMmuFlags) -> Result<(), Status>,
+        >(
+            ctx: *mut c_void,
+            base: usize,
+            len: usize,
+            flags: bindings::arch_mmu_flags_t,
+        ) -> zx_status_t {
+            // SAFETY: `ctx` points to a valid `F` and is exclusively referenced for the call.
+            let f = unsafe { &mut *ctx.cast::<F>() };
+            Status::result_into_raw(f(base, len, flags))
+        }
+
+        let ctx_ptr: *mut c_void = (&raw mut f).cast();
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping` and `ctx_ptr` outlives the call.
+        let status = unsafe {
+            bindings::cpp_vm_mapping_enumerate_protection_ranges_locked(
+                self.as_ffi_ptr(),
+                base,
+                size,
+                Some(callback_shim::<F>),
+                ctx_ptr,
+            )
+        };
+        Status::ok(status)
+    }
+
+    fn dump_locked(
+        &self,
+        _region_token: &LockToken<'_, VmAspaceRegionLockClass>,
+        token: &LockToken<'_, VmAspaceLockClass>,
+        depth: u32,
+        verbose: bool,
+    ) {
+        self.state().canary.assert();
+        for _ in 0..depth {
+            kprint::kprint!("  ");
+        }
+        let object = self.object_locked(token).as_ref().unwrap();
+        let mut vmo_name = [0u8; 32];
+        object.get_name(&mut vmo_name);
+
+        kprint::kprint!(
+            "map {:p} [{:#x} {:#x}] sz {:#x} state {} mergeable {:s}\n",
+            self as *const _,
+            self.base().0,
+            self.base().0 + self.size() - 1,
+            self.size(),
+            self.state_locked(token) as i32,
+            if self.mergeable_locked(token) == Mergeable::Yes { "true" } else { "false" }
+        );
+
+        let _ = self.enumerate_protection_ranges_locked(
+            token,
+            self.base().0,
+            self.size(),
+            |base, len, mmu_flags| {
+                for _ in 0..(depth + 1) {
+                    kprint::kprint!("  ");
+                }
+                kprint::kprint!(" [{:#x} {:#x}] mmufl {:#x}\n", base, base + len - 1, mmu_flags);
+                Err(Status::NEXT)
+            },
+        );
+
+        for _ in 0..(depth + 1) {
+            kprint::kprint!("  ");
+        }
+        let counts =
+            object.get_attributed_memory_in_range(self.object_offset(), self.size() as u64);
+        kprint::kprint!(
+            "vmo {:p}/k{} off {:#x} bytes ({}/{}) ref {} '{:cs}'\n",
+            object.as_raw(),
+            object.user_id(),
+            self.object_offset(),
+            counts.uncompressed_bytes,
+            counts.compressed_bytes,
+            self.ref_count().ref_count_debug(),
+            vmo_name.as_ptr()
+        );
+        if verbose {
+            object.dump(depth + 1, false);
+        }
     }
 
     /// Map in pages from the underlying vm object, optionally committing pages as it goes.
@@ -249,14 +477,6 @@ impl VmMapping {
                 new_arch_mmu_flags,
             )
         })
-    }
-
-    /// Returns the underlying VMO backing this mapping.
-    pub fn vmo(&self) -> Option<RefPtr<VmObject>> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        let raw = unsafe { bindings::cpp_vm_mapping_vmo(self.as_ffi_ptr()) };
-        // SAFETY: `raw` is null or an owned reference to a live `VmObject`.
-        unsafe { RefPtr::try_from_raw(raw.cast()) }
     }
 
     /// Informs the mapping that a write is going to be performed to the backing VMO.
@@ -413,4 +633,72 @@ pub unsafe extern "C" fn rust_vm_mapping_reset_object_locked(this: &VmMapping) {
     // SAFETY: Both the aspace lock and the object lock are held by the caller.
     unsafe { *this.state().object.get() = None };
     this.state().object_reset.store(true, Ordering::Relaxed);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_mapping_vmo(this: &VmMapping) -> *mut bindings::VmObject {
+    match this.vmo() {
+        Some(vmo) => RefPtr::into_raw(vmo).cast_mut().cast(),
+        None => core::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_mapping_decommit_range(
+    this: &VmMapping,
+    offset: usize,
+    len: usize,
+) -> zx_status_t {
+    Status::result_into_raw(this.decommit_range(offset, len))
+}
+
+/// # Safety
+///
+/// The object lock is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_object_range_to_vaddr_range(
+    this: &VmMapping,
+    offset: u64,
+    len: u64,
+    base: &mut MaybeUninit<usize>,
+    virtual_len: &mut MaybeUninit<u64>,
+) -> bool {
+    // SAFETY: The object lock is held by the caller.
+    let token = unsafe { LockToken::new() };
+    match this.object_range_to_vaddr_range(&token, offset, len) {
+        Some((vaddr, vlen)) => {
+            base.write(vaddr.0);
+            virtual_len.write(vlen);
+            true
+        }
+        None => false,
+    }
+}
+
+/// # Safety
+///
+/// The aspace lock and the object lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_trimmed_object_range_locked(
+    this: &VmMapping,
+    offset: u64,
+    len: u64,
+) -> u64 {
+    // SAFETY: The aspace lock is held by the caller.
+    let aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let object_token = unsafe { LockToken::new() };
+    this.trimmed_object_range_locked(&aspace_token, &object_token, offset, len)
+}
+
+/// # Safety
+///
+/// The region lock and the aspace lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_dump_locked(this: &VmMapping, depth: u32, verbose: bool) {
+    // SAFETY: The region lock is held by the caller.
+    let region_token = unsafe { LockToken::new() };
+    // SAFETY: The aspace lock is held by the caller.
+    let token = unsafe { LockToken::new() };
+    this.dump_locked(&region_token, &token, depth, verbose);
 }

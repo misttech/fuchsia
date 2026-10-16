@@ -56,6 +56,15 @@ FFI_ALWAYS_INLINE VmObject* cpp_vm_object_paged_as_vm_object(VmObjectPaged* vmo)
   return static_cast<VmObject*>(vmo);
 }
 
+FFI_ALWAYS_INLINE uint64_t cpp_vm_object_paged_size_locked(const VmObjectPaged* vmo)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmo->size_locked();
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_object_paged_lock_is_held(const VmObjectPaged* vmo) {
+  return vmo->lock_ref().lock().IsHeld();
+}
+
 FFI_ALWAYS_INLINE VmCowPages* cpp_vm_object_paged_debug_get_cow_pages(VmObjectPaged* vmo) {
   fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
   return fbl::ExportToRawPtr(&cow);

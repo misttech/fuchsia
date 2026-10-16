@@ -864,14 +864,13 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_address_region_unmap",
     "cpp_vm_mapping_debug_protect",
     "cpp_vm_mapping_debug_unmap",
-    "cpp_vm_mapping_decommit_range",
     "cpp_vm_mapping_destroy",
+    "cpp_vm_mapping_enumerate_protection_ranges_locked",
     "cpp_vm_mapping_force_writable",
     "cpp_vm_mapping_free",
     "cpp_vm_mapping_map_range",
     "cpp_vm_mapping_mark_mergeable",
     "cpp_vm_mapping_state",
-    "cpp_vm_mapping_vmo",
   ]
   type_allowlist = [
     "ActivateInsertRegions",
@@ -887,6 +886,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "VmAddressRegionOrMapping",
     "VmMapping",
     "arch_mmu_flags_t",
+    "cpp_vm_mapping_enumerate_protection_ranges_cb",
   ]
   type_blocklist = [
     "VmAspace",
@@ -931,7 +931,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
   edition = "2024"
   raw_lines = [
     "#![no_std]",
-    "use vm_object_bindings::VmObject;",
+    "pub use vm_object_bindings::VmObject;",
     "pub use zx_types::{zx_status_t, zx_vaddr_t as vaddr_t};",
     "pub type fbl_RefPtr = core::ffi::c_void;",
     "pub type VmAspace = core::ffi::c_void;",
@@ -1106,6 +1106,7 @@ kernel_bindgen_crate("vm-object-bindings") {
   function_allowlist = [
     "cpp_vm_object_commit_range",
     "cpp_vm_object_decommit_range",
+    "cpp_vm_object_dump",
     "cpp_vm_object_commit_range_pinned",
     "cpp_vm_object_free",
     "cpp_vm_object_get_ref_counted",
@@ -1261,6 +1262,8 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "cpp_vm_object_paged_zero_range",
     "cpp_vm_object_paged_zero_range_untracked",
     "cpp_vm_object_paged_resize",
+    "cpp_vm_object_paged_size_locked",
+    "cpp_vm_object_paged_lock_is_held",
     "cpp_vm_object_paged_unmap_and_call",
     "cpp_vm_object_paged_user_stream_size_locked",
     "cpp_vm_object_paged_create_contiguous",

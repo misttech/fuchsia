@@ -143,8 +143,7 @@ VmMapping::~VmMapping() {
 }
 
 fbl::RefPtr<VmObject> VmMapping::vmo() const {
-  Guard<CriticalMutex> guard{lock()};
-  return vmo_locked();
+  return fbl::ImportFromRawPtr(rust_vm_mapping_vmo(this));
 }
 
 VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked(
@@ -173,33 +172,7 @@ VmMapping::AttributionCounts VmMapping::GetAttributedMemory() const {
 }
 
 void VmMapping::DumpLockedImpl(uint depth, bool verbose) const {
-  AssertCanary();
-  for (uint i = 0; i < depth; ++i) {
-    printf("  ");
-  }
-  char vmo_name[32];
-  object_locked()->get_name(vmo_name, sizeof(vmo_name));
-  printf("map %p [%#" PRIxPTR " %#" PRIxPTR "] sz %#zx state %d mergeable %s\n", this, base(),
-         base() + size() - 1, size(), (int)state_locked(),
-         mergeable_locked() == Mergeable::YES ? "true" : "false");
-  EnumerateProtectionRangesLocked(
-      base(), size(), [depth](vaddr_t base, size_t len, arch_mmu_flags_t mmu_flags) {
-        for (uint i = 0; i < depth + 1; ++i) {
-          printf("  ");
-        }
-        printf(" [%#" PRIxPTR " %#" PRIxPTR "] mmufl %#x\n", base, base + len - 1, mmu_flags);
-        return ZX_ERR_NEXT;
-      });
-  for (uint i = 0; i < depth + 1; ++i) {
-    printf("  ");
-  }
-  AttributionCounts counts = object_locked()->GetAttributedMemoryInRange(object_offset(), size());
-  printf("vmo %p/k%" PRIu64 " off %#" PRIx64 " bytes (%zu/%zu) ref %d '%s'\n",
-         object_locked().get(), object_locked()->user_id(), object_offset(),
-         counts.uncompressed_bytes, counts.compressed_bytes, ref_count_debug(), vmo_name);
-  if (verbose) {
-    object_locked()->Dump(depth + 1, false);
-  }
+  rust_vm_mapping_dump_locked(this, depth, verbose);
 }
 
 using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
@@ -611,40 +584,9 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
 
 bool VmMapping::ObjectRangeToVaddrRange(uint64_t offset, uint64_t len, vaddr_t* base,
                                         uint64_t* virtual_len) const {
-  DEBUG_ASSERT(IsPageRounded(offset));
-  DEBUG_ASSERT(IsPageRounded(len));
   DEBUG_ASSERT(base);
   DEBUG_ASSERT(virtual_len);
-
-  // Zero sized ranges are considered to have no overlap.
-  if (len == 0) {
-    *base = 0;
-    *virtual_len = 0;
-    return false;
-  }
-
-  // compute the intersection of the passed in vmo range and our mapping
-  uint64_t offset_new;
-  if (!GetIntersect(object_offset(), static_cast<uint64_t>(size()), offset, len, &offset_new,
-                    virtual_len)) {
-    return false;
-  }
-
-  DEBUG_ASSERT(*virtual_len > 0 && *virtual_len <= SIZE_MAX);
-  DEBUG_ASSERT(offset_new >= object_offset());
-
-  LTRACEF("intersection offset %#" PRIx64 ", len %#" PRIx64 "\n", offset_new, *virtual_len);
-
-  // make sure the base + offset is within our address space
-  // should be, according to the range stored in base() + size()
-  bool overflowed = add_overflow(this->base(), offset_new - object_offset(), base);
-  ASSERT(!overflowed);
-
-  // make sure we're only operating within our window
-  ASSERT(*base >= this->base());
-  ASSERT((*base + *virtual_len - 1) <= (this->base() + size() - 1));
-
-  return true;
+  return rust_vm_mapping_object_range_to_vaddr_range(this, offset, len, base, virtual_len);
 }
 
 void VmMapping::AspaceUnmapLockedObject(uint64_t offset, uint64_t len, UnmapOptions options) const {
@@ -1096,19 +1038,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
 }
 
 zx_status_t VmMapping::DecommitRange(size_t offset, size_t len) {
-  AssertCanary();
-  LTRACEF("%p [%#zx+%#zx], offset %#zx, len %#zx\n", this, base(), size(), offset, len);
-
-  Guard<CriticalMutex> guard{lock()};
-  if (state_locked() != LifeCycleState::ALIVE) {
-    return ZX_ERR_BAD_STATE;
-  }
-  if (offset + len < offset || offset + len > size()) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-  // VmObject::DecommitRange will typically call back into our instance's
-  // VmMapping::AspaceUnmapLockedObject.
-  return object_locked()->DecommitRange(object_offset() + offset, len);
+  return rust_vm_mapping_decommit_range(this, offset, len);
 }
 
 zx_status_t VmMapping::DestroyLockedImpl() {
@@ -1858,28 +1788,5 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
 
 uint64_t VmMapping::TrimmedObjectRangeLocked(uint64_t offset, uint64_t len) const TA_REQ(lock())
     TA_REQ(object_locked()->lock()) {
-  const uint64_t vmo_offset = object_offset() + offset;
-  const uint64_t vmo_size = object_locked()->size_locked();
-  if (vmo_offset >= vmo_size) {
-    return 0;
-  }
-
-  uint64_t trim_len = vmo_size - vmo_offset;
-
-  if (flags() & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
-    VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get());
-    DEBUG_ASSERT(paged);
-    AssertHeld(paged->lock_ref());
-    auto stream_size_res = paged->saturating_stream_size_locked();
-    // Creating a fault-beyond-stream-size mapping should have allocated a SSM.
-    DEBUG_ASSERT(stream_size_res);
-    size_t stream_size = stream_size_res.value();
-    DEBUG_ASSERT(stream_size <= vmo_size);
-    if (vmo_offset >= stream_size) {
-      return 0;
-    }
-    trim_len = stream_size - vmo_offset;
-  }
-
-  return ktl::min(trim_len, len);
+  return rust_vm_mapping_trimmed_object_range_locked(this, offset, len);
 }

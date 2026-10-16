@@ -337,4 +337,8 @@ FFI_ALWAYS_INLINE void cpp_vm_object_set_user_stream_size(VmObject* vmo, StreamS
   vmo->SetUserStreamSize(fbl::ImportFromRawPtr(ssm));
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_object_dump(VmObject* vmo, uint32_t depth, bool verbose) {
+  vmo->Dump(depth, verbose);
+}
+
 }  // extern "C"

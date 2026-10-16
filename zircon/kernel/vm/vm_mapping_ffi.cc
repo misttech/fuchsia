@@ -21,10 +21,6 @@ FFI_ALWAYS_INLINE void* cpp_vm_mapping_state(VmMapping* mapping) {
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping) {
   return mapping->Destroy();
 }
-FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_decommit_range(VmMapping* mapping, size_t offset,
-                                                            size_t len) {
-  return mapping->DecommitRange(offset, len);
-}
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset,
                                                        size_t len, bool commit,
                                                        bool ignore_existing) {
@@ -39,9 +35,13 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_debug_protect(VmMapping* mapping, v
                                                            arch_mmu_flags_t new_arch_mmu_flags) {
   return mapping->DebugProtect(base, size, new_arch_mmu_flags);
 }
-FFI_ALWAYS_INLINE const VmObject* cpp_vm_mapping_vmo(VmMapping* mapping) {
-  fbl::RefPtr<VmObject> vmo = mapping->vmo();
-  return fbl::ExportToRawPtr(&vmo);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_enumerate_protection_ranges_locked(
+    const VmMapping* mapping, vaddr_t base, size_t size,
+    cpp_vm_mapping_enumerate_protection_ranges_cb cb, void* ctx) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return mapping->EnumerateProtectionRangesLocked(
+      base, size, [cb, ctx](vaddr_t base, size_t len, arch_mmu_flags_t flags) {
+        return cb(ctx, base, len, flags);
+      });
 }
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping,
                                                             VmMapping** out_mapping) {

@@ -113,6 +113,7 @@ zx_status_t cpp_vm_object_take_pages(VmObject* vmo, uint64_t offset, uint64_t le
                                      VmPageSpliceList* pages);
 zx_status_t cpp_vm_object_supply_pages(VmObject* vmo, uint64_t offset, uint64_t len,
                                        VmPageSpliceList* pages, SupplyOptions options);
+void cpp_vm_object_dump(VmObject* vmo, uint32_t depth, bool verbose);
 
 using cpp_vm_object_dirty_range_fn = zx_status_t (*)(void* ctx, uint64_t range_offset,
                                                      uint64_t range_len, bool range_is_zero);

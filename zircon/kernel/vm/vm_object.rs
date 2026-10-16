@@ -666,6 +666,13 @@ impl VmObject {
         unsafe { counts.assume_init() }
     }
 
+    pub fn dump(&self, depth: u32, verbose: bool) {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe {
+            bindings::cpp_vm_object_dump(self.as_raw(), depth, verbose);
+        }
+    }
+
     /// Read/write operators against kernel pointers only.
     /// May block on user pager requests and must be called without locks held.
     ///

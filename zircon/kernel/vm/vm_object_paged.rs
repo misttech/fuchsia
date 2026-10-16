@@ -368,6 +368,35 @@ impl VmObjectPaged {
         };
         if has_value { Some(stream_size) } else { None }
     }
+
+    pub fn size_locked(&self, _token: &LockToken<'_, VmObjectLockClass>) -> u64 {
+        // SAFETY: `self.as_raw()` is a valid `VmObjectPaged` pointer and the VMO lock is held.
+        unsafe { bindings::cpp_vm_object_paged_size_locked(self.as_raw()) }
+    }
+
+    pub fn lock_is_held(&self) -> bool {
+        // SAFETY: `self.as_raw()` is a valid `VmObjectPaged` pointer.
+        unsafe { bindings::cpp_vm_object_paged_lock_is_held(self.as_raw()) }
+    }
+
+    /// Calculates the minimum of the VMO size and the page-aligned user stream size.
+    pub fn saturating_stream_size_locked(
+        &self,
+        token: &LockToken<'_, VmObjectLockClass>,
+    ) -> Option<u64> {
+        let user_stream_size = self.user_stream_size_locked(token)?;
+
+        let vmo_size = self.size_locked(token);
+
+        // If user stream size is larger, trim to the VMO.
+        // TODO(https://fxbug.dev/380960681): remove check when stream size <= VMO size invariant is
+        // enforced.
+        if user_stream_size > vmo_size {
+            return Some(vmo_size);
+        }
+
+        Some(::page::round_up(user_stream_size as usize) as u64)
+    }
 }
 
 unsafe impl IsOpaqueRefCounted for VmObjectPaged {

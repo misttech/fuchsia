@@ -45,7 +45,6 @@ VmMapping* cpp_vm_address_region_create_vm_mapping(
 void cpp_vm_mapping_free(VmMapping* mapping);
 void* cpp_vm_mapping_state(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping);
-zx_status_t cpp_vm_mapping_decommit_range(VmMapping* mapping, size_t offset, size_t len);
 zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,
                                      bool ignore_existing);
 zx_status_t cpp_vm_mapping_debug_unmap(VmMapping* mapping, vaddr_t base, size_t size);
@@ -53,7 +52,12 @@ zx_status_t cpp_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base, size_
                                          arch_mmu_flags_t new_arch_mmu_flags);
 zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping, VmMapping** out_mapping);
 void cpp_vm_mapping_mark_mergeable(VmMapping* mapping);
-const VmObject* cpp_vm_mapping_vmo(VmMapping* mapping);
+typedef zx_status_t (*cpp_vm_mapping_enumerate_protection_ranges_cb)(void* ctx, vaddr_t base,
+                                                                     size_t len,
+                                                                     arch_mmu_flags_t flags);
+zx_status_t cpp_vm_mapping_enumerate_protection_ranges_locked(
+    const VmMapping* mapping, vaddr_t base, size_t size,
+    cpp_vm_mapping_enumerate_protection_ranges_cb cb, void* ctx);
 
 __END_CDECLS
 
