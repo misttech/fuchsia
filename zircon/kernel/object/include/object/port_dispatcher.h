@@ -361,6 +361,8 @@ zx_status_t cpp_port_dispatcher_dequeue(PortDispatcher* port, const Deadline* de
                                         zx_port_packet_t* packet);
 bool cpp_port_dispatcher_cancel_queued(PortDispatcher* port, const void* handle, uint64_t key);
 zx_status_t cpp_port_dispatcher_cancel_key(PortDispatcher* port, uint64_t key);
+void cpp_port_packet_set_packet(PortPacket* port_packet, const zx_port_packet_t* packet);
+zx_status_t cpp_port_dispatcher_queue(PortDispatcher* port, PortPacket* packet);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PORT_DISPATCHER_H_

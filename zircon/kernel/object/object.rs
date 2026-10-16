@@ -130,7 +130,7 @@ pub use msi_dispatcher::MsiDispatcher;
 pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
 pub use pager_dispatcher::PagerDispatcher;
 pub use pinned_memory_token_dispatcher::{PinnedMemoryTokenDispatcher, dev_vaddr_t};
-pub use port_dispatcher::{PortDispatcher, RawPortPacket};
+pub use port_dispatcher::{PortDispatcher, PortPacket, RawPortPacket};
 pub use process_dispatcher::{CurrentProcessDispatcher, ProcessDispatcher};
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource::{

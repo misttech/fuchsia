@@ -61,4 +61,6 @@ void ktrace_report_vcpu_meta();
 void ktrace_vcpu(VcpuBlockOp block_op, VcpuMeta meta);
 void ktrace_vcpu_exit(VcpuExit exit, uint64_t exit_address);
 
+extern "C" void cpp_ktrace_vcpu(VcpuBlockOp block_op, VcpuMeta meta);
+
 #endif  // ZIRCON_KERNEL_HYPERVISOR_INCLUDE_HYPERVISOR_KTRACE_H_

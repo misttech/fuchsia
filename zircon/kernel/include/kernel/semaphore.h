@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <kernel/thread.h>
 #include <kernel/wait.h>
 #include <ktl/atomic.h>
@@ -115,5 +116,12 @@ class Semaphore {
   ktl::atomic<int64_t> count_;
   WaitQueue waitq_;
 };
+
+extern "C" {
+void cpp_semaphore_init(ffi::Uninitialized<Semaphore>* semaphore, int64_t initial_count);
+void cpp_semaphore_destroy(Semaphore* semaphore);
+void cpp_semaphore_post(Semaphore* semaphore);
+zx_status_t cpp_semaphore_wait_deadline(Semaphore* semaphore, const Deadline* deadline);
+}
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SEMAPHORE_H_

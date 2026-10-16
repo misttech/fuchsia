@@ -93,4 +93,15 @@ FFI_ALWAYS_INLINE zx_status_t cpp_port_dispatcher_cancel_key(PortDispatcher* por
   return port->CancelKey(key);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_port_packet_set_packet(PortPacket* port_packet,
+                                                  const zx_port_packet_t* packet) {
+  port_packet->packet = *packet;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_port_dispatcher_queue(PortDispatcher* port, PortPacket* packet) {
+  return port->Queue(packet);
+}
+
 }  // extern "C"

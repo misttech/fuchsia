@@ -51,6 +51,7 @@ const _: () = {
     );
 };
 
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     fn cpp_port_dispatcher_create(
         options: u32,
@@ -93,6 +94,24 @@ unsafe extern "C" {
         key: u64,
     ) -> bool;
     fn cpp_port_dispatcher_cancel_key(port: *mut PortDispatcher, key: u64) -> zx_status_t;
+    fn cpp_port_packet_set_packet(port_packet: *mut PortPacket, packet: *const zx_port_packet_t);
+    fn cpp_port_dispatcher_queue(port: *mut PortDispatcher, packet: *mut PortPacket)
+    -> zx_status_t;
+}
+
+/// Opaque handle to a C++ `PortPacket`.
+#[repr(C)]
+pub struct PortPacket {
+    _opaque: zr::OpaqueFacade,
+}
+
+impl PortPacket {
+    /// Sets the `zx_port_packet_t` payload on this `PortPacket`.
+    #[inline]
+    pub fn set_packet(&mut self, packet: &zx_port_packet_t) {
+        // SAFETY: `self` and `packet` are valid references.
+        unsafe { cpp_port_packet_set_packet(self, packet) }
+    }
 }
 
 /// Opaque wrapper for the C++ `PortInterruptPacket` intrusive node.
@@ -253,6 +272,37 @@ impl PortDispatcher {
         // SAFETY: `self` is a valid `PortDispatcher` reference and `handle` is a valid `HandleRef`
         // protected by the handle table lock.
         unsafe { cpp_port_dispatcher_cancel_queued(self.as_ffi_mut(), handle.as_ptr(), key) }
+    }
+
+    /// Cancels queued packets matching the opaque `handle` token and `key`.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a valid non-null packet handle token (either a `Handle` pointer with the
+    /// owning process's handle table lock held, or an allocator-owned token whose packets are
+    /// ephemeral).
+    #[inline]
+    pub unsafe fn cancel_queued_handle(
+        &self,
+        handle: core::ptr::NonNull<core::ffi::c_void>,
+        key: u64,
+    ) -> bool {
+        // SAFETY: Guaranteed by caller.
+        unsafe { cpp_port_dispatcher_cancel_queued(self.as_ffi_mut(), handle.as_ptr(), key) }
+    }
+
+    /// Queues an ephemeral or allocator-backed `PortPacket` on this port.
+    ///
+    /// # Safety
+    ///
+    /// `packet` must be a valid `PortPacket` allocated from a `PortAllocator` that outlives any
+    /// queued packets (or cancels them before destruction). On `Ok(())`, ownership of `packet` is
+    /// transferred to the port; on `Err(...)`, the caller retains ownership of `packet`.
+    #[inline]
+    pub unsafe fn queue(&self, packet: core::ptr::NonNull<PortPacket>) -> Result<(), Status> {
+        // SAFETY: Guaranteed by caller.
+        let status = unsafe { cpp_port_dispatcher_queue(self.as_ffi_mut(), packet.as_ptr()) };
+        Status::ok(status)
     }
 
     /// Cancels all pending waits and packets registered with `key`.

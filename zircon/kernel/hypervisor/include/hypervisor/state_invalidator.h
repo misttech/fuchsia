@@ -17,4 +17,6 @@ struct StateInvalidator {
 
 }  // namespace hypervisor
 
+extern "C" void cpp_state_invalidator_invalidate(hypervisor::StateInvalidator* invalidator);
+
 #endif  // ZIRCON_KERNEL_HYPERVISOR_INCLUDE_HYPERVISOR_STATE_INVALIDATOR_H_

@@ -7,7 +7,15 @@
 #include <lib/ktrace.h>
 
 #include <hypervisor/ktrace.h>
+#include <kernel/ffi.h>
 #include <kernel/thread.h>
+
+static_assert(sizeof(VcpuBlockOp) == sizeof(uint32_t));
+static_assert(VCPU_BLOCK == 0);
+static_assert(VCPU_UNBLOCK == 1);
+static_assert(sizeof(VcpuMeta) == sizeof(uint32_t));
+static_assert(VCPU_INTERRUPT == 0);
+static_assert(VCPU_PORT == 1);
 
 #if defined(__clang__)
 #pragma GCC diagnostic push
@@ -73,3 +81,12 @@ void ktrace_vcpu_exit(VcpuExit exit, uint64_t exit_address) {
     KTRACE_DURATION_END("kernel:arch", "vcpu", ("exit_address", exit_address), ("exit_type", exit));
   }
 }
+
+extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_ktrace_vcpu(VcpuBlockOp block_op, VcpuMeta meta) {
+  ktrace_vcpu(block_op, meta);
+}
+
+}  // extern "C"

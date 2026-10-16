@@ -8,76 +8,69 @@
 #define ZIRCON_KERNEL_HYPERVISOR_INCLUDE_HYPERVISOR_TRAP_MAP_H_
 
 #include <fbl/arena.h>
-#include <fbl/intrusive_wavl_tree.h>
 #include <fbl/ref_ptr.h>
 #include <hypervisor/state_invalidator.h>
-#include <kernel/semaphore.h>
+#include <kernel/ffi.h>
+#include <kernel/mutex.h>
+#include <kernel/spinlock.h>
 #include <object/port_dispatcher.h>
 
 namespace hypervisor {
 
-// Blocks on allocation if the arena is empty.
-class BlockingPortAllocator final : public PortAllocator {
- public:
-  BlockingPortAllocator();
-
-  zx::result<> Init() TA_NO_THREAD_SAFETY_ANALYSIS;
-  PortPacket* AllocBlocking();
-  virtual void Free(PortPacket* port_packet) override;
-
- private:
-  Semaphore semaphore_;
-  fbl::TypedArena<PortPacket, Mutex> arena_;
-
-  PortPacket* Alloc() override;
-};
+using PortPacketArena = fbl::TypedArena<PortPacket, Mutex>;
+class RustPortAllocator;
 
 // Describes a single trap within a guest.
-class Trap : public fbl::WAVLTreeContainable<ktl::unique_ptr<Trap>> {
+class Trap {
  public:
-  Trap(uint32_t kind, zx_gpaddr_t addr, size_t len, fbl::RefPtr<PortDispatcher> port, uint64_t key);
-  ~Trap();
+  Trap() = delete;
+  ~Trap() = delete;
+  Trap(const Trap&) = delete;
+  Trap& operator=(const Trap&) = delete;
 
-  zx::result<> Init();
   zx::result<> Queue(const zx_port_packet_t& packet, StateInvalidator* invalidator = nullptr);
-
-  zx_gpaddr_t GetKey() const { return addr_; }
-  bool Contains(zx_gpaddr_t val) const { return val >= addr_ && val < addr_ + len_; }
-  bool HasPort() const { return !!port_; }
-
-  uint32_t kind() const { return kind_; }
-  zx_gpaddr_t addr() const { return addr_; }
-  size_t len() const { return len_; }
-  uint64_t key() const { return key_; }
-
- private:
-  const uint32_t kind_;
-  const zx_gpaddr_t addr_;
-  const size_t len_;
-  const fbl::RefPtr<PortDispatcher> port_;
-  const uint64_t key_;  // Key for packets in this port range.
-  BlockingPortAllocator port_allocator_;
+  bool HasPort() const;
+  uint32_t kind() const;
+  uint64_t key() const;
 };
 
 // Contains all the traps within a guest.
 class TrapMap {
  public:
+  TrapMap();
+  ~TrapMap();
+  TrapMap(const TrapMap&) = delete;
+  TrapMap& operator=(const TrapMap&) = delete;
+
   zx::result<> InsertTrap(uint32_t kind, zx_gpaddr_t addr, size_t len,
                           fbl::RefPtr<PortDispatcher> port, uint64_t key);
   zx::result<Trap*> FindTrap(uint32_t kind, zx_gpaddr_t addr);
 
  private:
-  using TrapTree = fbl::WAVLTree<zx_gpaddr_t, ktl::unique_ptr<Trap>>;
-
-  DECLARE_SPINLOCK(TrapMap) lock_;
-  TrapTree mem_traps_ TA_GUARDED(lock_);
+  using LockType = DECLARE_SPINLOCK(TrapMap);
+  static constexpr size_t kLockSize = (sizeof(LockType) + 7) & ~size_t{7};
 #ifdef ARCH_X86
-  TrapTree io_traps_ TA_GUARDED(lock_);
-#endif  // ARCH_X86
+  static constexpr size_t kStorageSize = kLockSize + 48;
+#else
+  static constexpr size_t kStorageSize = kLockSize + 24;
+#endif
 
-  TrapTree* TreeOf(uint32_t kind);
+  [[maybe_unused]] OpaqueStorage<kStorageSize, 8> storage_{};
 };
 
+static_assert(alignof(TrapMap) == 8);
+
 }  // namespace hypervisor
+
+extern "C" {
+void cpp_rust_port_allocator_init(ffi::Uninitialized<hypervisor::RustPortAllocator>* allocator);
+void cpp_port_packet_arena_init(ffi::Uninitialized<hypervisor::PortPacketArena>* arena);
+void cpp_port_packet_arena_destroy(hypervisor::PortPacketArena* arena);
+zx_status_t cpp_port_packet_arena_init_pool(hypervisor::PortPacketArena* arena, const char* name,
+                                            size_t max_count);
+PortPacket* cpp_port_packet_arena_new(hypervisor::PortPacketArena* arena, const void* handle,
+                                      PortAllocator* allocator);
+void cpp_port_packet_arena_delete(hypervisor::PortPacketArena* arena, PortPacket* port_packet);
+}
 
 #endif  // ZIRCON_KERNEL_HYPERVISOR_INCLUDE_HYPERVISOR_TRAP_MAP_H_

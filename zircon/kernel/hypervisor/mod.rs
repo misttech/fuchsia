@@ -8,3 +8,9 @@
 
 pub mod cpu;
 mod cpu_ffi;
+pub mod ktrace;
+mod ktrace_ffi;
+pub mod state_invalidator;
+mod state_invalidator_ffi;
+pub mod trap_map;
+mod trap_map_ffi;

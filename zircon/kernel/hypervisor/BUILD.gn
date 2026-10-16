@@ -15,7 +15,7 @@ source_set("hypervisor") {
     "aspace.cc",
     "guest_ffi.cc",
     "ktrace.cc",
-    "trap_map.cc",
+    "trap_map_ffi.cc",
     "vcpu_ffi.cc",
   ]
   deps = [
@@ -33,9 +33,25 @@ kernel_rust_mod("hypervisor-rs") {
   sources = [
     "cpu.rs",
     "cpu_ffi.rs",
+    "ktrace.rs",
+    "ktrace_ffi.rs",
     "mod.rs",
+    "state_invalidator.rs",
+    "state_invalidator_ffi.rs",
+    "trap_map.rs",
+    "trap_map_ffi.rs",
   ]
-  deps = [ "//sdk/rust/zx-status" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//src/lib/kalloc",
+    "//src/lib/ksync",
+    "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/range_check:range_check_rs",
+    "//zircon/system/ulib/fbl/rust:fbl",
+  ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 library_headers("headers") {
