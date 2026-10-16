@@ -28,8 +28,8 @@ use packet_formats::udp::UdpPacketBuilder;
 
 use netstack3_base::testutil::{TEST_ADDRS_V4, TEST_ADDRS_V6, TestIpExt, set_logger_for_test};
 use netstack3_base::{
-    CounterCollection as _, CounterContext, FrameDestination, MarkMatcher, MarkMatchers, Marks,
-    NetworkSerializationContext,
+    CounterCollection as _, CounterContext, FrameDestination, LocalFrameDestination, MarkMatcher,
+    MarkMatchers, Marks, NetworkSerializationContext,
 };
 use netstack3_core::device::DeviceId;
 use netstack3_core::ip::MarkDomain;
@@ -420,6 +420,40 @@ where
         |packet| assert_eq!(packet.original_packet().len(), original_packet_len),
         test_mark_reflection,
     );
+}
+
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+#[test_case(FrameDestination::Broadcast; "broadcast")]
+#[test_case(FrameDestination::Multicast; "multicast")]
+fn no_icmp_error_for_non_unicast_frame_destination<I: TestIpExt + IpExt>(
+    frame_dst: LocalFrameDestination,
+) {
+    set_logger_for_test();
+
+    let buffer = Buf::new(vec![0; 128], ..)
+        .wrap_in(UdpPacketBuilder::new(
+            I::TEST_ADDRS.remote_ip.get(),
+            I::TEST_ADDRS.local_ip.get(),
+            None,
+            NonZeroU16::new(1234).unwrap(),
+        ))
+        .wrap_in(<I as packet_formats::ip::IpExt>::PacketBuilder::new(
+            I::TEST_ADDRS.remote_ip.get(),
+            I::TEST_ADDRS.local_ip.get(),
+            64,
+            IpProto::Udp.into(),
+        ))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap();
+
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(I::TEST_ADDRS).build();
+    let device: DeviceId<_> = device_ids[0].clone().into();
+
+    ctx.test_api().receive_ip_packet::<I, _>(&device, Some(frame_dst), buffer);
+
+    assert_eq!(CounterContext::<IcmpTxCounters<I>>::counters(&ctx.core_ctx()).error.get(), 0);
+    assert_matches!(ctx.bindings_ctx.take_ethernet_frames()[..], []);
 }
 
 #[test_case(true; "reflection")]

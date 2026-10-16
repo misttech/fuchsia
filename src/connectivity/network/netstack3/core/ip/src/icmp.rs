@@ -2486,11 +2486,12 @@ fn send_icmpv6_error_message<B, BC, CC>(
 /// Should we send an ICMP(v4) response?
 ///
 /// `should_send_icmpv4_error` implements the logic described in RFC 1122
-/// Section 3.2.2. It decides whether, upon receiving an incoming packet with
-/// the given parameters, we should send an ICMP response or not. In particular,
-/// we do not send an ICMP response if we've received:
+/// Section 3.2.2 and RFC 1812 Section 4.3.2.7. It decides whether, upon
+/// receiving an incoming packet with the given parameters, we should send an
+/// ICMP response or not. In particular, we do not send an ICMP response if
+/// we've received:
 /// - a packet destined to a broadcast or multicast address
-/// - a packet sent in a link-layer broadcast
+/// - a packet sent in a link-layer broadcast or multicast
 /// - a non-initial fragment
 /// - a packet whose source address does not define a single host (a
 ///   zero/unspecified address, a broadcast address, a multicast address, or a
@@ -2499,7 +2500,10 @@ fn send_icmpv6_error_message<B, BC, CC>(
 /// RFC Non-Compliance: RFC 1122 Section 3.2.2 also considers the loopback
 /// address to be one that "does not define a single host". However, that breaks
 /// error delivery for loopback sockets. This deviation matches the behavior of
-/// Netstack2 and Linux.
+/// Linux. Additionally, while RFC 1122 Section 3.2.2 only explicitly prohibits
+/// sending ICMP error messages in response to link-layer broadcast frames, we
+/// also prohibit sending them in response to link-layer multicast frames,
+/// matching RFC 1812 Section 4.3.2.7 and Linux.
 ///
 /// Note that `should_send_icmpv4_error` does NOT check whether the incoming
 /// packet contained an ICMP error message. This is because that check is
@@ -2517,21 +2521,22 @@ fn should_send_icmpv4_error(
     // - a packet destined to a subnet broadcast address
     // - a packet whose source address is a subnet broadcast address
 
-    // NOTE: The FrameDestination type has variants for unicast, multicast, and
-    // broadcast. One implication of the fact that we only check for broadcast
-    // here (in compliance with the RFC) is that we could, in one very unlikely
-    // edge case, respond with an ICMP error message to an IP packet which was
-    // sent in a link-layer multicast frame. In particular, that can happen if
-    // we subscribe to a multicast IP group and, as a result, subscribe to the
-    // corresponding multicast MAC address, and we receive a unicast IP packet
-    // in a multicast link-layer frame destined to that MAC address.
+    // Filter out both link-layer broadcast and multicast frames. Although RFC
+    // 1122 Section 3.2.2 only mentions link-layer broadcast, RFC 1812 Section
+    // 4.3.2.7 and Linux also suppress ICMP errors for link-layer multicast
+    // frames to prevent ICMP amplification storms when a unicast IP packet is
+    // encapsulated in a multicast link-layer frame.
     //
     // TODO(joshlf): Should we filter incoming multicast IP traffic to make sure
     // that it matches the multicast MAC address of the frame it was
     // encapsulated in?
+    let broadcast_or_multicast_frame_dst = match frame_dst {
+        Some(FrameDestination::Individual { local: () }) | None => false,
+        Some(FrameDestination::Broadcast) | Some(FrameDestination::Multicast) => true,
+    };
     !(dst_ip.is_multicast()
         || dst_ip.is_limited_broadcast()
-        || frame_dst.is_some_and(|dst| dst.is_broadcast())
+        || broadcast_or_multicast_frame_dst
         || src_ip.is_limited_broadcast()
         || src_ip.is_multicast()
         || src_ip.is_class_e())
@@ -2924,6 +2929,9 @@ mod tests {
         // Should not send because Link Layer Broadcast.
         assert!(!should_send_icmpv4_error(Some(FrameDestination::Broadcast), src_ip, dst_ip,));
 
+        // Should not send because Link Layer Multicast.
+        assert!(!should_send_icmpv4_error(Some(FrameDestination::Multicast), src_ip, dst_ip));
+
         // Should not send because from limited broadcast addr
         assert!(!should_send_icmpv4_error(
             Some(frame_dst),
@@ -3008,6 +3016,21 @@ mod tests {
         ));
         assert!(should_send_icmpv6_error(
             Some(FrameDestination::Broadcast),
+            src_ip,
+            dst_ip,
+            true /* allow_dst_multicast */
+        ));
+
+        // Should not send because Link Layer Multicast, unless exception
+        // applies.
+        assert!(!should_send_icmpv6_error(
+            Some(FrameDestination::Multicast),
+            src_ip,
+            dst_ip,
+            false /* allow_dst_multicast */
+        ));
+        assert!(should_send_icmpv6_error(
+            Some(FrameDestination::Multicast),
             src_ip,
             dst_ip,
             true /* allow_dst_multicast */

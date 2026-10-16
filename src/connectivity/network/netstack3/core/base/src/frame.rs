@@ -184,13 +184,6 @@ pub enum FrameDestination<L = bool> {
 /// an individual address.
 pub type LocalFrameDestination = FrameDestination<()>;
 
-impl<L> FrameDestination<L> {
-    /// Is this `FrameDestination::Broadcast`?
-    pub fn is_broadcast(self) -> bool {
-        matches!(self, FrameDestination::Broadcast)
-    }
-}
-
 impl FrameDestination<bool> {
     /// Creates a `FrameDestination` from a `mac` and `local_mac` destination.
     pub fn from_dest(destination: Mac, local_mac: Mac) -> Self {
