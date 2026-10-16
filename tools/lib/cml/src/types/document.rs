@@ -851,7 +851,7 @@ impl DocumentContext {
             "program",
             include_path,
             Some(&other_origin),
-            Some(&vec!["environ", "features"]),
+            Some(&vec!["environ", "features", "modules"]),
         )
     }
 
@@ -1648,6 +1648,20 @@ mod tests {
         some.merge_from(other, &Path::new("some/path")).unwrap();
         let expected =
             document_context(&json!({ "program": { "environ": ["1", "2"] } }).to_string());
+        assert_eq!(some.program, expected.program);
+    }
+
+    #[test]
+    fn test_merge_from_program_overlapping_modules() {
+        // It's ok to merge `program.modules` by concatenating the arrays together.
+        let mut some =
+            document_context(&json!({ "program": { "modules": ["ashmem"] } }).to_string());
+        let other =
+            document_context(&json!({ "program": { "modules": ["framebuffer"] } }).to_string());
+        some.merge_from(other, &Path::new("some/path")).unwrap();
+        let expected = document_context(
+            &json!({ "program": { "modules": ["ashmem", "framebuffer"] } }).to_string(),
+        );
         assert_eq!(some.program, expected.program);
     }
 
