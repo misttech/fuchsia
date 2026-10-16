@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_proc_macro(
+    name = "netstack3-macros",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    # @bazel2gn:skip
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = [
+        "//third_party/rust_crates/vendor:proc-macro2",
+        "//third_party/rust_crates/vendor:quote",
+        "//third_party/rust_crates/vendor:syn",
+    ],
+)
+
+# We only need to run this test on host, so only define it on host.
+# @bazel2gn:skip
+host_rustc_test(
+    name = "netstack3-macros-test",
+    srcs = ["src/test.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_root = "src/test.rs",
+    edition = "2024",
+    proc_macro_deps = [":netstack3-macros"],
+    deps = [
+        "//src/connectivity/lib/net-types",
+        "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
+    ],
+)
