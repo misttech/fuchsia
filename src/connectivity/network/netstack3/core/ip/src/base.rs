@@ -4438,73 +4438,61 @@ pub fn receive_ipv6_packet<
                 // possible when the packet has the fragment extension
                 // header (even if the fragment data has values that implies
                 // that the packet is not fragmented).
-                match process_fragment(core_ctx, bindings_ctx, device, packet) {
-                    ProcessFragmentResult::Done => return,
-                    ProcessFragmentResult::NotNeeded(packet) => {
-                        // While strange, it's possible for there to be a
-                        // Fragment header that says the packet doesn't need
-                        // defragmentation (an atomic fragment). Such a packet
-                        // must still be processed as a fully reassembled packet,
-                        // which means removing the Fragment header and parsing
-                        // any extension headers that follow it, as they are part
-                        // of the Fragmentable Part of the packet.
-                        let (buf, max_fragment_len) = match reassemble_ipv6_atomic_fragment(&packet)
-                        {
-                            Ok(result) => result,
-                            Err(err) => {
-                                core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
-                                debug!(
-                                    "receive_ip_packet: failed to reassemble atomic \
-                                    fragment: {:?}",
-                                    err
-                                );
-                                return;
-                            }
-                        };
-                        let buf = Buf::new(buf, ..);
-                        buffer = packet::Either::B(buf);
-
-                        // Extension headers that follow the Fragment header are
-                        // only parsed after reassembly, so parsing the
-                        // reassembled packet may result in errors that require
-                        // an ICMP response.
-                        match try_parse_ip_packet!(buffer) {
-                            Ok(packet) => (packet, None, Some(max_fragment_len)),
-                            Err(error) => {
-                                core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
-                                debug!(
-                                    "receive_ip_packet: failed to parse reassembled atomic \
-                                    fragment: {:?}",
-                                    error
-                                );
-                                handle_ipv6_parse_error(
-                                    core_ctx,
-                                    bindings_ctx,
-                                    device,
-                                    frame_dst,
-                                    device_ip_layer_metadata,
-                                    buffer,
-                                    error,
-                                );
-                                return;
+                let (buf, max_fragment_len) =
+                    match process_fragment(core_ctx, bindings_ctx, device, packet) {
+                        ProcessFragmentResult::Done => return,
+                        ProcessFragmentResult::NotNeeded(packet) => {
+                            // While strange, it's possible for there to be a
+                            // Fragment header that says the packet doesn't need
+                            // defragmentation (an atomic fragment). Such a packet
+                            // must still be processed as a fully reassembled packet,
+                            // which means removing the Fragment header and parsing
+                            // any extension headers that follow it, as they are part
+                            // of the Fragmentable Part of the packet.
+                            match reassemble_ipv6_atomic_fragment(&packet) {
+                                Ok(result) => result,
+                                Err(err) => {
+                                    core_ctx
+                                        .increment_both(device, |c| &c.fragment_reassembly_error);
+                                    debug!(
+                                        "receive_ip_packet: failed to reassemble atomic \
+                                        fragment: {:?}",
+                                        err
+                                    );
+                                    return;
+                                }
                             }
                         }
-                    }
-                    ProcessFragmentResult::Reassembled { buffer: buf, max_fragment_len } => {
-                        let buf = Buf::new(buf, ..);
-                        buffer = packet::Either::B(buf);
-
-                        match buffer.parse_mut() {
-                            Ok(packet) => (packet, None, Some(max_fragment_len)),
-                            Err(err) => {
-                                core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
-                                debug!(
-                                    "receive_ip_packet: fragmented, failed to reassemble: {:?}",
-                                    err
-                                );
-                                return;
-                            }
+                        ProcessFragmentResult::Reassembled { buffer: buf, max_fragment_len } => {
+                            (buf, max_fragment_len)
                         }
+                    };
+
+                let buf = Buf::new(buf, ..);
+                buffer = packet::Either::B(buf);
+
+                // Extension headers that follow the Fragment header are only
+                // parsed after reassembly, so parsing the reassembled packet
+                // may result in errors that require an ICMP response.
+                match try_parse_ip_packet!(buffer) {
+                    Ok(packet) => (packet, None, Some(max_fragment_len)),
+                    Err(error) => {
+                        core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
+                        debug!(
+                            "receive_ip_packet: fragmented, failed to parse reassembled packet: \
+                            {:?}",
+                            error
+                        );
+                        handle_ipv6_parse_error(
+                            core_ctx,
+                            bindings_ctx,
+                            device,
+                            frame_dst,
+                            device_ip_layer_metadata,
+                            buffer,
+                            error,
+                        );
+                        return;
                     }
                 }
             }
