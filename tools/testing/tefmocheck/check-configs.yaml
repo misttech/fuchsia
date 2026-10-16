@@ -1,8 +1,10 @@
+failure_mode_checks:
+
 # ==============================================================================
 # CATEGORY 1: Swarming & CAS Upload Failures
 # Priority checks for Swarming task infrastructure & CAS upload errors.
 # ==============================================================================
-failure_mode_checks:
+
 # For https://fxbug.dev/42166822
 # This is printed by Swarming after a Swarming task's command completes, and
 # suggests that a test leaked a subprocess that modified one of the task's
