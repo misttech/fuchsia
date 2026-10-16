@@ -2,10 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_unittest_package("mock-paver-tests") {
-  deps = [ ":mock-paver_test" ]
+bazel_test_suite("mock-paver-tests") {
+  target_tests = [ "//src/sys/pkg/testing/mock-paver:mock-paver-tests" ]
 }
 
 group("hermetic_tests") {
@@ -44,18 +44,12 @@ rustc_library("mock-paver") {
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
-  test_deps = [
-    "//src/lib/fuchsia",
-    "//third_party/rust_crates:assert_matches",
-  ]
-  version = "0.1.0"
   visibility = [
     ":*",
     "//src/security/*",
     "//src/sys/pkg/*",
-    "//vendor/google/starnix/*",
+    "//vendor/google/*",
   ]
-  with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
