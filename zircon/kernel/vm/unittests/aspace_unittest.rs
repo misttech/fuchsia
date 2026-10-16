@@ -1149,6 +1149,95 @@ mod aspace_rs {
         expect_ok!(aspace.destroy());
     }
 
+    /// Tests memory priority propagation with bidirectional clones.
+    #[test]
+    fn vmaspace_priority_bidir_clone_test() {
+        let aspace = unwrap_some!(VmAspace::create(Type::User, b"test-aspace"));
+
+        let vmar = unwrap_ok!(aspace.root_vmar().unwrap().create_sub_vmar(
+            0,
+            PAGE_SIZE_USIZE * 64,
+            0,
+            vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
+            b"test vmar",
+        ));
+
+        let status = vmar.set_memory_priority(MemoryPriority::High);
+        expect_ok!(status);
+
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2));
+
+        let mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+            PAGE_SIZE_USIZE,
+            PAGE_SIZE_USIZE,
+            0,
+            vmar::flag::SPECIFIC_OVERWRITE,
+            VmObjectPaged::into_vm_object(vmo.clone()),
+            0,
+            ARCH_RW_USER_FLAGS,
+            b"test-mapping",
+        ));
+
+        expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+        expect_true!(aspace.is_high_memory_priority());
+
+        // Create a clone of the VMO.
+        let vmo_child = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            true,
+        ));
+        let childp = VmObject::downcast_paged(vmo_child.clone()).expect("is paged");
+
+        // Child should not have priority.
+        expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+        expect_false!(childp.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+
+        // Destroying the clone should leave memory priority unchanged of the original.
+        drop(vmo_child);
+        drop(childp);
+        expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+        expect_true!(aspace.is_high_memory_priority());
+
+        // Remove the mapping.
+        expect_ok!(mapping_result.mapping.destroy());
+        expect_false!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+
+        // Create a new clone of the VMO and map in the clone.
+        let vmo_child = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            true,
+        ));
+        let childp = VmObject::downcast_paged(vmo_child.clone()).expect("is paged");
+        expect_false!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+        expect_false!(childp.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+        let _mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+            PAGE_SIZE_USIZE,
+            PAGE_SIZE_USIZE,
+            0,
+            vmar::flag::SPECIFIC_OVERWRITE,
+            vmo_child,
+            0,
+            ARCH_RW_USER_FLAGS,
+            b"test-mapping",
+        ));
+
+        expect_false!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+        expect_true!(childp.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+
+        // Now destroy the parent VMO and ensure child retains priority.
+        drop(vmo);
+        expect_true!(childp.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+
+        expect_ok!(aspace.destroy());
+        expect_false!(childp.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+    }
+
     /// Tests memory priority propagation to a child VMO slice.
     #[test]
     fn vmaspace_priority_slice_test() {

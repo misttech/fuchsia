@@ -64,6 +64,7 @@ ArchVmAspace* cpp_vm_aspace_arch_aspace(VmAspace* aspace);
 VmMapping* cpp_vm_aspace_find_mapping(VmAspace* aspace, zx_vaddr_t vaddr);
 void* cpp_vm_aspace_lock(const VmAspace* aspace);
 void* cpp_vm_aspace_region_lock(const VmAspace* aspace);
+void cpp_vm_aspace_change_high_priority_count_locked(VmAspace* aspace, int64_t delta);
 }
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_ASPACE_FFI_H_

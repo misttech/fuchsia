@@ -1596,87 +1596,38 @@ void VmMapping::MarkMergeable(fbl::RefPtr<VmMapping> mapping) {
 template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) {
   if constexpr (SplitOnUnmap) {
-    // all that's required to set our priority is to have the object and aspace() set up
-    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_locked() && aspace());
+    rust_vm_mapping_set_mem_priority_locked_split(this, priority);
   } else {
-    DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
-  }
-  const bool to_high = priority == VmAddressRegion::MemoryPriority::HIGH;
-  const int64_t delta = to_high ? 1 : -1;
-  if (priority == memory_priority_locked()) {
-    return;
-  }
-  set_memory_priority_locked(priority);
-  aspace()->ChangeHighPriorityCountLocked(delta);
-  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get()); paged) {
-    PriorityChanger pc = paged->MakePriorityChanger(delta);
-    if (priority == VmAddressRegion::MemoryPriority::HIGH) {
-      pc.PrepareMayNotAlreadyBeHighPriority();
-    }
-    Guard<CriticalMutex> guard{AliasedLock, object_locked()->lock(), pc.lock()};
-    pc.ChangeHighPriorityCountLocked();
+    rust_vm_mapping_set_mem_priority_locked(this, priority);
   }
 }
+template void VmMapping::SetMemoryPriorityLocked<false>(VmAddressRegion::MemoryPriority);
+template void VmMapping::SetMemoryPriorityLocked<true>(VmAddressRegion::MemoryPriority);
 
 template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityDefaultLockedObject() {
   if constexpr (SplitOnUnmap) {
-    // all that's required to set our priority is to have the object and aspace() set up
-    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_locked() && aspace());
+    rust_vm_mapping_set_mem_priority_default_locked_object_split(this);
   } else {
-    DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
-  }
-  if (memory_priority_locked() == VmAddressRegion::MemoryPriority::DEFAULT) {
-    return;
-  }
-  set_memory_priority_locked(VmAddressRegion::MemoryPriority::DEFAULT);
-  aspace()->ChangeHighPriorityCountLocked(-1);
-  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get()); paged) {
-    PriorityChanger pc = paged->MakePriorityChanger(-1);
-    AssertHeld(pc.lock_ref());  // we have the object lock
-    pc.ChangeHighPriorityCountLocked();
+    rust_vm_mapping_set_mem_priority_default_locked_object(this);
   }
 }
+template void VmMapping::SetMemoryPriorityDefaultLockedObject<false>();
+template void VmMapping::SetMemoryPriorityDefaultLockedObject<true>();
 
 template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject() {
   if constexpr (SplitOnUnmap) {
-    // all that's required to set our priority is to have the object and aspace() set up
-    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_locked() && aspace());
+    rust_vm_mapping_set_mem_priority_high_already_positive_locked_object_split(this);
   } else {
-    DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
-  }
-  if (memory_priority_locked() == VmAddressRegion::MemoryPriority::HIGH) {
-    return;
-  }
-  set_memory_priority_locked(VmAddressRegion::MemoryPriority::HIGH);
-  aspace()->ChangeHighPriorityCountLocked(1);
-  if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_locked().get()); paged) {
-    PriorityChanger pc = paged->MakePriorityChanger(1);
-    AssertHeld(pc.lock_ref());  // we have the object lock
-    pc.PrepareIsAlreadyHighPriorityLocked();
-    pc.ChangeHighPriorityCountLocked();
+    rust_vm_mapping_set_mem_priority_high_already_positive_locked_object(this);
   }
 }
+template void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject<false>();
+template void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject<true>();
 
 void VmMapping::CommitHighMemoryPriorityImpl() {
-  fbl::RefPtr<VmObject> vmo;
-  uint64_t offset;
-  uint64_t len;
-  {
-    Guard<CriticalMutex> guard{lock()};
-    if (state_locked() != LifeCycleState::ALIVE ||
-        memory_priority_locked() != MemoryPriority::HIGH) {
-      return;
-    }
-    vmo = object_locked();
-    offset = object_offset();
-    len = size();
-  }
-  DEBUG_ASSERT(vmo);
-  vmo->CommitHighPriorityPages(offset, len);
-  // Ignore the return result of MapRange as this is just best effort.
-  MapRange(offset, len, false, true);
+  rust_vm_mapping_commit_high_memory_priority(this);
 }
 
 zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {

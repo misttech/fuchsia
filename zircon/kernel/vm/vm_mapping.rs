@@ -6,7 +6,7 @@
 
 use super::arch_vm_aspace::ArchMmuFlags;
 use super::page_source::MultiPageRequest;
-use super::vm_address_region::{LifeCycleState, VmAddressRegionOrMapping, flag};
+use super::vm_address_region::{LifeCycleState, MemoryPriority, VmAddressRegionOrMapping, flag};
 use super::vm_aspace::{VmAspaceLockClass, VmAspaceRegionLockClass};
 use super::vm_object::{VmObject, VmObjectLockClass};
 use crate::kernel::types::VAddr;
@@ -435,6 +435,143 @@ impl VmMapping {
         }
     }
 
+    /// If `MemoryPriority::High`, then disable dynamic reclamation within this region. If
+    /// `MemoryPriority::Default`, move towards allowing reclamation.
+    ///
+    /// When called with `SPLIT_ON_UNMAP = true`, we set the memory
+    /// priority assuming the object has not been `activate`'d yet.
+    fn set_memory_priority_locked<const SPLIT_ON_UNMAP: bool>(
+        &self,
+        token: &mut LockToken<'_, VmAspaceLockClass>,
+        priority: MemoryPriority,
+    ) {
+        if SPLIT_ON_UNMAP {
+            // all that's required to set our priority is to have the object and `aspace()` set up
+            debug_assert!(
+                self.state_locked(token) == LifeCycleState::NotReady
+                    && self.object_locked(token).is_some()
+            );
+        } else {
+            debug_assert!(self.state_locked(token) == LifeCycleState::Alive);
+        }
+        let to_high = priority == MemoryPriority::High;
+        let delta: i64 = if to_high { 1 } else { -1 };
+        if priority == self.memory_priority_locked(token) {
+            return;
+        }
+        self.set_memory_priority_field_locked(token, priority);
+        self.aspace().change_high_priority_count_locked(token, delta);
+        let object = self.object_locked(token).as_deref().unwrap();
+        if let Some(paged) = object.as_paged() {
+            pin_init::stack_pin_init!(let pc = paged.make_priority_changer(delta));
+            if priority == MemoryPriority::High {
+                pc.as_mut().prepare_may_not_already_be_high_priority();
+            }
+            ksync::lock!(let guard = ksync::aliased_lock(object.lock_ref(), pc.lock()));
+            let (_, cow_token) = guard.tokens();
+            pc.as_mut().change_high_priority_count_locked(cow_token);
+        }
+    }
+
+    /// Move towards allowing dynamic reclamation in the region. You may call this method with the
+    /// `object` lock, in contrast to `set_memory_priority_locked`.
+    ///
+    /// When called with `set_memory_priority_default_locked_object::<true>`, we set the memory
+    /// priority assuming the object has not been `activate`'d yet.
+    fn set_memory_priority_default_locked_object<const SPLIT_ON_UNMAP: bool>(
+        &self,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+        object_token: &LockToken<'_, VmObjectLockClass>,
+    ) {
+        if SPLIT_ON_UNMAP {
+            // all that's required to set our priority is to have the object and `aspace()` set up
+            debug_assert!(
+                self.state_locked(aspace_token) == LifeCycleState::NotReady
+                    && self.object_locked(aspace_token).is_some()
+            );
+        } else {
+            debug_assert!(self.state_locked(aspace_token) == LifeCycleState::Alive);
+        }
+        if self.memory_priority_locked(aspace_token) == MemoryPriority::Default {
+            return;
+        }
+        self.set_memory_priority_field_locked(aspace_token, MemoryPriority::Default);
+        self.aspace().change_high_priority_count_locked(aspace_token, -1);
+        if let Some(paged) = self.object_locked(aspace_token).as_deref().unwrap().as_paged() {
+            pin_init::stack_pin_init!(let pc = paged.make_priority_changer(-1));
+            debug_assert!(paged.cow_pages().lock_is_held()); // we have the object lock
+            pc.as_mut().change_high_priority_count_locked(object_token);
+        }
+    }
+
+    /// Marks the address region as high priority. Only call this method if the mapped
+    /// `VmObject` is already high priority (for example if you have already called
+    /// `set_memory_priority_locked` on a child).
+    ///
+    /// You may call this method with the object lock, in contrast to
+    /// `set_memory_priority_locked`.
+    ///
+    /// When called with `set_memory_priority_high_already_positive_locked_object::<true>`, we set
+    /// the memory priority assuming the object has not been `activate`'d yet.
+    fn set_memory_priority_high_already_positive_locked_object<const SPLIT_ON_UNMAP: bool>(
+        &self,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+        object_token: &LockToken<'_, VmObjectLockClass>,
+    ) {
+        if SPLIT_ON_UNMAP {
+            // all that's required to set our priority is to have the object and `aspace()` set up
+            debug_assert!(
+                self.state_locked(aspace_token) == LifeCycleState::NotReady
+                    && self.object_locked(aspace_token).is_some()
+            );
+        } else {
+            debug_assert!(self.state_locked(aspace_token) == LifeCycleState::Alive);
+        }
+        if self.memory_priority_locked(aspace_token) == MemoryPriority::High {
+            return;
+        }
+        self.set_memory_priority_field_locked(aspace_token, MemoryPriority::High);
+        self.aspace().change_high_priority_count_locked(aspace_token, 1);
+        if let Some(paged) = self.object_locked(aspace_token).as_deref().unwrap().as_paged() {
+            pin_init::stack_pin_init!(let pc = paged.make_priority_changer(1));
+            debug_assert!(paged.cow_pages().lock_is_held()); // we have the object lock
+            pc.as_mut().prepare_is_already_high_priority_locked(object_token);
+            pc.as_mut().change_high_priority_count_locked(object_token);
+        }
+    }
+
+    /// Performs any actions necessary to apply a high memory priority over the given range. This
+    /// method is always safe to call as it will internally check the memory priority status and
+    /// skip if necessary, so the caller does not need to worry about races with a different memory
+    /// priority being applied. As this may need to acquire the lock even to check the memory
+    /// priority, if the caller knows they have not caused this to become high priority (i.e. they
+    /// have called `set_memory_priority_locked` with `MemoryPriority::Default`), then calling this
+    /// should be skipped for performance. Memory that needs to be committed for a high memory
+    /// priority are user pager backed pages and any compressed or loaned pages. Anonymous pages and
+    /// copy-on-write pages do not allocated / committed. This method has no return value as it is
+    /// entirely best effort and no part of its operation is needed for correctness.
+    fn commit_high_memory_priority(&self) {
+        let vmo;
+        let offset;
+        let len;
+        {
+            ksync::lock!(let guard = self.lock().lock());
+            if self.state_locked(guard.token()) != LifeCycleState::Alive
+                || self.memory_priority_locked(guard.token()) != MemoryPriority::High
+            {
+                return;
+            }
+            vmo = self.vmo_locked(guard.token());
+            offset = self.object_offset();
+            len = self.size() as u64;
+        }
+        debug_assert!(vmo.is_some());
+        let vmo = vmo.unwrap();
+        vmo.commit_high_priority_pages(offset, len);
+        // Ignore the return result of `map_range` as this is just best effort.
+        let _ = self.map_range(offset as usize, len as usize, false, true);
+    }
+
     /// Map in pages from the underlying vm object, optionally committing pages as it goes.
     /// |ignore_existing| controls whether existing hardware mappings in the specified range should
     /// be ignored or treated as an error. |ignore_existing| should only be set to true for user
@@ -752,4 +889,95 @@ pub unsafe extern "C" fn rust_vm_mapping_dump_locked(this: &VmMapping, depth: u3
     // SAFETY: The aspace lock is held by the caller.
     let token = unsafe { LockToken::new() };
     this.dump_locked(&region_token, &token, depth, verbose);
+}
+
+/// # Safety
+///
+/// The aspace lock is held and the object lock is not held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_locked(
+    this: &VmMapping,
+    priority: MemoryPriority,
+) {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut token = unsafe { LockToken::new() };
+    this.set_memory_priority_locked::<false>(&mut token, priority);
+}
+
+/// # Safety
+///
+/// The aspace lock is held and the object lock is not held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_locked_split(
+    this: &VmMapping,
+    priority: MemoryPriority,
+) {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut token = unsafe { LockToken::new() };
+    this.set_memory_priority_locked::<true>(&mut token, priority);
+}
+
+/// # Safety
+///
+/// The aspace lock and the object lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_default_locked_object(this: &VmMapping) {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let object_token = unsafe { LockToken::new() };
+    this.set_memory_priority_default_locked_object::<false>(&mut aspace_token, &object_token);
+}
+
+/// # Safety
+///
+/// The aspace lock and the object lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_default_locked_object_split(
+    this: &VmMapping,
+) {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let object_token = unsafe { LockToken::new() };
+    this.set_memory_priority_default_locked_object::<true>(&mut aspace_token, &object_token);
+}
+
+/// # Safety
+///
+/// The aspace lock and the object lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_high_already_positive_locked_object(
+    this: &VmMapping,
+) {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let object_token = unsafe { LockToken::new() };
+    this.set_memory_priority_high_already_positive_locked_object::<false>(
+        &mut aspace_token,
+        &object_token,
+    );
+}
+
+/// # Safety
+///
+/// The aspace lock and the object lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_high_already_positive_locked_object_split(
+    this: &VmMapping,
+) {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let object_token = unsafe { LockToken::new() };
+    this.set_memory_priority_high_already_positive_locked_object::<true>(
+        &mut aspace_token,
+        &object_token,
+    );
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_mapping_commit_high_memory_priority(this: &VmMapping) {
+    this.commit_high_memory_priority();
 }

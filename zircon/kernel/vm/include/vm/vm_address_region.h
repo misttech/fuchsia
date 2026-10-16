@@ -1397,6 +1397,15 @@ bool rust_vm_mapping_object_range_to_vaddr_range(const VmMapping* mapping, uint6
 uint64_t rust_vm_mapping_trimmed_object_range_locked(const VmMapping* mapping, uint64_t offset,
                                                      uint64_t len);
 void rust_vm_mapping_dump_locked(const VmMapping* mapping, uint32_t depth, bool verbose);
+void rust_vm_mapping_set_mem_priority_locked(VmMapping* mapping,
+                                             VmAddressRegion::MemoryPriority priority);
+void rust_vm_mapping_set_mem_priority_locked_split(VmMapping* mapping,
+                                                   VmAddressRegion::MemoryPriority priority);
+void rust_vm_mapping_set_mem_priority_default_locked_object(VmMapping* mapping);
+void rust_vm_mapping_set_mem_priority_default_locked_object_split(VmMapping* mapping);
+void rust_vm_mapping_set_mem_priority_high_already_positive_locked_object(VmMapping* mapping);
+void rust_vm_mapping_set_mem_priority_high_already_positive_locked_object_split(VmMapping* mapping);
+void rust_vm_mapping_commit_high_memory_priority(VmMapping* mapping);
 }
 
 inline void VmMapping::AssertCanary() const { rust_vm_mapping_assert_canary(this); }

@@ -550,6 +550,21 @@ impl VmAspace {
         unsafe { bindings::cpp_vm_aspace_is_high_memory_priority(self.as_ffi_ptr()) }
     }
 
+    /// Increments or decrements the priority count of this aspace. The high priority count is used
+    /// to control active page table reclamation, and applies to the whole aspace. The count is
+    /// never allowed to go negative and so callers must only subtract what they have already added.
+    /// Further, callers are required to remove any additions before the aspace is destroyed.
+    pub(super) fn change_high_priority_count_locked(
+        &self,
+        _token: &mut LockToken<'_, VmAspaceLockClass>,
+        delta: i64,
+    ) {
+        // SAFETY: `self` is a live `VmAspace` and the aspace lock is held, proven by `_token`.
+        unsafe {
+            bindings::cpp_vm_aspace_change_high_priority_count_locked(self.as_ffi_ptr(), delta)
+        }
+    }
+
     /// Finds the memory mapping for `vaddr` in this address space.
     pub fn find_mapping(&self, vaddr: usize) -> Option<RefPtr<VmMapping>> {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`.

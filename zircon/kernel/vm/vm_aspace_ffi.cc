@@ -171,4 +171,8 @@ FFI_ALWAYS_INLINE void* cpp_vm_aspace_lock(const VmAspace* aspace) { return aspa
 FFI_ALWAYS_INLINE void* cpp_vm_aspace_region_lock(const VmAspace* aspace) {
   return aspace->region_lock();
 }
+FFI_ALWAYS_INLINE void cpp_vm_aspace_change_high_priority_count_locked(
+    VmAspace* aspace, int64_t delta) TA_NO_THREAD_SAFETY_ANALYSIS {
+  aspace->ChangeHighPriorityCountLocked(delta);
+}
 }

@@ -7,7 +7,7 @@
 use super::page::VmPagePtr;
 use super::page_source::PageSource;
 use super::stream_size_manager::StreamSizeManager;
-use super::vm_cow_pages::VmCowPages;
+use super::vm_cow_pages::{PriorityChanger, VmCowPages};
 use super::vm_object::{VmObject, VmObjectLockClass, VmObjectReadWriteOptions};
 use crate::user_copy::{UserInIovec, UserOutIovec};
 use core::marker::PhantomPinned;
@@ -15,6 +15,7 @@ use core::mem::ManuallyDrop;
 use core::ops::Deref;
 use fbl::{IsOpaqueRefCounted, RefPtr};
 use ksync::LockToken;
+use pin_init::PinInit;
 use vm_object_paged_bindings as bindings;
 use zr::Opaque;
 use zx_status::Status;
@@ -143,6 +144,19 @@ impl VmObjectPaged {
     pub fn debug_get_cow_pages(&self) -> Option<RefPtr<VmCowPages>> {
         let raw = unsafe { bindings::cpp_vm_object_paged_debug_get_cow_pages(self.as_raw()) };
         unsafe { VmCowPages::from_raw(raw) }
+    }
+
+    pub(super) fn cow_pages(&self) -> &VmCowPages {
+        // SAFETY: `cow_pages_` is a `const` `RefPtr` owned by `self`, so the pointee outlives
+        // `self`.
+        unsafe {
+            VmCowPages::from_raw_ref(bindings::cpp_vm_object_paged_cow_pages(self.as_raw()).cast())
+        }
+    }
+
+    /// See the comments on `PriorityChanger` for how to use this object.
+    pub fn make_priority_changer(&self, delta: i64) -> impl PinInit<PriorityChanger<'_>> {
+        PriorityChanger::new(self.cow_pages(), delta)
     }
 
     /// Debug helper to fetch backing page pointer.

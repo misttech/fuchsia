@@ -29,6 +29,7 @@ VmObjectPaged* cpp_vm_object_as_vm_object_paged(VmObject* vmo);
 VmCowPages* cpp_vm_object_paged_debug_get_cow_pages(VmObjectPaged* vmo);
 uint64_t cpp_vm_object_paged_size_locked(const VmObjectPaged* vmo);
 bool cpp_vm_object_paged_lock_is_held(const VmObjectPaged* vmo);
+const VmCowPages* cpp_vm_object_paged_cow_pages(const VmObjectPaged* vmo);
 vm_page_t* cpp_vm_object_paged_debug_get_page(VmObjectPaged* vmo, uint64_t offset);
 
 zx_status_t cpp_vm_object_paged_zero_range(const VmObjectPaged* vmo, uint64_t offset,

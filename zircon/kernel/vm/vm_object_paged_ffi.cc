@@ -70,6 +70,10 @@ FFI_ALWAYS_INLINE VmCowPages* cpp_vm_object_paged_debug_get_cow_pages(VmObjectPa
   return fbl::ExportToRawPtr(&cow);
 }
 
+FFI_ALWAYS_INLINE const VmCowPages* cpp_vm_object_paged_cow_pages(const VmObjectPaged* vmo) {
+  return vmo->cow_pages_.get();
+}
+
 FFI_ALWAYS_INLINE VmObjectPaged* cpp_vm_object_as_vm_object_paged(VmObject* vmo) {
   return DownCastVmObject<VmObjectPaged>(vmo);
 }

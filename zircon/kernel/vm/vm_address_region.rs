@@ -414,13 +414,16 @@ impl VmAddressRegionOrMapping {
     }
 
     #[inline]
-    fn memory_priority_locked(&self, token: &LockToken<'_, VmAspaceLockClass>) -> MemoryPriority {
+    pub(super) fn memory_priority_locked(
+        &self,
+        token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> MemoryPriority {
         // SAFETY: The aspace lock is held.
         unsafe { *self.state().memory_priority.get(token) }
     }
 
     #[inline]
-    fn set_memory_priority_field_locked(
+    pub(super) fn set_memory_priority_field_locked(
         &self,
         token: &mut LockToken<'_, VmAspaceLockClass>,
         priority: MemoryPriority,

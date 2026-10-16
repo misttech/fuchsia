@@ -255,6 +255,19 @@ impl VmObject {
         Status::ok(status)
     }
 
+    /// Performs any page commits necessary for a VMO with high memory priority over the given
+    /// range. This method is always safe to call as it will internally check the memory priority
+    /// status and skip if necessary, so the caller does not need to worry about races with the VMO
+    /// no longer being high priority. As this may need to acquire the lock even to check the memory
+    /// priority, if the caller knows they have not caused this VMO to become high priority (i.e.
+    /// they have not called `change_high_priority_count_locked` with a positive value), then
+    /// calling this should be skipped for performance. This method has no return value as it is
+    /// entirely best effort and no part of its operation is needed for correctness.
+    pub fn commit_high_priority_pages(&self, offset: u64, len: u64) {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        unsafe { bindings::cpp_vm_object_commit_high_priority_pages(self.as_raw(), offset, len) }
+    }
+
     /// Returns the mapping cache policy of the VMO.
     pub fn get_mapping_cache_policy(&self) -> ArchMmuFlags {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.

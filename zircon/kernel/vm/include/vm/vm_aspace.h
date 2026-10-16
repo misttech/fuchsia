@@ -35,6 +35,7 @@ extern "C" void cpp_vm_aspace_free(VmAspace* aspace);
 extern "C" void* cpp_vm_aspace_lock(const VmAspace* aspace);
 extern "C" void* cpp_vm_aspace_region_lock(const VmAspace* aspace);
 extern "C" VmAddressRegion* cpp_vm_aspace_root_vmar_locked(VmAspace* aspace);
+extern "C" void cpp_vm_aspace_change_high_priority_count_locked(VmAspace* aspace, int64_t delta);
 
 class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCounted<VmAspace> {
  public:
@@ -272,6 +273,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   friend void* ::cpp_vm_aspace_lock(const VmAspace* aspace);
   friend void* ::cpp_vm_aspace_region_lock(const VmAspace* aspace);
   friend VmAddressRegion* ::cpp_vm_aspace_root_vmar_locked(VmAspace* aspace);
+  friend void ::cpp_vm_aspace_change_high_priority_count_locked(VmAspace* aspace, int64_t delta);
 
   // complete initialization, may fail in OOM cases
   zx_status_t Init(ShareOpt share_opt);

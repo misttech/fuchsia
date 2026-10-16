@@ -97,7 +97,7 @@ impl<'a> DeferredOps<'a> {
 /// * Handles traversing up the `VmCowPages` hierarchy to ensure that high priority status is
 /// propagated.
 ///
-/// Callers should prefer `VmMapping::SetMemoryPriorityLocked`,
+/// Callers should prefer `VmMapping::set_memory_priority_locked`,
 /// `VmMapping::set_memory_priority_default_locked_object`, or
 /// `VmMapping::set_memory_priority_high_already_positive_locked_object`, if applicable.
 ///
