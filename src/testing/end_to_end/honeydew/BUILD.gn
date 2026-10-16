@@ -381,6 +381,7 @@ group("functional_tests") {
       "honeydew/affordances/virtual_audio/tests/functional_tests:tests",
       "honeydew/auxiliary_devices/power_switch/tests/functional_tests:tests",
       "honeydew/auxiliary_devices/usb_power_hub/tests/functional_tests:tests",
+      "honeydew/device_classes/tests/functional_tests:tests",
       "honeydew/fuchsia_device/tests/functional_tests:tests",
       "honeydew/transports/adb/tests/functional_tests:tests",
       "honeydew/transports/fastboot/tests/functional_tests:tests",

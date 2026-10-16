@@ -9,6 +9,7 @@ import tempfile
 
 from honeydew.affordances.ui.screenshot import screenshot, types
 from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.utils import screenshot as screenshot_utils
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -38,8 +39,12 @@ class ScreenshotUsingFfx(screenshot.Screenshot):
             NotSupportedError: Screenshot affordance is not supported by Fuchsia device.
         """
 
-    def take(self) -> types.ScreenshotImage:
+    def take(self, standardize: bool = False) -> types.ScreenshotImage:
         """Take a screenshot.
+
+        Args:
+            standardize: Whether to standardize (crop/resample to square) the
+                screenshot image. Defaults to False.
 
         Return:
             ScreenshotImage: the screenshot image.
@@ -50,5 +55,7 @@ class ScreenshotUsingFfx(screenshot.Screenshot):
             path = os.path.join(temp_dir, "screenshot.png")
             self._ffx.run(cmd=_FFX_SCREENSHOT_CMD + [temp_dir])
             image = types.ScreenshotImage.load_from_path(path)
+            if standardize:
+                image = screenshot_utils.standardize_screenshot(image)
             _LOGGER.debug("Screenshot taken")
             return image

@@ -10,6 +10,7 @@ from unittest import mock
 import png
 from honeydew.affordances.ui.screenshot import screenshot_using_ffx
 from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.utils import screenshot as screenshot_utils
 
 
 class ScreenshotUsingFfxTests(unittest.TestCase):
@@ -47,3 +48,28 @@ class ScreenshotUsingFfxTests(unittest.TestCase):
         self.assertEqual(img.size.width, 1.0)
         self.assertEqual(img.size.height, 1.0)
         self.assertEqual(img.data, bytes(expected_img_bytes))
+
+    def test_take_screenshot_standardized(self) -> None:
+        """Verifies take(standardize=True) standardizes the screenshot."""
+        expected_img_bytes = [100, 50, 255, 255]
+
+        def mock_run(cmd: list[str]) -> str:
+            output_dir = Path(cmd[-1])
+            fake_output_file = output_dir / "screenshot.png"
+            png.from_array([expected_img_bytes], mode="RGBA").save(
+                fake_output_file
+            )
+            return f"output: {fake_output_file}"
+
+        self.mock_ffx.run = mock.MagicMock(side_effect=mock_run)
+        with mock.patch.object(
+            screenshot_utils,
+            "standardize_screenshot",
+            autospec=True,
+        ) as mock_standardize:
+            self.screenshot_obj.take(standardize=False)
+            mock_standardize.assert_not_called()
+
+            img = self.screenshot_obj.take(standardize=True)
+            mock_standardize.assert_called_once()
+            self.assertEqual(img, mock_standardize.return_value)

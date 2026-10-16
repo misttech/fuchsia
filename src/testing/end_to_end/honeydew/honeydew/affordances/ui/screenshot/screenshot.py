@@ -13,8 +13,12 @@ class Screenshot(affordance.Affordance):
     """Abstract base class for Screenshot affordance."""
 
     @abc.abstractmethod
-    def take(self) -> types.ScreenshotImage:
+    def take(self, standardize: bool = False) -> types.ScreenshotImage:
         """Take a screenshot.
+
+        Args:
+            standardize: Whether to standardize (crop/resample to square) the
+                screenshot image. Defaults to False.
 
         Return:
             ScreenshotImage: the screenshot image.
