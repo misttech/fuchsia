@@ -210,7 +210,7 @@ fuchsia_test_package("paver-tests") {
   ]
   test_specs = {
     # Gives more timeout to reduce flake.(https://fxbug.dev/42182211)
-    timeout_secs = 720
+    timeout_secs = 310
     log_settings = {
       max_severity = "ERROR"
     }
