@@ -2,12 +2,6 @@
 
 Run the checks to verify if the required criteria for the Bazel migration are fulfilled.
 
-## Authentication Check
-
-1. Run the **auth check command**.
-   * If it exits non-zero, fail the Pre-Migration Checks step with the reason: "Credentials expired or will expire in an hour".
-
-
 ## Required Skills Check
 
 The Bazel migration uses the skills below.
@@ -39,6 +33,16 @@ The Bazel migration uses the skills below.
 3. Newly registered skills may not be listed until a new session starts. For the current run, read the `SKILL.md` of each installed skill from the directory found in step 1, and follow it when this skill refers to that skill.
 
 
+## Authentication Check
+
+1. Use the `go-links` skill to resolve the **auth check command** link to its destination, read the document it points to, and get the command from its "Command" section.
+   * If the user specified the auth check command in the prompt, skip this step and use that command.
+   * If the link cannot be resolved, the document cannot be read, or it has no command, fail the Pre-Migration Checks step with the reason: "Failed to get the auth check command".
+
+2. Run the **auth check command**.
+   * If it exits non-zero, fail the Pre-Migration Checks step with the reason: "Credentials expired or will expire in an hour".
+
+
 ## Planter Installation Check
 
 The `<planter>` below is the `planter` binary resolved with `"$(command -v planter || echo "$HOME/.local/bin/planter")"`, the same way `scripts/planter_task_add_run.sh` finds it. Use it instead of a bare `planter`, because `~/.local/bin` may not be on `PATH`.
@@ -54,6 +58,7 @@ The `<planter>` below is the `planter` binary resolved with `"$(command -v plant
 ### 2. Install Planter
 
 1. Use the `go-links` skill to resolve the **Planter installation guide** link to its destination, read the document it points to, and follow its steps to install the `planter` prebuilt.
+   * If the user specified a different Planter installation guide in the prompt, do not resolve the link. Read that guide instead and follow its steps.
    * If the link cannot be resolved or the document cannot be read, fail the Pre-Migration Checks step with the reason: "Failed to read the Planter installation guide".
    * The build can take 10 minutes or more. Allow a long timeout or run the command in the background and wait for it to finish; do not treat a slow build as a failure.
 
