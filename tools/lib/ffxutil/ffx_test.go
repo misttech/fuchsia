@@ -287,3 +287,106 @@ func TestFFXInvokerErrorOmitsConfigAndOutputPaths(t *testing.T) {
 		t.Errorf("GetLastRebootReason error should not contain temp paths or target nodename, got %q", rebootErr.Error())
 	}
 }
+
+func TestExtractFFXMachineError(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+		target string
+		want   string
+	}{
+		{
+			name:   "fastboot partition not big enough with NUL byte and Caused by",
+			output: "{\"progress\":{\"stage\":\"boot_a\"}}\n{\"type\":\"unexpected\",\"code\":1,\"message\":\"Fastboot interface error: Failed to stage file Failed to upload boot_a: failed to flash partition (boot_a): not big enough\\u0000\\n\\nCaused by:\\n    0: Failed to stage file\\n    1: Failed to upload boot_a\\n    2: failed to flash partition (boot_a): not big enough\\u0000\"}\n",
+			target: "id:1A2B3C4D",
+			want:   "Fastboot interface error: Failed to stage file Failed to upload boot_a: failed to flash partition (boot_a): not big enough",
+		},
+		{
+			name:   "target specification not found scrubs dynamic serial",
+			output: `{"type":"user","code":1,"message":"Target specification \"id:11271J3DA017M8\" was not found. Use ` + "`ffx target list`" + ` to list known targets, and use a different matcher."}`,
+			target: "id:11271J3DA017M8",
+			want:   `Target specification "<target>" was not found. Use ` + "`ffx target list`" + ` to list known targets, and use a different matcher.`,
+		},
+		{
+			name:   "fastboot write timeout",
+			output: `{"type":"unexpected","code":1,"message":"Fastboot interface error: Fastboot send error: timed out writing to fastboot interface: Custom { kind: TimedOut, error: \"timed out\" }\n\nCaused by:\n    0: timed out"}`,
+			target: "id:4B121JEAYW01WG",
+			want:   `Fastboot interface error: Fastboot send error: timed out writing to fastboot interface: Custom { kind: TimedOut, error: "timed out" }`,
+		},
+		{
+			name:   "finished envelope with BUG header",
+			output: `{"finished":{"success":false,"error_message":"BUG: An internal command error occurred.\nError: Fastboot interface error: Fastboot error: Upload error: Could not write to interface\n    1. Fastboot error"}}`,
+			target: "id:4B121JEAYW01WG",
+			want:   "Fastboot interface error: Fastboot error: Upload error: Could not write to interface",
+		},
+		{
+			name:   "bare serial stripped of id prefix is scrubbed",
+			output: `{"type":"unexpected","code":1,"message":"Fastboot interface error: USB Interface creation error for serial 4B121JEAYW01WG: Resource busy (os error 16)"}`,
+			target: "id:4B121JEAYW01WG",
+			want:   "Fastboot interface error: USB Interface creation error for serial <target>: Resource busy (os error 16)",
+		},
+		{
+			name:   "config error type is surfaced",
+			output: `{"type":"config","code":1,"message":"Configuration error: missing required config value"}`,
+			target: "id:4B121JEAYW01WG",
+			want:   "Configuration error: missing required config value",
+		},
+		{
+			name:   "non-error progress only returns empty",
+			output: `{"type":"progress","message":"uploading boot_a"}`,
+			target: "id:1A2B3C4D",
+			want:   "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractFFXMachineError(tc.output, tc.target); got != tc.want {
+				t.Errorf("extractFFXMachineError() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFFXInvokerSurfacesMachineJSONError(t *testing.T) {
+	tmpDir := t.TempDir()
+	ffxPath := filepath.Join(tmpDir, "ffx")
+	script := "#!/bin/bash\nif [[ \"$*\" == *\"check-ssh-keys\"* ]]; then\n  exit 0\nfi\necho '{\"type\":\"unexpected\",\"code\":1,\"message\":\"Fastboot interface error: Failed to stage file Failed to upload boot_a: failed to flash partition (boot_a): not big enough\\u0000\\n\\nCaused by:\\n    0: Failed to stage file\"}'\nexit 1\n"
+	if err := os.WriteFile(ffxPath, []byte(script), os.ModePerm); err != nil {
+		t.Fatalf("failed to write mock ffx tool: %s", err)
+	}
+	ctx := context.Background()
+	sshKeys := SSHInfo{
+		SshPriv: filepath.Join(tmpDir, "privKey"),
+		SshPub:  filepath.Join(tmpDir, "pubKey"),
+	}
+	ffx, err := NewFFXInstance(ctx, ffxPath, tmpDir, []string{}, "id:11271J3DA017M8", &sshKeys, filepath.Join(tmpDir, "out"), UseFFXStrict)
+	if err != nil {
+		t.Fatalf("NewFFXInstance failed: %s", err)
+	}
+
+	flashErr := ffx.Flash(ctx, "id:11271J3DA017M8", "", "product_bundles.json", false)
+	if flashErr == nil {
+		t.Fatal("expected Flash to fail")
+	}
+	wantSubstr := "FFX command failed (ffx -v --machine json target flash --product-bundle product_bundles.json): Fastboot interface error: Failed to stage file Failed to upload boot_a: failed to flash partition (boot_a): not big enough: exit status 1"
+	if flashErr.Error() != wantSubstr {
+		t.Errorf("Flash error = %q, want %q", flashErr.Error(), wantSubstr)
+	}
+
+	bootErr := ffx.BootloaderBoot(ctx, "id:11271J3DA017M8", "product_bundles.json", false)
+	if bootErr == nil {
+		t.Fatal("expected BootloaderBoot to fail")
+	}
+	wantBoot := "FFX command failed (ffx target bootloader --product-bundle product_bundles.json boot): Fastboot interface error: Failed to stage file Failed to upload boot_a: failed to flash partition (boot_a): not big enough: exit status 1"
+	if bootErr.Error() != wantBoot {
+		t.Errorf("BootloaderBoot error = %q, want %q", bootErr.Error(), wantBoot)
+	}
+
+	waitErr := ffx.TargetWait(ctx, "-t", "90")
+	if waitErr == nil {
+		t.Fatal("expected TargetWait to fail")
+	}
+	wantWait := "FFX command failed (ffx --config log.level=debug target wait -t 90): Fastboot interface error: Failed to stage file Failed to upload boot_a: failed to flash partition (boot_a): not big enough: exit status 1"
+	if waitErr.Error() != wantWait {
+		t.Errorf("TargetWait error = %q, want %q", waitErr.Error(), wantWait)
+	}
+}

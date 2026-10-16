@@ -80,5 +80,5 @@ func (f *FFXInstance) RegisterRepository(ctx context.Context, repoName string, p
 	if overrideAddr != "" {
 		args = append(args, "--address-override", overrideAddr)
 	}
-	return f.invoker(args).setTarget(f.target).run(ctx)
+	return f.invoker(args).setTarget(f.target).setCaptureOutput().run(ctx)
 }
