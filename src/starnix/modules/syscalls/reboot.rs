@@ -132,6 +132,15 @@ fn shutdown_and_block(
             match connect_to_protocol::<fpower::AdminMarker>() {
                 Ok(proxy) => match proxy.shutdown(&options).await {
                     Ok(Ok(())) => {}
+                    Ok(Err(status)) if status == zx::Status::ALREADY_EXISTS.into_raw() => {
+                        // Another client (e.g. driver_manager) already started a system
+                        // shutdown. Linux never returns from a successful reboot(), so keep
+                        // the caller parked until container teardown kills it. Returning an
+                        // error here makes init abort and reboot into the bootloader.
+                        log_info!(
+                            "sys_reboot: shutdown in progress ({debug_name}), parking caller"
+                        );
+                    }
                     Ok(Err(status)) => {
                         log_error!(
                             "sys_reboot: proxy.shutdown async ({debug_name}) returned error: {}",
