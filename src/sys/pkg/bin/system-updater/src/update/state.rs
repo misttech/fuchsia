@@ -28,6 +28,10 @@ impl Yield {
         self.co.yield_(state).await;
     }
 
+    pub fn last_state(&self) -> &State {
+        &self.last_state
+    }
+
     pub fn into_last_state(self) -> State {
         self.last_state
     }

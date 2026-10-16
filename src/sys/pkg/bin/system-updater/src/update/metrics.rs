@@ -10,7 +10,7 @@ use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };
-use fidl_fuchsia_update_installer_ext::Initiator;
+use fidl_fuchsia_update_installer_ext::{Initiator, State};
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_component::client::connect_to_protocol;
 use futures::FutureExt;
@@ -18,7 +18,7 @@ use futures::future::{self, Future};
 use std::time::{Duration, SystemTime};
 
 // See $FUCHSIA_OUT_DIR/gen/src/sys/pkg/bin/amber/cobalt_sw_delivery_registry.rs for more info.
-pub use metrics::{
+use metrics::{
     SoftwareDeliveryMetricDimensionPhase as Phase,
     SoftwareDeliveryMetricDimensionStatusCode as StatusCode,
 };
@@ -80,9 +80,9 @@ fn error_to_status_code(error: &fidl_fuchsia_pkg_ext::ResolveError) -> StatusCod
     }
 }
 
-pub(super) fn result_to_status_code(res: Result<(), &AttemptError>) -> StatusCode {
+fn result_to_status_code<T>(res: Result<T, &AttemptError>) -> StatusCode {
     match res {
-        Ok(()) => StatusCode::Success,
+        Ok(_) => StatusCode::Success,
         Err(
             AttemptError::Prepare(PrepareError::ResolveUpdate(ResolveError::Error(error, _)))
             | AttemptError::Stage(StageError::Resolve(ResolveError::Error(error, _)))
@@ -95,6 +95,24 @@ pub(super) fn result_to_status_code(res: Result<(), &AttemptError>) -> StatusCod
         // context indicating more clearly what type of error happened.
         Err(_) => StatusCode::Error,
     }
+}
+
+fn state_to_phase(state: &State) -> u32 {
+    let phase = match state {
+        State::Prepare | State::FailPrepare(_) => Phase::Tufupdate,
+        State::Stage(_) | State::FailStage(_) => Phase::ImageWrite,
+        State::Fetch(_) | State::FailFetch(_) => Phase::PackageDownload,
+        State::Commit(_) | State::FailCommit(_) => Phase::ImageCommit,
+        State::WaitToReboot(_)
+        | State::Reboot(_)
+        | State::DeferReboot(_)
+        | State::CompleteButNotActive(_) => Phase::SuccessPendingReboot,
+        State::Canceled => {
+            log::error!("Unexpected Canceled state when logging metrics");
+            return 0;
+        }
+    };
+    phase as u32
 }
 
 fn hour_of_day(when: SystemTime) -> u32 {
@@ -121,27 +139,21 @@ impl Client {
         );
     }
 
-    pub fn log_ota_result_attempt(
+    pub(super) fn log_ota_result<T>(
         &mut self,
         initiator: Initiator,
         attempts: u32,
-        phase: Phase,
-        status: StatusCode,
+        last_state: &State,
+        duration: Duration,
+        res: Result<T, &AttemptError>,
     ) {
+        let phase = state_to_phase(last_state);
+        let status = result_to_status_code(res);
         self.0.send(
             MetricEvent::builder(metrics::OTA_RESULT_ATTEMPTS_MIGRATED_METRIC_ID)
                 .with_event_codes((initiator, phase, status))
                 .as_occurrence(attempts.into()),
         );
-    }
-
-    pub fn log_ota_result_duration(
-        &mut self,
-        initiator: Initiator,
-        phase: Phase,
-        status: StatusCode,
-        duration: Duration,
-    ) {
         self.0.send(
             MetricEvent::builder(metrics::OTA_RESULT_DURATION_MIGRATED_METRIC_ID)
                 .with_event_codes((initiator, phase, status))

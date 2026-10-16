@@ -338,7 +338,6 @@ async fn run_attempt_to_commit(
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
     mut cancel_receiver: oneshot::Receiver<()>,
     co: &mut state::Yield,
-    phase: &mut metrics::Phase,
     target_version: &mut history::Version,
 ) -> Result<Option<(state::WaitToReboot, update_package::UpdateMode)>, AttemptError> {
     let attempt_res = {
@@ -350,11 +349,11 @@ async fn run_attempt_to_commit(
                 verify_existing_blobs,
                 manifest_public_keys,
             }
-            .run(co, phase, target_version)
+            .run(co, target_version)
             .left_future()
             .fuse(),
             _ => Attempt { config, env, concurrent_package_resolves }
-                .run(co, phase, target_version)
+                .run(co, target_version)
                 .right_future()
                 .fuse(),
         };
@@ -376,18 +375,15 @@ async fn run_attempt_to_commit(
 
     if !config.options.should_commit {
         state.enter_complete_but_not_active(co).await;
-        *phase = metrics::Phase::SuccessPendingReboot;
         return Ok(None);
     }
 
     // Commit the update
     let state = state.enter_commit(co).await;
-    *phase = metrics::Phase::ImageCommit;
     match commit_images(&env.boot_manager, mode, current_configuration).await {
         Ok(()) => {
             // Success!
             let state = state.enter_wait_to_reboot(co).await;
-            *phase = metrics::Phase::SuccessPendingReboot;
             Ok(Some((state, mode)))
         }
         Err(e) => {
@@ -441,7 +437,6 @@ async fn update(
         // functionality here sets up the update attempt and takes the appropriate actions based on
         // whether the update attempt succeeds or fails.
 
-        let mut phase = metrics::Phase::Tufupdate;
         let (mut cobalt, cobalt_forwarder_task) = env.cobalt_connector.connect();
         let cobalt_forwarder_task = fuchsia_async::Task::spawn(cobalt_forwarder_task);
 
@@ -459,14 +454,22 @@ async fn update(
             manifest_public_keys,
             cancel_receiver,
             &mut co,
-            &mut phase,
             &mut target_version,
         )
         .await;
 
-        let status_code = metrics::result_to_status_code(attempt_res.as_ref().map(|_| ()));
         // TODO(https://fxbug.dev/568366644): account for suspend duration.
         let update_duration = config.start_time_mono.elapsed();
+        info!("system update attempt completed in {}s, logging metrics", update_duration.as_secs());
+        cobalt.log_ota_result(
+            config.options.initiator,
+            history.lock().attempts_for(&source_version, &target_version) + 1,
+            co.last_state(),
+            update_duration,
+            attempt_res.as_ref(),
+        );
+        drop(cobalt);
+
         let wait_to_reboot = match attempt_res {
             Ok(wait_to_reboot) => {
                 if let Some(threshold) = excessive_update_duration
@@ -496,21 +499,6 @@ async fn update(
                 None
             }
         };
-
-        info!("system update attempt completed in {}s, logging metrics", update_duration.as_secs());
-        cobalt.log_ota_result_attempt(
-            config.options.initiator,
-            history.lock().attempts_for(&source_version, &target_version) + 1,
-            phase,
-            status_code,
-        );
-        cobalt.log_ota_result_duration(
-            config.options.initiator,
-            phase,
-            status_code,
-            update_duration,
-        );
-        drop(cobalt);
 
         // wait for all cobalt events to be flushed to the service.
         info!("flushing cobalt events");
@@ -802,7 +790,6 @@ impl Attempt<'_> {
     async fn run(
         mut self,
         co: &mut state::Yield,
-        phase: &mut metrics::Phase,
         target_version: &mut history::Version,
     ) -> Result<(state::Fetch, update_package::UpdateMode, paver::CurrentConfiguration), AttemptError>
     {
@@ -832,7 +819,6 @@ impl Attempt<'_> {
                 packages_to_fetch.len() as u64 + 1,
             )
             .await;
-        *phase = metrics::Phase::ImageWrite;
 
         let () = match self
             .stage_images(
@@ -854,7 +840,6 @@ impl Attempt<'_> {
 
         // Fetch packages
         let mut state = state.enter_fetch(co).await;
-        *phase = metrics::Phase::PackageDownload;
 
         let () = match self
             .fetch_packages(co, &mut state, packages_to_fetch, mode, update_pkg.1)
@@ -1235,7 +1220,6 @@ impl PackagelessAttempt<'_> {
     async fn run(
         mut self,
         co: &mut state::Yield,
-        phase: &mut metrics::Phase,
         target_version: &mut history::Version,
     ) -> Result<(state::Fetch, update_package::UpdateMode, paver::CurrentConfiguration), AttemptError>
     {
@@ -1268,7 +1252,6 @@ impl PackagelessAttempt<'_> {
             )
             .await;
         state.add_progress(co, manifest_size, manifest_size).await;
-        *phase = metrics::Phase::ImageWrite;
 
         let blob_base_url = blob_base_url.to_string();
         let () = match self
@@ -1284,7 +1267,6 @@ impl PackagelessAttempt<'_> {
 
         // Fetch blobs
         let mut state = state.enter_fetch(co).await;
-        *phase = metrics::Phase::PackageDownload;
 
         let () = match self.fetch_blobs(co, &mut state, &manifest, &blob_base_url, &blobfs).await {
             Ok(()) => (),
