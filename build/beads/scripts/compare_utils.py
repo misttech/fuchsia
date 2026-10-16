@@ -340,6 +340,7 @@ def _matches_action_type(
     action_type: str,
     source_file: T.Optional[str] = None,
     expected_outputs: T.Optional[list[str]] = None,
+    tokens: T.Optional[list[str]] = None,
 ) -> bool:
     """Check whether a command matches the specified action type and criteria.
 
@@ -367,12 +368,14 @@ def _matches_action_type(
         expected_outputs: Optional list of expected output file paths. Paths in
             this list are relative to the Ninja build directory (e.g. 'obj/src/main.o'
             or 'host_x64/my_bin', as returned by the GN ninja outputs database).
+        tokens: Optional pre-tokenized command tokens (`shlex.split(cmd)`).
 
     Returns:
         True if the command matches all applicable criteria; False otherwise.
     """
     _validate_action_type(action_type)
-    tokens = shlex.split(cmd)
+    if tokens is None:
+        tokens = shlex.split(cmd)
 
     if action_type == ACTION_C_COMPILE:
         if not _matches_compile_action(
@@ -486,6 +489,7 @@ def query_ninja_commands(
 
     ninja_cmd_output = ninja_runner.run_and_extract_output(ninja_cmd)
     commands = ninja_cmd_output.strip().splitlines()
+    tokenized_commands = [(cmd, shlex.split(cmd)) for cmd in commands]
 
     results = GnCommandMap()
     for query, outputs in query_outputs:
@@ -494,12 +498,13 @@ def query_ninja_commands(
         source_file = query.source
 
         matched_cmd = None
-        for cmd in commands:
+        for cmd, tokens in tokenized_commands:
             if _matches_action_type(
                 cmd,
                 action_type,
                 source_file=source_file,
                 expected_outputs=outputs,
+                tokens=tokens,
             ):
                 matched_cmd = cmd
                 break
@@ -622,7 +627,10 @@ def query_bazel_commands(
                     continue
                 cmd_str = shlex.join(full_args)
                 if _matches_action_type(
-                    cmd_str, action_type, source_file=source_file
+                    cmd_str,
+                    action_type,
+                    source_file=source_file,
+                    tokens=full_args,
                 ):
                     matched_cmd = cmd_str
                     break
