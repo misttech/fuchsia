@@ -323,7 +323,8 @@ INSTANTIATE_TEST_SUITE_P(
         SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", "1"},
         SysctlTestReadBackParam{"/proc/sys/net/core/rmem_max", "6291456"},
         SysctlTestReadBackParam{"/proc/sys/net/core/wmem_max", "6291456"},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv4/tcp_rmem", "4096\t87380\t6291456"}),
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/tcp_rmem", "4096\t87380\t6291456"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/tcp_wmem", "4096\t16384\t4194304"}),
     [](const testing::TestParamInfo<SysctlTestReadBackParam> &info) {
       auto path = std::filesystem::path(info.param.path);
       auto name = path.filename().string();
@@ -543,6 +544,7 @@ const SysctlNodeParam kSysctlNodePaths[] = {
     {"net/ipv4/neigh/default/ucast_solicit"},
     {"net/ipv4/ping_group_range"},
     {"net/ipv4/tcp_rmem"},
+    {"net/ipv4/tcp_wmem"},
     {"net/ipv6/conf/all/accept_ra_rt_table"},
     {"net/ipv6/conf/all/disable_ipv6"},
     {"net/ipv6/conf/default/accept_ra_defrtr"},

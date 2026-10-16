@@ -1113,21 +1113,13 @@ impl BytesFileOps for TcpRmemFile {
             .trim_ascii()
             .split_ascii_whitespace();
 
-        let min = params
-            .next()
-            .ok_or_else(|| errno!(EINVAL))?
-            .parse::<u32>()
-            .map_err(|_| errno!(EINVAL))?;
-        let default = params
-            .next()
-            .ok_or_else(|| errno!(EINVAL))?
-            .parse::<u32>()
-            .map_err(|_| errno!(EINVAL))?;
-        let max = params
-            .next()
-            .ok_or_else(|| errno!(EINVAL))?
-            .parse::<u32>()
-            .map_err(|_| errno!(EINVAL))?;
+        let mut next_u32 = || {
+            params.next().ok_or_else(|| errno!(EINVAL))?.parse::<u32>().map_err(|_| errno!(EINVAL))
+        };
+
+        let min = next_u32()?;
+        let default = next_u32()?;
+        let max = next_u32()?;
 
         if params.next().is_some() {
             return error!(EINVAL);
@@ -1191,6 +1183,96 @@ impl BytesFileOps for TcpRmemFile {
         let min = receive_sizes.min.unwrap_or(0);
         let default = receive_sizes.default.unwrap_or(0);
         let max = receive_sizes.max.unwrap_or(0);
+
+        Ok(format!("{}\t{}\t{}\n", min, default, max).into_bytes().into())
+    }
+}
+
+pub struct TcpWmemFile;
+
+impl TcpWmemFile {
+    pub fn new_node() -> impl FsNodeOps {
+        BytesFile::new_node(Self)
+    }
+}
+
+impl BytesFileOps for TcpWmemFile {
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let mut params = std::str::from_utf8(&data)
+            .map_err(|_| errno!(EINVAL))?
+            .trim_ascii()
+            .split_ascii_whitespace();
+
+        let mut next_u32 = || {
+            params.next().ok_or_else(|| errno!(EINVAL))?.parse::<u32>().map_err(|_| errno!(EINVAL))
+        };
+
+        let min = next_u32()?;
+        let default = next_u32()?;
+        let max = next_u32()?;
+
+        if params.next().is_some() {
+            return error!(EINVAL);
+        }
+
+        let control =
+            connect_to_protocol_sync::<fnet_settings::ControlMarker>().map_err(|err| {
+                log_error!(
+                    "failed to connect to {}: {:?}",
+                    fnet_settings::ControlMarker::PROTOCOL_NAME,
+                    err
+                );
+                errno!(EIO)
+            })?;
+
+        let tcp_settings = fnet_settings::Tcp {
+            buffer_sizes: Some(fnet_settings::SocketBufferSizes {
+                send: Some(fnet_settings::SocketBufferSizeRange {
+                    min: Some(min),
+                    default: Some(default),
+                    max: Some(max),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        control
+            .update_tcp(&tcp_settings, zx::MonotonicInstant::INFINITE)
+            .map_err(|err| {
+                log_error!("failed to update tcp settings: {:?}", err);
+                errno!(EIO)
+            })?
+            .map_err(map_update_error)?;
+
+        Ok(())
+    }
+
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let state = connect_to_protocol_sync::<fnet_settings::StateMarker>().map_err(|err| {
+            log_error!(
+                "failed to connect to {}: {:?}",
+                fnet_settings::StateMarker::PROTOCOL_NAME,
+                err
+            );
+            errno!(EIO)
+        })?;
+
+        let tcp_settings = state.get_tcp(zx::MonotonicInstant::INFINITE).map_err(|err| {
+            log_error!("failed to get tcp settings: {:?}", err);
+            errno!(EIO)
+        })?;
+
+        let send_sizes =
+            tcp_settings.buffer_sizes.and_then(|sizes| sizes.send).ok_or_else(|| {
+                log_error!("tcp settings missing send buffer sizes");
+                errno!(EIO)
+            })?;
+
+        let min = send_sizes.min.unwrap_or(0);
+        let default = send_sizes.default.unwrap_or(0);
+        let max = send_sizes.max.unwrap_or(0);
 
         Ok(format!("{}\t{}\t{}\n", min, default, max).into_bytes().into())
     }

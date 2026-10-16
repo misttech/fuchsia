@@ -4,7 +4,7 @@
 
 use crate::sys_net::{
     PingGroupRangeFile, ProcSysNetIpv4Conf, ProcSysNetIpv4Neigh, ProcSysNetIpv6Conf,
-    ProcSysNetIpv6Neigh, RmemMaxFile, TcpRmemFile, WmemMaxFile,
+    ProcSysNetIpv6Neigh, RmemMaxFile, TcpRmemFile, TcpWmemFile, WmemMaxFile,
 };
 use crate::sysctl_directory::{SysctlDirectory, SysctlDirectoryMutator};
 use starnix_core::security;
@@ -497,6 +497,7 @@ fn sysctl_net_directory(dir: &SysctlDirectoryMutator<'_, { uapi::CAP_NET_ADMIN }
             file_mode,
         );
         dir.entry("tcp_rmem", TcpRmemFile::new_node(), file_mode);
+        dir.entry("tcp_wmem", TcpWmemFile::new_node(), file_mode);
     });
     dir.subdir("ipv6", 0o555, |dir| {
         dir.entry("conf", ProcSysNetIpv6Conf, dir_mode);
