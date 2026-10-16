@@ -36,7 +36,8 @@ source_set("vmo") {
 
   # Due to how the kernel manages the PMM under ASAN memory can become more
   # fragmented resulting in less chance of succeeding large contiguous
-  # allocation requests.
+  # allocation requests. Tests use this to limit the size of their large
+  # contiguous allocations under ASAN, rather than skipping them completely.
   defines = [ "LIMIT_CONTIGUOUS_ALLOCATIONS=$is_asan" ]
 }
 

@@ -3176,10 +3176,6 @@ TEST(VmoTestCase, UnmapLoanedcontiguousWhileFaulting) {
   using pager_tests::UserPager;
   using pager_tests::Vmo;
 
-  if constexpr (LIMIT_CONTIGUOUS_ALLOCATIONS) {
-    ZXTEST_SKIP("avoiding large contiguous allocations");
-  }
-
   zx::unowned_resource system_resource = maybe_standalone::GetSystemResource();
   if (!system_resource->is_valid()) {
     printf("System resource not available, skipping\n");
@@ -3200,16 +3196,31 @@ TEST(VmoTestCase, UnmapLoanedcontiguousWhileFaulting) {
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef,
                                  "VmoTestCase::UnmapLoanedcontiguousWhileFaulting");
 
-  constexpr uint64_t kNumPages = 4096;
+  // Large contiguous allocations are less likely to succeed when the PMM is fragmented (as it can
+  // be under ASAN), so start smaller in that configuration and back off further if an allocation
+  // fails. The race being tested does not depend on the size of the VMO.
+  constexpr uint64_t kMaxPages = LIMIT_CONTIGUOUS_ALLOCATIONS ? 256 : 4096;
+  constexpr uint64_t kMinPages = 16;
+  uint64_t num_pages = kMaxPages;
 
   // Try a bunch of times.
-  for (size_t i = 0; i < 100; i++) {
+  size_t completed = 0;
+  for (; completed < 100; completed++) {
     // Create the contiguous VMO for this iteration, decommitting its pages to make them loaned.
     zx::vmo contig_vmo;
-    ASSERT_OK(
-        zx::vmo::create_contiguous(bti, kNumPages * zx_system_get_page_size(), 0, &contig_vmo));
-    zx_status_t status = contig_vmo.op_range(ZX_VMO_OP_DECOMMIT, 0,
-                                             kNumPages * zx_system_get_page_size(), nullptr, 0);
+    zx_status_t status;
+    while ((status = zx::vmo::create_contiguous(bti, num_pages * zx_system_get_page_size(), 0,
+                                                &contig_vmo)) == ZX_ERR_NO_MEMORY &&
+           num_pages > kMinPages) {
+      num_pages /= 2;
+    }
+    if (status == ZX_ERR_NO_MEMORY) {
+      // Could not even allocate kMinPages, stop with however many iterations have completed.
+      break;
+    }
+    ASSERT_OK(status);
+    const uint64_t vmo_size = num_pages * zx_system_get_page_size();
+    status = contig_vmo.op_range(ZX_VMO_OP_DECOMMIT, 0, vmo_size, nullptr, 0);
     if (status == ZX_ERR_NOT_SUPPORTED) {
       // Contiguous decommit may not be supported by the current kernel cmdline, so cannot consider
       // this a hard error.
@@ -3223,21 +3234,21 @@ TEST(VmoTestCase, UnmapLoanedcontiguousWhileFaulting) {
     UserPager pager;
     ASSERT_TRUE(pager.Init());
     Vmo *vmo;
-    ASSERT_TRUE(pager.CreateVmo(kNumPages, &vmo));
-    ASSERT_TRUE(pager.SupplyPages(vmo, 0, kNumPages));
+    ASSERT_TRUE(pager.CreateVmo(num_pages, &vmo));
+    ASSERT_TRUE(pager.SupplyPages(vmo, 0, num_pages));
 
     // Map in the contiguous VMO.
     zx_vaddr_t vaddr = 0;
     ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, contig_vmo, 0,
-                                         kNumPages * zx_system_get_page_size(), &vaddr));
+                                         vmo_size, &vaddr));
     // Drop the contig_vmo reference, just leaving the mapping.
     contig_vmo.reset();
 
     // Spawn a test thread to touch the mapping. Using an atomic to ensure that the test thread has
     // started taking its faults before we unmap to increase the chance of a successful race.
     std::atomic<bool> running = false;
-    TestThread t([vaddr, &running]() -> bool {
-      for (size_t i = 0; i < kNumPages; i++) {
+    TestThread t([vaddr, num_pages, &running]() -> bool {
+      for (size_t i = 0; i < num_pages; i++) {
         *(volatile char *)(vaddr + i * zx_system_get_page_size()) = 42;
         running = true;
       }
@@ -3251,13 +3262,16 @@ TEST(VmoTestCase, UnmapLoanedcontiguousWhileFaulting) {
     while (!running) {
       arch::Yield();
     }
-    zx::vmar::root_self()->unmap(vaddr, kNumPages * zx_system_get_page_size());
+    zx::vmar::root_self()->unmap(vaddr, vmo_size);
 
     // Wait for the test thread to complete. In correct execution it will either crash due to the
     // mapping going away, or because it calls __builtin_abort, so we just wait for any crash.
     ASSERT_TRUE(t.WaitForAnyCrash());
     // Successfully getting here indicates that the kernel didn't crash when closing the internal
     // physical page provider.
+  }
+  if (completed == 0) {
+    ZXTEST_SKIP("unable to allocate even a minimum size contiguous VMO");
   }
 }
 
