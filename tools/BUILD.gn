@@ -91,7 +91,6 @@ group("tests_no_e2e") {
     "//tools/bindc:tests",
     "//tools/build:tests($host_toolchain)",
     "//tools/cargo-gnaw:tests",
-    "//tools/clidoc:tests",
     "//tools/cmc:tests",
     "//tools/component_id_index:tests($host_toolchain)",
     "//tools/component_manager_config:tests($host_toolchain)",

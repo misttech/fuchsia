@@ -1,0 +1,79 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/host_tests:host_test_data.bzl", "host_test_data_files")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "clidoc_bin",
+    srcs = [
+        "src/ffx_doc.rs",
+        "src/main.rs",
+    ],
+    crate_name = "clidoc",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        "//src/developer/ffx/command:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:flate2",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:simplelog",
+        "//third_party/rust_crates/vendor:tar",
+    ],
+)
+
+# Test data for generating reference docs.
+# The shell script is the tool that has --help output,
+# the markdown file is the expected output.
+host_test_data_files(
+    name = "clidoc_test_scripts",
+    srcs = [
+        "src/testdata/ffx",
+        "src/testdata/tool_with_subcommands.md",
+        "src/testdata/tool_with_subcommands.sh",
+    ],
+    dest_dir = "clidoc_test_data",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+# Copy test data next to the test binary for local runs, where current_exe()
+# resolves the runtime_dir symlink to the package output directory.
+genrule(
+    name = "clidoc_test_scripts_local",
+    srcs = [
+        "src/testdata/ffx",
+        "src/testdata/tool_with_subcommands.md",
+        "src/testdata/tool_with_subcommands.sh",
+    ],
+    outs = [
+        "clidoc_test_data/ffx",
+        "clidoc_test_data/tool_with_subcommands.md",
+        "clidoc_test_data/tool_with_subcommands.sh",
+    ],
+    cmd = "mkdir -p $(RULEDIR)/clidoc_test_data && cp $(SRCS) $(RULEDIR)/clidoc_test_data/",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_rustc_test(
+    name = "clidoc_bin_test",
+    crate = ":clidoc_bin",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_data = [
+        ":clidoc_test_scripts",
+        ":clidoc_test_scripts_local",
+    ],
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
