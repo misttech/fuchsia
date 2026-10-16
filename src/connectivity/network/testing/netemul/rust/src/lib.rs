@@ -782,28 +782,6 @@ impl<'a> TestRealm<'a> {
         Ok(fdio::create_fd(sock.into()).context("failed to create fd")?.into())
     }
 
-    /// Creates a raw [`socket2::Socket`] backed by the implementation of
-    /// `fuchsia.posix.socket.raw/Provider` in this realm and with the specified
-    /// options.
-    pub async fn raw_socket_with_options(
-        &self,
-        domain: fposix_socket::Domain,
-        association: fposix_socket_raw::ProtocolAssociation,
-        options: fposix_socket::SocketCreationOptions,
-    ) -> Result<socket2::Socket> {
-        let socket_provider = self
-            .connect_to_protocol::<fposix_socket_raw::ProviderMarker>()
-            .context("failed to connect to socket provider")?;
-        let sock = socket_provider
-            .socket_with_options(domain, &association, options)
-            .await
-            .context("failed to call socket")?
-            .map_err(|e| std::io::Error::from_raw_os_error(e.into_primitive()))
-            .context("failed to create socket")?;
-
-        Ok(fdio::create_fd(sock.into()).context("failed to create fd")?.into())
-    }
-
     /// Creates a [`socket2::Socket`] backed by the implementation of
     /// [`fuchsia.posix.socket.packet/Provider`] in this realm.
     ///
