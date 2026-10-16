@@ -1250,7 +1250,7 @@ impl PackagelessAttempt<'_> {
         // Prepare
         let state = state::Prepare::enter(co).await;
 
-        let (current_configuration, manifest, manifest_size, blob_base_url) =
+        let (current_configuration, manifest, manifest_size, blob_base_url, blobfs) =
             match self.prepare(target_version).await {
                 Ok(tuple) => tuple,
                 Err(e) => {
@@ -1258,12 +1258,6 @@ impl PackagelessAttempt<'_> {
                     return Err(e.into());
                 }
             };
-
-        let blobfs = blobfs::Client::builder()
-            .creator()
-            .build()
-            .await
-            .map_err(|e| AttemptError::Prepare(PrepareError::OpenBlobfs(e)))?;
 
         let total_target_size = manifest_size
             + manifest
@@ -1317,11 +1311,15 @@ impl PackagelessAttempt<'_> {
     /// target OS and partition images that need written.
     ///
     /// The returned tuple contains the current partition configuration, the update manifest, the
-    /// download size of the manifest in bytes, and the base URL for fetching blobs.
+    /// download size of the manifest in bytes, the base URL for fetching blobs, and the blobfs
+    /// client.
     async fn prepare(
         &mut self,
         target_version: &mut history::Version,
-    ) -> Result<(paver::CurrentConfiguration, OtaManifest, u64, http::Uri), PrepareError> {
+    ) -> Result<
+        (paver::CurrentConfiguration, OtaManifest, u64, http::Uri, blobfs::Client),
+        PrepareError,
+    > {
         // Ensure that the partition boot metadata is ready for the update to begin. Specifically:
         // - the current configuration must be Healthy and Active, and
         // - the non-current configuration must be Unbootable.
@@ -1409,7 +1407,10 @@ impl PackagelessAttempt<'_> {
 
         let () = validate_epoch(SOURCE_EPOCH_RAW, manifest.epoch)?;
 
-        Ok((current_config, manifest, manifest_size, blob_base_url))
+        let blobfs =
+            blobfs::Client::builder().creator().build().await.map_err(PrepareError::OpenBlobfs)?;
+
+        Ok((current_config, manifest, manifest_size, blob_base_url, blobfs))
     }
 
     /// Pave the various raw images (zbi, firmware, vbmeta) for fuchsia and/or recovery.
