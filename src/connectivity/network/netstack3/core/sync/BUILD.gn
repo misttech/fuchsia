@@ -46,7 +46,7 @@ config("check_cfg_flags") {
   rustflags = [
     "--check-cfg=cfg(loom)",
     "--check-cfg=cfg(test)",
-    "--check-cfg=cfg(feature, values(\"recursive-lock-panic\", \"rc-debug-names\", \"testutils\", \"instrumented\"))",
+    "--check-cfg=cfg(feature, values(\"rc-debug-names\", \"testutils\", \"instrumented\"))",
   ]
 }
 _COMMON_SRCS = [
@@ -74,10 +74,14 @@ _COMMON_PROC_MACRO_DEPS = [ "//third_party/rust_crates:derivative" ]
 # It's possible this variable is only used in if conditions (e.g. is_host).
 not_needed([ "_COMMON_PROC_MACRO_DEPS" ])
 
-_COMMON_DEPS = [
+_COMMON_DEPS = []
+_COMMON_DEPS += [
   "//src/connectivity/lib/net-types",
   "//src/connectivity/network/netstack3/core/lock-order",
 ]
+if (is_fuchsia) {
+  _COMMON_DEPS += [ "//src/lib/fuchsia-sync" ]
+}
 
 # To avoid "Assignment had no effect" from GN.
 # It's possible this variable is only used in if conditions (e.g. is_host).
@@ -97,10 +101,7 @@ rustc_library("netstack3-sync") {
 rustc_library("netstack3-sync-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
-  features = [
-    "recursive-lock-panic",
-    "rc-debug-names",
-  ]
+  features = [ "rc-debug-names" ]
   crate_name = "netstack3_sync"
   edition = "2024"
   proc_macro_deps = _COMMON_PROC_MACRO_DEPS

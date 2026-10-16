@@ -17,7 +17,6 @@ rustc_check_cfg_build_flags(
         "test",
     ],
     features = [
-        "recursive-lock-panic",
         "rc-debug-names",
         "testutils",
         "instrumented",
@@ -42,7 +41,10 @@ _COMMON_PROC_MACRO_DEPS = ["//third_party/rust_crates/vendor:derivative"]
 _COMMON_DEPS = [
     "//src/connectivity/lib/net-types",
     "//src/connectivity/network/netstack3/core/lock-order",
-]
+] + select({
+    "@platforms//os:fuchsia": ["//src/lib/fuchsia-sync"],
+    "//conditions:default": [],
+})
 
 rustc_library(
     name = "netstack3-sync",
@@ -59,7 +61,6 @@ rustc_library(
     srcs = _COMMON_SRCS,
     build_flags = _COMMON_BUILD_FLAGS,
     crate_features = [
-        "recursive-lock-panic",
         "rc-debug-names",
     ],
     crate_name = "netstack3_sync",

@@ -131,8 +131,7 @@ rustc_library_with_features("netstack3-core") {
     },
 
     # A variant of the netstack3-core library that has additional
-    # instrumentation that is useful for debugging and testing, like recursive
-    # lock acquisition detection.
+    # instrumentation that is useful for debugging and testing.
     {
       target_name = "netstack3-core-instrumented"
       features = [ "instrumented" ]
