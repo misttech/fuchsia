@@ -1,0 +1,27 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Storage tests defined in Bazel. These are exported to `fx test` and infra
+# builders through `:bazel_tests` in BUILD.gn.
+test_suite(
+    name = "target_tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    tests = [
+        "//src/storage/fxfs/trace:fxfs-trace-tests-package",
+        "//src/storage/lib/units:storage-units-tests",
+    ],
+)
+
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_CONSTRAINTS,
+    tests = [
+        "//src/storage/fxfs/trace:fxfs-trace-host-tests",
+        "//src/storage/lib/units:units_host_test",
+    ],
+)

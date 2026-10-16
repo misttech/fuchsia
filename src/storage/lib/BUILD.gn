@@ -44,7 +44,6 @@ group("tests") {
     "super_parser:tests",
     "sync_io_client:tests",
     "trace:tests",
-    "units:tests",
     "vfs/cpp:tests",
     "vfs/rust:tests",
     "vmo-blob:tests",

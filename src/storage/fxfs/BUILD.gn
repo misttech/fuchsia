@@ -398,7 +398,6 @@ group("tests") {
     "//src/storage/fxfs/benches:tests",
     "//src/storage/fxfs/test:tests",
     "//src/storage/fxfs/tools:tests",
-    "//src/storage/fxfs/trace:tests",
     "//src/storage/fxfs/unicode:tests",
   ]
 }

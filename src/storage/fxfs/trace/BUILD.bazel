@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -16,6 +18,8 @@ rustc_library(
     deps = ["//src/storage/lib/trace"],
 )
 
+# The tests run through Bazel only, via the //src/storage test suites.
+# @bazel2gn:skip
 rustc_test(
     name = "fxfs-trace-tests",
     srcs = ["tests/compile_tests.rs"],
@@ -25,4 +29,18 @@ rustc_test(
         ":trace",
         "//src/lib/fuchsia",
     ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "fxfs-trace-host-tests",
+    binary_name = "fxfs-trace-tests",
+    visibility = ["//src/storage:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "fxfs-trace-tests-package",
+    package_name = "fxfs-trace-tests",
+    unit_tests = [":fxfs-trace-tests"],
+    visibility = ["//src/storage:__pkg__"],
 )
