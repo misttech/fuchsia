@@ -350,12 +350,12 @@ where
             if let Some(mut receiver) = receiver_opt {
                 async move {
                     match receiver.next().await {
-                        Some(_) => {
+                        Some(state) => {
                             // Put the receiver back for the next iteration
                             *self.driver_state.lock().epskc.update_receiver.lock() = Some(receiver);
 
                             // Process the ePSKc state update
-                            self.handle_epskc_state_changed().await;
+                            self.handle_epskc_state_changed(state).await;
                             debug!("ePSKc state updated successfully");
 
                             Some((Result::<_, Error>::Ok(()), ()))

@@ -977,3 +977,99 @@ async fn test_host_send_rejects_thread_netif_message_without_leaking() {
         assert_eq!(instance.get_buffer_info().0.mFreeBuffers, free_buffers_before);
     });
 }
+
+/// Verifies that `setup_border_agent_ephemeral_key_callback` captures each
+/// `BorderAgentEphemeralKeyState` at the time the OpenThread callback fires, and
+/// that `handle_epskc_state_changed` forwards those captured states rather than
+/// re-querying OpenThread later (which would miss intermediate transitions).
+#[fuchsia::test(threads = 10)]
+async fn test_epskc_callback_captures_intermediate_states_before_async_handling() {
+    use lowpan_driver_common::lowpan_fidl::EphemeralKeyState;
+    use openthread::ot::{BorderAgent as _, BorderAgentEphemeralKeyState, Tasklets as _};
+
+    let _singleton_lock = TEST_HARNESS_SINGLETON_LOCK.lock();
+
+    let (sink, stream, ncp_task) = new_fake_spinel_pair();
+    let _ncp_task = fasync::Task::spawn(ncp_task);
+
+    let instance = ot::Instance::new(Platform::build().init(sink, stream));
+    ot::set_logging_level(ot::LogLevel::Crit);
+
+    let (sender, _receiver) = mpsc::channel(100);
+    let (border_agent_sender, _border_agent_receiver) = mpsc::channel(10);
+    let driver = OtDriver::new(
+        instance,
+        DummyNetworkInterface::default(),
+        DummyBackboneInterface::default(),
+        ProductMetadata::default(),
+        sender,
+        border_agent_sender,
+    );
+
+    driver.driver_state.lock().setup_border_agent_ephemeral_key_callback();
+
+    let mut state_stream = driver.watch_ephemeral_key_state();
+
+    // 1. Initial state is Stopped (ePSKc is enabled by default in Fuchsia's OpenThread config).
+    assert_matches!(state_stream.next().now_or_never(), Some(Some(Ok(EphemeralKeyState::Stopped))));
+
+    // 2. Trigger multiple OpenThread ePSKc state transitions and process their
+    // callback tasklets BEFORE `handle_epskc_state_changed` runs:
+    // Stopped -> Disabled -> Stopped -> Disabled -> Stopped, plus simulated
+    // Started -> Connected -> Accepted -> Stopped while OpenThread's live state remains `Stopped`.
+    {
+        let driver_state = driver.driver_state.lock();
+        driver_state.ot_instance.border_agent_ephemeral_key_set_enabled(false);
+        driver_state.ot_instance.process();
+
+        driver_state.ot_instance.border_agent_ephemeral_key_set_enabled(true);
+        driver_state.ot_instance.process();
+
+        driver_state.ot_instance.border_agent_ephemeral_key_set_enabled(false);
+        driver_state.ot_instance.process();
+
+        driver_state.ot_instance.border_agent_ephemeral_key_set_enabled(true);
+        driver_state.ot_instance.process();
+
+        // Simulate rapid session transitions queued before `handle_epskc_state_changed` runs,
+        // while OpenThread's current state is already back at `Stopped`.
+        driver_state.epskc.trigger_service_update(BorderAgentEphemeralKeyState::Started);
+        driver_state.epskc.trigger_service_update(BorderAgentEphemeralKeyState::Connected);
+        driver_state.epskc.trigger_service_update(BorderAgentEphemeralKeyState::Accepted);
+        driver_state.epskc.trigger_service_update(BorderAgentEphemeralKeyState::Stopped);
+
+        assert_eq!(
+            driver_state.ot_instance.border_agent_ephemeral_key_get_state(),
+            BorderAgentEphemeralKeyState::Stopped
+        );
+    }
+
+    // 3. Now process all queued callback notifications via `handle_epskc_state_changed`,
+    // just as `epskc_state_change_stream` does in `main_loop_stream`.
+    let mut update_receiver =
+        driver.driver_state.lock().epskc.update_receiver.lock().take().unwrap();
+    while let Ok(state) = update_receiver.try_recv() {
+        driver.handle_epskc_state_changed(state).now_or_never().unwrap();
+    }
+
+    // 4. Every intermediate state captured at callback time must be delivered in FIFO order,
+    // even though OpenThread's live state was `Stopped` when `handle_epskc_state_changed` ran.
+    for expected in [
+        EphemeralKeyState::Disabled,
+        EphemeralKeyState::Stopped,
+        EphemeralKeyState::Disabled,
+        EphemeralKeyState::Stopped,
+        EphemeralKeyState::Started,
+        EphemeralKeyState::Connected,
+        EphemeralKeyState::Accepted,
+        EphemeralKeyState::Stopped,
+    ] {
+        assert_eq!(
+            state_stream.next().now_or_never().flatten().transpose().unwrap(),
+            Some(expected)
+        );
+    }
+    assert!(state_stream.next().now_or_never().is_none());
+
+    ot::set_logging_level(ot::LogLevel::None);
+}

@@ -5,6 +5,7 @@
 use super::*;
 
 use lowpan_driver_common::lowpan_fidl::*;
+use openthread::ot::BorderAgent;
 use std::num::NonZeroU64;
 
 #[derive(Debug)]
@@ -244,11 +245,13 @@ impl<OT: AsRef<ot::Instance>> DriverState<OT> {
         *self.epskc.update_sender.lock() = Some(sender.clone());
         *self.epskc.update_receiver.lock() = Some(receiver);
 
-        self.ot_instance.border_agent_set_ephemeral_key_callback(Some(move || {
-            trace!("ePSKc mode state changed, triggering update");
+        let ot_instance = self.ot_instance.as_ref();
+        ot_instance.border_agent_set_ephemeral_key_callback(Some(move || {
             // NOTE: DRIVER STATE IS LOCKED WHEN THIS IS CALLED!
+            let state = ot_instance.border_agent_ephemeral_key_get_state();
+            trace!("ePSKc mode state changed to {:?}, triggering update", state);
             // Send notification through channel (non-blocking, no reentrancy issues)
-            let _ = sender.unbounded_send(());
+            let _ = sender.unbounded_send(state);
         }));
     }
 }

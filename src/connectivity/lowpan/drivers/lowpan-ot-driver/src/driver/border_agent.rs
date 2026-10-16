@@ -83,8 +83,12 @@ impl Default for BorderAgent {
 
 #[derive(Debug)]
 pub struct Epskc {
-    pub update_sender: fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedSender<()>>>,
-    pub update_receiver: fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedReceiver<()>>>,
+    pub update_sender: fuchsia_sync::Mutex<
+        Option<futures::channel::mpsc::UnboundedSender<BorderAgentEphemeralKeyState>>,
+    >,
+    pub update_receiver: fuchsia_sync::Mutex<
+        Option<futures::channel::mpsc::UnboundedReceiver<BorderAgentEphemeralKeyState>>,
+    >,
     pub state_sender:
         fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedSender<EphemeralKeyState>>>,
 }
@@ -99,9 +103,10 @@ impl Epskc {
     }
 
     /// Trigger a ePSKc mode state update from here.
-    pub fn trigger_service_update(&self) {
+    #[cfg(test)]
+    pub fn trigger_service_update(&self, state: BorderAgentEphemeralKeyState) {
         if let Some(ref sender) = *self.update_sender.lock() {
-            let _ = sender.unbounded_send(());
+            let _ = sender.unbounded_send(state);
         }
     }
 
@@ -647,21 +652,20 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
         }
     }
 
-    pub async fn handle_epskc_state_changed(&self) {
+    pub async fn handle_epskc_state_changed(&self, state: BorderAgentEphemeralKeyState) {
         // Get all of the state information from OT that requires locking on OtDriver fields.
         // The current ePSKc state determines what action will be taken if any.  If the service has
         // been started, the extended address is used in deriving the service instance name and the
         // port is published to listeners.
-        let (state, port, ext_addr) = {
+        let (port, ext_addr) = {
             let driver_state = self.driver_state.lock();
             let ot_instance = &driver_state.ot_instance;
-            let state = ot_instance.border_agent_ephemeral_key_get_state();
             let port = ot_instance.border_agent_ephemeral_key_get_udp_port();
             let ext_addr = ot_instance.get_extended_address().as_slice().to_vec();
 
             driver_state.epskc.on_state_changed(state.into_ext());
 
-            (state, port, ext_addr)
+            (port, ext_addr)
         };
 
         let mut epskc_publisher = self.epskc_publisher.lock();
