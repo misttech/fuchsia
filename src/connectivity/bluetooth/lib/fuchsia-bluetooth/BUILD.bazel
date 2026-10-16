@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -41,14 +42,8 @@ rustc_library(
         "src/types/uuid.rs",
         "src/util.rs",
     ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
     edition = "2024",
-    rustc_flags = ["-Dunused_results"],
-    # @bazel2gn:skip
-    test_deps = [
-        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
-        "//src/lib/fuchsia",
-        "//third_party/rust_crates/vendor:assert_matches",
-    ],
     visibility = [
         "//src/connectivity/bluetooth:__subpackages__",
         "//src/developer/ffx/tools/bluetooth:__subpackages__",
@@ -56,8 +51,6 @@ rustc_library(
         "//src/testing/sl4f:__pkg__",
         "//vendor/google:__subpackages__",
     ],
-    # @bazel2gn:skip
-    with_unit_tests = True,
     # TODO(armansito): Split out testing code into a separate library and move
     # test-specific dependencies out.
     deps = [
@@ -92,6 +85,19 @@ rustc_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fuchsia-bluetooth_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":fuchsia-bluetooth",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
 )
 
 # @bazel2gn:skip

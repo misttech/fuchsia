@@ -33,8 +33,8 @@ rustc_library("vigil") {
     "src/lib.rs",
     "src/vigil.rs",
   ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   edition = "2024"
-  rustflags = [ "-Dunused_results" ]
   visibility = [
     ":*",
     "//src/connectivity/bluetooth/lib/*",

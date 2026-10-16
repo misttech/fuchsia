@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -16,16 +17,9 @@ rustc_library(
         "src/maybe_stream.rs",
         "src/responding_channel.rs",
     ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
     edition = "2024",
-    rustc_flags = ["-Dunused_results"],
-    # @bazel2gn:skip
-    test_deps = [
-        "//src/lib/fuchsia",
-        "//src/lib/fuchsia-async",
-    ],
     visibility = ["//src/connectivity/bluetooth:__subpackages__"],
-    # @bazel2gn:skip
-    with_unit_tests = True,
     deps = [
         "//src/lib/async-utils",
         "//third_party/rust_crates/vendor:anyhow",
@@ -33,13 +27,25 @@ rustc_library(
     ],
 )
 
+# @bazel2gn:skip
+rustc_test(
+    name = "async-helpers_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":async-helpers",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+    ],
+)
+
 rustc_library(
     name = "async-test-helpers",
     testonly = True,
     srcs = ["src/test/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
     crate_root = "src/test/lib.rs",
     edition = "2024",
-    rustc_flags = ["-Dunused_results"],
     visibility = ["//src/connectivity/bluetooth:__subpackages__"],
     deps = [
         "//src/lib/async-utils",

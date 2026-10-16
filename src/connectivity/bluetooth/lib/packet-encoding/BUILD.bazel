@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -10,18 +11,20 @@ package(default_applicable_licenses = ["//:license"])
 rustc_library(
     name = "packet-encoding",
     srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
     edition = "2024",
-    rustc_flags = ["-Dunused_results"],
-    # @bazel2gn:skip
-    test_deps = [
-        # Rust std needs fdio on Fuchsia. GN adds it to every Fuchsia
-        # executable, Bazel does not (https://fxbug.dev/42065890).
-        "//sdk/lib/fdio",
+    visibility = ["//src/connectivity/bluetooth:__subpackages__"],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "packet-encoding_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":packet-encoding",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
         "//third_party/rust_crates/vendor:assert_matches",
     ],
-    visibility = ["//src/connectivity/bluetooth:__subpackages__"],
-    # @bazel2gn:skip
-    with_unit_tests = True,
 )
 
 # @bazel2gn:skip

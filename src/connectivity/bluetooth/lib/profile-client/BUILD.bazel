@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -13,22 +14,13 @@ rustc_library(
         "src/error.rs",
         "src/lib.rs",
     ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
     edition = "2024",
-    rustc_flags = ["-Dunused_results"],
-    # @bazel2gn:skip
-    test_deps = [
-        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
-        "//src/lib/fuchsia",
-        "//src/lib/fuchsia-async",
-        "//third_party/rust_crates/vendor:futures-test",
-        "//third_party/rust_crates/vendor:test-case",
-    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//src/connectivity/bluetooth:__subpackages__",
         "//vendor/google:__subpackages__",
     ],
-    # @bazel2gn:skip
-    with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
         "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
@@ -40,13 +32,29 @@ rustc_library(
     ],
 )
 
+# @bazel2gn:skip
+rustc_test(
+    name = "profile-client_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":profile-client",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures-test",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
 rustc_library(
     name = "test-profile-server",
     testonly = True,
     srcs = ["src/test/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
     crate_root = "src/test/lib.rs",
     edition = "2024",
-    rustc_flags = ["-Dunused_results"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//src/connectivity/bluetooth/lib/bt-hfp:__pkg__",
         "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free:__pkg__",

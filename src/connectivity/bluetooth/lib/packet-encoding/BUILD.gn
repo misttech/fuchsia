@@ -29,8 +29,8 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 rustc_library("packet-encoding") {
   sources = [ "src/lib.rs" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   edition = "2024"
-  rustflags = [ "-Dunused_results" ]
   visibility = [
     ":*",
     "//src/connectivity/bluetooth/*",

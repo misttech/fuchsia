@@ -6,7 +6,8 @@ load(
     "@fuchsia_rules_common//packages:resources.bzl",
     "fuchsia_package_resource_group",
 )
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -18,25 +19,29 @@ rustc_library(
         "src/folder_listing.rs",
         "src/lib.rs",
     ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
     edition = "2024",
-    rustc_flags = ["-Dunused_results"],
-    # @bazel2gn:skip
-    test_deps = [
-        "//sdk/lib/fdio",
-        "//src/lib/fuchsia",
-    ],
     visibility = [
         "//src/connectivity/bluetooth/lib/bt-map:__pkg__",
         "//src/connectivity/bluetooth/lib/bt-obex:__pkg__",
         "//src/connectivity/bluetooth/profiles/bt-map-mce:__pkg__",
     ],
-    # @bazel2gn:skip
-    with_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:bitflags",
         "//third_party/rust_crates/vendor:chrono",
         "//third_party/rust_crates/vendor:thiserror",
         "//third_party/rust_crates/vendor:xml",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "objects_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":objects",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
     ],
 )
 

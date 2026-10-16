@@ -35,8 +35,8 @@ rustc_library("async-helpers") {
     "src/maybe_stream.rs",
     "src/responding_channel.rs",
   ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   edition = "2024"
-  rustflags = [ "-Dunused_results" ]
   visibility = [
     ":*",
     "//src/connectivity/bluetooth/*",
@@ -50,9 +50,9 @@ rustc_library("async-helpers") {
 rustc_library("async-test-helpers") {
   testonly = true
   sources = [ "src/test/lib.rs" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   source_root = "src/test/lib.rs"
   edition = "2024"
-  rustflags = [ "-Dunused_results" ]
   visibility = [
     ":*",
     "//src/connectivity/bluetooth/*",

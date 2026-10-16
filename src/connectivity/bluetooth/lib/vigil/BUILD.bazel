@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -14,25 +15,30 @@ rustc_library(
         "src/lib.rs",
         "src/vigil.rs",
     ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
     edition = "2024",
-    rustc_flags = ["-Dunused_results"],
-    # @bazel2gn:skip
-    test_deps = [
-        "//src/lib/async-utils",
-        "//third_party/rust_crates/vendor:futures-test",
-    ],
     visibility = [
         "//src/connectivity/bluetooth/lib:__subpackages__",
         "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:__pkg__",
         "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free:__pkg__",
     ],
-    # @bazel2gn:skip
-    with_unit_tests = True,
     deps = [
         "//src/lib/diagnostics/inspect/derive",
         "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
         "//src/lib/fuchsia-sync",
         "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "vigil_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":vigil",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/async-utils",
+        "//third_party/rust_crates/vendor:futures-test",
     ],
 )
 

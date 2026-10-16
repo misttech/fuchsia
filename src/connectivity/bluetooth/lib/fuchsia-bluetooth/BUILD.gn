@@ -60,8 +60,8 @@ rustc_library("fuchsia-bluetooth") {
     "src/types/uuid.rs",
     "src/util.rs",
   ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   edition = "2024"
-  rustflags = [ "-Dunused_results" ]
   visibility = [
     ":*",
     "//src/connectivity/bluetooth/*",
