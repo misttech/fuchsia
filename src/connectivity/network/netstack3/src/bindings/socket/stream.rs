@@ -96,15 +96,21 @@ struct TaskSpawnData {
 
 impl ListenerNotifier for UnconnectedSocketData {
     fn accept_queue_changed(&mut self, change: AcceptQueueChange) {
-        let Self { zx_socket, .. } = self;
+        let Self { zx_socket, rx_task_sender: _, tx_task_sender: _, data_notifier } = self;
         match change {
             AcceptQueueChange::ConnectionAdded { was_empty } => {
                 // Only signal the peer when the queue transitions from empty to
-                // non-empty to avoid redundant syscalls.
+                // non-empty to avoid redundant syscalls. Signal the peer before
+                // notifying the wake group so that `ZXSIO_SIGNAL_INCOMING` is
+                // already asserted on the socket when the client wakes up and
+                // checks its readiness.
                 if was_empty {
                     zx_socket
                         .signal_peer(zx::Signals::NONE, ZXSIO_SIGNAL_INCOMING)
                         .expect("failed to signal for available connections");
+                }
+                if let Some(notifier) = data_notifier {
+                    notifier.notify();
                 }
             }
             AcceptQueueChange::ConnectionRemoved { is_empty } => {
