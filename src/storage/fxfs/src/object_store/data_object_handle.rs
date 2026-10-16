@@ -2131,7 +2131,7 @@ mod tests {
     use crate::object_store::data_object_handle::{OverwriteOptions, WRITE_ATTR_BATCH_SIZE};
     use crate::object_store::directory::replace_child;
     use crate::object_store::object_record::{FsverityMetadata, ObjectKey, ObjectValue, Timestamp};
-    use crate::object_store::transaction::{Mutation, Options, ReservationOptions, lock_keys};
+    use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
         AttributeId, AttributeKey, DataObjectHandle, DirType, Directory, Extent, ExtentMode,
@@ -4027,11 +4027,7 @@ mod tests {
         assert_eq!(allocator.get_allocated_bytes(), allocated_before);
 
         store
-            .tombstone_object(
-                object.object_id(),
-                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
-                None,
-            )
+            .tombstone_object(object.object_id(), Options::default(), None)
             .await
             .expect("purge failed");
 

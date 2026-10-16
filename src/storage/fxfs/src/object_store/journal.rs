@@ -45,7 +45,7 @@ use crate::object_store::journal::writer::JournalWriter;
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use crate::object_store::transaction::{
-    AllocatorMutation, LockKey, Mutation, MutationV56, MutationV57, MutationV59,
+    AllocatorMutation, LockKey, Mutation, MutationV56, MutationV57, MutationV59, MutationV61,
     ObjectMutationIterator, ObjectStoreMutation, Options, ReservationOptions,
     TRANSACTION_MAX_JOURNAL_USAGE, Transaction, lock_keys,
 };
@@ -66,6 +66,7 @@ use futures::FutureExt as _;
 use futures::future::poll_fn;
 use rustc_hash::FxHashMap as HashMap;
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use static_assertions::const_assert;
 use std::clone::Clone;
 use std::collections::HashSet;
@@ -116,21 +117,24 @@ pub struct JournalCheckpointV32 {
     pub version: Version,
 }
 
-pub type JournalRecord = JournalRecordV60;
+pub type JournalRecord = JournalRecordV61;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum JournalRecordV60 {
+pub enum JournalRecordV61 {
     EndBlock,
     Mutation {
         object_id: u64,
-        mutation: MutationV59,
+        mutation: MutationV61,
     },
+
     /// Commits records in the transaction.
     Commit,
+
     /// Discard all mutations with offsets greater than or equal to the given offset.
     Discard(u64),
+
     /// Indicates the device was flushed at the given journal offset.
     /// Note that this really means that at this point in the journal offset, we can be certain that
     /// there's no remaining buffered data in the block device; the buffers and the disk contents
@@ -141,6 +145,7 @@ pub enum JournalRecordV60 {
     /// to defensively flush the device before replaying the journal (if possible, i.e. not
     /// read-only) in case the block device connection was reused.
     DidFlushDevice(u64),
+
     /// Checksums for a data range written by this transaction, for a particular store identified by
     /// the u64 object id. A transaction is only valid if these checksums are right. The range is
     /// the device offset the checksums are for.
@@ -150,6 +155,38 @@ pub enum JournalRecordV60 {
     /// time since the last flush, because otherwise we can't roll it back anyway so it doesn't
     /// matter. For copy-on-write extents, the bool is always true.
     DataChecksums(u64, Range<u64>, crate::checksum::ChecksumsV38, bool),
+
+    /// Commits records in a transaction that borrows metadata space, recording the total bytes
+    /// currently held in `ObjectManager::metadata_reservation` (`M_total`).
+    CommitBorrowed(u64),
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
+pub enum JournalRecordV60 {
+    EndBlock,
+    Mutation { object_id: u64, mutation: MutationV59 },
+    Commit,
+    Discard(u64),
+    DidFlushDevice(u64),
+    DataChecksums(u64, Range<u64>, crate::checksum::ChecksumsV38, bool),
+}
+
+impl From<JournalRecordV60> for JournalRecordV61 {
+    fn from(record: JournalRecordV60) -> Self {
+        match record {
+            JournalRecordV60::EndBlock => Self::EndBlock,
+            JournalRecordV60::Mutation { object_id, mutation } => {
+                Self::Mutation { object_id, mutation: mutation.into() }
+            }
+            JournalRecordV60::Commit => Self::Commit,
+            JournalRecordV60::Discard(offset) => Self::Discard(offset),
+            JournalRecordV60::DidFlushDevice(offset) => Self::DidFlushDevice(offset),
+            JournalRecordV60::DataChecksums(owner, range, checksums, first_write) => {
+                Self::DataChecksums(owner, range, checksums, first_write)
+            }
+        }
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -352,6 +389,21 @@ struct JournaledTransactions {
     device_flushed_offset: u64,
 }
 
+/// Indicates whether a replayed transaction borrowed metadata space.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum BorrowedMetadata {
+    /// Funded transaction (`JournalRecord::Commit`) that adds `4 * txn_size` to `M_total`.
+    #[default]
+    None,
+
+    /// V61+ transaction (`JournalRecord::CommitBorrowed(u64)`) that borrowed metadata space,
+    /// carrying `M_total` (`metadata_reservation.amount()`).
+    Borrowed(u64),
+
+    /// Pre-V61 transaction that contained a `Mutation::UpdateBorrowed(u64)` record.
+    LegacyBorrowed(u64),
+}
+
 #[derive(Debug, Default)]
 pub struct JournaledTransaction {
     pub checkpoint: JournalCheckpoint,
@@ -368,6 +420,12 @@ pub struct JournaledTransaction {
 
     /// The volume which was deleted in this transaction, if any.
     pub volume_deleted: Option</* store_id: */ u64>,
+
+    /// Whether this transaction borrowed metadata space.
+    pub borrowed_metadata: BorrowedMetadata,
+
+    /// Per-object journal usage (in bytes) for mutations in this transaction.
+    pub object_journal_usage: SmallVec<[(u64, u64); 2]>,
 }
 
 impl JournaledTransaction {
@@ -561,7 +619,7 @@ impl Journal {
                 return *owner_object_id != INVALID_OBJECT_ID;
             }
             Mutation::BeginFlush => {}
-            Mutation::EndFlush => {}
+            Mutation::EndFlush(_) => {}
             Mutation::DeleteVolume => {}
             Mutation::UpdateBorrowed(_) => {}
             Mutation::UpdateMutationsKey(_) => {}
@@ -613,7 +671,10 @@ impl Journal {
             on_new_allocator(allocator.clone());
         }
         self.objects.set_allocator(allocator.clone());
-        self.objects.set_borrowed_metadata_space(super_block.borrowed_metadata_space);
+        self.objects.init_replay_metadata_reservation(
+            super_block.journal_checkpoint.version,
+            &super_block.reserved_metadata_space,
+        );
         self.objects.set_last_end_offset(super_block.super_block_journal_file_offset);
         {
             let mut inner = self.inner.lock();
@@ -819,14 +880,23 @@ impl Journal {
         allocator.open().await.context("Failed to open allocator")?;
 
         // Now replay all other mutations.
-        for JournaledTransaction { checkpoint, non_root_mutations, end_offset, .. } in transactions
+        for JournaledTransaction {
+            checkpoint,
+            non_root_mutations,
+            end_offset,
+            borrowed_metadata,
+            object_journal_usage,
+            ..
+        } in transactions
         {
             self.objects
                 .replay_mutations(
                     non_root_mutations,
+                    &object_journal_usage,
                     &journal_offsets,
                     &ApplyContext { mode: ApplyMode::Replay, checkpoint },
                     end_offset,
+                    borrowed_metadata,
                 )
                 .await
                 .context("Failed to replay mutations")?;
@@ -892,7 +962,16 @@ impl Journal {
             .await
             .context("Failed to complete replay for object manager")?;
 
-        info!(checkpoint = last_checkpoint.file_offset, discarded_to; "replay complete");
+        let required = self.objects.required_reservation();
+        let borrowed = self.objects.borrowed_metadata_space();
+        info!(
+            checkpoint = last_checkpoint.file_offset,
+            discarded_to,
+            metadata_reservation:% =
+                format_args!("{}({} - {})", required - borrowed, required, borrowed),
+            store_borrowed:? = self.objects.stores_borrowed();
+            "replay complete"
+        );
         Ok(())
     }
 
@@ -922,8 +1001,10 @@ impl Journal {
                     break;
                 }
             }
-            let result =
-                reader.deserialize().await.context("Failed to deserialize journal record")?;
+            let result = reader
+                .deserialize::<JournalRecord>()
+                .await
+                .context("Failed to deserialize journal record")?;
             match result {
                 ReadResult::Reset(_) => {
                     if current_transaction.is_some() {
@@ -935,230 +1016,269 @@ impl Journal {
                         device_flushed_offset = offset;
                     }
                 }
-                ReadResult::Some(record) => {
-                    match record {
-                        JournalRecord::EndBlock => {
-                            reader.skip_to_end_of_block();
-                        }
-                        JournalRecord::Mutation { object_id, mutation } => {
-                            let current_transaction = match current_transaction.as_mut() {
-                                None => {
-                                    transactions.push(JournaledTransaction::new(checkpoint));
-                                    current_transaction = transactions.last_mut();
-                                    current_transaction.as_mut().unwrap()
-                                }
-                                Some(transaction) => transaction,
-                            };
-
-                            if stores_deleted.contains(&object_id) {
-                                bail!(
-                                    anyhow!(FxfsError::Inconsistent)
-                                        .context("Encountered mutations for deleted store")
-                                );
+                ReadResult::Some(record) => match record {
+                    JournalRecord::EndBlock => {
+                        reader.skip_to_end_of_block();
+                    }
+                    JournalRecord::Mutation { object_id, mutation } => {
+                        let record_start_offset = checkpoint.file_offset;
+                        let current_transaction = match current_transaction.as_mut() {
+                            None => {
+                                transactions.push(JournaledTransaction::new(checkpoint));
+                                current_transaction = transactions.last_mut();
+                                current_transaction.as_mut().unwrap()
                             }
+                            Some(transaction) => transaction,
+                        };
 
-                            match &mutation {
-                                Mutation::BeginFlush => {
-                                    begin_flush_offsets.insert(
-                                        object_id,
-                                        current_transaction.checkpoint.file_offset,
-                                    );
-                                }
-                                Mutation::EndFlush => {
-                                    if let Some(offset) = begin_flush_offsets.remove(&object_id) {
-                                        if let Some(deleted_volume) =
-                                            &current_transaction.volume_deleted
-                                        {
-                                            if *deleted_volume == object_id {
-                                                bail!(anyhow!(FxfsError::Inconsistent).context(
-                                                    "Multiple EndFlush/DeleteVolume mutations in a \
-                                                    single transaction for the same object"
-                                                ));
-                                            }
-                                        }
-                                        // The +1 is because we don't want to replay the transaction
-                                        // containing the begin flush; we don't need or want to
-                                        // replay it.
-                                        if current_transaction
-                                            .end_flush
-                                            .replace((object_id, offset + 1))
-                                            .is_some()
-                                        {
-                                            bail!(anyhow!(FxfsError::Inconsistent).context(
-                                                "Multiple EndFlush mutations in a \
-                                                 single transaction"
-                                            ));
-                                        }
-                                    }
-                                }
-                                Mutation::DeleteVolume => {
-                                    if let Some((flushed_object, _)) =
-                                        &current_transaction.end_flush
+                        if stores_deleted.contains(&object_id) {
+                            bail!(
+                                anyhow!(FxfsError::Inconsistent)
+                                    .context("Encountered mutations for deleted store")
+                            );
+                        }
+
+                        match &mutation {
+                            Mutation::BeginFlush => {
+                                begin_flush_offsets
+                                    .insert(object_id, current_transaction.checkpoint.file_offset);
+                            }
+                            Mutation::EndFlush(_) => {
+                                if let Some(offset) = begin_flush_offsets.remove(&object_id) {
+                                    if let Some(deleted_volume) =
+                                        &current_transaction.volume_deleted
                                     {
-                                        if *flushed_object == object_id {
+                                        if *deleted_volume == object_id {
                                             bail!(anyhow!(FxfsError::Inconsistent).context(
                                                 "Multiple EndFlush/DeleteVolume mutations in a \
-                                                    single transaction for the same object"
+                                                single transaction for the same object"
                                             ));
                                         }
                                     }
+                                    // `BeginFlush` seals the object's in-memory mutable layer so
+                                    // all mutations prior to `BeginFlush` are written to the new
+                                    // layer file referenced by `EndFlush`. Transactions committed
+                                    // after `BeginFlush` (starting at `>= offset + 1`) are written
+                                    // to the new mutable layer and must still be replayed; the
+                                    // `BeginFlush` transaction itself at `offset` has no remaining
+                                    // mutations to replay once `EndFlush` commits.
                                     if current_transaction
-                                        .volume_deleted
-                                        .replace(object_id)
+                                        .end_flush
+                                        .replace((object_id, offset + 1))
                                         .is_some()
                                     {
                                         bail!(anyhow!(FxfsError::Inconsistent).context(
-                                            "Multiple DeleteVolume mutations in a single \
-                                             transaction"
+                                            "Multiple EndFlush mutations in a \
+                                             single transaction"
                                         ));
                                     }
-                                    stores_deleted.insert(object_id);
                                 }
-                                _ => {}
                             }
-
-                            // If this mutation doesn't need to be applied, don't bother adding it
-                            // to the transaction.
-                            if (object_id_filter == INVALID_OBJECT_ID
-                                || object_id_filter == object_id)
-                                && self.should_apply(object_id, &current_transaction.checkpoint)
-                            {
-                                if object_id == root_parent_store_object_id {
-                                    current_transaction.root_parent_mutations.push(mutation);
-                                } else if object_id == root_store_object_id {
-                                    current_transaction.root_mutations.push(mutation);
-                                } else {
-                                    current_transaction
-                                        .non_root_mutations
-                                        .push((object_id, mutation));
+                            Mutation::DeleteVolume => {
+                                if let Some((flushed_object, _)) = &current_transaction.end_flush {
+                                    if *flushed_object == object_id {
+                                        bail!(anyhow!(FxfsError::Inconsistent).context(
+                                            "Multiple EndFlush/DeleteVolume mutations in a \
+                                                single transaction for the same object"
+                                        ));
+                                    }
                                 }
+                                if current_transaction.volume_deleted.replace(object_id).is_some() {
+                                    bail!(anyhow!(FxfsError::Inconsistent).context(
+                                        "Multiple DeleteVolume mutations in a single \
+                                         transaction"
+                                    ));
+                                }
+                                stores_deleted.insert(object_id);
+                            }
+                            Mutation::UpdateBorrowed(borrowed) => {
+                                ensure!(
+                                    object_id == 0,
+                                    anyhow!(FxfsError::Inconsistent)
+                                        .context("Invalid object_id for UpdateBorrowed")
+                                );
+                                current_transaction.borrowed_metadata =
+                                    BorrowedMetadata::LegacyBorrowed(*borrowed);
+                                continue;
+                            }
+                            _ => {}
+                        }
+
+                        let record_len =
+                            reader.journal_file_checkpoint().file_offset - record_start_offset;
+
+                        // If this mutation doesn't need to be applied, don't bother adding it
+                        // to the transaction.
+                        if (object_id_filter == INVALID_OBJECT_ID || object_id_filter == object_id)
+                            && self.should_apply(object_id, &current_transaction.checkpoint)
+                        {
+                            if object_id == root_parent_store_object_id {
+                                current_transaction.root_parent_mutations.push(mutation);
+                            } else if object_id == root_store_object_id {
+                                current_transaction.root_mutations.push(mutation);
+                            } else {
+                                if mutation.counts_towards_object_journal_usage() {
+                                    if let Some((last_id, usage)) =
+                                        current_transaction.object_journal_usage.last_mut()
+                                        && *last_id == object_id
+                                    {
+                                        *usage += record_len;
+                                    } else if let Some((_, usage)) = current_transaction
+                                        .object_journal_usage
+                                        .iter_mut()
+                                        .find(|(id, _)| *id == object_id)
+                                    {
+                                        *usage += record_len;
+                                    } else {
+                                        current_transaction
+                                            .object_journal_usage
+                                            .push((object_id, record_len));
+                                    }
+                                }
+                                current_transaction.non_root_mutations.push((object_id, mutation));
                             }
                         }
-                        JournalRecord::DataChecksums(
+                    }
+                    JournalRecord::DataChecksums(
+                        owner_object_id,
+                        device_range,
+                        checksums,
+                        first_write,
+                    ) => {
+                        ensure!(
+                            checkpoint.version.major < 60 || owner_object_id != INVALID_OBJECT_ID,
+                            anyhow!(FxfsError::Inconsistent)
+                                .context("Invalid owner_object_id in DataChecksums")
+                        );
+                        if stores_deleted.contains(&owner_object_id) {
+                            bail!(
+                                anyhow!(FxfsError::Inconsistent)
+                                    .context("Encountered DataChecksums for deleted store")
+                            );
+                        }
+                        let current_transaction = match current_transaction.as_mut() {
+                            None => {
+                                transactions.push(JournaledTransaction::new(checkpoint));
+                                current_transaction = transactions.last_mut();
+                                current_transaction.as_mut().unwrap()
+                            }
+                            Some(transaction) => transaction,
+                        };
+                        current_transaction.checksums.push(JournaledChecksums {
                             owner_object_id,
                             device_range,
                             checksums,
                             first_write,
-                        ) => {
-                            ensure!(
-                                checkpoint.version.major < 60
-                                    || owner_object_id != INVALID_OBJECT_ID,
-                                anyhow!(FxfsError::Inconsistent)
-                                    .context("Invalid owner_object_id in DataChecksums")
-                            );
-                            if stores_deleted.contains(&owner_object_id) {
-                                bail!(
-                                    anyhow!(FxfsError::Inconsistent)
-                                        .context("Encountered DataChecksums for deleted store")
-                                );
-                            }
-                            let current_transaction = match current_transaction.as_mut() {
-                                None => {
-                                    transactions.push(JournaledTransaction::new(checkpoint));
-                                    current_transaction = transactions.last_mut();
-                                    current_transaction.as_mut().unwrap()
-                                }
-                                Some(transaction) => transaction,
-                            };
-                            current_transaction.checksums.push(JournaledChecksums {
-                                owner_object_id,
-                                device_range,
-                                checksums,
-                                first_write,
-                            });
+                        });
+                    }
+                    JournalRecord::Commit | JournalRecord::CommitBorrowed(_) => {
+                        // `pre_commit` can emit an empty `BorrowedMetadataAndData` transaction
+                        // (`CommitBorrowed` with no mutations) when `needs_borrow_for_journal`
+                        // is true after a journal reset or discard. Recording it during full
+                        // journal replay advances `last_end_offset` so that a subsequent funded
+                        // transaction is not charged for the discarded/padded journal range.
+                        if current_transaction.is_none()
+                            && object_id_filter == INVALID_OBJECT_ID
+                            && matches!(record, JournalRecord::CommitBorrowed(_))
+                        {
+                            transactions.push(JournaledTransaction::new(checkpoint));
+                            current_transaction = transactions.last_mut();
                         }
-                        JournalRecord::Commit => {
-                            if let Some(&mut JournaledTransaction {
-                                ref checkpoint,
-                                ref root_parent_mutations,
-                                ref mut end_offset,
-                                ..
-                            }) = current_transaction.take()
-                            {
-                                for mutation in root_parent_mutations {
-                                    // Snoop the mutations for any that might apply to the journal
-                                    // file so that we can pass them to the reader so that it can
-                                    // read the journal file.
-                                    if let Mutation::ObjectStore(ObjectStoreMutation {
-                                        item:
-                                            Item {
-                                                key:
-                                                    ObjectKey {
-                                                        object_id,
-                                                        data:
-                                                            ObjectKeyData::Attribute(
-                                                                AttributeId::DATA,
-                                                                AttributeKey::Extent(extent),
-                                                            ),
-                                                        ..
-                                                    },
-                                                value:
-                                                    ObjectValue::Extent(ExtentValue::Some {
-                                                        device_offset,
-                                                        ..
-                                                    }),
-                                                ..
-                                            },
-                                        ..
-                                    }) = mutation
-                                    {
-                                        // Add the journal extents we find on the way to our
-                                        // reader.
-                                        let handle = reader.handle();
-                                        if *object_id != handle.object_id() {
-                                            continue;
-                                        }
-                                        if let Some(end_offset) = handle.end_offset() {
-                                            if extent.start != end_offset {
-                                                bail!(anyhow!(FxfsError::Inconsistent).context(
-                                                    format!(
-                                                        "Unexpected journal extent {:?} -> {}, \
-                                                           expected start: {}",
-                                                        *extent, device_offset, end_offset,
-                                                    )
-                                                ));
-                                            }
-                                        }
-                                        handle.push_extent(
-                                            checkpoint.file_offset,
-                                            *device_offset
-                                                ..*device_offset
-                                                    + extent.length().context("Invalid extent")?,
-                                        );
+                        if let Some(&mut JournaledTransaction {
+                            ref checkpoint,
+                            ref root_parent_mutations,
+                            ref mut end_offset,
+                            ref mut borrowed_metadata,
+                            ..
+                        }) = current_transaction.take()
+                        {
+                            for mutation in root_parent_mutations {
+                                // Snoop the mutations for any that might apply to the journal
+                                // file so that we can pass them to the reader so that it can
+                                // read the journal file.
+                                if let Mutation::ObjectStore(ObjectStoreMutation {
+                                    item:
+                                        Item {
+                                            key:
+                                                ObjectKey {
+                                                    object_id,
+                                                    data:
+                                                        ObjectKeyData::Attribute(
+                                                            AttributeId::DATA,
+                                                            AttributeKey::Extent(extent),
+                                                        ),
+                                                    ..
+                                                },
+                                            value:
+                                                ObjectValue::Extent(ExtentValue::Some {
+                                                    device_offset,
+                                                    ..
+                                                }),
+                                            ..
+                                        },
+                                    ..
+                                }) = mutation
+                                {
+                                    // Add the journal extents we find on the way to our
+                                    // reader.
+                                    let handle = reader.handle();
+                                    if *object_id != handle.object_id() {
+                                        continue;
                                     }
+                                    if let Some(end_offset) = handle.end_offset() {
+                                        if extent.start != end_offset {
+                                            bail!(anyhow!(FxfsError::Inconsistent).context(
+                                                format!(
+                                                    "Unexpected journal extent {:?} -> {}, \
+                                                       expected start: {}",
+                                                    *extent, device_offset, end_offset,
+                                                )
+                                            ));
+                                        }
+                                    }
+                                    handle.push_extent(
+                                        checkpoint.file_offset,
+                                        *device_offset
+                                            ..*device_offset
+                                                + extent.length().context("Invalid extent")?,
+                                    );
                                 }
-                                *end_offset = reader.journal_file_checkpoint().file_offset;
                             }
-                        }
-                        JournalRecord::Discard(offset) => {
-                            if offset == 0 {
-                                bail!(
-                                    anyhow!(FxfsError::Inconsistent)
-                                        .context("Invalid offset for Discard")
-                                );
-                            }
-                            if let Some(transaction) = current_transaction.as_ref() {
-                                if transaction.checkpoint.file_offset < offset {
-                                    // Odd, but OK.
-                                    continue;
-                                }
-                            }
-                            current_transaction = None;
-                            while let Some(transaction) = transactions.last() {
-                                if transaction.checkpoint.file_offset < offset {
-                                    break;
-                                }
-                                transactions.pop();
-                            }
-                            reader.handle().discard_extents(offset);
-                        }
-                        JournalRecord::DidFlushDevice(offset) => {
-                            if offset > device_flushed_offset {
-                                device_flushed_offset = offset;
+                            *end_offset = reader.journal_file_checkpoint().file_offset;
+                            if let JournalRecord::CommitBorrowed(borrowed) = record {
+                                *borrowed_metadata = BorrowedMetadata::Borrowed(borrowed);
                             }
                         }
                     }
-                }
+                    JournalRecord::Discard(offset) => {
+                        if offset == 0 {
+                            bail!(
+                                anyhow!(FxfsError::Inconsistent)
+                                    .context("Invalid offset for Discard")
+                            );
+                        }
+                        if let Some(transaction) = current_transaction.as_ref() {
+                            if transaction.checkpoint.file_offset < offset {
+                                // Odd, but OK.
+                                continue;
+                            }
+                        }
+                        current_transaction = None;
+                        while let Some(transaction) = transactions.last() {
+                            if transaction.checkpoint.file_offset < offset {
+                                break;
+                            }
+                            transactions.pop();
+                        }
+                        reader.handle().discard_extents(offset);
+                    }
+                    JournalRecord::DidFlushDevice(offset) => {
+                        if offset > device_flushed_offset {
+                            device_flushed_offset = offset;
+                        }
+                    }
+                },
+
                 // This is expected when we reach the end of the journal stream.
                 ReadResult::ChecksumMismatch => break,
             }
@@ -1227,7 +1347,7 @@ impl Journal {
 
         let allocator = Arc::new(Allocator::new(filesystem.clone(), INIT_ALLOCATOR_OBJECT_ID));
         self.objects.set_allocator(allocator.clone());
-        self.objects.init_metadata_reservation()?;
+        self.objects.init_metadata_reservation().await?;
 
         let journal_handle;
         let super_block_a_handle;
@@ -1503,13 +1623,15 @@ impl Journal {
         let old_super_block_offset;
         let mut new_super_block_header;
         let checkpoint;
-        let borrowed;
+        let reserved_metadata_space;
 
         {
             let _sync_guard = debug_assert_not_too_long!(self.sync_mutex.lock());
             {
                 let _write_guard = self.writer_mutex.lock();
-                (checkpoint, borrowed) = self.pad_to_block()?;
+                checkpoint = self.pad_to_block()?;
+                reserved_metadata_space =
+                    self.objects.reconcile_metadata_reservation(checkpoint.file_offset);
                 old_layers = super_block::compact_root_parent(&*root_parent_store)?;
             }
             self.flush_device(checkpoint.file_offset)
@@ -1528,7 +1650,7 @@ impl Journal {
         new_super_block_header.journal_checkpoint = min_checkpoint.unwrap_or(checkpoint);
         new_super_block_header.journal_checkpoint.version = LATEST_VERSION;
         new_super_block_header.journal_file_offsets = journal_file_offsets;
-        new_super_block_header.borrowed_metadata_space = borrowed;
+        new_super_block_header.reserved_metadata_space = reserved_metadata_space;
 
         self.super_block_manager
             .save(
@@ -1550,15 +1672,11 @@ impl Journal {
     /// unless the flush_device option is set, in which case data should have been persisted to
     /// lower layers.  If a precondition is supplied, it is evaluated and the sync will be skipped
     /// if it returns false.  This allows callers to check a condition whilst a lock is held.  If a
-    /// sync is performed, this function returns the checkpoint that was flushed and the amount of
-    /// borrowed metadata space at the point it was flushed.
-    pub async fn sync(
-        &self,
-        options: SyncOptions<'_>,
-    ) -> Result<Option<(JournalCheckpoint, u64)>, Error> {
+    /// sync is performed, this function returns the checkpoint that was flushed.
+    pub async fn sync(&self, options: SyncOptions<'_>) -> Result<Option<JournalCheckpoint>, Error> {
         let _guard = debug_assert_not_too_long!(self.sync_mutex.lock());
 
-        let (checkpoint, borrowed) = {
+        let checkpoint = {
             if let Some(precondition) = options.precondition {
                 if !precondition() {
                     return Ok(None);
@@ -1576,13 +1694,13 @@ impl Journal {
             self.flush_device(checkpoint.file_offset).await.context("sync: flush failed")?;
         }
 
-        Ok(Some((checkpoint, borrowed)))
+        Ok(Some(checkpoint))
     }
 
     // Returns the checkpoint as it was prior to padding.  This is done because the super block
     // needs to record where the last transaction ends and it's the next transaction that pays the
     // price of the padding.
-    fn pad_to_block(&self) -> Result<(JournalCheckpoint, u64), Error> {
+    fn pad_to_block(&self) -> Result<JournalCheckpoint, Error> {
         let mut inner = self.inner.lock();
         let checkpoint = inner.writer.journal_file_checkpoint();
         if checkpoint.file_offset % BLOCK_SIZE != 0 {
@@ -1592,7 +1710,7 @@ impl Journal {
                 waker.wake();
             }
         }
-        Ok((checkpoint, self.objects.borrowed_metadata_space()))
+        Ok(checkpoint)
     }
 
     async fn flush_device(&self, checkpoint_offset: u64) -> Result<(), Error> {
@@ -1700,6 +1818,7 @@ impl Journal {
     fn write_and_apply_mutations(&self, transaction: &mut Transaction<'_>) -> u64 {
         let checkpoint_before;
         let checkpoint_after;
+        let mut object_usages = SmallVec::<[(u64, u64); 4]>::new();
         {
             let _guard = self.writer_mutex.lock();
             checkpoint_before = {
@@ -1711,27 +1830,24 @@ impl Journal {
                 let mut iter = transaction.mutations().iter().peekable();
                 while let Some(store_iter) = ObjectMutationIterator::new(&mut iter) {
                     let object_id = store_iter.object_id();
+                    let mut usage = 0;
                     self.objects.write_mutations(
                         object_id,
                         store_iter,
-                        Writer(object_id, &mut inner.writer),
+                        Writer { object_id, writer: &mut inner.writer, usage: &mut usage },
                     );
+                    if usage > 0 {
+                        object_usages.push((object_id, usage));
+                    }
                 }
                 checkpoint
             };
-            let maybe_mutation =
-                self.objects.apply_transaction(transaction, &checkpoint_before).expect(
-                    "apply_transaction should not fail in live mode; \
-                     filesystem will be in an inconsistent state",
-                );
+            self.objects.apply_transaction(transaction, &checkpoint_before).expect(
+                "apply_transaction should not fail in live mode; \
+                 filesystem will be in an inconsistent state",
+            );
             checkpoint_after = {
                 let mut inner = self.inner.lock();
-                if let Some(mutation) = maybe_mutation {
-                    inner
-                        .writer
-                        .write_record(&JournalRecord::Mutation { object_id: 0, mutation })
-                        .unwrap();
-                }
                 for (owner_object_id, device_range, checksums, first_write) in
                     transaction.take_checksums().into_iter()
                 {
@@ -1745,15 +1861,20 @@ impl Journal {
                         ))
                         .unwrap();
                 }
-                inner.writer.write_record(&JournalRecord::Commit).unwrap();
+                let commit_record = if transaction.metadata_reservation.is_borrowed() {
+                    JournalRecord::CommitBorrowed(self.objects.metadata_reservation().amount())
+                } else {
+                    JournalRecord::Commit
+                };
+                inner.writer.write_record(&commit_record).unwrap();
 
                 inner.writer.journal_file_checkpoint()
             };
         }
         self.objects.did_commit_transaction(
             transaction,
-            &checkpoint_before,
             checkpoint_after.file_offset,
+            &object_usages,
         );
 
         if let Some(waker) = self.inner.lock().flush_waker.take() {
@@ -1880,56 +2001,6 @@ impl Journal {
         Ok(())
     }
 
-    fn should_force_major_compaction(&self) -> ForceMajor {
-        // required_reservation is the total amount of space we have set aside for metadata.  That
-        // space is divided into borrowed space (which is used by transactions like file deletions
-        // which will eventually, after compaction, give back their space), and
-        // metadata_reservation (which is available for use during compaction, both to persist the
-        // new layer files and for other transient costs).
-        let required_reservation = self.objects.required_reservation();
-        // reclaim_size determines the frequency of compaction.  The journal will automatically
-        // compact when reclaim_size / 2 <= J <= reclaim_size, and will block most operations once
-        // J > reclaim_size, so any given compaction should have no more than reclaim_size bytes.
-        let reclaim_size = self.inner.lock().reclaim_size;
-        // metadata_reservation = required_reservation - borrowed
-        let metadata_reservation = self.objects.metadata_reservation().amount();
-        // max_store_reservation is the greatest amount reserved by any object store.  This
-        // corresponds to the minimum amount which is needed to perform a major compaction of that
-        // store (and therefore the minimum amount needed to do a major compaction overall, since
-        // we compact stores one by one and immediately purge old layer files after compaction,
-        // releasing their space back into metaadta_resrvation).
-        let max_store_reservation = self.objects.max_store_reservation();
-
-        // Compaction will usually return borrowed space by freeing up space in the journal, but a
-        // major or merge compaction is sometimes necessary -- consider if you have one layer file
-        // which adds many objects, and another layer file which deletes all of these objects.  If
-        // the layers are merged, they cancel out and become very small.  If they are not merged,
-        // they do not cancel out and both layers remain large.  The space borrowed to persist the
-        // deletion mutations is only given back once they cancel out with the creation mutations.
-        //
-        // Thus, borrowed space can only be guaranteed to be returned if we eventually
-        // major-compact LSM trees.
-        //
-        // Since major compaction is expensive, we don't want to do it too often, but we also need
-        // to make sure we don't wait too long and drain the metadata reservation too much (in
-        // particular, it cannot go below `max_store_reservation`, because at that point major
-        // compaction might not be possible any more).
-        //
-        // Thus, we force a major compaction when metadata_reservation <= max_store_reservation -
-        // M, for some margin M.  The reason that `reclaim_size` is used as the margin is because
-        // `reclaim_size` determines how often we compact, and in theory, the journal is going to
-        // be compacted at some point when J < reclaim_size.  This establishes the ideal margin --
-        // at this point we are confident that major compaction is still possible, but the next
-        // compaction might be another reclaim_size bytes later, which is too late.
-        if required_reservation >= reclaim_size
-            && metadata_reservation <= max_store_reservation.saturating_sub(reclaim_size)
-        {
-            ForceMajor::True
-        } else {
-            ForceMajor::False
-        }
-    }
-
     #[trace]
     async fn compact(&self) -> Result<(), Error> {
         assert!(
@@ -1942,14 +2013,13 @@ impl Journal {
         );
         crate::metrics::lsm_tree_metrics().journal_compactions_total.add(1);
         let trace = self.trace.load(Ordering::Relaxed);
-        let force_major = self.should_force_major_compaction();
-        debug!("Compaction starting, force_major={force_major:?}");
+        debug!("Compaction starting");
         if trace {
-            info!("J: start compaction, force_major={force_major:?}");
+            info!("J: start compaction");
         }
         let earliest_version = self
             .objects
-            .flush(FlushReason::Journal(force_major))
+            .flush(FlushReason::Journal(ForceMajor::False))
             .await
             .context("Failed to flush objects")?;
         self.inner.lock().super_block_header.earliest_version = earliest_version;
@@ -2073,11 +2143,22 @@ impl Journal {
 }
 
 /// Wrapper to allow records to be written to the journal.
-pub struct Writer<'a>(u64, &'a mut JournalWriter);
+pub struct Writer<'a> {
+    object_id: u64,
+    writer: &'a mut JournalWriter,
+    usage: &'a mut u64,
+}
 
 impl Writer<'_> {
     pub fn write(&mut self, mutation: Mutation) {
-        self.1.write_record(&JournalRecord::Mutation { object_id: self.0, mutation }).unwrap();
+        let count_usage = mutation.counts_towards_object_journal_usage();
+        let offset_before = self.writer.journal_file_checkpoint().file_offset;
+        self.writer
+            .write_record(&JournalRecord::Mutation { object_id: self.object_id, mutation })
+            .unwrap();
+        if count_usage {
+            *self.usage += self.writer.journal_file_checkpoint().file_offset - offset_before;
+        }
     }
 }
 
@@ -2167,11 +2248,16 @@ mod tests {
     use super::{JournalRecord, JournalRecordV59, SuperBlockInstance};
     use crate::checksum::Checksums;
     use crate::errors::FxfsError;
-    use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
+    use crate::filesystem::{
+        FlushReason, ForceMajor, FxFilesystem, FxFilesystemBuilder, SyncOptions,
+    };
     use crate::fsck::fsck;
-    use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, WriteObjectHandle};
-    use crate::object_store::directory::Directory;
-    use crate::object_store::transaction::{Mutation, Options};
+    use crate::object_handle::{
+        INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle,
+    };
+    use crate::object_store::directory::{Directory, replace_child};
+    use crate::object_store::object_record::{ObjectKey, ObjectValue};
+    use crate::object_store::transaction::{Mutation, Options, ReservationOptions};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
         HandleOptions, LockKey, NewChildStoreOptions, ObjectStore, StoreOptions, lock_keys,
@@ -2180,6 +2266,9 @@ mod tests {
     #[cfg(target_os = "fuchsia")]
     use fuchsia_async::TestExecutor;
     use fuchsia_async::{self as fasync, MonotonicDuration};
+    use fxfs_insecure_crypto::new_insecure_crypt;
+    use rustc_hash::FxHashMap as HashMap;
+    use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
 
@@ -3136,11 +3225,11 @@ mod tests {
             .expect("acquire_transaction_for_remove_volume failed");
         root_vol.delete_volume("vol1", transaction, || {}).await.expect("delete_volume failed");
 
-        // Write 64 KiB to "bar" in "vol2". Allocating in "vol2" sees `volumes_deleted_pending_sync`,
-        // syncs the journal and flushes the device (queuing `DidFlushDevice` for the next journal
-        // write), and frees "vol1"'s 64 KiB extent. Writing to "bar" reuses and overwrites those
-        // exact disk blocks with `0xbb`, while the `DidFlushDevice` record remains buffered in
-        // memory in `JournalWriter`.
+        // Write 64 KiB to "bar" in "vol2". Allocating in "vol2" sees
+        // `volumes_deleted_pending_sync`, syncs the journal and flushes the device (queuing
+        // `DidFlushDevice` for the next journal write), and frees "vol1"'s 64 KiB extent. Writing
+        // to "bar" reuses and overwrites those exact disk blocks with `0xbb`, while the
+        // `DidFlushDevice` record remains buffered in memory in `JournalWriter`.
         let mut buf = bar.allocate_buffer(65536).await;
         buf.fill(0xbb);
         bar.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
@@ -3156,6 +3245,1502 @@ mod tests {
             .err()
             .expect("vol1 should remain deleted");
         fs2.close().await.expect("close failed");
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_metadata_reservation_replay_and_reserved_space_change() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume("test", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_id = store.store_object_id();
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        let other_store = root_volume
+            .new_volume("other", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let other_store_id = other_store.store_object_id();
+        let other_root_directory =
+            Directory::open(&other_store, other_store.root_directory_object_id())
+                .await
+                .expect("open failed");
+
+        let object_id = {
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(store_id, store.root_directory_object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let handle = root_directory
+                .create_child_file(&mut transaction, "to_delete")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+            let mut buf = handle.allocate_buffer(4096).await;
+            buf.fill(0xab);
+            handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+            handle.object_id()
+        };
+
+        {
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        other_store_id,
+                        other_store.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            other_root_directory
+                .create_child_file(&mut transaction, "other_file")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        }
+
+        // Compact so the super-block records the current actual reserved metadata space.
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+
+        let (store_borrowed_after_compact, store_req_after_compact) =
+            fs.object_manager().store_borrowed(store_id).unwrap();
+        assert_eq!(store_borrowed_after_compact, 0);
+        assert!(store_req_after_compact > 0);
+        let (other_borrowed_after_compact, other_req_after_compact) =
+            fs.object_manager().store_borrowed(other_store_id).unwrap();
+        assert_eq!(other_borrowed_after_compact, 0);
+        assert!(other_req_after_compact > 0);
+
+        // Commit a non-borrowing transaction followed by borrowing transactions (unlink +
+        // tombstone) in `store` after the super-block, leaving `other_store` untouched.
+        {
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(store_id, store.root_directory_object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_directory
+                .create_child_file(&mut transaction, "keep")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(store_id, store.root_directory_object_id()),
+                        LockKey::object(store_id, object_id),
+                    ],
+                    Options {
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            replace_child(&mut transaction, None, (&root_directory, "to_delete"))
+                .await
+                .expect("replace_child failed");
+            transaction.commit().await.expect("commit failed");
+
+            fs.tombstone_object(store_id, object_id, None).await.expect("tombstone_object failed");
+        }
+
+        fs.sync(SyncOptions { flush_device: true, ..Default::default() })
+            .await
+            .expect("sync failed");
+
+        let expected_reservation = fs.object_manager().metadata_reservation().amount();
+        let expected_borrowed = fs.object_manager().borrowed_metadata_space();
+        let expected_reserved_map = fs.object_manager().reserved_metadata_space();
+        assert!(expected_borrowed > 0);
+
+        let (expected_store_borrowed, expected_store_req) =
+            fs.object_manager().store_borrowed(store_id).unwrap();
+        assert!(expected_store_borrowed > 0 && expected_store_borrowed < expected_store_req);
+        let (expected_other_borrowed, expected_other_req) =
+            fs.object_manager().store_borrowed(other_store_id).unwrap();
+        assert_eq!(expected_other_borrowed, 0);
+
+        let snapshot1 = fs.device().snapshot().expect("snapshot failed");
+        let snapshot2 = fs.device().snapshot().expect("snapshot failed");
+        let snapshot3 = fs.device().snapshot().expect("snapshot failed");
+        fs.close().await.expect("close failed");
+
+        // 1. Remount with unchanged required_reservation: total and per-store borrowed amounts
+        // must match live state across the system and all child stores.
+        {
+            let fs2 = FxFilesystem::open(snapshot1).await.expect("open failed");
+            assert_eq!(fs2.object_manager().metadata_reservation().amount(), expected_reservation);
+            assert_eq!(fs2.object_manager().borrowed_metadata_space(), expected_borrowed);
+            assert_eq!(fs2.object_manager().reserved_metadata_space(), expected_reserved_map);
+            assert_eq!(
+                fs2.object_manager().store_borrowed(store_id),
+                Some((expected_store_borrowed, expected_store_req))
+            );
+            assert_eq!(
+                fs2.object_manager().store_borrowed(other_store_id),
+                Some((expected_other_borrowed, expected_other_req))
+            );
+            fsck(fs2.clone()).await.expect("fsck failed");
+            fs2.close().await.expect("close failed");
+        }
+
+        // 2. Remount with an increased required_reservation (simulating a version upgrade that
+        // increases expected reservation): actual metadata_reservation must remain unchanged rather
+        // than reserving more from the allocator at mount time, and fsck must succeed.
+        {
+            let extra = 65536;
+            let fs2 = FxFilesystemBuilder::new()
+                .on_new_store(move |store| {
+                    store
+                        .filesystem()
+                        .ensure_local()
+                        .object_manager()
+                        .set_reserved_space(super::RESERVED_SPACE + extra);
+                })
+                .open(snapshot2)
+                .await
+                .expect("open failed");
+            assert_eq!(fs2.object_manager().metadata_reservation().amount(), expected_reservation);
+            assert_eq!(fs2.object_manager().borrowed_metadata_space(), expected_borrowed + extra);
+            assert_eq!(fs2.object_manager().reserved_metadata_space(), expected_reserved_map);
+            fsck(fs2.clone()).await.expect("fsck failed");
+            fs2.close().await.expect("close failed");
+        }
+
+        // 3. Remount with a decreased required_reservation (smaller than expected_reservation):
+        // metadata_reservation is capped at `required_reservation()`.
+        {
+            let fs2 = FxFilesystemBuilder::new()
+                .on_new_store(move |store| {
+                    store.filesystem().ensure_local().object_manager().set_reserved_space(0);
+                })
+                .open(snapshot3)
+                .await
+                .expect("open failed");
+            assert_eq!(
+                fs2.object_manager().metadata_reservation().amount(),
+                fs2.object_manager().required_reservation()
+            );
+            assert_eq!(fs2.object_manager().borrowed_metadata_space(), 0);
+            fsck(fs2.clone()).await.expect("fsck failed");
+            fs2.close().await.expect("close failed");
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_borrowing_between_begin_and_end_flush_and_replay() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store_a = root_volume
+            .new_volume("store_a", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_a_id = store_a.store_object_id();
+        let dir_a = Directory::open(&store_a, store_a.root_directory_object_id())
+            .await
+            .expect("open failed");
+
+        let store_b = root_volume
+            .new_volume("store_b", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_b_id = store_b.store_object_id();
+        let dir_b = Directory::open(&store_b, store_b.root_directory_object_id())
+            .await
+            .expect("open failed");
+
+        let mut file_ids = Vec::new();
+        for name in ["file1", "file2"] {
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, store_a.root_directory_object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let handle = dir_a
+                .create_child_file(&mut transaction, name)
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+            let mut buf = handle.allocate_buffer(4096).await;
+            buf.fill(0xcd);
+            handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+            file_ids.push(handle.object_id());
+        }
+
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+
+        // 1. Borrow in `store_a` before `BeginFlush` by deleting and tombstoning `file1`.
+        {
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(store_a_id, store_a.root_directory_object_id()),
+                        LockKey::object(store_a_id, file_ids[0]),
+                    ],
+                    Options {
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            replace_child(&mut transaction, None, (&dir_a, "file1"))
+                .await
+                .expect("replace_child failed");
+            transaction.commit().await.expect("commit failed");
+            fs.tombstone_object(store_a_id, file_ids[0], None)
+                .await
+                .expect("tombstone_object failed");
+        }
+
+        let (pre_borrowed, _) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+        assert!(pre_borrowed > 0);
+
+        // 2. Hold the lock on `store_a`'s StoreInfo object in `root_store` so `store_a.flush()`
+        // commits `BeginFlush`, writes the new layer file, and pauses right before `EndFlush`.
+        let store_info_lock = fs
+            .lock_manager()
+            .write_lock(lock_keys![LockKey::object(
+                fs.root_store().store_object_id(),
+                store_a.store_info_handle_object_id().unwrap(),
+            )])
+            .await;
+
+        let store_a_clone = store_a.clone();
+        let flush_task = fasync::Task::spawn(async move {
+            store_a_clone.flush().await.expect("store_a flush failed");
+        });
+
+        // Wait until `BeginFlush` has sealed the mutable layer of `store_a`.
+        while !store_a.tree().immutable_layer_set().layers.iter().any(|l| l.handle().is_none()) {
+            fasync::Timer::new(MonotonicDuration::from_millis(1)).await;
+        }
+
+        // 3. While `store_a` is between `BeginFlush` and `EndFlush`, borrow in `store_a` (deleting
+        // `file2`) and commit a funded transaction in `store_b`.
+        {
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(store_a_id, store_a.root_directory_object_id()),
+                        LockKey::object(store_a_id, file_ids[1]),
+                    ],
+                    Options {
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            replace_child(&mut transaction, None, (&dir_a, "file2"))
+                .await
+                .expect("replace_child failed");
+            transaction.commit().await.expect("commit failed");
+            fs.tombstone_object(store_a_id, file_ids[1], None)
+                .await
+                .expect("tombstone_object failed");
+
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, store_b.root_directory_object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            dir_b
+                .create_child_file(&mut transaction, "b_file")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        }
+
+        let (total_borrowed_mid, _) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+        let post_borrowed = total_borrowed_mid - pre_borrowed;
+        assert!(post_borrowed > 0);
+
+        // Allow `EndFlush` to complete.
+        std::mem::drop(store_info_lock);
+        flush_task.await;
+
+        // Pre-`BeginFlush` borrowed space must be cleared by the full compaction, while
+        // post-`BeginFlush` borrowed space must remain borrowed.
+        let (b_a_after, req_a_after) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+        assert_eq!(b_a_after, post_borrowed);
+        let (b_b_after, req_b_after) = fs.object_manager().store_borrowed(store_b_id).unwrap();
+        assert_eq!(b_b_after, 0);
+
+        // 4. Snapshot before a new super-block is written (so `EndFlush` is replayed after the
+        // super-block) and verify replay produces the exact same reservations across all buckets.
+        fs.sync(SyncOptions { flush_device: true, ..Default::default() })
+            .await
+            .expect("sync failed");
+        let expected_map_before_sb = fs.object_manager().reserved_metadata_space();
+        let snapshot_before_sb = fs.device().snapshot().expect("snapshot failed");
+
+        // 5. Write a new super-block (where `journal_file_offsets[store_a_id]` points to the
+        // post-`BeginFlush` transaction prior to `EndFlush`), commit one more transaction, and
+        // snapshot again to verify replay when `EndFlush` precedes
+        // `super_block_journal_file_offset`.
+        fs.journal().write_super_block().await.expect("write_super_block failed");
+        {
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, store_a.root_directory_object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            dir_a
+                .create_child_file(&mut transaction, "after_sb")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        fs.sync(SyncOptions { flush_device: true, ..Default::default() })
+            .await
+            .expect("sync failed");
+        let expected_map_after_sb = fs.object_manager().reserved_metadata_space();
+        let expected_store_a_after_sb = fs.object_manager().store_borrowed(store_a_id);
+        let expected_store_b_after_sb = fs.object_manager().store_borrowed(store_b_id);
+        let snapshot_after_sb = fs.device().snapshot().expect("snapshot failed");
+        fs.close().await.expect("close failed");
+
+        {
+            let fs2 = FxFilesystem::open(snapshot_before_sb).await.expect("open failed");
+            assert_eq!(fs2.object_manager().reserved_metadata_space(), expected_map_before_sb);
+            assert_eq!(
+                fs2.object_manager().store_borrowed(store_a_id),
+                Some((b_a_after, req_a_after))
+            );
+            assert_eq!(
+                fs2.object_manager().store_borrowed(store_b_id),
+                Some((b_b_after, req_b_after))
+            );
+            fsck(fs2.clone()).await.expect("fsck failed");
+            fs2.close().await.expect("close failed");
+        }
+
+        {
+            let fs3 = FxFilesystem::open(snapshot_after_sb).await.expect("open failed");
+            assert_eq!(fs3.object_manager().reserved_metadata_space(), expected_map_after_sb);
+            assert_eq!(fs3.object_manager().store_borrowed(store_a_id), expected_store_a_after_sb);
+            assert_eq!(fs3.object_manager().store_borrowed(store_b_id), expected_store_b_after_sb);
+            fsck(fs3.clone()).await.expect("fsck failed");
+            fs3.close().await.expect("close failed");
+        }
+    }
+
+    async fn populate_store_with_base_layer(store: &ObjectStore) {
+        let store_id = store.store_object_id();
+        let dir_id = store.root_directory_object_id();
+
+        // Populate `store` with > 512 KiB (`DEFAULT_RECLAIM_SIZE`) of inline extended attributes
+        // so minor compactions keep their base layer.
+        for batch in 0..28 {
+            let mut transaction = store
+                .new_transaction(lock_keys![LockKey::object(store_id, dir_id)], Options::default())
+                .await
+                .expect("new_transaction failed");
+            for i in 0..50 {
+                let idx = batch * 50 + i;
+                transaction.add(
+                    store_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            dir_id,
+                            format!("attr_{idx:04}_{:<200}", idx).into_bytes(),
+                        ),
+                        ObjectValue::inline_extended_attribute(vec![0x55; 200]),
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+        }
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("flush failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_per_store_selective_major_compaction_isolation() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        let store_a = root_volume
+            .new_volume("store_a", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_a_id = store_a.store_object_id();
+        let root_dir_a = store_a.root_directory_object_id();
+
+        let store_b = root_volume
+            .new_volume("store_b", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_b_id = store_b.store_object_id();
+        let root_dir_b = store_b.root_directory_object_id();
+
+        populate_store_with_base_layer(&store_a).await;
+        populate_store_with_base_layer(&store_b).await;
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+        assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 1);
+        assert_eq!(store_b.load_store_info().await.unwrap().layers.len(), 1);
+
+        // Add a second layer to `store_b` via a funded transaction and minor flush.
+        {
+            let mut transaction = store_b
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, root_dir_b)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_b_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_b, b"extra".to_vec()),
+                    ObjectValue::inline_extended_attribute(vec![0x77; 200]),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+            store_b
+                .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+                .await
+                .expect("minor flush failed");
+        }
+        assert_eq!(store_b.load_store_info().await.unwrap().layers.len(), 2);
+        let (b_b_before, req_b_before) = fs.object_manager().store_borrowed(store_b_id).unwrap();
+        assert_eq!(b_b_before, 0);
+
+        // Delete extended attributes in `store_a` using `BorrowedMetadata` until `B_A >= R_A / 2`.
+        for batch in 0..28 {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 0..50 {
+                let idx = batch * 50 + i;
+                transaction.add(
+                    store_a_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            root_dir_a,
+                            format!("attr_{idx:04}_{:<200}", idx).into_bytes(),
+                        ),
+                        ObjectValue::None,
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+            let (b_a, req_a) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+            if b_a >= req_a - req_a / 2 {
+                break;
+            }
+        }
+        let (b_a_depleted, req_a_depleted) =
+            fs.object_manager().store_borrowed(store_a_id).unwrap();
+        assert!(b_a_depleted >= req_a_depleted - req_a_depleted / 2);
+
+        // `store_b`'s borrowed space must remain completely isolated from `store_a`'s borrowing.
+        assert_eq!(fs.object_manager().store_borrowed(store_b_id), Some((0, req_b_before)));
+
+        // Flushing with `ForceMajor::False` must force a major compaction on `store_a` (resetting
+        // `B_A == 0` and merging its layers into 1) while leaving `store_b` untouched (still 2
+        // layers).
+        fs.object_manager()
+            .flush(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("flush failed");
+        assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 1);
+        let (b_a_restored, _) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+        assert_eq!(b_a_restored, 0);
+        assert_eq!(store_b.load_store_info().await.unwrap().layers.len(), 2);
+
+        fsck(fs.clone()).await.expect("fsck failed");
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_shortfall_major_compaction_does_not_cycle() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        let store_b = root_volume
+            .new_volume("store_b", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_b_id = store_b.store_object_id();
+        let root_dir_b = store_b.root_directory_object_id();
+
+        populate_store_with_base_layer(&store_b).await;
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+
+        // Add a second layer to `store_b` via a funded transaction and minor flush.
+        {
+            let mut transaction = store_b
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, root_dir_b)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_b_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_b, b"extra".to_vec()),
+                    ObjectValue::inline_extended_attribute(vec![0x77; 200]),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+            store_b
+                .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+                .await
+                .expect("minor flush failed");
+        }
+        assert_eq!(store_b.load_store_info().await.unwrap().layers.len(), 2);
+        let (_, req_b_before) = fs.object_manager().store_borrowed(store_b_id).unwrap();
+
+        // Simulate a shortfall in `M_total` alongside `B_B >= R_B / 2` on `store_b` (which has 2
+        // layers of live data and no tombstones, so compacting yields no space).
+        let current_total = fs.object_manager().metadata_reservation().amount();
+        let reduction = current_total / 2;
+        fs.object_manager().metadata_reservation().give_back(reduction);
+        fs.object_manager().set_store_borrowed(store_b_id, req_b_before);
+
+        // 1) Flushing with `ForceMajor::False` must major-compact `store_b` down to 1 layer and
+        // reset `B_B == 0` even though `M_total` is short and compacting yielded no space.
+        fs.journal().force_compact().await.expect("force_compact failed");
+        let info_b_after_major = store_b.load_store_info().await.unwrap();
+        assert_eq!(info_b_after_major.layers.len(), 1);
+        let (b_b_restored, _) = fs.object_manager().store_borrowed(store_b_id).unwrap();
+        assert_eq!(b_b_restored, 0);
+
+        // 2) Commit a single transaction on `store_b` while `M_total` is still short and flush
+        // with `ForceMajor::False`. Because `B_B` stayed `0` across
+        // `reconcile_metadata_reservation`, this flush must perform a minor compaction (creating a
+        // 2nd layer) rather than cycling on major compactions.
+        {
+            let mut transaction = store_b
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, root_dir_b)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_b_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_b, b"after_shortfall".to_vec()),
+                    ObjectValue::inline_extended_attribute(vec![0x88; 200]),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+        fs.object_manager()
+            .flush(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("flush failed");
+        assert_eq!(
+            store_b.load_store_info().await.unwrap().layers.len(),
+            2,
+            "Single transaction after shortfall major compaction must not trigger major compaction"
+        );
+
+        fs.allocator()
+            .reserve(None, reduction)
+            .unwrap()
+            .move_to(fs.object_manager().metadata_reservation(), reduction);
+        fsck(fs.clone()).await.expect("fsck failed");
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_no_op_major_compaction_guard() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        let store_a = root_volume
+            .new_volume("store_a", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_a_id = store_a.store_object_id();
+
+        populate_store_with_base_layer(&store_a).await;
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+
+        // If `B_A >= R_A / 2` when `store_a` already has only 1 layer and no unflushed journal
+        // mutations, `flush(FlushReason::Journal(ForceMajor::False))` must not re-compact
+        // `store_a`.
+        let layer_oid_a_before = store_a.load_store_info().await.unwrap().layers[0];
+        let (_, req_a) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+        fs.object_manager().set_store_borrowed(store_a_id, req_a);
+        fs.object_manager()
+            .flush(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("flush failed");
+        assert_eq!(store_a.load_store_info().await.unwrap().layers, vec![layer_oid_a_before]);
+
+        fs.object_manager().set_store_borrowed(store_a_id, 0);
+        fsck(fs.clone()).await.expect("fsck failed");
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_minor_compaction_replay_and_delete_volume_prunes_borrowed() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        let store_b = root_volume
+            .new_volume("store_b", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_b_id = store_b.store_object_id();
+        let root_dir_b = store_b.root_directory_object_id();
+
+        populate_store_with_base_layer(&store_b).await;
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+
+        // Commit a small borrowing transaction on `store_b` (which has 1 base layer > 512 KiB),
+        // perform a minor flush (`layers.len() > 1`, which creates a new minor layer and preserves
+        // `B_B > 0`), and create + delete a volume `store_c`. Verify that `DeleteVolume` does not
+        // leave `store_c` in `store_borrowed` and that replaying the journal across the minor
+        // `EndFlush` preserves `store_b`'s borrowed space.
+        {
+            let mut transaction = store_b
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, root_dir_b)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_b_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_b, b"attr_0000_0".to_vec()),
+                    ObjectValue::None,
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+        let (b_b_minor, _) = fs.object_manager().store_borrowed(store_b_id).unwrap();
+        assert!(b_b_minor > 0);
+        store_b
+            .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("minor flush failed");
+        assert!(store_b.load_store_info().await.unwrap().layers.len() > 1);
+        assert_eq!(fs.object_manager().store_borrowed(store_b_id).unwrap().0, b_b_minor);
+
+        let store_c = root_volume
+            .new_volume("store_c", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_c_id = store_c.store_object_id();
+        std::mem::drop(store_c);
+        let (_, delete_txn) = root_volume
+            .acquire_transaction_for_remove_volume("store_c", [], false, Options::default())
+            .await
+            .expect("acquire_transaction_for_remove_volume failed");
+        root_volume
+            .delete_volume("store_c", delete_txn, || {})
+            .await
+            .expect("delete_volume failed");
+        assert!(fs.object_manager().store_borrowed(store_c_id).is_none());
+
+        fs.sync(SyncOptions { flush_device: true, ..Default::default() })
+            .await
+            .expect("sync failed");
+        let expected_map = fs.object_manager().reserved_metadata_space();
+        assert!(!expected_map.contains_key(&store_c_id));
+        let snapshot = fs.device().snapshot().expect("snapshot failed");
+        fs.close().await.expect("close failed");
+
+        let fs2 = FxFilesystem::open(snapshot).await.expect("open failed");
+        assert_eq!(fs2.object_manager().reserved_metadata_space(), expected_map);
+        fsck(fs2.clone()).await.expect("fsck failed");
+        fs2.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_legacy_borrowed_proportional_distribution() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        let crypt_a = Arc::new(new_insecure_crypt());
+        let store_a = root_volume
+            .new_volume(
+                "store_a",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(crypt_a.clone()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+        let store_a_id = store_a.store_object_id();
+        let root_dir_a = store_a.root_directory_object_id();
+
+        let store_b = root_volume
+            .new_volume("store_b", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_b_id = store_b.store_object_id();
+        let root_dir_b = store_b.root_directory_object_id();
+
+        // Give `store_a` more metadata than `store_b`.
+        for i in 0..16 {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_a_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_a, format!("attr_{i}").into_bytes()),
+                    ObjectValue::inline_extended_attribute(vec![0xaa; 1024]),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+        {
+            let mut transaction = store_b
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, root_dir_b)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_b_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_b, b"attr_0".to_vec()),
+                    ObjectValue::inline_extended_attribute(vec![0xbb; 1024]),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+
+        // Write an additional mutation to `store_a`, lock `store_a`, and flush it while locked so
+        // `store_a` has both layer files and a non-empty `encrypted_mutations` file.
+        {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_a_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_a, b"locked_attr".to_vec()),
+                    ObjectValue::inline_extended_attribute(vec![0xcc; 1024]),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+        store_a.lock().await.expect("lock failed");
+        store_a.flush().await.expect("locked flush failed");
+        fs.journal().write_super_block().await.expect("write_super_block failed");
+        fs.journal().write_super_block().await.expect("write_super_block failed");
+
+        // After the super-block, commit:
+        // 1) A funded (`Commit`) transaction on `store_b`.
+        // 2) A V60 borrowing (`CommitBorrowed`) transaction on `store_b`.
+        {
+            let mut transaction = store_b
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, root_dir_b)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_b_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_b, b"funded_attr".to_vec()),
+                    ObjectValue::inline_extended_attribute(vec![0xdd; 64]),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+        let offset_before_legacy_borrowed = fs.object_manager().last_end_offset();
+        {
+            let mut transaction = store_b
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, root_dir_b)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_b_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_b, b"legacy_borrowed_attr".to_vec()),
+                    ObjectValue::None,
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+        let offset_after_legacy_borrowed = fs.object_manager().last_end_offset();
+
+        let (_, req_a) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+        let (_, req_b) = fs.object_manager().store_borrowed(store_b_id).unwrap();
+        assert!(req_a > req_b);
+
+        // Compute `legacy_required` (`max_i(1.5 * L_i) + 4 * J_total + 1_048_576`), where locked
+        // `store_a` includes `encrypted_mutations_size * 3`.
+        let (_, min_checkpoint) = fs.object_manager().journal_file_offsets();
+        let min_offset = min_checkpoint.unwrap().file_offset;
+        let journal_usage = offset_after_legacy_borrowed - min_offset;
+        let info_a = store_a.load_store_info().await.unwrap();
+        let mut store_a_layer_size = 0;
+        for &oid in &info_a.layers {
+            store_a_layer_size += fs.root_store().get_file_size(oid).await.unwrap();
+        }
+        assert_ne!(info_a.encrypted_mutations_object_id, INVALID_OBJECT_ID);
+        store_a_layer_size +=
+            fs.root_store().get_file_size(info_a.encrypted_mutations_object_id).await.unwrap() * 3;
+        let max_layer_size = [
+            fs.allocator()
+                .tree()
+                .immutable_layer_set()
+                .layers
+                .iter()
+                .map(|l| l.handle().map(ReadObjectHandle::get_size).unwrap_or(0))
+                .sum::<u64>(),
+            fs.root_store()
+                .tree()
+                .immutable_layer_set()
+                .layers
+                .iter()
+                .map(|l| l.handle().map(ReadObjectHandle::get_size).unwrap_or(0))
+                .sum::<u64>(),
+            store_a_layer_size,
+            store_b
+                .tree()
+                .immutable_layer_set()
+                .layers
+                .iter()
+                .map(|l| l.handle().map(ReadObjectHandle::get_size).unwrap_or(0))
+                .sum::<u64>(),
+        ]
+        .into_iter()
+        .max()
+        .unwrap();
+        assert_eq!(max_layer_size, store_a_layer_size);
+        let legacy_required = max_layer_size * 3 / 2 + journal_usage * 4 + 1_048_576;
+        let new_required = fs.object_manager().required_reservation();
+        assert!(new_required > legacy_required);
+
+        let initial_legacy_borrowed = 1_048_576 / 4;
+        let expected_final_legacy_borrowed = initial_legacy_borrowed
+            + (offset_after_legacy_borrowed - offset_before_legacy_borrowed) * 4;
+
+        fs.sync(SyncOptions { flush_device: true, ..Default::default() })
+            .await
+            .expect("sync failed");
+        let snapshot_legacy = fs.device().snapshot().expect("snapshot failed");
+        fs.close().await.expect("close failed");
+
+        // Seed `ReplayMetadataReservation::Borrowed` when `store_a` is opened in
+        // `on_replay_complete` (right before `init_metadata_reservation`) so
+        // `init_metadata_reservation` runs in `< V61` migration mode with `store_b`'s unflushed
+        // borrowing in `journal_checkpoints`.
+        let fs2 = FxFilesystemBuilder::new()
+            .on_new_store(move |store| {
+                if store.store_object_id() == store_a_id {
+                    store
+                        .filesystem()
+                        .ensure_local()
+                        .object_manager()
+                        .init_replay_metadata_reservation(
+                            Version { major: 59, minor: 0 },
+                            &HashMap::from_iter([(0, expected_final_legacy_borrowed)]),
+                        );
+                }
+            })
+            .open(snapshot_legacy)
+            .await
+            .expect("open failed");
+
+        let expected_reservation = legacy_required - expected_final_legacy_borrowed;
+        assert_eq!(fs2.object_manager().metadata_reservation().amount(), expected_reservation);
+        assert_eq!(
+            fs2.object_manager().borrowed_metadata_space(),
+            new_required - expected_reservation
+        );
+        let (b_a, r_a) = fs2.object_manager().store_borrowed(store_a_id).unwrap();
+        let (b_b, r_b) = fs2.object_manager().store_borrowed(store_b_id).unwrap();
+        assert!(b_a > 0 && b_a < r_a);
+        assert!(b_b > 0 && b_b < r_b);
+        fsck(fs2.clone()).await.expect("fsck failed");
+        fs2.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_edge_cases_shrink_minor_layer_both_checkpoints_and_system_compaction() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        let store_a = root_volume
+            .new_volume("store_a", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_a_id = store_a.store_object_id();
+        let root_dir_a = store_a.root_directory_object_id();
+
+        // Populate `store_a` with > 512 KiB so minor compactions keep its base layer.
+        for batch in 0..28 {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 0..50 {
+                let idx = batch * 50 + i;
+                transaction.add(
+                    store_a_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            root_dir_a,
+                            format!("base_{idx:04}_{:<200}", idx).into_bytes(),
+                        ),
+                        ObjectValue::inline_extended_attribute(vec![0x55; 200]),
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+        }
+        store_a
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("major flush failed");
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+        assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 1);
+
+        // 1) Exercise `Checkpoints::Both(x, y)` merging into `Checkpoints::Old(x + y)` on repeated
+        // `BeginFlush`: commit borrowing transaction `x`, then `Mutation::BeginFlush`, then
+        // borrowing transaction `y`, and then minor-flush `store_a`.
+        {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 0..20 {
+                transaction.add(
+                    store_a_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            root_dir_a,
+                            format!("minor_attr_{i:02}").into_bytes(),
+                        ),
+                        ObjectValue::inline_extended_attribute(vec![0xaa; 1024]),
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+
+            let mut begin_txn = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            begin_txn.add(store_a_id, Mutation::BeginFlush);
+            begin_txn.commit().await.expect("commit failed");
+
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 20..40 {
+                transaction.add(
+                    store_a_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            root_dir_a,
+                            format!("minor_attr_{i:02}").into_bytes(),
+                        ),
+                        ObjectValue::inline_extended_attribute(vec![0xaa; 1024]),
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+        }
+        store_a
+            .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("minor flush failed");
+        assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 2);
+        let (layer_borrowed_after_grow, _) =
+            fs.object_manager().store_borrowed(store_a_id).unwrap();
+        assert!(layer_borrowed_after_grow > 0);
+
+        // 2) Exercise pre-super-block partitioning of `B_A` into `store_borrowed` (flushed layer)
+        // and `journal_checkpoints` (unflushed journal): commit an unflushed borrowing transaction,
+        // write a super-block without flushing `store_a`, remount, and verify `store_borrowed`
+        // matches before and after a minor flush.
+        {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_a_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_a, b"unflushed_before_sb".to_vec()),
+                    ObjectValue::None,
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+        let (total_b_with_unflushed, _) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+        assert!(total_b_with_unflushed > layer_borrowed_after_grow);
+        fs.journal().write_super_block().await.expect("write_super_block failed");
+        {
+            let snapshot = fs.device().snapshot().expect("snapshot failed");
+            let fs_replay = FxFilesystem::open(snapshot).await.expect("open failed");
+            assert_eq!(
+                fs_replay.object_manager().store_borrowed(store_a_id).unwrap().0,
+                total_b_with_unflushed
+            );
+            fs_replay.close().await.expect("close failed");
+        }
+
+        // 3) Exercise minor compaction shrinking a store's layer size (`new_size < old_size` in
+        // `store_borrowed_for_flush`): replace the 40 large (1024-byte) attributes in Layer 1 with
+        // `ObjectValue::None` in a funded transaction and minor-flush `store_a`.
+        {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 0..40 {
+                transaction.add(
+                    store_a_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            root_dir_a,
+                            format!("minor_attr_{i:02}").into_bytes(),
+                        ),
+                        ObjectValue::None,
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+        }
+        let res_before_shrink = fs.object_manager().reservation(store_a_id).unwrap();
+        store_a
+            .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("minor flush failed");
+        assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 2);
+        let res_after_shrink = fs.object_manager().reservation(store_a_id).unwrap();
+        assert!(res_after_shrink < res_before_shrink);
+        let (layer_borrowed_after_shrink, _) =
+            fs.object_manager().store_borrowed(store_a_id).unwrap();
+        assert_eq!(
+            layer_borrowed_after_shrink,
+            layer_borrowed_after_grow.saturating_sub(res_before_shrink - res_after_shrink)
+        );
+
+        // 4) Exercise system bucket (`root_store`) forced major compaction when
+        // `b_sys >= sys_headroom / 2`: reset `store_a` borrowed to 0 while keeping 2 layers on
+        // `store_a`, commit a mutation on `root_store` so `root_store` can compact, simulate
+        // system borrowing by giving back reservation space, and verify a journal flush forces
+        // `root_store` to compact without compacting `store_a`.
+        fs.object_manager().set_store_borrowed(store_a_id, 0);
+        {
+            let root_store = fs.root_store();
+            let root_id = root_store.store_object_id();
+            let graveyard_id = root_store.graveyard_directory_object_id();
+            let mut transaction = root_store
+                .new_transaction(
+                    lock_keys![LockKey::object(root_id, graveyard_id)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                root_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(graveyard_id, b"sys_test".to_vec()),
+                    ObjectValue::None,
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+        let current_res = fs.object_manager().metadata_reservation().amount();
+        fs.object_manager().metadata_reservation().give_back(current_res / 2);
+        fs.object_manager()
+            .flush(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("flush failed");
+        assert_eq!(
+            store_a.load_store_info().await.unwrap().layers.len(),
+            2,
+            "System borrowing must not force major compaction on child store_a when B_A == 0"
+        );
+        let restored = fs.allocator().reserve(None, current_res / 2).unwrap();
+        restored.move_to(fs.object_manager().metadata_reservation(), current_res / 2);
+        fsck(fs.clone()).await.expect("fsck failed");
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_locked_store_isolation_and_minor_flush_reservation() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        let crypt_a = Arc::new(new_insecure_crypt());
+        let store_a = root_volume
+            .new_volume(
+                "store_a",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(crypt_a.clone()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+        let store_a_id = store_a.store_object_id();
+        let root_dir_a = store_a.root_directory_object_id();
+
+        let crypt_b = Arc::new(new_insecure_crypt());
+        let store_b = root_volume
+            .new_volume(
+                "store_b",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(crypt_b.clone()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+        let store_b_id = store_b.store_object_id();
+        let root_dir_b = store_b.root_directory_object_id();
+
+        // Populate both encrypted stores so each has a base layer > 512 KiB.
+        for (store, store_id, dir_id) in
+            [(&store_a, store_a_id, root_dir_a), (&store_b, store_b_id, root_dir_b)]
+        {
+            for batch in 0..28 {
+                let mut transaction = store
+                    .new_transaction(
+                        lock_keys![LockKey::object(store_id, dir_id)],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                for i in 0..50 {
+                    let idx = batch * 50 + i;
+                    transaction.add(
+                        store_id,
+                        Mutation::replace_or_insert_object(
+                            ObjectKey::extended_attribute(
+                                dir_id,
+                                format!("attr_{idx:04}_{:<200}", idx).into_bytes(),
+                            ),
+                            ObjectValue::inline_extended_attribute(vec![0x55; 200]),
+                        ),
+                    );
+                }
+                transaction.commit().await.expect("commit failed");
+            }
+        }
+
+        store_a
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("flush failed");
+        store_b
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("flush failed");
+        fs.journal().force_compact().await.expect("force_compact failed");
+        fs.journal().stop_compactions().await;
+
+        // Add a 2nd layer to `store_b` via a funded transaction and minor flush.
+        {
+            let mut transaction = store_b
+                .new_transaction(
+                    lock_keys![LockKey::object(store_b_id, root_dir_b)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store_b_id,
+                Mutation::replace_or_insert_object(
+                    ObjectKey::extended_attribute(root_dir_b, b"extra_1".to_vec()),
+                    ObjectValue::inline_extended_attribute(vec![0x77; 200]),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+            store_b
+                .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+                .await
+                .expect("minor flush failed");
+        }
+        fs.journal().force_compact().await.expect("force_compact failed");
+        assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 1);
+        assert_eq!(store_b.load_store_info().await.unwrap().layers.len(), 2);
+        assert_eq!(fs.object_manager().borrowed_metadata_space(), 0);
+
+        // 1) Minor flush reservation retention test:
+        // Commit borrowing deletions on `store_a`, perform a minor flush (`ForceMajor::False`),
+        // and compact the journal (`reconcile_metadata_reservation`). When `store_a` subsequently
+        // performs a major compaction (`ForceMajor::True`) and compacts the journal, `M_total` must
+        // be fully restored (`borrowed_metadata_space() == 0`).
+        {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 0..50 {
+                transaction.add(
+                    store_a_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            root_dir_a,
+                            format!("temp_{i:04}_{:<200}", i).into_bytes(),
+                        ),
+                        ObjectValue::None,
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+            store_a
+                .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+                .await
+                .expect("minor flush failed");
+            assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 2);
+        }
+        fs.journal().force_compact().await.expect("force_compact failed");
+        store_a
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("major flush failed");
+        fs.journal().force_compact().await.expect("force_compact failed");
+        assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 1);
+        assert_eq!(fs.object_manager().store_borrowed(store_a_id).unwrap().0, 0);
+        assert_eq!(
+            fs.object_manager().borrowed_metadata_space(),
+            0,
+            "reconcile_metadata_reservation must not give away M_total during a minor flush"
+        );
+
+        // 2) Locked store isolation test:
+        // Commit borrowing deletions on `store_a`, flush the first batch as a minor compaction
+        // while unlocked, and lock `store_a` while the second batch is still in the journal so that
+        // `force_compact` flushes it via `flush_locked()`.
+        {
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 0..50 {
+                transaction.add(
+                    store_a_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            root_dir_a,
+                            format!("temp_{i:04}_{:<200}", i).into_bytes(),
+                        ),
+                        ObjectValue::None,
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+            store_a
+                .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+                .await
+                .expect("minor flush failed");
+            assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 2);
+
+            let mut transaction = store_a
+                .new_transaction(
+                    lock_keys![LockKey::object(store_a_id, root_dir_a)],
+                    Options {
+                        skip_journal_checks: true,
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 50..100 {
+                transaction.add(
+                    store_a_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(
+                            root_dir_a,
+                            format!("temp_{i:04}_{:<200}", i).into_bytes(),
+                        ),
+                        ObjectValue::None,
+                    ),
+                );
+            }
+            transaction.commit().await.expect("commit failed");
+        }
+
+        store_a.lock().await.expect("lock failed");
+        fs.journal().force_compact().await.expect("force_compact failed");
+
+        let (b_a_locked, req_a_locked) = fs.object_manager().store_borrowed(store_a_id).unwrap();
+        assert!(b_a_locked > 0);
+        // Simulate `store_a` having borrowed up to its full `req_A` budget before being locked.
+        fs.object_manager().set_store_borrowed(store_a_id, req_a_locked);
+
+        // While `store_a` is locked with maximal borrowed space, `store_b` (which has 2 layers)
+        // must remain completely isolated and not be forced into a major compaction.
+        fs.object_manager()
+            .flush(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("flush failed");
+        assert_eq!(
+            store_b.load_store_info().await.unwrap().layers.len(),
+            2,
+            "Locked store_a must not force major compactions on unlocked store_b"
+        );
+        assert_eq!(fs.object_manager().store_borrowed(store_b_id).unwrap().0, 0);
+
+        // Unlock `store_a`: because `B_A >= req_A / 2`, a journal flush must now force a major
+        // compaction on `store_a`, purging its transient attributes and resetting `B_A` to 0
+        // without touching `store_b`'s 2 layers.
+        store_a.unlock(crypt_a).await.expect("unlock failed");
+        fs.object_manager()
+            .flush(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("flush failed");
+        assert_eq!(store_a.load_store_info().await.unwrap().layers.len(), 1);
+        assert_eq!(fs.object_manager().store_borrowed(store_a_id).unwrap().0, 0);
+        assert_eq!(store_b.load_store_info().await.unwrap().layers.len(), 2);
+
+        // Compact the journal and verify that all metadata reservation space borrowed by `store_a`
+        // during its minor/locked flushes was retained and restored
+        // (`borrowed_metadata_space == 0`).
+        fs.journal().force_compact().await.expect("force_compact failed");
+        assert_eq!(fs.object_manager().borrowed_metadata_space(), 0);
+
+        fsck(fs.clone()).await.expect("fsck failed");
         fs.close().await.expect("close failed");
     }
 }

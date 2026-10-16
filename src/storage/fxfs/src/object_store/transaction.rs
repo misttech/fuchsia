@@ -244,32 +244,77 @@ pub trait TransactionSink: Send + Sync + 'static {
     fn metadata_reservation(&self) -> Option<&Reservation> {
         None
     }
+    /// Returns true if `store_id` is a system store (`root_store` or `root_parent_store`).
+    fn is_system_store(&self, _store_id: u64) -> bool {
+        false
+    }
 }
 
 /// The journal consists of these records which will be replayed at mount time.  Within a
 /// transaction, these are stored as a set which allows some mutations to be deduplicated and found
 /// (and we require custom comparison functions below).  For example, we need to be able to find
 /// object size changes.
-pub type Mutation = MutationV59;
+pub type Mutation = MutationV61;
 
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint, Versioned,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum MutationV61 {
+    ObjectStore(ObjectStoreMutationV59),
+    EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
+    Allocator(AllocatorMutationV32),
+
+    /// Indicates the beginning of a flush. This would typically involve sealing a tree.
+    BeginFlush,
+
+    /// Indicates the end of a flush. This would typically involve replacing the immutable layers
+    /// with compacted ones. The `u64` records the child store's new flushed layer borrowing
+    /// (`store_borrowed`, or `0` for full compactions and system objects).
+    EndFlush(u64),
+
+    /// Volume has been deleted. Requires we remove it from the set of managed ObjectStore.
+    DeleteVolume,
+    UpdateMutationsKey(UpdateMutationsKey),
+    CreateInternalDir(u64),
+
+    /// Legacy `< V61` mutation only produced in memory when migrating `MutationV59` during journal
+    /// replay (`#[serde(skip)]` prevents serializing or deserializing this variant in V61+
+    /// streams). This can be removed once all `< V61` versions are removed; it must remain the
+    /// *last* variant so that the serialized variant tags of the preceding variants do not change
+    /// when it is removed.
+    #[serde(skip)]
+    #[cfg_attr(fuzz, arbitrary(skip))]
+    UpdateBorrowed(u64),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
 pub enum MutationV59 {
     ObjectStore(ObjectStoreMutationV59),
     EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
     Allocator(AllocatorMutationV32),
-    /// Indicates the beginning of a flush. This would typically involve sealing a tree.
     BeginFlush,
-    /// Indicates the end of a flush. This would typically involve replacing the immutable layers
-    /// with compacted ones.
     EndFlush,
-    /// Volume has been deleted. Requires we remove it from the set of managed ObjectStore.
     DeleteVolume,
     UpdateBorrowed(u64),
     UpdateMutationsKey(UpdateMutationsKey),
     CreateInternalDir(u64),
+}
+
+impl From<MutationV59> for MutationV61 {
+    fn from(mutation: MutationV59) -> Self {
+        match mutation {
+            MutationV59::ObjectStore(m) => Self::ObjectStore(m),
+            MutationV59::EncryptedObjectStore(m) => Self::EncryptedObjectStore(m),
+            MutationV59::Allocator(m) => Self::Allocator(m),
+            MutationV59::BeginFlush => Self::BeginFlush,
+            MutationV59::EndFlush => Self::EndFlush(0),
+            MutationV59::DeleteVolume => Self::DeleteVolume,
+            MutationV59::UpdateBorrowed(b) => Self::UpdateBorrowed(b),
+            MutationV59::UpdateMutationsKey(k) => Self::UpdateMutationsKey(k),
+            MutationV59::CreateInternalDir(id) => Self::CreateInternalDir(id),
+        }
+    }
 }
 
 #[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
@@ -324,6 +369,19 @@ impl Mutation {
 
     pub fn update_mutations_key(key: FxfsKey) -> Self {
         Mutation::UpdateMutationsKey(key.into())
+    }
+
+    /// Returns true if this mutation's serialized journal bytes should be accounted against the
+    /// target object's per-store journal usage (`J_S`) rather than system journal usage (`J_sys`).
+    ///
+    /// Lifecycle control records (`BeginFlush`, `EndFlush`, and `DeleteVolume`) are not written
+    /// into an object store's layer files, and `BeginFlush`/`EndFlush` are committed in
+    /// `BorrowedMetadataAndData` transactions where `apply_mutation` transitions
+    /// `journal_checkpoints` and `store_borrowed` before post-transaction usage accounting runs.
+    /// Accounting their bytes in `J_sys` ensures they do not re-dirty `journal_checkpoints` or add
+    /// post-flush borrowed debt to `store_borrowed`.
+    pub fn counts_towards_object_journal_usage(&self) -> bool {
+        !matches!(self, Mutation::BeginFlush | Mutation::EndFlush(_) | Mutation::DeleteVolume)
     }
 }
 
@@ -829,6 +887,17 @@ pub enum MetadataReservation<'a> {
     Hold(Hold<'a>),
 }
 
+impl MetadataReservation<'_> {
+    /// Returns true if this transaction borrows metadata space from `ObjectManager`'s metadata
+    /// reservation (`BorrowedMetadata` or `BorrowedMetadataAndData`).
+    pub fn is_borrowed(&self) -> bool {
+        matches!(
+            self,
+            MetadataReservation::BorrowedMetadata | MetadataReservation::BorrowedMetadataAndData
+        )
+    }
+}
+
 /// A transaction groups mutation records to be committed as a group.
 pub struct Transaction<'a> {
     sink: Arc<dyn TransactionSink>,
@@ -1066,7 +1135,6 @@ impl<'a> Transaction<'a> {
         associated_object: AssocObj<'a>,
     ) -> Option<Mutation> {
         assert!(object_id != INVALID_OBJECT_ID);
-        let mut is_allocate = false;
         match &mutation {
             Mutation::ObjectStore(ObjectStoreMutation {
                 item:
@@ -1082,21 +1150,40 @@ impl<'a> Transaction<'a> {
                 self.includes_write = true;
             }
             Mutation::Allocator(AllocatorMutation::Allocate { .. }) => {
-                is_allocate = true;
+                assert!(
+                    !matches!(self.metadata_reservation, MetadataReservation::BorrowedMetadata)
+                        || self.sink.image_builder_mode(),
+                    "Allocations are not allowed in BorrowedMetadata transactions"
+                );
+            }
+            Mutation::Allocator(AllocatorMutation::Deallocate { owner_object_id, .. }) => {
+                // System store extents (layer files, journal, super-blocks) are allocated from
+                // `metadata_reservation` (`M_total`), so deallocating them in a borrowing
+                // transaction must use `BorrowedMetadataAndData` to return the freed space to
+                // `M_total` (matching `ObjectManager::replay_mutations`). Conversely, child store
+                // extents are allocated from user space and must use `BorrowedMetadata` so their
+                // deallocation returns space to the global allocator rather than inflating
+                // `M_total`.
+                debug_assert!(
+                    !matches!(self.metadata_reservation, MetadataReservation::BorrowedMetadata)
+                        || self.sink.image_builder_mode()
+                        || !self.sink.is_system_store(*owner_object_id),
+                    "System store deallocations in borrowing transactions must use \
+                     BorrowedMetadataAndData"
+                );
+                debug_assert!(
+                    !matches!(
+                        self.metadata_reservation,
+                        MetadataReservation::BorrowedMetadataAndData
+                    ) || self.sink.is_system_store(*owner_object_id),
+                    "Child store deallocations in borrowing transactions must use BorrowedMetadata"
+                );
             }
             _ => {}
         }
         let txn_mutation = TxnMutation { object_id, mutation, associated_object };
         self.verify_locks(&txn_mutation);
-        let old = self.mutations.replace(txn_mutation).map(|m| m.mutation);
-        if is_allocate {
-            assert!(
-                !matches!(self.metadata_reservation, MetadataReservation::BorrowedMetadata)
-                    || self.sink.image_builder_mode(),
-                "Allocations are not allowed in BorrowedMetadata transactions"
-            );
-        }
-        old
+        self.mutations.replace(txn_mutation).map(|m| m.mutation)
     }
 
     pub fn add_checksum(
@@ -2474,7 +2561,7 @@ mod tests {
         });
         mutations.insert(TxnMutation {
             object_id: 1,
-            mutation: Mutation::EndFlush,
+            mutation: Mutation::EndFlush(0),
             associated_object: AssocObj::None,
         });
         mutations.insert(TxnMutation {
@@ -2489,7 +2576,7 @@ mod tests {
             let mut obj_iter = ObjectMutationIterator::new(&mut iter).expect("expected object 1");
             assert_eq!(obj_iter.object_id(), 1);
             assert_eq!(obj_iter.next(), Some(&Mutation::BeginFlush));
-            assert_eq!(obj_iter.next(), Some(&Mutation::EndFlush));
+            assert_eq!(obj_iter.next(), Some(&Mutation::EndFlush(0)));
             assert_eq!(obj_iter.next(), None);
         }
 
@@ -2515,7 +2602,7 @@ mod tests {
         });
         mutations.insert(TxnMutation {
             object_id: 1,
-            mutation: Mutation::EndFlush,
+            mutation: Mutation::EndFlush(0),
             associated_object: AssocObj::None,
         });
         mutations.insert(TxnMutation {
@@ -2531,7 +2618,7 @@ mod tests {
         });
         mutations.insert(TxnMutation {
             object_id: 2,
-            mutation: Mutation::EndFlush,
+            mutation: Mutation::EndFlush(0),
             associated_object: AssocObj::None,
         });
 

@@ -22,7 +22,6 @@ use crate::object_store::object_record::{
 use crate::object_store::transaction::{
     AssocObj, LockKey, Mutation, Options, ReservationOptions, lock_keys,
 };
-use crate::object_store::tree::reservation_amount_from_layer_size;
 use crate::object_store::volume::{RootVolume, root_volume};
 use crate::object_store::{
     AttributeId, DataObjectHandle, DirectWriter, Directory, FileExtent, HandleOptions, HandleOwner,
@@ -255,11 +254,10 @@ impl ObjectStore {
         // the new object tree layer, and swap volumes atomically.
         self.write_store_info(&mut activate_volume_txn, &new_store_info).await?;
         let replaced_objects = root.replace_volume(&mut activate_volume_txn, src, dst).await?;
-        reservation_update =
-            ReservationUpdate::new(reservation_amount_from_layer_size(total_layer_size));
+        reservation_update = ReservationUpdate::new(total_layer_size);
         activate_volume_txn.add_with_object(
             self.store_object_id(),
-            Mutation::EndFlush,
+            Mutation::EndFlush(0),
             AssocObj::Borrowed(&reservation_update),
         );
         activate_volume_txn
@@ -287,17 +285,29 @@ impl ObjectStore {
                 parent_store.tombstone_object(object_id, txn_options, None).await?;
             }
         }
+
         // Delete objects from the destination volume we replaced, if any.
         if let Some(replaced_objects) = replaced_objects {
             for object_id in replaced_objects {
                 fs.ensure_local()
                     .root_store()
-                    .tombstone_object(object_id, Options::default(), None)
+                    .tombstone_object(object_id, txn_options, None)
                     .await?;
             }
         }
-        // Delete the metadata ownership file.
-        self.tombstone_object(metadata_object_id, txn_options, None).await?;
+
+        // Delete the metadata ownership file in `self` (a child volume, so deallocated extents
+        // return to the global allocator via `BorrowedMetadata`).
+        self.tombstone_object(
+            metadata_object_id,
+            Options {
+                skip_journal_checks: true,
+                reservation: ReservationOptions::BorrowedMetadata,
+                ..Default::default()
+            },
+            None,
+        )
+        .await?;
 
         Ok(())
     }
@@ -625,13 +635,37 @@ mod tests {
             write_image_to_file(&src, &image, INSTALL_FILE).await;
             // We should see a different set of files before/after installation.
             verify_volume_contents(&root, DST_NAME, &existing_files).await;
+
+            // Reserve all remaining free space in the allocator to verify that `install_volume`
+            // (including tombstoning replaced volume objects) uses metadata reservations rather
+            // than requiring new allocator reservations.
+            let free_space = fs.allocator().get_disk_bytes() - fs.allocator().get_used_bytes().0;
+            let hold_all_free = fs.allocator().reserve(None, free_space).unwrap();
             ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME).await.unwrap();
+            std::mem::drop(hold_all_free);
+
             assert!(root.volume_directory().lookup(SRC_NAME).await.unwrap().is_none());
             verify_volume_contents(&root, DST_NAME, &new_files).await;
             ensure_volume_graveyard_is_empty(&root, DST_NAME).await;
         };
 
         do_fsck(&fs, DST_NAME).await;
+
+        // Verify that replaying the `install_volume` transactions produces the exact same metadata
+        // reservation state as live mode (which would diverge if child-store `metadata_object_id`
+        // deallocations used `BorrowedMetadataAndData` or system-store `replaced_objects`
+        // deallocations used `Options::default()`).
+        fs.sync(SyncOptions { flush_device: true, ..Default::default() }).await.unwrap();
+        let expected_reservation = fs.object_manager().metadata_reservation().amount();
+        let expected_map = fs.object_manager().reserved_metadata_space();
+        let snapshot = fs.device().snapshot().unwrap();
+        fs.close().await.unwrap();
+
+        let fs2 = FxFilesystem::open(snapshot).await.unwrap();
+        assert_eq!(fs2.object_manager().metadata_reservation().amount(), expected_reservation);
+        assert_eq!(fs2.object_manager().reserved_metadata_space(), expected_map);
+        do_fsck(&fs2, DST_NAME).await;
+        fs2.close().await.unwrap();
     }
 
     /// Ensure that we don't allow installing a volume if the pending volume has additional extent

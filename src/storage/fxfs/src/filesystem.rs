@@ -684,7 +684,7 @@ impl FxFilesystem {
             Ok(checkpoint) => info!(
                 "Filesystem closed (checkpoint={}, metadata_reservation={:?}, \
                  reservation_required={}, borrowed={})",
-                checkpoint.as_ref().unwrap().0.file_offset,
+                checkpoint.as_ref().unwrap().file_offset,
                 self.object_manager().metadata_reservation(),
                 self.object_manager().required_reservation(),
                 self.object_manager().borrowed_metadata_space(),
@@ -793,7 +793,7 @@ impl FxFilesystem {
             let object_id = mutation.object_id;
 
             // We don't need to prepare commits (which reserves keys) for flush mutations.
-            if matches!(mutation.mutation, Mutation::BeginFlush | Mutation::EndFlush) {
+            if matches!(mutation.mutation, Mutation::BeginFlush | Mutation::EndFlush(_)) {
                 continue;
             }
 
@@ -818,17 +818,10 @@ impl FxFilesystem {
         let journal_offset = if self.journal().image_builder_mode().is_some() {
             let journal_checkpoint =
                 JournalCheckpoint { file_offset: 0, checksum: 0, version: LATEST_VERSION };
-            let maybe_mutation = self
-                .object_manager()
+            self.object_manager()
                 .apply_transaction(transaction, &journal_checkpoint)
                 .expect("Transactions must not fail in image_builder_mode");
-            if let Some(mutation) = maybe_mutation {
-                assert!(matches!(mutation, Mutation::UpdateBorrowed(_)));
-                // These are Mutation::UpdateBorrowed which are normally used to track borrowing of
-                // metadata reservations. As we are image-building and not using the journal,
-                // we don't track this.
-            }
-            self.object_manager().did_commit_transaction(transaction, &journal_checkpoint, 0);
+            self.object_manager().did_commit_transaction(transaction, 0, &[]);
             0
         } else {
             self.journal.commit(transaction).await?
@@ -991,6 +984,10 @@ impl TransactionSink for FxFilesystem {
 
     fn metadata_reservation(&self) -> Option<&Reservation> {
         Some(self.object_manager().metadata_reservation())
+    }
+
+    fn is_system_store(&self, store_id: u64) -> bool {
+        self.object_manager().is_system_store(store_id)
     }
 }
 

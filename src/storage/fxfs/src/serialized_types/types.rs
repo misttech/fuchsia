@@ -11,20 +11,23 @@ use crate::object_store::allocator::{
     AllocatorValueV32,
 };
 use crate::object_store::journal::super_block::{
-    SuperBlockHeader, SuperBlockHeaderV32, SuperBlockRecord, SuperBlockRecordV56,
-    SuperBlockRecordV59,
+    SuperBlockHeader, SuperBlockHeaderV32, SuperBlockHeaderV61, SuperBlockRecord,
+    SuperBlockRecordV56, SuperBlockRecordV59,
 };
 use crate::object_store::journal::{
     JournalRecord, JournalRecordV56, JournalRecordV57, JournalRecordV59, JournalRecordV60,
+    JournalRecordV61,
 };
 use crate::object_store::object_record::{
     FsverityMetadata, FsverityMetadataV50, ObjectKey, ObjectKeyV54, ObjectValue, ObjectValueV56,
     ObjectValueV59,
 };
-use crate::object_store::transaction::{Mutation, MutationV56, MutationV57, MutationV59};
+use crate::object_store::transaction::{
+    Mutation, MutationV56, MutationV57, MutationV59, MutationV61,
+};
 use crate::object_store::{
     EncryptedMutations, EncryptedMutationsV49, EncryptedTransaction, EncryptedTransactionV57,
-    EncryptedTransactionV59, StoreInfo, StoreInfoV52,
+    EncryptedTransactionV59, EncryptedTransactionV61, StoreInfo, StoreInfoV52,
 };
 use crate::serialized_types::{Version, Versioned, VersionedLatest, versioned_type};
 use std::collections::BTreeMap;
@@ -38,7 +41,7 @@ use std::collections::BTreeMap;
 ///
 /// IMPORTANT: When changing this (major or minor), update the list of possible versions at
 /// https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/cobalt_config/fuchsia/local_storage/versions.txt.
-pub const LATEST_VERSION: Version = Version { major: 60, minor: 0 };
+pub const LATEST_VERSION: Version = Version { major: 61, minor: 0 };
 
 /// The last version of the filesystem where keys in layer files used the old serialization format
 /// (prior to SerializeKey and delta encoding).
@@ -127,6 +130,7 @@ versioned_types! {
         49.. => EncryptedMutationsV49,
     }
     EncryptedTransaction {
+        61.. => EncryptedTransactionV61,
         59.. => EncryptedTransactionV59,
         57.. => EncryptedTransactionV57,
     }
@@ -134,12 +138,14 @@ versioned_types! {
         50.. => FsverityMetadataV50,
     }
     JournalRecord {
+        61.. => JournalRecordV61,
         60.. => JournalRecordV60,
         59.. => JournalRecordV59,
         57.. => JournalRecordV57,
         56.. => JournalRecordV56,
     }
     Mutation {
+        61.. => MutationV61,
         59.. => MutationV59,
         57.. => MutationV57,
         56.. => MutationV56,
@@ -161,6 +167,7 @@ versioned_types! {
         52.. => StoreInfoV52,
     }
     SuperBlockHeader {
+        61.. => SuperBlockHeaderV61,
         32.. => SuperBlockHeaderV32,
     }
     SuperBlockRecord {

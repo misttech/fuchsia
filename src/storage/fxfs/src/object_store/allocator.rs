@@ -106,7 +106,7 @@ use crate::object_store::transaction::{
     WriteGuard, lock_keys,
 };
 use crate::object_store::{
-    DataObjectHandle, DirectWriter, Extent, HandleOptions, ObjectStore, ReservedId, tree,
+    DataObjectHandle, DirectWriter, Extent, HandleOptions, ObjectStore, ReservedId,
 };
 use crate::range::RangeExt;
 use crate::round::round_div;
@@ -940,10 +940,11 @@ impl Allocator {
             }
 
             self.tree.append_open_layers(layers);
-            self.filesystem.upgrade().unwrap().object_manager().update_reservation(
-                self.object_id,
-                tree::reservation_amount_from_layer_size(total_size),
-            );
+            self.filesystem
+                .upgrade()
+                .unwrap()
+                .object_manager()
+                .update_layer_size(self.object_id, total_size);
         }
 
         Ok(())
@@ -1980,7 +1981,7 @@ impl JournalingObject for Allocator {
                     inner.owner_bytes.iter().map(|(k, v)| (*k, v.allocated_bytes.0)).collect();
                 inner.info.allocated_bytes = allocated_bytes;
             }
-            Mutation::EndFlush => {}
+            Mutation::EndFlush(_) => {}
             _ => bail!("unexpected mutation: {:?}", mutation),
         }
         Ok(())
@@ -2208,15 +2209,13 @@ impl<'a> Flusher<'a> {
         buf.copy_from_slice(&serialized_info);
         object_handle.txn_write(&mut transaction, 0u64, buf.as_ref()).await?;
 
-        reservation_update = ReservationUpdate::new(tree::reservation_amount_from_layer_size(
-            layer_object_handle.get_size(),
-        ));
+        reservation_update = ReservationUpdate::new(layer_object_handle.get_size());
 
         // It's important that EndFlush is in the same transaction that we write AllocatorInfo,
         // because we use EndFlush to make the required adjustments to allocated_bytes.
         transaction.add_with_object(
             self.allocator.object_id(),
-            Mutation::EndFlush,
+            Mutation::EndFlush(0),
             AssocObj::Borrowed(&reservation_update),
         );
         root_store.remove_from_graveyard(&mut transaction, layer_object_handle.object_id());

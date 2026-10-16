@@ -365,6 +365,11 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         LayerSet { layers, merge_fn: self.merge_fn, counters: self.counters.clone() }
     }
 
+    /// Returns the number of immutable layers in the tree without cloning the layer set.
+    pub fn immutable_layer_count(&self) -> usize {
+        self.data.read().layers.len()
+    }
+
     /// Inserts an item into the mutable layer.
     /// Returns error if item already exists.
     pub fn insert(&self, item: Item<K, V>) -> Result<(), Error> {

@@ -50,9 +50,9 @@ use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::{JournalCheckpoint, JournalCheckpointV32, JournaledTransaction};
 use crate::object_store::key_manager::KeyManager;
 use crate::object_store::transaction::{
-    AssocObj, AssociatedObject, LockKey, LockKeys, MutationV59, ObjectMutationIterator,
-    ObjectStoreMutation, Operation, Options, ReservationOptions, Transaction, WriteGuard,
-    lock_keys,
+    AssocObj, AssociatedObject, LockKey, LockKeys, MutationV59, MutationV61,
+    ObjectMutationIterator, ObjectStoreMutation, Operation, Options, ReservationOptions,
+    Transaction, WriteGuard, lock_keys,
 };
 use crate::serialized_types::{
     AES_JOURNAL_ENCRYPTION_VERSION, DEFAULT_MAX_SERIALIZED_RECORD_SIZE, Version, Versioned,
@@ -97,14 +97,15 @@ const OBJECT_ID_HI_MASK: u64 = 0xffffffff00000000;
 // At time of writing, this threshold limits transactions that delete extents to about 10,000 bytes.
 const TRANSACTION_MUTATION_THRESHOLD: usize = 200;
 
-// The number of keys we want to pre-cache for flushes.  We cache up to 2 keys.  One is for the
-// current flush, and one is pre-cached for the next flush so that we don't need to call the crypt
-// service during a flush.  To understand why, consider two threads T1 and T2.  Just prior to
-// committing a transaction, T1 ensures there are two keys.  Then, before T1 has committed the
-// transaction, T2 flushes and consumes one of the keys.  T1 then commits the transaction. The next
-// time a flush occurs, there's a key ready. If T1 had only ensured there was one key, there'd be no
-// key.
-const CACHED_KEYS_LIMIT: usize = 2;
+// The number of keys we want to pre-cache for flushes.  We cache up to 4 keys so that we don't need
+// to call the crypt service during a flush:
+// - Up to 2 flushes can occur between `prepare_commit` and acquiring `commit_mutex` on a
+//   transaction T1 (one minor flush for prior journal mutations, followed by one major compaction
+//   when `immutable_layer_count() > 1` and `needs_flush == false`).
+// - Up to 2 flushes can occur after T1 commits without a subsequent transaction calling
+//   `prepare_commit` (one minor flush for T1's mutations, followed by one major compaction when
+//   `immutable_layer_count() > 1` and `needs_flush == false`).
+const CACHED_KEYS_LIMIT: usize = 4;
 
 // Encrypted files and directories use the fscrypt key (identified by `FSCRYPT_KEY_ID`) to encrypt
 // file contents and filenames respectively. All non-fscrypt encrypted files otherwise default to
@@ -1969,10 +1970,7 @@ impl ObjectStore {
                 .context("Failed to read object store layers")?;
         }
 
-        fs.ensure_local().object_manager().update_reservation(
-            store_object_id,
-            tree::reservation_amount_from_layer_size(total_layer_size),
-        );
+        fs.ensure_local().object_manager().update_layer_size(store_object_id, total_layer_size);
 
         Ok(store)
     }
@@ -3034,7 +3032,7 @@ impl JournalingObject for ObjectStore {
         match &*self.lock_state.lock() {
             LockState::Locked | LockState::Locking => {
                 ensure!(
-                    matches!(mutation, Mutation::BeginFlush | Mutation::EndFlush)
+                    matches!(mutation, Mutation::BeginFlush | Mutation::EndFlush(_))
                         || matches!(
                             mutation,
                             Mutation::EncryptedObjectStore(_) | Mutation::UpdateMutationsKey(_)
@@ -3142,7 +3140,7 @@ impl JournalingObject for ObjectStore {
                 ensure!(self.parent_store.is_some(), FxfsError::Inconsistent);
                 self.tree.seal();
             }
-            Mutation::EndFlush => ensure!(self.parent_store.is_some(), FxfsError::Inconsistent),
+            Mutation::EndFlush(_) => ensure!(self.parent_store.is_some(), FxfsError::Inconsistent),
             Mutation::EncryptedObjectStore(_) | Mutation::UpdateMutationsKey(_) => {
                 // We will process these during Self::unlock.
                 ensure!(
@@ -3229,6 +3227,7 @@ impl JournalingObject for ObjectStore {
                     Mutation::ObjectStore(_) | Mutation::CreateInternalDir(_) => {
                         encrypted_transaction.0.push(mutation)
                     }
+
                     // `EncryptedObjectStore` and `UpdateMutationsKey` are both obviously
                     // associated with encrypted object stores, but are either the encrypted
                     // mutation data itself or metadata governing how the data will be encrypted.
@@ -3239,16 +3238,21 @@ impl JournalingObject for ObjectStore {
                             "Only this method should generate encrypted mutations"
                         );
                     }
+                    Mutation::UpdateBorrowed(_) => {
+                        unreachable!(
+                            "UpdateBorrowed is only produced when replaying legacy journals"
+                        );
+                    }
+
                     // `BeginFlush` and `EndFlush` are not needed during `unlock()` and are needed
-                    // during the initial journal replay, so should not be encrypted. `Allocator`,
-                    // `DeleteVolume`, `UpdateBorrowed` mutations are never associated with an
-                    // encrypted store as we do not encrypt the allocator or root/root-parent
-                    // stores so we can avoid the locking.
+                    // during the initial journal replay, so should not be encrypted. `Allocator`
+                    // and `DeleteVolume` mutations are never associated with an encrypted store as
+                    // we do not encrypt the allocator or root/root-parent stores so we can avoid
+                    // the locking.
                     Mutation::Allocator(_)
                     | Mutation::BeginFlush
-                    | Mutation::EndFlush
-                    | Mutation::DeleteVolume
-                    | Mutation::UpdateBorrowed(_) => {
+                    | Mutation::EndFlush(_)
+                    | Mutation::DeleteVolume => {
                         writer.write(mutation);
                     }
                 }
@@ -3281,7 +3285,7 @@ impl JournalingObject for ObjectStore {
 
 /// The plaintext serialization of the mutations for a transaction that are encrypted then wrapped
 /// in `Mutation::EncryptedObjectStore`.
-pub type EncryptedTransaction = EncryptedTransactionV59;
+pub type EncryptedTransaction = EncryptedTransactionV61;
 
 static_assertions::const_assert!(EncryptedTransaction::MAX_CHUNK_SIZE % 16 == 0);
 impl EncryptedTransaction {
@@ -3331,24 +3335,49 @@ impl EncryptedTransaction {
 // wrapped in Mutation and the version associated with it will come from some parent type above
 // Mutation.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct EncryptedTransactionV61(pub Vec<MutationV61>);
+
+impl TypeFingerprint for EncryptedTransactionV61 {
+    fn fingerprint() -> String {
+        format!(
+            "struct{{MAX_CHUNK_SIZE: {}, {}}}",
+            // The MAX_CHUNK_SIZE is an important part of the format.
+            Self::MAX_CHUNK_SIZE,
+            Vec::<MutationV61>::fingerprint()
+        )
+    }
+}
+
+impl Versioned for EncryptedTransactionV61 {
+    // This can serialize much larger sizes. They will be broken up before being wrapped in
+    // EncryptedObjectStore.
+    fn max_serialized_size() -> Option<u64> {
+        None
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EncryptedTransactionV59(pub Vec<MutationV59>);
 
 impl TypeFingerprint for EncryptedTransactionV59 {
     fn fingerprint() -> String {
         format!(
             "struct{{MAX_CHUNK_SIZE: {}, {}}}",
-            // The MAX_CHUNK_SIZE is an important part of the format.
-            Self::MAX_CHUNK_SIZE,
+            EncryptedTransaction::MAX_CHUNK_SIZE,
             Vec::<MutationV59>::fingerprint()
         )
     }
 }
 
 impl Versioned for EncryptedTransactionV59 {
-    // This can serialize much larger sizes. They will be broken up before being wrapped in
-    // EncryptedObjectStore.
     fn max_serialized_size() -> Option<u64> {
         None
+    }
+}
+
+impl From<EncryptedTransactionV59> for EncryptedTransactionV61 {
+    fn from(old: EncryptedTransactionV59) -> Self {
+        Self(old.0.into_iter().map(Into::into).collect())
     }
 }
 
@@ -3398,9 +3427,8 @@ impl AsRef<ObjectStore> for ObjectStore {
 
 fn layer_size_from_encrypted_mutations_size(size: u64) -> u64 {
     // This is similar to reserved_space_from_journal_usage. It needs to be a worst case estimate of
-    // the amount of metadata space that might need to be reserved to allow the encrypted mutations
-    // to be written to layer files.  It needs to be >= than reservation_amount_from_layer_size will
-    // return once the data has been written to layer files and <= than
+    // the layer size so that the metadata space reserved for it is >= what will be required once
+    // the encrypted mutations have been written to layer files and <= what
     // reserved_space_from_journal_usage would use.  We can't just use
     // reserved_space_from_journal_usage because the encrypted mutations file includes some extra
     // data (it includes the checkpoints) that isn't written in the same way to the journal.

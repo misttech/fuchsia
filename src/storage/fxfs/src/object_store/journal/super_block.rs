@@ -111,12 +111,12 @@ impl SuperBlockInstance {
     }
 }
 
-pub type SuperBlockHeader = SuperBlockHeaderV32;
+pub type SuperBlockHeader = SuperBlockHeaderV61;
 
 #[derive(
     Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned,
 )]
-pub struct SuperBlockHeaderV32 {
+pub struct SuperBlockHeaderV61 {
     /// The globally unique identifier for the filesystem.
     pub guid: UuidWrapperV32,
 
@@ -155,14 +155,55 @@ pub struct SuperBlockHeaderV32 {
     /// object id -> journal file offset. Indicates where each object has been flushed to.
     pub journal_file_offsets: HashMap<u64, u64>,
 
-    /// Records the amount of borrowed metadata space as applicable at
+    /// Key 0 maps to the total reserved metadata space (`M_total`), and each child store object id
+    /// maps to the metadata space borrowed by that store (`B_S`) as of
     /// `super_block_journal_file_offset`.
-    pub borrowed_metadata_space: u64,
+    pub reserved_metadata_space: HashMap<u64, u64>,
 
     /// The earliest version of Fxfs used to create any still-existing struct in the filesystem.
     ///
     /// Note: structs in the filesystem may had been made with various different versions of Fxfs.
     pub earliest_version: Version,
+}
+
+#[derive(Serialize, Deserialize, TypeFingerprint, Versioned)]
+pub struct SuperBlockHeaderV32 {
+    guid: UuidWrapperV32,
+    generation: u64,
+    root_parent_store_object_id: u64,
+    root_parent_graveyard_directory_object_id: u64,
+    root_store_object_id: u64,
+    allocator_object_id: u64,
+    journal_object_id: u64,
+    journal_checkpoint: JournalCheckpointV32,
+    super_block_journal_file_offset: u64,
+    journal_file_offsets: HashMap<u64, u64>,
+    borrowed_metadata_space: u64,
+    earliest_version: Version,
+}
+
+impl From<SuperBlockHeaderV32> for SuperBlockHeaderV61 {
+    fn from(header: SuperBlockHeaderV32) -> Self {
+        SuperBlockHeaderV61 {
+            guid: header.guid,
+            generation: header.generation,
+            root_parent_store_object_id: header.root_parent_store_object_id,
+            root_parent_graveyard_directory_object_id: header
+                .root_parent_graveyard_directory_object_id,
+            root_store_object_id: header.root_store_object_id,
+            allocator_object_id: header.allocator_object_id,
+            journal_object_id: header.journal_object_id,
+            journal_checkpoint: header.journal_checkpoint,
+            super_block_journal_file_offset: header.super_block_journal_file_offset,
+            journal_file_offsets: header.journal_file_offsets,
+
+            // Store the legacy `borrowed_metadata_space` scalar at key 0;
+            // `ObjectManager::init_replay_metadata_reservation` checks the super-block header
+            // version (`< V61`) and interprets key 0 as `ReplayMetadataReservation::Borrowed`.
+            reserved_metadata_space: HashMap::from_iter([(0, header.borrowed_metadata_space)]),
+            earliest_version: header.earliest_version,
+        }
+    }
 }
 
 type UuidWrapper = UuidWrapperV32;
@@ -631,11 +672,15 @@ impl<S: HandleOwner> SuperBlockWriter<S> {
         let len =
             std::cmp::max(MIN_SUPER_BLOCK_SIZE, self.writer.journal_file_checkpoint().file_offset)
                 + SUPER_BLOCK_CHUNK_SIZE;
+
+        // The super-block handle lives in `root_store` (a system store) and its extents are
+        // allocated using `BorrowedMetadataAndData`, so truncating excess extents must also use
+        // `BorrowedMetadataAndData` to return freed space to `metadata_reservation`.
         self.handle
             .truncate_with_options(
                 Options {
                     skip_journal_checks: true,
-                    reservation: ReservationOptions::BorrowedMetadata,
+                    reservation: ReservationOptions::BorrowedMetadataAndData,
                     ..Default::default()
                 },
                 len,
@@ -894,6 +939,20 @@ mod tests {
             .get_size(),
             MIN_SUPER_BLOCK_SIZE + SUPER_BLOCK_CHUNK_SIZE
         );
+
+        // Compact the journal so both super-block instances are truncated back to their minimum
+        // size and verify that the truncated super-block extents were returned to
+        // `metadata_reservation` (`borrowed_metadata_space() == 0`).
+        fs.journal().force_compact().await.expect("force_compact failed");
+        assert_eq!(fs.object_manager().borrowed_metadata_space(), 0);
+        let expected_map = fs.object_manager().reserved_metadata_space();
+        let snapshot = fs.device().snapshot().expect("snapshot failed");
+        fs.close().await.expect("close failed");
+
+        let fs2 = FxFilesystem::open(snapshot).await.expect("open failed");
+        assert_eq!(fs2.object_manager().reserved_metadata_space(), expected_map);
+        assert_eq!(fs2.object_manager().borrowed_metadata_space(), 0);
+        fs2.close().await.expect("close failed");
     }
 
     #[fuchsia::test]
