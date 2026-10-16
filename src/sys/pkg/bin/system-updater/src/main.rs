@@ -11,9 +11,7 @@ use crate::update::{RealUpdater, UpdateHistory};
 use anyhow::anyhow;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
-use fuchsia_sync::Mutex;
 use log::{error, info};
-use std::sync::Arc;
 
 mod fidl;
 mod install_manager;
@@ -29,7 +27,7 @@ async fn main() {
         inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
 
     let history_node = inspector.root().create_child("history");
-    let history = Arc::new(Mutex::new(UpdateHistory::load(history_node).await));
+    let history = UpdateHistory::load(history_node).await;
 
     let mut fs = ServiceFs::new_local();
     if let Err(e) = fs.take_and_serve_directory_handle() {

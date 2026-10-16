@@ -14,7 +14,6 @@ use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use fidl_fuchsia_update_installer_ext as fupdate_installer_ext;
 use fuchsia_async::TimeoutExt as _;
 use fuchsia_hash::Hash;
-use fuchsia_sync::Mutex;
 use fuchsia_url::fuchsia_pkg::{
     AbsoluteComponentUrl, AbsolutePackageUrl, PinnedAbsolutePackageUrl,
 };
@@ -28,7 +27,6 @@ use log::{error, info, warn};
 use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::Duration;
 use update_package::manifest::OtaManifest;
 
@@ -250,7 +248,9 @@ pub enum CommitAction {
 /// A trait to update the system in the given `Environment` using the provided config options.
 #[async_trait(?Send)]
 pub trait Updater {
-    type UpdateStream: FusedStream<Item = fupdate_installer_ext::State>;
+    type UpdateStream<'a>: FusedStream<Item = fupdate_installer_ext::State>
+    where
+        Self: 'a;
 
     async fn update(
         &mut self,
@@ -258,27 +258,24 @@ pub trait Updater {
         env: Environment,
         reboot_controller: RebootController,
         cancel_receiver: oneshot::Receiver<()>,
-    ) -> (String, Self::UpdateStream);
+    ) -> (String, Self::UpdateStream<'_>);
 }
 
 pub struct RealUpdater {
-    history: Arc<Mutex<UpdateHistory>>,
+    history: UpdateHistory,
     structured_config: system_updater_config::Config,
     crash_reporter: crash_report::CrashReporter,
 }
 
 impl RealUpdater {
-    pub fn new(
-        history: Arc<Mutex<UpdateHistory>>,
-        structured_config: system_updater_config::Config,
-    ) -> Self {
+    pub fn new(history: UpdateHistory, structured_config: system_updater_config::Config) -> Self {
         Self { history, structured_config, crash_reporter: crash_report::CrashReporter::new() }
     }
 }
 
 #[async_trait(?Send)]
 impl Updater for RealUpdater {
-    type UpdateStream = Pin<Box<dyn FusedStream<Item = fupdate_installer_ext::State>>>;
+    type UpdateStream<'a> = Pin<Box<dyn FusedStream<Item = fupdate_installer_ext::State> + 'a>>;
 
     async fn update(
         &mut self,
@@ -286,7 +283,7 @@ impl Updater for RealUpdater {
         env: Environment,
         reboot_controller: RebootController,
         cancel_receiver: oneshot::Receiver<()>,
-    ) -> (String, Self::UpdateStream) {
+    ) -> (String, Self::UpdateStream<'_>) {
         let manifest_public_keys = self
             .structured_config
             .manifest_public_keys
@@ -308,7 +305,7 @@ impl Updater for RealUpdater {
         let (attempt_id, attempt) = update(
             config,
             env,
-            Arc::clone(&self.history),
+            &mut self.history,
             reboot_controller,
             self.structured_config.concurrent_package_resolves.into(),
             self.structured_config.concurrent_blob_fetches.into(),
@@ -316,7 +313,7 @@ impl Updater for RealUpdater {
             manifest_public_keys,
             excessive_update_duration,
             cancel_receiver,
-            self.crash_reporter.clone(),
+            &mut self.crash_reporter,
         )
         .await;
         (attempt_id, Box::pin(attempt))
@@ -399,7 +396,7 @@ async fn run_attempt_to_commit(
 async fn update(
     config: Config,
     env: Environment,
-    history: Arc<Mutex<UpdateHistory>>,
+    history: &mut UpdateHistory,
     reboot_controller: RebootController,
     concurrent_package_resolves: usize,
     concurrent_blob_fetches: usize,
@@ -407,24 +404,23 @@ async fn update(
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
     excessive_update_duration: Option<Duration>,
     cancel_receiver: oneshot::Receiver<()>,
-    crash_reporter: crash_report::CrashReporter,
+    crash_reporter: &mut crash_report::CrashReporter,
 ) -> (String, impl FusedStream<Item = fupdate_installer_ext::State>) {
-    let attempt_fut = history.lock().start_update_attempt(
-        config.options.clone(),
-        &config.update_url,
-        config.start_time,
-        &env.data_sink,
-        &env.boot_manager,
-    );
-    let attempt = attempt_fut.await;
+    let attempt = history
+        .start_update_attempt(
+            config.options.clone(),
+            &config.update_url,
+            config.start_time,
+            &env.data_sink,
+            &env.boot_manager,
+        )
+        .await;
     let source_version = attempt.source_version().clone();
     let power_state_control = env.power_state_control.clone();
 
-    let history_clone = Arc::clone(&history);
     let attempt_id = attempt.attempt_id().to_string();
     let stream = async_generator::generate(move |co| async move {
         let mut co = state::Yield::new(co);
-        let history = history_clone;
         // The only operation allowed to fail in this function is update_attempt. The rest of the
         // functionality here sets up the update attempt and takes the appropriate actions based on
         // whether the update attempt succeeds or fails.
@@ -455,7 +451,7 @@ async fn update(
         info!("system update attempt completed in {}s, logging metrics", update_duration.as_secs());
         cobalt.log_ota_result(
             config.options.initiator,
-            history.lock().attempts_for(&source_version, &target_version) + 1,
+            history.attempts_for(&source_version, &target_version) + 1,
             co.last_state(),
             update_duration,
             attempt_res.as_ref(),
@@ -527,9 +523,8 @@ async fn update(
         let should_reboot = matches!(last_state, fupdate_installer_ext::State::Reboot { .. });
 
         let attempt = attempt.finish(target_version, last_state);
-        history.lock().record_update_attempt(attempt);
-        let save_fut = history.lock().save();
-        save_fut.await;
+        history.record_update_attempt(attempt);
+        history.save().await;
 
         if should_reboot {
             reboot::reboot(&power_state_control).await;

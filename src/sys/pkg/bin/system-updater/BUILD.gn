@@ -41,7 +41,6 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
-    "//src/lib/fuchsia-sync",
     "//src/lib/fuchsia-url",
     "//src/lib/http-uri-ext",
     "//src/lib/include_str_from_working_dir",
@@ -78,6 +77,7 @@ rustc_binary("bin") {
   non_rust_deps = [ ":epoch.json" ]
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/lib/fuchsia-sync",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",
     "//src/sys/pkg/testing/mock-crash-reporter:lib",
     "//src/sys/pkg/testing/mock-paver",

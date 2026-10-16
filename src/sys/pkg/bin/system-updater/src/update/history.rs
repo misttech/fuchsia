@@ -154,34 +154,30 @@ impl UpdateHistory {
 
     /// Start a new update attempt, returns an PendingAttempt with initial information, caller
     /// should fill in additional information and pass it back to `record_update_attempt()`.
-    pub fn start_update_attempt<'a>(
+    pub async fn start_update_attempt(
         &self,
         options: Options,
-        update_url: &'a http::Uri,
+        update_url: &http::Uri,
         start_time: SystemTime,
-        data_sink: &'a DataSinkProxy,
-        boot_manager: &'a BootManagerProxy,
-    ) -> impl Future<Output = PendingAttempt> + 'a {
-        let latest_target_version = self.latest_successful_target_version().cloned();
-
-        async move {
-            // Generate a random UUID like 6fa28c38-d149-4c8b-a1fc-2cdbc714aad2.
-            let attempt_id = uuid::Uuid::new_v4().to_string();
-            let source_version = Version::current(
-                latest_target_version.as_ref(),
-                data_sink,
-                boot_manager,
-                &NamespaceSystemInfo,
-                SOURCE_EPOCH_RAW,
-            )
-            .await;
-            PendingAttempt {
-                attempt_id,
-                source_version,
-                options,
-                update_url: update_url.to_string(),
-                start_time,
-            }
+        data_sink: &DataSinkProxy,
+        boot_manager: &BootManagerProxy,
+    ) -> PendingAttempt {
+        // Generate a random UUID like 6fa28c38-d149-4c8b-a1fc-2cdbc714aad2.
+        let attempt_id = uuid::Uuid::new_v4().to_string();
+        let source_version = Version::current(
+            self.latest_successful_target_version(),
+            data_sink,
+            boot_manager,
+            &NamespaceSystemInfo,
+            SOURCE_EPOCH_RAW,
+        )
+        .await;
+        PendingAttempt {
+            attempt_id,
+            source_version,
+            options,
+            update_url: update_url.to_string(),
+            start_time,
         }
     }
 
@@ -257,25 +253,21 @@ impl UpdateHistory {
     }
 
     /// Save the update history to disk.
-    pub fn save(&mut self) -> impl Future<Output = ()> + use<> {
+    pub async fn save(&self) {
         let writer = |bytes| async move {
             let _ = fuchsia_fs::file::write_in_namespace(UPDATE_HISTORY_PATH, &bytes).await;
         };
-        self.save_to(writer)
+        self.save_to(writer).await
     }
 
-    fn save_to<W, F>(&self, writer: W) -> impl Future<Output = ()> + use<W, F>
+    async fn save_to<W, F>(&self, writer: W)
     where
         W: FnOnce(Vec<u8>) -> F,
         F: Future<Output = ()>,
     {
         let history = UpdateHistoryJson::Version1(self.update_attempts.clone());
-        let bytes = serde_json::to_vec(&history);
-
-        async move {
-            if let Ok(bytes) = bytes {
-                writer(bytes).await
-            }
+        if let Ok(bytes) = serde_json::to_vec(&history) {
+            writer(bytes).await
         }
     }
 }

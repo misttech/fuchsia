@@ -7,15 +7,13 @@
 use anyhow::anyhow;
 use fidl_fuchsia_feedback::{CrashReport, CrashReporterMarker, CrashReporterProxy};
 use fuchsia_async as fasync;
-use fuchsia_sync::Mutex;
 use log::{error, warn};
-use std::sync::Arc;
 
 const TWENTY_FOUR_HOURS: zx::MonotonicDuration = zx::MonotonicDuration::from_hours(24);
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(crate) struct CrashReporter {
-    previous_installation_error_report_timestamp: Arc<Mutex<Option<zx::MonotonicInstant>>>,
+    previous_installation_error_report_timestamp: Option<zx::MonotonicInstant>,
 }
 
 impl CrashReporter {
@@ -35,25 +33,22 @@ impl CrashReporter {
 
     /// Files an installation error crash report in a background task if one has not already been
     /// filed in the past 24 hours. Logs on error because crash-reporting is best-effort.
-    pub(crate) fn installation_error(&self) {
+    pub(crate) fn installation_error(&mut self) {
         if let Some(proxy) = Self::connect_proxy() {
             self.installation_error_impl(proxy, zx::MonotonicInstant::get());
         }
     }
 
-    fn installation_error_impl(&self, proxy: CrashReporterProxy, now: zx::MonotonicInstant) {
+    fn installation_error_impl(&mut self, proxy: CrashReporterProxy, now: zx::MonotonicInstant) {
+        if let Some(prev) = self.previous_installation_error_report_timestamp
+            && now < prev + TWENTY_FOUR_HOURS
         {
-            let mut prev = self.previous_installation_error_report_timestamp.lock();
-            if let Some(prev) = *prev
-                && now < prev + TWENTY_FOUR_HOURS
-            {
-                warn!(
-                    "skipping report because we already filed one in the past 24 hours (at {prev:?})"
-                );
-                return;
-            }
-            *prev = Some(now);
+            warn!(
+                "skipping report because we already filed one in the past 24 hours (at {prev:?})"
+            );
+            return;
         }
+        self.previous_installation_error_report_timestamp = Some(now);
         Self::file_report(proxy, "fuchsia-installation-error", now);
     }
 
@@ -97,6 +92,7 @@ mod tests {
     use futures::prelude::*;
     use mock_crash_reporter::{MockCrashReporterService, ThrottleHook};
     use std::assert_matches;
+    use std::sync::Arc;
     use test_case::test_case;
 
     fn assert_signature(report: CrashReport, expected_signature: &str) {
@@ -119,7 +115,7 @@ mod tests {
         let (hook, mut recv) = ThrottleHook::new(res);
         let mock = Arc::new(MockCrashReporterService::new(hook));
         let (proxy, _crash_report_server) = mock.spawn_crash_reporter_service();
-        let crash_reporter = CrashReporter::new();
+        let mut crash_reporter = CrashReporter::new();
 
         crash_reporter.installation_error_impl(proxy.clone(), zx::MonotonicInstant::get());
         assert_signature(recv.next().await.unwrap(), "fuchsia-installation-error");
@@ -137,7 +133,7 @@ mod tests {
         let (hook, mut recv) = ThrottleHook::new(Ok(FileReportResults::default()));
         let mock = Arc::new(MockCrashReporterService::new(hook));
         let (proxy, _fidl_server) = mock.spawn_crash_reporter_service();
-        let crash_reporter = CrashReporter::new();
+        let mut crash_reporter = CrashReporter::new();
         let mut now = zx::MonotonicInstant::get();
 
         // On the first InstallationError, we file a report.

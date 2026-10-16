@@ -577,7 +577,7 @@ mod tests {
 
     #[async_trait(?Send)]
     impl Updater for FakeUpdater {
-        type UpdateStream = mpsc::Receiver<State>;
+        type UpdateStream<'a> = mpsc::Receiver<State>;
 
         async fn update(
             &mut self,
@@ -585,7 +585,7 @@ mod tests {
             _env: Environment,
             _reboot_controller: RebootController,
             _cancel_receiver: oneshot::Receiver<()>,
-        ) -> (String, Self::UpdateStream) {
+        ) -> (String, Self::UpdateStream<'_>) {
             self.0.next().await.unwrap()
         }
     }
@@ -965,7 +965,7 @@ mod tests {
 
     #[async_trait(?Send)]
     impl Updater for CancelableUpdater {
-        type UpdateStream = Pin<Box<dyn FusedStream<Item = State>>>;
+        type UpdateStream<'a> = Pin<Box<dyn FusedStream<Item = State>>>;
 
         async fn update(
             &mut self,
@@ -973,7 +973,7 @@ mod tests {
             _env: Environment,
             _reboot_controller: RebootController,
             cancel_receiver: oneshot::Receiver<()>,
-        ) -> (String, Self::UpdateStream) {
+        ) -> (String, Self::UpdateStream<'_>) {
             let stream = async_generator::generate(move |mut co| async move {
                 co.yield_(State::Prepare).await;
                 let () = cancel_receiver.await.expect("cancel sender should not be dropped");
