@@ -14,18 +14,23 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_rust",
     "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
     "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
 
-  test_deps = [ "//third_party/rust_crates:googletest" ]
+  test_deps = [
+    "//src/lib/fdio/rust:fdio",
+    "//third_party/rust_crates:googletest",
+  ]
 
   sources = [
     "src/backlight.rs",

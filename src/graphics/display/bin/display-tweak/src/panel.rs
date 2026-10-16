@@ -11,7 +11,6 @@ use argh::FromArgs;
 use fidl_fuchsia_hardware_display as display;
 use fidl_fuchsia_hardware_display_types as display_types;
 use fuchsia_async::{DurationExt, TimeoutExt};
-use fuchsia_component::client::Service;
 use futures::{TryStreamExt, future};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -46,12 +45,13 @@ impl From<DisplayPowerMode> for display_types::PowerMode {
     }
 }
 
-/// Obtains a handle to the display entry point at the default hard-coded path.
+/// Obtains a handle to the display entry point from the first service
+/// directory that has it (see [`utils::SERVICE_DIRS`]).
 async fn open_display_provider() -> Result<display::ProviderProxy, Error> {
     log::trace!("Opening display coordinator");
 
     const TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
-    let service_proxy = Service::open(display::ServiceMarker)
+    let service_proxy = utils::open_service(display::ServiceMarker)
         .context("failed to open display Service")?
         .watch_for_any()
         .on_timeout(TIMEOUT.after_now(), move || Err(anyhow!("watch timed out")))

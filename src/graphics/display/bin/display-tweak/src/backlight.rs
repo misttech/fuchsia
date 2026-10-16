@@ -5,14 +5,14 @@
 use anyhow::{Context as _, Error};
 use argh::FromArgs;
 use fidl_fuchsia_hardware_backlight as backlight;
-use fuchsia_component::client::Service;
 
 use crate::utils::{self, on_off_to_bool};
 
-/// Obtains a handle to the backlight service at the default hard-coded path.
+/// Obtains a handle to the backlight service from the first service directory
+/// that has it (see [`utils::SERVICE_DIRS`]).
 async fn open_backlight() -> Result<backlight::DeviceProxy, Error> {
     log::trace!("Opening backlight device");
-    let device = Service::open(backlight::ServiceMarker)
+    let device = utils::open_service(backlight::ServiceMarker)
         .context("Failed to open service")?
         .watch_for_any()
         .await
