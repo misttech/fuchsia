@@ -76,6 +76,7 @@ pub unsafe fn free_list(list: Pin<&mut VmPageDoublyLinkedList>) {
 
 /// Converts a physical address to a `VmPagePtr`.
 pub fn paddr_to_vm_page(paddr: PAddr) -> Option<VmPagePtr> {
+    // SAFETY: `cpp_paddr_to_vm_page` accepts any physical address and returns null if not found.
     let raw = unsafe { bindings::cpp_paddr_to_vm_page(paddr.0) };
     // SAFETY: cpp_paddr_to_vm_page returns a valid VmPagePtr, or null.
     unsafe { VmPagePtr::from_ffi(raw) }
@@ -165,18 +166,23 @@ pub fn page_queues() -> &'static PageQueues {
 }
 
 /// Returns the static `Evictor` instance associated with the PMM.
+#[inline]
 pub fn evictor() -> &'static Evictor {
-    // SAFETY: No preconditions.
-    let evictor = unsafe { bindings::cpp_pmm_evictor() };
-    let evictor: *const Evictor = evictor.cast();
-    // SAFETY: `cpp_pmm_evictor` returns a valid static pointer to the global PMM's Evictor.
-    unsafe { evictor.as_ref_unchecked() }
+    node().evictor()
 }
 
 /// Returns a reference to the global `PmmNode` instance.
 #[inline]
 pub fn node() -> &'static PmmNode {
+    // SAFETY: `PMM_NODE` is the static `Pmm::node_` singleton initialized at boot and valid for
+    // the lifetime of the kernel.
     unsafe { &PMM_NODE }
+}
+
+/// Returns the total number of bytes across all physical memory arenas.
+#[inline]
+pub fn count_total_bytes() -> u64 {
+    node().count_total_bytes()
 }
 
 /// Synchronously walk the PMM's free list and validate each page.  This is an incredibly expensive
@@ -186,14 +192,9 @@ pub fn pmm_checker_check_all_free_pages() {
 }
 
 /// Returns the `VmCompression` instance if compression is enabled.
+#[inline]
 pub fn get_page_compression() -> Option<&'static crate::vm::compression::VmCompression> {
-    let raw = unsafe { bindings::cpp_pmm_get_page_compression() };
-    if raw.is_null() {
-        None
-    } else {
-        // SAFETY: `raw` points to a live `VmCompression` owned by the global PmmNode.
-        Some(unsafe { &*(raw as *const crate::vm::compression::VmCompression) })
-    }
+    node().get_page_compression()
 }
 
 /// Unit tests for PMM.

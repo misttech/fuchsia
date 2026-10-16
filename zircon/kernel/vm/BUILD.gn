@@ -276,8 +276,6 @@ kernel_bindgen_crate("pmm-bindings") {
 
   notice_year = 2026
   function_allowlist = [
-    "cpp_pmm_page_queues",
-    "cpp_pmm_evictor",
     "cpp_pmm_alloc_page",
     "cpp_pmm_alloc_pages",
     "cpp_pmm_alloc_contiguous",
@@ -286,15 +284,11 @@ kernel_bindgen_crate("pmm-bindings") {
     "cpp_pmm_num_arenas",
     "cpp_pmm_get_arena_info",
     "cpp_paddr_to_vm_page",
-    "cpp_pmm_get_page_compression",
   ]
   type_allowlist = []
   type_blocklist = [
-    "Evictor",
     "PmmOptDelayReuse",
-    "PageQueues",
     "PmmNode",
-    "VmCompression",
     "VmPageDoublyLinkedList",
     "pmm_arena_info",
     "pmm_arena_info_t",
@@ -305,9 +299,7 @@ kernel_bindgen_crate("pmm-bindings") {
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   deps = [
-    ":evictor-bindings",
     ":page-bindings",
-    ":page-queues-bindings",
     ":pmm-arena-bindings",
     ":pmm-node-bindings",
     "//sdk/rust/zx-types",
@@ -316,15 +308,12 @@ kernel_bindgen_crate("pmm-bindings") {
   edition = "2024"
   raw_lines = [
     "#![no_std]",
-    "use evictor_bindings::Evictor;",
     "use page_bindings::vm_page_t;",
-    "use page_queues_bindings::PageQueues;",
     "pub use pmm_arena_bindings::{pmm_arena_info, pmm_arena_info_t};",
     "pub use zx_types::{zx_paddr_t, zx_status_t};",
     "pub use pmm_node_bindings::PmmOptDelayReuse;",
     "pub type PmmNode = pmm_node_bindings::PmmNode;",
     "pub type VmPageDoublyLinkedList = core::ffi::c_void;",
-    "pub type VmCompression = core::ffi::c_void;",
   ]
   expect_lints = []
 }
@@ -1342,10 +1331,14 @@ kernel_bindgen_crate("compression-bindings") {
     "cpp_vmcompression_compressor_guard_destroy",
     "cpp_vmcompression_compressor_guard_get",
     "cpp_vmcompression_free_reference",
+    "cpp_vmcompression_get_stats",
   ]
+  var_allowlist = [ "VmCompression_kNumLogBuckets" ]
   type_allowlist = [
+    "VmCompressedStorage_MemoryUsage",
     "VmCompression",
     "VmCompression_CompressorGuard",
+    "VmCompression_Stats",
   ]
   opaque_types = [
     "VmCompression",
@@ -1361,21 +1354,25 @@ kernel_bindgen_crate("compression-bindings") {
     "VmCompression_CompressResult",
     "VmCompression_FailTag",
     "VmCompression_PageAndMetadata",
-    "VmCompression_Stats",
     "VmCompression_ZeroTag",
     "VmCompressor",
     "vm_page_t",
+    "zx_duration_mono_t",
     "zx_status_t",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
 
-  deps = [ ":compressor-bindings" ]
+  deps = [
+    ":compressor-bindings",
+    "//sdk/rust/zx-types",
+  ]
 
   raw_lines = [
     "#![no_std]",
     "pub use compressor_bindings::VmCompressor;",
+    "pub use zx_types::zx_duration_mono_t;",
   ]
-  expect_lints = []
+  expect_lints = [ "non_upper_case_globals" ]
 }
 
 kernel_bindgen_crate("compressor-bindings") {
@@ -1563,6 +1560,7 @@ kernel_rust_mod("vm-rs") {
     "discardable_vmo_tracker.rs",
     "evictor.rs",
     "fault.rs",
+    "memory_stats.rs",
     "mod.rs",
     "page.rs",
     "page_queues.rs",
@@ -1618,6 +1616,7 @@ kernel_rust_mod("vm-rs") {
     ":vm-page-list-bindings",
     ":vmm-bindings",
     "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
     "//src/lib/kalloc",
     "//src/lib/kprint",
     "//src/lib/ksync",

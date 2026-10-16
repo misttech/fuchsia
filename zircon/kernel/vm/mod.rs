@@ -16,6 +16,7 @@ pub mod evictor;
 pub mod fault;
 #[path = "../lib/heap/heap.rs"]
 pub mod heap;
+pub mod memory_stats;
 pub mod page;
 pub mod page_queues;
 pub mod page_slab_allocator;

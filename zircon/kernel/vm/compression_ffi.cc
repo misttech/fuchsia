@@ -46,4 +46,9 @@ FFI_ALWAYS_INLINE void cpp_vmcompression_free_reference(VmCompression* compressi
   compression->Free(VmCompression::CompressedRef(ref));
 }
 
+FFI_ALWAYS_INLINE VmCompression::Stats cpp_vmcompression_get_stats(
+    const VmCompression* compression) {
+  return compression->GetStats();
+}
+
 }  // extern "C"

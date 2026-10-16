@@ -12,6 +12,8 @@ use core::pin::Pin;
 use pin_init::{PinInit, pin_data};
 use zr::{Opaque, pin_init_ffi};
 
+pub type Stats = bindings::VmCompression_Stats;
+
 // Note: The upstream C++ `VmCompression` comments and documentation are intentionally not copied
 // over yet.
 #[pin_data(PinnedDrop)]
@@ -24,6 +26,8 @@ pub struct VmCompression {
 zr::unsafe_pinned_drop_ffi!(VmCompression, bindings::cpp_vmcompression_destroy);
 
 impl VmCompression {
+    pub const NUM_LOG_BUCKETS: usize = bindings::VmCompression_kNumLogBuckets;
+
     /// Domain-specific conversion: returns raw pointer for `VmCompression`.
     pub fn as_raw(&self) -> *mut bindings::VmCompression {
         self.raw.get()
@@ -31,8 +35,8 @@ impl VmCompression {
 
     /// Retrieve a reference to a VmCompressor, wrapped in the RAII CompressorGuard. Once the
     /// compressor is finished with it can be destroyed, which will release it for re-use.
-    /// This method may block until a compressor becomes available and callers should be prepared for
-    /// extended wait times.
+    /// This method may block until a compressor becomes available and callers should be prepared
+    /// for extended wait times.
     pub fn acquire_compressor<'a>(&'a self) -> impl PinInit<CompressorGuard<'a>> {
         pin_init_ffi!(bindings::cpp_vmcompression_acquire_compressor, self.as_raw())
     }
@@ -49,6 +53,12 @@ impl VmCompression {
         // SAFETY: `self.as_raw()` points to a live `VmCompression`, and the caller upholds the
         // requirements documented in `# Safety`.
         unsafe { bindings::cpp_vmcompression_free_reference(self.as_raw(), reference.value()) }
+    }
+
+    /// Returns a snapshot of the compression statistics.
+    pub fn get_stats(&self) -> Stats {
+        // SAFETY: `self.as_raw()` points to a live `VmCompression`.
+        unsafe { bindings::cpp_vmcompression_get_stats(self.as_raw()) }
     }
 }
 
@@ -99,8 +109,11 @@ impl fbl::HasRefCount for VmCompression {
     }
 }
 
+// SAFETY: `VmCompression` represents a C++ `fbl::RefCounted` object.
 unsafe impl fbl::Recyclable for VmCompression {
     unsafe fn recycle(ptr: core::ptr::NonNull<Self>) {
+        // SAFETY: Caller guarantees `ptr` points to a valid `VmCompression` with zero remaining
+        // references ready to be deleted.
         unsafe { bindings::cpp_vmcompression_free(ptr.as_ptr() as *mut bindings::VmCompression) }
     }
 }

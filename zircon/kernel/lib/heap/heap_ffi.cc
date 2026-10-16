@@ -21,4 +21,8 @@ FFI_ALWAYS_INLINE void cpp_profile_track_free(uint32_t handle, size_t size) {
   profile_track_free(handle, size);
 }
 
+FFI_ALWAYS_INLINE void cpp_heap_get_info(size_t* total_bytes, size_t* free_bytes) {
+  heap_get_info(total_bytes, free_bytes);
+}
+
 }  // extern "C"

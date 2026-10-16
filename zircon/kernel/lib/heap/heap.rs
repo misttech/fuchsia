@@ -20,3 +20,14 @@ pub fn profile_track_free(cookie: u32, size: usize) {
     // SAFETY: There are no obligations.
     unsafe { bindings::cpp_profile_track_free(cookie, size) }
 }
+
+/// Gets stats about the heap.
+/// Returns `(total_bytes, free_bytes)`, where `total_bytes` is the total size of the heap (the sum
+/// of all pages allocated from the PMM) and `free_bytes` is the free portion.
+pub fn get_info() -> (usize, usize) {
+    let mut total_bytes = 0;
+    let mut free_bytes = 0;
+    // SAFETY: Passing valid, aligned, non-aliasing mutable pointers to local stack variables.
+    unsafe { bindings::cpp_heap_get_info(&mut total_bytes, &mut free_bytes) };
+    (total_bytes, free_bytes)
+}

@@ -11,11 +11,14 @@
 #include <stdint.h>
 #include <zircon/compiler.h>
 
+#include <kernel/ffi.h>
+
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 __BEGIN_CDECLS
 
-uint32_t cpp_profile_track_alloc(size_t size);
-void cpp_profile_track_free(uint32_t handle, size_t size);
+FFI_ALWAYS_INLINE uint32_t cpp_profile_track_alloc(size_t size);
+FFI_ALWAYS_INLINE void cpp_profile_track_free(uint32_t handle, size_t size);
+FFI_ALWAYS_INLINE void cpp_heap_get_info(size_t* total_bytes, size_t* free_bytes);
 
 __END_CDECLS
 

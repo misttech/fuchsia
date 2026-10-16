@@ -13,7 +13,36 @@ pub use page_bindings as bindings;
 pub struct VmPageState(pub bindings::vm_page_state);
 
 impl VmPageState {
+    pub const FREE: Self = Self(bindings::vm_page_state::FREE);
+    pub const ALLOC: Self = Self(bindings::vm_page_state::ALLOC);
+    pub const OBJECT: Self = Self(bindings::vm_page_state::OBJECT);
+    pub const WIRED: Self = Self(bindings::vm_page_state::WIRED);
+    pub const HEAP: Self = Self(bindings::vm_page_state::HEAP);
+    pub const MMU: Self = Self(bindings::vm_page_state::MMU);
+    pub const IOMMU: Self = Self(bindings::vm_page_state::IOMMU);
+    pub const IPC: Self = Self(bindings::vm_page_state::IPC);
+    pub const CACHE: Self = Self(bindings::vm_page_state::CACHE);
+    pub const SLAB: Self = Self(bindings::vm_page_state::SLAB);
+    pub const ZRAM: Self = Self(bindings::vm_page_state::ZRAM);
+    pub const FREE_LOANED: Self = Self(bindings::vm_page_state::FREE_LOANED);
+
     pub const COUNT: usize = bindings::vm_page_state::COUNT_ as usize;
+
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::FREE,
+        Self::ALLOC,
+        Self::OBJECT,
+        Self::WIRED,
+        Self::HEAP,
+        Self::MMU,
+        Self::IOMMU,
+        Self::IPC,
+        Self::CACHE,
+        Self::SLAB,
+        Self::ZRAM,
+        Self::FREE_LOANED,
+    ];
+
     /// Returns the index of `self` as a `usize`.
     #[inline]
     pub const fn index(self) -> usize {
@@ -44,10 +73,12 @@ pub const fn page_state_to_string(state: VmPageState) -> &'static str {
         bindings::vm_page_state::WIRED => "wired",
         bindings::vm_page_state::HEAP => "heap",
         bindings::vm_page_state::MMU => "mmu",
+        bindings::vm_page_state::IOMMU => "iommu",
         bindings::vm_page_state::IPC => "ipc",
         bindings::vm_page_state::CACHE => "cache",
         bindings::vm_page_state::SLAB => "slab",
         bindings::vm_page_state::ZRAM => "zram",
+        bindings::vm_page_state::FREE_LOANED => "free_loaned",
         _ => "unknown",
     }
 }
@@ -58,8 +89,16 @@ impl core::fmt::Display for VmPageState {
     }
 }
 
-const _: () = assert!(core::mem::size_of::<VmPageState>() == 1);
-const _: () = assert!(core::mem::align_of::<VmPageState>() == 1);
-const _: () = assert!(core::mem::size_of::<VmPageCounts>() == 12 * 8);
-const _: () = assert!(core::mem::align_of::<VmPageCounts>() == 8);
-const _: () = assert!(core::mem::offset_of!(VmPageCounts, by_state) == 0);
+zr::static_assert!(core::mem::size_of::<VmPageState>() == 1);
+zr::static_assert!(core::mem::align_of::<VmPageState>() == 1);
+zr::static_assert!(core::mem::size_of::<VmPageCounts>() == 12 * 8);
+zr::static_assert!(core::mem::align_of::<VmPageCounts>() == 8);
+zr::static_assert!(core::mem::offset_of!(VmPageCounts, by_state) == 0);
+zr::static_assert!({
+    let mut i = 0;
+    while i < VmPageState::COUNT {
+        assert!(VmPageState::ALL[i].index() == i);
+        i += 1;
+    }
+    true
+});

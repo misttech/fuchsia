@@ -27,6 +27,11 @@ FFI_ALWAYS_INLINE void cpp_vmcompression_compressor_guard_destroy(
 FFI_ALWAYS_INLINE VmCompressor* cpp_vmcompression_compressor_guard_get(
     VmCompression::CompressorGuard* guard);
 FFI_ALWAYS_INLINE void cpp_vmcompression_free_reference(VmCompression* compression, uint32_t ref);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
+FFI_ALWAYS_INLINE VmCompression::Stats cpp_vmcompression_get_stats(
+    const VmCompression* compression);
+#pragma clang diagnostic pop
 
 __END_CDECLS
 
