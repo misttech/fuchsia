@@ -13,6 +13,7 @@
 #include <lib/zbi-format/zbi.h>
 #include <lib/zbitl/error-stdio.h>
 #include <lib/zbitl/item.h>
+#include <lib/zbitl/items/kernel.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +33,6 @@
 #include <phys/new.h>
 #include <phys/stdio.h>
 #include <phys/symbolize.h>
-#include <phys/zbi.h>
 #include <pretty/cpp/sizes.h>
 
 #include "turducken.h"
@@ -422,7 +422,7 @@ int TurduckenTest::Main(Zbi::iterator kernel_item) {
   uint64_t kernel_load_address =
       GetMemoryAddress(BootZbi::GetKernelAllocationSize(kernel_item), seed);
   uint64_t data_load_address = GetMemoryAddress(
-      BootZbi::Size{.size = loaded_zbi().storage().size(), .alignment = kArchZbiDataAlignment},
+      BootZbi::Size{.size = loaded_zbi().storage().size(), .alignment = zbitl::kDataAlignment},
       seed);
 
   set_kernel_load_address(kernel_load_address);

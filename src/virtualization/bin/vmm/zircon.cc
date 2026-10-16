@@ -15,6 +15,7 @@
 #include <lib/zbitl/error-string.h>
 #include <lib/zbitl/fd.h>
 #include <lib/zbitl/image.h>
+#include <lib/zbitl/items/kernel.h>
 #include <lib/zircon-internal/e820.h>
 #include <limits.h>
 #include <stdio.h>
@@ -26,7 +27,6 @@
 #include <iterator>
 
 #include <fbl/unique_fd.h>
-#include <phys/zbi.h>
 
 #include "src/virtualization/bin/vmm/bits.h"
 #include "src/virtualization/bin/vmm/dev_mem.h"
@@ -88,9 +88,9 @@ zx_status_t read_unified_zbi(fbl::unique_fd zbi_fd, const uintptr_t kernel_zbi_o
   zbi_header_t kernel_item_header;
   zbi_kernel_t kernel_payload_header;
   {
-    if (auto ret = read(zbi_fd.get(), phys_mem.ptr(kernel_zbi_off, sizeof(ZbiKernelImage)),
-                        sizeof(ZbiKernelImage));
-        ret != sizeof(ZbiKernelImage)) {
+    if (auto ret = read(zbi_fd.get(), phys_mem.ptr(kernel_zbi_off, sizeof(zbitl::KernelImage)),
+                        sizeof(zbitl::KernelImage));
+        ret != sizeof(zbitl::KernelImage)) {
       FX_LOGS(ERROR) << "Failed to read initial ZBI headers: " << strerror(errno);
       return ZX_ERR_IO;
     }
@@ -102,11 +102,11 @@ zx_status_t read_unified_zbi(fbl::unique_fd zbi_fd, const uintptr_t kernel_zbi_o
     // Dereference and copy for good measure, as we will soon be overwriting
     // the kernel ZBI range.
     kernel_item_header =
-        phys_mem.read<zbi_header_t>(kernel_zbi_off + offsetof(ZbiKernelImage, hdr_kernel));
+        phys_mem.read<zbi_header_t>(kernel_zbi_off + offsetof(zbitl::KernelImage, hdr_kernel));
     kernel_payload_header =
-        phys_mem.read<zbi_kernel_t>(kernel_zbi_off + offsetof(ZbiKernelImage, data_kernel));
+        phys_mem.read<zbi_kernel_t>(kernel_zbi_off + offsetof(zbitl::KernelImage, data_kernel));
   }
-  const uintptr_t reserved_size = offsetof(ZbiKernelImage, data_kernel) +
+  const uintptr_t reserved_size = offsetof(zbitl::KernelImage, data_kernel) +
                                   kernel_item_header.length +
                                   kernel_payload_header.reserve_memory_size;
   if (kernel_zbi_off + reserved_size > phys_mem.size()) {

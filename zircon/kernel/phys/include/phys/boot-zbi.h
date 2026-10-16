@@ -9,6 +9,7 @@
 
 #include <lib/fit/result.h>
 #include <lib/zbitl/image.h>
+#include <lib/zbitl/items/kernel.h>
 #include <lib/zbitl/view.h>
 
 #include <cstdint>
@@ -16,7 +17,6 @@
 #include <ktl/optional.h>
 #include <ktl/span.h>
 #include <phys/allocation.h>
-#include <phys/zbi.h>
 
 // BootZbi represents a bootable ZBI and manages the memory allocation and ZBI
 // protocol details for getting its kernel image and data ZBI in place and
@@ -90,14 +90,14 @@ class BootZbi {
 
   // The Kernel* methods can be used at any time, even before Load().
 
-  const ZbiKernelImage* KernelImage() const { return kernel_; }
+  const zbitl::KernelImage* KernelImage() const { return kernel_; }
 
   const zbi_kernel_t* KernelHeader() const { return &KernelImage()->data_kernel; }
 
   uint64_t KernelLoadAddress() const { return reinterpret_cast<uintptr_t>(KernelImage()); }
 
   uint32_t KernelLoadSize() const {
-    return static_cast<uint32_t>(offsetof(ZbiKernelImage, data_kernel)) +
+    return static_cast<uint32_t>(offsetof(zbitl::KernelImage, data_kernel)) +
            KernelImage()->hdr_kernel.length;
   }
 
@@ -137,7 +137,7 @@ class BootZbi {
   void InitKernel(Allocation kernel);
   void InitData(Allocation data);
 
-  void SetKernel(const ZbiKernelImage* kernel) { kernel_ = kernel; }
+  void SetKernel(const zbitl::KernelImage* kernel) { kernel_ = kernel; }
 
   [[noreturn]] void ZbiBoot(uintptr_t entry, void* data) const;
 
@@ -164,10 +164,10 @@ class BootZbi {
   // only to the kernel item header (at kernel_->hdr_kernel) and payload.  At
   // construction by Init() this points to just before kernel_item_.  After
   // Load() it may instead point into kernel_buffer_.data(), but is guaranteed
-  // to be aligned to kArchZbiKernelAlignment and to have enough memory
+  // to be aligned to zbitl::kKernelAlignment and to have enough memory
   // after the load image for the requested reserves (either allocated in
   // kernel_buffer_ or reusing zbi_.storage() when no longer in use for data).
-  const ZbiKernelImage* kernel_ = nullptr;
+  const zbitl::KernelImage* kernel_ = nullptr;
 };
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_BOOT_ZBI_H_

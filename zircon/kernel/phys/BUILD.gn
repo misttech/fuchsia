@@ -230,7 +230,6 @@ if (toolchain_environment == "kernel.phys" ||
       ":main",
       ":stdio",
       ":uart-console",
-      ":zbi",
       ":zbi-memory",
       "//src/lib/zbitl",
       "//zircon/kernel/lib/boot-options",
@@ -596,7 +595,6 @@ if (toolchain_environment == "kernel.phys" ||
       ":allocation",
       ":main",
       ":stdio",
-      ":zbi",
       "//src/lib/zbitl",
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/ktl",
@@ -774,22 +772,6 @@ if (toolchain_environment == "kernel.phys" ||
     sources = [ "linuxboot-embed.cc" ]
     deps = [ "//zircon/kernel/lib/arch" ]
   }
-}
-
-source_set("zbi") {
-  public = [ "include/phys/zbi.h" ]
-  public_deps = [
-    # <phys/zbi.h> has #include <zbi/asm/zbi.h>
-    # <phys/arch/zbi.h> has #include <zbi/asm/zbi.h>
-    "//sdk/fidl/zbi:zbi_zither.asm",
-
-    # <phys/zbi.h>" has #include <lib/zbi-format/kernel.h>.
-    # <phys/zbi.h>" has #include <lib/zbi-format/zbi.h>.
-    # <phys/arch/zbi-boot.h> has #include <lib/zbi-format/zbi.h>.
-    "//sdk/lib/zbi-format",
-  ]
-  public_configs = [ ":includes" ]
-  sources = [ "$arch_phys/include/phys/arch/zbi.h" ]
 }
 
 config("includes") {

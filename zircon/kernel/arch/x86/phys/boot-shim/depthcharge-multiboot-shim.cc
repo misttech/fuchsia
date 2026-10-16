@@ -15,6 +15,7 @@
 #include <lib/zbi-format/zbi.h>
 #include <lib/zbitl/error-stdio.h>
 #include <lib/zbitl/image.h>
+#include <lib/zbitl/items/kernel.h>
 #include <stdlib.h>
 
 #include <ktl/iterator.h>
@@ -26,7 +27,6 @@
 #include <phys/stdio.h>
 #include <phys/symbolize.h>
 #include <phys/uart-console.h>
-#include <phys/zbi.h>
 
 #include "legacy-boot-shim.h"
 #include "stdout.h"
@@ -129,7 +129,7 @@ bool AppendDepthChargeItems(LegacyBootShim& shim, BootZbi::Zbi& zbi,
 // appending them as the protocol requires.
 bool LoadDepthchargeZbi(LegacyBootShim& shim, BootZbi& boot) {
   auto& input_zbi = shim.input_zbi();
-  auto kernel_item = input_zbi.find(kArchZbiKernelType);
+  auto kernel_item = input_zbi.find(zbitl::kKernelType);
   if (shim.Check("ZBI Iteration error.", input_zbi.take_error()); kernel_item == input_zbi.end()) {
     printf("%s: No kernel item in the ZBI!.", ProgramName());
     return false;
@@ -189,7 +189,7 @@ uart::all::Config<> UartFromZbi(LegacyBootShim::InputZbi zbi,
   auto first = zbi.begin();
   auto last = zbi.end();
 
-  auto kernel_it = zbi.find(kArchZbiKernelType);
+  auto kernel_it = zbi.find(zbitl::kKernelType);
   if (check_and_print_error()) {
     return uart_config;
   }

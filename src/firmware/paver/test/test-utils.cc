@@ -257,14 +257,14 @@ paver::PaverConfig FakePaverConfig(std::string slot_suffix) {
 }
 
 fbl::Array<uint8_t> CreateZbiHeader(paver::Arch arch, size_t payload_size,
-                                    ZbiKernelImage** result_header, std::span<uint8_t>* span) {
+                                    zbitl::KernelImage** result_header, std::span<uint8_t>* span) {
   // Allocate raw memory.
-  const size_t data_size = sizeof(ZbiKernelImage) + payload_size;
+  const size_t data_size = sizeof(zbitl::KernelImage) + payload_size;
   auto data = fbl::Array<uint8_t>(new uint8_t[data_size], data_size);
   memset(data.get(), 0xee, data_size);
 
   // Set up header for outer ZBI header.
-  auto header = reinterpret_cast<ZbiKernelImage*>(data.get());
+  auto header = reinterpret_cast<zbitl::KernelImage*>(data.get());
   header->hdr_file.type = ZBI_TYPE_CONTAINER;
   header->hdr_file.extra = ZBI_CONTAINER_MAGIC;
   header->hdr_file.magic = ZBI_ITEM_MAGIC;
@@ -285,7 +285,7 @@ fbl::Array<uint8_t> CreateZbiHeader(paver::Arch arch, size_t payload_size,
     *span = std::span<uint8_t>(data.get(), data_size);
   }
   if (result_header != nullptr) {
-    *result_header = reinterpret_cast<ZbiKernelImage*>(data.get());
+    *result_header = reinterpret_cast<zbitl::KernelImage*>(data.get());
   }
 
   return data;

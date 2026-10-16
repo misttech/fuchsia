@@ -102,6 +102,7 @@ if (toolchain_environment == "kernel.phys32" ||
     public_deps = [
       ":stdout",
       "..:legacy-boot",
+      "//src/lib/zbitl",
       "//zircon/kernel/lib/acpi_lite",
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/boot-options",
@@ -113,7 +114,6 @@ if (toolchain_environment == "kernel.phys32" ||
       "//zircon/kernel/phys:main",
       "//zircon/kernel/phys:symbolize",
       "//zircon/kernel/phys:uart-console",
-      "//zircon/kernel/phys:zbi",
       "//zircon/kernel/phys/lib/boot-shim",
       "//zircon/system/ulib/hwreg",
     ]
@@ -175,10 +175,10 @@ if (toolchain_environment == "kernel.phys32" ||
         "..:multiboot",
         "//sdk/lib/fit",
         "//sdk/lib/zbi-format",
+        "//src/lib/zbitl",
         "//zircon/kernel/phys:stdio",
         "//zircon/kernel/phys:symbolize",
         "//zircon/kernel/phys:uart-console",
-        "//zircon/kernel/phys:zbi",
         "//zircon/system/ulib/uart",
       ]
     }

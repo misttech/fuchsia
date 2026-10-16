@@ -245,7 +245,7 @@ fit::result<BootZbi::Error> FixedAddressBootZbi::Load(uint32_t extra_data_capaci
     memcpy(data_dst.data(), zbi_blob.data(), zbi_blob.size());
   }
 
-  SetKernel(reinterpret_cast<const ZbiKernelImage*>(kernel_dst.data()));
+  SetKernel(reinterpret_cast<const zbitl::KernelImage*>(kernel_dst.data()));
   ZbiBoot(KernelEntryAddress(), data_dst.data());
 }
 

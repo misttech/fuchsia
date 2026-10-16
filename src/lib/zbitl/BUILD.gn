@@ -33,6 +33,7 @@ library_headers("headers.decompress") {
 
 library_headers("headers") {
   headers = [
+    "lib/zbitl/asm.h",
     "lib/zbitl/checking.h",
     "lib/zbitl/efi.h",
     "lib/zbitl/error-stdio.h",
@@ -45,6 +46,7 @@ library_headers("headers") {
     "lib/zbitl/items/cpu-topology.h",
     "lib/zbitl/items/debugdata.h",
     "lib/zbitl/items/graphics.h",
+    "lib/zbitl/items/kernel.h",
     "lib/zbitl/json.h",
     "lib/zbitl/memory.h",
     "lib/zbitl/stdio.h",
@@ -54,6 +56,12 @@ library_headers("headers") {
   public_deps = [
     # Many files have #include <lib/zbi-format/zbi.h>.
     "//sdk/lib/zbi-format",
+
+    # <lib/zbitl/items/kernel.h> has #include <zbi/asm/zbi.h>.
+    "//sdk/fidl/zbi:zbi_zither.asm",
+
+    # <lib/zbitl/asm.h> has #include <lib/arch/asm.h>.
+    "//zircon/kernel/lib/arch:headers",
 
     # <lib/zbitl/view.h> has #include <lib/cksum.h>.
     "//zircon/third_party/ulib/cksum$headers_dep",

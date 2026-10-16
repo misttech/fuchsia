@@ -12,6 +12,7 @@
 #include <lib/memalloc/pool.h>
 #include <lib/uart/all.h>
 #include <lib/zbi-format/zbi.h>
+#include <lib/zbitl/items/kernel.h>
 #include <stdlib.h>
 
 #include <ktl/optional.h>
@@ -23,7 +24,6 @@
 #include <phys/stdio.h>
 #include <phys/symbolize.h>
 #include <phys/uart-console.h>
-#include <phys/zbi.h>
 
 #include "stdout.h"
 
@@ -78,7 +78,7 @@ bool LegacyBootShim::IsProperZbi() const {
   bool result = true;
   InputZbi zbi = input_zbi_;
   for (auto [header, payload] : zbi) {
-    result = header->type == kArchZbiKernelType;
+    result = header->type == zbitl::kKernelType;
     break;
   }
   zbi.ignore_error();

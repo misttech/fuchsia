@@ -2,23 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZBI_H_
-#define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZBI_H_
+#ifndef SRC_LIB_ZBITL_INCLUDE_LIB_ZBITL_ASM_H_
+#define SRC_LIB_ZBITL_INCLUDE_LIB_ZBITL_ASM_H_
 
-#include <phys/arch/zbi.h>
+// Assembly macros for defining ZBI headers in place.
 
-#ifdef __ASSEMBLER__
+#ifndef __ASSEMBLER__
+#error "<lib/zbitl/asm.h> is only for assembly"
+#endif
+
+#include <lib/arch/asm.h>
+#include <lib/zbitl/items/kernel.h>
 
 #include <zbi/asm/zbi.h>
 
-#else
-
-#include <lib/zbi-format/kernel.h>
-#include <lib/zbi-format/zbi.h>
-
-#endif  // #ifdef __ASSEMBLER__
-
-#ifdef __ASSEMBLER__  // clang-format off
+// clang-format off
 
 /// Define the layout of a ZBI item header.
 ///
@@ -84,27 +82,11 @@
 ///     - Required: Name of the symbol pointing to the end of the kernel payload.
 ///
 .macro .zbi.kernel.image.object name, end
-  .zbi.container.object \name, length=(\end - .L.zbi.kernel.image.object.header.\name\().\@), align=ARCH_ZBI_KERNEL_ALIGNMENT
-  .zbi.header.object .L.zbi.kernel.image.object.header.\name\().\@, type=ARCH_ZBI_KERNEL_TYPE, length=(\end - .L.zbi.kernel.image.object.payload.\name\().\@)
+  .zbi.container.object \name, length=(\end - .L.zbi.kernel.image.object.header.\name\().\@), align=ARCH_KERNEL_ALIGNMENT
+  .zbi.header.object .L.zbi.kernel.image.object.header.\name\().\@, type=ARCH_KERNEL_TYPE, length=(\end - .L.zbi.kernel.image.object.payload.\name\().\@)
   .label .L.zbi.kernel.image.object.payload.\name\().\@, type=object
 .endm //.zbi.kernel.image.object
 
-#else  // clang-format on
+// clang-format on
 
-constexpr uint32_t kArchZbiKernelType = ARCH_ZBI_KERNEL_TYPE;
-
-constexpr uintptr_t kArchZbiKernelAlignment = ARCH_ZBI_KERNEL_ALIGNMENT;
-
-constexpr uintptr_t kArchZbiDataAlignment = ARCH_ZBI_DATA_ALIGNMENT;
-
-// Represents (the headers of) a bootable ZBI, loaded into memory by the boot
-// loader.
-struct ZbiKernelImage {
-  zbi_header_t hdr_file;
-  zbi_header_t hdr_kernel;
-  zbi_kernel_t data_kernel;
-};
-
-#endif  // ifdef __ASSEMBLER__
-
-#endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ZBI_H_
+#endif  // SRC_LIB_ZBITL_INCLUDE_LIB_ZBITL_ASM_H_

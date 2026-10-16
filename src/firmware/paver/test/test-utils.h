@@ -11,11 +11,11 @@
 #include <lib/fdio/directory.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/zbi-format/zbi.h>
+#include <lib/zbitl/items/kernel.h>
 
 #include <memory>
 
 #include <fbl/array.h>
-#include <phys/zbi.h>
 #include <ramdevice-client-test/ramnandctl.h>
 #include <ramdevice-client/ramdisk.h>
 #include <ramdevice-client/ramnand.h>
@@ -205,7 +205,7 @@ paver::PaverConfig FakePaverConfig(std::string slot_suffix = "-a");
 // If "result_header" is non-null, it will point to the beginning of the
 // uint8_t. It must not outlive the returned fbl::Array object.
 fbl::Array<uint8_t> CreateZbiHeader(paver::Arch arch, size_t payload_size,
-                                    ZbiKernelImage** result_header,
+                                    zbitl::KernelImage** result_header,
                                     std::span<uint8_t>* span = nullptr);
 
 // Creates fake partitions under /block.

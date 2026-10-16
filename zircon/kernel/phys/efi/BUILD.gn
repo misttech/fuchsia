@@ -235,7 +235,7 @@ if (is_efi_toolchain) {
     sources = [ "efi-boot-zbi.cc" ]
     deps = [
       "..:allocation",
-      "..:zbi",
+      "//src/lib/zbitl",
     ]
   }
 }

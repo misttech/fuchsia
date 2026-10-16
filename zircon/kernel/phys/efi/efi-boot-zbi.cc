@@ -9,6 +9,7 @@
 #include <lib/memalloc/range.h>
 #include <lib/zbitl/error-stdio.h>
 #include <lib/zbitl/image.h>
+#include <lib/zbitl/items/kernel.h>
 #include <lib/zbitl/view.h>
 #include <zircon/assert.h>
 
@@ -16,7 +17,6 @@
 #include <phys/allocation.h>
 #include <phys/efi/page-size.h>
 #include <phys/symbolize.h>
-#include <phys/zbi.h>
 
 #include <ktl/enforce.h>
 
@@ -37,7 +37,7 @@ fit::result<EfiBootZbi::Zbi::Error, EfiBootZbi::Zbi> EfiBootZbi::Load(
   }
 
   auto kernel_item = it;
-  if (kernel_item->header->type != kArchZbiKernelType ||
+  if (kernel_item->header->type != zbitl::kKernelType ||
       kernel_item->header->length < sizeof(zbi_kernel_t)) {
     file_zbi_.ignore_error();
     return fit::error{Zbi::Error{
@@ -82,9 +82,9 @@ fit::result<EfiBootZbi::Zbi::Error, EfiBootZbi::Zbi> EfiBootZbi::Load(
   // Set up the in-memory kernel item as the "input ZBI" like Init() would do.
   // But allocate enough extra space after it to guarantee "in-place" loading.
   const size_t kernel_load_size =
-      offsetof(ZbiKernelImage, data_kernel) + kernel_item->header->length;
+      offsetof(zbitl::KernelImage, data_kernel) + kernel_item->header->length;
   size_t kernel_alloc_size = kernel_load_size + kernel_header.reserve_memory_size;
-  if (auto result = zbi_copy(kernel_alloc_size, memalloc::Type::kKernel, kArchZbiKernelAlignment,
+  if (auto result = zbi_copy(kernel_alloc_size, memalloc::Type::kKernel, zbitl::kKernelAlignment,
                              kernel_item, it);
       result.is_ok()) {
     InitKernel(ktl::move(result).value());
@@ -114,7 +114,7 @@ fit::result<EfiBootZbi::Zbi::Error, EfiBootZbi::Zbi> EfiBootZbi::Load(
   // Set up the in-memory data ZBI like Load() would do.
   const size_t data_zbi_size = sizeof(zbi_header_t) + data_items_size;
   size_t data_capacity = data_zbi_size + extra_data_capacity;
-  if (auto result = zbi_copy(data_capacity, memalloc::Type::kDataZbi, kArchZbiDataAlignment, it,
+  if (auto result = zbi_copy(data_capacity, memalloc::Type::kDataZbi, zbitl::kDataAlignment, it,
                              file_zbi_.end());
       result.is_ok()) {
     InitData(ktl::move(result).value());

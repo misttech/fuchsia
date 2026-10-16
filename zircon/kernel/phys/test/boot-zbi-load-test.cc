@@ -9,6 +9,7 @@
 #include <lib/unittest/unittest.h>
 #include <lib/zbi-format/kernel.h>
 #include <lib/zbi-format/zbi.h>
+#include <lib/zbitl/items/kernel.h>
 #include <lib/zbitl/view.h>
 #include <stdio.h>
 #include <zircon/assert.h>
@@ -20,7 +21,6 @@
 #include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/boot-zbi.h>
-#include <phys/zbi.h>
 
 #include "turducken.h"
 
@@ -58,7 +58,7 @@ using InputZbi = TurduckenTestBase::Zbi;
 // ImageModifier takes as an argument zbitl::Image<ktl::span<ktl::byte>> of the base image
 // generated here
 Allocation AllocateZbiForTest(InputZbi zbi, size_t extra_capacity = 0,
-                              size_t alignment = kArchZbiDataAlignment,
+                              size_t alignment = zbitl::kDataAlignment,
                               size_t prepend_discard_item_size = 0) {
   // Given an InputZbi that may have additional items injected from the environment in which it was
   // built, we want to extract the kernel item and the cmdline item. Additionally we allocate up to
@@ -67,7 +67,7 @@ Allocation AllocateZbiForTest(InputZbi zbi, size_t extra_capacity = 0,
 
   auto cleanup = zbitl_cleanup(zbi);
 
-  auto kernel_it = zbi.find(kArchZbiKernelType);
+  auto kernel_it = zbi.find(zbitl::kKernelType);
   ZX_ASSERT_MSG(kernel_it != zbi.end(), "InputZbi did not contain a KERNEL item.");
 
   auto cmdline_it = zbi.find(ZBI_TYPE_CMDLINE);
@@ -144,7 +144,7 @@ BootZbi BootZbiInitAndLoad(BootZbi::InputZbi input_zbi, uint32_t extra_bytes) {
   {
     auto clean_input_zbi_iters = zbitl_cleanup(input_zbi);
 
-    auto kernel_item_it = input_zbi.find(kArchZbiKernelType);
+    auto kernel_item_it = input_zbi.find(zbitl::kKernelType);
     ZX_ASSERT(kernel_item_it != input_zbi.end());
 
     auto data_item_it = ktl::next(kernel_item_it);
@@ -170,7 +170,7 @@ bool CannotLoadKernelInPlaceDataZbiFitsWithinAllocation(InputZbi zbi) {
   Allocation zbi_alloc;
   // Prepend 1 discard item of 1 byte long, so the kernel item is no longer aligned, and forces
   // relocation.
-  zbi_alloc = AllocateZbiForTest(zbi, Allocation::PageSize(), kArchZbiKernelAlignment, 1);
+  zbi_alloc = AllocateZbiForTest(zbi, Allocation::PageSize(), zbitl::kKernelAlignment, 1);
   // No allocation should be returned, since we did not request the trailing bytes to be allocated.
   ZX_ASSERT(!ShrinkZbiToFit(zbi_alloc, true).has_value());
   // `zbi_alloc` contains a valid ZBI whose current allocation capacity should allow it to include
@@ -181,7 +181,7 @@ bool CannotLoadKernelInPlaceDataZbiFitsWithinAllocation(InputZbi zbi) {
   ASSERT_TRUE(zbi_alloc->size_bytes() >= image.size_bytes());
   // Before any modifications are applied to input zbi.
   auto image_cleanup = zbitl_cleanup(image);
-  auto input_kernel_it = image.find(kArchZbiKernelType);
+  auto input_kernel_it = image.find(zbitl::kKernelType);
   ASSERT_TRUE(input_kernel_it != image.end());
   auto input_data_it = ktl::next(input_kernel_it);
   ASSERT_TRUE(input_data_it != image.end());
@@ -220,7 +220,7 @@ bool CannotLoadKernelInPlaceDataZbiDoesNotFitsWithinAllocation(InputZbi zbi) {
   Allocation zbi_alloc;
   // Prepend 1 discard item of 1 byte long, so the kernel item is no longer aligned, and forces
   // relocation.
-  zbi_alloc = AllocateZbiForTest(zbi, 2 * Allocation::PageSize(), kArchZbiKernelAlignment, 1);
+  zbi_alloc = AllocateZbiForTest(zbi, 2 * Allocation::PageSize(), zbitl::kKernelAlignment, 1);
   // No allocation should be returned, since we did not request the trailing bytes to be allocated.
   ZX_ASSERT(!ShrinkZbiToFit(zbi_alloc, true));
 
@@ -232,7 +232,7 @@ bool CannotLoadKernelInPlaceDataZbiDoesNotFitsWithinAllocation(InputZbi zbi) {
   ASSERT_TRUE(zbi_alloc->size_bytes() >= image.size_bytes());
   // Before any modifications are applied to input zbi.
   auto image_cleanup = zbitl_cleanup(image);
-  auto input_kernel_it = image.find(kArchZbiKernelType);
+  auto input_kernel_it = image.find(zbitl::kKernelType);
   ASSERT_TRUE(input_kernel_it != image.end());
   auto input_data_it = ktl::next(input_kernel_it);
   ASSERT_TRUE(input_data_it != image.end());
@@ -277,7 +277,7 @@ bool CannotLoadKernelInPlaceDataZbiDoesNotFitInPlace(InputZbi zbi) {
   Allocation zbi_alloc;
   // Prepend 1 discard item of 1 byte long, so the kernel item is no longer aligned, and forces
   // relocation.
-  zbi_alloc = AllocateZbiForTest(zbi, 2 * Allocation::PageSize(), kArchZbiKernelAlignment, 1);
+  zbi_alloc = AllocateZbiForTest(zbi, 2 * Allocation::PageSize(), zbitl::kKernelAlignment, 1);
   // By allocating the tail, we will fail to allocate in place (at least PageSize extra bytes)
   // and the data should be reallocated as well.
   ktl::optional tail = ShrinkZbiToFit(zbi_alloc, true, true);
@@ -290,7 +290,7 @@ bool CannotLoadKernelInPlaceDataZbiDoesNotFitInPlace(InputZbi zbi) {
   ASSERT_TRUE(zbi_alloc->size_bytes() >=
               image.size_bytes());  // Before any modifications are applied to input zbi.
   auto image_cleanup = zbitl_cleanup(image);
-  auto input_kernel_it = image.find(kArchZbiKernelType);
+  auto input_kernel_it = image.find(zbitl::kKernelType);
   ASSERT_TRUE(input_kernel_it != image.end());
   auto input_data_it = ktl::next(input_kernel_it);
   ASSERT_TRUE(input_data_it != image.end());
@@ -339,14 +339,14 @@ bool CanLoadKernelInPlaceDataZbiDoesNotFitInPlace(InputZbi zbi) {
   uint32_t kernel_reserved_memory_size = 0;
   {
     auto cleanup_zbi = zbitl_cleanup(zbi);
-    auto kernel_it = zbi.find(kArchZbiKernelType);
+    auto kernel_it = zbi.find(zbitl::kKernelType);
     ASSERT_TRUE(kernel_it != zbi.end());
     kernel_reserved_memory_size = static_cast<uint32_t>(
         reinterpret_cast<zbi_kernel_t*>(kernel_it->payload.data())->reserve_memory_size);
   }
 
   zbi_alloc = AllocateZbiForTest(zbi, kernel_reserved_memory_size + Allocation::PageSize(),
-                                 kArchZbiKernelAlignment);
+                                 zbitl::kKernelAlignment);
 
   {
     // Before shrink to fit, append no discard item of the memory size.
@@ -374,7 +374,7 @@ bool CanLoadKernelInPlaceDataZbiDoesNotFitInPlace(InputZbi zbi) {
   ASSERT_TRUE(zbi_alloc->size_bytes() >=
               image.size_bytes());  // Before any modifications are applied to input zbi.
   auto image_cleanup = zbitl_cleanup(image);
-  auto input_kernel_it = image.find(kArchZbiKernelType);
+  auto input_kernel_it = image.find(zbitl::kKernelType);
   ASSERT_TRUE(input_kernel_it != image.end());
   ktl::byte* input_kernel_address = input_kernel_it->payload.data();
   auto input_data_it = ktl::next(input_kernel_it);
@@ -420,14 +420,14 @@ bool CanLoadKernelInPlaceDataZbiDoesFitInPlaceDataZbiIsSmaller(InputZbi zbi) {
   uint32_t kernel_reserved_memory_size = 0;
   {
     auto cleanup_zbi = zbitl_cleanup(zbi);
-    auto kernel_it = zbi.find(kArchZbiKernelType);
+    auto kernel_it = zbi.find(zbitl::kKernelType);
     ASSERT_TRUE(kernel_it != zbi.end());
     kernel_reserved_memory_size = static_cast<uint32_t>(
         reinterpret_cast<zbi_kernel_t*>(kernel_it->payload.data())->reserve_memory_size);
   }
 
   zbi_alloc = AllocateZbiForTest(zbi, kernel_reserved_memory_size + Allocation::PageSize(),
-                                 kArchZbiKernelAlignment);
+                                 zbitl::kKernelAlignment);
 
   {
     // Before shrink to fit, append no discard item of the memory size, the kernel is still bigger
@@ -454,7 +454,7 @@ bool CanLoadKernelInPlaceDataZbiDoesFitInPlaceDataZbiIsSmaller(InputZbi zbi) {
   ASSERT_TRUE(zbi_alloc->size_bytes() >= image.size_bytes());
   // Before any modifications are applied to input zbi.
   auto image_cleanup = zbitl_cleanup(image);
-  auto input_kernel_it = image.find(kArchZbiKernelType);
+  auto input_kernel_it = image.find(zbitl::kKernelType);
   ASSERT_TRUE(input_kernel_it != image.end());
   ktl::byte* input_kernel_address = input_kernel_it->payload.data();
   auto input_data_it = ktl::next(input_kernel_it);
@@ -502,7 +502,7 @@ bool CanLoadKernelInPlaceDataZbiDoesFitInPlaceDataZbiIsBigger(InputZbi zbi) {
   uint32_t kernel_size = 0;
   {
     auto cleanup_zbi = zbitl_cleanup(zbi);
-    auto kernel_it = zbi.find(kArchZbiKernelType);
+    auto kernel_it = zbi.find(zbitl::kKernelType);
     ASSERT_TRUE(kernel_it != zbi.end());
     kernel_size = kernel_it->header->length;
     kernel_reserved_memory_size = static_cast<uint32_t>(
@@ -511,7 +511,7 @@ bool CanLoadKernelInPlaceDataZbiDoesFitInPlaceDataZbiIsBigger(InputZbi zbi) {
 
   zbi_alloc =
       AllocateZbiForTest(zbi, kernel_reserved_memory_size + kernel_size + Allocation::PageSize(),
-                         kArchZbiKernelAlignment);
+                         zbitl::kKernelAlignment);
 
   {
     // Before shrink to fit, append an item of kernel size + memory size.
@@ -540,7 +540,7 @@ bool CanLoadKernelInPlaceDataZbiDoesFitInPlaceDataZbiIsBigger(InputZbi zbi) {
 
   // Before any modifications are applied to input zbi.
   auto image_cleanup = zbitl_cleanup(image);
-  auto input_kernel_it = image.find(kArchZbiKernelType);
+  auto input_kernel_it = image.find(zbitl::kKernelType);
   ASSERT_TRUE(input_kernel_it != image.end());
   ktl::byte* input_kernel_address = input_kernel_it->payload.data();
   auto input_data_it = ktl::next(input_kernel_it);
