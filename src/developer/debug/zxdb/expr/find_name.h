@@ -83,8 +83,8 @@ struct FindNameContext {
   // symbols will be searched.
   const CodeBlock* block = nullptr;
 
-  // The language to search built-in types for. If set and there are no type matches, the name
-  // will be matched against hardcoded built-in types for the corresponding language. If unset,
+  // The language to search built-in types for. If set, the name will be matched against hardcoded
+  // built-in types for the corresponding language before searching the symbol index. If unset,
   // only types declared in the symbols will be matched.
   std::optional<ExprLanguage> language;
 };

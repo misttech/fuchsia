@@ -129,6 +129,34 @@ class ScopedBoolSetter {
   bool original_value_;
 };
 
+// Returns true if the name token at |name_token_index| is followed by "::" or by a "<...>::"
+// template scope qualifier (such as "foo.Base::bar" or "foo->Template<int>::bar").
+bool HasScopeQualifier(const std::vector<ExprToken>& tokens, size_t name_token_index) {
+  if (name_token_index + 1 >= tokens.size())
+    return false;
+  if (tokens[name_token_index + 1].type() == ExprTokenType::kColonColon)
+    return true;
+  if (tokens[name_token_index + 1].type() != ExprTokenType::kLess)
+    return false;
+
+  size_t cur = name_token_index + 2;
+  bool first = true;
+  while (cur < tokens.size() && tokens[cur].type() != ExprTokenType::kGreater) {
+    if (!first) {
+      if (tokens[cur].type() != ExprTokenType::kComma)
+        return false;
+      cur++;
+    }
+    first = false;
+    TemplateTypeResult result = ExtractTemplateType(tokens, cur);
+    if (!result.success || result.end_token == cur)
+      return false;
+    cur = result.end_token;
+  }
+  return cur + 1 < tokens.size() && tokens[cur].type() == ExprTokenType::kGreater &&
+         tokens[cur + 1].type() == ExprTokenType::kColonColon;
+}
+
 }  // namespace
 
 struct ExprParser::DispatchInfo {
@@ -1138,6 +1166,21 @@ fxl::RefPtr<ExprNode> ExprParser::BinaryOpInfix(fxl::RefPtr<ExprNode> left,
 
 fxl::RefPtr<ExprNode> ExprParser::DotOrArrowInfix(fxl::RefPtr<ExprNode> left,
                                                   const ExprToken& token) {
+  if (!at_end() &&
+      (cur_token().type() == ExprTokenType::kName ||
+       cur_token().type() == ExprTokenType::kSpecialName) &&
+      !HasScopeQualifier(tokens_, cur_)) {
+    // Unqualified member identifiers are resolved against the left-hand side object's type at
+    // evaluation time, so parse the identifier component directly without looking up the name in
+    // the lexical or global symbol scope.
+    ParsedIdentifierComponent comp = GetIdentifierComponent();
+    if (has_error())
+      return nullptr;
+    Consume();
+    return fxl::MakeRefCounted<MemberAccessExprNode>(std::move(left), token,
+                                                     ParsedIdentifier(std::move(comp)));
+  }
+
   // These are left-associative so use the same precedence as the token. Allow empty expressions
   // during parse so we can give a slightly better error message below.
   fxl::RefPtr<ExprNode> right = ParseExpression(kPrecedenceCallAccess, EmptyExpression::kAllow);

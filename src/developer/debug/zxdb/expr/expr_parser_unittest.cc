@@ -9,10 +9,18 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/zxdb/common/string_util.h"
+#include "src/developer/debug/zxdb/expr/abi_null.h"
+#include "src/developer/debug/zxdb/expr/eval_context_impl.h"
 #include "src/developer/debug/zxdb/expr/expr_tokenizer.h"
 #include "src/developer/debug/zxdb/expr/found_name.h"
 #include "src/developer/debug/zxdb/expr/mock_eval_context.h"
+#include "src/developer/debug/zxdb/symbols/code_block.h"
 #include "src/developer/debug/zxdb/symbols/collection.h"
+#include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
+#include "src/developer/debug/zxdb/symbols/modified_type.h"
+#include "src/developer/debug/zxdb/symbols/process_symbols_test_setup.h"
+#include "src/developer/debug/zxdb/symbols/type_test_support.h"
+#include "src/developer/debug/zxdb/symbols/variable_test_support.h"
 
 namespace zxdb {
 
@@ -318,6 +326,158 @@ TEST_F(ExprParserTest, NestedDotArrow) {
       "  bar\n"
       " baz\n",
       GetParseString("foo.bar->baz"));
+}
+
+TEST_F(ExprParserTest, MemberAccessAndBuiltinCastsSkipIndex) {
+  ProcessSymbolsTestSetup setup;
+  MockModuleSymbols* module_symbols = setup.InjectMockModule();
+  constexpr uint64_t kLoadAddress = ProcessSymbolsTestSetup::kDefaultLoadAddress;
+
+  auto int32_type = MakeInt32Type();
+  DwarfExpr var_loc;
+  auto my_var =
+      MakeVariableForTest("my_var", int32_type, kLoadAddress, kLoadAddress + 0x100, var_loc);
+  auto my_ptr =
+      MakeVariableForTest("my_ptr", int32_type, kLoadAddress, kLoadAddress + 0x100, var_loc);
+  auto block = fxl::MakeRefCounted<CodeBlock>(DwarfTag::kLexicalBlock);
+  block->set_variables({LazySymbol(my_var), LazySymbol(my_ptr)});
+
+  auto provider = fxl::MakeRefCounted<MockSymbolDataProvider>();
+  auto parse_with_context = [&](const char* input,
+                                ExprLanguage lang = ExprLanguage::kC) -> std::string {
+    ExprTokenizer tokenizer(input, lang);
+    if (!tokenizer.Tokenize())
+      return std::string();
+    auto context = fxl::MakeRefCounted<EvalContextImpl>(
+        std::make_shared<AbiNull>(), setup.process().GetWeakPtr(), provider, lang, block);
+    ExprParser parser(tokenizer.TakeTokens(), lang, context);
+    auto root = parser.ParseStandaloneExpression();
+    if (!root) {
+      ADD_FAILURE() << "Parse failure: " << parser.err().msg();
+      return std::string();
+    }
+    std::ostringstream out;
+    root->Print(out, 0);
+    return out.str();
+  };
+
+  EXPECT_EQ(
+      "ACCESSOR(.)\n"
+      " IDENTIFIER(\"my_var\")\n"
+      " field\n",
+      parse_with_context("my_var.field"));
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  EXPECT_EQ(
+      "ACCESSOR(->)\n"
+      " IDENTIFIER(\"my_ptr\")\n"
+      " field\n",
+      parse_with_context("my_ptr->field"));
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  EXPECT_EQ(
+      "BINARY_OP(<)\n"
+      " ACCESSOR(.)\n"
+      "  IDENTIFIER(\"my_var\")\n"
+      "  field\n"
+      " LITERAL(10)\n",
+      parse_with_context("my_var.field < 10"));
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  EXPECT_EQ(
+      "CAST(C)\n"
+      " TYPE(bool)\n"
+      " IDENTIFIER(\"my_var\")\n",
+      parse_with_context("(bool)my_var"));
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  EXPECT_EQ(
+      "CAST(reinterpret_cast)\n"
+      " TYPE(size_t*)\n"
+      " IDENTIFIER(\"my_ptr\")\n",
+      parse_with_context("reinterpret_cast<size_t*>(my_ptr)"));
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  EXPECT_EQ(
+      "CAST(Rust)\n"
+      " TYPE(u8*)\n"
+      " ACCESSOR(.)\n"
+      "  IDENTIFIER(\"my_var\")\n"
+      "  field\n",
+      parse_with_context("my_var.field as *u8", ExprLanguage::kRust));
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  EXPECT_EQ(
+      "CAST(Rust)\n"
+      " TYPE(u8*)\n"
+      " ACCESSOR(->)\n"
+      "  ACCESSOR(.)\n"
+      "   ACCESSOR(.)\n"
+      "    IDENTIFIER(\"my_var\")\n"
+      "    vec\n"
+      "   buf\n"
+      "  ptr\n",
+      parse_with_context("my_var.vec.buf->ptr as *u8", ExprLanguage::kRust));
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+}
+
+TEST_F(ExprParserTest, MemberAccessShadowedAndQualifiedNames) {
+  auto underlying = fxl::MakeRefCounted<Collection>(DwarfTag::kStructureType, "UnderlyingStruct");
+  auto typedef_type = fxl::MakeRefCounted<ModifiedType>(DwarfTag::kTypedef, underlying);
+  typedef_type->set_assigned_name("shadowed_typedef");
+  eval_context().AddName(ParsedIdentifier("shadowed_typedef"), FoundName(typedef_type));
+
+  EXPECT_EQ(
+      "ACCESSOR(.)\n"
+      " IDENTIFIER(\"my_var\")\n"
+      " shadowed_typedef\n",
+      GetParseString("my_var.shadowed_typedef"));
+  EXPECT_EQ(
+      "ACCESSOR(->)\n"
+      " IDENTIFIER(\"my_ptr\")\n"
+      " shadowed_typedef\n",
+      GetParseString("my_ptr->shadowed_typedef"));
+  EXPECT_EQ(
+      "BINARY_OP(*)\n"
+      " ACCESSOR(.)\n"
+      "  IDENTIFIER(\"my_var\")\n"
+      "  shadowed_typedef\n"
+      " LITERAL(2)\n",
+      GetParseString("my_var.shadowed_typedef * 2"));
+  EXPECT_EQ(
+      "BINARY_OP(<)\n"
+      " ACCESSOR(.)\n"
+      "  IDENTIFIER(\"my_var\")\n"
+      "  shadowed_typedef\n"
+      " LITERAL(2)\n",
+      GetParseString("my_var.shadowed_typedef < 2"));
+  EXPECT_EQ(
+      "ACCESSOR(.)\n"
+      " IDENTIFIER(\"my_var\")\n"
+      " Namespace\n",
+      GetParseString("my_var.Namespace"));
+  EXPECT_EQ(
+      "ACCESSOR(.)\n"
+      " IDENTIFIER(\"my_var\")\n"
+      " Template\n",
+      GetParseString("my_var.Template"));
+  EXPECT_EQ(
+      "BINARY_OP(<)\n"
+      " ACCESSOR(.)\n"
+      "  IDENTIFIER(\"my_var\")\n"
+      "  Template\n"
+      " LITERAL(2)\n",
+      GetParseString("my_var.Template < 2"));
+  EXPECT_EQ(
+      "ACCESSOR(.)\n"
+      " IDENTIFIER(\"my_var\")\n"
+      " ::Type::field\n",
+      GetParseString("my_var.Type::field"));
+  EXPECT_EQ(
+      "ACCESSOR(->)\n"
+      " IDENTIFIER(\"my_ptr\")\n"
+      " Template<int>::field\n",
+      GetParseString("my_ptr->Template<int>::field"));
 }
 
 TEST_F(ExprParserTest, UnexpectedInput) {

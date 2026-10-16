@@ -54,6 +54,9 @@ class MockModuleSymbols : public ModuleSymbols {
   // to.
   Index& index() { return index_; }
 
+  // Returns the number of times GetIndex() has been called on this module.
+  size_t index_lookups() const { return index_lookups_; }
+
   void set_modification_time(std::size_t mtime) { modification_time_ = mtime; }
   void set_mapped_length(uint64_t len) { mapped_length_ = len; }
   void set_build_dir(const std::string& build_dir) { build_dir_ = build_dir; }
@@ -91,6 +94,7 @@ class MockModuleSymbols : public ModuleSymbols {
   MockSymbolFactory symbol_factory_;
 
   Index index_;
+  mutable size_t index_lookups_ = 0;
 
   std::string local_file_name_;
   std::size_t modification_time_ = 0;

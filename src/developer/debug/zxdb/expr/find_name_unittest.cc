@@ -816,4 +816,54 @@ TEST(FindName, ElfSymbol) {
   EXPECT_EQ(results[0].other_symbol().get(), elf_symbol.get());
 }
 
+TEST(FindName, BuiltinTypesSkipIndex) {
+  ProcessSymbolsTestSetup setup;
+  MockModuleSymbols* module_symbols = setup.InjectMockModule();
+  SymbolContext symbol_context(ProcessSymbolsTestSetup::kDefaultLoadAddress);
+
+  // Set up a member function with an object pointer ("this") so FindMemberOnThis is also active.
+  auto int_type = MakeInt32Type();
+  auto class_type = MakeCollectionType(DwarfTag::kClassType, "MyClass", {{"member", int_type}});
+  auto ptr_class_type = fxl::MakeRefCounted<ModifiedType>(DwarfTag::kPointerType, class_type);
+  auto this_param = fxl::MakeRefCounted<Variable>(DwarfTag::kFormalParameter, "this",
+                                                  ptr_class_type, VariableLocation());
+  auto function = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  function->set_object_pointer(this_param);
+
+  FindNameContext c_context(&setup.process(), symbol_context, function.get(), ExprLanguage::kC);
+  FindNameOptions all_kinds(FindNameOptions::kAllKinds);
+
+  FoundName found = FindName(c_context, all_kinds, ParsedIdentifier("size_t"));
+  ASSERT_TRUE(found.is_found());
+  EXPECT_EQ(FoundName::kType, found.kind());
+  EXPECT_EQ("size_t", found.type()->GetFullName());
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  found = FindName(c_context, all_kinds, ParsedIdentifier("bool"));
+  ASSERT_TRUE(found.is_found());
+  EXPECT_EQ(FoundName::kType, found.kind());
+  EXPECT_EQ("bool", found.type()->GetFullName());
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  FindNameContext rust_context(&setup.process(), symbol_context, function.get(),
+                               ExprLanguage::kRust);
+  found = FindName(rust_context, all_kinds, ParsedIdentifier("u8"));
+  ASSERT_TRUE(found.is_found());
+  EXPECT_EQ(FoundName::kType, found.kind());
+  EXPECT_EQ("u8", found.type()->GetFullName());
+  EXPECT_EQ(0u, module_symbols->index_lookups());
+
+  // Built-in types are not returned when find_types is false.
+  FindNameOptions vars_only(FindNameOptions::kNoKinds);
+  vars_only.find_vars = true;
+  found = FindName(c_context, vars_only, ParsedIdentifier("size_t"));
+  EXPECT_FALSE(found.is_found());
+
+  // Non-builtin types still consult the module index.
+  size_t lookups_before = module_symbols->index_lookups();
+  found = FindName(c_context, all_kinds, ParsedIdentifier("NonBuiltinType"));
+  EXPECT_FALSE(found.is_found());
+  EXPECT_GT(module_symbols->index_lookups(), lookups_before);
+}
+
 }  // namespace zxdb

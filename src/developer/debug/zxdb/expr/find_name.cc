@@ -526,6 +526,15 @@ void FindName(const FindNameContext& context, const FindNameOptions& options,
   if (supported == FindNameSupported::kInternal)
     return FindInternalName(context, options, looking_for, results);
 
+  if (options.find_types && context.language) {
+    // Match synthetic built-in types for the requested language before searching the symbol index.
+    if (auto type = GetBuiltinType(*context.language, looking_for.GetFullName())) {
+      results->emplace_back(std::move(type));
+      if (results->size() >= options.max_results)
+        return;
+    }
+  }
+
   // This only works for fully-supported identifier types. Some work only with the module-specific
   // symbol query we do below.
   if (supported == FindNameSupported::kFully && options.search_mode == FindNameOptions::kLexical &&
@@ -555,12 +564,6 @@ void FindName(const FindNameContext& context, const FindNameOptions& options,
       }
     }
     FindIndexedName(context, options, current_scope, looking_for, true, results);
-  }
-
-  if (results->empty() && options.find_types && context.language) {
-    // Fall back on synthetic built-in types for the requested language.
-    if (auto type = GetBuiltinType(*context.language, looking_for.GetFullName()))
-      results->emplace_back(std::move(type));
   }
 }
 

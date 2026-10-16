@@ -133,7 +133,10 @@ std::vector<fxl::RefPtr<Function>> MockModuleSymbols::GetMainFunctions() const {
   return std::vector<fxl::RefPtr<Function>>();
 }
 
-const Index& MockModuleSymbols::GetIndex() const { return index_; }
+const Index& MockModuleSymbols::GetIndex() const {
+  index_lookups_++;
+  return index_;
+}
 
 LazySymbol MockModuleSymbols::IndexSymbolRefToSymbol(const IndexNode::SymbolRef& die_ref) const {
   auto found = die_refs_.find(die_ref.die_ref());
