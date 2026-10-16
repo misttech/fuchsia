@@ -15,7 +15,7 @@ class VmAspace;
 __BEGIN_CDECLS
 
 VmAspace* cpp_process_dispatcher_normal_aspace(ProcessDispatcher* process);
-VmAspace* cpp_process_dispatcher_restricted_aspace(ProcessDispatcher* process);
+VmAspace* cpp_process_dispatcher_restricted_aspace(const ProcessDispatcher* process);
 
 __END_CDECLS
 

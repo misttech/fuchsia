@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::diagnostics::{
+    VmarMapsInfoWriter, VmoInfoWriter, get_process_vmos, get_vm_aspace_maps, get_vm_aspace_vmos,
+};
 use super::dispatcher::DispatcherOps;
 use super::handle::{HandleOwner, HandleValue, KernelHandle};
 use super::handle_table::HandleTable;
@@ -17,15 +20,17 @@ use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_enforce_basic_policy, cpp_process_dispatcher_exit_current,
     cpp_process_dispatcher_futex_context, cpp_process_dispatcher_get_debug_addr,
     cpp_process_dispatcher_get_dyn_break_on_load, cpp_process_dispatcher_get_info,
-    cpp_process_dispatcher_get_timer_slack_policy,
+    cpp_process_dispatcher_get_runtime_stats, cpp_process_dispatcher_get_stats,
+    cpp_process_dispatcher_get_threads, cpp_process_dispatcher_get_timer_slack_policy,
     cpp_process_dispatcher_get_timer_slack_policy_amount, cpp_process_dispatcher_handle_table,
     cpp_process_dispatcher_is_current, cpp_process_dispatcher_job, cpp_process_dispatcher_kill,
     cpp_process_dispatcher_lookup_thread_by_id, cpp_process_dispatcher_make_and_add_handle,
     cpp_process_dispatcher_make_and_add_handle_from_ref, cpp_process_dispatcher_resume,
     cpp_process_dispatcher_set_critical_to_job, cpp_process_dispatcher_set_debug_addr,
-    cpp_process_dispatcher_set_dyn_break_on_load, cpp_process_dispatcher_start,
-    cpp_process_dispatcher_suspend, cpp_process_dispatcher_vdso_base_address,
-    cpp_process_get_job_koid, cpp_process_remove_thread,
+    cpp_process_dispatcher_set_dyn_break_on_load, cpp_process_dispatcher_shareable_state,
+    cpp_process_dispatcher_start, cpp_process_dispatcher_state, cpp_process_dispatcher_suspend,
+    cpp_process_dispatcher_vdso_base_address, cpp_process_get_job_koid, cpp_process_remove_thread,
+    cpp_shareable_process_state_aspace,
 };
 use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
@@ -33,13 +38,60 @@ use crate::arch_rs::UserEntryState;
 use crate::kernel::thread::ThreadPtr;
 use crate::vm::vm_aspace::VmAspace;
 use core::mem::MaybeUninit;
+use fbl::Array;
 use zx_status::Status;
-use zx_types::{zx_info_process_t, zx_rights_t, zx_vaddr_t};
+use zx_types::{
+    zx_info_process_t, zx_info_task_runtime_t, zx_info_task_stats_t, zx_koid_t, zx_rights_t,
+    zx_vaddr_t,
+};
 
 crate::object::dispatcher::impl_dispatcher_facade!(
     pub struct ProcessDispatcher,
     zx_types::ZX_OBJ_TYPE_PROCESS
 );
+
+// LINT.IfChange(ProcessState)
+/// State of a [`ProcessDispatcher`].
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ProcessState {
+    /// Initial state, no thread present in process.
+    Initial = 0,
+    /// First thread has started and is running.
+    Running = 1,
+    /// Process has delivered kill signal to all threads.
+    Dying = 2,
+    /// All threads have entered DEAD state and potentially dropped refs on process.
+    Dead = 3,
+}
+// LINT.ThenChange(//zircon/kernel/object/include/object/process_dispatcher.h:ProcessState)
+
+zr::static_assert!(core::mem::size_of::<ProcessState>() == 4);
+zr::static_assert!(core::mem::align_of::<ProcessState>() == 4);
+
+/// Facade for the C++ `ShareableProcessState` class.
+#[repr(C)]
+pub(super) struct ShareableProcessState {
+    _facade: zr::OpaqueFacade,
+}
+
+zr::static_assert!(core::mem::size_of::<ShareableProcessState>() == 0);
+
+impl ShareableProcessState {
+    /// Returns a `*const ShareableProcessState` pointer suitable for passing to FFI routines.
+    #[inline]
+    fn as_ffi(&self) -> *const Self {
+        self as *const Self
+    }
+
+    /// Returns the shareable address space owned by this `ShareableProcessState`.
+    #[inline]
+    fn aspace(&self) -> &VmAspace {
+        // SAFETY: `self` is a valid `ShareableProcessState` reference, and the shareable address
+        // space is valid for the lifetime of `self`.
+        unsafe { &*cpp_shareable_process_state_aspace(self.as_ffi()) }
+    }
+}
 
 /// A wrapper around a raw pointer to the current [`ProcessDispatcher`].
 ///
@@ -93,6 +145,20 @@ impl ProcessDispatcher {
         // SAFETY: `self` is a valid `ProcessDispatcher`, and its handle table is valid for the
         // lifetime of `self`.
         unsafe { &*cpp_process_dispatcher_handle_table(self.as_ffi()) }
+    }
+
+    /// Returns a reference to this process's [`ShareableProcessState`].
+    #[inline]
+    fn shareable_state(&self) -> &ShareableProcessState {
+        // SAFETY: `self` is a valid `ProcessDispatcher`, and its shareable state is valid for the
+        // lifetime of `self`.
+        unsafe { &*cpp_process_dispatcher_shareable_state(self.as_ffi()) }
+    }
+
+    /// Returns the current [`ProcessState`] of this process.
+    pub(super) fn state(&self) -> ProcessState {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_state(self.as_ffi()) }
     }
 
     /// Starts execution of this process.
@@ -185,8 +251,8 @@ impl ProcessDispatcher {
         let raw_dispatcher =
             fbl::RefPtr::into_raw(unsafe { dispatcher.cast::<super::Dispatcher>() });
         let mut out = HandleValue::default();
-        // SAFETY: `self` is a valid `ProcessDispatcher`, `raw_dispatcher` carries an acquired reference count
-        // transferred to C++, and `out` points to writable memory.
+        // SAFETY: `self` is a valid `ProcessDispatcher`, `raw_dispatcher` carries an acquired
+        // reference count transferred to C++, and `out` points to writable memory.
         let status = unsafe {
             cpp_process_dispatcher_make_and_add_handle_from_ref(
                 self.as_ffi_mut(),
@@ -217,7 +283,8 @@ impl ProcessDispatcher {
     #[inline]
     pub fn get_timer_slack_policy(&self) -> crate::kernel::deadline::TimerSlack {
         let mut slack = crate::kernel::deadline::TimerSlack::none();
-        // SAFETY: `self` is a valid `ProcessDispatcher` reference and `slack` points to valid memory.
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference and `slack` points to valid
+        // memory.
         unsafe {
             cpp_process_dispatcher_get_timer_slack_policy(self.as_ffi(), &mut slack);
         }
@@ -228,6 +295,98 @@ impl ProcessDispatcher {
     pub fn get_info(&self) -> zx_info_process_t {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
         unsafe { cpp_process_dispatcher_get_info(self.as_ffi()) }
+    }
+
+    /// Returns task memory statistics for this process.
+    pub fn get_stats(&self) -> Result<zx_info_task_stats_t, Status> {
+        let mut stats = zx_info_task_stats_t::default();
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference and `stats` is valid for
+        // writing.
+        let status = unsafe { cpp_process_dispatcher_get_stats(self.as_ffi(), &mut stats) };
+        Status::ok(status)?;
+        Ok(stats)
+    }
+
+    /// Returns the runtime of all threads that previously ran or are currently running under this
+    /// process.
+    pub fn get_runtime_stats(&self) -> zx_info_task_runtime_t {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_get_runtime_stats(self.as_ffi()) }
+    }
+
+    /// Returns the KOIDs of all threads in this process.
+    pub fn get_threads(&self) -> Result<Array<zx_koid_t>, Status> {
+        let mut ptr: *mut zx_koid_t = core::ptr::null_mut();
+        let mut count: usize = 0;
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference and `ptr` and `count` are valid
+        // out-pointers.
+        let status = unsafe {
+            cpp_process_dispatcher_get_threads(self.as_ffi(), &raw mut ptr, &raw mut count)
+        };
+        Status::ok(status)?;
+        if count == 0 {
+            Ok(Array::new())
+        } else {
+            // SAFETY: `ptr` was allocated by `new zx_koid_t[count]` (backed by the kernel heap
+            // `malloc`) and initialized with `count` elements.
+            Ok(unsafe { Array::from_raw_parts(ptr, count) })
+        }
+    }
+
+    /// Writes the address space maps for this process into `maps` and returns `(actual, available)`.
+    pub fn get_aspace_maps(
+        &self,
+        maps: &mut impl VmarMapsInfoWriter,
+        mut max: usize,
+    ) -> Result<(usize, usize), Status> {
+        // Get the restricted_aspace first because it lives in the lower portion of the memory,
+        // and this API should return a sorted map.
+        let mut actual_r = 0;
+        let mut available_r = 0;
+        if let Some(restricted_aspace) = self.restricted_aspace() {
+            (actual_r, available_r) = get_vm_aspace_maps(restricted_aspace, maps, max)?;
+            debug_assert!(max >= actual_r);
+            max -= actual_r;
+            maps.add_offset(actual_r);
+        }
+
+        // Do not check the state since we need to call get_vm_aspace_maps without the dispatcher
+        // lock held, and so any check will become stale anyway. Should the process be dead, or
+        // transition to the dead state during the operation, then the associated aspace will also
+        // be destroyed, which will be noticed and result in a ZX_ERR_BAD_STATE being returned from
+        // get_vm_aspace_maps.
+        let (actual, available) = get_vm_aspace_maps(self.shareable_state().aspace(), maps, max)?;
+
+        Ok((actual + actual_r, available + available_r))
+    }
+
+    /// Writes the VMOs associated with this process into `vmos` and returns `(actual, available)`.
+    pub fn get_vmos(
+        &self,
+        vmos: &mut impl VmoInfoWriter,
+        max: usize,
+    ) -> Result<(usize, usize), Status> {
+        if self.state() != ProcessState::Running {
+            return Err(Status::BAD_STATE);
+        }
+
+        let (actual, available) = get_process_vmos(self, vmos, max)?;
+
+        debug_assert!(max >= actual);
+        vmos.add_offset(actual);
+        let (actual2, available2) =
+            get_vm_aspace_vmos(self.shareable_state().aspace(), vmos, max - actual)?;
+
+        let mut actual3 = 0;
+        let mut available3 = 0;
+        debug_assert!(max >= actual + actual2);
+        vmos.add_offset(actual2);
+        if let Some(restricted_aspace) = self.restricted_aspace() {
+            (actual3, available3) =
+                get_vm_aspace_vmos(restricted_aspace, vmos, max - (actual + actual2))?;
+        }
+
+        Ok((actual + actual2 + actual3, available + available2 + available3))
     }
 
     /// Sets this process as critical to the given job.
@@ -268,7 +427,8 @@ impl ProcessDispatcher {
         let mut vmar_rights = MaybeUninit::<zx_rights_t>::uninit();
 
         // SAFETY: `job` is a valid `RefPtr<JobDispatcher>` whose refcount is transferred to C++,
-        // `name` points to readable memory of length `name.len()`, and output pointers point to valid uninitialized storage.
+        // `name` points to readable memory of length `name.len()`, and output pointers point to
+        // valid uninitialized storage.
         let status = unsafe {
             cpp_process_dispatcher_create(
                 fbl::RefPtr::into_raw(job) as *mut _,
@@ -307,7 +467,8 @@ impl ProcessDispatcher {
         let mut vmar_handle = MaybeUninit::uninit();
         let mut vmar_rights = MaybeUninit::<zx_rights_t>::uninit();
 
-        // SAFETY: `shared_proc` is a valid `RefPtr<ProcessDispatcher>` whose refcount is transferred to C++.
+        // SAFETY: `shared_proc` is a valid `RefPtr<ProcessDispatcher>` whose refcount is
+        // transferred to C++.
         let status = unsafe {
             cpp_process_dispatcher_create_shared(
                 fbl::RefPtr::into_raw(shared_proc) as *mut _,
@@ -342,7 +503,8 @@ impl ProcessDispatcher {
     pub fn aspace_at(&self, va: usize) -> Option<&VmAspace> {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
         let aspace_ptr = unsafe { cpp_process_dispatcher_aspace_at(self.as_ffi_mut(), va) };
-        // SAFETY: `aspace_ptr` is either null or points to a valid `VmAspace` managed by the process.
+        // SAFETY: `aspace_ptr` is either null or points to a valid `VmAspace` managed by the
+        // process.
         unsafe { aspace_ptr.as_ref() }
     }
 
@@ -385,7 +547,7 @@ impl ProcessDispatcher {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
         let raw: *mut process_dispatcher_bindings::VmAspace = unsafe {
             process_dispatcher_bindings::cpp_process_dispatcher_restricted_aspace(
-                self.as_ffi_mut().cast(),
+                self.as_ffi().cast(),
             )
         };
         // SAFETY: The restricted address space is valid for the lifetime of `self`.

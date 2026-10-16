@@ -7,25 +7,27 @@
 use super::dispatcher::{Dispatcher, DispatcherOps};
 use super::handle::{HandleOwner, HandleRef, HandleValue};
 use super::handle_table_ffi::{
-    cpp_handle_table_add_handle_locked,
-    cpp_handle_table_get_dispatcher_with_rights_no_policy_check,
-    cpp_handle_table_get_handle_locked, cpp_handle_table_koid, cpp_handle_table_lock,
-    cpp_handle_table_map_handle_to_value, cpp_handle_table_remove_handle_locked,
+    cpp_handle_table_add_handle_locked, cpp_handle_table_for_each_handle_batched,
+    cpp_handle_table_for_each_handle_locked, cpp_handle_table_get_handle_locked,
+    cpp_handle_table_handle_count, cpp_handle_table_handle_count_locked, cpp_handle_table_koid,
+    cpp_handle_table_lock, cpp_handle_table_map_handle_to_value,
+    cpp_handle_table_remove_handle_locked,
 };
 use super::process_dispatcher::ProcessDispatcher;
 use crate::kernel::thread::AutoExpiringPreemptDisabler;
 use core::convert::Infallible;
 use core::ffi::c_void;
 use core::fmt::{self, Debug, Formatter};
-use core::mem::{MaybeUninit, size_of};
+use core::mem::size_of;
 use core::ptr::{self, NonNull};
-use fbl::{HasRefCount, Recyclable, RefPtr};
+use fbl::{Array, HasRefCount, Recyclable, RefPtr};
 use ksync::{BrwLockPi, BrwLockPiReadGuard, BrwLockPiWriteGuard, LockClass, LockToken};
 use pin_init::PinInit;
 use zr::OpaqueFacade;
 use zx_status::Status;
 use zx_types::{
-    ZX_HANDLE_INVALID, ZX_OBJ_TYPE_NONE, ZX_RIGHT_NONE, zx_handle_t, zx_koid_t, zx_rights_t,
+    ZX_HANDLE_INVALID, ZX_OBJ_TYPE_NONE, ZX_RIGHT_NONE, zx_handle_t, zx_info_handle_extended_t,
+    zx_koid_t, zx_rights_t, zx_status_t,
 };
 
 /// Lock class tag for the handle table's reader-writer lock.
@@ -131,6 +133,20 @@ impl HandleTable {
         unsafe { cpp_handle_table_koid(self.as_ffi()) }
     }
 
+    /// Returns the number of outstanding handles in this handle table.
+    #[inline]
+    pub fn handle_count(&self) -> u32 {
+        // SAFETY: `self` is a valid `HandleTable` reference.
+        unsafe { cpp_handle_table_handle_count(self.as_ffi()) }
+    }
+
+    /// Returns the number of outstanding handles in this handle table while holding its lock.
+    #[inline]
+    pub fn handle_count_locked(&self, _token: &LockToken<'_, HandleTableLockClass>) -> u32 {
+        // SAFETY: `self` is a valid `HandleTable` reference and the handle table lock is held.
+        unsafe { cpp_handle_table_handle_count_locked(self.as_ffi()) }
+    }
+
     /// Maps a handle to its user-visible `HandleValue` for this handle table.
     #[inline]
     pub fn map_handle_to_value(&self, handle: HandleRef<'_>) -> HandleValue {
@@ -143,15 +159,29 @@ impl HandleTable {
     #[inline]
     pub fn get_handle_locked<'a>(
         &'a self,
-        _token: &'a LockToken<'_, HandleTableLockClass>,
+        token: &'a LockToken<'_, HandleTableLockClass>,
         caller: &ProcessDispatcher,
         handle_value: HandleValue,
     ) -> Option<HandleRef<'a>> {
-        // SAFETY: `self` and `caller` are valid and the handle table lock is held for `'a`.
+        self.get_handle_locked_opt(token, Some(caller), handle_value)
+    }
+
+    /// Same as [`Self::get_handle_locked`], except `caller` can be `None` to skip
+    /// `ZX_POL_BAD_HANDLE` policy enforcement.
+    #[inline]
+    fn get_handle_locked_opt<'a>(
+        &'a self,
+        _token: &'a LockToken<'_, HandleTableLockClass>,
+        caller: Option<&ProcessDispatcher>,
+        handle_value: HandleValue,
+    ) -> Option<HandleRef<'a>> {
+        let caller_ptr = caller.map_or(ptr::null_mut(), ProcessDispatcher::as_ffi_mut);
+        // SAFETY: `self` is valid, `caller_ptr` is null or a valid `ProcessDispatcher`, and the
+        // handle table lock is held for `'a`.
         let ptr = unsafe {
             cpp_handle_table_get_handle_locked(
                 self.as_ffi_mut(),
-                caller.as_ffi_mut(),
+                caller_ptr,
                 handle_value.raw_value(),
             )
         };
@@ -244,6 +274,45 @@ impl HandleTable {
         status
     }
 
+    /// Get the dispatcher corresponding to this handle value, after checking that this handle has
+    /// the desired rights.
+    /// `ZX_ERR_WRONG_TYPE` is returned before `ZX_ERR_ACCESS_DENIED`, because if the wrong handle
+    /// was passed, evaluating its rights does not have much meaning and also this aids in
+    /// debugging.
+    /// If successful, returns the dispatcher and the rights the handle currently has.
+    /// If `caller` is `None`, `ZX_POL_BAD_HANDLE` will not be enforced.
+    #[inline]
+    fn get_dispatcher_with_rights_impl<T>(
+        &self,
+        caller: Option<&ProcessDispatcher>,
+        handle_value: HandleValue,
+        desired_rights: zx_rights_t,
+    ) -> Result<(RefPtr<T>, zx_rights_t), Status>
+    where
+        T: DispatcherOps + HasRefCount + Recyclable,
+    {
+        let (has_desired_rights, rights, generic_dispatcher) = {
+            // Scope utilized to reduce lock duration.
+            ksync::lock!(let guard = self.read_lock());
+            let handle = self
+                .get_handle_locked_opt(guard.token(), caller, handle_value)
+                .ok_or(Status::BAD_HANDLE)?;
+            (handle.has_rights(desired_rights), handle.rights(), handle.dispatcher())
+        };
+
+        // Wrong type takes precedence over access denied.
+        if T::TYPE != ZX_OBJ_TYPE_NONE && generic_dispatcher.get_type() != T::TYPE {
+            return Err(Status::WRONG_TYPE);
+        }
+
+        if !has_desired_rights {
+            return Err(Status::ACCESS_DENIED);
+        }
+
+        // SAFETY: We verified the type of the dispatcher matches `T::TYPE`, so it is safe to cast.
+        Ok((unsafe { generic_dispatcher.cast::<T>() }, rights))
+    }
+
     /// Resolves a handle to a dispatcher of type `T` without requiring any rights.
     ///
     /// # Errors
@@ -277,18 +346,7 @@ impl HandleTable {
     where
         T: DispatcherOps + HasRefCount + Recyclable,
     {
-        let (dispatcher, rights) = {
-            ksync::lock!(let guard = self.read_lock());
-            let handle = self
-                .get_handle_locked(guard.token(), caller, handle_value)
-                .ok_or(Status::BAD_HANDLE)?;
-            (handle.dispatcher(), handle.rights())
-        };
-        if T::TYPE != ZX_OBJ_TYPE_NONE && dispatcher.get_type() != T::TYPE {
-            return Err(Status::WRONG_TYPE);
-        }
-        // SAFETY: We verified the type of the dispatcher matches `T::TYPE`, so it is safe to cast.
-        Ok((unsafe { dispatcher.cast::<T>() }, rights))
+        self.get_dispatcher_with_rights_impl::<T>(Some(caller), handle_value, ZX_RIGHT_NONE)
     }
 
     /// Resolves a handle to a dispatcher of type `T` with the required `rights` and returns its
@@ -309,12 +367,7 @@ impl HandleTable {
     where
         T: DispatcherOps + HasRefCount + Recyclable,
     {
-        let (dispatcher, actual_rights) =
-            self.get_dispatcher_and_rights::<T>(caller, handle_value)?;
-        if (actual_rights & rights) != rights {
-            return Err(Status::ACCESS_DENIED);
-        }
-        Ok((dispatcher, actual_rights))
+        self.get_dispatcher_with_rights_impl::<T>(Some(caller), handle_value, rights)
     }
 
     /// Resolves a handle to a dispatcher of type `T` with the required `rights` in this handle
@@ -336,7 +389,7 @@ impl HandleTable {
         T: DispatcherOps + HasRefCount + Recyclable,
     {
         let (dispatcher, _actual_rights) =
-            self.get_dispatcher_with_rights_and_actual::<T>(caller, handle_value, rights)?;
+            self.get_dispatcher_with_rights_impl::<T>(Some(caller), handle_value, rights)?;
         Ok(dispatcher)
     }
 
@@ -355,22 +408,138 @@ impl HandleTable {
     where
         T: DispatcherOps + HasRefCount + Recyclable,
     {
-        const { assert!(T::TYPE != ZX_OBJ_TYPE_NONE) };
-        let mut dispatcher = MaybeUninit::<RefPtr<Dispatcher>>::uninit();
-        // SAFETY: `self` is a valid `HandleTable` whose lock is not held here, and `dispatcher`
-        // points to valid uninitialized memory that is initialized only on success.
+        let (dispatcher, _actual_rights) =
+            self.get_dispatcher_with_rights_impl::<T>(None, handle_value, rights)?;
+        Ok(dispatcher)
+    }
+
+    /// Calls `func` on every handle owned by the handle table while holding the handle table lock.
+    /// Stops if `func` returns an error, returning the error value.
+    pub fn for_each_handle<F>(&self, func: F) -> Result<(), Status>
+    where
+        F: FnMut(zx_handle_t, zx_rights_t, &Dispatcher) -> Result<(), Status>,
+    {
+        ksync::lock!(let guard = self.read_lock());
+        self.for_each_handle_locked(guard.token(), func)
+    }
+
+    /// Similar to [`Self::for_each_handle`], but requires the caller to be holding the handle
+    /// table lock.
+    pub fn for_each_handle_locked<F>(
+        &self,
+        _token: &LockToken<'_, HandleTableLockClass>,
+        mut func: F,
+    ) -> Result<(), Status>
+    where
+        F: FnMut(zx_handle_t, zx_rights_t, &Dispatcher) -> Result<(), Status>,
+    {
+        /// # Safety
+        ///
+        /// `ctx` must point to a valid, unaliased `F` on the caller's stack and `disp` must point
+        /// to a valid `Dispatcher` for the duration of the synchronous callback invocation.
+        unsafe extern "C" fn trampoline<F>(
+            ctx: *mut c_void,
+            handle: zx_handle_t,
+            rights: zx_rights_t,
+            disp: *const Dispatcher,
+        ) -> zx_status_t
+        where
+            F: FnMut(zx_handle_t, zx_rights_t, &Dispatcher) -> Result<(), Status>,
+        {
+            // SAFETY: `cpp_handle_table_for_each_handle_locked` invokes `trampoline` synchronously
+            // and sequentially on the same thread before returning, so `ctx` points to the live,
+            // unaliased `func` on `for_each_handle_locked`'s stack, and `disp` points to a live
+            // `Dispatcher` owned by a `Handle` in `handles_` while the handle table lock is held.
+            let (cb, disp) = unsafe { (&mut *ctx.cast::<F>(), &*disp) };
+            Status::result_into_raw(cb(handle, rights, disp))
+        }
+
+        // SAFETY: `self` is a valid `HandleTable`, the handle table lock is held via `_token`, and
+        // `cpp_handle_table_for_each_handle_locked` only invokes `trampoline` synchronously before
+        // returning, while `func` remains live and unaliased on this stack frame.
         let status = unsafe {
-            cpp_handle_table_get_dispatcher_with_rights_no_policy_check(
-                self.as_ffi_mut(),
-                handle_value.raw_value(),
-                T::TYPE,
-                rights,
-                &raw mut dispatcher,
+            cpp_handle_table_for_each_handle_locked(
+                self.as_ffi(),
+                (&raw mut func).cast(),
+                trampoline::<F>,
             )
         };
-        Status::ok(status)?;
-        // SAFETY: The call succeeded, so `dispatcher` was initialized, and C++ verified that its
-        // type matches `T::TYPE`, so it is safe to cast.
-        Ok(unsafe { dispatcher.assume_init().cast::<T>() })
+        Status::ok(status)
+    }
+
+    /// Iterates over every handle owned by this handle table in batches and calls `func` on each
+    /// one without holding the handle table lock during `func`.
+    pub fn for_each_handle_batched<F>(&self, mut func: F) -> Result<(), Status>
+    where
+        F: FnMut(zx_handle_t, zx_rights_t, &Dispatcher) -> Result<(), Status>,
+    {
+        /// # Safety
+        ///
+        /// `ctx` must point to a valid, unaliased `F` on the caller's stack and `disp` must point
+        /// to a valid `Dispatcher` for the duration of the synchronous callback invocation.
+        unsafe extern "C" fn trampoline<F>(
+            ctx: *mut c_void,
+            handle: zx_handle_t,
+            rights: zx_rights_t,
+            disp: *const Dispatcher,
+        ) -> zx_status_t
+        where
+            F: FnMut(zx_handle_t, zx_rights_t, &Dispatcher) -> Result<(), Status>,
+        {
+            // SAFETY: `cpp_handle_table_for_each_handle_batched` invokes `trampoline`
+            // synchronously and sequentially on the same thread before returning, so `ctx` points
+            // to the live, unaliased `func` on `for_each_handle_batched`'s stack, and `disp`
+            // points to a live `Dispatcher` kept alive by the batch's
+            // `fbl::RefPtr<const Dispatcher>`.
+            let (cb, disp) = unsafe { (&mut *ctx.cast::<F>(), &*disp) };
+            Status::result_into_raw(cb(handle, rights, disp))
+        }
+
+        // SAFETY: `self` is a valid `HandleTable`, and `cpp_handle_table_for_each_handle_batched`
+        // only invokes `trampoline` synchronously before returning, while `func` remains live and
+        // unaliased on this stack frame.
+        let status = unsafe {
+            cpp_handle_table_for_each_handle_batched(
+                self.as_ffi_mut(),
+                (&raw mut func).cast(),
+                trampoline::<F>,
+            )
+        };
+        Status::ok(status)
+    }
+
+    /// Returns extended handle information for all handles in this handle table.
+    pub fn get_handle_info(&self) -> Result<Array<zx_info_handle_extended_t>, Status> {
+        loop {
+            let count = self.handle_count() as usize;
+            // TODO: Bug 45685. This memory allocation should come from a different pool since it
+            // can be larger than one page.
+            let mut handles = Array::<zx_info_handle_extended_t>::try_new_zeroed_slice(count)
+                .map_err(|_| Status::NO_MEMORY)?;
+
+            {
+                ksync::lock!(let guard = self.read_lock());
+                if count != self.handle_count_locked(guard.token()) as usize {
+                    continue;
+                }
+
+                let mut index = 0;
+                let _ = self.for_each_handle_locked(guard.token(), |handle, rights, disp| {
+                    let entry = &mut handles[index];
+                    index += 1;
+                    *entry = zx_info_handle_extended_t {
+                        type_: disp.get_type(),
+                        handle_value: handle,
+                        rights,
+                        reserved: 0,
+                        koid: disp.get_koid(),
+                        related_koid: disp.get_related_koid(),
+                        peer_owner_koid: 0,
+                    };
+                    Ok(())
+                });
+            }
+            return Ok(handles);
+        }
     }
 }

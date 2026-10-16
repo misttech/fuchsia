@@ -8,12 +8,15 @@ use super::dispatcher::Dispatcher;
 use super::handle::{HandleValue, KernelHandle};
 use super::handle_table::HandleTable;
 use super::job_dispatcher::JobDispatcher;
-use super::process_dispatcher::ProcessDispatcher;
+use super::process_dispatcher::{ProcessDispatcher, ProcessState, ShareableProcessState};
 use super::thread_dispatcher::ThreadDispatcher;
 use crate::arch_rs::UserEntryState;
 use crate::kernel::thread::Thread;
 use core::mem::MaybeUninit;
-use zx_types::{zx_info_process_t, zx_koid_t, zx_rights_t, zx_status_t, zx_vaddr_t};
+use zx_types::{
+    zx_info_process_t, zx_info_task_runtime_t, zx_info_task_stats_t, zx_koid_t, zx_rights_t,
+    zx_status_t, zx_vaddr_t,
+};
 
 unsafe extern "C" {
     /// Returns a raw pointer to the current process dispatcher.
@@ -104,6 +107,24 @@ unsafe extern "C" {
         process: *const ProcessDispatcher,
     ) -> *const HandleTable;
 
+    /// Returns a pointer to the shareable process state of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(super) fn cpp_process_dispatcher_shareable_state(
+        process: *const ProcessDispatcher,
+    ) -> *const ShareableProcessState;
+
+    /// Returns a pointer to the address space of `state`.
+    ///
+    /// # Safety
+    ///
+    /// `state` must point to a valid `ShareableProcessState`.
+    pub(super) fn cpp_shareable_process_state_aspace(
+        state: *const ShareableProcessState,
+    ) -> *const crate::vm::vm_aspace::VmAspace;
+
     /// Enforces basic policy for the given process.
     ///
     /// # Safety
@@ -127,7 +148,8 @@ unsafe extern "C" {
     ///
     /// # Safety
     ///
-    /// `process` must point to a valid `ProcessDispatcher` and `out_slack` must point to valid memory.
+    /// `process` must point to a valid `ProcessDispatcher` and `out_slack` must point to valid
+    /// memory.
     pub(crate) fn cpp_process_dispatcher_get_timer_slack_policy(
         process: *const ProcessDispatcher,
         out_slack: *mut crate::kernel::deadline::TimerSlack,
@@ -141,6 +163,45 @@ unsafe extern "C" {
     pub(crate) fn cpp_process_dispatcher_get_info(
         process: *const ProcessDispatcher,
     ) -> zx_info_process_t;
+
+    /// Returns the current `ProcessDispatcher::State` of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(super) fn cpp_process_dispatcher_state(process: *const ProcessDispatcher) -> ProcessState;
+
+    /// Retrieves task memory statistics for `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher` and `out_stats` must point to valid
+    /// writable memory.
+    pub(crate) fn cpp_process_dispatcher_get_stats(
+        process: *const ProcessDispatcher,
+        out_stats: *mut zx_info_task_stats_t,
+    ) -> zx_status_t;
+
+    /// Retrieves task runtime statistics for `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_get_runtime_stats(
+        process: *const ProcessDispatcher,
+    ) -> zx_info_task_runtime_t;
+
+    /// Retrieves the KOIDs of all threads in `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher` and `out_threads` and `out_count` must
+    /// point to valid writable memory.
+    pub(crate) fn cpp_process_dispatcher_get_threads(
+        process: *const ProcessDispatcher,
+        out_threads: *mut *mut zx_koid_t,
+        out_count: *mut usize,
+    ) -> zx_status_t;
 
     /// Sets a process as critical to a job.
     ///
@@ -178,7 +239,8 @@ unsafe extern "C" {
     ///
     /// # Safety
     ///
-    /// `shared_proc` must point to a valid `ProcessDispatcher` whose reference count was transferred.
+    /// `shared_proc` must point to a valid `ProcessDispatcher` whose reference count was
+    /// transferred.
     /// `name_ptr` must point to `name_len` readable bytes.
     /// Output handle and rights pointers must point to writable memory.
     pub(crate) fn cpp_process_dispatcher_create_shared(
@@ -198,7 +260,8 @@ unsafe extern "C" {
     ///
     /// # Safety
     ///
-    /// Must only be called within a valid running thread context. Terminates current process execution.
+    /// Must only be called within a valid running thread context. Terminates current process
+    /// execution.
     pub(crate) fn cpp_process_dispatcher_exit_current(retcode: i64) -> !;
 
     /// Returns the address space of `process` at the given virtual address.

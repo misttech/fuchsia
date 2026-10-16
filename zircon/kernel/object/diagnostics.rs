@@ -4,15 +4,30 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::ffi::{c_char, c_int, c_void};
-use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use kprint::kprintln;
+use super::io_buffer_dispatcher::IoBufferDispatcher;
+use super::process_dispatcher::ProcessDispatcher;
+use super::vm_object_dispatcher::{VmObjectDispatcher, VmoOwnership, vmo_to_info_entry};
+use crate::arch_rs::UserCopyCaptureFaultsError;
+use crate::vm::arch_vm_aspace::{
+    ARCH_MMU_FLAG_INVALID, ARCH_MMU_FLAG_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_READ,
+    ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
+};
+use crate::vm::attribution::{AttributionCounts, FractionalBytes};
+use crate::vm::vm_address_region::{VmAddressRegion, VmAspaceGuard, VmEnumerator};
+use crate::vm::vm_aspace::VmAspace;
+use crate::vm::vm_mapping::{FlagsRange, VmMapping};
+use crate::vm::vm_object::VmObject;
+use core::ffi::CStr;
+use core::pin::Pin;
+use fbl::RefPtr;
+use zx_status::Status;
 use zx_types::{
-    ZX_OBJ_TYPE_CHANNEL, ZX_OBJ_TYPE_EVENTPAIR, ZX_OBJ_TYPE_FIFO, ZX_OBJ_TYPE_IOB,
-    ZX_OBJ_TYPE_SOCKET,
+    ZX_INFO_MAPS_TYPE_ASPACE, ZX_INFO_MAPS_TYPE_MAPPING, ZX_INFO_MAPS_TYPE_VMAR, ZX_MAX_NAME_LEN,
+    ZX_VM_PERM_EXECUTE, ZX_VM_PERM_READ, ZX_VM_PERM_WRITE, zx_info_maps_mapping_t, zx_info_maps_t,
+    zx_info_vmo_t,
 };
 
+#[cfg(console_enabled)]
 use super::diagnostics_ffi::{
     dump_all_peer_dispatchers, dump_all_vm_objects, dump_handles_for_koid, dump_job_list,
     dump_job_policies, dump_orphaned_mapped_vmos, dump_orphaned_slices,
@@ -20,19 +35,377 @@ use super::diagnostics_ffi::{
     dump_process_list, dump_process_memory_usage, dump_process_vm_objects, dump_vm_object_cow_tree,
     handle_diagnostics_dump_table_info, handle_diagnostics_outstanding_handles, kill_process,
 };
+#[cfg(console_enabled)]
 use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
+#[cfg(console_enabled)]
 use crate::kernel::thread;
+#[cfg(console_enabled)]
 use crate::platform_rs::timer::DurationMono;
-use crate::vm::vm_aspace::VmAspace;
+#[cfg(console_enabled)]
+use core::ffi::{c_char, c_int, c_void};
+#[cfg(console_enabled)]
+use core::ptr;
+#[cfg(console_enabled)]
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+#[cfg(console_enabled)]
+use kprint::kprintln;
+#[cfg(console_enabled)]
+use zx_types::{
+    ZX_OBJ_TYPE_CHANNEL, ZX_OBJ_TYPE_EVENTPAIR, ZX_OBJ_TYPE_FIFO, ZX_OBJ_TYPE_IOB,
+    ZX_OBJ_TYPE_SOCKET,
+};
 
+/// Abstraction around writing `zx_info_vmo_t`s to user space. As there are multiple versions of the
+/// `zx_info_vmo_t` struct and we generally just want to produce the most recent one,
+/// implementations of this trait deal with converting from the most recent representation to the
+/// version requested by the user.
+/// Since conversion may need to occur element by element this provides no multi-element array
+/// writes like the regular user_copy interface.
+pub trait VmoInfoWriter {
+    /// Writes a single `zx_info_vmo_t` at the given element offset. Return values are same as
+    /// `user_ptr::copy_to_user`.
+    fn write(&mut self, vmo: &zx_info_vmo_t, offset: usize) -> Result<(), Status>;
+    /// Same as `write`, except is the no faulting variant and returns the complete capture result
+    /// type.
+    fn write_capture_faults(
+        &mut self,
+        vmo: &zx_info_vmo_t,
+        offset: usize,
+    ) -> Result<(), UserCopyCaptureFaultsError>;
+    /// Increases the base offset such that writes to offset 0 write to this offset.
+    fn add_offset(&mut self, offset: usize);
+}
+
+/// Similar to [`VmoInfoWriter`], but for `zx_info_maps_t`.
+pub trait VmarMapsInfoWriter {
+    /// Writes a single `zx_info_maps_t` at the given element offset. Return values are same as
+    /// `user_ptr::copy_to_user`.
+    fn write(&mut self, maps: &zx_info_maps_t, offset: usize) -> Result<(), Status>;
+    /// Same as `write`, except is the no faulting variant and returns the complete capture result
+    /// type.
+    fn write_capture_faults(
+        &mut self,
+        maps: &zx_info_maps_t,
+        offset: usize,
+    ) -> Result<(), UserCopyCaptureFaultsError>;
+    /// Increases the base offset such that writes to offset 0 write to this offset.
+    fn add_offset(&mut self, offset: usize);
+}
+
+fn copy_cstr_to_name(dst: &mut [u8; ZX_MAX_NAME_LEN], src: &CStr) {
+    let bytes = src.to_bytes();
+    let len = bytes.len().min(dst.len() - 1);
+    dst[..len].copy_from_slice(&bytes[..len]);
+    dst[len..].fill(0);
+}
+
+fn arch_mmu_flags_to_vm_flags(arch_mmu_flags: ArchMmuFlags) -> u32 {
+    if (arch_mmu_flags & ARCH_MMU_FLAG_INVALID) != 0 {
+        return 0;
+    }
+    let mut ret = 0;
+    if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_READ) != 0 {
+        ret |= ZX_VM_PERM_READ;
+    }
+    if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) != 0 {
+        ret |= ZX_VM_PERM_WRITE;
+    }
+    if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) != 0 {
+        ret |= ZX_VM_PERM_EXECUTE;
+    }
+    ret
+}
+
+/// Builds a list of all VMARs and mappings in a `VmAspace` or `VmAddressRegion`.
+struct AspaceEnumerator<'a, W: VmarMapsInfoWriter> {
+    writer: &'a mut W,
+    depth_offset: usize,
+    max: usize,
+    available: usize,
+}
+
+impl<'a, W: VmarMapsInfoWriter> AspaceEnumerator<'a, W> {
+    fn new(writer: &'a mut W, depth_offset: usize, max: usize, avail_start: usize) -> Self {
+        Self { writer, depth_offset, max, available: avail_start }
+    }
+
+    fn available(&self) -> usize {
+        self.available
+    }
+}
+
+impl<W: VmarMapsInfoWriter> VmEnumerator for AspaceEnumerator<'_, W> {
+    fn on_vm_mapping(
+        &mut self,
+        map: &VmMapping,
+        _vmar: &VmAddressRegion,
+        depth: u32,
+        mut guard: Pin<&mut VmAspaceGuard<'_>>,
+    ) -> Status {
+        let map_base = map.base().0;
+        let map_size = map.size();
+        let map_object_offset = map.object_offset();
+        let vmo: RefPtr<VmObject> =
+            map.vmo_locked(guard.token()).expect("mapping in aspace must have a VMO");
+        let mut region_offset = 0;
+        let mut entry = zx_info_maps_t::default();
+
+        while region_offset < map_size && map.is_alive_locked(guard.token()) {
+            let region_base = map_base + region_offset;
+            let protect_range: FlagsRange =
+                map.arch_mmu_flags_range_locked(guard.token(), region_base);
+            let region_len = (protect_range.region_top as usize) - region_base;
+            if self.available < self.max {
+                let mmu_flags: ArchMmuFlags = protect_range.mmu_flags;
+                let available = self.available;
+                let depth_offset = self.depth_offset;
+                let writer = &mut *self.writer;
+                let mut status = Ok(());
+                guard.as_mut().call_unlocked(|| {
+                    vmo.get_name(&mut entry.name);
+                    entry.base = region_base;
+                    entry.size = region_len;
+                    entry.depth = (depth as usize) + depth_offset;
+                    entry.r#type = ZX_INFO_MAPS_TYPE_MAPPING;
+                    let object_offset = map_object_offset + (region_base - map_base) as u64;
+                    let counts: AttributionCounts =
+                        vmo.get_attributed_memory_in_range(object_offset, region_len as u64);
+                    let total_scaled_bytes: FractionalBytes = counts.total_scaled_bytes();
+                    entry.u.mapping = zx_info_maps_mapping_t {
+                        mmu_flags: arch_mmu_flags_to_vm_flags(mmu_flags),
+                        padding1: Default::default(),
+                        vmo_koid: vmo.user_id(),
+                        vmo_offset: object_offset,
+                        committed_bytes: counts.uncompressed_bytes,
+                        populated_bytes: counts.total_bytes(),
+                        committed_private_bytes: counts.private_uncompressed_bytes,
+                        populated_private_bytes: counts.total_private_bytes(),
+                        committed_scaled_bytes: counts.scaled_uncompressed_bytes.integral,
+                        populated_scaled_bytes: total_scaled_bytes.integral,
+                        committed_fractional_scaled_bytes: counts
+                            .scaled_uncompressed_bytes
+                            .fractional,
+                        populated_fractional_scaled_bytes: total_scaled_bytes.fractional,
+                    };
+                    status = writer.write(&entry, available);
+                });
+                if status.is_err() {
+                    return Status::INVALID_ARGS;
+                }
+            }
+            self.available += 1;
+            region_offset += region_len;
+        }
+        Status::NEXT
+    }
+
+    fn on_vm_address_region(
+        &mut self,
+        vmar: &VmAddressRegion,
+        depth: u32,
+        mut guard: Pin<&mut VmAspaceGuard<'_>>,
+    ) -> Status {
+        if self.available < self.max {
+            let mut entry = zx_info_maps_t::default();
+            copy_cstr_to_name(&mut entry.name, vmar.name());
+            entry.base = vmar.base().0;
+            entry.size = vmar.size();
+            entry.depth = (depth as usize) + self.depth_offset;
+            entry.r#type = ZX_INFO_MAPS_TYPE_VMAR;
+            let available = self.available;
+            let writer = &mut *self.writer;
+            let mut status = Ok(());
+            guard.as_mut().call_unlocked(|| {
+                status = writer.write(&entry, available);
+            });
+            if status.is_err() {
+                return Status::INVALID_ARGS;
+            }
+        }
+        self.available += 1;
+
+        Status::NEXT
+    }
+}
+
+/// Walks `target_aspace` and writes entries that describe it into `maps`, up to `max` entries.
+/// Returns `(actual, available)`, the number of entries written and the number of entries that
+/// could have been written.
+pub fn get_vm_aspace_maps(
+    target_aspace: &VmAspace,
+    maps: &mut impl VmarMapsInfoWriter,
+    max: usize,
+) -> Result<(usize, usize), Status> {
+    if target_aspace.is_destroyed() {
+        return Err(Status::BAD_STATE);
+    }
+
+    if max > 0 {
+        let mut entry = zx_info_maps_t::default();
+        // SAFETY: `target_aspace` is a live `VmAspace`, and `VmAspace::rename` is only called
+        // during `VmAspace` initialization before the object is published, so no concurrent
+        // `rename` can occur.
+        let name = unsafe { target_aspace.name_ptr() };
+        copy_cstr_to_name(&mut entry.name, name);
+        entry.base = target_aspace.base();
+        entry.size = target_aspace.size();
+        entry.depth = 0;
+        entry.r#type = ZX_INFO_MAPS_TYPE_ASPACE;
+        if maps.write(&entry, 0).is_err() {
+            return Err(Status::INVALID_ARGS);
+        }
+    }
+
+    let root_vmar = target_aspace.root_vmar().ok_or(Status::BAD_STATE)?;
+    let mut ae = AspaceEnumerator::new(maps, 1, max, 1);
+    root_vmar.enumerate_children(&mut ae)?;
+    let available = ae.available();
+    let actual = max.min(available);
+    Ok((actual, available))
+}
+
+/// Walks `target_vmar` and writes entries that describe it into `maps`, up to `max` entries.
+/// Returns `(actual, available)`, the number of entries written and the number of entries that
+/// could have been written.
+pub fn get_vmar_maps(
+    target_vmar: &VmAddressRegion,
+    maps: &mut impl VmarMapsInfoWriter,
+    max: usize,
+) -> Result<(usize, usize), Status> {
+    let mut ae = AspaceEnumerator::new(maps, 0, max, 0);
+    target_vmar.enumerate_children(&mut ae)?;
+
+    let available = ae.available();
+    let actual = max.min(available);
+    Ok((actual, available))
+}
+
+/// Builds a list of all VMOs mapped into a `VmAspace`.
+struct AspaceVmoEnumerator<'a, W: VmoInfoWriter> {
+    vmos: &'a mut W,
+    max: usize,
+    available: usize,
+}
+
+impl<'a, W: VmoInfoWriter> AspaceVmoEnumerator<'a, W> {
+    fn new(vmos: &'a mut W, max: usize) -> Self {
+        Self { vmos, max, available: 0 }
+    }
+
+    fn available(&self) -> usize {
+        self.available
+    }
+}
+
+impl<W: VmoInfoWriter> VmEnumerator for AspaceVmoEnumerator<'_, W> {
+    fn on_vm_mapping(
+        &mut self,
+        map: &VmMapping,
+        _vmar: &VmAddressRegion,
+        _depth: u32,
+        mut guard: Pin<&mut VmAspaceGuard<'_>>,
+    ) -> Status {
+        if self.available < self.max {
+            let vmo: RefPtr<VmObject> =
+                map.vmo_locked(guard.token()).expect("mapping in aspace must have a VMO");
+            let available = self.available;
+            let vmos = &mut *self.vmos;
+            let mut status = Ok(());
+            guard.as_mut().call_unlocked(|| {
+                let entry: zx_info_vmo_t =
+                    vmo_to_info_entry(&vmo, VmoOwnership::Mapping, /*handle_rights=*/ 0);
+                status = vmos.write(&entry, available);
+            });
+            if let Err(err) = status {
+                return err;
+            }
+        }
+        self.available += 1;
+        Status::NEXT
+    }
+}
+
+/// Walks `target_aspace` and writes entries that describe its mapped VMOs into `vmos`, up to `max`
+/// entries. Returns `(actual, available)`, the number of entries written and the number of entries
+/// that could have been written.
+pub fn get_vm_aspace_vmos(
+    target_aspace: &VmAspace,
+    vmos: &mut impl VmoInfoWriter,
+    max: usize,
+) -> Result<(usize, usize), Status> {
+    if target_aspace.is_destroyed() {
+        return Err(Status::BAD_STATE);
+    }
+
+    let root_vmar = target_aspace.root_vmar().ok_or(Status::BAD_STATE)?;
+
+    let mut ave = AspaceVmoEnumerator::new(vmos, max);
+    root_vmar.enumerate_children(&mut ave)?;
+
+    let available = ave.available();
+    let actual = available.min(max);
+    Ok((actual, available))
+}
+
+/// For every VMO in `process`'s handle table, writes an entry into `vmos`, up to `max` entries.
+/// Returns `(actual, available)`, the number of entries written and the number of entries that
+/// could have been written.
+pub fn get_process_vmos(
+    process: &ProcessDispatcher,
+    vmos: &mut impl VmoInfoWriter,
+    max: usize,
+) -> Result<(usize, usize), Status> {
+    let mut actual = 0;
+    let mut available = 0;
+    // We may see multiple handles to the same VMO, but leave it to userspace to
+    // do deduping.
+    process.handle_table().for_each_handle_batched(|_handle, rights, disp| {
+        if let Some(vmod) = disp.downcast::<VmObjectDispatcher>() {
+            available += 1;
+            if actual < max {
+                let entry = vmo_to_info_entry(vmod.vmo(), VmoOwnership::Handle, rights);
+                if vmos.write(&entry, actual).is_err() {
+                    return Err(Status::INVALID_ARGS);
+                }
+                actual += 1;
+            }
+            return Ok(());
+        }
+        if let Some(iobd) = disp.downcast::<IoBufferDispatcher>() {
+            available += iobd.region_count();
+            for i in 0..iobd.region_count() {
+                if actual >= max {
+                    break;
+                }
+                let vmo = iobd.get_vmo(i).expect("region index in range");
+                let region_map_rights = iobd.get_map_rights(rights, i);
+                let entry = vmo_to_info_entry(&vmo, VmoOwnership::IoBuffer, region_map_rights);
+                if vmos.write(&entry, actual).is_err() {
+                    return Err(Status::INVALID_ARGS);
+                }
+                actual += 1;
+            }
+        }
+        // We can skip this if it isn't a VMO or IOB
+        Ok(())
+    })?;
+    Ok((actual, available))
+}
+
+#[cfg(console_enabled)]
 const MB: usize = 1024 * 1024;
 
+#[cfg(console_enabled)]
 static MWD_LIMIT_BYTES: AtomicUsize = AtomicUsize::new(32 * MB);
+#[cfg(console_enabled)]
 static MWD_RUNNING: AtomicBool = AtomicBool::new(false);
 
+#[cfg(console_enabled)]
 static HWD_LIMIT: AtomicUsize = AtomicUsize::new(1024);
+#[cfg(console_enabled)]
 static HWD_RUNNING: AtomicBool = AtomicBool::new(false);
 
+#[cfg(console_enabled)]
 fn dump_process_list_key_map() {
     kprintln!("id  : process id number");
     kprintln!("#h  : total number of handles");
@@ -50,6 +423,7 @@ fn dump_process_list_key_map() {
     kprintln!("#?? : number of all other handle types");
 }
 
+#[cfg(console_enabled)]
 fn dump_handle_rights_key_map() {
     kprintln!("dup : ZX_RIGHT_DUPLICATE");
     kprintln!("tr  : ZX_RIGHT_TRANSFER");
@@ -75,6 +449,7 @@ fn dump_handle_rights_key_map() {
 }
 
 /// Dumps an address space based on the arg.
+#[cfg(console_enabled)]
 fn dump_address_space(arg: &CmdArgs) {
     if "kernel".starts_with(arg.as_str()) {
         // The arg is a prefix of "kernel".
@@ -84,11 +459,13 @@ fn dump_address_space(arg: &CmdArgs) {
     }
 }
 
+#[cfg(console_enabled)]
 fn dump_handle_table() {
     kprintln!("outstanding handles: {}", handle_diagnostics_outstanding_handles());
     handle_diagnostics_dump_table_info();
 }
 
+#[cfg(console_enabled)]
 extern "C" fn hwd_thread(_arg: *mut c_void) -> i32 {
     static PREVIOUS_HANDLE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
@@ -118,6 +495,7 @@ extern "C" fn hwd_thread(_arg: *mut c_void) -> i32 {
     }
 }
 
+#[cfg(console_enabled)]
 extern "C" fn mwd_thread(_arg: *mut c_void) -> i32 {
     loop {
         let _ = thread::sleep_relative(DurationMono::from_seconds(1));
@@ -128,6 +506,7 @@ extern "C" fn mwd_thread(_arg: *mut c_void) -> i32 {
 /// # Safety
 ///
 /// `argv` must point to a valid array of `CmdArgs` of length `argc`, with `argc >= 1`.
+#[cfg(console_enabled)]
 unsafe extern "C" fn cmd_diagnostics(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
     let rc: c_int = 0;
     // SAFETY: The console framework guarantees `argv` points to `argc` valid `CmdArgs` elements.
@@ -332,6 +711,7 @@ unsafe extern "C" fn cmd_diagnostics(argc: c_int, argv: *const CmdArgs, _flags: 
     -1
 }
 
+#[cfg(console_enabled)]
 static_command!(
     CMD_ZX,
     c"zx".as_ptr(),

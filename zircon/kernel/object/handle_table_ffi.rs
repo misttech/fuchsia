@@ -8,9 +8,14 @@ use super::dispatcher::Dispatcher;
 use super::handle_table::HandleTable;
 use super::process_dispatcher::ProcessDispatcher;
 use core::ffi::c_void;
-use core::mem::MaybeUninit;
-use fbl::RefPtr;
-use zx_types::{zx_handle_t, zx_koid_t, zx_obj_type_t, zx_rights_t, zx_status_t};
+use zx_types::{zx_handle_t, zx_koid_t, zx_rights_t, zx_status_t};
+
+pub(crate) type HandleTableForEachHandleFn = unsafe extern "C" fn(
+    ctx: *mut c_void,
+    handle: zx_handle_t,
+    rights: zx_rights_t,
+    disp: *const Dispatcher,
+) -> zx_status_t;
 
 unsafe extern "C" {
     /// Returns a pointer to the handle table's `BrwLockPi` lock.
@@ -42,8 +47,9 @@ unsafe extern "C" {
     ///
     /// # Safety
     ///
-    /// `handle_table` must point to a valid `HandleTable`, `caller` must point to a valid
-    /// `ProcessDispatcher`, and the handle table lock must be held.
+    /// `handle_table` must point to a valid `HandleTable`, `caller` must be null (to skip
+    /// `ZX_POL_BAD_HANDLE` enforcement) or point to a valid `ProcessDispatcher`, and the handle
+    /// table lock must be held.
     pub(crate) fn cpp_handle_table_get_handle_locked(
         handle_table: *mut HandleTable,
         caller: *mut ProcessDispatcher,
@@ -72,23 +78,43 @@ unsafe extern "C" {
         handle: *mut c_void,
     ) -> *mut c_void;
 
-    /// Looks up a dispatcher of `expected_type` with `rights` in `handle_table` without enforcing
-    /// `ZX_POL_BAD_HANDLE`, via `HandleTable::GetDispatcherWithRightsNoPolicyCheck`.
-    ///
-    /// Returns `ZX_ERR_BAD_HANDLE` if the handle is not found, `ZX_ERR_WRONG_TYPE` if the
-    /// dispatcher is not of `expected_type`, and `ZX_ERR_ACCESS_DENIED` if the handle lacks
-    /// `rights`. `out_dispatcher` is initialized only on success.
+    /// Returns the number of outstanding handles in `handle_table`.
     ///
     /// # Safety
     ///
-    /// `handle_table` must point to a valid `HandleTable` whose lock is not held by the caller,
-    /// and `out_dispatcher` must point to valid uninitialized memory for a
-    /// `fbl::RefPtr<Dispatcher>`.
-    pub(crate) fn cpp_handle_table_get_dispatcher_with_rights_no_policy_check(
+    /// `handle_table` must point to a valid `HandleTable`.
+    pub(crate) fn cpp_handle_table_handle_count(handle_table: *const HandleTable) -> u32;
+
+    /// Returns the number of outstanding handles in `handle_table` while holding the handle table
+    /// lock.
+    ///
+    /// # Safety
+    ///
+    /// `handle_table` must point to a valid `HandleTable` and the handle table lock must be held.
+    pub(crate) fn cpp_handle_table_handle_count_locked(handle_table: *const HandleTable) -> u32;
+
+    /// Iterates over every handle owned by `handle_table` while holding the handle table lock.
+    ///
+    /// # Safety
+    ///
+    /// `handle_table` must point to a valid `HandleTable` with its lock held, and `ctx` and `func`
+    /// must be valid for synchronous invocations during the call.
+    pub(crate) fn cpp_handle_table_for_each_handle_locked(
+        handle_table: *const HandleTable,
+        ctx: *mut c_void,
+        func: HandleTableForEachHandleFn,
+    ) -> zx_status_t;
+
+    /// Iterates over every handle owned by `handle_table` in batches without holding the handle
+    /// table lock while invoking `func`.
+    ///
+    /// # Safety
+    ///
+    /// `handle_table` must point to a valid `HandleTable`, and `ctx` and `func` must be valid
+    /// for synchronous invocations during the call.
+    pub(crate) fn cpp_handle_table_for_each_handle_batched(
         handle_table: *mut HandleTable,
-        handle_value: zx_handle_t,
-        expected_type: zx_obj_type_t,
-        rights: zx_rights_t,
-        out_dispatcher: *mut MaybeUninit<RefPtr<Dispatcher>>,
+        ctx: *mut c_void,
+        func: HandleTableForEachHandleFn,
     ) -> zx_status_t;
 }

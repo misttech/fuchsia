@@ -14,8 +14,7 @@ mod clock_dispatcher;
 mod clock_dispatcher_ffi;
 mod counter_dispatcher;
 mod counter_dispatcher_ffi;
-#[cfg(console_enabled)]
-mod diagnostics;
+pub mod diagnostics;
 #[cfg(console_enabled)]
 mod diagnostics_ffi;
 mod dispatcher;
@@ -107,6 +106,10 @@ pub use bus_transaction_initiator_dispatcher::BusTransactionInitiatorDispatcher;
 pub use channel_dispatcher::ChannelDispatcher;
 pub use clock_dispatcher::{ClockDispatcher, ClockUpdateArgs};
 pub use counter_dispatcher::CounterDispatcher;
+pub use diagnostics::{
+    VmarMapsInfoWriter, VmoInfoWriter, get_process_vmos, get_vm_aspace_maps, get_vm_aspace_vmos,
+    get_vmar_maps,
+};
 pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use event_dispatcher::EventDispatcher;
 pub use event_pair_dispatcher::EventPairDispatcher;
