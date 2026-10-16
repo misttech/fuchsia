@@ -18,6 +18,7 @@ group("tests") {
   deps = [
     "accessibility:tests",
     "audio:tests",
+    "camera:tests",
     "camera_watcher_agent:tests",
     "common:tests",
     "config:tests",

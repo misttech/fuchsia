@@ -36,7 +36,7 @@ rustc_library("settings_camera") {
     "//third_party/rust_crates:futures",
   ]
 
-  test_deps = []
+  test_deps = [ "//src/lib/fuchsia" ]
 
   sources = [ "src/lib.rs" ]
 

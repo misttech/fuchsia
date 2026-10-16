@@ -14,7 +14,7 @@ use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use serde::{Deserialize, Serialize};
-use settings_camera::connect_to_camera;
+use settings_camera::connect_to_cameras;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::event::{
     ExternalEventPublisher, ResponseType, SettingValuePublisher,
@@ -171,6 +171,10 @@ pub struct InputController {
     publisher: Option<Publisher>,
     setting_value_publisher: SettingValuePublisher<InputInfo>,
     external_publisher: ExternalEventPublisher,
+    /// Tracks whether the last attempt to push camera software mute state failed,
+    /// ensuring retries still push state to all cameras even if `CameraWatcherAgent`
+    /// updated `input_device_state` in the interim.
+    cam_sw_state_dirty: bool,
 }
 
 impl StorageAccess for InputController {
@@ -224,6 +228,7 @@ impl InputController {
             publisher: None,
             setting_value_publisher,
             external_publisher,
+            cam_sw_state_dirty: false,
         }
     }
 
@@ -489,7 +494,7 @@ impl InputController {
         // push the state if it has changed. If the device does not have a camera,
         // it should be None both here and above, and thus not detect a change.
         let modified_cam_state = Self::get_cam_sw_state_from(&input_info.input_device_state).ok();
-        if cam_state != modified_cam_state
+        if (cam_state != modified_cam_state || self.cam_sw_state_dirty)
             && let Some(state) = modified_cam_state
         {
             self.push_cam_sw_state(state).await?;
@@ -545,14 +550,18 @@ impl InputController {
     /// when there is a camera included in the config. The config is used to populate the
     /// stored input_info, so the input_info's input_device_state can be checked whether its
     /// device_types contains Camera prior to calling this function.
+    ///
+    /// Multiple cameras are not yet supported individually, and individual camera mute/unmute is
+    /// not exposed, so the software mute state is applied across all reported camera devices.
     async fn push_cam_sw_state(&mut self, cam_state: DeviceState) -> Result<(), InputError> {
         let is_muted = cam_state.has_state(DeviceState::MUTED);
+        self.cam_sw_state_dirty = true;
 
         // Start up a connection to the camera device watcher and connect to the
-        // camera proxy using the id that is returned. The connection will drop out
+        // camera proxies using the ids that are returned. The connections will drop out
         // of scope after the mute state is sent.
-        let camera_proxy =
-            connect_to_camera(&self.service_context, self.external_publisher.clone())
+        let camera_proxies =
+            connect_to_cameras(&self.service_context, self.external_publisher.clone())
                 .await
                 .map_err(|e| {
                     InputError::UnexpectedError(
@@ -560,13 +569,27 @@ impl InputController {
                     )
                 })?;
 
-        camera_proxy.set_software_mute_state(is_muted).await.map_err(|e| {
-            InputError::ExternalFailure(
-                "fuchsia.camera3.Device".into(),
-                "SetSoftwareMuteState".into(),
-                format!("{e:?}").into(),
-            )
-        })
+        let results = futures::future::join_all(
+            camera_proxies.iter().map(|proxy| proxy.set_software_mute_state(is_muted)),
+        )
+        .await;
+
+        let mut mute_error = None;
+        for result in results {
+            if let Err(e) = result {
+                log::warn!("Failed to set software mute state on camera: {e:?}");
+                mute_error = Some(InputError::ExternalFailure(
+                    "fuchsia.camera3.Device".into(),
+                    "SetSoftwareMuteState".into(),
+                    format!("{e:?}").into(),
+                ));
+            }
+        }
+        if let Some(err) = mute_error {
+            return Err(err);
+        }
+        self.cam_sw_state_dirty = false;
+        Ok(())
     }
 }
 
@@ -945,5 +968,205 @@ mod tests {
         assert_eq!(call_count.load(Ordering::Relaxed), 3);
         assert!(res2.is_ok());
         assert!(camera_muted.load(Ordering::Relaxed));
+    }
+
+    async fn setup_multi_camera_test(
+        initial_muted: bool,
+        fail_camera_1_on_attempt: Option<usize>,
+    ) -> (
+        InputController,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        use fidl::endpoints::DiscoverableProtocolMarker;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        let camera1_muted = Arc::new(AtomicBool::new(initial_muted));
+        let camera2_muted = Arc::new(AtomicBool::new(initial_muted));
+        let camera1_clone = camera1_muted.clone();
+        let camera2_clone = camera2_muted.clone();
+        let camera1_attempts = Arc::new(AtomicUsize::new(0));
+
+        let service_context = Rc::new(ServiceContext::new(Some(Box::new(
+            move |service_name: &str, channel: zx::Channel| {
+                let camera1 = camera1_clone.clone();
+                let camera2 = camera2_clone.clone();
+                let camera1_attempts = camera1_attempts.clone();
+                let service_name = service_name.to_string();
+                Box::pin(async move {
+                    if service_name != fidl_fuchsia_camera3::DeviceWatcherMarker::PROTOCOL_NAME {
+                        return Err(anyhow::Error::msg("unsupported service"));
+                    }
+                    let mut stream = fidl::endpoints::ServerEnd::<
+                        fidl_fuchsia_camera3::DeviceWatcherMarker,
+                    >::new(channel)
+                    .into_stream();
+                    fasync::Task::local(async move {
+                        while let Some(Ok(req)) = stream.next().await {
+                            #[allow(unreachable_patterns)]
+                            match req {
+                                fidl_fuchsia_camera3::DeviceWatcherRequest::WatchDevices {
+                                    responder,
+                                } => {
+                                    let _ = responder.send(&[
+                                        fidl_fuchsia_camera3::WatchDevicesEvent::Existing(1),
+                                        fidl_fuchsia_camera3::WatchDevicesEvent::Added(2),
+                                    ]);
+                                }
+                                fidl_fuchsia_camera3::DeviceWatcherRequest::ConnectToDevice {
+                                    id,
+                                    request,
+                                    control_handle: _,
+                                } => {
+                                    let target = match id {
+                                        1 => {
+                                            let attempt =
+                                                camera1_attempts.fetch_add(1, Ordering::Relaxed);
+                                            if fail_camera_1_on_attempt == Some(attempt) {
+                                                drop(request);
+                                                continue;
+                                            }
+                                            camera1.clone()
+                                        }
+                                        2 => camera2.clone(),
+                                        _ => panic!("unexpected camera id {id}"),
+                                    };
+                                    fasync::Task::local(handle_camera3_device(
+                                        request.into_stream(),
+                                        target,
+                                    ))
+                                    .detach();
+                                }
+                                _ => {}
+                            }
+                        }
+                    })
+                    .detach();
+                    Ok(())
+                })
+            },
+        ))));
+
+        let storage_factory = InMemoryStorageFactory::new();
+        storage_factory
+            .initialize::<InputController>()
+            .await
+            .expect("controller should have impls");
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+
+        let initial_state = if initial_muted {
+            DeviceState::MUTED.bits()
+        } else {
+            0 // AVAILABLE
+        };
+
+        let mut controller = InputController::create_with_config::<InMemoryStorageFactory>(
+            service_context,
+            InputConfiguration {
+                devices: vec![InputDeviceConfiguration {
+                    device_name: DEFAULT_CAMERA_NAME.to_string(),
+                    device_type: InputDeviceType::CAMERA,
+                    source_states: vec![SourceState {
+                        source: DeviceStateSource::SOFTWARE,
+                        state: initial_state,
+                    }],
+                    mutable_toggle_state: 0,
+                }],
+            },
+            &storage_factory,
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await;
+
+        let _ = controller.restore().await;
+        (controller, camera1_muted, camera2_muted)
+    }
+
+    #[fuchsia::test]
+    async fn test_set_input_states_multiple_cameras() {
+        use std::sync::atomic::Ordering;
+
+        let (mut controller, camera1_muted, camera2_muted) =
+            setup_multi_camera_test(false, None).await;
+        assert!(!camera1_muted.load(Ordering::Relaxed));
+        assert!(!camera2_muted.load(Ordering::Relaxed));
+
+        let mute_device = InputDevice {
+            name: DEFAULT_CAMERA_NAME.to_string(),
+            device_type: InputDeviceType::CAMERA,
+            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
+            state: DeviceState::MUTED,
+        };
+
+        let res = controller.set_input_states(vec![mute_device], DeviceStateSource::SOFTWARE).await;
+        assert!(res.is_ok());
+        assert!(camera1_muted.load(Ordering::Relaxed));
+        assert!(camera2_muted.load(Ordering::Relaxed));
+    }
+
+    #[fuchsia::test]
+    async fn test_set_input_states_multiple_cameras_partial_failure() {
+        use std::sync::atomic::Ordering;
+
+        // Fail camera 1 on attempt 1 (the first set_input_states call after restore()).
+        let (mut controller, camera1_muted, camera2_muted) =
+            setup_multi_camera_test(false, Some(1)).await;
+
+        let mute_device = InputDevice {
+            name: DEFAULT_CAMERA_NAME.to_string(),
+            device_type: InputDeviceType::CAMERA,
+            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
+            state: DeviceState::MUTED,
+        };
+
+        let res = controller.set_input_states(vec![mute_device], DeviceStateSource::SOFTWARE).await;
+        assert!(res.is_err());
+        assert!(!camera1_muted.load(Ordering::Relaxed));
+        // Even though camera 1 failed, camera 2 must still have been muted.
+        assert!(camera2_muted.load(Ordering::Relaxed));
+    }
+
+    #[fuchsia::test]
+    async fn test_set_input_states_multiple_cameras_partial_unmute_retry() {
+        use std::sync::atomic::Ordering;
+
+        // Both cameras start muted. Fail camera 1 on attempt 1 (the first unmute attempt).
+        let (mut controller, camera1_muted, camera2_muted) =
+            setup_multi_camera_test(true, Some(1)).await;
+        assert!(camera1_muted.load(Ordering::Relaxed));
+        assert!(camera2_muted.load(Ordering::Relaxed));
+
+        let unmute_device = InputDevice {
+            name: DEFAULT_CAMERA_NAME.to_string(),
+            device_type: InputDeviceType::CAMERA,
+            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::AVAILABLE)].into(),
+            state: DeviceState::AVAILABLE,
+        };
+
+        // First unmute attempt fails on camera 1 while camera 2 unmutes.
+        let res = controller
+            .set_input_states(vec![unmute_device.clone()], DeviceStateSource::SOFTWARE)
+            .await;
+        assert!(res.is_err());
+        assert!(camera1_muted.load(Ordering::Relaxed));
+        assert!(!camera2_muted.load(Ordering::Relaxed));
+
+        // Simulate CameraWatcherAgent reporting that the aggregate mute state is now unmuted
+        // (`false`) because camera 2 unmuted.
+        let watcher_res = controller.handle_camera_event(false).await;
+        assert!(watcher_res.is_ok());
+
+        // Retrying set_input_states(AVAILABLE) must still push SetSoftwareMuteState(false) to
+        // camera 1 even though handle_camera_event already updated the cached state to AVAILABLE.
+        let retry_res =
+            controller.set_input_states(vec![unmute_device], DeviceStateSource::SOFTWARE).await;
+        assert!(retry_res.is_ok());
+        assert!(!camera1_muted.load(Ordering::Relaxed));
+        assert!(!camera2_muted.load(Ordering::Relaxed));
     }
 }

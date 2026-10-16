@@ -4,8 +4,9 @@
 
 use anyhow::{Context, Error};
 use fuchsia_async as fasync;
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
-use settings_camera::connect_to_camera;
+use settings_camera::connect_to_cameras;
 use settings_common::inspect::event::ExternalEventPublisher;
 use settings_common::service_context::ServiceContext;
 use settings_common::trace;
@@ -26,11 +27,14 @@ impl CameraWatcherAgent {
     }
 
     pub async fn spawn(self, service_context: &ServiceContext) -> Result<(), Error> {
-        let camera_device_client =
-            connect_to_camera(service_context, self.external_publisher.clone())
+        // Multiple cameras are not yet supported individually, and individual camera mute/unmute
+        // is not exposed, so all reported cameras are watched and aggregated together.
+        let camera_device_clients =
+            connect_to_cameras(service_context, self.external_publisher.clone())
                 .await
                 .context("connecting to camera")?;
-        let mut event_handler = EventHandler { muted_txs: self.muted_txs.clone(), sw_muted: false };
+        let mut event_handler =
+            EventHandler::new(self.muted_txs.clone(), camera_device_clients.len());
         fasync::Task::local(async move {
             let id = fuchsia_trace::Id::new();
             // Here we don't care about hw_muted state because the input service would pick
@@ -38,10 +42,35 @@ impl CameraWatcherAgent {
             // other clients of the camera3 service could change the sw mute state but not
             // notify the settings service.
             trace!(id, "camera_watcher_agent_handler");
-            while let Ok((sw_muted, _hw_muted)) = camera_device_client.watch_mute_state().await {
+            let mut mute_streams = futures::stream::select_all(
+                camera_device_clients.into_iter().enumerate().map(|(index, client)| {
+                    futures::stream::unfold(Some(client), move |client_opt| async move {
+                        let client = client_opt?;
+                        match client.watch_mute_state().await {
+                            Ok((sw_muted, _hw_muted)) => {
+                                Some(((index, CameraEvent::MuteState(sw_muted)), Some(client)))
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to watch mute state for camera {index}: {e:?}");
+                                Some(((index, CameraEvent::Disconnected), None))
+                            }
+                        }
+                    })
+                    .boxed_local()
+                }),
+            );
+            while let Some((index, event)) = mute_streams.next().await {
                 trace!(id, "event");
-                event_handler.handle_event(sw_muted);
+                match event {
+                    CameraEvent::MuteState(sw_muted) => {
+                        event_handler.handle_event(index, sw_muted);
+                    }
+                    CameraEvent::Disconnected => {
+                        event_handler.handle_disconnect(index);
+                    }
+                }
             }
+            log::warn!("All camera mute state streams have closed");
         })
         .detach();
 
@@ -49,16 +78,80 @@ impl CameraWatcherAgent {
     }
 }
 
+enum CameraEvent {
+    MuteState(bool),
+    Disconnected,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CameraState {
+    Unknown,
+    Active(bool),
+    Disconnected,
+}
+
 struct EventHandler {
     muted_txs: Vec<UnboundedSender<bool>>,
-    sw_muted: bool,
+    sw_muted: Option<bool>,
+    camera_states: Vec<CameraState>,
 }
 
 impl EventHandler {
-    fn handle_event(&mut self, sw_muted: bool) {
-        if self.sw_muted != sw_muted {
-            self.sw_muted = sw_muted;
-            self.send_event(sw_muted);
+    fn new(muted_txs: Vec<UnboundedSender<bool>>, num_cameras: usize) -> Self {
+        Self { muted_txs, sw_muted: None, camera_states: vec![CameraState::Unknown; num_cameras] }
+    }
+
+    fn handle_event(&mut self, index: usize, sw_muted: bool) {
+        if let Some(state) = self.camera_states.get_mut(index) {
+            *state = CameraState::Active(sw_muted);
+        }
+        self.evaluate_and_send();
+    }
+
+    fn handle_disconnect(&mut self, index: usize) {
+        if let Some(state) = self.camera_states.get_mut(index) {
+            *state = CameraState::Disconnected;
+        }
+        self.evaluate_and_send();
+    }
+
+    fn evaluate_and_send(&mut self) {
+        let mut has_connected = false;
+        let mut has_unknown = false;
+        let mut any_unmuted = false;
+
+        for state in &self.camera_states {
+            match state {
+                CameraState::Active(false) => {
+                    has_connected = true;
+                    any_unmuted = true;
+                }
+                CameraState::Active(true) => {
+                    has_connected = true;
+                }
+                CameraState::Unknown => {
+                    has_connected = true;
+                    has_unknown = true;
+                }
+                CameraState::Disconnected => {}
+            }
+        }
+
+        let resolved_muted = if !has_connected {
+            None
+        } else if any_unmuted {
+            Some(false)
+        } else if !has_unknown {
+            Some(true)
+        } else {
+            None
+        };
+
+        if let Some(all_muted) = resolved_muted
+            && self.sw_muted != Some(all_muted)
+        {
+            self.sw_muted = Some(all_muted);
+            self.send_event(all_muted);
         }
     }
 
@@ -73,7 +166,6 @@ impl EventHandler {
 mod tests {
     use super::*;
     use fuchsia_async::{MonotonicInstant, TestExecutor};
-    use futures::StreamExt;
     use futures::channel::mpsc;
     use futures::lock::Mutex;
     use settings_camera::CAMERA_WATCHER_TIMEOUT;
@@ -103,11 +195,10 @@ mod tests {
         let (tx1, mut rx1) = mpsc::unbounded();
         let (tx2, mut rx2) = mpsc::unbounded();
 
-        let mut event_handler =
-            EventHandler { muted_txs: vec![tx1.clone(), tx2.clone()], sw_muted: false };
+        let mut event_handler = EventHandler::new(vec![tx1.clone(), tx2.clone()], 1);
 
         // Send the events.
-        event_handler.handle_event(true);
+        event_handler.handle_event(0, true);
 
         let mut channel_received = 0;
 
@@ -141,6 +232,55 @@ mod tests {
         }
 
         assert_eq!(channel_received, 2);
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn event_handler_aggregates_multiple_cameras() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut event_handler = EventHandler::new(vec![tx], 2);
+
+        // Muting only camera 0 should not emit a muted event because camera 1 is still unmuted.
+        event_handler.handle_event(0, true);
+        assert!(rx.try_recv().is_err());
+
+        // Muting camera 1 makes all cameras muted, emitting `true` once.
+        event_handler.handle_event(1, true);
+        assert_eq!(rx.next().await, Some(true));
+
+        // Duplicate `true` on camera 0 does not emit another event.
+        event_handler.handle_event(0, true);
+        assert!(rx.try_recv().is_err());
+
+        // Unmuting camera 1 immediately emits `false`.
+        event_handler.handle_event(1, false);
+        assert_eq!(rx.next().await, Some(false));
+
+        // Unmuting camera 0 afterwards does not emit a duplicate `false`.
+        event_handler.handle_event(0, false);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn event_handler_handles_camera_disconnect() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut event_handler = EventHandler::new(vec![tx], 2);
+
+        // Initial state: both cameras unmuted (`false`), emitting initial `false`.
+        event_handler.handle_event(0, false);
+        assert_eq!(rx.next().await, Some(false));
+        event_handler.handle_event(1, false);
+        assert!(rx.try_recv().is_err());
+
+        // Disconnecting camera 0 while unmuted does not prevent camera 1 from muting the aggregate.
+        event_handler.handle_disconnect(0);
+        assert!(rx.try_recv().is_err());
+
+        event_handler.handle_event(1, true);
+        assert_eq!(rx.next().await, Some(true));
+
+        // Disconnecting the last remaining camera does not emit a state change.
+        event_handler.handle_disconnect(1);
+        assert!(rx.try_recv().is_err());
     }
 
     struct FakeServices {
