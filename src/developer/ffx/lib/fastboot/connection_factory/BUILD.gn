@@ -30,7 +30,10 @@ rustc_library("lib") {
     "//third_party/rust_crates:tokio",
   ]
 
-  test_deps = [ "//src/developer/ffx/lib/fastboot/transport/interface:lib" ]
+  test_deps = [
+    "//src/developer/ffx/lib/fastboot/transport/interface:lib",
+    "//src/lib/fuchsia",
+  ]
 
   sources = [ "src/lib.rs" ]
 }

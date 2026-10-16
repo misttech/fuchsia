@@ -6,7 +6,6 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use discovery::TargetState;
-use discovery::query::TargetInfoQuery;
 use errors::ffx_bail;
 use fdomain_fuchsia_hardware_power_statecontrol::{
     AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
@@ -22,7 +21,7 @@ use ffx_fastboot::info::info;
 use ffx_fastboot::lock::lock;
 use ffx_fastboot::unlock::unlock;
 use ffx_fastboot::util::{Event, UnlockEvent};
-use ffx_fastboot_connection_factory::{RetryLimit, get_fastboot_interface};
+use ffx_fastboot_connection_factory::{RetryLimit, get_fastboot_interface, rediscovery_query};
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgress, Variable};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
@@ -101,7 +100,7 @@ impl FfxMain for BootloaderTool {
                 log::debug!("Target already in Fastboot state");
                 handle
             }
-            TargetState::Product { .. } => {
+            TargetState::Product { serial, .. } => {
                 if self.ctx.is_strict() {
                     return_user_error!(
                         r"
@@ -136,8 +135,11 @@ Reboot the Target to the bootloader and re-run this command."
                     Err(e) => handle_fidl_connection_err(e)?,
                 };
 
-                let query =
-                    info.serial_number.map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Id(sn));
+                let query = rediscovery_query(
+                    info.serial_number,
+                    serial.as_deref(),
+                    handle.node_name.as_deref(),
+                );
                 ffx_target::discover_fastboot_target(&self.ctx, query, Some(100000)).await?
             }
             TargetState::Unknown => {

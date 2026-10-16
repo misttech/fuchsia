@@ -292,7 +292,8 @@ pub fn get_connection_kind(
                 return Err(ConnectionFactoryError::NoTcpAddress);
             };
             let socket_addr: SocketAddr = addr.into();
-            let name = get_fallback_name(node_name, &socket_addr, "TCP");
+            let name =
+                get_fallback_name(node_name, &fastboot_state.serial_number, &socket_addr, "TCP");
             FastbootConnectionKind::Tcp(name, socket_addr)
         }
         discovery::FastbootConnectionState::Udp(ref v) => {
@@ -300,23 +301,46 @@ pub fn get_connection_kind(
                 return Err(ConnectionFactoryError::NoUdpAddress);
             };
             let socket_addr: SocketAddr = addr.into();
-            let name = get_fallback_name(node_name, &socket_addr, "UDP");
+            let name =
+                get_fallback_name(node_name, &fastboot_state.serial_number, &socket_addr, "UDP");
             FastbootConnectionKind::Udp(name, socket_addr)
         }
     };
     Ok(connection_kind)
 }
 
+/// Builds a [`discovery::query::TargetInfoQuery`] for Fastboot rediscovery after rebooting
+/// a Product target into bootloader mode, preferring the hardware info serial number, then
+/// the product-state serial number, then the nodename, and finally `First`.
+pub fn rediscovery_query(
+    hwinfo_serial: Option<String>,
+    product_serial: Option<&str>,
+    node_name: Option<&str>,
+) -> discovery::query::TargetInfoQuery {
+    let serial = hwinfo_serial
+        .filter(|s| !s.is_empty())
+        .or_else(|| product_serial.filter(|s| !s.is_empty()).map(String::from));
+    match (serial, node_name.filter(|n| !n.is_empty())) {
+        (Some(sn), _) => discovery::query::TargetInfoQuery::Id(sn),
+        (None, Some(nn)) => discovery::query::TargetInfoQuery::NodenameOrId(nn.to_string()),
+        (None, None) => discovery::query::TargetInfoQuery::First,
+    }
+}
+
+/// Returns the target identifier for TCP/UDP Fastboot rediscovery, preferring
+/// `node_name`, then `id:<serial_number>`, and finally the socket address string.
 fn get_fallback_name(
     node_name: Option<String>,
+    serial_number: &str,
     socket_addr: &SocketAddr,
     protocol: &str,
 ) -> String {
-    match node_name {
+    match node_name.filter(|n| !n.is_empty()) {
         Some(name) => name,
+        None if !serial_number.is_empty() => format!("id:{serial_number}"),
         None => {
             log::debug!(
-                "node_name is missing for {} target, rediscovery will be impossible. Using address {} as fallback.",
+                "node_name and serial_number are missing for {} target, rediscovery will be impossible. Using address {} as fallback.",
                 protocol,
                 socket_addr
             );
@@ -357,7 +381,7 @@ mod tests {
     use discovery::{FastbootConnectionState, FastbootTargetState};
     use std::net::{IpAddr, Ipv4Addr};
 
-    #[test]
+    #[fuchsia::test]
     fn test_get_connection_kind_usb() {
         let serial = "serial123".to_string();
         let state = FastbootTargetState {
@@ -371,7 +395,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_get_connection_kind_tcp() {
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let state = FastbootTargetState {
@@ -388,7 +412,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_get_connection_kind_udp() {
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let state = FastbootTargetState {
@@ -398,18 +422,35 @@ mod tests {
         let kind = get_connection_kind(&state, None).unwrap();
         match kind {
             FastbootConnectionKind::Udp(n, a) => {
-                assert_eq!(n, addr.to_string());
+                assert_eq!(n, "id:serial");
                 assert_eq!(a, addr);
             }
             _ => panic!("Expected Udp connection kind"),
         }
     }
 
-    #[test]
-    fn test_get_connection_kind_tcp_fallback() {
+    #[fuchsia::test]
+    fn test_get_connection_kind_tcp_empty_nodename_fallback() {
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let state = FastbootTargetState {
             serial_number: "serial".to_string(),
+            connection_state: FastbootConnectionState::Tcp(vec![addr.into()]),
+        };
+        let kind = get_connection_kind(&state, Some(String::new())).unwrap();
+        match kind {
+            FastbootConnectionKind::Tcp(n, a) => {
+                assert_eq!(n, "id:serial");
+                assert_eq!(a, addr);
+            }
+            _ => panic!("Expected Tcp connection kind"),
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_get_connection_kind_tcp_addr_fallback() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let state = FastbootTargetState {
+            serial_number: String::new(),
             connection_state: FastbootConnectionState::Tcp(vec![addr.into()]),
         };
         let kind = get_connection_kind(&state, None).unwrap();
@@ -422,7 +463,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_get_connection_kind_empty_tcp() {
         let state = FastbootTargetState {
             serial_number: "serial".to_string(),
@@ -431,12 +472,35 @@ mod tests {
         assert!(get_connection_kind(&state, None).is_err());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_get_connection_kind_empty_udp() {
         let state = FastbootTargetState {
             serial_number: "serial".to_string(),
             connection_state: FastbootConnectionState::Udp(vec![]),
         };
         assert!(get_connection_kind(&state, None).is_err());
+    }
+
+    #[fuchsia::test]
+    fn test_rediscovery_query_prefers_hwinfo_then_product_serial_then_nodename() {
+        use discovery::query::TargetInfoQuery;
+
+        assert_eq!(
+            rediscovery_query(Some("hw-serial".into()), Some("prod-serial"), Some("node-a")),
+            TargetInfoQuery::Id("hw-serial".into())
+        );
+        assert_eq!(
+            rediscovery_query(None, Some("prod-serial"), Some("node-a")),
+            TargetInfoQuery::Id("prod-serial".into())
+        );
+        assert_eq!(
+            rediscovery_query(Some(String::new()), Some("prod-serial"), Some("node-a")),
+            TargetInfoQuery::Id("prod-serial".into())
+        );
+        assert_eq!(
+            rediscovery_query(None, None, Some("node-a")),
+            TargetInfoQuery::NodenameOrId("node-a".into())
+        );
+        assert_eq!(rediscovery_query(None, Some(""), Some("")), TargetInfoQuery::First);
     }
 }

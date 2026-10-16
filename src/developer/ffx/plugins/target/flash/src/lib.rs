@@ -5,7 +5,6 @@
 use anyhow::anyhow;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
-use discovery::query::TargetInfoQuery;
 use discovery::{TargetHandle, TargetState};
 use errors::ffx_bail;
 use fdomain_fuchsia_hardware_power_statecontrol::{
@@ -15,7 +14,7 @@ use fdomain_fuchsia_hwinfo::DeviceProxy;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot::common::from_manifest;
 use ffx_fastboot::util::{Event, UnlockEvent};
-use ffx_fastboot_connection_factory::{RetryLimit, get_fastboot_interface};
+use ffx_fastboot_connection_factory::{RetryLimit, get_fastboot_interface, rediscovery_query};
 use ffx_fastboot_interface::fastboot_interface::UploadProgress;
 use ffx_flash_args::FlashCommand;
 use ffx_flash_manifest::SSH_OEM_COMMAND;
@@ -469,7 +468,8 @@ async fn reboot_target_to_bootloader_and_rediscover(
     ctx: &EnvironmentContext,
     device_proxy: DeviceProxy,
     power_proxy: AdminProxy,
-    node_name: &Option<String>,
+    node_name: Option<&str>,
+    product_serial: Option<&str>,
 ) -> fho::Result<TargetHandle> {
     // Wait to allow the Target to fully cycle to the bootloader
     writeln!(writer, "Waiting for Target to reboot...")
@@ -497,11 +497,7 @@ async fn reboot_target_to_bootloader_and_rediscover(
         Err(e) => handle_fidl_connection_err(e)?,
     };
 
-    let query = match (info.serial_number, node_name) {
-        (Some(sn), _) => TargetInfoQuery::Id(sn),
-        (None, Some(nn)) => TargetInfoQuery::NodenameOrId(nn.clone()),
-        (None, None) => TargetInfoQuery::First,
-    };
+    let query = rediscovery_query(info.serial_number, product_serial, node_name);
     ffx_target::discover_fastboot_target(&ctx, query, Some(100000)).await.map_err(|e| e.into())
 }
 
@@ -523,7 +519,7 @@ impl FlashTool {
                 log::debug!("Target already in Fastboot state");
                 handle
             }
-            TargetState::Product { .. } => {
+            TargetState::Product { serial, .. } => {
                 if self.ctx.is_strict() {
                     return_user_error!(
                         r"
@@ -540,7 +536,8 @@ Reboot the Target to the bootloader and re-run this command."
                     &self.ctx,
                     device_proxy,
                     power_proxy,
-                    &handle.node_name,
+                    handle.node_name.as_deref(),
+                    serial.as_deref(),
                 )
                 .await?
             }

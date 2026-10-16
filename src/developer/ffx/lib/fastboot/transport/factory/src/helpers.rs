@@ -58,9 +58,19 @@ pub(crate) async fn verify_fastboot_live<T: AsyncRead + AsyncWrite + Unpin>(
     }
 }
 
+/// Converts the target identifier stored on a TCP/UDP Fastboot factory into a
+/// [`discovery::query::TargetInfoQuery`] for mid-flash rediscovery.
 pub(crate) fn query_for_target_name(target_name: &str) -> discovery::query::TargetInfoQuery {
     if target_name.is_empty() || target_name.parse::<SocketAddr>().is_ok() {
         discovery::query::TargetInfoQuery::First
+    } else if let Some(serial) =
+        target_name.strip_prefix("id:").or_else(|| target_name.strip_prefix("serial:"))
+    {
+        if serial.is_empty() {
+            discovery::query::TargetInfoQuery::First
+        } else {
+            discovery::query::TargetInfoQuery::Id(serial.to_string())
+        }
     } else {
         discovery::query::TargetInfoQuery::NodenameOrId(target_name.to_string())
     }
@@ -112,14 +122,25 @@ mod test {
     use super::*;
     use discovery::query::TargetInfoQuery;
 
-    #[test]
+    #[fuchsia::test]
     fn test_query_for_target_name_empty_or_socket_addr_returns_first() {
         assert!(matches!(query_for_target_name(""), TargetInfoQuery::First));
+        assert!(matches!(query_for_target_name("id:"), TargetInfoQuery::First));
+        assert!(matches!(query_for_target_name("serial:"), TargetInfoQuery::First));
         assert!(matches!(query_for_target_name("127.0.0.1:53027"), TargetInfoQuery::First));
         assert!(matches!(query_for_target_name("[::1]:5554"), TargetInfoQuery::First));
     }
 
-    #[test]
+    #[fuchsia::test]
+    fn test_query_for_target_name_prefix_returns_id() {
+        assert_eq!(query_for_target_name("id:serial123"), TargetInfoQuery::Id("serial123".into()));
+        assert_eq!(
+            query_for_target_name("serial:serial456"),
+            TargetInfoQuery::Id("serial456".into())
+        );
+    }
+
+    #[fuchsia::test]
     fn test_query_for_target_name_nodename_returns_nodename_or_id() {
         match query_for_target_name("fuchsia-5254-0063-5e7a") {
             TargetInfoQuery::NodenameOrId(name) => assert_eq!(name, "fuchsia-5254-0063-5e7a"),
