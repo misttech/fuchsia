@@ -159,11 +159,13 @@ def get_bazel_expanded_actions(
 
 # Constants used to identify the type of actions that require build_flags() response.
 # LINT.IfChange(cc_action_kinds)
+ACTION_KIND_COMPILE_COMMON = "compile_common"
 ACTION_KIND_CPP_COMPILE = "cpp_compile"
 ACTION_KIND_C_COMPILE = "c_compile"
 ACTION_KIND_CPP_LINK = "cpp_link"
 
 CC_ACTION_KINDS = {
+    ACTION_KIND_COMPILE_COMMON,
     ACTION_KIND_CPP_COMPILE,
     ACTION_KIND_C_COMPILE,
     ACTION_KIND_CPP_LINK,
@@ -215,15 +217,13 @@ class ResolvedBuildArgsFlags:
     def get_flags_for(self, kind: str) -> list[str]:
         """Return the list of flags for the given action kind."""
         result: list[str] = []
-        if kind == ACTION_KIND_CPP_COMPILE:
-            result += self.include_flags
-            result += self.define_flags
+        if kind == ACTION_KIND_COMPILE_COMMON:
+            result.extend(self.include_flags)
+            result.extend(self.define_flags)
             result.extend(self.cflags)
+        elif kind == ACTION_KIND_CPP_COMPILE:
             result.extend(self.cflags_cc)
         elif kind == ACTION_KIND_C_COMPILE:
-            result += self.include_flags
-            result += self.define_flags
-            result.extend(self.cflags)
             result.extend(self.cflags_c)
         elif kind == ACTION_KIND_RUST_COMPILE:
             result.extend(self.rustflags)

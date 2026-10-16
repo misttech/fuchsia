@@ -2,16 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "asm_func.h"
+
+#if !defined(EXAMPLE_MACRO) || EXAMPLE_MACRO != 1
+#error "EXAMPLE_MACRO is not properly defined!"
+#endif
+
 .text
-.globl asm_example_identity
+.globl ASM_EXAMPLE_SYMBOL
 #if defined(__x86_64__)
-asm_example_identity:
+ASM_EXAMPLE_SYMBOL:
     mov %edi, %eax
     ret
 #elif defined(__aarch64__)
-asm_example_identity:
+ASM_EXAMPLE_SYMBOL:
     ret
 #else
-asm_example_identity:
+ASM_EXAMPLE_SYMBOL:
     ret
 #endif

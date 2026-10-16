@@ -48,11 +48,13 @@ BUILD_FLAGS_CC_TARGET_TYPES = set(["cxx_common", "cxx_executable", "cxx_shared_l
 # Constants used to identify the type of actions that require build flags.
 # These are NOT the @rules_cc//cc:action_names.bzl names.
 # LINT.IfChange(cc_action_kinds)
+ACTION_KIND_COMPILE_COMMON = "compile_common"
 ACTION_KIND_CPP_COMPILE = "cpp_compile"
 ACTION_KIND_C_COMPILE = "c_compile"
 ACTION_KIND_CPP_LINK = "cpp_link"
 
 CC_ACTION_KINDS = [
+    ACTION_KIND_COMPILE_COMMON,
     ACTION_KIND_CPP_COMPILE,
     ACTION_KIND_C_COMPILE,
     ACTION_KIND_CPP_LINK,
@@ -146,26 +148,19 @@ def _compute_build_flags_for_cc_action(build_flags_infos, action_kind):
         A string list containing the build flags for the given action kind.
     """
     result = []
-    if action_kind == ACTION_KIND_CPP_COMPILE:
+    if action_kind == ACTION_KIND_COMPILE_COMMON:
         # NOTE: The GN toolchain definition in clang_toolchain() uses
-        # {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}}
+        # {{defines}} {{include_dirs}} {{cflags}} for C, C++, and assembly (.s/.S).
         for info in build_flags_infos:
             result.extend(["-D{}".format(define) for define in info.defines])
         for info in build_flags_infos:
             result.extend(["-I{}".format(include_dir) for include_dir in info.include_dirs])
         for info in build_flags_infos:
             result.extend(info.cflags)
+    elif action_kind == ACTION_KIND_CPP_COMPILE:
         for info in build_flags_infos:
             result.extend(info.cflags_cc)
     elif action_kind == ACTION_KIND_C_COMPILE:
-        # NOTE: The GN toolchain definition in clang_toolchain() uses
-        # {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}}
-        for info in build_flags_infos:
-            result.extend(["-D{}".format(define) for define in info.defines])
-        for info in build_flags_infos:
-            result.extend(["-I{}".format(include_dir) for include_dir in info.include_dirs])
-        for info in build_flags_infos:
-            result.extend(info.cflags)
         for info in build_flags_infos:
             result.extend(info.cflags_c)
     elif action_kind == ACTION_KIND_CPP_LINK:
@@ -327,6 +322,13 @@ def wrap_cc_macro_args_with_build_flags(
         testonly = testonly,
     )
 
+    common_response_name = _cc_response_file(
+        target_name = name,
+        action_kind = ACTION_KIND_COMPILE_COMMON,
+        final_build_flags = final_build_flags_name,
+        testonly = testonly,
+    )
+
     cxx_response_name = _cc_response_file(
         target_name = name,
         action_kind = ACTION_KIND_CPP_COMPILE,
@@ -341,21 +343,23 @@ def wrap_cc_macro_args_with_build_flags(
         testonly = testonly,
     )
 
-    # Add the response files to the corresponding action attributes.
-    # Move any `copts` after the response files in `cxxopts` and `conlyopts` so
-    # that target-specific `copts` (e.g. `-Wno-...`) are not overridden by
-    # default warning flags in the response files (since Bazel places `copts`
-    # before `cxxopts` and `conlyopts` on the compiler command line).
+    # Place common_response_name (defines, include_dirs, cflags) at the start of
+    # `copts` so that:
+    # 1) Assembly actions (`assemble` and `preprocess_assemble`, which only
+    #    receive `copts`) get all common compile flags without receiving C/C++-only
+    #    flags (`cflags_c` / `cflags_cc`), and
+    # 2) Target-specific `copts` appear after default warning/optimization `cflags`
+    #    on the compiler command line.
     result = dict(kwargs)
-    copts = result.pop("copts", None) or []
-
-    result["cxxopts"] = ["@$(location {})".format(cxx_response_name)] + copts + (kwargs.get("cxxopts") or [])
-    result["conlyopts"] = ["@$(location {})".format(conly_response_name)] + copts + (kwargs.get("conlyopts") or [])
+    result["copts"] = ["@$(location {})".format(common_response_name)] + (kwargs.get("copts") or [])
+    result["cxxopts"] = ["@$(location {})".format(cxx_response_name)] + (kwargs.get("cxxopts") or [])
+    result["conlyopts"] = ["@$(location {})".format(conly_response_name)] + (kwargs.get("conlyopts") or [])
 
     # TODO(https://fxbug.dev/1650836). Use "additional_compiler_inputs" when Bazel 9.1 or higher
     # is used (Fuchsia hasn't upgraded yet). In the meantime, the workaround is to export CcInfo
     # providers from the response file targets and add them to 'deps'.
     result["deps"] = (kwargs.get("deps") or []) + [
+        ":" + common_response_name,
         ":" + cxx_response_name,
         ":" + conly_response_name,
     ]
@@ -419,7 +423,15 @@ def compute_cc_toolchain_feature_for_default_build_flags(
             ] if flags else [],
         )
 
-    conly_compile_flags = _compute_build_flags_for_cc_action(
+    common_compile_flags = _compute_build_flags_for_cc_action(
+        default_flags_set.cxx_common_infos,
+        ACTION_KIND_COMPILE_COMMON,
+    )
+    asm_compile_actions = [
+        ACTION_NAMES.assemble,
+        ACTION_NAMES.preprocess_assemble,
+    ]
+    conly_compile_flags = common_compile_flags + _compute_build_flags_for_cc_action(
         default_flags_set.cxx_common_infos,
         ACTION_KIND_C_COMPILE,
     )
@@ -427,7 +439,7 @@ def compute_cc_toolchain_feature_for_default_build_flags(
         ACTION_NAMES.c_compile,
         ACTION_NAMES.objc_compile,
     ]
-    cxx_compile_flags = _compute_build_flags_for_cc_action(
+    cxx_compile_flags = common_compile_flags + _compute_build_flags_for_cc_action(
         default_flags_set.cxx_common_infos,
         ACTION_KIND_CPP_COMPILE,
     )
@@ -463,6 +475,8 @@ def compute_cc_toolchain_feature_for_default_build_flags(
     ]
 
     flag_sets = []
+    if common_compile_flags:
+        flag_sets.append(define_flag_set(asm_compile_actions, common_compile_flags))
     if conly_compile_flags:
         flag_sets.append(define_flag_set(conly_compile_actions, conly_compile_flags))
     if cxx_compile_flags:

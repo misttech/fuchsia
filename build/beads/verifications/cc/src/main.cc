@@ -4,10 +4,13 @@
 
 #include <iostream>
 
+#include "asm_func.h"
 #include "c_lib.h"
 #include "cc_lib.h"
 
-extern "C" int asm_example_identity(int x);
+#if !defined(EXAMPLE_MACRO) || EXAMPLE_MACRO != 1
+#error "EXAMPLE_MACRO is not properly defined!"
+#endif
 
 int main() {
   int a = c_example_add(2, 3);

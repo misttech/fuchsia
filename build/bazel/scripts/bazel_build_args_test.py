@@ -28,6 +28,13 @@ class PathToLabelTest(unittest.TestCase):
     def test_valid_path_parsing(self) -> None:
         TEST_CASES = [
             (
+                "bazel-out/k8-fastbuild/bin/build/bazel/examples/hello_world/main.compile_common.build_flags",
+                ResponseFileTarget(
+                    "@@//build/bazel/examples/hello_world:main.final_build_flags",
+                    "compile_common",
+                ),
+            ),
+            (
                 "bazel-out/k8-fastbuild/bin/build/bazel/examples/hello_world/main.cpp_compile.build_flags",
                 ResponseFileTarget(
                     "@@//build/bazel/examples/hello_world:main.final_build_flags",
@@ -342,6 +349,7 @@ class ExpandArgsStaticTest(unittest.TestCase):
         raw_args = [
             "exec",
             "clang",
+            "@bazel-out/k8-fastbuild/bin/src/main.compile_common.build_flags",
             "@bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags",
             "@bazel-out/k8-fastbuild/bin/target.params",
             "--env-file",
@@ -350,6 +358,11 @@ class ExpandArgsStaticTest(unittest.TestCase):
 
         response_files_map = ResponseFileMap(
             {
+                "bazel-out/k8-fastbuild/bin/src/main.compile_common.build_flags": (
+                    ResponseFileTarget(
+                        "@@//src:main.final_build_flags", "compile_common"
+                    )
+                ),
                 "bazel-out/k8-fastbuild/bin/src/main.cpp_compile.build_flags": (
                     ResponseFileTarget(
                         "@@//src:main.final_build_flags", "cpp_compile"
@@ -417,6 +430,7 @@ class GetBazelExpandedActionsTest(unittest.TestCase):
                 args=[
                     "exec",
                     "clang",
+                    "@bazel-out/bin/main.compile_common.build_flags",
                     "@bazel-out/bin/main.cpp_compile.build_flags",
                 ],
                 env_vars={"FOO": "foo"},
@@ -424,9 +438,12 @@ class GetBazelExpandedActionsTest(unittest.TestCase):
         ]
         response_files_map = ResponseFileMap(
             {
+                "bazel-out/bin/main.compile_common.build_flags": ResponseFileTarget(
+                    "@@//src:main.final_build_flags", "compile_common"
+                ),
                 "bazel-out/bin/main.cpp_compile.build_flags": ResponseFileTarget(
                     "@@//src:main.final_build_flags", "cpp_compile"
-                )
+                ),
             }
         )
 
