@@ -502,22 +502,13 @@ kernel_bindgen_crate("page-queues-bindings") {
   notice_year = 2026
   function_allowlist = [
     "cpp_page_queues_init",
-    "cpp_page_queues_stop_threads",
     "cpp_page_queues_get_lock",
     "cpp_page_queues_string_from_age_reason",
-    "cpp_page_queues_rotate_reclaim_queues",
     "cpp_page_queues_pop_anonymous_zero_fork",
     "cpp_page_queues_peek_isolate",
     "cpp_page_queues_get_cow_for_loaned_page",
     "cpp_page_queues_dump",
-    "cpp_page_queues_start_threads",
     "cpp_page_queues_start_debug_compressor",
-    "cpp_page_queues_set_active_ratio_multiplier",
-    "cpp_page_queues_disable_aging",
-    "cpp_page_queues_enable_aging",
-    "cpp_page_queues_set_aging_event",
-    "cpp_page_queues_debug_get_lru_thread",
-    "cpp_page_queues_debug_get_mru_thread",
   ]
   type_allowlist = [
     "AgeReason",

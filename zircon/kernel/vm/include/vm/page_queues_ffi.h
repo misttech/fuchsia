@@ -26,14 +26,11 @@ struct PageQueuesVmoBacklink {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 __BEGIN_CDECLS
 
-FFI_ALWAYS_INLINE void cpp_page_queues_stop_threads(PageQueues* queues);
 FFI_ALWAYS_INLINE void cpp_page_queues_init(ffi::Uninitialized<PageQueues>* queues);
 
 FFI_ALWAYS_INLINE void* cpp_page_queues_get_lock(PageQueues* queues);
 
 FFI_ALWAYS_INLINE const char* cpp_page_queues_string_from_age_reason(int32_t reason);
-
-FFI_ALWAYS_INLINE void cpp_page_queues_rotate_reclaim_queues(PageQueues* queues);
 
 FFI_ALWAYS_INLINE bool cpp_page_queues_pop_anonymous_zero_fork(PageQueues* queues,
                                                                PageQueuesVmoBacklink* out_backlink);
@@ -44,18 +41,7 @@ FFI_ALWAYS_INLINE bool cpp_page_queues_get_cow_for_loaned_page(PageQueues* queue
 
 FFI_ALWAYS_INLINE void cpp_page_queues_dump(const PageQueues* queues);
 
-FFI_ALWAYS_INLINE void cpp_page_queues_start_threads(PageQueues* queues,
-                                                     zx_duration_mono_t min_mru_rotate_time,
-                                                     zx_duration_mono_t max_mru_rotate_time);
 FFI_ALWAYS_INLINE void cpp_page_queues_start_debug_compressor(PageQueues* queues);
-FFI_ALWAYS_INLINE void cpp_page_queues_set_active_ratio_multiplier(PageQueues* queues,
-                                                                   uint32_t multiplier);
-FFI_ALWAYS_INLINE void cpp_page_queues_disable_aging(PageQueues* queues);
-FFI_ALWAYS_INLINE void cpp_page_queues_enable_aging(PageQueues* queues);
-FFI_ALWAYS_INLINE void cpp_page_queues_set_aging_event(PageQueues* queues, Event* event);
-
-FFI_ALWAYS_INLINE Thread* cpp_page_queues_debug_get_lru_thread(PageQueues* queues);
-FFI_ALWAYS_INLINE Thread* cpp_page_queues_debug_get_mru_thread(PageQueues* queues);
 
 __END_CDECLS
 

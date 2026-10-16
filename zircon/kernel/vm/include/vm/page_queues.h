@@ -21,17 +21,12 @@
 #include <kernel/semaphore.h>
 #include <ktl/array.h>
 #include <ktl/optional.h>
-#include <ktl/variant.h>
 #include <vm/debug_compressor.h>
 #include <vm/page.h>
 
 class VmCowPages;
 class PageQueues;
-
-// Declared here, and not just in page_queues_ffi.h, so that the friend declaration in PageQueues
-// refers to this C linkage function.
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE void cpp_page_queues_stop_threads(PageQueues* queues);
+struct Thread;
 
 extern "C" {
 void rust_page_queues_set_wired(const void* storage, vm_page_t* page, VmCowPages* object,
@@ -71,6 +66,8 @@ void rust_page_queues_remove_array_into_list(const void* storage, vm_page_t** pa
 
 void rust_page_queues_mark_accessed(const void* storage, vm_page_t* page);
 
+void rust_page_queues_rotate_reclaim_queues(const void* storage);
+
 void rust_page_queues_get_reclaim_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_get_active_inactive_counts(const void* storage, void* out_counts);
@@ -91,12 +88,22 @@ bool rust_page_queues_debug_page_is_any_anonymous(const void* storage, const vm_
 bool rust_page_queues_debug_page_is_wired(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_high_priority(const void* storage, const vm_page_t* page);
 
+void rust_page_queues_start_threads(const void* storage, zx_duration_mono_t min_mru_rotate_time,
+                                    zx_duration_mono_t max_mru_rotate_time);
+void rust_page_queues_set_active_ratio_multiplier(const void* storage, uint32_t multiplier);
 void rust_page_queues_set_lru_action(const void* storage, int32_t action);
+void rust_page_queues_disable_aging(const void* storage);
+void rust_page_queues_enable_aging(const void* storage);
+void rust_page_queues_set_aging_event(const void* storage, Event* event);
 
-// TODO(https://fxbug.dev/549881466): Temporary export used by the C++ RotateReclaimQueues,
-// LruThread and PeekIsolate until they are ported to Rust, at which point this will be removed. An
-// |isolate| of SIZE_MAX means no limit.
+Thread* rust_page_queues_debug_get_lru_thread(const void* storage);
+Thread* rust_page_queues_debug_get_mru_thread(const void* storage);
+
+// TODO(https://fxbug.dev/549881466): Temporary export used by the C++ PeekIsolate until it is
+// ported to Rust, at which point this will be removed. An |isolate| of SIZE_MAX means no limit.
 void rust_page_queues_process_lru_queue(const void* storage, uint64_t target_gen, size_t isolate);
+void rust_page_queues_synchronize_with_aging(const void* storage);
+void rust_page_queues_stop_threads(const void* storage);
 }  // extern "C"
 
 // Allocated pages that are part of the cow pages in a VmObjectPaged can be placed in a page queue.
@@ -448,11 +455,11 @@ class PageQueues {
   // Controls to enable and disable the active aging system. These must be called alternately and
   // not in parallel. That is, it is an error to call DisableAging twice without calling EnableAging
   // in between. Similar for EnableAging.
-  void DisableAging() TA_EXCL(lock_);
-  void EnableAging() TA_EXCL(lock_);
+  void DisableAging();
+  void EnableAging();
 
   // Register an Event that will be signalled every time aging occurs. This can be used to know if
-  // if PeekReclaim might now return items (due to aging having occurred) where it had previously
+  // PeekReclaim might now return items (due to aging having occurred) where it had previously
   // ceased.
   // Only a single Event may be registered at a time and the Event is assumed to live as long as the
   // PageQueues object. A nullptr can be passed in to unregister an Event, otherwise it is an error
@@ -462,8 +469,8 @@ class PageQueues {
   // Debug methods to retrieve a reference to any lru and mru threads. These are intended for use
   // during tests / debugging and hence bypass the lock normally needed to read these members. It is
   // up to the caller to know if these objects are alive or not.
-  Thread* DebugGetLruThread() TA_NO_THREAD_SAFETY_ANALYSIS { return lru_thread_; }
-  Thread* DebugGetMruThread() TA_NO_THREAD_SAFETY_ANALYSIS { return mru_thread_; }
+  Thread* DebugGetLruThread() { return rust_page_queues_debug_get_lru_thread(this); }
+  Thread* DebugGetMruThread() { return rust_page_queues_debug_get_mru_thread(this); }
 
  private:
   // Specifies the indices for both the page_queues_ and the page_queue_counts_
@@ -562,49 +569,13 @@ class PageQueues {
   // |pages| indicates how many pages might have changed queue, and hence how much the ratio could
   // have changed by.
   void MaybeCheckActiveRatioAging(size_t pages) TA_EXCL(lock_);
-  void MaybeCheckActiveRatioAgingLocked(size_t pages) TA_REQ(lock_);
-
-  // Internal helper for shutting down any threads created in |StartThreads|.
-  void StopThreads();
-
-  // The Rust Drop implementation of PageQueues performs the equivalent work of ~PageQueues(), and
-  // needs to be able to shut the threads down.
-  friend void cpp_page_queues_stop_threads(PageQueues* queues);
-
-  // Entry point for the thread that will performing aging and increment the mru generation.
-  void MruThread();
 
   // Checks if the active ratio has exceeded the threshold to cause aging, and if so signals the
   // event.
   void CheckActiveRatioAgingLocked() TA_REQ(lock_);
 
-  // Checks if there is any pending age reason and either returns the reason, or a suggestion on
-  // how long to wait before checking again. This timeout does not take into account that other
-  // changes, namely the active ratio, could cause aging to be necessary before that timeout.
-  ktl::variant<AgeReason, zx_instant_mono_t> GetAgeReasonLocked() const TA_REQ(lock_);
-
-  // Synchronizes with any outstanding aging. This is intended to allow a reclamation process to
-  // ensure it is not racing with, and falsely failing to reclaim, the aging thread due to
-  // scheduling or other delays.
-  void SynchronizeWithAging() TA_EXCL(lock_);
-
-  // Helper that performs an instance of aging recording the reason, increment the mru generation
-  // and performing any needed notifications / triggers.
-  // The caller is responsible for only calling this if aging is possible, i.e. if
-  // CanIncrementMruGen is true.
-  void IncrementMruGenLocked(AgeReason age_reason) TA_REQ(lock_);
-
-  // Attempts to perform aging with the given |age_reason|. This will either perform aging, or make
-  // non-zero progress towards being able to successfully age. Must be called with lock_ held, and
-  // takes ownership of the lock acquisition and releases it.
-  void TryAgingLocked(AgeReason age_reason, Guard<CriticalMutex>::Adoptable&& adopt);
-
   // Helper method that calculates whether the current active ratio would trigger aging.
   bool IsActiveRatioTriggeringAging() TA_REQ(lock_);
-
-  void LruThread();
-  void MaybeTriggerLruProcessingLocked() TA_REQ(lock_);
-  bool NeedsLruProcessingLocked() const TA_REQ(lock_);
 
   // Records that |pages| have potentially changed queue impacting the active/inactive ratio, and
   // returns |true| if checking the active ratio can be skipped.
@@ -623,21 +594,6 @@ class PageQueues {
     return true;
   }
 
-  // Returns whether or not it is permissible to increase the mru generation, or if the lru
-  // generation would need incrementing first. This is marked as requiring lock_ as, even though the
-  // annotation is not exercised, the return value of this method is only useful / non-racy if the
-  // mru/lru generations cannot change, which requires holding the lock to guarantee.
-  bool CanIncrementMruGenLocked() const TA_REQ(lock_) {
-    return mru_gen_.load(ktl::memory_order_relaxed) - lru_gen_.load(ktl::memory_order_relaxed) <
-           kNumReclaim - 1;
-  }
-
-  // Similar to |CanIncrementMruGenLocked|, but for the lru.
-  bool CanIncrementLruGenLocked() const TA_REQ(lock_) {
-    return mru_gen_.load(ktl::memory_order_relaxed) - lru_gen_.load(ktl::memory_order_relaxed) >
-           kNumActiveQueues;
-  }
-
   // The list_lock_ is used to protect the linked lists queues as these cannot be implemented with
   // atomics. A few related members are also protected with this lock, such as the isolate_cursor.
   // The purpose of this separate spinlock, compared to the general lock_, is so that latency
@@ -651,10 +607,10 @@ class PageQueues {
   DECLARE_CRITICAL_MUTEX(PageQueues) mutable lock_;
 
   // Externally supplied event that we should signal anytime aging occurs.
-  Event* aging_event_ TA_GUARDED(lock_) = nullptr;
+  [[maybe_unused]] Event* aging_event_ TA_GUARDED(lock_) = nullptr;
 
   // Records whether or not the active aging via the mru thread should be disabled or not.
-  bool aging_disabled_ TA_GUARDED(lock_) = false;
+  [[maybe_unused]] bool aging_disabled_ TA_GUARDED(lock_) = false;
 
   // Time at which the mru_gen_ was last incremented.
   ktl::atomic<zx_instant_mono_t> last_age_time_ = ZX_TIME_INFINITE_PAST;
@@ -679,7 +635,7 @@ class PageQueues {
   AutounsignalEvent lru_event_;
 
   // What to do with pages when processing the LRU queue.
-  LruAction lru_action_ TA_GUARDED(lock_) = LruAction::None;
+  [[maybe_unused]] LruAction lru_action_ TA_GUARDED(lock_) = LruAction::None;
 
   // The page queues are placed into an array, indexed by page queue, for consistency and uniformity
   // of access. This does mean that the list for PageQueueNone does not actually have any pages in
@@ -775,8 +731,8 @@ class PageQueues {
 
   // Track the mru and lru threads and have a signalling mechanism to shut them down.
   ktl::atomic<bool> shutdown_threads_ = false;
-  Thread* mru_thread_ TA_GUARDED(lock_) = nullptr;
-  Thread* lru_thread_ TA_GUARDED(lock_) = nullptr;
+  [[maybe_unused]] Thread* mru_thread_ TA_GUARDED(lock_) = nullptr;
+  [[maybe_unused]] Thread* lru_thread_ TA_GUARDED(lock_) = nullptr;
 
   // Debug compressor is only available when debug asserts are also enabled. This ensures it can
   // never have an impact on production builds.
@@ -786,8 +742,8 @@ class PageQueues {
 
   // Queue rotation parameters. These are not locked as they are only read by the mru thread, and
   // are set before the mru thread is started.
-  zx_duration_mono_t min_mru_rotate_time_;
-  zx_duration_mono_t max_mru_rotate_time_;
+  [[maybe_unused]] zx_duration_mono_t min_mru_rotate_time_;
+  [[maybe_unused]] zx_duration_mono_t max_mru_rotate_time_;
 
   // Determines if anonymous zero page forks are placed in the zero fork queue or in the reclaimable
   // queue.
