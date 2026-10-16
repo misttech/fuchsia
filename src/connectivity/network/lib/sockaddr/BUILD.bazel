@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "sockaddr",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/network:__subpackages__",
+        "//src/lib/network/fidl_fuchsia_posix_socket_ext:__pkg__",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-types",
+        "//src/connectivity/lib/packet-formats",
+        "//third_party/rust_crates/vendor:libc",
+        "//third_party/rust_crates/vendor:socket2",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "sockaddr_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":sockaddr",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:proptest-derive"],
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//third_party/rust_crates/vendor:proptest",
+    ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "sockaddr_host_test",
+    binary_name = "sockaddr_test",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "sockaddr-tests",
+    unit_tests = [":sockaddr_test"],
+)
