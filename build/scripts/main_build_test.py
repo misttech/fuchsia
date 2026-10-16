@@ -28,15 +28,18 @@ import tempfile
 import time
 import unittest
 from collections.abc import Generator
-from contextlib import contextmanager
 from typing import Any
 from unittest import mock
 
-import main_build
-import signal_utils
+# Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
+_FUCHSIA_ROOT = pathlib.Path(__file__).parent.parent.parent
+if str(_FUCHSIA_ROOT) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_ROOT))
+
 from build.auth import gcloud
 from build.rbe import build_summary, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
+from build.scripts import main_build, signal_utils
 
 _FAKE_RBE_SETTINGS = rbe_settings.fake()
 
@@ -127,7 +130,7 @@ class MainBuildTestBase(unittest.TestCase):
         self.isolate_creds_patcher.stop()
         self.run_select_patcher.stop()
 
-    @contextmanager
+    @contextlib.contextmanager
     def mock_invocation_context(
         self, build_uuid: str = "uuid-123", timestamp: str = "ts-456"
     ) -> Generator[tuple[mock.Mock, mock.Mock], None, None]:
@@ -1037,6 +1040,56 @@ class BuildInvocationTest(MainBuildTestBase):
                     custom_path / "invocation_id", "uuid-123\n"
                 )
 
+    def test_timeout_command_prefix(self) -> None:
+        """Verifies construction of the timeout command prefix."""
+        context = self.create_context()
+        context.config.timeout = "45m"
+        context.config.verbose = True
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            prefix = list(invocation.timeout_command_prefix())
+            self.assertEqual(prefix[0], sys.executable)
+            self.assertEqual(prefix[1], str(context.build_timeout_script))
+            self.assertIn("--timeout", prefix)
+            self.assertEqual(prefix[prefix.index("--timeout") + 1], "45m")
+            self.assertIn("--log-dir", prefix)
+            self.assertEqual(
+                prefix[prefix.index("--log-dir") + 1],
+                str(invocation.timeout_log_dir),
+            )
+            self.assertIn("--verbose", prefix)
+            self.assertEqual(prefix[-1], "--")
+
+    def test_timeout_command_prefix_empty_when_no_timeout(self) -> None:
+        """Verifies timeout_command_prefix yields nothing when timeout is not configured."""
+        context = self.create_context()
+        context.config.timeout = None
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            self.assertEqual(list(invocation.timeout_command_prefix()), [])
+
+    def test_timeout_command_prefix_tui(self) -> None:
+        """Verifies --no-separate-pgrp is passed when tui is enabled."""
+        context = self.create_context()
+        context.config.timeout = "45m"
+        context.config.tui = True
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            prefix = list(invocation.timeout_command_prefix())
+            self.assertIn("--no-separate-pgrp", prefix)
+
+    def test_timeout_command_prefix_grace_period(self) -> None:
+        """Verifies --grace-period is forwarded when timeout_grace_period is set."""
+        context = self.create_context()
+        context.config.timeout = "45m"
+        context.config.timeout_grace_period = "60s"
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            prefix = list(invocation.timeout_command_prefix())
+            self.assertIn("--grace-period", prefix)
+            idx = prefix.index("--grace-period")
+            self.assertEqual(prefix[idx + 1], "60s")
+
     def test_get_build_env(self) -> None:
         context = self.create_context()
         context.env = {"TERM": "xterm", "USER": "fuchsia-user", "EXTRA": "val"}
@@ -1748,6 +1801,58 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
                         exec_info.full_command[idx + 1], str(metrics_path)
                     )
 
+    def test_new_build_command_execution_with_timeout(self) -> None:
+        context = self.create_context(rbe=False, resultstore="none")
+        context.config.timeout = "90m"
+        with self.mock_invocation_context("uuid-123", "ts-456"):
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.multiple(
+                main_build.FuchsiaBuildContext,
+                rbe_enabled=mock.PropertyMock(return_value=False),
+                needs_auth=mock.PropertyMock(return_value=False),
+            ):
+                with mock.patch.object(main_build, "mkdir") as mock_mkdir:
+                    exec_info = invocation.new_build_command_execution(
+                        "ninja", ["ninja", "target"]
+                    )
+                    mock_mkdir.assert_called_with(invocation.timeout_log_dir)
+
+                    full_cmd = exec_info.full_command
+                    self.assertEqual(full_cmd[0], sys.executable)
+                    self.assertEqual(
+                        full_cmd[1], str(context.build_timeout_script)
+                    )
+                    self.assertIn("--timeout", full_cmd)
+                    idx_timeout = full_cmd.index("--timeout")
+                    self.assertEqual(full_cmd[idx_timeout + 1], "90m")
+                    self.assertIn("--log-dir", full_cmd)
+                    idx_log = full_cmd.index("--log-dir")
+                    self.assertEqual(
+                        full_cmd[idx_log + 1], str(invocation.timeout_log_dir)
+                    )
+
+                    self.assertIn("--", full_cmd)
+                    sep_idx = full_cmd.index("--")
+                    self.assertEqual(
+                        full_cmd[sep_idx + 1], str(context.top_build_wrapper)
+                    )
+                    self.assertEqual(full_cmd[-1], "target")
+
+    def test_new_build_command_execution_non_build_ignores_timeout(
+        self,
+    ) -> None:
+        context = self.create_context(rbe=False, resultstore="none")
+        context.config.timeout = "90m"
+        with self.mock_invocation_context("uuid-123", "ts-456"):
+            invocation = main_build.BuildInvocation(context)
+            exec_info = invocation.new_build_command_execution(
+                "bazel", ["bazel", "query", "//..."], is_build=False
+            )
+            # When is_build=False, build_timeout wrapper is not applied
+            self.assertEqual(
+                exec_info.full_command, ["bazel", "query", "//..."]
+            )
+
 
 class PrepareFunctionsTest(MainBuildTestBase):
     def test_bazel(self) -> None:
@@ -1889,6 +1994,12 @@ class MainFunctionTest(MainBuildTestBase):
             ["--build-dir", "out/default", "--no-status", "ninja"]
         )
         self.assertFalse(args.status)
+
+    def test_arg_parser_timeout(self) -> None:
+        args = main_build._MAIN_ARG_PARSER.parse_args(
+            ["--build-dir", "out/default", "--timeout", "90m", "ninja"]
+        )
+        self.assertEqual(args.timeout, "90m")
 
     def test_main_catches_config_error(self) -> None:
         mock_args = default_args()
@@ -2807,6 +2918,26 @@ class CollectResultStoreMetadataTest(unittest.TestCase):
                 diagnostic_logs["nested/deep_subbuild/rsproxy.INFO"],
                 str(deep_subbuild_rsproxy_info.resolve()),
             )
+
+
+class CollectTimeoutMetadataTest(unittest.TestCase):
+    def test_collect_timeout_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = pathlib.Path(tmpdir)
+            timeout_dir = log_dir / main_build.TIMEOUT_LOGS_DIR
+            main_build.mkdir(timeout_dir)
+            (timeout_dir / "pstree_drain.json").write_text(
+                "{}", encoding="utf-8"
+            )
+
+            metadata = main_build._collect_timeout_metadata(log_dir)
+            self.assertEqual(metadata["log_dir"], str(timeout_dir.resolve()))
+            self.assertEqual(metadata["snapshots"], ["pstree_drain.json"])
+
+    def test_collect_timeout_metadata_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = pathlib.Path(tmpdir)
+            self.assertEqual(main_build._collect_timeout_metadata(log_dir), {})
 
 
 if __name__ == "__main__":

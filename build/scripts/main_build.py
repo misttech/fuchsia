@@ -35,8 +35,6 @@ import uuid
 from collections.abc import Iterable, Sequence
 from typing import Any, TextIO
 
-import signal_utils
-
 # Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
 _FUCHSIA_ROOT = pathlib.Path(__file__).parent.parent.parent
 if str(_FUCHSIA_ROOT) not in sys.path:
@@ -45,7 +43,7 @@ if str(_FUCHSIA_ROOT) not in sys.path:
 from build.auth import gcloud
 from build.rbe import build_summary, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
-from build.scripts import properties
+from build.scripts import properties, signal_utils
 
 _JSONPrimitive = str | int | float | bool | None
 JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
@@ -131,6 +129,8 @@ NINJA_BUILD_TRACE_GZ = "ninja_build_trace.json.gz"
 NINJA_LOGS_DIR = "ninja_logs"
 NINJA_ACTION_METRICS_JSON = "ninja_action_metrics.json"
 NINJA_ERRORS_JSON = "ninja_errors.json"
+TIMEOUT_LOGS_DIR = pathlib.Path("timeout_logs")
+BUILD_TIMEOUT_SCRIPT = pathlib.Path("build/scripts/build_timeout.py")
 FINT_BUILD_PY_RELATIVE_PATH = pathlib.Path(
     "tools/integration/fint/fint_build.py"
 )
@@ -192,6 +192,8 @@ class FuchsiaBuildConfig(object):
     cas_instance: str | None = None
     rbe_instance: str | None = None
     log_dir: pathlib.Path | None = None
+    timeout: str | None = None
+    timeout_grace_period: str | None = None
 
     @staticmethod
     def from_args(
@@ -218,6 +220,8 @@ class FuchsiaBuildConfig(object):
             cas_instance=args.cas_instance,
             rbe_instance=args.rbe_instance,
             log_dir=args.log_dir,
+            timeout=args.timeout,
+            timeout_grace_period=args.timeout_grace_period,
         )
 
 
@@ -381,6 +385,20 @@ def _collect_bazel_metadata(log_dir: pathlib.Path) -> JSONObject:
     return {
         "log_dir": str(bazel_log_dir.resolve()),
         "invocations": invocations,
+    }
+
+
+def _collect_timeout_metadata(log_dir: pathlib.Path) -> JSONObject:
+    """Discovers diagnostic snapshots generated during build timeout."""
+    timeout_dir = log_dir / TIMEOUT_LOGS_DIR
+    if not timeout_dir.exists():
+        return {}
+    snapshots = sorted(f.name for f in timeout_dir.iterdir() if f.is_file())
+    if not snapshots:
+        return {}
+    return {
+        "log_dir": str(timeout_dir.resolve()),
+        "snapshots": snapshots,
     }
 
 
@@ -1022,6 +1040,11 @@ class FuchsiaBuildContext(object):
         return self.source_dir / "build/scripts/top_build_wrap.sh"
 
     @property
+    def build_timeout_script(self) -> pathlib.Path:
+        """Path to build_timeout.py wrapper script."""
+        return self.source_dir / BUILD_TIMEOUT_SCRIPT
+
+    @property
     def args_gn(self) -> pathlib.Path:
         return self.build_dir / "args.gn"
 
@@ -1228,11 +1251,20 @@ class BuildInvocation(object):
         if bazel_metadata:
             metadata["bazel"] = bazel_metadata
 
+        timeout_metadata = _collect_timeout_metadata(log_dir)
+        if timeout_metadata:
+            metadata["timeout"] = timeout_metadata
+
         try:
             mkdir(output_path.parent)
             output_path.write_text(json.dumps(metadata, indent=2) + "\n")
+        except (OSError, TypeError, ValueError) as e:
+            msg(
+                f"Failed to serialize or write metadata JSON: {e}",
+                file=sys.stderr,
+            )
         except Exception as e:
-            msg(f"Failed to write metadata JSON: {e}", file=sys.stderr)
+            msg(f"Unexpected error writing metadata JSON: {e}", file=sys.stderr)
 
     @functools.cached_property
     def build_uuid(self) -> str:
@@ -1297,6 +1329,11 @@ class BuildInvocation(object):
         """The path where Ninja action metrics are recorded."""
         return self.log_dir / NINJA_LOGS_DIR / NINJA_ACTION_METRICS_JSON
 
+    @property
+    def timeout_log_dir(self) -> pathlib.Path:
+        """The directory where timeout diagnostics and process snapshots are recorded."""
+        return self.log_dir / TIMEOUT_LOGS_DIR
+
     def top_build_command_prefix(self) -> Iterable[str]:
         """Construct the prefix command for the top-level wrapper."""
         context = self.context
@@ -1340,6 +1377,32 @@ class BuildInvocation(object):
 
         if context.config.verbose:
             yield "--verbose"
+
+    def timeout_command_prefix(self) -> Iterable[str]:
+        """Constructs the build_timeout wrapper prefix.
+
+        Returns command tokens up to and including '--':
+            [python3, build_timeout.py, --timeout, <duration>, --log-dir, <log_dir>, --]
+        """
+        context = self.context
+        if not context.config.timeout:
+            return
+
+        yield sys.executable
+        yield str(context.build_timeout_script)
+        yield "--timeout"
+        yield context.config.timeout
+        yield "--log-dir"
+        yield str(self.timeout_log_dir)
+        if context.config.timeout_grace_period:
+            yield "--grace-period"
+            yield context.config.timeout_grace_period
+        if context.config.verbose:
+            yield "--verbose"
+        if context.config.tui:
+            yield "--no-separate-pgrp"
+
+        yield "--"
 
     def get_build_env(self) -> dict[str, str]:
         """Curate a build environment for this invocation."""
@@ -1495,6 +1558,10 @@ class BuildInvocation(object):
             build_command = fint_cmd + list(build_command)
 
         full_cmd = top_cmd + ["--"] + list(build_command)
+
+        if is_build and context.config.timeout:
+            mkdir(self.timeout_log_dir)
+            full_cmd = list(self.timeout_command_prefix()) + full_cmd
 
         return BuildCommandExecution(
             full_command=full_cmd,
@@ -1896,6 +1963,20 @@ def _main_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-status", action="store_false", dest="status")
+    parser.add_argument(
+        "--timeout",
+        type=str,
+        default=None,
+        help="Specify an overall build timeout (e.g. '90m', '5400s'). "
+        "Wraps execution in build_timeout.py with progressive signaling and diagnostic snapshots.",
+    )
+    parser.add_argument(
+        "--timeout-grace-period",
+        type=str,
+        default=None,
+        help="Specify an explicit in-tree shutdown grace period (e.g. '60s'). "
+        "Intermediate escalation steps in build_timeout.py are scaled to fit within this duration.",
+    )
 
     parser.add_argument(
         "--fint-params-path",
