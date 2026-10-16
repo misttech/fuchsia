@@ -440,8 +440,11 @@ impl FileOps for PerfEventFile {
         _file: &FileObject,
         current_task: &CurrentTask,
         length: Option<usize>,
-        _prot: ProtectionFlags,
+        prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
+        if prot.contains(ProtectionFlags::EXEC) {
+            return error!(EPERM);
+        }
         let buffer_size: u64 = length.unwrap_or(0) as u64;
         let page_size = zx::system_get_page_size() as u64;
         if buffer_size <= page_size || buffer_size > ESTIMATED_MMAP_BUFFER_SIZE {
@@ -487,6 +490,11 @@ impl FileOps for PerfEventFile {
                 return error!(EINVAL);
             }
         };
+    }
+
+    // The perf data buffer is mapped through memory shared with Starnix, which isn't executable.
+    fn can_map_executable(&self) -> bool {
+        false
     }
 
     fn write(

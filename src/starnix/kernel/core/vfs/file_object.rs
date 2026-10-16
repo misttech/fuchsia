@@ -228,6 +228,16 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         default_mmap(file, current_task, addr, memory_offset, length, prot_flags, options)
     }
 
+    /// Returns whether [`Self::mmap`] can map the file with `PROT_EXEC`, if the file can otherwise
+    /// be executed (see [`FileObject::can_exec`]).
+    ///
+    /// Files whose `mmap()` maps memory that can't be executable, e.g. memory shared with Starnix,
+    /// must return `false`, so that `PROT_EXEC` isn't implied when mapping them (e.g. by the
+    /// `READ_IMPLIES_EXEC` personality).
+    fn can_map_executable(&self) -> bool {
+        true
+    }
+
     /// Respond to a `getdents` or `getdents64` calls.
     ///
     /// The `file.offset` lock will be held while entering this method. The implementation must look
@@ -436,6 +446,10 @@ impl<T: FileOps + CloseFreeSafe, P: Deref<Target = T> + Send + Sync + 'static> F
         options: MappingOptions,
     ) -> Result<UserAddress, Errno> {
         self.deref().mmap(file, current_task, addr, memory_offset, length, prot_flags, options)
+    }
+
+    fn can_map_executable(&self) -> bool {
+        self.deref().can_map_executable()
     }
 
     fn readdir(
@@ -1250,6 +1264,9 @@ impl FileOps for ProxyFileOps {
     }
     fn is_seekable(&self) -> bool {
         self.0.ops().is_seekable()
+    }
+    fn can_map_executable(&self) -> bool {
+        self.0.ops().can_map_executable()
     }
     fn flush(&self, _file: &FileObject, current_task: &CurrentTask) {
         self.0.ops().flush(&self.0, current_task);

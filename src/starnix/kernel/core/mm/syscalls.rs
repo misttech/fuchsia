@@ -23,6 +23,7 @@ use starnix_syscalls::SyscallArg;
 use starnix_types::time::{duration_from_timespec, time_from_timespec};
 use starnix_uapi::auth::{PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_READ_REALCREDS};
 use starnix_uapi::errors::{EINTR, Errno};
+use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::{
@@ -62,6 +63,8 @@ pub fn sys_mmap(
     offset: u64,
 ) -> Result<UserAddress, Errno> {
     let user_address = do_mmap(current_task, addr, length, prot, flags, fd, offset)?;
+    // Use the requested `prot` rather than the effective protection, which may include `PROT_EXEC`
+    // implied by `READ_IMPLIES_EXEC`: dynamic linkers request `PROT_EXEC` explicitly.
     if prot & PROT_EXEC != 0 {
         // Possibly loads a new module. Notify debugger for the change.
         // We only care about dynamic linker loading modules for now, which uses mmap. In the future
@@ -69,6 +72,20 @@ pub fn sys_mmap(
         notify_debugger_of_module_list(current_task)?;
     }
     Ok(user_address)
+}
+
+/// Returns whether [`ProtectionFlags::READ`] implies [`ProtectionFlags::EXEC`] for
+/// `current_task`, i.e. whether the [`PersonalityFlags::READ_IMPLIES_EXEC`] personality flag is
+/// set.
+///
+/// `personality(2)`:
+/// > READ_IMPLIES_EXEC (since Linux 2.6.8)
+/// >        With this flag set, PROT_READ implies PROT_EXEC for mmap(2).
+///
+/// TODO(https://fxbug.dev/508555755): `READ_IMPLIES_EXEC` should be cleared when executing a
+/// program with more privileges (e.g. set-user-ID, or with an SELinux domain transition).
+fn read_implies_exec(current_task: &CurrentTask) -> bool {
+    current_task.thread_group().read().personality.contains(PersonalityFlags::READ_IMPLIES_EXEC)
 }
 
 pub fn do_mmap(
@@ -80,7 +97,7 @@ pub fn do_mmap(
     fd: FdNumber,
     offset: u64,
 ) -> Result<UserAddress, Errno> {
-    let prot_flags = ProtectionFlags::from_access_bits(prot).ok_or_else(|| {
+    let mut prot_flags = ProtectionFlags::from_access_bits(prot).ok_or_else(|| {
         track_stub!(TODO("https://fxbug.dev/322874211"), "mmap parse protection", prot);
         errno!(EINVAL)
     })?;
@@ -107,6 +124,17 @@ pub fn do_mmap(
     }
 
     let file = if flags & MAP_ANONYMOUS != 0 { None } else { Some(current_task.files().get(fd)?) };
+
+    // With `READ_IMPLIES_EXEC`, `PROT_READ` implies `PROT_EXEC` (see personality(2)). Files that
+    // cannot be executed (e.g. on a `noexec` mount), or whose `mmap()` can't map them executable
+    // (e.g. binder or io_uring files), are still mapped, without `PROT_EXEC`.
+    if prot_flags.contains(ProtectionFlags::READ)
+        && read_implies_exec(current_task)
+        && file.as_ref().is_none_or(|file| file.can_exec() && file.ops().can_map_executable())
+    {
+        prot_flags |= ProtectionFlags::EXEC;
+    }
+
     if flags & (MAP_PRIVATE | MAP_SHARED) == 0
         || flags & (MAP_PRIVATE | MAP_SHARED) == MAP_PRIVATE | MAP_SHARED
     {

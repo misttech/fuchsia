@@ -239,6 +239,11 @@ impl FileOps for BinderConnection {
         error!(EINVAL)
     }
 
+    // The binder buffer is mapped through memory shared with Starnix, which isn't executable.
+    fn can_map_executable(&self) -> bool {
+        false
+    }
+
     fn mmap(
         &self,
         file: &FileObject,

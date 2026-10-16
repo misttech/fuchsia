@@ -159,6 +159,11 @@ impl FileOps for BpfHandle {
         self.as_map()?.get_memory(length, prot)
     }
 
+    // BPF maps are mapped through memory shared with Starnix, which isn't executable.
+    fn can_map_executable(&self) -> bool {
+        false
+    }
+
     fn mmap(
         &self,
         file: &FileObject,

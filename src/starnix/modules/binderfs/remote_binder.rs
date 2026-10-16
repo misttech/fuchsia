@@ -137,6 +137,11 @@ impl FileOps for RemoteBinderFileOps {
         error!(EOPNOTSUPP)
     }
 
+    // The memory that binder maps isn't executable.
+    fn can_map_executable(&self) -> bool {
+        false
+    }
+
     fn mmap(
         &self,
         _file: &FileObject,

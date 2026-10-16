@@ -46,6 +46,7 @@ use starnix_types::math::{round_down_to_system_page_size, round_up_to_system_pag
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::auth::CAP_IPC_LOCK;
 use starnix_uapi::errors::{EPERM, Errno};
+use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::range_ext::RangeExt;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::restricted_aspace::{
@@ -585,13 +586,14 @@ impl ExecutableMemoryProbes {
     /// Probes `files`. Must not be called while holding the memory manager's lock.
     fn probe(&mut self, current_task: &CurrentTask, files: Vec<FileHandle>) {
         for file in files {
-            let provides_executable_memory = file
-                .get_memory(
-                    current_task,
-                    /* length = */ None,
-                    ProtectionFlags::READ | ProtectionFlags::EXEC,
-                )
-                .is_ok();
+            let provides_executable_memory = file.ops().can_map_executable()
+                && file
+                    .get_memory(
+                        current_task,
+                        /* length = */ None,
+                        ProtectionFlags::READ | ProtectionFlags::EXEC,
+                    )
+                    .is_ok();
             self.0.push((file, provides_executable_memory));
         }
     }
@@ -670,6 +672,46 @@ fn protect_mapping_range(
 
     mapping_context.protect_vmar_range(range.start, range.end - range.start, prot_flags)?;
     Ok(false)
+}
+
+/// Returns whether `mapping` is executable, or can be made executable by `mprotect()` (provided the
+/// security checks allow it).
+fn can_become_executable(mapping: &Mapping, probes: &ExecutableMemoryProbes) -> bool {
+    if mapping.can_exec() {
+        return true;
+    }
+    if !mapping.may_exec() {
+        return false;
+    }
+    match mapping.get_backing_internal() {
+        MappingBacking::PrivateAnonymous => true,
+        MappingBacking::Memory(backing) => {
+            backing.memory().get_rights().contains(zx::Rights::EXECUTE)
+                || file_lacking_executable_memory(mapping)
+                    .is_some_and(|(file, _)| probes.provides_executable_memory(file) == Some(true))
+        }
+    }
+}
+
+/// Returns the protection that `mprotect()` applies to `mapping` when `prot_flags` is requested by
+/// a task with `personality`.
+///
+/// With `READ_IMPLIES_EXEC`, `PROT_READ` implies `PROT_EXEC` (see personality(2)), for mappings
+/// that can become executable. Other mappings keep the requested protection.
+fn effective_prot_flags(
+    mapping: &Mapping,
+    prot_flags: ProtectionFlags,
+    personality: PersonalityFlags,
+    probes: &ExecutableMemoryProbes,
+) -> ProtectionFlags {
+    if prot_flags.contains(ProtectionFlags::READ)
+        && personality.contains(PersonalityFlags::READ_IMPLIES_EXEC)
+        && can_become_executable(mapping, probes)
+    {
+        prot_flags | ProtectionFlags::EXEC
+    } else {
+        prot_flags
+    }
 }
 
 /// Returns whether writes to `mapping` must be blocked while `MemoryManagerState::protect()`
@@ -1661,6 +1703,7 @@ impl MemoryManagerState {
         addr: UserAddress,
         length: usize,
         prot_flags: ProtectionFlags,
+        personality: PersonalityFlags,
         probes: &ExecutableMemoryProbes,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
@@ -1688,6 +1731,7 @@ impl MemoryManagerState {
             }
 
             let intersection = range.intersect(&prot_range);
+            let prot_flags = effective_prot_flags(mapping, prot_flags, personality, probes);
 
             // Mappings that can't be executable (e.g. of files on a `noexec` mount) can't be made
             // executable, whatever the rights of their memory.
@@ -4615,12 +4659,18 @@ impl MemoryManager {
             return error!(ENOMEM);
         }
 
+        let personality = current_task.thread_group().read().personality;
+        // Whether `PROT_EXEC` is requested, or may be implied by `READ_IMPLIES_EXEC`.
+        let may_add_exec = prot_flags.contains(ProtectionFlags::EXEC)
+            || (prot_flags.contains(ProtectionFlags::READ)
+                && personality.contains(PersonalityFlags::READ_IMPLIES_EXEC));
+
         // Hold the lock throughout the operation to uphold memory manager's invariants.
         // See mm/README.md.
         let mut probes = ExecutableMemoryProbes::default();
         let mut state = loop {
             let state = self.state.write();
-            if !prot_flags.contains(ProtectionFlags::EXEC) {
+            if !may_add_exec {
                 break state;
             }
             // Probe the files that may need to be made executable without holding the lock, and
@@ -4637,8 +4687,15 @@ impl MemoryManager {
             probes.probe(current_task, unprobed_files);
         };
         let mut released_mappings = ReleasedMappings::default();
-        let result =
-            state.protect(current_task, addr, length, prot_flags, &probes, &mut released_mappings);
+        let result = state.protect(
+            current_task,
+            addr,
+            length,
+            prot_flags,
+            personality,
+            &probes,
+            &mut released_mappings,
+        );
         released_mappings.finalize(state);
         result
     }
@@ -7070,6 +7127,7 @@ mod tests {
                     second_map,
                     *PAGE_SIZE as usize,
                     ProtectionFlags::empty(),
+                    PersonalityFlags::empty(),
                     &ExecutableMemoryProbes::default(),
                     &mut released_mappings,
                 )
@@ -7108,6 +7166,7 @@ mod tests {
                     second_map,
                     *PAGE_SIZE as usize,
                     ProtectionFlags::empty(),
+                    PersonalityFlags::empty(),
                     &ExecutableMemoryProbes::default(),
                     &mut released_mappings,
                 )

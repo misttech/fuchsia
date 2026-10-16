@@ -175,8 +175,6 @@
 
                 // TODO: https://fxbug.dev/398707795
                 "mmap/001",
-                "mmap/020",
-                "mmap/026",
                 "mmap/038",
 
                 // See https://fxbug.dev/319480589: Starnix does not support dynamic kernel module loading.

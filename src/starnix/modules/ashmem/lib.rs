@@ -13,7 +13,7 @@ use starnix_core::device::DeviceOps;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{
     DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
-    ProtectionFlags,
+    ProtectionFlags, VMEX_RESOURCE,
 };
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{
@@ -26,6 +26,7 @@ use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
 use starnix_uapi::{ASHMEM_NAME_LEN, ashmem_pin, device_id, errno, error, off_t, uapi};
 use std::sync::Arc;
@@ -176,18 +177,28 @@ impl FileOps for Ashmem {
             return error!(EINVAL);
         }
 
-        let memory = self
-            .memory
-            .get_or_try_init(|| {
-                if size_paged_aligned == 0 {
-                    return error!(EINVAL);
-                }
-                // Round up to page boundary
-                let vmo = zx::Vmo::create(size_paged_aligned as u64).map_err(|_| errno!(ENOMEM))?;
-                let memory = MemoryObject::from(vmo).with_zx_name(b"starnix:ashmem");
-                Ok(Arc::new(memory))
-            })?
-            .clone();
+        let memory = self.memory.get_or_try_init(|| {
+            if size_paged_aligned == 0 {
+                return error!(EINVAL);
+            }
+            // Round up to page boundary
+            let vmo = zx::Vmo::create(size_paged_aligned as u64)
+                .map_err(|_| errno!(ENOMEM))?
+                // The region may be mapped with `PROT_EXEC`, which the protection mask allows
+                // by default.
+                .replace_as_executable(&VMEX_RESOURCE)
+                .map_err(|_| errno!(ENOMEM))?;
+            let memory = MemoryObject::from(vmo).with_zx_name(b"starnix:ashmem");
+            Ok(Arc::new(memory))
+        })?;
+        // If `PROT_EXEC` has been cleared from the protection mask, strip `Rights::EXECUTE` from
+        // the mapped handle so the mapping cannot later be made executable via `mprotect()`.
+        let memory = if state.prot_flags.contains(ProtectionFlags::EXEC) {
+            memory.clone()
+        } else {
+            let rights = memory.get_rights() - zx::Rights::EXECUTE;
+            Arc::new(memory.duplicate_handle(rights).map_err(|_| errno!(ENOMEM))?)
+        };
 
         let mapped_addr = current_task.mm()?.map_memory(
             addr,
@@ -245,13 +256,25 @@ impl FileOps for Ashmem {
             }
             #[allow(unreachable_patterns)]
             ASHMEM_SET_PROT_MASK | starnix_uapi::arch32::ASHMEM_SET_PROT_MASK => {
-                let mut state = self.state.lock();
-                let prot_flags =
+                let mut prot_flags =
                     ProtectionFlags::from_access_bits(arg.into()).ok_or_else(|| errno!(EINVAL))?;
+                let read_implies_exec = current_task
+                    .thread_group()
+                    .read()
+                    .personality
+                    .contains(PersonalityFlags::READ_IMPLIES_EXEC);
+                let mut state = self.state.lock();
 
                 // Do not allow protections to be increased
                 if !state.prot_flags.contains(prot_flags) {
                     return error!(EINVAL);
+                }
+
+                // With `READ_IMPLIES_EXEC`, `PROT_READ` implies `PROT_EXEC` (see personality(2)),
+                // so that the region can be mapped with `PROT_READ`. This is the only case in
+                // which the protections of the region can be increased.
+                if read_implies_exec && prot_flags.contains(ProtectionFlags::READ) {
+                    prot_flags |= ProtectionFlags::EXEC;
                 }
 
                 state.prot_flags = prot_flags;

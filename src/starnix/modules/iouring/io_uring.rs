@@ -1169,6 +1169,11 @@ impl FileOps for IoUringFileObject {
     fileops_impl_noop_sync!();
     fileops_impl_dataless!();
 
+    // The rings are mapped through memory shared with Starnix, which isn't executable.
+    fn can_map_executable(&self) -> bool {
+        false
+    }
+
     fn mmap(
         &self,
         file: &FileObject,

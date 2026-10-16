@@ -679,6 +679,11 @@ impl FileOps for KgslFile {
         }
     }
 
+    // The GPU memory that this file maps isn't executable.
+    fn can_map_executable(&self) -> bool {
+        false
+    }
+
     fn mmap(
         &self,
         _file: &FileObject,

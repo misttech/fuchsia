@@ -5,12 +5,16 @@
 #include "third_party/android/platform/bionic/libc/kernel/uapi/linux/ashmem.h"
 
 #include <fcntl.h>
+#include <lib/fit/defer.h>
 #include <lib/stdcompat/string_view.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/personality.h>
 #include <unistd.h>
 
 #include <fstream>
+#include <sstream>
 #include <string>
 
 #include <gmock/gmock.h>
@@ -296,6 +300,70 @@ TEST_F(AshmemTest, NoIncreaseProtections) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, PROT_WRITE), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, PROT_READ | PROT_WRITE),
               SyscallFailsWithErrno(EINVAL));
+}
+
+// Returns the permissions of the mapping that contains `addr`, as shown in /proc/self/maps.
+std::string MappingPerms(void *addr) {
+  std::ifstream maps_file("/proc/self/maps");
+  std::stringstream maps;
+  maps << maps_file.rdbuf();
+  auto mapping = test_helper::find_memory_mapping(reinterpret_cast<uintptr_t>(addr), maps.str());
+  return mapping ? mapping->perms : "";
+}
+
+// Regions can be mapped with `PROT_EXEC`, which the default protection mask allows.
+TEST_F(AshmemTest, MapExecutable) {
+  auto fd = CreateRegion(nullptr, PAGE_SIZE);
+  void *addr = mmap(nullptr, PAGE_SIZE, PROT_READ | PROT_EXEC, MAP_SHARED, fd.get(), 0);
+  ASSERT_NE(addr, MAP_FAILED) << strerror(errno);
+  EXPECT_EQ(MappingPerms(addr), "r-xs");
+  munmap(addr, PAGE_SIZE);
+}
+
+// With the `READ_IMPLIES_EXEC` personality, `PROT_READ` implies `PROT_EXEC` in the protection mask,
+// so that regions can still be mapped with `PROT_READ`, which then also implies `PROT_EXEC`.
+TEST_F(AshmemTest, ReadImpliesExecProtections) {
+  int orig_pers = personality(0xffffffff);
+  ASSERT_NE(orig_pers, -1);
+  auto restore = fit::defer([orig_pers]() { personality(orig_pers); });
+
+  auto fd = CreateRegion(nullptr, PAGE_SIZE);
+  // Without `READ_IMPLIES_EXEC`, `PROT_EXEC` can be removed while keeping `PROT_READ`.
+  ASSERT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, PROT_READ | PROT_WRITE), SyscallSucceeds());
+  ASSERT_THAT(ioctl(fd.get(), ASHMEM_GET_PROT_MASK),
+              SyscallSucceedsWithValue(PROT_READ | PROT_WRITE));
+
+  // A mapping created while `PROT_EXEC` is cleared from the mask cannot later be made executable
+  // via `mprotect()`, even with `READ_IMPLIES_EXEC`.
+  void *noexec_addr = mmap(nullptr, PAGE_SIZE, PROT_NONE, MAP_SHARED, fd.get(), 0);
+  ASSERT_NE(noexec_addr, MAP_FAILED) << strerror(errno);
+
+  // Changing the personality alone doesn't change the mask.
+  ASSERT_NE(personality(orig_pers | READ_IMPLIES_EXEC), -1);
+  ASSERT_THAT(ioctl(fd.get(), ASHMEM_GET_PROT_MASK),
+              SyscallSucceedsWithValue(PROT_READ | PROT_WRITE));
+
+  ASSERT_THAT(mprotect(noexec_addr, PAGE_SIZE, PROT_READ), SyscallSucceeds());
+  EXPECT_EQ(MappingPerms(noexec_addr), "r--s");
+  EXPECT_THAT(mprotect(noexec_addr, PAGE_SIZE, PROT_READ | PROT_EXEC),
+              SyscallFailsWithErrno(EACCES));
+  munmap(noexec_addr, PAGE_SIZE);
+
+  // `PROT_READ` implies `PROT_EXEC`, which the mask doesn't allow.
+  void *addr = mmap(nullptr, PAGE_SIZE, PROT_READ, MAP_SHARED, fd.get(), 0);
+  EXPECT_EQ(addr, MAP_FAILED);
+  EXPECT_EQ(errno, EINVAL);
+
+  // Setting the same mask with `READ_IMPLIES_EXEC` adds `PROT_EXEC`.
+  ASSERT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, PROT_READ | PROT_WRITE), SyscallSucceeds());
+  ASSERT_THAT(ioctl(fd.get(), ASHMEM_GET_PROT_MASK),
+              SyscallSucceedsWithValue(PROT_READ | PROT_WRITE | PROT_EXEC));
+
+  // The region can now be mapped with `PROT_READ`, and the mapping is executable.
+  addr = mmap(nullptr, PAGE_SIZE, PROT_READ, MAP_SHARED, fd.get(), 0);
+  ASSERT_NE(addr, MAP_FAILED) << strerror(errno);
+  EXPECT_EQ(MappingPerms(addr), "r-xs");
+  munmap(addr, PAGE_SIZE);
 }
 
 // You are allowed to decrease protections, but changes are not retroactive
