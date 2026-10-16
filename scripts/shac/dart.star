@@ -19,21 +19,20 @@ def _dart_format(ctx):
         cipd_platform_name(ctx),
     )
 
-    procs = [
-        (
-            f,
-            os_exec(ctx, [dart_exe, "format", "--output=json", f]),
-        )
-        for f in dart_files
-    ]
-    for (f, proc) in procs:
-        new_contents = json.decode(proc.wait().stdout)["source"]
-        old_contents = str(ctx.io.read_file(f))
+    res = os_exec(
+        ctx,
+        [dart_exe, "format", "--output=json"] + list(dart_files),
+    ).wait()
+    for line in res.stdout.splitlines():
+        doc = json.decode(line)
+        filepath = doc["path"]
+        new_contents = doc["source"]
+        old_contents = str(ctx.io.read_file(filepath))
         if new_contents != old_contents:
             ctx.emit.finding(
                 level = "error",
                 message = FORMATTER_MSG,
-                filepath = f,
+                filepath = filepath,
                 replacements = [new_contents],
             )
 
