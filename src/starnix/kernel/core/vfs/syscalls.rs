@@ -1754,6 +1754,12 @@ fn do_mount_remount(
     data_addr: UserCString,
 ) -> Result<(), Errno> {
     let mount = target.mount_if_root()?;
+    // Prevent a detached mount from being modified via any lingering file descriptors to it.
+    // Drop `mounts_lock()` immediately so the spinlock is not held across user-memory reads,
+    // LSM hooks, or filesystem reconfiguration.
+    if mount.is_detached(&current_task.kernel().mounts_lock()) {
+        return error!(EINVAL);
+    }
 
     let data = current_task.read_path_if_non_null(data_addr)?;
     let mut mount_params = MountParams::parse(data.as_ref())?;
@@ -3373,27 +3379,28 @@ mod arch32 {
         sys_copy_file_range as sys_arch32_copy_file_range, sys_dup3 as sys_arch32_dup3,
         sys_epoll_create1 as sys_arch32_epoll_create1, sys_epoll_ctl as sys_arch32_epoll_ctl,
         sys_epoll_pwait as sys_arch32_epoll_pwait, sys_epoll_pwait2 as sys_arch32_epoll_pwait2,
-        sys_eventfd2 as sys_arch32_eventfd2, sys_fchmod as sys_arch32_fchmod,
-        sys_fchmodat as sys_arch32_fchmodat, sys_fchown as sys_arch32_fchown32,
-        sys_fchown as sys_arch32_fchown, sys_fchownat as sys_arch32_fchownat,
-        sys_fdatasync as sys_arch32_fdatasync, sys_flock as sys_arch32_flock,
-        sys_fsetxattr as sys_arch32_fsetxattr, sys_fstatat64 as sys_arch32_fstatat64,
-        sys_fstatfs as sys_arch32_fstatfs, sys_fsync as sys_arch32_fsync,
-        sys_ftruncate as sys_arch32_ftruncate, sys_io_cancel as sys_arch32_io_cancel,
-        sys_io_destroy as sys_arch32_io_destroy, sys_io_getevents as sys_arch32_io_getevents,
-        sys_io_setup as sys_arch32_io_setup, sys_io_submit as sys_arch32_io_submit,
-        sys_lgetxattr as sys_arch32_lgetxattr, sys_linkat as sys_arch32_linkat,
-        sys_listxattr as sys_arch32_listxattr, sys_llistxattr as sys_arch32_llistxattr,
-        sys_lsetxattr as sys_arch32_lsetxattr, sys_mkdirat as sys_arch32_mkdirat,
-        sys_mknodat as sys_arch32_mknodat, sys_pidfd_getfd as sys_arch32_pidfd_getfd,
-        sys_pidfd_open as sys_arch32_pidfd_open, sys_ppoll as sys_arch32_ppoll,
-        sys_preadv as sys_arch32_preadv, sys_pselect6 as sys_arch32_pselect6,
-        sys_readv as sys_arch32_readv, sys_removexattr as sys_arch32_removexattr,
-        sys_renameat2 as sys_arch32_renameat2, sys_select as sys_arch32__newselect,
-        sys_sendfile as sys_arch32_sendfile, sys_setxattr as sys_arch32_setxattr,
-        sys_splice as sys_arch32_splice, sys_statfs as sys_arch32_statfs,
-        sys_statx as sys_arch32_statx, sys_symlinkat as sys_arch32_symlinkat,
-        sys_sync as sys_arch32_sync, sys_syncfs as sys_arch32_syncfs, sys_tee as sys_arch32_tee,
+        sys_eventfd2 as sys_arch32_eventfd2, sys_fchdir as sys_arch32_fchdir,
+        sys_fchmod as sys_arch32_fchmod, sys_fchmodat as sys_arch32_fchmodat,
+        sys_fchown as sys_arch32_fchown32, sys_fchown as sys_arch32_fchown,
+        sys_fchownat as sys_arch32_fchownat, sys_fdatasync as sys_arch32_fdatasync,
+        sys_flock as sys_arch32_flock, sys_fsetxattr as sys_arch32_fsetxattr,
+        sys_fstatat64 as sys_arch32_fstatat64, sys_fstatfs as sys_arch32_fstatfs,
+        sys_fsync as sys_arch32_fsync, sys_ftruncate as sys_arch32_ftruncate,
+        sys_io_cancel as sys_arch32_io_cancel, sys_io_destroy as sys_arch32_io_destroy,
+        sys_io_getevents as sys_arch32_io_getevents, sys_io_setup as sys_arch32_io_setup,
+        sys_io_submit as sys_arch32_io_submit, sys_lgetxattr as sys_arch32_lgetxattr,
+        sys_linkat as sys_arch32_linkat, sys_listxattr as sys_arch32_listxattr,
+        sys_llistxattr as sys_arch32_llistxattr, sys_lsetxattr as sys_arch32_lsetxattr,
+        sys_mkdirat as sys_arch32_mkdirat, sys_mknodat as sys_arch32_mknodat,
+        sys_pidfd_getfd as sys_arch32_pidfd_getfd, sys_pidfd_open as sys_arch32_pidfd_open,
+        sys_ppoll as sys_arch32_ppoll, sys_preadv as sys_arch32_preadv,
+        sys_pselect6 as sys_arch32_pselect6, sys_readv as sys_arch32_readv,
+        sys_removexattr as sys_arch32_removexattr, sys_renameat2 as sys_arch32_renameat2,
+        sys_select as sys_arch32__newselect, sys_sendfile as sys_arch32_sendfile,
+        sys_setxattr as sys_arch32_setxattr, sys_splice as sys_arch32_splice,
+        sys_statfs as sys_arch32_statfs, sys_statx as sys_arch32_statx,
+        sys_symlinkat as sys_arch32_symlinkat, sys_sync as sys_arch32_sync,
+        sys_syncfs as sys_arch32_syncfs, sys_tee as sys_arch32_tee,
         sys_timerfd_create as sys_arch32_timerfd_create,
         sys_timerfd_gettime as sys_arch32_timerfd_gettime,
         sys_timerfd_settime as sys_arch32_timerfd_settime, sys_truncate as sys_arch32_truncate,

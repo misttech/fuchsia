@@ -20,7 +20,7 @@ use crate::vfs::{
     SymlinkTarget, UnlinkKind, fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek,
     fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
-use fuchsia_rcu::{RcuArc, RcuBox, RcuReadScope};
+use fuchsia_rcu::{RcuArc, RcuBox, RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
 use starnix_logging::log_warn;
 use starnix_sync::{LockDepMutex, MountSubmountsLock, Mutex, NamespaceFlagsLock};
@@ -91,6 +91,9 @@ impl Namespace {
         new_ns: &Namespace,
         mounts_guard: &MountsWriteToken,
     ) -> Option<NamespaceNode> {
+        if node.mount.as_ref().is_some_and(|m| m.is_detached(mounts_guard)) {
+            return Some(node);
+        }
         let mut node = mounts_guard.defer_drop(node);
         // Collect the list of mountpoints that leads to this node's mount
         let mut mountpoints = vec![];
@@ -133,10 +136,6 @@ impl Namespace {
         let current_root_mount = current_root.mount.as_ref().ok_or_else(|| errno!(EINVAL))?;
         let put_old_mount = put_old.mount.as_ref().ok_or_else(|| errno!(EINVAL))?;
 
-        let current_root_mountpoint =
-            current_root_mount.mountpoint().ok_or_else(|| errno!(EINVAL))?;
-        let new_root_mountpoint = new_root_mount.mountpoint().ok_or_else(|| errno!(EINVAL))?;
-
         if Arc::ptr_eq(new_root_mount, current_root_mount)
             || Arc::ptr_eq(put_old_mount, current_root_mount)
         {
@@ -155,6 +154,17 @@ impl Namespace {
 
         let kernel = self.kernel();
         let mounts_guard = kernel.mounts_lock();
+
+        // Prevent a detached mount from being modified via chroot or lingering file descriptors.
+        // (`current_root_mount` and `new_root_mount` are checked via `mountpoint()` below.)
+        if put_old_mount.is_detached(&mounts_guard) {
+            return error!(EINVAL);
+        }
+
+        let current_root_mountpoint =
+            mounts_guard.defer_drop(current_root_mount.mountpoint().ok_or_else(|| errno!(EINVAL))?);
+        let new_root_mountpoint =
+            mounts_guard.defer_drop(new_root_mount.mountpoint().ok_or_else(|| errno!(EINVAL))?);
 
         // Retain mounts and mountpoint entries so that any drops triggered by
         // unlinking or reparenting under `mounts_guard` are deferred until after
@@ -195,12 +205,10 @@ impl Namespace {
         // 1. Detach new_root_mount from its parent.
         new_root_parent
             .remove_submount_internal(&mounts_guard, &new_root_mountpoint.mount_hash_key())?;
-        new_root_mount.relations.set_mountpoint(&mounts_guard, None);
 
         // 2. Place new_root_mount where current_root_mount was.
         current_root_parent
             .remove_submount_internal(&mounts_guard, &current_root_mountpoint.mount_hash_key())?;
-        current_root_mount.relations.set_mountpoint(&mounts_guard, None);
         current_root_parent.create_submount(
             &mounts_guard,
             &current_root_mountpoint.entry,
@@ -354,10 +362,22 @@ impl Into<MountInfo> for Option<MountHandle> {
     }
 }
 
+/// Attachment state of a [`Mount`] within a [`Namespace`]'s mount tree.
+#[derive(Clone, Debug, Default, RcuDroppable)]
+enum MountpointState {
+    /// Root [`Mount`] of a [`Namespace`], or a newly constructed [`Mount`] prior to attachment.
+    #[default]
+    Root,
+    /// Submount attached to a `parent` [`Mount`] at a mountpoint `entry`.
+    Attached { parent: Weak<Mount>, entry: Weak<DirEntry> },
+    /// Submount that has been unmounted and disconnected from the mount table.
+    Detached,
+}
+
 #[derive(Default)]
 struct MountRelations {
-    /// The parent mount and the directory entry in the parent where this mount is mounted.
-    mountpoint: RcuBox<Option<(Weak<Mount>, Weak<DirEntry>)>>,
+    /// Attachment state of this [`Mount`] relative to its parent [`Mount`] in the [`Namespace`].
+    mountpoint: RcuBox<MountpointState>,
     /// The active submounts, keyed by the directory entry in this mount where they are mounted.
     submounts: LockDepMutex<HashMap<PtrKey<DirEntry>, Submount>, MountSubmountsLock>,
     /// A lock-free RCU friendly view of [submounts].
@@ -396,12 +416,34 @@ impl MountRelations {
         &self,
         guard: &MountsWriteToken,
         key: &PtrKey<DirEntry>,
-    ) -> Result<(), Errno> {
+    ) -> Result<Submount, Errno> {
         // SAFETY: The MountsWriteToken proves we have exclusive write access.
         let _ = unsafe { self.submount_lookup.remove(key) };
-        let submount = self.submounts.lock().remove(key);
-        let submount = guard.defer_drop(submount);
-        if submount.is_some() { Ok(()) } else { error!(EINVAL) }
+        let submount = self.submounts.lock().remove(key).ok_or_else(|| errno!(EINVAL))?;
+        submount.mount.relations.detach_mountpoint(guard);
+        Ok(submount)
+    }
+
+    /// Recursively disconnects all submounts of this [`Mount`] from each other and from the mount
+    /// table.
+    ///
+    /// Per `umount2(2)`, `MNT_DETACH` must "immediately disconnect the filesystem and all
+    /// filesystems mounted below it from each other and from the mount table".
+    fn detach_submounts_recursive(&self, guard: &MountsWriteToken) {
+        let submounts: Vec<_> =
+            self.submounts.lock().drain().map(|(_, submount)| submount).collect();
+        if submounts.is_empty() {
+            return;
+        }
+        for submount in &submounts {
+            let key = PtrKey::from(&submount.dir);
+            // SAFETY: The MountsWriteToken proves we have exclusive write access.
+            let _ = unsafe { self.submount_lookup.remove(&key) };
+            submount.mount.relations.detach_mountpoint(guard);
+            submount.mount.make_private(guard);
+            submount.mount.relations.detach_submounts_recursive(guard);
+        }
+        guard.defer_drop(submounts);
     }
 
     fn iter_submounts<'a>(
@@ -425,16 +467,18 @@ impl MountRelations {
     fn set_mountpoint(
         &self,
         _guard: &MountsWriteToken,
-        mountpoint: Option<(Weak<Mount>, Weak<DirEntry>)>,
+        parent: Weak<Mount>,
+        entry: Weak<DirEntry>,
     ) {
-        self.mountpoint.update(mountpoint);
+        self.mountpoint.update(MountpointState::Attached { parent, entry });
     }
 
-    fn mountpoint<'a>(
-        &'a self,
-        scope: &'a starnix_rcu::RcuReadScope,
-    ) -> Option<&'a (Weak<Mount>, Weak<DirEntry>)> {
-        self.mountpoint.as_ref(scope).as_ref()
+    fn detach_mountpoint(&self, _guard: &MountsWriteToken) {
+        self.mountpoint.update(MountpointState::Detached);
+    }
+
+    fn mountpoint<'a>(&'a self, scope: &'a starnix_rcu::RcuReadScope) -> &'a MountpointState {
+        self.mountpoint.as_ref(scope)
     }
 
     fn take_peer_group(&self, _guard: &MountsWriteToken) -> Option<Arc<PeerGroup>> {
@@ -487,6 +531,10 @@ impl Mount {
                 // A target node may not have a mount point if it's an anonymous node. Modern Linux (6.15+)
                 // returns ENOENT in this case, rather than the more intuitive EINVAL.
                 let mount = node.mount.as_ref().ok_or_else(|| errno!(ENOENT))?;
+                // Prevent a detached mount from being cloned via lingering file descriptors.
+                if mount.is_detached(mounts_guard) {
+                    return error!(EINVAL);
+                }
                 Ok(mount.clone_mount(mounts_guard, &node.entry, flags.into()))
             }
         }
@@ -577,11 +625,16 @@ impl Mount {
                 if submount.relations.submounts_len() != 0 {
                     continue;
                 }
+                submount.make_private(mounts_guard);
             }
             let _ = peer.remove_submount_internal(mounts_guard, mount_hash_key);
         }
 
-        self.remove_submount_internal(mounts_guard, mount_hash_key)
+        let submount = self.relations.remove_submount(mounts_guard, mount_hash_key)?;
+        submount.mount.make_private(mounts_guard);
+        submount.mount.relations.detach_submounts_recursive(mounts_guard);
+        mounts_guard.defer_drop(submount);
+        Ok(())
     }
 
     pub fn move_mount(
@@ -591,6 +644,10 @@ impl Mount {
     ) -> Result<(), Errno> {
         let kernel = target_mount.kernel();
         let mounts_guard = kernel.mounts_lock();
+        // Prevent a detached mount from being modified via any lingering file descriptors to it.
+        if source_mount.is_detached(&mounts_guard) || target_mount.is_detached(&mounts_guard) {
+            return error!(EINVAL);
+        }
 
         let source_mountpoint = source_mount.mountpoint().ok_or_else(|| errno!(EIO))?;
         let source_mountpoint = mounts_guard.defer_drop(source_mountpoint);
@@ -608,7 +665,6 @@ impl Mount {
             }
             source_parent
                 .remove_submount_internal(&mounts_guard, &source_mountpoint.mount_hash_key())?;
-            source_mount.relations.set_mountpoint(&mounts_guard, None);
         }
 
         target_mount.create_submount(
@@ -743,6 +799,11 @@ impl Mount {
         mounts_guard: &MountsWriteToken,
         flags: UnmountFlags,
     ) -> Result<(), Errno> {
+        // Prevent a detached mount from being unmounted again via lingering file descriptors
+        // (returning `EINVAL` rather than `EBUSY` even when open files keep it active).
+        if self.is_detached(mounts_guard) {
+            return error!(EINVAL);
+        }
         if !flags.contains(UnmountFlags::DETACH) {
             if self.active_clients() > 0 || self.relations.submounts_len() != 0 {
                 return error!(EBUSY);
@@ -781,11 +842,26 @@ impl Mount {
         self.relations.get_submount(&scope, &PtrKey::from(dir_entry)).is_some()
     }
 
-    /// The NamespaceNode on which this Mount is mounted.
+    /// Whether this [`Mount`] has been unmounted from the mount table.
+    pub(super) fn is_detached(&self, _mounts_guard: &MountsWriteToken) -> bool {
+        // Distinguishes an unmounted submount (`MountpointState::Detached`) from a `Namespace`'s
+        // `root_mount` (`MountpointState::Root`). Because
+        // `MountRelations::detach_submounts_recursive` transitions all submounts beneath a lazily
+        // unmounted (`MNT_DETACH`) mount to `MountpointState::Detached`, checking this `Mount`'s
+        // own `MountpointState` is sufficient.
+        let scope = RcuReadScope::new();
+        matches!(self.relations.mountpoint(&scope), MountpointState::Detached)
+    }
+
+    /// [`NamespaceNode`] on which this [`Mount`] is mounted.
     pub fn mountpoint(&self) -> Option<NamespaceNode> {
         let scope = RcuReadScope::new();
-        let (mount, entry) = self.relations.mountpoint(&scope)?;
-        Some(NamespaceNode::new(mount.upgrade()?, entry.upgrade()?))
+        match self.relations.mountpoint(&scope) {
+            MountpointState::Attached { parent, entry } => {
+                Some(NamespaceNode::new(parent.upgrade()?, entry.upgrade()?))
+            }
+            MountpointState::Root | MountpointState::Detached => None,
+        }
     }
 
     /// Add a child mount *without propagating it to the peer group*. For internal use only.
@@ -814,12 +890,17 @@ impl Mount {
 
         let submount = mount.kernel().mounts.register_mount(dir, Arc::clone(&mount));
 
-        let has_old_mountpoint = {
-            let scope = RcuReadScope::new();
-            mount.relations.mountpoint(&scope).is_some()
-        };
-        mount.relations.set_mountpoint(guard, Some((Arc::downgrade(self), Arc::downgrade(dir))));
-        assert!(!has_old_mountpoint, "add_submount can only take a newly created mount");
+        // Accepts both newly constructed mounts (`MountpointState::Root`) and mounts transiently
+        // disconnected from their previous parent during `move_mount` or `pivot_root`
+        // (`MountpointState::Detached`).
+        assert!(
+            !matches!(
+                mount.relations.mountpoint(&RcuReadScope::new()),
+                MountpointState::Attached { .. }
+            ),
+            "add_submount can only take an unattached mount"
+        );
+        mount.relations.set_mountpoint(guard, Arc::downgrade(self), Arc::downgrade(dir));
 
         let old_mount = self.relations.insert_submount(
             guard,
@@ -829,10 +910,11 @@ impl Mount {
         );
         if let Some(old_mount) = old_mount {
             let old_mount = guard.defer_drop(old_mount);
-            old_mount
-                .mount
-                .relations
-                .set_mountpoint(guard, Some((Arc::downgrade(&mount), Arc::downgrade(&mount.root))));
+            old_mount.mount.relations.set_mountpoint(
+                guard,
+                Arc::downgrade(&mount),
+                Arc::downgrade(&mount.root),
+            );
             let new_old_submount =
                 mount.kernel().mounts.register_mount(&mount.root, old_mount.mount.clone());
             let replaced = mount.relations.insert_submount(
@@ -852,7 +934,9 @@ impl Mount {
         guard: &MountsWriteToken,
         mount_hash_key: &PtrKey<DirEntry>,
     ) -> Result<(), Errno> {
-        self.relations.remove_submount(guard, mount_hash_key)
+        let submount = self.relations.remove_submount(guard, mount_hash_key)?;
+        guard.defer_drop(submount);
+        Ok(())
     }
 
     /// Return this mount's current peer group.
@@ -1974,6 +2058,10 @@ impl NamespaceNode {
         let mountpoint = mounts_guard.defer_drop(mountpoint);
 
         let mount = mountpoint.mount.as_ref().ok_or_else(|| errno!(ENOENT))?;
+        // Prevent a detached mount from being modified via any lingering file descriptors to it.
+        if mount.is_detached(&mounts_guard) {
+            return error!(EINVAL);
+        }
         let writeable_mount = mounts_guard.retain(mount);
         let writeable_entry = mounts_guard.retain(&mountpoint.entry);
         writeable_mount.create_submount(

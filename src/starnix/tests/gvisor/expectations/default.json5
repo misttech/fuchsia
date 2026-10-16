@@ -171,9 +171,6 @@
                 "Cgroup.AllControllersExplicit",
                 "Cgroup.AllControllersImplicit",
                 "Cgroup.CantRenameControlFile",
-
-                // TODO(https://fxbug.dev/556077553): Bind mounting detached cgroup mount.
-                "Cgroup.DetachedMountBindFails",
                 "Cgroup.CgroupsCannotMountTwice",
                 "Cgroup.ControllersMustBeInUniqueHierarchy",
                 "Cgroup.Create",
@@ -478,7 +475,6 @@
                 "MountTest.BindSlaveToShared",
                 "MountTest.BindSlaveToSlave",
                 "MountTest.ChangeMountFlagsOfLockedMount",
-                "MountTest.DetachedMountBindFails",
                 "MountTest.LargeTreePropagationEvent",
                 "MountTest.LockedMountFlagsAreInheritedByBind",
                 "MountTest.LockedMountStopsNonRecBind",

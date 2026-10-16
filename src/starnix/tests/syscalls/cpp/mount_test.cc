@@ -1632,4 +1632,194 @@ TEST_F(MountTest, PivotRootWithoutCapability) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
+class DetachedMountTest : public MountTest {
+ public:
+  void SetUp() override {
+    MountTest::SetUp();
+    if (IsSkipped()) {
+      return;
+    }
+
+    ASSERT_SUCCESS(MakeDir("mnt"));
+    ASSERT_SUCCESS(mount("tmpfs", TestPath("mnt").c_str(), "tmpfs", 0, nullptr));
+    ASSERT_SUCCESS(MakeDir("mnt/sub"));
+    ASSERT_SUCCESS(mount("tmpfs", TestPath("mnt/sub").c_str(), "tmpfs", 0, nullptr));
+    ASSERT_SUCCESS(MakeDir("mnt/sub/put_old"));
+    ASSERT_SUCCESS(MakeDir("target"));
+
+    parent_fd_ = fbl::unique_fd(open(TestPath("mnt").c_str(), O_RDONLY | O_DIRECTORY));
+    ASSERT_SUCCESS(parent_fd_.get());
+    child_fd_ = fbl::unique_fd(open(TestPath("mnt/sub").c_str(), O_RDONLY | O_DIRECTORY));
+    ASSERT_SUCCESS(child_fd_.get());
+
+    parent_path_ = "/proc/self/fd/" + std::to_string(parent_fd_.get());
+    child_path_ = "/proc/self/fd/" + std::to_string(child_fd_.get());
+
+    // Lazily unmount `mnt` so both `mnt` and its submounts are detached from the mount
+    // namespace and from each other while `parent_fd_` and `child_fd_` continue referencing them.
+    ASSERT_SUCCESS(Unmount("mnt", MNT_DETACH));
+  }
+
+ protected:
+  fbl::unique_fd parent_fd_;
+  fbl::unique_fd child_fd_;
+  std::string parent_path_;
+  std::string child_path_;
+};
+
+TEST_F(DetachedMountTest, SubmountDisconnectedFromParent) {
+  EXPECT_THAT(access((child_path_ + "/put_old").c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access((parent_path_ + "/sub/put_old").c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_F(DetachedMountTest, BindFails) {
+  EXPECT_THAT(mount(parent_path_.c_str(), TestPath("target").c_str(), nullptr, MS_BIND, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount(child_path_.c_str(), TestPath("target").c_str(), nullptr, MS_BIND, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount(TestPath("1").c_str(), parent_path_.c_str(), nullptr, MS_BIND, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount(TestPath("1").c_str(), child_path_.c_str(), nullptr, MS_BIND, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(DetachedMountTest, SubmountFails) {
+  EXPECT_THAT(mount("tmpfs", parent_path_.c_str(), "tmpfs", 0, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount("tmpfs", child_path_.c_str(), "tmpfs", 0, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(DetachedMountTest, MoveFails) {
+  EXPECT_THAT(mount(parent_path_.c_str(), TestPath("target").c_str(), nullptr, MS_MOVE, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount(child_path_.c_str(), TestPath("target").c_str(), nullptr, MS_MOVE, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount(TestPath("1").c_str(), parent_path_.c_str(), nullptr, MS_MOVE, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount(TestPath("1").c_str(), child_path_.c_str(), nullptr, MS_MOVE, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(DetachedMountTest, RemountFails) {
+  EXPECT_THAT(mount(nullptr, parent_path_.c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount(nullptr, child_path_.c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(
+      mount(nullptr, parent_path_.c_str(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY, nullptr),
+      SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(
+      mount(nullptr, child_path_.c_str(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY, nullptr),
+      SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(DetachedMountTest, ChangePropagationSucceeds) {
+  EXPECT_THAT(mount(nullptr, parent_path_.c_str(), nullptr, MS_SHARED, nullptr), SyscallSucceeds());
+  EXPECT_THAT(mount(nullptr, child_path_.c_str(), nullptr, MS_SHARED, nullptr), SyscallSucceeds());
+  EXPECT_THAT(mount(nullptr, parent_path_.c_str(), nullptr, MS_PRIVATE, nullptr),
+              SyscallSucceeds());
+  EXPECT_THAT(mount(nullptr, child_path_.c_str(), nullptr, MS_PRIVATE, nullptr), SyscallSucceeds());
+}
+
+TEST_F(DetachedMountTest, UnmountFails) {
+  EXPECT_THAT(umount2(parent_path_.c_str(), 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(umount2(child_path_.c_str(), 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(umount2(parent_path_.c_str(), MNT_DETACH), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(umount2(child_path_.c_str(), MNT_DETACH), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(DetachedMountTest, PivotRootFails) {
+  if (!test_helper::HasSysAdmin() || !test_helper::HasCapability(CAP_SYS_CHROOT)) {
+    GTEST_SKIP() << "Not running with sysadmin/chroot capabilities, skipping.";
+  }
+
+  EXPECT_THAT(sys_pivot_root(parent_path_.c_str(), (parent_path_ + "/sub").c_str()),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(sys_pivot_root(child_path_.c_str(), (child_path_ + "/put_old").c_str()),
+              SyscallFailsWithErrno(EINVAL));
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(fchdir(parent_fd_.get()), SyscallSucceeds());
+    ASSERT_THAT(chroot("."), SyscallSucceeds());
+    ASSERT_THAT(fchdir(child_fd_.get()), SyscallSucceeds());
+    EXPECT_THAT(sys_pivot_root(".", "./put_old"), SyscallFailsWithErrno(EINVAL));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(fchdir(child_fd_.get()), SyscallSucceeds());
+    ASSERT_THAT(chroot("."), SyscallSucceeds());
+    ASSERT_THAT(fchdir(parent_fd_.get()), SyscallSucceeds());
+    EXPECT_THAT(sys_pivot_root(".", "./sub"), SyscallFailsWithErrno(EINVAL));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(DetachedMountTest, UnsharePreservesDetachedState) {
+  if (!test_helper::HasSysAdmin() || !test_helper::HasCapability(CAP_SYS_CHROOT)) {
+    GTEST_SKIP() << "Not running with sysadmin/chroot capabilities, skipping.";
+  }
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(fchdir(parent_fd_.get()), SyscallSucceeds());
+    ASSERT_THAT(chroot("."), SyscallSucceeds());
+    ASSERT_THAT(fchdir(child_fd_.get()), SyscallSucceeds());
+
+    ASSERT_THAT(unshare(CLONE_NEWNS), SyscallSucceeds());
+
+    EXPECT_THAT(mount(".", "/", nullptr, MS_BIND, nullptr), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(mount("/", "./put_old", nullptr, MS_BIND, nullptr), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(mount("tmpfs", ".", "tmpfs", 0, nullptr), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(mount("tmpfs", "/", "tmpfs", 0, nullptr), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(umount2(".", MNT_DETACH), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(umount2("/", MNT_DETACH), SyscallFailsWithErrno(EINVAL));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(DetachedMountTest, NoPropagationToDetachedMount) {
+  ASSERT_SUCCESS(MakeDir("peer"));
+  ASSERT_SUCCESS(mount("tmpfs", TestPath("peer").c_str(), "tmpfs", 0, nullptr));
+  ASSERT_SUCCESS(Mount(nullptr, "peer", MS_SHARED));
+  ASSERT_SUCCESS(MakeDir("peer/dir"));
+
+  ASSERT_SUCCESS(MakeDir("sub_peer"));
+  ASSERT_SUCCESS(mount("tmpfs", TestPath("sub_peer").c_str(), "tmpfs", 0, nullptr));
+  ASSERT_SUCCESS(Mount(nullptr, "sub_peer", MS_SHARED));
+  ASSERT_SUCCESS(MakeDir("sub_peer/dir"));
+
+  ASSERT_SUCCESS(MakeDir("detached"));
+  ASSERT_SUCCESS(Mount("peer", "detached", MS_BIND));
+  ASSERT_SUCCESS(MakeDir("detached/sub"));
+  ASSERT_SUCCESS(Mount("sub_peer", "detached/sub", MS_BIND));
+
+  fbl::unique_fd detached_fd(open(TestPath("detached").c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_SUCCESS(detached_fd.get());
+  fbl::unique_fd detached_sub_fd(open(TestPath("detached/sub").c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_SUCCESS(detached_sub_fd.get());
+
+  std::string detached_path = "/proc/self/fd/" + std::to_string(detached_fd.get());
+  std::string detached_sub_path = "/proc/self/fd/" + std::to_string(detached_sub_fd.get());
+
+  ASSERT_SUCCESS(Unmount("detached", MNT_DETACH));
+
+  // Mounting under the live peers must not propagate new submounts onto the detached mounts.
+  ASSERT_SUCCESS(Mount("2", "peer/dir", MS_BIND));
+  ASSERT_SUCCESS(Mount("2", "sub_peer/dir", MS_BIND));
+  ASSERT_TRUE(FileExists("peer/dir/2"));
+  ASSERT_TRUE(FileExists("sub_peer/dir/2"));
+
+  EXPECT_THAT(access((detached_path + "/dir/2").c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access((detached_sub_path + "/dir/2").c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(mount((detached_path + "/dir").c_str(), TestPath("target").c_str(), nullptr, MS_BIND,
+                    nullptr),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(mount((detached_sub_path + "/dir").c_str(), TestPath("target").c_str(), nullptr,
+                    MS_BIND, nullptr),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 }  // namespace
