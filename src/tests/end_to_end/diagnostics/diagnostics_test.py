@@ -18,6 +18,51 @@ from perf import action_timer
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 _TEST_SUITE = "fuchsia.test.diagnostics"
 
+_BLOCK_IO_METRICS: tuple[str, ...] = (
+    "block.read.count",
+    "block.read.bytes",
+    "block.write.count",
+    "block.write.bytes",
+    "block.flush.count",
+    "block.flush.bytes",
+    "block.trim.count",
+    "block.trim.bytes",
+)
+
+# Maps block driver Inspect tree name (metadata.name) to
+# (allowed_component_urls, root_child_node_name).
+_BLOCK_DRIVERS: Dict[str, tuple[frozenset[str], str]] = {
+    "ahci": (frozenset({"fuchsia-boot:///ahci#meta/ahci.cm"}), "ahci"),
+    "ftl": (frozenset({"fuchsia-boot:///ftl#meta/ftl.cm"}), "ftl"),
+    "nvme": (frozenset({"fuchsia-boot:///nvme#meta/nvme.cm"}), "nvme"),
+    "sdmmc": (
+        frozenset({"fuchsia-boot:///sdmmc#meta/sdmmc.cm"}),
+        "sdmmc_core",
+    ),
+    "ufs": (
+        frozenset(
+            {
+                "fuchsia-boot:///ufs#meta/ufs.cm",
+                "fuchsia-boot:///ufs-pci#meta/ufs-pci.cm",
+                "fuchsia-boot:///ufs-pdev#meta/ufs-pdev.cm",
+            }
+        ),
+        "ufs",
+    ),
+    "virtio-block": (
+        frozenset({"fuchsia-boot:///virtio_block#meta/virtio_block.cm"}),
+        "virtio_block",
+    ),
+}
+
+# Allowlist of block drivers that do not yet expose block I/O metrics.
+_UNINSTRUMENTED_BLOCK_DRIVERS: frozenset[str] = frozenset(
+    {
+        "ahci",
+        "nvme",
+    }
+)
+
 
 class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
@@ -44,6 +89,8 @@ class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
                 self._check_netstack_data(inspect_data)
                 self._check_persistence_data(inspect_data)
                 self._check_fshost_data(inspect_data)
+                self._check_block_metrics_data(inspect_data)
+                self._check_fxfs_metrics_data(inspect_data)
 
     def _get_single_payload(
         self, inspect_data: List[Dict[str, Any]], moniker: str
@@ -298,6 +345,112 @@ class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
         asserts.assert_greater_equal(stats.get("used_bytes", -1), 0)
         asserts.assert_greater(stats.get("allocated_inodes", 0), 0)
         asserts.assert_greater_equal(stats.get("used_inodes", -1), 0)
+
+    def _check_block_metrics_data(
+        self, inspect_data: List[Dict[str, Any]]
+    ) -> None:
+        """Verify that a known block driver publishes block I/O counters."""
+        matched_nodes: List[tuple[str, str, Dict[str, Any]]] = []
+        allowlisted_drivers: List[str] = []
+        for data in inspect_data:
+            moniker = data.get("moniker", "")
+            if not moniker.startswith(
+                ("bootstrap/boot-drivers:", "bootstrap/base-drivers:")
+            ):
+                continue
+            metadata = data.get("metadata") or {}
+            driver_name = metadata.get("name")
+            if driver_name not in _BLOCK_DRIVERS:
+                continue
+            expected_urls, node_name = _BLOCK_DRIVERS[driver_name]
+            if metadata.get("component_url") not in expected_urls:
+                continue
+            root = (data.get("payload") or {}).get("root")
+            if not isinstance(root, dict):
+                continue
+            node = root.get(node_name)
+            if not isinstance(node, dict):
+                continue
+            if driver_name in _UNINSTRUMENTED_BLOCK_DRIVERS:
+                allowlisted_drivers.append(moniker)
+            else:
+                matched_nodes.append((moniker, node_name, node))
+
+        if not matched_nodes and allowlisted_drivers:
+            return
+
+        asserts.assert_greater(
+            len(matched_nodes),
+            0,
+            "Expected to find at least one known block driver Inspect node "
+            f"({list(_BLOCK_DRIVERS.keys())}).",
+        )
+
+        total_read_ops = 0
+        total_read_bytes = 0
+        for moniker, node_name, node in matched_nodes:
+            for metric in _BLOCK_IO_METRICS:
+                asserts.assert_in(
+                    metric,
+                    node,
+                    f"Block driver {moniker} ({node_name}) missing '{metric}'",
+                )
+                asserts.assert_greater_equal(
+                    node[metric],
+                    0,
+                    f"Block driver {moniker} ({node_name}) '{metric}' should be >= 0",
+                )
+            total_read_ops += node["block.read.count"]
+            total_read_bytes += node["block.read.bytes"]
+
+        asserts.assert_greater(
+            total_read_ops,
+            0,
+            "Expected total block.read.count > 0 across matched block drivers.",
+        )
+        asserts.assert_greater(
+            total_read_bytes,
+            0,
+            "Expected total block.read.bytes > 0 across matched block drivers.",
+        )
+
+    def _check_fxfs_metrics_data(
+        self, inspect_data: List[Dict[str, Any]]
+    ) -> None:
+        """Verify Fxfs per-store device I/O metrics when Fxfs is active."""
+        root = self._find_payload(inspect_data, "bootstrap/fshost/fxfs")
+        if root is None:
+            return
+
+        stores = root.get("stores")
+        asserts.assert_true(
+            isinstance(stores, dict) and len(stores) > 0,
+            "Expected non-empty 'stores' node in bootstrap/fshost/fxfs Inspect output.",
+        )
+        assert isinstance(stores, dict)
+
+        total_device_read_ops = 0
+        for store_name, store_data in stores.items():
+            if not isinstance(store_data, dict):
+                continue
+            for metric in ("device_read_ops", "device_write_ops"):
+                asserts.assert_in(
+                    metric,
+                    store_data,
+                    f"Fxfs store '{store_name}' missing '{metric}'",
+                )
+                asserts.assert_greater_equal(
+                    store_data[metric],
+                    0,
+                    f"Fxfs store '{store_name}' '{metric}' should be >= 0",
+                )
+            total_device_read_ops += store_data["device_read_ops"]
+
+        asserts.assert_greater(
+            total_device_read_ops,
+            0,
+            "Expected total Fxfs store device_read_ops > 0.",
+        )
 
     def test_logs(self) -> None:
         """Validates that we can snapshot logs from the device."""
