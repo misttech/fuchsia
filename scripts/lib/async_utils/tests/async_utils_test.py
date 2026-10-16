@@ -348,33 +348,29 @@ class TestSignals(unittest.TestCase):
 
         def main(output_file_name: str) -> None:
             async def internal_main() -> None:
+                sleep_task = asyncio.create_task(asyncio.sleep(120))
+
+                def write_output() -> None:
+                    with open(output_file_name, mode="at") as output_file:
+                        output_file.write("Handler printed message\n")
+                    sleep_task.cancel()
+
+                async_utils.signals.register_on_terminate_signal(write_output)
                 os.kill(os.getpid(), signal.SIGTERM)
-                await asyncio.sleep(120)
+                try:
+                    await sleep_task
+                except asyncio.CancelledError:
+                    with open(output_file_name, mode="at") as output_file:
+                        output_file.write("Cancelled\n")
 
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            loop = asyncio.get_event_loop()
-
-            fut = asyncio.ensure_future(internal_main())
-
-            def write_output() -> None:
-                with open(output_file_name, "a") as f:
-                    f.write("Handler printed message\n")
-                fut.cancel()
-
-            async_utils.signals.register_on_terminate_signal(write_output)
-            try:
-                loop.run_until_complete(fut)
-            except asyncio.CancelledError:
-                with open(output_file_name, "a") as f:
-                    f.write("Cancelled\n")
+            asyncio.run(internal_main())
 
         proc = multiprocessing.Process(target=main, args=(output_file_name,))
         proc.start()
         proc.join()
 
-        lines: list[str]
-        with open(output_file_name, "r") as f:
-            lines = [line.strip() for line in f.readlines()]
+        with open(output_file_name, mode="rt") as output_file:
+            lines = [line.strip() for line in output_file.readlines()]
 
         self.assertListEqual(lines, ["Handler printed message", "Cancelled"])
 

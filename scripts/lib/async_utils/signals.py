@@ -16,13 +16,13 @@ def register_on_terminate_signal(fn: typing.Callable[[], None]) -> None:
     Args:
         fn (typing.Callable[[typing.Any | None], None]): The function to call.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     for s in [signal.SIGTERM, signal.SIGINT]:
         loop.add_signal_handler(s, fn)
 
 
 def unregister_all_termination_signals() -> None:
     """Unregister all existing termination signal handlers."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     for s in [signal.SIGTERM, signal.SIGINT]:
         loop.remove_signal_handler(s)
