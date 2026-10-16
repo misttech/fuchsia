@@ -1472,6 +1472,7 @@ mod tests {
     use crate::tests::tests::run_process_accessor;
     use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
     use rand::distr::{Alphanumeric, SampleString};
+    use starnix_core::execution::{TaskInfo, create_task};
     use starnix_core::mm::MemoryAccessor;
     use starnix_core::power::{OwnedMessageCounter, WakeupSourceOrigin};
     use starnix_core::task::{RunState, Task};
@@ -1487,6 +1488,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::ffi::CString;
     use std::sync::LazyLock;
+    use zerocopy::IntoBytes;
 
     static REMOTE_CONTROLLER_CLIENT: LazyLock<
         LockDepMutex<
@@ -1505,7 +1507,6 @@ mod tests {
             REMOTE_CONTROLLER_CLIENT.lock().remove(service_name).ok_or_else(|| errno!(ENOENT))
         }
     }
-    use starnix_core::execution::{TaskInfo, create_task};
 
     /// Runs the `REMOTE_BINDER_WAIT` loop for `current_task`, spawning worker threads in the same
     /// thread group whenever `wait_command.spawn_thread != 0` and joining them before exit. When
@@ -1738,20 +1739,12 @@ mod tests {
     #[::fuchsia::test]
     async fn external_binder_connection() {
         run_remote_binder_test(|binder| async move {
-            const VMO_SIZE: usize = 10 * 1024 * 1024;
-            let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("Vmo::create");
-            let addr = fuchsia_runtime::vmar_root_self()
-                .map(0, &vmo, 0, VMO_SIZE, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
-                .expect("map");
-            scopeguard::defer! {
-              // SAFETY: This is a ffi call to a kernel syscall.
-              unsafe { fuchsia_runtime::vmar_root_self().unmap(addr, VMO_SIZE).expect("unmap"); }
-            }
-
-            binder.set_vmo(vmo, addr as u64).expect("set_vmo");
+            let mapped_vmo = MappedTestVmo::new();
+            let (vmo, address) = mapped_vmo.vmo_args();
+            binder.set_vmo(vmo, address).expect("set_vmo");
             let mut version = uapi::binder_version { protocol_version: 0 };
             let version_ref = &mut version as *mut uapi::binder_version;
-            let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("Vmo::create");
+            let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
             let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle");
             let files = Vec::new();
             let user_writes = binder
@@ -1781,24 +1774,14 @@ mod tests {
     #[::fuchsia::test]
     async fn map_vmo_responds_once_mapped() {
         run_remote_binder_test(|binder| async move {
-            const VMO_SIZE: usize = 10 * 1024 * 1024;
-            let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("Vmo::create");
-            let addr = fuchsia_runtime::vmar_root_self()
-                .map(0, &vmo, 0, VMO_SIZE, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
-                .expect("map");
-            scopeguard::defer! {
-              // SAFETY: No Rust reference points into the mapping. The test only gives its address
-              // to the binder driver, which accesses the memory through the VMO.
-              unsafe { fuchsia_runtime::vmar_root_self().unmap(addr, VMO_SIZE).expect("unmap"); }
-            }
-
-            let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle");
-            binder.map_vmo(dup, addr as u64).await.expect("map_vmo").expect("map_vmo");
+            let mapped_vmo = MappedTestVmo::new();
+            map_vmo(&binder, &mapped_vmo).await;
 
             // The VMO is mapped once `map_vmo` responds, so the driver rejects another one, and
             // returns the error to the client.
+            let (vmo, address) = mapped_vmo.vmo_args();
             assert_eq!(
-                binder.map_vmo(vmo, addr as u64).await.expect("map_vmo"),
+                binder.map_vmo(vmo, address).await.expect("map_vmo"),
                 Err(fposix::Errno::Einval)
             );
             binder
@@ -1963,6 +1946,348 @@ mod tests {
             worker.interrupt();
             assert_eq!(read.await.expect("ioctl"), Err(fposix::Errno::Eintr));
             binder
+        })
+        .await;
+    }
+
+    /// A VMO mapped in the address space of the test, which the simulated remote binder process
+    /// uses as its binder shared memory. It is unmapped when dropped.
+    struct MappedTestVmo {
+        vmo: zx::Vmo,
+        address: usize,
+    }
+
+    impl MappedTestVmo {
+        const SIZE: usize = 10 * 1024 * 1024;
+
+        fn new() -> Self {
+            let vmo = zx::Vmo::create(Self::SIZE as u64).expect("Vmo::create");
+            let address = fuchsia_runtime::vmar_root_self()
+                .map(0, &vmo, 0, Self::SIZE, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
+                .expect("map");
+            Self { vmo, address }
+        }
+
+        /// Returns a handle to the VMO and the address of the mapping, as `MapVmo` and `SetVmo`
+        /// take them.
+        fn vmo_args(&self) -> (zx::Vmo, u64) {
+            let vmo = self.vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle");
+            (vmo, self.address as u64)
+        }
+    }
+
+    impl Drop for MappedTestVmo {
+        fn drop(&mut self) {
+            // SAFETY: No Rust reference points into the mapping. The test only gives its address
+            // to the binder driver, which accesses the memory through the VMO.
+            unsafe {
+                fuchsia_runtime::vmar_root_self().unmap(self.address, Self::SIZE).expect("unmap");
+            }
+        }
+    }
+
+    /// Registers a new `BinderThread` channel with `binder`.
+    async fn register_thread_channel(binder: &fbinder::BinderProxy) -> fbinder::BinderThreadProxy {
+        let (thread, server_end) = create_proxy::<fbinder::BinderThreadMarker>();
+        binder
+            .register_thread_channel(server_end)
+            .await
+            .expect("register_thread_channel")
+            .expect("register_thread_channel");
+        thread
+    }
+
+    /// Maps `mapped_vmo` as the binder shared memory of the simulated remote binder process.
+    async fn map_vmo(binder: &fbinder::BinderProxy, mapped_vmo: &MappedTestVmo) {
+        let (vmo, address) = mapped_vmo.vmo_args();
+        binder.map_vmo(vmo, address).await.expect("map_vmo").expect("map_vmo");
+    }
+
+    /// Calls `BINDER_VERSION` on `thread`. Returns the binder protocol version.
+    async fn binder_version(thread: &fbinder::BinderThreadProxy) -> Result<i32, fposix::Errno> {
+        let mut version = uapi::binder_version { protocol_version: 0 };
+        let version_address = &version as *const uapi::binder_version as u64;
+        let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
+        let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle");
+        let user_writes = thread
+            .ioctl(uapi::BINDER_VERSION, version_address, vmo, &[], Vec::new())
+            .await
+            .expect("ioctl")?;
+        // The ioctl returns the version it writes in the VMO.
+        assert_eq!(
+            user_writes,
+            vec![fbinder::IoctlReadWrite {
+                address: version_address,
+                offset: 0,
+                length: std::mem::size_of::<uapi::binder_version>() as u64,
+            }]
+        );
+        dup.read(version.as_mut_bytes(), 0).expect("read");
+        Ok(version.protocol_version)
+    }
+
+    /// Calls `BINDER_WRITE_READ` on `thread`, to write `commands` without reading anything.
+    async fn write_commands(
+        thread: &fbinder::BinderThreadProxy,
+        commands: &[u32],
+    ) -> Result<(), fposix::Errno> {
+        let bwr = uapi::binder_write_read {
+            write_size: std::mem::size_of_val(commands) as u64,
+            write_consumed: 0,
+            write_buffer: commands.as_ptr() as u64,
+            read_size: 0,
+            read_consumed: 0,
+            read_buffer: 0,
+        };
+        let bwr_address = &bwr as *const uapi::binder_write_read as u64;
+        let bwr_size = std::mem::size_of_val(&bwr) as u64;
+        // As the remote binder clients do, pass the memory read by the ioctl in the VMO.
+        let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
+        vmo.write(bwr.as_bytes(), 0).expect("write bwr");
+        vmo.write(commands.as_bytes(), bwr_size).expect("write commands");
+        let ioctl_reads = [
+            fbinder::IoctlReadWrite { address: bwr_address, offset: 0, length: bwr_size },
+            fbinder::IoctlReadWrite {
+                address: bwr.write_buffer,
+                offset: bwr_size,
+                length: bwr.write_size,
+            },
+        ];
+        thread
+            .ioctl(uapi::BINDER_WRITE_READ, bwr_address, vmo, &ioctl_reads, Vec::new())
+            .await
+            .expect("ioctl")
+            .map(|_| ())
+    }
+
+    /// Starts a `BINDER_WRITE_READ` ioctl on `thread` that only reads. With nothing to read, the
+    /// worker task serving `thread` blocks in `handle_thread_read` until the remote thread receives
+    /// some work, or the worker task is interrupted. Returns the response of the ioctl.
+    fn start_read(
+        thread: &fbinder::BinderThreadProxy,
+    ) -> fidl::client::QueryResponseFut<fbinder::BinderThreadIoctlResult> {
+        let read_buffer = [0u8; 64];
+        let bwr = read_only_binder_write_read(&read_buffer);
+        let bwr_address = &bwr as *const uapi::binder_write_read as u64;
+        let bwr_size = std::mem::size_of_val(&bwr) as u64;
+        // As the remote binder clients do, pass the memory read by the ioctl in the VMO. The ioctl
+        // returns what it writes rather than writing to the memory of the test, so the addresses of
+        // `bwr` and `read_buffer` only identify them, and they do not need to outlive this function.
+        let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
+        vmo.write(bwr.as_bytes(), 0).expect("write bwr");
+        let ioctl_reads =
+            [fbinder::IoctlReadWrite { address: bwr_address, offset: 0, length: bwr_size }];
+        thread.ioctl(uapi::BINDER_WRITE_READ, bwr_address, vmo, &ioctl_reads, Vec::new())
+    }
+
+    /// Returns a `Binder` proxy that is not connected to any binder device. A test that closes its
+    /// connection returns it to `run_remote_binder_test_with_thread_group`, which closes it.
+    fn closed_binder() -> fbinder::BinderProxy {
+        create_proxy::<fbinder::BinderMarker>().0
+    }
+
+    /// Waits until the simulated remote binder process has a single worker task, and that task is
+    /// blocked in `handle_thread_read`. Returns the worker and the run state it is blocked in.
+    async fn wait_for_worker_blocked_in_read(thread_group: &ThreadGroup) -> (Arc<Task>, RunState) {
+        loop {
+            // `handle_thread_read` blocks on an event, while waiting for a request blocks in a
+            // `Waiter`.
+            let (worker, run_state) = wait_for_blocked_worker(thread_group, None).await;
+            if matches!(run_state, RunState::Event(_)) {
+                return (worker, run_state);
+            }
+            fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn thread_channel_ioctl() {
+        run_remote_binder_test_with_thread_group(|binder, thread_group| async move {
+            let mapped_vmo = MappedTestVmo::new();
+            map_vmo(&binder, &mapped_vmo).await;
+            let thread = register_thread_channel(&binder).await;
+            assert_eq!(
+                binder_version(&thread).await,
+                Ok(uapi::BINDER_CURRENT_PROTOCOL_VERSION as i32)
+            );
+
+            // A benign ENOENT command race (such as releasing a handle that was already removed)
+            // must be forwarded as Enoent without closing the BinderThread channel.
+            assert_eq!(
+                write_commands(&thread, &[uapi::binder_driver_command_protocol_BC_RELEASE, 1])
+                    .await,
+                Err(fposix::Errno::Enoent)
+            );
+
+            // Verify the channel is still open and usable after ENOENT.
+            assert_eq!(
+                binder_version(&thread).await,
+                Ok(uapi::BINDER_CURRENT_PROTOCOL_VERSION as i32)
+            );
+
+            // Register the thread as a looper, then drop the channel and verify the underlying
+            // BinderThread is unregistered when the worker recycles by registering a new channel
+            // and entering looper again on the reused worker task.
+            write_commands(&thread, &[uapi::binder_driver_command_protocol_BC_ENTER_LOOPER])
+                .await
+                .expect("enter_looper");
+
+            // Drop the channel, and wait for the worker to stop serving it and to wait for a new
+            // request. Otherwise, the next channel could be registered before the worker is back in
+            // the unassigned pool, and be served by a new worker.
+            let (worker, serving_run_state) = wait_for_blocked_worker(&thread_group, None).await;
+            std::mem::drop(thread);
+            let (idle_worker, _) =
+                wait_for_blocked_worker(&thread_group, Some(&serving_run_state)).await;
+            assert_eq!(idle_worker.get_tid(), worker.get_tid());
+
+            let second_thread = register_thread_channel(&binder).await;
+            write_commands(&second_thread, &[uapi::binder_driver_command_protocol_BC_ENTER_LOOPER])
+                .await
+                .expect("enter_looper on reused worker");
+
+            // The second channel is served by the same worker.
+            let (second_worker, _) = wait_for_blocked_worker(&thread_group, None).await;
+            assert_eq!(second_worker.get_tid(), worker.get_tid());
+            binder
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn thread_channel_worker_is_interruptible() {
+        run_remote_binder_test_with_thread_group(|binder, thread_group| async move {
+            let mapped_vmo = MappedTestVmo::new();
+            map_vmo(&binder, &mapped_vmo).await;
+            let thread = register_thread_channel(&binder).await;
+
+            // While waiting for the next request, the worker serving the channel must be blocked
+            // in an interruptible run state, so that signals, exit and freezing can reach it.
+            let (worker, idle_run_state) = wait_for_blocked_worker(&thread_group, None).await;
+            worker.interrupt();
+
+            // The interrupt breaks the wait. The worker parks the channel, returns from
+            // `REMOTE_BINDER_WAIT`, and resumes serving the same channel on its next call.
+            let (resumed_worker, _) =
+                wait_for_blocked_worker(&thread_group, Some(&idle_run_state)).await;
+            assert_eq!(resumed_worker.get_tid(), worker.get_tid());
+
+            // The channel was not dropped and still works.
+            assert_eq!(
+                binder_version(&thread).await,
+                Ok(uapi::BINDER_CURRENT_PROTOCOL_VERSION as i32)
+            );
+            binder
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn thread_channel_read_is_interruptible() {
+        run_remote_binder_test_with_thread_group(|binder, thread_group| async move {
+            let mapped_vmo = MappedTestVmo::new();
+            map_vmo(&binder, &mapped_vmo).await;
+            let thread = register_thread_channel(&binder).await;
+
+            // A read with nothing to read blocks the worker in `handle_thread_read`.
+            let read = start_read(&thread);
+            let (worker, _) = wait_for_worker_blocked_in_read(&thread_group).await;
+
+            // Interrupting the worker ends the read with `EINTR`. The worker parks the channel,
+            // returns from `REMOTE_BINDER_WAIT`, and resumes serving the same channel.
+            worker.interrupt();
+            assert_eq!(read.await.expect("ioctl"), Err(fposix::Errno::Eintr));
+            assert_eq!(
+                binder_version(&thread).await,
+                Ok(uapi::BINDER_CURRENT_PROTOCOL_VERSION as i32)
+            );
+            let (resumed_worker, _) = wait_for_blocked_worker(&thread_group, None).await;
+            assert_eq!(resumed_worker.get_tid(), worker.get_tid());
+            binder
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn thread_channel_closed_during_read() {
+        run_remote_binder_test_with_thread_group(|binder, thread_group| async move {
+            let mapped_vmo = MappedTestVmo::new();
+            map_vmo(&binder, &mapped_vmo).await;
+            let thread = register_thread_channel(&binder).await;
+            write_commands(&thread, &[uapi::binder_driver_command_protocol_BC_ENTER_LOOPER])
+                .await
+                .expect("enter_looper");
+
+            // Close the channel while its worker is blocked in `handle_thread_read`, waiting for
+            // work for the looper.
+            let read = start_read(&thread);
+            let (worker, read_run_state) = wait_for_worker_blocked_in_read(&thread_group).await;
+            std::mem::drop(read);
+            std::mem::drop(thread);
+
+            // The worker only notices that the channel is closed once the read returns. When
+            // interrupted, it does not park the closed channel: it unregisters its binder thread,
+            // returns from `REMOTE_BINDER_WAIT`, and waits for a new request on its next call.
+            worker.interrupt();
+            let (idle_worker, _) =
+                wait_for_blocked_worker(&thread_group, Some(&read_run_state)).await;
+            assert_eq!(idle_worker.get_tid(), worker.get_tid());
+
+            // The next channel is served by the same worker, which can enter the looper again, as
+            // its binder thread was unregistered.
+            let second_thread = register_thread_channel(&binder).await;
+            write_commands(&second_thread, &[uapi::binder_driver_command_protocol_BC_ENTER_LOOPER])
+                .await
+                .expect("enter_looper on reused worker");
+            let (second_worker, _) = wait_for_blocked_worker(&thread_group, None).await;
+            assert_eq!(second_worker.get_tid(), worker.get_tid());
+            binder
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn thread_channel_closed_with_connection() {
+        run_remote_binder_test_with_thread_group(|binder, thread_group| async move {
+            let mapped_vmo = MappedTestVmo::new();
+            map_vmo(&binder, &mapped_vmo).await;
+            let thread = register_thread_channel(&binder).await;
+            assert_eq!(
+                binder_version(&thread).await,
+                Ok(uapi::BINDER_CURRENT_PROTOCOL_VERSION as i32)
+            );
+
+            // Close the connection while the worker waits for the next request on the channel. The
+            // worker stops serving the channel, closes it, and waits for a new request.
+            let (worker, serving_run_state) = wait_for_blocked_worker(&thread_group, None).await;
+            std::mem::drop(binder);
+            thread.on_closed().await.expect("on_closed");
+            let (idle_worker, _) =
+                wait_for_blocked_worker(&thread_group, Some(&serving_run_state)).await;
+            assert_eq!(idle_worker.get_tid(), worker.get_tid());
+            closed_binder()
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn thread_channel_closed_with_connection_during_read() {
+        run_remote_binder_test_with_thread_group(|binder, thread_group| async move {
+            let mapped_vmo = MappedTestVmo::new();
+            map_vmo(&binder, &mapped_vmo).await;
+            let thread = register_thread_channel(&binder).await;
+            let read = start_read(&thread);
+            let (worker, read_run_state) = wait_for_worker_blocked_in_read(&thread_group).await;
+
+            // Closing the connection closes its binder process, which ends the read with `EBADF`.
+            // The worker then stops serving the channel, closes it, and waits for a new request.
+            std::mem::drop(binder);
+            assert_eq!(read.await.expect("ioctl"), Err(fposix::Errno::Ebadf));
+            thread.on_closed().await.expect("on_closed");
+            let (idle_worker, _) =
+                wait_for_blocked_worker(&thread_group, Some(&read_run_state)).await;
+            assert_eq!(idle_worker.get_tid(), worker.get_tid());
+            closed_binder()
         })
         .await;
     }
