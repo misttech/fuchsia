@@ -162,11 +162,3 @@ rust_lint_config(
     },
     rustc = _RUSTC_LINT_CONFIGS,
 )
-
-rust_lint_config(
-    name = "clippy_allow_all",
-    clippy = {
-        "all": "allow",
-    },
-    rustc = _RUSTC_LINT_CONFIGS,
-)

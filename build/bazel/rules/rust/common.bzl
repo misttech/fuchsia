@@ -28,3 +28,12 @@ def with_fuchsia_rust_stdlib_link_deps(link_deps):
 def with_fuchsia_rust_test_aspect_hints(aspect_hints):
     """Add the Fuchsia Rust test runner shard to aspect_hints."""
     return (aspect_hints or []) + ["//src/sys/test_runners/rust:default"]
+
+def with_fuchsia_rust_tags(tags, disable_clippy):
+    """Add "noclippy" to tags when disable_clippy is True."""
+    if not disable_clippy:
+        return tags
+    tags = list(tags or [])
+    if "noclippy" not in tags:
+        tags.append("noclippy")
+    return tags

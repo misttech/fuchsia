@@ -839,6 +839,68 @@ rustc_dylib(
 	}
 }`,
 		}, {
+			name: "rustc_disable_clippy",
+			bazel: `
+rustc_library(
+	name = "foo_lib",
+	srcs = ["src/lib.rs"],
+	disable_clippy = True,
+)
+
+rustc_binary(
+	name = "foo_bin",
+	srcs = ["src/main.rs"],
+	disable_clippy = True,
+)
+
+rustc_dylib(
+	name = "foo_dylib",
+	srcs = ["src/lib.rs"],
+	disable_clippy = True,
+)
+
+rustc_proc_macro(
+	name = "foo_macro",
+	srcs = ["src/lib.rs"],
+	disable_clippy = True,
+)
+
+rustc_test(
+	name = "foo_test",
+	srcs = ["src/main.rs"],
+	disable_clippy = True,
+)`,
+			wantGN: `rustc_library("foo_lib") {
+	sources = [
+		"src/lib.rs",
+	]
+	disable_clippy = true
+}
+rustc_binary("foo_bin") {
+	sources = [
+		"src/main.rs",
+	]
+	disable_clippy = true
+}
+rustc_dylib("foo_dylib") {
+	sources = [
+		"src/lib.rs",
+	]
+	disable_clippy = true
+}
+rustc_macro("foo_macro") {
+	sources = [
+		"src/lib.rs",
+	]
+	disable_clippy = true
+}
+rustc_test("foo_test") {
+	sources = [
+		"src/main.rs",
+	]
+	disable_clippy = true
+}`,
+		}, {
 			name: "ffx_plugin",
 			bazel: `
 ffx_plugin(

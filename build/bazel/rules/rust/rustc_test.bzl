@@ -9,6 +9,7 @@ load("@rules_rust//rust:defs.bzl", "rust_test")
 load(
     "//build/bazel/rules/rust:common.bzl",
     "with_fuchsia_rust_stdlib_link_deps",
+    "with_fuchsia_rust_tags",
     "with_fuchsia_rust_test_aspect_hints",
     "with_fuchsia_rustc_flags",
 )
@@ -16,12 +17,14 @@ load(
 def _rustc_test_impl(
         name,
         lint_config,
+        disable_clippy,
         rustc_flags,
         build_flags,
         **kwargs):
     if lint_config == None:
         lint_config = "//build/config/rust/lints:clippy_warn_default"
 
+    kwargs["tags"] = with_fuchsia_rust_tags(kwargs.get("tags"), disable_clippy)
     kwargs["rustc_flags"] = with_fuchsia_rustc_flags(rustc_flags)
     kwargs["link_deps"] = with_fuchsia_rust_stdlib_link_deps(kwargs.get("link_deps"))
     kwargs["aspect_hints"] = with_fuchsia_rust_test_aspect_hints(kwargs.get("aspect_hints"))
@@ -57,5 +60,11 @@ rustc_test = macro(
     """,
     implementation = _rustc_test_impl,
     inherit_attrs = rust_test,
-    attrs = BUILD_FLAGS_RUST_MACRO_ATTRS,
+    attrs = {
+        "disable_clippy": attr.bool(
+            doc = "If true, disables clippy lints on this target.",
+            default = False,
+            configurable = False,
+        ),
+    } | BUILD_FLAGS_RUST_MACRO_ATTRS,
 )

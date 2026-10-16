@@ -125,6 +125,7 @@ filegroup(
 
         # Aspect tests
         "//build/bazel/aspects/tests",
+        "//build/bazel/rules/rust/tests",
     ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )

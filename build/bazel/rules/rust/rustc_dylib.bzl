@@ -10,7 +10,7 @@ load(
     "wrap_rust_macro_args_with_build_flags",
 )
 load("@rules_rust//rust:defs.bzl", "rust_dylib_library")
-load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rust_stdlib_link_deps", "with_fuchsia_rustc_flags")
+load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rust_stdlib_link_deps", "with_fuchsia_rust_tags", "with_fuchsia_rustc_flags")
 load("//build/bazel/rules/rust:generate_unit_tests.bzl", "generate_unit_tests")
 
 def _rustc_dylib_impl(
@@ -32,15 +32,13 @@ def _rustc_dylib_impl(
     # are regular native link dependencies in Bazel. They only differ in GN.
     if public_deps:
         kwargs["link_deps"] = (kwargs.get("link_deps") or []) + public_deps
-    if disable_clippy:
-        lint_config = "//build/config/rust/lints:clippy_allow_all"
-        test_lint_config = "//build/config/rust/lints:clippy_allow_all"
-    elif lint_config == None:
+    if lint_config == None:
         lint_config = "//build/config/rust/lints:clippy_warn_production"
         test_lint_config = "//build/config/rust/lints:clippy_warn_default"
     else:
         test_lint_config = lint_config
 
+    kwargs["tags"] = with_fuchsia_rust_tags(kwargs.get("tags"), disable_clippy)
     kwargs["rustc_flags"] = with_fuchsia_rustc_flags(rustc_flags)
 
     library_kwargs = wrap_rust_macro_args_with_build_flags(

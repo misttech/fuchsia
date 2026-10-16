@@ -146,7 +146,6 @@ def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, dep
             # LINT.ThenChange(//build/rust/fidl_rust.gni)
             "//build/config/rust/lints:deny_unused_results",
         ],
-        tags = ["noclippy"],
         testonly = testonly,
         visibility = visibility,
     )
@@ -181,7 +180,6 @@ def _fidl_rust_library_flex(flavor, name, fidl_library_name, testonly, visibilit
         build_flags = [
             "//build/config/rust/lints:deny_unused_results",
         ],
-        tags = ["noclippy"],
         testonly = testonly,
         visibility = visibility,
     )
