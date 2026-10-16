@@ -260,7 +260,7 @@ pub fn sys_madvise(
     length: usize,
     advice: u32,
 ) -> Result<(), Errno> {
-    current_task.mm()?.madvise(addr, length, advice)?;
+    current_task.mm()?.madvise(current_task, addr, length, advice)?;
     Ok(())
 }
 

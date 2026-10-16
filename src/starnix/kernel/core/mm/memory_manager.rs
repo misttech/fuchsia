@@ -9,7 +9,7 @@ use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, MapInfoCache, Mapping,
     MappingBacking, MappingFlags, MappingMode, MappingName, MappingNameRef, MlockPinFlavor,
-    PrivateFutexKey, ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload,
+    PrefetchMessage, PrivateFutexKey, ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload,
     VmsplicePayloadSegment,
 };
 use crate::security;
@@ -2075,6 +2075,7 @@ impl MemoryManagerState {
     /// Flag-mutating advice values are handled by [`Self::madvise_update_flags`].
     fn madvise_read_only(
         &self,
+        current_task: &CurrentTask,
         context: &MappingContext,
         addr: UserAddress,
         length: usize,
@@ -2156,11 +2157,16 @@ impl MemoryManagerState {
                     return error!(EINVAL);
                 }
                 MadviseReadOnlyAdvice::WillNeed => {
-                    if mapping.flags().contains(MappingFlags::WRITE) {
-                        zx::VmoOp::COMMIT
-                    } else {
-                        zx::VmoOp::PREFETCH
-                    }
+                    let memory = match self.get_mapping_backing(mapping) {
+                        MappingBacking::Memory(backing) => backing.memory(),
+                        MappingBacking::PrivateAnonymous => &context.private_anonymous.backing,
+                    };
+                    current_task.kernel().kthreads.prefetch_pool().enqueue(PrefetchMessage {
+                        memory: memory.clone(),
+                        offset: start_offset,
+                        length: end_offset - start_offset,
+                    });
+                    continue;
                 }
                 MadviseReadOnlyAdvice::Cold => {
                     track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_COLD");
@@ -4775,7 +4781,13 @@ impl MemoryManager {
         Ok(())
     }
 
-    pub fn madvise(&self, addr: UserAddress, length: usize, advice: u32) -> Result<(), Errno> {
+    pub fn madvise(
+        &self,
+        current_task: &CurrentTask,
+        addr: UserAddress,
+        length: usize,
+        advice: u32,
+    ) -> Result<(), Errno> {
         match MadviseAdvice::from_raw(advice) {
             MadviseAdvice::UpdateFlags(advice) => {
                 let mut state = self.state.write();
@@ -4792,7 +4804,7 @@ impl MemoryManager {
             }
             MadviseAdvice::ReadOnly(advice) => {
                 let state = self.state.read();
-                state.madvise_read_only(&self.mapping_context, addr, length, advice)
+                state.madvise_read_only(current_task, &self.mapping_context, addr, length, advice)
             }
         }
     }
@@ -6138,7 +6150,7 @@ mod tests {
     use crate::task::KernelFeatures;
     use crate::task::syscalls::sys_prctl;
     use crate::testing::*;
-    use crate::vfs::{FdFlags, FdNumber, new_memfd};
+    use crate::vfs::{FdFlags, FdNumber, fileops_impl_memory, new_memfd};
     use assert_matches::assert_matches;
     use itertools::assert_equal;
     use starnix_uapi::open_flags::OpenFlags;
@@ -6146,7 +6158,7 @@ mod tests {
     use starnix_uapi::user_address::{UserCString, UserRef};
     use starnix_uapi::{
         MAP_ANONYMOUS, MAP_FIXED, MAP_GROWSDOWN, MAP_PRIVATE, MAP_SHARED, PR_SET_VMA,
-        PR_SET_VMA_ANON_NAME, PROT_EXEC, PROT_NONE, PROT_READ,
+        PR_SET_VMA_ANON_NAME, PROT_EXEC, PROT_NONE, PROT_READ, PROT_WRITE,
     };
     use std::ffi::CString;
     use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -8373,6 +8385,62 @@ mod tests {
             let child_mm = child_task.mm().unwrap();
             assert!(child_mm.ensure_range_mapped_in_user_vmar(read_addr, Some(page_size)).unwrap());
             assert!(child_mm.ensure_range_mapped_in_user_vmar(exec_addr, Some(page_size)).unwrap());
+        })
+        .await;
+    }
+
+    struct PagerTestFile(Arc<MemoryObject>);
+    impl FileOps for PagerTestFile {
+        fileops_impl_memory!(self, &self.0);
+        fileops_impl_noop_sync!();
+    }
+
+    #[::fuchsia::test]
+    async fn test_madvise_background_thread_pool() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE;
+            let pager = zx::Pager::create(zx::PagerOptions::empty()).unwrap();
+            let port = zx::Port::create();
+            let vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, 1, page_size).unwrap();
+            let child_vmo = vmo.create_child(zx::VmoChildOptions::REFERENCE, 0, 0).unwrap();
+            let memory = Arc::new(MemoryObject::from(child_vmo));
+
+            let file =
+                anon_test_file(&current_task, Box::new(PagerTestFile(memory)), OpenFlags::RDWR);
+            let fd = current_task.add_file(file, FdFlags::empty()).unwrap();
+            let addr = do_mmap(
+                &current_task,
+                UserAddress::default(),
+                page_size as usize,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE,
+                fd,
+                0,
+            )
+            .unwrap();
+
+            // `madvise(MADV_WILLNEED)` returns immediately while the blocking `PREFETCH` runs on
+            // the background thread pool.
+            assert_eq!(
+                current_task.mm().unwrap().madvise(
+                    &current_task,
+                    addr,
+                    page_size as usize,
+                    MADV_WILLNEED
+                ),
+                Ok(())
+            );
+
+            // Wait for the pager request triggered by the background worker's PREFETCH.
+            let packet = port.wait(zx::MonotonicInstant::INFINITE).unwrap();
+            assert_eq!(packet.key(), 1);
+
+            let aux_vmo = zx::Vmo::create(page_size).unwrap();
+            aux_vmo.write(&[0x42; 16], 0).unwrap();
+            pager.supply_pages(&vmo, 0..page_size, &aux_vmo, 0).unwrap();
+
+            let read_buf: [u8; 16] = current_task.read_memory_to_array(addr).unwrap();
+            assert_eq!(&read_buf, &[0x42; 16]);
         })
         .await;
     }

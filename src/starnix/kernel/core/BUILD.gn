@@ -77,6 +77,7 @@ _starnix_core_sources = [
   "mm/memory_manager.rs",
   "mm/mlock.rs",
   "mm/mod.rs",
+  "mm/prefetch_pool.rs",
   "mm/private_anonymous_memory_manager.rs",
   "mm/protection_flags.rs",
   "mm/syscalls.rs",

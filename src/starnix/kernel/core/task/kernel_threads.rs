@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::execution::create_kernel_thread;
+use crate::mm::PrefetchThreadPool;
 use crate::task::dynamic_thread_spawner::DynamicThreadSpawner;
 use crate::task::{CurrentTask, DelayedReleaser, Kernel, Task, ThreadGroup};
 use fragile::Fragile;
@@ -33,6 +34,10 @@ pub struct KernelThreads {
     /// You can spawn tasks on this executor using `spawn_future`. However, those task must not
     /// block. If you need to block, you can spawn a worker thread using `spawner`.
     ehandle: fasync::EHandle,
+
+    /// The background thread pool for memory prefetch operations (e.g. from madvise). Order above
+    /// the `spawner` so that the threads are joined before the `spawner` is torn down.
+    prefetch_pool: OnceLock<PrefetchThreadPool>,
 
     /// The thread pool to spawn blocking calls to.
     spawner: OnceLock<DynamicThreadSpawner>,
@@ -83,6 +88,7 @@ impl KernelThreads {
             system_task: Default::default(),
             kernel,
             rcu_advancer: Default::default(),
+            prefetch_pool: Default::default(),
         }
     }
 
@@ -124,6 +130,10 @@ impl KernelThreads {
 
         self.rcu_advancer
             .set(RcuAdvancer { stop, thread: Some(thread) })
+            .map_err(|_| errno!(EEXIST))?;
+
+        self.prefetch_pool
+            .set(PrefetchThreadPool::new(self.spawner()))
             .map_err(|_| errno!(EEXIST))?;
 
         Ok(())
@@ -173,12 +183,18 @@ impl KernelThreads {
             .upgrade()
             .expect("System task must be still alive")
     }
+
+    /// Access the background thread pool for memory prefetch operations.
+    pub fn prefetch_pool(&self) -> &PrefetchThreadPool {
+        self.prefetch_pool.get().expect("KernelThreads::init must be called")
+    }
 }
 
 impl Drop for KernelThreads {
     // TODO: Replace with .release. This is not actually safe, since locks
     // may be held elsewhere on this thread.
     fn drop(&mut self) {
+        let _ = self.prefetch_pool.take();
         if let Some(system_task) = self.system_task.take() {
             system_task.system_task.into_inner().release(());
         }
