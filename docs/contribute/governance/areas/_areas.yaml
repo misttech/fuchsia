@@ -282,7 +282,7 @@
 
 - name: 'Product Assembly'
   api_primary: 'aaronwood@google.com'
-  api_secondary: 'awolter@google.com'
+  api_secondary: 'diserovich@google.com'
   description: |
     <p>
       A set of APIs to combine software from a variety of sources into a
