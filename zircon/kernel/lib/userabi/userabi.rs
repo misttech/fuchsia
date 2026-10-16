@@ -260,8 +260,8 @@ fn crashlog_to_vmo() -> Result<(RefPtr<VmObject>, usize), Status> {
 
     let _ = crashlog_vmo.set_name(CRASHLOG_VMO_NAME);
 
-    // Stash the recovered crashlog so that it may be propagated to the next
-    // kernel instance in case we later mexec.
+    // Stash the recovered crashlog so that it may be inspected later from the
+    // kernel console.
     crashlog_stash(&crashlog_vmo);
 
     // Now that we have recovered the old crashlog, enable crashlog uptime

@@ -102,7 +102,6 @@ if (toolchain_environment == "kernel.phys" ||
       "feature.cc",
       "fpu.cc",
       "handoff.cc",
-      "mexec.S",
       "mmu.cc",
       "mp.cc",
       "perf_mon.cc",

@@ -52,9 +52,6 @@ struct BootConstants {
   // all of the serial writes to be polling.
   bool bypass_debuglog = false;
 
-  // ZBI container of items to be propagated in mexec.
-  PhysHandoffPermanentSpan<const std::byte> mexec_data;
-
   // This is a multi-line string of important information to precede a panic
   // message, for example.  It includes full symbolizer markup context logging
   // for the kernel as well as version and build information.

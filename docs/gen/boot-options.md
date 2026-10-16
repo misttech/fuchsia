@@ -251,20 +251,6 @@ This option sets the amount of time the kernel will wait before rebooting the
 system after it has signaled an out-of-memory (OOM) event. This option is
 only relevant when `kernel.oom.behavior` is set to `reboot`.
 
-### kernel.mexec-force-high-ramdisk=\<bool>
-
-**Default:** `false`
-
-This option is intended for test use only. When set to `true` it forces the
-mexec syscall to place the ramdisk for the following kernel in high memory
-(64-bit address space, >= 4GiB offset).
-
-### kernel.mexec-pci-shutdown=\<bool>
-
-**Default:** `true`
-
-If false, this option leaves PCI devices running when calling mexec.
-
 ### kernel.oom.enable=\<bool>
 
 **Default:** `true`
@@ -612,8 +598,6 @@ When disabled, certain debugging-related syscalls will fail with
 * `zx_mtrace_control()`
 * `zx_object_get_property()` with `ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID`
 * `zx_process_write_memory()`
-* `zx_system_mexec()`
-* `zx_system_mexec_payload_get()`
 * `zx_thread_write_state()` (When using the `ZX_THREAD_STATE_DEBUG_REGS` kind.)
 * `zx_vmo_op_range()` with `ZX_VMO_OP_CACHE_INVALIDATE`
 

@@ -6,7 +6,6 @@
 
 #include <lib/arch/x86/msr.h>
 #include <lib/code-patching/code-patches.h>
-#include <lib/zbi-format/graphics.h>
 #include <lib/zbi-format/zbi.h>
 #include <zircon/assert.h>
 
@@ -22,13 +21,7 @@
 ArchPatchInfo ArchPreparePatchInfo() { return {}; }
 
 void HandoffPrep::ArchSummarizeMiscZbiItem(const zbi_header_t& header,
-                                           ktl::span<const ktl::byte> payload) {
-  switch (header.type) {
-    case ZBI_TYPE_FRAMEBUFFER:
-      SaveForMexec(header, payload);
-      break;
-  }
-}
+                                           ktl::span<const ktl::byte> payload) {}
 
 void HandoffPrep::ArchConstructKernelAddressSpace() {}
 

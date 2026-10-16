@@ -58,7 +58,7 @@
 #include <object/process_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
 #include <phys/handoff.h>
-#include <platform/mexec.h>
+#include <platform/halt_helper.h>
 #include <vm/handoff-end.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>
@@ -70,28 +70,6 @@
 #include <ktl/enforce.h>
 
 #define LOCAL_TRACE 0
-
-extern "C" zx_status_t cpp_system_mexec_payload_get_helper(uint8_t* buffer, size_t buffer_size,
-                                                           size_t* out_zbi_size);
-
-extern "C" NO_ASAN zx_status_t cpp_system_mexec_core(zx_handle_t resource, zx_handle_t kernel_vmo,
-                                                     zx_handle_t data_zbi_vmo);
-
-extern "C" zx_status_t cpp_system_mexec_payload_get_helper(uint8_t* buffer, size_t buffer_size,
-                                                           size_t* out_zbi_size) {
-  if (auto result = WriteMexecData({reinterpret_cast<ktl::byte*>(buffer), buffer_size});
-      result.is_error()) {
-    return result.error_value();
-  } else {
-    *out_zbi_size = ktl::move(result).value();
-    return ZX_OK;
-  }
-}
-
-extern "C" NO_ASAN zx_status_t cpp_system_mexec_core(zx_handle_t resource, zx_handle_t kernel_vmo,
-                                                     zx_handle_t data_zbi_vmo) {
-  return system_mexec_core(resource, kernel_vmo, data_zbi_vmo);
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" FFI_ALWAYS_INLINE void cpp_scheduler_update_processing_rates(

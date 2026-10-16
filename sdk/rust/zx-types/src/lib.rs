@@ -832,7 +832,7 @@ multiconst!(zx_rsrc_system_base_t, [
     ZX_RSRC_SYSTEM_INFO_BASE        = 3;
     ZX_RSRC_SYSTEM_CPU_BASE         = 4;
     ZX_RSRC_SYSTEM_POWER_BASE       = 5;
-    ZX_RSRC_SYSTEM_MEXEC_BASE       = 6;
+    // 6 was ZX_RSRC_SYSTEM_MEXEC_BASE, now retired.
     ZX_RSRC_SYSTEM_ENERGY_INFO_BASE = 7;
     ZX_RSRC_SYSTEM_IOMMU_BASE       = 8;
     ZX_RSRC_SYSTEM_FRAMEBUFFER_BASE = 9;

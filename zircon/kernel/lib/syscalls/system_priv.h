@@ -10,14 +10,7 @@
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls/system.h>
 
-zx_status_t system_mexec_core(zx_handle_t resource, zx_handle_t kernel_vmo,
-                              zx_handle_t data_zbi_vmo);
-
 extern "C" {
-zx_status_t cpp_system_mexec_payload_get_helper(uint8_t* buffer, size_t buffer_size,
-                                                size_t* out_zbi_size);
-zx_status_t cpp_system_mexec_core(zx_handle_t resource, zx_handle_t kernel_vmo,
-                                  zx_handle_t data_zbi_vmo);
 void cpp_scheduler_update_processing_rates(zx_cpu_performance_info_t* info, size_t count);
 void cpp_scheduler_update_processing_limits(zx_cpu_perf_limit_t* info, size_t count);
 void cpp_scheduler_get_performance_scales(zx_cpu_performance_info_t* info, size_t count);

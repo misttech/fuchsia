@@ -2580,39 +2580,6 @@ void SyscallDecoderDispatcher::Populate() {
   }
 
   {
-    Syscall* zx_system_mexec = Add("zx_system_mexec", SyscallReturnType::kStatus);
-    // Arguments
-    auto resource = zx_system_mexec->Argument<zx_handle_t>(SyscallType::kHandle);
-    auto kernel_vmo = zx_system_mexec->Argument<zx_handle_t>(SyscallType::kHandle);
-    auto bootimage_vmo = zx_system_mexec->Argument<zx_handle_t>(SyscallType::kHandle);
-    // Inputs
-    zx_system_mexec->Input<uint32_t>("resource",
-                                     std::make_unique<ArgumentAccess<zx_handle_t>>(resource));
-    zx_system_mexec->Input<uint32_t>("kernel_vmo",
-                                     std::make_unique<ArgumentAccess<zx_handle_t>>(kernel_vmo));
-    zx_system_mexec->Input<uint32_t>("bootimage_vmo",
-                                     std::make_unique<ArgumentAccess<zx_handle_t>>(bootimage_vmo));
-  }
-
-  {
-    Syscall* zx_system_mexec_payload_get =
-        Add("zx_system_mexec_payload_get", SyscallReturnType::kStatus);
-    // Arguments
-    auto resource = zx_system_mexec_payload_get->Argument<zx_handle_t>(SyscallType::kHandle);
-    auto buffer = zx_system_mexec_payload_get->PointerArgument<uint8_t>(SyscallType::kUint8Hexa);
-    auto buffer_size = zx_system_mexec_payload_get->Argument<size_t>(SyscallType::kSize);
-    // Inputs
-    zx_system_mexec_payload_get->Input<uint32_t>(
-        "resource", std::make_unique<ArgumentAccess<zx_handle_t>>(resource));
-    zx_system_mexec_payload_get->Input<size_t>(
-        "buffer_size", std::make_unique<ArgumentAccess<size_t>>(buffer_size));
-    // Outputs
-    zx_system_mexec_payload_get->OutputBuffer<uint8_t, uint8_t, size_t>(
-        ZX_OK, "buffer", SyscallType::kUint8Hexa, std::make_unique<ArgumentAccess<uint8_t>>(buffer),
-        std::make_unique<ArgumentAccess<size_t>>(buffer_size));
-  }
-
-  {
     Syscall* zx_system_powerctl = Add("zx_system_powerctl", SyscallReturnType::kStatus);
     // Arguments
     auto resource = zx_system_powerctl->Argument<zx_handle_t>(SyscallType::kHandle);

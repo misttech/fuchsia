@@ -31,7 +31,6 @@
 #include <arch/ops.h>
 #include <arch/x86.h>
 #include <arch/x86/apic.h>
-#include <arch/x86/mmu.h>
 #include <arch/x86/pv.h>
 #include <explicit-memory/bytes.h>
 #include <fbl/alloc_checker.h>
@@ -46,13 +45,10 @@
 #include <platform/efi.h>
 #include <platform/efi_crashlog.h>
 #include <platform/mapped_crashlog.h>
-#include <platform/mexec.h>
 #include <platform/pc.h>
 #include <platform/pc/memory.h>
 #include <platform/pc/smbios.h>
-#include <vm/physmap.h>
 #include <vm/pmm.h>
-#include <vm/vm_aspace.h>
 
 #include <ktl/enforce.h>
 
@@ -91,97 +87,7 @@ void platform_init_crashlog() {
   PlatformCrashlog::Bind(gEfiCrashlog);
 }
 
-// Number of pages required to identity map 16GiB of memory.
-constexpr size_t kBytesToIdentityMap = 16ull * GB;
-constexpr size_t kNumL2PageTables = kBytesToIdentityMap / (2ull * MB * NO_OF_PT_ENTRIES);
-constexpr size_t kNumL3PageTables = 1;
-constexpr size_t kNumL4PageTables = 1;
-constexpr size_t kTotalPageTableCount = kNumL2PageTables + kNumL3PageTables + kNumL4PageTables;
-
-fbl::RefPtr<VmAspace> gMexecIdentityAspace;
-
-// Array of pages that are safe to use for the new kernel's page tables.  These must
-// be after where the new boot image will be placed during mexec.  This array is
-// populated in platform_mexec_prep and used in platform_mexec.
-paddr_t gMexecSafePages[kTotalPageTableCount];
-
 }  // namespace
-
-void platform_mexec_prep(uintptr_t final_bootimage_addr, size_t final_bootimage_len) {
-  DEBUG_ASSERT(!arch_ints_disabled());
-  DEBUG_ASSERT(mp_get_online_mask() == cpu_num_to_mask(BOOT_CPU_ID));
-
-  // This code only handles one L3 and one L4 page table for now. Fail if
-  // there are more L2 page tables than can fit in one L3 page table.
-  static_assert(kNumL2PageTables <= NO_OF_PT_ENTRIES,
-                "Kexec identity map size is too large. Only one L3 PTE is supported at this time.");
-  static_assert(kNumL3PageTables == 1, "Only 1 L3 page table is supported at this time.");
-  static_assert(kNumL4PageTables == 1, "Only 1 L4 page table is supported at this time.");
-
-  // Identity map the first 16GiB of RAM
-  gMexecIdentityAspace = VmAspace::Create(VmAspace::Type::LowKernel, "x86-64 mexec 1:1");
-  DEBUG_ASSERT(gMexecIdentityAspace);
-
-  const uint perm_flags_rwx =
-      ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE;
-  void* identity_address = nullptr;
-  paddr_t pa = 0;
-  zx_status_t result =
-      gMexecIdentityAspace->AllocPhysical("1:1 mapping", kBytesToIdentityMap, &identity_address, 0,
-                                          pa, VmAspace::VMM_FLAG_VALLOC_SPECIFIC, perm_flags_rwx);
-  if (result != ZX_OK) {
-    panic("failed to identity map low memory");
-  }
-
-  result = alloc_pages_greater_than(final_bootimage_addr + final_bootimage_len + kPageSize,
-                                    kTotalPageTableCount, kBytesToIdentityMap, gMexecSafePages);
-  if (result != ZX_OK) {
-    panic("failed to alloc mexec_safe_pages");
-  }
-}
-
-void platform_mexec(mexec_asm_func mexec_assembly, ktl::span<const memmov_ops_t> ops,
-                    uintptr_t new_kernel_addr, size_t new_kernel_len, uintptr_t new_kernel_entry,
-                    uintptr_t new_data_zbi_addr, size_t new_data_zbi_len) {
-  DEBUG_ASSERT(arch_ints_disabled());
-  DEBUG_ASSERT(mp_get_online_mask() == cpu_num_to_mask(BOOT_CPU_ID));
-
-  // This code only handles one L3 and one L4 page table for now. Fail if
-  // there are more L2 page tables than can fit in one L3 page table.
-  static_assert(kNumL2PageTables <= NO_OF_PT_ENTRIES,
-                "Kexec identity map size is too large. Only one L3 PTE is supported at this time.");
-  static_assert(kNumL3PageTables == 1, "Only 1 L3 page table is supported at this time.");
-  static_assert(kNumL4PageTables == 1, "Only 1 L4 page table is supported at this time.");
-  DEBUG_ASSERT(gMexecIdentityAspace);
-
-  vmm_set_active_aspace(gMexecIdentityAspace.get());
-
-  size_t safe_page_id = 0;
-  volatile pt_entry_t* ptl4 = (pt_entry_t*)paddr_to_physmap(gMexecSafePages[safe_page_id++]);
-  volatile pt_entry_t* ptl3 = (pt_entry_t*)paddr_to_physmap(gMexecSafePages[safe_page_id++]);
-
-  // Initialize these to 0
-  for (size_t i = 0; i < NO_OF_PT_ENTRIES; i++) {
-    ptl4[i] = 0;
-    ptl3[i] = 0;
-  }
-
-  for (size_t i = 0; i < kNumL2PageTables; i++) {
-    ptl3[i] = gMexecSafePages[safe_page_id] | X86_KERNEL_PD_FLAGS;
-    volatile pt_entry_t* ptl2 = (pt_entry_t*)paddr_to_physmap(gMexecSafePages[safe_page_id]);
-
-    for (size_t j = 0; j < NO_OF_PT_ENTRIES; j++) {
-      ptl2[j] = (2 * MB * (i * NO_OF_PT_ENTRIES + j)) | X86_KERNEL_PD_LP_FLAGS;
-    }
-
-    safe_page_id++;
-  }
-
-  ptl4[0] = vaddr_to_paddr((void*)ptl3) | X86_KERNEL_PD_FLAGS;
-
-  mexec_assembly((uintptr_t)new_data_zbi_addr, vaddr_to_paddr((void*)ptl4), 0, 0, ops.data(),
-                 new_kernel_entry);
-}
 
 void platform_early_init(void) {
   /* extract bootloader data while still accessible */

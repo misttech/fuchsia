@@ -571,17 +571,6 @@ _ZX_SYSCALL_DECL(system_get_physmem, uint64_t, _ZX_SYSCALL_EXTERN_C, 0, (), (voi
 _ZX_SYSCALL_DECL(system_get_version_string, zx_string_view_t, _ZX_SYSCALL_EXTERN_C __CONST, 0, (),
                  (void))
 
-_ZX_SYSCALL_DECL(system_mexec, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
-                 (resource, kernel_vmo, bootimage_vmo),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource,
-                  _ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t kernel_vmo,
-                  _ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t bootimage_vmo))
-
-_ZX_SYSCALL_DECL(system_mexec_payload_get, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
-                 (resource, buffer, buffer_size),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, void* buffer,
-                  size_t buffer_size))
-
 _ZX_SYSCALL_DECL(system_powerctl, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (resource, cmd),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, uint32_t cmd))
 

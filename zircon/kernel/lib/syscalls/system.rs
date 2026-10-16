@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
-
 use crate::object::{
     EventDispatcher, HandleValue, JobDispatcher, ProcessDispatcher, validate_system_resource,
 };
@@ -14,7 +12,6 @@ use crate::platform_rs::halt_helper::platform_graceful_halt_helper;
 use crate::platform_rs::power::{PlatformHaltAction, ZirconCrashReason};
 use crate::platform_rs::timer::InstantMono;
 use crate::user_copy::{UserInPtr, UserOutPtr};
-use boot_options::BootOptions;
 use syscalls_macro::syscall;
 use zx_status::Status;
 use zx_types::*;
@@ -28,23 +25,9 @@ zr::static_assert!(core::mem::align_of::<zx_wake_source_report_header_t>() == 8)
 zr::static_assert!(core::mem::size_of::<zx_wake_source_report_entry_t>() == 72);
 zr::static_assert!(core::mem::align_of::<zx_wake_source_report_entry_t>() == 8);
 
-// Allocate this many extra bytes at the end of the bootdata for the platform
-// to fill in with platform specific boot structures.
-pub const BOOTDATA_PLATFORM_EXTRA_BYTES: usize = page::SIZE * 4;
-
 pub const MEMORY_STALL_MAX_WINDOW: zx_duration_mono_t = 10 * 1_000_000_000;
 
 unsafe extern "C" {
-    fn cpp_system_mexec_payload_get_helper(
-        buffer: *mut MaybeUninit<u8>,
-        buffer_size: usize,
-        out_zbi_size: *mut usize,
-    ) -> zx_status_t;
-    fn cpp_system_mexec_core(
-        resource: zx_handle_t,
-        kernel_vmo: zx_handle_t,
-        data_zbi_vmo: zx_handle_t,
-    ) -> zx_status_t;
     fn cpp_percpu_processor_count() -> usize;
     fn cpp_scheduler_update_processing_rates(info: *mut zx_cpu_performance_info_t, count: usize);
     fn cpp_scheduler_update_processing_limits(info: *mut zx_cpu_perf_limit_t, count: usize);
@@ -54,61 +37,6 @@ unsafe extern "C" {
         count: usize,
     );
     fn cpp_scheduler_get_processing_limits(info: *mut zx_cpu_perf_limit_t, count: usize);
-}
-
-#[syscall]
-pub fn sys_system_mexec_payload_get(
-    resource: HandleValue,
-    user_buffer: UserOutPtr<u8>,
-    buffer_size: usize,
-) -> Result<(), Status> {
-    if !BootOptions::get().enable_debugging_syscalls {
-        return Err(Status::NOT_SUPPORTED);
-    }
-    // Highly privileged, only mexec resource should have access.
-    validate_system_resource(resource, ZX_RSRC_SYSTEM_MEXEC_BASE)?;
-
-    // Limit the size of the result that we can return to userspace.
-    if buffer_size > BOOTDATA_PLATFORM_EXTRA_BYTES {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    let mut buffer =
-        kalloc::Box::<[u8]>::try_new_uninit_slice(buffer_size).map_err(|_| Status::NO_MEMORY)?;
-    let mut zbi_size = 0usize;
-    // SAFETY: We pass a valid allocated buffer of size `buffer_size` and a valid `zbi_size` out pointer.
-    let status = unsafe {
-        cpp_system_mexec_payload_get_helper(buffer.as_mut_ptr(), buffer_size, &mut zbi_size)
-    };
-    Status::ok(status)?;
-    debug_assert!(zbi_size <= buffer_size);
-    // SAFETY: cpp_system_mexec_payload_get_helper initializes buffer[..zbi_size] on success.
-    let zbi_buffer = unsafe { core::slice::from_raw_parts(buffer.as_ptr() as *const u8, zbi_size) };
-    user_buffer.copy_slice_to_user(zbi_buffer)?;
-    Ok(())
-}
-
-#[syscall]
-pub fn sys_system_mexec(
-    resource: HandleValue,
-    kernel_vmo: HandleValue,
-    data_zbi_vmo: HandleValue,
-) -> Result<(), Status> {
-    if !BootOptions::get().enable_debugging_syscalls {
-        return Err(Status::NOT_SUPPORTED);
-    }
-    validate_system_resource(resource, ZX_RSRC_SYSTEM_MEXEC_BASE)?;
-
-    // SAFETY: Forwarding handles to inner C++ mexec coalescing & execution logic.
-    let status = unsafe {
-        cpp_system_mexec_core(
-            resource.raw_value(),
-            kernel_vmo.raw_value(),
-            data_zbi_vmo.raw_value(),
-        )
-    };
-    Status::ok(status)?;
-    Ok(())
 }
 
 #[syscall]

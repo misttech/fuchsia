@@ -98,7 +98,6 @@ if (toolchain_base_environment == "kernel") {
       "exceptions.cc",
       "fpu_asm.S",
       "handoff.cc",
-      "mexec-stub.S",
       "mmu.cc",
       "mp.cc",
       "riscv64_context_switch.S",

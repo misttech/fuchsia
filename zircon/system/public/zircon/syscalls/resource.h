@@ -38,7 +38,7 @@ typedef uint64_t zx_rsrc_system_base_t;
 #define ZX_RSRC_SYSTEM_INFO_BASE ((zx_rsrc_system_base_t)3u)
 #define ZX_RSRC_SYSTEM_CPU_BASE ((zx_rsrc_system_base_t)4u)
 #define ZX_RSRC_SYSTEM_POWER_BASE ((zx_rsrc_system_base_t)5u)
-#define ZX_RSRC_SYSTEM_MEXEC_BASE ((zx_rsrc_system_base_t)6u)
+// 6u was ZX_RSRC_SYSTEM_MEXEC_BASE, now retired.
 #define ZX_RSRC_SYSTEM_ENERGY_INFO_BASE ((zx_rsrc_system_base_t)7u)
 #define ZX_RSRC_SYSTEM_IOMMU_BASE ((zx_rsrc_system_base_t)8u)
 #define ZX_RSRC_SYSTEM_PROFILE_BASE ((zx_rsrc_system_base_t)10u)

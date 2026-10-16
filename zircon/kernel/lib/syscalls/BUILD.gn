@@ -35,7 +35,6 @@ source_set("impl") {
     "driver.cc",
     "membarrier_ffi.cc",
     "object_property_ffi.cc",
-    "system.cc",
     "system_ffi.cc",
     "test.cc",
     "thread_ffi.cc",

@@ -26,7 +26,7 @@ The system resource is a special case that contains other resources, all of whic
 one. These resources each have their own base within the system resource. Valid *base*
 values for the system resource are **ZX_RSRC_SYSTEM_HYPERVISOR_BASE**,
 **ZX_RSRC_SYSTEM_VMEX_BASE**, **ZX_RSRC_SYSTEM_DEBUG_BASE**, **ZX_RSRC_SYSTEM_INFO_BASE**,
-**ZX_RSRC_SYSTEM_CPU_BASE**, **ZX_RSRC_SYSTEM_POWER_BASE**, **ZX_RSRC_SYSTEM_MEXEC_BASE**,
+**ZX_RSRC_SYSTEM_CPU_BASE**, **ZX_RSRC_SYSTEM_POWER_BASE**,
 **ZX_RSRC_SYSTEM_ENERGY_INFO_BASE**, **ZX_RSRC_SYSTEM_IOMMU_BASE**,
 **ZX_RSRC_SYSTEM_FRAMEBUFFER_BASE**, **ZX_RSRC_SYSTEM_PROFILE_BASE**,
 **ZX_RSRC_SYSTEM_MSI_BASE**, and **ZX_SYSTEM_DEBUGLOG_BASE**.

@@ -33,7 +33,7 @@ pub mod vmm_flag {
 pub enum Type {
     User = 0,
     Kernel = 1,
-    /// You probably do not want to use `LowKernel`. It is primarily used for SMP bootstrap or mexec
+    /// You probably do not want to use `LowKernel`. It is primarily used for SMP bootstrap
     /// to allow mappings of very low memory using the standard VMM subsystem.
     LowKernel = 2,
     /// Used to construct an address space representing hypervisor guest memory.

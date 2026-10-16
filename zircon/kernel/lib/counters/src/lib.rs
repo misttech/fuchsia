@@ -255,8 +255,7 @@ static VMO_HEADER: [u64; 2] = [DescriptorVmo::MAGIC, SMP_MAX_CPUS as u64];
 zr::static_assert!(size_of_val(&VMO_HEADER) == offset_of!(DescriptorVmo, descriptor_table_size));
 
 // This counter tracks how long it takes for Zircon to reach the last init level
-// It also can show if the target does not reset the internal clock upon reboot
-// which is true also for mexec (netboot) scenario.
+// It also can show if the target does not reset the internal clock upon reboot.
 define_kcounter!(INIT_TIME, "init.target.time.msec", Sum);
 
 fn counters_init(_level: init::LkInitLevel) {

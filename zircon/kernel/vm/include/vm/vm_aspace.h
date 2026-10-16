@@ -41,7 +41,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   enum class Type : uint8_t {
     User = 0,
     Kernel,
-    // You probably do not want to use LOW_KERNEL. It is primarily used for SMP bootstrap or mexec
+    // You probably do not want to use LOW_KERNEL. It is primarily used for SMP bootstrap or EFI
     // to allow mappings of very low memory using the standard VMM subsystem.
     LowKernel,
     // Used to construct an address space representing hypervisor guest memory.

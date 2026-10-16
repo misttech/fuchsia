@@ -22,7 +22,6 @@
 #include <phys/arch/arch-handoff.h>
 #include <platform/crashlog.h>
 #include <platform/mapped_crashlog.h>
-#include <platform/mexec.h>
 #include <platform/timer.h>
 #include <platform/uart.h>
 
@@ -187,20 +186,6 @@ void topology_init() {
 
   CpuDistanceMap::Get().Dump();
 }
-
-zx_status_t platform_mexec_patch_zbi(uint8_t* zbi, const size_t len) { PANIC_UNIMPLEMENTED; }
-
-void platform_mexec_prep(uintptr_t new_bootimage_addr, size_t new_bootimage_len) {
-  PANIC_UNIMPLEMENTED;
-}
-
-void platform_mexec(mexec_asm_func mexec_assembly, ktl::span<const memmov_ops_t> ops,
-                    uintptr_t new_kernel_addr, size_t new_kernel_len, uintptr_t new_kernel_entry,
-                    uintptr_t new_data_zbi_addr, size_t new_data_zbi_len) {
-  PANIC_UNIMPLEMENTED;
-}
-
-zx_status_t platform_append_mexec_data(ktl::span<ktl::byte> data_zbi) { return ZX_OK; }
 
 ktl::optional<uint32_t> PlatformUartGetIrqNumber(uint32_t irq_num) { return irq_num; }
 

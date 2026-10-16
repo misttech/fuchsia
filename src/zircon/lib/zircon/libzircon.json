@@ -167,8 +167,6 @@
     "zx_system_get_performance_info",
     "zx_system_get_physmem",
     "zx_system_get_version_string",
-    "zx_system_mexec",
-    "zx_system_mexec_payload_get",
     "zx_system_powerctl",
     "zx_system_set_performance_info",
     "zx_system_suspend_enter",

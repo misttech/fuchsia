@@ -20,7 +20,6 @@ source_set("platform") {
     "efi_bootbyte.cc",
     "efi_crashlog.cc",
     "mapped_crashlog.cc",
-    "mexec.cc",
     "power_ffi.cc",
     "timer_ffi.cc",
   ]
@@ -56,10 +55,7 @@ source_set("platform") {
 }
 
 library_headers("headers") {
-  headers = [
-    "platform/uart.h",
-    "platform/mexec.h",
-  ]
+  headers = [ "platform/uart.h" ]
 }
 
 source_set("tests") {

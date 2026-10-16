@@ -3,15 +3,10 @@
 // found in the LICENSE file.
 
 #include <lib/standalone-test/standalone.h>
-#include <lib/zbi-format/kernel.h>
-#include <lib/zbi-format/zbi.h>
-#include <lib/zbitl/item.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/debuglog.h>
 #include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
-#include <lib/zx/pager.h>
-#include <lib/zx/port.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
@@ -22,7 +17,6 @@
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/log.h>
 #include <zircon/syscalls/object.h>
-#include <zircon/syscalls/port.h>
 #include <zircon/syscalls/resource.h>
 #include <zircon/types.h>
 
@@ -372,276 +366,6 @@ TEST(Resource, IoportDeniedByDefault) {
   ASSERT_DEATH([]() { outb(/*port=*/0x80, /*data=*/1); },
                "I/O port access should be forbidden by default and trigger a crash");
 }
-
-// Regression test for https://fxbug.dev/502277149
-TEST(Resource, MexecPagerPanic) {
-  const zx::unowned_resource system = get_system();
-  if (!system->is_valid()) {
-    ZXTEST_SKIP("System resource not available");
-  }
-
-  // Create a valid-looking ZBI for kernel_vmo
-  zx::vmo kernel_vmo;
-  ASSERT_OK(zx::vmo::create(8192, 0, &kernel_vmo));
-
-  zbi_header_t header = {
-      .type = ZBI_TYPE_CONTAINER,
-      .length = static_cast<uint32_t>(sizeof(zbi_header_t) + sizeof(zbi_kernel_t)),
-      .extra = ZBI_CONTAINER_MAGIC,
-      .flags = ZBI_FLAGS_VERSION,
-      .reserved0 = 0,
-      .reserved1 = 0,
-      .magic = ZBI_ITEM_MAGIC,
-      .crc32 = ZBI_ITEM_NO_CRC32,
-  };
-  zbi_header_t kheader = {
-      .type = ZBI_TYPE_KERNEL_X64,
-      .length = static_cast<uint32_t>(sizeof(zbi_kernel_t)),
-      .extra = 0,
-      .flags = ZBI_FLAGS_VERSION,
-      .reserved0 = 0,
-      .reserved1 = 0,
-      .magic = ZBI_ITEM_MAGIC,
-      .crc32 = ZBI_ITEM_NO_CRC32,
-  };
-  zbi_kernel_t kernel = {
-      .entry = 0x100,
-      .reserve_memory_size = 0,
-  };
-  ASSERT_OK(kernel_vmo.write(&header, 0, sizeof(header)));
-  ASSERT_OK(kernel_vmo.write(&kheader, sizeof(header), sizeof(kheader)));
-  ASSERT_OK(kernel_vmo.write(&kernel, sizeof(header) + sizeof(kheader), sizeof(kernel)));
-
-  zx::pager pager;
-  zx::port port;
-  zx::vmo vmo;
-  ASSERT_OK(zx::pager::create(0, &pager));
-  ASSERT_OK(zx::port::create(0, &port));
-  ASSERT_OK(pager.create_vmo(0, port, 0, zx_system_get_page_size(), &vmo));
-
-  std::thread t([&pager, &port, &vmo]() {
-    for (;;) {
-      zx_port_packet_t packet;
-      zx_status_t status = port.wait(zx::time::infinite(), &packet);
-      if (status != ZX_OK)
-        break;
-
-      if (packet.type == ZX_PKT_TYPE_USER)
-        break;
-
-      if (packet.type == ZX_PKT_TYPE_PAGE_REQUEST &&
-          packet.page_request.command == ZX_PAGER_VMO_READ) {
-        pager.op_range(ZX_PAGER_OP_FAIL, vmo, packet.page_request.offset,
-                       packet.page_request.length, ZX_ERR_IO);
-      }
-    }
-  });
-
-  // Call mexec.
-  // This should return an error, but not panic!
-  zx_status_t status = zx_system_mexec(system->get(), kernel_vmo.get(), vmo.get());
-
-  EXPECT_NE(status, ZX_OK);
-
-  // Cleanup
-  zx_port_packet_t packet = {};
-  packet.type = ZX_PKT_TYPE_USER;
-  port.queue(&packet);
-  t.join();
-}
-
-#endif  // defined(__x86_64__)
-
-// Regression test for https://fxbug.dev/503716683
-TEST(Resource, MexecZeroSizedVmo) {
-  // This test requires the MEXEC resource.
-  zx::unowned_resource system_resource = standalone::GetSystemResource();
-  if (!system_resource->is_valid()) {
-    ZXTEST_SKIP("System resource not available");
-  }
-
-  zx::result<zx::resource> mexec_rsrc_result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_MEXEC_BASE);
-
-  if (mexec_rsrc_result.is_error()) {
-    ZXTEST_SKIP("MEXEC resource not available or failed to derive");
-  }
-  zx::resource mexec_resource = std::move(mexec_rsrc_result.value());
-
-  zx::vmo vmo1, vmo2;
-  ASSERT_OK(zx::vmo::create(0, 0, &vmo1));
-  ASSERT_OK(zx::vmo::create(0, 0, &vmo2));
-
-  // Zero sized kernel or bootimage is never valid.
-  EXPECT_EQ(zx_system_mexec(mexec_resource.get(), vmo1.get(), vmo2.get()), ZX_ERR_BAD_STATE);
-}
-
-// Regression test for https://fxbug.dev/503703423
-TEST(Resource, MexecPayloadTooSmall) {
-  // This test requires the MEXEC resource.
-  zx::unowned_resource system_resource = get_system();
-  if (!system_resource->is_valid()) {
-    ZXTEST_SKIP("System resource not available");
-  }
-
-  zx::resource mexec_resource;
-  zx_status_t status =
-      zx::resource::create(*system_resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1,
-                           nullptr, 0, &mexec_resource);
-
-  if (status != ZX_OK) {
-    ZXTEST_SKIP("MEXEC resource not available or failed to derive");
-  }
-
-  // Buffer small enough to cause Extend to fail.
-  uint8_t buffer[32];
-
-  status = zx_system_mexec_payload_get(mexec_resource.get(), buffer, sizeof(buffer));
-
-  // If we reach here, it didn't crash!
-  EXPECT_NE(ZX_OK, status);
-}
-
-// Regression test for https://fxbug.dev/507415559
-TEST(Resource, MexecEmptyZbi) {
-  // This test requires the MEXEC resource.
-  zx::unowned_resource system_resource = get_system();
-  if (!system_resource->is_valid()) {
-    ZXTEST_SKIP("System resource not available");
-  }
-
-  zx::resource mexec_resource;
-  if (zx_status_t status =
-          zx::resource::create(*system_resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1,
-                               nullptr, 0, &mexec_resource);
-      status != ZX_OK) {
-    ZXTEST_SKIP("MEXEC resource not available");
-  }
-
-  zx::vmo kernel_vmo, bootimage_vmo;
-  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &kernel_vmo));
-  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &bootimage_vmo));
-
-  // Valid container, but no kernel item.
-  const zbi_header_t header = zbitl::ContainerHeader(0);
-  ASSERT_OK(kernel_vmo.write(&header, 0, sizeof(header)));
-
-  EXPECT_EQ(ZX_ERR_IO_DATA_INTEGRITY,
-            zx_system_mexec(mexec_resource.get(), kernel_vmo.get(), bootimage_vmo.get()));
-}
-
-// Regression test for HAZARD-ZIRCON-01: Verify that failed sys_system_mexec calls
-// do not leak wired physical memory pages allocated by vmo_coalesce_pages.
-TEST(Resource, MexecMemoryLeakOnFailure) {
-  zx::unowned_resource system_resource = get_system();
-  if (!system_resource->is_valid()) {
-    ZXTEST_SKIP("System resource not available");
-  }
-
-  zx::resource mexec_resource;
-  if (zx_status_t status =
-          zx::resource::create(*system_resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1,
-                               nullptr, 0, &mexec_resource);
-      status != ZX_OK) {
-    ZXTEST_SKIP("MEXEC resource not available");
-  }
-
-  zx::resource info_resource;
-  if (zx_status_t status =
-          zx::resource::create(*system_resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_INFO_BASE, 1,
-                               nullptr, 0, &info_resource);
-      status != ZX_OK) {
-    ZXTEST_SKIP("INFO resource not available");
-  }
-
-  zx_info_kmem_stats_t kmem_before;
-  ASSERT_OK(zx_object_get_info(info_resource.get(), ZX_INFO_KMEM_STATS, &kmem_before,
-                               sizeof(kmem_before), nullptr, nullptr));
-
-  // Allocate a 64KB kernel VMO containing an invalid container header (no bootable kernel).
-  const size_t test_vmo_size = 64 * 1024;
-  zx::vmo kernel_vmo, bootimage_vmo;
-  ASSERT_OK(zx::vmo::create(test_vmo_size, 0, &kernel_vmo));
-  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &bootimage_vmo));
-
-  const zbi_header_t header = zbitl::ContainerHeader(0);
-  ASSERT_OK(kernel_vmo.write(&header, 0, sizeof(header)));
-
-  // Repeatedly invoke mexec expecting failure on zbitl validation.
-  // Prior to the fix, each call leaked the entire contiguous physical range (64KB per call, ~38MB
-  // total).
-  constexpr size_t kIterations = 600;
-  for (size_t i = 0; i < kIterations; ++i) {
-    EXPECT_EQ(ZX_ERR_IO_DATA_INTEGRITY,
-              zx_system_mexec(mexec_resource.get(), kernel_vmo.get(), bootimage_vmo.get()));
-  }
-
-  zx_info_kmem_stats_t kmem_after;
-  ASSERT_OK(zx_object_get_info(info_resource.get(), ZX_INFO_KMEM_STATS, &kmem_after,
-                               sizeof(kmem_after), nullptr, nullptr));
-
-  // If memory were leaked, free_bytes would decrease by at least (kIterations * test_vmo_size) =
-  // ~38MB. Allow for modest ambient allocations, but assert we did not leak ~38MB.
-  const uint64_t potential_leak_bytes = kIterations * test_vmo_size;
-  if (kmem_before.free_bytes > kmem_after.free_bytes) {
-    uint64_t bytes_lost = kmem_before.free_bytes - kmem_after.free_bytes;
-    EXPECT_LT(bytes_lost, potential_leak_bytes / 2,
-              "Wired physical memory was leaked across failed mexec calls");
-  }
-}
-
-// Regression test for https://fxbug.dev/512234306
-// NOTE: If behavior ever regresses, then we expect this
-// test to only fail (crash) on KASAN builds of the kernel.
-TEST(Resource, MexecBadZbiHeaderLength) {
-  zx::unowned_resource system_resource = get_system();
-  if (!system_resource->is_valid()) {
-    ZXTEST_SKIP("System resource not available");
-  }
-
-  zx::resource mexec_resource;
-  zx_status_t status =
-      zx::resource::create(*system_resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1,
-                           nullptr, 0, &mexec_resource);
-  if (status != ZX_OK) {
-    ZXTEST_SKIP("MEXEC resource not available");
-  }
-
-  zbi_header_t container = {
-      .type = ZBI_TYPE_CONTAINER,
-      .length = 0x40000000,  // 1 GB
-      .extra = ZBI_CONTAINER_MAGIC,
-      .flags = ZBI_FLAGS_VERSION,
-      .reserved0 = 0,
-      .reserved1 = 0,
-      .magic = ZBI_ITEM_MAGIC,
-      .crc32 = ZBI_ITEM_NO_CRC32,
-  };
-
-  zbi_header_t item1 = {
-      .type = ZBI_TYPE_DISCARD,
-      .length = 0x3FFFFF00,  // Jump 1 GB
-      .extra = 0,
-      .flags = ZBI_FLAGS_VERSION,
-      .reserved0 = 0,
-      .reserved1 = 0,
-      .magic = ZBI_ITEM_MAGIC,
-      .crc32 = ZBI_ITEM_NO_CRC32,
-  };
-
-  zx::vmo kernel_vmo, bootimage_vmo;
-  const size_t vmo_size = sizeof(container) + sizeof(item1);
-  ASSERT_OK(zx::vmo::create(vmo_size, 0, &kernel_vmo));
-  ASSERT_OK(zx::vmo::create(vmo_size, 0, &bootimage_vmo));
-
-  ASSERT_OK(kernel_vmo.write(&container, 0, sizeof(container)));
-  ASSERT_OK(kernel_vmo.write(&item1, sizeof(container), sizeof(item1)));
-
-  status = zx_system_mexec(mexec_resource.get(), kernel_vmo.get(), bootimage_vmo.get());
-  EXPECT_NE(ZX_OK, status);
-}
-
-#if defined(__x86_64__)
 
 // Regression test for https://fxbug.dev/517585028
 TEST(Resource, PcInterruptVectorPoolLeak) {
@@ -1098,11 +822,11 @@ TEST(Resource, SystemResourceSubBasesAndSyscallValidation) {
   }
 
   const zx_rsrc_system_base_t all_bases[] = {
-      ZX_RSRC_SYSTEM_HYPERVISOR_BASE, ZX_RSRC_SYSTEM_VMEX_BASE,        ZX_RSRC_SYSTEM_DEBUG_BASE,
-      ZX_RSRC_SYSTEM_INFO_BASE,       ZX_RSRC_SYSTEM_CPU_BASE,         ZX_RSRC_SYSTEM_POWER_BASE,
-      ZX_RSRC_SYSTEM_MEXEC_BASE,      ZX_RSRC_SYSTEM_ENERGY_INFO_BASE, ZX_RSRC_SYSTEM_IOMMU_BASE,
-      ZX_RSRC_SYSTEM_PROFILE_BASE,    ZX_RSRC_SYSTEM_MSI_BASE,         ZX_RSRC_SYSTEM_DEBUGLOG_BASE,
-      ZX_RSRC_SYSTEM_STALL_BASE,      ZX_RSRC_SYSTEM_TRACING_BASE,     ZX_RSRC_SYSTEM_SAMPLING_BASE,
+      ZX_RSRC_SYSTEM_HYPERVISOR_BASE,  ZX_RSRC_SYSTEM_VMEX_BASE,     ZX_RSRC_SYSTEM_DEBUG_BASE,
+      ZX_RSRC_SYSTEM_INFO_BASE,        ZX_RSRC_SYSTEM_CPU_BASE,      ZX_RSRC_SYSTEM_POWER_BASE,
+      ZX_RSRC_SYSTEM_ENERGY_INFO_BASE, ZX_RSRC_SYSTEM_IOMMU_BASE,    ZX_RSRC_SYSTEM_PROFILE_BASE,
+      ZX_RSRC_SYSTEM_MSI_BASE,         ZX_RSRC_SYSTEM_DEBUGLOG_BASE, ZX_RSRC_SYSTEM_STALL_BASE,
+      ZX_RSRC_SYSTEM_TRACING_BASE,     ZX_RSRC_SYSTEM_SAMPLING_BASE,
   };
 
   for (zx_rsrc_system_base_t base : all_bases) {

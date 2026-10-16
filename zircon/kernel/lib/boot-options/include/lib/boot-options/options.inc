@@ -232,12 +232,6 @@ system after it has signaled an out-of-memory (OOM) event. This option is
 only relevant when `kernel.oom.behavior` is set to `reboot`.
 )""")
 
-DEFINE_OPTION("kernel.mexec-force-high-ramdisk", bool, mexec_force_high_ramdisk, {false}, R"""(
-This option is intended for test use only. When set to `true` it forces the
-mexec syscall to place the ramdisk for the following kernel in high memory
-(64-bit address space, >= 4GiB offset).
-)""")
-
 DEFINE_OPTION("kernel.oom.enable", bool, oom_enabled, {true}, R"""(
 This option turns on out-of-memory (OOM) monitoring in the kernel, which takes action
 per `kernel.oom.behavior` when the PMM has less than `kernel.oom.outofmemory-mb` free memory,
@@ -520,8 +514,6 @@ When disabled, certain debugging-related syscalls will fail with
 * `zx_mtrace_control()`
 * `zx_object_get_property()` with `ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID`
 * `zx_process_write_memory()`
-* `zx_system_mexec()`
-* `zx_system_mexec_payload_get()`
 * `zx_thread_write_state()` (When using the `ZX_THREAD_STATE_DEBUG_REGS` kind.)
 * `zx_vmo_op_range()` with `ZX_VMO_OP_CACHE_INVALIDATE`
 )""")

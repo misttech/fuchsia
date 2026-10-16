@@ -827,18 +827,6 @@ unsafe extern "C" {
 
     pub fn zx_system_get_version_string() -> zx_string_view_t;
 
-    pub fn zx_system_mexec(
-        resource: zx_handle_t,
-        kernel_vmo: zx_handle_t,
-        bootimage_vmo: zx_handle_t,
-    ) -> zx_status_t;
-
-    pub fn zx_system_mexec_payload_get(
-        resource: zx_handle_t,
-        buffer: *mut u8,
-        buffer_size: usize,
-    ) -> zx_status_t;
-
     pub fn zx_system_powerctl(resource: zx_handle_t, cmd: u32) -> zx_status_t;
 
     pub fn zx_system_set_performance_info(

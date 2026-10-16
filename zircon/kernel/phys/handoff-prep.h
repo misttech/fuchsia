@@ -389,8 +389,6 @@ class HandoffPrep {
     return storage;
   }
 
-  void SaveForMexec(const zbi_header_t& header, ktl::span<const ktl::byte> payload);
-
   // The arch-specific protocol for a given item.
   // Defined in //zircon/kernel/arch/$cpu/phys/arch-handoff-prep-zbi.cc.
   void ArchSummarizeMiscZbiItem(const zbi_header_t& header, ktl::span<const ktl::byte> payload);
@@ -516,7 +514,6 @@ class HandoffPrep {
   TemporaryDataAllocator temporary_data_allocator_;
   PermanentDataAllocator permanent_data_allocator_;
   VirtualAddressAllocator first_class_mapping_allocator_;
-  zbitl::Image<Allocation> mexec_image_;
   ktl::optional<HandoffVmarList> vmars_{ktl::in_place};
   ktl::optional<HandoffVmoList> extra_vmos_{ktl::in_place};
 };
