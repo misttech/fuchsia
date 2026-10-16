@@ -17,6 +17,7 @@ rustc_library("rust") {
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust_next",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
@@ -30,6 +31,11 @@ rustc_library("rust") {
   sources = [
     "src/lib.rs",
     "src/serde.rs",
+  ]
+
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:futures",
   ]
 }
 
