@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Macro for defining a Fuchsia C++ binary."""
+
 load(
     "@fuchsia_rules_common//build_flags:cc.bzl",
     "BUILD_FLAGS_CC_MACRO_ATTRS",
@@ -16,6 +18,7 @@ load("@rules_cc//cc:defs.bzl", "cc_binary")
 # LINT.IfChange(instrumentation_features)
 _INSTRUMENTATION_FEATURES = [
     "asan",
+    "coverage",
     "hwasan",
     "lsan",
     "msan",

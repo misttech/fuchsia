@@ -231,8 +231,9 @@ def compute_clang_features(
                             flags = [
                                 # The statically-linked profiling runtime depends on libzircon.
                                 "-lzircon",
-                                "-Wl",
-                                "-dynamic-linker=coverage/ld.so.1",
+                                # Note: Unlike GN, which installs coverage shared libraries and a
+                                # copy of ld.so.1 under /pkg/lib/coverage/, Bazel's fx_packaged_binary
+                                # installs ld.so.1 and instrumented shared libraries in /pkg/lib/.
                             ],
                         ),
                     ],

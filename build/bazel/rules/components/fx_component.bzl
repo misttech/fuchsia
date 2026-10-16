@@ -4,6 +4,7 @@
 
 """Macros for defining a Fuchsia component and component manifest."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(
     "@fuchsia_rules_common//components:component_manifest.bzl",
     "compile_component_manifest",
@@ -89,16 +90,49 @@ def _fx_component_manifest_impl(ctx):
 
     cmc = ctx.executable._cmc_tool
 
+    # Inject a `use` clause for `fuchsia.debugdata.Publisher` on coverage and
+    # profile variants, matching `cm()` in //tools/cmc/build/cml.gni.
+    # LINT.IfChange(debugdata_merge)
+    debugdata_shard = None
+    if ctx.attr._is_profile[BuildSettingInfo].value:
+        debugdata_shard = ctx.file._profile_shard
+    elif ctx.attr._is_coverage[BuildSettingInfo].value:
+        debugdata_shard = ctx.file._coverage_shard
+
+    include_paths = [".", "sdk/lib"]
+    if debugdata_shard:
+        include_paths.append(manifest_in.dirname)
+        manifest_merged = ctx.actions.declare_file("{}_merge.cml".format(ctx.label.name))
+        ctx.actions.run(
+            executable = cmc,
+            arguments = [
+                "merge",
+                "--output",
+                manifest_merged.path,
+                debugdata_shard.path,
+                manifest_in.path,
+            ],
+            inputs = [
+                debugdata_shard,
+                manifest_in,
+            ],
+            outputs = [manifest_merged],
+            mnemonic = "CmcMerge",
+        )
+        manifest_in = manifest_merged
+
+    # LINT.ThenChange(//tools/cmc/build/cml.gni:debugdata_merge)
+
     return compile_component_manifest(
         ctx = ctx,
         cmc_tool = cmc,
         manifest_in = manifest_in,
         component_name = component_name,
         includes = ctx.files.includes,
-        include_paths = [".", "sdk/lib"],
+        include_paths = include_paths,
     ) + [
         _FxComponentManifestSourcesInfo(
-            source_manifest = manifest_in,
+            source_manifest = ctx.file.manifest,
             includes = depset(ctx.files.includes),
         ),
     ]
@@ -129,6 +163,20 @@ Explicitly setting this is necessary for sandboxed build action execution.""",
             default = "//tools/cmc:cmc",
             executable = True,
             cfg = "exec",
+        ),
+        "_is_coverage": attr.label(
+            default = "//build/bazel/config/variables:is_coverage",
+        ),
+        "_is_profile": attr.label(
+            default = "//build/bazel/config/variables:is_profile",
+        ),
+        "_coverage_shard": attr.label(
+            default = "//sdk/lib/sys/testing:coverage.shard.cml",
+            allow_single_file = [".cml"],
+        ),
+        "_profile_shard": attr.label(
+            default = "//build/config/profile:instrumentation_data.cml",
+            allow_single_file = [".cml"],
         ),
     },
 )

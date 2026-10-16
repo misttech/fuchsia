@@ -132,6 +132,8 @@ _ubsan_feature = feature(
 )
 
 # LINT.IfChange(sanitizer_features)
+# Note: _INSTRUMENTATION_FEATURES in fx_cc_binary.bzl includes these sanitizer
+# features plus "coverage" (defined in toolchain_utils.bzl).
 sanitizer_features = [
     _clang_sanitizer_feature,
     _asan_feature,
@@ -143,6 +145,7 @@ sanitizer_features = [
 ]
 # LINT.ThenChange(//build/bazel/rules/cc/fx_cc_binary.bzl:instrumentation_features)
 
+# buildifier: disable=unnamed-macro
 def define_clang_sanitizer_config_settings():
     """Create sanitizer-related feature_flag() and config_setting() targets.
 

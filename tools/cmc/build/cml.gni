@@ -41,6 +41,7 @@ template("cm") {
 
   # We need to inject a use clause for DebugData for the coverage and profile
   # variants. is_coverage is true for profile and coverage variants.
+  # LINT.IfChange(debugdata_merge)
   needs_debugdata = is_coverage || is_profile
 
   if (needs_debugdata) {
@@ -72,6 +73,8 @@ template("cm") {
     merged = get_target_outputs(":${target_name}_merge")
     input_manifest = merged[0]
   }
+
+  # LINT.ThenChange(//build/bazel/rules/components/fx_component.bzl:debugdata_merge)
 
   cmc(target_name) {
     forward_variables_from(invoker,

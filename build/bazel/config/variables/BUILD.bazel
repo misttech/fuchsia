@@ -11,6 +11,13 @@ load(
 
 package(default_applicable_licenses = ["//:license"])
 
+# If the build configuration has coverage enabled.
+bool_flag(
+    name = "is_coverage",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
 # If the build configuration has profiling enabled.
 bool_flag(
     name = "is_profile",

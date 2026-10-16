@@ -129,6 +129,12 @@ if (_has_host_coverage_rust) {
   _common_args += [ "--config=host_rust_coverage" ]
 }
 
+if (is_coverage) {
+  _build_args += [ "--//build/bazel/config/variables:is_coverage=True" ]
+} else {
+  _build_args += [ "--//build/bazel/config/variables:is_coverage=False" ]
+}
+
 if (is_profile) {
   _build_args += [ "--//build/bazel/config/variables:is_profile=True" ]
 } else {
