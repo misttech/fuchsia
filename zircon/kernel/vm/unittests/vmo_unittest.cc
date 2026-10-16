@@ -5436,6 +5436,98 @@ static bool vmo_ever_pinned_parent_merge_test() {
   END_TEST;
 }
 
+// Tests that TakePages and SupplyPages handle a spurious parent content marker left on a VMO after
+// a zero page in its hidden parent is reclaimed by compression and the hidden parent is merged.
+static bool vmo_take_pages_spurious_parent_content_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  VmCompression* compression = Pmm::Node().GetPageCompression();
+  if (!compression) {
+    END_TEST;
+  }
+
+  auto make_vmo_with_spurious_parent_content = [](fbl::RefPtr<VmObjectPaged>* out_vmo) -> bool {
+    BEGIN_TEST;
+
+    fbl::RefPtr<VmObjectPaged> child;
+    {
+      fbl::RefPtr<VmObjectPaged> vmo;
+      ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 2 * kPageSize, &vmo));
+
+      // Commit two zero pages so we get a bidirectional clone with a hidden parent, then write
+      // non-zero data to the second page.
+      ASSERT_OK(vmo->CommitRange(0, 2 * kPageSize));
+      uint64_t val = 0xdeadbeef;
+      ASSERT_OK(vmo->Write(&val, kPageSize, sizeof(val)));
+
+      fbl::RefPtr<VmObject> child_no_paged;
+      ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, 2 * kPageSize,
+                                 /*copy_name=*/false, &child_no_paged));
+      child = DownCastVmObject<VmObjectPaged>(child_no_paged);
+
+      fbl::RefPtr<VmCowPages> hidden_parent = vmo->DebugGetCowPages()->DebugGetParent();
+      ASSERT_NONNULL(hidden_parent);
+
+      vm_page_t* page = hidden_parent->DebugGetPage(0);
+      ASSERT_NONNULL(page);
+
+      auto compressor = Pmm::Node().GetPageCompression()->AcquireCompressor();
+      ASSERT_OK(compressor.get().Arm());
+
+      auto result = hidden_parent->ReclaimPage(page, 0, VmCowPages::EvictionAction::IgnoreHint,
+                                               &compressor.get());
+      ASSERT_TRUE(result.is_ok());
+      EXPECT_EQ(result.value().num_pages, 1u);
+      EXPECT_TRUE(hidden_parent->DebugIsEmpty(0));
+      EXPECT_TRUE(child->DebugGetCowPages()->DebugIsParentContent(0));
+
+      // Dropping |vmo| merges |hidden_parent| into |child|, leaving |child| with no parent, a
+      // spurious parent content marker at offset 0, and a committed page at offset kPageSize.
+    }
+
+    EXPECT_NULL(child->DebugGetCowPages()->DebugGetParent());
+    EXPECT_TRUE(child->DebugGetCowPages()->DebugIsParentContent(0));
+    EXPECT_TRUE(child->DebugGetCowPages()->DebugIsPage(kPageSize));
+
+    *out_vmo = ktl::move(child);
+    END_TEST;
+  };
+
+  // Take pages from a parentless VMO containing a spurious parent content marker and transfer them
+  // to a destination VMO that also contains a spurious parent content marker.
+  fbl::RefPtr<VmObjectPaged> src;
+  ASSERT_TRUE(make_vmo_with_spurious_parent_content(&src));
+
+  VmPageSpliceList pages;
+  ASSERT_OK(src->TakePages(0, 2 * kPageSize, &pages));
+  EXPECT_TRUE(src->DebugGetCowPages()->DebugIsEmpty(0));
+  EXPECT_TRUE(src->DebugGetCowPages()->DebugIsEmpty(kPageSize));
+
+  fbl::RefPtr<VmObjectPaged> dst;
+  ASSERT_TRUE(make_vmo_with_spurious_parent_content(&dst));
+  ASSERT_OK(dst->SupplyPages(0, 2 * kPageSize, &pages, SupplyOptions::TransferData));
+
+  uint64_t val = 1;
+  EXPECT_OK(dst->Read(&val, 0, sizeof(val)));
+  EXPECT_EQ(0u, val);
+  EXPECT_OK(dst->Read(&val, kPageSize, sizeof(val)));
+  EXPECT_EQ(0xdeadbeefu, val);
+
+  // Also test supplying a committed page directly over a spurious parent content marker at offset
+  // 0.
+  fbl::RefPtr<VmObjectPaged> dst2;
+  ASSERT_TRUE(make_vmo_with_spurious_parent_content(&dst2));
+  VmPageSpliceList page1;
+  ASSERT_OK(dst->TakePages(kPageSize, kPageSize, &page1));
+  ASSERT_OK(dst2->SupplyPages(0, kPageSize, &page1, SupplyOptions::TransferData));
+  EXPECT_OK(dst2->Read(&val, 0, sizeof(val)));
+  EXPECT_EQ(0xdeadbeefu, val);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -5518,6 +5610,7 @@ VM_UNITTEST(vmo_get_page_offset_test)
 VM_UNITTEST(vmo_ever_pinned_hidden_parent_creation_test)
 VM_UNITTEST(vmo_ever_pinned_page_migration_test)
 VM_UNITTEST(vmo_ever_pinned_parent_merge_test)
+VM_UNITTEST(vmo_take_pages_spurious_parent_content_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace

@@ -1155,6 +1155,70 @@ bool continuous_attribution_tracker_take_pages_parent() {
 
 // TODO(https://fxbug.dev/549880387): Delete in favor of the Rust version in
 // continuous_attribution_unittest.rs.
+// Test that TakePages handles a spurious parent content marker transferred to a child and
+// decrements the populated slots count.
+bool continuous_attribution_tracker_take_pages_spurious_parent_content() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> child;
+  // Make |child|'s only slot hold a parent content marker.
+  {
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 2 * kPageSize, &vmo));
+
+    // Ensure we get a bidirectional clone.
+    ASSERT_OK(vmo->CommitRange(0, 2 * kPageSize));
+
+    fbl::RefPtr<VmObject> child_no_paged;
+    ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kPageSize,
+                               /*copy_name=*/false, &child_no_paged));
+    child = DownCastVmObject<VmObjectPaged>(child_no_paged);
+
+    fbl::RefPtr<VmCowPages> hidden_parent = vmo->DebugGetCowPages()->DebugGetParent();
+    ASSERT_NONNULL(hidden_parent);
+
+    vm_page_t *page = hidden_parent->DebugGetPage(0);
+    VmCompression *compression = Pmm::Node().GetPageCompression();
+    if (!compression) {
+      END_TEST;
+    }
+
+    auto compressor = compression->AcquireCompressor();
+    ASSERT_OK(compressor.get().Arm());
+
+    auto result = hidden_parent->ReclaimPage(page, 0, VmCowPages::EvictionAction::IgnoreHint,
+                                             &compressor.get());
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result.value().num_pages, 1u);
+    EXPECT_TRUE(hidden_parent->DebugIsEmpty(0));
+    EXPECT_TRUE(child->DebugGetCowPages()->DebugIsParentContent(0));
+    EXPECT_EQ(1u, child->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
+
+    // Drop |vmo| to trigger the hidden parent to merge into |child|, leaving |child| with no
+    // parent while still having a spurious parent content marker.
+  }
+
+  EXPECT_TRUE(child->DebugGetCowPages()->DebugIsParentContent(0));
+  EXPECT_EQ(1u, child->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
+
+  VmPageSpliceList page_list;
+  ASSERT_OK(child->TakePages(0, kPageSize, &page_list));
+
+  EXPECT_TRUE(child->DebugGetCowPages()->DebugIsEmpty(0));
+  EXPECT_EQ(0u, child->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
+  EXPECT_TRUE(page_list.Pop().IsEmpty());
+
+  END_TEST;
+}
+
+// TODO(https://fxbug.dev/549880387): Delete in favor of the Rust version in
+// continuous_attribution_unittest.rs.
 // Test that deduplicating a zero page in a hidden parent creates a persistent
 // disconnect between the child's attribution tracker and GetAttributedMemory.
 //
@@ -1226,6 +1290,7 @@ VM_UNITTEST(continuous_attribution_tracker_release_owned_self)
 VM_UNITTEST(continuous_attribution_tracker_release_owned_parent)
 VM_UNITTEST(continuous_attribution_tracker_take_pages)
 VM_UNITTEST(continuous_attribution_tracker_take_pages_parent)
+VM_UNITTEST(continuous_attribution_tracker_take_pages_spurious_parent_content)
 VM_UNITTEST(continuous_attribution_tracker_dedup_hidden_parent_disconnect)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")

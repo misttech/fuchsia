@@ -5793,10 +5793,15 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
           found_page = true;
           // Splice lists do not support page intervals.
           ASSERT(!src->IsInterval());
-          // Have no parent and so should not see parent content.
-          DEBUG_ASSERT(!src->IsParentContent());
-          if (src->IsPageOrRef()) {
+          // Despite there being no |parent_|, we must check for parent content markers here. See
+          // the comment on |tree_has_parent_content_markers| for more about spurious parent content
+          // markers.
+          if (src->IsPageOrRef() || src->IsParentContent()) {
             ++populated_slots_removed;
+          }
+          if (src->IsParentContent()) {
+            *src = VmPageOrMarker::Empty();
+            return;
           }
           if (src->IsPage()) {
             DEBUG_ASSERT(src->Page()->object.pin_count == 0);
@@ -5825,9 +5830,9 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
     if (populated_slots_removed > 0) {
       continuous_attribution_tracker_.Decrement(populated_slots_removed);
     }
+    CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
     if (status != ZX_OK) {
       DEBUG_ASSERT(status == ZX_ERR_NO_MEMORY);
-      CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
       return status;
     }
 
@@ -6086,12 +6091,12 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
       compression->Free(old_page->ReleaseReference());
     } else if (old_page->IsParentContent()) {
       // If we freed a parent_content_marker, the share count on the initial content should be
-      // decremented as we can no longer see it.
+      // decremented as we can no longer see it. Note that the marker may be spurious (see the
+      // comment on |tree_has_parent_content_markers|), in which case there is no initial content.
       DEBUG_ASSERT(node_has_parent_content_markers());
       PageLookup lookup_info = FindInitialPageContentLocked(offset);
-      DEBUG_ASSERT(lookup_info.cursor.current() && !lookup_info.cursor.current()->IsEmpty());
-      DEBUG_ASSERT(lookup_info.owner);
-      if (lookup_info.cursor.current()->IsPageOrRef()) {
+      if (lookup_info.cursor.current() && lookup_info.cursor.current()->IsPageOrRef()) {
+        DEBUG_ASSERT(lookup_info.owner);
         lookup_info.owner.locked().DecrementCowContentShareCount(
             *lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
             compression);

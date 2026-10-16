@@ -4743,6 +4743,102 @@ mod vmo_rs {
         expect_eq!(PmmOptDelayReuse::Yes, c_cow.should_delay_reuse_on_free());
     }
 
+    /// Tests that TakePages and SupplyPages handle a spurious parent content marker.
+    #[test]
+    fn vmo_take_pages_spurious_parent_content_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let Some(compression) = pmm::node().get_page_compression() else {
+            return true;
+        };
+
+        macro_rules! make_vmo_with_spurious_parent_content {
+            () => {{
+                let child: RefPtr<VmObjectPaged>;
+                {
+                    let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, 2 * PAGE_SIZE));
+
+                    // Commit two pages so we get a bidirectional clone with a hidden parent, then
+                    // write non-zero data to the second page.
+                    assert_ok!(vmo.commit_range(0, 2 * PAGE_SIZE));
+                    let val: u64 = 0xdeadbeef;
+                    assert_ok!(vmo.write(PAGE_SIZE, &val.to_le_bytes()));
+
+                    let clone = unwrap_ok!(vmo.create_clone(
+                        Resizability::NonResizable,
+                        SnapshotType::Full,
+                        0,
+                        2 * PAGE_SIZE,
+                        /*copy_name=*/ false,
+                    ));
+                    child = VmObject::downcast_paged(clone).expect("clone is a paged VMO");
+
+                    let hidden_parent = vmo
+                        .debug_get_cow_pages()
+                        .expect("paged VMO has backing cow pages")
+                        .debug_get_parent()
+                        .expect("bidirectional clone has a hidden parent");
+
+                    let page = hidden_parent
+                        .debug_get_page(0)
+                        .expect("hidden parent has a page at offset 0");
+
+                    stack_pin_init!(let compressor = compression.acquire_compressor());
+                    assert_ok!(compressor.as_mut().get().arm());
+
+                    // SAFETY: `page` is the page at offset 0 of `hidden_parent`.
+                    let result = unsafe {
+                        hidden_parent.reclaim_page(
+                            page,
+                            0,
+                            EvictionAction::IgnoreHint,
+                            Some(compressor.as_mut().get()),
+                        )
+                    };
+                    assert_true!(result.is_ok());
+                    expect_eq!(1u64, result.as_ref().unwrap().num_pages);
+                    expect_true!(hidden_parent.debug_is_empty(0));
+                    expect_true!(child.debug_get_cow_pages().unwrap().debug_is_parent_content(0));
+
+                    // Dropping `vmo` merges `hidden_parent` into `child`, leaving `child` with no
+                    // parent, a spurious parent content marker at offset 0, and a page at
+                    // `PAGE_SIZE`.
+                }
+
+                let child_cow = child.debug_get_cow_pages().expect("child has cow pages");
+                expect_true!(child_cow.debug_get_parent().is_none());
+                expect_true!(child_cow.debug_is_parent_content(0));
+                expect_true!(child_cow.debug_is_page(PAGE_SIZE));
+                child
+            }};
+        }
+
+        let src = make_vmo_with_spurious_parent_content!();
+        let src_cow = src.debug_get_cow_pages().expect("src has cow pages");
+
+        stack_pin_init!(let pages = VmPageSpliceList::new());
+        assert_ok!(src.take_pages(0, 2 * PAGE_SIZE, pages.as_mut()));
+        expect_true!(src_cow.debug_is_empty(0));
+        expect_true!(src_cow.debug_is_empty(PAGE_SIZE));
+
+        let dst = make_vmo_with_spurious_parent_content!();
+        assert_ok!(dst.supply_pages(0, 2 * PAGE_SIZE, pages.as_mut(), SupplyOptions::TransferData));
+
+        let mut buf = [MaybeUninit::<u8>::uninit(); 8];
+        let bytes = unwrap_ok!(dst.read(0, &mut buf));
+        expect_eq!(0u64, u64::from_le_bytes(bytes.try_into().unwrap()));
+        let bytes = unwrap_ok!(dst.read(PAGE_SIZE, &mut buf));
+        expect_eq!(0xdeadbeefu64, u64::from_le_bytes(bytes.try_into().unwrap()));
+
+        // Also test supplying a committed page directly over a spurious parent content marker.
+        let dst2 = make_vmo_with_spurious_parent_content!();
+        stack_pin_init!(let page1 = VmPageSpliceList::new());
+        assert_ok!(dst.take_pages(PAGE_SIZE, PAGE_SIZE, page1.as_mut()));
+        assert_ok!(dst2.supply_pages(0, PAGE_SIZE, page1.as_mut(), SupplyOptions::TransferData));
+        let bytes = unwrap_ok!(dst2.read(0, &mut buf));
+        expect_eq!(0xdeadbeefu64, u64::from_le_bytes(bytes.try_into().unwrap()));
+    }
+
     /// Test stream functionality in kernel objects.
     #[test]
     fn vmo_user_stream_size_test() {

@@ -1094,6 +1094,87 @@ mod tests {
         expect_eq!(0u32, a_cow.debug_get_populated_slots_count());
     }
 
+    /// Test that TakePages handles a spurious parent content marker transferred to a child.
+    #[test]
+    fn take_pages_spurious_parent_content() {
+        if should_skip_no_feature!() {
+            return true;
+        }
+
+        let _disable_scanner = AutoVmScannerDisable::new();
+
+        let child: RefPtr<VmObjectPaged>;
+        // Make |child|'s only slot hold a parent content marker.
+        {
+            let vmo: RefPtr<VmObjectPaged> =
+                unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, 2 * PAGE_SIZE));
+
+            // Ensure we get a bidirectional clone.
+            assert_ok!(vmo.commit_range(0, 2 * PAGE_SIZE));
+
+            let clone = unwrap_ok!(vmo.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Full,
+                0,
+                PAGE_SIZE,
+                /*copy_name=*/ false
+            ));
+            child = VmObject::downcast_paged(clone).expect("clone is a paged VMO");
+
+            let hidden_parent = vmo
+                .debug_get_cow_pages()
+                .expect("paged VMO has backing cow pages")
+                .debug_get_parent()
+                .expect("bidirectional clone has a hidden parent");
+
+            let page =
+                hidden_parent.debug_get_page(0).expect("hidden parent has a page at offset 0");
+
+            // Everything below depends on compressing the hidden parent's page. Returning here is
+            // safe only because nothing above records a failure and continues: the checks so far
+            // are all short-circuiting, so there is no accumulated result for `return true` to
+            // discard.
+            let Some(compression) = pmm::node().get_page_compression() else {
+                kprintln!("Skipping {:s}:{:u}; no page compression configured.", file!(), line!());
+                return true;
+            };
+
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            assert_ok!(compressor.as_mut().get().arm());
+
+            // SAFETY: `page` is the page at offset 0 of `hidden_parent`.
+            let result = unsafe {
+                hidden_parent.reclaim_page(
+                    page,
+                    0,
+                    EvictionAction::IgnoreHint,
+                    Some(compressor.as_mut().get()),
+                )
+            };
+            assert_true!(result.is_ok());
+            expect_eq!(1u64, result.as_ref().unwrap().num_pages);
+            expect_true!(hidden_parent.debug_is_empty(0));
+
+            let child_cow = child.debug_get_cow_pages().expect("paged VMO has backing cow pages");
+            expect_true!(child_cow.debug_is_parent_content(0));
+            expect_eq!(1u32, child_cow.debug_get_populated_slots_count());
+
+            // Drop |vmo| to trigger the hidden parent to merge into |child|, leaving |child| with
+            // no parent while still having a spurious parent content marker.
+        }
+
+        let child_cow = child.debug_get_cow_pages().expect("paged VMO has backing cow pages");
+        expect_true!(child_cow.debug_is_parent_content(0));
+        expect_eq!(1u32, child_cow.debug_get_populated_slots_count());
+
+        stack_pin_init!(let page_list = VmPageSpliceList::new());
+        assert_ok!(child.take_pages(0, PAGE_SIZE, page_list.as_mut()));
+
+        expect_true!(child_cow.debug_is_empty(0));
+        expect_eq!(0u32, child_cow.debug_get_populated_slots_count());
+        expect_true!(page_list.as_mut().pop().is_empty());
+    }
+
     /// Test the attribution disconnect from deduplicating a zero page in a hidden parent.
     #[test]
     fn dedup_hidden_parent_disconnect() {
