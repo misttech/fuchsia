@@ -3,20 +3,48 @@
 # found in the LICENSE file.
 
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
+load("//build/bazel/rules/host_tests:host_cc_test.bzl", "host_cc_test")
 
 package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "srcs",
+    srcs = [
+        "json_merge.cc",
+    ],
+    hdrs = [
+        "json_merge.h",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        "//third_party/rapidjson",
+    ],
+    alwayslink = True,
+)
 
 cc_binary_host_tool(
     name = "json_merge",
     srcs = [
-        "json_merge.cc",
-        "json_merge.h",
         "main.cc",
     ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:public"],
     deps = [
-        "//third_party/rapidjson",
+        ":srcs",
+    ],
+)
+
+host_cc_test(
+    name = "json_merge_test",
+    srcs = [
+        "test.cc",
+    ],
+    visibility = [
+        "//build/tools:__pkg__",
+    ],
+    deps = [
+        ":srcs",
+        "//src/lib/fxl/test:gtest_main",
     ],
 )
