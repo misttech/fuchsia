@@ -311,6 +311,7 @@ kernel_rust_mod("object-rs") {
     "suspend_token_dispatcher_ffi.rs",
     "thread_dispatcher.rs",
     "thread_dispatcher_ffi.rs",
+    "thread_state.rs",
     "timer_dispatcher.rs",
     "timer_dispatcher_ffi.rs",
     "user_handles.rs",

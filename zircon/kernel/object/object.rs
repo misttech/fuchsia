@@ -83,6 +83,7 @@ mod suspend_token_dispatcher;
 mod suspend_token_dispatcher_ffi;
 mod thread_dispatcher;
 mod thread_dispatcher_ffi;
+mod thread_state;
 mod timer_dispatcher;
 mod timer_dispatcher_ffi;
 mod user_handles;

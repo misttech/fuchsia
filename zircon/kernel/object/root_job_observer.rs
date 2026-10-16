@@ -459,6 +459,7 @@ mod tests {
     };
     use super::super::thread_dispatcher::ThreadDispatcher;
     use super::RootJobObserver;
+    use crate::arch_rs::UserEntryState;
     use crate::kernel::deadline::{Deadline, TimerSlack};
     use crate::kernel::event::Event;
     use crate::platform_rs::timer::DurationMono;
@@ -479,7 +480,8 @@ mod tests {
         let thread = thread_handle.dispatcher();
         thread.initialize().expect("failed to initialize thread");
         thread.suspend().expect("failed to suspend thread");
-        thread.start(0, 0, 0, 0, 0, 0, true).expect("failed to start thread");
+        let entry = UserEntryState { pc: 0, sp: 0, arg1: 0, arg2: 0, tp: 0, abi_reg: 0 };
+        thread.start(entry, true).expect("failed to start thread");
         thread_handle
     }
 

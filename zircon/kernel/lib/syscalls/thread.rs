@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::arch_rs::UserEntryState;
 #[cfg(target_arch = "x86_64")]
 use crate::arch_rs::x86::vm::is_vaddr_canonical;
 use crate::object::{HandleValue, ProcessDispatcher, ThreadDispatcher, VmObjectDispatcher};
@@ -113,7 +114,8 @@ pub fn sys_thread_start_regs(
         }
     }
 
-    thread.start(thread_entry as usize, stack as usize, arg1, arg2, tp, abi_reg, false)?;
+    let entry = UserEntryState { pc: thread_entry, sp: stack, arg1, arg2, tp, abi_reg };
+    thread.start(entry, false)?;
     Ok(())
 }
 

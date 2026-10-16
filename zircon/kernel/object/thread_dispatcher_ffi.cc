@@ -20,6 +20,26 @@ KCOUNTER(thread_legacy_yield, "thread.legacy_yield")
 static_assert(sizeof(ThreadDispatcher::CoreThreadObservation) == 2 * sizeof(uintptr_t));
 static_assert(alignof(ThreadDispatcher::CoreThreadObservation) == alignof(uintptr_t));
 
+// The transitional rust_thread_dispatcher_{lifecycle,set_state,set_exception_state}_locked
+// bridges pass these enumerations across the FFI boundary as raw discriminants, so the two
+// numberings have to agree exactly. The Rust enums are #[repr(u32)] with explicit discriminants;
+// these asserts hold the C++ side to the same values.
+// LINT.IfChange(thread_lifecycle)
+static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::INITIAL) == 0);
+static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::INITIALIZED) == 1);
+static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::RUNNING) == 2);
+static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::SUSPENDED) == 3);
+static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::DYING) == 4);
+static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::DEAD) == 5);
+// LINT.ThenChange(//zircon/kernel/object/thread_state.rs:Lifecycle)
+
+// LINT.IfChange(thread_exception)
+static_assert(static_cast<uint32_t>(ThreadState::Exception::IDLE) == 0);
+static_assert(static_cast<uint32_t>(ThreadState::Exception::UNPROCESSED) == 1);
+static_assert(static_cast<uint32_t>(ThreadState::Exception::TRY_NEXT) == 2);
+static_assert(static_cast<uint32_t>(ThreadState::Exception::RESUME) == 3);
+// LINT.ThenChange(//zircon/kernel/object/thread_state.rs:Exception)
+
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -30,28 +50,6 @@ FFI_ALWAYS_INLINE ThreadDispatcher* cpp_thread_dispatcher_current() {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_is_current(const ThreadDispatcher* thread) {
   return thread == ThreadDispatcher::GetCurrent();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_has_started(const ThreadDispatcher* thread) {
-  return thread->HasStarted();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_is_dying_or_dead(const ThreadDispatcher* thread) {
-  return thread->IsDyingOrDead();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_is_dying_or_dead_locked(const ThreadDispatcher* thread)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  return thread->IsDyingOrDeadLocked();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE Thread* cpp_thread_dispatcher_core_thread_locked(const ThreadDispatcher* thread)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  return thread->core_thread_locked();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -111,51 +109,40 @@ FFI_ALWAYS_INLINE void cpp_thread_dispatcher_set_core_thread(ThreadDispatcher* t
   thread->set_core_thread(core_thread);
 }
 
+// |core_thread_| is TA_GUARDED(get_lock()), and every caller of this shim reads it while holding
+// that lock -- but it holds it from Rust, through a ksync guard rather than a C++ Guard, so
+// Clang's analysis cannot see the acquisition and would reject the access. The suppression is
+// scoped to this shim, which is exactly the seam the analysis cannot cross; the accessor it
+// calls keeps its TA_REQ.
+//
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Thread* cpp_thread_dispatcher_get_core_thread(const ThreadDispatcher* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread->core_thread();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dispatcher_set_user_entry(ThreadDispatcher* thread,
+                                                            const UserEntryState* entry) {
+  thread->set_user_entry(*entry);
+}
+
+// Attaches |thread| to its lower level kernel thread. This takes out an additional reference on
+// the ThreadDispatcher, which the kernel Thread holds until it exits.
+//
+// Thread::SetUsermodeThread() is a Thread method, so this would otherwise belong beside the
+// other Thread shims in kernel/thread_ffi.cc. It lives here because it names a ThreadDispatcher,
+// and the Rust `kernel` module must not depend on the `object` module.
+//
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dispatcher_attach_to_core_thread(ThreadDispatcher* thread,
+                                                                   Thread* core_thread) {
+  core_thread->SetUsermodeThread(fbl::RefPtr<ThreadDispatcher>(thread));
+}
+
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE int cpp_thread_start_routine_entry(void* thread) {
   return ThreadDispatcher::StartRoutine(thread);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_initialize(ThreadDispatcher* thread) {
-  return thread->Initialize();
-}
-
-zx_status_t cpp_thread_dispatcher_start(ThreadDispatcher* thread, zx_vaddr_t entry,
-                                        zx_vaddr_t stack, uint64_t arg1, uint64_t arg2, uint64_t tp,
-                                        uint64_t abi_reg, bool ensure_initial_thread) {
-  return thread->Start(
-      {
-          .pc = entry,
-          .sp = stack,
-          .arg1 = arg1,
-          .arg2 = arg2,
-          .tp = tp,
-          .abi_reg = abi_reg,
-      },
-      ensure_initial_thread);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_dispatcher_exit_current() { ThreadDispatcher::ExitCurrent(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_dispatcher_kill_current() { ThreadDispatcher::KillCurrent(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_dispatcher_kill(ThreadDispatcher* thread) { thread->Kill(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_suspend(ThreadDispatcher* thread) {
-  return thread->Suspend();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_dispatcher_resume(ThreadDispatcher* thread) { thread->Resume(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_restricted_kick(ThreadDispatcher* thread) {
-  return thread->RestrictedKick();
 }
 
 zx_status_t cpp_thread_dispatcher_read_state(ThreadDispatcher* thread, uint32_t state_kind,

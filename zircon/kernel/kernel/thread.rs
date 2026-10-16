@@ -60,6 +60,10 @@ unsafe extern "C" {
     fn cpp_thread_current_yield();
     fn cpp_thread_kill(thread: *mut Thread);
     fn cpp_thread_suspend(thread: *mut Thread) -> zx_status_t;
+    fn cpp_thread_restricted_kick(thread: *mut Thread) -> zx_status_t;
+    fn cpp_thread_set_memory_stall_state_inactive(thread: *mut Thread);
+    fn cpp_thread_current_exit(retcode: i32) -> !;
+    fn cpp_thread_current_kill();
     fn cpp_thread_is_blocked(thread: *mut Thread) -> bool;
     fn cpp_thread_lock_guard_init(
         guard: *mut lock_guard_bindings::ThreadLockGuard,
@@ -358,6 +362,32 @@ impl ThreadPtr {
     pub unsafe fn suspend(self) -> Result<(), Status> {
         let status = unsafe { cpp_thread_suspend(self.as_raw()) };
         Status::ok(status)
+    }
+
+    /// Kicks the thread out of restricted mode into normal mode if it is currently in restricted
+    /// mode, or remembers the kick state for the next attempt to enter restricted mode.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the thread is still valid.
+    pub unsafe fn restricted_kick(self) -> Result<(), Status> {
+        // SAFETY: The caller guarantees self.as_raw() points to a valid, live kernel thread.
+        let status = unsafe { cpp_thread_restricted_kick(self.as_raw()) };
+        Status::ok(status)
+    }
+
+    /// Starts memory stall accounting for the thread by moving it out of the
+    /// `IgnoredKernelOnly` stall state and into `Inactive`. Preemption is disabled for the
+    /// duration of the update inside the shim.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the thread is still valid and is currently in the
+    /// `IgnoredKernelOnly` stall state, which the shim asserts.
+    pub unsafe fn set_memory_stall_state_inactive(self) {
+        // SAFETY: The caller guarantees self.as_raw() points to a valid, live kernel thread that is
+        // currently in the IgnoredKernelOnly stall state.
+        unsafe { cpp_thread_set_memory_stall_state_inactive(self.as_raw()) }
     }
 
     /// Checks if the thread is currently blocked.
@@ -709,6 +739,23 @@ pub unsafe fn spawn(
 /// waiting to execute.
 pub fn r#yield() {
     unsafe { cpp_thread_current_yield() }
+}
+
+/// Terminates the current thread with the given return code. Does not return.
+///
+/// Nothing on the current stack is dropped, since control never comes back. That is a leak
+/// rather than unsoundness, so this is a safe function, matching `r#yield` above.
+pub fn current_exit(retcode: i32) -> ! {
+    // SAFETY: `Thread::Current::Exit` unwinds the kernel stack of the calling thread and never
+    // returns, which is what the `!` return type on the declaration states.
+    unsafe { cpp_thread_current_exit(retcode) }
+}
+
+/// Marks the current thread for termination. The thread will actually terminate when the kernel
+/// stack unwinds.
+pub fn current_kill() {
+    // SAFETY: `Thread::Current::Kill` only raises a signal on the calling thread.
+    unsafe { cpp_thread_current_kill() }
 }
 
 /// Increments the preempt disable counter for the current thread.

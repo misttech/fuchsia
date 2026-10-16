@@ -66,11 +66,13 @@ Lock<CriticalMutex>* ThreadDispatcher::get_lock() const {
 ThreadDispatcher::~ThreadDispatcher() {
   LTRACE_ENTRY_OBJ;
 
+  // The _locked accessors below are called without taking get_lock(). Destruction implies the
+  // last reference is gone, so there is no concurrent access to race with.
   DEBUG_ASSERT_MSG(!HasStartedLocked() || IsDyingOrDeadLocked(),
                    "Thread %p killed in bad state: %s\n", this,
-                   ThreadLifecycleToString(state_.lifecycle()));
+                   ThreadLifecycleToString(lifecycle_locked()));
 
-  if (state_.lifecycle() != ThreadState::Lifecycle::INITIAL) {
+  if (lifecycle_locked() != ThreadState::Lifecycle::INITIAL) {
     // We grew the pool in Initialize(), which transitioned the thread from its
     // inintial state.
     process()->futex_context().ShrinkFutexStatePool();
@@ -86,26 +88,6 @@ ThreadDispatcher::~ThreadDispatcher() {
 
   // Runs last so that the code above can still reach the parent process through the Rust state.
   rust_thread_dispatcher_state_destroy(&opaque_storage_);
-}
-
-// complete initialization of the thread object outside of the constructor
-zx_status_t ThreadDispatcher::Initialize() {
-  LTRACE_ENTRY_OBJ;
-
-  // Make sure we contribute a FutexState object to our process's futex state.
-  auto result = process()->futex_context().GrowFutexStatePool();
-  if (result != ZX_OK) {
-    return result;
-  }
-
-  Guard<CriticalMutex> guard{get_lock()};
-  // Associate the proc's address space with this thread. All threads start off with the normal
-  // address space as their active aspace.
-  VmAspace* aspace = process()->normal_aspace();
-  aspace->AttachToThread(core_thread_);
-  // we've entered the initialized state
-  SetStateLocked(ThreadState::Lifecycle::INITIALIZED);
-  return ZX_OK;
 }
 
 zx_status_t ThreadDispatcher::set_name(const char* name, size_t len) {
@@ -133,202 +115,6 @@ zx_status_t ThreadDispatcher::get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const 
   }
   strlcpy(out_name, core_thread_->name(), ZX_MAX_NAME_LEN);
   return ZX_OK;
-}
-
-// start a thread
-zx_status_t ThreadDispatcher::Start(const EntryState& entry, bool ensure_initial_thread) {
-  AssertCanary();
-
-  LTRACE_ENTRY_OBJ;
-
-  // add ourselves to the process, which may fail if the process is in a dead state.
-  // If the process is live then it will call our StartRunning routine.
-  return process()->AddInitializedThread(this, ensure_initial_thread, entry);
-}
-
-zx_status_t ThreadDispatcher::MakeRunnable(const EntryState& entry, bool suspended) {
-  if (!arch_is_valid_user_pc(entry.pc)) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  Guard<CriticalMutex> guard{get_lock()};
-
-  if (state_.lifecycle() != ThreadState::Lifecycle::INITIALIZED)
-    return ZX_ERR_BAD_STATE;
-
-  // save the user space entry state
-  user_entry_ = entry;
-
-  // update our suspend count to account for our parent state
-  if (suspended)
-    suspend_count_++;
-
-  // Attach the ThreadDispatcher to the core thread. This takes out an additional
-  // reference on the ThreadDispatcher.
-  core_thread_->SetUsermodeThread(fbl::RefPtr<ThreadDispatcher>(this));
-
-  // start the thread in RUNNING state, if we're starting suspended it will transition to
-  // SUSPENDED when it checks thread signals before executing any user code
-  SetStateLocked(ThreadState::Lifecycle::RUNNING);
-
-  // Given this is no longer a kernel-only thread, start memory stall accounting
-  // by entering the Inactive state.
-  {
-    AnnotatedAutoPreemptDisabler preempt_disabler;
-    DEBUG_ASSERT(core_thread_->memory_stall_state() == ThreadStallState::IgnoredKernelOnly);
-    core_thread_->set_memory_stall_state(ThreadStallState::Inactive);
-  }
-
-  if (suspend_count_ == 0) {
-    core_thread_->Resume();
-  } else {
-    // Thread::Suspend() only fails if the underlying thread is already dead, which we should
-    // ignore here to match the behavior of Thread::Resume(); our Exiting() callback will run
-    // shortly to clean us up
-    core_thread_->Suspend();
-  }
-
-  return ZX_OK;
-}
-
-void ThreadDispatcher::Kill() {
-  AssertCanary();
-
-  LTRACE_ENTRY_OBJ;
-
-  Guard<CriticalMutex> guard{get_lock()};
-
-  switch (state_.lifecycle()) {
-    case ThreadState::Lifecycle::INITIAL:
-    case ThreadState::Lifecycle::INITIALIZED:
-      // thread was never started, leave in this state
-      break;
-    case ThreadState::Lifecycle::RUNNING:
-    case ThreadState::Lifecycle::SUSPENDED:
-      // deliver a kernel kill signal to the thread
-      core_thread_->Kill();
-
-      // enter the dying state
-      SetStateLocked(ThreadState::Lifecycle::DYING);
-      break;
-    case ThreadState::Lifecycle::DYING:
-    case ThreadState::Lifecycle::DEAD:
-      // already going down
-      break;
-  }
-}
-
-zx_status_t ThreadDispatcher::Suspend() {
-  AssertCanary();
-
-  LTRACE_ENTRY_OBJ;
-
-  Guard<CriticalMutex> guard{get_lock()};
-
-  LTRACEF("%p: state %s\n", this, ThreadLifecycleToString(state_.lifecycle()));
-
-  // Update |suspend_count_| in all cases so that we can always verify a sane value - it's
-  // possible both Suspend() and Resume() get called while the thread is DYING.
-  DEBUG_ASSERT(suspend_count_ >= 0);
-  suspend_count_++;
-
-  switch (state_.lifecycle()) {
-    case ThreadState::Lifecycle::INITIAL:
-      // Unreachable, thread leaves INITIAL state before Create() returns.
-      DEBUG_ASSERT(false);
-      __UNREACHABLE;
-    case ThreadState::Lifecycle::INITIALIZED:
-      // If the thread hasn't started yet, don't actually try to suspend it. We need to let
-      // Start() run first to set up userspace entry data, which will then suspend if the count
-      // is still >0 at that time.
-      return ZX_OK;
-    case ThreadState::Lifecycle::RUNNING:
-    case ThreadState::Lifecycle::SUSPENDED:
-      if (suspend_count_ == 1)
-        return core_thread_->Suspend();
-      return ZX_OK;
-    case ThreadState::Lifecycle::DYING:
-    case ThreadState::Lifecycle::DEAD:
-      return ZX_ERR_BAD_STATE;
-  }
-
-  DEBUG_ASSERT(false);
-  return ZX_ERR_BAD_STATE;
-}
-
-void ThreadDispatcher::Resume() {
-  AssertCanary();
-
-  LTRACE_ENTRY_OBJ;
-
-  Guard<CriticalMutex> guard{get_lock()};
-
-  DEBUG_ASSERT(suspend_count_ > 0);
-  suspend_count_--;
-
-  switch (state_.lifecycle()) {
-    case ThreadState::Lifecycle::INITIAL:
-      // Unreachable, thread leaves INITIAL state before Create() returns.
-      DEBUG_ASSERT(false);
-      __UNREACHABLE;
-    case ThreadState::Lifecycle::INITIALIZED:
-      break;
-    case ThreadState::Lifecycle::RUNNING:
-    case ThreadState::Lifecycle::SUSPENDED:
-      // It's possible the thread never transitioned from RUNNING -> SUSPENDED.
-      if (suspend_count_ == 0)
-        core_thread_->Resume();
-      break;
-    case ThreadState::Lifecycle::DYING:
-    case ThreadState::Lifecycle::DEAD:
-      // If it's dying or dead then bail.
-      break;
-  }
-}
-
-zx_status_t ThreadDispatcher::RestrictedKick() {
-  AssertCanary();
-
-  LTRACE_ENTRY_OBJ;
-
-  Guard<CriticalMutex> guard{get_lock()};
-
-  switch (state_.lifecycle()) {
-    case ThreadState::Lifecycle::INITIAL:
-      // Unreachable, thread leaves INITIAL state before Create() returns.
-      DEBUG_ASSERT(false);
-      __UNREACHABLE;
-    case ThreadState::Lifecycle::INITIALIZED:
-    case ThreadState::Lifecycle::RUNNING:
-    case ThreadState::Lifecycle::SUSPENDED:
-      return core_thread_->RestrictedKick();
-    case ThreadState::Lifecycle::DYING:
-    case ThreadState::Lifecycle::DEAD:
-      return ZX_ERR_BAD_STATE;
-  }
-
-  DEBUG_ASSERT(false);
-  return ZX_ERR_BAD_STATE;
-}
-
-bool ThreadDispatcher::IsDyingOrDead() const {
-  Guard<CriticalMutex> guard{get_lock()};
-  return IsDyingOrDeadLocked();
-}
-
-bool ThreadDispatcher::IsDyingOrDeadLocked() const {
-  auto lifecycle = state_.lifecycle();
-  return lifecycle == ThreadState::Lifecycle::DYING || lifecycle == ThreadState::Lifecycle::DEAD;
-}
-
-bool ThreadDispatcher::HasStarted() const {
-  Guard<CriticalMutex> guard{get_lock()};
-  return HasStartedLocked();
-}
-
-bool ThreadDispatcher::HasStartedLocked() const {
-  auto lifecycle = state_.lifecycle();
-  return lifecycle != ThreadState::Lifecycle::INITIAL &&
-         lifecycle != ThreadState::Lifecycle::INITIALIZED;
 }
 
 void ThreadDispatcher::ExitingCurrent() {
@@ -390,40 +176,6 @@ void ThreadDispatcher::ExitingCurrent() {
   LTRACE_EXIT_OBJ;
 }
 
-void ThreadDispatcher::Suspending() {
-  LTRACE_ENTRY_OBJ;
-
-  // Update the state before sending any notifications out. We want the
-  // receiver to see the new state.
-  {
-    Guard<CriticalMutex> guard{get_lock()};
-
-    // Don't suspend if we are racing with our own death.
-    if (state_.lifecycle() != ThreadState::Lifecycle::DYING) {
-      SetStateLocked(ThreadState::Lifecycle::SUSPENDED);
-    }
-  }
-
-  LTRACE_EXIT_OBJ;
-}
-
-void ThreadDispatcher::Resuming() {
-  LTRACE_ENTRY_OBJ;
-
-  // Update the state before sending any notifications out. We want the
-  // receiver to see the new state.
-  {
-    Guard<CriticalMutex> guard{get_lock()};
-
-    // Don't resume if we are racing with our own death.
-    if (state_.lifecycle() != ThreadState::Lifecycle::DYING) {
-      SetStateLocked(ThreadState::Lifecycle::RUNNING);
-    }
-  }
-
-  LTRACE_EXIT_OBJ;
-}
-
 // low level LK entry point for the thread
 int ThreadDispatcher::StartRoutine(void* arg) {
   LTRACE_ENTRY;
@@ -468,35 +220,6 @@ int ThreadDispatcher::StartRoutine(void* arg) {
   __UNREACHABLE;
 }
 
-void ThreadDispatcher::SetStateLocked(ThreadState::Lifecycle lifecycle) {
-  AssertCanary();
-
-  LTRACEF("thread %p: state %u (%s)\n", this, static_cast<unsigned int>(lifecycle),
-          ThreadLifecycleToString(lifecycle));
-
-  DEBUG_ASSERT(get_lock()->lock().IsHeld());
-
-  state_.set(lifecycle);
-
-  switch (lifecycle) {
-    case ThreadState::Lifecycle::RUNNING:
-      UpdateStateLocked(ZX_THREAD_SUSPENDED, ZX_THREAD_RUNNING);
-      break;
-    case ThreadState::Lifecycle::SUSPENDED:
-      UpdateStateLocked(ZX_THREAD_RUNNING, ZX_THREAD_SUSPENDED);
-      break;
-    case ThreadState::Lifecycle::DEAD:
-      UpdateStateLocked(ZX_THREAD_RUNNING | ZX_THREAD_SUSPENDED, ZX_THREAD_TERMINATED);
-      break;
-    default:
-      // Nothing to do.
-      // In particular, for the DYING state we don't modify the SUSPENDED
-      // or RUNNING signals: For observer purposes they'll only be interested
-      // in the transition from {SUSPENDED,RUNNING} to DEAD.
-      break;
-  }
-}
-
 bool ThreadDispatcher::InExceptionLocked() {
   AssertCanary();
 
@@ -507,7 +230,7 @@ bool ThreadDispatcher::InExceptionLocked() {
 
 bool ThreadDispatcher::SuspendedOrInExceptionLocked() {
   AssertCanary();
-  return state_.lifecycle() == ThreadState::Lifecycle::SUSPENDED || InExceptionLocked();
+  return lifecycle_locked() == ThreadState::Lifecycle::SUSPENDED || InExceptionLocked();
 }
 
 static zx_thread_state_t ThreadLifecycleToState(ThreadState::Lifecycle lifecycle,
@@ -564,7 +287,7 @@ zx_info_thread_t ThreadDispatcher::GetInfoForUserspace() const {
 
   Guard<CriticalMutex> guard{get_lock()};
   info.state =
-      ThreadLifecycleToState(state_.lifecycle(), blocked_reason_.load(ktl::memory_order_acquire));
+      ThreadLifecycleToState(lifecycle_locked(), blocked_reason_.load(ktl::memory_order_acquire));
   info.wait_exception_channel_type = exceptionate_type_;
 
   // If we've exited then return with the lifecycle and exception type, and keep
@@ -672,7 +395,7 @@ zx_status_t ThreadDispatcher::HandleException(Exceptionate* exceptionate,
     // This state is needed by GetInfoForUserspace().
     exception_ = exception;
     exceptionate_type_ = exceptionate->type();
-    state_.set(ThreadState::Exception::UNPROCESSED);
+    SetExceptionStateLocked(ThreadState::Exception::UNPROCESSED);
   }
 
   LTRACEF("blocking on exception response\n");
@@ -697,7 +420,7 @@ zx_status_t ThreadDispatcher::HandleException(Exceptionate* exceptionate,
   }
 
   exception_.reset();
-  state_.set(ThreadState::Exception::IDLE);
+  SetExceptionStateLocked(ThreadState::Exception::IDLE);
 
   return status;
 }
@@ -846,9 +569,9 @@ zx_status_t ThreadDispatcher::WriteState(zx_thread_state_topic_t state_kind,
 
 zx_status_t ThreadDispatcher::SetBaseProfile(const SchedulerState::BaseProfile& profile) {
   Guard<CriticalMutex> guard{get_lock()};
-  if ((state_.lifecycle() == ThreadState::Lifecycle::INITIAL) ||
-      (state_.lifecycle() == ThreadState::Lifecycle::DYING) ||
-      (state_.lifecycle() == ThreadState::Lifecycle::DEAD)) {
+  if ((lifecycle_locked() == ThreadState::Lifecycle::INITIAL) ||
+      (lifecycle_locked() == ThreadState::Lifecycle::DYING) ||
+      (lifecycle_locked() == ThreadState::Lifecycle::DEAD)) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -859,9 +582,9 @@ zx_status_t ThreadDispatcher::SetBaseProfile(const SchedulerState::BaseProfile& 
 
 zx_status_t ThreadDispatcher::SetSoftAffinity(cpu_mask_t mask) {
   Guard<CriticalMutex> guard{get_lock()};
-  if ((state_.lifecycle() == ThreadState::Lifecycle::INITIAL) ||
-      (state_.lifecycle() == ThreadState::Lifecycle::DYING) ||
-      (state_.lifecycle() == ThreadState::Lifecycle::DEAD)) {
+  if ((lifecycle_locked() == ThreadState::Lifecycle::INITIAL) ||
+      (lifecycle_locked() == ThreadState::Lifecycle::DYING) ||
+      (lifecycle_locked() == ThreadState::Lifecycle::DEAD)) {
     return ZX_ERR_BAD_STATE;
   }
   // The mask was already validated by the Profile dispatcher.
@@ -869,6 +592,12 @@ zx_status_t ThreadDispatcher::SetSoftAffinity(cpu_mask_t mask) {
   return ZX_OK;
 }
 
+// TRANSITIONAL. Duplicates lifecycle_to_string() in thread_state.rs. Two callers remain, both
+// in this file: the DEBUG_ASSERT_MSG in ~ThreadDispatcher() and the LTRACEF in Suspend(). Once
+// both move to Rust this definition and its declaration in thread_state.h are deleted. Do not
+// add callers.
+//
+// LINT.IfChange(lifecycle_to_string)
 const char* ThreadLifecycleToString(ThreadState::Lifecycle lifecycle) {
   switch (lifecycle) {
     case ThreadState::Lifecycle::INITIAL:
@@ -884,5 +613,9 @@ const char* ThreadLifecycleToString(ThreadState::Lifecycle lifecycle) {
     case ThreadState::Lifecycle::DEAD:
       return "dead";
   }
+  // Fallback for an out-of-range discriminant. lifecycle_locked() range-checks the value it
+  // returns with a DEBUG_ASSERT, which is compiled out at LK_DEBUGLEVEL <= 1; in those builds an
+  // invalid value matches no case above and must still yield a well-formed string.
   return "unknown";
 }
+// LINT.ThenChange(//zircon/kernel/object/thread_state.rs:lifecycle_to_string)

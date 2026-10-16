@@ -12,6 +12,7 @@
 #include <zircon/types.h>
 
 #include <arch/regs.h>
+#include <kernel/auto_preempt_disabler.h>
 #include <kernel/deadline.h>
 #include <kernel/ffi.h>
 #include <kernel/mp.h>
@@ -191,6 +192,30 @@ FFI_ALWAYS_INLINE zx_status_t cpp_thread_suspend(Thread* thread) {
   DEBUG_ASSERT(thread != nullptr);
   return thread->Suspend();
 }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_thread_restricted_kick(Thread* thread) {
+  DEBUG_ASSERT(thread != nullptr);
+  return thread->RestrictedKick();
+}
+
+// Starts memory stall accounting for |thread| by moving it from the IgnoredKernelOnly stall
+// state into Inactive. Preemption is disabled here, inside the shim, so that Clang can verify
+// the preempt_disabled_token requirement of the accessors.
+//
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_set_memory_stall_state_inactive(Thread* thread) {
+  DEBUG_ASSERT(thread != nullptr);
+  AnnotatedAutoPreemptDisabler preempt_disabler;
+  DEBUG_ASSERT(thread->memory_stall_state() == ThreadStallState::IgnoredKernelOnly);
+  thread->set_memory_stall_state(ThreadStallState::Inactive);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_current_exit(int retcode) { Thread::Current::Exit(retcode); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_current_kill() { Thread::Current::Kill(); }
 
 bool cpp_thread_is_blocked(Thread* thread) {
   DEBUG_ASSERT(thread != nullptr);

@@ -476,12 +476,12 @@ impl ProcessDispatcher {
     }
 
     /// Attaches the normal address space of this process to `core_thread`.
-    pub fn attach_normal_aspace_to_thread(&self, core_thread: ThreadPtr) -> Result<(), Status> {
+    pub fn attach_normal_aspace_to_thread(&self, core_thread: ThreadPtr) {
         // SAFETY: `self` is a valid `ProcessDispatcher`, and `core_thread` upholds the
         // `ThreadPtr` invariant that it points to a live kernel thread.
         let status =
             unsafe { cpp_process_attach_aspace_to_thread(self.as_ffi(), core_thread.as_raw()) };
-        Status::ok(status)
+        debug_assert_eq!(status, zx_types::ZX_OK);
     }
 
     /// Returns the parent job koid.

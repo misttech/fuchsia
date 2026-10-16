@@ -5,8 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::futex_context_ffi::{
-    cpp_thread_dispatcher_blocking_futex_id, cpp_thread_dispatcher_core_thread_locked,
-    cpp_thread_dispatcher_is_dying_or_dead_locked, cpp_thread_dispatcher_observe_core_thread,
+    cpp_thread_dispatcher_blocking_futex_id, cpp_thread_dispatcher_observe_core_thread,
     cpp_thread_dispatcher_set_blocking_futex_id,
 };
 use super::handle::HandleValue;
@@ -172,57 +171,6 @@ impl ThreadDispatcher {
         // SAFETY: `thread` is valid per caller contract; `user_thread_raw` returns a valid
         // `ThreadDispatcher*` or null.
         unsafe { thread.user_thread_raw().as_ref() }
-    }
-
-    /// Returns true if the thread is dying or dead. Same as [`Self::is_dying_or_dead`], but
-    /// requires the caller to already hold this thread's dispatcher lock, as proven by `_token`.
-    ///
-    /// Threads never return to a previous state from dying/dead so once this is true it will
-    /// never flip back to false.
-    ///
-    /// # Safety
-    ///
-    /// - `_token` must have been obtained from a guard on **this particular instance's**
-    ///   dispatcher lock (e.g. [`NullableThreadDispatcherGuard::token`] for a guard over `self`).
-    ///   A [`LockToken`] only identifies a lock class, not a lock instance, so the type system
-    ///   cannot enforce this.
-    /// - Holding the lock is necessary but not sufficient: the caller must also be following
-    ///   `FutexContext`'s synchronization protocol (holding the owning futex context's state lock
-    ///   and pending-operation references for the threads involved).
-    #[inline]
-    unsafe fn is_dying_or_dead_locked(
-        &self,
-        _token: &LockToken<'_, ThreadDispatcherLockClass>,
-    ) -> bool {
-        // SAFETY: `self` is a valid `ThreadDispatcher` whose dispatcher lock is held, per the
-        // caller contract.
-        unsafe { cpp_thread_dispatcher_is_dying_or_dead_locked(self as *const _) }
-    }
-
-    /// Returns this thread's underlying kernel [`ThreadPtr`] (`core_thread_`), the thread as
-    /// understood by the lower kernel. This is `None` once the thread has transitioned to DEAD.
-    ///
-    /// Requires the caller to hold this thread's dispatcher lock, as proven by `_token`.
-    ///
-    /// # Safety
-    ///
-    /// - `_token` must have been obtained from a guard on **this particular instance's**
-    ///   dispatcher lock (e.g. [`NullableThreadDispatcherGuard::token`] for a guard over `self`).
-    ///   A [`LockToken`] only identifies a lock class, not a lock instance, so the type system
-    ///   cannot enforce this.
-    /// - Holding the lock is necessary but not sufficient: the returned [`ThreadPtr`] is only
-    ///   valid while the dispatcher lock is held, and the caller must also be following
-    ///   `FutexContext`'s synchronization protocol (holding the owning futex context's state lock
-    ///   and pending-operation references for the threads involved, and obeying its chain-lock
-    ///   ordering before touching the `Thread`).
-    #[inline]
-    unsafe fn core_thread_locked(
-        &self,
-        _token: &LockToken<'_, ThreadDispatcherLockClass>,
-    ) -> Option<ThreadPtr> {
-        // SAFETY: `self` is a valid `ThreadDispatcher` whose dispatcher lock is held, per the
-        // caller contract.
-        unsafe { ThreadPtr::from_raw(cpp_thread_dispatcher_core_thread_locked(self as *const _)) }
     }
 
     /// Returns the ID of the futex this thread is currently waiting on (`blocking_futex_id_`), or
@@ -1073,13 +1021,11 @@ impl FutexContext {
                     let owner_token = futex_owner_guard
                         .token()
                         .expect("futex_owner_guard must hold the futex owner's dispatcher lock");
-                    // SAFETY: `owner_token` was obtained from `futex_owner_guard`, which was
-                    // created over `futex_owner_thread` (i.e. `owner_thread`) and holds that same
-                    // thread's dispatcher lock. We also hold the futex state lock and are
-                    // following the `FutexContext` protocol.
-                    if !unsafe { owner_thread.is_dying_or_dead_locked(&owner_token) } {
-                        // SAFETY: As above, `owner_token` comes from the guard holding
-                        // `owner_thread`'s own dispatcher lock.
+                    if !owner_thread.is_dying_or_dead_locked(&owner_token) {
+                        // SAFETY: `owner_token` was obtained from `futex_owner_guard`, which was
+                        // created over `futex_owner_thread` (i.e. `owner_thread`) and holds that
+                        // same thread's dispatcher lock. We also hold the futex state lock and
+                        // are following the `FutexContext` protocol.
                         new_owner_observation =
                             unsafe { owner_thread.observe_core_thread_locked(&owner_token) };
                     }
@@ -1526,14 +1472,13 @@ impl FutexContext {
                 let owner_token = requeue_owner_guard
                     .token()
                     .expect("requeue_owner_guard must hold the requeue owner's dispatcher lock");
-                // SAFETY: `owner_token` was obtained from `requeue_owner_guard`, which was created
-                // over `requeue_owner_thread` (i.e. `owner_thread`) and holds that same thread's
-                // dispatcher lock. We also hold both futex state locks and are following the
-                // `FutexContext` protocol.
-                if !unsafe { owner_thread.is_dying_or_dead_locked(&owner_token) } {
-                    // SAFETY: As above, `owner_token` comes from the guard holding
-                    // `owner_thread`'s own dispatcher lock.
-                    new_requeue_owner = unsafe { owner_thread.core_thread_locked(&owner_token) };
+                // `requeue_owner_guard` holds `owner_thread`'s own dispatcher lock, so
+                // `owner_token` proves the lock the lifecycle and `core_thread_` are guarded by.
+                // Checking the lifecycle first also guarantees `core_thread_` is still set: it is
+                // only cleared in the same critical section that moves the thread to
+                // `Lifecycle::Dead`.
+                if !owner_thread.is_dying_or_dead_locked(&owner_token) {
+                    new_requeue_owner = Some(owner_thread.core_thread_locked(&owner_token));
                 }
             }
 
