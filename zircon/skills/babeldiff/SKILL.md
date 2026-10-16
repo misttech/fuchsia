@@ -109,23 +109,25 @@ When the user specifies a Gerrit URL (such as
 `https://fuchsia-review.googlesource.com/c/fuchsia/+/1796398/17`) or a numeric
 CL ID (`1796398`):
 
-1.  **Extract the CL number** (and optional patchset number) from the URL or ID.
-2.  **Fetch the CL ref into `FETCH_HEAD`** without modifying the working tree or
-    current branch. If no patchset was specified, query `git ls-remote` to find
-    the latest numeric patchset ref:
+Pass the CL number, patchset, `fxr/` prefix, or review URL directly to
+`babeldiff cl` (or `--cl`):
 
 ```bash
-CL=1796398
-# Find the highest patchset ref (or use refs/changes/*/${CL}/${PATCHSET} if specified):
-REF=$(git ls-remote origin "refs/changes/*/${CL}/*" \
-  | awk -F'[\t/]' '$NF ~ /^[0-9]+$/ {print $NF, $0}' \
-  | sort -n | tail -1 | awk '{print $3}')
-echo "Fetching $REF"
-git fetch origin "$REF"
+# Compare the latest patchset of a CL:
+./zircon/skills/babeldiff/tool/target/release/babeldiff cl 1796398
 
-# Analyze FETCH_HEAD against its exact parent (FETCH_HEAD^):
-./zircon/skills/babeldiff/tool/target/release/babeldiff git FETCH_HEAD
+# Or with a specific patchset, fxr/ prefix, or URL:
+./zircon/skills/babeldiff/tool/target/release/babeldiff cl 1796398/17
+./zircon/skills/babeldiff/tool/target/release/babeldiff cl fxr/1796398
+./zircon/skills/babeldiff/tool/target/release/babeldiff cl https://fuchsia-review.googlesource.com/c/fuchsia/+/1796398/17
+
+# Using the top-level flag:
+./zircon/skills/babeldiff/tool/target/release/babeldiff --cl 1796398
 ```
+
+`babeldiff` automatically downloads the patch from Gerrit with full file
+context, resolves unchanged companion headers and C++ sources from the local
+repository, and runs the correspondence check.
 
 > [!IMPORTANT]
 > **Exit Status Behavior**: `babeldiff` exits with status **`0`** when no issues
@@ -149,9 +151,10 @@ When analyzing a change as an agent, run `babeldiff` in two stages:
 1.  **Stage 1: High-Level Summary & Issue Inventory (`--summary
     --issues-only`)**:
    ```bash
-   ./zircon/skills/babeldiff/tool/target/release/babeldiff git FETCH_HEAD --summary --issues-only
+   ./zircon/skills/babeldiff/tool/target/release/babeldiff cl ${CL} --summary --issues-only
    ```
-   This prints:
+   (Or `./zircon/skills/babeldiff/tool/target/release/babeldiff git HEAD
+   --summary --issues-only` for local commits.) This prints:
    - Total pairs, issue counts by kind (`control-flow`, `call`, `comment`,
      `error-path`, `lock`, `order`, `assert`, `trace`, `atomic`, `value`,
      `pairing`, `unsafe`), and rubric lint counts,
@@ -166,7 +169,7 @@ When analyzing a change as an agent, run `babeldiff` in two stages:
 2.  **Stage 2: Untruncated Stacked Alignment (`--layout stacked --issues-only -U
     3`)**:
    ```bash
-   ./zircon/skills/babeldiff/tool/target/release/babeldiff git FETCH_HEAD --layout stacked --issues-only -U 3
+   ./zircon/skills/babeldiff/tool/target/release/babeldiff cl ${CL} --layout stacked --issues-only -U 3
    ```
    `--layout stacked` prints each C++ line directly above the Rust line it
    aligns with without horizontal width truncation, making it ideal for LLM
@@ -176,7 +179,7 @@ When analyzing a change as an agent, run `babeldiff` in two stages:
 3.  **Stage 3: Structured JSON (`--format json --issues-only`)** *(optional for
     programmatic processing)*:
    ```bash
-   ./zircon/skills/babeldiff/tool/target/release/babeldiff git FETCH_HEAD --format json --issues-only
+   ./zircon/skills/babeldiff/tool/target/release/babeldiff cl ${CL} --format json --issues-only
    ```
    Emits a single JSON object containing `summary`, `pairs` (with `link`,
    `rationale`, `score`, `overrides`, and `findings` array containing `id`,
@@ -229,7 +232,7 @@ If your harness supports user-facing HTML artifacts
 3.  Then overwrite `<artifact_dir>/babeldiff_<cl>.html` directly via
     `run_command`:
    ```bash
-   ./zircon/skills/babeldiff/tool/target/release/babeldiff git FETCH_HEAD \
+   ./zircon/skills/babeldiff/tool/target/release/babeldiff cl ${CL} \
      --format html -o "<artifact_dir>/babeldiff_${CL}.html" || [ $? -eq 1 ]
    ```
 

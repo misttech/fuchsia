@@ -42,6 +42,13 @@ compiled in.
 babeldiff git HEAD
 babeldiff git origin/main..my-branch
 
+# A Fuchsia Gerrit change (CL number, patchset, fxr/ prefix, or review URL).
+# Downloads the patch from fuchsia-review.googlesource.com with full context.
+babeldiff cl 1885120
+babeldiff cl 1885120/5
+babeldiff cl fxr/1885120
+babeldiff --cl 1885120
+
 # A patch file (git format-patch, git show, or git diff output), or stdin.
 babeldiff patch change.patch
 git show HEAD | babeldiff patch
@@ -58,6 +65,7 @@ Useful options:
 
 | Option | Effect |
 | --- | --- |
+| `--cl <CL>`, `--review`, `--gerrit` | Download and compare a Fuchsia Gerrit change (e.g. `1885120`, `1885120/5`, `fxr/1885120`, or URL). |
 | `--format html -o report.html` | Write a self-contained HTML page for reviewing in a browser (see below). |
 | `--layout stacked` | Print each C++ unit above the Rust it aligns with, untruncated. Better for agents and narrow terminals. |
 | `--format json` | Machine-readable findings for agents (see below). |

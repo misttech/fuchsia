@@ -1,13 +1,11 @@
 //! Reads changes and file contents from a git repository.
 
-use crate::analyze::{name_similarity, CppFinder};
+use crate::analyze::{CppFinder, name_similarity};
 use crate::cpp::DeclComments;
 use crate::extract::{self, attach_decl_comments};
 use crate::input::{ChangeSet, Version};
-use crate::layout;
 use crate::model::{Function, Lang};
-use crate::normalize;
-use crate::patch;
+use crate::{layout, normalize, patch};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Command;
@@ -57,16 +55,8 @@ impl Git {
     pub fn range(spec: &str) -> (String, String) {
         match spec.split_once("..") {
             Some((a, b)) => (
-                if a.is_empty() {
-                    "HEAD".into()
-                } else {
-                    a.into()
-                },
-                if b.is_empty() {
-                    "HEAD".into()
-                } else {
-                    b.trim_start_matches('.').into()
-                },
+                if a.is_empty() { "HEAD".into() } else { a.into() },
+                if b.is_empty() { "HEAD".into() } else { b.trim_start_matches('.').into() },
             ),
             None => (format!("{spec}^"), spec.to_string()),
         }
@@ -74,15 +64,7 @@ impl Git {
 
     /// The files changed between two revisions, with full contents.
     pub fn changeset(&self, base: &str, head: &str) -> Result<ChangeSet, String> {
-        let diff = self.run(&[
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "-U0",
-            "-M",
-            base,
-            head,
-        ])?;
+        let diff = self.run(&["diff", "--no-color", "--no-ext-diff", "-U0", "-M", base, head])?;
         let mut cs = ChangeSet::default();
         for f in patch::parse(&diff) {
             let Some(lang) = Lang::from_path(f.path()) else {
@@ -101,11 +83,7 @@ impl Git {
             }
             if let Some(p) = &f.new_path {
                 if let Some(text) = self.show(head, p) {
-                    let v = Version {
-                        path: p.clone(),
-                        text,
-                        changed: Some(f.added()),
-                    };
+                    let v = Version { path: p.clone(), text, changed: Some(f.added()) };
                     match lang {
                         Lang::Cpp => cs.cpp_new.push(v),
                         Lang::Rust => cs.rust_new.push(v),
@@ -113,8 +91,13 @@ impl Git {
                 }
             }
         }
-        // Load unchanged companion headers included by modified C++ source
-        // files so `extern-signature` can verify `cpp_*` header prototypes.
+        self.load_companion_headers(&mut cs, head);
+        Ok(cs)
+    }
+
+    /// Loads unchanged companion headers included by modified C++ source
+    /// files so `extern-signature` can verify `cpp_*` header prototypes.
+    pub fn load_companion_headers(&self, cs: &mut ChangeSet, rev: &str) {
         let include_re = regex::Regex::new(r#"(?m)^\s*#\s*include\s*[<"]([^>"]+)[>"]"#).unwrap();
         let mut extra_headers = Vec::new();
         for v in &cs.cpp_new {
@@ -136,7 +119,7 @@ impl Git {
                         {
                             continue;
                         }
-                        if let Some(text) = self.show(head, &cand) {
+                        if let Some(text) = self.show(rev, &cand) {
                             extra_headers.push(Version {
                                 path: cand,
                                 text,
@@ -149,7 +132,6 @@ impl Git {
             }
         }
         cs.cpp_new.extend(extra_headers);
-        Ok(cs)
     }
 }
 
@@ -168,13 +150,7 @@ pub struct RepoFinder {
 
 impl RepoFinder {
     pub fn new(git: Git, rev: impl Into<String>) -> RepoFinder {
-        RepoFinder {
-            git,
-            rev: rev.into(),
-            files: None,
-            parsed: HashMap::new(),
-            max_files: 24,
-        }
+        RepoFinder { git, rev: rev.into(), files: None, parsed: HashMap::new(), max_files: 24 }
     }
 
     fn cpp_files(&mut self) -> &[String] {
@@ -233,12 +209,8 @@ impl CppFinder for RepoFinder {
             return Vec::new();
         }
         let want = stem(&rust.path);
-        let mut paths: Vec<String> = self
-            .cpp_files()
-            .iter()
-            .filter(|p| stem(p) == want)
-            .cloned()
-            .collect();
+        let mut paths: Vec<String> =
+            self.cpp_files().iter().filter(|p| stem(p) == want).cloned().collect();
         let camel_name = camel(&rust.base);
         let mut args = vec!["grep".to_string(), "-l".into(), "-w".into(), "-F".into()];
         for n in [camel_name.as_str(), rust.base.as_str()] {
@@ -252,11 +224,7 @@ impl CppFinder for RepoFinder {
             args.push("--".into());
             // Search the Rust file's top-level directory (e.g. `zircon/`),
             // which keeps grep fast in a tree the size of Fuchsia's.
-            let top = rust
-                .path
-                .split_once('/')
-                .map(|(t, _)| format!("{t}/"))
-                .unwrap_or_default();
+            let top = rust.path.split_once('/').map(|(t, _)| format!("{t}/")).unwrap_or_default();
             for ext in ["cc", "cpp", "h", "hpp"] {
                 args.push(format!(":(glob){top}**/*.{ext}"));
             }
@@ -285,11 +253,7 @@ impl CppFinder for RepoFinder {
             for (k, v) in ds {
                 decls.entry(k.clone()).or_insert_with(|| v.clone());
             }
-            out.extend(
-                fs.iter()
-                    .filter(|f| name_similarity(f, rust) >= 0.6)
-                    .cloned(),
-            );
+            out.extend(fs.iter().filter(|f| name_similarity(f, rust) >= 0.6).cloned());
         }
         attach_decl_comments(&mut out, &decls, &Default::default());
         out

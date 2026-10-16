@@ -17,7 +17,15 @@ use std::process::ExitCode;
 #[command(version, about)]
 struct Cli {
     #[command(subcommand)]
-    command: Cmd,
+    command: Option<Cmd>,
+
+    /// Download the latest patchset of a change from fuchsia-review.googlesource.com and compare it.
+    #[arg(long = "cl", visible_aliases = ["review", "gerrit"], value_name = "CL", global = true)]
+    cl: Option<String>,
+
+    /// Git repository directory (defaults to "." for `git` and `cl` modes).
+    #[arg(short = 'C', long, value_name = "DIR", global = true)]
+    repo: Option<PathBuf>,
 
     /// Output format: plain text, a self-contained HTML page for people, or
     /// JSON for agents and scripts.
@@ -69,20 +77,19 @@ enum Cmd {
     Git {
         #[arg(default_value = "HEAD")]
         rev: String,
-        /// Repository directory.
-        #[arg(short = 'C', long, default_value = ".")]
-        repo: PathBuf,
     },
     /// Compare a unified diff or `git format-patch` file ("-" or omitted for stdin).
     Patch {
         file: Option<PathBuf>,
-        /// A git repository to read full file contents from (by the blob ids
-        /// in the patch) and to search for unchanged C++.
-        #[arg(short = 'C', long)]
-        repo: Option<PathBuf>,
         /// Revision to search for unchanged C++ (the patch's parent).
         #[arg(long, default_value = "HEAD")]
         base: String,
+    },
+    /// Download the latest patchset of a change from fuchsia-review.googlesource.com and compare it.
+    #[command(visible_aliases = ["review", "gerrit"])]
+    Cl {
+        /// Fuchsia review number (e.g. 1885120, 1885120/5, fxr/1885120, or a Gerrit URL).
+        cl: String,
     },
     /// Compare every function in the given C++ and Rust files.
     Files {
@@ -121,23 +128,47 @@ fn main() -> ExitCode {
     }
 }
 
+enum Op {
+    Git { rev: String, repo: PathBuf },
+    Patch { file: Option<PathBuf>, repo: Option<PathBuf>, base: String },
+    Cl { cl: String, repo: PathBuf },
+    Files { files: Vec<PathBuf> },
+}
+
 fn run(cli: &Cli) -> Result<usize, String> {
     let mut forced = Vec::new();
     for p in &cli.pairs {
-        let (c, r) = p
-            .split_once('=')
-            .ok_or_else(|| format!("--pair expects CPP=RUST, got {p:?}"))?;
+        let (c, r) =
+            p.split_once('=').ok_or_else(|| format!("--pair expects CPP=RUST, got {p:?}"))?;
         forced.push((c.to_string(), r.to_string()));
     }
-    let (cs, mut finder, title): (ChangeSet, Box<dyn CppFinder>, String) = match &cli.command {
-        Cmd::Git { rev, repo } => {
+    let repo_or_dot = || cli.repo.clone().unwrap_or_else(|| PathBuf::from("."));
+    let op = if let Some(cl) = &cli.cl {
+        Op::Cl { cl: cl.clone(), repo: repo_or_dot() }
+    } else {
+        match &cli.command {
+            Some(Cmd::Cl { cl }) => Op::Cl { cl: cl.clone(), repo: repo_or_dot() },
+            Some(Cmd::Git { rev }) => Op::Git { rev: rev.clone(), repo: repo_or_dot() },
+            Some(Cmd::Patch { file, base }) => {
+                Op::Patch { file: file.clone(), repo: cli.repo.clone(), base: base.clone() }
+            }
+            Some(Cmd::Files { files }) => Op::Files { files: files.clone() },
+            None => {
+                return Err(
+                    "a subcommand (git, patch, cl, files) or --cl <CL> is required".to_string()
+                );
+            }
+        }
+    };
+    let (cs, mut finder, title): (ChangeSet, Box<dyn CppFinder>, String) = match op {
+        Op::Git { rev, repo } => {
             let git = Git::new(repo);
-            let (base, head) = Git::range(rev);
+            let (base, head) = Git::range(&rev);
             let cs = git.changeset(&base, &head)?;
             let title = git
                 .run(&["log", "-1", "--format=%h %s", &head])
                 .map(|s| s.trim().to_string())
-                .unwrap_or_else(|_| rev.clone());
+                .unwrap_or(rev);
             let finder: Box<dyn CppFinder> = if cli.no_search {
                 Box::new(NoFinder)
             } else {
@@ -145,7 +176,7 @@ fn run(cli: &Cli) -> Result<usize, String> {
             };
             (cs, finder, title)
         }
-        Cmd::Patch { file, repo, base } => {
+        Op::Patch { file, repo, base } => {
             let text = match file.as_deref() {
                 None => read_stdin()?,
                 Some(p) if p.as_os_str() == "-" => read_stdin()?,
@@ -164,23 +195,64 @@ fn run(cli: &Cli) -> Result<usize, String> {
                 None => ChangeSet::from_patch(&files, &mut |_| None),
             };
             let finder: Box<dyn CppFinder> = match git {
-                Some(g) if !cli.no_search => Box::new(RepoFinder::new(g, base.clone())),
+                Some(g) if !cli.no_search => Box::new(RepoFinder::new(g, base)),
                 _ => Box::new(NoFinder),
             };
             (cs, finder, title)
         }
-        Cmd::Files { files } => {
+        Op::Cl { cl, repo } => {
+            let (change_num, patchset) = babeldiff::cl::parse_cl_spec(&cl)?;
+            let url = babeldiff::cl::gerrit_patch_url(&change_num, patchset.as_deref());
+            let text = babeldiff::cl::download_patch(&url)?;
+            let files = babeldiff::patch::parse(&text);
+            let git = Some(Git::new(&repo)).filter(Git::is_repo);
+            let mut cs = match &git {
+                Some(g) => ChangeSet::from_patch(&files, &mut |id| g.blob(id)),
+                None => ChangeSet::from_patch(&files, &mut |_| None),
+            };
+            let finder: Box<dyn CppFinder> = match git {
+                Some(g) => {
+                    let base = match babeldiff::cl::patch_commit_sha(&text) {
+                        Some(sha)
+                            if g.run(&[
+                                "rev-parse",
+                                "--verify",
+                                "--quiet",
+                                &format!("{sha}^^{{commit}}"),
+                            ])
+                            .is_ok() =>
+                        {
+                            format!("{sha}^")
+                        }
+                        _ => "HEAD".to_string(),
+                    };
+                    g.load_companion_headers(&mut cs, &base);
+                    if cli.no_search {
+                        Box::new(NoFinder)
+                    } else {
+                        Box::new(RepoFinder::new(g, base))
+                    }
+                }
+                None => Box::new(NoFinder),
+            };
+            let label = match &patchset {
+                Some(ps) => format!("{change_num}/{ps}"),
+                None => change_num,
+            };
+            let title = match patch_title(&text) {
+                Some(subj) => format!("fxr/{label}: {subj}"),
+                None => format!("fxr/{label}"),
+            };
+            (cs, finder, title)
+        }
+        Op::Files { files } => {
             let mut loaded = Vec::new();
-            for p in files {
+            for p in &files {
                 let text =
                     std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?;
                 loaded.push((p.display().to_string(), text));
             }
-            let title = loaded
-                .iter()
-                .map(|(p, _)| p.as_str())
-                .collect::<Vec<_>>()
-                .join(" ");
+            let title = loaded.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>().join(" ");
             (ChangeSet::from_files(&loaded), Box::new(NoFinder), title)
         }
     };
@@ -238,8 +310,6 @@ fn patch_title(text: &str) -> Option<String> {
 
 fn read_stdin() -> Result<String, String> {
     let mut s = String::new();
-    std::io::stdin()
-        .read_to_string(&mut s)
-        .map_err(|e| format!("reading stdin: {e}"))?;
+    std::io::stdin().read_to_string(&mut s).map_err(|e| format!("reading stdin: {e}"))?;
     Ok(s)
 }

@@ -31,6 +31,7 @@
 pub mod align;
 pub mod analyze;
 pub mod check;
+pub mod cl;
 pub mod cpp;
 pub mod extract;
 pub mod git;
@@ -76,8 +77,6 @@ pub fn run_with(
     let (placement, lints) = placement::placement(&report.pairs);
     report.placement = placement;
     report.lints.extend(lints);
-    report
-        .lints
-        .sort_by(|a, b| (&a.path, a.line, a.kind).cmp(&(&b.path, b.line, b.kind)));
+    report.lints.sort_by(|a, b| (&a.path, a.line, a.kind).cmp(&(&b.path, b.line, b.kind)));
     report
 }

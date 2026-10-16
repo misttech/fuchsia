@@ -1251,3 +1251,94 @@ impl Lamp {
     let dropped_doc = "pub fn lamp_level(lamp: &Lamp) -> u32 {\n    lamp.level()\n}\n";
     assert_eq!(only_issues(cpp_with_doc, dropped_doc), ["comment only in C++"]);
 }
+
+#[test]
+fn parse_cl_formats_in_golden() {
+    assert_eq!(babeldiff::cl::parse_cl_spec("1885120"), Ok(("1885120".into(), None)));
+    assert_eq!(babeldiff::cl::parse_cl_spec("1885120/5"), Ok(("1885120".into(), Some("5".into()))));
+    assert_eq!(babeldiff::cl::parse_cl_spec("fxr/1885120"), Ok(("1885120".into(), None)));
+    assert_eq!(
+        babeldiff::cl::parse_cl_spec("fxr/1885120/5"),
+        Ok(("1885120".into(), Some("5".into())))
+    );
+    assert_eq!(
+        babeldiff::cl::parse_cl_spec("https://fuchsia-review.googlesource.com/c/fuchsia/+/1885120"),
+        Ok(("1885120".into(), None))
+    );
+    assert_eq!(
+        babeldiff::cl::parse_cl_spec(
+            "https://fuchsia-review.googlesource.com/c/fuchsia/+/1885120/5"
+        ),
+        Ok(("1885120".into(), Some("5".into())))
+    );
+    assert_eq!(
+        babeldiff::cl::parse_cl_spec(
+            "https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1885120/5"
+        ),
+        Ok(("1885120".into(), Some("5".into())))
+    );
+    assert!(babeldiff::cl::parse_cl_spec("").is_err());
+    assert!(babeldiff::cl::parse_cl_spec("not-a-cl").is_err());
+    assert!(babeldiff::cl::parse_cl_spec("1885120/bad").is_err());
+}
+
+#[test]
+fn cli_requires_subcommand_or_cl() {
+    let bin = env!("CARGO_BIN_EXE_babeldiff");
+    let out = Command::new(bin).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("a subcommand (git, patch, cl, files) or --cl <CL> is required"));
+}
+
+#[test]
+fn cli_cl_subcommand_and_flag() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let patch_content = std::fs::read_to_string(fixture("beacon/beacon.patch")).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let server_patch = patch_content.clone();
+    std::thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut stream, _) = match listener.accept() {
+                Ok(conn) => conn,
+                Err(_) => break,
+            };
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                server_patch.len(),
+                server_patch
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+
+    let bin = env!("CARGO_BIN_EXE_babeldiff");
+    let base_url = format!("http://127.0.0.1:{port}");
+
+    // 1. Test `babeldiff cl 1885120/1`
+    let out1 = Command::new(bin)
+        .env("BABELDIFF_GERRIT_URL", &base_url)
+        .args(["cl", "1885120/1", "--summary"])
+        .output()
+        .unwrap();
+    assert_eq!(out1.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out1.stderr));
+    let stdout1 = String::from_utf8_lossy(&out1.stdout);
+    assert!(stdout1.contains("babeldiff: 7 pairs, 0 issues"));
+
+    // 2. Test `babeldiff --cl 1885120/1`
+    let out2 = Command::new(bin)
+        .env("BABELDIFF_GERRIT_URL", &base_url)
+        .args(["--cl", "1885120/1", "--summary"])
+        .output()
+        .unwrap();
+    assert_eq!(out2.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out2.stderr));
+    let stdout2 = String::from_utf8_lossy(&out2.stdout);
+    assert!(stdout2.contains("babeldiff: 7 pairs, 0 issues"));
+}
