@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "profile",
+    srcs = ["src/lib.rs"],
+    crate_name = "storage_profile",
+    edition = "2024",
+    visibility = [
+        "//src/storage/fxfs/platform:__pkg__",
+        "//src/storage/fxfs/test:__pkg__",
+        "//src/storage/lib:__subpackages__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/storage/lib/ptr_slice",
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//third_party/rust_crates/vendor:arrayref",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "profile_test",
+    crate = ":profile",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "storage-profile-tests",
+    unit_tests = [":profile_test"],
+)
