@@ -126,6 +126,7 @@ impl PendingAttempt {
 
 #[derive(Debug)]
 pub struct UpdateHistory {
+    current_version: Option<Version>,
     update_attempts: VecDeque<UpdateAttempt>,
     inspectable_update_attempts: BoundedNode<inspect::Node>,
 }
@@ -155,7 +156,7 @@ impl UpdateHistory {
     /// Start a new update attempt, returns an PendingAttempt with initial information, caller
     /// should fill in additional information and pass it back to `record_update_attempt()`.
     pub async fn start_update_attempt(
-        &self,
+        &mut self,
         options: Options,
         update_url: &http::Uri,
         start_time: SystemTime,
@@ -164,14 +165,21 @@ impl UpdateHistory {
     ) -> PendingAttempt {
         // Generate a random UUID like 6fa28c38-d149-4c8b-a1fc-2cdbc714aad2.
         let attempt_id = uuid::Uuid::new_v4().to_string();
-        let source_version = Version::current(
-            self.latest_successful_target_version(),
-            data_sink,
-            boot_manager,
-            &NamespaceSystemInfo,
-            SOURCE_EPOCH_RAW,
-        )
-        .await;
+        let source_version = match &self.current_version {
+            Some(current_version) => current_version.clone(),
+            None => {
+                let current_version = Version::current(
+                    self.latest_successful_target_version(),
+                    data_sink,
+                    boot_manager,
+                    &NamespaceSystemInfo,
+                    SOURCE_EPOCH_RAW,
+                )
+                .await;
+                self.current_version = Some(current_version.clone());
+                current_version
+            }
+        };
         PendingAttempt {
             attempt_id,
             source_version,
@@ -209,6 +217,7 @@ impl UpdateHistory {
     {
         match Self::load_from(reader).await {
             Ok(update_attempts) => Self {
+                current_version: None,
                 inspectable_update_attempts: {
                     let mut bounded_node =
                         BoundedNode::from_node_and_capacity(node, MAX_UPDATE_ATTEMPTS);
@@ -228,6 +237,7 @@ impl UpdateHistory {
             Err(e) => {
                 warn!("Could not load update history: {:#}", anyhow!(e));
                 Self {
+                    current_version: None,
                     update_attempts: Default::default(),
 
                     // BoundedNode doesn't implement Default, so we need to set a default here ourselves.
@@ -354,6 +364,7 @@ mod tests {
     impl Default for UpdateHistory {
         fn default() -> UpdateHistory {
             UpdateHistory {
+                current_version: None,
                 update_attempts: Default::default(),
                 inspectable_update_attempts: default_inspectable_update_attempts(),
             }
@@ -833,7 +844,8 @@ mod tests {
         let completed_target_version =
             Version::for_hash_and_empty_paver_hashes("completed target version");
 
-        let history = UpdateHistory {
+        let mut history = UpdateHistory {
+            current_version: None,
             update_attempts: VecDeque::from(vec![
                 UpdateAttempt {
                     attempt_id: "id".to_owned(),
@@ -874,26 +886,43 @@ mod tests {
         let data_sink = paver.spawn_data_sink_service();
         let boot_manager = paver.spawn_boot_manager_service();
 
-        assert_eq!(
-            history
-                .start_update_attempt(
-                    Options {
-                        initiator: Initiator::User,
-                        allow_attach_to_existing_attempt: false,
-                        should_write_recovery: true,
-                        manifest_range: None,
-                        manifest_headers: vec![],
-                        should_commit: true,
-                    },
-                    &"fuchsia-pkg://fuchsia.test/update".parse().unwrap(),
-                    SystemTime::UNIX_EPOCH + Duration::from_nanos(42),
-                    &data_sink,
-                    &boot_manager,
-                )
-                .await
-                .source_version,
-            completed_target_version
+        let opts = Options {
+            initiator: Initiator::User,
+            allow_attach_to_existing_attempt: false,
+            should_write_recovery: true,
+            manifest_range: None,
+            manifest_headers: vec![],
+            should_commit: true,
+        };
+        let attempt = history
+            .start_update_attempt(
+                opts.clone(),
+                &"fuchsia-pkg://fuchsia.test/update".parse().unwrap(),
+                SystemTime::UNIX_EPOCH + Duration::from_nanos(42),
+                &data_sink,
+                &boot_manager,
+            )
+            .await;
+        assert_eq!(attempt.source_version, completed_target_version);
+
+        // Recording a new successful attempt in the same boot and starting another attempt should
+        // reuse the cached current_version without querying paver again.
+        let events_after_first = paver.take_events();
+        assert!(!events_after_first.is_empty());
+        history.record_update_attempt(
+            attempt.finish(Version::for_hash("newer target version"), make_reboot_state()),
         );
+        let second_attempt = history
+            .start_update_attempt(
+                opts,
+                &"fuchsia-pkg://fuchsia.test/update".parse().unwrap(),
+                SystemTime::UNIX_EPOCH + Duration::from_nanos(43),
+                &data_sink,
+                &boot_manager,
+            )
+            .await;
+        assert_eq!(second_attempt.source_version, completed_target_version);
+        assert_eq!(paver.take_events(), vec![]);
     }
 
     #[fuchsia::test]
@@ -1048,6 +1077,7 @@ mod tests {
     #[fuchsia::test]
     async fn attempts_for_only_matches_most_recent_attempts() {
         let history = UpdateHistory {
+            current_version: None,
             update_attempts: VecDeque::from(vec![
                 UpdateAttempt {
                     attempt_id: "id".to_owned(),
@@ -1108,6 +1138,7 @@ mod tests {
     #[fuchsia::test]
     async fn mismatching_source_version_attempts_history_1_attempt() {
         let history = UpdateHistory {
+            current_version: None,
             update_attempts: VecDeque::from(vec![
                 UpdateAttempt {
                     attempt_id: "id".to_owned(),
@@ -1151,6 +1182,7 @@ mod tests {
     #[fuchsia::test]
     async fn mismatching_target_version_attempts_history_1_attempt() {
         let history = UpdateHistory {
+            current_version: None,
             update_attempts: VecDeque::from(vec![
                 UpdateAttempt {
                     attempt_id: "id".to_owned(),
