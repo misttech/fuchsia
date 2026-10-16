@@ -48,6 +48,8 @@ if (is_host) {
         [ "//src/developer/ffx/plugins/inspect:ffx_inspect_tool_test_data" ]
     params = {
       num_usb_disconnects = 5
+      verify_mdns = true
+      mdns_timeout_sec = 12
 
       # Assert the link comes back at HighSpeed after every reconnect.
       expected_usb_link_speed = "high"
@@ -73,6 +75,8 @@ if (is_host) {
     ]
     params = {
       num_usb_disconnects = 100
+      verify_mdns = true
+      mdns_timeout_sec = 12
     }
     local_config_source = "UsbDisconnectTestbed.yaml"
     environments = [ iris_env ]
@@ -80,8 +84,7 @@ if (is_host) {
   }
 
   # Verifies that the device stays discoverable over mDNS across repeated
-  # physical cable replugs. A separate target so that it can soak on FYI
-  # before verify_mdns is enabled on usb_disconnect_test.
+  # physical cable replugs with a shorter disconnect window.
   python_mobly_test("usb_mdns_hotplug_test") {
     main_source = "test_usb_disconnect.py"
     libraries = [
