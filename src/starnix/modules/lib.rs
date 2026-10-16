@@ -5,6 +5,7 @@
 // Increase recursion limit because LTO causes overflow.
 #![recursion_limit = "256"]
 
+use anyhow::{Error, anyhow, bail};
 pub use starnix_consent_sync::init as consent_sync_init;
 use starnix_core::bpf::fs::BpfFs;
 use starnix_core::device::kobject::DeviceMetadata;
@@ -61,47 +62,208 @@ use starnix_modules_zram::zram_device_init;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::fs_type::FileSystemTypeFlags;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
-fn misc_device_init(kernel: &Kernel) -> Result<(), Errno> {
-    let registry = &kernel.device_registry;
-    let misc_class = registry.objects.misc_class();
-    registry.register_device(
-        kernel,
-        // TODO(https://fxbug.dev/322365477) consider making this configurable
-        "hw_random".into(),
-        DeviceMetadata::new("hwrng".into(), DeviceId::HW_RANDOM, DeviceMode::Char),
-        misc_class.clone(),
-        simple_device_ops::<DevRandom>,
-    )?;
-    registry.register_device(
-        kernel,
-        "fuse".into(),
-        DeviceMetadata::new("fuse".into(), DeviceId::FUSE, DeviceMode::Char),
-        misc_class.clone(),
-        open_fuse_device,
-    )?;
-    registry.register_device(
-        kernel,
-        "device-mapper".into(),
-        DeviceMetadata::new("mapper/control".into(), DeviceId::DEVICE_MAPPER, DeviceMode::Char),
-        misc_class.clone(),
-        create_device_mapper,
-    )?;
-    registry.register_device(
-        kernel,
-        "loop-control".into(),
-        DeviceMetadata::new("loop-control".into(), DeviceId::LOOP_CONTROL, DeviceMode::Char),
-        misc_class.clone(),
-        create_loop_control_device,
-    )?;
-    registry.register_device(
-        kernel,
-        "tun".into(),
-        DeviceMetadata::new("tun".into(), DeviceId::TUN, DeviceMode::Char),
-        misc_class,
-        simple_device_ops::<DevTun>,
-    )?;
+/// Modules that are enabled by default for all containers unless explicitly disabled via
+/// `"-<module>"` in `program.modules`.
+const DEFAULT_MODULES: &[&str] =
+    &["device_mapper", "hw_random", "loop", "power_residency", "rtc", "tun", "zram"];
+
+/// Validates that `name` is a known container module and that `args` (if `Some`) are valid for
+/// that module.
+pub fn validate_module(name: &str, args: Option<&[&str]>) -> Result<(), Error> {
+    match name {
+        "device_mapper" | "hw_random" | "loop" | "power_residency" | "rtc" | "tun" | "zram" => {
+            if let Some(args) = args
+                && !args.is_empty()
+            {
+                bail!("module '{name}' does not accept arguments: {args:?}");
+            }
+        }
+        _ => bail!("unsupported module: {name}"),
+    }
     Ok(())
+}
+
+impl Modules {
+    fn init_module(&self, name: &str, kernel: &Arc<Kernel>, args: &[&str]) -> Result<(), Error> {
+        validate_module(name, Some(args))?;
+        let registry = &kernel.device_registry;
+        match name {
+            "device_mapper" => {
+                registry.register_device(
+                    kernel,
+                    "device-mapper".into(),
+                    DeviceMetadata::new(
+                        "mapper/control".into(),
+                        DeviceId::DEVICE_MAPPER,
+                        DeviceMode::Char,
+                    ),
+                    registry.objects.misc_class(),
+                    create_device_mapper,
+                )?;
+                device_mapper_init(kernel)?;
+            }
+            "hw_random" => {
+                registry.register_device(
+                    kernel,
+                    "hw_random".into(),
+                    DeviceMetadata::new("hwrng".into(), DeviceId::HW_RANDOM, DeviceMode::Char),
+                    registry.objects.misc_class(),
+                    simple_device_ops::<DevRandom>,
+                )?;
+            }
+            "loop" => {
+                registry.register_device(
+                    kernel,
+                    "loop-control".into(),
+                    DeviceMetadata::new(
+                        "loop-control".into(),
+                        DeviceId::LOOP_CONTROL,
+                        DeviceMode::Char,
+                    ),
+                    registry.objects.misc_class(),
+                    create_loop_control_device,
+                )?;
+                loop_device_init(kernel)?;
+            }
+            "power_residency" => init_power_residency_device(kernel),
+            "rtc" => rtc_device_init(kernel)?,
+            "tun" => {
+                registry.register_device(
+                    kernel,
+                    "tun".into(),
+                    DeviceMetadata::new("tun".into(), DeviceId::TUN, DeviceMode::Char),
+                    registry.objects.misc_class(),
+                    simple_device_ops::<DevTun>,
+                )?;
+            }
+            "zram" => zram_device_init(kernel)?,
+            _ => bail!("unsupported module: {name}"),
+        }
+        Ok(())
+    }
+}
+
+/// Configuration and initialization registry for container kernel modules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Modules {
+    entries: BTreeMap<String, Option<Vec<String>>>,
+}
+
+impl Default for Modules {
+    fn default() -> Self {
+        let entries =
+            DEFAULT_MODULES.iter().map(|&module| (module.to_string(), Some(Vec::new()))).collect();
+        Self { entries }
+    }
+}
+
+impl Modules {
+    /// Parses and registers a single module specification string (`"<module> [args...]"` or
+    /// `"-<module>"`).
+    pub fn add_spec(&mut self, spec: &str) -> Result<(), Error> {
+        let mut tokens = spec.split_whitespace();
+        let name = tokens.next().ok_or_else(|| anyhow!("empty module specification"))?;
+        if let Some(disabled_module) = name.strip_prefix('-') {
+            if disabled_module.is_empty() || disabled_module.starts_with('-') {
+                bail!("invalid module specification: {spec}");
+            }
+            if tokens.next().is_some() {
+                bail!("cannot specify arguments when disabling module '{disabled_module}'");
+            }
+            self.disable(disabled_module);
+            return Ok(());
+        }
+        let mut args = Vec::new();
+        for token in tokens {
+            // Normalize `--option=value` into `["--option", "value"]` for `argh::FromArgs`.
+            if token.starts_with('-')
+                && let Some((flag, value)) = token.split_once('=')
+            {
+                args.push(flag.to_string());
+                args.push(value.to_string());
+            } else {
+                args.push(token.to_string());
+            }
+        }
+        self.add_with_args(name, args);
+        Ok(())
+    }
+
+    /// Disables `module`, preventing it from being initialized even if enabled by default or in an
+    /// included manifest shard.
+    fn disable(&mut self, module: &str) {
+        self.entries.insert(module.to_string(), None);
+    }
+
+    /// Enables `module` with no arguments, preserving any arguments or explicit disablement already
+    /// configured for `module`.
+    pub fn enable(&mut self, module: &str) {
+        self.add_with_args(module, Vec::new());
+    }
+
+    /// Enables `module` with `args` unless `module` has been explicitly disabled.
+    ///
+    /// If `args` is empty and `module` is already enabled, any existing arguments configured for
+    /// `module` are preserved so that bare `<module>` entries (for example from an included
+    /// manifest shard) do not overwrite explicit module arguments.
+    pub fn add_with_args(&mut self, module: &str, args: Vec<String>) {
+        match self.entries.get_mut(module) {
+            Some(None) => {}
+            Some(Some(existing_args)) => {
+                if !args.is_empty() {
+                    *existing_args = args;
+                }
+            }
+            None => {
+                self.entries.insert(module.to_string(), Some(args));
+            }
+        }
+    }
+
+    /// Returns whether `module` is enabled.
+    pub fn is_enabled(&self, module: &str) -> bool {
+        matches!(self.entries.get(module), Some(Some(_)))
+    }
+
+    /// Returns the normalized arguments configured for `module`, if enabled.
+    pub fn args(&self, module: &str) -> Option<&[String]> {
+        self.entries.get(module).and_then(Option::as_deref)
+    }
+
+    /// Validates all configured module names, module arguments, and cross-module constraints.
+    pub fn validate(&self) -> Result<(), Error> {
+        for (module, args) in &self.entries {
+            let arg_refs: Option<Vec<&str>> =
+                args.as_ref().map(|a| a.iter().map(String::as_str).collect());
+            validate_module(module, arg_refs.as_deref())?;
+        }
+        Ok(())
+    }
+
+    /// Records the enabled modules and their arguments under a `"modules"` child Inspect node.
+    pub fn record_inspect(&self, parent_node: &fuchsia_inspect::Node) {
+        parent_node.record_child("modules", |inspect_node| {
+            for (module, args) in &self.entries {
+                if let Some(args) = args {
+                    inspect_node.record_string(module, args.join(" "));
+                }
+            }
+        });
+    }
+
+    /// Initializes all enabled modules in `kernel`.
+    pub fn init_modules(&self, kernel: &Arc<Kernel>) -> Result<(), Error> {
+        for (module, args) in &self.entries {
+            if let Some(args) = args {
+                let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                self.init_module(module, kernel, &arg_refs)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Initializes common devices in `Kernel`.
@@ -110,14 +272,16 @@ fn misc_device_init(kernel: &Kernel) -> Result<(), Errno> {
 /// not create an initial task, so this function should be triggered after a `CurrentTask` has been
 /// initialized.
 pub fn init_common_devices(kernel: &Kernel) -> Result<(), Errno> {
-    rtc_device_init(kernel)?;
-    misc_device_init(kernel)?;
+    let registry = &kernel.device_registry;
+    registry.register_device(
+        kernel,
+        "fuse".into(),
+        DeviceMetadata::new("fuse".into(), DeviceId::FUSE, DeviceMode::Char),
+        registry.objects.misc_class(),
+        open_fuse_device,
+    )?;
     mem_device_init(kernel)?;
     tty_device_init(kernel)?;
-    loop_device_init(kernel)?;
-    device_mapper_init(kernel)?;
-    zram_device_init(kernel)?;
-    init_power_residency_device(kernel);
     Ok(())
 }
 

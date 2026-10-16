@@ -44,6 +44,7 @@ rustc_library("modules") {
   visibility = [ "//src/starnix/kernel/runner/*" ]
 
   deps = [
+    "//src/lib/diagnostics/inspect/rust",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/android_usb",
@@ -86,5 +87,6 @@ rustc_library("modules") {
     "//src/starnix/modules/tun",
     "//src/starnix/modules/wakeup_test",
     "//src/starnix/modules/zram",
+    "//third_party/rust_crates:anyhow",
   ]
 }

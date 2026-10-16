@@ -233,6 +233,23 @@ impl ContainerStartInfo {
             runtime_dir: start_info.runtime_dir,
         })
     }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(
+        features: Vec<String>,
+        modules: Vec<String>,
+        config: ContainerStructuredConfig,
+    ) -> Self {
+        Self {
+            program: ContainerProgram { features, modules, ..Default::default() },
+            config,
+            outgoing_dir: None,
+            container_namespace: ContainerNamespace::new(),
+            runtime_dir: None,
+            break_on_start: None,
+            component_instance: None,
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -255,6 +272,10 @@ pub struct ContainerProgram {
     /// The features enabled for this container.
     #[serde(default)]
     pub features: Vec<String>,
+
+    /// The modules enabled for this container.
+    #[serde(default)]
+    pub modules: Vec<String>,
 
     /// The resource limits to apply to this container.
     #[serde(default)]
@@ -626,9 +647,9 @@ async fn create_container(
             None
         }
     };
-    let mut features = parse_features(&start_info, kernel_extra_features)?;
+    let (mut features, modules) = parse_features(&start_info, kernel_extra_features)?;
 
-    log_debug!("Creating container with {:#?}", features);
+    log_debug!("Creating container with {features:#?}, {modules:#?}");
     let mut kernel_cmdline = BString::from(start_info.program.kernel_cmdline.as_bytes());
     let mut devicetree_bootreason = None;
 
@@ -761,6 +782,7 @@ async fn create_container(
     let kernel_node = node.create_child("kernel");
     kernel_node.record_int("created_at", zx::MonotonicInstant::get().into_nanos());
     features.record_inspect(&kernel_node);
+    modules.record_inspect(&kernel_node);
 
     let security_state = security::kernel_init_security(
         features.selinux.enabled,
@@ -836,10 +858,12 @@ async fn create_container(
     mount_filesystems(&system_task, start_info, &pkg_dir_proxy)
         .source_context("mounting filesystems")?;
 
-    // Run all common features that were specified in the .cml.
+    // Run all common features and modules that were specified in the .cml.
     {
         log_info!("Running container features.");
         run_container_features(&kernel, &features)?;
+        log_info!("Initializing container modules.");
+        modules.init_modules(&kernel)?;
     }
 
     log_info!("Initializing remote block devices.");

@@ -17,7 +17,7 @@ use starnix_core::vfs::FsString;
 use starnix_features::Feature;
 use starnix_logging::log_error;
 use starnix_modules::{
-    AspectRatio, EventProxyMode, Framebuffer, StartRelaysArgs, TouchPowerPolicyDevice,
+    AspectRatio, EventProxyMode, Framebuffer, Modules, StartRelaysArgs, TouchPowerPolicyDevice,
     ashmem_device_init, booted_device_init, consent_sync_init, cooling_device_init,
     fastrpc_device_init, gpu_device_init, gralloc_device_init, hvdcp_opti_init, kgsl_device_init,
     magma_device_init, nanohub_device_init, new_input_relay, nmfs_init, odpm_device_init,
@@ -323,13 +323,11 @@ impl Features {
     }
 }
 
-/// Parses all the featurse in `entries`.
-///
-/// Returns an error if parsing fails, or if an unsupported feature is present in `features`.
+/// Parses container features and modules from `start_info` and `kernel_extra_features`.
 pub fn parse_features(
     start_info: &ContainerStartInfo,
     kernel_extra_features: &[String],
-) -> Result<Features, Error> {
+) -> Result<(Features, Modules), Error> {
     let ContainerStructuredConfig {
         crash_report_throttling,
         enable_utc_time_adjustment,
@@ -345,6 +343,7 @@ pub fn parse_features(
     } = &start_info.config;
 
     let mut features = Features::default();
+    let mut modules = Modules::default();
     for entry in start_info
         .program
         .features
@@ -491,6 +490,12 @@ pub fn parse_features(
         ));
     }
 
+    for spec in &start_info.program.modules {
+        modules.add_spec(spec)?;
+    }
+
+    modules.validate()?;
+
     if *ui_visual_debugging_level > 0 {
         features.enable_visual_debugging = true;
     }
@@ -521,7 +526,7 @@ pub fn parse_features(
     features.kernel.dirent_cache_size = *dirent_cache_size;
     features.initial_view_id_annotation = initial_view_id_annotation.clone();
 
-    Ok(features)
+    Ok((features, modules))
 }
 
 /// Runs all the features that are enabled in `system_task.kernel()`.
@@ -692,4 +697,70 @@ pub fn run_component_features(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_start_info(features: Vec<String>, modules: Vec<String>) -> ContainerStartInfo {
+        ContainerStartInfo::new_for_test(
+            features,
+            modules,
+            ContainerStructuredConfig {
+                additional_mounts: Vec::new(),
+                cached_zx_map_info_bytes: 0,
+                crash_report_throttling: false,
+                dirent_cache_size: 0,
+                enable_utc_time_adjustment: false,
+                extra_features: Vec::new(),
+                initial_view_id_annotation: String::new(),
+                mlock_always_onfault: false,
+                mlock_pin_flavor: "noop".to_string(),
+                selinux_exceptions: Vec::new(),
+                ui_visual_debugging_level: 0,
+            },
+        )
+    }
+
+    #[fuchsia::test]
+    fn reject_empty_module_specification() {
+        let start_info = test_start_info(Vec::new(), vec!["   ".to_string()]);
+        assert!(parse_features(&start_info, &[]).is_err());
+    }
+
+    #[fuchsia::test]
+    fn disable_default_modules() {
+        let start_info = test_start_info(Vec::new(), vec!["-zram".to_string()]);
+
+        let (_features, modules) =
+            parse_features(&start_info, &[]).expect("parse_features should succeed");
+        assert!(modules.is_enabled("rtc"));
+        assert!(modules.is_enabled("loop"));
+        assert!(modules.is_enabled("power_residency"));
+        assert!(!modules.is_enabled("zram"));
+        assert_eq!(modules.args("zram"), None);
+    }
+
+    #[fuchsia::test]
+    fn reject_invalid_disable_module_specifications() {
+        for invalid_spec in ["-", "--foo", "-zram --extra-arg", "-unknown_module"] {
+            let start_info = test_start_info(Vec::new(), vec![invalid_spec.to_string()]);
+            assert!(
+                parse_features(&start_info, &[]).is_err(),
+                "expected '{invalid_spec}' to be rejected"
+            );
+        }
+    }
+
+    #[fuchsia::test]
+    fn reject_unknown_modules_and_invalid_module_arguments() {
+        for invalid_spec in ["unknown_module", "zram --unexpected"] {
+            let start_info = test_start_info(Vec::new(), vec![invalid_spec.to_string()]);
+            assert!(
+                parse_features(&start_info, &[]).is_err(),
+                "expected '{invalid_spec}' to be rejected"
+            );
+        }
+    }
 }
