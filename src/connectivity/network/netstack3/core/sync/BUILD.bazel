@@ -41,10 +41,9 @@ _COMMON_PROC_MACRO_DEPS = ["//third_party/rust_crates/vendor:derivative"]
 _COMMON_DEPS = [
     "//src/connectivity/lib/net-types",
     "//src/connectivity/network/netstack3/core/lock-order",
-] + select({
-    "@platforms//os:fuchsia": ["//src/lib/fuchsia-sync"],
-    "//conditions:default": [],
-})
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates/vendor:lock_api",
+]
 
 rustc_library(
     name = "netstack3-sync",

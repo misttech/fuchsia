@@ -74,14 +74,12 @@ _COMMON_PROC_MACRO_DEPS = [ "//third_party/rust_crates:derivative" ]
 # It's possible this variable is only used in if conditions (e.g. is_host).
 not_needed([ "_COMMON_PROC_MACRO_DEPS" ])
 
-_COMMON_DEPS = []
-_COMMON_DEPS += [
+_COMMON_DEPS = [
   "//src/connectivity/lib/net-types",
   "//src/connectivity/network/netstack3/core/lock-order",
+  "//src/lib/fuchsia-sync",
+  "//third_party/rust_crates:lock_api",
 ]
-if (is_fuchsia) {
-  _COMMON_DEPS += [ "//src/lib/fuchsia-sync" ]
-}
 
 # To avoid "Assignment had no effect" from GN.
 # It's possible this variable is only used in if conditions (e.g. is_host).

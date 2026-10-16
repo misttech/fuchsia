@@ -20,186 +20,392 @@ pub use sync::atomic;
 
 pub mod rc;
 
-/// A mutex assuming lock poisoning will never occur.
-#[derive(Debug, Default)]
-pub struct Mutex<T>(
-    #[cfg(all(target_os = "fuchsia", not(loom)))] fuchsia_sync::Mutex<T>,
-    #[cfg(not(all(target_os = "fuchsia", not(loom))))] sync::Mutex<T>,
-);
+#[cfg(not(loom))]
+pub use inner::*;
+#[cfg(loom)]
+pub use inner_loom::*;
 
-/// Lock guard for access to a [`Mutex`].
-#[cfg(all(target_os = "fuchsia", not(loom)))]
-pub type LockGuard<'a, T> = fuchsia_sync::MutexGuard<'a, T>;
+#[cfg(not(loom))]
+mod inner {
+    use core::fmt;
 
-/// Lock guard for access to a [`Mutex`].
-#[cfg(not(all(target_os = "fuchsia", not(loom))))]
-pub type LockGuard<'a, T> = sync::MutexGuard<'a, T>;
+    /// TODO(https://fxbug.dev/553027583): Remove this import and the default
+    /// parameters for locks.
+    use fuchsia_sync::{RawMutex, RawRwLock};
 
-impl<T> Mutex<T> {
-    /// Creates a new mutex in an unlocked state ready for use.
-    #[inline]
-    pub fn new(t: T) -> Mutex<T> {
-        #[cfg(all(target_os = "fuchsia", not(loom)))]
-        let m = fuchsia_sync::Mutex::new(t);
-        #[cfg(not(all(target_os = "fuchsia", not(loom))))]
-        let m = sync::Mutex::new(t);
-        Mutex(m)
+    /// A mutex assuming lock poisoning will never occur.
+    pub struct Mutex<T, R = RawMutex>(lock_api::Mutex<R, T>);
+
+    /// Lock guard for access to a [`Mutex`].
+    pub type LockGuard<'a, T, R = RawMutex> = lock_api::MutexGuard<'a, R, T>;
+
+    impl<T: Default, R: lock_api::RawMutex> Default for Mutex<T, R> {
+        #[inline]
+        fn default() -> Self {
+            Self(lock_api::Mutex::default())
+        }
     }
 
-    /// Acquires a mutex, blocking the current thread until it is able to do so.
-    ///
-    /// # Panics
-    ///
-    /// This method may panic if the calling thread is already holding the
-    /// lock.
-    #[inline]
-    pub fn lock(&self) -> LockGuard<'_, T> {
-        let Self(m) = self;
-        #[cfg(all(target_os = "fuchsia", not(loom)))]
-        return m.lock();
-        #[cfg(not(all(target_os = "fuchsia", not(loom))))]
-        return m.lock().expect("unexpectedly poisoned");
+    impl<T: fmt::Debug, R: lock_api::RawMutex> fmt::Debug for Mutex<T, R> {
+        #[inline]
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(m) = self;
+            m.fmt(f)
+        }
     }
 
-    /// Consumes this mutex, returning the underlying data.
-    #[inline]
-    pub fn into_inner(self) -> T {
-        let Self(mutex) = self;
-        #[cfg(all(target_os = "fuchsia", not(loom)))]
-        return mutex.into_inner();
-        #[cfg(not(all(target_os = "fuchsia", not(loom))))]
-        return mutex.into_inner().expect("unexpectedly poisoned");
+    impl<T, R: lock_api::RawMutex> Mutex<T, R> {
+        /// Creates a new mutex in an unlocked state ready for use.
+        #[inline]
+        pub const fn new(t: T) -> Self {
+            Self(lock_api::Mutex::new(t))
+        }
+
+        /// Acquires a mutex, blocking the current thread until it is able to do
+        /// so.
+        ///
+        /// # Panics
+        ///
+        /// This method may panic if the calling thread is already holding the
+        /// lock.
+        #[inline]
+        pub fn lock(&self) -> LockGuard<'_, T, R> {
+            let Self(m) = self;
+            m.lock()
+        }
+
+        /// Consumes this mutex, returning the underlying data.
+        #[inline]
+        pub fn into_inner(self) -> T {
+            let Self(mutex) = self;
+            mutex.into_inner()
+        }
+
+        /// Returns a mutable reference to the underlying data.
+        ///
+        /// Since this call borrows the [`Mutex`] mutably, no actual locking
+        /// needs to take place.
+        #[inline]
+        pub fn get_mut(&mut self) -> &mut T {
+            let Self(mutex) = self;
+            mutex.get_mut()
+        }
+    }
+    /// A reader-writer lock assuming lock poisoning will never occur.
+    pub struct RwLock<T, R = RawRwLock>(lock_api::RwLock<R, T>);
+
+    /// Lock guard for read access to a [`RwLock`].
+    pub type RwLockReadGuard<'a, T, R = RawRwLock> = lock_api::RwLockReadGuard<'a, R, T>;
+
+    /// Lock guard for write access to a [`RwLock`].
+    pub type RwLockWriteGuard<'a, T, R = RawRwLock> = lock_api::RwLockWriteGuard<'a, R, T>;
+
+    impl<T: Default, R: lock_api::RawRwLock> Default for RwLock<T, R> {
+        #[inline]
+        fn default() -> Self {
+            Self(lock_api::RwLock::default())
+        }
     }
 
-    /// Returns a mutable reference to the underlying data.
-    ///
-    /// Since this call borrows the [`Mutex`] mutably, no actual locking needs
-    /// to take place.
-    #[inline]
-    // TODO(https://github.com/tokio-rs/loom/pull/322): remove the disable for
-    // loom once loom's lock type supports the method.
-    #[cfg(not(loom))]
-    pub fn get_mut(&mut self) -> &mut T {
-        let Self(mutex) = self;
-        #[cfg(target_os = "fuchsia")]
-        return mutex.get_mut();
-        #[cfg(not(target_os = "fuchsia"))]
-        return mutex.get_mut().expect("unexpectedly poisoned");
+    impl<T: fmt::Debug, R: lock_api::RawRwLock> fmt::Debug for RwLock<T, R> {
+        #[inline]
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(rw) = self;
+            rw.fmt(f)
+        }
+    }
+
+    impl<T, R: lock_api::RawRwLock> RwLock<T, R> {
+        /// Creates a new instance of an `RwLock<T>` which is unlocked.
+        #[inline]
+        pub const fn new(t: T) -> Self {
+            Self(lock_api::RwLock::new(t))
+        }
+
+        /// Locks this rwlock with shared read access, blocking the current
+        /// thread until it can be acquired.
+        ///
+        /// # Panics
+        ///
+        /// This method may panic if the calling thread already holds the read
+        /// or write lock.
+        #[inline]
+        pub fn read(&self) -> RwLockReadGuard<'_, T, R> {
+            let Self(rw) = self;
+            rw.read()
+        }
+
+        /// Locks this rwlock with exclusive write access, blocking the current
+        /// thread until it can be acquired.
+        ///
+        /// # Panics
+        ///
+        /// This method may panic if the calling thread already holds the read
+        /// or write lock.
+        #[inline]
+        pub fn write(&self) -> RwLockWriteGuard<'_, T, R> {
+            let Self(rw) = self;
+            rw.write()
+        }
+
+        /// Consumes this rwlock, returning the underlying data.
+        #[inline]
+        pub fn into_inner(self) -> T {
+            let Self(rwlock) = self;
+            rwlock.into_inner()
+        }
+
+        /// Returns a mutable reference to the underlying data.
+        ///
+        /// Since this call borrows the [`RwLock`] mutably, no actual locking
+        /// needs to take place.
+        #[inline]
+        pub fn get_mut(&mut self) -> &mut T {
+            let Self(rwlock) = self;
+            rwlock.get_mut()
+        }
     }
 }
 
-impl<T: 'static> lock_order::lock::ExclusiveLock<T> for Mutex<T> {
-    type Guard<'l> = LockGuard<'l, T>;
+/// An alternative implementation that provides the exact same API for `Mutex`
+/// and `RwLock` as the `inner` module does, but alway`loom::sync` locks.
+#[cfg(loom)]
+mod inner_loom {
+    use core::fmt;
+    use core::marker::PhantomData;
+    use core::ops::{Deref, DerefMut};
+
+    use lock_api as _;
+
+    use crate::sync;
+    /// TODO(https://fxbug.dev/553027583): Remove this import and the default
+    /// parameters for locks.
+    use fuchsia_sync::{RawMutex, RawRwLock};
+
+    /// A mutex assuming lock poisoning will never occur.
+    pub struct Mutex<T, R = RawMutex>(sync::Mutex<T>, PhantomData<R>);
+
+    /// Lock guard for access to a [`Mutex`].
+    pub struct LockGuard<'a, T, R = RawMutex>(sync::MutexGuard<'a, T>, PhantomData<R>);
+
+    impl<T: fmt::Debug, R> fmt::Debug for LockGuard<'_, T, R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(g, _marker) = self;
+            g.fmt(f)
+        }
+    }
+
+    impl<T: fmt::Display, R> fmt::Display for LockGuard<'_, T, R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(g, _marker) = self;
+            g.fmt(f)
+        }
+    }
+
+    impl<T, R> Deref for LockGuard<'_, T, R> {
+        type Target = T;
+
+        fn deref(&self) -> &Self::Target {
+            let Self(g, _marker) = self;
+            g.deref()
+        }
+    }
+
+    impl<T, R> DerefMut for LockGuard<'_, T, R> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            let Self(g, _marker) = self;
+            g.deref_mut()
+        }
+    }
+
+    impl<T: Default, R> Default for Mutex<T, R> {
+        #[inline]
+        fn default() -> Self {
+            Self::new(T::default())
+        }
+    }
+
+    impl<T: fmt::Debug, R> fmt::Debug for Mutex<T, R> {
+        #[inline]
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(m, _marker) = self;
+            m.fmt(f)
+        }
+    }
+
+    impl<T, R> Mutex<T, R> {
+        /// Creates a new mutex in an unlocked state ready for use.
+        #[inline]
+        pub fn new(t: T) -> Self {
+            Self(sync::Mutex::new(t), PhantomData)
+        }
+
+        /// Acquires a mutex, blocking the current thread until it is able to do
+        /// so.
+        ///
+        /// # Panics
+        ///
+        /// This method may panic if the calling thread is already holding the
+        /// lock.
+        #[inline]
+        pub fn lock(&self) -> LockGuard<'_, T, R> {
+            let Self(m, _marker) = self;
+            LockGuard(m.lock().expect("unexpectedly poisoned"), PhantomData)
+        }
+
+        /// Consumes this mutex, returning the underlying data.
+        #[inline]
+        pub fn into_inner(self) -> T {
+            let Self(mutex, _marker) = self;
+            mutex.into_inner().expect("unexpectedly poisoned")
+        }
+    }
+
+    /// A reader-writer lock assuming lock poisoning will never occur.
+    pub struct RwLock<T, R = RawRwLock>(sync::RwLock<T>, PhantomData<R>);
+
+    /// Lock guard for read access to a [`RwLock`].
+    pub struct RwLockReadGuard<'a, T, R = RawRwLock>(sync::RwLockReadGuard<'a, T>, PhantomData<R>);
+
+    impl<T: fmt::Debug, R> fmt::Debug for RwLockReadGuard<'_, T, R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(g, _marker) = self;
+            g.fmt(f)
+        }
+    }
+
+    impl<T: fmt::Display, R> fmt::Display for RwLockReadGuard<'_, T, R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(g, _marker) = self;
+            g.fmt(f)
+        }
+    }
+
+    impl<T, R> Deref for RwLockReadGuard<'_, T, R> {
+        type Target = T;
+
+        fn deref(&self) -> &Self::Target {
+            let Self(g, _marker) = self;
+            g.deref()
+        }
+    }
+
+    /// Lock guard for write access to a [`RwLock`].
+    pub struct RwLockWriteGuard<'a, T, R = RawRwLock>(
+        sync::RwLockWriteGuard<'a, T>,
+        PhantomData<R>,
+    );
+
+    impl<T: fmt::Debug, R> fmt::Debug for RwLockWriteGuard<'_, T, R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(g, _marker) = self;
+            g.fmt(f)
+        }
+    }
+
+    impl<T: fmt::Display, R> fmt::Display for RwLockWriteGuard<'_, T, R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(g, _marker) = self;
+            g.fmt(f)
+        }
+    }
+
+    impl<T, R> Deref for RwLockWriteGuard<'_, T, R> {
+        type Target = T;
+
+        fn deref(&self) -> &Self::Target {
+            let Self(g, _marker) = self;
+            g.deref()
+        }
+    }
+
+    impl<T, R> DerefMut for RwLockWriteGuard<'_, T, R> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            let Self(g, _marker) = self;
+            g.deref_mut()
+        }
+    }
+
+    impl<T: Default, R> Default for RwLock<T, R> {
+        #[inline]
+        fn default() -> Self {
+            Self::new(T::default())
+        }
+    }
+
+    impl<T: fmt::Debug, R> fmt::Debug for RwLock<T, R> {
+        #[inline]
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let Self(rw, _marker) = self;
+            rw.fmt(f)
+        }
+    }
+
+    impl<T, R> RwLock<T, R> {
+        /// Creates a new instance of an `RwLock<T>` which is unlocked.
+        #[inline]
+        pub fn new(t: T) -> Self {
+            Self(sync::RwLock::new(t), PhantomData)
+        }
+
+        /// Locks this rwlock with shared read access, blocking the current
+        /// thread until it can be acquired.
+        ///
+        /// # Panics
+        ///
+        /// This method may panic if the calling thread already holds the read
+        /// or write lock.
+        #[inline]
+        pub fn read(&self) -> RwLockReadGuard<'_, T, R> {
+            let Self(rw, _marker) = self;
+            RwLockReadGuard(rw.read().expect("unexpectedly poisoned"), PhantomData)
+        }
+
+        /// Locks this rwlock with exclusive write access, blocking the current
+        /// thread until it can be acquired.
+        ///
+        /// # Panics
+        ///
+        /// This method may panic if the calling thread already holds the read
+        /// or write lock.
+        #[inline]
+        pub fn write(&self) -> RwLockWriteGuard<'_, T, R> {
+            let Self(rw, _marker) = self;
+            RwLockWriteGuard(rw.write().expect("unexpectedly poisoned"), PhantomData)
+        }
+
+        /// Consumes this rwlock, returning the underlying data.
+        #[inline]
+        pub fn into_inner(self) -> T {
+            let Self(rwlock, _marker) = self;
+            rwlock.into_inner().expect("unexpectedly poisoned")
+        }
+    }
+}
+
+impl<T: 'static, R: lock_api::RawMutex + 'static> lock_order::lock::ExclusiveLock<T>
+    for Mutex<T, R>
+{
+    type Guard<'l> = LockGuard<'l, T, R>;
 
     fn lock(&self) -> Self::Guard<'_> {
         self.lock()
     }
 }
 
-impl<T, I: Ip> GenericOverIp<I> for Mutex<T>
+impl<T, I: Ip, R> GenericOverIp<I> for Mutex<T, R>
 where
     T: GenericOverIp<I>,
 {
-    type Type = Mutex<T::Type>;
+    type Type = Mutex<T::Type, R>;
 }
 
-/// A reader-writer lock assuming lock poisoning will never occur.
-#[derive(Debug, Default)]
-pub struct RwLock<T>(
-    #[cfg(all(target_os = "fuchsia", not(loom)))] fuchsia_sync::RwLock<T>,
-    #[cfg(not(all(target_os = "fuchsia", not(loom))))] sync::RwLock<T>,
-);
+impl<T: 'static, R: lock_api::RawRwLock + 'static> lock_order::lock::ReadWriteLock<T>
+    for RwLock<T, R>
+{
+    type ReadGuard<'l> = RwLockReadGuard<'l, T, R>;
 
-/// Lock guard for read access to a [`RwLock`].
-#[cfg(all(target_os = "fuchsia", not(loom)))]
-pub type RwLockReadGuard<'a, T> = fuchsia_sync::RwLockReadGuard<'a, T>;
-
-/// Lock guard for read access to a [`RwLock`].
-#[cfg(not(all(target_os = "fuchsia", not(loom))))]
-pub type RwLockReadGuard<'a, T> = sync::RwLockReadGuard<'a, T>;
-
-/// Lock guard for write access to a [`RwLock`].
-#[cfg(all(target_os = "fuchsia", not(loom)))]
-pub type RwLockWriteGuard<'a, T> = fuchsia_sync::RwLockWriteGuard<'a, T>;
-
-/// Lock guard for write access to a [`RwLock`].
-#[cfg(not(all(target_os = "fuchsia", not(loom))))]
-pub type RwLockWriteGuard<'a, T> = sync::RwLockWriteGuard<'a, T>;
-
-impl<T> RwLock<T> {
-    /// Creates a new instance of an `RwLock<T>` which is unlocked.
-    #[inline]
-    pub fn new(t: T) -> RwLock<T> {
-        #[cfg(all(target_os = "fuchsia", not(loom)))]
-        let rw = fuchsia_sync::RwLock::new(t);
-        #[cfg(not(all(target_os = "fuchsia", not(loom))))]
-        let rw = sync::RwLock::new(t);
-        RwLock(rw)
-    }
-
-    /// Locks this rwlock with shared read access, blocking the current thread
-    /// until it can be acquired.
-    ///
-    /// # Panics
-    ///
-    /// This method may panic if the calling thread already holds the read or
-    /// write lock.
-    #[inline]
-    pub fn read(&self) -> RwLockReadGuard<'_, T> {
-        let Self(rw) = self;
-        #[cfg(all(target_os = "fuchsia", not(loom)))]
-        return rw.read();
-        #[cfg(not(all(target_os = "fuchsia", not(loom))))]
-        return rw.read().expect("unexpectedly poisoned");
-    }
-
-    /// Locks this rwlock with exclusive write access, blocking the current
-    /// thread until it can be acquired.
-    ///
-    /// # Panics
-    ///
-    /// This method may panic if the calling thread already holds the read or
-    /// write lock.
-    #[inline]
-    pub fn write(&self) -> RwLockWriteGuard<'_, T> {
-        let Self(rw) = self;
-        #[cfg(all(target_os = "fuchsia", not(loom)))]
-        return rw.write();
-        #[cfg(not(all(target_os = "fuchsia", not(loom))))]
-        return rw.write().expect("unexpectedly poisoned");
-    }
-
-    /// Consumes this rwlock, returning the underlying data.
-    #[inline]
-    pub fn into_inner(self) -> T {
-        let Self(rwlock) = self;
-        #[cfg(all(target_os = "fuchsia", not(loom)))]
-        return rwlock.into_inner();
-        #[cfg(not(all(target_os = "fuchsia", not(loom))))]
-        return rwlock.into_inner().expect("unexpectedly poisoned");
-    }
-
-    /// Returns a mutable reference to the underlying data.
-    ///
-    /// Since this call borrows the [`RwLock`] mutably, no actual locking needs
-    /// to take place.
-    #[inline]
-    // TODO(https://github.com/tokio-rs/loom/pull/322): remove the disable for
-    // loom once loom's lock type supports the method.
-    #[cfg(not(loom))]
-    pub fn get_mut(&mut self) -> &mut T {
-        let Self(rwlock) = self;
-        #[cfg(target_os = "fuchsia")]
-        return rwlock.get_mut();
-        #[cfg(not(target_os = "fuchsia"))]
-        return rwlock.get_mut().expect("unexpectedly poisoned");
-    }
-}
-
-impl<T: 'static> lock_order::lock::ReadWriteLock<T> for RwLock<T> {
-    type ReadGuard<'l> = RwLockReadGuard<'l, T>;
-
-    type WriteGuard<'l> = RwLockWriteGuard<'l, T>;
+    type WriteGuard<'l> = RwLockWriteGuard<'l, T, R>;
 
     fn read_lock(&self) -> Self::ReadGuard<'_> {
         self.read()
@@ -210,117 +416,9 @@ impl<T: 'static> lock_order::lock::ReadWriteLock<T> for RwLock<T> {
     }
 }
 
-impl<T, I: Ip> GenericOverIp<I> for RwLock<T>
+impl<T, I: Ip, R> GenericOverIp<I> for RwLock<T, R>
 where
     T: GenericOverIp<I>,
 {
-    type Type = RwLock<T::Type>;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use std::thread;
-
-    #[test]
-    fn mutex_lock_and_write() {
-        let m = Mutex::<u32>::new(0);
-        {
-            let mut guard = m.lock();
-            assert_eq!(*guard, 0);
-            *guard = 5;
-        }
-
-        {
-            let guard = m.lock();
-            assert_eq!(*guard, 5);
-        }
-    }
-
-    #[test]
-    fn mutex_lock_from_different_threads() {
-        const NUM_THREADS: u32 = 4;
-
-        let m = Mutex::<u32>::new(u32::MAX);
-        let m = &m;
-
-        thread::scope(|s| {
-            for i in 0..NUM_THREADS {
-                let _: thread::ScopedJoinHandle<'_, _> = s.spawn(move || {
-                    let prev = {
-                        let mut guard = m.lock();
-                        let prev = *guard;
-                        *guard = i;
-                        prev
-                    };
-
-                    assert!(prev == u32::MAX || prev < NUM_THREADS);
-                });
-            }
-        });
-
-        let guard = m.lock();
-        assert!(*guard < NUM_THREADS);
-    }
-
-    #[test]
-    fn rwlock_read_lock() {
-        let rw = RwLock::<u32>::new(0);
-
-        {
-            let guard = rw.read();
-            assert_eq!(*guard, 0);
-        }
-
-        {
-            let guard = rw.read();
-            assert_eq!(*guard, 0);
-        }
-    }
-
-    #[test]
-    fn rwlock_write_lock() {
-        let rw = RwLock::<u32>::new(0);
-        {
-            let mut guard = rw.write();
-            assert_eq!(*guard, 0);
-            *guard = 5;
-        }
-
-        {
-            let guard = rw.write();
-            assert_eq!(*guard, 5);
-        }
-    }
-
-    #[test]
-    fn rwlock_read_and_write_from_different_threads() {
-        const NUM_THREADS: u32 = 4;
-
-        let rw = RwLock::<u32>::new(u32::MAX);
-        let rw = &rw;
-
-        thread::scope(|s| {
-            for i in 0..NUM_THREADS {
-                let _: thread::ScopedJoinHandle<'_, _> = s.spawn(move || {
-                    let prev = if i % 2 == 0 {
-                        // Only threads with even numbered `i` performs a write.
-                        let mut guard = rw.write();
-                        let prev = *guard;
-                        *guard = i;
-                        prev
-                    } else {
-                        let guard = rw.read();
-                        *guard
-                    };
-
-                    assert!(prev == u32::MAX || (prev < NUM_THREADS && prev % 2 == 0));
-                });
-            }
-        });
-
-        let val = *rw.read();
-        assert!(val < NUM_THREADS && val % 2 == 0);
-    }
+    type Type = RwLock<T::Type, R>;
 }
