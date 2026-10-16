@@ -488,6 +488,31 @@ class E2EGitHooksTest(unittest.TestCase):
             bar_json.read_text(encoding="utf-8"), expected_formatted
         )
 
+        # 3. Pathspec commit (`git commit <file>`): syncs both next-index and index.lock
+        baz_json = workspace / "src" / "baz.json"
+        baz_json.write_text(unformatted_content, encoding="utf-8")
+        self._run_git("add", "src/baz.json", cwd=workspace, check=True)
+
+        pathspec_result = self._run_git(
+            "commit",
+            "src/baz.json",
+            "-m",
+            commit_message,
+            cwd=workspace,
+        )
+        self.assertEqual(
+            pathspec_result.returncode,
+            0,
+            f"Pathspec commit should succeed with auto-formatting: {pathspec_result.stderr}\n{pathspec_result.stdout}",
+        )
+        show_json_pathspec = self._run_git(
+            "show", "HEAD:src/baz.json", cwd=workspace, check=True
+        )
+        self.assertEqual(show_json_pathspec.stdout, expected_formatted)
+        self.assertEqual(
+            baz_json.read_text(encoding="utf-8"), expected_formatted
+        )
+
         status_result = self._run_git(
             "status", "--porcelain", cwd=workspace, check=True
         )

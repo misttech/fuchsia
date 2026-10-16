@@ -15,8 +15,9 @@ This module provides core primitives for safely working with Git index and stage
 from __future__ import annotations
 
 import dataclasses
+import os
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,7 @@ def run_cmd(
     cwd: Path | None = None,
     input_data: str | bytes | None = None,
     text: bool = True,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     """Runs a subprocess command with captured output."""
     return subprocess.run(
@@ -81,6 +83,7 @@ def run_cmd(
         input=input_data,
         capture_output=True,
         text=text,
+        env=env,
     )
 
 
@@ -294,6 +297,36 @@ class StashGuard:
                 target.unlink(missing_ok=True)
 
 
+def _restage_files(
+    repo_root: Path,
+    files: Sequence[str],
+) -> subprocess.CompletedProcess[str]:
+    """Restages modified files into the active index and index.lock if present."""
+    add_cmd = ["git", "add", "--pathspec-from-file=-", "--pathspec-file-nul"]
+    pathspec_data = "\0".join(files) + "\0"
+    res = run_cmd(add_cmd, cwd=repo_root, input_data=pathspec_data)
+    if res.returncode != 0:
+        return res
+
+    git_index_env = os.environ.get("GIT_INDEX_FILE")
+    if git_index_env:
+        git_index_path = Path(git_index_env)
+        if not git_index_path.is_absolute():
+            git_index_path = repo_root / git_index_path
+        if git_index_path.name.startswith(
+            "next-index-"
+        ) and git_index_path.name.endswith(".lock"):
+            index_lock = git_index_path.parent / "index.lock"
+            if index_lock.is_file():
+                res = run_cmd(
+                    add_cmd,
+                    cwd=repo_root,
+                    input_data=pathspec_data,
+                    env=os.environ | {"GIT_INDEX_FILE": str(index_lock)},
+                )
+    return res
+
+
 def run_staged_pipeline(
     context: ActionContext,
     mutating_actions: Sequence[StagedFileAction] = (),
@@ -347,16 +380,7 @@ def run_staged_pipeline(
             except GitError as e:
                 return PipelineResult.fail(error=str(e))
             if actually_modified:
-                res_add = run_cmd(
-                    [
-                        "git",
-                        "add",
-                        "--pathspec-from-file=-",
-                        "--pathspec-file-nul",
-                    ],
-                    cwd=context.repo_root,
-                    input_data="\0".join(actually_modified) + "\0",
-                )
+                res_add = _restage_files(context.repo_root, actually_modified)
                 if res_add.returncode != 0:
                     err = (
                         res_add.stderr.strip()

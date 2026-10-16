@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -470,6 +472,52 @@ class RunStagedPipelineTest(GitWorkspaceTestCase):
         self.assertEqual(f2.read_text(encoding="utf-8"), "y=2\n")
         diff_res = self.git("diff")
         self.assertEqual(diff_res.stdout, "")
+
+    def test_restage_syncs_relative_next_index_and_index_lock(self) -> None:
+        """Verifies simulated GIT_INDEX_FILE=next-index-*.lock also updates index.lock."""
+        self.stage_file("code.py", "a=1\n")
+        git_dir = self.test_dir / ".git"
+        real_index = git_dir / "index"
+        next_index = git_dir / "next-index-999.lock"
+        index_lock = git_dir / "index.lock"
+        shutil.copy2(real_index, next_index)
+        shutil.copy2(real_index, index_lock)
+
+        with mock.patch.dict(
+            os.environ, {"GIT_INDEX_FILE": ".git/next-index-999.lock"}
+        ):
+            ctx = git_staging.ActionContext(repo_root=self.test_dir)
+            result = git_staging.run_staged_pipeline(
+                context=ctx,
+                mutating_actions=[fake_formatter],
+            )
+        self.assertTrue(result.success)
+        self.assertEqual(result.restaged_files, ("code.py",))
+
+        # Simulate Git completing `git commit <file>` by renaming index.lock over index
+        index_lock.replace(real_index)
+        next_index.unlink()
+        self.assertStaged("code.py", "a = 1\n")
+        self.assertEqual(self.git("diff").stdout, "")
+
+    def test_restage_index_lock_failure_propagates_error(self) -> None:
+        """Verifies failure when updating index.lock propagates as PipelineResult.fail."""
+        self.stage_file("code.py", "a=1\n")
+        git_dir = self.test_dir / ".git"
+        next_index = git_dir / "next-index-999.lock"
+        index_lock = git_dir / "index.lock"
+        shutil.copy2(git_dir / "index", next_index)
+        index_lock.write_text("corrupt index lock", encoding="utf-8")
+
+        with mock.patch.dict(os.environ, {"GIT_INDEX_FILE": str(next_index)}):
+            ctx = git_staging.ActionContext(repo_root=self.test_dir)
+            result = git_staging.run_staged_pipeline(
+                context=ctx,
+                mutating_actions=[fake_formatter],
+            )
+        self.assertFalse(result.success)
+        self.assertEqual(result.restaged_files, ())
+        self.assertTrue(result.error)
 
 
 if __name__ == "__main__":
