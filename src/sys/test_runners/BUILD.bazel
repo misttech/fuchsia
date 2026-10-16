@@ -9,7 +9,6 @@ exports_files(
     visibility = [
         "//src/lib/files:__pkg__",
         "//src/sys/pkg/lib/fuchsia-pkg:__pkg__",
-        "//src/sys/pkg/lib/tuf:__pkg__",
         "//src/sys/pkg/tests/far:__pkg__",
     ],
 )
