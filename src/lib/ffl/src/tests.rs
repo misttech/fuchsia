@@ -284,7 +284,7 @@ fn test_fast_fixed() {
     let diff = a_fast - b_fast;
     assert_eq!(diff.into_fixed().raw_value(), -1i64 << 16);
 
-    let prod = a_fast * b_fast;
+    let prod: FastFixed<i64, 16> = (a_fast * b_fast).into();
     assert_eq!(prod.into_fixed().raw_value(), 12i64 << 16);
 
     // Division
@@ -304,7 +304,7 @@ fn test_fast_fixed() {
     // Scaled down by 32 bits: i64::MAX >> 32
     let max_fast = FastFixed(max_val_f);
     let two_fast = FastFixed(two_f);
-    let fast_prod = max_fast * two_fast;
+    let fast_prod: FastFixed<i64, 32> = (max_fast * two_fast).into();
     assert_eq!(fast_prod.into_fixed().raw_value(), i64::MAX >> 32);
 
     // Verify safe comparisons and large shift safety across different scales
@@ -567,4 +567,127 @@ fn test_division_by_zero() {
     let num = Fixed::<i32, 0>::from_integer(10);
     let denom = Fixed::<i32, 0>::from_integer(0);
     let _res = Fixed::<i32, 0>::from(num / denom);
+}
+
+#[test]
+fn test_fast_fixed_deferred_multiplication() {
+    use crate::FastExpression;
+
+    type Duration = FastFixed<i64, 0>;
+    type Utilization = FastFixed<i64, 31>;
+
+    let duration = Duration::from_raw(10_000_000); // 10ms in ns.
+    let utilization = Utilization::from_raw(1 << 29); // 0.25
+
+    // The result format is chosen when the product is evaluated and does not depend on
+    // operand order; the equivalent of the C++ `Target{lhs * rhs}` idiom.
+    assert_eq!(Duration::from(duration * utilization).raw_value(), 2_500_000);
+    assert_eq!(Duration::from(utilization * duration).raw_value(), 2_500_000);
+    assert_eq!((duration * utilization).evaluate::<i64, 0>().raw_value(), 2_500_000);
+
+    // An exact product is kept when the target has enough precision...
+    let reciprocal = Utilization::from_raw(214); // ~1 / 10ms, as used by the scheduler.
+    assert_eq!(Utilization::from(duration * reciprocal).raw_value(), 2_140_000_000);
+    assert_eq!(Utilization::from(reciprocal * duration).raw_value(), 2_140_000_000);
+
+    // ...and rounded half to even exactly once when it does not.
+    let quarter = FastFixed::<i64, 2>::from_raw(1); // 0.25
+    assert_eq!(Duration::from(Duration::from_raw(2) * quarter).raw_value(), 0); // 0.5 -> 0
+    assert_eq!(Duration::from(Duration::from_raw(6) * quarter).raw_value(), 2); // 1.5 -> 2
+    assert_eq!(Duration::from(Duration::from_raw(-6) * quarter).raw_value(), -2);
+    assert_eq!(Duration::from(Duration::from_raw(7) * quarter).raw_value(), 2); // 1.75 -> 2
+
+    // Scaling up to a finer format.
+    let fine = FastFixed::<i64, 8>::from(Duration::from_raw(3) * Duration::from_raw(5));
+    assert_eq!(fine.raw_value(), 15 << 8);
+
+    // The raw product saturates in the 64-bit intermediate.
+    let huge = Duration::from_raw(i64::MAX);
+    assert_eq!(Duration::from(huge * Duration::from_raw(2)).raw_value(), i64::MAX);
+    assert_eq!(Duration::from(huge * Duration::from_raw(-2)).raw_value(), i64::MIN);
+
+    // Narrower result types are clamped.
+    let narrow = FastFixed::<i32, 0>::from(Duration::from_raw(1 << 40) * Duration::from_raw(1));
+    assert_eq!(narrow.raw_value(), i32::MAX);
+
+    // Comparisons evaluate the expression in the format of the FastFixed operand.
+    let weight = FastFixed::<i64, 10>::from_raw(3 << 10); // 3.0
+    let factor = FastFixed::<i64, 10>::from_raw(1 << 9); // 0.5
+    assert!(weight * factor < weight);
+    assert!(weight > weight * factor);
+    assert!(weight * factor == FastFixed::<i64, 10>::from_raw(3 << 9));
+    assert!(FastFixed::<i64, 10>::from_raw(3 << 9) == weight * factor);
+
+    // Addition and subtraction with a FastFixed evaluate the expression in its format first,
+    // matching the C++ promotion to the lesser precision.
+    let remaining = Duration::from_raw(7);
+    let delta = Utilization::from_raw(1 << 30); // 0.5
+    assert_eq!((remaining + delta * Duration::from_raw(3)).raw_value(), 7 + 2); // 1.5 -> 2
+    assert_eq!((delta * Duration::from_raw(3) + remaining).raw_value(), 7 + 2);
+    assert_eq!((remaining - delta * Duration::from_raw(3)).raw_value(), 7 - 2);
+    assert_eq!((delta * Duration::from_raw(3) - remaining).raw_value(), 2 - 7);
+
+    // Two expressions combine into a deferred sum that is rounded once on evaluation.
+    let half = Utilization::from_raw(1 << 30);
+    let one = Duration::from_raw(1);
+    // 0.5 + 0.5 = 1.0 exactly, not round(0.5) + round(0.5) = 0.
+    assert_eq!(Duration::from(half * one + half * one).raw_value(), 1);
+    assert_eq!(Duration::from(half * one - half * one).raw_value(), 0);
+    assert_eq!(Utilization::from(half * one + half * one).raw_value(), 1 << 31);
+    // A deferred sum aligns its terms to the lesser precision before adding.
+    let sum = half * one + Duration::from_raw(2) * Duration::from_raw(2);
+    assert_eq!(Utilization::from(sum).raw_value(), 4 << 31); // 0.5 -> 0, plus 4
+
+    // Deferred sums compose with further products and sums, and are rounded once at the end.
+    let quarter_util = Utilization::from_raw(1 << 29);
+    // 0.25 + 0.25 + 0.5 = 1.0 exactly.
+    let chained = quarter_util * one + quarter_util * one + half * one;
+    assert_eq!(Duration::from(chained).raw_value(), 1);
+    assert_eq!(
+        Duration::from(half * one + (quarter_util * one + quarter_util * one)).raw_value(),
+        1
+    );
+    assert_eq!(Duration::from(chained - half * one).raw_value(), 0); // 0.5 -> 0
+    assert_eq!(Duration::from((chained + chained) - (half * one + half * one)).raw_value(), 1);
+
+    // A FastFixed combines with and compares against a deferred sum in its own format.
+    assert_eq!((remaining + (half * one + half * one)).raw_value(), 8);
+    assert_eq!(((half * one + half * one) + remaining).raw_value(), 8);
+    assert_eq!((remaining - (half * one + half * one)).raw_value(), 6);
+    assert_eq!(((half * one + half * one) - remaining).raw_value(), -6);
+    assert!(half * one + half * one == one);
+    assert!(one == half * one + half * one);
+    assert!(half * one + half * one > Duration::from_raw(0));
+    assert!(Duration::from_raw(0) < half * one + half * one);
+    assert!(weight * factor + weight * factor == weight);
+    let unit = Duration::from_raw(1) * Duration::from_raw(1);
+    assert!(weight < weight * factor + weight * factor + unit);
+    assert!(weight * factor + weight * factor + unit > weight);
+}
+
+#[test]
+fn test_fast_fixed_from_fixed() {
+    type Duration = FastFixed<i64, 0>;
+    type Utilization = FastFixed<i64, 31>;
+
+    // Precision reduction rounds half to even.
+    let one_and_half = Utilization::from_raw(3 << 30);
+    assert_eq!(Duration::from_fixed(one_and_half).raw_value(), 2);
+    let half = Utilization::from_raw(1 << 30);
+    assert_eq!(Duration::from_fixed(half).raw_value(), 0);
+    let minus_half = Utilization::from_raw(-(1 << 30));
+    assert_eq!(Duration::from_fixed(minus_half).raw_value(), 0);
+
+    // Precision increase is exact.
+    assert_eq!(Utilization::from_fixed(Duration::from_raw(3)).raw_value(), 3i64 << 31);
+
+    // Values that do not fit saturate.
+    assert_eq!(Utilization::from_fixed(Duration::from_raw(1 << 40)).raw_value(), i64::MAX);
+    assert_eq!(
+        FastFixed::<i32, 0>::from_fixed(Duration::from_raw(-(1i64 << 40))).raw_value(),
+        i32::MIN
+    );
+
+    // Same-format conversion is the identity.
+    assert_eq!(Duration::from_fixed(Duration::from_raw(42)).raw_value(), 42);
 }

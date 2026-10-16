@@ -1176,9 +1176,7 @@ impl SchedulerState {
             let total_util = ipv.uncapped_utilization + bp_deadline.utilization;
             let new_util = core::cmp::min(total_util, K_THREAD_UTILIZATION_MAX);
             let new_deadline = core::cmp::min(ipv.min_deadline, bp_deadline.deadline_ns);
-            let new_capacity = SchedDuration::from(Fixed::<i64, 0>::from_fixed(
-                (new_util * new_deadline).into_fixed(),
-            ));
+            let new_capacity = SchedDuration::from(new_util * new_deadline);
 
             self.effective_profile.set_deadline(
                 SchedDeadlineParams {
@@ -1190,9 +1188,7 @@ impl SchedulerState {
             );
         } else if ipv.uncapped_utilization > SchedUtilization::from_raw(0) {
             let new_util = core::cmp::min(ipv.uncapped_utilization, K_THREAD_UTILIZATION_MAX);
-            let capacity = SchedDuration::from(Fixed::<i64, 0>::from_fixed(
-                (new_util * ipv.min_deadline).into_fixed(),
-            ));
+            let capacity = SchedDuration::from(new_util * ipv.min_deadline);
             self.effective_profile.set_deadline(
                 SchedDeadlineParams {
                     capacity_ns: capacity,
@@ -1510,9 +1506,7 @@ impl WaitQueueInheritedSchedulerState {
         if self.ipvs.uncapped_utilization > SchedUtilization::from_raw(0) {
             let utilization =
                 core::cmp::min(K_THREAD_UTILIZATION_MAX, self.ipvs.uncapped_utilization);
-            let capacity = SchedDuration::from(Fixed::<i64, 0>::from_fixed(
-                (utilization * self.ipvs.min_deadline).into_fixed(),
-            ));
+            let capacity = SchedDuration::from(utilization * self.ipvs.min_deadline);
             ep.set_deadline(
                 SchedDeadlineParams {
                     capacity_ns: capacity,
@@ -2782,8 +2776,7 @@ impl Scheduler {
     }
 
     fn round_1000(v: FastFixed<i64, 31>) -> u64 {
-        let prod = v * FastFixed::<i64, 0>::from_raw(1000);
-        Fixed::<i64, 0>::from_fixed(prod.into_fixed()).raw_value() as u64
+        FastFixed::<i64, 0>::from(v * FastFixed::<i64, 0>::from_raw(1000)).raw_value() as u64
     }
 
     /// Updates trace counters which track the total number of runnable threads for a CPU.
@@ -2826,7 +2819,8 @@ impl Scheduler {
             let state = self.state.get();
             ((*state).this_cpu, (*state).total_expected_runtime_ns)
         };
-        let fair_demand = K_RECIPROCAL_DEFAULT_FAIR_PERIOD * total_expected_runtime_ns;
+        let fair_demand =
+            SchedUtilization::from(K_RECIPROCAL_DEFAULT_FAIR_PERIOD * total_expected_runtime_ns);
         // SAFETY: `self` is a valid `Scheduler` and `queue_lock_` is held.
         let deadline_util = unsafe { cpp_scheduler_get_normalized_utilization(self) };
         let total_demand = deadline_util + fair_demand;

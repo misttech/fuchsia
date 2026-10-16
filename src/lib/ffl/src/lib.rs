@@ -13,8 +13,9 @@
 //! - [`ExponentialAverage`]: A utility for tracking exponential moving averages
 //!   and variance using fixed-point values.
 //! - Expression templates: Deferred-evaluation expression structures like
-//!   [`expression::DivExpression`] to maintain resolution and precision for
-//!   division operations.
+//!   [`expression::DivExpression`] and [`expression::MulExpression`] to
+//!   maintain resolution and precision for division and multiplication
+//!   operations until the result is converted to a concrete format.
 
 #![cfg_attr(not(test), no_std)]
 
@@ -31,7 +32,7 @@ pub(crate) mod utility;
 // Re-export public API
 pub use exponential_average::ExponentialAverage;
 pub use expression::{from_ratio, to_resolution};
-pub use fast::FastFixed;
+pub use fast::{FastExpression, FastFixed};
 pub use fixed::{Fixed, compare_fixed};
 pub use string::{Mode, String};
 

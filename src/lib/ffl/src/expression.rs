@@ -15,6 +15,19 @@ pub struct DivExpression<L, R> {
     pub denominator: R,
 }
 
+/// An expression representing deferred multiplication.
+///
+/// The exact product is kept until the expression is converted to a target
+/// resolution or assigned to a `FastFixed` variable, so the result format does
+/// not depend on operand order.
+#[derive(Clone, Copy)]
+pub struct MulExpression<L, R> {
+    /// The left-hand factor of the multiplication expression.
+    pub lhs: L,
+    /// The right-hand factor of the multiplication expression.
+    pub rhs: R,
+}
+
 // Division operator for Fixed / Fixed
 impl<IL, const FL: usize, IR, const FR: usize> core::ops::Div<Fixed<IR, FR>> for Fixed<IL, FL> {
     type Output = DivExpression<Fixed<IL, FL>, Fixed<IR, FR>>;

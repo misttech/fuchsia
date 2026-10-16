@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::expression::DivExpression;
+use crate::expression::{DivExpression, MulExpression};
 use crate::fixed::{Fixed, PromoteAddSub, PromoteMul};
 use crate::num_traits::{
     self, Bounded, CheckedDiv, SaturatingAdd, SaturatingMul, SaturatingSub, Zero,
@@ -284,29 +284,256 @@ where
     }
 }
 
-// Operators: Mul
-impl<T, const FRAC: usize, U, const FRAC_R: usize> core::ops::Mul<FastFixed<U, FRAC_R>>
-    for FastFixed<T, FRAC>
+// Operators: Mul (returns a deferred MulExpression containing FastFixed)
+impl<T, const FL: usize, U, const FR: usize> core::ops::Mul<FastFixed<U, FR>> for FastFixed<T, FL> {
+    type Output = MulExpression<FastFixed<T, FL>, FastFixed<U, FR>>;
+
+    fn mul(self, rhs: FastFixed<U, FR>) -> Self::Output {
+        MulExpression { lhs: self, rhs }
+    }
+}
+
+/// A deferred `FastFixed` expression.
+///
+/// Expressions carry the exact result of an operation (within the 64-bit
+/// intermediate type) together with its number of fractional bits, and are
+/// rounded exactly once when they are converted into a concrete `FastFixed`
+/// format with `From`/`Into` or [`FastExpression::evaluate`], mirroring the
+/// deferred expression templates of the C++ library. Expressions compose:
+/// adding or subtracting two expressions yields a deferred [`SumExpression`],
+/// while combining or comparing an expression with a `FastFixed` evaluates
+/// the expression in that `FastFixed`'s format.
+pub trait FastExpression: Copy {
+    /// The 64-bit intermediate integer type the expression is evaluated in.
+    type Int: num_traits::PrimInt
+        + Bounded
+        + SaturatingAdd
+        + SaturatingSub
+        + SaturatingMul
+        + num_traits::NumCast
+        + crate::num_traits::FixedInt;
+
+    /// The number of fractional bits of the raw value produced by `evaluate_raw`.
+    const FRAC: usize;
+
+    /// Evaluates the expression to its raw value with `Self::FRAC` fractional bits.
+    fn evaluate_raw(self) -> Self::Int;
+
+    /// Evaluates the expression into the given `FastFixed` format, rounding half
+    /// to even exactly once and saturating when the value does not fit.
+    fn evaluate<I, const FRAC_OUT: usize>(self) -> FastFixed<I, FRAC_OUT>
+    where
+        I: Bounded + num_traits::NumCast + Copy,
+    {
+        FastFixed(Fixed::from_raw(clamp_cast(rescale(self.evaluate_raw(), Self::FRAC, FRAC_OUT))))
+    }
+}
+
+/// Rescales a raw value from `src_frac` to `dst_frac` fractional bits, rounding
+/// half to even when precision is reduced and saturating when it is increased.
+#[inline]
+fn rescale<I>(value: I, src_frac: usize, dst_frac: usize) -> I
+where
+    I: num_traits::PrimInt + Bounded + SaturatingMul + crate::num_traits::FixedInt,
+{
+    if src_frac > dst_frac {
+        let delta = src_frac - dst_frac;
+        div_power_of_two(round_half_to_even::<I>(value, delta), delta)
+    } else if src_frac < dst_frac {
+        saturating_shl(value, dst_frac - src_frac)
+    } else {
+        value
+    }
+}
+
+impl<T, const FL: usize, U, const FR: usize> FastExpression
+    for MulExpression<FastFixed<T, FL>, FastFixed<U, FR>>
 where
     T: PromoteMul<U> + num_traits::Zero + PartialOrd + num_traits::NumCast + Copy,
     U: num_traits::Zero + PartialOrd + num_traits::NumCast + Copy,
     <T as PromoteMul<U>>::Output: FastInt,
 {
-    type Output = FastFixed<<T as PromoteMul<U>>::Output, FRAC>;
+    type Int = <<T as PromoteMul<U>>::Output as FastInt>::Intermediate;
+    const FRAC: usize = FL + FR;
 
-    fn mul(self, rhs: FastFixed<U, FRAC_R>) -> Self::Output {
-        type Out<T, U> = <T as PromoteMul<U>>::Output;
-        type I64<T, U> = <Out<T, U> as FastInt>::Intermediate;
+    fn evaluate_raw(self) -> Self::Int {
+        let val_l: Self::Int = clamp_cast(self.lhs.0.raw_value());
+        let val_r: Self::Int = clamp_cast(self.rhs.0.raw_value());
+        val_l.saturating_mul(&val_r)
+    }
+}
 
-        let val_l: I64<T, U> = clamp_cast(self.0.raw_value());
-        let val_r: I64<T, U> = clamp_cast(rhs.0.raw_value());
-        let prod = val_l.saturating_mul(&val_r);
+/// A deferred sum or difference of two `FastFixed` expressions.
+///
+/// The operands are aligned to the lesser of their precisions before the
+/// addition, as in the C++ library.
+#[derive(Clone, Copy)]
+pub struct SumExpression<L, R> {
+    lhs: L,
+    rhs: R,
+    subtract: bool,
+}
 
-        // Scale from (FRAC + FRAC_R) to FRAC by shifting right by FRAC_R
-        let rounded = round_half_to_even::<I64<T, U>>(prod, FRAC_R);
-        let converted = div_power_of_two(rounded, FRAC_R);
+impl<L, R> FastExpression for SumExpression<L, R>
+where
+    L: FastExpression,
+    R: FastExpression<Int = L::Int>,
+{
+    type Int = L::Int;
+    const FRAC: usize = if L::FRAC < R::FRAC { L::FRAC } else { R::FRAC };
 
-        FastFixed(Fixed::from_raw(clamp_cast(converted)))
+    fn evaluate_raw(self) -> Self::Int {
+        let lhs = rescale(self.lhs.evaluate_raw(), L::FRAC, Self::FRAC);
+        let rhs = rescale(self.rhs.evaluate_raw(), R::FRAC, Self::FRAC);
+        if self.subtract { lhs.saturating_sub(&rhs) } else { lhs.saturating_add(&rhs) }
+    }
+}
+
+// Evaluation of expressions into a FastFixed format.
+impl<I, const FRAC_OUT: usize, L, R> From<MulExpression<L, R>> for FastFixed<I, FRAC_OUT>
+where
+    I: Bounded + num_traits::NumCast + Copy,
+    MulExpression<L, R>: FastExpression,
+{
+    fn from(expr: MulExpression<L, R>) -> Self {
+        expr.evaluate()
+    }
+}
+
+impl<I, const FRAC_OUT: usize, L, R> From<SumExpression<L, R>> for FastFixed<I, FRAC_OUT>
+where
+    I: Bounded + num_traits::NumCast + Copy,
+    SumExpression<L, R>: FastExpression,
+{
+    fn from(expr: SumExpression<L, R>) -> Self {
+        expr.evaluate()
+    }
+}
+
+// Comparison of a FastFixed with an expression: the expression is evaluated in
+// the format of the FastFixed operand, as in the C++ library.
+impl<I, const FRAC: usize, E> PartialEq<E> for FastFixed<I, FRAC>
+where
+    I: Bounded + num_traits::NumCast + PartialEq + Copy,
+    E: FastExpression,
+{
+    fn eq(&self, other: &E) -> bool {
+        *self == other.evaluate::<I, FRAC>()
+    }
+}
+
+impl<I, const FRAC: usize, E> PartialOrd<E> for FastFixed<I, FRAC>
+where
+    I: Bounded + num_traits::NumCast + PartialOrd + Copy,
+    E: FastExpression,
+{
+    fn partial_cmp(&self, other: &E) -> Option<core::cmp::Ordering> {
+        self.partial_cmp(&other.evaluate::<I, FRAC>())
+    }
+}
+
+/// Addition and subtraction involving expressions. A FastFixed operand fixes the
+/// result format: the expression is evaluated in that format first, which matches
+/// the C++ promotion to the lesser precision whenever the FastFixed operand is at
+/// most as precise as the expression. Two expressions combine into a deferred
+/// SumExpression.
+macro_rules! impl_fast_fixed_expression_add_sub {
+    ($Trait:ident, $method:ident, $op:tt) => {
+        impl<I, const FRAC: usize, E> core::ops::$Trait<E> for FastFixed<I, FRAC>
+        where
+            I: Bounded + num_traits::NumCast + Copy,
+            E: FastExpression,
+            FastFixed<I, FRAC>: core::ops::$Trait<FastFixed<I, FRAC>>,
+        {
+            type Output = <FastFixed<I, FRAC> as core::ops::$Trait<FastFixed<I, FRAC>>>::Output;
+
+            fn $method(self, rhs: E) -> Self::Output {
+                self $op rhs.evaluate::<I, FRAC>()
+            }
+        }
+    };
+}
+
+impl_fast_fixed_expression_add_sub!(Add, add, +);
+impl_fast_fixed_expression_add_sub!(Sub, sub, -);
+
+/// Expression-side operators. These are implemented per expression type rather
+/// than as a blanket impl over `FastExpression` because the orphan rules forbid
+/// implementing a foreign trait for a bare type parameter.
+macro_rules! impl_fast_expression_ops {
+    ($Expr:ident) => {
+        impl<I, const FRAC: usize, L, R> PartialEq<FastFixed<I, FRAC>> for $Expr<L, R>
+        where
+            I: Bounded + num_traits::NumCast + PartialEq + Copy,
+            $Expr<L, R>: FastExpression,
+        {
+            fn eq(&self, other: &FastFixed<I, FRAC>) -> bool {
+                self.evaluate::<I, FRAC>() == *other
+            }
+        }
+
+        impl<I, const FRAC: usize, L, R> PartialOrd<FastFixed<I, FRAC>> for $Expr<L, R>
+        where
+            I: Bounded + num_traits::NumCast + PartialOrd + Copy,
+            $Expr<L, R>: FastExpression,
+        {
+            fn partial_cmp(&self, other: &FastFixed<I, FRAC>) -> Option<core::cmp::Ordering> {
+                self.evaluate::<I, FRAC>().partial_cmp(other)
+            }
+        }
+
+        impl_fast_expression_ops!(@add_sub $Expr, Add, add, +, false);
+        impl_fast_expression_ops!(@add_sub $Expr, Sub, sub, -, true);
+    };
+    (@add_sub $Expr:ident, $Trait:ident, $method:ident, $op:tt, $subtract:expr) => {
+        impl<I, const FRAC: usize, L, R> core::ops::$Trait<FastFixed<I, FRAC>> for $Expr<L, R>
+        where
+            I: Bounded + num_traits::NumCast + Copy,
+            $Expr<L, R>: FastExpression,
+            FastFixed<I, FRAC>: core::ops::$Trait<FastFixed<I, FRAC>>,
+        {
+            type Output = <FastFixed<I, FRAC> as core::ops::$Trait<FastFixed<I, FRAC>>>::Output;
+
+            fn $method(self, rhs: FastFixed<I, FRAC>) -> Self::Output {
+                self.evaluate::<I, FRAC>() $op rhs
+            }
+        }
+
+        impl<L, R, E> core::ops::$Trait<E> for $Expr<L, R>
+        where
+            $Expr<L, R>: FastExpression,
+            E: FastExpression,
+        {
+            type Output = SumExpression<$Expr<L, R>, E>;
+
+            fn $method(self, rhs: E) -> Self::Output {
+                SumExpression { lhs: self, rhs, subtract: $subtract }
+            }
+        }
+    };
+}
+
+impl_fast_expression_ops!(MulExpression);
+impl_fast_expression_ops!(SumExpression);
+
+// Format conversion.
+impl<R, const FRAC_OUT: usize> FastFixed<R, FRAC_OUT>
+where
+    R: Bounded + num_traits::NumCast + Copy,
+{
+    /// Converts `other` into this format, rounding half to even when precision
+    /// is reduced and saturating when the value does not fit.
+    ///
+    /// This is the equivalent of the C++ `ffl` idiom `Target{other}` and replaces
+    /// the `Fixed::from_fixed(other.into_fixed()).into()` round trip.
+    pub fn from_fixed<OtherI: Copy, const OTHER_FRAC: usize>(
+        other: FastFixed<OtherI, OTHER_FRAC>,
+    ) -> Self
+    where
+        crate::fixed_format::Value<OtherI, OTHER_FRAC>:
+            crate::fixed_format::ConvertValue<R, FRAC_OUT>,
+    {
+        FastFixed(Fixed::from_fixed(other.0))
     }
 }
 
