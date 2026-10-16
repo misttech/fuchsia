@@ -5238,6 +5238,10 @@ mod tests {
         let container = phy_manager.phys.get(&phy_id).unwrap();
         assert!(container.power_dependency_token.is_some());
         assert!(container.power_dependency_lease.is_some());
+        assert!(!test_values.power_manager.is_lease_dropped("wlancfg-phy-1-level-2-dependency"));
+
+        phy_manager.remove_phy(phy_id);
+        assert!(test_values.power_manager.is_lease_dropped("wlancfg-phy-1-level-2-dependency"));
     }
 
     #[fuchsia::test]

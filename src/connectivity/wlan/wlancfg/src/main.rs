@@ -19,9 +19,11 @@
 
 use anyhow::{Context as _, Error, format_err};
 use diagnostics_log::PublishOptions;
+use fidl::endpoints::ControlHandle as _;
 use fidl_fuchsia_location_namedplace::RegulatoryRegionWatcherMarker;
 use fidl_fuchsia_power_broker as fbroker;
 use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_process_lifecycle as flifecycle;
 use fidl_fuchsia_wlan_device_service::DeviceMonitorMarker;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fuchsia_async as fasync;
@@ -53,7 +55,7 @@ use wlancfg_lib::client::{self, scan};
 use wlancfg_lib::config_management::{SavedNetworksManager, SavedNetworksManagerApi};
 use wlancfg_lib::legacy::{self, IfaceRef};
 use wlancfg_lib::mode_management::iface_manager_api::IfaceManagerApi;
-use wlancfg_lib::mode_management::phy_manager::{self, PhyManager};
+use wlancfg_lib::mode_management::phy_manager::{self, PhyManager, PhyManagerApi};
 use wlancfg_lib::mode_management::{
     DEFECT_CHANNEL_SIZE, create_iface_manager, device_monitor, recovery,
 };
@@ -240,6 +242,51 @@ async fn run_regulatory_manager(
     if let Some(e) = regulatory_manager.run(regulatory_sender).await.err() {
         warn!("RegulatoryManager exiting: {:?}", e);
     }
+    Ok(())
+}
+
+async fn serve_lifecycle<F>(
+    phy_manager: Arc<Mutex<dyn PhyManagerApi>>,
+    mut requests: flifecycle::LifecycleRequestStream,
+    main_fut: F,
+) -> Result<(), Error>
+where
+    F: std::future::Future<Output = Result<(), Error>>,
+{
+    let wait_for_stop = async {
+        match requests.next().await {
+            Some(Ok(flifecycle::LifecycleRequest::Stop { control_handle })) => control_handle,
+            Some(Err(e)) => {
+                warn!("Lifecycle request stream error: {:?}; waiting indefinitely", e);
+                futures::future::pending().await
+            }
+            None => {
+                warn!("Lifecycle request stream closed without Stop; waiting indefinitely");
+                futures::future::pending().await
+            }
+        }
+    };
+    let mut main_fut = Box::pin(main_fut.fuse());
+    let mut wait_for_stop = pin!(wait_for_stop.fuse());
+    let control_handle = select! {
+        res = main_fut => return res,
+        control_handle = wait_for_stop => control_handle,
+    };
+    // Explicitly drop `main_fut` before acquiring the `phy_manager` lock so that any lock guard
+    // held across an `.await` point inside `main_fut` is released and cannot deadlock shutdown.
+    drop(main_fut);
+    info!("Received lifecycle stop request; destroying all interfaces before shutdown");
+    let mut phy_manager = phy_manager.lock().await;
+    if let Err(e) = phy_manager.destroy_all_client_ifaces().await {
+        warn!("Failed to destroy client interfaces during shutdown: {:?}", e);
+    }
+    if let Err(e) = phy_manager.destroy_all_ap_ifaces().await {
+        warn!("Failed to destroy AP interfaces during shutdown: {:?}", e);
+    }
+    for phy_id in phy_manager.get_phy_ids() {
+        phy_manager.remove_phy(phy_id);
+    }
+    control_handle.shutdown();
     Ok(())
 }
 
@@ -451,19 +498,35 @@ async fn run_all_futures() -> Result<(), Error> {
     // We're initialized now, we can stop keeping the system awake
     drop(initial_wake_lease);
 
-    let _ = futures::try_join!(
-        fidl_fut,
-        dev_watcher_fut,
-        iface_manager_service,
-        saved_networks_metrics_fut.map(Ok),
-        scanning_service,
-        regulatory_fut,
-        telemetry_fut.map(Ok),
-        roam_manager_service_fut.map(Ok),
-        connection_selection_service.map(Ok),
-        suspend_blocker_fut,
-    )?;
-    Ok(())
+    let mut telemetry_fut = pin!(telemetry_fut.map(Ok));
+    let main_fut = async {
+        let _ = futures::try_join!(
+            fidl_fut,
+            dev_watcher_fut,
+            iface_manager_service,
+            saved_networks_metrics_fut.map(Ok),
+            scanning_service,
+            regulatory_fut,
+            &mut telemetry_fut,
+            roam_manager_service_fut.map(Ok),
+            connection_selection_service.map(Ok),
+            suspend_blocker_fut,
+        )?;
+        Err(format_err!("WLAN policy layer stopped"))
+    };
+
+    match fuchsia_runtime::take_startup_handle(fuchsia_runtime::HandleType::Lifecycle.into()) {
+        Some(lifecycle_handle) => {
+            let request_stream =
+                fidl::endpoints::ServerEnd::<flifecycle::LifecycleMarker>::from(lifecycle_handle)
+                    .into_stream();
+            Box::pin(serve_lifecycle(phy_manager, request_stream, main_fut)).await
+        }
+        None => {
+            warn!("No lifecycle startup handle provided; skipping shutdown listener");
+            main_fut.await
+        }
+    }
 }
 
 #[fuchsia::main(logging = false)]
@@ -476,9 +539,10 @@ async fn main() -> Result<(), Error> {
     ftrace_provider::trace_provider_create_with_fdio();
     wtrace::instant_wlancfg_start();
 
-    // Always exit with an error so stopping wlancfg will trigger a reboot on devices
+    // When `run_all_futures` exits due to an unexpected error (rather than a graceful
+    // `LifecycleRequest::Stop`), exiting with an error will trigger a reboot on devices
     // where wlancfg is `on_terminate: "reboot"`.
-    Box::pin(run_all_futures()).await.and(Err(format_err!("WLAN policy layer stopped"))).inspect_err(
+    Box::pin(run_all_futures()).await.inspect_err(
         |e| {
             // When the ELF runner executing wlancfg is configured with `forward_std_err_to: "none"`,
             // the Rust Termination trait's implementation to print an `Err` value to stderr would be lost.
@@ -487,4 +551,246 @@ async fn main() -> Result<(), Error> {
             error!("{e:?}. (ELF runner logs this again as a warning unless configured not to forward stderr.)");
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use async_trait::async_trait;
+    use fidl::endpoints::{self, Proxy as _};
+    use fuchsia_async::TestExecutor;
+    use futures::task::Poll;
+    use ieee80211::MacAddr;
+    use std::collections::HashMap;
+    use wlancfg_lib::mode_management::Defect;
+    use wlancfg_lib::mode_management::phy_manager::{CreateClientIfacesReason, PhyManagerError};
+    use wlancfg_lib::mode_management::recovery::RecoverySummary;
+    use wlancfg_lib::regulatory_manager::CountryCode;
+
+    #[derive(Debug, PartialEq)]
+    enum PhyManagerCall {
+        DestroyAllClientIfaces,
+        DestroyAllApIfaces,
+        RemovePhy(u16),
+    }
+
+    struct FakePhyManager {
+        phys: Vec<u16>,
+        calls: Vec<PhyManagerCall>,
+        destroy_ifaces_succeeds: bool,
+    }
+
+    impl FakePhyManager {
+        fn new(phys: Vec<u16>, destroy_ifaces_succeeds: bool) -> Self {
+            Self { phys, calls: Vec::new(), destroy_ifaces_succeeds }
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl PhyManagerApi for FakePhyManager {
+        async fn add_phy(&mut self, _phy_id: u16) -> Result<(), PhyManagerError> {
+            unimplemented!()
+        }
+
+        fn remove_phy(&mut self, phy_id: u16) {
+            self.calls.push(PhyManagerCall::RemovePhy(phy_id));
+            self.phys.retain(|phy| *phy != phy_id);
+        }
+
+        async fn on_iface_added(&mut self, _iface_id: u16) -> Result<(), PhyManagerError> {
+            unimplemented!()
+        }
+
+        fn on_iface_removed(&mut self, _iface_id: u16) {
+            unimplemented!()
+        }
+
+        async fn create_all_client_ifaces(
+            &mut self,
+            _reason: CreateClientIfacesReason,
+        ) -> HashMap<u16, Result<Vec<u16>, PhyManagerError>> {
+            unimplemented!()
+        }
+
+        fn client_connections_enabled(&self) -> bool {
+            unimplemented!()
+        }
+
+        async fn destroy_all_client_ifaces(&mut self) -> Result<(), PhyManagerError> {
+            self.calls.push(PhyManagerCall::DestroyAllClientIfaces);
+            if self.destroy_ifaces_succeeds {
+                Ok(())
+            } else {
+                Err(PhyManagerError::IfaceDestroyFailure)
+            }
+        }
+
+        fn get_client(&mut self) -> Option<u16> {
+            unimplemented!()
+        }
+
+        async fn create_or_get_ap_iface(&mut self) -> Result<Option<u16>, PhyManagerError> {
+            unimplemented!()
+        }
+
+        async fn destroy_ap_iface(&mut self, _iface_id: u16) -> Result<(), PhyManagerError> {
+            unimplemented!()
+        }
+
+        async fn destroy_all_ap_ifaces(&mut self) -> Result<(), PhyManagerError> {
+            self.calls.push(PhyManagerCall::DestroyAllApIfaces);
+            if self.destroy_ifaces_succeeds {
+                Ok(())
+            } else {
+                Err(PhyManagerError::IfaceDestroyFailure)
+            }
+        }
+
+        fn suggest_ap_mac(&mut self, _mac: MacAddr) {
+            unimplemented!()
+        }
+
+        fn get_phy_ids(&self) -> Vec<u16> {
+            self.phys.clone()
+        }
+
+        fn log_phy_add_failure(&mut self) {
+            unimplemented!()
+        }
+
+        async fn set_country_code(
+            &mut self,
+            _country_code: Option<CountryCode>,
+        ) -> Result<(), PhyManagerError> {
+            unimplemented!()
+        }
+
+        fn record_defect(&mut self, _defect: Defect) {
+            unimplemented!()
+        }
+
+        async fn perform_recovery(&mut self, _summary: RecoverySummary) {
+            unimplemented!()
+        }
+
+        async fn on_before_suspend(&mut self) {}
+        async fn on_after_resume(&mut self) {}
+    }
+
+    #[fuchsia::test]
+    fn test_serve_lifecycle_stop_destroys_ifaces_and_removes_phys() {
+        let mut exec = TestExecutor::new();
+        let phy_manager = Arc::new(Mutex::new(FakePhyManager::new(vec![0, 1], true)));
+
+        // Have `main_fut` hold the `phy_manager` lock across an `.await` point so we verify that
+        // `serve_lifecycle` drops `main_fut` before acquiring `phy_manager.lock().await`.
+        let phy_manager_for_main = Arc::clone(&phy_manager);
+        let (main_tx, main_rx) = oneshot::channel::<Result<(), Error>>();
+        let main_fut = async move {
+            let _guard = phy_manager_for_main.lock().await;
+            main_rx.await.unwrap_or_else(|_| Err(format_err!("canceled")))
+        };
+
+        let (lifecycle_proxy, lifecycle_stream) =
+            endpoints::create_proxy_and_stream::<flifecycle::LifecycleMarker>();
+        let mut lifecycle_fut = pin!(serve_lifecycle(
+            Arc::clone(&phy_manager) as Arc<Mutex<dyn PhyManagerApi>>,
+            lifecycle_stream,
+            main_fut,
+        ));
+        assert_matches!(exec.run_until_stalled(&mut lifecycle_fut), Poll::Pending);
+        assert!(!main_tx.is_canceled());
+        assert!(phy_manager.try_lock().is_none());
+
+        lifecycle_proxy.stop().expect("failed to send stop request");
+
+        assert_matches!(exec.run_until_stalled(&mut lifecycle_fut), Poll::Ready(Ok(())));
+        assert!(main_tx.is_canceled());
+        assert!(lifecycle_proxy.is_closed());
+
+        let phy_manager = phy_manager.try_lock().expect("phy_manager lock should be released");
+        assert_eq!(
+            phy_manager.calls,
+            vec![
+                PhyManagerCall::DestroyAllClientIfaces,
+                PhyManagerCall::DestroyAllApIfaces,
+                PhyManagerCall::RemovePhy(0),
+                PhyManagerCall::RemovePhy(1),
+            ]
+        );
+        assert!(phy_manager.phys.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_serve_lifecycle_stop_still_removes_phys_when_destroy_iface_fails() {
+        let mut exec = TestExecutor::new();
+        let phy_manager = Arc::new(Mutex::new(FakePhyManager::new(vec![0], false)));
+
+        let (lifecycle_proxy, lifecycle_stream) =
+            endpoints::create_proxy_and_stream::<flifecycle::LifecycleMarker>();
+        let mut lifecycle_fut = pin!(serve_lifecycle(
+            Arc::clone(&phy_manager) as Arc<Mutex<dyn PhyManagerApi>>,
+            lifecycle_stream,
+            futures::future::pending(),
+        ));
+
+        lifecycle_proxy.stop().expect("failed to send stop request");
+
+        assert_matches!(exec.run_until_stalled(&mut lifecycle_fut), Poll::Ready(Ok(())));
+        assert!(lifecycle_proxy.is_closed());
+
+        let phy_manager = phy_manager.try_lock().expect("phy_manager lock should be released");
+        assert_eq!(
+            phy_manager.calls,
+            vec![
+                PhyManagerCall::DestroyAllClientIfaces,
+                PhyManagerCall::DestroyAllApIfaces,
+                PhyManagerCall::RemovePhy(0),
+            ]
+        );
+        assert!(phy_manager.phys.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_serve_lifecycle_propagates_main_fut_error() {
+        let mut exec = TestExecutor::new();
+        let phy_manager = Arc::new(Mutex::new(FakePhyManager::new(vec![0], true)));
+
+        let (_lifecycle_proxy, lifecycle_stream) =
+            endpoints::create_proxy_and_stream::<flifecycle::LifecycleMarker>();
+        let mut lifecycle_fut = pin!(serve_lifecycle(
+            Arc::clone(&phy_manager) as Arc<Mutex<dyn PhyManagerApi>>,
+            lifecycle_stream,
+            future::ready(Err(format_err!("main_fut failed"))),
+        ));
+
+        assert_matches!(exec.run_until_stalled(&mut lifecycle_fut), Poll::Ready(Err(_)));
+        let phy_manager = phy_manager.try_lock().expect("phy_manager lock should be released");
+        assert!(phy_manager.calls.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_serve_lifecycle_waits_indefinitely_when_stream_closes_without_stop() {
+        let mut exec = TestExecutor::new();
+        let phy_manager = Arc::new(Mutex::new(FakePhyManager::new(vec![0], true)));
+
+        let (main_tx, main_rx) = oneshot::channel::<Result<(), Error>>();
+        let main_fut =
+            async move { main_rx.await.unwrap_or_else(|_| Err(format_err!("canceled"))) };
+        let (lifecycle_proxy, lifecycle_stream) =
+            endpoints::create_proxy_and_stream::<flifecycle::LifecycleMarker>();
+        drop(lifecycle_proxy);
+
+        let mut lifecycle_fut = pin!(serve_lifecycle(
+            Arc::clone(&phy_manager) as Arc<Mutex<dyn PhyManagerApi>>,
+            lifecycle_stream,
+            main_fut,
+        ));
+        assert_matches!(exec.run_until_stalled(&mut lifecycle_fut), Poll::Pending);
+        assert!(phy_manager.try_lock().expect("phy_manager lock").calls.is_empty());
+
+        main_tx.send(Err(format_err!("main_fut error"))).expect("failed to send main_fut result");
+        assert_matches!(exec.run_until_stalled(&mut lifecycle_fut), Poll::Ready(Err(_)));
+    }
 }

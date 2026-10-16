@@ -9,6 +9,7 @@
     program: {
         runner: "elf",
         binary: "bin/wlancfg",
+        lifecycle: { stop_event: "notify" },
     },
     capabilities: [
         {
