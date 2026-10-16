@@ -258,12 +258,6 @@ impl VerifierErrorKind {
     }
 }
 
-impl From<VerifierErrorKind> for String {
-    fn from(error: VerifierErrorKind) -> Self {
-        error.to_string()
-    }
-}
-
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum EbpfError {
     #[error("Verification error loading program: {0}")]
