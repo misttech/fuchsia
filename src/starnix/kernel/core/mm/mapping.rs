@@ -194,6 +194,14 @@ impl Mapping {
         self.flags.contains(MappingFlags::EXEC)
     }
 
+    /// Returns whether this mapping is allowed to be executable, as reported by `me` in
+    /// `/proc/[pid]/smaps`. For file mappings, this is false if the file is on a `noexec` mount
+    /// or is sealed against execution. Security checks (see `security::file_mprotect()`) may still
+    /// deny making the mapping executable.
+    pub fn may_exec(&self) -> bool {
+        self.max_access().contains(Access::EXEC)
+    }
+
     /// Returns whether this is a private file mapping with pages that were modified via
     /// copy-on-write, and are therefore no longer shared with the mapped file.
     ///
@@ -352,6 +360,15 @@ pub enum MappingBacking {
     PrivateAnonymous,
 }
 
+impl MappingBacking {
+    pub fn as_memory(&self) -> Option<&MappingBackingMemory> {
+        match self {
+            Self::Memory(memory) => Some(memory),
+            Self::PrivateAnonymous => None,
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, split_enum_storage::SplitStorage)]
 pub enum MappingName {
     /// No name.
@@ -384,6 +401,15 @@ pub enum MappingName {
 
     /// This mapping is a context for asynchronous I/O.
     AioContext(Arc<AioContext>),
+}
+
+impl<'a> MappingNameRef<'a> {
+    pub fn as_file(&self) -> Option<&'a Arc<FileMapping>> {
+        match self {
+            Self::File(file) => Some(file),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]

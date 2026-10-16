@@ -23,7 +23,7 @@ use crate::vfs::pseudo::dynamic_file::{
     DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
 };
 use crate::vfs::{
-    FileObject, FileOps, FsContext, FsString, NamespaceNode, fileops_impl_noop_sync,
+    FileHandle, FileObject, FileOps, FsContext, FsString, NamespaceNode, fileops_impl_noop_sync,
     fileops_impl_seekable,
 };
 use anyhow::{Error, anyhow};
@@ -45,7 +45,7 @@ use starnix_types::futex_address::FutexAddress;
 use starnix_types::math::{round_down_to_system_page_size, round_up_to_system_page_size};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::auth::CAP_IPC_LOCK;
-use starnix_uapi::errors::Errno;
+use starnix_uapi::errors::{EPERM, Errno};
 use starnix_uapi::range_ext::RangeExt;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::restricted_aspace::{
@@ -535,6 +535,143 @@ impl MadviseAdvice {
     }
 }
 
+/// Returns the file and the memory of `mapping`, if `mapping` is a file mapping that may be
+/// executable but whose memory handle lacks `Rights::EXECUTE`.
+///
+/// File memory is obtained with only the rights needed by the protection requested in `mmap()`,
+/// so such mappings need a new handle to be made executable with `mprotect()`.
+fn file_lacking_executable_memory(mapping: &Mapping) -> Option<(&FileHandle, &Arc<MemoryObject>)> {
+    let file = mapping.name().as_file()?;
+    let memory = mapping.get_backing_internal().as_memory()?.memory();
+    if memory.get_rights().contains(zx::Rights::EXECUTE) || !mapping.may_exec() {
+        return None;
+    }
+    Some((file.file(), memory))
+}
+
+/// Whether the files of the mappings that `mprotect()` may need to make executable provide
+/// executable memory, which excludes files with a custom `mmap()`, like binder or io_uring files,
+/// whose memory is shared with Starnix or other processes.
+///
+/// Probing a file may make a synchronous FIDL call (e.g. for remote files), so it is done without
+/// holding the memory manager's lock (see `MemoryManager::protect()`).
+#[derive(Default)]
+struct ExecutableMemoryProbes(Vec<(FileHandle, bool)>);
+
+impl ExecutableMemoryProbes {
+    /// Returns whether `file` provides executable memory, or `None` if it wasn't probed.
+    fn provides_executable_memory(&self, file: &FileHandle) -> Option<bool> {
+        self.0.iter().find(|(probed, _)| Arc::ptr_eq(probed, file)).map(|(_, provides)| *provides)
+    }
+
+    /// Returns the files of the mappings in `range` of `state` that may need to be made
+    /// executable, and weren't probed.
+    fn unprobed_files(
+        &self,
+        state: &MemoryManagerState,
+        range: Range<UserAddress>,
+    ) -> Vec<FileHandle> {
+        let mut files: Vec<FileHandle> = state
+            .mappings
+            .range(range)
+            .filter_map(|(_, mapping)| file_lacking_executable_memory(mapping))
+            .map(|(file, _)| file.clone())
+            .collect();
+        files.retain(|file| self.provides_executable_memory(file).is_none());
+        files.dedup_by(|a, b| Arc::ptr_eq(a, b));
+        files
+    }
+
+    /// Probes `files`. Must not be called while holding the memory manager's lock.
+    fn probe(&mut self, current_task: &CurrentTask, files: Vec<FileHandle>) {
+        for file in files {
+            let provides_executable_memory = file
+                .get_memory(
+                    current_task,
+                    /* length = */ None,
+                    ProtectionFlags::READ | ProtectionFlags::EXEC,
+                )
+                .is_ok();
+            self.0.push((file, provides_executable_memory));
+        }
+    }
+}
+
+/// Returns a handle to `memory` with `zx::Rights::EXECUTE` added to its other rights. Starnix holds
+/// the VMEX resource, so it can make any VMO executable.
+fn executable_memory_handle(memory: &MemoryObject) -> Result<MemoryObject, zx::Status> {
+    memory
+        .duplicate_handle(zx::Rights::SAME_RIGHTS)
+        .and_then(|memory| memory.replace_as_executable(&VMEX_RESOURCE))
+}
+
+/// Returns an executable handle to the memory backing `mapping`, if `mapping` is a file mapping
+/// that may be executable but whose memory handle lacks `zx::Rights::EXECUTE` (see
+/// `file_lacking_executable_memory()`), for changing its protection to `prot_flags`. Callers
+/// must have checked that the change is allowed (see `security::file_mprotect()`).
+///
+/// Returns `EACCES` if the memory can't be made executable, e.g. because the file doesn't provide
+/// executable memory.
+fn executable_memory_for_mapping(
+    mapping: &Mapping,
+    prot_flags: ProtectionFlags,
+    probes: &ExecutableMemoryProbes,
+) -> Result<Option<Arc<MemoryObject>>, Errno> {
+    let Some((file, memory)) = file_lacking_executable_memory(mapping) else {
+        return Ok(None);
+    };
+    // The memory can't be made writable, so the mapping can't be remapped as requested.
+    if prot_flags.contains(ProtectionFlags::WRITE)
+        && !memory.get_rights().contains(zx::Rights::WRITE)
+    {
+        return error!(EACCES);
+    }
+    // `MemoryManager::protect()` probes all the files before calling this.
+    if probes.provides_executable_memory(file) != Some(true) {
+        return error!(EACCES);
+    }
+    // Only `zx::Rights::EXECUTE` is added: the other rights of the handle (e.g. the lack of
+    // `zx::Rights::WRITE` for shared mappings of read-only files) are preserved.
+    let memory = executable_memory_handle(memory).map_err(|status| match status {
+        zx::Status::NO_MEMORY => errno!(ENOMEM),
+        // E.g. memory that isn't a plain VMO, like BPF ring buffers, or handles that can't be
+        // duplicated.
+        _ => errno!(EACCES),
+    })?;
+    Ok(Some(Arc::new(memory)))
+}
+
+/// Changes the protection of `range`, which must lie within `mapping`, to `prot_flags`, and
+/// updates `mapping` accordingly.
+///
+/// Returns whether the memory backing `mapping` was replaced, in which case any mlock pin of
+/// `range` must be moved to the new memory.
+fn protect_mapping_range(
+    mapping_context: &MappingContext,
+    range: &Range<UserAddress>,
+    mapping: &mut Mapping,
+    prot_flags: ProtectionFlags,
+    probes: &ExecutableMemoryProbes,
+) -> Result<bool, Errno> {
+    mapping.set_flags(mapping.flags().with_access_flags(prot_flags));
+
+    if prot_flags.contains(ProtectionFlags::EXEC) {
+        if let Some(memory) = executable_memory_for_mapping(mapping, prot_flags, probes)? {
+            // The memory currently mapped lacks `Rights::EXECUTE`, so the existing mapping can't be
+            // made executable. Replace it with a mapping of the same memory through an executable
+            // handle. As for the protection change, access that the memory doesn't allow is reported
+            // as `EACCES`.
+            mapping_context
+                .replace_mapping_memory(range, mapping, memory)
+                .map_err(|e| if e == EPERM { errno!(EACCES) } else { e })?;
+            return Ok(true);
+        }
+    }
+
+    mapping_context.protect_vmar_range(range.start, range.end - range.start, prot_flags)?;
+    Ok(false)
+}
+
 /// Returns whether writes to `mapping` must be blocked while `MemoryManagerState::protect()`
 /// checks whether it can be made executable with `prot_flags`, and changes its protection.
 ///
@@ -580,7 +717,23 @@ impl ForkedMemory {
         if let Some((_, clone)) = self.clones.iter().find(|(r, _)| *r == rights) {
             return Ok(clone.clone());
         }
-        let clone = memory.clone_memory(rights, options)?;
+        // Parts of a mapping may use handles to the same memory that differ only by
+        // `Rights::EXECUTE`, if only some of them were made executable with `mprotect()`. Keep
+        // them sharing the snapshot of the memory, if it was snapshotted, as in the source.
+        let snapshot = self.clones.iter().find(|(r, clone)| {
+            r.symmetric_difference(rights) == zx::Rights::EXECUTE && !Arc::ptr_eq(clone, memory)
+        });
+        let clone = match snapshot {
+            Some((_, snapshot)) if rights.contains(zx::Rights::EXECUTE) => {
+                Arc::new(executable_memory_handle(snapshot).map_err(|_| errno!(ENOMEM))?)
+            }
+            Some((_, snapshot)) => Arc::new(
+                snapshot
+                    .duplicate_handle(snapshot.get_rights() - zx::Rights::EXECUTE)
+                    .map_err(|_| errno!(ENOMEM))?,
+            ),
+            None => memory.clone_memory(rights, options)?,
+        };
         self.clones.push((rights, clone.clone()));
         Ok(clone)
     }
@@ -1460,15 +1613,57 @@ impl MemoryManagerState {
         released_mappings.extend(self.mappings.remove(unmap_range));
     }
 
+    /// Returns the range whose protection `protect()` changes for `addr..end` and `prot_flags`.
+    ///
+    /// With `ProtectionFlags::GROWSDOWN`, the range is extended down to the beginning of the
+    /// mapping that grows downward.
+    fn protection_range(
+        &self,
+        addr: UserAddress,
+        end: UserAddress,
+        prot_flags: ProtectionFlags,
+    ) -> Result<Range<UserAddress>, Errno> {
+        if !prot_flags.contains(ProtectionFlags::GROWSDOWN) {
+            return Ok(addr..end);
+        }
+        let Some((range, mapping)) = self.mappings.get(addr) else {
+            return error!(EINVAL);
+        };
+        // Ensure that the mapping has GROWSDOWN if PROT_GROWSDOWN was specified.
+        if !mapping.flags().contains(MappingFlags::GROWSDOWN) {
+            return error!(EINVAL);
+        }
+        let access_flags = mapping.flags().access_flags();
+        // From <https://man7.org/linux/man-pages/man2/mprotect.2.html>:
+        //
+        //   PROT_GROWSDOWN
+        //     Apply the protection mode down to the beginning of a
+        //     mapping that grows downward (which should be a stack
+        //     segment or a segment mapped with the MAP_GROWSDOWN flag
+        //     set).
+        let mut start = range.start;
+        while let Some((range, mapping)) =
+            self.mappings.get(start.saturating_sub(*PAGE_SIZE as usize))
+        {
+            if !mapping.flags().contains(MappingFlags::GROWSDOWN)
+                || mapping.flags().access_flags() != access_flags
+            {
+                break;
+            }
+            start = range.start;
+        }
+        Ok(start..end)
+    }
+
     fn protect(
         &mut self,
         current_task: &CurrentTask,
         addr: UserAddress,
         length: usize,
         prot_flags: ProtectionFlags,
+        probes: &ExecutableMemoryProbes,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
-        let vmar_flags = prot_flags.to_vmar_flags();
         let page_size = *PAGE_SIZE;
         let end = addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?.round_up(page_size)?;
 
@@ -1476,38 +1671,7 @@ impl MemoryManagerState {
             return error!(EINVAL);
         }
 
-        let prot_range = if prot_flags.contains(ProtectionFlags::GROWSDOWN) {
-            let mut start = addr;
-            let Some((range, mapping)) = self.mappings.get(start) else {
-                return error!(EINVAL);
-            };
-            // Ensure that the mapping has GROWSDOWN if PROT_GROWSDOWN was specified.
-            if !mapping.flags().contains(MappingFlags::GROWSDOWN) {
-                return error!(EINVAL);
-            }
-            let access_flags = mapping.flags().access_flags();
-            // From <https://man7.org/linux/man-pages/man2/mprotect.2.html>:
-            //
-            //   PROT_GROWSDOWN
-            //     Apply the protection mode down to the beginning of a
-            //     mapping that grows downward (which should be a stack
-            //     segment or a segment mapped with the MAP_GROWSDOWN flag
-            //     set).
-            start = range.start;
-            while let Some((range, mapping)) =
-                self.mappings.get(start.saturating_sub(page_size as usize))
-            {
-                if !mapping.flags().contains(MappingFlags::GROWSDOWN)
-                    || mapping.flags().access_flags() != access_flags
-                {
-                    break;
-                }
-                start = range.start;
-            }
-            start..end
-        } else {
-            addr..end
-        };
+        let prot_range = self.protection_range(addr, end, prot_flags)?;
 
         let mapping_context = &current_task.mm()?.mapping_context;
 
@@ -1524,6 +1688,15 @@ impl MemoryManagerState {
             }
 
             let intersection = range.intersect(&prot_range);
+
+            // Mappings that can't be executable (e.g. of files on a `noexec` mount) can't be made
+            // executable, whatever the rights of their memory.
+            if prot_flags.contains(ProtectionFlags::EXEC)
+                && !mapping.can_exec()
+                && !mapping.may_exec()
+            {
+                return error!(EACCES);
+            }
 
             // Zircon resolves write faults on a writable mapping without taking the memory
             // manager's lock, so another thread could modify a page of the range after
@@ -1571,7 +1744,7 @@ impl MemoryManagerState {
                 // copy-on-write child of the file VMO. Promotion doesn't change the mapping's
                 // access flags, so the protection is still updated below.
                 if prot_flags.contains(ProtectionFlags::WRITE)
-                    && Self::can_promote_lazy_private(&mapping, prot_flags)
+                    && Self::can_promote_lazy_private(&mapping)
                 {
                     mapping = self.promote_to_private_child(
                         current_task.kernel(),
@@ -1597,23 +1770,25 @@ impl MemoryManagerState {
                     mapping.set_mapping_mode(MappingMode::Eager);
                 }
 
-                // SAFETY: This is safe because it's performed on the restricted vmar.
-                unsafe {
-                    mapping_context.user_vmar.protect(
-                        intersection.start.ptr(),
-                        intersection.end - intersection.start,
-                        vmar_flags,
-                    )
+                let memory_replaced = protect_mapping_range(
+                    mapping_context,
+                    &intersection,
+                    &mut mapping,
+                    prot_flags,
+                    probes,
+                )?;
+                released_mappings
+                    .extend(self.mappings.insert(intersection.clone(), mapping.clone()));
+                // Replacing the memory of a locked mapping drops its mlock pin.
+                if memory_replaced && mapping.flags().contains(MappingFlags::LOCKED) {
+                    self.repin_locked_mapping(
+                        current_task.kernel(),
+                        mapping_context,
+                        &intersection,
+                        &mapping,
+                        released_mappings,
+                    )?;
                 }
-                .map_err(|s| match s {
-                    zx::Status::INVALID_ARGS => errno!(EINVAL),
-                    zx::Status::NOT_FOUND => errno!(ENOMEM),
-                    zx::Status::ACCESS_DENIED => errno!(EACCES),
-                    _ => impossible_error(s),
-                })?;
-
-                mapping.set_flags(mapping.flags().with_access_flags(prot_flags));
-                released_mappings.extend(self.mappings.insert(intersection.clone(), mapping));
             }
 
             // The range now has its new protection, which must be kept.
@@ -1628,19 +1803,14 @@ impl MemoryManagerState {
     }
 
     /// Returns whether `mapping` is a `LAZY_PRIVATE_FILE` mapping that should be promoted to a
-    /// copy-on-write child VMO before applying `prot_flags`.
+    /// copy-on-write child VMO before changing its protection.
     ///
-    /// Mappings whose memory lacks `EXECUTE` rights are not promoted when `prot_flags` requests
-    /// `PROT_EXEC`, since the protection change will fail with `EACCES` regardless.
-    fn can_promote_lazy_private(mapping: &Mapping, prot_flags: ProtectionFlags) -> bool {
-        if !mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE) {
-            return false;
-        }
-        let MappingBacking::Memory(backing) = mapping.get_backing_internal() else {
-            return false;
-        };
-        !prot_flags.contains(ProtectionFlags::EXEC)
-            || backing.memory().get_rights().contains(zx::Rights::EXECUTE)
+    /// Mappings whose memory lacks `EXECUTE` rights are promoted too: making them executable then
+    /// maps the child through an executable handle, if allowed (see
+    /// `executable_memory_for_mapping()`).
+    fn can_promote_lazy_private(mapping: &Mapping) -> bool {
+        mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE)
+            && matches!(mapping.get_backing_internal(), MappingBacking::Memory(_))
     }
 
     /// Moves the private `mapping` covering `range` onto a new copy-on-write child of its backing
@@ -3669,6 +3839,35 @@ impl MappingContext {
         })
     }
 
+    /// Maps `memory` over `range` in the user VMAR, in place of what is currently mapped there,
+    /// and makes `memory` the backing of `mapping`.
+    ///
+    /// `range` must lie within `mapping`. `memory` is mapped with the flags of `mapping`, at the
+    /// offset that `mapping` uses for `range.start`.
+    fn replace_mapping_memory(
+        &self,
+        range: &Range<UserAddress>,
+        mapping: &mut Mapping,
+        memory: Arc<MemoryObject>,
+    ) -> Result<(), Errno> {
+        let memory_offset = mapping.address_to_offset(range.start);
+        self.map_in_user_vmar(
+            SelectedAddress::FixedOverwrite(range.start),
+            &memory,
+            memory_offset,
+            range.end - range.start,
+            mapping.flags(),
+            /* populate = */ false,
+        )?;
+        let mut backing = MappingBackingMemory::new(range.start, memory, memory_offset);
+        // The memory is the same, only the handle to it changes.
+        if mapping.is_known_cow_modified() {
+            backing.set_cow_modified();
+        }
+        mapping.set_backing_internal(MappingBacking::Memory(Box::new(backing)));
+        Ok(())
+    }
+
     pub fn max_address(&self) -> UserAddress {
         UserAddress::from_ptr(self.user_vmar_info.base + self.user_vmar_info.len)
     }
@@ -4418,9 +4617,28 @@ impl MemoryManager {
 
         // Hold the lock throughout the operation to uphold memory manager's invariants.
         // See mm/README.md.
-        let mut state = self.state.write();
+        let mut probes = ExecutableMemoryProbes::default();
+        let mut state = loop {
+            let state = self.state.write();
+            if !prot_flags.contains(ProtectionFlags::EXEC) {
+                break state;
+            }
+            // Probe the files that may need to be made executable without holding the lock, and
+            // retry until all the files mapped in the range when the lock is held were probed.
+            // If the range is invalid, `MemoryManagerState::protect()` reports it.
+            let Ok(prot_range) = state.protection_range(addr, end, prot_flags) else {
+                break state;
+            };
+            let unprobed_files = probes.unprobed_files(&state, prot_range);
+            if unprobed_files.is_empty() {
+                break state;
+            }
+            std::mem::drop(state);
+            probes.probe(current_task, unprobed_files);
+        };
         let mut released_mappings = ReleasedMappings::default();
-        let result = state.protect(current_task, addr, length, prot_flags, &mut released_mappings);
+        let result =
+            state.protect(current_task, addr, length, prot_flags, &probes, &mut released_mappings);
         released_mappings.finalize(state);
         result
     }
@@ -6852,6 +7070,7 @@ mod tests {
                     second_map,
                     *PAGE_SIZE as usize,
                     ProtectionFlags::empty(),
+                    &ExecutableMemoryProbes::default(),
                     &mut released_mappings,
                 )
                 .unwrap();
@@ -6889,6 +7108,7 @@ mod tests {
                     second_map,
                     *PAGE_SIZE as usize,
                     ProtectionFlags::empty(),
+                    &ExecutableMemoryProbes::default(),
                     &mut released_mappings,
                 )
                 .unwrap();
@@ -7807,7 +8027,7 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    async fn test_private_read_only_file_mapping_without_exec_rights_mprotect_exec_fails() {
+    async fn test_private_read_only_file_mapping_without_exec_rights_mprotect_write_exec() {
         spawn_kernel_and_run_with_pkgfs(async |current_task| {
             let file =
                 current_task.open_file("data/testfile.txt".into(), OpenFlags::RDONLY).unwrap();
@@ -7823,7 +8043,7 @@ mod tests {
             )
             .expect("mmap failed");
 
-            let err = current_task
+            current_task
                 .mm()
                 .unwrap()
                 .protect(
@@ -7832,8 +8052,19 @@ mod tests {
                     *PAGE_SIZE as usize,
                     ProtectionFlags::READ | ProtectionFlags::WRITE | ProtectionFlags::EXEC,
                 )
-                .expect_err("mprotect(PROT_WRITE | PROT_EXEC) should fail without EXECUTE rights");
-            assert_eq!(err, errno!(EACCES));
+                .expect("mprotect(PROT_WRITE | PROT_EXEC) failed");
+
+            // The mapping was moved to a copy-on-write child of the file's memory, which is
+            // mapped through an executable handle.
+            let mm = current_task.mm().unwrap();
+            let state = mm.state.read();
+            let (_, mapping) = state.mappings.get(addr).expect("mapping");
+            assert!(!mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE));
+            assert!(mapping.can_exec());
+            let MappingBacking::Memory(backing) = mapping.get_backing_internal() else {
+                panic!("mapping should be backed by memory");
+            };
+            assert!(backing.memory().get_rights().contains(zx::Rights::EXECUTE));
         })
         .await;
     }

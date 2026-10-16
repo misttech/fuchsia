@@ -198,7 +198,6 @@
                 "mmap14",
                 "mount02",
                 "mprotect01",
-                "mprotect05",
                 "msync03",
 
                 // TODO(https://fxbug.dev/547878640): Requires O_DIRECT support.

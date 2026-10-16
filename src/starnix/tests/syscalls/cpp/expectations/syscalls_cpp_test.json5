@@ -81,17 +81,6 @@
                 // TODO(https://fxbug.dev/507976628): Write at most the requested size in the BPF_OBJ_GET_INFO_BY_FD command.
                 "BpfMapTest.ObjGetInfoByFdOnlyWritesRequestedSize",
 
-                // TODO(https://fxbug.dev/297438799)
-                "MmapTest.CanMprotectNonExecMmapToExecutable",
-
-                // TODO(https://fxbug.dev/297438799)
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/____and_rwx",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r___and_rwx",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/rw__and_r_x",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r___and_r_x",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/____and_r_x",
-                "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/rw__and_rwx",
-
                 // TODO(https://g-issues.fuchsia.dev/issues/318701791)
                 "MemfdFaultTest/FaultFileTest.ReadV/0",
                 "TmpfsFaultTest/FaultFileTest.ReadV/0",

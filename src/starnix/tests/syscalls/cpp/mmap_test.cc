@@ -11,6 +11,7 @@
 #include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
+#include <sys/statvfs.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -296,13 +297,150 @@ TEST(MmapTest, CannotMprotectNoexecAsExecutable) {
 
   std::string file_path = temp_dir.path() + "/executable_file";
   close(SAFE_SYSCALL(creat(file_path.c_str(), 0755)));
-  fbl::unique_fd fd(open(file_path.c_str(), O_RDONLY));
+  int raw_fd = open(file_path.c_str(), O_RDONLY);
+  ASSERT_THAT(raw_fd, SyscallSucceeds());
+  fbl::unique_fd fd(raw_fd);
 
-  void* res = mmap(nullptr, page_size, PROT_READ, MAP_SHARED, fd.get(), 0);
-  ASSERT_NE(res, MAP_FAILED);
+  for (int flags : {MAP_SHARED, MAP_PRIVATE}) {
+    SCOPED_TRACE(flags);
+    auto mapping =
+        test_helper::ScopedMMap::MMap(nullptr, page_size, PROT_READ, flags, fd.get(), /*offset=*/0);
+    ASSERT_THAT(mapping, SyscallResultIsOk());
+    EXPECT_THAT(mprotect(mapping->mapping(), page_size, PROT_READ | PROT_EXEC),
+                SyscallFailsWithErrno(EACCES));
+  }
+}
 
-  EXPECT_THAT(mprotect(res, page_size, PROT_READ | PROT_EXEC), SyscallFailsWithErrno(EACCES));
-  munmap(res, page_size);
+// Returns whether the filesystem of `path` is mounted with `noexec`.
+bool IsOnNoexecMount(const std::string& path) {
+  struct statvfs buf = {};
+  return statvfs(path.c_str(), &buf) == 0 && (buf.f_flag & ST_NOEXEC) != 0;
+}
+
+// Creates an executable file at `path`, filled with `size` bytes of `value`.
+void CreateExecutableFile(const std::string& path, size_t size, uint8_t value) {
+  int raw_fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0755);
+  ASSERT_THAT(raw_fd, SyscallSucceeds());
+  fbl::unique_fd fd(raw_fd);
+  std::vector<uint8_t> contents(size, value);
+  ASSERT_EQ(write(fd.get(), contents.data(), contents.size()),
+            static_cast<ssize_t>(contents.size()));
+}
+
+TEST(MmapTest, MprotectExecPreservesWrittenPrivateFileMapping) {
+  // A private file mapping created without PROT_EXEC can later be made executable. Data written
+  // to the mapping before that must be preserved, and must not be carried through to the file.
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  if (IsOnNoexecMount(tmp_dir.path())) {
+    GTEST_SKIP() << "The temporary directory is on a noexec mount";
+  }
+  std::string path = tmp_dir.path() + "/private_mprotect_exec_file";
+  ASSERT_NO_FATAL_FAILURE(CreateExecutableFile(path, page_size, 0xAA));
+  int raw_fd = open(path.c_str(), O_RDONLY);
+  ASSERT_THAT(raw_fd, SyscallSucceeds());
+  fbl::unique_fd fd(raw_fd);
+
+  auto mapping = test_helper::ScopedMMap::MMap(nullptr, page_size, PROT_READ | PROT_WRITE,
+                                               MAP_PRIVATE, fd.get(), /*offset=*/0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  volatile uint8_t* bytes = static_cast<volatile uint8_t*>(mapping->mapping());
+  bytes[0] = 0xBB;
+
+  ASSERT_THAT(mprotect(mapping->mapping(), page_size, PROT_READ | PROT_EXEC), SyscallSucceeds());
+  EXPECT_EQ(bytes[0], 0xBB);
+  EXPECT_EQ(bytes[1], 0xAA);
+
+  uint8_t file_byte = 0;
+  ASSERT_EQ(pread(fd.get(), &file_byte, 1, /*offset=*/0), 1);
+  EXPECT_EQ(file_byte, 0xAA);
+}
+
+TEST(MmapTest, MprotectExecOfPartialSharedFileMappingStaysCoherent) {
+  // Making part of a shared file mapping executable must keep it backed by the file's memory at
+  // the same offset: writes through the mapping reach the file, and writes to the file are
+  // visible through the mapping.
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  if (IsOnNoexecMount(tmp_dir.path())) {
+    GTEST_SKIP() << "The temporary directory is on a noexec mount";
+  }
+  std::string path = tmp_dir.path() + "/shared_mprotect_exec_file";
+  ASSERT_NO_FATAL_FAILURE(CreateExecutableFile(path, page_size * 3, 0));
+  int raw_fd = open(path.c_str(), O_RDWR);
+  ASSERT_THAT(raw_fd, SyscallSucceeds());
+  fbl::unique_fd fd(raw_fd);
+
+  auto mapping = test_helper::ScopedMMap::MMap(nullptr, page_size * 3, PROT_READ | PROT_WRITE,
+                                               MAP_SHARED, fd.get(), /*offset=*/0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  volatile uint8_t* bytes = static_cast<volatile uint8_t*>(mapping->mapping());
+  bytes[0] = 0x11;
+  bytes[page_size] = 0x22;
+  bytes[page_size * 2] = 0x33;
+
+  // Only make the middle page executable.
+  ASSERT_THAT(mprotect(static_cast<uint8_t*>(mapping->mapping()) + page_size, page_size,
+                       PROT_READ | PROT_WRITE | PROT_EXEC),
+              SyscallSucceeds());
+  EXPECT_EQ(bytes[0], 0x11);
+  EXPECT_EQ(bytes[page_size], 0x22);
+  EXPECT_EQ(bytes[page_size * 2], 0x33);
+
+  // Writes through the executable page reach the file.
+  bytes[page_size + 1] = 0x44;
+  uint8_t file_byte = 0;
+  ASSERT_EQ(pread(fd.get(), &file_byte, 1, page_size + 1), 1);
+  EXPECT_EQ(file_byte, 0x44);
+
+  // Writes to the file are visible through the executable page.
+  const uint8_t file_value = 0x55;
+  ASSERT_EQ(pwrite(fd.get(), &file_value, 1, page_size + 2), 1);
+  EXPECT_EQ(bytes[page_size + 2], 0x55);
+}
+
+TEST(MmapTest, ForkAfterMprotectExecOfPartialPrivateFileMapping) {
+  // After making only part of a private file mapping executable, a forked child must be able to
+  // use both parts and see the parent's modifications.
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  if (IsOnNoexecMount(tmp_dir.path())) {
+    GTEST_SKIP() << "The temporary directory is on a noexec mount";
+  }
+  std::string path = tmp_dir.path() + "/fork_mprotect_exec_file";
+  ASSERT_NO_FATAL_FAILURE(CreateExecutableFile(path, page_size * 2, 0xAA));
+  int raw_fd = open(path.c_str(), O_RDONLY);
+  ASSERT_THAT(raw_fd, SyscallSucceeds());
+  fbl::unique_fd fd(raw_fd);
+
+  for (int prot : {PROT_READ, PROT_READ | PROT_WRITE}) {
+    SCOPED_TRACE(prot);
+    auto mapping = test_helper::ScopedMMap::MMap(nullptr, page_size * 2, prot, MAP_PRIVATE,
+                                                 fd.get(), /*offset=*/0);
+    ASSERT_THAT(mapping, SyscallResultIsOk());
+    uint8_t* bytes = static_cast<uint8_t*>(mapping->mapping());
+    ASSERT_THAT(mprotect(bytes + page_size, page_size, prot | PROT_EXEC), SyscallSucceeds());
+
+    uint8_t expected_first = 0xAA;
+    uint8_t expected_second = 0xAA;
+    if ((prot & PROT_WRITE) != 0) {
+      expected_first = 0xBB;
+      expected_second = 0xCC;
+      bytes[0] = expected_first;
+      bytes[page_size] = expected_second;
+    }
+
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      volatile uint8_t* child_bytes = bytes;
+      EXPECT_EQ(child_bytes[0], expected_first);
+      EXPECT_EQ(child_bytes[page_size], expected_second);
+    });
+    ASSERT_TRUE(helper.WaitForChildren());
+  }
 }
 
 class MMapProcTest : public ProcTestBase {

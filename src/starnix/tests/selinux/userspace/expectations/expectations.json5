@@ -42,12 +42,6 @@
                 // policy is loaded.
                 "MountTests/MountOptionValidationTest.RejectedBeforePolicyLoad/*",
 
-                // TODO: https://fxbug.dev/409256444 - Make (SE)Starnix match the (SE)Linux behavior
-                // demonstrated in this test.
-                "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodYes_PrivateMapping_Modification_MprotectSuccess",
-                "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_SharedMapping_Modification_MprotectSuccess",
-                "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_NoModification_MprotectSuccess",
-
                 // TODO: https://fxbug.dev/501038871 - Make (SE)Starnix match the (SE)Linux behavior
                 // regarding perf_event_open with invalid tracepoint ID.
                 "PerfEventTest.InvalidTracepointIdAndNoPermission",
