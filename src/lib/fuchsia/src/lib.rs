@@ -23,7 +23,7 @@ use std::future::Future;
 #[cfg(fuchsia_api_level_less_than = "27")]
 pub use fidl_fuchsia_diagnostics::{Interest, Severity};
 #[cfg(fuchsia_api_level_at_least = "27")]
-pub use fidl_fuchsia_diagnostics_types::{Interest, Severity};
+pub use fidl_fuchsia_diagnostics_types_common::{Interest, Severity};
 
 #[cfg(target_os = "fuchsia")]
 pub use fuchsia_async_inspect;

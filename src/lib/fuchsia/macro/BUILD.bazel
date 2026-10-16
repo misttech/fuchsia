@@ -15,7 +15,7 @@ rustc_library(
     edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+        "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust_common",
         "//third_party/rust_crates/vendor:proc-macro2",
         "//third_party/rust_crates/vendor:quote",
         "//third_party/rust_crates/vendor:syn",

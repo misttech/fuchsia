@@ -16,7 +16,7 @@ rustc_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+        "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust_common",
         "//src/lib/diagnostics/log/rust",
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:argh",

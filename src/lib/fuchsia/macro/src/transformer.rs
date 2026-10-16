@@ -5,7 +5,7 @@
 #[cfg(fuchsia_api_level_less_than = "27")]
 use fidl_fuchsia_diagnostics::Severity;
 #[cfg(fuchsia_api_level_at_least = "27")]
-use fidl_fuchsia_diagnostics_types::Severity;
+use fidl_fuchsia_diagnostics_types_common::Severity;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::parse::{Parse, ParseStream, Parser};
