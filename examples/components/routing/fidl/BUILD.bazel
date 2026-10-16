@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# [START fidl_echo]
+fidl_library(
+    name = "echo",
+    srcs = ["echo.fidl"],
+    enable_hlcpp = True,
+    library_name = "fidl.examples.routing.echo",
+    visibility = [
+        "//examples/components:__subpackages__",
+        "//examples/diagnostics:__subpackages__",
+        "//examples/testing:__subpackages__",
+        "//sdk/lib/driver/async-helpers/cpp:__pkg__",
+        "//src/lib/fuchsia-component-test/tests:__subpackages__",
+        "//src/sys:__subpackages__",
+    ],
+)
+# [END fidl_echo]
+
+# Workaround for //build/bazel/rules/fidl:fidl_rust_library.bzl using
+# fidl_library_name instead of name for the _rust_common dependency.
+# @bazel2gn:skip
+package_group(
+    name = "fidl_macro_visibility",
+    packages = ["//build/bazel/rules/fidl"],
+)
+
+# @bazel2gn:skip
+alias(
+    name = "fidl.examples.routing.echo_rust_common",
+    actual = ":echo_rust_common",
+    visibility = [":fidl_macro_visibility"],
+)
