@@ -21,6 +21,7 @@ syscall_tests_without_deps = [
   # go/keep-sorted start
 
   "abort_test",
+  "aio_test",
   "anon_test",
   "ashmem_test",
   "aspace_test",

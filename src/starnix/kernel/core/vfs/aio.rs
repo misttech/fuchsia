@@ -108,6 +108,7 @@ impl Drop for AioContext {
 struct AioContextInner {
     operations: OperationQueue,
     results: ResultQueue,
+    write_worker_done: zx::Event,
 }
 
 impl AioContextInner {
@@ -115,11 +116,14 @@ impl AioContextInner {
         Arc::new(Self {
             operations: OperationQueue::new(max_operations),
             results: Default::default(),
+            write_worker_done: zx::Event::create(),
         })
     }
 
     fn stop(&self) {
         self.operations.stop();
+        let _ =
+            self.write_worker_done.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE);
     }
 
     fn get_events(
@@ -187,11 +191,11 @@ impl AioContextInner {
     }
 
     fn perform_next_action(&self, current_task: &CurrentTask, worker_type: WorkerType) {
-        while let Ok(IoAction::Op(op)) =
+        while let Ok(IoAction::Op(mut op)) =
             self.operations.block_until_dequeue(current_task, worker_type)
         {
             let Some(result) = op.execute(current_task) else {
-                return;
+                continue;
             };
             self.results.enqueue(op.complete(result));
 
@@ -201,6 +205,9 @@ impl AioContextInner {
                     let _ = eventfd.write(current_task, &mut input_buffer);
                 }
             }
+        }
+        if matches!(worker_type, WorkerType::Write) {
+            let _ = self.write_worker_done.signal(zx::Signals::NONE, zx::Signals::USER_0);
         }
     }
 }
@@ -248,11 +255,14 @@ impl TryFrom<u32> for OpType {
         }
     }
 }
+
+enum IoOperationType {
+    Read { file: WeakFileHandle, task: Weak<Task>, buffers: UserBuffers },
+    Write { file: FileHandle, buffer: Result<VecInputBuffer, Errno> },
+}
+
 struct IoOperation {
-    op_type: OpType,
-    file: WeakFileHandle,
-    task: Weak<Task>,
-    buffers: UserBuffers,
+    op: IoOperationType,
     offset: usize,
     id: u64,
     iocb_addr: IocbPtr,
@@ -315,28 +325,47 @@ impl IoOperation {
             None
         };
 
-        Ok(IoOperation {
-            op_type,
-            file: Arc::downgrade(&file),
-            task: Arc::downgrade(&current_task.task),
-            buffers,
-            offset,
-            id: control_block.aio_data,
-            iocb_addr,
-            eventfd,
-        })
-    }
-
-    fn execute(&self, current_task: &CurrentTask) -> Option<Result<SyscallResult, Errno>> {
-        let Some(file) = self.file.upgrade() else {
-            // The FileHandle can close while async IO operations are ongoing.
-            // Ignore this operation when this happens.
-            return None;
+        let op = match op_type {
+            OpType::PRead | OpType::PReadV => IoOperationType::Read {
+                file: Arc::downgrade(&file),
+                task: Arc::downgrade(&current_task.task),
+                buffers,
+            },
+            OpType::PWrite | OpType::PWriteV => {
+                let buffer = UserBuffersInputBuffer::syscall_new(current_task, buffers)
+                    .and_then(|mut source| source.read_all())
+                    .map(VecInputBuffer::from);
+                IoOperationType::Write { file, buffer }
+            }
         };
 
-        let result = match self.op_type {
-            OpType::PRead | OpType::PReadV => self.do_read(current_task, file).map(Into::into),
-            OpType::PWrite | OpType::PWriteV => self.do_write(current_task, file).map(Into::into),
+        Ok(IoOperation { op, offset, id: control_block.aio_data, iocb_addr, eventfd })
+    }
+
+    fn worker_type(&self) -> WorkerType {
+        match &self.op {
+            IoOperationType::Read { .. } => WorkerType::Read,
+            IoOperationType::Write { .. } => WorkerType::Write,
+        }
+    }
+
+    fn execute(&mut self, current_task: &CurrentTask) -> Option<Result<SyscallResult, Errno>> {
+        let offset = self.offset;
+        let result = match &mut self.op {
+            IoOperationType::Read { file, task, buffers } => {
+                let Some(file) = file.upgrade() else {
+                    // The FileHandle can close while async IO operations are ongoing.
+                    // Ignore this operation when this happens.
+                    return None;
+                };
+                Self::do_read(current_task, file, task, buffers, offset).map(Into::into)
+            }
+            IoOperationType::Write { file, buffer } => match buffer {
+                Ok(input_buffer) => {
+                    Self::do_write(current_task, file, offset, input_buffer).map(Into::into)
+                }
+                Err(errno) => Err(errno.clone()),
+            },
         };
         Some(result)
     }
@@ -350,28 +379,41 @@ impl IoOperation {
         io_event { data: self.id, obj: self.iocb_addr.addr().into(), res, ..Default::default() }
     }
 
-    fn do_read(&self, current_task: &CurrentTask, file: FileHandle) -> Result<usize, Errno> {
+    fn do_read(
+        current_task: &CurrentTask,
+        file: FileHandle,
+        task: &Weak<Task>,
+        buffers: &UserBuffers,
+        offset: usize,
+    ) -> Result<usize, Errno> {
         let mut output_buffer = {
-            let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
-            let sink = UserBuffersOutputBuffer::syscall_new(&task, self.buffers.clone())?;
+            let task = task.upgrade().ok_or_else(|| errno!(EFAULT))?;
+            let sink = UserBuffersOutputBuffer::syscall_new(&task, buffers.clone())?;
             VecOutputBuffer::new(sink.available())
         };
 
-        file.read_at(current_task, self.offset, &mut output_buffer)?;
+        if file.ops().is_seekable() {
+            file.read_at(current_task, offset, &mut output_buffer)?;
+        } else {
+            file.read(current_task, &mut output_buffer)?;
+        }
 
-        let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
-        let mut sink = UserBuffersOutputBuffer::syscall_new(&task, self.buffers.clone())?;
+        let task = task.upgrade().ok_or_else(|| errno!(EFAULT))?;
+        let mut sink = UserBuffersOutputBuffer::syscall_new(&task, buffers.clone())?;
         sink.write(&output_buffer.data())
     }
 
-    fn do_write(&self, current_task: &CurrentTask, file: FileHandle) -> Result<usize, Errno> {
-        let mut input_buffer = {
-            let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
-            let mut source = UserBuffersInputBuffer::syscall_new(&task, self.buffers.clone())?;
-            VecInputBuffer::new(&source.read_all()?)
-        };
-
-        file.write_at(current_task, self.offset, &mut input_buffer)
+    fn do_write(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        offset: usize,
+        input_buffer: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        if file.ops().is_seekable() {
+            file.write_at(current_task, offset, input_buffer)
+        } else {
+            file.write(current_task, input_buffer)
+        }
     }
 }
 
@@ -428,7 +470,7 @@ impl OperationQueue {
     }
 
     fn enqueue(&self, op: IoOperation) -> Result<(), Errno> {
-        let worker_type = op.op_type.worker_type();
+        let worker_type = op.worker_type();
         {
             let mut pending = self.pending.lock();
             if pending.is_stopped {
@@ -444,20 +486,34 @@ impl OperationQueue {
     }
 
     fn stop(&self) {
-        let mut pending = self.pending.lock();
-        pending.is_stopped = true;
-        pending.read_ops.clear();
-        pending.write_ops.clear();
+        {
+            let mut pending = self.pending.lock();
+            pending.is_stopped = true;
+            pending.read_ops.clear();
+        }
         self.read_waiters.notify_all();
         self.write_waiters.notify_all();
     }
 
     fn dequeue(&self, worker_type: WorkerType) -> Option<IoAction> {
         let mut pending = self.pending.lock();
-        if pending.is_stopped {
-            return Some(IoAction::Stop);
+        match worker_type {
+            WorkerType::Read => {
+                if pending.is_stopped {
+                    return Some(IoAction::Stop);
+                }
+                pending.read_ops.pop_front().map(IoAction::Op)
+            }
+            WorkerType::Write => {
+                if let Some(op) = pending.write_ops.pop_front() {
+                    return Some(IoAction::Op(op));
+                }
+                if pending.is_stopped {
+                    return Some(IoAction::Stop);
+                }
+                None
+            }
         }
-        pending.ops_for(worker_type).pop_front().map(IoAction::Op)
     }
 
     fn remove(&self, worker_type: WorkerType, iocb_addr: IocbPtr) -> Result<(), Errno> {
@@ -472,7 +528,7 @@ impl OperationQueue {
                 .iter()
                 .position(|value| value.iocb_addr.addr() == iocb_addr.addr())
             {
-                pending.ops_for(worker_type).remove(idx);
+                let _ = pending.ops_for(worker_type).remove(idx);
             } else {
                 return error!(EAGAIN);
             }
@@ -495,7 +551,10 @@ impl OperationQueue {
             if let Some(action) = self.dequeue(worker_type) {
                 return Ok(action);
             }
-            current_task.block_until(guard, zx::MonotonicInstant::INFINITE)?;
+            match current_task.block_until(guard, zx::MonotonicInstant::INFINITE) {
+                Err(err) if err == EINTR => continue,
+                result => result?,
+            }
         }
     }
 }
@@ -516,5 +575,120 @@ impl ResultQueue {
         let mut events = self.events.lock();
         let len = std::cmp::min(events.len(), limit);
         events.drain(..len).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mm::{MemoryAccessor, PAGE_SIZE};
+    use crate::testing::{map_memory, spawn_kernel_and_run};
+    use crate::vfs::{
+        Anon, FdFlags, FileObject, FileOps, fileops_impl_noop_sync, fileops_impl_seekless,
+    };
+    use starnix_sync::Mutex;
+    use starnix_uapi::open_flags::OpenFlags;
+    use starnix_uapi::user_address::UserAddress;
+
+    struct TestSinkFile {
+        written: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl FileOps for TestSinkFile {
+        fileops_impl_seekless!();
+        fileops_impl_noop_sync!();
+
+        fn read(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn OutputBuffer,
+        ) -> Result<usize, Errno> {
+            error!(EINVAL)
+        }
+
+        fn write(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            data: &mut dyn InputBuffer,
+        ) -> Result<usize, Errno> {
+            let bytes = data.read_all()?;
+            let len = bytes.len();
+            self.written.lock().extend_from_slice(&bytes);
+            Ok(len)
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_pwrite_completes_after_fd_closed_and_buffer_unmapped() {
+        spawn_kernel_and_run(async |current_task| {
+            let header = b"A_WRTE_HEADER:";
+            let payload = b"restarting adbd as root\n";
+            let user_buf = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_memory(user_buf, header).expect("write header");
+            let payload_buf = (user_buf + header.len()).expect("payload addr");
+            current_task.write_memory(payload_buf, payload).expect("write user payload");
+
+            let iocb_addr1 = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let iocb_ref1 = IocbPtr::new(current_task, iocb_addr1);
+            let iocb_addr2 = (iocb_addr1 + std::mem::size_of::<iocb>()).expect("iocb2 addr");
+            let iocb_ref2 = IocbPtr::new(current_task, iocb_addr2);
+
+            let written = Arc::new(Mutex::new(Vec::new()));
+            let write_file = Anon::new_private_file(
+                current_task,
+                Box::new(TestSinkFile { written: Arc::clone(&written) }),
+                OpenFlags::WRONLY,
+                "[test-sink]",
+            );
+            let write_fd = current_task.add_file(write_file, FdFlags::empty()).expect("add file");
+
+            let cb1 = iocb {
+                aio_fildes: write_fd.raw() as u32,
+                aio_lio_opcode: IOCB_CMD_PWRITE as u16,
+                aio_buf: user_buf.ptr() as u64,
+                aio_nbytes: header.len() as u64,
+                aio_offset: 0,
+                aio_data: 0x1234,
+                ..Default::default()
+            };
+            let cb2 = iocb {
+                aio_fildes: write_fd.raw() as u32,
+                aio_lio_opcode: IOCB_CMD_PWRITE as u16,
+                aio_buf: payload_buf.ptr() as u64,
+                aio_nbytes: payload.len() as u64,
+                aio_offset: 0,
+                aio_data: 0x1235,
+                ..Default::default()
+            };
+
+            let ctx_id = AioContext::create(current_task, 16).expect("create aio context");
+            let aio_ctx = current_task
+                .mm()
+                .expect("mm")
+                .get_aio_context(ctx_id.into())
+                .expect("get aio context");
+            aio_ctx.submit(current_task, cb1, iocb_ref1).expect("submit header op");
+            aio_ctx.submit(current_task, cb2, iocb_ref2).expect("submit payload op");
+
+            // Simulate adbd exiting immediately after io_submit returns: close the FD table entry,
+            // unmap userspace buffers, and stop the AIO context before waiting for background writes.
+            current_task.files().close(write_fd).expect("close write fd");
+            current_task
+                .mm()
+                .expect("mm")
+                .unmap(user_buf, (*PAGE_SIZE) as usize)
+                .expect("unmap user buf");
+            aio_ctx.inner.stop();
+
+            let mut expected = Vec::new();
+            expected.extend_from_slice(header);
+            expected.extend_from_slice(payload);
+            assert_eq!(written.lock().as_slice(), expected.as_slice());
+        })
+        .await;
     }
 }
