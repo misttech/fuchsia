@@ -116,7 +116,6 @@
                 // TODO(https://fxbug.dev/546549247): A variety of nuances in epoll handling.
                 "epoll_ctl06",
                 "epoll_wait10",
-                "epoll_wait12",
                 "epoll_wait16",
 
                 // Requires SEEK_HOLE.

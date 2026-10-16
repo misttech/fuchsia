@@ -62,9 +62,6 @@
                 // LOOP_CLR_FD.
                 "LoopTest.SysfsLoopDirectoryLifecycle",
 
-                // TODO(https://fxbug.dev/564489293): Target error does not deliver EPOLLERR.
-                "EpollTest.TargetErrorDeliversEpollErr",
-
                 // TODO(https://fxbug.dev/351037863)
                 "AshmemTest.SetNameOverflow",
 
