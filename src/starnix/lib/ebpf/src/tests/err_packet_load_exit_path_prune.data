@@ -1,0 +1,19 @@
+# A packet load both continues and exits (when the load fails). The fall-through branch (r8 is the
+# packet) reaches the load first. Its exit path must not be recorded as a proof that the load
+# terminates: the jump branch (r8 is a scalar) reaches the load later and its continuation
+# dereferences r8, which must be rejected.
+-- asm
+mov %r6, %r1
+ldxw %r7, [%r6]
+mov %r8, %r6
+mov %r0, 0
+jeq %r7, 0, +1
+ja +1
+mov %r8, 0
+ldpb +0
+ldxb %r0, [%r8]
+exit
+-- mem
+00000000000000000000000000000000
+-- error
+incorrect load

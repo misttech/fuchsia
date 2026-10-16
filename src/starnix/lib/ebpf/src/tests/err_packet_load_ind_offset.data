@@ -1,0 +1,16 @@
+# The packet load is a prune point. The fall-through branch (r7 != 0) initializes the indirect
+# offset register r8 before reaching the load. The jump branch (r7 == 0) reaches the load with r8
+# unwritten, which must be rejected even though the loaded byte in r0 is not read before exit.
+-- asm
+mov %r6, %r1
+ldxw %r7, [%r6]
+mov %r0, 0
+jeq %r7, 0, +2
+mov %r8, 0
+mov %r9, 0
+ldpb %r8+0
+exit
+-- mem
+00000000000000000000000000000000
+-- error
+access to unwritten offset

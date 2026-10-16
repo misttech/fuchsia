@@ -1,0 +1,18 @@
+# The packet load is a prune point. The fall-through branch (r7 != 0) reaches it first with r6
+# being the packet. The jump branch (r7 == 0) reaches it with r6 being a scalar, which must be
+# rejected: a packet load requires r6 to be the packet.
+-- asm
+mov %r6, %r1
+ldxw %r7, [%r6]
+mov %r1, 0
+mov %r0, 0
+jeq %r7, 0, +1
+ja +1
+mov %r6, 0
+ldpb +0
+mov %r0, 0
+exit
+-- mem
+00000000000000000000000000000000
+-- error
+R6 is not a packet

@@ -3201,13 +3201,14 @@ impl BpfVisitor for DataDependencies {
     ) -> Result<(), String> {
         // 1 to 5 are scratch registers (bits 1..=5)
         self.registers &= !0b0011_1110;
-        // Only do something if the dst is read, otherwise the computation doesn't matter.
-        if self.remove_reg(dst) {
-            self.add_reg(src);
-            if let Some(reg) = register_offset {
-                self.add_reg(reg);
-            }
+        self.remove_reg(dst);
+        // The types of the packet and of the offset are always checked, and r0 is checked to be a
+        // written scalar on the exit path taken when the load fails.
+        self.add_reg(src);
+        if let Some(reg) = register_offset {
+            self.add_reg(reg);
         }
+        self.add_reg(0);
         Ok(())
     }
 
@@ -4652,13 +4653,6 @@ impl BpfVisitor for ComputationContext {
                 return Err("access to unwritten offset".to_string());
             }
         }
-        // Handle the case where the load succeed.
-        let mut next = self.next()?;
-        next.set_reg(dst, Type::UNKNOWN_SCALAR)?;
-        for i in 1..=5 {
-            next.set_reg(i, Type::default())?;
-        }
-        context.states.push(next);
         // Handle the case where the load fails.
         if !self.reg(0)?.is_written_scalar() {
             return Err("register 0 is incorrect at exit time".to_string());
@@ -4666,7 +4660,17 @@ impl BpfVisitor for ComputationContext {
         if !self.resources.is_empty() {
             return Err("some resources have not been released at exit time".to_string());
         }
-        self.terminated = true;
+        // `self` is not terminated here: a copy of it is the parent of `next`, and terminates with
+        // the dependencies of both paths once `next` terminates. Terminating `self` would record
+        // it as a terminating context with the dependencies of the exit path only.
+
+        // Handle the case where the load succeed.
+        let mut next = self.next()?;
+        next.set_reg(dst, Type::UNKNOWN_SCALAR)?;
+        for i in 1..=5 {
+            next.set_reg(i, Type::default())?;
+        }
+        context.states.push(next);
         Ok(())
     }
 

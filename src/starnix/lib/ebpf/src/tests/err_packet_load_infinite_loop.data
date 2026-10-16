@@ -1,0 +1,12 @@
+# An unconditional loop around a packet load does not terminate when the load succeeds. The failure
+# exit path of the packet load must not be recorded as a terminating context that prunes the back
+# edge.
+-- asm
+mov %r6, %r1
+mov %r0, 0
+ldpb +0
+ja -2
+-- mem
+00000000000000000000000000000000
+-- error
+bpf byte code does not terminate

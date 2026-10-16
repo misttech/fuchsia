@@ -1,0 +1,20 @@
+# Two branches converge on a packet load (`ldpb +0`), differing in a caller-saved scratch register
+# (%r2) and an unused callee-saved register (%r8). Both branches satisfy the packet load's data
+# dependencies (%r6 is the packet and %r0 is a written scalar), so the second branch is pruned at
+# the packet load and the program verifies and returns the loaded byte.
+-- asm
+mov %r6, %r1
+ldxw %r7, [%r6]
+mov %r0, 0
+jeq %r7, 0, +3
+mov %r2, 1
+mov %r8, 10
+ja +2
+mov %r2, 2
+mov %r8, %r6
+ldpb +0
+exit
+-- mem
+00000000000000002a00000000000000
+-- result
+0x2a
