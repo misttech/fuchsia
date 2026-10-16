@@ -18,6 +18,7 @@ Supports:
 
 import argparse
 import collections
+import json
 import os
 import pathlib
 import re
@@ -226,14 +227,16 @@ def _check_file(
     root: pathlib.Path,
     fix_guards: bool,
     emit: bool,
-    collision_tracker: dict[str, list[pathlib.Path]],
-) -> None:
+    collision_tracker: dict[str, list[pathlib.Path]] | None = None,
+    return_fixed: bool = False,
+) -> str | None:
     """Check or format the header guard for a given header file."""
     if path.suffix != ".h":
-        return
+        return None
 
     expected_guard = _header_guard_from_path(path, root)
-    collision_tracker[expected_guard].append(path)
+    if collision_tracker is not None:
+        collision_tracker[expected_guard].append(path)
 
     try:
         content = path.read_text(encoding="utf-8", errors="replace")
@@ -287,8 +290,8 @@ def _check_file(
                 f"{path} contains both #pragma once and header guards"
             )
         # If neither fixing nor emitting, #pragma once is accepted as valid.
-        if not fix_guards and not emit:
-            return
+        if not fix_guards and not emit and not return_fixed:
+            return None
 
     # Standard include guard match
     is_valid = found_ifndef and found_define and found_endif
@@ -296,11 +299,11 @@ def _check_file(
     if is_valid:
         if emit:
             sys.stdout.write(content)
-        return
+        return None
 
     # Guard needs fix or emission of corrected content.
     # In check mode, report the specific missing component.
-    if not fix_guards and not emit:
+    if not fix_guards and not emit and not return_fixed:
         if not found_ifndef:
             raise HeaderGuardError(
                 f"{path} missing #ifndef part of header guard (expected: {expected_guard})"
@@ -316,9 +319,12 @@ def _check_file(
     # In fix or emit mode, generate the fixed content.
     fixed_content = _generate_fixed_content(content, expected_guard)
 
+    if return_fixed:
+        return fixed_content if fixed_content != content else None
+
     if emit:
         sys.stdout.write(fixed_content)
-        return
+        return None
 
     assert fix_guards
     try:
@@ -326,6 +332,7 @@ def _check_file(
         print(f"Fixed header guard in {path}")
     except OSError as e:
         raise HeaderGuardError(f"Error writing {path}: {e}") from e
+    return None
 
 
 def _find_header_files(
@@ -374,6 +381,16 @@ def main() -> int:
         action="store_true",
     )
     parser.add_argument(
+        "--json",
+        help="Emit JSON array of findings/replacements to stdout without modifying disk.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--output",
+        type=pathlib.Path,
+        help="With --json, write the JSON array to this file instead of stdout.",
+    )
+    parser.add_argument(
         "--root",
         help="Root of the repository or checkout to calculate relative guards against.",
     )
@@ -391,6 +408,39 @@ def main() -> int:
         if args.root
         else pathlib.Path(os.environ.get("FUCHSIA_DIR", default_root)).resolve()
     )
+
+    if args.json:
+        results = []
+        for path_arg in args.paths:
+            path = pathlib.Path(path_arg)
+            if not path.is_file():
+                results.append(
+                    {
+                        "path": path_arg,
+                        "error": f"Path does not exist: {path_arg}",
+                    }
+                )
+                continue
+            try:
+                fixed = _check_file(
+                    path,
+                    root,
+                    fix_guards=False,
+                    emit=False,
+                    return_fixed=True,
+                )
+                if fixed is not None:
+                    results.append({"path": path_arg, "replacements": [fixed]})
+            except HeaderGuardError as e:
+                results.append({"path": path_arg, "error": str(e)})
+        # The results include the full fixed contents of each file with a wrong
+        # header guard, which can exceed shac's limit on the size of a
+        # subprocess's stdout.
+        if args.output:
+            args.output.write_text(json.dumps(results), encoding="utf-8")
+        else:
+            print(json.dumps(results))
+        return 0
 
     collision_tracker: dict[str, list[pathlib.Path]] = collections.defaultdict(
         list

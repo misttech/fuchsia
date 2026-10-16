@@ -120,31 +120,31 @@ def _buildifier_lint(ctx):
 
 def _fuchsia_shac_style_guide(ctx):
     """Enforces shac conventions that are specific to the fuchsia project."""
-    procs = []
-    for f in ctx.scm.affected_files(glob = "*.star"):
-        procs.append(
-            (f, os_exec(ctx, [
-                "%s/prebuilt/third_party/python3/%s/bin/python3" % (
-                    get_fuchsia_dir(ctx),
-                    cipd_platform_name(ctx),
-                ),
-                "scripts/shac/fuchsia_shac_style_guide.py",
-                f,
-            ])),
-        )
+    star_files = ctx.scm.affected_files(glob = "*.star")
+    if not star_files:
+        return
 
-    for f, proc in procs:
-        res = proc.wait()
-        for finding in json.decode(res.stdout):
-            ctx.emit.finding(
-                level = "error",
-                filepath = f,
-                message = finding["message"],
-                line = finding["line"],
-                col = finding["col"],
-                end_line = finding["end_line"],
-                end_col = finding["end_col"],
-            )
+    res = os_exec(
+        ctx,
+        [
+            "%s/prebuilt/third_party/python3/%s/bin/python3" % (
+                get_fuchsia_dir(ctx),
+                cipd_platform_name(ctx),
+            ),
+            "scripts/shac/fuchsia_shac_style_guide.py",
+        ] + list(star_files),
+    ).wait()
+
+    for finding in json.decode(res.stdout):
+        ctx.emit.finding(
+            level = "error",
+            filepath = finding["filepath"],
+            message = finding["message"],
+            line = finding["line"],
+            col = finding["col"],
+            end_line = finding["end_line"],
+            end_col = finding["end_col"],
+        )
 
 def register_starlark_checks():
     shac.register_check(shac.check(_buildifier, formatter = True))

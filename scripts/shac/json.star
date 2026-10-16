@@ -61,42 +61,33 @@ def _json_format(ctx):
     )
     formatter_script = "%s/scripts/shac/json_format.py" % fuchsia_dir
 
-    procs = []
-    for f in json_files:
-        temp = ctx.io.tempfile(ctx.io.read_file(f))
-        procs.append((
-            f,
-            temp,
-            os_exec(
-                ctx,
-                [
-                    python_bin,
-                    formatter_script,
-                    "--no-sort-keys",
-                    "--quiet",
-                    temp,
-                ],
-                ok_retcodes = (0, 1),
-            ),
-        ))
+    # The results can exceed shac's limit on a subprocess's stdout size.
+    output = ctx.io.tempfile("")
+    os_exec(
+        ctx,
+        [
+            python_bin,
+            formatter_script,
+            "--check",
+            "--no-sort-keys",
+            "--output",
+            output,
+        ] + list(json_files),
+    ).wait()
 
-    for f, temp, proc in procs:
-        res = proc.wait()
-        if res.retcode == 0:
-            formatted = str(ctx.io.read_file(temp))
-            original = str(ctx.io.read_file(f))
-            if formatted != original:
-                ctx.emit.finding(
-                    level = "warning",
-                    message = FORMATTER_MSG,
-                    filepath = f,
-                    replacements = [formatted],
-                )
+    for item in json.decode(str(ctx.io.read_file(output))):
+        if "replacements" in item:
+            ctx.emit.finding(
+                level = "warning",
+                message = FORMATTER_MSG,
+                filepath = item["filepath"],
+                replacements = item["replacements"],
+            )
         else:
             ctx.emit.finding(
                 level = "warning",
-                message = "Could not format %s: invalid JSON syntax" % f,
-                filepath = f,
+                message = "Could not format %s: invalid JSON syntax" % item["filepath"],
+                filepath = item["filepath"],
             )
 
 def register_json_checks():

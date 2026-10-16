@@ -126,35 +126,35 @@ def _header_guards(ctx):
     )
     checker_script = "%s/scripts/shac/check_header_guards.py" % fuchsia_dir
 
-    procs = []
-    for h in headers:
-        procs.append((
-            h,
-            os_exec(
-                ctx,
-                [python_bin, checker_script, "--root", fuchsia_dir, "--emit", h],
-                ok_retcodes = (0, 1),
-            ),
-        ))
+    # The results can exceed shac's limit on a subprocess's stdout size.
+    output = ctx.io.tempfile("")
+    os_exec(
+        ctx,
+        [
+            python_bin,
+            checker_script,
+            "--root",
+            fuchsia_dir,
+            "--json",
+            "--output",
+            output,
+        ] + headers,
+    ).wait()
 
-    for h, proc in procs:
-        res = proc.wait()
-        if res.retcode != 0:
+    for item in json.decode(str(ctx.io.read_file(output))):
+        if "error" in item:
             ctx.emit.finding(
                 level = "warning",
-                message = res.stderr.strip() or ("Header guard issue in %s." % h),
-                filepath = h,
+                message = item["error"] or ("Header guard issue in %s." % item["path"]),
+                filepath = item["path"],
             )
         else:
-            formatted = res.stdout
-            original = str(ctx.io.read_file(h))
-            if formatted and formatted != original:
-                ctx.emit.finding(
-                    level = "warning",
-                    message = FORMATTER_MSG,
-                    filepath = h,
-                    replacements = [formatted],
-                )
+            ctx.emit.finding(
+                level = "warning",
+                message = FORMATTER_MSG,
+                filepath = item["path"],
+                replacements = item["replacements"],
+            )
 
 def _clang_tidy(ctx):
     """Runs clang-tidy on C/C++ source files."""

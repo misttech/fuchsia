@@ -5,6 +5,7 @@
 
 import collections
 import io
+import json
 import pathlib
 import sys
 import tempfile
@@ -376,6 +377,42 @@ class TestCheckHeaderGuards(unittest.TestCase):
         ), mock.patch.object(sys, "stderr", io.StringIO()):
             ret = check_header_guards.main()
             self.assertEqual(ret, 1)
+
+    def test_main_cli_json_mode(self) -> None:
+        good_h = self.root / "src" / "good.h"
+        good_h.parent.mkdir(parents=True, exist_ok=True)
+        good_h.write_text(
+            "#ifndef SRC_GOOD_H_\n#define SRC_GOOD_H_\n\n#endif  // SRC_GOOD_H_\n",
+            encoding="utf-8",
+        )
+        pragma_h = self.root / "src" / "pragma.h"
+        pragma_h.write_text("#pragma once\n", encoding="utf-8")
+        broken_h = self.root / "src" / "broken.h"
+        broken_h.write_text("#pragma once\n#pragma once\n", encoding="utf-8")
+
+        stdout_buf = io.StringIO()
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "check_header_guards.py",
+                "--root",
+                str(self.root),
+                "--json",
+                str(good_h),
+                str(pragma_h),
+                str(broken_h),
+            ],
+        ), mock.patch.object(sys, "stdout", stdout_buf):
+            ret = check_header_guards.main()
+            self.assertEqual(ret, 0)
+
+        results = json.loads(stdout_buf.getvalue())
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["path"], str(pragma_h))
+        self.assertIn("#ifndef SRC_PRAGMA_H_", results[0]["replacements"][0])
+        self.assertEqual(results[1]["path"], str(broken_h))
+        self.assertIn("multiple #pragma once", results[1]["error"])
 
 
 if __name__ == "__main__":

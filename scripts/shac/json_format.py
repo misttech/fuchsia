@@ -14,6 +14,17 @@ import tempfile
 from pathlib import Path
 
 
+def _write_results(
+    results: list[dict[str, object]], output: Path | None
+) -> None:
+    # The results include the full formatted contents of each unformatted file,
+    # which can exceed shac's limit on the size of a subprocess's stdout.
+    if output:
+        output.write_text(json.dumps(results), encoding="utf-8")
+    else:
+        print(json.dumps(results))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pretty-print JSON files.")
     parser.add_argument(
@@ -36,8 +47,45 @@ def main():
         dest="quiet",
         help="Suppress output.",
     )
+    parser.add_argument(
+        "--check",
+        default=False,
+        action="store_true",
+        help="Check files without modifying disk and print JSON results to stdout.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="With --check, write the JSON results to this file instead of stdout.",
+    )
 
     args = parser.parse_args()
+    if args.check:
+        results = []
+        for json_path in args.file:
+            try:
+                original = json_path.read_text(encoding="utf-8")
+                data = json.loads(original)
+            except json.JSONDecodeError:
+                results.append({"filepath": str(json_path)})
+                continue
+            formatted = json.dumps(
+                data,
+                indent=4,
+                sort_keys=args.sort_keys,
+                separators=(",", ": "),
+            )
+            new_content = formatted + "\n"
+            if original != new_content:
+                results.append(
+                    {
+                        "filepath": str(json_path),
+                        "replacements": [new_content],
+                    }
+                )
+        _write_results(results, args.output)
+        return
+
     for json_path in args.file:
         try:
             with open(json_path, "r", encoding="utf-8") as f:
