@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "tee-client-api-headers",
+    hdrs = [
+        "include/tee-client-api/tee-client-impl.h",
+        "include/tee-client-api/tee-client-types.h",
+        "include/tee-client-api/tee_client_api.h",
+    ],
+    visibility = [
+        "//src/devices/securemem/drivers/aml-securemem:__pkg__",
+        "//src/devices/tee/drivers/optee:__pkg__",
+    ],
+)
+
+fx_cc_library(
+    name = "tee-client-api-static",
+    srcs = ["tee-client-api.cc"],
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.hardware.tee:fuchsia.hardware.tee_cpp",
+        "//sdk/fidl/fuchsia.tee:fuchsia.tee_cpp",
+        "//sdk/lib/component/incoming/cpp",
+        "//sdk/lib/fdio",
+        "//sdk/lib/fidl",
+        "//zircon/system/ulib/zx",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [":tee-client-api-headers"],
+    alwayslink = True,
+)
