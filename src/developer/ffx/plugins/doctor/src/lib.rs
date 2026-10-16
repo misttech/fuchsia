@@ -102,9 +102,6 @@ impl FfxMain for DoctorTool {
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        // TODO(b/373720502): This is passing a `Some(self.show_tool)` to make it simpler not to
-        // have to update existing tests that take in a dozen arguments. The proper approach for
-        // this is to refactor `ffx doctor` to make testing things like this less cumbersome.
         // TODO(b/373723080): Add actual tests for the usage of `ffx target show` within `ffx
         // doctor`.
         // This duplication avoids dynamic dispatch overhead from generic Write arguments
