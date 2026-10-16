@@ -162,7 +162,7 @@ func ValidateDevice(
 	}
 
 	if expectedRebootReason != "" {
-		reason, err := ffxTool.TargetGetLastRebootReason(ctx, device.Name())
+		reason, err := device.GetLastRebootReason(ctx, ffxTool)
 		if err != nil {
 			return fmt.Errorf("failed to get last reboot reason: %w", err)
 		}

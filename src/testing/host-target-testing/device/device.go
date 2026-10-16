@@ -972,3 +972,14 @@ func (c *Client) SetUpdateChannel(
 	ffxTool.SetTarget(targetSpecifier)
 	return ffxTool.TargetUpdateChannelSet(ctx, targetSpecifier, channel)
 }
+
+func (c *Client) GetLastRebootReason(
+	ctx context.Context,
+	ffxTool *ffx.FFXTool,
+) (string, error) {
+	targetSpecifier, err := c.getTargetSpecifier(ctx, ffxTool)
+	if err != nil {
+		return "", fmt.Errorf("failed to get target specifier: %w", err)
+	}
+	return ffxTool.TargetGetLastRebootReason(ctx, targetSpecifier)
+}
