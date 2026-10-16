@@ -192,8 +192,8 @@ impl MessageData for Arc<VmsplicePayload> {
     }
 
     fn clone_at_most(&self, limit: usize) -> Self {
-        let mut payload =
-            VmsplicePayload::new_with_segments(self.mapping.clone(), self.segments.lock().clone());
+        let segments = { self.segments.lock().clone() };
+        let mut payload = VmsplicePayload::new_with_segments(self.mapping.clone(), segments);
         payload.truncate(limit);
         payload
     }
@@ -421,6 +421,35 @@ mod tests {
                 .unwrap();
 
             assert!(mm.inflight_vmspliced_payloads.payloads.lock().is_empty());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn clone_at_most_registers_cloned_payload() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE;
+            let mm = current_task.mm().unwrap();
+            let memory = Arc::new(MemoryObject::from(zx::Vmo::create(page_size).unwrap()));
+            memory.write(b"0123456789abcdef", 0).unwrap();
+
+            let payload = VmsplicePayload::new(
+                Arc::downgrade(&mm),
+                VmsplicePayloadSegment {
+                    addr_offset: UserAddress::NULL,
+                    length: 16,
+                    memory,
+                    memory_offset: 0,
+                    should_snapshot_on_unmap: true,
+                },
+            );
+            let cloned = payload.clone_at_most(6);
+            assert_eq!(cloned.len(), 6);
+            assert_eq!(mm.inflight_vmspliced_payloads.payloads.lock().len(), 2);
+
+            let mut got = VecOutputBuffer::new(6);
+            cloned.copy_to_user(&mut got).unwrap();
+            assert_eq!(got.data(), b"012345");
         })
         .await;
     }
