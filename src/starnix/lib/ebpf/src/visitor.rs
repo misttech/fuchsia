@@ -8,7 +8,7 @@ use crate::{
     BPF_JGE, BPF_JGT, BPF_JLE, BPF_JLT, BPF_JMP, BPF_JMP32, BPF_JNE, BPF_JSET, BPF_JSGE, BPF_JSGT,
     BPF_JSLE, BPF_JSLT, BPF_K, BPF_LD, BPF_LDDW, BPF_LDX, BPF_LSH, BPF_MEM, BPF_MOD, BPF_MOV,
     BPF_MUL, BPF_NEG, BPF_OR, BPF_RSH, BPF_ST, BPF_STX, BPF_SUB, BPF_TO_BE, BPF_TO_LE, BPF_W,
-    BPF_X, BPF_XCHG, BPF_XOR, DataWidth, EbpfInstruction,
+    BPF_X, BPF_XCHG, BPF_XOR, DataWidth, EbpfInstruction, VerifierErrorKind,
 };
 
 /// The index into the registers. 10 is the stack pointer.
@@ -25,177 +25,187 @@ pub enum Source {
 
 pub trait BpfVisitor {
     type Context<'a>;
+    type Error: From<VerifierErrorKind>;
 
     fn add<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn add64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn and<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn and64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn arsh<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn arsh64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn div<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn div64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn lsh<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn lsh64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn r#mod<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn mod64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn mov<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn mov64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn mul<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn mul64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn or<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn or64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn rsh<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn rsh64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn sub<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn sub64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn xor<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn xor64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
-    fn neg<'a>(&mut self, context: &mut Self::Context<'a>, dst: Register) -> Result<(), String>;
-    fn neg64<'a>(&mut self, context: &mut Self::Context<'a>, dst: Register) -> Result<(), String>;
+    fn neg<'a>(
+        &mut self,
+        context: &mut Self::Context<'a>,
+        dst: Register,
+    ) -> Result<(), Self::Error>;
+    fn neg64<'a>(
+        &mut self,
+        context: &mut Self::Context<'a>,
+        dst: Register,
+    ) -> Result<(), Self::Error>;
 
     fn be<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         width: DataWidth,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn le<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         width: DataWidth,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn call_external<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         index: u32,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
-    fn exit<'a>(&mut self, context: &mut Self::Context<'a>) -> Result<(), String>;
+    fn exit<'a>(&mut self, context: &mut Self::Context<'a>) -> Result<(), Self::Error>;
 
-    fn jump<'a>(&mut self, context: &mut Self::Context<'a>, offset: i16) -> Result<(), String>;
+    fn jump<'a>(&mut self, context: &mut Self::Context<'a>, offset: i16)
+    -> Result<(), Self::Error>;
 
     fn jeq<'a>(
         &mut self,
@@ -203,154 +213,154 @@ pub trait BpfVisitor {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jeq64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jne<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jne64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jge<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jge64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jgt<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jgt64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jle<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jle64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jlt<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jlt64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jsge<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jsge64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jsgt<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jsgt64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jsle<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jsle64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jslt<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jslt64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jset<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
     fn jset64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_add<'a>(
         &mut self,
@@ -359,7 +369,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_add64<'a>(
         &mut self,
@@ -368,7 +378,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_and<'a>(
         &mut self,
@@ -377,7 +387,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_and64<'a>(
         &mut self,
@@ -386,7 +396,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_or<'a>(
         &mut self,
@@ -395,7 +405,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_or64<'a>(
         &mut self,
@@ -404,7 +414,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_xor<'a>(
         &mut self,
@@ -413,7 +423,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_xor64<'a>(
         &mut self,
@@ -422,7 +432,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_xchg<'a>(
         &mut self,
@@ -431,7 +441,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_xchg64<'a>(
         &mut self,
@@ -440,7 +450,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_cmpxchg<'a>(
         &mut self,
@@ -448,7 +458,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn atomic_cmpxchg64<'a>(
         &mut self,
@@ -456,7 +466,7 @@ pub trait BpfVisitor {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn load<'a>(
         &mut self,
@@ -465,7 +475,7 @@ pub trait BpfVisitor {
         offset: i16,
         src: Register,
         width: DataWidth,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn load64<'a>(
         &mut self,
@@ -473,7 +483,7 @@ pub trait BpfVisitor {
         dst: Register,
         src: u8,
         lower: u32,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn load_from_packet<'a>(
         &mut self,
@@ -483,7 +493,7 @@ pub trait BpfVisitor {
         offset: i32,
         register_offset: Option<Register>,
         width: DataWidth,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     fn store<'a>(
         &mut self,
@@ -492,14 +502,14 @@ pub trait BpfVisitor {
         offset: i16,
         src: Source,
         width: DataWidth,
-    ) -> Result<(), String>;
+    ) -> Result<(), Self::Error>;
 
     #[inline(always)]
     fn visit<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         inst: EbpfInstruction,
-    ) -> Result<(), String> {
+    ) -> Result<(), Self::Error> {
         let dst = inst.dst_reg();
         let src_imm = || Source::Value(inst.imm() as u64);
         let src_reg = || Source::Reg(inst.src_reg());
@@ -508,7 +518,7 @@ pub trait BpfVisitor {
             16 => Ok(DataWidth::U16),
             32 => Ok(DataWidth::U32),
             64 => Ok(DataWidth::U64),
-            _ => Err(format!("invalid byte swap width: {}", inst.imm())),
+            _ => Err(VerifierErrorKind::InvalidByteSwapWidth(inst.imm()).into()),
         };
 
         const BPF_ALU_ADD_K: u8 = BPF_ALU | BPF_ADD | BPF_K;
@@ -754,7 +764,7 @@ pub trait BpfVisitor {
             // Function call.
             BPF_JMP_CALL => match inst.src_reg() {
                 0 => self.call_external(context, inst.imm() as u32),
-                _ => Err(format!("unsupported call with src = {}", inst.src_reg())),
+                _ => Err(VerifierErrorKind::UnsupportedCallType(inst.src_reg()).into()),
             },
 
             // Return.
@@ -844,7 +854,7 @@ pub trait BpfVisitor {
                     }
                     BPF_XCHG => self.atomic_xchg(context, true, dst, inst.offset(), inst.src_reg()),
                     BPF_CMPXCHG => self.atomic_cmpxchg(context, dst, inst.offset(), inst.src_reg()),
-                    _ => Err(format!("invalid atomic operation {:x}", operation)),
+                    _ => Err(VerifierErrorKind::InvalidAtomicOp(operation).into()),
                 }
             }
 
@@ -880,11 +890,11 @@ pub trait BpfVisitor {
                     BPF_CMPXCHG => {
                         self.atomic_cmpxchg64(context, dst, inst.offset(), inst.src_reg())
                     }
-                    _ => Err(format!("invalid atomic operation {:x}", operation)),
+                    _ => Err(VerifierErrorKind::InvalidAtomicOp(operation).into()),
                 }
             }
 
-            _ => Err(format!("invalid op code {:x}", inst.code())),
+            _ => Err(VerifierErrorKind::InvalidOpcode(inst.code()).into()),
         }
     }
 }

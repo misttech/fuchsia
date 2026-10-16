@@ -11,7 +11,6 @@ mod ebpf_test {
     };
     use linux_uapi::{bpf_attr, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE};
     use serial_test::serial;
-    use std::assert_matches;
     use std::ffi::CString;
     use std::fs::{File, OpenOptions};
     use std::io::Write as _;
@@ -1612,7 +1611,7 @@ mod ebpf_test {
             &mut maps,
         )
         .expect_err("update on read-only map must fail verification");
-        assert_matches!(err.raw_os_error(), Some(libc::EACCES | libc::EINVAL));
+        assert_eq!(err.raw_os_error(), Some(libc::EACCES));
 
         // Program storing into lookup pointer of read-only map must fail
         // verification.
@@ -1623,7 +1622,7 @@ mod ebpf_test {
             &mut maps,
         )
         .expect_err("store into read-only map must fail verification");
-        assert_matches!(err.raw_os_error(), Some(libc::EACCES | libc::EINVAL));
+        assert_eq!(err.raw_os_error(), Some(libc::EACCES));
 
         // Program reading from lookup pointer of read-only map must pass
         // verification.
@@ -1644,7 +1643,7 @@ mod ebpf_test {
             &mut maps,
         )
         .expect_err("helper write into read-only map must fail verification");
-        assert_matches!(err.raw_os_error(), Some(libc::EACCES | libc::EINVAL));
+        assert_eq!(err.raw_os_error(), Some(libc::EACCES));
 
         // Program modifying read-only global variable (.rodata) must fail
         // verification.
@@ -1655,7 +1654,7 @@ mod ebpf_test {
             &mut maps,
         )
         .expect_err("write into read-only global must fail verification");
-        assert_matches!(err.raw_os_error(), Some(libc::EACCES | libc::EINVAL));
+        assert_eq!(err.raw_os_error(), Some(libc::EACCES));
 
         // Program reading from read-only global variable (.rodata) must pass
         // verification.

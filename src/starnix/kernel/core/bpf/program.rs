@@ -9,9 +9,9 @@ use crate::task::{CurrentTask, Kernel, register_delayed_release};
 use crate::vfs::{FdNumber, OutputBuffer};
 use ebpf::{
     BPF_LDDW, BPF_PSEUDO_BTF_ID, BPF_PSEUDO_FUNC, BPF_PSEUDO_MAP_FD, BPF_PSEUDO_MAP_IDX,
-    BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE, EbpfInstruction, EbpfProgram,
-    EbpfProgramContext, StaticHelperSet, VerifiedEbpfProgram, VerifierLogger, link_program,
-    verify_program,
+    BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE, EbpfError, EbpfInstruction, EbpfProgram,
+    EbpfProgramContext, StaticHelperSet, VerifiedEbpfProgram, VerifierError, VerifierLogger,
+    link_program, verify_program,
 };
 use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType, StructId};
 use fidl_fuchsia_ebpf as febpf;
@@ -19,7 +19,7 @@ use starnix_lifecycle::{AtomicCounter, ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_warn, track_stub};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON};
-use starnix_uapi::errors::Errno;
+use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::{bpf_attr__bindgen_ty_4, errno, error};
 use std::sync::{Arc, Weak};
 
@@ -89,6 +89,18 @@ fn map_ebpf_api_error(e: EbpfApiError) -> Errno {
     }
 }
 
+#[track_caller]
+fn verifier_error_to_errno(e: VerifierError) -> Errno {
+    Errno::with_context(ErrnoCode::from_error_code(e.errno() as i16), e)
+}
+
+fn map_ebpf_error(e: EbpfError) -> Errno {
+    match e {
+        EbpfError::ProgramVerifyError(v) => verifier_error_to_errno(v),
+        _ => errno!(EINVAL, e),
+    }
+}
+
 impl Program {
     pub fn new(
         current_task: &CurrentTask,
@@ -103,8 +115,8 @@ impl Program {
             .program_type
             .create_calling_context(info.expected_attach_type, maps_schema)
             .map_err(map_ebpf_api_error)?;
-        let program = verify_program(code, calling_context, &mut logger)
-            .map_err(|err| errno!(EINVAL, err))?;
+        let program =
+            verify_program(code, calling_context, &mut logger).map_err(verifier_error_to_errno)?;
 
         let (fidl_handle, service_handle) = zx::EventPair::create();
         let fidl_id =
@@ -146,7 +158,7 @@ impl Program {
         }
 
         let maps = self.maps.iter().map(|map| map.get_inner()).collect();
-        let program = link_program(&self.program, maps).map_err(|err| errno!(EINVAL, err))?;
+        let program = link_program(&self.program, maps).map_err(map_ebpf_error)?;
 
         Ok(program)
     }

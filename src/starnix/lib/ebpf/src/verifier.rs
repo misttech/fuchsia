@@ -9,8 +9,8 @@ use crate::visitor::{BpfVisitor, ProgramCounter, Register, Source};
 use crate::{
     BPF_ATOMIC, BPF_CALL, BPF_CLS_MASK, BPF_CMPXCHG, BPF_DW, BPF_EXIT, BPF_JA, BPF_JMP, BPF_JMP32,
     BPF_LDDW, BPF_MAX_INSTS, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE, BPF_STACK_SIZE, BPF_STX,
-    BPF_SUB_OP_MASK, BPF_W, DataWidth, EbpfError, EbpfInstruction, GENERAL_REGISTER_COUNT,
-    MapFlags, MapSchema, REGISTER_COUNT,
+    BPF_SUB_OP_MASK, BPF_W, DataWidth, EbpfInstruction, GENERAL_REGISTER_COUNT, MapFlags,
+    MapSchema, REGISTER_COUNT, VerifierError, VerifierErrorKind,
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian, NativeEndian};
 use linux_uapi::{bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY};
@@ -263,14 +263,14 @@ pub enum MemoryParameterSize {
 }
 
 impl MemoryParameterSize {
-    fn size(&self, context: &ComputationContext) -> Result<u64, String> {
+    fn size(&self, context: &ComputationContext) -> Result<u64, VerifierErrorKind> {
         match self {
             Self::Value(size) => Ok(*size),
             Self::Reference { index } => {
                 let size_type = context.reg(index + 1)?;
                 match size_type {
                     Type::ScalarValue(data) if data.is_known() => Ok(data.value),
-                    _ => Err("cannot know buffer size".to_string()),
+                    _ => Err(VerifierErrorKind::NonConstantBufferSize),
                 }
             }
         }
@@ -505,13 +505,13 @@ impl Type {
         }
     }
 
-    fn inner(&self, context: &ComputationContext) -> Result<&Type, String> {
+    fn inner(&self, context: &ComputationContext) -> Result<&Type, VerifierErrorKind> {
         match self {
             Self::Releasable { id, inner } => {
                 if context.resources.contains(id) {
                     Ok(&inner)
                 } else {
-                    Err("Access to released resource".to_string())
+                    Err(VerifierErrorKind::UseAfterRelease)
                 }
             }
             _ => Ok(self),
@@ -526,7 +526,7 @@ impl Type {
         jump_width: JumpWidth,
         type1: Self,
         type2: Self,
-    ) -> Result<(Self, Self), String> {
+    ) -> Result<(Self, Self), VerifierErrorKind> {
         let result = match (jump_width, jump_type, type1.inner(context)?, type2.inner(context)?) {
             (JumpWidth::W64, JumpType::Eq, Type::ScalarValue(data1), Type::ScalarValue(data2))
                 if data1.is_fully_initialized() && data2.is_fully_initialized() =>
@@ -687,7 +687,7 @@ impl Type {
         parameter_type: &Type,
         index: usize,
         next: &mut ComputationContext,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         match (parameter_type, self) {
             (Type::NullOrParameter(t), Type::ScalarValue(data))
                 if data.is_known() && data.value == 0 =>
@@ -712,11 +712,11 @@ impl Type {
                 Type::ConstPtrToMap { schema, .. },
             ) => {
                 if *must_be_writable && schema.flags.contains(MapFlags::ProgReadOnly) {
-                    return Err("write to a read-only map".to_string());
+                    return Err(VerifierErrorKind::WriteToReadOnlyMap);
                 }
                 let map_type = schema.map_type;
                 if !filter.is_allowed(map_type) {
-                    return Err(format!("Map type {map_type} not allowed in {helper_name}"));
+                    return Err(VerifierErrorKind::InvalidMapTypeForHelper(map_type));
                 }
                 Ok(())
             }
@@ -729,7 +729,7 @@ impl Type {
             }
             (Type::MapKeyParameter { map_ptr_index }, Type::PtrToStack { offset }) => {
                 let schema = context.get_map_schema(*map_ptr_index)?;
-                context.stack.read_data_ptr(context.pc, *offset, schema.key_size as u64)
+                context.stack.read_data_ptr(*offset, schema.key_size as u64)
             }
             (
                 Type::MapValueParameter { map_ptr_index },
@@ -740,23 +740,23 @@ impl Type {
             }
             (Type::MapValueParameter { map_ptr_index }, Type::PtrToStack { offset }) => {
                 let schema = context.get_map_schema(*map_ptr_index)?;
-                context.stack.read_data_ptr(context.pc, *offset, schema.value_size as u64)
+                context.stack.read_data_ptr(*offset, schema.value_size as u64)
             }
             (
                 Type::MemoryParameter { size, output, .. },
                 Type::PtrToMemory { offset, buffer_size, origin, .. },
             ) => {
                 if *output && !origin.is_writable() {
-                    return Err("write to read-only memory".to_string());
+                    return Err(VerifierErrorKind::WriteToReadOnlyMemory);
                 }
                 let expected_size = size.size(context)?;
                 let offset_max = offset.max();
                 if offset_max > *buffer_size {
-                    return Err("out of bound read".to_string());
+                    return Err(VerifierErrorKind::OutOfBoundsMemoryAccess);
                 }
                 let size_left = *buffer_size - offset_max;
                 if expected_size > size_left {
-                    return Err("out of bound read".to_string());
+                    return Err(VerifierErrorKind::OutOfBoundsMemoryAccess);
                 }
                 Ok(())
             }
@@ -765,13 +765,13 @@ impl Type {
                 let size = size.size(context)?;
                 let buffer_end = offset.add(size);
                 if !buffer_end.is_within_stack() {
-                    Err("out of bound access".to_string())
+                    Err(VerifierErrorKind::OutOfBoundsMemoryAccess)
                 } else {
                     if *output {
-                        next.stack.write_data_ptr(context.pc, *offset, size)?;
+                        next.stack.write_data_ptr(*offset, size)?;
                     }
                     if *input {
-                        context.stack.read_data_ptr(context.pc, *offset, size)?;
+                        context.stack.read_data_ptr(*offset, size)?;
                     }
                     Ok(())
                 }
@@ -795,7 +795,7 @@ impl Type {
                         next,
                     )
                 } else {
-                    Err(format!("Resource already released for index {index}"))
+                    Err(VerifierErrorKind::UseAfterRelease)
                 }
             }
             (Type::ContextParameter { parameter_index }, arg_type) => {
@@ -804,7 +804,7 @@ impl Type {
                 {
                     Ok(())
                 } else {
-                    Err(format!("Helper expects program argument {parameter_index}"))
+                    Err(VerifierErrorKind::ExpectedProgramArgument(*parameter_index))
                 }
             }
             (Type::ReleaseParameter { id: id1 }, Type::Releasable { id: id2, .. })
@@ -813,12 +813,12 @@ impl Type {
                 if next.resources.remove(id2) {
                     Ok(())
                 } else {
-                    Err(format!("{id2:?} Resource already released for index {index}"))
+                    Err(VerifierErrorKind::DoubleRelease)
                 }
             }
             (_, Type::Releasable { id, inner }) => {
                 if !next.resources.contains(id) {
-                    return Err(format!("Resource already released for index {index}"));
+                    return Err(VerifierErrorKind::UseAfterRelease);
                 }
                 inner.match_parameter_type(
                     verification_context,
@@ -831,7 +831,7 @@ impl Type {
             }
             (Type::AnyParameter, _) => Ok(()),
 
-            _ => Err(format!("incorrect parameter for index {index}")),
+            _ => Err(VerifierErrorKind::HelperArgumentTypeMismatch(index)),
         }
     }
 
@@ -969,9 +969,12 @@ pub fn verify_program(
     code: Vec<EbpfInstruction>,
     calling_context: CallingContext,
     logger: &mut dyn VerifierLogger,
-) -> Result<VerifiedEbpfProgram, EbpfError> {
+) -> Result<VerifiedEbpfProgram, VerifierError> {
     if code.len() > BPF_MAX_INSTS {
-        return error_and_log(logger, "ebpf program too long");
+        return error_and_log(
+            logger,
+            VerifierError { kind: VerifierErrorKind::ProgramTooLarge, pc: None },
+        );
     }
     // Pre-scan the program to ensure all LDDW instructions are structurally well-formed,
     // even if they are in unreachable code. This is necessary because:
@@ -992,14 +995,20 @@ pub fn verify_program(
         let inst = &code[scan_pc];
         if inst.code() == BPF_LDDW {
             let Some(next_instruction) = code.get(scan_pc + 1) else {
-                return error_and_log(logger, "incomplete lddw");
+                return error_and_log(
+                    logger,
+                    VerifierError { kind: VerifierErrorKind::IncompleteLddw, pc: Some(scan_pc) },
+                );
             };
             if next_instruction.code() != 0
                 || next_instruction.offset() != 0
                 || next_instruction.src_reg() != 0
                 || next_instruction.dst_reg() != 0
             {
-                return error_and_log(logger, "invalid lddw");
+                return error_and_log(
+                    logger,
+                    VerifierError { kind: VerifierErrorKind::MalformedLddw, pc: Some(scan_pc) },
+                );
             }
             scan_pc += 2;
         } else {
@@ -1031,7 +1040,9 @@ pub fn verify_program(
     let mut context = ComputationContext::default();
     for (i, t) in calling_context.args.iter().enumerate() {
         // The parameter registers are r1 to r5.
-        context.set_reg((i + 1) as u8, t.clone()).map_err(EbpfError::ProgramVerifyError)?;
+        context
+            .set_reg((i + 1) as u8, t.clone())
+            .map_err(|kind| VerifierError { kind, pc: None })?;
     }
     let states = vec![context];
     let mut verification_context =
@@ -1049,26 +1060,32 @@ pub fn verify_program(
                 if let Some(parent) = context.parent.take() {
                     parent.dependencies.lock().merge(ending_context.dependencies);
                     if let Some(parent) = Arc::into_inner(parent) {
-                        parent
-                            .terminate(&mut verification_context)
-                            .map_err(EbpfError::ProgramVerifyError)?;
+                        parent.terminate(&mut verification_context)?;
                     }
                 }
                 continue;
             }
         }
         if verification_context.iteration > 10 * BPF_MAX_INSTS {
-            return error_and_log(verification_context.logger, "bpf byte code does not terminate");
+            return error_and_log(
+                verification_context.logger,
+                VerifierError { kind: VerifierErrorKind::ComplexityLimitExceeded, pc: None },
+            );
         }
         if context.pc >= code.len() {
-            return error_and_log(verification_context.logger, "pc out of bounds");
+            return error_and_log(
+                verification_context.logger,
+                VerifierError { kind: VerifierErrorKind::FellOffProgramEnd, pc: Some(context.pc) },
+            );
         }
-        if let Err(message) = context.visit(&mut verification_context, code[context.pc]) {
-            let message = format!("at PC {}: {}", context.pc, message);
-            return error_and_log(verification_context.logger, message);
+        if let Err(kind) = context.visit(&mut verification_context, code[context.pc]) {
+            return error_and_log(
+                verification_context.logger,
+                VerifierError { kind, pc: Some(context.pc) },
+            );
         }
         if context.terminated {
-            context.terminate(&mut verification_context).map_err(EbpfError::ProgramVerifyError)?;
+            context.terminate(&mut verification_context)?;
         }
         verification_context.iteration += 1;
     }
@@ -1133,14 +1150,17 @@ impl<'a> VerificationContext<'a> {
 
     /// Register an instruction that loads or stores a struct field. These instructions will need
     /// to updated later when the program is linked.
-    fn register_struct_access(&mut self, struct_access: StructAccess) -> Result<(), String> {
+    fn register_struct_access(
+        &mut self,
+        struct_access: StructAccess,
+    ) -> Result<(), VerifierErrorKind> {
         match self.struct_access_instructions.entry(struct_access.pc) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(struct_access);
             }
             std::collections::hash_map::Entry::Occupied(entry) => {
                 if *entry.get() != struct_access {
-                    return Err("Inconsistent struct field access".to_string());
+                    return Err(VerifierErrorKind::InconsistentStructFieldAccess);
                 }
             }
         }
@@ -1162,9 +1182,16 @@ impl Default for StackOffset {
 }
 
 impl StackOffset {
-    /// Whether the current offset is valid for element access.
-    fn is_valid_offset(&self) -> bool {
-        self.0.is_known() && self.0.value < (BPF_STACK_SIZE as u64)
+    /// Returns an error if the current offset is not valid for element access, distinguishing
+    /// variable offsets from out of bounds ones.
+    fn check_valid_offset(&self) -> Result<(), VerifierErrorKind> {
+        if !self.0.is_known() {
+            return Err(VerifierErrorKind::VariableStackOffset);
+        }
+        if self.0.value >= (BPF_STACK_SIZE as u64) {
+            return Err(VerifierErrorKind::StackAccessOutOfBounds);
+        }
+        Ok(())
     }
 
     /// Whether the current offset is within the stack bounds, inclusive of `BPF_STACK_SIZE`.
@@ -1306,10 +1333,9 @@ impl Stack {
 
     fn write_data_ptr(
         &mut self,
-        pc: ProgramCounter,
         mut offset: StackOffset,
         bytes: u64,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         for i in 0..bytes {
             self.store(offset, Type::UNKNOWN_SCALAR, DataWidth::U8)?;
             offset = offset.add(1);
@@ -1317,46 +1343,41 @@ impl Stack {
         Ok(())
     }
 
-    fn read_data_ptr(
-        &self,
-        pc: ProgramCounter,
-        offset: StackOffset,
-        bytes: u64,
-    ) -> Result<(), String> {
-        let read_element =
-            |index: usize, start_offset: usize, end_offset: usize| -> Result<(), String> {
-                match self.get(index) {
-                    Type::ScalarValue(data) => {
-                        debug_assert!(end_offset > start_offset);
-                        let unwritten_bits = Self::extract_sub_value(
-                            data.unwritten_mask,
-                            start_offset,
-                            end_offset - start_offset,
-                        );
-                        if unwritten_bits == 0 {
-                            Ok(())
-                        } else {
-                            Err("reading unwritten value from the stack".to_string())
-                        }
+    fn read_data_ptr(&self, offset: StackOffset, bytes: u64) -> Result<(), VerifierErrorKind> {
+        let read_element = |index: usize,
+                            start_offset: usize,
+                            end_offset: usize|
+         -> Result<(), VerifierErrorKind> {
+            match self.get(index) {
+                Type::ScalarValue(data) => {
+                    debug_assert!(end_offset > start_offset);
+                    let unwritten_bits = Self::extract_sub_value(
+                        data.unwritten_mask,
+                        start_offset,
+                        end_offset - start_offset,
+                    );
+                    if unwritten_bits == 0 {
+                        Ok(())
+                    } else {
+                        Err(VerifierErrorKind::UninitializedStackRead)
                     }
-                    _ => Err("invalid read from the stack".to_string()),
                 }
-            };
+                _ => Err(VerifierErrorKind::NonScalarStackRead),
+            }
+        };
         if bytes == 0 {
             return Ok(());
         }
 
         if bytes as usize > BPF_STACK_SIZE {
-            return Err("stack overflow".to_string());
+            return Err(VerifierErrorKind::StackAccessOutOfBounds);
         }
 
-        if !offset.is_valid_offset() {
-            return Err("invalid stack offset".to_string());
-        }
+        offset.check_valid_offset()?;
 
         let end_offset = offset.add(bytes);
         if !end_offset.is_within_stack() {
-            return Err("stack overflow".to_string())?;
+            return Err(VerifierErrorKind::StackAccessOutOfBounds);
         }
 
         // Handle the case where all the data is contained in a single element excluding the last
@@ -1382,12 +1403,15 @@ impl Stack {
         Ok(())
     }
 
-    fn store(&mut self, offset: StackOffset, value: Type, width: DataWidth) -> Result<(), String> {
-        if !offset.is_valid_offset() {
-            return Err("out of bounds store".to_string());
-        }
+    fn store(
+        &mut self,
+        offset: StackOffset,
+        value: Type,
+        width: DataWidth,
+    ) -> Result<(), VerifierErrorKind> {
+        offset.check_valid_offset()?;
         if offset.sub_index() % width.bytes() != 0 {
-            return Err("misaligned access".to_string());
+            return Err(VerifierErrorKind::MisalignedStackAccess);
         }
 
         let index = offset.array_index();
@@ -1437,19 +1461,17 @@ impl Stack {
                     );
                 }
                 _ => {
-                    return Err("cannot store part of a non scalar value on the stack".to_string());
+                    return Err(VerifierErrorKind::PartialNonScalarStackStore);
                 }
             }
         }
         Ok(())
     }
 
-    fn load(&self, offset: StackOffset, width: DataWidth) -> Result<Type, String> {
-        if !offset.is_valid_offset() {
-            return Err("out of bounds load".to_string());
-        }
+    fn load(&self, offset: StackOffset, width: DataWidth) -> Result<Type, VerifierErrorKind> {
+        offset.check_valid_offset()?;
         if offset.sub_index() % width.bytes() != 0 {
-            return Err("misaligned access".to_string());
+            return Err(VerifierErrorKind::MisalignedStackAccess);
         }
 
         let index = offset.array_index();
@@ -1479,11 +1501,13 @@ impl Stack {
                         urange,
                     ))
                 }
-                _ => return Err(format!("incorrect load of {} bytes", width.bytes())),
+                _ => {
+                    return Err(VerifierErrorKind::PartialNonScalarStackLoad);
+                }
             }
         };
         if !result.is_initialized() {
-            return Err("reading unwritten value from the stack".to_string());
+            return Err(VerifierErrorKind::UninitializedStackRead);
         }
         Ok(result)
     }
@@ -1602,9 +1626,9 @@ impl ComputationContext {
         self.stack.set_null(null_id, is_null);
     }
 
-    fn reg(&self, index: Register) -> Result<Type, String> {
+    fn reg(&self, index: Register) -> Result<Type, VerifierErrorKind> {
         if index >= REGISTER_COUNT {
-            return Err(format!("R{index} is invalid"));
+            return Err(VerifierErrorKind::InvalidRegister(index));
         }
         if index < GENERAL_REGISTER_COUNT {
             Ok(self.registers[index as usize].clone())
@@ -1613,9 +1637,12 @@ impl ComputationContext {
         }
     }
 
-    fn set_reg(&mut self, index: Register, reg_type: Type) -> Result<(), String> {
+    fn set_reg(&mut self, index: Register, reg_type: Type) -> Result<(), VerifierErrorKind> {
+        if index >= REGISTER_COUNT {
+            return Err(VerifierErrorKind::InvalidRegister(index));
+        }
         if index >= GENERAL_REGISTER_COUNT {
-            return Err(format!("R{index} is invalid"));
+            return Err(VerifierErrorKind::WriteToReadOnlyRegister(index));
         }
         self.registers[index as usize] = reg_type;
         Ok(())
@@ -1629,36 +1656,54 @@ impl ComputationContext {
             .or_insert(new_bound_min);
     }
 
-    fn get_map_schema(&self, argument: u8) -> Result<MapSchema, String> {
+    fn get_map_schema(&self, argument: u8) -> Result<MapSchema, VerifierErrorKind> {
         match self.reg(argument + 1)? {
             Type::ConstPtrToMap { schema, .. } => Ok(schema),
-            _ => Err(format!("No map found at argument {argument}")),
+            _ => Err(VerifierErrorKind::HelperArgumentNotMap(argument)),
         }
     }
 
-    fn next(&self) -> Result<Self, String> {
-        let parent = Some(Arc::new(self.clone()));
-        self.jump_with_offset(0, parent)
+    fn next(&self) -> Result<Self, VerifierErrorKind> {
+        self.jump_with_offset(0, Arc::new(self.clone()))
     }
 
     /// Returns a new `ComputationContext` where the pc has jump by `offset + 1`. In particular,
     /// the next instruction is reached with `jump_with_offset(0)`.
-    fn jump_with_offset(&self, offset: i16, parent: Option<Arc<Self>>) -> Result<Self, String> {
+    ///
+    /// This does not check that the target is inside the program: falling off the end of the
+    /// program is reported by the main verification loop. Use `checked_jump_with_offset` for
+    /// explicit jumps.
+    fn jump_with_offset(&self, offset: i16, parent: Arc<Self>) -> Result<Self, VerifierErrorKind> {
         let pc = self
             .pc
             .checked_add_signed(offset.into())
             .and_then(|v| v.checked_add_signed(1))
-            .ok_or_else(|| "jump outside of program".to_string())?;
+            .ok_or(VerifierErrorKind::JumpOutOfBounds)?;
         let result = Self {
             pc,
             registers: self.registers.clone(),
             stack: self.stack.clone(),
             array_bounds: self.array_bounds.clone(),
             resources: self.resources.clone(),
-            parent,
+            parent: Some(parent),
             dependencies: Default::default(),
             terminated: false,
         };
+        Ok(result)
+    }
+
+    /// Same as `jump_with_offset`, but also fails if the target of the jump is outside of the
+    /// program.
+    fn checked_jump_with_offset(
+        &self,
+        verification_context: &VerificationContext<'_>,
+        offset: i16,
+        parent: Arc<Self>,
+    ) -> Result<Self, VerifierErrorKind> {
+        let result = self.jump_with_offset(offset, parent)?;
+        if result.pc >= verification_context.code.len() {
+            return Err(VerifierErrorKind::JumpOutOfBounds);
+        }
         Ok(result)
     }
 
@@ -1668,10 +1713,10 @@ impl ComputationContext {
         dst_buffer_size: u64,
         instruction_offset: i16,
         width: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         let memory_range = dst_offset.urange + instruction_offset + U64Range::new(0, width as u64);
         if memory_range.max > dst_buffer_size {
-            return Err("out of bound access".to_string());
+            return Err(VerifierErrorKind::OutOfBoundsMemoryAccess);
         }
         Ok(())
     }
@@ -1682,7 +1727,7 @@ impl ComputationContext {
         addr: &Type,
         field: Field,
         value: Type,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         let addr = addr.inner(self)?;
         match *addr {
             Type::PtrToStack { offset } => {
@@ -1693,15 +1738,15 @@ impl ComputationContext {
                 self.check_memory_access(offset, buffer_size, field.offset, field.width.bytes())?;
             }
             Type::PtrToMemory { .. } => {
-                return Err("write to read-only memory".to_string());
+                return Err(VerifierErrorKind::WriteToReadOnlyMemory);
             }
             Type::PtrToStruct { ref id, offset, ref descriptor, .. } => {
                 let field_desc = descriptor
                     .find_field(offset, field)
-                    .ok_or_else(|| "incorrect store".to_string())?;
+                    .ok_or(VerifierErrorKind::InvalidStructFieldAccess)?;
 
                 if !matches!(field_desc.field_type, FieldType::MutableScalar { .. }) {
-                    return Err("store to a read-only field".to_string());
+                    return Err(VerifierErrorKind::WriteToReadOnlyField);
                 }
 
                 context.register_struct_access(StructAccess {
@@ -1719,13 +1764,13 @@ impl ComputationContext {
                     field.width.bytes(),
                 )?;
             }
-            _ => return Err("incorrect store".to_string()),
+            _ => return Err(VerifierErrorKind::StoreToNonPointer),
         }
 
         match value {
             Type::ScalarValue(data) if data.is_fully_initialized() => {}
             // Private data should not be leaked.
-            _ => return Err("incorrect store".to_string()),
+            _ => return Err(VerifierErrorKind::InvalidStoredValue),
         }
         Ok(())
     }
@@ -1735,7 +1780,7 @@ impl ComputationContext {
         context: &mut VerificationContext<'_>,
         addr: &Type,
         field: Field,
-    ) -> Result<Type, String> {
+    ) -> Result<Type, VerifierErrorKind> {
         let addr = addr.inner(self)?;
         match *addr {
             Type::PtrToStack { offset } => {
@@ -1749,7 +1794,7 @@ impl ComputationContext {
             Type::PtrToStruct { ref id, offset, ref descriptor, .. } => {
                 let field_desc = descriptor
                     .find_field(offset, field)
-                    .ok_or_else(|| "incorrect load".to_string())?;
+                    .ok_or(VerifierErrorKind::InvalidStructFieldAccess)?;
 
                 let (return_type, is_32_bit_ptr_load) = match &field_desc.field_type {
                     FieldType::Scalar { .. } | FieldType::MutableScalar { .. } => {
@@ -1806,7 +1851,7 @@ impl ComputationContext {
                 )?;
                 Ok(Type::UNKNOWN_SCALAR)
             }
-            _ => Err("incorrect load".to_string()),
+            _ => Err(VerifierErrorKind::LoadFromNonPointer),
         }
     }
 
@@ -1822,7 +1867,7 @@ impl ComputationContext {
         return_value: &Type,
         next: &mut ComputationContext,
         maybe_null: bool,
-    ) -> Result<Type, String> {
+    ) -> Result<Type, VerifierErrorKind> {
         match return_value {
             Type::AliasParameter { parameter_index } => self.reg(parameter_index + 1),
             Type::ReleasableParameter { id, inner } => {
@@ -1894,7 +1939,7 @@ impl ComputationContext {
         }
     }
 
-    fn compute_source(&self, src: Source) -> Result<Type, String> {
+    fn compute_source(&self, src: Source) -> Result<Type, VerifierErrorKind> {
         match src {
             Source::Reg(reg) => self.reg(reg),
             Source::Value(v) => Ok(v.into()),
@@ -1907,7 +1952,7 @@ impl ComputationContext {
         op2: Type,
         alu_type: AluType,
         op: impl Fn(ScalarValueData, ScalarValueData) -> ScalarValueData,
-    ) -> Result<Type, String> {
+    ) -> Result<Type, VerifierErrorKind> {
         let result: Type = match (alu_type, op1.inner(context)?, op2.inner(context)?) {
             (_, Type::ScalarValue(data1), Type::ScalarValue(data2)) => op(*data1, *data2).into(),
             (
@@ -1931,7 +1976,7 @@ impl ComputationContext {
                 | Type::PtrToArray { .. },
                 Type::ScalarValue(data),
             ) if alu_type.is_ptr_compatible() && !data.is_fully_initialized() => {
-                return Err("pointer arithmetic with uninitialized scalar".to_string());
+                return Err(VerifierErrorKind::UninitializedPointerArithmetic);
             }
             (alu_type, Type::PtrToStack { offset: x }, Type::ScalarValue(data))
                 if alu_type.is_ptr_compatible() =>
@@ -1960,15 +2005,13 @@ impl ComputationContext {
                 Type::PtrToStruct { id: id.clone(), offset, descriptor: descriptor.clone() }
             }
             (AluType::Add, Type::PtrToArray { id, offset: x }, Type::ScalarValue(data)) => {
-                let offset = x
-                    .checked_add(*data)
-                    .ok_or_else(|| "packet pointer offset overflow".to_string())?;
+                let offset =
+                    x.checked_add(*data).ok_or(VerifierErrorKind::PointerOffsetOverflow)?;
                 Type::PtrToArray { id: id.clone(), offset }
             }
             (AluType::Sub, Type::PtrToArray { id, offset: x }, Type::ScalarValue(data)) => {
-                let offset = x
-                    .checked_sub(*data)
-                    .ok_or_else(|| "packet pointer offset underflow".to_string())?;
+                let offset =
+                    x.checked_sub(*data).ok_or(VerifierErrorKind::PointerOffsetOverflow)?;
                 Type::PtrToArray { id: id.clone(), offset }
             }
             (
@@ -2012,7 +2055,7 @@ impl ComputationContext {
         src: Source,
         alu_type: AluType,
         op: impl Fn(ScalarValueData, ScalarValueData) -> ScalarValueData,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         if let Some(op_name) = op_name {
             bpf_log!(
                 self,
@@ -2061,8 +2104,8 @@ impl ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-        op: impl FnOnce(&ComputationContext, Type, Type) -> Result<Type, String>,
-    ) -> Result<(), String> {
+        op: impl FnOnce(&ComputationContext, Type, Type) -> Result<Type, VerifierErrorKind>,
+    ) -> Result<(), VerifierErrorKind> {
         self.log_atomic_operation(op_name, verification_context, fetch, dst, offset, src);
         let addr = self.reg(dst)?;
         let value = self.reg(src)?;
@@ -2089,7 +2132,7 @@ impl ComputationContext {
         src: Register,
         alu_type: AluType,
         op: impl Fn(ScalarValueData, ScalarValueData) -> ScalarValueData,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.raw_atomic_operation(
             op_name,
             verification_context,
@@ -2113,7 +2156,7 @@ impl ComputationContext {
         src: Register,
         jump_width: JumpWidth,
         op: impl Fn(ScalarValueData, ScalarValueData) -> Result<Option<bool>, ()>,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.log_atomic_operation(op_name, verification_context, true, dst, offset, src);
         let width = match jump_width {
             JumpWidth::W32 => DataWidth::U32,
@@ -2151,7 +2194,7 @@ impl ComputationContext {
         verification_context: &mut VerificationContext<'_>,
         dst: Register,
         width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, verification_context, "{op_name}{} {}", width.bits(), display_register(dst),);
         let bit_op = |value: u64| match width {
             DataWidth::U16 => BO::read_u16((value as u16).as_bytes()) as u64,
@@ -2183,7 +2226,7 @@ impl ComputationContext {
         op1: &Type,
         op2: &Type,
         op: impl Fn(ScalarValueData, ScalarValueData) -> Result<Option<bool>, ()>,
-    ) -> Result<Option<bool>, String> {
+    ) -> Result<Option<bool>, VerifierErrorKind> {
         match (jump_width, op1, op2) {
             (_, Type::ScalarValue(data1), Type::ScalarValue(data2)) => op(*data1, *data2),
             (JumpWidth::W64, Type::ScalarValue(data), Type::NullOr { .. })
@@ -2234,7 +2277,7 @@ impl ComputationContext {
 
             _ => Err(()),
         }
-        .map_err(|_| "non permitted comparison".to_string())
+        .map_err(|_| VerifierErrorKind::InvalidComparison)
     }
 
     fn conditional_jump(
@@ -2247,7 +2290,7 @@ impl ComputationContext {
         jump_type: JumpType,
         jump_width: JumpWidth,
         op: impl Fn(ScalarValueData, ScalarValueData) -> Result<Option<bool>, ()>,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(
             self,
             verification_context,
@@ -2260,7 +2303,7 @@ impl ComputationContext {
         let op2 = self.compute_source(src.clone())?;
         let apply_constraints_and_register = |mut next: Self,
                                               jump_type: JumpType|
-         -> Result<Self, String> {
+         -> Result<Self, VerifierErrorKind> {
             if jump_type != JumpType::Unknown {
                 let (new_op1, new_op2) =
                     Type::constraint(&mut next, jump_type, jump_width, op1.clone(), op2.clone())?;
@@ -2279,11 +2322,11 @@ impl ComputationContext {
             Ok(next)
         };
         let branch = self.compute_branch(jump_width, &op1, &op2, op)?;
-        let parent = Some(Arc::new(self.clone()));
+        let parent = Arc::new(self.clone());
         if branch.unwrap_or(true) {
             // Do the jump
             verification_context.states.push(apply_constraints_and_register(
-                self.jump_with_offset(offset, parent.clone())?,
+                self.checked_jump_with_offset(verification_context, offset, parent.clone())?,
                 jump_type,
             )?);
         }
@@ -2314,7 +2357,10 @@ impl ComputationContext {
     ///    the same PC.
     /// 4. **Parent Termination:** If all the children of the current context have terminated,
     ///    its parent context is recursively terminated.
-    fn terminate(self, verification_context: &mut VerificationContext<'_>) -> Result<(), String> {
+    fn terminate(
+        self,
+        verification_context: &mut VerificationContext<'_>,
+    ) -> Result<(), VerifierError> {
         let mut next = Some(self);
         // Because of the potential length of the parent chain, do not use recursion.
         while let Some(mut current) = next.take() {
@@ -2326,13 +2372,15 @@ impl ComputationContext {
             //    and the actual operation.
             let mut dependencies = *current.dependencies.get_mut();
 
-            dependencies.visit(
-                &mut DataDependenciesVisitorContext {
-                    calling_context: &verification_context.calling_context,
-                    computation_context: &current,
-                },
-                verification_context.code[current.pc],
-            )?;
+            dependencies
+                .visit(
+                    &mut DataDependenciesVisitorContext {
+                        calling_context: &verification_context.calling_context,
+                        computation_context: &current,
+                    },
+                    verification_context.code[current.pc],
+                )
+                .map_err(|kind| VerifierError { kind, pc: Some(current.pc) })?;
 
             if let Some(terminating_contexts) =
                 &mut verification_context.terminating_contexts[current.pc]
@@ -2340,7 +2388,9 @@ impl ComputationContext {
                 // 2. Clear the state depending on the dependencies states
                 for register in 0..GENERAL_REGISTER_COUNT {
                     if !dependencies.has_reg(register) {
-                        current.set_reg(register, Default::default())?;
+                        current
+                            .set_reg(register, Default::default())
+                            .map_err(|kind| VerifierError { kind, pc: Some(current.pc) })?;
                     }
                 }
                 current.stack.retain(dependencies.stack);
@@ -2485,7 +2535,7 @@ impl DataDependencies {
         self.stack |= other.stack;
     }
 
-    fn alu(&mut self, dst: Register, src: Source) -> Result<(), String> {
+    fn alu(&mut self, dst: Register, src: Source) -> Result<(), VerifierErrorKind> {
         // Only do something if the dst is read, otherwise the computation doesn't matter.
         if self.has_reg(dst) {
             if let Source::Reg(src) = src {
@@ -2495,7 +2545,7 @@ impl DataDependencies {
         Ok(())
     }
 
-    fn jmp(&mut self, dst: Register, src: Source) -> Result<(), String> {
+    fn jmp(&mut self, dst: Register, src: Source) -> Result<(), VerifierErrorKind> {
         self.add_reg(dst);
         if let Source::Reg(src) = src {
             self.add_reg(src);
@@ -2512,7 +2562,7 @@ impl DataDependencies {
         src: Register,
         width: DataWidth,
         is_cmpxchg: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         let mut is_read = false;
         if is_cmpxchg && self.has_reg(0) {
             is_read = true;
@@ -2523,9 +2573,7 @@ impl DataDependencies {
         let addr = context.reg(dst)?;
         if let Type::PtrToStack { offset: stack_offset } = addr {
             let stack_offset = stack_offset.add(offset);
-            if !stack_offset.is_valid_offset() {
-                return Err(format!("Invalid stack offset at {}", context.pc));
-            }
+            stack_offset.check_valid_offset()?;
             let slot = stack_offset.array_index();
             if is_read || self.has_stack(slot) {
                 is_read = true;
@@ -2548,13 +2596,14 @@ struct DataDependenciesVisitorContext<'a> {
 
 impl BpfVisitor for DataDependencies {
     type Context<'a> = DataDependenciesVisitorContext<'a>;
+    type Error = VerifierErrorKind;
 
     fn add<'a>(
         &mut self,
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn add64<'a>(
@@ -2562,7 +2611,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn and<'a>(
@@ -2570,7 +2619,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn and64<'a>(
@@ -2578,7 +2627,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn arsh<'a>(
@@ -2586,7 +2635,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn arsh64<'a>(
@@ -2594,7 +2643,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn div<'a>(
@@ -2602,7 +2651,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn div64<'a>(
@@ -2610,7 +2659,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn lsh<'a>(
@@ -2618,7 +2667,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn lsh64<'a>(
@@ -2626,7 +2675,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn r#mod<'a>(
@@ -2634,7 +2683,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn mod64<'a>(
@@ -2642,7 +2691,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn mul<'a>(
@@ -2650,7 +2699,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn mul64<'a>(
@@ -2658,7 +2707,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn or<'a>(
@@ -2666,7 +2715,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn or64<'a>(
@@ -2674,7 +2723,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn rsh<'a>(
@@ -2682,7 +2731,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn rsh64<'a>(
@@ -2690,7 +2739,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn sub<'a>(
@@ -2698,7 +2747,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn sub64<'a>(
@@ -2706,7 +2755,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn xor<'a>(
@@ -2714,7 +2763,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
     fn xor64<'a>(
@@ -2722,7 +2771,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(dst, src)
     }
 
@@ -2731,7 +2780,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         if src == Source::Reg(dst) || !self.has_reg(dst) {
             return Ok(());
         }
@@ -2746,11 +2795,15 @@ impl BpfVisitor for DataDependencies {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.mov(context, dst, src)
     }
 
-    fn neg<'a>(&mut self, _context: &mut Self::Context<'a>, _dst: Register) -> Result<(), String> {
+    fn neg<'a>(
+        &mut self,
+        _context: &mut Self::Context<'a>,
+        _dst: Register,
+    ) -> Result<(), VerifierErrorKind> {
         // This is reading and writing the same value. This induces no change in dependencies.
         Ok(())
     }
@@ -2758,7 +2811,7 @@ impl BpfVisitor for DataDependencies {
         &mut self,
         _context: &mut Self::Context<'a>,
         _dst: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         // This is reading and writing the same value. This induces no change in dependencies.
         Ok(())
     }
@@ -2768,7 +2821,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         _dst: Register,
         _width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         // This is reading and writing the same value. This induces no change in dependencies.
         Ok(())
     }
@@ -2777,7 +2830,7 @@ impl BpfVisitor for DataDependencies {
         _context: &mut Self::Context<'a>,
         _dst: Register,
         _width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         // This is reading and writing the same value. This induces no change in dependencies.
         Ok(())
     }
@@ -2786,9 +2839,9 @@ impl BpfVisitor for DataDependencies {
         &mut self,
         context: &mut Self::Context<'a>,
         index: u32,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         let Some(helper) = context.calling_context.helpers.get(&index).cloned() else {
-            return Err(format!("unknown external function {}", index));
+            return Err(VerifierErrorKind::UnknownHelper(index));
         };
         // A helper reads the stack region each `input` memory-parameter argument
         // points at, so those stack slots are data dependencies, like load/store.
@@ -2797,7 +2850,7 @@ impl BpfVisitor for DataDependencies {
             if let Type::MemoryParameter { size, input: true, .. } = arg {
                 if let Type::PtrToStack { offset } = comp.reg((arg_index + 1) as Register)? {
                     let end = offset.add(size.size(comp)?);
-                    if offset.is_valid_offset() && end.is_within_stack() {
+                    if offset.check_valid_offset().is_ok() && end.is_within_stack() {
                         let start_idx = offset.array_index();
                         let end_idx = end.array_index();
                         self.add_stack_range(start_idx, end_idx);
@@ -2816,13 +2869,17 @@ impl BpfVisitor for DataDependencies {
         Ok(())
     }
 
-    fn exit<'a>(&mut self, _context: &mut Self::Context<'a>) -> Result<(), String> {
+    fn exit<'a>(&mut self, _context: &mut Self::Context<'a>) -> Result<(), VerifierErrorKind> {
         // This read r0 unconditionally.
         self.add_reg(0);
         Ok(())
     }
 
-    fn jump<'a>(&mut self, _context: &mut Self::Context<'a>, _offset: i16) -> Result<(), String> {
+    fn jump<'a>(
+        &mut self,
+        _context: &mut Self::Context<'a>,
+        _offset: i16,
+    ) -> Result<(), VerifierErrorKind> {
         // This doesn't do anything with values.
         Ok(())
     }
@@ -2833,7 +2890,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jeq64<'a>(
@@ -2842,7 +2899,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jne<'a>(
@@ -2851,7 +2908,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jne64<'a>(
@@ -2860,7 +2917,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jge<'a>(
@@ -2869,7 +2926,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jge64<'a>(
@@ -2878,7 +2935,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jgt<'a>(
@@ -2887,7 +2944,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jgt64<'a>(
@@ -2896,7 +2953,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jle<'a>(
@@ -2905,7 +2962,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jle64<'a>(
@@ -2914,7 +2971,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jlt<'a>(
@@ -2923,7 +2980,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jlt64<'a>(
@@ -2932,7 +2989,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jsge<'a>(
@@ -2941,7 +2998,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jsge64<'a>(
@@ -2950,7 +3007,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jsgt<'a>(
@@ -2959,7 +3016,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jsgt64<'a>(
@@ -2968,7 +3025,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jsle<'a>(
@@ -2977,7 +3034,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jsle64<'a>(
@@ -2986,7 +3043,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jslt<'a>(
@@ -2995,7 +3052,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jslt64<'a>(
@@ -3004,7 +3061,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jset<'a>(
@@ -3013,7 +3070,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
     fn jset64<'a>(
@@ -3022,7 +3079,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.jmp(dst, src)
     }
 
@@ -3033,7 +3090,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
     }
 
@@ -3044,7 +3101,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
     }
 
@@ -3055,7 +3112,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
     }
 
@@ -3066,7 +3123,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
     }
 
@@ -3077,7 +3134,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
     }
 
@@ -3088,7 +3145,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
     }
 
@@ -3099,7 +3156,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
     }
 
@@ -3110,7 +3167,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
     }
 
@@ -3121,7 +3178,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
     }
 
@@ -3132,7 +3189,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
     }
 
@@ -3142,7 +3199,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, true, dst, offset, src, DataWidth::U32, true)
     }
 
@@ -3152,7 +3209,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic(&context.computation_context, true, dst, offset, src, DataWidth::U64, true)
     }
 
@@ -3163,15 +3220,13 @@ impl BpfVisitor for DataDependencies {
         offset: i16,
         src: Register,
         width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         let context = &context.computation_context;
         if self.has_reg(dst) {
             let addr = context.reg(src)?;
             if let Type::PtrToStack { offset: stack_offset } = addr {
                 let stack_offset = stack_offset.add(offset);
-                if !stack_offset.is_valid_offset() {
-                    return Err(format!("Invalid stack offset at {}", context.pc));
-                }
+                stack_offset.check_valid_offset()?;
                 self.add_stack(stack_offset.array_index());
             }
         }
@@ -3185,7 +3240,7 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         _src: u8,
         _lower: u32,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.remove_reg(dst);
         Ok(())
     }
@@ -3198,7 +3253,7 @@ impl BpfVisitor for DataDependencies {
         _offset: i32,
         register_offset: Option<Register>,
         _width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         // 1 to 5 are scratch registers (bits 1..=5)
         self.registers &= !0b0011_1110;
         self.remove_reg(dst);
@@ -3219,14 +3274,12 @@ impl BpfVisitor for DataDependencies {
         offset: i16,
         src: Source,
         width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         let context = &context.computation_context;
         let addr = context.reg(dst)?;
         if let Type::PtrToStack { offset: stack_offset } = addr {
             let stack_offset = stack_offset.add(offset);
-            if !stack_offset.is_valid_offset() {
-                return Err(format!("Invalid stack offset at {}", context.pc));
-            }
+            stack_offset.check_valid_offset()?;
             if self.remove_stack(stack_offset.array_index()) {
                 if let Source::Reg(src) = src {
                     self.add_reg(src);
@@ -3417,13 +3470,14 @@ fn display_source(src: Source) -> String {
 
 impl BpfVisitor for ComputationContext {
     type Context<'a> = VerificationContext<'a>;
+    type Error = VerifierErrorKind;
 
     fn add<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("add32"), context, dst, src, AluType::Plain, |x, y| alu32(x, y, |x, y| x + y))
     }
     fn add64<'a>(
@@ -3431,7 +3485,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("add"), context, dst, src, AluType::Add, |x, y| x + y)
     }
     fn and<'a>(
@@ -3439,7 +3493,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("and32"), context, dst, src, AluType::Plain, |x, y| alu32(x, y, |x, y| x & y))
     }
     fn and64<'a>(
@@ -3447,7 +3501,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("and"), context, dst, src, AluType::Plain, |x, y| x & y)
     }
     fn arsh<'a>(
@@ -3455,7 +3509,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("arsh32"), context, dst, src, AluType::Plain, |x, y| {
             alu32(x, y, |x, y| x.ashr(y))
         })
@@ -3465,7 +3519,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("arsh"), context, dst, src, AluType::Plain, |x, y| x.ashr(y))
     }
     fn div<'a>(
@@ -3473,7 +3527,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("div32"), context, dst, src, AluType::Plain, |x, y| alu32(x, y, |x, y| x / y))
     }
     fn div64<'a>(
@@ -3481,7 +3535,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("div"), context, dst, src, AluType::Plain, |x, y| x / y)
     }
     fn lsh<'a>(
@@ -3489,7 +3543,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("lsh32"), context, dst, src, AluType::Plain, |x, y| {
             alu32(x, y, |x, y| x << y)
         })
@@ -3499,7 +3553,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("lsh"), context, dst, src, AluType::Plain, |x, y| x << y)
     }
     fn r#mod<'a>(
@@ -3507,7 +3561,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("mod32"), context, dst, src, AluType::Plain, |x, y| alu32(x, y, |x, y| x % y))
     }
     fn mod64<'a>(
@@ -3515,7 +3569,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("mod"), context, dst, src, AluType::Plain, |x, y| x % y)
     }
     fn mov<'a>(
@@ -3523,7 +3577,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, context, "mov32 {}, {}", display_register(dst), display_source(src));
         let src = self.compute_source(src)?;
         let value = match src {
@@ -3546,7 +3600,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, context, "mov {}, {}", display_register(dst), display_source(src));
         let src = self.compute_source(src)?;
         let mut next = self.next()?;
@@ -3559,7 +3613,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("mul32"), context, dst, src, AluType::Plain, |x, y| alu32(x, y, |x, y| x * y))
     }
     fn mul64<'a>(
@@ -3567,7 +3621,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("mul"), context, dst, src, AluType::Plain, |x, y| x * y)
     }
     fn or<'a>(
@@ -3575,7 +3629,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("or32"), context, dst, src, AluType::Plain, |x, y| alu32(x, y, |x, y| x | y))
     }
     fn or64<'a>(
@@ -3583,7 +3637,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("or"), context, dst, src, AluType::Plain, |x, y| x | y)
     }
     fn rsh<'a>(
@@ -3591,7 +3645,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("rsh32"), context, dst, src, AluType::Plain, |x, y| {
             alu32(x, y, |x, y| x >> y)
         })
@@ -3601,7 +3655,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("rsh"), context, dst, src, AluType::Plain, |x, y| x >> y)
     }
     fn sub<'a>(
@@ -3609,7 +3663,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("sub32"), context, dst, src, AluType::Plain, |x, y| alu32(x, y, |x, y| x - y))
     }
     fn sub64<'a>(
@@ -3617,7 +3671,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("sub"), context, dst, src, AluType::Sub, |x, y| x - y)
     }
     fn xor<'a>(
@@ -3625,7 +3679,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("xor32"), context, dst, src, AluType::Plain, |x, y| alu32(x, y, |x, y| x ^ y))
     }
     fn xor64<'a>(
@@ -3633,17 +3687,25 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         src: Source,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.alu(Some("xor"), context, dst, src, AluType::Plain, |x, y| x ^ y)
     }
 
-    fn neg<'a>(&mut self, context: &mut Self::Context<'a>, dst: Register) -> Result<(), String> {
+    fn neg<'a>(
+        &mut self,
+        context: &mut Self::Context<'a>,
+        dst: Register,
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, context, "neg32 {}", display_register(dst));
         self.alu(None, context, dst, Source::Value(0), AluType::Plain, |x, y| {
             alu32(x, y, |x, _y| -x)
         })
     }
-    fn neg64<'a>(&mut self, context: &mut Self::Context<'a>, dst: Register) -> Result<(), String> {
+    fn neg64<'a>(
+        &mut self,
+        context: &mut Self::Context<'a>,
+        dst: Register,
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, context, "neg {}", display_register(dst));
         self.alu(None, context, dst, Source::Value(0), AluType::Plain, |x, _y| -x)
     }
@@ -3653,7 +3715,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.endianness::<BigEndian>("be", context, dst, width)
     }
 
@@ -3662,7 +3724,7 @@ impl BpfVisitor for ComputationContext {
         context: &mut Self::Context<'a>,
         dst: Register,
         width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.endianness::<LittleEndian>("le", context, dst, width)
     }
 
@@ -3670,10 +3732,10 @@ impl BpfVisitor for ComputationContext {
         &mut self,
         context: &mut Self::Context<'a>,
         index: u32,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, context, "call 0x{:x}", index);
         let Some(helper) = context.calling_context.helpers.get(&index).cloned() else {
-            return Err(format!("unknown external function {}", index));
+            return Err(VerifierErrorKind::UnknownHelper(index));
         };
         let HelperDefinition { signature, name, .. } = helper;
         debug_assert!(signature.args.len() <= 5);
@@ -3696,22 +3758,27 @@ impl BpfVisitor for ComputationContext {
         Ok(())
     }
 
-    fn exit<'a>(&mut self, context: &mut Self::Context<'a>) -> Result<(), String> {
+    fn exit<'a>(&mut self, context: &mut Self::Context<'a>) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, context, "exit");
         if !self.reg(0)?.is_written_scalar() {
-            return Err("register 0 is incorrect at exit time".to_string());
+            return Err(VerifierErrorKind::InvalidReturnValue);
         }
         if !self.resources.is_empty() {
-            return Err("some resources have not been released at exit time".to_string());
+            return Err(VerifierErrorKind::ResourceLeak);
         }
         self.terminated = true;
         Ok(())
     }
 
-    fn jump<'a>(&mut self, context: &mut Self::Context<'a>, offset: i16) -> Result<(), String> {
+    fn jump<'a>(
+        &mut self,
+        context: &mut Self::Context<'a>,
+        offset: i16,
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, context, "ja {}", offset);
-        let parent = Some(Arc::new(self.clone()));
-        context.states.push(self.jump_with_offset(offset, parent)?);
+        let parent = Arc::new(self.clone());
+        let next = self.checked_jump_with_offset(context, offset, parent)?;
+        context.states.push(next);
         Ok(())
     }
 
@@ -3721,7 +3788,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jeq32",
             context,
@@ -3750,7 +3817,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jeq",
             context,
@@ -3779,7 +3846,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jne32",
             context,
@@ -3808,7 +3875,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jne",
             context,
@@ -3837,7 +3904,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jge32",
             context,
@@ -3866,7 +3933,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jge",
             context,
@@ -3895,7 +3962,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jgt32",
             context,
@@ -3924,7 +3991,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jgt",
             context,
@@ -3953,7 +4020,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jle32",
             context,
@@ -3982,7 +4049,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jle",
             context,
@@ -4011,7 +4078,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jlt32",
             context,
@@ -4040,7 +4107,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jlt",
             context,
@@ -4069,7 +4136,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jsge32",
             context,
@@ -4087,7 +4154,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jsge",
             context,
@@ -4105,7 +4172,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jsgt32",
             context,
@@ -4123,7 +4190,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jsgt",
             context,
@@ -4141,7 +4208,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jsle32",
             context,
@@ -4159,7 +4226,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jsle",
             context,
@@ -4177,7 +4244,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jslt32",
             context,
@@ -4195,7 +4262,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jslt",
             context,
@@ -4213,7 +4280,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jset32",
             context,
@@ -4239,7 +4306,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: Source,
         offset: i16,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.conditional_jump(
             "jset",
             context,
@@ -4267,7 +4334,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "add32",
             context,
@@ -4288,7 +4355,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "add",
             context,
@@ -4309,7 +4376,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "and32",
             context,
@@ -4330,7 +4397,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "and",
             context,
@@ -4351,7 +4418,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "or32",
             context,
@@ -4372,7 +4439,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "or",
             context,
@@ -4393,7 +4460,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "xor32",
             context,
@@ -4414,7 +4481,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "xor",
             context,
@@ -4435,7 +4502,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.atomic_operation(
             "xchg32",
             context,
@@ -4456,7 +4523,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.raw_atomic_operation(
             "xchg",
             context,
@@ -4475,7 +4542,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.raw_atomic_cmpxchg("cmpxchg32", context, dst, offset, src, JumpWidth::W32, |x, y| {
             comp32(x, y, |x, y| {
                 // x == y
@@ -4496,7 +4563,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         offset: i16,
         src: Register,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         self.raw_atomic_cmpxchg("cmpxchg", context, dst, offset, src, JumpWidth::W64, |x, y| {
             comp64(x, y, |x, y| {
                 // x == y
@@ -4518,7 +4585,7 @@ impl BpfVisitor for ComputationContext {
         offset: i16,
         src: Register,
         width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(
             self,
             context,
@@ -4542,7 +4609,7 @@ impl BpfVisitor for ComputationContext {
         dst: Register,
         src: u8,
         lower: u32,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         // The pre-scan has already guaranteed that `pc + 1` is valid and structurally well-formed.
         let next_instruction = &context.code[self.pc + 1];
 
@@ -4566,7 +4633,7 @@ impl BpfVisitor for ComputationContext {
                     .maps
                     .get(usize::try_from(map_index).unwrap())
                     .map(|schema| Type::ConstPtrToMap { id: map_index.into(), schema: *schema })
-                    .ok_or_else(|| format!("lddw with invalid map index: {}", map_index))?
+                    .ok_or(VerifierErrorKind::InvalidMapIndex(map_index))?
             }
             BPF_PSEUDO_MAP_IDX_VALUE => {
                 let map_index = lower;
@@ -4583,15 +4650,16 @@ impl BpfVisitor for ComputationContext {
                     .calling_context
                     .maps
                     .get(usize::try_from(map_index).unwrap())
-                    .ok_or_else(|| format!("lddw with invalid map index: {}", map_index))?;
+                    .ok_or(VerifierErrorKind::InvalidMapIndex(map_index))?;
 
                 if map_schema.map_type != bpf_map_type_BPF_MAP_TYPE_ARRAY {
-                    return Err(format!(
-                        "Invalid map type at index {map_index} for lddw. Expecting array."
+                    return Err(VerifierErrorKind::LddwMapValueNotArray(
+                        map_index,
+                        map_schema.map_type,
                     ));
                 }
                 if map_schema.max_entries == 0 {
-                    return Err(format!("Array has no entry."));
+                    return Err(VerifierErrorKind::EmptyArrayMap);
                 }
 
                 let origin = if map_schema.flags.contains(MapFlags::ProgReadOnly) {
@@ -4607,11 +4675,11 @@ impl BpfVisitor for ComputationContext {
                 }
             }
             _ => {
-                return Err(format!("invalid lddw"));
+                return Err(VerifierErrorKind::UnsupportedLddwSource(src));
             }
         };
 
-        let parent = Some(Arc::new(self.clone()));
+        let parent = Arc::new(self.clone());
         let mut next = self.jump_with_offset(1, parent)?;
         next.set_reg(dst, value.into())?;
 
@@ -4627,7 +4695,7 @@ impl BpfVisitor for ComputationContext {
         offset: i32,
         register_offset: Option<Register>,
         width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         bpf_log!(
             self,
             context,
@@ -4644,21 +4712,21 @@ impl BpfVisitor for ComputationContext {
             None => false,
         };
         if !src_is_packet {
-            return Err(format!("R{} is not a packet", src));
+            return Err(VerifierErrorKind::RegisterNotPacket(src));
         }
 
         if let Some(reg) = register_offset {
             let reg = self.reg(reg)?;
             if !reg.is_written_scalar() {
-                return Err("access to unwritten offset".to_string());
+                return Err(VerifierErrorKind::UninitializedPacketOffset);
             }
         }
         // Handle the case where the load fails.
         if !self.reg(0)?.is_written_scalar() {
-            return Err("register 0 is incorrect at exit time".to_string());
+            return Err(VerifierErrorKind::InvalidReturnValue);
         }
         if !self.resources.is_empty() {
-            return Err("some resources have not been released at exit time".to_string());
+            return Err(VerifierErrorKind::ResourceLeak);
         }
         // `self` is not terminated here: a copy of it is the parent of `next`, and terminates with
         // the dependencies of both paths once `next` terminates. Terminating `self` would record
@@ -4681,7 +4749,7 @@ impl BpfVisitor for ComputationContext {
         offset: i16,
         src: Source,
         width: DataWidth,
-    ) -> Result<(), String> {
+    ) -> Result<(), VerifierErrorKind> {
         let value = match src {
             Source::Reg(r) => {
                 bpf_log!(
@@ -4798,11 +4866,10 @@ where
 
 fn error_and_log<T>(
     logger: &mut dyn VerifierLogger,
-    msg: impl std::string::ToString,
-) -> Result<T, EbpfError> {
-    let msg = msg.to_string();
-    logger.log(msg.as_bytes());
-    return Err(EbpfError::ProgramVerifyError(msg));
+    err: VerifierError,
+) -> Result<T, VerifierError> {
+    logger.log(err.to_string().as_bytes());
+    Err(err)
 }
 
 fn associate_orderings(o1: Ordering, o2: Ordering) -> Option<Ordering> {
@@ -5067,14 +5134,14 @@ mod tests {
         for offset in 0..32 {
             for end in (offset + 1)..32 {
                 assert_eq!(
-                    s.read_data_ptr(2, StackOffset(offset.into()), (end - offset) as u64).is_ok(),
+                    s.read_data_ptr(StackOffset(offset.into()), (end - offset) as u64).is_ok(),
                     offset >= 8 && end <= 26
                 );
             }
         }
 
         // Verify that overflows are handled properly.
-        assert!(s.read_data_ptr(2, StackOffset(12.into()), u64::MAX - 2).is_err());
+        assert!(s.read_data_ptr(StackOffset(12.into()), u64::MAX - 2).is_err());
     }
 
     #[test]
@@ -5380,7 +5447,7 @@ mod tests {
             &mut next_uaf,
         );
         assert!(err.is_err());
-        assert_eq!(err.unwrap_err(), "Resource already released for index 0");
+        assert_eq!(err.unwrap_err(), VerifierErrorKind::UseAfterRelease);
     }
 
     #[test]
@@ -5538,11 +5605,11 @@ mod tests {
         // Store to read-only memory must fail.
         let ro_map_ptr = ptr_with_origin(PointerOrigin::MapReadOnly);
         let err = next.store_memory(&mut context, &ro_map_ptr, u32_field, Type::from(42));
-        assert_eq!(err, Err("write to read-only memory".to_string()));
+        assert_eq!(err, Err(VerifierErrorKind::WriteToReadOnlyMemory));
 
         let ro_kernel_ptr = ptr_with_origin(PointerOrigin::KernelReadOnly);
         let err = next.store_memory(&mut context, &ro_kernel_ptr, u32_field, Type::from(42));
-        assert_eq!(err, Err("write to read-only memory".to_string()));
+        assert_eq!(err, Err(VerifierErrorKind::WriteToReadOnlyMemory));
 
         // Store to writable memory must succeed.
         let rw_map_ptr = ptr_with_origin(PointerOrigin::MapWritable);

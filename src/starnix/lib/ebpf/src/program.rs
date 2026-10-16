@@ -840,8 +840,8 @@ mod test {
     use crate::api::*;
     use crate::conformance::test::parse_asm;
     use crate::{
-        CallingContext, FieldDescriptor, FieldMapping, FieldType, NullVerifierLogger,
-        PointerOrigin, ProgramArgument, StructDescriptor, Type, verify_program,
+        CallingContext, FieldDescriptor, FieldType, NullVerifierLogger, PointerOrigin,
+        ProgramArgument, StructDescriptor, Type, VerifierError, VerifierErrorKind, verify_program,
     };
     use std::mem::offset_of;
     use std::sync::{Arc, LazyLock};
@@ -1076,7 +1076,7 @@ mod test {
         let program = r#"
         mov %r0, 0
         ldxdw %r2, [%r1+16]
-        ldxdw %r1, [%r1+6]
+        ldxdw %r1, [%r1+8]
         # ensure data contains at least 4 bytes
         mov %r3, %r1
         add %r3, 0x4
@@ -1085,7 +1085,14 @@ mod test {
         ldxdw %r0, [%r1]
         exit
         "#;
-        initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        let err = initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        assert_eq!(
+            err,
+            EbpfError::ProgramVerifyError(VerifierError {
+                kind: VerifierErrorKind::OutOfBoundsMemoryAccess,
+                pc: Some(6),
+            })
+        );
     }
 
     #[test]
@@ -1228,7 +1235,7 @@ mod test {
 
         assert_eq!(
             verify_result.expect_err("validation should fail"),
-            EbpfError::ProgramVerifyError("at PC 2: R6 is not a packet".to_string())
+            VerifierError { kind: VerifierErrorKind::RegisterNotPacket(6), pc: Some(2) }
         );
     }
 
@@ -1239,7 +1246,14 @@ mod test {
           ldxdw %r0, [%r1]
           exit
         "#;
-        initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        let err = initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        assert_eq!(
+            err,
+            EbpfError::ProgramVerifyError(VerifierError {
+                kind: VerifierErrorKind::InvalidStructFieldAccess,
+                pc: Some(0),
+            })
+        );
     }
 
     #[test]
@@ -1249,7 +1263,14 @@ mod test {
           ldxw %r0, [%r1 + 4]
           exit
         "#;
-        initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        let err = initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        assert_eq!(
+            err,
+            EbpfError::ProgramVerifyError(VerifierError {
+                kind: VerifierErrorKind::InvalidStructFieldAccess,
+                pc: Some(0),
+            })
+        );
     }
 
     #[test]
@@ -1259,7 +1280,14 @@ mod test {
           ldxw %r0, [%r1 + 8]
           exit
         "#;
-        initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        let err = initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        assert_eq!(
+            err,
+            EbpfError::ProgramVerifyError(VerifierError {
+                kind: VerifierErrorKind::InvalidStructFieldAccess,
+                pc: Some(0),
+            })
+        );
     }
 
     #[test]
@@ -1269,7 +1297,14 @@ mod test {
           stw [%r1], 0x42
           exit
         "#;
-        initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        let err = initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        assert_eq!(
+            err,
+            EbpfError::ProgramVerifyError(VerifierError {
+                kind: VerifierErrorKind::WriteToReadOnlyField,
+                pc: Some(0),
+            })
+        );
     }
 
     #[test]
@@ -1303,6 +1338,13 @@ mod test {
         ldxdw %r0, [%r1]
         exit
         "#;
-        initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        let err = initialize_test_program(parse_asm(program)).expect_err("incorrect program");
+        assert_eq!(
+            err,
+            EbpfError::ProgramVerifyError(VerifierError {
+                kind: VerifierErrorKind::PointerOffsetOverflow,
+                pc: Some(4),
+            })
+        );
     }
 }

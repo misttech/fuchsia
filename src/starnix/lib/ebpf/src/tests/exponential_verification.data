@@ -8,11 +8,13 @@ mov %r8, 0
 mov %r9, 0
 # Start of the loop
 add %r8, 1
-jge %r0, 0, +1
+jge %r0, 0, +2
 add %r9, %r7
+ja +0
 mul %r7, 2
 # Loop 31 times
-jlt %r8, 32, -5
+jlt %r8, 32, -6
+lddw %r6, 0
 exit
 -- mem
 00

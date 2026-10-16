@@ -263,6 +263,7 @@ impl<C: EbpfProgramContext> ComputationContext<'_, C> {
 
 impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
     type Context<'a> = C::RunContext<'a>;
+    type Error = String;
 
     #[inline(always)]
     fn add<'a>(
