@@ -3,7 +3,9 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -16,20 +18,32 @@ rustc_library(
     crate_name = "event_queue",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        ":test.pkg.eventqueue_rust",
-        "//src/lib/fidl/rust/fidl",
-        "//src/lib/fuchsia",
-        "//third_party/rust_crates/vendor:assert_matches",
-    ],
-    version = "0.0.1",
     visibility = ["//src/sys/pkg:__subpackages__"],
-    with_unit_tests = True,
     deps = [
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:thiserror",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "event-queue_test",
+    crate = ":event-queue",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        ":test.pkg.eventqueue_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "event-queue-tests",
+    unit_tests = [":event-queue_test"],
 )
 
 fidl_library(

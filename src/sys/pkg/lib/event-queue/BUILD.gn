@@ -2,15 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
 group("tests") {
   testonly = true
   deps = [ ":event-queue-tests" ]
 }
 
-fuchsia_unittest_package("event-queue-tests") {
-  deps = [ ":event-queue_test" ]
+bazel_test_suite("event-queue-tests") {
+  target_tests = [ "//src/sys/pkg/lib/event-queue:event-queue-tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -46,18 +46,10 @@ rustc_library("event-queue") {
   crate_name = "event_queue"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  test_deps = [
-    ":test.pkg.eventqueue_rust",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//third_party/rust_crates:assert_matches",
-  ]
-  version = "0.0.1"
   visibility = [
     ":*",
     "//src/sys/pkg/*",
   ]
-  with_unit_tests = true
   deps = [
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
