@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -12,14 +14,30 @@ rustc_library(
     crate_name = "channel_config",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        "//third_party/rust_crates/vendor:pretty_assertions",
+    visibility = [
+        "//src/sys/pkg/bin/omaha-client:__pkg__",
+        "//src/sys/pkg/lib:__subpackages__",
+        "//src/sys/pkg/scripts/gen_eager_package_config:__pkg__",
     ],
-    version = "0.0.1",
-    visibility = ["//src/sys/pkg:__subpackages__"],
-    with_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:omaha_client",
         "//third_party/rust_crates/vendor:serde",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "channel-config_test",
+    crate = ":channel-config",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//third_party/rust_crates/vendor:pretty_assertions",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "channel-config-lib-tests",
+    unit_tests = [":channel-config_test"],
 )

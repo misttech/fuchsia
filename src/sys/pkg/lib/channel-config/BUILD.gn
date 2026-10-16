@@ -2,10 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_unittest_package("channel-config-lib-tests") {
-  deps = [ ":channel-config_test" ]
+bazel_test_suite("channel-config-lib-tests") {
+  target_tests = [ "//src/sys/pkg/lib/channel-config:channel-config-lib-tests" ]
 }
 
 group("tests") {
@@ -43,13 +43,12 @@ rustc_library("channel-config") {
   crate_name = "channel_config"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  test_deps = [ "//third_party/rust_crates:pretty_assertions" ]
-  version = "0.0.1"
   visibility = [
     ":*",
-    "//src/sys/pkg/*",
+    "//src/sys/pkg/bin/omaha-client:*",
+    "//src/sys/pkg/lib/*",
+    "//src/sys/pkg/scripts/gen_eager_package_config:*",
   ]
-  with_unit_tests = true
   deps = [
     "//third_party/rust_crates:omaha_client",
     "//third_party/rust_crates:serde",
