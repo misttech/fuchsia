@@ -9,7 +9,9 @@ package(default_applicable_licenses = ["//:license"])
 test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
-    tests = [],
+    tests = [
+        "//src/graphics/lib/compute/rive-rs:rive-rs-tests",
+    ],
 )
 
 test_suite(

@@ -14,7 +14,6 @@ group("tests") {
   testonly = true
   public_deps = [
     "forma:forma-tests",
-    "rive-rs:rive-rs-tests",
     "surpass:surpass-tests",
   ]
 }
