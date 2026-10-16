@@ -1,0 +1,40 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuchsia-stream-processors",
+    srcs = [
+        "src/lib.rs",
+        "src/types.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/bluetooth/lib/fuchsia-audio-codec:__pkg__",
+        "//src/media/stream_processors:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+        "//src/lib/fidl_table_validation",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fuchsia-stream-processors_test",
+    crate = ":fuchsia-stream-processors",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fuchsia-stream-processors-tests",
+    unit_tests = [":fuchsia-stream-processors_test"],
+)
