@@ -15,9 +15,3 @@ void StallAccumulator::Update(int op_contributors_progressing, int op_contributo
 void StallAccumulator::ApplyContextSwitch(Thread *current_thread, Thread *next_thread) {
   rust_stall_apply_context_switch(current_thread, next_thread);
 }
-
-StallAggregator::Stats StallAggregator::ReadStats() {
-  Stats result;
-  rust_stall_aggregator_read_stats(&result);
-  return result;
-}

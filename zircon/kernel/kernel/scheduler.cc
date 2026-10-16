@@ -472,6 +472,16 @@ FFI_ALWAYS_INLINE cpu_stats* cpp_get_cpu_stats(cpu_num_t cpu_num) TA_NO_THREAD_S
   return &percpu::Get(cpu_num).stats;
 }
 
+static_assert(sizeof(ffi::Uninitialized<cpu_stats>) == sizeof(cpu_stats));
+static_assert(alignof(ffi::Uninitialized<cpu_stats>) == alignof(cpu_stats));
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_get_projected_cpu_stats(cpu_num_t cpu_num,
+                                                             ffi::Uninitialized<cpu_stats>* out) {
+  DEBUG_ASSERT(out != nullptr);
+  out->Initialize(Scheduler::GetProjectedCpuStats(cpu_num));
+}
+
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uint64_t cpp_scheduler_power_state_active_power_coefficient_nw(
     const Scheduler* sched) TA_NO_THREAD_SAFETY_ANALYSIS {

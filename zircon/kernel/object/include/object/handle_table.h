@@ -179,8 +179,6 @@ class HandleTable : public fbl::RefCounted<HandleTable> {
   template <typename Func>
   zx_status_t ForEachHandleBatched(Func&& func);
 
-  zx_status_t GetHandleInfo(fbl::Array<zx_info_handle_extended_t>* handles) const;
-
   // Called when all the containing ProcessDispatchers have transitioned to the Dead state.
   void Clean();
 

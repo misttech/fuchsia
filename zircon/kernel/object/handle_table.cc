@@ -185,35 +185,6 @@ zx_status_t HandleTable::GetDispatcherInternal(ProcessDispatcher& caller, zx_han
   return ZX_OK;
 }
 
-zx_status_t HandleTable::GetHandleInfo(fbl::Array<zx_info_handle_extended_t>* handles) const {
-  for (;;) {
-    size_t count = HandleCount();
-    // TODO: Bug 45685. This memory allocation should come from a different pool since it
-    // can be larger than one page.
-    fbl::AllocChecker ac;
-    handles->reset(new (&ac) zx_info_handle_extended_t[count], count);
-    if (!ac.check()) {
-      return ZX_ERR_NO_MEMORY;
-    }
-
-    {
-      Guard<BrwLockPi, BrwLockPi::Reader> guard{&lock_};
-      if (count != count_) {
-        continue;
-      }
-
-      size_t index = 0;
-      ForEachHandleLocked([&](zx_handle_t handle, zx_rights_t rights, const Dispatcher* disp) {
-        auto& entry = (*handles)[index++];
-        entry = {disp->get_type(),         handle, rights, 0u, disp->get_koid(),
-                 disp->get_related_koid(), 0u};
-        return ZX_OK;
-      });
-    }
-    return ZX_OK;
-  }
-}
-
 HandleTable::HandleCursor::HandleCursor(HandleTable* handle_table) : handle_table_(handle_table) {
   AutoExpiringPreemptDisabler preempt_disable{Mutex::DEFAULT_TIMESLICE_EXTENSION};
   Guard<BrwLockPi, BrwLockPi::Writer> guard{&handle_table_->lock_};

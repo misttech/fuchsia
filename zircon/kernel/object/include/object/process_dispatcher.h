@@ -38,8 +38,6 @@
 class JobDispatcher;
 class ProcessDispatcher;
 class ThreadDispatcher;
-class VmarMapsInfoWriter;
-class VmoInfoWriter;
 class VmAddressRegionDispatcher;
 
 extern "C" {
@@ -281,9 +279,6 @@ class ProcessDispatcher final
   TaskRuntimeStats GetTaskRuntimeStats() const TA_EXCL(get_lock());
   zx_info_task_runtime_t GetRuntimeStats() const { return GetTaskRuntimeStats(); }
 
-  zx_status_t GetAspaceMaps(VmarMapsInfoWriter& maps, size_t max, size_t* actual,
-                            size_t* available) const;
-  zx_status_t GetVmos(VmoInfoWriter& vmos, size_t max, size_t* actual, size_t* available);
   zx_status_t GetThreads(fbl::Array<zx_koid_t>* threads) const;
   zx_status_t SetCriticalToJob(fbl::RefPtr<JobDispatcher> critical_to_job, bool retcode_nonzero);
 

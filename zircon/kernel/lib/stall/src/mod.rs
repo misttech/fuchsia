@@ -680,12 +680,6 @@ fn start_sampling_thread(_level: init::LkInitLevel) {
 
 init::lk_init_hook!(stall, start_sampling_thread, init::LK_INIT_LEVEL_USER);
 
-/// Reads the aggregated stall stats into `out_stats`.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_stall_aggregator_read_stats(out_stats: &mut AggregatorStats) {
-    *out_stats = StallAggregator::get().read_stats();
-}
-
 /// Tests for memory pressure stall accounting.
 #[cfg(ktest)]
 #[unittest::suite(name = "stall")]

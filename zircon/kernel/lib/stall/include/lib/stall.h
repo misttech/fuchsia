@@ -79,27 +79,4 @@ void rust_stall_accumulator_update(StallAccumulator *accumulator, int op_contrib
                                    int op_contributors_stalling);
 }
 
-// Maintains system-wide stall stats by periodically aggregating measurements from per-CPU
-// `StallAccumulator`s.
-//
-// The implementation, the singleton instance and the observers that watch it all live in Rust
-// (see ../../src/mod.rs); this is the forwarder the C++ diagnostics use.
-class StallAggregator {
- public:
-  struct Stats {
-    // Total monotonic time spent with at least one memory-stalled thread.
-    zx_duration_mono_t stalled_time_some = 0;
-
-    // Total monotonic time spent with all threads memory-stalled.
-    zx_duration_mono_t stalled_time_full = 0;
-  };
-
-  // Returns the values of the aggregated stats.
-  static Stats ReadStats();
-};
-
-extern "C" {
-void rust_stall_aggregator_read_stats(StallAggregator::Stats *out_stats);
-}
-
 #endif  // ZIRCON_KERNEL_LIB_STALL_INCLUDE_LIB_STALL_H_

@@ -26,6 +26,7 @@ use crate::kconcurrent::{
 };
 use crate::ktrace_rs;
 use crate::vm::vm_aspace::VmAspace;
+use core::mem::MaybeUninit;
 use fbl::{
     Cursor, DefaultObjectTag, TrackingSize, WavlTree, WavlTreeAugmentedInvariantObserver,
     WavlTreeAugmentedInvariantObserverTraits, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
@@ -490,6 +491,20 @@ pub fn enable_new_wakeup_accounting() -> bool {
         true
     } else {
         boot_options::BootOptions::get().enable_new_wakeup_accounting
+    }
+}
+
+/// Returns the CPU stats for the given CPU number, forward projected to account for idle or
+/// normalized busy time elapsed since the last relevant state change.
+pub fn get_projected_cpu_stats(cpu_num: CpuNum) -> CpuStats {
+    assert!((cpu_num as usize) < PerCpu::processor_count());
+    let mut stats = MaybeUninit::uninit();
+    // SAFETY: `cpu_num` is bounds-checked to be in `0..PerCpu::processor_count()`,
+    // `stats.as_mut_ptr()` is a valid stack pointer to uninitialized storage, and `CpuStats` has
+    // identical layout to C++ `ffi::Uninitialized<cpu_stats>`.
+    unsafe {
+        cpp_scheduler_get_projected_cpu_stats(cpu_num, stats.as_mut_ptr());
+        stats.assume_init()
     }
 }
 
@@ -1653,6 +1668,7 @@ unsafe extern "C" {
     fn cpp_thread_migrate_pending(thread: *const Thread) -> bool;
 
     fn cpp_get_cpu_stats(cpu_num: CpuNum) -> *mut CpuStats;
+    fn cpp_scheduler_get_projected_cpu_stats(cpu_num: CpuNum, out: *mut CpuStats);
     fn cpp_scheduler_power_state_active_power_coefficient_nw(sched: *const Scheduler) -> u64;
     fn cpp_scheduler_power_level_control_max_idle_power_coefficient_nw(
         sched: *const Scheduler,

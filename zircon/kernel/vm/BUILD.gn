@@ -26,7 +26,6 @@ source_set("vm") {
     "kstack.cc",
     "lz4_compressor.cc",
     "mem_command.cc",
-    "memory_stats.cc",
     "page.cc",
     "page_queues.cc",
     "page_source.cc",

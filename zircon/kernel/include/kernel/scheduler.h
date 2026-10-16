@@ -115,6 +115,7 @@ Scheduler* cpp_scheduler_get(cpu_num_t cpu);
 void cpp_scheduler_save_state_list_push_front(Scheduler* sched, Thread* thread);
 
 cpu_stats* cpp_get_cpu_stats(cpu_num_t cpu_num);
+void cpp_scheduler_get_projected_cpu_stats(cpu_num_t cpu_num, ffi::Uninitialized<cpu_stats>* out);
 uint64_t cpp_scheduler_power_state_active_power_coefficient_nw(const Scheduler* sched);
 uint64_t cpp_scheduler_power_level_control_max_idle_power_coefficient_nw(const Scheduler* sched);
 
