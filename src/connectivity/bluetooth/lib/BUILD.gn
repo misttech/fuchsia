@@ -36,7 +36,6 @@ group("tests") {
     "battery-client:tests",
     "bt-a2dp:tests",
     "bt-hfp:tests",
-    "bt-map:tests",
     "fidl:tests",
     "fuchsia-audio-codec:tests",
     "fuchsia-audio-dai:tests",

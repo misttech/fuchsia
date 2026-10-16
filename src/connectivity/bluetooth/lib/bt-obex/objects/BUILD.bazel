@@ -12,6 +12,11 @@ load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package
 
 package(default_applicable_licenses = ["//:license"])
 
+exports_files(
+    ["test/bad_sample.xml"],
+    visibility = ["//src/connectivity/bluetooth/lib/bt-map:__pkg__"],
+)
+
 rustc_library(
     name = "objects",
     srcs = [

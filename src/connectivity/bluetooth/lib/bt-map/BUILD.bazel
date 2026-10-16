@@ -1,0 +1,105 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "fuchsia_package_resource_group",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "bt-map",
+    srcs = [
+        "src/lib.rs",
+        "src/packets/event_report.rs",
+        "src/packets/messages_listing.rs",
+        "src/packets/mod.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__pkg__",
+        "//src/connectivity/bluetooth/profiles/bt-map-mce:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.map:fuchsia.bluetooth.map_rust",
+        "//src/connectivity/bluetooth/lib/bt-obex",
+        "//src/connectivity/bluetooth/lib/bt-obex/objects",
+        "//src/connectivity/bluetooth/lib/packet-encoding",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:xml",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "bt-map_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bt-map",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//visibility:private"],
+    deps = ["//src/lib/fuchsia"],
+)
+
+# @bazel2gn:skip
+fuchsia_package_resource_group(
+    name = "test-files",
+    testonly = True,
+    srcs = [
+        "test/bad_sample_event_report_v1_0_1.xml",
+        "test/bad_sample_event_report_v1_0_2.xml",
+        "test/bad_sample_event_report_v1_1.xml",
+        "test/bad_sample_messages_listing_v1_0_1.xml",
+        "test/bad_sample_messages_listing_v1_0_2.xml",
+        "test/bad_sample_messages_listing_v1_1_1.xml",
+        "test/bad_sample_messages_listing_v1_1_2.xml",
+        "test/sample_event_report_v1_0.xml",
+        "test/sample_event_report_v1_1.xml",
+        "test/sample_event_report_v1_2.xml",
+        "test/sample_messages_listing_v1_0_1.xml",
+        "test/sample_messages_listing_v1_0_2.xml",
+        "test/sample_messages_listing_v1_1_1.xml",
+        "test/sample_messages_listing_v1_1_2.xml",
+        "//src/connectivity/bluetooth/lib/bt-obex/objects:test/bad_sample.xml",
+    ],
+    basename_only = True,
+    dest = "data",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_unittest_component(
+    name = "bt-map-tests-component",
+    binary = ":bt-map_test",
+    component_name = "bt-map-tests",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "bt-map-tests-package",
+    package_name = "bt-map-tests",
+    resources = [":test-files"],
+    test_components = [":bt-map-tests-component"],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "bt-map-tests",
+    package = ":bt-map-tests-package",
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
