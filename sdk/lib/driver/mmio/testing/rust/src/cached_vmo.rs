@@ -96,6 +96,10 @@ impl UnsafeMmio for CachedVmoMemory {
     fn write_barrier(&self) {
         self.0.write_barrier()
     }
+
+    fn read_barrier(&self) {
+        self.0.read_barrier()
+    }
 }
 
 impl AtomicMmioPtr for CachedVmoMemory {

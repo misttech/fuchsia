@@ -102,6 +102,14 @@ pub trait UnsafeMmio {
     /// Issues a memory write barrier.  It is guaranteed that all stores preceding this barrier will
     /// appear to have happened before all stores following this barrier.
     fn write_barrier(&self);
+
+    /// Issues a memory read barrier.  It is guaranteed that all loads preceding this barrier will
+    /// appear to have happened before all loads following this barrier.
+    ///
+    /// The default implementation issues the architecture's read barrier.
+    fn read_barrier(&self) {
+        crate::arch::read_barrier();
+    }
 }
 
 /// An `MmioRegion` provides a safe implementation of [Mmio] and [MmioSplit] on top of an
@@ -302,6 +310,10 @@ impl<Impl: UnsafeMmio, Owner: Borrow<Impl>> Mmio for MmioRegion<Impl, Owner> {
     fn write_barrier(&self) {
         self.owner.borrow().write_barrier();
     }
+
+    fn read_barrier(&self) {
+        self.owner.borrow().read_barrier();
+    }
 }
 
 impl<Impl: UnsafeMmio, Owner: Borrow<Impl> + Clone> MmioSplit for MmioRegion<Impl, Owner> {
@@ -338,6 +350,7 @@ mod tests {
     use fuchsia_sync::RwLock;
     use rand::RngExt as _;
     use std::sync::Barrier;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread::sleep;
     use std::time::Duration;
 
@@ -354,6 +367,8 @@ mod tests {
     struct CheckedRegisters {
         cells: Vec<RwLock<u8>>,
         mean_op_duration: f32,
+        write_barriers: AtomicUsize,
+        read_barriers: AtomicUsize,
     }
 
     impl CheckedRegisters {
@@ -363,7 +378,12 @@ mod tests {
 
             let mean_op_duration = mean_op_duration.as_secs_f32();
 
-            Self { cells, mean_op_duration }
+            Self {
+                cells,
+                mean_op_duration,
+                write_barriers: AtomicUsize::new(0),
+                read_barriers: AtomicUsize::new(0),
+            }
         }
 
         fn sleep(&self) {
@@ -450,8 +470,28 @@ mod tests {
         }
 
         fn write_barrier(&self) {
-            // NOP
+            // Only counted: ordinary memory needs no barrier.
+            self.write_barriers.fetch_add(1, Ordering::Relaxed);
         }
+
+        fn read_barrier(&self) {
+            // Only counted: ordinary memory needs no barrier.
+            self.read_barriers.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn test_region_forwards_barriers() {
+        let mut region = MmioRegion::new(CheckedRegisters::new(16, Duration::ZERO)).into_split();
+        let split = region.split_off(8);
+
+        region.write_barrier();
+        split.read_barrier();
+        split.read_barrier();
+
+        let registers = region.unsafe_mmio();
+        assert_eq!(registers.write_barriers.load(Ordering::Relaxed), 1);
+        assert_eq!(registers.read_barriers.load(Ordering::Relaxed), 2);
     }
 
     #[test]

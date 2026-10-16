@@ -254,6 +254,19 @@ pub trait Mmio {
     /// Issues a memory write barrier.  It is guaranteed that all stores preceding this barrier will
     /// appear to have happened before all stores following this barrier.
     fn write_barrier(&self);
+
+    /// Issues a memory read barrier.  It is guaranteed that all loads preceding this barrier will
+    /// appear to have happened before all loads following this barrier.
+    ///
+    /// Use this after loading a device register that publishes the state of memory written by the
+    /// device (e.g. a doorbell or completion status register) and before loading that memory, so
+    /// that the memory loads are not satisfied until after the register load has completed.
+    ///
+    /// The default implementation issues the architecture's read barrier; implementations that
+    /// wrap another `Mmio` should forward to it.
+    fn read_barrier(&self) {
+        crate::arch::read_barrier();
+    }
 }
 
 /// An MMIO region from which ownership of disjoint sub-regions can be split off.

@@ -43,6 +43,7 @@ mock! {
         pub fn store64(&self, addr: usize, value: u64);
 
         pub fn write_barrier(&self);
+        pub fn read_barrier(&self);
     }
 }
 
@@ -105,6 +106,10 @@ impl<O: Deref<Target = MockMemoryOps>> UnsafeMmio for MockMmio<O> {
 
     fn write_barrier(&self) {
         self.ops.write_barrier();
+    }
+
+    fn read_barrier(&self) {
+        self.ops.read_barrier();
     }
 }
 

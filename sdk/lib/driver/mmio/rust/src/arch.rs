@@ -32,7 +32,16 @@ mod ops {
         };
     }
 
-    pub(super) use {load_op, store_op, write_barrier_op};
+    macro_rules! read_barrier_op {
+        () => {
+            std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire)
+        };
+    }
+
+    pub(super) use load_op;
+    pub(super) use read_barrier_op;
+    pub(super) use store_op;
+    pub(super) use write_barrier_op;
 }
 
 // KVM on x86 doesn't support Mmio using vector registers. Specify the instructions for this
@@ -101,7 +110,19 @@ mod ops {
         };
     }
 
-    pub(super) use {load_op, store_op, write_barrier_op};
+    macro_rules! read_barrier_op {
+        () => {
+            // Safety: N/A; see [`crate::arch::read_barrier`].
+            unsafe {
+                core::arch::asm!("lfence", options(nostack, preserves_flags));
+            }
+        };
+    }
+
+    pub(super) use load_op;
+    pub(super) use read_barrier_op;
+    pub(super) use store_op;
+    pub(super) use write_barrier_op;
 }
 
 // rustc/llvm may generate instructions that are incompatible with being run in certain
@@ -170,10 +191,26 @@ mod ops {
         };
     }
 
-    pub(super) use {load_op, store_op, write_barrier_op};
+    macro_rules! read_barrier_op {
+        () => {
+            // Use `dsb ld` (rather than `hw_rmb()`'s `dmb ld`) to match `write_barrier_op!`'s use
+            // of `dsb st` and Linux's `rmb()`, ensuring preceding device-memory loads have
+            // completed before subsequent loads execute.
+            //
+            // Safety: N/A; see [`crate::arch::read_barrier`].
+            unsafe {
+                core::arch::asm!("dsb ld", options(nostack, preserves_flags));
+            }
+        };
+    }
+
+    pub(super) use load_op;
+    pub(super) use read_barrier_op;
+    pub(super) use store_op;
+    pub(super) use write_barrier_op;
 }
 
-use ops::{load_op, store_op, write_barrier_op};
+use ops::{load_op, read_barrier_op, store_op, write_barrier_op};
 
 macro_rules! load_fn {
     ($name:ident, $type:tt) => {
@@ -222,4 +259,11 @@ pub(crate) fn write_barrier() {
     // Note that there are no safety requirements for issuing a write barrier, as this operation is
     // outside the scope of Rust's memory model.
     write_barrier_op!()
+}
+
+#[inline]
+pub(crate) fn read_barrier() {
+    // Note that there are no safety requirements for issuing a read barrier, as this operation is
+    // outside the scope of Rust's memory model.
+    read_barrier_op!()
 }

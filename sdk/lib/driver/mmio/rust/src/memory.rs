@@ -125,6 +125,10 @@ impl<Claim> UnsafeMmio for Memory<Claim> {
     fn write_barrier(&self) {
         arch::write_barrier();
     }
+
+    fn read_barrier(&self) {
+        arch::read_barrier();
+    }
 }
 
 /// Represents a mutable borrow for the lifetime `'a`.
@@ -168,6 +172,9 @@ mod tests {
                 // write into the register memory.
                 mmio.store64(i * size_of::<u64>(), i as u64);
             }
+            // Barriers are no-ops for ordinary memory but must be callable on any Mmio.
+            mmio.write_barrier();
+            mmio.read_barrier();
 
             for i in 0..NUM_REGISTERS {
                 // ensure the stores occurred.

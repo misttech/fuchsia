@@ -270,6 +270,11 @@ impl<H: VmoMemoryHandler> UnsafeMmio for VmoMemory<H> {
     fn write_barrier(&self) {
         self.vmo.write_barrier();
     }
+
+    #[inline]
+    fn read_barrier(&self) {
+        self.vmo.read_barrier();
+    }
 }
 
 impl<H> AtomicMmioPtr for VmoMemory<H> {
@@ -550,5 +555,6 @@ mod tests {
         assert_eq!(mmio.len(), VMO_SIZE);
         assert_eq!(mmio.align_offset(8), 0);
         mmio.write_barrier();
+        mmio.read_barrier();
     }
 }
