@@ -13,6 +13,11 @@
         features: [
             // keep-sorted start
             "container",
+
+            // keep-sorted end
+        ],
+        modules: [
+            // keep-sorted start
             "google_odpm",
 
             // keep-sorted end

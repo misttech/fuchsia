@@ -9,6 +9,11 @@
         features: [
             // keep-sorted start
             "container",
+
+            // keep-sorted end
+        ],
+        modules: [
+            // keep-sorted start
             "nanohub",
 
             // keep-sorted end

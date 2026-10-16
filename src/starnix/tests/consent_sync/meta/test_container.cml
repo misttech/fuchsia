@@ -4,7 +4,7 @@
 {
     include: [ "//src/starnix/containers/debian/meta/debian_container.cml" ],
     program: {
-        features: [ "data_collection_consent_sync" ],
+        modules: [ "data_collection_consent_sync" ],
     },
     use: [
         { protocol: "fuchsia.settings.Privacy" },

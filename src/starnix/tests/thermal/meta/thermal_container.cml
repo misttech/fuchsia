@@ -13,8 +13,12 @@
         features: [
             // keep-sorted start
             "container",
-            "cooling:cpu,fcc=8",
-            "thermal",
+
+            // keep-sorted end
+        ],
+        modules: [
+            // keep-sorted start
+            "thermal --cooling cpu,fcc=8",
 
             // keep-sorted end
         ],

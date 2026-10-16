@@ -8,16 +8,21 @@
         init: [],
         features: [
             // keep-sorted start
-            "ashmem",
-            "boot_notifier",
             "container",
             "custom_artifacts",
             "enable_suid",
             "io_uring",
-            "kgsl",
-            "magma_supported_vendors:0x13B5,0x5143,0x8086",
             "ping_group_range:0,4294967294",
             "test_data",
+
+            // keep-sorted end
+        ],
+        modules: [
+            // keep-sorted start
+            "ashmem",
+            "boot_notifier",
+            "kgsl",
+            "magma --supported-vendors 0x13B5,0x5143,0x8086",
 
             // keep-sorted end
         ],
