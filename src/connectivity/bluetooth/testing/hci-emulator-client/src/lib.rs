@@ -19,6 +19,19 @@ pub mod types;
 
 const EMULATOR_DEVICE_DIR: &str = "class/bt-emulator";
 
+/// Returns true if `topological_path` is that of the emulator node `name` published directly
+/// under `<DEV_DIR>/<emulator_device_path>`. The whole last path component must match:
+/// `emulator-1` must not match `emulator-10`.
+fn is_emulator_node_path(topological_path: &str, emulator_device_path: &str, name: &str) -> bool {
+    topological_path
+        .strip_prefix(DEV_DIR)
+        .and_then(|path| path.strip_prefix('/'))
+        .and_then(|path| path.strip_prefix(emulator_device_path))
+        .and_then(|path| path.strip_prefix('/'))
+        .and_then(|path| path.strip_prefix(name))
+        .is_some_and(str::is_empty)
+}
+
 /// Represents a bt-hci device emulator. Instances of this type can be used manage the
 /// bt-hci-emulator driver within the test device hierarchy. The associated driver instance gets
 /// unbound and all bt-hci and bt-emulator device instances destroyed when
@@ -152,17 +165,13 @@ impl TestDevice {
         let directory = device_watcher::wait_for_device_with(
             &emulator_dir,
             |device_watcher::DeviceInfo { filename, topological_path }| {
-                let topological_path = topological_path.strip_prefix(DEV_DIR)?;
-                let topological_path = topological_path.strip_prefix('/')?;
-                let topological_path = topological_path.strip_prefix(emulator_device_path)?;
-                let topological_path = topological_path.strip_prefix('/')?;
-                let topological_path = topological_path.strip_prefix(&name)?;
-                let _: &str = topological_path;
-                Some(fuchsia_fs::directory::open_directory_async(
-                    &emulator_dir,
-                    filename,
-                    fuchsia_fs::Flags::empty(),
-                ))
+                is_emulator_node_path(&topological_path, emulator_device_path, &name).then(|| {
+                    fuchsia_fs::directory::open_directory_async(
+                        &emulator_dir,
+                        filename,
+                        fuchsia_fs::Flags::empty(),
+                    )
+                })
             },
         )
         .on_timeout(WATCH_TIMEOUT, || Err(format_err!("timed out waiting for device to appear")))
@@ -211,6 +220,32 @@ mod tests {
     use fidl_fuchsia_driver_test as fdt;
     use fuchsia_component_test::RealmBuilder;
     use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+
+    #[fuchsia::test]
+    fn emulator_node_path_matches_whole_component() {
+        const DEV: &str = "sys/platform/bt-hci-emulator";
+        assert!(is_emulator_node_path(
+            "/dev/sys/platform/bt-hci-emulator/emulator-1",
+            DEV,
+            "emulator-1"
+        ));
+        assert!(!is_emulator_node_path(
+            "/dev/sys/platform/bt-hci-emulator/emulator-10",
+            DEV,
+            "emulator-1"
+        ));
+        assert!(!is_emulator_node_path(
+            "/dev/sys/platform/bt-hci-emulator/emulator",
+            DEV,
+            "emulator-1"
+        ));
+        assert!(!is_emulator_node_path(
+            "/dev/sys/platform/bt-hci-emulator/emulator-1/x",
+            DEV,
+            "emulator-1"
+        ));
+        assert!(!is_emulator_node_path("/dev/sys/platform/other/emulator-1", DEV, "emulator-1"));
+    }
 
     fn default_settings() -> EmulatorSettings {
         EmulatorSettings {
@@ -280,7 +315,7 @@ mod tests {
         emul_dev = device_watcher::wait_for_device_with(
             &emulator_dir,
             |device_watcher::DeviceInfo { filename, topological_path }| {
-                topological_path.starts_with(&topo).then(|| {
+                (topological_path == topo).then(|| {
                     fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
                         EmulatorMarker,
                     >(&emulator_dir, filename)
