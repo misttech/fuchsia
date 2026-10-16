@@ -204,6 +204,12 @@ func (c *Client) postConnectSetup(
 }
 
 func (c *Client) Reconnect(ctx context.Context, ffxTool *ffx.FFXTool) error {
+	// The device might be running a new version, which needs a new ffx, so save the one we were
+	// given.
+	if ffxTool != nil {
+		c.SetFFXTool(ffxTool)
+	}
+
 	if err := c.sshClient.Reconnect(ctx); err != nil {
 		return err
 	}
@@ -353,10 +359,10 @@ func (c *Client) GetSystemImageMerkle(ctx context.Context) (build.MerkleRoot, er
 
 // Reboot asks the device to reboot. It waits until the device reconnects
 // before returning.
-func (c *Client) Reboot(ctx context.Context, ffxTool *ffx.FFXTool) error {
+func (c *Client) Reboot(ctx context.Context, nextFFXTool *ffx.FFXTool) error {
 	logger.Infof(ctx, "rebooting")
 
-	return c.ExpectReboot(ctx, ffxTool, func() error {
+	return c.ExpectReboot(ctx, nextFFXTool, func() error {
 		// Run the reboot in the background, which gives us a chance to
 		// observe us successfully executing the reboot command.
 		return c.RunReboot(ctx)
@@ -476,7 +482,7 @@ func (c *Client) ExpectDisconnect(ctx context.Context, f func() error) error {
 // trying to reboot the device. Either way, err out.
 func (c *Client) ExpectReboot(
 	ctx context.Context,
-	ffxTool *ffx.FFXTool,
+	nextFFXTool *ffx.FFXTool,
 	f func() error,
 ) error {
 	// Generate a unique value.
@@ -539,7 +545,7 @@ func (c *Client) ExpectReboot(
 
 	logger.Infof(ctx, "device disconnected, waiting for device to boot")
 
-	if err := c.Reconnect(ctx, ffxTool); err != nil {
+	if err := c.Reconnect(ctx, nextFFXTool); err != nil {
 		return fmt.Errorf("failed to reconnect: %w", err)
 	}
 

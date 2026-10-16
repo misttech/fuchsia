@@ -67,7 +67,8 @@ type client interface {
 type Updater interface {
 	Update(
 		ctx context.Context,
-		ffxTool *ffx.FFXTool,
+		currentFFXTool *ffx.FFXTool,
+		nextFFXTool *ffx.FFXTool,
 		c client,
 		target string,
 		updatePackage *packages.UpdatePackage,
@@ -131,7 +132,8 @@ func NewSystemUpdateChecker(checkForUnknownFirmware bool) *SystemUpdateChecker {
 
 func (u *SystemUpdateChecker) Update(
 	ctx context.Context,
-	ffxTool *ffx.FFXTool,
+	currentFFXTool *ffx.FFXTool,
+	nextFFXTool *ffx.FFXTool,
 	c client,
 	target string,
 	srcUpdatePackage *packages.UpdatePackage,
@@ -141,7 +143,8 @@ func (u *SystemUpdateChecker) Update(
 	if srcUpdatePackage.Path() == defaultUpdatePackagePath {
 		return updateCheckNow(
 			ctx,
-			ffxTool,
+			currentFFXTool,
+			nextFFXTool,
 			c,
 			target,
 			srcUpdatePackage.Repository(),
@@ -189,7 +192,8 @@ func (u *SystemUpdateChecker) Update(
 
 	return updateCheckNow(
 		ctx,
-		ffxTool,
+		currentFFXTool,
+		nextFFXTool,
 		c,
 		target,
 		tempRepo,
@@ -200,7 +204,8 @@ func (u *SystemUpdateChecker) Update(
 
 func updateCheckNow(
 	ctx context.Context,
-	ffxTool *ffx.FFXTool,
+	currentFFXTool *ffx.FFXTool,
+	nextFFXTool *ffx.FFXTool,
 	c client,
 	target string,
 	repo *packages.Repository,
@@ -210,7 +215,7 @@ func updateCheckNow(
 	logger.Infof(ctx, "Triggering OTA")
 
 	startTime := time.Now()
-	err := c.ExpectReboot(ctx, ffxTool, func() error {
+	err := c.ExpectReboot(ctx, nextFFXTool, func() error {
 		// Since an update can trigger a reboot, we can run into all
 		// sorts of races. The two main ones are:
 		//
@@ -246,7 +251,15 @@ func updateCheckNow(
 		for i := 0; i < 3; i++ {
 			childCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			if err := c.RegisterPackageRepository(childCtx, ffxTool, server, repoName, createRewriteRule, nil, target); err == nil {
+			if err := c.RegisterPackageRepository(
+				childCtx,
+				currentFFXTool,
+				server,
+				repoName,
+				createRewriteRule,
+				nil,
+				target,
+			); err == nil {
 				break
 			}
 			if i == 2 {
@@ -262,7 +275,12 @@ func updateCheckNow(
 			// work around the problem by falling back to /bin/update.
 			childCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			if err := c.SetUpdateChannel(childCtx, ffxTool, target, "trigger-ota"); err != nil {
+			if err := c.SetUpdateChannel(
+				childCtx,
+				currentFFXTool,
+				target,
+				"trigger-ota",
+			); err != nil {
 				logger.Warningf(ctx, "update channel set via ffx failed: %v. The device may be running an old version of system-update-checker or incompatible RCS.", err)
 				logger.Warningf(ctx, "retrying with /bin/update")
 				cmd := []string{
@@ -282,7 +300,7 @@ func updateCheckNow(
 			// monitoring the update.
 			childCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			stdout, err := c.MonitorUpdate(childCtx, ffxTool, target)
+			stdout, err := c.MonitorUpdate(childCtx, currentFFXTool, target)
 			if err != nil {
 				logger.Warningf(ctx, "update monitoring via ffx failed: %v. Retrying via /bin/update.", err)
 				cmd := []string{
@@ -378,7 +396,8 @@ func NewSystemUpdater(checkForUnknownFirmware bool) *SystemUpdater {
 
 func (u *SystemUpdater) Update(
 	ctx context.Context,
-	ffxTool *ffx.FFXTool,
+	currentFFXTool *ffx.FFXTool,
+	nextFFXTool *ffx.FFXTool,
 	c client,
 	target string,
 	srcUpdate *packages.UpdatePackage,
@@ -400,14 +419,27 @@ func (u *SystemUpdater) Update(
 		return fmt.Errorf("error setting up server: %w", err)
 	}
 	defer server.Shutdown(ctx)
-	if err := c.RegisterPackageRepository(ctx, ffxTool, server, repoName, true, nil, target); err != nil {
+	if err := c.RegisterPackageRepository(
+		ctx,
+		currentFFXTool,
+		server,
+		repoName,
+		true,
+		nil,
+		target,
+	); err != nil {
 		return fmt.Errorf("error registering repository with target: %w", err)
 	}
 
 	updatePackageUrl := fmt.Sprintf("fuchsia-pkg://%s/%s", repoName, dstUpdate.Path())
 	logger.Infof(ctx, "Downloading OTA %q", updatePackageUrl)
 
-	if err := c.ForceInstall(ctx, ffxTool, target, updatePackageUrl); err != nil {
+	if err := c.ForceInstall(
+		ctx,
+		currentFFXTool,
+		target,
+		updatePackageUrl,
+	); err != nil {
 		logger.Errorf(ctx, "failed to run system updater via ffx: %w, retrying via /bin/update", err)
 		cmd := []string{
 			"/bin/update",
@@ -429,7 +461,7 @@ func (u *SystemUpdater) Update(
 	logger.Infof(ctx, "Rebooting device")
 	startTime = time.Now()
 
-	if err = c.Reboot(ctx, ffxTool); err != nil {
+	if err = c.Reboot(ctx, nextFFXTool); err != nil {
 		return fmt.Errorf("device failed to reboot after OTA applied: %w", err)
 	}
 
@@ -471,7 +503,8 @@ func NewOmahaUpdater(
 
 func (u *OmahaUpdater) Update(
 	ctx context.Context,
-	ffxTool *ffx.FFXTool,
+	currentFFXTool *ffx.FFXTool,
+	nextFFXTool *ffx.FFXTool,
 	c client,
 	target string,
 	srcUpdate *packages.UpdatePackage,
@@ -532,7 +565,8 @@ func (u *OmahaUpdater) Update(
 	// Trigger an update
 	return updateCheckNow(
 		ctx,
-		ffxTool,
+		currentFFXTool,
+		nextFFXTool,
 		c,
 		target,
 		dstUpdate.Repository(),

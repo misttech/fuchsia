@@ -429,13 +429,16 @@ func otaToPackage(
 		return err
 	}
 
-	if err := u.Update(ctx, currentFfx, device, target, ota.updatePackage); err != nil {
+	if err := u.Update(
+		ctx,
+		currentFfx,
+		nextFfx,
+		device,
+		target,
+		ota.updatePackage,
+	); err != nil {
 		return fmt.Errorf("failed to download OTA: %w", err)
 	}
-
-	// We have now rebooted into the new OS. Update the client's active FFX tool
-	// so any subsequent IP resolutions use the correct binary.
-	device.SetFFXTool(nextFfx)
 
 	logger.Infof(ctx, "Validating device")
 
