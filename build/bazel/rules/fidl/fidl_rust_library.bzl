@@ -115,7 +115,7 @@ def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, dep
         library_deps.append(_fidl_rust_flavor_label(dep, flavor))
 
     if flavor != "common":
-        library_deps.append(":" + _fidl_rust_flavor_label_name(fidl_library_name, "common"))
+        library_deps.append(":" + _fidl_rust_flavor_label_name(name, "common"))
 
     if contains_drivers:
         # TODO(https://fxbug.dev/503359085): driver transport support

@@ -499,6 +499,7 @@ template("fuchsia_structured_config_values2") {
 #   testonly (optional)
 #     Standard GN meaning.
 template("fuchsia_structured_config_rust_lib") {
+  # LINT.IfChange(rust_lib_names)
   if (!defined(invoker.name)) {
     rust_library_name = target_name
   } else {
@@ -515,6 +516,9 @@ template("fuchsia_structured_config_rust_lib") {
 
   fidl_source_target = "${target_name}_fidl_config_lib_source"
   rust_source_target = "${target_name}_rust_config_lib_source"
+  fidl_library_target = "${target_name}_fidl_internal"
+
+  # LINT.ThenChange(//build/bazel/rules/components/structured_config.bzl:rust_lib_names)
 
   if (current_toolchain == default_toolchain) {
     assert(defined(invoker.cm_label), "must provide a component manifest label")
@@ -568,8 +572,6 @@ template("fuchsia_structured_config_rust_lib") {
   rust_source_file = "${source_gen_dir}/${rust_source_target}.rs"
 
   # generate the FIDL library
-  fidl_library_target = "${target_name}_fidl_internal"
-
   fidl(fidl_library_target) {
     name = fidl_library_name
     forward_variables_from(invoker, [ "testonly" ])

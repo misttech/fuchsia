@@ -231,6 +231,34 @@ python_binary("generate_version_history_bin") {
 }`,
 		},
 		{
+			name: "fuchsia_structured_config_rust_lib",
+			bazel: `load("//build/bazel/rules/components:structured_config.bzl", "fuchsia_structured_config_rust_lib")
+
+fuchsia_structured_config_rust_lib(
+	name = "my_component_config",
+	cm_label = ":manifest",
+)
+
+fuchsia_structured_config_rust_lib(
+	name = "my_test_config",
+	testonly = True,
+	cm_label = ":test_manifest",
+	crate_name = "my_crate",
+	visibility = ["//visibility:public"],
+)`,
+			wantGN: `fuchsia_structured_config_rust_lib("my_component_config") {
+	cm_label = ":manifest"
+}
+fuchsia_structured_config_rust_lib("my_test_config") {
+	testonly = true
+	cm_label = ":test_manifest"
+	name = "my_crate"
+	visibility = [
+		"*",
+	]
+}`,
+		},
+		{
 			name: "Bazel-only rules with no GN equivalent",
 			bazel: `exports_files(["meta/foo.cml"])
 

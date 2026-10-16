@@ -105,7 +105,8 @@ var bazelRuleToGNTemplate = map[string]string{
 	"zither_fidl_library": "fidl",
 
 	// Components
-	"expect_includes": "expect_includes",
+	"expect_includes":                    "expect_includes",
+	"fuchsia_structured_config_rust_lib": "fuchsia_structured_config_rust_lib",
 
 	// Host tools
 	"cc_binary_host_tool": "executable",
@@ -376,6 +377,15 @@ var idkFIDLAttrMap = mustMergeMaps(idkAttrMap, fidlAttrMap)
 // idkRustBinAttrMap maps from attribute name in Bazel IDK Rust binary rules to GN parameter names.
 var idkRustBinAttrMap = mustMergeMaps(idkAttrMap, rustBinAttrMap)
 
+// structuredConfigRustLibAttrMap maps from attribute names in Bazel
+// `fuchsia_structured_config_rust_lib()` to GN parameter names.
+// This map only includes attributes that have different names in Bazel and GN.
+var structuredConfigRustLibAttrMap = map[string]string{
+	// `name` is the target name in Bazel, so the crate name uses a different
+	// attribute.
+	"crate_name": "name",
+}
+
 // pythonBinAttrMap maps from attribute name in Bazel Python binary rules to GN parameter names.
 var pythonBinAttrMap = map[string]string{
 	"main": "main_source",
@@ -425,6 +435,9 @@ var attrMapsByRules = map[string]map[string]string{
 	"idk_cc_binary_host_tool":    idkAttrMap,
 	"idk_go_binary_host_tool":    idkAttrMap,
 	"idk_rustc_binary_host_tool": idkRustBinAttrMap,
+
+	// Components
+	"fuchsia_structured_config_rust_lib": structuredConfigRustLibAttrMap,
 
 	// Tools
 	"ffx_tool":           rustBinAttrMap,

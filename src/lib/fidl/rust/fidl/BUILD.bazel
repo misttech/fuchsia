@@ -29,6 +29,7 @@ rustc_library(
     # In GN, the library must be visible to any path that defines a `fidl()` target.
     # In both, it is used outside the FIDL bindings in other places.
     visibility = [
+        "//build/bazel/rules/components:__subpackages__",
         "//build/bazel/rules/fidl:__subpackages__",
         "//build/components:__subpackages__",
         "//examples:__subpackages__",

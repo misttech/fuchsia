@@ -12,6 +12,7 @@
 # bazel2gn to be able to generate the correct import statements instead.
 
 import("//build/compiled_action.gni")
+import("//build/components/fuchsia_structured_config.gni")
 import("//build/cpp/sdk_source_set.gni")
 import("//build/fidl/fidl.gni")
 import("//build/go/go_binary.gni")

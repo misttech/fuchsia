@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_inputs.gni")
 import("//build/compiled_action.gni")
 import("//build/host.gni")
 import("//build/python/python_binary.gni")
@@ -57,6 +58,14 @@ if (is_host) {
   install_host_tools("install") {
     deps = [ ":configc" ]
     outputs = [ "configc" ]
+  }
+
+  # Exposes configc to Bazel, as
+  # @gn_targets//toolchain_host_x64/tools/configc:configc.
+  # TODO(wittrock): Remove once configc is built by Bazel.
+  bazel_input_file("bazel_input") {
+    generator = ":configc"
+    outputs = [ "${root_out_dir}/configc" ]
   }
 
   python_binary("validate_config_wrapper") {
