@@ -281,6 +281,17 @@ unsafe extern "C" {
     fn cpp_timer_get_ticks_to_time_ratio() -> Ratio;
     fn cpp_timer_get_mono_ticks_offset() -> i64;
     fn cpp_timer_current_mono_and_boot_ticks() -> CurrentTicksObservation;
+    fn cpp_timer_set_ticks_to_time_ratio(ticks_to_time: Ratio);
+    fn cpp_timer_set_initial_ticks(ticks: u64);
+}
+
+unsafe extern "C" {
+    /// Runs the expired timers of the current CPU.
+    ///
+    /// # Safety
+    ///
+    /// Must be called from the timer interrupt, with interrupts disabled.
+    pub fn timer_tick();
 }
 
 /// Returns the current monotonic time in ticks.
@@ -337,6 +348,32 @@ pub fn timer_current_mono_and_boot_ticks() -> CurrentTicksObservation {
     // SAFETY: Calling this FFI function has no preconditions and safely returns the current ticks
     // observation.
     unsafe { cpp_timer_current_mono_and_boot_ticks() }
+}
+
+/// Sets the ratio between timer ticks and nanoseconds.
+///
+/// # Safety
+///
+/// Must be called exactly once, on the boot CPU with interrupts disabled,
+/// before secondary CPUs are started and before anything converts ticks to
+/// time.
+#[inline]
+pub unsafe fn timer_set_ticks_to_time_ratio(ticks_to_time: Ratio) {
+    // SAFETY: the caller upholds the one-time, single-CPU contract above, so
+    // nothing reads the ratio while it is written.
+    unsafe { cpp_timer_set_ticks_to_time_ratio(ticks_to_time) }
+}
+
+/// Sets the raw ticks value at which the boot and monotonic timelines start.
+///
+/// # Safety
+///
+/// Must be called on the boot CPU with interrupts disabled, before secondary
+/// CPUs are started.
+#[inline]
+pub unsafe fn timer_set_initial_ticks(ticks: u64) {
+    // SAFETY: the caller upholds the single-CPU contract above.
+    unsafe { cpp_timer_set_initial_ticks(ticks) }
 }
 
 /// Platform timer tests.

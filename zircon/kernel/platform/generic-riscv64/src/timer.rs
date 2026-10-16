@@ -4,13 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-//! The `<platform/timer.h>` entry points for the generic RISC-V 64 platform.
-//!
-//! The pdev timer ops table (`dev/pdev/timer`) is not consulted: the only timer
-//! riscv64 ever registers there is the SBI timer in `arch_rs::riscv64::timer`,
-//! so its functions are called directly and the fn-pointer hop is gone.  The
-//! one pdev behaviour that callers depend on is kept: raw ticks read as zero
-//! until the timer has been initialized.
+//! The `<platform/timer.h>` entry points for the generic RISC-V 64 platform,
+//! backed by the SBI timer in `arch_rs::riscv64::timer`.  Raw ticks read as
+//! zero until that timer has been initialized.
 
 use crate::arch_rs::riscv64::feature;
 use crate::arch_rs::riscv64::timer::{
@@ -34,9 +30,7 @@ const GET_TICKS_SYNC_FLAG_BEFORE_SUBSEQUENT_STORES: u8 = 1 << 3;
 /// accesses as the `GET_TICKS_SYNC_FLAG_*` bits in `FLAGS` demand.
 ///
 /// This function is required to return zero if it is invoked before the timer
-/// hardware is initialized (see <platform/timer.h>).  The pdev timer's default
-/// ops did that for the C++ platform; the arch timer's initialization flag
-/// stands in for its registration here.
+/// hardware is initialized (see <platform/timer.h>).
 #[inline(always)]
 fn platform_current_raw_ticks_synchronized<const FLAGS: u8>() -> zx_ticks_t {
     if !timer_is_initialized() {
@@ -149,7 +143,6 @@ pub extern "C" fn rust_platform_convert_early_ticks(sample_time: u64) -> zx_inst
 /// Arms the oneshot timer of the current CPU to fire at `deadline` raw ticks.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_platform_set_oneshot_timer(deadline: zx_ticks_t) -> Result<(), Status> {
-    // pdev's default ops panic if the timer has not been registered yet.
     debug_assert!(timer_is_initialized());
     riscv_sbi_set_oneshot_timer(deadline)
 }
@@ -157,7 +150,6 @@ pub extern "C" fn rust_platform_set_oneshot_timer(deadline: zx_ticks_t) -> Resul
 /// Stops the timer of the current CPU.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_platform_stop_timer() {
-    // pdev's default ops panic if the timer has not been registered yet.
     debug_assert!(timer_is_initialized());
     let _ = riscv_sbi_timer_stop();
 }
@@ -165,7 +157,6 @@ pub extern "C" fn rust_platform_stop_timer() {
 /// Shuts the timer of the current CPU down, ahead of taking the CPU offline.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_platform_shutdown_timer() {
-    // pdev's default ops panic if the timer has not been registered yet.
     debug_assert!(timer_is_initialized());
     let _ = riscv_sbi_timer_shutdown();
 }

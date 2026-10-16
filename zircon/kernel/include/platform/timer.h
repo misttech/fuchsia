@@ -119,7 +119,8 @@ zx_status_t platform_suspend_timer_curr_cpu();
 // It is an error to call this function with interrupts enabled.
 zx_status_t platform_resume_timer_curr_cpu();
 
-void timer_tick();
+// C linkage so that Rust timer interrupt handlers can call it directly.
+extern "C" void timer_tick();
 
 // A bool indicating whether or not user mode has direct access to the registers
 // which allow directly observing the tick counter or not.
@@ -375,6 +376,8 @@ zx_instant_mono_t cpp_current_mono_time();
 zx_instant_boot_t cpp_current_boot_time();
 CppRatio cpp_timer_get_ticks_to_time_ratio();
 CurrentTicksObservation cpp_timer_current_mono_and_boot_ticks();
+void cpp_timer_set_ticks_to_time_ratio(CppRatio ticks_to_time);
+void cpp_timer_set_initial_ticks(uint64_t ticks);
 
 }  // extern "C"
 

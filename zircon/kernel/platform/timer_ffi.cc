@@ -45,4 +45,14 @@ FFI_ALWAYS_INLINE CurrentTicksObservation cpp_timer_current_mono_and_boot_ticks(
 
 static_assert(sizeof(CurrentTicksObservation) == 16 && alignof(CurrentTicksObservation) == 8);
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_timer_set_ticks_to_time_ratio(CppRatio ticks_to_time) {
+  timer_set_ticks_to_time_ratio({ticks_to_time.numerator, ticks_to_time.denominator});
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_timer_set_initial_ticks(uint64_t ticks) {
+  timer_set_initial_ticks(ticks);
+}
+
 }  // extern "C"

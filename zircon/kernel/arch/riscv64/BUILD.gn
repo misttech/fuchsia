@@ -105,7 +105,6 @@ if (toolchain_base_environment == "kernel") {
       "riscv64_user_copy.S",
       "spinlock.cc",
       "stvec.S",
-      "timer.cc",
       "user_copy_c.cc",
       "vector_asm.S",
     ]
@@ -113,7 +112,6 @@ if (toolchain_base_environment == "kernel") {
       "//sdk/lib/zbi-format",
       "//zircon/kernel/dev/iommu/stub",
       "//zircon/kernel/dev/pdev/power",
-      "//zircon/kernel/dev/pdev/timer",
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/boot-options",
       "//zircon/kernel/lib/code-patching",
@@ -419,6 +417,7 @@ if (toolchain_base_environment == "kernel") {
       "//zircon/kernel/lib/debug",
       "//zircon/kernel/lib/id_allocator:id-allocator-rs",
       "//zircon/kernel/lib/page:page-rs",
+      "//zircon/system/ulib/affine/rust:affine",
       "//zircon/system/ulib/fbl/rust:fbl",
       "//zircon/system/ulib/pretty/rust:pretty",
     ]

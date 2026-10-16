@@ -149,10 +149,6 @@ pub mod generic32;
 #[path = "dev/interrupt/plic/plic.rs"]
 pub mod plic;
 
-#[cfg(target_arch = "riscv64")]
-#[path = "dev/pdev/timer/timer.rs"]
-pub mod pdev_timer;
-
 #[cfg(target_arch = "aarch64")]
 #[path = "dev/pdev/clocks_and_pmic/clocks_and_pmic.rs"]
 pub mod pdev_clocks_and_pmic;

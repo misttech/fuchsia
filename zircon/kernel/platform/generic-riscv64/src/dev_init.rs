@@ -15,7 +15,8 @@ use crate::plic::{DcfgRiscvPlicDriver, plic_init_early, plic_init_late, plic_ini
 /// # Safety
 ///
 /// Each configuration that is `Some` must be a live driver configuration from
-/// the physboot handoff.
+/// the physboot handoff.  Must be called once, on the boot CPU with interrupts
+/// disabled, before secondary CPUs are started.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_platform_driver_handoff_early(
     plic_driver: Option<&DcfgRiscvPlicDriver>,
@@ -25,7 +26,8 @@ pub unsafe extern "C" fn rust_platform_driver_handoff_early(
         plic_init_early(plic);
     }
     if let Some(timer) = timer_driver {
-        riscv_generic_timer_init_early(timer);
+        // SAFETY: the caller upholds the one-time, boot-CPU contract above.
+        unsafe { riscv_generic_timer_init_early(timer) };
     }
 }
 
