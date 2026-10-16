@@ -660,6 +660,15 @@ struct WireResponse<frawsocket::Provider::Socket> {
   }
 };
 
+template <>
+struct WireResponse<fpacketsocket::Provider::Socket> {
+  using ClientEnd = fidl::ClientEnd<fpacketsocket::Socket>;
+
+  static ClientEnd FromResponse(fpacketsocket::wire::ProviderSocketResponse* response) {
+    return std::move(response->socket);
+  }
+};
+
 // TODO(https://fxbug.dev/384115233): Update after the API is stabilized.
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 template <>
@@ -694,6 +703,15 @@ struct WireResponse<frawsocket::Provider::SocketWithOptions> {
 
   static ClientEnd FromResponse(frawsocket::wire::ProviderSocketWithOptionsResponse* response) {
     return std::move(response->s);
+  }
+};
+
+template <>
+struct WireResponse<fpacketsocket::Provider::SocketWithOptions> {
+  using ClientEnd = fidl::ClientEnd<fpacketsocket::Socket>;
+
+  static ClientEnd FromResponse(fpacketsocket::wire::ProviderSocketWithOptionsResponse* response) {
+    return std::move(response->socket);
   }
 };
 #endif
@@ -806,15 +824,24 @@ zx_status_t zxio_socket_inner(zxio_service_connector service_connector, int doma
       if (provider.is_error()) {
         return ZX_ERR_IO;
       }
-      fidl::WireResult socket_result = fidl::WireCall(provider.value())->Socket(kind);
-      if (!socket_result.ok()) {
-        return socket_result.status();
+      auto socket_result =
+// TODO(https://fxbug.dev/384115233): Update after the API is stabilized. Use if-else
+// instead of the ternary operator.
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+          opts.has_value()
+              ? handle_wire_result(
+                    fidl::WireCall(provider.value())->SocketWithOptions(kind, creation_opts()))
+              :
+#endif
+              handle_wire_result(fidl::WireCall(provider.value())->Socket(kind));
+      if (socket_result.is_error()) {
+        return socket_result.error_value();
       }
-      if (socket_result->is_error()) {
-        *out_code = static_cast<int16_t>(socket_result->error_value());
+      if ((*socket_result).is_error()) {
+        *out_code = static_cast<int16_t>((*socket_result).error_value());
         return ZX_OK;
       }
-      fidl::ClientEnd<fpacketsocket::Socket>& control = socket_result->value()->socket;
+      fidl::ClientEnd<fpacketsocket::Socket>& control = (*socket_result).value();
       fidl::WireResult result = fidl::WireCall(control)->Describe();
       if (!result.ok()) {
         return result.status();

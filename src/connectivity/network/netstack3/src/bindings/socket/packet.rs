@@ -15,7 +15,7 @@ use chunked_ringbuf::RingBuffer;
 use fidl::Peered as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream as _};
 use futures::TryStreamExt as _;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use net_types::ethernet::Mac;
 use net_types::ip::IpVersion;
 use netstack3_core::CoreTxMetadata;
@@ -45,6 +45,7 @@ use crate::bindings::util::{
     RemoveResourceResultExt as _, ResultExt as _, ScopeExt as _, TryFromFidl,
     TryIntoCoreWithContext as _, TryIntoFidlWithContext,
 };
+use crate::bindings::waker::WakeGroupId;
 use crate::bindings::{BindingsCtx, Ctx};
 
 #[derive(Debug)]
@@ -233,21 +234,36 @@ pub(crate) async fn serve(
     while let Some(req) = stream.try_next().await? {
         match req {
             fppacket::ProviderRequest::Socket { responder, kind } => {
-                let (client, request_stream) = fidl::endpoints::create_request_stream();
-                fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
-                    SocketWorker::serve_stream_with(
-                        ctx.clone(),
-                        move |ctx, properties| BindingData::new(ctx, kind, properties),
-                        SocketWorkerProperties {},
-                        rs,
-                        (),
-                    )
-                });
+                let client = handle_create_socket(ctx.clone(), kind, Default::default());
+                responder.send(Ok(client)).unwrap_or_log("failed to respond");
+            }
+            fppacket::ProviderRequest::SocketWithOptions { responder, kind, opts } => {
+                let client = handle_create_socket(ctx.clone(), kind, opts);
                 responder.send(Ok(client)).unwrap_or_log("failed to respond");
             }
         }
     }
     Ok(())
+}
+
+fn handle_create_socket(
+    ctx: Ctx,
+    kind: fppacket::Kind,
+    creation_opts: fpsocket::SocketCreationOptions,
+) -> fidl::endpoints::ClientEnd<fppacket::SocketMarker> {
+    let (client, request_stream) = fidl::endpoints::create_request_stream();
+    // TODO(https://fxbug.dev/574457735): Support marks on packet sockets.
+    let fpsocket::SocketCreationOptions { marks: _, group, __source_breaking } = creation_opts;
+    fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
+        SocketWorker::serve_stream_with(
+            ctx,
+            move |ctx, properties| BindingData::new(ctx, kind, properties, group.map(Into::into)),
+            SocketWorkerProperties {},
+            rs,
+            (),
+        )
+    });
+    client
 }
 
 #[derive(Debug)]
@@ -333,6 +349,7 @@ impl BindingData {
         ctx: &mut Ctx,
         kind: fppacket::Kind,
         SocketWorkerProperties {}: SocketWorkerProperties,
+        wake_group: Option<WakeGroupId>,
     ) -> Self {
         let (local_event, peer_event) = zx::EventPair::create();
         match local_event.signal_peer(zx::Signals::NONE, ZXSIO_SIGNAL_OUTGOING) {
@@ -340,16 +357,26 @@ impl BindingData {
             Err(e) => error!("socket failed to signal peer: {:?}", e),
         }
 
+        let notifier = wake_group
+            .as_ref()
+            .and_then(|group| ctx.bindings_ctx().wake_groups.data_notifier(group));
+        let notifier_is_some = notifier.is_some();
+
         let state = SocketState {
             queue: Queue::MessageQueue(Mutex::new(MessageQueue::new(
                 local_event,
-                None, /* notifier */
+                notifier,
                 ctx.bindings_ctx().settings.device.read().packet_receive_buffer.default(),
             ))),
             kind,
             bpf_filter: RwLock::new(None),
         };
         let id = ctx.api().device_socket().create(state);
+        if let Some(group) = wake_group
+            && notifier_is_some
+        {
+            debug!("attaching socket {id:?} to wake group {group:?}");
+        }
 
         BindingData { peer_event, id }
     }

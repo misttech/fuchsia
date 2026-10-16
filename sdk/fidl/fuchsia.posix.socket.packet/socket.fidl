@@ -253,4 +253,17 @@ closed protocol Provider {
     }) -> (resource struct {
         socket client_end:Socket;
     }) error fuchsia.posix.Errno;
+
+    /// Requests a packet socket with creation options.
+    ///
+    /// + request `kind` the kind of packet socket to create.
+    /// + request `opts` creation options for the socket.
+    /// - response `socket` the packet socket.
+    @available(added=HEAD)
+    strict SocketWithOptions(resource struct {
+        kind Kind;
+        opts fuchsia.posix.socket.SocketCreationOptions;
+    }) -> (resource struct {
+        socket client_end:Socket;
+    }) error fuchsia.posix.Errno;
 };

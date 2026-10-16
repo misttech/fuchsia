@@ -71,6 +71,22 @@ pub async fn packet_socket(
     .await)
 }
 
+/// Creates a packet socket using the given provider and configured with the
+/// specified options.
+pub async fn packet_socket_with_options(
+    provider: &fpacket::ProviderProxy,
+    kind: fpacket::Kind,
+    options: fposix_socket::SocketCreationOptions,
+) -> Result<Result<socket2::Socket, std::io::Error>, fidl::Error> {
+    let result = provider.socket_with_options(kind, options).await?;
+    Ok(async move {
+        let client_end =
+            result.map_err(|errno| std::io::Error::from_raw_os_error(errno.into_primitive()))?;
+        Ok(fdio::create_fd(client_end.into()).map_err(|status| status.into_io_error())?.into())
+    }
+    .await)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

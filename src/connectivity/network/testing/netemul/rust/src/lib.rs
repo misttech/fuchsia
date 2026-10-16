@@ -819,6 +819,26 @@ impl<'a> TestRealm<'a> {
             .context("failed to create socket")
     }
 
+    /// Creates a [`socket2::Socket`] backed by the implementation of
+    /// [`fuchsia.posix.socket.packet/Provider`] in this realm and with the specified
+    /// options.
+    ///
+    /// [`fuchsia.posix.socket.packet/Provider`]: fposix_socket_packet::ProviderMarker
+    pub async fn packet_socket_with_options(
+        &self,
+        kind: fposix_socket_packet::Kind,
+        options: fposix_socket::SocketCreationOptions,
+    ) -> Result<socket2::Socket> {
+        let socket_provider = self
+            .connect_to_protocol::<fposix_socket_packet::ProviderMarker>()
+            .context("failed to connect to socket provider")?;
+
+        fposix_socket_ext::packet_socket_with_options(&socket_provider, kind, options)
+            .await
+            .context("failed to call socket")?
+            .context("failed to create socket")
+    }
+
     /// Creates a Stream [`socket2::Socket`] backed by the implementation of
     /// `fuchsia.posix.socket/Provider` in this realm.
     pub async fn stream_socket(

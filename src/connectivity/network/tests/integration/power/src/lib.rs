@@ -21,6 +21,7 @@ use fidl_fuchsia_net_resources as fnet_resources;
 use fidl_fuchsia_net_tun as fnet_tun;
 use fidl_fuchsia_netemul as fnetemul;
 use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use fidl_fuchsia_power_broker as fpower_broker;
 use fidl_fuchsia_power_system as fpower_system;
@@ -35,7 +36,7 @@ use net_types::ip::{Ip, IpAddress as _, IpVersion, Ipv4, Ipv6};
 use netemul::{RealmTcpStream as _, RealmUdpSocket as _};
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
 use netstack_testing_common::realms::{
-    KnownServiceProvider, Netstack3, NetstackVersion, TestSandboxExt as _,
+    KnownServiceProvider, Netstack3, NetstackVersion, TestRealmExt as _, TestSandboxExt as _,
 };
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
@@ -43,6 +44,7 @@ use packet_formats::ip::{IpPacket, IpProto, Ipv6Proto};
 use packet_formats::ipv4::Ipv4Packet;
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::udp::{UdpPacket, UdpParseArgs};
+use sockaddr::IntoSockAddr as _;
 use test_case::test_case;
 use zx::Peered as _;
 
@@ -803,6 +805,65 @@ impl<I: Ip> WakeupSocket for RawSocket<I> {
     }
 }
 
+struct PacketSocket {
+    socket: fasync::net::DatagramSocket,
+    addr: socket2::SockAddr,
+}
+
+impl WakeupSocket for PacketSocket {
+    async fn setup(
+        realm: &netemul::TestRealm<'_>,
+        wake_group: fnet_resources::WakeGroupToken,
+    ) -> Self {
+        let loopback_id = realm
+            .loopback_properties()
+            .await
+            .expect("get loopback properties")
+            .expect("loopback should exist")
+            .id;
+
+        let addr = libc::sockaddr_ll::from(sockaddr::EthernetSockaddr {
+            interface_id: Some(loopback_id),
+            addr: net_types::ethernet::Mac::UNSPECIFIED,
+            protocol: packet_formats::ethernet::EtherType::Ipv4,
+        })
+        .into_sockaddr();
+
+        let socket = realm
+            .packet_socket_with_options(
+                fposix_socket_packet::Kind::Network,
+                fposix_socket::SocketCreationOptions {
+                    group: Some(wake_group),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create packet socket");
+        socket.bind(&addr).expect("bind packet socket");
+        let socket =
+            fasync::net::DatagramSocket::new_from_socket(socket).expect("wrap packet socket");
+
+        Self { socket, addr }
+    }
+
+    async fn client_write(&mut self, _realm: &netemul::TestRealm<'_>) {
+        let write_count = self
+            .socket
+            .send_to(Self::PAYLOAD.as_bytes(), self.addr.clone())
+            .await
+            .expect("send payload to server");
+        assert_eq!(write_count, Self::PAYLOAD.as_bytes().len());
+    }
+
+    async fn server_read(&mut self) {
+        let mut buf = [0u8; Self::PAYLOAD.as_bytes().len()];
+        let (read_count, _from) =
+            self.socket.recv_from(&mut buf).await.expect("read payload from client");
+        assert_eq!(read_count, Self::PAYLOAD.as_bytes().len());
+        assert_eq!(&buf[..read_count], Self::PAYLOAD.as_bytes());
+    }
+}
+
 const GROUP_WAKEUP_SIGNAL: zx::Signals =
     zx::Signals::from_bits(fnet_power::GROUP_WAKEUP_SIGNAL).unwrap();
 const WAITER_AWAKE_SIGNAL: zx::Signals =
@@ -816,6 +877,7 @@ const WAITER_ASLEEP_SIGNAL: zx::Signals =
 #[test_case(PhantomData::<UdpSocketPair>; "udp")]
 #[test_case(PhantomData::<RawSocket<Ipv4>>; "raw_ipv4")]
 #[test_case(PhantomData::<RawSocket<Ipv6>>; "raw_ipv6")]
+#[test_case(PhantomData::<PacketSocket>; "packet")]
 async fn wake_group_sockets<S: WakeupSocket>(name: &str, _socket_type: PhantomData<S>) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");

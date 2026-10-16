@@ -15,6 +15,7 @@ rustc_test("power") {
     "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust",
     "//sdk/fidl/fuchsia.net.tun:fuchsia.net.tun_rust",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
+    "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_rust",
     "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_rust",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
@@ -22,6 +23,7 @@ rustc_test("power") {
     "//src/connectivity/lib/net-declare",
     "//src/connectivity/lib/net-types",
     "//src/connectivity/lib/packet-formats",
+    "//src/connectivity/network/lib/sockaddr",
     "//src/connectivity/network/testing/netemul/fidl:fuchsia.netemul_rust",
     "//src/connectivity/network/testing/netemul/rust:lib",
     "//src/connectivity/network/tests/integration/common:netstack_testing_common",
@@ -35,7 +37,9 @@ rustc_test("power") {
     "//src/power/testing/fake-suspend:test.suspendcontrol_rust",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:libc",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:socket2",
     "//third_party/rust_crates:test-case",
   ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
