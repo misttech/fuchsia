@@ -38,6 +38,19 @@ type Resolution = flexible union {
     1: duration zx.Duration;
 };
 
+/// Indicates the power-up state of the timer hardware at boot.
+type PowerUpState = flexible enum {
+    /// The power-up state is unknown or not reported by the hardware.
+    UNKNOWN = 0;
+
+    /// The hardware powered up normally (backup power was maintained).
+    REGULAR = 1;
+
+    /// The hardware powered up after a battery drain or full power loss
+    /// (backup domain registers were reset).
+    BATTERY_DRAIN = 2;
+};
+
 /// Properties for a specific timer abstracted by the driver.
 type TimerProperties = table {
     /// Unique identifier for this timer.
@@ -94,6 +107,13 @@ type TimerProperties = table {
     ///
     /// Optional.
     6: supports_read bool;
+
+    /// Indicates the power-up state of the timer hardware at boot.
+    ///
+    /// If not present, the power-up state is `PowerUpState.UNKNOWN`.
+    ///
+    /// Optional.
+    7: power_up_state PowerUpState;
 };
 
 /// Driver properties.

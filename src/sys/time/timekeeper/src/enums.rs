@@ -29,6 +29,9 @@ pub enum InitializeRtcOutcome {
     ReadFailed,
     InvalidBeforeBackstop,
     Succeeded,
+    /// The RTC was read, but the reading is potentially stale (e.g. after a battery drain
+    /// or counter reset).
+    SucceededStale,
     /// The UTC clock was started from backstop, instead from RTC.
     ///
     /// This happens if RTC is not available, but we must move the UTC clock to support buggy old
@@ -55,7 +58,7 @@ impl Into<CobaltRtcEvent> for InitializeRtcOutcome {
             // TODO(jsankey): Define a better Cobalt enum for this case
             Self::ReadNotAttempted => CobaltRtcEvent::ReadSucceeded,
             Self::InvalidBeforeBackstop => CobaltRtcEvent::ReadInvalidBeforeBackstop,
-            Self::Succeeded => CobaltRtcEvent::ReadSucceeded,
+            Self::Succeeded | Self::SucceededStale => CobaltRtcEvent::ReadSucceeded,
             Self::StartedFromBackstop => CobaltRtcEvent::StartedFromBackstop,
         }
     }

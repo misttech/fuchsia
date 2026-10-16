@@ -118,7 +118,8 @@
         periodic_rtc_update_interval_minutes: { type: "uint32" },
 
         /// The policy for how to handle RTC readings that are in the past with respect
-        /// to the current boot clock.
+        /// to the current boot clock. Recovery from battery drain with a reset boot
+        /// counter requires `"apply_maybe_stale"`.
         rtc_allow_setting_past_utc: {
             type: "string",
             max_size: 64,

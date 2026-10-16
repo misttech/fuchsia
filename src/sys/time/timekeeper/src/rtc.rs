@@ -45,13 +45,22 @@ pub enum RtcCreationError {
     NotConfigured,
 }
 
+/// The result of reading the RTC.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RtcReading {
+    /// A valid RTC time reading.
+    Valid(UtcInstant),
+    /// A potentially stale RTC time reading (e.g., recovered after power loss or counter reset).
+    Stale(UtcInstant),
+}
+
 /// Interface to interact with a real-time clock. Note that the RTC hardware interface is limited
 /// to a resolution of one second; times returned by the RTC will always be a whole number of
 /// seconds and times sent to the RTC will discard any fractional second.
 #[async_trait(?Send)]
 pub trait Rtc {
     /// Returns the current time reported by the realtime clock.
-    async fn get(&self) -> Result<UtcInstant>;
+    async fn get(&self) -> Result<RtcReading>;
     /// Sets the time of the realtime clock to `value`.
     async fn set(&self, value: UtcInstant) -> Result<()>;
 }
@@ -117,23 +126,30 @@ where
 {
     /// Returns a linear approximation of the UtcInstant based on a valid reading
     /// of the current boot clock, and assuming a valid persisted reference boot instant.
-    async fn get(&self) -> Result<UtcInstant> {
+    ///
+    /// Note that when the boot counter resets (such as after a battery drain, yielding
+    /// `diff < 0`), [`RtcInitializationPolicy::ApplyMaybeStale`] is required to apply
+    /// the persisted UTC reference as [`RtcReading::Stale`]; [`RtcInitializationPolicy::Default`]
+    /// rejects negative offsets with an error.
+    async fn get(&self) -> Result<RtcReading> {
         let boot_now = self.now().await;
+        let power_up_state = self.power_up_state().await;
         let (boot_reference, utc_reference) = self.state.borrow().get_rtc_reference();
         let diff = boot_now - boot_reference;
-        if diff < zx::BootDuration::ZERO {
+        let utc_candidate = if diff < zx::BootDuration::ZERO {
             match self.rtc_initialization_policy {
                 RtcInitializationPolicy::ApplyMaybeStale => {
                     log::warn!(
                         concat!(
                             "negative RTC diff detected, but config allows applying past UTC. ",
-                            "References:\n\tpersisted: {:?}\n\tnow:       {:?}\n\tutc:       {:?}"
+                            "References:\n\tpersisted:      {:?}\n\tnow:            {:?}\n\tutc:            {:?}\n\tpower_up_state: {:?}"
                         ),
                         boot_reference,
                         boot_now,
-                        utc_reference
+                        utc_reference,
+                        power_up_state
                     );
-                    Ok(utc_reference)
+                    utc_reference
                 }
                 RtcInitializationPolicy::Default => {
                     // ReadOnlyRtc relies on the boot clock for RTC updates. This allows us to have
@@ -143,21 +159,38 @@ where
                     log::warn!(
                         concat!(
                             "negative RTC diff detected. References:",
-                            "\n\tpersisted: {:?}\n\tnow:       {:?}\n\tutc:       {:?}"
+                            "\n\tpersisted:      {:?}\n\tnow:            {:?}\n\tutc:            {:?}\n\tpower_up_state: {:?}"
                         ),
                         boot_reference,
                         boot_now,
-                        utc_reference
+                        utc_reference,
+                        power_up_state
                     );
-                    Err(anyhow!(
+                    return Err(anyhow!(
                         "negative offset adjustment for RTC is not allowed: {}",
                         format_duration(diff)
-                    ))
+                    ));
                 }
             }
         } else {
-            let utc_now = utc_reference + UtcDuration::from_nanos(diff.into_nanos());
-            Ok(utc_now)
+            utc_reference + UtcDuration::from_nanos(diff.into_nanos())
+        };
+
+        let is_stale = match power_up_state {
+            ffhh::PowerUpState::BatteryDrain => true,
+            _ => diff < zx::BootDuration::ZERO,
+        };
+
+        if is_stale {
+            log::warn!(
+                "potentially stale RTC reading detected (power_up_state={:?}, diff={:?}); marking reading {:?} as stale",
+                power_up_state,
+                diff,
+                utc_candidate
+            );
+            Ok(RtcReading::Stale(utc_candidate))
+        } else {
+            Ok(RtcReading::Valid(utc_candidate))
         }
     }
 
@@ -174,14 +207,15 @@ where
     F: Fn(&State) -> Result<()>,
     C: Fn() -> zx::BootInstant,
 {
+    const CLOCK_ID: u64 = 1;
+
     async fn now(&self) -> zx::BootInstant {
-        const CLOCK_ID: u64 = 1;
         let local_now = (self.clock_fn)();
         if let Some(ref proxy) = self.proxy {
             // This hard-coded resolution is appropriate for our device.
             let resolution = ffhh::Resolution::Duration(NANOS_PER_SECOND);
             proxy
-                .read_clock(CLOCK_ID, &resolution)
+                .read_clock(Self::CLOCK_ID, &resolution)
                 .await
                 .inspect_err(|err| {
                     error!("error while reading persistent clock: {err:?}");
@@ -197,6 +231,25 @@ where
         } else {
             local_now
         }
+    }
+
+    async fn power_up_state(&self) -> ffhh::PowerUpState {
+        let Some(ref proxy) = self.proxy else {
+            return ffhh::PowerUpState::Unknown;
+        };
+        let props = proxy
+            .get_properties()
+            .await
+            .inspect_err(|err| {
+                error!("error while reading persistent clock properties: {err:?}");
+            })
+            .expect("FIDL call to a driver does not fail");
+        props
+            .timers_properties
+            .as_ref()
+            .and_then(|timers| timers.iter().find(|t| t.id == Some(Self::CLOCK_ID)))
+            .and_then(|timer| timer.power_up_state)
+            .unwrap_or(ffhh::PowerUpState::Unknown)
     }
 }
 
@@ -320,7 +373,7 @@ fn zx_time_to_fidl_time(zx_time: UtcInstant) -> frtc::Time {
 
 #[async_trait(?Send)]
 impl Rtc for RtcImpl {
-    async fn get(&self) -> Result<UtcInstant> {
+    async fn get(&self) -> Result<RtcReading> {
         self.proxy
             .get()
             .map_err(|err| anyhow!("FIDL error on Rtc::get: {}", err))
@@ -330,6 +383,7 @@ impl Rtc for RtcImpl {
             .await?
             .map_err(|err| anyhow!("Driver error on Rtc::get: {}", err))
             .and_then(fidl_time_to_zx_time)
+            .map(RtcReading::Valid)
     }
 
     async fn set(&self, value: UtcInstant) -> Result<()> {
@@ -370,16 +424,21 @@ impl Rtc for RtcImpl {
 #[derive(Clone)]
 pub struct FakeRtc {
     /// The response used for get requests.
-    value: Result<UtcInstant, String>,
+    value: Result<RtcReading, String>,
     /// The most recent value received in a set request.
     last_set: Arc<Mutex<Option<UtcInstant>>>,
 }
 
 #[cfg(test)]
 impl FakeRtc {
-    /// Returns a new `FakeRtc` that always returns the supplied time.
+    /// Returns a new `FakeRtc` that always returns the supplied valid time.
     pub fn valid(time: UtcInstant) -> FakeRtc {
-        FakeRtc { value: Ok(time), last_set: Arc::new(Mutex::new(None)) }
+        FakeRtc { value: Ok(RtcReading::Valid(time)), last_set: Arc::new(Mutex::new(None)) }
+    }
+
+    /// Returns a new `FakeRtc` that always returns the supplied stale time.
+    pub fn stale(time: UtcInstant) -> FakeRtc {
+        FakeRtc { value: Ok(RtcReading::Stale(time)), last_set: Arc::new(Mutex::new(None)) }
     }
 
     /// Returns a new `FakeRtc` that always returns the supplied error message.
@@ -402,8 +461,8 @@ impl FakeRtc {
 #[cfg(test)]
 #[async_trait(?Send)]
 impl Rtc for FakeRtc {
-    async fn get(&self) -> Result<UtcInstant> {
-        self.value.as_ref().map(|time| time.clone()).map_err(|msg| Error::msg(msg.clone()))
+    async fn get(&self) -> Result<RtcReading> {
+        self.value.as_ref().map(|time| *time).map_err(|msg| Error::msg(msg.clone()))
     }
 
     async fn set(&self, value: UtcInstant) -> Result<()> {
@@ -460,7 +519,7 @@ mod test {
                 responder.send(Ok(&TEST_FIDL_TIME)).expect("Failed response");
             }
         });
-        assert_eq!(rtc_impl.get().await.unwrap(), TEST_ZX_TIME);
+        assert_eq!(rtc_impl.get().await.unwrap(), RtcReading::Valid(TEST_ZX_TIME));
     }
 
     #[fuchsia::test]
@@ -522,13 +581,25 @@ mod test {
     #[fuchsia::test(allow_stalls = false)]
     async fn valid_fake() {
         let fake = FakeRtc::valid(TEST_ZX_TIME);
-        assert_eq!(fake.get().await.unwrap(), TEST_ZX_TIME);
+        assert_eq!(fake.get().await.unwrap(), RtcReading::Valid(TEST_ZX_TIME));
         assert_eq!(fake.last_set(), None);
 
         // Set a new time, this should be recorded but get should still return the original time.
         assert!(fake.set(DIFFERENT_ZX_TIME).await.is_ok());
         assert_eq!(fake.last_set(), Some(DIFFERENT_ZX_TIME));
-        assert_eq!(fake.get().await.unwrap(), TEST_ZX_TIME);
+        assert_eq!(fake.get().await.unwrap(), RtcReading::Valid(TEST_ZX_TIME));
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn stale_fake() {
+        let fake = FakeRtc::stale(TEST_ZX_TIME);
+        assert_eq!(fake.get().await.unwrap(), RtcReading::Stale(TEST_ZX_TIME));
+        assert_eq!(fake.last_set(), None);
+
+        // Set a new time, this should be recorded but get should still return the original time.
+        assert!(fake.set(DIFFERENT_ZX_TIME).await.is_ok());
+        assert_eq!(fake.last_set(), Some(DIFFERENT_ZX_TIME));
+        assert_eq!(fake.get().await.unwrap(), RtcReading::Stale(TEST_ZX_TIME));
     }
 
     #[fuchsia::test(allow_stalls = false)]
@@ -612,18 +683,18 @@ mod test {
             // Advance the boot clock a bit. Verify that the UTC moved too.
             (*fake_boot_now.borrow_mut()) += zx::BootDuration::from_nanos(100);
             let utc = rtc.get().await.unwrap();
-            assert_eq!(utc, UtcInstant::from_nanos(42100));
+            assert_eq!(utc, RtcReading::Valid(UtcInstant::from_nanos(42100)));
 
             // Again, please.
             (*fake_boot_now.borrow_mut()) += zx::BootDuration::from_nanos(100);
             let utc = rtc.get().await.unwrap();
-            assert_eq!(utc, UtcInstant::from_nanos(42200));
+            assert_eq!(utc, RtcReading::Valid(UtcInstant::from_nanos(42200)));
 
             // Time travel is allowed in fake-land. Rewind time a bit, check it.
             // However, see (*) below.
             (*fake_boot_now.borrow_mut()) -= zx::BootDuration::from_nanos(100);
             let utc = rtc.get().await.unwrap();
-            assert_eq!(utc, UtcInstant::from_nanos(42100));
+            assert_eq!(utc, RtcReading::Valid(UtcInstant::from_nanos(42100)));
         }
 
         {
@@ -642,7 +713,7 @@ mod test {
             // Some time passed since we last wrote the above file.
             (*fake_boot_now.borrow_mut()) += zx::BootDuration::from_nanos(300);
             let utc = rtc.get().await.unwrap();
-            assert_eq!(utc, UtcInstant::from_nanos(42400));
+            assert_eq!(utc, RtcReading::Valid(UtcInstant::from_nanos(42400)));
 
             // Time travel is allowed in fake-land.
             // (*) But don't overdo it! If we rewind beyond the reference, then the RTC read should
@@ -664,12 +735,12 @@ mod test {
             );
 
             // Time travel is allowed in fake-land.
-            // If we rewind beyond the reference, but we have ApplyMaybeStale, then
-            // we should get the last known UTC reference.
+            // If we rewind beyond the reference, and we have ApplyMaybeStale, the negative diff
+            // indicates a counter reset, so we get the last known UTC reference marked as Stale.
             (*fake_boot_now.borrow_mut()) -= zx::BootDuration::from_nanos(500);
             let utc = rtc.get().await.unwrap();
             // The last set UTC reference was 42000.
-            assert_eq!(utc, UtcInstant::from_nanos(42000));
+            assert_eq!(utc, RtcReading::Stale(UtcInstant::from_nanos(42000)));
         }
     }
 
@@ -707,6 +778,99 @@ mod test {
         assert_eq!(
             rtc.now().await,
             zx::BootInstant::ZERO + zx::BootDuration::from_nanos(42 * NANOS_PER_SECOND)
+        );
+    }
+
+    #[fuchsia::test]
+    async fn read_only_rtc_power_up_states() {
+        let d = tempfile::TempDir::new().expect("tempdir created");
+        let p = d.path().join("file.json");
+        let state = Rc::new(RefCell::new(State::new(false)));
+        let utc_reference = UtcInstant::from_nanos(100 * NANOS_PER_SECOND);
+        state
+            .borrow_mut()
+            .set_rtc_reference(zx::BootInstant::from_nanos(50 * NANOS_PER_SECOND), utc_reference);
+
+        let clock_ticks = Rc::new(RefCell::new(10u64));
+        let timer_id = Rc::new(RefCell::new(1u64));
+        let power_up_state = Rc::new(RefCell::new(ffhh::PowerUpState::Unknown));
+
+        let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<ffhh::DeviceMarker>();
+        let ticks_clone = clock_ticks.clone();
+        let id_clone = timer_id.clone();
+        let state_clone = power_up_state.clone();
+
+        let _task = fasync::Task::local(async move {
+            while let Some(request) = stream.next().await {
+                match request {
+                    Ok(ffhh::DeviceRequest::ReadClock { responder, .. }) => {
+                        responder.send(Ok(*ticks_clone.borrow())).unwrap();
+                    }
+                    Ok(ffhh::DeviceRequest::GetProperties { responder, .. }) => {
+                        let props = ffhh::Properties {
+                            timers_properties: Some(vec![ffhh::TimerProperties {
+                                id: Some(*id_clone.borrow()),
+                                power_up_state: Some(*state_clone.borrow()),
+                                ..Default::default()
+                            }]),
+                            ..Default::default()
+                        };
+                        responder.send(props).unwrap();
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        });
+
+        let rtc = new_read_only_rtc_with_dependencies(
+            state,
+            Some(proxy),
+            |s| State::write_internal(&p, s),
+            || zx::BootInstant::ZERO,
+            RtcInitializationPolicy::ApplyMaybeStale,
+        );
+
+        // 1. Unknown power-up state with negative diff (ticks = 10 < 50): Stale(utc_reference).
+        *power_up_state.borrow_mut() = ffhh::PowerUpState::Unknown;
+        assert_eq!(rtc.get().await.unwrap(), RtcReading::Stale(utc_reference));
+
+        // 2. Regular power-up state with negative diff (ticks = 10 < 50): Stale(utc_reference).
+        *power_up_state.borrow_mut() = ffhh::PowerUpState::Regular;
+        assert_eq!(rtc.get().await.unwrap(), RtcReading::Stale(utc_reference));
+
+        // 3. Unknown power-up state with positive diff (ticks = 60 >= 50): Valid(utc_reference + 10s).
+        *power_up_state.borrow_mut() = ffhh::PowerUpState::Unknown;
+        *clock_ticks.borrow_mut() = 60;
+        assert_eq!(
+            rtc.get().await.unwrap(),
+            RtcReading::Valid(utc_reference + UtcDuration::from_seconds(10))
+        );
+
+        // 4. Regular power-up state with positive diff (ticks = 60 >= 50): Valid(utc_reference + 10s).
+        *power_up_state.borrow_mut() = ffhh::PowerUpState::Regular;
+        assert_eq!(
+            rtc.get().await.unwrap(),
+            RtcReading::Valid(utc_reference + UtcDuration::from_seconds(10))
+        );
+
+        // 5. BatteryDrain power-up state with negative diff (ticks = 0 < 50): Stale(utc_reference).
+        *power_up_state.borrow_mut() = ffhh::PowerUpState::BatteryDrain;
+        *clock_ticks.borrow_mut() = 0;
+        assert_eq!(rtc.get().await.unwrap(), RtcReading::Stale(utc_reference));
+
+        // 6. BatteryDrain power-up state with non-negative diff (ticks = 60 >= 50): Stale(utc_reference + 10s).
+        *clock_ticks.borrow_mut() = 60;
+        assert_eq!(
+            rtc.get().await.unwrap(),
+            RtcReading::Stale(utc_reference + UtcDuration::from_seconds(10))
+        );
+
+        // 7. Unrelated timer ID (id = 0 != CLOCK_ID) reporting BatteryDrain with positive diff:
+        //    ignored (defaults to Unknown), so reading is Valid(utc_reference + 10s).
+        *timer_id.borrow_mut() = 0;
+        assert_eq!(
+            rtc.get().await.unwrap(),
+            RtcReading::Valid(utc_reference + UtcDuration::from_seconds(10))
         );
     }
 }

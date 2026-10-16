@@ -24,7 +24,7 @@ use crate::diagnostics::{
     CobaltDiagnostics, CompositeDiagnostics, Diagnostics, Event, InspectDiagnostics,
 };
 use crate::enums::{InitialClockState, InitializeRtcOutcome, Role, StartClockSource, Track};
-use crate::rtc::{Rtc, RtcCreationError, RtcImpl};
+use crate::rtc::{Rtc, RtcCreationError, RtcImpl, RtcReading};
 use crate::time_source::{TimeSource, TimeSourceLauncher};
 use crate::time_source_manager::TimeSourceManager;
 use anyhow::{Context as _, Result};
@@ -77,10 +77,13 @@ pub struct Config {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RtcInitializationPolicy {
-    /// No change to existing behavior.
+    /// Rejects RTC readings when the boot clock has a negative offset relative
+    /// to the persisted boot reference.
     #[default]
     Default,
-    /// Apply the RTC reading even if it is in the past.
+    /// Applies the persisted UTC reference even when the boot clock is in the
+    /// past relative to the persisted boot reference (e.g. after a battery
+    /// drain or counter reset), returning [`RtcReading::Stale`].
     ApplyMaybeStale,
 }
 
@@ -599,7 +602,7 @@ async fn set_clock_from_rtc<R: Rtc, D: Diagnostics>(
 ) {
     info!("reading initial RTC time.");
     let mono_before = zx::BootInstant::get();
-    let mut rtc_time = match rtc.get().await {
+    let (mut rtc_time, is_stale) = match rtc.get().await {
         Err(err) => {
             error!("failed to read RTC time: {}", err);
             diagnostics.record(Event::InitializeRtc {
@@ -608,7 +611,8 @@ async fn set_clock_from_rtc<R: Rtc, D: Diagnostics>(
             });
             return;
         }
-        Ok(time) => time,
+        Ok(RtcReading::Valid(time)) => (time, false),
+        Ok(RtcReading::Stale(time)) => (time, true),
     };
     let mono_after = zx::BootInstant::get();
     let mono_time = mono_before + (mono_after - mono_before) / 2;
@@ -636,10 +640,12 @@ async fn set_clock_from_rtc<R: Rtc, D: Diagnostics>(
         debug!("RTC time {} is ahead of backstop {}, as expected", rtc_chrono, backstop_chrono);
     }
 
-    diagnostics.record(Event::InitializeRtc {
-        outcome: InitializeRtcOutcome::Succeeded,
-        time: Some(rtc_time),
-    });
+    let outcome = if is_stale {
+        InitializeRtcOutcome::SucceededStale
+    } else {
+        InitializeRtcOutcome::Succeeded
+    };
+    diagnostics.record(Event::InitializeRtc { outcome, time: Some(rtc_time) });
     if let Err(status) = clock.update(UtcClockUpdate::builder().absolute_value(mono_time, rtc_time))
     {
         error!("failed to start UTC clock from RTC at time {}: {}", rtc_chrono, status);
@@ -648,27 +654,35 @@ async fn set_clock_from_rtc<R: Rtc, D: Diagnostics>(
             .record(Event::StartClock { track: Track::Primary, source: StartClockSource::Rtc });
         info!("started UTC clock from RTC at time: {}", rtc_chrono);
 
-        // Refresh the UTC immediately, to ensure that next reboot always
-        // gets a reference from this boot. Otherwise, confusion around
-        // reference will exist.
-        if let Ok(utc_instant) =
-            clock.read().inspect_err(|err| log::error!("could not read UTC: {err:?}"))
-        {
-            let _ = rtc
-                .set(utc_instant)
-                .await
-                .map_err(|err| log::error!("could not reconfirm UTC: {err:?}"));
-        }
-
-        if let Err(status) = clock.signal(
-            zx::Signals::NONE,
-            zx::Signals::from_bits(ftime::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
-        ) {
-            // Since userspace depends on this signal, we probably can not recover if
-            // we can not signal.
-            panic!("Failed to signal clock logging quality: {}", status);
+        if is_stale {
+            warn!(
+                "RTC reading was potentially stale; skipping RTC reference update and not asserting SIGNAL_UTC_CLOCK_LOGGING_QUALITY"
+            );
         } else {
-            debug!("sent SIGNAL_UTC_CLOCK_LOGGING_QUALITY");
+            // Refresh the UTC immediately, to ensure that next reboot always
+            // gets a reference from this boot. Otherwise, confusion around
+            // reference will exist. Skip this when the reading is stale so a
+            // subsequent warm reboot prior to network synchronization does not
+            // treat the stale reference as valid.
+            if let Ok(utc_instant) =
+                clock.read().inspect_err(|err| log::error!("could not read UTC: {err:?}"))
+            {
+                let _ = rtc
+                    .set(utc_instant)
+                    .await
+                    .map_err(|err| log::error!("could not reconfirm UTC: {err:?}"));
+            }
+
+            if let Err(status) = clock.signal(
+                zx::Signals::NONE,
+                zx::Signals::from_bits(ftime::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
+            ) {
+                // Since userspace depends on this signal, we probably can not recover if
+                // we can not signal.
+                panic!("Failed to signal clock logging quality: {}", status);
+            } else {
+                debug!("sent SIGNAL_UTC_CLOCK_LOGGING_QUALITY");
+            }
         }
     }
 }
@@ -1387,6 +1401,16 @@ mod tests {
         // Checking that the clock was updated to use the valid RTC time.
         assert!(clock.get_details().unwrap().last_value_update_ticks > initial_update_ticks);
         assert!(clock.read().unwrap() >= VALID_RTC_TIME);
+        assert_eq!(
+            clock.wait_one(
+                zx::Signals::from_bits(ftime::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
+                zx::MonotonicInstant::INFINITE_PAST,
+            ),
+            zx::WaitResult::Ok(
+                zx::Signals::from_bits(ftime::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap()
+                    | zx::Signals::CLOCK_STARTED
+            )
+        );
 
         // Checking that the correct diagnostic events were logged.
         diagnostics.assert_events_prefix(&[
@@ -1398,6 +1422,111 @@ mod tests {
             Event::StartClock { track: Track::Primary, source: StartClockSource::Rtc },
             Event::TimeSourceStatus { role: Role::Primary, status: ftexternal::Status::Network },
         ]);
+    }
+
+    #[fuchsia::test]
+    fn no_update_stale_rtc_suppresses_logging_quality_signal() {
+        // Start from the system time. Required to work around backstop time issues.
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        clone_system_time(&mut executor);
+
+        let (clock, initial_update_ticks) = create_clock();
+        let rtc = FakeRtc::stale(VALID_RTC_TIME);
+        let diagnostics = Arc::new(FakeDiagnostics::new());
+        let config = make_test_config();
+
+        let time_source = FakePushTimeSource::events(vec![TimeSourceEvent::StatusChange {
+            status: ftexternal::Status::Network,
+        }])
+        .into();
+        let (s, r) = mpsc::channel(1);
+        let b = new_state_for_test(true);
+
+        // Maintain UTC until no more work remains
+        let mut fut = pin!(maintain_utc(
+            PrimaryTrack { clock: Arc::clone(&clock), time_source },
+            None,
+            Some(rtc.clone()),
+            Arc::clone(&diagnostics),
+            Arc::clone(&config),
+            s,
+            r,
+            b,
+        ));
+        let _ignore =
+            run_in_fake_time(&mut executor, &mut fut, fasync::MonotonicDuration::from_millis(1));
+
+        // Checking that the clock was updated to use the stale RTC time, but
+        // the persistent RTC reference was not overwritten and
+        // SIGNAL_UTC_CLOCK_LOGGING_QUALITY was NOT asserted.
+        assert!(clock.get_details().unwrap().last_value_update_ticks > initial_update_ticks);
+        assert!(clock.read().unwrap() >= VALID_RTC_TIME);
+        assert_eq!(rtc.last_set(), None);
+        assert_eq!(
+            clock.wait_one(
+                zx::Signals::from_bits(ftime::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
+                zx::MonotonicInstant::INFINITE_PAST,
+            ),
+            zx::WaitResult::TimedOut(zx::Signals::CLOCK_STARTED)
+        );
+
+        // Checking that the correct diagnostic events were logged.
+        diagnostics.assert_events_prefix(&[
+            Event::Initialized { clock_state: InitialClockState::NotSet },
+            Event::InitializeRtc {
+                outcome: InitializeRtcOutcome::SucceededStale,
+                time: Some(VALID_RTC_TIME),
+            },
+            Event::StartClock { track: Track::Primary, source: StartClockSource::Rtc },
+            Event::TimeSourceStatus { role: Role::Primary, status: ftexternal::Status::Network },
+        ]);
+    }
+
+    #[fuchsia::test]
+    fn stale_rtc_asserts_logging_quality_after_external_update() {
+        let mut executor = fasync::TestExecutor::new();
+        let (primary_clock, primary_ticks) = create_clock();
+        let rtc = FakeRtc::stale(VALID_RTC_TIME);
+        let diagnostics = Arc::new(FakeDiagnostics::new());
+        let config = make_test_config();
+
+        let boot_ref = zx::BootInstant::get();
+        let (s, r) = mpsc::channel(1);
+        let b = new_state_for_test(true);
+
+        let mut fut = pin!(maintain_utc(
+            PrimaryTrack {
+                clock: Arc::clone(&primary_clock),
+                time_source: FakePushTimeSource::events(vec![
+                    TimeSourceEvent::StatusChange { status: ftexternal::Status::Ok },
+                    TimeSourceEvent::from(Sample::new(
+                        UtcInstant::from_nanos((boot_ref + OFFSET).into_nanos()),
+                        boot_ref,
+                        STD_DEV,
+                    )),
+                ])
+                .into(),
+            },
+            None,
+            Some(rtc.clone()),
+            Arc::clone(&diagnostics),
+            Arc::clone(&config),
+            s,
+            r,
+            b,
+        ));
+        let _ = executor.run_until_stalled(&mut fut);
+
+        // Once the external sample is applied, both LOGGING_QUALITY and SYNCHRONIZED must be set.
+        assert!(primary_clock.get_details().unwrap().last_value_update_ticks > primary_ticks);
+        let expected_signals = zx::Signals::from_bits(
+            ftime::SIGNAL_UTC_CLOCK_LOGGING_QUALITY | ftime::SIGNAL_UTC_CLOCK_SYNCHRONIZED,
+        )
+        .unwrap();
+        assert_eq!(
+            primary_clock.wait_one(expected_signals, zx::MonotonicInstant::INFINITE_PAST),
+            zx::WaitResult::Ok(expected_signals | zx::Signals::CLOCK_STARTED)
+        );
     }
 
     #[fuchsia::test]
