@@ -6,20 +6,24 @@
 
 # Checks how out of date our third-party rust deps are
 
+import argparse
 import concurrent.futures
 import json
 import os
 import re
 import subprocess
-from datetime import datetime, timedelta
+import tomllib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Tuple
 from urllib import error, request
 
-from rust import PREBUILT_THIRD_PARTY_DIR, ROOT_PATH
+from rust import HOST_PLATFORM, PREBUILT_THIRD_PARTY_DIR, ROOT_PATH
 
 manifest = ROOT_PATH / "third_party/rust_crates/Cargo.toml"
-cargo_binary = PREBUILT_THIRD_PARTY_DIR / "cargo"
+cargo_binary = (
+    PREBUILT_THIRD_PARTY_DIR / "rust" / HOST_PLATFORM / "bin" / "cargo"
+)
 
 cache_dir = (
     Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
@@ -36,7 +40,7 @@ request.install_opener(opener)
 
 def parse_semver(
     version_str: str,
-) -> Tuple[int, int, int, bool, Tuple[Tuple[int, str], ...]]:
+) -> Tuple[int, int, int, bool, Tuple[Tuple[Tuple[int, int | str], ...], ...]]:
     # Try to match major.minor.patch optional pre-release/build strings if available
     # This is the conventional semantic version format for almost all crates on crates.io.
     # If no match is found, treat it as a 0.0.0 version.
@@ -60,27 +64,46 @@ def parse_semver(
     pre_parts = []
     if prerelease:
         for part in prerelease.split("."):
-            if part.isdigit():
-                pre_parts.append((0, int(part)))
-            else:
-                pre_parts.append((1, part))
+            sub_parts = [
+                (0, int(sub)) if sub.isdigit() else (1, sub)
+                for sub in re.findall(r"\d+|\D+", part)
+            ]
+            pre_parts.append(tuple(sub_parts))
 
     return (major, minor, patch, is_release, tuple(pre_parts))
 
 
-def fetch_crate_versions(crate: str) -> List[Tuple[str, datetime]]:
+def fetch_crate_versions(
+    crate: str, min_publish_age: timedelta, now: datetime
+) -> List[Tuple[str, datetime, bool]]:
     cache_path = cache_dir / crate
-    if not cache_path.exists():
+    needs_fetch = not cache_path.exists()
+    if not needs_fetch:
+        cache_mtime = datetime.fromtimestamp(
+            cache_path.stat().st_mtime, tz=timezone.utc
+        )
+        if now - cache_mtime >= min_publish_age:
+            needs_fetch = True
+    if needs_fetch:
         try:
             print("Info: fetching", crate, "release data from crates.io")
-            request.urlretrieve(url.format(crate), cache_dir / crate)
+            tmp_path = cache_dir / f"{crate}.tmp.{os.getpid()}"
+            try:
+                request.urlretrieve(url.format(crate), tmp_path)
+                os.replace(tmp_path, cache_path)
+            finally:
+                tmp_path.unlink(missing_ok=True)
         except error.HTTPError:
             print("Warning:", crate, "was not found on crates.io")
             return []
     with open(cache_path) as f:
         data = json.load(f)
     versions = [
-        (v["num"], datetime.fromisoformat(v["created_at"]))
+        (
+            v["num"],
+            datetime.fromisoformat(v["created_at"]),
+            v.get("yanked", False),
+        )
         for v in data["versions"]
     ]
     # Sort semantically with newest crates first
@@ -89,11 +112,24 @@ def fetch_crate_versions(crate: str) -> List[Tuple[str, datetime]]:
 
 
 def process_crate(
-    crate: str, version: str
+    crate: str,
+    version: str,
+    min_publish_age: timedelta,
+    now: datetime,
+    raw_versions: List[Tuple[str, datetime, bool]] | None = None,
 ) -> Tuple[timedelta, int, str, str, Tuple[str, datetime]] | None:
-    versions = fetch_crate_versions(crate)
-    if not versions:
+    if raw_versions is None:
+        raw_versions = fetch_crate_versions(crate, min_publish_age, now)
+    if not raw_versions:
         return None
+
+    # Ignore yanked versions on crates.io, keeping the current in-tree version
+    # so we can still compute outdatedness if it was yanked upstream.
+    versions = [
+        (v_num, created_at)
+        for v_num, created_at, yanked in raw_versions
+        if v_num == version or not yanked
+    ]
 
     current_semver = parse_semver(version)
     current_is_release = current_semver[3]
@@ -101,6 +137,13 @@ def process_crate(
     if current_is_release:
         # If the current version is a stable release, ignore the previous pre-releases
         versions = [v for v in versions if parse_semver(v[0])[3]]
+
+    if min_publish_age > timedelta(0):
+        versions = [
+            v
+            for v in versions
+            if v[0] == version or now - v[1] >= min_publish_age
+        ]
 
     try:
         versions = versions[
@@ -120,28 +163,93 @@ def process_crate(
     return (age, len(versions) - 1, crate, version, versions[0])
 
 
+def process_crate_versions(
+    crate: str,
+    crate_versions: List[str],
+    min_publish_age: timedelta,
+    now: datetime,
+) -> List[Tuple[timedelta, int, str, str, Tuple[str, datetime]]]:
+    raw_versions = fetch_crate_versions(crate, min_publish_age, now)
+    if not raw_versions:
+        return []
+    results = []
+    for version in crate_versions:
+        res = process_crate(crate, version, min_publish_age, now, raw_versions)
+        if res is not None:
+            results.append(res)
+    return results
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Checks how out of date our third-party rust deps are."
+    )
+    age_group = parser.add_mutually_exclusive_group()
+    age_group.add_argument(
+        "--min-publish-age",
+        type=int,
+        default=None,
+        help="Override the minimum publish age (in days).",
+    )
+    age_group.add_argument(
+        "--no-min-publish-age",
+        "--skip-min-publish-age",
+        action="store_const",
+        const=0,
+        dest="min_publish_age",
+        help="Skip minimum publish age filtering and cache expiration.",
+    )
+    parser.add_argument(
+        "--out-dir",
+        help="Path to the Fuchsia build directory.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
+
+    with open(manifest, "rb") as f:
+        manifest_data = tomllib.load(f)
+    default_min_publish_age = (
+        manifest_data.get("gn", {}).get("config", {}).get("min_publish_age", 0)
+    )
+    min_age_days = (
+        args.min_publish_age
+        if args.min_publish_age is not None
+        else default_min_publish_age
+    )
+    min_publish_age = timedelta(days=min_age_days)
+    now = datetime.now(timezone.utc)
+
     cargo_process = subprocess.run(
-        ["cargo", "metadata", "--manifest-path", manifest],
+        [cargo_binary, "metadata", "--frozen", "--manifest-path", manifest],
         text=True,
         capture_output=True,
     )
     metadata = json.loads(cargo_process.stdout)
-    crates = {p["name"]: p["version"] for p in metadata["packages"]}
+    crates: dict[str, List[str]] = {}
+    for p in metadata["packages"]:
+        crates.setdefault(p["name"], []).append(p["version"])
     updates = []
 
     # Limit workers to avoid overwhelming crates.io and hitting rate limits.
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         future_to_crate = {
-            executor.submit(process_crate, crate, version): crate
-            for crate, version in crates.items()
+            executor.submit(
+                process_crate_versions,
+                crate,
+                crate_versions,
+                min_publish_age,
+                now,
+            ): crate
+            for crate, crate_versions in crates.items()
         }
         for future in concurrent.futures.as_completed(future_to_crate):
             crate = future_to_crate[future]
             try:
-                result = future.result()
-                if result is not None:
-                    updates.append(result)
+                results = future.result()
+                updates.extend(results)
             except Exception as exc:
                 print(
                     f"Warning: processing {crate} generated an exception: {exc}"
