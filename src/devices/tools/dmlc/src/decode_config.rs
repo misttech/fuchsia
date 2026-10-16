@@ -4,7 +4,7 @@
 
 use anyhow::Context;
 use dml_config as fbdc;
-use fidl_fuchsia_driver_metadata as fdr;
+use fidl_fuchsia_driver_metadata_common as fdr;
 use std::fs::File;
 use std::io::Read;
 

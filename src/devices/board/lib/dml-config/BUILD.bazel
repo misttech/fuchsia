@@ -32,8 +32,8 @@ rustc_library(
         "//vendor/google:__subpackages__",
     ],
     deps = [
-        ":fuchsia.board.dml.config_rust",
-        "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
+        ":fuchsia.board.dml.config_rust_common",
+        "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust_common",
         "//third_party/rust_crates/vendor:anyhow",
     ] + select({
         "@platforms//os:fuchsia": [

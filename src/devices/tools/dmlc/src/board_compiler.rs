@@ -8,7 +8,7 @@ use crate::cml_generator::generate_board_cml_file;
 use crate::parser::*;
 use anyhow::Context;
 use dml_config as fbdc;
-use fidl_fuchsia_driver_metadata as fdr;
+use fidl_fuchsia_driver_metadata_common as fdr;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;

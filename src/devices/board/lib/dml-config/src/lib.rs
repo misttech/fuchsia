@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Context;
-use fidl_fuchsia_board_dml_config as fbdc;
-use fidl_fuchsia_driver_metadata as fdr;
+use fidl_fuchsia_board_dml_config_common as fbdc;
+use fidl_fuchsia_driver_metadata_common as fdr;
 
 // Re-export FIDL types for convenience
 pub use fbdc::{

@@ -25,9 +25,9 @@ if (is_fuchsia) {
     ]
     deps = [
       ":board_structured_config",
-      ":fuchsia.board.dml.config_rust",
+      ":fuchsia.board.dml.config_rust_common",
       "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next",
-      "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
+      "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust_common",
       "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_rust_next",
       "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_rust_next",
       "//sdk/lib/driver/runtime/rust/fidl",
@@ -104,8 +104,8 @@ rustc_library("dml-config") {
   ]
   deps = []
   deps += [
-    ":fuchsia.board.dml.config_rust",
-    "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
+    ":fuchsia.board.dml.config_rust_common",
+    "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust_common",
     "//third_party/rust_crates:anyhow",
   ]
   if (is_fuchsia) {

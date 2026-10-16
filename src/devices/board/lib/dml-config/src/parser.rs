@@ -5,7 +5,7 @@
 use crate::{AggregateEntry, BoardConfig, Device, Iommu, IommuType, ResourceEntry};
 use anyhow::{Context, anyhow, bail};
 use fdf_fidl::DriverChannel;
-use fidl_fuchsia_driver_metadata as fdr;
+use fidl_fuchsia_driver_metadata_common as fdr;
 use fidl_next_fuchsia_driver_framework as fdf_framework;
 use fidl_next_fuchsia_hardware_platform_bus as fpbus;
 use fidl_next_fuchsia_hardware_power as fpower;
