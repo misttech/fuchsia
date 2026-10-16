@@ -21,6 +21,7 @@ use fidl_fuchsia_net_resources as fnet_resources;
 use fidl_fuchsia_net_tun as fnet_tun;
 use fidl_fuchsia_netemul as fnetemul;
 use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use fidl_fuchsia_power_broker as fpower_broker;
 use fidl_fuchsia_power_system as fpower_system;
 use fidl_test_sagcontrol as fsagcontrol;
@@ -30,6 +31,7 @@ use futures::stream::FusedStream;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, Stream, StreamExt as _};
 use log::info;
 use net_declare::{fidl_subnet, std_socket_addr_v6};
+use net_types::ip::{Ip, IpAddress as _, IpVersion, Ipv4, Ipv6};
 use netemul::{RealmTcpStream as _, RealmUdpSocket as _};
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
 use netstack_testing_common::realms::{
@@ -38,6 +40,7 @@ use netstack_testing_common::realms::{
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
 use packet_formats::ip::{IpPacket, IpProto, Ipv6Proto};
+use packet_formats::ipv4::Ipv4Packet;
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::udp::{UdpPacket, UdpParseArgs};
 use test_case::test_case;
@@ -687,6 +690,66 @@ impl WakeupSocket for UdpSocketPair {
     }
 }
 
+struct RawSocket<I> {
+    socket: fasync::net::DatagramSocket,
+    addr: std::net::SocketAddr,
+    _marker: PhantomData<I>,
+}
+
+impl<I: Ip> WakeupSocket for RawSocket<I> {
+    async fn setup(
+        realm: &netemul::TestRealm<'_>,
+        wake_group: fnet_resources::WakeGroupToken,
+    ) -> Self {
+        let domain = match I::VERSION {
+            IpVersion::V4 => fposix_socket::Domain::Ipv4,
+            IpVersion::V6 => fposix_socket::Domain::Ipv6,
+        };
+        let socket = realm
+            .raw_socket_with_options(
+                domain,
+                fposix_socket_raw::ProtocolAssociation::Associated(IpProto::Udp.into()),
+                fposix_socket::SocketCreationOptions {
+                    group: Some(wake_group),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create raw socket");
+        let socket = fasync::net::DatagramSocket::new_from_socket(socket).expect("wrap raw socket");
+        let addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), 0);
+
+        Self { socket, addr, _marker: PhantomData }
+    }
+
+    async fn client_write(&mut self) {
+        let write_count = self
+            .socket
+            .send_to(Self::PAYLOAD.as_bytes(), self.addr.into())
+            .await
+            .expect("send payload to server");
+        assert_eq!(write_count, Self::PAYLOAD.as_bytes().len());
+    }
+
+    async fn server_read(&mut self) {
+        let mut buf = [0u8; 128];
+        let (read_count, from) =
+            self.socket.recv_from(&mut buf).await.expect("read payload from client");
+        assert_eq!(from.as_socket(), Some(self.addr));
+        let mut received = &buf[..read_count];
+        match I::VERSION {
+            IpVersion::V4 => {
+                let pkt = Ipv4Packet::parse(&mut received, ()).expect("parse ipv4 packet");
+                assert_eq!(pkt.body(), Self::PAYLOAD.as_bytes());
+            }
+            IpVersion::V6 => {
+                // Raw sockets omit the IPv6 header.
+                assert_eq!(received, Self::PAYLOAD.as_bytes());
+            }
+        }
+    }
+}
+
 const GROUP_WAKEUP_SIGNAL: zx::Signals =
     zx::Signals::from_bits(fnet_power::GROUP_WAKEUP_SIGNAL).unwrap();
 const WAITER_AWAKE_SIGNAL: zx::Signals =
@@ -697,6 +760,8 @@ const WAITER_ASLEEP_SIGNAL: zx::Signals =
 #[netstack_test]
 #[test_case(PhantomData::<TcpSocketPair>; "tcp")]
 #[test_case(PhantomData::<UdpSocketPair>; "udp")]
+#[test_case(PhantomData::<RawSocket<Ipv4>>; "raw_ipv4")]
+#[test_case(PhantomData::<RawSocket<Ipv6>>; "raw_ipv6")]
 async fn wake_group_sockets<S: WakeupSocket>(name: &str, _socket_type: PhantomData<S>) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
