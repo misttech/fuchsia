@@ -754,6 +754,56 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
         })
 
 STEP_BLOCKING = ("ERROR", "WARNING")
+BUILD_FILE_NAMES = {"BUILD.bazel", "BUILD", "BUILD.gn", "MODULE.bazel"}
+BUILD_FILE_EXTS = (".bazel", ".bzl", ".gn", ".gni")
+
+
+def _subrepo_dirs():
+    subrepos = []
+    vg = os.path.join(workdir, "vendor", "google")
+    if os.path.exists(os.path.join(vg, ".git")):
+        subrepos.append(vg)
+    for d in dirs:
+        abs_d = os.path.join(workdir, d)
+        if not os.path.isdir(abs_d):
+            continue
+        try:
+            top = subprocess.check_output(
+                ["git", "-C", abs_d, "rev-parse", "--show-toplevel"],
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
+            if top and os.path.realpath(top) != os.path.realpath(workdir) and top not in subrepos:
+                subrepos.append(top)
+        except Exception:
+            pass
+    return subrepos
+
+
+def _subrepos_clean_since_upload():
+    for sr in _subrepo_dirs():
+        try:
+            diff_sr = subprocess.check_output(
+                ["git", "-C", sr, "diff", "--name-only", "HEAD", "--"],
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
+            if diff_sr:
+                return False
+            untracked_sr = [
+                u.strip() for u in subprocess.check_output(
+                    ["git", "-C", sr, "ls-files", "--others", "--exclude-standard"],
+                    stderr=subprocess.DEVNULL, text=True,
+                ).splitlines() if u.strip()
+            ]
+            if any(
+                os.path.basename(u) in BUILD_FILE_NAMES or u.endswith(BUILD_FILE_EXTS)
+                for u in untracked_sr
+            ):
+                return False
+        except Exception:
+            return False
+    return True
+
+
 uploaded_commit = os.environ.get("PLANTER_UPLOADED_COMMIT", "").strip()
 if uploaded_commit and not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", "0"):
     try:
@@ -771,8 +821,10 @@ if uploaded_commit and not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", 
     untracked_in_dirs = [
         u for u in git_lines(["ls-files", "--others", "--exclude-standard"])
         if any(u == d or u.startswith(d + "/") for d in dirs)
+        or os.path.basename(u) in BUILD_FILE_NAMES
+        or u.endswith(BUILD_FILE_EXTS)
     ]
-    if up_tree and up_tree == head_tree and not diff_worktree and not untracked_in_dirs:
+    if up_tree and up_tree == head_tree and not diff_worktree and not untracked_in_dirs and _subrepos_clean_since_upload():
         findings.append({
             "source": "build_verification",
             "category": "build_reused",
@@ -787,8 +839,8 @@ reuse_key = None
 reused = None
 reused_time = 0
 if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", "0"):
-    def _git_bytes(args):
-        return subprocess.run(["git", "-C", workdir] + args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout
+    def _git_bytes(args, repo_dir=workdir):
+        return subprocess.run(["git", "-C", repo_dir] + args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout
 
     def _file_digest(path):
         h = hashlib.sha256()
@@ -803,19 +855,26 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
             h.update(b"missing")
         return h.hexdigest()
 
-    def _worktree_tree():
+    def _worktree_tree(repo_dir=workdir):
         # The git tree of the whole working tree (tracked edits and untracked, non-ignored files),
         # so committing the change after a run does not change the fingerprint. Uses a copy of
         # the index so the real one is untouched and its stat cache keeps this fast.
-        subprocess.run(["git", "-C", workdir, "update-index", "-q", "--refresh"],
+        subprocess.run(["git", "-C", repo_dir, "update-index", "-q", "--refresh"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        dirty = sorted(set(
-            git_lines(["diff", "--name-only", "--ignore-submodules=all", "HEAD"])
-            + git_lines(["ls-files", "--others", "--exclude-standard"])
-        ))
+        dirty_out = subprocess.run(
+            ["git", "-C", repo_dir, "diff", "--name-only", "--ignore-submodules=all", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        ).stdout
+        untracked_out = subprocess.run(
+            ["git", "-C", repo_dir, "ls-files", "--others", "--exclude-standard"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        ).stdout
+        dirty = sorted({
+            l.strip() for l in (dirty_out.splitlines() + untracked_out.splitlines()) if l.strip()
+        })
         if not dirty:
-            return _git_bytes(["rev-parse", "HEAD^{tree}"])
-        git_dir = _git_bytes(["rev-parse", "--absolute-git-dir"]).decode().strip()
+            return _git_bytes(["rev-parse", "HEAD^{tree}"], repo_dir=repo_dir)
+        git_dir = _git_bytes(["rev-parse", "--absolute-git-dir"], repo_dir=repo_dir).decode().strip()
         fd, index = tempfile.mkstemp(dir=git_dir, prefix=".planter-build-verification-index.")
         os.close(fd)
         try:
@@ -824,9 +883,9 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
             except OSError:
                 os.unlink(index)
             env = dict(os.environ, GIT_INDEX_FILE=index)
-            subprocess.run(["git", "-C", workdir, "add", "-A", "--"] + dirty, env=env, stdout=subprocess.DEVNULL,
+            subprocess.run(["git", "-C", repo_dir, "add", "-A", "--"] + dirty, env=env, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, check=True)
-            return subprocess.run(["git", "-C", workdir, "write-tree"], env=env, stdout=subprocess.PIPE,
+            return subprocess.run(["git", "-C", repo_dir, "write-tree"], env=env, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, check=True).stdout
         finally:
             try:
@@ -842,7 +901,13 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
                 data = data.encode()
             h.update(label.encode() + b"\0" + str(len(data)).encode() + b"\0" + data)
 
-        _add("tree", _worktree_tree())
+        _add("tree", _worktree_tree(workdir))
+        for sr in _subrepo_dirs():
+            try:
+                rel_sr = os.path.relpath(sr, workdir)
+                _add(f"subrepo:{rel_sr}", _worktree_tree(sr))
+            except Exception:
+                pass
         _add("dirs", json.dumps([sorted(dirs), sorted(bazel_dirs), sorted(host_dirs)]))
         _add("steps", json.dumps([[n, c] for n, c in steps]))
         _add("env", json.dumps([timeout, dependent_limit]))

@@ -158,11 +158,36 @@ signal.signal(signal.SIGTERM, on_sigterm)
 
 
 def machinery_lock_paths():
-    # planter's lockMachinery lock: <os.TempDir()>/planter-machinery-<sha256(abs dir)[:8]>.lock.
-    # The agent's TMPDIR can differ from planter's, so /tmp is tried as well.
+    # planter's lockMachinery lock: <lockDir>/planter-machinery-<sha256(abs dir)[:16]>.lock.
+    # Check PLANTER_LOCK_DIR, $(dirname PLANTER_DB)/locks, ~/.planter/locks, TMPDIR, and /tmp.
     name = "planter-machinery-" + hashlib.sha256(project_dir.encode()).hexdigest()[:16] + ".lock"
-    dirs = [os.environ.get("TMPDIR") or "/tmp", "/tmp"]
-    return list(dict.fromkeys(os.path.join(d, name) for d in dirs))
+    dirs = []
+    if os.environ.get("PLANTER_LOCK_DIR"):
+        dirs.append(os.environ["PLANTER_LOCK_DIR"])
+    if os.environ.get("PLANTER_DB"):
+        dirs.append(os.path.join(os.path.dirname(os.path.abspath(os.environ["PLANTER_DB"])), "locks"))
+    dirs.extend([
+        os.path.expanduser("~/.planter/locks"),
+        os.environ.get("TMPDIR") or "/tmp",
+        "/tmp",
+    ])
+    return list(dict.fromkeys(os.path.join(d, name) for d in dirs if d))
+
+
+_held_machinery_locks = []
+
+
+def release_machinery_locks():
+    while _held_machinery_locks:
+        fd = _held_machinery_locks.pop()
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+import atexit
+atexit.register(release_machinery_locks)
 
 
 def evolution_running():
@@ -173,12 +198,21 @@ def evolution_running():
             continue  # No evolution has run since the lock file was cleaned up.
         try:
             fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            # Keep the shared lock open while reading manifest/scripts so mergeEvolution
+            # cannot atomically overwrite check files mid-read.
+            _held_machinery_locks.append(fd)
         except BlockingIOError:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            release_machinery_locks()
             return True
         except OSError:
-            pass
-        finally:
-            os.close(fd)  # Also releases the shared lock.
+            try:
+                os.close(fd)
+            except OSError:
+                pass
     return False
 
 
@@ -590,6 +624,22 @@ def commit_msg_only_since_upload():
         ]
         if untracked:
             return False
+        vg = os.path.join(workdir, "vendor", "google")
+        if os.path.exists(os.path.join(vg, ".git")):
+            diff_vg = subprocess.check_output(
+                ["git", "-C", vg, "diff", "--name-only", "HEAD", "--"],
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
+            if diff_vg:
+                return False
+            untracked_vg = [
+                u.strip() for u in subprocess.check_output(
+                    ["git", "-C", vg, "ls-files", "--others", "--exclude-standard"],
+                    stderr=subprocess.DEVNULL, text=True,
+                ).splitlines() if u.strip()
+            ]
+            if untracked_vg:
+                return False
         return True
     except Exception:
         return False
@@ -665,6 +715,8 @@ rows = []
 all_findings = []
 try:
     for n, spec in enumerate(enabled, 1):
+        if spec["name"] == "build_verification":
+            release_machinery_locks()
         log(f"({n}/{len(enabled)}) {spec['name']}...")
         started = time.monotonic()
         findings = run_check(spec)

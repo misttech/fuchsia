@@ -416,11 +416,13 @@ def is_globally_used_target(rdep_pkgs):
 def recommend_visibility(rdep_pkgs):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
     narrow = recommend_narrow_visibility(pkgs)
-    if is_globally_used_target(pkgs) or len(narrow) > 8:
+    globally_used = is_globally_used_target(pkgs)
+    if globally_used or len(narrow) > 8:
         rollup = recommend_area_rollup_visibility(pkgs)
-        if len(rollup) <= 15:
+        if globally_used and len(rollup) > 15:
+            return ["//:__subpackages__"]
+        if len(rollup) <= len(narrow):
             return rollup
-        return ["//:__subpackages__"]
     return narrow
 
 print(json.dumps({

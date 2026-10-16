@@ -96,6 +96,33 @@ GN_BAZEL_INPUT_TEMPLATES = {
     "bazel_input_file",
     "bazel_input_directory",
 }
+GN_CONVERTIBLE_SYMMETRY_TEMPLATES = {
+    "static_library",
+    "source_set",
+    "shared_library",
+    "library_headers",
+    "rustc_library",
+    "rustc_macro",
+    "go_library",
+    "python_library",
+    "fidl",
+    "sdk_source_set",
+    "sdk_static_library",
+    "sdk_shared_library",
+    "zx_library",
+}
+
+
+def is_testonly_target(gn_text, name):
+    if not gn_text:
+        return False
+    code = blank_comments(gn_text)
+    pat = re.compile(r'\b[A-Za-z_]\w*\(\s*"' + re.escape(name) + r'"\s*\)\s*\{')
+    for m in pat.finditer(code):
+        body = code[m.end() - 1 : call_end(code, m.end() - 1)]
+        if re.search(r"\btestonly\s*=\s*true\b", body):
+            return True
+    return False
 
 
 def bazel_input_generator_migrated(gn_text, name, pkg, bazel_names, new_map):
@@ -438,6 +465,33 @@ for pkg in sorted(candidate_dirs):
             f = alwayslink_finding(label, name, pkg, bazel_rel, rule, alwayslink, line, old_types)
             if f:
                 findings.append(f)
+        elif (
+            bazel_text
+            and name not in bazel_names
+            and (old_types <= GN_CONVERTIBLE_SYMMETRY_TEMPLATES)
+            and not is_testonly_target(before, name)
+        ):
+            was = "/".join(sorted(old_types))
+            findings.append(
+                {
+                    "source": "gn_target_type_parity",
+                    "category": "missing_migrated_target",
+                    "severity": "ERROR",
+                    "file": bazel_rel,
+                    "line": 1,
+                    "message": (
+                        f"`{label}` (GN `{was}`) existed in `{gn_rel}` at `{change_base}` but is missing from both "
+                        f"`{bazel_rel}` and `{gn_rel}`. Every convertible non-test GN target must have a "
+                        f"corresponding target in `{bazel_rel}` (or remain in `{gn_rel}` above the BAZEL2GN SENTINEL "
+                        "if blocked by a GN-only attribute)."
+                    ),
+                    "remediation": (
+                        f"Migrate `{name}` (`{was}`) to `{bazel_rel}` and run `fx bazel2gn -d {pkg}` (or restore it "
+                        f"in `{gn_rel}` if it cannot be migrated). If dropping `{label}` was intentional because it "
+                        "had zero reverse dependencies and is dead code, dispute this finding in the CoderReport."
+                    ),
+                }
+            )
 
     if bazel_text and (had_bazel_input or has_bazel_host_tool):
         gn_targets_pat = re.compile(r'@gn_targets//(?:[^\s"\':]+/)?' + re.escape(pkg) + r'(?::([^\s"\']+))?')

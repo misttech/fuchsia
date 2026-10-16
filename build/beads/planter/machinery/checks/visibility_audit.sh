@@ -219,12 +219,79 @@ def is_globally_used_target(rdep_pkgs, pkg_path):
 def recommend_visibility(rdep_pkgs, pkg_path):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
     narrow = recommend_narrow_visibility(pkgs, pkg_path)
-    if is_globally_used_target(pkgs, pkg_path) or len(narrow) > 8:
+    globally_used = is_globally_used_target(pkgs, pkg_path)
+    if globally_used or len(narrow) > 8:
         rollup = recommend_area_rollup_visibility(pkgs, pkg_path)
-        if len(rollup) <= 15:
+        if globally_used and len(rollup) > 15:
+            return ["//:__subpackages__"]
+        if len(rollup) <= len(narrow):
             return rollup
-        return ["//:__subpackages__"]
     return narrow
+
+def get_orig_gn_visibility_scopes(pkg_path):
+    """Returns {target_name: [(scope_pkg, 'pkg'|'subpackages'), ...]} for targets in change_base BUILD.gn
+    that had an explicit non-wildcard visibility = [...] restriction."""
+    gn_rel = f"{pkg_path}/BUILD.gn" if pkg_path else "BUILD.gn"
+    try:
+        gn_src = subprocess.check_output(
+            ["git", "-C", workdir, "show", f"{change_base}:{gn_rel}"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return {}
+    no_comments = re.sub(r"#[^\n]*", "", gn_src)
+    def parse_gn_vis_list(vis_body):
+        if "$" in vis_body:
+            return None
+        pats = re.findall(r'"([^"]+)"', vis_body)
+        if not pats:
+            return None
+        scopes = []
+        for pat in pats:
+            if pat == "//*":
+                return None
+            if pat.startswith(":"):
+                scopes.append((pkg_path, "pkg"))
+                continue
+            m_gn = re.match(r"^//([^:*]*?)/?(\*|:.*)?$", pat)
+            if not m_gn:
+                return None
+            sp = m_gn.group(1).strip("/")
+            suffix = m_gn.group(2) or ""
+            scopes.append((sp, "subpackages" if suffix == "*" else "pkg"))
+        return scopes
+    out = {}
+    target_re = re.compile(r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{')
+    for m in target_re.finditer(no_comments):
+        tname = m.group(2)
+        depth, in_str, i, n = 0, False, m.end() - 1, len(no_comments)
+        while i < n:
+            c = no_comments[i]
+            if in_str:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        tbody = no_comments[m.end() : i]
+        if re.search(r"\bvisibility\s*\+=", tbody):
+            continue
+        vm = re.search(r"\bvisibility\s*=\s*\[([^\]]*)\]", tbody)
+        if vm:
+            scopes = parse_gn_vis_list(vm.group(1))
+            if scopes:
+                out[tname] = scopes
+    return out
 
 def get_preexisting_vis_info(rel_path):
     """Returns (vis_strings, no_vis_targets) already present in change_base/HEAD~1 of rel_path (unless rel_path is target_dir)."""
@@ -504,6 +571,7 @@ for rel_path in sorted(candidate_files):
         continue
 
     preexisting_vis, preexisting_no_vis_targets = get_preexisting_vis_info(rel_path)
+    orig_gn_vis_map = get_orig_gn_visibility_scopes(pkg_path)
     var_table = {}
     bazel_targets = []
     package_targets = set()
@@ -732,7 +800,9 @@ for rel_path in sorted(candidate_files):
                 })
             continue
 
-        allow_broad_rollup = (is_globally_used or len(narrow_vis) > 5 or len(distinct_areas) >= 3) and len(entries) <= 15
+        findings_before_target = len(findings)
+        max_rollup_entries = 15 if is_globally_used else max(15, len(area_rollup_vis))
+        allow_broad_rollup = (is_globally_used or len(narrow_vis) > 5 or len(distinct_areas) >= 3) and len(entries) <= max_rollup_entries
         top_level_subpkgs = []
         for val, lineno in entries:
             if val in preexisting_vis:
@@ -977,6 +1047,55 @@ for rel_path in sorted(candidate_files):
                 "message": f"Target '{target_name}' enumerates {len(top_level_subpkgs)} top-level '//<dir>:__subpackages__' roots in visibility.",
                 "remediation": f"Scope visibility to {json.dumps(rec_target_vis)}."
             })
+
+        if target_name in orig_gn_vis_map and len(findings) == findings_before_target:
+            gn_allowed = orig_gn_vis_map[target_name]
+            all_rdeps_in_gn = all(
+                any(
+                    r == gsp or (gk == "subpackages" and (gsp == "" or r.startswith(gsp + "/")))
+                    for gsp, gk in gn_allowed
+                )
+                for r in target_rdeps
+            )
+            if all_rdeps_in_gn:
+                for val, lineno in entries:
+                    if val in preexisting_vis or val == "//visibility:private" or val in rec_target_vis:
+                        continue
+                    m_scope = re.match(r"^(?://([^:]*))?:__(pkg|subpackages)__$", val)
+                    if not m_scope:
+                        continue
+                    sp = pkg_path if m_scope.group(1) is None else m_scope.group(1).strip("/")
+                    kind = m_scope.group(2)
+                    if kind == "pkg":
+                        covered_by_gn = any(
+                            sp == gsp or (gk == "subpackages" and (gsp == "" or sp.startswith(gsp + "/")))
+                            for gsp, gk in gn_allowed
+                        )
+                    else:
+                        covered_by_gn = any(
+                            gk == "subpackages" and (gsp == "" or sp == gsp or sp.startswith(gsp + "/"))
+                            for gsp, gk in gn_allowed
+                        )
+                    if not covered_by_gn:
+                        gn_bounds_desc = sorted(
+                            {f"//{gsp}/*" if gk == "subpackages" else f"//{gsp}:*" for gsp, gk in gn_allowed}
+                        )
+                        findings.append({
+                            "source": "visibility_audit",
+                            "category": "visibility_widened_beyond_gn",
+                            "severity": "error",
+                            "file": rel_path,
+                            "line": lineno,
+                            "message": (
+                                f"Target '{target_name}' widens visibility with '{val}' beyond the explicit "
+                                f"visibility bounds in `{pkg_path}/BUILD.gn` at `{change_base}` ({', '.join(gn_bounds_desc)}), "
+                                f"even though all actual reverse dependencies are within the original GN scope."
+                            ),
+                            "remediation": (
+                                f"Scope visibility on '{target_name}' to {json.dumps(rec_target_vis)} (or omit "
+                                "visibility if private to the package) and re-run fx bazel2gn."
+                            ),
+                        })
 
 print(json.dumps(findings, indent=2))
 PYEOF
