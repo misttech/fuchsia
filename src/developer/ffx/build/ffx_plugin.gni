@@ -269,6 +269,10 @@ template("ffx_plugin") {
            "`proc_macro_deps` requires `sources` to be specified.")
     assert(includes_execution || !defined(invoker.test_deps),
            "`test_deps` requires `sources` to be specified.")
+    assert(!defined(invoker.args_test_deps) ||
+               (defined(invoker.args_with_unit_tests) &&
+                    invoker.args_with_unit_tests),
+           "`args_test_deps` requires `args_with_unit_tests = true`.")
     assert(includes_execution ||
                !(defined(invoker.with_unit_tests) && invoker.with_unit_tests),
            "`with_unit_tests` requires `sources` to be specified.")

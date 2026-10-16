@@ -11,17 +11,17 @@ package(
 
 ffx_plugin(
     name = "ffx_completion",
+    srcs = ["src/lib.rs"],
     args_deps = [
         "//src/developer/ffx/core:lib",
         "//third_party/rust_crates/vendor:argh",
     ],
-    args_sources = ["src/args.rs"],
+    args_srcs = ["src/args.rs"],
     edition = "2024",
     proc_macro_deps = [
         "//third_party/rust_crates/vendor:async-trait",
     ],
     sdk_category = "not-yet-specified",
-    sources = ["src/lib.rs"],
     version = "0.1.0",
     deps = [
         "//src/developer/ffx/command:lib",

@@ -278,7 +278,15 @@ var rustCommonAttrMap = map[string]string{
 // rustBinAttrMap maps from attribute name in Bazel Rust binary rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var rustBinAttrMap = mustMergeMaps(rustCommonAttrMap, map[string]string{
-	"crate_name": "output_name",
+	"binary_name": "output_name",
+	"crate_name":  "output_name",
+})
+
+// ffxPluginAttrMap maps from attribute names in Bazel `ffx_plugin()` to GN parameter names.
+// This map only includes attributes that have different names in Bazel and GN.
+var ffxPluginAttrMap = mustMergeMaps(rustCommonAttrMap, map[string]string{
+	"args_srcs":       "args_sources",
+	"args_crate_root": "args_source_root",
 })
 
 // fidlAttrMap maps from attribute names in Bazel FIDL rules to GN parameter names.
@@ -415,6 +423,7 @@ var attrMapsByRules = map[string]map[string]string{
 
 	// Tools
 	"ffx_tool":           rustBinAttrMap,
+	"ffx_plugin":         ffxPluginAttrMap,
 	"install_host_tools": installHostToolAttrMap,
 
 	// Others

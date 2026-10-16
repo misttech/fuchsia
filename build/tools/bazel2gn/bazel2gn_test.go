@@ -811,6 +811,100 @@ rustc_dylib(
 	}
 }`,
 		}, {
+			name: "ffx_plugin",
+			bazel: `
+ffx_plugin(
+	name = "ffx_foo",
+	args_crate_root = "src/foo_args.rs",
+	args_deps = ["//third_party/rust_crates/vendor:argh"],
+	args_srcs = ["src/foo_args.rs"],
+	compile_data = ["data/foo.txt"],
+	config_data = ["data/config.json"],
+	crate_features = ["bar"],
+	data = ["//src/foo:data"],
+	disable_clippy = True,
+	edition = "2024",
+	lint_config = "//build/config/rust/lints:deny_unused_results",
+	link_deps = ["//sdk/lib/fdio"],
+	plugin_deps = ["//src/developer/ffx/plugins/foo/bar:ffx_foo_bar"],
+	proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+	sdk_category = "partner",
+	srcs = ["src/lib.rs"],
+	version = "0.1.0",
+	deps = ["//third_party/rust_crates/vendor:anyhow"],
+)
+
+ffx_tool(
+	name = "ffx_foo_tool",
+	srcs = ["src/main.rs"],
+	binary_name = "ffx-foo",
+	disable_instrumentation = True,
+	edition = "2024",
+	sdk_area = "Developer",
+	sdk_category = "partner",
+	sdk_deps = ["//sdk/lib/fdio"],
+	sdk_target_name = "sdk",
+	deps = [":ffx_foo"],
+)`,
+			wantGN: `ffx_plugin("ffx_foo") {
+	args_source_root = "src/foo_args.rs"
+	args_deps = [
+		"//third_party/rust_crates:argh",
+	]
+	args_sources = [
+		"src/foo_args.rs",
+	]
+	inputs = [
+		"data/foo.txt",
+	]
+	config_data = [
+		"data/config.json",
+	]
+	features = [
+		"bar",
+	]
+	non_rust_deps = [
+		"//src/foo:data",
+	]
+	disable_clippy = true
+	edition = "2024"
+	lint_config = "//build/config/rust/lints:deny_unused_results"
+	link_deps = [
+		"//sdk/lib/fdio",
+	]
+	plugin_deps = [
+		"//src/developer/ffx/plugins/foo/bar:ffx_foo_bar",
+	]
+	proc_macro_deps = [
+		"//third_party/rust_crates:async-trait",
+	]
+	sdk_category = "partner"
+	sources = [
+		"src/lib.rs",
+	]
+	version = "0.1.0"
+	deps = [
+		"//third_party/rust_crates:anyhow",
+	]
+}
+ffx_tool("ffx_foo_tool") {
+	sources = [
+		"src/main.rs",
+	]
+	output_name = "ffx-foo"
+	exclude_toolchain_tags = [ "instrumented" ]
+	edition = "2024"
+	sdk_area = "Developer"
+	sdk_category = "partner"
+	sdk_deps = [
+		"//sdk/lib/fdio",
+	]
+	sdk_target_name = "sdk"
+	deps = [
+		":ffx_foo",
+	]
+}`,
+		}, {
 			name: "rustc_library link_deps",
 			bazel: `
 rustc_library(
