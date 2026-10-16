@@ -38,7 +38,15 @@ int main() {
       return;
     }
 
-    fidl::BindServer(dispatcher, std::move(server_end), &interactive_guest_impl);
+    fidl::BindServer(
+        dispatcher, std::move(server_end), &interactive_guest_impl,
+        [&already_bound](interactive_guest::InteractiveGuestImpl* impl, fidl::UnbindInfo info,
+                         fidl::ServerEnd<InteractiveGuest> server_end) {
+          FX_LOGS(INFO) << "InteractiveGuest unbound (" << info.FormatDescription()
+                        << "); ensuring guest is shut down.";
+          impl->DoShutdown();
+          already_bound = false;
+        });
     already_bound = true;
   };
   result = outgoing.AddUnmanagedProtocol<InteractiveGuest>(incoming_request_handler);

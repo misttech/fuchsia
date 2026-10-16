@@ -60,8 +60,8 @@ RunningGuest::RunningGuest(std::string name, fbl::unique_fd vsock_fd,
 
 RunningGuest::~RunningGuest() {
   // All teardowns should be gracefully done by the owning class, and failure to do so
-  // puts the interaction client in an indeterminte state with regards to bound ports.
-  FX_CHECK(interaction_client_ && interaction_client_->IsRunning())
+  // puts the interaction client in an indeterminate state with regards to bound ports.
+  FX_CHECK(!interaction_client_ || !interaction_client_->IsRunning())
       << "An invalid teardown sequence has occurred.";
 }
 
@@ -102,8 +102,15 @@ void RunningGuest::Execute(
 }
 
 void RunningGuest::Shutdown() {
-  FX_LOGST(INFO, Name()) << "Beginning shutdown procedures.";
-  interaction_client_->Stop();
+  if (!interaction_client_) {
+    return;
+  }
+  if (interaction_client_->IsRunning()) {
+    FX_LOGST(INFO, Name()) << "Beginning shutdown procedures.";
+    interaction_client_->Stop();
+    thrd_join(guest_interaction_service_thread_, nullptr);
+  }
+  interaction_client_.reset();
 }
 
 const char* RunningGuest::Name() { return name_.c_str(); }

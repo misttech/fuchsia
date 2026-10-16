@@ -33,9 +33,11 @@ class InteractiveGuestImpl
   void ExecuteCommand(ExecuteCommandRequest& request,
                       ExecuteCommandCompleter::Sync& completer) override;
 
- private:
+  // Idempotently shuts down any running guest and resets the guest manager connection so that
+  // subsequent `Start` requests can be served.
   void DoShutdown();
 
+ private:
   async::Loop& loop_;
   fidl::SyncClient<fuchsia_virtualization::GuestManager> guest_manager_sync_;
   std::optional<RunningGuest> running_guest_;

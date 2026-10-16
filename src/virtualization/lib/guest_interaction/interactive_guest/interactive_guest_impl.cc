@@ -66,14 +66,18 @@ bool AttemptGuestInteractionDaemonBringup(const char* guest_name,
   FX_LOGST(INFO, guest_name) << "Attempting serial connection.";
   fidl::Result<fuchsia_virtualization::Guest::GetConsole> get_serial_console_result =
       guest->GetConsole();
-  FX_CHECK(get_serial_console_result.is_ok())
-      << std::format("[{}] Failed to get guest console with error: {}", guest_name,
-                     get_serial_console_result.error_value().FormatDescription());
+  if (get_serial_console_result.is_error()) {
+    FX_LOGST(ERROR, guest_name) << "Failed to get guest console with error: "
+                                << get_serial_console_result.error_value().FormatDescription();
+    return false;
+  }
 
   GuestConsole serial(std::make_unique<ZxSocket>(std::move(get_serial_console_result->socket())));
   zx_status_t status = serial.Start(zx::time::infinite());
-  FX_CHECK(status == ZX_OK) << std::format("[{}] Failed to start serial with error: {}", guest_name,
-                                           status);
+  if (status != ZX_OK) {
+    FX_PLOGST(ERROR, guest_name, status) << "Failed to start serial.";
+    return false;
+  }
 
   FX_LOGST(INFO, guest_name)
       << "Serial connection established, attempting guest_interaction_deamon bringup.";
@@ -153,9 +157,13 @@ void InteractiveGuestImpl::Start(StartRequest& request, StartCompleter::Sync& co
   fidl::Result<fuchsia_virtualization::GuestManager::Launch> launch_result =
       guest_manager_sync_->Launch({std::move(request.guest_config()), std::move(guest_server_end)});
 
-  FX_CHECK(launch_result.is_ok()) << std::format("[{}] Failed to launch guest with error: {}",
-                                                 request_name,
-                                                 launch_result.error_value().FormatDescription());
+  if (launch_result.is_error()) {
+    FX_LOGST(ERROR, request_name) << "Failed to launch guest with error: "
+                                  << launch_result.error_value().FormatDescription();
+    DoShutdown();
+    completer.Close(ZX_ERR_INTERNAL);
+    return;
+  }
 
   fidl::SyncClient<fuchsia_virtualization::Guest> guest =
       fidl::SyncClient<fuchsia_virtualization::Guest>({std::move(guest_client_end)});
@@ -163,6 +171,7 @@ void InteractiveGuestImpl::Start(StartRequest& request, StartCompleter::Sync& co
   // Bringup the guest interaction daemon, e.g. the Guest gRPC server
   // that fulfills interaction requests over vsock.
   if (!AttemptGuestInteractionDaemonBringup(request_name, guest)) {
+    DoShutdown();
     completer.Close(ZX_ERR_INTERNAL);
     return;
   }
@@ -215,9 +224,19 @@ void InteractiveGuestImpl::ExecuteCommand(ExecuteCommandRequest& request,
 }
 
 void InteractiveGuestImpl::DoShutdown() {
-  FX_CHECK(running_guest_) << "Shutdown requested without a running guest!";
-  running_guest_->Shutdown();
-  guest_manager_sync_->ForceShutdown();
+  if (running_guest_) {
+    running_guest_->Shutdown();
+    running_guest_.reset();
+  }
+  if (guest_manager_sync_.is_valid()) {
+    fidl::Result<fuchsia_virtualization::GuestManager::ForceShutdown> shutdown_result =
+        guest_manager_sync_->ForceShutdown();
+    if (shutdown_result.is_error()) {
+      FX_LOGS(WARNING) << "ForceShutdown failed: "
+                       << shutdown_result.error_value().FormatDescription();
+    }
+    guest_manager_sync_ = {};
+  }
 }
 
 }  // namespace interactive_guest
