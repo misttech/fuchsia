@@ -43,19 +43,13 @@ mod resolver;
 mod state;
 
 pub(super) use config::Config;
-pub(super) use environment::{
-    BuildInfo, CobaltConnector, Environment, EnvironmentConnector, NamespaceEnvironmentConnector,
-    SystemInfo,
-};
+pub(super) use environment::{BuildInfo, CobaltConnector, Environment, SystemInfo};
 pub(super) use history::UpdateHistory;
 pub(super) use reboot::{ControlRequest, RebootController};
 pub(super) use resolver::ResolveError;
 
 #[cfg(test)]
-pub(super) use {
-    config::ConfigBuilder,
-    environment::{NamespaceBuildInfo, NamespaceCobaltConnector, NamespaceSystemInfo},
-};
+pub(super) use config::ConfigBuilder;
 
 const COBALT_FLUSH_TIMEOUT: Duration = Duration::from_secs(30);
 const SOURCE_EPOCH_RAW: &str = include_str_from_working_dir_env!("EPOCH_PATH");

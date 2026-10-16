@@ -41,17 +41,6 @@ pub trait SystemInfo {
     async fn system_image_hash(&self) -> Result<Option<fuchsia_hash::Hash>, Error>;
 }
 
-pub trait EnvironmentConnector {
-    fn connect() -> Result<Environment, Error>;
-}
-
-pub struct NamespaceEnvironmentConnector;
-impl EnvironmentConnector for NamespaceEnvironmentConnector {
-    fn connect() -> Result<Environment, Error> {
-        Environment::connect_in_namespace()
-    }
-}
-
 /// The collection of external data files and services an update attempt will utilize to perform
 /// the update.
 pub struct Environment<
@@ -78,7 +67,7 @@ impl Environment {
     /// update installation attempt. While this method can detect missing services, it is possible
     /// for this method to succeed but for the first interaction with a service to observe that the
     /// connection has since been closed.
-    fn connect_in_namespace() -> Result<Self, Error> {
+    pub(crate) fn connect_in_namespace() -> Result<Self, Error> {
         let (data_sink, boot_manager) = paver::connect_in_namespace()?;
         Ok(Self {
             data_sink,

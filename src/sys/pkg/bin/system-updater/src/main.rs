@@ -7,7 +7,7 @@
 
 use crate::fidl::{FidlServer, UpdateStateNotifier};
 use crate::install_manager::start_install_manager;
-use crate::update::{NamespaceEnvironmentConnector, RealUpdater, UpdateHistory};
+use crate::update::{RealUpdater, UpdateHistory};
 use anyhow::anyhow;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -41,12 +41,8 @@ async fn main() {
     // listen for FIDL events, and notify monitors of update attempt progress.
     let updater = RealUpdater::new(history, structured_config);
     let attempt_node = inspector.root().create_child("install_manager");
-    let (install_manager_ch, install_manager_fut) = start_install_manager::<
-        UpdateStateNotifier,
-        RealUpdater,
-        NamespaceEnvironmentConnector,
-    >(updater, attempt_node)
-    .await;
+    let (install_manager_ch, install_manager_fut) =
+        start_install_manager::<UpdateStateNotifier, RealUpdater>(updater, attempt_node).await;
 
     // The FIDL server will forward requests to the install manager task via the control handle.
     let server_fut = FidlServer::new(install_manager_ch).run(fs);
