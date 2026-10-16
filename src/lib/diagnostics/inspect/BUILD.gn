@@ -16,7 +16,6 @@ group("tests") {
   testonly = true
   deps = [
     "contrib:tests",
-    "derive:tests",
     "format/rust:tests",
     "runtime/rust:tests",
     "rust:tests",

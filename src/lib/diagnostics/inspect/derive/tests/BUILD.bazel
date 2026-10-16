@@ -1,0 +1,115 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:defs.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "fuchsia_inspect_derive_tests",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:serde",
+    ],
+)
+
+rustc_test(
+    name = "fuchsia_inspect_derive_import_tests",
+    srcs = ["src/import.rs"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/fuchsia",
+    ],
+)
+
+fx_packaged_binary(
+    name = "fuchsia_inspect_derive_tests_packaged_bin",
+    testonly = True,
+    binary = ":fuchsia_inspect_derive_tests",
+    binary_name = "fuchsia_inspect_derive_tests",
+)
+
+fx_packaged_binary(
+    name = "fuchsia_inspect_derive_import_tests_packaged_bin",
+    testonly = True,
+    binary = ":fuchsia_inspect_derive_import_tests",
+    binary_name = "fuchsia_inspect_derive_import_tests",
+)
+
+fx_component_manifest(
+    name = "fuchsia-inspect-derive-test-manifest",
+    testonly = True,
+    component_name = "fuchsia-inspect-derive-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fuchsia-inspect-derive-test.cml",
+)
+
+fx_test_component(
+    name = "fuchsia-inspect-derive-test-component",
+    compiled_manifest = ":fuchsia-inspect-derive-test-manifest",
+    component_name = "fuchsia-inspect-derive-test",
+    deps = [":fuchsia_inspect_derive_tests_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "fuchsia-inspect-derive-import-test-manifest",
+    testonly = True,
+    component_name = "fuchsia-inspect-derive-import-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fuchsia-inspect-derive-import-test.cml",
+)
+
+fx_test_component(
+    name = "fuchsia-inspect-derive-import-test-component",
+    compiled_manifest = ":fuchsia-inspect-derive-import-test-manifest",
+    component_name = "fuchsia-inspect-derive-import-test",
+    deps = [":fuchsia_inspect_derive_import_tests_packaged_bin"],
+)
+
+fx_package(
+    name = "fuchsia-inspect-derive-tests-package",
+    package_name = "fuchsia-inspect-derive-tests",
+    test_components = [
+        ":fuchsia-inspect-derive-import-test-component",
+        ":fuchsia-inspect-derive-test-component",
+    ],
+)
+
+fx_test(
+    name = "fuchsia-inspect-derive-tests",
+    package = ":fuchsia-inspect-derive-tests-package",
+    visibility = ["//src/lib/diagnostics:__pkg__"],
+)

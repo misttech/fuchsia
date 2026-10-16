@@ -13,3 +13,14 @@ test_suite(
         "//src/lib/diagnostics/python/fuchsia_inspect:python_inspect_test",
     ],
 )
+
+# Diagnostics library device tests defined in Bazel. These are exported to
+# `fx test` and infra builders through the `bazel_tests` target in
+# //src/lib/diagnostics/BUILD.gn.
+test_suite(
+    name = "target_tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    tests = [
+        "//src/lib/diagnostics/inspect/derive/tests:fuchsia-inspect-derive-tests",
+    ],
+)

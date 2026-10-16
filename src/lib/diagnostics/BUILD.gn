@@ -41,6 +41,7 @@ group("tests") {
 
 bazel_test_suite("bazel_tests") {
   host_tests = [ "//src/lib/diagnostics:host_tests" ]
+  target_tests = [ "//src/lib/diagnostics:target_tests" ]
 }
 
 group("benchmarks") {
