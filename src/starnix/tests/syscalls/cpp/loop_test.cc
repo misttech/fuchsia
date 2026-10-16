@@ -238,6 +238,59 @@ TEST_F(LoopTest, RemoveAfterClearFd) {
   device_registered = false;
 }
 
+TEST_F(LoopTest, SysfsDeviceDirectoryRemovalAndReplacement) {
+  int test_minor = AddUnusedLoopDevice();
+  ASSERT_GE(test_minor, 0);
+
+  std::string device_path = "/dev/loop" + std::to_string(test_minor);
+  std::string sys_block_link = "/sys/block/loop" + std::to_string(test_minor);
+  std::string sys_device_dir = "/sys/devices/virtual/block/loop" + std::to_string(test_minor);
+
+  bool device_registered = true;
+  auto cleanup = fit::defer([&] {
+    if (device_registered && RemoveLoopDeviceRetryingOnBusy(test_minor) < 0) {
+      unlink(device_path.c_str());
+    }
+  });
+
+  // Look up the `/sys/block` symlink and target device directory before removal so both dentries
+  // are populated in the VFS cache.
+  struct stat first_lstat = {};
+  ASSERT_SUCCESS(lstat(sys_block_link.c_str(), &first_lstat));
+  struct stat first_stat = {};
+  ASSERT_SUCCESS(stat(sys_block_link.c_str(), &first_stat));
+  struct stat first_dir_stat = {};
+  ASSERT_SUCCESS(stat(sys_device_dir.c_str(), &first_dir_stat));
+  EXPECT_EQ(first_stat.st_ino, first_dir_stat.st_ino);
+
+  // Removing and re-adding the loop device without an intervening sysfs lookup must replace the
+  // cached sysfs symlink and target directory with new nodes rather than returning stale cached
+  // dentries.
+  ASSERT_SUCCESS(RemoveLoopDeviceRetryingOnBusy(test_minor));
+  device_registered = false;
+  ASSERT_SUCCESS(AddLoopDevice(test_minor));
+  device_registered = true;
+
+  struct stat second_lstat = {};
+  ASSERT_SUCCESS(lstat(sys_block_link.c_str(), &second_lstat));
+  EXPECT_NE(first_lstat.st_ino, second_lstat.st_ino);
+  struct stat second_stat = {};
+  ASSERT_SUCCESS(stat(sys_block_link.c_str(), &second_stat));
+  EXPECT_NE(first_stat.st_ino, second_stat.st_ino);
+  struct stat second_dir_stat = {};
+  ASSERT_SUCCESS(stat(sys_device_dir.c_str(), &second_dir_stat));
+  EXPECT_EQ(second_stat.st_ino, second_dir_stat.st_ino);
+
+  // Removing the loop device must evict the cached sysfs entries so subsequent lookups fail with
+  // ENOENT.
+  ASSERT_SUCCESS(RemoveLoopDeviceRetryingOnBusy(test_minor));
+  device_registered = false;
+  struct stat removed_lstat = {};
+  EXPECT_THAT(lstat(sys_block_link.c_str(), &removed_lstat), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access(sys_block_link.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access(sys_device_dir.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+}
+
 TEST_F(LoopTest, BackingFile) {
   fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY, 0644));
   ASSERT_TRUE(backing_file.is_valid());
