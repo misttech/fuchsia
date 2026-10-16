@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{metrics, paver};
+use super::paver;
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_power_statecontrol::{
@@ -15,24 +15,6 @@ use fidl_fuchsia_pkg::{
 };
 use fidl_fuchsia_pkg_garbagecollector::ManagerProxy as SpaceManagerProxy;
 use fuchsia_component::client::connect_to_protocol;
-use futures::future::BoxFuture;
-use futures::prelude::*;
-
-/// A trait to provide the ability to create a metrics client.
-pub trait CobaltConnector {
-    /// Create a new metrics client and return a future that completes when all events are flushed
-    /// to the service.
-    fn connect(&self) -> (metrics::Client, BoxFuture<'static, ()>);
-}
-
-/// A trait to provide access to /config/build-info.
-#[async_trait]
-pub trait BuildInfo {
-    /// Read the current board name, returning None if the file does not exist.
-    async fn board(&self) -> Result<Option<String>, Error>;
-    /// Read the current version, returning None if the file does not exist.
-    async fn version(&self) -> Result<Option<String>, Error>;
-}
 
 /// A trait to provide access to the current system image hash.
 #[async_trait]
@@ -43,11 +25,7 @@ pub trait SystemInfo {
 
 /// The collection of external data files and services an update attempt will utilize to perform
 /// the update.
-pub struct Environment<
-    B = NamespaceBuildInfo,
-    C = NamespaceCobaltConnector,
-    S = NamespaceSystemInfo,
-> {
+pub struct Environment {
     pub data_sink: DataSinkProxy,
     pub boot_manager: BootManagerProxy,
     pub pkg_resolver: PackageResolverProxy,
@@ -57,9 +35,6 @@ pub struct Environment<
     pub space_manager: SpaceManagerProxy,
     pub power_state_control: PowerStateControlProxy,
     pub ota_downloader: fidl_fuchsia_pkg_internal::OtaDownloaderProxy,
-    pub build_info: B,
-    pub cobalt_connector: C,
-    pub system_info: S,
 }
 
 impl Environment {
@@ -87,57 +62,37 @@ impl Environment {
                 .context("connect to fuchsia.hardware.power.statecontrol.Admin")?,
             ota_downloader: connect_to_protocol::<fidl_fuchsia_pkg_internal::OtaDownloaderMarker>()
                 .context("connect to fuchsia.pkg.internal.OtaDownloader")?,
-            build_info: NamespaceBuildInfo,
-            cobalt_connector: NamespaceCobaltConnector,
-            system_info: NamespaceSystemInfo,
         })
     }
 }
 
-#[derive(Debug)]
-pub struct NamespaceCobaltConnector;
+async fn read_build_info(name: &str) -> Result<Option<String>, Error> {
+    let build_info =
+        fuchsia_fs::directory::open_in_namespace("/config/build-info", fio::PERM_READABLE)
+            .context("while opening /config/build-info")?;
 
-impl CobaltConnector for NamespaceCobaltConnector {
-    fn connect(&self) -> (metrics::Client, BoxFuture<'static, ()>) {
-        let (cobalt, forwarder_task) = metrics::connect_to_cobalt();
-        (cobalt, forwarder_task.boxed())
-    }
+    let file = match fuchsia_fs::directory::open_file(&build_info, name, fio::PERM_READABLE).await {
+        Ok(file) => file,
+        Err(fuchsia_fs::node::OpenError::OpenError(zx::Status::NOT_FOUND)) => return Ok(None),
+        Err(e) => {
+            return Err(e).with_context(|| format!("while opening /config/build-info/{name}"));
+        }
+    };
+
+    let contents = fuchsia_fs::file::read_to_string(&file)
+        .await
+        .with_context(|| format!("while reading /config/build-info/{name}"))?;
+    Ok(Some(contents))
 }
 
-#[derive(Debug)]
-pub struct NamespaceBuildInfo;
-
-impl NamespaceBuildInfo {
-    async fn read_file(&self, name: &str) -> Result<Option<String>, Error> {
-        let build_info =
-            fuchsia_fs::directory::open_in_namespace("/config/build-info", fio::PERM_READABLE)
-                .context("while opening /config/build-info")?;
-
-        let file = match fuchsia_fs::directory::open_file(&build_info, name, fio::PERM_READABLE)
-            .await
-        {
-            Ok(file) => file,
-            Err(fuchsia_fs::node::OpenError::OpenError(zx::Status::NOT_FOUND)) => return Ok(None),
-            Err(e) => {
-                return Err(e).with_context(|| format!("while opening /config/build-info/{name}"));
-            }
-        };
-
-        let contents = fuchsia_fs::file::read_to_string(&file)
-            .await
-            .with_context(|| format!("while reading /config/build-info/{name}"))?;
-        Ok(Some(contents))
-    }
+/// Read the current board name from /config/build-info, returning None if the file does not exist.
+pub(crate) async fn board() -> Result<Option<String>, Error> {
+    read_build_info("board").await
 }
 
-#[async_trait]
-impl BuildInfo for NamespaceBuildInfo {
-    async fn board(&self) -> Result<Option<String>, Error> {
-        self.read_file("board").await
-    }
-    async fn version(&self) -> Result<Option<String>, Error> {
-        self.read_file("version").await
-    }
+/// Read the current version from /config/build-info, returning None if the file does not exist.
+pub(crate) async fn version() -> Result<Option<String>, Error> {
+    read_build_info("version").await
 }
 
 #[derive(Debug)]

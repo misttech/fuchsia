@@ -43,7 +43,7 @@ mod resolver;
 mod state;
 
 pub(super) use config::Config;
-pub(super) use environment::{BuildInfo, CobaltConnector, Environment, SystemInfo};
+pub(super) use environment::{Environment, NamespaceSystemInfo, SystemInfo};
 pub(super) use history::UpdateHistory;
 pub(super) use reboot::{ControlRequest, RebootController};
 pub(super) use resolver::ResolveError;
@@ -415,8 +415,6 @@ async fn update(
         config.start_time,
         &env.data_sink,
         &env.boot_manager,
-        &env.build_info,
-        &env.system_info,
     );
     let attempt = attempt_fut.await;
     let source_version = attempt.source_version().clone();
@@ -431,7 +429,7 @@ async fn update(
         // functionality here sets up the update attempt and takes the appropriate actions based on
         // whether the update attempt succeeds or fails.
 
-        let (mut cobalt, cobalt_forwarder_task) = env.cobalt_connector.connect();
+        let (mut cobalt, cobalt_forwarder_task) = metrics::connect_to_cobalt();
         let cobalt_forwarder_task = fuchsia_async::Task::spawn(cobalt_forwarder_task);
 
         info!(config:?; "starting system update");
@@ -935,7 +933,7 @@ impl Attempt<'_> {
             }
         }
 
-        verify_board(&self.env.build_info, &update_pkg).await.map_err(PrepareError::VerifyBoard)?;
+        verify_board(&update_pkg).await.map_err(PrepareError::VerifyBoard)?;
 
         let packages_to_fetch = match mode {
             update_package::UpdateMode::Normal => {
@@ -1369,9 +1367,7 @@ impl PackagelessAttempt<'_> {
             return Err(PrepareError::VerifyImages(update_package::VerifyError::MissingZbi));
         }
 
-        let () = verify_board_in_manifest(&self.env.build_info, &manifest)
-            .await
-            .map_err(PrepareError::VerifyBoard)?;
+        let () = verify_board_in_manifest(&manifest).await.map_err(PrepareError::VerifyBoard)?;
 
         let () = validate_epoch(SOURCE_EPOCH_RAW, manifest.epoch)?;
 
@@ -1883,22 +1879,16 @@ async fn resolve_update_package(
     resolver::resolve_update_package(pkg_resolver, update_url).await
 }
 
-async fn verify_board<B>(build_info: &B, pkg: &update_package::UpdatePackage) -> Result<(), Error>
-where
-    B: BuildInfo,
-{
-    let current_board = build_info.board().await.context("while determining current board")?;
+async fn verify_board(pkg: &update_package::UpdatePackage) -> Result<(), Error> {
+    let current_board = environment::board().await.context("while determining current board")?;
     if let Some(current_board) = current_board {
         let () = pkg.verify_board(&current_board).await.context("while verifying target board")?;
     }
     Ok(())
 }
 
-async fn verify_board_in_manifest<B>(build_info: &B, manifest: &OtaManifest) -> Result<(), Error>
-where
-    B: BuildInfo,
-{
-    let current_board = build_info.board().await.context("while determining current board")?;
+async fn verify_board_in_manifest(manifest: &OtaManifest) -> Result<(), Error> {
+    let current_board = environment::board().await.context("while determining current board")?;
     if let Some(current_board) = current_board
         && manifest.board != current_board
     {

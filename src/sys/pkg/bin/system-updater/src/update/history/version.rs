@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::update::{BuildInfo, SystemInfo, paver};
+use crate::update::{SystemInfo, environment, paver};
 use anyhow::{Context as _, anyhow};
 use epoch::EpochFile;
 use fidl_fuchsia_mem as fmem;
@@ -148,7 +148,6 @@ impl Version {
         last_target_version: Option<&Version>,
         data_sink: &DataSinkProxy,
         boot_manager: &BootManagerProxy,
-        build_info: &impl BuildInfo,
         system_info: &impl SystemInfo,
         source_epoch_raw: &str,
     ) -> Self {
@@ -168,7 +167,7 @@ impl Version {
         };
         let (vbmeta_hash, zbi_hash) =
             get_vbmeta_and_zbi_hash_from_environment(data_sink, boot_manager).await;
-        let build_version = match build_info.version().await {
+        let build_version = match environment::version().await {
             Ok(Some(version)) => version,
             Ok(None) => {
                 error!("Build version not found");
@@ -326,7 +325,6 @@ fn sha256_hash_ignore_trailing_zeros(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::update::environment::NamespaceBuildInfo;
     use fidl_fuchsia_paver::Configuration;
     use fuchsia_hash::Hash;
     use fuchsia_pkg_testing::{FakeUpdatePackage, make_epoch_json};
@@ -635,7 +633,6 @@ mod tests {
                 Some(&last_target_version),
                 &data_sink,
                 &boot_manager,
-                &NamespaceBuildInfo,
                 &system_info,
                 &make_epoch_json(42)
             )

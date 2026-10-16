@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::update::{BuildInfo, SOURCE_EPOCH_RAW, SystemInfo};
+use crate::update::{NamespaceSystemInfo, SOURCE_EPOCH_RAW};
 use anyhow::{Error, anyhow};
 use bounded_node::BoundedNode;
 use fidl_fuchsia_paver::{BootManagerProxy, DataSinkProxy};
@@ -161,8 +161,6 @@ impl UpdateHistory {
         start_time: SystemTime,
         data_sink: &'a DataSinkProxy,
         boot_manager: &'a BootManagerProxy,
-        build_info: &'a impl BuildInfo,
-        system_info: &'a impl SystemInfo,
     ) -> impl Future<Output = PendingAttempt> + 'a {
         let latest_target_version = self.latest_successful_target_version().cloned();
 
@@ -173,8 +171,7 @@ impl UpdateHistory {
                 latest_target_version.as_ref(),
                 data_sink,
                 boot_manager,
-                build_info,
-                system_info,
+                &NamespaceSystemInfo,
                 SOURCE_EPOCH_RAW,
             )
             .await;
@@ -345,7 +342,6 @@ mod serde_system_time {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::update::environment::{FakeSystemInfo, NamespaceBuildInfo};
     use anyhow::anyhow;
     use diagnostics_assertions::assert_data_tree;
     use fidl_fuchsia_update_installer_ext::{
@@ -386,7 +382,6 @@ mod tests {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let data_sink = paver.spawn_data_sink_service();
         let boot_manager = paver.spawn_boot_manager_service();
-        let system_info = FakeSystemInfo(None);
         let opts = Options {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: false,
@@ -402,8 +397,6 @@ mod tests {
                 SystemTime::UNIX_EPOCH + Duration::from_nanos(i as u64),
                 &data_sink,
                 &boot_manager,
-                &NamespaceBuildInfo,
-                &system_info,
             )
             .await;
         history.record_update_attempt(
@@ -888,7 +881,6 @@ mod tests {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let data_sink = paver.spawn_data_sink_service();
         let boot_manager = paver.spawn_boot_manager_service();
-        let system_info = FakeSystemInfo(None);
 
         assert_eq!(
             history
@@ -905,8 +897,6 @@ mod tests {
                     SystemTime::UNIX_EPOCH + Duration::from_nanos(42),
                     &data_sink,
                     &boot_manager,
-                    &NamespaceBuildInfo,
-                    &system_info,
                 )
                 .await
                 .source_version,
