@@ -502,3 +502,10 @@ pub fn x86_cpu_has_meltdown() -> bool {
     // SAFETY: Value is only written to during single threaded startup
     unsafe { core::ptr::addr_of!(G_HAS_MELTDOWN).read() }
 }
+
+/// Returns whether the CPU supports Supervisor Mode Access Prevention (SMAP).
+#[inline]
+pub fn x86_feature_has_smap() -> bool {
+    // SAFETY: Value is only written to during single threaded startup
+    unsafe { core::ptr::addr_of!(G_X86_FEATURE_HAS_SMAP).read() }
+}
