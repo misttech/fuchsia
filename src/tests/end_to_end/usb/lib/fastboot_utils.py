@@ -16,6 +16,17 @@ from honeydew.typing import custom_types as honeydew_types
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
+async def _cycle_vbus_power(
+    usb_power_hub: usb_power_hub.UsbPowerHub,
+    usb_port: int | None = None,
+    off_duration_sec: float = 2.0,
+) -> None:
+    """Cycles VBUS power on the USB power hub to trigger a fresh attach edge."""
+    usb_power_hub.power_off(port=usb_port)
+    await asyncio.sleep(off_duration_sec)
+    usb_power_hub.power_on(port=usb_port)
+
+
 async def reboot_to_fastboot_mode(
     dut: fuchsia_device.FuchsiaDevice,
     usb_power_hub: usb_power_hub.UsbPowerHub | None = None,
@@ -28,7 +39,11 @@ async def reboot_to_fastboot_mode(
         dut: Honeydew FuchsiaDevice instance.
         usb_power_hub: Optional USB Power Hub fixture.
         usb_port: Optional port number on the USB power hub.
-        timeout_sec: Timeout in seconds for waiting for fastboot mode.
+        timeout_sec: Timeout in seconds applied per stage, not as a total
+            budget. In the worst case (initial FIDL wait timeout followed by
+            VBUS rescue wait timeout), this function can wait up to
+            `2 * timeout_sec + 2`s. Callers should size GN test target
+            timeout_secs accordingly.
     """
     # Ensure USB power is turned ON before rebooting so bootloader sees VBUS
     if usb_power_hub:
@@ -68,7 +83,27 @@ async def reboot_to_fastboot_mode(
         )
 
     _LOGGER.info("Waiting for device to enter fastboot mode...")
-    dut.fastboot.wait_for_fastboot_mode(timeout=float(timeout_sec))
+
+    # TODO(http://b/572759803): Remove this try/except VBUS power-cycle rescue
+    # wrapper once the Sorrel 2nd-stage UEFI bootloader (xbl.img) fix for
+    # ShouldForceEnableUsb (UsbConfigLib.c EFI_ERROR(0x50)) is rolled in.
+    # In lieu of that bootloader fix, when xbl.img hits ShouldForceEnableUsb: 1
+    # (~6% of warm resets) it skips initial USB controller start because VBUS
+    # was already high; toggling VBUS off/on generates a fresh PMIC VBUS attach
+    # edge that triggers ABL to start the USB controller and enumerate.
+    try:
+        dut.fastboot.wait_for_fastboot_mode(timeout=float(timeout_sec))
+        return
+    except errors.HoneydewTimeoutError:
+        if usb_power_hub is None:
+            raise
+        _LOGGER.warning(
+            "Device did not enumerate within %ss (possible UEFI handoff "
+            "ShouldForceEnableUsb: 1 stall). Cycling VBUS to rescue...",
+            timeout_sec,
+        )
+        await _cycle_vbus_power(usb_power_hub, usb_port)
+        dut.fastboot.wait_for_fastboot_mode(timeout=float(timeout_sec))
 
 
 async def _boot_from_fastboot_to_fuchsia(
@@ -117,14 +152,45 @@ async def recover_to_fuchsia_mode(
         dut: Honeydew FuchsiaDevice instance.
         usb_power_hub: Optional USB Power Hub fixture.
         usb_port: Optional port number on the USB power hub.
-        timeout_sec: Timeout in seconds for waiting for Fuchsia mode.
+        timeout_sec: Timeout in seconds applied per stage, not as a total
+            budget. In the worst case where _boot_from_fastboot_to_fuchsia(...,
+            CONTINUE) fails, this triggers an additional VBUS power-cycle
+            rescue and fallback REBOOT, extending the total wait budget up to
+            `2 * timeout_sec + 4`s plus settling delays. Callers should size
+            GN test target timeout_secs accordingly.
     """
     _LOGGER.info("Ensuring device is booted back to Fuchsia...")
     if usb_power_hub:
         usb_power_hub.power_on(port=usb_port)
 
     # Allow 2s settling delay for USB enumeration and endpoints to stabilize.
-    await asyncio.sleep(2)
+    # TODO(http://b/572759803): Remove this VBUS power-cycle rescue block
+    # (and restore `await asyncio.sleep(2)`) once the Sorrel 2nd-stage UEFI
+    # bootloader (xbl.img) fix for ShouldForceEnableUsb is rolled in.
+    # In lieu of that fix, if teardown is entered while the DUT is stranded in
+    # an unenumerated Fastboot stall, cycling VBUS forces a fresh PMIC VBUS
+    # attach event so `is_in_fastboot_mode()` sees the DUT and boots Fuchsia.
+    if not dut.fastboot.is_in_fastboot_mode():
+        if usb_power_hub is not None:
+            try:
+                dut.fastboot.wait_for_fastboot_mode(timeout=2.0)
+            except errors.HoneydewTimeoutError:
+                _LOGGER.warning(
+                    "Device not seen in fastboot. Cycling VBUS to rescue "
+                    "potential UEFI stall..."
+                )
+                await _cycle_vbus_power(usb_power_hub, usb_port)
+                try:
+                    dut.fastboot.wait_for_fastboot_mode(timeout=5.0)
+                except errors.HoneydewTimeoutError as e:
+                    _LOGGER.warning(
+                        "Device did not re-enter fastboot mode after VBUS rescue "
+                        "cycle (%s); proceeding to check if DUT booted to "
+                        "Fuchsia directly.",
+                        e,
+                    )
+        else:
+            await asyncio.sleep(2)
 
     if dut.fastboot.is_in_fastboot_mode():
         _LOGGER.info("Device is in Fastboot mode; issuing fastboot continue...")
@@ -134,11 +200,19 @@ async def recover_to_fuchsia_mode(
             )
             _LOGGER.info("Device is successfully back online in Fuchsia.")
             return
-        except Exception as e:
+        except (errors.HoneydewError, asyncio.TimeoutError) as e:
             _LOGGER.warning(
                 "fastboot continue failed (%s); attempting fallback reboot...",
                 e,
             )
+            # TODO(http://b/572759803): Remove this VBUS power-cycle rescue
+            # once the Sorrel 2nd-stage UEFI (xbl.img) fix is rolled in.
+            # In lieu of that fix, if `fastboot continue` timed out because the
+            # DUT warm-reset back into an unenumerated Fastboot state, cycling
+            # VBUS re-enumerates USB before issuing the fallback `reboot`.
+            if usb_power_hub:
+                await _cycle_vbus_power(usb_power_hub, usb_port)
+                await asyncio.sleep(2)
             await _boot_from_fastboot_to_fuchsia(
                 dut, fastboot_types.BootToFuchsiaMethod.REBOOT, timeout_sec
             )
