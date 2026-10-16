@@ -311,7 +311,9 @@ toolchain(
 
 rust_stdlib_filegroup(
     name = "rust_std_fuchsia_x64",
-    srcs = glob(["lib/rustlib/x86_64-unknown-fuchsia/lib/*"]),
+    srcs = glob(["lib/rustlib/x86_64-unknown-fuchsia/lib/*"]) + [
+        "@//build/config/profile:llvm_profile_counter_bias.ld",
+    ],
 )
 
 rust_toolchain(
@@ -363,7 +365,9 @@ toolchain(
 
 rust_stdlib_filegroup(
     name = "rust_std_fuchsia_arm64",
-    srcs = glob(["lib/rustlib/aarch64-unknown-fuchsia/lib/*"]),
+    srcs = glob(["lib/rustlib/aarch64-unknown-fuchsia/lib/*"]) + [
+        "@//build/config/profile:llvm_profile_counter_bias.ld",
+    ],
 )
 
 rust_toolchain(
@@ -426,7 +430,9 @@ rust_stdlib_filegroup(
     # See https://doc.rust-lang.org/rustc/platform-support/riscv64gc-unknown-linux-gnu.html
     # which this uses a "riscv64gc" prefix, while C++ uses only "riscv64" for the same
     # ABI.
-    srcs = glob(["lib/rustlib/riscv64gc-unknown-fuchsia/lib/*"]),
+    srcs = glob(["lib/rustlib/riscv64gc-unknown-fuchsia/lib/*"]) + [
+        "@//build/config/profile:llvm_profile_counter_bias.ld",
+    ],
 )
 
 rust_toolchain(

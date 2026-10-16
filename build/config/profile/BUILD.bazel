@@ -6,4 +6,5 @@ package(default_applicable_licenses = ["//:license"])
 
 exports_files([
     "instrumentation_data.cml",
+    "llvm_profile_counter_bias.ld",
 ])
