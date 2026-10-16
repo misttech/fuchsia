@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "sandbox",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//examples/components:__subpackages__",
+        "//sdk/ctf:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/diagnostics:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# Avoid test name collision by defining unit tests manually. Setting output_name
+# on the rustc_library does not work.
+# @bazel2gn:skip
+rustc_test(
+    name = "component_sandbox_test",
+    crate = ":sandbox",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "component-sandbox-test",
+    unit_tests = [":component_sandbox_test"],
+)
