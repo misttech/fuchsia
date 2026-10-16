@@ -4,15 +4,17 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/intrin.h>
+
+#include <arch/arm64/arm64_ffi.h>
 #include <arch/arm64/mp.h>
 #include <arch/arm64/periphmap.h>
+#include <arch/debugger.h>
 #include <kernel/cpu.h>
 #include <kernel/ffi.h>
+#include <kernel/thread.h>
 
 extern "C" {
-
-uint64_t cpp_arm64_cpu_num_to_mpidr(cpu_num_t cpu_num);
-uintptr_t cpp_arm64_periph_paddr_to_vaddr(uint64_t paddr);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uint64_t cpp_arm64_cpu_num_to_mpidr(cpu_num_t cpu_num) {
@@ -22,6 +24,43 @@ FFI_ALWAYS_INLINE uint64_t cpp_arm64_cpu_num_to_mpidr(cpu_num_t cpu_num) {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uintptr_t cpp_arm64_periph_paddr_to_vaddr(uint64_t paddr) {
   return static_cast<uintptr_t>(periph_paddr_to_vaddr(static_cast<paddr_t>(paddr)));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_arm64_get_tpidr_regs(uint64_t* tpidr_el0, uint64_t* tpidrro_el0) {
+  *tpidr_el0 = __arm_rsr64("tpidr_el0");
+  *tpidrro_el0 = __arm_rsr64("tpidrro_el0");
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_arm64_set_tpidr_regs(uint64_t tpidr_el0, uint64_t tpidrro_el0) {
+  __arm_wsr64("tpidr_el0", tpidr_el0);
+  __arm_wsr64("tpidrro_el0", tpidrro_el0);
+  Thread* thread = Thread::Current::Get();
+  thread->arch().tpidr_el0 = tpidr_el0;
+  thread->arch().tpidrro_el0 = tpidrro_el0;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_arm64_enter_restricted_tpidr(uint64_t tpidr_el0, bool is_arm32) {
+  __arm_wsr64("tpidr_el0", tpidr_el0);
+  if (is_arm32) {
+    __arm_wsr64("tpidrro_el0", tpidr_el0);
+  }
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint64_t cpp_arm64_get_tpidr_el0() { return __arm_rsr64("tpidr_el0"); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_arm64_get_general_regs(zx_thread_state_general_regs_t* regs) {
+  return arch_get_general_regs(Thread::Current::Get(), regs);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t
+cpp_arm64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
+  return arch_set_general_regs(Thread::Current::Get(), regs);
 }
 
 }  // extern "C"

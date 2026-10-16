@@ -108,7 +108,6 @@ if (toolchain_environment == "kernel.phys" ||
       "perf_mon.cc",
       "periphmap.cc",
       "registers.cc",
-      "restricted.cc",
       "secondary.S",
       "secondary.cc",
       "smccc.S",
@@ -201,17 +200,35 @@ if (toolchain_environment == "kernel.phys" ||
     notice_year = 2026
   }
 
+  kernel_bindgen_crate("arm64-restricted-bindings") {
+    headers = [ "include/arch/restricted.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    notice_year = 2026
+    raw_lines = [ "#![no_std]" ]
+    type_allowlist = [ "ArchSavedNormalState" ]
+    explicit_padding = false
+    std_derives = [
+      "default",
+      "eq",
+      "partialeq",
+    ]
+    expect_lints = []
+  }
+
   kernel_rust_mod("arch-arm64-rs") {
     output_name = "arch_arm64"
     source_root = "src/mod.rs"
     sources = [
       "src/cache.rs",
       "src/mod.rs",
+      "src/restricted.rs",
       "src/vm.rs",
     ]
     deps = [
       ":arch-arm64-aspace-bindings",
       ":arch-arm64-vm-bindings",
+      ":arm64-restricted-bindings",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//zircon/kernel/arch:arch-types-bindings",
