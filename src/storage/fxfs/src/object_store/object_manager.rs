@@ -1519,3 +1519,744 @@ impl AssociatedObject for ReservationUpdate {
         manager.update_layer_size(object_id, self.0);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ForceMajor;
+    use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
+    use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
+    use crate::object_handle::{ObjectHandle, WriteObjectHandle};
+    use crate::object_store::directory::replace_child;
+    use crate::object_store::journal::JournalOptions;
+    use crate::object_store::transaction::{
+        LockKey, Mutation, Options, ReservationOptions, lock_keys,
+    };
+    use crate::object_store::volume::root_volume;
+    use crate::object_store::{
+        Directory, FlushReason, HandleOptions, INVALID_OBJECT_ID, NewChildStoreOptions, ObjectKey,
+        ObjectStore, ObjectValue, StoreOptions,
+    };
+    use fxfs_crypto::Crypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
+    use rand::rngs::SmallRng;
+    use rand::{RngExt, SeedableRng};
+    use std::sync::Arc;
+    use std::time::Instant;
+    use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
+
+    // Runs a randomized stress test exercising per-store metadata reservations, borrowing,
+    // minor/major compactions, locked flushes, dynamic volume creation/deletion, and remounts
+    // under tight disk-space headroom.
+    //
+    // By default (in CQ), this runs a single 160-step episode with a random seed. It can also be
+    // run manually for extended stress testing or failure reproduction using environment variables:
+    //   - `FXFS_STRESS_SECS=<seconds>`: run episodes continuously for the given duration.
+    //   - `FXFS_STRESS_SEED=<u64>`: start from a specific RNG seed.
+    #[fuchsia::test(threads = 4)]
+    async fn test_metadata_reservation_stress() {
+        struct VolState {
+            name: String,
+            store_id: u64,
+            crypt: Option<Arc<dyn Crypt>>,
+            permanent: bool,
+            churn_cursor: usize,
+            churn_gen: Vec<u64>,
+        }
+
+        async fn check_all_volumes(fs: &Arc<FxFilesystem>, vols: &[VolState]) {
+            fs.graveyard().flush().await;
+            let options = FsckOptions {
+                fail_on_warning: true,
+                halt_on_error: true,
+                do_slow_passes: true,
+                quiet: true,
+                ..Default::default()
+            };
+            fsck_with_options(fs.clone(), &options).await.expect("fsck failed");
+            for vol in vols {
+                if fs.object_manager().store(vol.store_id).is_some() {
+                    fsck_volume_with_options(
+                        fs.as_ref(),
+                        &options,
+                        vol.store_id,
+                        vol.crypt.clone(),
+                    )
+                    .await
+                    .expect("fsck_volume failed");
+                }
+            }
+        }
+
+        async fn list_dir_files(store: &Arc<ObjectStore>) -> Vec<(String, u64)> {
+            let root_dir = Directory::open(store, store.root_directory_object_id())
+                .await
+                .expect("open root_dir failed");
+            let layer_set = store.tree().layer_set();
+            let mut merger = layer_set.merger();
+            let mut iter = root_dir.iter(&mut merger).await.expect("iter failed");
+            let mut files = Vec::new();
+            while let Some((name, object_id, _)) = iter.get() {
+                if name != "filler" {
+                    files.push((name.to_string(), object_id));
+                }
+                iter.advance().await.expect("advance failed");
+            }
+            files
+        }
+
+        // `vol_2` and `vol_3` are permanent and unencrypted, so at least 2 volumes are always
+        // unlocked.
+        fn pick_unlocked_volume(
+            fs: &FxFilesystem,
+            vols: &[VolState],
+            rng: &mut SmallRng,
+        ) -> Arc<ObjectStore> {
+            let unlocked: Vec<usize> = (0..vols.len())
+                .filter(|&i| {
+                    fs.object_manager().store(vols[i].store_id).is_some_and(|s| !s.is_locked())
+                })
+                .collect();
+            let idx = unlocked[rng.random_range(0..unlocked.len())];
+            fs.object_manager().store(vols[idx].store_id).unwrap()
+        }
+
+        async fn unlink_and_tombstone_file(
+            fs: &FxFilesystem,
+            store: &Arc<ObjectStore>,
+            fname: &str,
+            oid: u64,
+            immediate: bool,
+        ) {
+            let root_dir = Directory::open(store, store.root_directory_object_id())
+                .await
+                .expect("open root_dir failed");
+            let ctx = root_dir
+                .acquire_context_for_replace(None, fname, true)
+                .await
+                .expect("acquire_context_for_replace failed");
+            let mut txn = ctx.transaction;
+            let truncate_guard = ctx.truncate_guard;
+            replace_child(&mut txn, None, (&root_dir, fname)).await.expect("replace_child failed");
+            txn.commit().await.expect("commit unlink failed");
+            if immediate {
+                fs.tombstone_object(store.store_object_id(), oid, truncate_guard.as_ref())
+                    .await
+                    .expect("tombstone_object failed");
+            } else {
+                std::mem::drop(truncate_guard);
+                fs.graveyard().queue_tombstone_object(store.store_object_id(), oid);
+            }
+        }
+
+        let stress_secs =
+            std::env::var("FXFS_STRESS_SECS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        let base_seed = std::env::var("FXFS_STRESS_SEED")
+            .ok()
+            .map(|s| {
+                if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+                    u64::from_str_radix(hex, 16)
+                } else {
+                    s.parse::<u64>()
+                }
+                .expect("invalid FXFS_STRESS_SEED")
+            })
+            .unwrap_or_else(rand::random);
+
+        let start_time = Instant::now();
+        let mut episode = 0u64;
+
+        loop {
+            let seed = base_seed.wrapping_add(episode);
+            let mut rng = SmallRng::seed_from_u64(seed);
+            let steps_per_episode = if stress_secs > 0 { 400 } else { 160 };
+            if episode == 0 || (stress_secs > 0 && episode % 25 == 0) {
+                eprintln!(
+                    "[stress] episode {episode} (seed={seed:#x}, elapsed={:?})",
+                    start_time.elapsed()
+                );
+            }
+
+            let reclaim_size = if rng.random_bool(0.5) { 32768 } else { 65536 };
+            let device = DeviceHolder::new(FakeDevice::new(4096, 4096));
+            let mut fs = FxFilesystemBuilder::new()
+                .format(true)
+                .journal_options(JournalOptions { reclaim_size, ..Default::default() })
+                .open(device)
+                .await
+                .expect("open failed");
+
+            let mut vols = Vec::new();
+            {
+                let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+                for i in 0..4 {
+                    let encrypted = i < 2;
+                    let crypt: Option<Arc<dyn Crypt>> =
+                        encrypted.then(|| Arc::new(new_insecure_crypt()) as _);
+                    let name = format!("vol_{i}");
+                    let store = root_vol
+                        .new_volume(
+                            &name,
+                            NewChildStoreOptions {
+                                options: StoreOptions {
+                                    crypt: crypt.clone(),
+                                    ..StoreOptions::default()
+                                },
+                                ..NewChildStoreOptions::default()
+                            },
+                        )
+                        .await
+                        .expect("new_volume failed");
+                    let store_id = store.store_object_id();
+                    let root_dir_id = store.root_directory_object_id();
+
+                    // Pre-populate `vol_0` (encrypted) and `vol_2` (unencrypted) with > 512 KiB
+                    // (`DEFAULT_RECLAIM_SIZE`) of base-layer metadata so minor compactions keep
+                    // their base layer instead of collapsing into full compactions.
+                    let base_count = if i == 0 || i == 2 { 1400 } else { 0 };
+                    for batch in 0..(base_count / 50) {
+                        let mut txn = store
+                            .new_transaction(
+                                lock_keys![LockKey::object(store_id, root_dir_id)],
+                                Options::default(),
+                            )
+                            .await
+                            .expect("new_transaction failed");
+                        for j in 0..50 {
+                            let idx = batch * 50 + j;
+                            txn.add(
+                                store_id,
+                                Mutation::replace_or_insert_object(
+                                    ObjectKey::extended_attribute(
+                                        root_dir_id,
+                                        format!("churn_{idx:04}_gen_0_{:<190}", idx).into_bytes(),
+                                    ),
+                                    ObjectValue::inline_extended_attribute(vec![0x55; 200]),
+                                ),
+                            );
+                        }
+                        txn.commit().await.expect("commit failed");
+                    }
+                    if base_count > 0 {
+                        store
+                            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+                            .await
+                            .expect("initial major flush failed");
+                    }
+
+                    vols.push(VolState {
+                        name,
+                        store_id,
+                        crypt,
+                        permanent: true,
+                        churn_cursor: 0,
+                        churn_gen: vec![0; base_count],
+                    });
+                }
+                fs.journal().force_compact().await.expect("force_compact failed");
+                fs.journal().force_compact().await.expect("force_compact failed");
+
+                // Write 64 KiB chunks to `filler` in `vol_3` until remaining free space is tight
+                // (<= 1.25 MiB). Any failure to major-compact dead base-layer records or any
+                // reservation leak will exhaust this headroom and cause funded operations below to
+                // panic with `NoSpace`.
+                let store_3 = fs.object_manager().store(vols[3].store_id).unwrap();
+                let root_dir_3 = Directory::open(&store_3, store_3.root_directory_object_id())
+                    .await
+                    .expect("open root_dir_3 failed");
+                let filler = {
+                    let mut txn = store_3
+                        .new_transaction(
+                            lock_keys![LockKey::object(vols[3].store_id, root_dir_3.object_id())],
+                            Options::default(),
+                        )
+                        .await
+                        .expect("new_transaction failed");
+                    let file = root_dir_3
+                        .create_child_file(&mut txn, "filler")
+                        .await
+                        .expect("create filler failed");
+                    txn.commit().await.expect("commit filler failed");
+                    file
+                };
+                let chunk = filler.allocate_buffer(65536).await;
+                let mut offset = 0;
+                while fs
+                    .allocator()
+                    .get_disk_bytes()
+                    .saturating_sub(fs.allocator().get_used_bytes().0)
+                    > 1280 * 1024
+                {
+                    filler
+                        .write_or_append(Some(offset), chunk.as_ref())
+                        .await
+                        .expect("write filler failed");
+                    offset += 65536;
+                }
+                fs.journal().force_compact().await.expect("force_compact failed");
+                fs.sync(SyncOptions { flush_device: true, ..Default::default() })
+                    .await
+                    .expect("sync failed");
+            }
+
+            let mut next_id = 0u64;
+            for _step in 0..steps_per_episode {
+                if stress_secs > 0 && start_time.elapsed().as_secs() >= stress_secs {
+                    break;
+                }
+                next_id += 1;
+                let op = rng.random_range(0..100);
+
+                if op < 18 {
+                    // 1) Create and write a file in a random unlocked volume (capping live user
+                    // files per volume at 3 so live data stays bounded).
+                    let store = pick_unlocked_volume(&fs, &vols, &mut rng);
+                    let existing = list_dir_files(&store).await;
+                    if existing.len() >= 3 {
+                        let (ref old_name, old_oid) = existing[0];
+                        unlink_and_tombstone_file(&fs, &store, old_name, old_oid, true).await;
+                    }
+                    fs.graveyard().flush().await;
+                    let root_dir = Directory::open(&store, store.root_directory_object_id())
+                        .await
+                        .expect("open failed");
+                    let name = format!("f_{next_id}");
+                    let mut txn = store
+                        .new_transaction(
+                            lock_keys![LockKey::object(
+                                store.store_object_id(),
+                                root_dir.object_id()
+                            )],
+                            Options::default(),
+                        )
+                        .await
+                        .unwrap_or_else(|e| panic!("new_transaction failed (seed={seed:#x}): {e}"));
+                    let handle = root_dir
+                        .create_child_file(&mut txn, &name)
+                        .await
+                        .expect("create_child_file failed");
+                    txn.commit().await.expect("commit create_child_file failed");
+                    let blocks = rng.random_range(1..=2);
+                    let mut buf = handle.allocate_buffer(blocks * 4096).await;
+                    buf.fill((next_id & 0xff) as u8);
+                    handle
+                        .write_or_append(Some(0), buf.as_ref())
+                        .await
+                        .unwrap_or_else(|e| panic!("write_or_append failed (seed={seed:#x}): {e}"));
+                } else if op < 32 {
+                    // 2) Overwrite or truncate an existing file in a random unlocked volume.
+                    let store = pick_unlocked_volume(&fs, &vols, &mut rng);
+                    let files = list_dir_files(&store).await;
+                    if files.is_empty() {
+                        continue;
+                    }
+                    let (_, oid) = files[rng.random_range(0..files.len())];
+                    let handle =
+                        ObjectStore::open_object(&store, oid, HandleOptions::default(), None)
+                            .await
+                            .expect("open_object failed");
+                    if rng.random_bool(0.5) {
+                        if rng.random_bool(0.5) {
+                            handle
+                                .truncate_with_options(
+                                    Options {
+                                        reservation: ReservationOptions::BorrowedMetadata,
+                                        ..Default::default()
+                                    },
+                                    0,
+                                )
+                                .await
+                                .expect("borrowed truncate failed");
+                        } else {
+                            let new_size = rng.random_range(0..=4096);
+                            handle.truncate(new_size).await.expect("truncate failed");
+                        }
+                    } else {
+                        let mut buf = handle.allocate_buffer(4096).await;
+                        buf.fill(0x5a);
+                        let offset = rng.random_range(0..=1) * 4096;
+                        handle
+                            .write_or_append(Some(offset), buf.as_ref())
+                            .await
+                            .expect("write_or_append failed");
+                    }
+                } else if op < 40 {
+                    // 3) Unlink and tombstone a file in a random unlocked volume.
+                    let store = pick_unlocked_volume(&fs, &vols, &mut rng);
+                    let files = list_dir_files(&store).await;
+                    if files.is_empty() {
+                        continue;
+                    }
+                    let (ref fname, oid) = files[rng.random_range(0..files.len())];
+                    let immediate = rng.random_bool(0.7);
+                    unlink_and_tombstone_file(&fs, &store, fname, oid, immediate).await;
+                } else if op < 54 {
+                    // 4) Insert or delete (via BorrowedMetadata) extended attributes on root_dir.
+                    let store = pick_unlocked_volume(&fs, &vols, &mut rng);
+                    let store_id = store.store_object_id();
+                    let root_dir_id = store.root_directory_object_id();
+                    let attr_idx = rng.random_range(0..32);
+                    let key_name = format!("xattr_{attr_idx:02}_{:<120}", attr_idx).into_bytes();
+                    if rng.random_bool(0.45) {
+                        let mut txn = store
+                            .new_transaction(
+                                lock_keys![LockKey::object(store_id, root_dir_id)],
+                                Options::default(),
+                            )
+                            .await
+                            .expect("funded xattr txn failed");
+                        let len = rng.random_range(64..=256);
+                        txn.add(
+                            store_id,
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::extended_attribute(root_dir_id, key_name),
+                                ObjectValue::inline_extended_attribute(vec![0x77; len]),
+                            ),
+                        );
+                        txn.commit().await.expect("funded xattr commit failed");
+                    } else {
+                        let mut txn = store
+                            .new_transaction(
+                                lock_keys![LockKey::object(store_id, root_dir_id)],
+                                Options {
+                                    skip_journal_checks: true,
+                                    reservation: ReservationOptions::BorrowedMetadata,
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .expect("borrowed txn failed");
+                        txn.add(
+                            store_id,
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::extended_attribute(root_dir_id, key_name),
+                                ObjectValue::None,
+                            ),
+                        );
+                        txn.commit().await.expect("borrowed commit failed");
+                    }
+                } else if op < 74 {
+                    // 5) Base-layer delete + create churn on a volume with a > 512 KiB base layer
+                    // (`vol_2` is permanent and unencrypted, so `candidates` is never empty):
+                    // delete a batch of existing entries (using `BorrowedMetadata`) and insert an
+                    // equal number of new-generation entries (using a funded transaction). Because
+                    // the live entry count stays constant while dead records accumulate, major
+                    // compaction must trigger automatically to reclaim space.
+                    let candidates: Vec<usize> = (0..vols.len())
+                        .filter(|&i| {
+                            !vols[i].churn_gen.is_empty()
+                                && fs
+                                    .object_manager()
+                                    .store(vols[i].store_id)
+                                    .is_some_and(|s| !s.is_locked())
+                        })
+                        .collect();
+                    let idx = candidates[rng.random_range(0..candidates.len())];
+                    let store = fs.object_manager().store(vols[idx].store_id).unwrap();
+                    let store_id = store.store_object_id();
+                    let root_dir_id = store.root_directory_object_id();
+
+                    // Perform two 25-entry sub-batches per step so each transaction stays well
+                    // within `TRANSACTION_MAX_JOURNAL_USAGE` (24 KiB) while generating enough
+                    // churn (50 entries per step) to require major compactions in a 160-step run.
+                    let churn_len = vols[idx].churn_gen.len();
+                    for _ in 0..2 {
+                        let start = vols[idx].churn_cursor;
+                        vols[idx].churn_cursor = (start + 25) % churn_len;
+
+                        let mut del_txn = store
+                            .new_transaction(
+                                lock_keys![LockKey::object(store_id, root_dir_id)],
+                                Options {
+                                    skip_journal_checks: true,
+                                    reservation: ReservationOptions::BorrowedMetadata,
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .expect("borrowed base delete txn failed");
+                        for offset in 0..25 {
+                            let j = (start + offset) % churn_len;
+                            let old_gen = vols[idx].churn_gen[j];
+                            del_txn.add(
+                                store_id,
+                                Mutation::replace_or_insert_object(
+                                    ObjectKey::extended_attribute(
+                                        root_dir_id,
+                                        format!("churn_{j:04}_gen_{old_gen}_{:<190}", j)
+                                            .into_bytes(),
+                                    ),
+                                    ObjectValue::None,
+                                ),
+                            );
+                        }
+                        del_txn.commit().await.expect("borrowed base delete commit failed");
+
+                        let mut ins_txn = store
+                            .new_transaction(
+                                lock_keys![LockKey::object(store_id, root_dir_id)],
+                                Options::default(),
+                            )
+                            .await
+                            .unwrap_or_else(|e| {
+                                panic!("funded base replacement txn failed (seed={seed:#x}): {e}")
+                            });
+                        for offset in 0..25 {
+                            let j = (start + offset) % churn_len;
+                            let new_gen = vols[idx].churn_gen[j] + 1;
+                            vols[idx].churn_gen[j] = new_gen;
+                            ins_txn.add(
+                                store_id,
+                                Mutation::replace_or_insert_object(
+                                    ObjectKey::extended_attribute(
+                                        root_dir_id,
+                                        format!("churn_{j:04}_gen_{new_gen}_{:<190}", j)
+                                            .into_bytes(),
+                                    ),
+                                    ObjectValue::inline_extended_attribute(vec![0x66; 200]),
+                                ),
+                            );
+                        }
+                        ins_txn.commit().await.expect("funded base replacement commit failed");
+                    }
+                } else if op < 84 {
+                    // 6) Lock / unlock / flush-while-locked an encrypted volume (`vol_0` and
+                    // `vol_1` are permanent and encrypted, so `encrypted` is never empty).
+                    let encrypted: Vec<usize> =
+                        (0..vols.len()).filter(|&i| vols[i].crypt.is_some()).collect();
+                    let idx = encrypted[rng.random_range(0..encrypted.len())];
+                    let crypt = vols[idx].crypt.clone().unwrap();
+                    let store = fs.object_manager().store(vols[idx].store_id).unwrap();
+                    if store.is_locked() {
+                        match rng.random_range(0..3) {
+                            0 => {
+                                store.flush().await.expect("locked flush failed");
+                            }
+                            1 => {
+                                store
+                                    .unlock_read_only(crypt)
+                                    .await
+                                    .expect("unlock_read_only failed");
+                                store.lock_read_only();
+                            }
+                            _ => {
+                                store.unlock(crypt).await.expect("unlock failed");
+                            }
+                        }
+                    } else {
+                        fs.graveyard().flush().await;
+                        store.lock().await.expect("lock failed");
+                        if rng.random_bool(0.5) {
+                            store.flush().await.expect("locked flush failed");
+                        }
+                    }
+                } else if op < 91 {
+                    // 7) Explicit minor flush (`ForceMajor::False`) or journal compaction. Never
+                    // pass `ForceMajor::True` here so major compaction is only triggered when
+                    // `should_force_major_compaction` decides it is required.
+                    fs.journal().pause_compactions().await;
+                    let idx = rng.random_range(0..vols.len());
+                    let store = fs.object_manager().store(vols[idx].store_id).unwrap();
+                    match rng.random_range(0..3) {
+                        0 => {
+                            store
+                                .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+                                .await
+                                .expect("minor flush failed");
+                        }
+                        1 => {
+                            fs.object_manager()
+                                .flush(FlushReason::Journal(ForceMajor::False))
+                                .await
+                                .expect("object_manager flush failed");
+                        }
+                        _ => {
+                            fs.journal().force_compact().await.expect("force_compact failed");
+                        }
+                    }
+                    fs.journal().resume_compactions();
+                } else if op < 95 {
+                    // 8) Dynamically create or delete a child volume (at most 1 dynamic volume at
+                    // a time so volume reservations stay within the tight disk headroom).
+                    let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+                    let dynamic_indices: Vec<usize> =
+                        (0..vols.len()).filter(|&i| !vols[i].permanent).collect();
+                    if dynamic_indices.is_empty() {
+                        let encrypted = rng.random_bool(0.5);
+                        let crypt: Option<Arc<dyn Crypt>> =
+                            encrypted.then(|| Arc::new(new_insecure_crypt()) as _);
+                        let name = format!("dyn_{next_id}");
+                        let store = root_vol
+                            .new_volume(
+                                &name,
+                                NewChildStoreOptions {
+                                    options: StoreOptions {
+                                        crypt: crypt.clone(),
+                                        ..StoreOptions::default()
+                                    },
+                                    ..NewChildStoreOptions::default()
+                                },
+                            )
+                            .await
+                            .expect("dynamic new_volume failed");
+                        let store_id = store.store_object_id();
+                        let root_dir_id = store.root_directory_object_id();
+                        let mut txn = store
+                            .new_transaction(
+                                lock_keys![LockKey::object(store_id, root_dir_id)],
+                                Options::default(),
+                            )
+                            .await
+                            .expect("dynamic volume txn failed");
+                        txn.add(
+                            store_id,
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::extended_attribute(root_dir_id, b"dyn_attr".to_vec()),
+                                ObjectValue::inline_extended_attribute(vec![0x33; 256]),
+                            ),
+                        );
+                        txn.commit().await.expect("dynamic volume commit failed");
+                        vols.push(VolState {
+                            name,
+                            store_id,
+                            crypt,
+                            permanent: false,
+                            churn_cursor: 0,
+                            churn_gen: Vec::new(),
+                        });
+                    } else {
+                        fs.graveyard().flush().await;
+                        let idx = dynamic_indices[rng.random_range(0..dynamic_indices.len())];
+                        let vol = vols.remove(idx);
+                        let (_, delete_txn) = root_vol
+                            .acquire_transaction_for_remove_volume(
+                                &vol.name,
+                                [],
+                                true,
+                                Options {
+                                    reservation: ReservationOptions::BorrowedMetadata,
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .expect("acquire_transaction_for_remove_volume failed");
+                        root_vol
+                            .delete_volume(&vol.name, delete_txn, || {})
+                            .await
+                            .expect("delete_volume failed");
+                        assert!(fs.object_manager().store_borrowed(vol.store_id).is_none());
+                    }
+                } else {
+                    // 9) Remount (clean close, synced snapshot replay, or power-fail discard).
+                    fs.graveyard().flush().await;
+                    let remount_kind = rng.random_range(0..3);
+                    if remount_kind == 0 {
+                        // Power-fail snapshot with random discarded blocks since last flush.
+                        fs.journal().pause_compactions().await;
+                        fs.sync(SyncOptions::default()).await.expect("sync failed");
+                        let snapshot = fs.device().snapshot().expect("snapshot failed");
+                        fs.journal().resume_compactions();
+                        snapshot
+                            .discard_random_since_last_flush()
+                            .expect("discard_random_since_last_flush failed");
+                        let pf_fs = FxFilesystem::open(snapshot).await.expect("open pf_fs failed");
+                        check_all_volumes(&pf_fs, &vols).await;
+                        pf_fs.close().await.expect("close pf_fs failed");
+                    } else {
+                        if remount_kind == 1 {
+                            // Unclean synced snapshot remount (replays unflushed journal
+                            // transactions, locked flushes, and compactions) and continues on the
+                            // replayed fs.
+                            fs.journal().stop_compactions().await;
+                            fs.sync(SyncOptions { flush_device: true, ..Default::default() })
+                                .await
+                                .expect("sync failed");
+                            let snapshot = fs.device().snapshot().expect("snapshot failed");
+                            let expected_reserved = fs.object_manager().reserved_metadata_space();
+                            fs.close().await.expect("close old fs failed");
+                            fs = FxFilesystemBuilder::new()
+                                .journal_options(JournalOptions {
+                                    reclaim_size,
+                                    ..Default::default()
+                                })
+                                .open(snapshot)
+                                .await
+                                .expect("open snapshot failed");
+                            assert_eq!(
+                                fs.object_manager().reserved_metadata_space(),
+                                expected_reserved,
+                                "replayed reserved_metadata_space mismatch on snapshot remount \
+                                 (seed={seed:#x})"
+                            );
+                        } else {
+                            // Clean close and remount.
+                            fs.close().await.expect("close failed");
+                            let device = fs.take_device().await;
+                            device.reopen(false);
+                            fs = FxFilesystemBuilder::new()
+                                .journal_options(JournalOptions {
+                                    reclaim_size,
+                                    ..Default::default()
+                                })
+                                .open(device)
+                                .await
+                                .expect("open failed");
+                        }
+                        check_all_volumes(&fs, &vols).await;
+                        for vol in &vols {
+                            if let Some(crypt) = &vol.crypt
+                                && rng.random_bool(0.5)
+                            {
+                                let store = fs.object_manager().store(vol.store_id).unwrap();
+                                store.unlock(crypt.clone()).await.expect("unlock failed");
+                            }
+                        }
+                    }
+                }
+            }
+
+            // End-of-episode full compaction & invariant verification.
+            fs.graveyard().flush().await;
+            fs.journal().pause_compactions().await;
+            for vol in &vols {
+                if let Some(crypt) = &vol.crypt {
+                    let store = fs.object_manager().store(vol.store_id).unwrap();
+                    if store.is_locked() {
+                        store.unlock(crypt.clone()).await.expect("unlock failed");
+                    }
+                }
+            }
+            fs.object_manager()
+                .flush(FlushReason::Journal(ForceMajor::True))
+                .await
+                .expect("full flush failed");
+            fs.journal().force_compact().await.expect("force_compact failed");
+            fs.journal().force_compact().await.expect("force_compact failed");
+            let mut layers_before = Vec::with_capacity(vols.len());
+            for vol in &vols {
+                let store = fs.object_manager().store(vol.store_id).unwrap();
+                let info = store.load_store_info().await.unwrap();
+                assert!(info.layers.len() <= 1);
+                assert_eq!(info.encrypted_mutations_object_id, INVALID_OBJECT_ID);
+                let (b, _) = fs.object_manager().store_borrowed(vol.store_id).unwrap();
+                assert_eq!(b, 0);
+                layers_before.push((vol.store_id, info.layers));
+            }
+            fs.object_manager()
+                .flush(FlushReason::Journal(ForceMajor::False))
+                .await
+                .expect("noop flush failed");
+            for (store_id, expected_layers) in layers_before {
+                let store = fs.object_manager().store(store_id).unwrap();
+                assert_eq!(store.load_store_info().await.unwrap().layers, expected_layers);
+            }
+            check_all_volumes(&fs, &vols).await;
+            fs.close().await.expect("close failed");
+
+            episode += 1;
+            if stress_secs == 0 || start_time.elapsed().as_secs() >= stress_secs {
+                break;
+            }
+        }
+    }
+}
