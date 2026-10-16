@@ -177,14 +177,10 @@ impl<C: EbpfProgramContext> ComputationContext<'_, C> {
         op: impl Fn(&mut Self, &AtomicU32, u32) -> u32,
     ) -> Result<(), String> {
         let addr = self.reg(dst).add(offset as u64);
-        // TODO How to statically check alignment?
-        if addr.as_usize() % std::mem::size_of::<AtomicU32>() != 0 {
-            return Err(format!("misaligned access"));
-        }
         // SAFETY
         //
         // The address has been verified by the verifier that ensured the memory is valid for
-        // reading and writing.
+        // reading and writing, and that it is suitably aligned for an atomic access.
         #[allow(
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"
@@ -208,14 +204,10 @@ impl<C: EbpfProgramContext> ComputationContext<'_, C> {
         op: impl Fn(&mut Self, &AtomicU64, u64) -> u64,
     ) -> Result<(), String> {
         let addr = self.reg(dst).add(offset as u64);
-        // TODO How to statically check alignment?
-        if addr.as_usize() % std::mem::size_of::<AtomicU64>() != 0 {
-            return Err(format!("misaligned access"));
-        }
         // SAFETY
         //
         // The address has been verified by the verifier that ensured the memory is valid for
-        // reading and writing.
+        // reading and writing, and that it is suitably aligned for an atomic access.
         #[allow(
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"

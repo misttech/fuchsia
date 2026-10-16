@@ -1721,6 +1721,32 @@ impl ComputationContext {
         Ok(())
     }
 
+    /// Checks that the atomic access to `addr + field.offset` is allowed: it
+    /// must target either the stack or a map value, and it must be naturally
+    /// aligned for `field.width`.
+    ///
+    /// The stack and map values are at least 8-byte aligned, so it is
+    /// sufficient to check the offset of the access relative to the start of
+    /// the buffer. The offset is tracked as a `ScalarValueData`, so the check
+    /// requires the low bits of the offset to be known and zero.
+    fn check_atomic_access(&self, addr: &Type, field: Field) -> Result<(), VerifierErrorKind> {
+        let addr = addr.inner(self)?;
+        let base_offset = match *addr {
+            Type::PtrToStack { offset } => offset.reg(),
+            Type::PtrToMemory { offset, origin, .. } if origin.is_map_value() => offset,
+            _ => return Err(VerifierErrorKind::AtomicAccessNotAllowed),
+        };
+        let alignment_mask = (field.width.bytes() as u64) - 1;
+        // Adding a constant preserves the low bits of the result only if the
+        // low bits of the other operand are known.
+        if base_offset.unknown_mask & alignment_mask != 0
+            || base_offset.value.wrapping_add_signed(field.offset.into()) & alignment_mask != 0
+        {
+            return Err(VerifierErrorKind::MisalignedAtomicAccess);
+        }
+        Ok(())
+    }
+
     fn store_memory(
         &mut self,
         context: &mut VerificationContext<'_>,
@@ -2110,6 +2136,7 @@ impl ComputationContext {
         let addr = self.reg(dst)?;
         let value = self.reg(src)?;
         let field = Field::new(offset, width);
+        self.check_atomic_access(&addr, field)?;
         let loaded_type = self.load_memory(verification_context, &addr, field)?;
         let result = op(self, loaded_type.clone(), value)?;
         let mut next = self.next()?;
@@ -2164,6 +2191,7 @@ impl ComputationContext {
         };
         let addr = self.reg(dst)?;
         let field = Field::new(offset, width);
+        self.check_atomic_access(&addr, field)?;
         let dst = self.load_memory(verification_context, &addr, field)?;
         let value = self.reg(src)?;
         let r0 = self.reg(0)?;
@@ -5619,5 +5647,86 @@ mod tests {
         let rw_kernel_ptr = ptr_with_origin(PointerOrigin::KernelWritable);
         let res = next.store_memory(&mut context, &rw_kernel_ptr, u32_field, Type::from(42));
         assert!(res.is_ok());
+    }
+
+    /// Verifies that atomic operations are only allowed on naturally aligned
+    /// addresses within the stack or a map value.
+    #[test]
+    fn test_atomic_access_checks() {
+        let context = ComputationContext::default();
+
+        let ptr_to_memory = |offset: ScalarValueData, origin| Type::PtrToMemory {
+            id: MemoryId::new(),
+            offset,
+            buffer_size: 64,
+            origin,
+        };
+        let ptr_to_stack =
+            |offset: i16| Type::PtrToStack { offset: StackOffset::default().add(offset) };
+        // An offset that is either 0 or 1: its low bit is unknown.
+        let unknown_low_bit = ScalarValueData::new(0, 1, 0, U64Range::new(0, 1));
+        // An offset that is either 0 or 8: its low 3 bits are known to be 0.
+        let unknown_high_bits = ScalarValueData::new(0, 8, 0, U64Range::new(0, 8));
+
+        let u32_field = |offset| Field::new(offset, DataWidth::U32);
+        let u64_field = |offset| Field::new(offset, DataWidth::U64);
+
+        // Aligned accesses to map values and the stack are allowed.
+        for origin in [PointerOrigin::MapWritable, PointerOrigin::MapReadOnly] {
+            let ptr = ptr_to_memory(0.into(), origin);
+            assert_eq!(context.check_atomic_access(&ptr, u64_field(8)), Ok(()));
+            assert_eq!(context.check_atomic_access(&ptr, u32_field(4)), Ok(()));
+            let ptr = ptr_to_memory(4.into(), origin);
+            assert_eq!(context.check_atomic_access(&ptr, u64_field(4)), Ok(()));
+            assert_eq!(context.check_atomic_access(&ptr, u32_field(-4)), Ok(()));
+            let ptr = ptr_to_memory(unknown_high_bits, origin);
+            assert_eq!(context.check_atomic_access(&ptr, u64_field(16)), Ok(()));
+        }
+        assert_eq!(context.check_atomic_access(&ptr_to_stack(-8), u64_field(0)), Ok(()));
+        assert_eq!(context.check_atomic_access(&ptr_to_stack(-4), u32_field(-4)), Ok(()));
+
+        // Misaligned accesses are rejected, including when the alignment cannot
+        // be proven because the low bits of the offset are unknown.
+        let map_ptr = ptr_to_memory(0.into(), PointerOrigin::MapWritable);
+        assert_eq!(
+            context.check_atomic_access(&map_ptr, u64_field(4)),
+            Err(VerifierErrorKind::MisalignedAtomicAccess)
+        );
+        assert_eq!(
+            context.check_atomic_access(&map_ptr, u32_field(2)),
+            Err(VerifierErrorKind::MisalignedAtomicAccess)
+        );
+        let map_ptr = ptr_to_memory(4.into(), PointerOrigin::MapWritable);
+        assert_eq!(
+            context.check_atomic_access(&map_ptr, u64_field(0)),
+            Err(VerifierErrorKind::MisalignedAtomicAccess)
+        );
+        let map_ptr = ptr_to_memory(unknown_low_bit, PointerOrigin::MapWritable);
+        assert_eq!(
+            context.check_atomic_access(&map_ptr, u64_field(0)),
+            Err(VerifierErrorKind::MisalignedAtomicAccess)
+        );
+        assert_eq!(
+            context.check_atomic_access(&ptr_to_stack(-6), u32_field(0)),
+            Err(VerifierErrorKind::MisalignedAtomicAccess)
+        );
+        assert_eq!(
+            context.check_atomic_access(&ptr_to_stack(-8), u64_field(4)),
+            Err(VerifierErrorKind::MisalignedAtomicAccess)
+        );
+
+        // Atomic accesses to other kinds of memory are rejected, even when
+        // aligned.
+        for origin in [PointerOrigin::KernelWritable, PointerOrigin::KernelReadOnly] {
+            let ptr = ptr_to_memory(0.into(), origin);
+            assert_eq!(
+                context.check_atomic_access(&ptr, u64_field(8)),
+                Err(VerifierErrorKind::AtomicAccessNotAllowed)
+            );
+        }
+        assert_eq!(
+            context.check_atomic_access(&Type::from(0), u64_field(0)),
+            Err(VerifierErrorKind::AtomicAccessNotAllowed)
+        );
     }
 }

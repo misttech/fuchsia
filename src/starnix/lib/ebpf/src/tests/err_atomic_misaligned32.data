@@ -1,0 +1,18 @@
+# A 32-bit atomic operation on an address that is only 2-byte aligned must be
+# rejected by the verifier.
+-- asm
+mov %r2, 0
+stxw [%r10-4], %r2
+lddw %r1, map[2]
+mov %r2, %r10
+add %r2, -4
+call 109
+jne %r0, 0, +2
+mov %r0, 1
+exit
+mov %r2, 1
+lock fetch add32 [%r0+2], %r2
+mov %r0, 0
+exit
+-- error
+misaligned atomic access

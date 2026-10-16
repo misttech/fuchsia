@@ -1,0 +1,43 @@
+# Atomic operations with naturally aligned addresses must be accepted by the
+# verifier, both for map values and for the stack.
+-- asm
+# r6 = map value (16 bytes, all zero).
+mov %r2, 0
+stxw [%r10-4], %r2
+lddw %r1, map[2]
+mov %r2, %r10
+add %r2, -4
+call 109
+jne %r0, 0, +2
+mov %r0, 1
+exit
+mov %r6, %r0
+# 64-bit fetch-add at offset 8: value = 0x21, r2 = 0x20.
+mov %r2, 0x20
+stxdw [%r6+8], %r2
+mov %r2, 1
+lock fetch add [%r6+8], %r2
+# 32-bit add at offset 4: value = 0x12.
+mov %r3, 0x10
+stxw [%r6+4], %r3
+mov %r3, 2
+lock add32 [%r6+4], %r3
+# 64-bit xchg on the stack: stack = 0x20, r2 = 3.
+mov %r4, 3
+stxdw [%r10-16], %r4
+lock xchg [%r10-16], %r2
+# 32-bit cmpxchg on the stack: matches, stack = 0x7, r0 = 0x20.
+mov %r0, 0x20
+mov %r5, 7
+lock cmpxchg32 [%r10-16], %r5
+# r0 = 0x20 + 0x21 + 0x12 + 3 + 7 = 0x5d
+ldxdw %r7, [%r6+8]
+add %r0, %r7
+ldxw %r7, [%r6+4]
+add %r0, %r7
+add %r0, %r2
+ldxw %r7, [%r10-16]
+add %r0, %r7
+exit
+-- result
+0x5d

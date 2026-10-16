@@ -160,6 +160,12 @@ pub enum VerifierErrorKind {
     #[error("misaligned stack access")]
     MisalignedStackAccess,
 
+    #[error("misaligned atomic access")]
+    MisalignedAtomicAccess,
+
+    #[error("atomic access is allowed only to the stack and map values")]
+    AtomicAccessNotAllowed,
+
     #[error("reading unwritten value from the stack")]
     UninitializedStackRead,
 
@@ -238,6 +244,8 @@ impl VerifierErrorKind {
             | Self::VariableStackOffset
             | Self::StackAccessOutOfBounds
             | Self::MisalignedStackAccess
+            | Self::MisalignedAtomicAccess
+            | Self::AtomicAccessNotAllowed
             | Self::UninitializedStackRead
             | Self::NonScalarStackRead
             | Self::PartialNonScalarStackStore

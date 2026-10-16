@@ -1,0 +1,24 @@
+# An atomic operation at an offset whose low bits are not known to the verifier
+# must be rejected, even if the access is known to be within bounds: the
+# address may be misaligned at runtime.
+-- asm
+mov %r2, 0
+stxw [%r10-4], %r2
+lddw %r1, map[2]
+mov %r2, %r10
+add %r2, -4
+call 109
+jne %r0, 0, +2
+mov %r0, 1
+exit
+# r3 is either 0 or 1.
+ldxb %r3, [%r0]
+and %r3, 1
+add %r0, %r3
+mov %r2, 1
+# Within bounds (offset <= 1, 8 bytes, 16 bytes value), but maybe misaligned.
+lock add [%r0], %r2
+mov %r0, 0
+exit
+-- error
+misaligned atomic access

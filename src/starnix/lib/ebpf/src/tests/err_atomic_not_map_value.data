@@ -1,0 +1,12 @@
+# Atomic operations are allowed only on the stack and on map values. An atomic
+# operation on other memory (here the program argument buffer) must be rejected
+# by the verifier, even when the access is aligned and within bounds.
+-- asm
+mov %r2, 1
+lock add [%r1+8], %r2
+mov %r0, 0
+exit
+-- mem
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+-- error
+atomic access is allowed only to the stack and map values

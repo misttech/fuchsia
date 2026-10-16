@@ -434,8 +434,19 @@ pub mod test {
         }
     }
 
+    /// Index of the test map whose value can be obtained with the
+    /// `map_lookup_value` helper. Must match the position of the map in the
+    /// `CallingContext` used by `test_ebpf_conformance`.
+    const TEST_MAP_INDEX_WITH_VALUE: usize = 2;
+
+    /// Size of the value of the test map at index `TEST_MAP_INDEX_WITH_VALUE`.
+    const TEST_MAP_VALUE_SIZE: usize = 16;
+
     struct TestEbpfRunContext {
         buffer_size: usize,
+        /// Storage for the value returned by the `map_lookup_value` helper.
+        /// Stored as `u64` to guarantee 8-byte alignment.
+        map_value: [u64; TEST_MAP_VALUE_SIZE / std::mem::size_of::<u64>()],
     }
 
     const DATA_OFFSET: usize = 8;
@@ -765,6 +776,28 @@ pub mod test {
                 ),
                 (
                     HelperDefinition {
+                        index: 109,
+                        name: "map_lookup_value",
+                        signature: FunctionSignature {
+                            args: vec![
+                                Type::ConstPtrToMapParameter {
+                                    filter: MapTypeFilter::DenyList(&[
+                                        linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                                    ]),
+                                    must_be_writable: false,
+                                },
+                                Type::MapKeyParameter { map_ptr_index: 0 },
+                            ],
+                            return_value: Type::NullOrParameter(Box::new(
+                                Type::MapValueParameter { map_ptr_index: 0 },
+                            )),
+                            invalidate_array_bounds: false,
+                        },
+                    },
+                    EbpfHelperImpl::<TestEbpfProgramContext>(map_lookup_value),
+                ),
+                (
+                    HelperDefinition {
                         index: 107,
                         name: "with_context",
                         signature: FunctionSignature {
@@ -1021,6 +1054,17 @@ pub mod test {
         0.into()
     }
 
+    fn map_lookup_value(
+        context: &mut TestEbpfRunContext,
+        _map: BpfValue,
+        _key: BpfValue,
+        _: BpfValue,
+        _: BpfValue,
+        _: BpfValue,
+    ) -> BpfValue {
+        (context.map_value.as_mut_ptr() as u64).into()
+    }
+
     pub fn parse_asm(data: &str) -> Vec<EbpfInstruction> {
         let mut pairs =
             TestGrammar::parse(Rule::ASM_INSTRUCTIONS, data).expect("Parsing must be successful");
@@ -1174,6 +1218,7 @@ pub mod test {
     #[test_case(ubpf_test_data!("subnet.data"))]
     #[test_case(local_test_data!("access_with_check.data"))]
     #[test_case(local_test_data!("ashr_fully_unknown_u64_stays_unbounded.data"))]
+    #[test_case(local_test_data!("atomic_aligned.data"))]
     #[test_case(local_test_data!("bounded_loop_counter_access.data"))]
     #[test_case(local_test_data!("context_parameter.data"))]
     #[test_case(local_test_data!("datadep_call_oob.data"))]
@@ -1183,6 +1228,11 @@ pub mod test {
     #[test_case(local_test_data!("branch_zero_jgt_ptr_prunes_live.data"))]
     #[test_case(local_test_data!("cmpxchg_prune_point.data"))]
     #[test_case(local_test_data!("div_by_range_with_zero.data"))]
+    #[test_case(local_test_data!("err_atomic_misaligned32.data"))]
+    #[test_case(local_test_data!("err_atomic_misaligned64.data"))]
+    #[test_case(local_test_data!("err_atomic_misaligned_stack.data"))]
+    #[test_case(local_test_data!("err_atomic_not_map_value.data"))]
+    #[test_case(local_test_data!("err_atomic_variable_offset.data"))]
     #[test_case(local_test_data!("err_bounded_loop_oob_last_iteration.data"))]
     #[test_case(local_test_data!("err_context_parameter.data"))]
     #[test_case(local_test_data!("err_infinite_loop_counter.data"))]
@@ -1246,29 +1296,34 @@ pub mod test {
         let helpers: HashMap<u32, &'static HelperDefinition> =
             HELPER_DEFS.iter().map(|(def, _)| (def.index, def)).collect();
 
+        let maps = vec![
+            MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                key_size: 4,
+                value_size: 4,
+                max_entries: 0,
+                flags: MapFlags::NoPrealloc,
+            },
+            MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY,
+                key_size: 4,
+                value_size: 4,
+                max_entries: 1,
+                flags: MapFlags::ProgReadOnly,
+            },
+            MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY,
+                key_size: 4,
+                value_size: TEST_MAP_VALUE_SIZE as u32,
+                max_entries: 1,
+                flags: MapFlags::empty(),
+            },
+        ];
+        assert_eq!(maps[TEST_MAP_INDEX_WITH_VALUE].value_size as usize, TEST_MAP_VALUE_SIZE);
+
         let verified_program = verify_program(
             test_case.code,
-            CallingContext {
-                maps: vec![
-                    MapSchema {
-                        map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
-                        key_size: 4,
-                        value_size: 4,
-                        max_entries: 0,
-                        flags: MapFlags::NoPrealloc,
-                    },
-                    MapSchema {
-                        map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY,
-                        key_size: 4,
-                        value_size: 4,
-                        max_entries: 1,
-                        flags: MapFlags::ProgReadOnly,
-                    },
-                ],
-                helpers,
-                args,
-                packet_type,
-            },
+            CallingContext { maps, helpers, args, packet_type },
             &mut NullVerifierLogger,
         );
 
@@ -1282,7 +1337,8 @@ pub mod test {
             let program = link_program_dynamic::<TestEbpfProgramContext>(&verified_program, maps)
                 .expect("failed to link a test program");
 
-            let mut context = TestEbpfRunContext { buffer_size: test_memory.size };
+            let mut context =
+                TestEbpfRunContext { buffer_size: test_memory.size, map_value: Default::default() };
             let result = program.run_with_2_arguments(&mut context, test_memory, test_memory.size);
             assert_eq!(result, value);
         } else {
