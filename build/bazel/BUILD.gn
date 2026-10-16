@@ -413,6 +413,20 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/config/fuchsia_cxx_version.gni:experimental_cxx_version)
+
+  # LINT.IfChange(riscv64_enable_vector)
+  declaration = "//build/config/riscv64/riscv64.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "riscv64_enable_vector"
+      value = riscv64_enable_vector
+      type = "bool"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//build/config/riscv64/riscv64.gni:riscv64_enable_vector)
 }
 
 if (current_toolchain == default_toolchain) {

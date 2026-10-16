@@ -4,6 +4,8 @@
 
 import("//build/config/compiler_config.gni")
 
+# LINT.IfChange(x64_configs)
+
 # Platform baseline.
 # This tracks the minimum hardware requirements for Fuchsia on x86-64.
 compiler_config("x64") {
@@ -58,3 +60,4 @@ config("haswell") {
   cflags = [ "-mcpu=haswell" ]
   rustflags = [ "-Ctarget-cpu=haswell" ]
 }
+# LINT.ThenChange(BUILD.bazel:x64_configs)

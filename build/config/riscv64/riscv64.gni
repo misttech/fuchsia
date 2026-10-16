@@ -6,9 +6,13 @@ import("//build/config/compiler_config.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
 declare_args() {
+  # LINT.IfChange(riscv64_enable_vector)
   # Whether to enable the use of RISC-V vector instructions.
   riscv64_enable_vector = true
+  # LINT.ThenChange(//build/bazel/BUILD.gn:riscv64_enable_vector)
 }
+
+# LINT.IfChange(riscv64_configs)
 
 # These are the formal definitions of the profiles. RV32 details are omitted
 # here.  cf https://github.com/riscv/riscv-profiles/blob/main/profiles.adoc
@@ -376,3 +380,4 @@ template("riscv64_abi_config") {
     }
   }
 }
+# LINT.ThenChange(riscv64.bzl:riscv64_configs)

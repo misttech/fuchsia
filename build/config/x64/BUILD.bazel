@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(x64_configs)
+
+# Platform baseline.
+# This tracks the minimum hardware requirements for Fuchsia on x86-64.
+compiler_build_flags(
+    name = "x64",
+    cflags = [
+        "-march=x86-64-v2",
+        "-mtune=generic",
+    ],
+
+    # Assume toolchain_environment != "kernel" in Bazel
+    rustflags = ["-Ctarget-cpu=x86-64-v2"],
+
+    # TODO(https://fxbug.dev/42168336): the below is for Skylake through Cascade Lake.
+    # Not all x86-64 builds need this.
+    # Remove from baseline and apply via `board_configs` argument as needed.
+    subflags = [":mitigate_skylake_jcc"],
+    visibility = ["//visibility:public"],
+)
+
+# Mitigate Jump Conditional Code erratum.
+# See: https://fxbug.dev/42120593
+build_flags(
+    name = "mitigate_skylake_jcc",
+    # Assume is_gcc == false in Bazel
+    cflags = ["-mbranches-within-32B-boundaries"],
+    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.
+    visibility = ["//visibility:public"],
+)
+
+# Mitigate Straight Line Speculation (CVE-2021-26341, fxrev.dev/661362) by
+# inserting INT3/fences after certain control transfer instructions. The INT3s
+# are never executed; they just confine speculative execution to valid paths in
+# those cases.
+compiler_build_flags(
+    name = "harden_sls",
+    c_family_flags = ["-mharden-sls=all"],
+    defines = ["HARDEN_SLS"],
+    rust_target_features = [
+        "+harden-sls-ijmp",
+        "+harden-sls-ret",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Optimize for Intel Haswell
+build_flags(
+    name = "haswell",
+    cflags = ["-mcpu=haswell"],
+    rustflags = ["-Ctarget-cpu=haswell"],
+    visibility = ["//visibility:public"],
+)
+
+# LINT.ThenChange(BUILD.gn:x64_configs)

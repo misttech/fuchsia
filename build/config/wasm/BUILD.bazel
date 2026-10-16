@@ -1,0 +1,18 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_build_info//:args.bzl", "clang_prefix")
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(wasm_configs)
+
+build_flags(
+    name = "compiler",
+    rustflags = ["-Clinker={}/lld".format(clang_prefix)],
+    visibility = ["//visibility:public"],
+)
+
+# LINT.ThenChange(BUILD.gn:wasm_configs)

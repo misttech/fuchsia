@@ -4,6 +4,8 @@
 
 import("//build/config/compiler_config.gni")
 
+# LINT.IfChange(arm64_configs)
+
 # Platform baseline.
 # This tracks the minimum hardware requirements for Fuchsia on AArch64.
 compiler_config("arm64") {
@@ -74,9 +76,7 @@ foreach(v,
 }
 
 compiler_config("cortex-a53") {
-  cflags = [ "-mcpu=cortex-a53" ]
-  ldflags = cflags
-  asmflags = cflags
+  c_family_flags = [ "-mcpu=cortex-a53" ]
 
   # TODO(https://fxbug.dev/42168343): consider the below.
   #rustflags = [ "-Ctarget-cpu=cortex-a53" ]
@@ -103,3 +103,4 @@ compiler_config("fix-cortex-a53-835769") {
   cflags = [ "-mfix-cortex-a53-835769" ]
   rust_target_features = [ "+fix-cortex-a53-835769" ]
 }
+# LINT.ThenChange(BUILD.bazel:arm64_configs)

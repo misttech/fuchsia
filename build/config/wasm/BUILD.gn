@@ -4,6 +4,9 @@
 
 import("//build/config/clang/clang.gni")
 
+# LINT.IfChange(wasm_configs)
+
 config("compiler") {
   rustflags = [ "-Clinker=$rebased_clang_prefix/lld" ]
 }
+# LINT.ThenChange(BUILD.bazel:wasm_configs)

@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+load(":riscv64.bzl", "riscv64_abi_build_flags")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(riscv64_configs)
+
+# Platform baseline.
+# This tracks the minimum hardware requirements for Fuchsia on RISC-V.
+riscv64_abi_build_flags(
+    name = "abi",
+    visibility = ["//visibility:public"],
+)
+
+# NOTE: This assumes toolchain_environment != "kernel" in Bazel.
+compiler_build_flags(
+    name = "riscv64",
+    cflags = [
+        # TODO(https://fxbug.dev/42076645): Clang should do this everywhere for Fuchsia
+        # targets. When it does, put this under `if (is_gcc)`.
+        #
+        # Don't use .sdata/.sbss sections. Even though linker gp relaxation is
+        # separately disabled (gp is reserved for the shadow-call-stack in the
+        # Fuchsia Compiler ABI), we still don't want to use these sections
+        # because the compiler will place read-only (or RELRO) data in .sdata,
+        # which is suboptimal for security and sharing as well as creating
+        # problems for pure code.
+        "-msmall-data-limit=0",
+    ],
+    compiler_subflags = [":abi"],
+    rustflags = [
+        # TODO(https://fxbug.dev/360955800): remove the SCS option once the rustc driver can set it by default for Fuchsia targets
+        "-Zsanitizer=shadow-call-stack",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+riscv64_abi_build_flags(
+    name = "no-vector",
+    exclude_letters = ["v"],
+    visibility = ["//visibility:public"],
+)
+
+# LINT.ThenChange(BUILD.gn:riscv64_configs)
