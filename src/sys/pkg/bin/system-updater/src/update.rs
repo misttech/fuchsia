@@ -35,7 +35,6 @@ use update_package::manifest::OtaManifest;
 mod config;
 mod crash_report;
 mod environment;
-mod genutil;
 mod history;
 mod metrics;
 mod paver;
@@ -48,7 +47,6 @@ pub(super) use environment::{
     BuildInfo, CobaltConnector, Environment, EnvironmentConnector, NamespaceEnvironmentConnector,
     SystemInfo,
 };
-pub(super) use genutil::GeneratorExt;
 pub(super) use history::UpdateHistory;
 pub(super) use reboot::{ControlRequest, RebootController};
 pub(super) use resolver::ResolveError;
@@ -339,7 +337,7 @@ async fn run_attempt_to_commit(
     verify_existing_blobs: bool,
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
     mut cancel_receiver: oneshot::Receiver<()>,
-    co: &mut async_generator::Yield<fupdate_installer_ext::State>,
+    co: &mut state::Yield,
     phase: &mut metrics::Phase,
     target_version: &mut history::Version,
 ) -> Result<Option<(state::WaitToReboot, update_package::UpdateMode)>, AttemptError> {
@@ -436,7 +434,8 @@ async fn update(
 
     let history_clone = Arc::clone(&history);
     let attempt_id = attempt.attempt_id().to_string();
-    let stream = async_generator::generate(move |mut co| async move {
+    let stream = async_generator::generate(move |co| async move {
+        let mut co = state::Yield::new(co);
         let history = history_clone;
         // The only operation allowed to fail in this function is update_attempt. The rest of the
         // functionality here sets up the update attempt and takes the appropriate actions based on
@@ -517,53 +516,46 @@ async fn update(
         info!("flushing cobalt events");
         let () = flush_cobalt(cobalt_forwarder_task, COBALT_FLUSH_TIMEOUT).await;
 
-        let Some((state, mode)) = wait_to_reboot else {
-            return target_version;
-        };
-
-        info!(mode:?; "checking if reboot is required or should be deferred");
-        // Figure out if we should reboot.
-        match mode {
-            // First priority: Always reboot on ForceRecovery success, even if the caller
-            // asked to defer the reboot.
-            update_package::UpdateMode::ForceRecovery => {
-                info!("system update in ForceRecovery mode complete, rebooting...");
-            }
-            // Second priority: Use the attached reboot controller.
-            update_package::UpdateMode::Normal => {
-                info!("system update complete, waiting for initiator to signal reboot.");
-                match reboot_controller.wait_to_reboot().await {
-                    CommitAction::Reboot => {
-                        info!("initiator ready to reboot, rebooting...");
-                    }
-                    CommitAction::RebootDeferred => {
-                        info!("initiator deferred reboot to caller.");
-                        state.enter_defer_reboot(&mut co).await;
-                        return target_version;
+        if let Some((state, mode)) = wait_to_reboot {
+            info!(mode:?; "checking if reboot is required or should be deferred");
+            // Figure out if we should reboot.
+            match mode {
+                // First priority: Always reboot on ForceRecovery success, even if the caller
+                // asked to defer the reboot.
+                update_package::UpdateMode::ForceRecovery => {
+                    info!("system update in ForceRecovery mode complete, rebooting...");
+                    state.enter_reboot(&mut co).await;
+                }
+                // Second priority: Use the attached reboot controller.
+                update_package::UpdateMode::Normal => {
+                    info!("system update complete, waiting for initiator to signal reboot.");
+                    match reboot_controller.wait_to_reboot().await {
+                        CommitAction::Reboot => {
+                            info!("initiator ready to reboot, rebooting...");
+                            state.enter_reboot(&mut co).await;
+                        }
+                        CommitAction::RebootDeferred => {
+                            info!("initiator deferred reboot to caller.");
+                            state.enter_defer_reboot(&mut co).await;
+                        }
                     }
                 }
             }
         }
 
-        state.enter_reboot(&mut co).await;
-        target_version
+        let last_state = co.into_last_state();
+        let should_reboot = matches!(last_state, fupdate_installer_ext::State::Reboot { .. });
+
+        let attempt = attempt.finish(target_version, last_state);
+        history.lock().record_update_attempt(attempt);
+        let save_fut = history.lock().save();
+        save_fut.await;
+
+        if should_reboot {
+            reboot::reboot(&power_state_control).await;
+        }
     })
-    .when_done(
-        move |last_state: Option<fupdate_installer_ext::State>, target_version| async move {
-            let last_state = last_state.unwrap_or(fupdate_installer_ext::State::Prepare);
-
-            let should_reboot = matches!(last_state, fupdate_installer_ext::State::Reboot { .. });
-
-            let attempt = attempt.finish(target_version, last_state);
-            history.lock().record_update_attempt(attempt);
-            let save_fut = history.lock().save();
-            save_fut.await;
-
-            if should_reboot {
-                reboot::reboot(&power_state_control).await;
-            }
-        },
-    );
+    .into_yielded();
     (attempt_id, stream)
 }
 
@@ -809,7 +801,7 @@ impl Attempt<'_> {
     // early return point.
     async fn run(
         mut self,
-        co: &mut async_generator::Yield<fupdate_installer_ext::State>,
+        co: &mut state::Yield,
         phase: &mut metrics::Phase,
         target_version: &mut history::Version,
     ) -> Result<(state::Fetch, update_package::UpdateMode, paver::CurrentConfiguration), AttemptError>
@@ -1082,7 +1074,7 @@ impl Attempt<'_> {
     /// Pave the various raw images (zbi, firmware, vbmeta) for fuchsia and/or recovery.
     async fn stage_images(
         &mut self,
-        co: &mut async_generator::Yield<fupdate_installer_ext::State>,
+        co: &mut state::Yield,
         state: &mut state::Stage,
         update_pkg: &(update_package::UpdatePackage, Option<Hash>),
         current_configuration: paver::CurrentConfiguration,
@@ -1155,7 +1147,7 @@ impl Attempt<'_> {
     /// Fetch all packages needed by the target OS.
     async fn fetch_packages(
         &mut self,
-        co: &mut async_generator::Yield<fupdate_installer_ext::State>,
+        co: &mut state::Yield,
         state: &mut state::Fetch,
         packages_to_fetch: Vec<PinnedAbsolutePackageUrl>,
         mode: update_package::UpdateMode,
@@ -1242,7 +1234,7 @@ impl PackagelessAttempt<'_> {
     // early return point.
     async fn run(
         mut self,
-        co: &mut async_generator::Yield<fupdate_installer_ext::State>,
+        co: &mut state::Yield,
         phase: &mut metrics::Phase,
         target_version: &mut history::Version,
     ) -> Result<(state::Fetch, update_package::UpdateMode, paver::CurrentConfiguration), AttemptError>
@@ -1416,7 +1408,7 @@ impl PackagelessAttempt<'_> {
     /// Pave the various raw images (zbi, firmware, vbmeta) for fuchsia and/or recovery.
     async fn stage_images(
         &mut self,
-        co: &mut async_generator::Yield<fupdate_installer_ext::State>,
+        co: &mut state::Yield,
         state: &mut state::Stage,
         current_configuration: paver::CurrentConfiguration,
         manifest: &OtaManifest,
@@ -1567,7 +1559,7 @@ impl PackagelessAttempt<'_> {
     /// Fetch all blobs needed by the target OS.
     async fn fetch_blobs(
         &mut self,
-        co: &mut async_generator::Yield<fupdate_installer_ext::State>,
+        co: &mut state::Yield,
         state: &mut state::Fetch,
         manifest: &OtaManifest,
         blob_base_url: &str,

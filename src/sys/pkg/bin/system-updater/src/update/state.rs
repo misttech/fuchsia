@@ -5,13 +5,33 @@
 //! Wrappers around the installer state machine to track progress and ensure the installer can only
 //! make valid state transitions.
 
-use async_generator::Yield;
 use fidl_fuchsia_update_installer_ext::{
     FetchFailureReason, PrepareFailureReason, Progress, StageFailureReason, State, StateId,
     UpdateInfo, UpdateInfoAndProgress,
 };
 use fuchsia_async as fasync;
 use std::time::Duration;
+
+/// Wrapper around [`async_generator::Yield`] that remembers the last yielded [`State`].
+pub struct Yield {
+    co: async_generator::Yield<State>,
+    last_state: State,
+}
+
+impl Yield {
+    pub fn new(co: async_generator::Yield<State>) -> Self {
+        Self { co, last_state: State::Prepare }
+    }
+
+    pub async fn yield_(&mut self, state: State) {
+        self.last_state = state.clone();
+        self.co.yield_(state).await;
+    }
+
+    pub fn into_last_state(self) -> State {
+        self.last_state
+    }
+}
 
 /// Tracks a numeric goal and the current progress towards that goal, ensuring progress can only go
 /// forwards and never exceeds 100%.
@@ -52,7 +72,7 @@ impl ProgressTracker {
 
     /// Yields `state` if enough time or progress has elapsed since the last report,
     /// or if the goal or state has changed. Updates throttle timestamps when yielding.
-    async fn yield_if_due(&mut self, co: &mut Yield<State>, state: State) {
+    async fn yield_if_due(&mut self, co: &mut Yield, state: State) {
         let now = fasync::BootInstant::now();
         let current_fraction = self.as_fraction();
         let delta_fraction = current_fraction - self.last_reported_fraction;
@@ -80,7 +100,7 @@ pub struct Prepare;
 
 impl Prepare {
     /// Start at the Prepare state.
-    pub async fn enter(co: &mut Yield<State>) -> Prepare {
+    pub async fn enter(co: &mut Yield) -> Prepare {
         co.yield_(State::Prepare).await;
         Prepare
     }
@@ -89,12 +109,7 @@ impl Prepare {
     ///
     /// The sum of all n given to [`Fetch::add_progress`] and [`Stage::add_progress`] should equal
     /// `progress_goal` specified here.
-    pub async fn enter_stage(
-        self,
-        co: &mut Yield<State>,
-        info: UpdateInfo,
-        progress_goal: u64,
-    ) -> Stage {
+    pub async fn enter_stage(self, co: &mut Yield, info: UpdateInfo, progress_goal: u64) -> Stage {
         co.yield_(State::Stage(
             UpdateInfoAndProgress::builder().info(info).progress(Progress::none()).build(),
         ))
@@ -104,7 +119,7 @@ impl Prepare {
     }
 
     /// Transition to the FailPrepare terminal state.
-    pub async fn fail(self, co: &mut Yield<State>, reason: PrepareFailureReason) {
+    pub async fn fail(self, co: &mut Yield, reason: PrepareFailureReason) {
         co.yield_(State::FailPrepare(reason)).await;
     }
 }
@@ -131,20 +146,20 @@ impl Stage {
 
     /// Increment the progress by `progress` and bytes downloaded by `bytes` and emit a status
     /// update if not throttled.
-    pub async fn add_progress(&mut self, co: &mut Yield<State>, progress: u64, bytes: u64) {
+    pub async fn add_progress(&mut self, co: &mut Yield, progress: u64, bytes: u64) {
         self.progress.add(progress);
         self.bytes_downloaded = self.bytes_downloaded.saturating_add(bytes);
         self.progress.yield_if_due(co, State::Stage(self.info_progress())).await;
     }
 
     /// Transition to the Fetch state.
-    pub async fn enter_fetch(mut self, co: &mut Yield<State>) -> Fetch {
+    pub async fn enter_fetch(mut self, co: &mut Yield) -> Fetch {
         self.progress.yield_if_due(co, State::Fetch(self.info_progress())).await;
         Fetch { info: self.info, bytes_downloaded: self.bytes_downloaded, progress: self.progress }
     }
 
     /// Transition to the FailStage terminal state.
-    pub async fn fail(self, co: &mut Yield<State>, reason: StageFailureReason) {
+    pub async fn fail(self, co: &mut Yield, reason: StageFailureReason) {
         co.yield_(State::FailStage(self.info_progress().with_stage_reason(reason))).await;
     }
 }
@@ -175,14 +190,14 @@ impl Fetch {
 
     /// Increment the progress by `progress` and bytes downloaded by `bytes` and emit a status
     /// update if not throttled.
-    pub async fn add_progress(&mut self, co: &mut Yield<State>, progress: u64, bytes: u64) {
+    pub async fn add_progress(&mut self, co: &mut Yield, progress: u64, bytes: u64) {
         self.progress.add(progress);
         self.bytes_downloaded = self.bytes_downloaded.saturating_add(bytes);
         self.progress.yield_if_due(co, State::Fetch(self.info_progress())).await;
     }
 
     /// Transition to the Commit state.
-    pub async fn enter_commit(self, co: &mut Yield<State>) -> Commit {
+    pub async fn enter_commit(self, co: &mut Yield) -> Commit {
         debug_assert!(self.progress.done());
         co.yield_(State::Commit(self.info_progress())).await;
         Commit {
@@ -193,13 +208,13 @@ impl Fetch {
     }
 
     /// Transition to the CompleteButNotActive terminal state.
-    pub async fn enter_complete_but_not_active(self, co: &mut Yield<State>) {
+    pub async fn enter_complete_but_not_active(self, co: &mut Yield) {
         debug_assert!(self.progress.done());
         co.yield_(State::CompleteButNotActive(self.info_progress())).await;
     }
 
     /// Transition to the FailFetch terminal state.
-    pub async fn fail(self, co: &mut Yield<State>, reason: FetchFailureReason) {
+    pub async fn fail(self, co: &mut Yield, reason: FetchFailureReason) {
         co.yield_(State::FailFetch(self.info_progress().with_fetch_reason(reason))).await;
     }
 }
@@ -214,7 +229,7 @@ pub struct Commit {
 
 impl Commit {
     /// Transition to the WaitToReboot state.
-    pub async fn enter_wait_to_reboot(self, co: &mut Yield<State>) -> WaitToReboot {
+    pub async fn enter_wait_to_reboot(self, co: &mut Yield) -> WaitToReboot {
         co.yield_(State::WaitToReboot(self.info_progress())).await;
         WaitToReboot { info: self.info, bytes_downloaded: self.bytes_downloaded }
     }
@@ -231,7 +246,7 @@ impl Commit {
     }
 
     /// Transition to the FailCommit terminal state.
-    pub async fn fail(self, co: &mut Yield<State>) {
+    pub async fn fail(self, co: &mut Yield) {
         co.yield_(State::FailCommit(self.info_progress())).await;
     }
 }
@@ -253,13 +268,13 @@ impl WaitToReboot {
     }
 
     /// Transition to the Reboot terminal state.
-    pub async fn enter_reboot(self, co: &mut Yield<State>) {
+    pub async fn enter_reboot(self, co: &mut Yield) {
         let state = State::Reboot(self.info_progress());
         co.yield_(state).await;
     }
 
     /// Transition to the DeferReboot terminal state.
-    pub async fn enter_defer_reboot(self, co: &mut Yield<State>) {
+    pub async fn enter_defer_reboot(self, co: &mut Yield) {
         let state = State::DeferReboot(self.info_progress());
         co.yield_(state).await;
     }
@@ -312,10 +327,10 @@ mod tests {
 
     async fn collect_states<CB, FT>(cb: CB) -> Vec<State>
     where
-        CB: FnOnce(Yield<State>) -> FT,
+        CB: FnOnce(Yield) -> FT,
         FT: Future<Output = ()>,
     {
-        async_generator::generate(cb).into_yielded().collect().await
+        async_generator::generate(|co| cb(Yield::new(co))).into_yielded().collect().await
     }
 
     #[fuchsia::test]
@@ -544,7 +559,8 @@ mod tests {
     fn throttling_skips_small_updates_in_short_time() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
 
-        let generator = async_generator::generate(|mut co| async move {
+        let generator = async_generator::generate(|co| async move {
+            let mut co = Yield::new(co);
             let info = UpdateInfo::builder().download_size(0).build();
             let mut state = Prepare::enter(&mut co).await.enter_stage(&mut co, info, 100_000).await;
 
@@ -581,7 +597,8 @@ mod tests {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (tx, rx) = futures::channel::oneshot::channel();
 
-        let generator = async_generator::generate(|mut co| async move {
+        let generator = async_generator::generate(|co| async move {
+            let mut co = Yield::new(co);
             let info = UpdateInfo::builder().download_size(0).build();
             let mut state = Prepare::enter(&mut co).await.enter_stage(&mut co, info, 100_000).await;
 
