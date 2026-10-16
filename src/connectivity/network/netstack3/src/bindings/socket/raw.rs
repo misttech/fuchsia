@@ -32,10 +32,11 @@ use crate::bindings::settings::IpLayerSettings;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace};
 use crate::bindings::socket::{ErrnoError, IntoErrno, IpSockAddrExt, SockAddr};
 use crate::bindings::util::{
-    AllowBindingIdFromWeak, DeviceNotFoundError, ErrnoResultExt as _, IntoCore, IntoFidl,
-    IntoFidlWithContext as _, OpAndAddr, RemoveResourceResultExt, ResultExt as _, ScopeExt as _,
-    TryFromFidl, TryFromFidlWithContext, WrongIpVersionError,
+    AllowBindingIdFromWeak, DataNotifier, DeviceNotFoundError, ErrnoResultExt as _, IntoCore,
+    IntoFidl, IntoFidlWithContext as _, OpAndAddr, RemoveResourceResultExt, ResultExt as _,
+    ScopeExt as _, TryFromFidl, TryFromFidlWithContext, WrongIpVersionError,
 };
+use crate::bindings::waker::WakeGroupId;
 use crate::bindings::{BindingsCtx, Ctx};
 
 use super::worker::{CloseResponder, SocketWorker, SocketWorkerHandler};
@@ -71,11 +72,15 @@ pub struct SocketState<I: Ip> {
 }
 
 impl<I: IpExt> SocketState<I> {
-    fn new(event: zx::EventPair, settings: &IpLayerSettings) -> Self {
+    fn new(
+        event: zx::EventPair,
+        notifier: Option<DataNotifier>,
+        settings: &IpLayerSettings,
+    ) -> Self {
         SocketState {
             rx_queue: Mutex::new(MessageQueue::new(
                 event,
-                None, /* notifier */
+                notifier,
                 settings.raw_receive_buffer.default(),
             )),
         }
@@ -156,6 +161,7 @@ impl<I: IpExt> SocketWorkerState<I> {
         ctx: &mut Ctx,
         proto: RawIpSocketProtocol<I>,
         SocketWorkerProperties {}: SocketWorkerProperties,
+        wake_group: Option<WakeGroupId>,
     ) -> Self {
         let (local_event, peer_event) = zx::EventPair::create();
         match local_event.signal_peer(zx::Signals::NONE, ZXSIO_SIGNAL_OUTGOING) {
@@ -163,8 +169,19 @@ impl<I: IpExt> SocketWorkerState<I> {
             Err(e) => error!("socket failed to signal peer: {:?}", e),
         };
 
-        let state = SocketState::new(local_event, &*ctx.bindings_ctx().settings.ip.read());
+        let notifier = wake_group
+            .as_ref()
+            .and_then(|group| ctx.bindings_ctx().wake_groups.data_notifier(group));
+        let notifier_is_some = notifier.is_some();
+
+        let state =
+            SocketState::new(local_event, notifier, &*ctx.bindings_ctx().settings.ip.read());
         let id = ctx.api().raw_ip_socket().create(proto, state);
+        if let Some(group) = wake_group
+            && notifier_is_some
+        {
+            debug!("attaching socket {id:?} to wake group {group:?}");
+        }
         SocketWorkerState { peer_event, id, recv_hop_limit: false }
     }
 }
@@ -183,17 +200,9 @@ impl<I: IpExt + IpSockAddrExt> SocketWorkerHandler for SocketWorkerState<I> {
 
     type CloseResponder = fpraw::SocketCloseResponder;
 
-    type SetupArgs = fposix_socket::SocketCreationOptions;
+    type SetupArgs = Option<fnet::Marks>;
 
-    fn setup(&mut self, ctx: &mut Ctx, options: fposix_socket::SocketCreationOptions) {
-        let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } = options;
-        if group.is_some() {
-            // TODO(https://fxbug.dev/436354514): support raw sockets in wake groups.
-            debug!(
-                "raw sockets do not support wake groups, but one was provided for {:?}",
-                self.id
-            );
-        }
+    fn setup(&mut self, ctx: &mut Ctx, marks: Option<fnet::Marks>) {
         for (domain, mark) in marks.into_iter().map(fidl_fuchsia_net_ext::Marks::from).flatten() {
             ctx.api().raw_ip_socket().set_mark(
                 &self.id,
@@ -668,34 +677,34 @@ fn handle_create_socket(
     protocol: fpraw::ProtocolAssociation,
     creation_opts: fposix_socket::SocketCreationOptions,
 ) -> Result<fidl::endpoints::ClientEnd<fpraw::SocketMarker>, ErrnoError> {
-    let (client, request_stream) = fidl::endpoints::create_request_stream();
-    match domain {
-        fposix_socket::Domain::Ipv4 => {
-            let protocol = RawIpSocketProtocol::<Ipv4>::try_from_fidl(protocol)?;
-            fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
-                SocketWorker::serve_stream_with(
-                    ctx,
-                    move |ctx, properties| SocketWorkerState::new(ctx, protocol, properties),
-                    SocketWorkerProperties {},
-                    rs,
-                    creation_opts,
-                )
-            })
-        }
-        fposix_socket::Domain::Ipv6 => {
-            let protocol = RawIpSocketProtocol::<Ipv6>::try_from_fidl(protocol)?;
-            fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
-                SocketWorker::serve_stream_with(
-                    ctx,
-                    move |ctx, properties| SocketWorkerState::new(ctx, protocol, properties),
-                    SocketWorkerProperties {},
-                    rs,
-                    creation_opts,
-                )
-            })
-        }
+    #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
+    fn create<I: IpExt + IpSockAddrExt>(
+        ctx: Ctx,
+        protocol: fpraw::ProtocolAssociation,
+        creation_opts: fposix_socket::SocketCreationOptions,
+    ) -> Result<fidl::endpoints::ClientEnd<fpraw::SocketMarker>, ErrnoError> {
+        let protocol = RawIpSocketProtocol::<I>::try_from_fidl(protocol)?;
+        let (client, request_stream) = fidl::endpoints::create_request_stream();
+        let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } =
+            creation_opts;
+        fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
+            SocketWorker::serve_stream_with(
+                ctx,
+                move |ctx, properties| {
+                    SocketWorkerState::new(ctx, protocol, properties, group.map(Into::into))
+                },
+                SocketWorkerProperties {},
+                rs,
+                marks,
+            )
+        });
+        Ok(client)
     }
-    Ok(client)
+
+    match domain {
+        fposix_socket::Domain::Ipv4 => create::<Ipv4>(ctx, protocol, creation_opts),
+        fposix_socket::Domain::Ipv6 => create::<Ipv6>(ctx, protocol, creation_opts),
+    }
 }
 
 /// The response for a successful call to `recvmsg`.
