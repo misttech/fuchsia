@@ -136,24 +136,18 @@ func NewPackageServer(ctx context.Context, repoPath string, port int) (*PackageS
 		}),
 	}
 
-	// Start the server and spin off a handler to stop it when the context
-	// is canceled.
-	pkgSrvStarted := make(chan struct{})
+	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	logger.Debugf(ctx, "[package server] starting on %s", addr)
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("%s: listening on %s failed: %w", constants.FailedToServeMsg, addr, err)
+	}
 	go func() {
-		addr := fmt.Sprintf("0.0.0.0:%d", port)
-		logger.Debugf(ctx, "[package server] starting on %s", addr)
-		l, err := net.Listen("tcp", addr)
-		if err != nil {
-			logger.Errorf(ctx, "%s: listening on %s failed: %s", constants.FailedToServeMsg, addr, err)
-		}
-		close(pkgSrvStarted)
 		if err := pkgSrv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Errorf(ctx, "%s: %s", constants.FailedToServeMsg, err)
 		}
 	}()
 
-	// Do not return until the package server has actually started serving.
-	<-pkgSrvStarted
 	logger.Debugf(ctx, "package server started")
 	return &PackageServer{
 		loggerCtx: ctx,

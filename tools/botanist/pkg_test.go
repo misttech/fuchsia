@@ -8,9 +8,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,5 +111,30 @@ func TestPackageServer(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPackageServerListenErrorDoesNotPanic(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	localRepo := emptyPackageRepo(t)
+
+	// Bind a port first so that NewPackageServer's net.Listen will fail on the same port.
+	l, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer l.Close()
+
+	port := l.Addr().(*net.TCPAddr).Port
+
+	pkgSrv, err := NewPackageServer(ctx, localRepo, port)
+	if err == nil {
+		pkgSrv.Close()
+		t.Fatalf("NewPackageServer unexpectedly succeeded on already bound port %d", port)
+	}
+	if !strings.Contains(err.Error(), "listening on") {
+		t.Errorf("expected error to mention listening on port failure, got: %v", err)
 	}
 }
