@@ -4,11 +4,48 @@
 # found in the LICENSE file.
 
 import argparse
+import json
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+_PYPROJECT = """[tool.isort]
+profile = "black"
+line_length = 80
+"""
+
+# Exercises all three tools: autoflake removes the unused `os` import, isort
+# sorts and wraps the imports, and black reformats `1+2`.
+_DIRTY = """import sys
+import json
+import os
+from very_long_module_name_that_definitely_forces_isort_to_wrap_this_line import member_c, member_a, member_b
+
+def foo():
+    print(sys.argv)
+    print(json.dumps({}))
+    print(member_a, member_b, member_c)
+    return 1+2
+"""
+
+_FORMATTED = """import json
+import sys
+
+from very_long_module_name_that_definitely_forces_isort_to_wrap_this_line import (
+    member_a,
+    member_b,
+    member_c,
+)
+
+
+def foo():
+    print(sys.argv)
+    print(json.dumps({}))
+    print(member_a, member_b, member_c)
+    return 1 + 2
+"""
 
 
 class TestPythonFormat(unittest.TestCase):
@@ -28,53 +65,21 @@ class TestPythonFormat(unittest.TestCase):
         self.black = black
         self.script_path = script_path
 
-    def test_pipeline(self) -> None:
-        input_code = """import sys
-import json
-import os
-from very_long_module_name_that_definitely_forces_isort_to_wrap_this_line import member_c, member_a, member_b
+    def setUp(self) -> None:
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (self.root / "pyproject.toml").write_text(_PYPROJECT)
 
-def foo():
-    print(sys.argv)
-    print(json.dumps({}))
-    print(member_a, member_b, member_c)
-    return 1+2
-"""
+    def _write(self, path: str, content: str) -> None:
+        (self.root / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / path).write_text(content)
 
-        expected_output = """import json
-import sys
-
-from very_long_module_name_that_definitely_forces_isort_to_wrap_this_line import (
-    member_a,
-    member_b,
-    member_c,
-)
-
-
-def foo():
-    print(sys.argv)
-    print(json.dumps({}))
-    print(member_a, member_b, member_c)
-    return 1 + 2
-"""
-
-        pyproject_content = """[tool.isort]
-profile = "black"
-line_length = 80
-"""
-        pyproject_file = Path("pyproject.toml").resolve()
-        pyproject_file.write_text(pyproject_content)
-
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False, dir="."
-        ) as f:
-            f.write(input_code)
-            temp_filepath = f.name
-
-        try:
-            cmd: list[str | Path] = [
+    def _run(self, *files: str) -> subprocess.CompletedProcess[str]:
+        output = self.root / "output.json"
+        output.unlink(missing_ok=True)
+        res = subprocess.run(
+            [
                 self.python_bin,
-                self.script_path,
+                self.script_path.absolute(),
                 "--python",
                 self.python_bin,
                 "--autoflake",
@@ -84,20 +89,84 @@ line_length = 80
                 "--black",
                 self.black,
                 "--pyproject-toml",
-                pyproject_file,
-                temp_filepath,
-            ]
+                self.root / "pyproject.toml",
+                "--output",
+                output,
+                *files,
+            ],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode == 0:
+            res.stdout = output.read_text()
+        return res
 
-            res = subprocess.run(cmd, capture_output=True, text=True)
-            self.assertEqual(
-                res.returncode, 0, f"Script failed with stderr:\n{res.stderr}"
-            )
+    def _format(self, *files: str) -> dict[str, str]:
+        res = self._run(*files)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        result: dict[str, str] = json.loads(res.stdout)
+        return result
 
-            self.assertEqual(res.stdout.strip(), expected_output.strip())
+    def test_format(self) -> None:
+        # Files in a "build" directory check that isort doesn't skip
+        # directories that its default skip list includes.
+        self._write("build/clean.py", _FORMATTED)
+        self._write("build/dirty.py", _DIRTY)
+        self._write("dirty.py", _DIRTY)
+        # Only black changes this file.
+        self._write("black_only.py", "x = [1,2]\n")
 
-        finally:
-            Path(temp_filepath).unlink(missing_ok=True)
-            pyproject_file.unlink(missing_ok=True)
+        self.assertEqual(
+            self._format(
+                "build/clean.py", "build/dirty.py", "dirty.py", "black_only.py"
+            ),
+            {
+                "build/dirty.py": _FORMATTED,
+                "dirty.py": _FORMATTED,
+                "black_only.py": "x = [1, 2]\n",
+            },
+        )
+        # The original files must not be modified.
+        self.assertEqual((self.root / "dirty.py").read_text(), _DIRTY)
+
+    def test_all_clean(self) -> None:
+        self._write("clean.py", _FORMATTED)
+        self.assertEqual(self._format("clean.py"), {})
+
+    def test_nested_isort_config(self) -> None:
+        # isort must use the config closest to each original file, and treat
+        # modules next to that config as first-party.
+        self._write(
+            "sub/pyproject.toml",
+            '[tool.isort]\nprofile = "black"\ndefault_section = "THIRDPARTY"\n',
+        )
+        self._write("sub/local_module.py", "")
+        self._write(
+            "sub/main.py",
+            "import local_module\nimport requests\n\n"
+            "print(local_module, requests)\n",
+        )
+        self.assertEqual(
+            self._format("sub/main.py"),
+            {
+                "sub/main.py": "import requests\n\nimport local_module\n\n"
+                "print(local_module, requests)\n"
+            },
+        )
+
+    def test_syntax_error(self) -> None:
+        self._write("broken.py", "def foo(:\n")
+        res = self._run("broken.py")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("broken.py", res.stderr)
+
+    def test_rejects_absolute_paths(self) -> None:
+        self._write("dirty.py", _DIRTY)
+        res = self._run(str(self.root / "dirty.py"))
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("must be a relative path", res.stderr)
+        self.assertEqual((self.root / "dirty.py").read_text(), _DIRTY)
 
 
 def main() -> None:
@@ -120,16 +189,17 @@ def main() -> None:
 
     # Create custom suite to pass arguments to test instance
     suite = unittest.TestSuite()
-    suite.addTest(
-        TestPythonFormat(
-            python_bin=Path(args.python_bin),
-            autoflake=Path(args.autoflake),
-            isort=Path(args.isort),
-            black=Path(args.black),
-            script_path=Path(args.python_format_script),
-            methodName="test_pipeline",
+    for method_name in unittest.TestLoader().getTestCaseNames(TestPythonFormat):
+        suite.addTest(
+            TestPythonFormat(
+                python_bin=Path(args.python_bin).absolute(),
+                autoflake=Path(args.autoflake).absolute(),
+                isort=Path(args.isort).absolute(),
+                black=Path(args.black).absolute(),
+                script_path=Path(args.python_format_script),
+                methodName=method_name,
+            )
         )
-    )
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)

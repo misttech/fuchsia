@@ -3,79 +3,176 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Formats Python files with autoflake, isort, and black.
+
+Writes a JSON object to the --output file that maps each path whose contents
+changed to its formatted contents.
+
+The tools make conflicting style changes, so each file must go through them in
+order. Running the tools once per file is slow when checking thousands of files,
+so instead this script copies the files into a temporary directory and runs
+each tool once over all the copies.
+"""
+
 import argparse
+import io
+import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
+from collections.abc import Sequence
+from importlib import metadata
+from pathlib import Path
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Chain Python formatting tools."
+def _run(cmd: list[str], copy_root: Path) -> None:
+    # Run in copy_root with relative paths so that error messages refer to the
+    # original paths.
+    res = subprocess.run(
+        cmd,
+        cwd=copy_root,
+        # Black caches results by absolute path, so give it a throwaway cache
+        # rather than filling the user's cache with temporary paths.
+        env={**os.environ, "BLACK_CACHE_DIR": str(copy_root / ".black-cache")},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
-    parser.add_argument(
-        "--python", required=True, help="Path to python interpreter"
-    )
-    parser.add_argument(
-        "--autoflake", required=True, help="Path to autoflake script"
-    )
-    parser.add_argument("--isort", required=True, help="Path to isort script")
-    parser.add_argument("--black", required=True, help="Path to black binary")
-    parser.add_argument(
-        "--pyproject-toml", required=True, help="Path to pyproject.toml"
-    )
-    parser.add_argument("file", help="File to format")
+    if res.returncode != 0:
+        sys.stderr.write(res.stdout)
+        sys.exit(res.returncode)
 
+
+def _autoflake(
+    args: argparse.Namespace, files: Sequence[str], copy_root: Path
+) -> None:
+    jobs = min(len(files), os.cpu_count() or 1)
+    _run(
+        [
+            args.python,
+            args.autoflake,
+            f"--jobs={jobs}",
+            "--in-place",
+            "--remove-unused-variables",
+            "--remove-all-unused-imports",
+            "--remove-duplicate-keys",
+            "--ignore-init-module-imports",
+            *files,
+        ],
+        copy_root,
+    )
+
+
+def _isort(files: Sequence[str], copy_root: Path) -> None:
+    import isort
+
+    configs: dict[str, isort.Config] = {}
+    for f in files:
+        # isort's config and its classification of first-party imports depend
+        # on where a file lives, so sort each copy as if it were the original
+        # file, like `isort --filename <f> -` does.
+        directory = os.path.dirname(f)
+        if directory not in configs:
+            # Overriding isort's default skip list keeps it from skipping files
+            # under directories with common names like "build".
+            configs[directory] = isort.Config(
+                settings_path=directory, skip=[".venvs"]
+            )
+        copy = copy_root / f
+        try:
+            with open(copy, encoding="utf-8", newline="") as file:
+                original = file.read()
+            # autoflake strips byte order marks, and isort treats them as code.
+            content = original.removeprefix("\ufeff")
+            output = io.StringIO()
+            try:
+                isort.api.sort_stream(
+                    io.StringIO(content),
+                    output,
+                    config=configs[directory],
+                    file_path=Path(f),
+                    # Sort imports above any `isort: skip_file` comment, like
+                    # the CLI.
+                    raise_on_skip=False,
+                )
+            except isort.exceptions.FileSkipped:
+                # The file matches the config's skip settings.
+                continue
+        except Exception as e:
+            raise RuntimeError(f"isort failed on {f}") from e
+        if output.getvalue() != original:
+            with open(copy, "w", encoding="utf-8", newline="") as file:
+                file.write(output.getvalue())
+
+
+def _black(
+    args: argparse.Namespace, files: Sequence[str], copy_root: Path
+) -> None:
+    _run(
+        [
+            args.black,
+            "--config",
+            args.pyproject_toml,
+            "--quiet",
+            *files,
+        ],
+        copy_root,
+    )
+
+
+def _relative_path(path: str) -> str:
+    # Absolute paths or paths containing ".." would escape the temporary copy
+    # directory, so the tools would modify the original files.
+    if os.path.isabs(path) or ".." in Path(path).parts:
+        raise argparse.ArgumentTypeError(f"must be a relative path: {path}")
+    return path
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--python", required=True, type=os.path.abspath)
+    parser.add_argument("--autoflake", required=True, type=os.path.abspath)
+    parser.add_argument("--isort", required=True, type=os.path.abspath)
+    parser.add_argument("--black", required=True, type=os.path.abspath)
+    parser.add_argument(
+        "--pyproject-toml",
+        required=True,
+        type=os.path.abspath,
+        help="black's config file",
+    )
+    parser.add_argument("--output", required=True, help="JSON output file")
+    parser.add_argument("files", nargs="+", type=_relative_path)
     args = parser.parse_args()
 
-    # 1. Run autoflake
-    autoflake_cmd = [
-        args.python,
-        args.autoflake,
-        "--remove-unused-variables",
-        "--remove-all-unused-imports",
-        "--remove-duplicate-keys",
-        "--ignore-init-module-imports",
-        "--stdout",
-        args.file,
-    ]
-    res_autoflake = subprocess.run(autoflake_cmd, capture_output=True)
-    if res_autoflake.returncode != 0:
-        sys.stderr.buffer.write(res_autoflake.stderr)
-        sys.exit(res_autoflake.returncode)
+    # Run isort from source like third_party/pylibs/isort/main.py.
+    # TODO(b/353376647): Remove the metadata workaround along with the one in
+    # third_party/pylibs/isort/main.py.
+    sys.path.append(str(Path(args.isort).parent / "src"))
+    try:
+        metadata.version("isort")
+    except metadata.PackageNotFoundError:
+        metadata.version = lambda _: "unknown"  # type: ignore[assignment]
 
-    # 2. Run isort on autoflake output
-    isort_cmd = [
-        args.python,
-        args.isort,
-        "--skip",
-        ".venvs",
-        "--stdout",
-        "--filename",
-        args.file,
-        "-",
-    ]
-    res_isort = subprocess.run(
-        isort_cmd, input=res_autoflake.stdout, capture_output=True
-    )
-    if res_isort.returncode != 0:
-        sys.stderr.buffer.write(res_isort.stderr)
-        sys.exit(res_isort.returncode)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        copy_root = Path(tmp_dir)
+        for f in args.files:
+            (copy_root / f).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(f, copy_root / f)
 
-    # 3. Run black on isort output
-    black_cmd = [
-        args.black,
-        "--config",
-        args.pyproject_toml,
-        "-",
-    ]
-    res_black = subprocess.run(
-        black_cmd, input=res_isort.stdout, capture_output=True
-    )
-    if res_black.returncode != 0:
-        sys.stderr.buffer.write(res_black.stderr)
-        sys.exit(res_black.returncode)
+        _autoflake(args, args.files, copy_root)
+        _isort(args.files, copy_root)
+        _black(args, args.files, copy_root)
 
-    sys.stdout.buffer.write(res_black.stdout)
+        formatted = {}
+        for f in args.files:
+            content = (copy_root / f).read_bytes()
+            if content != Path(f).read_bytes():
+                formatted[f] = content.decode("utf-8")
+
+    with open(args.output, "w", encoding="utf-8") as output:
+        json.dump(formatted, output, ensure_ascii=False)
 
 
 if __name__ == "__main__":
