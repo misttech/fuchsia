@@ -6,7 +6,8 @@
 
 use crate::blob_sink::TraceBufferSink;
 use crate::packet_forwarder::{MonotonicClock, PacketForwarder, forward_slices};
-use anyhow::bail;
+use anyhow::{Context as _, anyhow, bail};
+use argh::FromArgs;
 use fuchsia_trace::{BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state};
 use fuchsia_trace_observer::TraceObserver;
 use futures::{SinkExt, StreamExt};
@@ -504,7 +505,7 @@ impl CallbackState {
     }
 }
 
-pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) -> Result<(), Errno> {
+fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) -> Result<(), Errno> {
     let (mut tx, mut rx) = futures::channel::mpsc::channel::<TraceState>(32);
 
     // Register the observer here, before the worker below reads `trace_state()` to find a session
@@ -608,6 +609,35 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
     kernel.kthreads.spawner().spawn_from_request(worker_req);
 
     Ok(())
+}
+
+/// Configuration options for the `perfetto` module.
+#[derive(FromArgs, Debug)]
+struct PerfettoArgs {
+    /// path to the Perfetto consumer socket inside the container filesystem
+    #[argh(option)]
+    socket_path: String,
+}
+
+fn parse_args(args: &[&str]) -> Result<FsString, anyhow::Error> {
+    let parsed =
+        PerfettoArgs::from_args(&["perfetto"], args).map_err(|e| anyhow!("{}", e.output))?;
+    if parsed.socket_path.is_empty() {
+        bail!("Perfetto socket path must not be empty");
+    }
+    Ok(parsed.socket_path.into())
+}
+
+/// Validates `perfetto` module configuration `args`.
+pub fn validate_args(args: &[&str]) -> Result<(), anyhow::Error> {
+    parse_args(args).map(|_| ())
+}
+
+/// Initializes the Perfetto consumer thread from module configuration `args`.
+pub fn module_init(kernel: &Kernel, args: &[&str]) -> Result<(), anyhow::Error> {
+    let socket_path = parse_args(args)?;
+    start_perfetto_consumer_thread(kernel, socket_path)
+        .context("Failed to start perfetto consumer thread")
 }
 
 #[cfg(test)]

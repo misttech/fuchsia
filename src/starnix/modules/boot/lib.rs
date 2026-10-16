@@ -4,7 +4,8 @@
 
 #![recursion_limit = "512"]
 
-use anyhow::Context;
+use anyhow::{Context, Error, anyhow};
+use argh::FromArgs;
 use fidl_fuchsia_power_cpu_manager::BoostMarker;
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_inspect::Property;
@@ -26,14 +27,34 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use zerocopy::IntoBytes;
 
-/// Initializes the boot notifier device.
-pub fn booted_device_init(kernel: &Kernel, cpu_boost_duration: Option<zx::MonotonicDuration>) {
+/// Configuration options for the `boot_notifier` module.
+#[derive(FromArgs, Debug, Default)]
+struct BootNotifierArgs {
+    /// duration in seconds to enable boot-time CPU boost
+    #[argh(option)]
+    cpu_boost_secs: Option<u32>,
+}
+
+fn parse_args(args: &[&str]) -> Result<Option<zx::MonotonicDuration>, Error> {
+    let parsed = BootNotifierArgs::from_args(&["boot_notifier"], args)
+        .map_err(|e| anyhow!("{}", e.output))?;
+    Ok(parsed.cpu_boost_secs.map(|secs| zx::MonotonicDuration::from_seconds(secs.into())))
+}
+
+/// Validates `boot_notifier` module configuration `args`.
+pub fn validate_args(args: &[&str]) -> Result<(), Error> {
+    parse_args(args).map(|_| ())
+}
+
+/// Initializes the boot notifier device from module configuration `args`.
+pub fn module_init(kernel: &Kernel, args: &[&str]) -> Result<(), Error> {
+    let cpu_boost_duration = parse_args(args)?;
     let (booted_sender, booted_receiver) = ThreadLockupDetector::tracked_channel::<bool>();
     let node = fuchsia_inspect::component::inspector().root().create_child("boot");
-    let device = BootedDevice::new(kernel, booted_sender, node, cpu_boost_duration)
-        .expect("must be able to initialize booted device");
+    let device = BootedDevice::new(kernel, booted_sender, node, cpu_boost_duration)?;
     device.clone().register(kernel);
     device.start_relay(kernel, booted_receiver);
+    Ok(())
 }
 
 #[derive(Clone)]

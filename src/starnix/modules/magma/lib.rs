@@ -12,6 +12,6 @@ mod init;
 #[allow(clippy::module_inception)]
 mod magma;
 
-pub use ffi::get_magma_params;
+use ffi::get_magma_params;
 pub use file::MagmaFile;
-pub use init::magma_device_init;
+pub use init::{cmdline_params, module_init, validate_args};

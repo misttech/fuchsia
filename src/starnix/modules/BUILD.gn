@@ -89,5 +89,6 @@ rustc_library("modules") {
     "//src/starnix/modules/wakeup_test",
     "//src/starnix/modules/zram",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:bstr",
   ]
 }

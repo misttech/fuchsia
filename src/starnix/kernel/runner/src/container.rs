@@ -52,7 +52,7 @@ use starnix_logging::{
     CATEGORY_STARNIX, NAME_CREATE_CONTAINER, log_debug, log_error, log_info, log_warn,
 };
 use starnix_modules::{
-    LayeredFsBuilder, LayeredFsMounts, OverlayStack, get_magma_params, init_common_devices,
+    LayeredFsBuilder, LayeredFsMounts, OverlayStack, init_common_devices,
     register_common_file_systems, register_common_syscalls,
 };
 
@@ -761,9 +761,8 @@ async fn create_container(
             }
         }
     }
-    if let Some(supported_vendors) = &features.magma_supported_vendors {
+    if let Some(params) = modules.extra_cmdline_params()? {
         kernel_cmdline.extend(b" ");
-        let params = get_magma_params(supported_vendors);
         kernel_cmdline.extend(&*params);
     }
 

@@ -10,6 +10,8 @@ mod thermal_zone;
 
 use crate::thermal_zone::{SensorProps, ThermalZone};
 use anyhow::{Error, anyhow};
+use argh::FromArgs;
+use cooling::cooling_device_init;
 use family::ThermalFamily;
 use fidl_fuchsia_hardware_temperature as ftemperature;
 use fidl_fuchsia_thermal as fthermal;
@@ -28,8 +30,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use thermal_netlink::{celsius_to_millicelsius, millicelsius_to_celsius};
 use zx::MonotonicInstant;
-
-pub use cooling::cooling_device_init;
 
 fn build_thermal_zone_directory(
     device: &Device,
@@ -162,7 +162,7 @@ impl BytesFileOps for EmulTempFile {
     }
 }
 
-pub fn thermal_device_init(kernel: &Kernel) -> Result<(), Error> {
+fn thermal_device_init(kernel: &Kernel) -> Result<(), Error> {
     let sensor_manager =
         fuchsia_component::client::connect_to_protocol_sync::<fthermal::SensorManagerMarker>()
             .map_err(|error| anyhow!("Failed to connect to SensorManager: {:?}", error))?;
@@ -241,4 +241,37 @@ pub fn thermal_device_init(kernel: &Kernel) -> Result<(), Error> {
         .spawn_future(move || async move { thermal_family_worker.await }, "thermal_netlink_worker");
 
     Ok(())
+}
+
+/// Configuration options for the `thermal` module.
+#[derive(FromArgs, Debug, Default, PartialEq, Eq)]
+struct ThermalArgs {
+    /// comma-separated list of cooling devices to register (e.g. "cpu,fcc=8")
+    #[argh(option)]
+    cooling: Option<String>,
+}
+
+fn parse_args(args: &[&str]) -> Result<Vec<String>, Error> {
+    let parsed = ThermalArgs::from_args(&["thermal"], args).map_err(|e| anyhow!("{}", e.output))?;
+    match parsed.cooling {
+        Some(cooling) => {
+            if cooling.is_empty() {
+                return Err(anyhow!("cooling option must not be empty"));
+            }
+            Ok(cooling.split(',').map(String::from).collect())
+        }
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Validates `thermal` module configuration `args`.
+pub fn validate_args(args: &[&str]) -> Result<(), Error> {
+    parse_args(args).map(|_| ())
+}
+
+/// Initializes thermal zones and optional cooling devices from module configuration `args`.
+pub fn module_init(kernel: &Kernel, args: &[&str]) -> Result<(), Error> {
+    let cooling_devices = parse_args(args)?;
+    thermal_device_init(kernel)?;
+    cooling_device_init(kernel, cooling_devices)
 }

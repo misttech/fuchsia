@@ -6,6 +6,7 @@
 #![recursion_limit = "256"]
 
 use anyhow::{Context, Error, anyhow, bail};
+use bstr::BString;
 use starnix_consent_sync::init as consent_sync_init;
 use starnix_core::bpf::fs::BpfFs;
 use starnix_core::device::kobject::DeviceMetadata;
@@ -22,7 +23,6 @@ use starnix_logging::log_error;
 use starnix_modules_android_usb::usb_device_init;
 use starnix_modules_ashmem::ashmem_device_init;
 use starnix_modules_binderfs::BinderFs;
-pub use starnix_modules_boot::booted_device_init;
 use starnix_modules_cgroupfs::{CgroupV1Fs, cgroup2_fs};
 use starnix_modules_debugfs::debug_fs;
 use starnix_modules_device_mapper::{create_device_mapper, device_mapper_init};
@@ -42,19 +42,16 @@ pub use starnix_modules_input::{EventProxyMode, StartRelaysArgs, new_input_relay
 use starnix_modules_kgsl::kgsl_device_init;
 pub use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_loop::{create_loop_control_device, loop_device_init};
-pub use starnix_modules_magma::{get_magma_params, magma_device_init};
 use starnix_modules_nanohub::nanohub_device_init;
 use starnix_modules_nmfs::nmfs_init;
 use starnix_modules_odpm::odpm_device_init;
 pub use starnix_modules_overlayfs::OverlayStack;
 use starnix_modules_overlayfs::new_overlay_fs;
-pub use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
 use starnix_modules_power_residency::init_power_residency_device;
 use starnix_modules_procfs::proc_fs;
 use starnix_modules_pstore::pstore_fs;
 use starnix_modules_rtc::rtc_device_init;
 use starnix_modules_selinuxfs::selinux_fs;
-pub use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
 pub use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
 use starnix_modules_tracefs::trace_fs;
 use starnix_modules_tun::DevTun;
@@ -74,7 +71,11 @@ const DEFAULT_MODULES: &[&str] =
 /// Validates that `name` is a known container module and that `args` (if `Some`) are valid for
 /// that module.
 pub fn validate_module(name: &str, args: Option<&[&str]>) -> Result<(), Error> {
-    match name {
+    let validator: Option<fn(&[&str]) -> Result<(), Error>> = match name {
+        "boot_notifier" => Some(starnix_modules_boot::validate_args),
+        "magma" => Some(starnix_modules_magma::validate_args),
+        "perfetto" => Some(starnix_modules_perfetto_consumer::validate_args),
+        "thermal" => Some(starnix_modules_thermal::validate_args),
         "android_usb"
         | "ashmem"
         | "data_collection_consent_sync"
@@ -93,14 +94,17 @@ pub fn validate_module(name: &str, args: Option<&[&str]>) -> Result<(), Error> {
         | "rtc"
         | "tun"
         | "wakeup_test"
-        | "zram" => {
-            if let Some(args) = args
-                && !args.is_empty()
-            {
+        | "zram" => None,
+        _ => bail!("unsupported module: {name}"),
+    };
+    if let Some(args) = args {
+        match validator {
+            Some(validate) => validate(args)?,
+            None if !args.is_empty() => {
                 bail!("module '{name}' does not accept arguments: {args:?}");
             }
+            None => {}
         }
-        _ => bail!("unsupported module: {name}"),
     }
     Ok(())
 }
@@ -114,6 +118,7 @@ impl Modules {
                 usb_device_init(kernel).context("Failed to add android usb device nodes")?;
             }
             "ashmem" => ashmem_device_init(kernel),
+            "boot_notifier" => starnix_modules_boot::module_init(kernel, args)?,
             "data_collection_consent_sync" => consent_sync_init(kernel),
             "device_mapper" => {
                 registry.register_device(
@@ -167,14 +172,17 @@ impl Modules {
                 )?;
                 loop_device_init(kernel)?;
             }
+            "magma" => starnix_modules_magma::module_init(kernel, args)?,
             "nanohub" => nanohub_device_init(kernel),
             "network_manager" => {
                 if let Err(e) = nmfs_init(kernel) {
                     log_error!("Network manager initialization failed: ({e:?})");
                 }
             }
+            "perfetto" => starnix_modules_perfetto_consumer::module_init(kernel, args)?,
             "power_residency" => init_power_residency_device(kernel),
             "rtc" => rtc_device_init(kernel)?,
+            "thermal" => starnix_modules_thermal::module_init(kernel, args)?,
             "tun" => {
                 registry.register_device(
                     kernel,
@@ -290,6 +298,15 @@ impl Modules {
             bail!("modules 'google_odpm' and 'hvdcp_opti' cannot be enabled simultaneously");
         }
         Ok(())
+    }
+
+    /// Returns any extra kernel command-line parameters contributed by enabled modules.
+    pub fn extra_cmdline_params(&self) -> Result<Option<BString>, Error> {
+        if let Some(args) = self.args("magma") {
+            let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            return Ok(Some(starnix_modules_magma::cmdline_params(&arg_refs)?));
+        }
+        Ok(None)
     }
 
     /// Records the enabled modules and their arguments under a `"modules"` child Inspect node.
