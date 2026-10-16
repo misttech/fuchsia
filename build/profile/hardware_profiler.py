@@ -16,10 +16,18 @@ import argparse
 import getpass
 import json
 import os
+import sys
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
+
+# Ensure fuchsia root is in sys.path
+_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent
+if str(_FUCHSIA_DIR) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_DIR))
+
+from build.profile import procfs
 
 # --- Immutable Dataclass Data Structures representing parsed states ---
 
@@ -80,29 +88,6 @@ class DiskInfo:
         if self.size_gb is not None:
             res["size_gb"] = self.size_gb
         return res
-
-
-@dataclass(frozen=True, slots=True)
-class CpuInfo:
-    """Represents the host processor hardware specs.
-
-    Attributes:
-        model_name: The brand/model name of the CPU (e.g., 'AMD EPYC 7B12').
-        logical_processors: The total count of active logical threads/cores.
-        physical_cores: The count of distinct physical cores on the CPU.
-    """
-
-    model_name: str
-    logical_processors: int
-    physical_cores: int
-
-    def to_dict(self) -> dict[str, Any]:
-        """Converts the CPU info record to a clean JSON-serializable dictionary."""
-        return {
-            "model_name": self.model_name,
-            "logical_processors": self.logical_processors,
-            "physical_cores": self.physical_cores,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,33 +168,18 @@ def _is_workspace_mount(mount_point: str, workspace_dir: str) -> bool:
 def _parse_mounts_content(
     content: str, workspace_dir: str
 ) -> Iterator[MountInfo]:
-    """Purely parses the raw /proc/mounts content string.
+    """Purely parses the raw /proc/mounts content string using procfs.parse_mounts.
 
     Filters and yields MountInfo records that are parent to or equal the workspace_dir.
-
-    Assumes the standard Linux /proc/mounts format, which is whitespace-separated
-    and maps columns sequentially as follows:
-      Col 0: Device node or virtual filesystem source (e.g. '/dev/sda1' or 'tmpfs')
-      Col 1: Mount point absolute path (e.g. '/' or '/home/fuchsia')
-      Col 2: Filesystem type identifier (e.g. 'ext4' or 'tmpfs')
-      Col 3: Comma-separated mount options flags (e.g. 'rw,noatime,discard')
-      Col 4: Dummy integer for dump (usually '0')
-      Col 5: Dummy integer for fsck pass (usually '0')
-
-    Example /proc/mounts line:
-      /dev/sda1 / ext4 rw,noatime,discard,errors=remount-ro 0 0
     """
-    for line in content.splitlines():
-        parts = line.split()
-        if len(parts) >= 4:
-            mount_point = parts[1]
-            if _is_workspace_mount(mount_point, workspace_dir):
-                yield MountInfo(
-                    device=parts[0],
-                    mount_point=mount_point,
-                    fstype=parts[2],
-                    options=parts[3],
-                )
+    for entry in procfs.parse_mounts(content):
+        if _is_workspace_mount(entry.mount_point, workspace_dir):
+            yield MountInfo(
+                device=entry.device,
+                mount_point=entry.mount_point,
+                fstype=entry.fstype,
+                options=entry.options,
+            )
 
 
 def _parse_mount_options(
@@ -291,72 +261,16 @@ def _parse_disk_properties(sys_dir: str) -> dict[str, DiskInfo]:
     return disks
 
 
-def _parse_cpuinfo_content(content: str) -> CpuInfo:
-    """Purely parses /proc/cpuinfo content and returns a CpuInfo record.
-
-    Example /proc/cpuinfo snippet:
-      processor : 0
-      model name : Intel(R) Xeon(R) CPU @ 2.20GHz
-      cpu cores : 2
-    """
-    model_name = "Unknown"
-    logical_processors = 0
-    physical_cores = 0
-
-    for line in content.splitlines():
-        if ":" in line:
-            key, val = [parts.strip() for parts in line.split(":", 1)]
-            if key == "processor":
-                logical_processors += 1
-            elif key == "model name" and model_name == "Unknown":
-                model_name = val
-            elif key == "cpu cores" and physical_cores == 0:
-                try:
-                    physical_cores = int(val)
-                except ValueError:
-                    pass
-
-    # Fallback in case cpu cores isn't reported on some architectures (like virtual VMs)
-    if physical_cores == 0:
-        physical_cores = logical_processors
-
-    return CpuInfo(
-        model_name=model_name,
-        logical_processors=logical_processors,
-        physical_cores=physical_cores,
-    )
-
-
-def _get_cpu_info(proc_dir: str) -> CpuInfo:
+def _get_cpu_info(proc_dir: str) -> procfs.CpuInfo:
     """Reads /proc/cpuinfo and returns a CpuInfo record."""
     proc_cpuinfo = Path(proc_dir) / "cpuinfo"
     if not proc_cpuinfo.exists():
-        return CpuInfo("Unknown", 1, 1)
+        return procfs.CpuInfo("Unknown", 1, 1)
     try:
         content = proc_cpuinfo.read_text(encoding="utf-8")
-        return _parse_cpuinfo_content(content)
+        return procfs.parse_cpuinfo(content)
     except OSError:
-        return CpuInfo("Unknown", 1, 1)
-
-
-def _parse_meminfo_total(content: str) -> MemoryInfo:
-    """Purely parses MemTotal from /proc/meminfo content.
-
-    Example /proc/meminfo line:
-      MemTotal:       65873920 kB
-    """
-    total_ram_gb = 0.0
-    for line in content.splitlines():
-        if line.startswith("MemTotal:"):
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    # Convert kB to bytes, then to GB
-                    total_ram_gb = round((int(parts[1]) * 1024) / 1e9, 2)
-                except ValueError:
-                    pass
-            break
-    return MemoryInfo(total_ram_gb=total_ram_gb)
+        return procfs.CpuInfo("Unknown", 1, 1)
 
 
 def _get_system_memory_info(proc_dir: str) -> MemoryInfo:
@@ -366,7 +280,8 @@ def _get_system_memory_info(proc_dir: str) -> MemoryInfo:
         return MemoryInfo(0.0)
     try:
         content = proc_meminfo.read_text(encoding="utf-8")
-        return _parse_meminfo_total(content)
+        total_bytes = procfs.parse_meminfo_bytes(content, "MemTotal")
+        return MemoryInfo(round(total_bytes / 1e9, 2))
     except OSError:
         return MemoryInfo(0.0)
 
@@ -464,7 +379,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--proc-dir",
-        default="/proc",
+        default=str(procfs.DEFAULT_PROC_ROOT),
         help="Custom path for proc filesystem (for testing)",
     )
     parser.add_argument(

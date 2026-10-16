@@ -126,30 +126,6 @@ class HardwareProfileTest(ProcMockTestCase):
         self.assertEqual(disks["vda"].rotational, False)
         self.assertEqual(disks["vda"].size_gb, 250.0)
 
-    def test_parse_cpuinfo_pure(self) -> None:
-        raw_cpuinfo = (
-            "processor\t: 0\n"
-            "model name\t: Intel(R) Xeon(R) CPU @ 2.20GHz\n"
-            "cpu cores\t: 2\n"
-            "\n"
-            "processor\t: 1\n"
-            "model name\t: Intel(R) Xeon(R) CPU @ 2.20GHz\n"
-            "cpu cores\t: 2\n"
-        )
-        info = hardware_profiler._parse_cpuinfo_content(raw_cpuinfo)
-        self.assertEqual(info.model_name, "Intel(R) Xeon(R) CPU @ 2.20GHz")
-        self.assertEqual(info.logical_processors, 2)
-        self.assertEqual(info.physical_cores, 2)
-
-    def test_parse_meminfo_pure(self) -> None:
-        raw_meminfo = (
-            "MemTotal:       65873920 kB\n" "MemFree:        4312690 kB\n"
-        )
-        info = hardware_profiler._parse_meminfo_total(raw_meminfo)
-        self.assertEqual(
-            info.total_ram_gb, 67.45
-        )  # 65873920 * 1024 / 1e9 = 67.4548...
-
     def test_collect_hardware_profile(self) -> None:
         self.write_mock_mounts(
             "/dev/sda1 / ext4 rw,noatime,discard,errors=remount-ro 0 0\n"

@@ -10,26 +10,44 @@ group("tests") {
 
   deps = [
     ":hardware_profiler_test($host_toolchain)",
+    ":procfs_test($host_toolchain)",
     ":system_profiler_test($host_toolchain)",
   ]
 }
 
 if (is_host) {
+  python_library("procfs") {
+    sources = [ "procfs.py" ]
+  }
+
   python_library("system_profiler") {
     sources = [ "system_profiler.py" ]
+    deps = [ ":procfs" ]
   }
 
   python_library("hardware_profiler") {
     sources = [ "hardware_profiler.py" ]
+    deps = [ ":procfs" ]
+  }
+
+  python_build_time_tests("procfs_test") {
+    tests = [ "procfs_test.py" ]
+    deps = [ ":procfs" ]
   }
 
   python_build_time_tests("system_profiler_test") {
     tests = [ "system_profiler_test.py" ]
-    inputs = [ "system_profiler.py" ]
+    deps = [
+      ":procfs",
+      ":system_profiler",
+    ]
   }
 
   python_build_time_tests("hardware_profiler_test") {
     tests = [ "hardware_profiler_test.py" ]
-    inputs = [ "hardware_profiler.py" ]
+    deps = [
+      ":hardware_profiler",
+      ":procfs",
+    ]
   }
 }

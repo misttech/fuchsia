@@ -8,85 +8,25 @@ Outputs a consolidated JSON trace file compatible with chrome://tracing.
 """
 
 import argparse
-import bisect
 import datetime
 import json
-import os
 import signal
+import sys
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# Ensure fuchsia root is in sys.path
+_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent
+if str(_FUCHSIA_DIR) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_DIR))
+
+from build.profile import procfs
+
 # Type alias representing a Chrome trace event dictionary
 TraceEvent = dict[str, Any]
-
-
-# --- Immutable Dataclass Data Structures representing raw parsed states ---
-
-
-@dataclass(frozen=True, slots=True)
-class ProcStatData:
-    cpu_ticks: list[int]
-    procs_running: int | None
-    procs_blocked: int | None
-    intr: int | None
-    ctxt: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class MemInfoData:
-    free: int
-    buffers: int
-    cached: int
-    swap_used: int
-    dirty: int
-    writeback: int
-
-
-@dataclass(frozen=True, slots=True)
-class VmStatData:
-    pgpgin: int
-    pgpgout: int
-    pswpin: int
-    pswpout: int
-
-
-@dataclass(frozen=True, slots=True)
-class FileNrData:
-    allocated: int
-    free_allocated: int
-
-
-@dataclass(frozen=True, slots=True)
-class LoadAvgData:
-    load1: float
-    load5: float
-    load15: float
-
-
-@dataclass(frozen=True, slots=True)
-class PressureLine:
-    avg10: float
-    avg60: float
-    avg300: float
-
-
-@dataclass(frozen=True, slots=True)
-class PressureData:
-    some: PressureLine | None
-    full: PressureLine | None
-
-
-@dataclass(frozen=True, slots=True)
-class InterfaceNetworkData:
-    ifname: str
-    rx_bytes: int
-    rx_packets: int
-    tx_bytes: int
-    tx_packets: int
 
 
 # --- Pure, Module-Scope Utility Functions ---
@@ -119,305 +59,6 @@ def make_counter_event(
 
 
 # --- Pure, Module-Scope Parsing Functions (Decoupled from I/O and self-state) ---
-
-
-def parse_proc_stat(lines: list[str]) -> ProcStatData:
-    """Parses /proc/stat lines into ProcStatData.
-
-    Args:
-        lines: Raw list of lines read from /proc/stat.
-
-    Returns:
-        A ProcStatData instance containing parsed CPU ticks, runnable/blocked
-        process counts, context switches, and interrupt counts.
-    """
-    cpu_ticks: list[int] = []
-    procs_running: int | None = None
-    procs_blocked: int | None = None
-    intr: int | None = None
-    ctxt: int | None = None
-
-    for line in lines:
-        if line.startswith("cpu "):
-            cpu_ticks = [int(x) for x in line.split()[1:]]
-        elif line.startswith("procs_running "):
-            procs_running = int(line.split()[1])
-        elif line.startswith("procs_blocked "):
-            procs_blocked = int(line.split()[1])
-        elif line.startswith("intr "):
-            intr = int(line.split()[1])
-        elif line.startswith("ctxt "):
-            ctxt = int(line.split()[1])
-
-    return ProcStatData(
-        cpu_ticks=cpu_ticks,
-        procs_running=procs_running,
-        procs_blocked=procs_blocked,
-        intr=intr,
-        ctxt=ctxt,
-    )
-
-
-def parse_proc_meminfo(lines: list[str]) -> MemInfoData:
-    """Parses /proc/meminfo lines into MemInfoData.
-
-    Args:
-        lines: Raw list of lines read from /proc/meminfo.
-
-    Returns:
-        A MemInfoData instance with calculated values in bytes representing free,
-        buffered, cached, swap used, dirty, and writeback memory.
-    """
-    mem_dict = {}
-    for line in lines:
-        parts = line.split()
-        if len(parts) >= 2:
-            mem_dict[parts[0].strip(":")] = int(parts[1]) * 1024
-
-    free = mem_dict.get("MemFree", 0)
-    buffers = mem_dict.get("Buffers", 0)
-    cached = (
-        mem_dict.get("Cached", 0)
-        + mem_dict.get("SReclaimable", 0)
-        - mem_dict.get("Shmem", 0)
-    )
-    swap_used = mem_dict.get("SwapTotal", 0) - mem_dict.get("SwapFree", 0)
-    dirty = mem_dict.get("Dirty", 0)
-    writeback = mem_dict.get("Writeback", 0)
-
-    return MemInfoData(
-        free=free,
-        buffers=buffers,
-        cached=cached,
-        swap_used=swap_used,
-        dirty=dirty,
-        writeback=writeback,
-    )
-
-
-def parse_proc_vmstat(lines: list[str]) -> VmStatData:
-    """Parses /proc/vmstat lines into VmStatData.
-
-    Args:
-        lines: Raw list of lines read from /proc/vmstat.
-
-    Returns:
-        A VmStatData instance containing page in/out and swap in/out counts in bytes.
-    """
-    vm_dict = {}
-    for line in lines:
-        parts = line.split()
-        if len(parts) == 2:
-            vm_dict[parts[0]] = int(parts[1])
-
-    # pgpgin/pgpgout are in KiB, convert to Bytes
-    pg_in = vm_dict.get("pgpgin", 0) * 1024
-    pg_out = vm_dict.get("pgpgout", 0) * 1024
-    # pswpin/pswpout are in pages (typically 4KiB), convert to Bytes
-    pswp_in = vm_dict.get("pswpin", 0) * 4096
-    pswp_out = vm_dict.get("pswpout", 0) * 4096
-
-    return VmStatData(
-        pgpgin=pg_in,
-        pgpgout=pg_out,
-        pswpin=pswp_in,
-        pswpout=pswp_out,
-    )
-
-
-def parse_file_nr(content: str) -> FileNrData:
-    """Parses /proc/sys/fs/file-nr content into FileNrData.
-
-    Args:
-        content: The text content of /proc/sys/fs/file-nr.
-
-    Returns:
-        A FileNrData instance containing system-wide allocated and free allocated
-        file descriptors.
-    """
-    parts = content.split()
-    allocated = int(parts[0]) if len(parts) > 0 else 0
-    free_allocated = int(parts[1]) if len(parts) > 1 else 0
-    return FileNrData(allocated=allocated, free_allocated=free_allocated)
-
-
-def parse_loadavg(content: str) -> LoadAvgData | None:
-    """Parses /proc/loadavg content into LoadAvgData.
-
-    Args:
-        content: The text content of /proc/loadavg.
-
-    Returns:
-        A LoadAvgData instance containing 1m, 5m, and 15m system load averages,
-        or None if parsing fails.
-    """
-    parts = content.split()
-    if len(parts) >= 3:
-        try:
-            return LoadAvgData(
-                load1=float(parts[0]),
-                load5=float(parts[1]),
-                load15=float(parts[2]),
-            )
-        except ValueError:
-            pass
-    return None
-
-
-def parse_pressure_file(lines: list[str]) -> PressureData:
-    """Parses a pressure file (e.g. /proc/pressure/cpu) into PressureData.
-
-    Args:
-        lines: Raw list of lines read from a pressure stall information file.
-
-    Returns:
-        A PressureData instance containing 10s, 60s, 300s avg stalls for 'some'
-        and 'full' categories, where applicable.
-    """
-    some: PressureLine | None = None
-    full: PressureLine | None = None
-
-    for line in lines:
-        parts = line.split()
-        if not parts:
-            continue
-        prefix = parts[0]
-        metrics = {}
-        for item in parts[1:]:
-            if "=" in item:
-                k, v = item.split("=", 1)
-                metrics[k] = float(v)
-
-        if "avg10" in metrics and "avg60" in metrics and "avg300" in metrics:
-            line_data = PressureLine(
-                avg10=metrics["avg10"],
-                avg60=metrics["avg60"],
-                avg300=metrics["avg300"],
-            )
-            if prefix == "some":
-                some = line_data
-            elif prefix == "full":
-                full = line_data
-
-    return PressureData(some=some, full=full)
-
-
-def parse_net_dev(lines: list[str]) -> list[InterfaceNetworkData]:
-    """Parses /proc/net/dev lines into a list of InterfaceNetworkData.
-
-    Filters out loopback, virtual, and completely inactive interfaces.
-
-    Args:
-        lines: Raw list of lines read from /proc/net/dev.
-
-    Returns:
-        A list of InterfaceNetworkData instances, one per active physical interface.
-    """
-    results: list[InterfaceNetworkData] = []
-    # Skip headers (first two lines)
-    for line in lines[2:]:
-        parts = line.split()
-        if len(parts) < 17:
-            continue
-        ifname = parts[0].strip(":")
-
-        # Filter out loopback and virtual/inactive interfaces
-        if ifname == "lo" or ifname.startswith(
-            ("veth", "docker", "br-", "virbr", "dummy", "tun", "tap")
-        ):
-            continue
-
-        try:
-            rx_bytes, rx_packets = int(parts[1]), int(parts[2])
-            tx_bytes, tx_packets = int(parts[9]), int(parts[10])
-        except ValueError:
-            continue
-
-        # Skip interfaces with absolutely no traffic
-        if rx_bytes == 0 and tx_bytes == 0:
-            continue
-
-        results.append(
-            InterfaceNetworkData(
-                ifname=ifname,
-                rx_bytes=rx_bytes,
-                rx_packets=rx_packets,
-                tx_bytes=tx_bytes,
-                tx_packets=tx_packets,
-            )
-        )
-    return results
-
-
-def get_process_tree_pids(proc_dir: Path, parent_pid: int) -> set[int]:
-    """Constructs a set of all active descendant PIDs of a parent PID.
-
-    Optimized using sorting and binary search (bisect_left) to run in
-    O(N log N) time, avoiding slow O(N^2) linear map scans.
-
-    Args:
-        proc_dir: Path to the proc directory filesystem (e.g. Path("/proc")).
-        parent_pid: The root process PID to traverse.
-
-    Returns:
-        A set of PIDs including the parent_pid and all its child and descendant
-        PIDs found active in proc_dir.
-    """
-    pids = {parent_pid}
-    try:
-        # Build an array of (ppid, child_pid) pairs
-        parent_map: list[tuple[int, int]] = []
-        for entry in os.scandir(proc_dir):
-            if entry.is_dir() and entry.name.isdigit():
-                try:
-                    with open(os.path.join(entry.path, "stat"), "r") as f:
-                        stat_line = f.read()
-                    rpar_idx = stat_line.rfind(")")
-                    fields = stat_line[rpar_idx + 2 :].split()
-                    ppid = int(fields[1])
-                    parent_map.append((ppid, int(entry.name)))
-                except (IOError, ValueError, IndexError):
-                    continue
-
-        # Sort to support O(log N) binary search
-        parent_map.sort()
-
-        # Traverse the tree from parent_pid
-        queue = [parent_pid]
-        while queue:
-            curr = queue.pop(-1)
-            # Find the left-most index matching (curr, 0)
-            pos = bisect.bisect_left(parent_map, (curr, 0))
-            while pos < len(parent_map):
-                ppid, child = parent_map[pos]
-                pos += 1
-                if ppid != curr:
-                    break
-                if child not in pids:
-                    pids.add(child)
-                    queue.append(child)
-    except Exception:
-        pass
-    return pids
-
-
-def count_process_tree_fds(proc_dir: Path, pids: set[int]) -> int:
-    """Counts the total number of open file descriptors in the process tree.
-
-    Args:
-        proc_dir: Path to the proc directory filesystem (e.g. Path("/proc")).
-        pids: The set of PIDs to count file descriptors for.
-
-    Returns:
-        An integer representing the sum of open file descriptors across all pids.
-    """
-    total_fds = 0
-    for pid in pids:
-        try:
-            total_fds += len(os.listdir(proc_dir / str(pid) / "fd"))
-        except (IOError, FileNotFoundError):
-            continue
-    return total_fds
 
 
 # --- Pluggable Metric Sampler Base Interface ---
@@ -465,7 +106,7 @@ class CpuAndSystemSampler(MetricSampler):
         except IOError:
             return
 
-        data = parse_proc_stat(lines)
+        data = procfs.parse_proc_stat(lines)
 
         # 1. CPU utilisation tick percentages
         if data.cpu_ticks:
@@ -590,7 +231,7 @@ class MemorySampler(MetricSampler):
         except IOError:
             return
 
-        data = parse_proc_meminfo(lines)
+        data = procfs.parse_proc_meminfo(lines)
         yield make_counter_event(
             "memory.free", "system", ts_us, "bytes", data.free
         )
@@ -636,7 +277,7 @@ class DiskIoAndPagingSampler(MetricSampler):
         except IOError:
             return
 
-        data = parse_proc_vmstat(lines)
+        data = procfs.parse_proc_vmstat(lines)
 
         if elapsed and self._prev_pgpg:
             yield make_counter_event(
@@ -693,21 +334,27 @@ class FileDescriptorSampler(MetricSampler):
         try:
             with open(self._proc_dir / "sys/fs/file-nr", "r") as f:
                 content = f.read()
-            data = parse_file_nr(content)
-            yield make_counter_event(
-                "fds.system",
-                "system",
-                ts_us,
-                "count",
-                data.allocated - data.free_allocated,
-            )
+            data = procfs.parse_file_nr(content)
+            if data:
+                yield make_counter_event(
+                    "fds.system",
+                    "system",
+                    ts_us,
+                    "count",
+                    data.allocated - data.free_allocated,
+                )
         except IOError:
             pass
 
         if self._target_pid:
-            pids = get_process_tree_pids(self._proc_dir, self._target_pid)
+            pids = procfs.find_descendant_pids(
+                self._target_pid, proc_root=self._proc_dir
+            )
             if pids:
-                fds_count = count_process_tree_fds(self._proc_dir, pids)
+                fds_count = sum(
+                    procfs.count_process_fds(pid, proc_root=self._proc_dir)
+                    for pid in pids
+                )
                 yield make_counter_event(
                     "fds.process", "process", ts_us, "count", fds_count
                 )
@@ -732,7 +379,7 @@ class LoadAverageSampler(MetricSampler):
         try:
             with open(self._proc_dir / "loadavg", "r") as f:
                 content = f.read()
-            data = parse_loadavg(content)
+            data = procfs.parse_loadavg(content)
             if data:
                 yield make_counter_event(
                     "loadavg.1min", "system", ts_us, "load", data.load1
@@ -771,7 +418,7 @@ class PressureSampler(MetricSampler):
                 with open(path, "r") as f:
                     lines = f.readlines()
 
-                data = parse_pressure_file(lines)
+                data = procfs.parse_pressure_file(lines)
                 if data.some:
                     yield make_counter_event(
                         f"pressure.{resource}.some.avg10",
@@ -817,7 +464,7 @@ class NetworkSampler(MetricSampler):
         except IOError:
             return
 
-        parsed_interfaces = parse_net_dev(lines)
+        parsed_interfaces = procfs.parse_net_dev(lines)
         total_rx_bytes, total_rx_pkts = 0.0, 0.0
         total_tx_bytes, total_tx_pkts = 0.0, 0.0
 
@@ -917,7 +564,7 @@ class SystemProfiler:
 
     Example:
         sampler = SystemProfiler(
-            samplers=[CpuAndSystemSampler(Path("/proc"))],
+            samplers=[CpuAndSystemSampler(procfs.DEFAULT_PROC_ROOT)],
             metadata={"BUILD_UUID": "abc"},
             time_fn=time.time
         )
@@ -1157,7 +804,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--proc-dir",
-        default="/proc",
+        default=str(procfs.DEFAULT_PROC_ROOT),
         help="Custom path for proc filesystem (for testing)",
     )
     args = parser.parse_args()
