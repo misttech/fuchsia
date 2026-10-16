@@ -974,6 +974,86 @@ zr::static_assert!(
     core::mem::align_of::<VmPageList>() == core::mem::align_of::<bindings::VmPageListBtree>()
 );
 
+#[derive(Copy, Clone)]
+struct VmPageListBtreeNodeEntry {
+    offset: u64,
+    node: *mut core::ffi::c_void,
+}
+
+// The B-Tree FFI functions below return the node pointer directly and write the offset through an
+// out-pointer rather than returning a `{ u64, *mut c_void }` struct by value. On x86_64, Clang and
+// rustc lower a `{ u64, *mut c_void }` return type to different LLVM IR types (`{ i64, ptr }` vs.
+// `{ i64, i64 }`), which prevents ThinLTO from inlining the C++ wrappers.
+
+/// # Safety
+///
+/// `tree` must point to an initialized `VmPageListBtree`, and `out_cursor` must be null or point to
+/// valid storage for a `VmPageListBtreeCursor`.
+#[inline]
+unsafe fn btree_lower_bound(
+    tree: *mut bindings::VmPageListBtree,
+    node_offset: u64,
+    out_cursor: *mut bindings::VmPageListBtreeCursor,
+) -> VmPageListBtreeNodeEntry {
+    let mut offset = 0;
+    // SAFETY: Guaranteed by caller.
+    let node = unsafe {
+        bindings::cpp_vm_page_list_btree_lower_bound(tree, node_offset, out_cursor, &mut offset)
+    };
+    VmPageListBtreeNodeEntry { offset, node }
+}
+
+/// # Safety
+///
+/// `cursor` must point to an initialized `VmPageListBtreeCursor`.
+#[inline]
+unsafe fn btree_cursor_get(
+    cursor: *const bindings::VmPageListBtreeCursor,
+) -> VmPageListBtreeNodeEntry {
+    let mut offset = 0;
+    // SAFETY: Guaranteed by caller.
+    let node = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor, &mut offset) };
+    VmPageListBtreeNodeEntry { offset, node }
+}
+
+/// # Safety
+///
+/// `cursor` must point to an initialized `VmPageListBtreeCursor`.
+#[inline]
+unsafe fn btree_cursor_next(
+    cursor: *mut bindings::VmPageListBtreeCursor,
+) -> VmPageListBtreeNodeEntry {
+    let mut offset = 0;
+    // SAFETY: Guaranteed by caller.
+    let node = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor, &mut offset) };
+    VmPageListBtreeNodeEntry { offset, node }
+}
+
+/// # Safety
+///
+/// `cursor` must point to an initialized `VmPageListBtreeCursor`.
+#[inline]
+unsafe fn btree_cursor_prev(
+    cursor: *mut bindings::VmPageListBtreeCursor,
+) -> VmPageListBtreeNodeEntry {
+    let mut offset = 0;
+    // SAFETY: Guaranteed by caller.
+    let node = unsafe { bindings::cpp_vm_page_list_btree_cursor_prev(cursor, &mut offset) };
+    VmPageListBtreeNodeEntry { offset, node }
+}
+
+/// # Safety
+///
+/// `cursor` must point to an initialized `VmPageListBtreeConstCursor`.
+#[inline]
+unsafe fn btree_const_cursor_next(
+    cursor: *mut bindings::VmPageListBtreeConstCursor,
+) -> *const core::ffi::c_void {
+    let mut offset = 0;
+    // SAFETY: Guaranteed by caller.
+    unsafe { bindings::cpp_vm_page_list_btree_const_cursor_next(cursor, &mut offset) }
+}
+
 struct NodeIter<'a> {
     cursor: Opaque<bindings::VmPageListBtreeConstCursor>,
     _phantom: core::marker::PhantomData<&'a VmPageList>,
@@ -984,13 +1064,12 @@ impl<'a> Iterator for NodeIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
-        let entry =
-            unsafe { bindings::cpp_vm_page_list_btree_const_cursor_next(self.cursor.get()) };
-        if entry.node.is_null() {
+        let node = unsafe { btree_const_cursor_next(self.cursor.get()) };
+        if node.is_null() {
             None
         } else {
-            // SAFETY: `entry.node` is verified non-null and valid for lifetime `'a`.
-            Some(unsafe { entry.node.cast::<VmPageListNode>().as_ref_unchecked() })
+            // SAFETY: `node` is verified non-null and valid for lifetime `'a`.
+            Some(unsafe { node.cast::<VmPageListNode>().as_ref_unchecked() })
         }
     }
 }
@@ -1005,7 +1084,7 @@ impl<'a> Iterator for NodeIterMut<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
-        let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(self.cursor.get()) };
+        let entry = unsafe { btree_cursor_next(self.cursor.get()) };
         if entry.node.is_null() {
             None
         } else {
@@ -1139,9 +1218,9 @@ impl<'a> VmPageListCursor<'a> {
         debug_assert_eq!(self.index, VmPageListNode::PAGE_FAN_OUT);
         // `cursor_next` returns the entry that the iterator was pointing at prior to advancing it.
         // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
-        let prev = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(self.cursor.get()) };
+        let prev = unsafe { btree_cursor_next(self.cursor.get()) };
         // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
-        let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(self.cursor.get()) };
+        let entry = unsafe { btree_cursor_get(self.cursor.get()) };
         // A null node means that the iterator has moved past the last node. Otherwise `entry`
         // follows `prev` in key order and both offsets are multiples of `NODE_SPAN_BYTES`, so the
         // sum is at most `entry.offset` and cannot overflow.
@@ -1163,9 +1242,9 @@ impl<'a> VmPageListCursor<'a> {
 
     /// Returns the entry that the underlying iterator points at. This must only be called while the
     /// cursor is `valid()`, which guarantees that the iterator points at a node.
-    fn get(&self) -> bindings::VmPageListBtreeNodeEntry {
+    fn get(&self) -> VmPageListBtreeNodeEntry {
         // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
-        let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(self.cursor.get()) };
+        let entry = unsafe { btree_cursor_get(self.cursor.get()) };
         debug_assert!(!entry.node.is_null());
         entry
     }
@@ -1174,15 +1253,28 @@ impl<'a> VmPageListCursor<'a> {
 /// Helper object for performing repeated `lookup_or_allocate` operations that are likely to be
 /// close to each other. While using this object other (modifying) methods on this `VmPageList` must
 /// not be performed, if they are the `reset` method needs to be used before continuing.
+///
+/// This is `#[repr(C)]` with the same two members, in the same order, as the C++
+/// `VmPageList::BatchInserter`, so that the C++ `this` pointer can be reinterpreted as a
+/// `BatchInserter` by `rust_vm_page_list_batch_inserter_lookup_or_allocate`. The layout is asserted
+/// on both sides. The C++ member is a `VmPageListBtree&`, i.e. the address of `VmPageList::list_`;
+/// it reads as a valid `&mut VmPageList` here because `list` is the sole, first member of the
+/// `#[repr(C)]` `VmPageList`.
+#[repr(C)]
 pub struct BatchInserter<'a> {
     list: &'a mut VmPageList,
     node: Opaque<bindings::VmPageListBtreeCursor>,
 }
 
-const _: () = {
-    assert!(core::mem::size_of::<BatchInserter<'_>>() == 24);
-    assert!(core::mem::align_of::<BatchInserter<'_>>() == 8);
-};
+zr::static_assert!(core::mem::offset_of!(VmPageList, list) == 0);
+zr::static_assert!(
+    core::mem::size_of::<BatchInserter<'_>>()
+        == core::mem::size_of::<*mut VmPageList>()
+            + core::mem::size_of::<bindings::VmPageListBtreeCursor>()
+);
+zr::static_assert!(
+    core::mem::align_of::<BatchInserter<'_>>() == core::mem::align_of::<*mut VmPageList>()
+);
 
 impl<'a> BatchInserter<'a> {
     /// Construct a `BatchInserter` for the specified `VmPageList`. The list must be kept alive for
@@ -1207,7 +1299,7 @@ impl<'a> BatchInserter<'a> {
 
         // First check if the currently saved iterator is valid and for the correct node.
         // SAFETY: `self.node.get()` is a valid pointer.
-        let mut entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(self.node.get()) };
+        let mut entry = unsafe { btree_cursor_get(self.node.get()) };
         if !entry.node.is_null() {
             if entry.offset == target_offset {
                 let node_ptr = entry.node.cast::<VmPageListNode>();
@@ -1222,10 +1314,10 @@ impl<'a> BatchInserter<'a> {
             if entry.offset < target_offset {
                 // Advance the cursor to the next node.
                 // SAFETY: `self.node.get()` is a valid pointer.
-                let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(self.node.get()) };
+                let _ = unsafe { btree_cursor_next(self.node.get()) };
                 // Peek at the new node.
                 // SAFETY: `self.node.get()` is a valid pointer.
-                entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(self.node.get()) };
+                entry = unsafe { btree_cursor_get(self.node.get()) };
                 if entry.node.is_null() {
                     // If we hit the end then we know a new node is needed, so skip the search and
                     // go straight to new node creation.
@@ -1245,11 +1337,7 @@ impl<'a> BatchInserter<'a> {
             // insertion later.
             // SAFETY: `self.list.list.get()` and `self.node.get()` are valid pointers.
             entry = unsafe {
-                bindings::cpp_vm_page_list_btree_lower_bound(
-                    self.list.list.get(),
-                    target_offset,
-                    self.node.get(),
-                )
+                btree_lower_bound(self.list.list.get(), target_offset, self.node.get())
             };
             if !entry.node.is_null() && entry.offset == target_offset {
                 let node_ptr = entry.node.cast::<VmPageListNode>();
@@ -1464,9 +1552,7 @@ impl VmPageList {
         let node_offset = VmPageListNode::node_offset(offset);
         let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
         // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
-        let entry = unsafe {
-            bindings::cpp_vm_page_list_btree_lower_bound(self.list.get(), node_offset, cursor.get())
-        };
+        let entry = unsafe { btree_lower_bound(self.list.get(), node_offset, cursor.get()) };
         if entry.node.is_null() {
             return VmPageListCursor::default();
         }
@@ -1549,9 +1635,7 @@ impl VmPageList {
         // lookup the tree node that holds this page. Use lower_bound instead of find to optimize
         // later insertion in case of failed lookup.
         // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
-        let entry = unsafe {
-            bindings::cpp_vm_page_list_btree_lower_bound(self.list.get(), node_offset, cursor.get())
-        };
+        let entry = unsafe { btree_lower_bound(self.list.get(), node_offset, cursor.get()) };
         if !entry.node.is_null() && entry.offset == node_offset {
             let node_ptr = entry.node.cast::<VmPageListNode>();
             // SAFETY: `node_ptr` is non-null and points to a live node owned by `self.list`. The
@@ -1621,9 +1705,7 @@ impl VmPageList {
         // can exit the traversal as soon as possible or avoid it entirely.
         let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
         // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
-        let entry = unsafe {
-            bindings::cpp_vm_page_list_btree_lower_bound(self.list.get(), node_offset, cursor.get())
-        };
+        let entry = unsafe { btree_lower_bound(self.list.get(), node_offset, cursor.get()) };
 
         // The slot that will eventually hold offset.
         let mut slot: *mut VmPageOrMarker = core::ptr::null_mut();
@@ -1746,8 +1828,7 @@ impl VmPageList {
                 // previous node we're looking for.
                 let prev_node_offset = node_offset - VmPageListNode::NODE_SPAN_BYTES;
                 // SAFETY: `cursor.get()` is a valid pointer pointing to current node.
-                let prev_entry =
-                    unsafe { bindings::cpp_vm_page_list_btree_cursor_prev(cursor.get()) };
+                let prev_entry = unsafe { btree_cursor_prev(cursor.get()) };
                 // We are here because slot was either an empty slot inside an interval or it was an
                 // interval end. Additionally, the slot was the left-most slot in its node, which
                 // means we are guaranteed to find a node to the left which holds the start of the
@@ -1802,9 +1883,8 @@ impl VmPageList {
                 // node we're looking for.
                 let next_node_offset = node_offset + VmPageListNode::NODE_SPAN_BYTES;
                 // SAFETY: `cursor.get()` is a valid pointer pointing to current node.
-                let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
-                let next_entry =
-                    unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
+                let _ = unsafe { btree_cursor_next(cursor.get()) };
+                let next_entry = unsafe { btree_cursor_get(cursor.get()) };
                 // We are here because slot was either empty or it was an interval start.
                 // Additionally, the slot was the right-most slot in its node, which means we are
                 // guaranteed to find a node to the right which holds the end of the interval.
@@ -2019,9 +2099,7 @@ impl VmPageList {
         // If the node containing offset is populated, the lower bound will return that node. If not
         // populated, it will return the next populated node.
         // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
-        let entry = unsafe {
-            bindings::cpp_vm_page_list_btree_lower_bound(self.list.get(), node_offset, cursor.get())
-        };
+        let entry = unsafe { btree_lower_bound(self.list.get(), node_offset, cursor.get()) };
         // Could not find a valid node >= node_offset. So offset cannot be part of an interval, an
         // interval would have an end slot.
         if entry.node.is_null() {
@@ -2076,7 +2154,7 @@ impl VmPageList {
 
         // We could not find the start in the same node. Check the previous one.
         // SAFETY: `cursor.get()` is initialized.
-        let prev_entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_prev(cursor.get()) };
+        let prev_entry = unsafe { btree_cursor_prev(cursor.get()) };
         debug_assert!(!prev_entry.node.is_null());
         // SAFETY: `prev_entry.node` is non-null and points to a valid `VmPageListNode`.
         let prev_node = unsafe { prev_entry.node.cast::<VmPageListNode>().as_ref_unchecked() };
@@ -2121,8 +2199,8 @@ impl VmPageList {
 
         // We could not find the end in the same node. Check the next one.
         // SAFETY: `cursor.get()` is initialized. Advance past current node and get next entry.
-        let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
-        let next_entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
+        let _ = unsafe { btree_cursor_next(cursor.get()) };
+        let next_entry = unsafe { btree_cursor_get(cursor.get()) };
         debug_assert!(!next_entry.node.is_null());
         // SAFETY: `next_entry.node` is non-null and points to a valid `VmPageListNode`.
         let next_node = unsafe { next_entry.node.cast::<VmPageListNode>().as_ref_unchecked() };
@@ -2595,7 +2673,7 @@ impl VmPageList {
 
         while node_offset <= last_node_offset {
             // SAFETY: `cursor.get()` is a valid pointer.
-            let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
+            let entry = unsafe { btree_cursor_get(cursor.get()) };
             debug_assert!(!entry.node.is_null());
             debug_assert_eq!(entry.offset, node_offset);
             // SAFETY: `entry.node` is non-null and valid.
@@ -2616,7 +2694,7 @@ impl VmPageList {
             }
             // Advance cursor to next node.
             // SAFETY: `cursor.get()` is a valid pointer.
-            let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
+            let _ = unsafe { btree_cursor_next(cursor.get()) };
             node_offset += VmPageListNode::NODE_SPAN_BYTES;
         }
 
@@ -3144,7 +3222,7 @@ impl VmPageList {
 
         loop {
             // SAFETY: `cursor.get()` is a valid pointer.
-            let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
+            let entry = unsafe { btree_cursor_next(cursor.get()) };
             if entry.node.is_null() || entry.offset >= end_offset {
                 break;
             }
@@ -3176,7 +3254,7 @@ impl VmPageList {
         // Position cursor at lower bound.
         // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
         unsafe {
-            bindings::cpp_vm_page_list_btree_lower_bound(
+            let _ = btree_lower_bound(
                 self.list.get(),
                 VmPageListNode::node_offset(start_offset),
                 cursor.get(),
@@ -3265,7 +3343,7 @@ impl VmPageList {
         // Position cursor at lower bound.
         // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
         let first_entry = unsafe {
-            bindings::cpp_vm_page_list_btree_lower_bound(
+            btree_lower_bound(
                 self.list.get(),
                 VmPageListNode::node_offset(start_offset),
                 cursor.get(),
@@ -3839,7 +3917,7 @@ impl VmPageList {
         let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
         // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
         let mut entry = unsafe {
-            bindings::cpp_vm_page_list_btree_lower_bound(
+            btree_lower_bound(
                 self.list.get(),
                 VmPageListNode::node_offset(start_offset),
                 cursor.get(),
@@ -3866,18 +3944,18 @@ impl VmPageList {
                     }
                 } else {
                     // SAFETY: `cursor.get()` is a valid pointer.
-                    let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
+                    let _ = unsafe { btree_cursor_next(cursor.get()) };
                 }
             } else {
                 // SAFETY: `cursor.get()` is a valid pointer.
-                let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
+                let _ = unsafe { btree_cursor_next(cursor.get()) };
             }
             if status != Status::NEXT {
                 return status;
             }
             // Peek at the new node after step or erase.
             // SAFETY: `cursor.get()` is a valid pointer.
-            entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
+            entry = unsafe { btree_cursor_get(cursor.get()) };
         }
         Status::NEXT
     }
@@ -3976,11 +4054,7 @@ impl VmPageList {
         // Iterate the range in `self` we are merging.
         // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
         let mut entry = unsafe {
-            bindings::cpp_vm_page_list_btree_lower_bound(
-                self.list.get(),
-                VmPageListNode::node_offset(offset),
-                cursor.get(),
-            )
+            btree_lower_bound(self.list.get(), VmPageListNode::node_offset(offset), cursor.get())
         };
         while !entry.node.is_null() && entry.offset < end_offset {
             let node_obj_offset = entry.offset;
@@ -4006,11 +4080,7 @@ impl VmPageList {
                 let other_cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
                 // SAFETY: `other.list.get()` and `other_cursor.get()` are valid pointers.
                 let other_entry = unsafe {
-                    bindings::cpp_vm_page_list_btree_lower_bound(
-                        other.list.get(),
-                        other_obj_offset,
-                        other_cursor.get(),
-                    )
+                    btree_lower_bound(other.list.get(), other_obj_offset, other_cursor.get())
                 };
 
                 // Allocate a new node if none was found.
@@ -4085,11 +4155,11 @@ impl VmPageList {
                 }
             } else {
                 // SAFETY: `cursor.get()` is a valid pointer.
-                let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
+                let _ = unsafe { btree_cursor_next(cursor.get()) };
             }
             // Peek at the new node after the step or erase.
             // SAFETY: `cursor.get()` is a valid pointer.
-            entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
+            entry = unsafe { btree_cursor_get(cursor.get()) };
         }
         true
     }
@@ -4561,6 +4631,197 @@ extern "C" fn rust_vm_page_splice_list_insert(
     let content = content.swap(VmPageOrMarker::empty());
     // SAFETY: C++ owns `list` and does not move it.
     unsafe { Pin::new_unchecked(list) }.insert(offset, content)
+}
+
+// FFI trampolines for C++ calling into the Rust `VmPageList`.
+//
+// The C++ `VmPageList` has the same layout as this one, so C++ passes its `this` pointer straight
+// through and it is reinterpreted here. The trampolines take it as a reference rather than a raw
+// pointer: C++ only ever passes a non-null pointer to an initialized list and does not otherwise
+// touch the list or its nodes for the duration of the call, so the reference's validity and
+// aliasing requirements are upheld by the caller. The slot pointers returned to C++ derive from the
+// node allocations rather than from the reference, so they stay valid after the reference is gone.
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_has_no_page_or_ref(list: &VmPageList) -> bool {
+    list.has_no_page_or_ref()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_has_no_page_ref_or_marker(list: &VmPageList) -> bool {
+    list.has_no_page_ref_or_marker()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_return_empty_slot(list: &mut VmPageList, offset: u64) {
+    list.return_empty_slot(offset)
+}
+
+/// `out` must refer to an empty `VmPageOrMarker` that is not part of the list; the removed content
+/// is moved into it.
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_remove_content(
+    list: &mut VmPageList,
+    offset: u64,
+    out: &mut VmPageOrMarker,
+) {
+    *out = list.remove_content(offset);
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_is_offset_in_zero_interval(list: &VmPageList, offset: u64) -> bool {
+    list.is_offset_in_zero_interval(offset)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_is_offset_in_interval(list: &VmPageList, offset: u64) -> bool {
+    list.is_offset_in_interval(offset)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_return_interval_slot(list: &mut VmPageList, offset: u64) {
+    list.return_interval_slot(offset)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_populate_slots_in_interval(
+    list: &mut VmPageList,
+    start_offset: u64,
+    end_offset: u64,
+) -> Result<(), Status> {
+    list.populate_slots_in_interval(start_offset, end_offset)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_clip_interval_start(
+    list: &mut VmPageList,
+    interval_start: u64,
+    len: u64,
+) -> Result<(), Status> {
+    list.clip_interval_start(interval_start, len)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_clip_interval_end(
+    list: &mut VmPageList,
+    interval_end: u64,
+    len: u64,
+) -> Result<(), Status> {
+    list.clip_interval_end(interval_end, len)
+}
+
+#[repr(C)]
+struct VmPageOrMarkerSlotAndBool {
+    slot: *mut VmPageOrMarker,
+    is_interval: bool,
+}
+
+#[repr(C)]
+struct VmPageOrMarkerConstSlotAndOffset {
+    slot: *const VmPageOrMarker,
+    offset: u64,
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_lookup_or_allocate_internal(
+    list: &mut VmPageList,
+    offset: u64,
+) -> *mut VmPageOrMarker {
+    list.lookup_or_allocate_internal(offset)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_lookup_or_allocate_check_for_interval(
+    list: &mut VmPageList,
+    offset: u64,
+    split_interval: bool,
+) -> VmPageOrMarkerSlotAndBool {
+    let (slot, is_interval) = list.lookup_or_allocate_check_for_interval(offset, split_interval);
+    VmPageOrMarkerSlotAndBool {
+        slot: slot.map_or(core::ptr::null_mut(), core::ptr::from_mut),
+        is_interval,
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_find_interval_start_for_end(
+    list: &VmPageList,
+    end_offset: u64,
+) -> VmPageOrMarkerConstSlotAndOffset {
+    let (slot, offset) = list.find_interval_start_for_end(end_offset);
+    VmPageOrMarkerConstSlotAndOffset { slot: core::ptr::from_ref(slot), offset }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_find_interval_end_for_start(
+    list: &VmPageList,
+    start_offset: u64,
+) -> VmPageOrMarkerConstSlotAndOffset {
+    let (slot, offset) = list.find_interval_end_for_start(start_offset);
+    VmPageOrMarkerConstSlotAndOffset { slot: core::ptr::from_ref(slot), offset }
+}
+
+// The three trampolines below take the dirty state as a plain `u32` rather than as a
+// `ZeroRangeDirtyState`, so that an out of range discriminant from C++ is a panic rather than
+// undefined behavior.
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_add_zero_interval_internal(
+    list: &mut VmPageList,
+    start_offset: u64,
+    end_offset: u64,
+    dirty_state: u32,
+    awaiting_clean_len: u64,
+    replace_existing_slot: bool,
+) -> Result<(), Status> {
+    list.add_zero_interval_internal(
+        start_offset,
+        end_offset,
+        ZeroRangeDirtyState::from_raw(dirty_state),
+        awaiting_clean_len,
+        replace_existing_slot,
+    )
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_replace_page_with_zero_interval(
+    list: &mut VmPageList,
+    offset: u64,
+    dirty_state: u32,
+) -> VmPagePtr {
+    list.replace_page_with_zero_interval(offset, ZeroRangeDirtyState::from_raw(dirty_state))
+}
+
+/// `old_start_offset` and `old_end_offset` use the C++ `UINT64_MAX` sentinel to mean "not
+/// specified"; it is translated to `None` here.
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_overwrite_zero_interval(
+    list: &mut VmPageList,
+    old_start_offset: u64,
+    old_end_offset: u64,
+    new_start_offset: u64,
+    new_end_offset: u64,
+    new_dirty_state: u32,
+) -> Result<(), Status> {
+    let old_start = (old_start_offset != u64::MAX).then_some(old_start_offset);
+    let old_end = (old_end_offset != u64::MAX).then_some(old_end_offset);
+    list.overwrite_zero_interval(
+        old_start,
+        old_end,
+        new_start_offset,
+        new_end_offset,
+        ZeroRangeDirtyState::from_raw(new_dirty_state),
+    )
+}
+
+/// The C++ `VmPageList::BatchInserter` has the same layout as the Rust `BatchInserter`, so, as for
+/// `VmPageList` above, C++ passes its `this` pointer straight through.
+#[unsafe(no_mangle)]
+extern "C" fn rust_vm_page_list_batch_inserter_lookup_or_allocate(
+    inserter: &mut BatchInserter<'_>,
+    offset: u64,
+) -> *mut VmPageOrMarker {
+    inserter.lookup_or_allocate(offset).map_or(core::ptr::null_mut(), core::ptr::from_mut)
 }
 
 #[cfg(ktest)]

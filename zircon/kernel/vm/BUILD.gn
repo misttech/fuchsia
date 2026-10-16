@@ -1073,9 +1073,7 @@ kernel_bindgen_crate("vm-page-list-bindings") {
   type_allowlist = [
     "VmPageListBtree",
     "VmPageListBtreeConstCursor",
-    "VmPageListBtreeConstNodeEntry",
     "VmPageListBtreeCursor",
-    "VmPageListBtreeNodeEntry",
     "VmPageListBtreeUtilization",
     "VmPageSpliceList",
   ]

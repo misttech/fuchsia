@@ -276,11 +276,6 @@ class VmPageOrMarker {
       NumStates,
     };
 
-    ZeroRange(uint32_t val, DirtyState state) : value_(val) {
-      DEBUG_ASSERT((value_ & BIT_MASK32(kAlignBits)) == 0);
-      DEBUG_ASSERT(GetDirtyState() == DirtyState::Untracked);
-      SetDirtyState(state);
-    }
     uint32_t value() const { return value_; }
 
     // For zero range tracking, we also need to track dirty state information, and if the interval
@@ -291,14 +286,6 @@ class VmPageOrMarker {
     DirtyState GetDirtyState() const {
       return static_cast<DirtyState>((value_ & (BIT_MASK32(kDirtyStateBits) << kDirtyStateShift)) >>
                                      kDirtyStateShift);
-    }
-    void SetDirtyState(DirtyState state) {
-      // Only allow dirty and untracked zero ranges for now.
-      DEBUG_ASSERT(state == DirtyState::Dirty || state == DirtyState::Untracked);
-      // Clear the old state.
-      value_ &= ~(BIT_MASK32(kDirtyStateBits) << kDirtyStateShift);
-      // Set the new state.
-      value_ |= static_cast<uint32_t>(state) << kDirtyStateShift;
     }
 
     static constexpr uint64_t kAwaitingCleanLengthShift = kAlignBits + kDirtyStateBits;
@@ -400,12 +387,6 @@ class VmPageOrMarker {
         (raw_ & (BIT_MASK(kIntervalSentinelBits) << kIntervalSentinelShift)) >>
         kIntervalSentinelShift);
   }
-  void SetIntervalSentinel(SentinelType sentinel) {
-    // Clear the old sentinel type.
-    raw_ &= ~(BIT_MASK32(kIntervalSentinelBits) << kIntervalSentinelShift);
-    // Set the new sentinel type.
-    raw_ |= static_cast<uint32_t>(sentinel) << kIntervalSentinelShift;
-  }
   // Next we also need to store the type of interval being represented; reserve a couple of bits for
   // this. Currently we only support one type of interval: a range of zero pages, but reserving 2
   // bits allows for more types in the future.
@@ -418,37 +399,6 @@ class VmPageOrMarker {
   }
   static constexpr uint64_t kIntervalBits = kTypeBits + kIntervalSentinelBits + kIntervalTypeBits;
   static_assert(ZeroRange::kAlignBits == kIntervalBits);
-
-  // Only support creation of zero interval type for now.
-  // Private and only friended with VmPageList so that an external caller cannot arbitrarily create
-  // interval sentinels.
-  [[nodiscard]] static VmPageOrMarker ZeroInterval(SentinelType sentinel,
-                                                   IntervalDirtyState state) {
-    uint32_t sentinel_bits = static_cast<uint32_t>(sentinel) << kIntervalSentinelShift;
-    uint32_t type_bits = static_cast<uint32_t>(IntervalType::Zero) << kIntervalTypeShift;
-    return VmPageOrMarker(ZeroRange(0, state).value() | type_bits | sentinel_bits | kIntervalType);
-  }
-
-  // Change the interval sentinel type for an existing interval, while preserving the rest of the
-  // original state. Only valid to call on an existing interval type. The only permissible
-  // transitions are from Slot to Start/End and vice versa, as these are the only valid transitions
-  // when extending or clipping intervals.
-  // Private and only friended with VmPageList so that an external caller cannot arbitrarily
-  // manipulate interval sentinels.
-  void ChangeIntervalSentinel(SentinelType new_sentinel) {
-#if ZX_DEBUG_ASSERT_IMPLEMENTED
-    DEBUG_ASSERT(IsInterval());
-    auto old_sentinel = GetIntervalSentinel();
-    DEBUG_ASSERT(old_sentinel != new_sentinel);
-    if (old_sentinel == SentinelType::Start || old_sentinel == SentinelType::End) {
-      DEBUG_ASSERT(new_sentinel == SentinelType::Slot);
-    } else {
-      DEBUG_ASSERT(old_sentinel == SentinelType::Slot);
-      DEBUG_ASSERT(new_sentinel == SentinelType::Start || new_sentinel == SentinelType::End);
-    }
-#endif
-    SetIntervalSentinel(new_sentinel);
-  }
 
   uint32_t GetType() const { return raw_ & BIT_MASK(kTypeBits); }
 
@@ -466,8 +416,6 @@ class VmPageOrMarker {
   static_assert(kZeroMarkerType == kVmPageListZeroMarkerType);
   static_assert(kIntervalType == kVmPageListIntervalType);
   static_assert(kParentContentType == kVmPageListParentContentType);
-
-  friend VmPageList;
 };
 
 // Limited reference to a VmPageOrMarker. This reference provides unrestricted const access to the
@@ -866,6 +814,23 @@ class VMPLCursor : private btree::BTree<uint64_t, VmPlnOwner>::iterator {
   friend VmPageList;
 };
 
+// Underlying BTree representation for VmPageList, mapping node offsets to owned VmPageListNodes.
+using VmPageListBtree = btree::BTree<uint64_t, VmPlnOwner>;
+
+// Cursor type for iterating over B-Tree nodes in ascending order. Wraps a B-tree iterator in a
+// named, sized type that can be handed to Rust as an opaque value.
+//
+// Defined here rather than alongside the rest of the FFI types in vm_page_list_ffi.h so that
+// VmPageList::BatchInserter can hold one directly. A VmPageListBtreeCursor* cannot legally be
+// obtained by casting an iterator*: no VmPageListBtreeCursor object exists at that address, and the
+// iterator is not standard-layout in any case.
+struct VmPageListBtreeCursor {
+  VmPageListBtree::iterator iter;
+};
+
+// NOTE: The Rust `VmPageList` in vm_page_list.rs is a `#[repr(C)]` mirror of this class. The
+// out-of-line members forward to it, and the inline template members below operate directly on
+// instances created on either side, so `list_` must remain the sole data member.
 class VmPageList final {
  public:
   VmPageList();
@@ -1112,8 +1077,10 @@ class VmPageList final {
     void reset() { node_ = {}; }
 
    private:
-    btree::BTree<uint64_t, VmPlnOwner>& list_;
-    btree::BTree<uint64_t, VmPlnOwner>::iterator node_;
+    // The Rust BatchInserter mirrors these two members in this order; see vm_page_list_ffi.h. The
+    // C++ side only ever hands |this| to Rust, so |list_| is never read from C++.
+    [[maybe_unused]] VmPageListBtree& list_;
+    VmPageListBtreeCursor node_;
   };
 
   // Returns a slot that was empty after LookupOrAllocate, and that the caller did not end up
