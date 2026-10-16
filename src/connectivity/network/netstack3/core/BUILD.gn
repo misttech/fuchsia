@@ -284,9 +284,12 @@ config("loom") {
 
 # LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.bazel:loom)
 
+# LINT.IfChange(benchmark)
 config("benchmark") {
   rustflags = [ "--cfg=benchmark" ]
 }
+
+# LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.bazel:benchmark)
 
 config("no_lock_order") {
   rustflags = [ "--cfg=no_lock_order" ]

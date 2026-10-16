@@ -19,3 +19,11 @@ build_flags(
     visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
 )
 # LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.gn:loom)
+
+# LINT.IfChange(benchmark)
+build_flags(
+    name = "benchmark",
+    rustflags = ["--cfg=benchmark"],
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+)
+# LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.gn:benchmark)
