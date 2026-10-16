@@ -601,9 +601,45 @@ impl AllCountersUpdate<ot::MleCounters> for AllCounters {
     }
 }
 
+impl FromExt<ot::BorderAgentEphemeralKeyState> for EphemeralKeyState {
+    fn from_ext(x: ot::BorderAgentEphemeralKeyState) -> Self {
+        match x {
+            ot::BorderAgentEphemeralKeyState::Disabled => EphemeralKeyState::Disabled,
+            ot::BorderAgentEphemeralKeyState::Stopped => EphemeralKeyState::Stopped,
+            ot::BorderAgentEphemeralKeyState::Started => EphemeralKeyState::Started,
+            ot::BorderAgentEphemeralKeyState::Connected => EphemeralKeyState::Connected,
+            ot::BorderAgentEphemeralKeyState::Accepted => EphemeralKeyState::Accepted,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ephemeral_key_state_conversion() {
+        assert_eq!(
+            EphemeralKeyState::from_ext(ot::BorderAgentEphemeralKeyState::Disabled),
+            EphemeralKeyState::Disabled
+        );
+        assert_eq!(
+            EphemeralKeyState::from_ext(ot::BorderAgentEphemeralKeyState::Stopped),
+            EphemeralKeyState::Stopped
+        );
+        assert_eq!(
+            EphemeralKeyState::from_ext(ot::BorderAgentEphemeralKeyState::Started),
+            EphemeralKeyState::Started
+        );
+        assert_eq!(
+            EphemeralKeyState::from_ext(ot::BorderAgentEphemeralKeyState::Connected),
+            EphemeralKeyState::Connected
+        );
+        assert_eq!(
+            EphemeralKeyState::from_ext(ot::BorderAgentEphemeralKeyState::Accepted),
+            EphemeralKeyState::Accepted
+        );
+    }
 
     #[test]
     fn test_border_agent_conversion() {

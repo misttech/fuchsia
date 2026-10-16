@@ -353,6 +353,13 @@ pub trait Driver: Send + Sync {
 
     /// Stops using the current ephemeral key.
     fn stop_ephemeral_key(&self, retain_active_session: bool) -> ZxResult;
+
+    /// Returns a stream object which, after emitting the initial EphemeralKeyState, will
+    /// proceed to emit additional values as the ephemeral key state changes.
+    ///
+    /// This is used to implement [`fidl_fuchsia_lowpan_thread::Epskc::watch_ephemeral_key_state`].
+    /// Only one instance of this stream is created per channel.
+    fn watch_ephemeral_key_state(&self) -> BoxStream<'_, ZxResult<EphemeralKeyState>>;
 }
 
 /// Wraps around a FIDL responder to prevent a drop from causing a shutdown.
@@ -1387,6 +1394,8 @@ impl<T: Driver> ServeTo<ThreadCapabilitiesRequestStream> for T {
 #[async_trait()]
 impl<T: Driver> ServeTo<EpskcRequestStream> for T {
     async fn serve_to(&self, request_stream: EpskcRequestStream) -> anyhow::Result<()> {
+        use futures::lock::Mutex;
+        let watcher = Mutex::new(self.watch_ephemeral_key_state());
         let request_control_handle = request_stream.control_handle();
 
         let closure = |command| async {
@@ -1401,8 +1410,29 @@ impl<T: Driver> ServeTo<EpskcRequestStream> for T {
                     .send(
                         self.stop_ephemeral_key(retain_active_session).map_err(|e| e.into_raw()),
                     )?,
-                EpskcRequest::WatchEphemeralKeyState { .. }
-                | EpskcRequest::_UnknownMethod { .. } => {
+                EpskcRequest::WatchEphemeralKeyState { responder } => {
+                    let responder = ResponderNoShutdown::wrap(responder);
+                    watcher
+                        .try_lock()
+                        .ok_or_else(|| {
+                            Error::from(ZxStatus::BAD_STATE).context(
+                                "No more than 1 outstanding call to watch_ephemeral_key_state is allowed",
+                            )
+                        })?
+                        .next()
+                        .map(|x| match x {
+                            Some(x) => x.map_err(Error::from),
+                            None => {
+                                Err(format_err!("watch_ephemeral_key_state stream ended early"))
+                            }
+                        })
+                        .and_then(|response| {
+                            ready(responder.unwrap().send(response).map_err(Error::from))
+                        })
+                        .await
+                        .context("error in watch_ephemeral_key_state request")?;
+                }
+                EpskcRequest::_UnknownMethod { .. } => {
                     warn!("ePSKc encountered unknown method");
                 }
             }
@@ -1411,10 +1441,11 @@ impl<T: Driver> ServeTo<EpskcRequestStream> for T {
 
         request_stream.err_into::<Error>().try_for_each_concurrent(None, closure).await.map_err(
             |err| {
-                error!("Error serving EpskcRequestStream: {:?}", err);
-
                 if let Some(epitaph) = err.downcast_ref::<ZxStatus>() {
+                    warn!("Closing EpskcRequestStream with epitaph {:?}: {:?}", epitaph, err);
                     request_control_handle.shutdown_with_epitaph(*epitaph);
+                } else {
+                    error!("Error serving EpskcRequestStream: {:?}", err);
                 }
 
                 err
@@ -1600,6 +1631,43 @@ mod tests {
                 proxy.attach_all_nodes_to(&[0, 0, 0, 0, 0, 0, 0, 0]).await,
                 Err(fidl::Error::ClientChannelClosed { epitaph, .. })
                     if epitaph == ZxStatus::NOT_SUPPORTED
+            );
+        };
+
+        futures::join!(server_future.boxed(), client_future.boxed());
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_epskc_watch_ephemeral_key_state() {
+        let (client_ep, server_ep) = create_endpoints::<EpskcMarker>();
+
+        let server_future = async move {
+            let device = DummyDevice::default();
+            device.serve_to(server_ep.into_stream()).map(|_| ()).await
+        };
+
+        let client_future = async move {
+            let proxy = client_ep.into_proxy();
+            assert_eq!(
+                proxy.watch_ephemeral_key_state().await.expect("watch_ephemeral_key_state"),
+                EphemeralKeyState::Stopped
+            );
+
+            // Issuing two concurrent watch_ephemeral_key_state calls should close the channel with
+            // ZxStatus::BAD_STATE.
+            let (res1, res2) = futures::join!(
+                proxy.watch_ephemeral_key_state(),
+                proxy.watch_ephemeral_key_state()
+            );
+            assert_matches!(
+                res1,
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == ZxStatus::BAD_STATE
+            );
+            assert_matches!(
+                res2,
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == ZxStatus::BAD_STATE
             );
         };
 

@@ -2001,4 +2001,95 @@ where
             }
         }
     }
+
+    fn watch_ephemeral_key_state(&self) -> BoxStream<'_, ZxResult<EphemeralKeyState>> {
+        let driver_state = self.driver_state.lock();
+        let initial_state =
+            driver_state.ot_instance.border_agent_ephemeral_key_get_state().into_ext();
+        driver_state.epskc.watch_state_stream(initial_state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use fuchsia_async::TestExecutor;
+    use futures::task::Poll;
+
+    #[fuchsia::test]
+    fn test_watch_ephemeral_key_state() {
+        let mut exec = TestExecutor::new();
+        let epskc = border_agent::Epskc::new();
+        let set_state = |new_state: BorderAgentEphemeralKeyState| {
+            epskc.on_state_changed(new_state.into_ext());
+        };
+
+        // Transitions before the watcher starts should not be observed once a watcher registers.
+        set_state(BorderAgentEphemeralKeyState::Started);
+        set_state(BorderAgentEphemeralKeyState::Stopped);
+
+        let mut state_stream =
+            epskc.watch_state_stream(BorderAgentEphemeralKeyState::Stopped.into_ext());
+
+        // 1. First poll returns the initial state (Stopped) immediately.
+        assert_matches!(
+            exec.run_until_stalled(&mut state_stream.next()),
+            Poll::Ready(Some(Ok(EphemeralKeyState::Stopped)))
+        );
+
+        // 2. Subsequent poll blocks when no new state has been sent.
+        let mut next_watch = state_stream.next();
+        assert_matches!(exec.run_until_stalled(&mut next_watch), Poll::Pending);
+
+        // 3. Changing state to Started wakes the watcher.
+        set_state(BorderAgentEphemeralKeyState::Started);
+        assert_matches!(
+            exec.run_until_stalled(&mut next_watch),
+            Poll::Ready(Some(Ok(EphemeralKeyState::Started)))
+        );
+
+        // 4. Intermediate state queuing: if multiple transitions occur before the next poll
+        // (Started -> Connected -> Accepted -> Stopped), subsequent polls return each
+        // intermediate state in FIFO order without dropping Accepted.
+        set_state(BorderAgentEphemeralKeyState::Connected);
+        set_state(BorderAgentEphemeralKeyState::Accepted);
+        set_state(BorderAgentEphemeralKeyState::Stopped);
+        assert_matches!(
+            exec.run_until_stalled(&mut state_stream.next()),
+            Poll::Ready(Some(Ok(EphemeralKeyState::Connected)))
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut state_stream.next()),
+            Poll::Ready(Some(Ok(EphemeralKeyState::Accepted)))
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut state_stream.next()),
+            Poll::Ready(Some(Ok(EphemeralKeyState::Stopped)))
+        );
+        assert_matches!(exec.run_until_stalled(&mut state_stream.next()), Poll::Pending);
+
+        // 5. Disabling ePSKc transitions to Disabled and wakes the watcher.
+        let mut next_watch = state_stream.next();
+        assert_matches!(exec.run_until_stalled(&mut next_watch), Poll::Pending);
+        set_state(BorderAgentEphemeralKeyState::Disabled);
+        assert_matches!(
+            exec.run_until_stalled(&mut next_watch),
+            Poll::Ready(Some(Ok(EphemeralKeyState::Disabled)))
+        );
+
+        // 6. Rapid transition that reverts to the last-returned value before the next poll
+        // (e.g. Disabled -> Stopped -> Disabled) is queued and observed in order.
+        set_state(BorderAgentEphemeralKeyState::Stopped);
+        set_state(BorderAgentEphemeralKeyState::Disabled);
+        assert_matches!(
+            exec.run_until_stalled(&mut state_stream.next()),
+            Poll::Ready(Some(Ok(EphemeralKeyState::Stopped)))
+        );
+        assert_matches!(
+            exec.run_until_stalled(&mut state_stream.next()),
+            Poll::Ready(Some(Ok(EphemeralKeyState::Disabled)))
+        );
+        assert_matches!(exec.run_until_stalled(&mut state_stream.next()), Poll::Pending);
+    }
 }

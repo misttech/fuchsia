@@ -11,6 +11,7 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::future::Fuse;
 use futures::select;
+use lowpan_driver_common::lowpan_fidl::EphemeralKeyState;
 use openthread::ot::BorderAgentEphemeralKeyState;
 use rand;
 use std::pin::pin;
@@ -84,6 +85,8 @@ impl Default for BorderAgent {
 pub struct Epskc {
     pub update_sender: fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedSender<()>>>,
     pub update_receiver: fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedReceiver<()>>>,
+    pub state_sender:
+        fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedSender<EphemeralKeyState>>>,
 }
 
 impl Epskc {
@@ -91,6 +94,7 @@ impl Epskc {
         Epskc {
             update_sender: fuchsia_sync::Mutex::new(None),
             update_receiver: fuchsia_sync::Mutex::new(None),
+            state_sender: fuchsia_sync::Mutex::new(None),
         }
     }
 
@@ -99,6 +103,26 @@ impl Epskc {
         if let Some(ref sender) = *self.update_sender.lock() {
             let _ = sender.unbounded_send(());
         }
+    }
+
+    /// Send a new ePSKc state transition to the active `WatchEphemeralKeyState` watcher, if any.
+    pub fn on_state_changed(&self, state: EphemeralKeyState) {
+        if let Some(ref sender) = *self.state_sender.lock() {
+            let _ = sender.unbounded_send(state);
+        }
+    }
+
+    /// Create a stream for `WatchEphemeralKeyState` that yields `initial_state` immediately
+    /// followed by any subsequent state transitions reported via `on_state_changed`.
+    pub fn watch_state_stream(
+        &self,
+        initial_state: EphemeralKeyState,
+    ) -> BoxStream<'static, ZxResult<EphemeralKeyState>> {
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+        *self.state_sender.lock() = Some(sender);
+        futures::stream::once(core::future::ready(Ok(initial_state)))
+            .chain(receiver.map(Ok))
+            .boxed()
     }
 }
 
@@ -635,6 +659,8 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
             let port = ot_instance.border_agent_ephemeral_key_get_udp_port();
             let ext_addr = ot_instance.get_extended_address().as_slice().to_vec();
 
+            driver_state.epskc.on_state_changed(state.into_ext());
+
             (state, port, ext_addr)
         };
 
@@ -693,8 +719,8 @@ mod tests {
     use fidl::endpoints::{Proxy, create_proxy};
     use fuchsia_async::TestExecutor;
 
+    use fidl_fuchsia_net_mdns as fidl_mdns;
     use std::task::Poll;
-    use {fidl_fuchsia_net_mdns as fidl_mdns, regex};
 
     const TEST_PORT: u16 = 1234;
     const TEST_SERVICE: &str = "test test test";

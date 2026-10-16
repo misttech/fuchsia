@@ -6,11 +6,11 @@
 
 use super::prelude_internal::*;
 
-use crate::lowpan_fidl::*;
 use crate::Driver;
+use crate::lowpan_fidl::*;
 use core::future::ready;
-use futures::stream::BoxStream;
 use futures::FutureExt;
+use futures::stream::BoxStream;
 use zx_status;
 
 /// A dummy LoWPAN Driver implementation, for testing.
@@ -484,5 +484,12 @@ impl Driver for DummyDevice {
 
     fn stop_ephemeral_key(&self, _retain_active_session: bool) -> ZxResult {
         Ok(())
+    }
+
+    fn watch_ephemeral_key_state(&self) -> BoxStream<'_, ZxResult<EphemeralKeyState>> {
+        ready(Ok(EphemeralKeyState::Stopped))
+            .into_stream()
+            .chain(futures::stream::pending())
+            .boxed()
     }
 }
