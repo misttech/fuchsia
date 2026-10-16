@@ -887,6 +887,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     /// Returns the next TaskRequest that `current_task` must handle, waiting if none is available.
     fn get_next_task(&self, current_task: &CurrentTask) -> Result<TaskRequest, Errno> {
         loop {
+            let is_interrupted = current_task.is_interrupt_pending();
             let waiter = {
                 let mut state = self.lock();
                 // Exit immediately if requested.
@@ -894,6 +895,9 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     return result
                         .map_err(|c| errno_from_code!(c.error_code() as i16))
                         .map(|_| TaskRequest::Return { spawn_thread: false });
+                }
+                if is_interrupted {
+                    return error!(EINTR);
                 }
                 if current_task.is_leader() {
                     if let Some(request) = state.taskless_requests.pop_front() {
@@ -1725,5 +1729,64 @@ mod tests {
                 fuchsia_async::Timer::new(std::time::Duration::from_millis(10)).await;
             }
         }).await;
+    }
+
+    #[::fuchsia::test]
+    async fn get_next_task_while_stopping_returns_eintr() {
+        spawn_kernel_and_run(async move |current_task| {
+            let remote_binder_handle =
+                RemoteBinderHandle::<TestRemoteControllerConnector>::new(current_task);
+            remote_binder_handle
+                .lock()
+                .taskless_requests
+                .push_back(TaskRequest::Return { spawn_thread: true });
+
+            current_task.write().set_stopped(
+                starnix_core::ptrace::StopState::GroupStopping,
+                None,
+                Some(current_task),
+                None,
+            );
+
+            assert_matches::assert_matches!(
+                remote_binder_handle.get_next_task(current_task),
+                Err(e) if e == errno!(EINTR)
+            );
+            assert_eq!(remote_binder_handle.lock().taskless_requests.len(), 1);
+
+            let worker_task = current_task.clone_task_for_test(
+                (uapi::CLONE_THREAD | uapi::CLONE_VM | uapi::CLONE_SIGHAND) as u64,
+                None,
+            );
+            remote_binder_handle.lock().pending_requests.insert(
+                worker_task.tid.clone(),
+                PendingRequest::Some(BoundTaskRequest {
+                    koid: Some(1),
+                    request: TaskRequest::Return { spawn_thread: false },
+                }),
+            );
+            worker_task.thread_group().set_stopped(
+                starnix_core::ptrace::StopState::GroupStopping,
+                None,
+                false,
+            );
+            assert_eq!(worker_task.load_stopped(), starnix_core::ptrace::StopState::Awake);
+
+            assert_matches::assert_matches!(
+                remote_binder_handle.get_next_task(&worker_task),
+                Err(e) if e == errno!(EINTR)
+            );
+            assert_matches::assert_matches!(
+                remote_binder_handle.lock().pending_requests.get(&worker_task.tid),
+                Some(PendingRequest::Some(_))
+            );
+
+            remote_binder_handle.close();
+            assert_matches::assert_matches!(
+                remote_binder_handle.get_next_task(&worker_task),
+                Ok(TaskRequest::Return { spawn_thread: false })
+            );
+        })
+        .await;
     }
 }

@@ -607,6 +607,13 @@ impl TaskMutableState<Base = Task> {
             || self.base.thread_group().is_any_signal_allowed_by_mask(mask)
     }
 
+    /// Returns whether a deliverable signal or a task/thread-group stop is pending for this task.
+    pub fn is_interrupt_pending(&self) -> bool {
+        self.is_any_signal_pending()
+            || self.base.load_stopped().is_stopping_or_stopped()
+            || self.base.thread_group().load_stopped().is_stopping_or_stopped()
+    }
+
     /// Returns the next pending signal that passes `predicate`.
     fn take_next_signal_where<F>(&mut self, predicate: F) -> Option<SignalInfo>
     where

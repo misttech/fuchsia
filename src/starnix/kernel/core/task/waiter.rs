@@ -1463,6 +1463,25 @@ mod tests {
     }
 
     #[::fuchsia::test]
+    async fn wait_while_stopping_returns_eintr() {
+        spawn_kernel_and_run(async |current_task| {
+            current_task.write().set_stopped(
+                crate::ptrace::StopState::GroupStopping,
+                None,
+                Some(current_task),
+                None,
+            );
+
+            let output: Result<(), Errno> = current_task
+                .run_in_state(RunState::Event(InterruptibleEvent::new()), move || {
+                    unreachable!("callback should not be called")
+                });
+            assert_eq!(output, error!(EINTR));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
     async fn test_async_typed_wait_value_with_handler() {
         spawn_kernel_and_run(async |current_task| {
             let queue: Arc<LockDepMutex<VecDeque<ReadyItem>, EventHandlerReadyQueueLock>> =

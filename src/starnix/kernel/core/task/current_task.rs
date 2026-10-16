@@ -520,6 +520,11 @@ impl CurrentTask {
         false
     }
 
+    /// Returns whether a deliverable signal or a task/thread-group stop is pending for this task.
+    pub fn is_interrupt_pending(&self) -> bool {
+        self.read().is_interrupt_pending()
+    }
+
     /// Set the RunState for the current task to the given value and then call the given callback.
     ///
     /// When the callback is done, the run_state is restored to `RunState::Running`.
@@ -553,7 +558,7 @@ impl CurrentTask {
                 if state.has_signal_pending(SIGKILL) {
                     return error!(EINTR);
                 }
-            } else if state.is_any_signal_pending() {
+            } else if state.is_interrupt_pending() {
                 return error!(EINTR);
             }
             state.set_run_state(run_state.clone());
