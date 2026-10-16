@@ -271,6 +271,7 @@ group("tests_for_release_testing") {
     # RoamRequestTest is the stable alternative.
     # See b/540853000 for details.
     ":wlan_policy_initiated_roam_test",
+    ":wmm_test",
   ]
 }
 
@@ -300,6 +301,23 @@ antlion_host_test("suspend_resume_test") {
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+}
+
+antlion_host_test("wmm_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/WlanWmmTest.py"
+
+  # Requires a second station and custom configuration. There are no available
+  # testbeds to support this topology. This will remain an at-desk test until an
+  # infra-hosted testbed matching this topology is supported.
+  package_deps = [ "//third_party/iperf:iperf3_pkg" ]
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/iperf",
+    "//src/testing/end_to_end/mobly_controller/legacy_access_point",
     "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
   ]
 }

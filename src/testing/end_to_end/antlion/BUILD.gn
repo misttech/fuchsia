@@ -22,10 +22,8 @@ group("e2e_tests") {
 # release testing.
 group("e2e_tests_manual") {
   testonly = true
-  public_deps = [
-    "tests/wlan/performance:wlan_wmm_test",
-    "//src/connectivity/wlan/tests/wlancfg:tests_for_release_testing",
-  ]
+  public_deps =
+      [ "//src/connectivity/wlan/tests/wlancfg:tests_for_release_testing" ]
 }
 
 # Tests to validate the netstack in under 15 minutes.
