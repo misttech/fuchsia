@@ -1009,10 +1009,13 @@ pub fn sys_prctl(
             if arg2 != 0 && arg2 != 1 {
                 return error!(EINVAL);
             }
+            // Per PR_SET_KEEPCAPS(2const):
+            //   EPERM: The caller's SECBIT_KEEP_CAPS_LOCKED flag is set.
+            if current_task.current_creds().securebits.contains(SecureBits::KEEP_CAPS_LOCKED) {
+                return error!(EPERM);
+            }
             let mut creds = Credentials::clone(&current_task.current_creds());
-            let mut securebits = creds.securebits;
-            securebits.set(SecureBits::KEEP_CAPS, arg2 != 0);
-            creds.set_securebits(securebits)?;
+            creds.securebits.set(SecureBits::KEEP_CAPS, arg2 != 0);
             current_task.set_creds(creds);
             Ok(().into())
         }
@@ -1062,10 +1065,9 @@ pub fn sys_prctl(
         PR_SET_SECUREBITS => {
             security::check_task_capable(current_task, CAP_SETPCAP)?;
 
-            let securebits = SecureBits::from_bits(arg2 as u32).ok_or_else(|| {
-                track_stub!(TODO("https://fxbug.dev/322875244"), "PR_SET_SECUREBITS", arg2);
-                errno!(ENOSYS)
-            })?;
+            // Observed: Linux returns EPERM (not EINVAL) when unrecognized bits are set in flags.
+            let flags = u32::try_from(arg2).map_err(|_| errno!(EPERM))?;
+            let securebits = SecureBits::from_bits(flags).ok_or_else(|| errno!(EPERM))?;
 
             let mut creds = Credentials::clone(&current_task.current_creds());
             creds.set_securebits(securebits)?;

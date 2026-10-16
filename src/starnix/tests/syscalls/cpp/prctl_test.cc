@@ -327,6 +327,40 @@ TEST(PrctlTest, KeepCaps) {
     EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 2), SyscallFailsWithErrno(EINVAL));
     EXPECT_THAT(prctl(PR_SET_KEEPCAPS, -1), SyscallFailsWithErrno(EINVAL));
   });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(PrctlTest, KeepCapsLocked) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  test_helper::ForkHelper helper;
+
+  // When SECBIT_KEEP_CAPS_LOCKED is set, PR_SET_KEEPCAPS fails with EPERM
+  // regardless of whether SECBIT_KEEP_CAPS is changing or staying the same.
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setresuid(0, 0, 0));
+    test_helper::SetCapabilityEffective(CAP_SETPCAP);
+
+    ASSERT_THAT(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS_LOCKED), SyscallSucceeds());
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 1), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 0), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 2), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(prctl(PR_GET_KEEPCAPS), SyscallSucceedsWithValue(0));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setresuid(0, 0, 0));
+    test_helper::SetCapabilityEffective(CAP_SETPCAP);
+
+    ASSERT_THAT(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS | SECBIT_KEEP_CAPS_LOCKED),
+                SyscallSucceeds());
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 0), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 1), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(prctl(PR_GET_KEEPCAPS), SyscallSucceedsWithValue(1));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
 }
 
 TEST(PrctlTest, NoNewPrivs) {
@@ -672,6 +706,9 @@ TEST_P(SecurebitsLockedTest, LockedBitCannotBeCleared) {
 
     SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, param.lock_bit));
 
+    // Setting the same locked value again succeeds.
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, param.lock_bit), SyscallSucceeds());
+
     // Try to clear the lock bit (by setting securebits to 0).
     EXPECT_THAT(prctl(PR_SET_SECUREBITS, 0), SyscallFailsWithErrno(EPERM));
 
@@ -686,11 +723,54 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(SecurebitParam{SECBIT_NOROOT, SECBIT_NOROOT_LOCKED, "NOROOT"},
                       SecurebitParam{SECBIT_NO_SETUID_FIXUP, SECBIT_NO_SETUID_FIXUP_LOCKED,
                                      "NO_SETUID_FIXUP"},
+                      SecurebitParam{SECBIT_KEEP_CAPS, SECBIT_KEEP_CAPS_LOCKED, "KEEP_CAPS"},
                       SecurebitParam{SECBIT_NO_CAP_AMBIENT_RAISE,
                                      SECBIT_NO_CAP_AMBIENT_RAISE_LOCKED, "NO_CAP_AMBIENT_RAISE"}),
     [](const ::testing::TestParamInfo<SecurebitsLockedTest::ParamType> &info) {
       return info.param.name;
     });
+
+TEST(PrctlTest, SecurebitsInvalidFlagsAndCapabilities) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&]() {
+    SAFE_SYSCALL(setresuid(0, 0, 0));
+    test_helper::SetCapabilityEffective(CAP_SETPCAP);
+
+    // Unrecognized bits in the lower 32 bits fail with EPERM.
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, 1UL << 30, 0, 0, 0), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(prctl(PR_GET_SECUREBITS), SyscallSucceedsWithValue(0));
+
+    // Unrecognized bits in the upper 32 bits (with valid lower 32 bits) must not be
+    // truncated to 32 bits on 64-bit platforms and must fail with EPERM.
+    if (sizeof(unsigned long) > 4) {
+      unsigned long high_bit = static_cast<unsigned long>(1ULL << 32);
+      EXPECT_THAT(prctl(PR_SET_SECUREBITS, high_bit | SECBIT_KEEP_CAPS, 0, 0, 0),
+                  SyscallFailsWithErrno(EPERM));
+      EXPECT_THAT(prctl(PR_GET_SECUREBITS), SyscallSucceedsWithValue(0));
+    }
+
+    // Extra arguments to PR_SET_SECUREBITS and PR_GET_SECUREBITS are ignored.
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS, 1, 2, 3), SyscallSucceeds());
+    EXPECT_THAT(prctl(PR_GET_SECUREBITS, 1, 2, 3, 4), SyscallSucceedsWithValue(SECBIT_KEEP_CAPS));
+
+    // Without CAP_SETPCAP, PR_SET_SECUREBITS fails with EPERM even when setting to the
+    // current value or toggling SECBIT_KEEP_CAPS.
+    test_helper::UnsetCapabilityEffective(CAP_SETPCAP);
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS, 0, 0, 0), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, 0, 0, 0, 0), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, SECBIT_NOROOT, 0, 0, 0), SyscallFailsWithErrno(EPERM));
+
+    // PR_GET_SECUREBITS and PR_SET_KEEPCAPS still succeed without CAP_SETPCAP.
+    EXPECT_THAT(prctl(PR_GET_SECUREBITS), SyscallSucceedsWithValue(SECBIT_KEEP_CAPS));
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 0), SyscallSucceeds());
+    EXPECT_THAT(prctl(PR_GET_SECUREBITS), SyscallSucceedsWithValue(0));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
 
 TEST(PrctlTest, PDeathSigGetSetAndFork) {
   test_helper::ForkHelper helper;
