@@ -52,6 +52,7 @@ use packet::{
 use packet_formats::error::{Ipv6ParseError, ParseError};
 use packet_formats::ip::{DscpAndEcn, IpPacket as _, IpPacketBuilder as _};
 use packet_formats::ipv4::{Ipv4FragmentType, Ipv4Packet};
+use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeader;
 use packet_formats::ipv6::{Ipv6Packet, Ipv6PacketRaw};
 use thiserror::Error;
 use zerocopy::SplitByteSlice;
@@ -4475,7 +4476,23 @@ pub fn receive_ipv6_packet<
                 // parsed after reassembly, so parsing the reassembled packet
                 // may result in errors that require an ICMP response.
                 match try_parse_ip_packet!(buffer) {
-                    Ok(packet) => (packet, None, Some(max_fragment_len)),
+                    Ok(packet) => {
+                        let packet: Ipv6Packet<_> = packet;
+                        // Drop reassembled packets that still contain a
+                        // Fragment header.
+                        if packet
+                            .iter_extension_hdrs()
+                            .any(|h| matches!(h, Ipv6ExtensionHeader::Fragment { .. }))
+                        {
+                            core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
+                            debug!(
+                                "receive_ipv6_packet: found fragment header after reassembly; \
+                                dropping"
+                            );
+                            return;
+                        }
+                        (packet, None, Some(max_fragment_len))
+                    }
                     Err(error) => {
                         core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
                         debug!(
@@ -4693,8 +4710,9 @@ pub fn receive_ipv6_packet<
                     .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
                 }
                 Ipv6PacketAction::ProcessFragment => {
-                    debug!("receive_ipv6_packet: found fragment header after reassembly; dropping");
-                    packet_metadata.acknowledge_drop();
+                    // Reassembled packets that still contain a Fragment
+                    // header are dropped immediately after reassembly.
+                    unreachable!("found fragment header after reassembly")
                 }
             }
         }

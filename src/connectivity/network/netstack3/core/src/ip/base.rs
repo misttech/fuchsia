@@ -661,7 +661,10 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                 .map_err(|(_body, err)| err)
             }
             Ipv6Proto::Proto(IpProto::Reserved) | Ipv6Proto::Other(_) => {
-                // IPv6 packet parser rejects with unrecognized next header.
+                // The next header should not be unrecognized at this point.
+                // Packet parsing should have detected this, and for fragmented
+                // packets additional parsing and checks after reassembly should
+                // guarantee that this invariant is upheld.
                 unreachable!()
             }
         }

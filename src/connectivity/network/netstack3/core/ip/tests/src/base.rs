@@ -735,6 +735,51 @@ fn test_ipv6_atomic_fragment_with_dest_opts_unrecognized_option() {
     );
 }
 
+// Test that a reassembled packet that still contains a Fragment header is
+// dropped.
+#[test]
+fn test_ipv6_reassembled_packet_with_fragment_header_dropped() {
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(TEST_ADDRS_V6).build();
+    let device: DeviceId<_> = device_ids[0].clone().into();
+
+    // An atomic fragment whose Fragmentable Part begins with another atomic
+    // Fragment header.
+    const INNER_IDENTIFICATION: u32 = 6;
+    let body: Vec<u8> = [
+        Ipv6Proto::NoNextHeader.into(), // Next Header
+        0,                              // Reserved
+        0,                              // Fragment Offset MSB
+        0,                              // Fragment Offset LS5bits w/ Res w/ M Flag
+    ]
+    .into_iter()
+    .chain(INNER_IDENTIFICATION.to_be_bytes())
+    .collect();
+    let builder = Ipv6PacketBuilderWithFragmentHeader::new(
+        Ipv6PacketBuilder::new(
+            TEST_ADDRS_V6.remote_ip,
+            TEST_ADDRS_V6.local_ip,
+            64,
+            Ipv6Proto::Other(Ipv6ExtHdrType::Fragment.into()),
+        ),
+        FragmentOffset::ZERO,
+        /* more_fragments */ false,
+        /* identification */ 5,
+    );
+    ctx.test_api().receive_ip_packet::<Ipv6, _>(
+        &device,
+        Some(LocalFrameDestination::Individual { local: () }),
+        wrap_body(builder, body),
+    );
+
+    assert_matches!(ctx.bindings_ctx.take_ethernet_frames()[..], []);
+    IpCounterExpectations::<Ipv6> {
+        receive_ip_packet: 1,
+        fragment_reassembly_error: 1,
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
+}
+
 // Test that a forwarded atomic fragment has its Fragment header removed,
 // and that a Packet Too Big error is sent if the original atomic fragment
 // (including its Fragment header) does not fit in the outbound MTU.
