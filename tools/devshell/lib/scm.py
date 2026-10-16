@@ -67,15 +67,7 @@ def _find_active_repositories(
 
 def _check_has_shac(repo_root: pathlib.Path) -> bool:
     """Checks if a repository root contains a shac.textproto configuration."""
-    # TODO(https://fxbug.dev/535293633): Remove this oughtn't-be-necessary
-    # try/except after upgrading to Python 3.14-or-later. See
-    # https://github.com/python/cpython/issues/144525 and
-    # https://docs.python.org/library/pathlib.html#querying-file-type-and-status
-    # for more context.
-    try:
-        return (repo_root / "shac.textproto").is_file()
-    except OSError:
-        return False
+    return (repo_root / "shac.textproto").is_file()
 
 
 def _get_repo_root_for_path(path: pathlib.Path) -> pathlib.Path:

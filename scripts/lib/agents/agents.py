@@ -57,23 +57,13 @@ def get_agent_env_vars() -> typing.List[str]:
 
     # Fallback to source tree location if imported without GN packaging.
     agents_txt = _get_source_agents_txt_path(__file__)
-    # TODO(https://fxbug.dev/535293633): Remove this oughtn't-be-necessary
-    # try/except after upgrading to Python 3.14-or-later. See
-    # https://github.com/python/cpython/issues/144525 and
-    # https://docs.python.org/library/pathlib.html#querying-file-type-and-status
-    # for more context.
-    try:
-        if agents_txt.is_file():
-            with agents_txt.open("r", encoding="utf-8") as f:
-                return [
-                    line.strip()
-                    for line in f
-                    if line.strip() and not line.strip().startswith("#")
-                ]
-    except PermissionError as permission_error:
-        raise FileNotFoundError(
-            f"Permission denied reading agents.txt at {agents_txt}"
-        ) from permission_error
+    if agents_txt.is_file():
+        with agents_txt.open("r", encoding="utf-8") as f:
+            return [
+                line.strip()
+                for line in f
+                if line.strip() and not line.strip().startswith("#")
+            ]
 
     raise FileNotFoundError(
         f"Could not locate agents.txt in packaged resources or at {agents_txt}"
