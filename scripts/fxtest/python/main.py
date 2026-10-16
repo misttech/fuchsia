@@ -2261,7 +2261,7 @@ class AsyncMain:
 
             # This is a synchronous wait and we don't want to block the event loop, so run it in the
             # default thread executor.
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, maybe_debugger.wait)
 
         recorder.emit_end(id=test_group)

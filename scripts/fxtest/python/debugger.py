@@ -194,7 +194,7 @@ def spawn(
 
     # zxdb will send us a SIGUSR1 when it has successfully connected to DebugAgent and is ready to
     # stream output.
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     loop.add_signal_handler(signal.SIGUSR1, on_sigusr1)
 
     def _cleanup() -> None:

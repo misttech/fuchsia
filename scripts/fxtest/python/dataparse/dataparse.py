@@ -171,7 +171,7 @@ def dataparse(cls: T) -> T:
                 def load_union_type() -> typing.Any:
                     # Load the union type from incoming_type.
                     # Only support Optional unions.
-                    args = incoming_type.__args__
+                    args = typing.get_args(incoming_type)
                     if len(args) != 2 or type(None) not in args:
                         raise DataParseError(
                             "Invalid Union type for dataparse. We support only Optional unions with a single type: "
@@ -180,14 +180,12 @@ def dataparse(cls: T) -> T:
                     inner_type = args[0] if args[1] == type(None) else args[1]
                     return load_real_type(inner_type)
 
-                if hasattr(incoming_type, "__origin__"):
-                    origin = incoming_type.__origin__
-                    if origin == list:
-                        return (list, incoming_type.__args__[0])
-                    elif origin == set:
-                        return (set, incoming_type.__args__[0])
-                    elif origin == typing.Union:
-                        return load_union_type()
+                origin = typing.get_origin(incoming_type)
+                if origin in (list, set):
+                    return (origin, typing.get_args(incoming_type)[0])
+                # TODO(https://github.com/python/mypy/issues/21588): Use
+                # typing.Union instead of types.UnionType once typeshed
+                # (python/typeshed#13740) and mypy support it in isinstance().
                 if isinstance(incoming_type, types.UnionType):
                     return load_union_type()
 

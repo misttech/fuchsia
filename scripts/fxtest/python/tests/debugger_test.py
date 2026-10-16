@@ -451,9 +451,8 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
 
         # Ensure signal handler is cleaned up
         self.addCleanup(
-            lambda: asyncio.get_event_loop().remove_signal_handler(
-                signal.SIGUSR1
-            )
+            asyncio.get_running_loop().remove_signal_handler,
+            signal.SIGUSR1,
         )
 
         # Simulate SIGUSR1
