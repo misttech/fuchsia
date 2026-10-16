@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "dns_server_watcher",
+    srcs = [
+        "src/lib.rs",
+        "src/stream.rs",
+        "src/test_util.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/network/dhcpv6/client:__pkg__",
+        "//src/connectivity/policy/netcfg:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust",
+        "//src/lib/async-utils",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "dns_server_watcher_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":dns_server_watcher",
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "dns-server-watcher-test",
+    unit_tests = [":dns_server_watcher_test"],
+)
