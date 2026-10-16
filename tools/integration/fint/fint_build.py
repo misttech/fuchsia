@@ -711,7 +711,7 @@ def run_gn_check(
     build_dir: pathlib.Path,
     host: HostProperties,
     verbose: bool = False,
-) -> int:
+) -> tuple[int, str | None]:
     """Runs 'gn check' to verify header dependency rules inside the build directory.
 
     Args:
@@ -721,7 +721,8 @@ def run_gn_check(
         verbose: Enable verbose logging.
 
     Returns:
-        The exit code of the 'gn check' subprocess.
+        A tuple of (exit_code, failure_summary), where failure_summary is None
+        when exit_code is 0.
     """
     gn_bin = checkout_dir / host.gn_relative_path
     cmd = [
@@ -735,8 +736,23 @@ def run_gn_check(
     msg("Running gn check...")
     if verbose:
         msg(f"Command: {shlex.join(cmd)}")
-    res = subprocess.run(cmd)
-    return res.returncode
+    res = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    output = res.stdout or ""
+    if res.returncode == 0:
+        if output:
+            print(output, end="")
+        return 0, None
+    if output:
+        print(output, end="", file=sys.stderr)
+    summary = (
+        output.strip() or f"gn check failed with exit code {res.returncode}"
+    )
+    return res.returncode, summary
 
 
 def check_ninja_noop(
@@ -745,7 +761,7 @@ def check_ninja_noop(
     host: HostProperties,
     targets: list[str],
     verbose: bool = False,
-) -> int:
+) -> tuple[int, str | None]:
     """Verifies that the Ninja build converges to a no-op state.
 
     This function does a dry-run invocation of Ninja with 'explain' and
@@ -761,8 +777,8 @@ def check_ninja_noop(
         verbose: Enable verbose logging.
 
     Returns:
-        0 if the build successfully converges to a no-op, non-zero if Ninja
-        diverges or fails.
+        A tuple of (exit_code, failure_summary), where exit_code is 0 and
+        failure_summary is None if the build converges to a no-op.
     """
     ninja_bin = checkout_dir / host.ninja_relative_path
 
@@ -790,19 +806,36 @@ def check_ninja_noop(
             capture_output=True,
             text=True,
         )
+        stdout = res.stdout or ""
+        stderr = res.stderr or ""
 
         if res.returncode != 0:
-            return res.returncode
+            if stderr:
+                print(stderr[:1000], file=sys.stderr)
+            if stdout:
+                print(stdout[:1000], file=sys.stderr)
+            output = stderr.strip() or stdout.strip()
+            summary = (
+                f"ninja dry-run check failed:\n{output}"
+                if output
+                else f"ninja dry-run check failed with exit code {res.returncode}"
+            )
+            return res.returncode, summary
 
-        if "ninja: no work to do." in res.stdout:
-            return 0
+        # Different versions of Ninja may emit output to stdout or stderr.
+        all_stdio = f"{stdout}\n\n{stderr}"
+        if "ninja: no work to do." in all_stdio:
+            return 0, None
 
         # Handle non-noop build
         msg(
             "Error: Ninja build did not converge to no-op.",
             file=sys.stderr,
         )
-        print(res.stdout[:1000], file=sys.stderr)
+        if stderr:
+            print(stderr[:1000], file=sys.stderr)
+        if stdout:
+            print(stdout[:1000], file=sys.stderr)
 
         # Print the dirty sources list if any were captured
         if dirty_sources_path.exists():
@@ -812,7 +845,32 @@ def check_ninja_noop(
                     f"Identified dirty source files:\n{dirty_content}",
                     file=sys.stderr,
                 )
-        return 1
+
+        summary_lines = [
+            "Ninja build did not converge to no-op.",
+            "See: https://fuchsia.dev/fuchsia-src/development/build/ninja_no_op",
+        ]
+        explain_lines = [
+            line.strip().removeprefix("ninja explain: ")
+            for line in all_stdio.splitlines()
+            if line.strip().startswith("ninja explain: ")
+        ]
+        fallback_output = stderr.strip() or stdout.strip()
+        first_explain_line = (
+            explain_lines[0]
+            if explain_lines
+            else (fallback_output.splitlines()[0] if fallback_output else "")
+        )
+        if first_explain_line:
+            summary_lines.extend(
+                [
+                    "",
+                    "First line of ninja explain output:",
+                    "",
+                    first_explain_line,
+                ]
+            )
+        return 1, "\n".join(summary_lines)
 
 
 def collect_failure_diagnostics(build_dir: pathlib.Path) -> None:
@@ -1198,7 +1256,7 @@ class BuildContext:
         success_stamp_path.write_text("")
 
         # Post-build verification checks
-        gn_status = run_gn_check(
+        gn_status, gn_failure_summary = run_gn_check(
             checkout_dir=self.checkout_dir,
             build_dir=self.build_dir,
             host=self.host,
@@ -1206,10 +1264,11 @@ class BuildContext:
         )
         if gn_status != 0:
             result.exit_code = gn_status
+            result.failure_summary = gn_failure_summary
             return
 
         if not self.context_spec.skip_ninja_noop_check:
-            noop_status = check_ninja_noop(
+            noop_status, noop_failure_summary = check_ninja_noop(
                 checkout_dir=self.checkout_dir,
                 build_dir=self.build_dir,
                 host=self.host,
@@ -1218,6 +1277,7 @@ class BuildContext:
             )
             if noop_status != 0:
                 result.exit_code = noop_status
+                result.failure_summary = noop_failure_summary
                 return
 
         # Export debug symbols at the very end to avoid spending time on symbols
@@ -1227,6 +1287,7 @@ class BuildContext:
         except RuntimeError as e:
             msg(f"Error: {e}", file=sys.stderr)
             result.exit_code = 1
+            result.failure_summary = f"Failed to export debug symbols: {e}"
             return
 
         try:
@@ -1783,33 +1844,36 @@ def main(argv: list[str]) -> int:
             args.verbose,
         )
 
-        # If artifact_dir is specified, serialize and write build_artifacts.json
-        # unconditionally on both success and failure.
-        if ctx.context_spec.artifact_dir:
-            ts_msg(
-                f"Serializing build artifacts manifest to {ctx.context_spec.artifact_dir}...",
-                args.verbose,
-            )
-            failure_summary = run.failure_summary
-            if run.exit_code != 0 and not failure_summary:
-                if args.ninja_error_logging_output:
-                    failure_summary = parse_ninja_failures(
-                        args.ninja_error_logging_output
-                    )
+    # If artifact_dir is specified, serialize and write build_artifacts.json
+    # unconditionally on both success and failure. This must happen after the
+    # `with wrapper(...)` block exits so that post-build checks (gn check,
+    # ninja no-op check, debug symbol export, affected tests) have completed
+    # and populated `run`.
+    if ctx.context_spec.artifact_dir:
+        ts_msg(
+            f"Serializing build artifacts manifest to {ctx.context_spec.artifact_dir}...",
+            args.verbose,
+        )
+        failure_summary = run.failure_summary
+        if run.exit_code != 0 and not failure_summary:
+            if args.ninja_error_logging_output:
+                failure_summary = parse_ninja_failures(
+                    args.ninja_error_logging_output
+                )
 
-                if not failure_summary:
-                    failure_summary = (
-                        f"Fuchsia build failed: delegated command "
-                        f"'{shlex.join(run.command)}' exited with status {run.exit_code}"
-                    )
+            if not failure_summary:
+                failure_summary = (
+                    f"Fuchsia build failed: delegated command "
+                    f"'{shlex.join(run.command)}' exited with status {run.exit_code}"
+                )
 
-            ctx.produce_build_artifacts(
-                duration_seconds,
-                failure_summary=failure_summary,
-                ninja_action_metrics_path=args.ninja_action_metrics_output,
-                affected_tests=run.affected_tests,
-                build_not_affected=run.build_not_affected,
-            )
+        ctx.produce_build_artifacts(
+            duration_seconds,
+            failure_summary=failure_summary,
+            ninja_action_metrics_path=args.ninja_action_metrics_output,
+            affected_tests=run.affected_tests,
+            build_not_affected=run.build_not_affected,
+        )
 
     return run.exit_code
 
