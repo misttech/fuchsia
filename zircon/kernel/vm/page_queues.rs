@@ -1,4 +1,4 @@
-// Copyright 2026 The Fuchsia Authors
+// Copyright 2020 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
@@ -12,13 +12,14 @@ use crate::kernel::thread::{self, Thread, ThreadPtr};
 use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
 use crate::vm::compressor::VmCompressor;
 use crate::vm::page::{VmPage, VmPageDoublyLinkedList, VmPagePtr};
+use crate::vm::page_state::page_state_to_string;
 use crate::vm::physical_page_borrowing_config::PhysicalPageBorrowingConfig;
 use crate::vm::vm::vm_ktrace_duration;
 use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowReclaimType};
 use crate::vm::{pmm, scanner};
 #[cfg(debug_assertions)]
 use core::cell::UnsafeCell;
-use core::ffi::{CStr, c_void};
+use core::ffi::{CStr, c_char, c_void};
 use core::marker::{PhantomData, PhantomPinned};
 use core::mem::{MaybeUninit, offset_of};
 use core::pin::Pin;
@@ -26,12 +27,13 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use debug::kernel_oops;
 use fbl::{DoublyLinkedListContainable, RefPtr};
-use kprint::kprintln;
-use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
+use kprint::{kformat, kprintln};
+use ksync::{KMutex, LockToken, RawCriticalMutex, guarded, kcell_init};
 use page_bindings::{vm_page_state, vm_page_t};
 use page_queues_bindings as bindings;
-use pin_init::{PinInit, pin_data};
-use zx_types::zx_duration_mono_t;
+use pin_init::{InPlaceWrite as _, PinInit, pin_data, pin_init_array_from_fn};
+use vm_constants_rs as vm_constants;
+use zx_types::{ZX_TIME_INFINITE_PAST, zx_duration_mono_t};
 
 define_kcounter!(PQ_AGING_REASON_TIMEOUT, "pq.aging.reason.timeout", Sum);
 define_kcounter!(PQ_AGING_REASON_ACTIVE_RATIO, "pq.aging.reason.active_ratio", Sum);
@@ -45,6 +47,10 @@ define_kcounter!(PQ_ACCESSED_NORMAL, "pq.accessed.normal", Sum);
 define_kcounter!(PQ_ACCESSED_NORMAL_SAME_QUEUE, "pq.accessed.normal_same_queue", Sum);
 define_kcounter!(PQ_ACCESSED_ISOLATE, "pq.accessed.isolate", Sum);
 define_kcounter!(PQ_ACCESSED_NOT_RECLAIM, "pq.accessed.not_reclaim", Sum);
+define_kcounter!(PQ_PEEK_SYNC_AGING, "pq.peek.sync_aging", Sum);
+define_kcounter!(PQ_PEEK_PROCESS_LRU, "pq.peek.process_lru", Sum);
+define_kcounter!(PQ_PEEK_SYNC_AGING_ALL_INACTIVE, "pq.peek.sync_aging.all_inactive", Sum);
+define_kcounter!(PQ_PEEK_PROCESS_LRU_ALL_INACTIVE, "pq.peek.process_lru.all_inactive", Sum);
 
 /// Used to identify the reason that aging is triggered, mostly for debugging and informational
 /// purposes.
@@ -60,12 +66,24 @@ pub enum AgeReason {
     /// test code or via the kernel debug console.
     Manual,
 }
+
 zr::static_assert!(AgeReason::Timeout as i32 == bindings::PageQueues_AgeReason::Timeout as i32);
 zr::static_assert!(
     AgeReason::ActiveRatio as i32 == bindings::PageQueues_AgeReason::ActiveRatio as i32
 );
 zr::static_assert!(AgeReason::Manual as i32 == bindings::PageQueues_AgeReason::Manual as i32);
 zr::static_assert!(size_of::<AgeReason>() == size_of::<bindings::PageQueues_AgeReason>());
+
+impl AgeReason {
+    fn from_raw(raw: i32) -> Self {
+        match raw {
+            x if x == Self::Timeout as i32 => Self::Timeout,
+            x if x == Self::ActiveRatio as i32 => Self::ActiveRatio,
+            x if x == Self::Manual as i32 => Self::Manual,
+            _ => panic!("Invalid AgeReason: {raw}"),
+        }
+    }
+}
 
 /// Describes any action to take when processing the LRU queue. This is applied to pages that would
 /// otherwise have to be moved from the old LRU queue into the isolate queue.
@@ -77,6 +95,7 @@ pub enum LruAction {
     CompressOnly,
     EvictAndCompress,
 }
+
 zr::static_assert!(LruAction::None as i32 == bindings::PageQueues_LruAction::None as i32);
 zr::static_assert!(LruAction::EvictOnly as i32 == bindings::PageQueues_LruAction::EvictOnly as i32);
 zr::static_assert!(
@@ -198,6 +217,40 @@ impl core::fmt::Debug for VmoBacklink {
             .field("page", &self.page)
             .field("offset", &self.offset)
             .finish()
+    }
+}
+
+/// FFI-compatible representation of `PageQueuesVmoBacklink` matching C++.
+#[repr(C)]
+pub struct PageQueuesVmoBacklink {
+    pub cow: *mut bindings::VmCowPages,
+    pub page: *mut vm_page_t,
+    pub offset: u64,
+}
+zr::static_assert!(
+    size_of::<PageQueuesVmoBacklink>() == size_of::<bindings::PageQueuesVmoBacklink>()
+);
+zr::static_assert!(
+    align_of::<PageQueuesVmoBacklink>() == align_of::<bindings::PageQueuesVmoBacklink>()
+);
+zr::static_assert!(
+    offset_of!(PageQueuesVmoBacklink, cow) == offset_of!(bindings::PageQueuesVmoBacklink, cow)
+);
+zr::static_assert!(
+    offset_of!(PageQueuesVmoBacklink, page) == offset_of!(bindings::PageQueuesVmoBacklink, page)
+);
+zr::static_assert!(
+    offset_of!(PageQueuesVmoBacklink, offset)
+        == offset_of!(bindings::PageQueuesVmoBacklink, offset)
+);
+
+impl From<VmoBacklink> for PageQueuesVmoBacklink {
+    fn from(backlink: VmoBacklink) -> Self {
+        let cow = match backlink.cow {
+            Some(c) => RefPtr::into_raw(c).cast_mut().cast(),
+            None => core::ptr::null_mut(),
+        };
+        Self { cow, page: backlink.page.as_ffi(), offset: backlink.offset }
     }
 }
 
@@ -817,14 +870,14 @@ pub struct PageQueues {
     ///
     /// As the #[guarded] macro does not support #[cfg] members in #[guarded_by] annotates this is
     /// manually wrapped in an UnsafeCell and its access is controlled by list_lock.
-    // Safety invariant: Protected by `list_lock`. Once initialized to `Some` in
-    // `StartDebugCompressor` (enforced by `DEBUG_ASSERT(!debug_compressor_)` inside
-    // `#if DEBUG_ASSERT_IMPLEMENTED`), the boxed `DebugCompressor` is never replaced, mutably
-    // borrowed (`&mut DebugCompressor`), or dropped until `PageQueues` is destroyed, allowing
-    // shared `&DebugCompressor` references obtained under `list_lock` to be used after releasing
-    // `list_lock`.
+    // Safety invariant: Reads and writes of the `Option` are synchronized by `list_lock`. Once
+    // initialized from `None` to `Some` in `start_debug_compressor` (enforced by
+    // `assert!(dc.is_none())`), the pinned `Box<DebugCompressor>` is never replaced or dropped
+    // until `PageQueues` is destroyed, allowing shared `&DebugCompressor` references obtained
+    // under `list_lock` to be used after releasing `list_lock`.
     #[cfg(debug_assertions)]
-    debug_compressor: UnsafeCell<Option<kalloc::Box<super::debug_compressor::DebugCompressor>>>,
+    debug_compressor:
+        UnsafeCell<Option<Pin<kalloc::Box<super::debug_compressor::DebugCompressor>>>>,
 
     /// Queue rotation parameters. Set under `lock` in `start_threads` and read under `lock` in
     /// `get_age_reason_locked`.
@@ -849,116 +902,13 @@ pub struct PageQueues {
     phantom: PhantomData<PhantomPinned>,
 }
 
-// Compile-time layout assertions against the C++ PageQueues type via bindgen.
+zr::static_assert!(core::mem::size_of::<PageQueues>() == vm_constants::kPageQueuesStorageSize);
+zr::static_assert!(core::mem::align_of::<PageQueues>() == vm_constants::kPageQueuesStorageAlign);
 zr::static_assert!(
     core::mem::size_of::<PageQueues>() == core::mem::size_of::<bindings::PageQueues>()
 );
 zr::static_assert!(
     core::mem::align_of::<PageQueues>() == core::mem::align_of::<bindings::PageQueues>()
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, list_lock)
-        == core::mem::offset_of!(bindings::PageQueues, list_lock_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, lock) == core::mem::offset_of!(bindings::PageQueues, lock_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, aging_event)
-        == core::mem::offset_of!(bindings::PageQueues, aging_event_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, aging_disabled)
-        == core::mem::offset_of!(bindings::PageQueues, aging_disabled_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, last_age_time)
-        == core::mem::offset_of!(bindings::PageQueues, last_age_time_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, last_age_reason)
-        == core::mem::offset_of!(bindings::PageQueues, last_age_reason_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, active_ratio_triggered)
-        == core::mem::offset_of!(bindings::PageQueues, active_ratio_triggered_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, mru_event)
-        == core::mem::offset_of!(bindings::PageQueues, mru_event_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, lru_event)
-        == core::mem::offset_of!(bindings::PageQueues, lru_event_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, lru_action)
-        == core::mem::offset_of!(bindings::PageQueues, lru_action_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, page_queues)
-        == core::mem::offset_of!(bindings::PageQueues, page_queues_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, isolate_queues)
-        == core::mem::offset_of!(bindings::PageQueues, isolate_queues_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, lru_gen)
-        == core::mem::offset_of!(bindings::PageQueues, lru_gen_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, mru_gen)
-        == core::mem::offset_of!(bindings::PageQueues, mru_gen_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, page_queue_counts)
-        == core::mem::offset_of!(bindings::PageQueues, page_queue_counts_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, lazy_active_ratio_aging_skips)
-        == core::mem::offset_of!(bindings::PageQueues, lazy_active_ratio_aging_skips_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, consecutive_skipped_sweeps)
-        == core::mem::offset_of!(bindings::PageQueues, consecutive_skipped_sweeps_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, shutdown_threads)
-        == core::mem::offset_of!(bindings::PageQueues, shutdown_threads_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, mru_thread)
-        == core::mem::offset_of!(bindings::PageQueues, mru_thread_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, lru_thread)
-        == core::mem::offset_of!(bindings::PageQueues, lru_thread_)
-);
-#[cfg(debug_assertions)]
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, debug_compressor)
-        == core::mem::offset_of!(bindings::PageQueues, debug_compressor_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, min_mru_rotate_time)
-        == core::mem::offset_of!(bindings::PageQueues, min_mru_rotate_time_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, max_mru_rotate_time)
-        == core::mem::offset_of!(bindings::PageQueues, max_mru_rotate_time_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, zero_fork_is_reclaimable)
-        == core::mem::offset_of!(bindings::PageQueues, zero_fork_is_reclaimable_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, anonymous_is_reclaimable)
-        == core::mem::offset_of!(bindings::PageQueues, anonymous_is_reclaimable_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(PageQueues, active_ratio_multiplier)
-        == core::mem::offset_of!(bindings::PageQueues, active_ratio_multiplier_)
 );
 
 // SAFETY: `PageQueues` is internally synchronized via its own `lock` and `list_lock`, and the
@@ -981,9 +931,21 @@ impl PinnedDrop for PageQueues {
         // their `&PageQueues` references.
         self.stop_threads();
 
-        // SAFETY: We hold an exclusive reference to `self` and, having just stopped the mru and
-        // lru threads, there can be no other references to the queues, so the `list_lock` does not
-        // need to be acquired to inspect them.
+        #[cfg(debug_assertions)]
+        {
+            // Explicitly drop `debug_compressor` (whose `PinnedDrop` stops and joins its
+            // background thread before the storage is freed) prior to asserting queue invariants
+            // and before compiler-generated drop glue drops `list_lock`, `lock`, `page_queues`,
+            // and `isolate_queues` in declaration order.
+            // SAFETY: We hold an exclusive reference (`Pin<&mut Self>`) during `drop`, and
+            // `stop_threads()` has already joined `mru_thread` and `lru_thread`, so no other
+            // references to `self.debug_compressor` exist.
+            let _ = unsafe { (*self.debug_compressor.get()).take() };
+        }
+
+        // SAFETY: We hold an exclusive reference to `self` and, having just stopped the mru,
+        // lru, and debug compressor threads, there can be no other references to the queues, so
+        // the `list_lock` does not need to be acquired to inspect them.
         unsafe {
             let token = LockToken::new();
             for queue in self.page_queues.get(&token) {
@@ -991,6 +953,8 @@ impl PinnedDrop for PageQueues {
             }
         }
         for (i, count) in self.page_queue_counts.iter().enumerate() {
+            // Relaxed: We hold an exclusive reference (`Pin<&mut Self>`) during `drop` with all
+            // background threads stopped, so no concurrent modifications can occur.
             let count = count.load(Ordering::Relaxed);
             debug_assert_eq!(count, 0, "i={i} count={count}");
         }
@@ -1011,12 +975,45 @@ impl PageQueues {
     pub const OP_BATCH_SIZE: usize = OP_BATCH_SIZE;
 
     pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
-        zr::pin_init_ffi!(bindings::cpp_page_queues_init)
+        pin_init::pin_init!(Self {
+            list_lock <- KMutex::init(),
+            lock <- KMutex::init(),
+            aging_event: None.into(),
+            aging_disabled: false.into(),
+            last_age_time: AtomicI64::new(ZX_TIME_INFINITE_PAST),
+            last_age_reason: AgeReason::Timeout.into(),
+            active_ratio_triggered: false.into(),
+            mru_event <- AutounsignalEvent::init_unsignaled(),
+            lru_event <- AutounsignalEvent::init_unsignaled(),
+            lru_action: LruAction::None.into(),
+            page_queues <- kcell_init(pin_init_array_from_fn(|_| VmPageDoublyLinkedList::new())),
+            isolate_queues <- kcell_init(pin_init_array_from_fn(|_| VmPageDoublyLinkedList::new())),
+            lru_gen: AtomicU64::new(0),
+            mru_gen: AtomicU64::new(NUM_RECLAIM as u64 - 1),
+            page_queue_counts: core::array::from_fn(|_| AtomicUsize::new(0)),
+            lazy_active_ratio_aging_skips: RelaxedAtomicU64::new(0),
+            consecutive_skipped_sweeps: RelaxedAtomicU32::new(0),
+            shutdown_threads: AtomicBool::new(false),
+            mru_thread: AtomicPtr::new(core::ptr::null_mut()),
+            lru_thread: AtomicPtr::new(core::ptr::null_mut()),
+            #[cfg(debug_assertions)]
+            debug_compressor: UnsafeCell::new(None),
+            min_mru_rotate_time: DEFAULT_MIN_MRU_ROTATE_TIME.into(),
+            max_mru_rotate_time: DEFAULT_MAX_MRU_ROTATE_TIME.into(),
+            zero_fork_is_reclaimable: RelaxedAtomicBool::new(false),
+            anonymous_is_reclaimable: RelaxedAtomicBool::new(false),
+            active_ratio_multiplier: (DEFAULT_ACTIVE_RATIO_MULTIPLIER as i64).into(),
+            phantom: PhantomData,
+        })
     }
 
-    /// Domain-specific conversion: returns raw pointer for `PageQueues`.
-    pub fn as_raw(&self) -> *mut bindings::PageQueues {
-        (self as *const Self).cast_mut().cast()
+    /// Provides access to the underlying lock, allowing _Locked variants to be called. Use of this
+    /// is highly discouraged as the underlying lock is a CriticalMutex which disables preemption.
+    /// Preferably *Array variations should be used, but this provides a higher performance
+    /// mechanism when needed.
+    #[inline]
+    pub fn get_lock(&self) -> &KMutex<PageQueuesListLockClass, RawCriticalMutex> {
+        &self.list_lock
     }
 
     // Converts free running generation to reclaim queue.
@@ -1518,13 +1515,48 @@ impl PageQueues {
         false
     }
 
-    // This processes the LRU queue with the goal of increasing the lru_gen to the target_gen. It
-    // achieves this by walking all the pages in the queue and doing one of the following:
-    // 1. For pages that have a newest accessed time and are in the wrong queue, are moved into the
-    // correct queue.
-    // 2. For pages that are in the correct queue, they are moved to the Isolate queue.
-    // An optional limit for the number of pages to Isolate can be provided and if reached this
-    // will return early even if target_gen has not been reached.
+    /// Peek the isolate lists and return the first page, or `None` if the lists are empty.
+    fn peek_isolate_list(&self) -> Option<VmoBacklink> {
+        ksync::lock!(let guard = self.lock_list_lock());
+        let fields = guard.fields();
+        for list in fields.isolate_queues.iter() {
+            if !list.is_empty() {
+                let head = list.front().unwrap();
+                // SAFETY: `head` is in an isolate queue under `list_lock`, so it is in the OBJECT
+                // state.
+                // Relaxed: All writes to `page_queue` for pages in `isolate_queues` are serialized
+                // by `list_lock`, which we hold here.
+                let page_queue =
+                    PageQueue(unsafe { head.get_page_queue_ref() }.load(Ordering::Relaxed));
+                debug_assert_eq!(page_queue, PageQueue::RECLAIM_ISOLATE);
+                // SAFETY: `head` is in the OBJECT state and `list_lock` is held.
+                let cow_ptr = unsafe { head.get_object() };
+                debug_assert!(!cow_ptr.is_null());
+                // Upgrading to a refptr can never fail as all pages are removed from a VmCowPages,
+                // and hence from the page queues here, prior to the last reference to a cow pages
+                // being dropped.
+                // SAFETY: `head` is in the OBJECT state in an isolate queue under `list_lock`, so
+                // `cow_ptr` is non-null, properly aligned, and points to a live `VmCowPages` kept
+                // alive by `head`'s residency in `PageQueues` under `list_lock`.
+                let cow_pages = unsafe { VmCowPages::upgrade_from_raw(cow_ptr.cast()) };
+                debug_assert!(cow_pages.is_some());
+                // SAFETY: `head` is in the OBJECT state and `list_lock` is held.
+                let offset = unsafe { head.get_page_offset() };
+                let page = VmPagePtr::new(NonNull::from(head));
+                return Some(VmoBacklink { cow: cow_pages, page, offset });
+            }
+        }
+        None
+    }
+
+    /// This processes the LRU queue with the goal of increasing the lru_gen to the target_gen. It
+    /// achieves this by walking all the pages in the queue and doing one of the following:
+    /// 1. For pages that have a newest accessed time and are in the wrong queue, are moved into the
+    ///    correct queue.
+    /// 2. For pages that are in the correct queue, they are moved to the Isolate queue.
+    ///
+    /// An optional limit for the number of pages to Isolate can be provided and if reached this
+    /// will return early even if target_gen has not been reached.
     fn process_lru_queue(&self, target_gen: u64, isolate: Option<usize>) {
         // This assertion is <=, and not strictly <, since to evict a some queue X, the target must
         // be X+1. Hence to preserve NUM_ACTIVE_QUEUES, we can allow target_gen to become equal to
@@ -2521,23 +2553,13 @@ impl PageQueues {
         self.maybe_check_active_ratio_aging(1);
     }
 
-    /// Provides access to the underlying lock, allowing _Locked variants to be called. Use of this
-    /// is highly discouraged as the underlying lock is a CriticalMutex which disables
-    /// preemption. Preferably *Array variations should be used, but this provides a higher
-    /// performance mechanism when needed.
-    pub fn get_lock(&self) -> &KMutex<PageQueuesListLockClass, RawCriticalMutex> {
-        let lock = unsafe { bindings::cpp_page_queues_get_lock(self.as_raw()) };
-        // SAFETY: The returned lock pointer is `&self.list_lock_`, valid for the lifetime of
-        // `self`.
-        unsafe { &*lock.cast::<KMutex<PageQueuesListLockClass, RawCriticalMutex>>() }
-    }
-
-    /// Returns a string representation of the given `AgeReason`.
+    /// Converts an `AgeReason` to a human-readable string.
     pub fn string_from_age_reason(reason: AgeReason) -> &'static CStr {
-        let ptr = unsafe { bindings::cpp_page_queues_string_from_age_reason(reason as i32) };
-        // SAFETY: `cpp_page_queues_string_from_age_reason` returns a pointer to a static C string
-        // literal.
-        unsafe { CStr::from_ptr(ptr) }
+        match reason {
+            AgeReason::ActiveRatio => c"Active ratio",
+            AgeReason::Timeout => c"Timeout",
+            AgeReason::Manual => c"Manual",
+        }
     }
 
     /// Performs a manually requested aging event. This ignores usual aging triggers / restrictions
@@ -2563,19 +2585,38 @@ impl PageQueues {
     /// otherwise if it has_value the vmo field may be null to indicate that the vmo is running
     /// its destructor (see VmoBacklink for more details).
     pub fn pop_anonymous_zero_fork(&self) -> Option<VmoBacklink> {
-        let mut out = MaybeUninit::<bindings::PageQueuesVmoBacklink>::uninit();
-        // SAFETY: `self.as_raw()` is a valid pointer and `out` is valid for writing.
-        let has_value = unsafe {
-            bindings::cpp_page_queues_pop_anonymous_zero_fork(self.as_raw(), out.as_mut_ptr())
+        let ret = {
+            ksync::lock!(let mut guard = self.lock_list_lock());
+            let page_opt = guard.fields().page_queues[PageQueue::ANONYMOUS_ZERO_FORK.0 as usize]
+                .back()
+                .map(|raw| VmPagePtr::new(NonNull::from(raw)));
+            if let Some(page) = page_opt {
+                // SAFETY: `page` was just obtained from a `VmPageDoublyLinkedList` in `page_queues`
+                // under `list_lock`, so it points to a live PMM `VmPage` in the OBJECT state.
+                let raw = unsafe { page.as_ref() };
+                // SAFETY: `raw` is in the OBJECT state under `list_lock`.
+                let cow_ptr = unsafe { raw.get_object() };
+                // SAFETY: `raw` is in the OBJECT state under `list_lock`.
+                let offset = unsafe { raw.get_page_offset() };
+                debug_assert!(!cow_ptr.is_null());
+                // SAFETY: `page` is a live `VmPage` currently in `PageQueue::ANONYMOUS_ZERO_FORK`,
+                // and `guard` holds `self.list_lock`.
+                unsafe {
+                    self.move_to_queue_locked_list(page, PageQueue::ANONYMOUS, &mut guard);
+                }
+                // SAFETY: `raw` is in `PageQueues` under `list_lock`, so `cow_ptr` is non-null,
+                // properly aligned, and points to a live `VmCowPages` that cannot complete
+                // destruction while any of its pages remain in `PageQueues`.
+                let cow = unsafe { VmCowPages::upgrade_from_raw(cow_ptr.cast()) };
+                Some(VmoBacklink { cow, page, offset })
+            } else {
+                None
+            }
         };
-        if has_value {
-            let out = unsafe { out.assume_init() };
-            let page = unsafe { VmPagePtr::from_ffi(out.page).expect("null page provided") };
-            let cow = unsafe { VmCowPages::from_raw(out.cow.cast()) };
-            Some(VmoBacklink { cow, page, offset: out.offset })
-        } else {
-            None
+        if ret.is_some() {
+            self.maybe_check_active_ratio_aging(1);
         }
+        ret
     }
 
     /// Looks at the isolate queues and returns backlink information of the first page found. If the
@@ -2584,19 +2625,71 @@ impl PageQueues {
     /// returned, otherwise if it has_value the vmo field may be null to indicate that the vmo
     /// is running its destructor (see VmoBacklink for more details). If a page is returned its
     /// location in the reclaim queue is not modified.
-    pub fn peek_isolate(&self, lowest_queue: usize) -> Option<VmoBacklink> {
-        let mut out = MaybeUninit::<bindings::PageQueuesVmoBacklink>::uninit();
-        // SAFETY: `self.as_raw()` is a valid pointer and `out` is valid for writing.
-        let has_value = unsafe {
-            bindings::cpp_page_queues_peek_isolate(self.as_raw(), lowest_queue, out.as_mut_ptr())
-        };
-        if has_value {
-            let out = unsafe { out.assume_init() };
-            let page = unsafe { VmPagePtr::from_ffi(out.page).expect("null page provided") };
-            let cow = unsafe { VmCowPages::from_raw(out.cow.cast()) };
-            Some(VmoBacklink { cow, page, offset: out.offset })
-        } else {
-            None
+    pub fn peek_isolate(&self, mut lowest_queue: usize) -> Option<VmoBacklink> {
+        // Ignore any requests to evict from the active queues as this is never allowed.
+        lowest_queue = lowest_queue.max(NUM_ACTIVE_QUEUES);
+        // Whether we're allowed to peek from all but the active queues. Typically true only under
+        // OOM.
+        let peek_all_inactive = lowest_queue == NUM_ACTIVE_QUEUES;
+
+        // TODO(adanis): Restructure this loop such that there is no question about its
+        // termination, but for now be paranoid.
+        const MAX_ITERATIONS: usize = NUM_RECLAIM * 2;
+        let mut loop_iterations: usize = 0;
+
+        loop {
+            // Peek the Isolate queue in case anything is ready for us.
+            let result = self.peek_isolate_list();
+            if result.is_some() {
+                return result;
+            }
+            let prev_iterations = loop_iterations;
+            loop_iterations += 1;
+            if prev_iterations > MAX_ITERATIONS {
+                // Relaxed: Diagnostic logging only; no ordering with other state is required.
+                kernel_oops!(
+                    "[pq]: peek_isolate iterated more than {} times ({}). lru:{} mru:{}\n",
+                    MAX_ITERATIONS,
+                    loop_iterations,
+                    self.lru_gen.load(Ordering::Relaxed),
+                    self.mru_gen.load(Ordering::Relaxed),
+                );
+            }
+
+            // Synchronize with any aging that was outstanding at the time of this call, and then
+            // use that updated mru_gen to compute the lru_target. Only do this for the first
+            // iteration of the loop, because we want to meet the termination condition to break
+            // out of the loop, which might not happen if we update mru_gen every time.
+            if loop_iterations == 1 {
+                self.synchronize_with_aging();
+                if peek_all_inactive {
+                    PQ_PEEK_SYNC_AGING_ALL_INACTIVE.add(1);
+                } else {
+                    PQ_PEEK_SYNC_AGING.add(1);
+                }
+            }
+            // The limit gen is 1 larger than the lowest queue because evicting from queue X is
+            // done by attempting to make the lru queue be X+1.
+            // Relaxed: `mru_gen` and `lru_gen` are monotonic generation counters;
+            // `process_lru_queue` re-reads `lru_gen` under `self.lock`.
+            let lru_limit = self.mru_gen.load(Ordering::Relaxed) - (lowest_queue as u64 - 1);
+            // Attempt to process one generation at a time to limit the work done before we find a
+            // reclaimable page.
+            let lru_target = self.lru_gen.load(Ordering::Relaxed) + 1;
+            if lru_target > lru_limit {
+                return self.peek_isolate_list();
+            }
+            // Although we only need a single page in the Isolate queue to return for the peek
+            // result, under the assumption that the caller is probably going to peek multiple
+            // pages move a few pages for efficiency.
+            // We do not want to process the entire LRU queue since it could contain tends to
+            // hundreds of thousands of items and so the full processing is left to the LruThread.
+            self.process_lru_queue(lru_target, Some(16));
+            if peek_all_inactive {
+                PQ_PEEK_PROCESS_LRU_ALL_INACTIVE.add(1);
+            } else {
+                PQ_PEEK_PROCESS_LRU.add(1);
+            }
         }
     }
 
@@ -2607,24 +2700,52 @@ impl PageQueues {
     ///
     /// # Safety
     ///
-    /// The caller must guarantee `page` is valid and in the loaned state with state not changing.
+    /// Caller must guarantee `page` is valid and in the loaned state with `state()` not changing.
     pub unsafe fn get_cow_for_loaned_page(&self, page: VmPagePtr) -> Option<VmoBacklink> {
-        let mut out = MaybeUninit::<bindings::PageQueuesVmoBacklink>::uninit();
-        // SAFETY: `self.as_raw()` is valid, and caller guarantees preconditions on `page`.
-        let has_value = unsafe {
-            bindings::cpp_page_queues_get_cow_for_loaned_page(
-                self.as_raw(),
-                page.as_ffi(),
-                out.as_mut_ptr(),
-            )
-        };
-        if has_value {
-            let out = unsafe { out.assume_init() };
-            let page = unsafe { VmPagePtr::from_ffi(out.page).expect("null page provided") };
-            let cow = unsafe { VmCowPages::from_raw(out.cow.cast()) };
-            Some(VmoBacklink { cow, page, offset: out.offset })
-        } else {
-            None
+        // SAFETY: Caller guarantees `page` is a valid loaned page with `state()` not changing.
+        let raw = unsafe { page.as_ref() };
+        debug_assert!(raw.is_loaned());
+        let state = raw.state();
+        match state.0 {
+            vm_page_state::FREE_LOANED => {
+                // Page is not owned by the page queues, so no cow pages to lookup.
+                None
+            }
+            vm_page_state::OBJECT => {
+                // Delaying the lock acquisition and then reading the object field here is safe
+                // since the caller has guaranteed that the page state is not changing, and then
+                // the object field is only modified under `list_lock`, which we will be holding.
+                ksync::lock!(let _guard = self.lock_list_lock());
+                // SAFETY: `raw` is in the OBJECT state and `list_lock` is held.
+                let cow_ptr = unsafe { raw.get_object() };
+                if cow_ptr.is_null() {
+                    // Our examination of the state was racy and this page may or may not be owned
+                    // by a VMO, but it's not in the page queues. It is the responsibility of the
+                    // caller to deal with scenario and the fact that once we drop our lock the
+                    // page could get inserted into the page queues.
+                    return None;
+                }
+                // There is a using/borrowing cow and we know it is still alive as we hold the
+                // PageQueues lock, and the cow may not destruct while it still has pages.
+                // SAFETY: `raw` is in the OBJECT state and `list_lock` is held.
+                let offset = unsafe { raw.get_page_offset() };
+                // SAFETY: `cow_ptr` is non-null while `raw` is in the OBJECT state under
+                // `list_lock`, so `cow_ptr` points to a live `VmCowPages` kept alive by `raw`'s
+                // residency in `PageQueues`.
+                let cow = unsafe { VmCowPages::upgrade_from_raw(cow_ptr.cast()) };
+                debug_assert!(cow.is_some());
+                Some(VmoBacklink { cow, page, offset })
+            }
+            vm_page_state::ALLOC => {
+                // Page is moving between the PMM and a VMO in some direction, but is not in the
+                // page queues.
+                None
+            }
+            _ => {
+                // A loaned page in any other state is invalid and represents a programming error
+                // or bug.
+                panic!("Unexpected page state {} for loaned page", page_state_to_string(state));
+            }
         }
     }
 
@@ -2719,10 +2840,93 @@ impl PageQueues {
         ActiveInactiveCounts { active: active_count, inactive: inactive_count }
     }
 
-    /// Dumps debug information about the page queues.
+    /// Dumps page queue state to the debug console.
     pub fn dump(&self) {
-        // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer.
-        unsafe { bindings::cpp_page_queues_dump(self.as_raw()) }
+        // Need to grab a copy of all the counts and generations. As the lock is needed to acquire
+        // the active/inactive counts, also hold the lock over the copying of the counts to avoid
+        // needless races.
+        let mru_gen;
+        let lru_gen;
+        let mut counts = [0usize; NUM_RECLAIM];
+        let inactive_count;
+        let failed_reclaim;
+        let dirty;
+        let last_age_time;
+        let last_age_reason;
+        let activeinactive;
+        {
+            ksync::lock!(let guard = self.lock_lock());
+            // Relaxed: `mru_gen`, `lru_gen`, and `last_age_time` are only modified under
+            // `self.lock` (which is held here), and `page_queue_counts` are advisory diagnostic
+            // counters that do not synchronize other memory accesses.
+            mru_gen = self.mru_gen.load(Ordering::Relaxed);
+            lru_gen = self.lru_gen.load(Ordering::Relaxed);
+            failed_reclaim = self.page_queue_counts[PageQueue::FAILED_RECLAIM.0 as usize]
+                .load(Ordering::Relaxed);
+            inactive_count = self.page_queue_counts[PageQueue::RECLAIM_ISOLATE.0 as usize]
+                .load(Ordering::Relaxed);
+            dirty = self.page_queue_counts[PageQueue::PAGER_BACKED_DIRTY.0 as usize]
+                .load(Ordering::Relaxed);
+            for (i, count) in counts.iter_mut().enumerate() {
+                *count = self.page_queue_counts[PageQueue::RECLAIM_BASE.0 as usize + i]
+                    .load(Ordering::Relaxed);
+            }
+            activeinactive = self.get_active_inactive_counts();
+            last_age_time = self.last_age_time.load(Ordering::Relaxed);
+            last_age_reason = *guard.fields().last_age_reason;
+        }
+
+        // Small arbitrary number that should be more than large enough to hold the constructed
+        // string without causing stack allocation pressure.
+        const BUF_SIZE: usize = 50;
+        let mut buf = [0u8; BUF_SIZE];
+        let mut buf_len = 0;
+        // This formats the counts of all buckets, not just those within the mru->lru range, even
+        // though any buckets not in that range should always have a count of zero. The format this
+        // generates is:
+        // [active],[active],inactive,inactive,{last inactive},should-be-zero,should-be-zero
+        // Although the inactive and should-be-zero use the same formatting, they are broken up by
+        // the {last inactive}.
+        for i in 0..NUM_RECLAIM as u64 {
+            let queue = Self::gen_to_queue(mru_gen - i);
+            let count = counts[(queue.0 - PageQueue::RECLAIM_BASE.0) as usize];
+            assert!(buf_len < BUF_SIZE);
+            let remain = &mut buf[buf_len..];
+            let remain_len = remain.len();
+            let write_len = if i < NUM_ACTIVE_QUEUES as u64 {
+                kformat!(remain, "[{:u}],", count).len()
+            } else if i == mru_gen - lru_gen {
+                kformat!(remain, "{{{:u}}},", count).len()
+            } else {
+                kformat!(remain, "{:u},", count).len()
+            };
+            if write_len + 1 >= remain_len {
+                // Buffer too small, just use whatever we have constructed so far.
+                buf_len += write_len;
+                break;
+            }
+            buf_len += write_len;
+        }
+
+        let current = current_mono_time();
+        let age_time_diff = current.0.saturating_sub(last_age_time);
+        const NANOS_PER_SEC: i64 = DurationMono::from_seconds(1).into_nanos();
+        let tv_sec = age_time_diff / NANOS_PER_SEC;
+        let tv_nsec = age_time_diff % NANOS_PER_SEC;
+
+        kprintln!(
+            concat!(
+                "pq: MRU:{mru_gen:u} ({tv_sec}.{tv_nsec}s ago, {:cs}) ",
+                "LRU:{lru_gen:u} Act/Inact:{:u}/{:u}"
+            ),
+            Self::string_from_age_reason(last_age_reason),
+            activeinactive.active,
+            activeinactive.inactive,
+        );
+        kprintln!(
+            "pq: {:s} Isolate:{inactive_count:u} Dirty:{dirty:u} Fail:{failed_reclaim:u}",
+            &buf[..buf_len],
+        );
     }
 
     /// Returns a global count of all pages compressed at the point of LRU change. This is a global
@@ -3012,8 +3216,40 @@ impl PageQueues {
     /// random subset of pages added to the page queues. It is an error to call this if there is
     /// no compressor or if not running in debug mode.
     pub fn start_debug_compressor(&self) {
-        // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer.
-        unsafe { bindings::cpp_page_queues_start_debug_compressor(self.as_raw()) }
+        // The debug compressor should not be enabled without debug asserts as we guard all usages
+        // of the debug compressor with compile time checks so that it cannot impact the
+        // performance of release versions.
+        #[cfg(not(debug_assertions))]
+        unreachable!("The debug compressor should not be enabled without debug asserts");
+        #[cfg(debug_assertions)]
+        {
+            let mut uninit_box =
+                kalloc::Box::<super::debug_compressor::DebugCompressor>::try_new_uninit()
+                    .expect("Failed to allocate VmDebugCompressor");
+            let slot = uninit_box.as_mut_ptr();
+            // SAFETY: `slot` is a valid, aligned pointer to uninitialized heap storage inside
+            // `uninit_box`. Once wrapped in `Pin<Box<DebugCompressor>>` below and stored in
+            // `self.debug_compressor`, the allocation remains pinned for the lifetime of
+            // `DebugCompressor`.
+            let _ = unsafe {
+                pin_init::PinInit::__pinned_init(
+                    super::debug_compressor::DebugCompressor::init(),
+                    slot,
+                )
+            };
+            // SAFETY: `DebugCompressor::init()` infallibly initialized `slot` in place, and the
+            // box is never moved out of.
+            let compressor = unsafe { Pin::new_unchecked(uninit_box.assume_init()) };
+            compressor.init_thread().expect("Failed to initialize debug compressor thread");
+            ksync::lock!(let _guard = self.lock_list_lock());
+            // SAFETY: `list_lock` is held, providing exclusive access to `self.debug_compressor`,
+            // and the `assert!(dc.is_none())` below upholds the `debug_compressor` field invariant
+            // that it transitions from `None` to `Some` at most once under `list_lock`.
+            let dc = unsafe { &mut *self.debug_compressor.get() };
+            // We should only be initializing the debug compressor once.
+            assert!(dc.is_none());
+            *dc = Some(compressor);
+        }
     }
 
     /// Sets the active ratio multiplier.
@@ -3057,15 +3293,13 @@ impl PageQueues {
                 ksync::lock!(let _guard = self.lock_list_lock());
                 // SAFETY: `self.debug_compressor` is only modified in `start_debug_compressor`
                 // while holding `list_lock`, which we hold here.
-                let debug_compressor = unsafe { &*self.debug_compressor.get() };
-                debug_compressor
-                    .as_ref()
-                    .map(|b| &**b as *const super::debug_compressor::DebugCompressor)
+                let dc = unsafe { &*self.debug_compressor.get() };
+                dc.as_ref().map(|b| &**b as *const super::debug_compressor::DebugCompressor)
             };
             if let Some(dc_ptr) = dc {
-                // SAFETY: Once initialized, the `Box<DebugCompressor>` inside `debug_compressor`
-                // is never replaced or dropped until `PageQueues` is dropped, and `pause` only
-                // requires `&DebugCompressor`.
+                // SAFETY: Once initialized, the `Pin<Box<DebugCompressor>>` inside
+                // `debug_compressor` is never replaced or dropped until `PageQueues` is dropped,
+                // and `pause` only requires `&DebugCompressor`.
                 unsafe { &*dc_ptr }.pause();
             }
         }
@@ -3094,8 +3328,8 @@ impl PageQueues {
             ksync::lock!(let _guard = self.lock_list_lock());
             // SAFETY: `self.debug_compressor` is only modified in `start_debug_compressor` while
             // holding `list_lock`, which we hold here.
-            let debug_compressor = unsafe { &*self.debug_compressor.get() };
-            if let Some(dc) = debug_compressor.as_ref() {
+            let dc = unsafe { &*self.debug_compressor.get() };
+            if let Some(dc) = dc.as_ref() {
                 dc.resume();
             }
         }
@@ -3207,6 +3441,42 @@ unsafe fn slice_from_raw_parts_or_empty<'a, T>(ptr: *const T, count: usize) -> &
     } else {
         // SAFETY: Caller guarantees `ptr` is valid for `count` elements when `count > 0`.
         unsafe { core::slice::from_raw_parts(ptr, count) }
+    }
+}
+
+/// Initializes a `PageQueues` instance in `slot`.
+///
+/// # Safety
+///
+/// The caller must ensure `slot` is non-null, aligned to `align_of::<PageQueues>()`, valid for
+/// exclusive reads and writes of `size_of::<PageQueues>()` bytes, and that the initialized
+/// `PageQueues` remains pinned at `slot` until dropped via [`rust_page_queues_destroy`].
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_init(slot: *mut MaybeUninit<PageQueues>) {
+    // SAFETY: Caller guarantees `slot` is non-null, aligned, valid for exclusive writes, and
+    // remains pinned until `rust_page_queues_destroy` is called.
+    let _ = unsafe { &mut *slot }.write_pin_init(PageQueues::init());
+}
+
+/// Drops a `PageQueues` instance in place.
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is non-null, aligned to `align_of::<PageQueues>()`, and points
+/// to a pinned `PageQueues` initialized by [`rust_page_queues_init`] that will not be accessed
+/// concurrently or used again after this call. All pages must have been removed from `queues`,
+/// and neither `queues.lock` nor `queues.list_lock` may be held by the current thread.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_destroy(queues: *mut PageQueues) {
+    // SAFETY: Caller guarantees `queues` is non-null, aligned, and points to a pinned,
+    // initialized `PageQueues` that will not be accessed again. Note that `PageQueues` is `!Unpin`
+    // and contains `UnsafeCell`, so `drop_in_place` forming `Pin<&mut PageQueues>` does not emit
+    // `noalias` / `Unique` retags that would conflict with `mru_thread` or `lru_thread` before
+    // `<PageQueues as PinnedDrop>::drop` calls `self.stop_threads()` as its first statement.
+    unsafe {
+        core::ptr::drop_in_place(queues);
     }
 }
 
@@ -3607,6 +3877,29 @@ pub unsafe extern "C" fn rust_page_queues_mark_accessed(queues: &PageQueues, pag
     unsafe { queues.mark_accessed(page_ptr) };
 }
 
+/// FFI wrapper for [`PageQueues::get_lock`].
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
+/// the duration of this call and for as long as the returned lock pointer is used.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_get_lock(queues: &PageQueues) -> *mut c_void {
+    queues.get_lock() as *const _ as *mut c_void
+}
+
+/// FFI wrapper for [`PageQueues::string_from_age_reason`].
+///
+/// # Panics
+///
+/// Panics if `reason` is not a valid [`AgeReason`] discriminant.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_page_queues_string_from_age_reason(reason: i32) -> *const c_char {
+    PageQueues::string_from_age_reason(AgeReason::from_raw(reason)).as_ptr()
+}
+
 /// FFI wrapper for [`PageQueues::rotate_reclaim_queues`].
 ///
 /// # Safety
@@ -3618,6 +3911,91 @@ pub unsafe extern "C" fn rust_page_queues_mark_accessed(queues: &PageQueues, pag
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_page_queues_rotate_reclaim_queues(queues: &PageQueues) {
     queues.rotate_reclaim_queues();
+}
+
+/// FFI wrapper for [`PageQueues::pop_anonymous_zero_fork`].
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
+/// the duration of this call with neither `queues.lock` nor `queues.list_lock` held by the current
+/// thread, and `out_backlink` is non-null, properly aligned, and valid for exclusive writes of a
+/// `PageQueuesVmoBacklink`. When this function returns `true` and `out_backlink.cow` is non-null,
+/// ownership of one strong reference count of `VmCowPages` is transferred to the caller.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_pop_anonymous_zero_fork(
+    queues: &PageQueues,
+    out_backlink: *mut PageQueuesVmoBacklink,
+) -> bool {
+    match queues.pop_anonymous_zero_fork() {
+        Some(b) => {
+            // SAFETY: Caller guarantees `out_backlink` is non-null, aligned, and valid for
+            // exclusive writes of `PageQueuesVmoBacklink`.
+            unsafe { out_backlink.write(b.into()) };
+            true
+        }
+        None => false,
+    }
+}
+
+/// FFI wrapper for [`PageQueues::peek_isolate`].
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
+/// the duration of this call with no `PageQueues` or VMO locks held by the current thread, and
+/// `out_backlink` is non-null, properly aligned, and valid for exclusive writes of a
+/// `PageQueuesVmoBacklink`. When this function returns `true` and `out_backlink.cow` is non-null,
+/// ownership of one strong reference count of `VmCowPages` is transferred to the caller.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_peek_isolate(
+    queues: &PageQueues,
+    lowest_queue: usize,
+    out_backlink: *mut PageQueuesVmoBacklink,
+) -> bool {
+    match queues.peek_isolate(lowest_queue) {
+        Some(b) => {
+            // SAFETY: Caller guarantees `out_backlink` is non-null, aligned, and valid for
+            // exclusive writes of `PageQueuesVmoBacklink`.
+            unsafe { out_backlink.write(b.into()) };
+            true
+        }
+        None => false,
+    }
+}
+
+/// FFI wrapper for [`PageQueues::get_cow_for_loaned_page`].
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
+/// the duration of this call with `queues.list_lock` not held by the current thread, `page` is a
+/// non-null, aligned pointer to a live loaned `vm_page_t` with `state()` not changing for the
+/// duration of this call, and `out_backlink` is non-null, properly aligned, and valid for
+/// exclusive writes of a `PageQueuesVmoBacklink`. When this function returns `true` and
+/// `out_backlink.cow` is non-null, ownership of one strong reference count of `VmCowPages` is
+/// transferred to the caller.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_get_cow_for_loaned_page(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    out_backlink: *mut PageQueuesVmoBacklink,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid non-null `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page) };
+    // SAFETY: Caller guarantees `page_ptr` is a loaned page with stable state.
+    match unsafe { queues.get_cow_for_loaned_page(page_ptr) } {
+        Some(b) => {
+            // SAFETY: Caller guarantees `out_backlink` is non-null, aligned, and valid for
+            // exclusive writes of `PageQueuesVmoBacklink`.
+            unsafe { out_backlink.write(b.into()) };
+            true
+        }
+        None => false,
+    }
 }
 
 /// FFI wrapper for [`PageQueues::get_reclaim_queue_counts`].
@@ -3669,6 +4047,19 @@ pub unsafe extern "C" fn rust_page_queues_get_active_inactive_counts(
     unsafe {
         *(out_counts as *mut ActiveInactiveCounts) = counts;
     }
+}
+
+/// FFI wrapper for [`PageQueues::dump`].
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
+/// the duration of this call, and that neither `queues.lock` nor `queues.list_lock` is held by the
+/// current thread.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_dump(queues: &PageQueues) {
+    queues.dump();
 }
 
 /// FFI wrapper for [`PageQueues::get_lru_pages_compressed`].
@@ -3884,6 +4275,19 @@ pub unsafe extern "C" fn rust_page_queues_start_threads(
     }
 }
 
+/// FFI wrapper for [`PageQueues::start_debug_compressor`].
+///
+/// # Safety
+///
+/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
+/// the duration of this call, that `queues.list_lock` and spinlocks are not held by the current
+/// thread, and that this function is called at most once on `queues`.
+// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_start_debug_compressor(queues: &PageQueues) {
+    queues.start_debug_compressor();
+}
+
 /// FFI wrapper for [`PageQueues::set_active_ratio_multiplier`].
 ///
 /// # Safety
@@ -3981,51 +4385,9 @@ pub unsafe extern "C" fn rust_page_queues_debug_get_mru_thread(pq: &PageQueues) 
     unsafe { pq.debug_get_mru_thread() }.map_or(core::ptr::null_mut(), |p| p.as_raw())
 }
 
-// TODO(https://fxbug.dev/549881466): Temporary export for the C++ PeekIsolate, to be removed once
-// it is ported to Rust.
-/// FFI wrapper for [`PageQueues::process_lru_queue`]. An `isolate` of `usize::MAX` means no limit.
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call, and no spinlocks or VMO locks are held by the caller.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_process_lru_queue(
-    queues: &PageQueues,
-    target_gen: u64,
-    isolate: usize,
-) {
-    queues.process_lru_queue(target_gen, (isolate != usize::MAX).then_some(isolate));
-}
-
-// TODO(https://fxbug.dev/549881466): Temporary export for the C++ PeekIsolate, to be removed once
-// it is ported to Rust.
-/// FFI wrapper for [`PageQueues::synchronize_with_aging`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call, and no page queues locks are held by the caller.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_synchronize_with_aging(queues: &PageQueues) {
-    queues.synchronize_with_aging();
-}
-
-// TODO(https://fxbug.dev/549881466): Temporary export for the C++ PageQueues destructor, to be
-// removed once the object is owned by Rust and stopped by its `PinnedDrop`.
-/// FFI wrapper for [`PageQueues::stop_threads`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call, and that `queues.lock` is not held by the current thread.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_stop_threads(queues: &PageQueues) {
-    queues.stop_threads();
-}
+// ------------------------------------------------------------------------------------------------
+// Tests
+// ------------------------------------------------------------------------------------------------
 
 #[cfg(ktest)]
 #[unittest::suite(name = "page_queues_rust")]
@@ -4662,7 +5024,8 @@ mod tests {
         };
         expect_true!(queue_a.is_some());
         expect_true!(queue_b.is_some());
-        expect_eq!(queue_a.unwrap(), queue_b.unwrap()); // Verify they are in the same queue (same generation)
+        // Verify they are in the same queue (same generation).
+        expect_eq!(queue_a.unwrap(), queue_b.unwrap());
 
         // Age pages until they reach the LRU queue.
         for _ in 0..NUM_RECLAIM - 1 {

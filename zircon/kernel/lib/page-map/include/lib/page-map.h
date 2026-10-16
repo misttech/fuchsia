@@ -20,6 +20,7 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/intrusive_wavl_tree.h>
 #include <fbl/ref_ptr.h>
+#include <kernel/semaphore.h>
 #include <vm/vm_address_region.h>
 #include <vm/vm_object_paged.h>
 

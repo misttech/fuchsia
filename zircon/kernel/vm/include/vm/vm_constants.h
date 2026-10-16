@@ -68,6 +68,22 @@ constexpr size_t kVmDebugCompressorStorageSize = 136;
 #endif
 constexpr size_t kVmDebugCompressorStorageAlign = 8;
 
+// Size and alignment for PageQueues state stored in C++ OpaqueStorage.
+#if WITH_LOCK_DEP
+#if ZX_DEBUG_ASSERT_IMPLEMENTED
+constexpr size_t kPageQueuesStorageSize = 608;
+#else
+constexpr size_t kPageQueuesStorageSize = 600;
+#endif
+#else  // !WITH_LOCK_DEP
+#if ZX_DEBUG_ASSERT_IMPLEMENTED
+constexpr size_t kPageQueuesStorageSize = 592;
+#else
+constexpr size_t kPageQueuesStorageSize = 584;
+#endif
+#endif  // WITH_LOCK_DEP
+constexpr size_t kPageQueuesStorageAlign = 8;
+
 // Size and alignment for PhysicalPageProvider.
 #if WITH_LOCK_DEP
 constexpr size_t kPhysicalPageProviderStateSize = 120;

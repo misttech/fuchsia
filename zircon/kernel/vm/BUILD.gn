@@ -30,7 +30,6 @@ source_set("vm") {
     "memory_stats.cc",
     "page.cc",
     "page_queues.cc",
-    "page_queues_ffi.cc",
     "page_source.cc",
     "page_source_ffi.cc",
     "page_state.cc",
@@ -223,6 +222,7 @@ kernel_bindgen_crate("vm-constants-rs") {
 
   notice_year = 2026
   var_allowlist = [
+    "kPageQueuesStorage.*",
     "kVmObjectPhysicalState.*",
     "kVmAddressRegionOrMappingState.*",
     "kRefCountedAdoptionValidator",
@@ -482,23 +482,13 @@ kernel_bindgen_crate("pmm-arena-bindings") {
 
 kernel_bindgen_crate("page-queues-bindings") {
   visibility = [ ":*" ]
-  headers = [ "include/vm/page_queues_ffi.h" ]
+  headers = [ "include/vm/page_queues.h" ]
   non_rust_deps = [ ":vm" ]
   output_name = "page_queues_bindings.rs"
   cpp = true
 
   edition = "2024"
   notice_year = 2026
-  function_allowlist = [
-    "cpp_page_queues_init",
-    "cpp_page_queues_get_lock",
-    "cpp_page_queues_string_from_age_reason",
-    "cpp_page_queues_pop_anonymous_zero_fork",
-    "cpp_page_queues_peek_isolate",
-    "cpp_page_queues_get_cow_for_loaned_page",
-    "cpp_page_queues_dump",
-    "cpp_page_queues_start_debug_compressor",
-  ]
   type_allowlist = [
     "AgeReason",
     "Counts",
@@ -508,9 +498,6 @@ kernel_bindgen_crate("page-queues-bindings") {
     "PageQueues_Counts",
     "PageQueues_ReclaimCounts",
     "PageQueuesVmoBacklink",
-    "RelaxedAtomic",
-    "ktl::atomic",
-    "std::atomic",
   ]
   type_blocklist = [
     "AutounsignalEvent",

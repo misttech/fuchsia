@@ -12,6 +12,7 @@
 #include <lib/counters.h>
 #include <lib/crypto/global_prng.h>
 #include <lib/crypto/prng.h>
+#include <lib/kconcurrent/chainlock_transaction.h>
 #include <lib/ktrace.h>
 #include <lib/lazy_init/lazy_init.h>
 #include <lib/page/size.h>
