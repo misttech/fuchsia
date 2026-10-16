@@ -6,14 +6,37 @@
 """Utilities for signal handling in build scripts."""
 
 import argparse
-import functools
-import os
+import contextlib
 import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from pathlib import Path
 from typing import Any
+
+# Ensure fuchsia root is in sys.path for absolute imports
+_FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_FUCHSIA_ROOT) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_ROOT))
+
+from build.scripts import managed_process
+
+
+@contextlib.contextmanager
+def scoped_signal_handlers(
+    signals: Sequence[int],
+    handler: Callable[[int, Any], None],
+) -> Iterator[None]:
+    """Context manager to install signal handlers for a scoped block and restore previous handlers on exit."""
+    old_handlers: dict[int, Any] = {}
+    for sig in signals:
+        old_handlers[sig] = signal.signal(sig, handler)
+    try:
+        yield
+    finally:
+        for sig, old_h in old_handlers.items():
+            signal.signal(sig, old_h)
 
 
 class BuildInterruptedError(KeyboardInterrupt):
@@ -42,11 +65,11 @@ class SignalManagedProcess:
         verbose: bool = False,
         timeout: float | None = None,
         timeout_callback: (
-            Callable[[subprocess.Popen[Any], float], None] | None
+            Callable[[managed_process.ManagedProcess, float], None] | None
         ) = None,
         initial_timeout: float | None = None,
         post_spawn_callback: (
-            Callable[[subprocess.Popen[Any]], None] | None
+            Callable[[managed_process.ManagedProcess], None] | None
         ) = None,
         **kwargs: Any,
     ) -> None:
@@ -61,7 +84,7 @@ class SignalManagedProcess:
             initial_timeout: Optional initial timeout before the first timeout_callback.
                 If no timeout is set, we only timeout once and then wait
                 indefinitely.
-            post_spawn_callback: Callback invoked immediately after Popen spawns.
+            post_spawn_callback: Callback invoked immediately after spawn.
             **kwargs: Additional arguments passed to subprocess.Popen.
         """
         if "preexec_fn" in kwargs:
@@ -86,26 +109,125 @@ class SignalManagedProcess:
         Raises:
             BuildInterruptedError: If a signal was received and forwarded.
         """
-        process = subprocess.Popen(
+        managed_proc = managed_process.ManagedProcess.spawn(
             self._command,
-            preexec_fn=functools.partial(_preexec_setup, self._separate_pgrp),
+            separate_pgrp=self._separate_pgrp,
             **self._popen_kwargs,
         )
         if self._post_spawn_callback:
-            self._post_spawn_callback(process)
-        if (
-            self._timeout is not None
-            or self._timeout_callback is not None
-            or self._initial_timeout is not None
-        ):
-            return _wait_and_forward_signals(
-                process,
-                verbose=self._verbose,
-                timeout=self._timeout,
-                timeout_callback=self._timeout_callback,
-                initial_timeout=self._initial_timeout,
+            self._post_spawn_callback(managed_proc)
+        return self._wait_and_forward_signals(managed_proc)
+
+    def _wait_and_forward_signals(
+        self, process: managed_process.ManagedProcess
+    ) -> int:
+        """Relays signals to the given process and waits for it to terminate.
+
+        This function ensures that the parent remains alive to relay signals
+        until the child has finished. This prevents orphaning and ensures that
+        the entire process tree is signaled correctly.
+
+        It handles SIGINT, SIGHUP, SIGTERM, and SIGQUIT.
+
+        The forwarding policy is determined automatically:
+        - If the process is a group leader (pgid == pid), signals are sent to the
+          entire group (os.killpg).
+        - Otherwise, signals are sent to the process PID only (os.kill).
+        This ensures that isolated sub-trees (like build tools wrapped in shell
+        scripts) are fully signaled, while preventing signal bombardment in
+        linear chains.
+
+        Args:
+            process: The subprocess to forward signals to and wait for.
+
+        Returns:
+            The return code of the process, converted to a shell-style positive
+            status (128 + signum) if terminated by a signal.
+
+        Raises:
+            BuildInterruptedError: If a signal was received and forwarded.
+        """
+        received_signum = 0
+
+        def handle_signal(signum: int, frame: Any) -> None:
+            sig_name = signal.Signals(signum).name
+            target = (
+                managed_process.ProcessTarget.GROUP
+                if process.is_group_leader
+                else managed_process.ProcessTarget.LEADER
             )
-        return _wait_and_forward_signals(process, verbose=self._verbose)
+
+            if self._verbose:
+                target_desc = (
+                    f"PGID {process.pgid}"
+                    if process.is_group_leader
+                    else f"PID {process.pid}"
+                )
+                print(
+                    f"[signal_utils] Received {sig_name}. Child PID: {process.pid}, PGID: {process.pgid}, IsLeader: {process.is_group_leader}",
+                    file=sys.stderr,
+                )
+                print(
+                    f"[signal_utils] Forwarding {sig_name} to {target_desc}...",
+                    file=sys.stderr,
+                )
+
+            process.send_signal(signum, target)
+            if self._verbose and process.poll() is not None:
+                print(
+                    f"[signal_utils] Received {sig_name}, but child process {process.pid} has already exited.",
+                    file=sys.stderr,
+                )
+
+            nonlocal received_signum
+            received_signum = signum
+
+        # Signals to forward.
+        signals_to_handle = [signal.SIGINT, signal.SIGHUP, signal.SIGTERM]
+        if hasattr(signal, "SIGQUIT"):
+            signals_to_handle.append(signal.SIGQUIT)
+
+        try:
+            with scoped_signal_handlers(signals_to_handle, handle_signal):
+                # Block until the process exits.
+                # We handle the return code conversion to shell status codes.
+                first_timeout = (
+                    self._initial_timeout
+                    if self._initial_timeout is not None
+                    else self._timeout
+                )
+                if first_timeout is None:
+                    rc = process.wait()
+                    return 128 - rc if rc < 0 else rc
+
+                start_time = time.monotonic()
+                next_timeout = start_time + first_timeout
+                while True:
+                    try:
+                        wait_timeout = max(0.0, next_timeout - time.monotonic())
+                        rc = process.wait(timeout=wait_timeout)
+                        return 128 - rc if rc < 0 else rc
+                    except subprocess.TimeoutExpired:
+                        elapsed = time.monotonic() - start_time
+                        if self._timeout_callback:
+                            self._timeout_callback(process, elapsed)
+                        if self._timeout is not None and self._timeout > 0:
+                            next_timeout += self._timeout
+                            if next_timeout <= time.monotonic():
+                                # This happens if the timeout handler takes longer than the
+                                # next timeout interval, in which case we just reset the
+                                # timeout.
+                                next_timeout = time.monotonic() + self._timeout
+                        else:
+                            next_timeout = float("inf")
+        finally:
+            if received_signum != 0:
+                # We determine the final return code here for the exception.
+                # If the process exited via our signal, its rc will reflect that.
+                final_rc = process.returncode
+                if final_rc < 0:
+                    final_rc = 128 - final_rc
+                raise BuildInterruptedError(final_rc, received_signum)
 
 
 def run_command(
@@ -119,160 +241,6 @@ def run_command(
     return SignalManagedProcess(
         command, separate_pgrp=separate_pgrp, verbose=verbose, **kwargs
     ).run()
-
-
-def _preexec_setup(separate_pgrp: bool = True) -> None:
-    """Prepares a child process for robust signal handling.
-
-    This function is intended to be used as a 'preexec_fn' in subprocess.Popen.
-    It performs two critical tasks:
-    1. Resets standard signals (SIGINT, SIGHUP, SIGTERM, SIGQUIT) to SIG_DFL.
-       This is necessary because if a child starts with these signals ignored
-       (common in background jobs), bash wrappers cannot set their own traps.
-    2. Optionally creates a new process group for the child tree.
-
-    Args:
-        separate_pgrp: If True, calls os.setpgrp() to isolate the child.
-    """
-    # 1. Reset signals to default handlers.
-    # This "un-ignores" signals so that bash wrappers can trap them.
-    for sig in (signal.SIGINT, signal.SIGHUP, signal.SIGTERM):
-        signal.signal(sig, signal.SIG_DFL)
-    if hasattr(signal, "SIGQUIT"):
-        signal.signal(signal.SIGQUIT, signal.SIG_DFL)
-
-    # 2. Isolate the process group.
-    if separate_pgrp:
-        os.setpgrp()
-
-
-def _wait_and_forward_signals(
-    process: subprocess.Popen[Any],
-    verbose: bool = False,
-    timeout: float | None = None,
-    timeout_callback: (
-        Callable[[subprocess.Popen[Any], float], None] | None
-    ) = None,
-    initial_timeout: float | None = None,
-) -> int:
-    """Relays signals to the given process and waits for it to terminate.
-
-    This function ensures that the parent remains alive to relay signals
-    until the child has finished. This prevents orphaning and ensures that
-    the entire process tree is signaled correctly.
-
-    It handles SIGINT, SIGHUP, SIGTERM, and SIGQUIT.
-
-    The forwarding policy is determined automatically:
-    - If the process is a group leader (pgid == pid), signals are sent to the
-      entire group (os.killpg).
-    - Otherwise, signals are sent to the process PID only (os.kill).
-    This ensures that isolated sub-trees (like build tools wrapped in shell
-    scripts) are fully signaled, while preventing signal bombardment in
-    linear chains.
-
-    Args:
-        process: The subprocess to forward signals to and wait for.
-        verbose: If True, log signal receipt and forwarding to stderr.
-        timeout: Optional interval in seconds to invoke timeout_callback.
-        timeout_callback: Callback invoked when timeout expires while waiting.
-        initial_timeout: Optional initial timeout before the first timeout_callback.
-
-    Returns:
-        The return code of the process, converted to a shell-style positive
-        status (128 + signum) if terminated by a signal.
-
-    Raises:
-        BuildInterruptedError: If a signal was received and forwarded.
-    """
-    received_signum = 0
-
-    def handle_signal(signum: int, frame: Any) -> None:
-        sig_name = signal.Signals(signum).name
-
-        try:
-            pgid = os.getpgid(process.pid)
-            is_group_leader = pgid == process.pid
-
-            if verbose:
-                target_desc = (
-                    f"PGID {pgid}" if is_group_leader else f"PID {process.pid}"
-                )
-                print(
-                    f"[signal_utils] Received {sig_name}. Child PID: {process.pid}, PGID: {pgid}, IsLeader: {is_group_leader}",
-                    file=sys.stderr,
-                )
-                print(
-                    f"[signal_utils] Forwarding {sig_name} to {target_desc}...",
-                    file=sys.stderr,
-                )
-
-            if is_group_leader:
-                os.killpg(pgid, signum)
-            else:
-                os.kill(process.pid, signum)
-        except ProcessLookupError:
-            if verbose:
-                print(
-                    f"[signal_utils] Received {sig_name}, but child process {process.pid} has already exited.",
-                    file=sys.stderr,
-                )
-
-        nonlocal received_signum
-        received_signum = signum
-
-    # Signals to forward.
-    signals_to_handle = [signal.SIGINT, signal.SIGHUP, signal.SIGTERM]
-    if hasattr(signal, "SIGQUIT"):
-        signals_to_handle.append(signal.SIGQUIT)
-
-    # Register handlers.
-    old_handlers = {}
-    for sig in signals_to_handle:
-        old_handlers[sig] = signal.signal(sig, handle_signal)
-
-    try:
-        # Block until the process exits.
-        # We handle the return code conversion to shell status codes.
-        first_timeout = (
-            initial_timeout if initial_timeout is not None else timeout
-        )
-        if first_timeout is None:
-            rc = process.wait()
-            return 128 - rc if rc < 0 else rc
-
-        start_time = time.monotonic()
-        next_timeout = start_time + first_timeout
-        while True:
-            try:
-                wait_timeout = max(0.0, next_timeout - time.monotonic())
-                rc = process.wait(timeout=wait_timeout)
-                return 128 - rc if rc < 0 else rc
-            except subprocess.TimeoutExpired:
-                elapsed = time.monotonic() - start_time
-                if timeout_callback:
-                    timeout_callback(process, elapsed)
-                if timeout is not None and timeout > 0:
-                    next_timeout += timeout
-                    if next_timeout <= time.monotonic():
-                        # This happens if the timeout handler takes longer than the
-                        # next timeout interval, in which case we just reset the
-                        # timeout.
-                        next_timeout = time.monotonic() + timeout
-                else:
-                    next_timeout = float("inf")
-    finally:
-        # Restore old handlers.
-        for sig, handler in old_handlers.items():
-            signal.signal(sig, handler)
-
-        if received_signum != 0:
-            # We determine the final return code here for the exception.
-            # If the process exited via our signal, its rc will reflect that.
-            final_rc = process.returncode
-            if final_rc < 0:
-                final_rc = 128 - final_rc
-            raise BuildInterruptedError(final_rc, received_signum)
 
 
 def main(argv: list[str]) -> int:

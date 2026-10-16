@@ -3,71 +3,90 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import functools
-import os
 import signal
 import subprocess
+import sys
 import unittest
+from pathlib import Path
+from typing import Any
 from unittest import mock
 
+# Ensure fuchsia root is in sys.path for absolute imports
+_FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_FUCHSIA_ROOT) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_ROOT))
+
 import signal_utils
+from build.scripts import managed_process
+
+
+def make_mock_managed_process(
+    pid: int = 1234,
+    pgid: int | None = None,
+    returncode: int | None = 0,
+    is_group_leader: bool = True,
+) -> mock.Mock:
+    """Creates a mock ManagedProcess instance for testing."""
+    proc = mock.Mock(spec=managed_process.ManagedProcess)
+    proc.pid = pid
+    proc.pgid = pgid if pgid is not None else pid
+    proc.returncode = returncode
+    proc.is_group_leader = is_group_leader
+    proc.poll.return_value = None
+    return proc
 
 
 class SignalUtilsTest(unittest.TestCase):
-    @mock.patch.object(os, "kill")
-    @mock.patch.object(os, "killpg")
-    @mock.patch.object(os, "getpgid")
+    def _wait_and_forward_signals(
+        self,
+        process: managed_process.ManagedProcess,
+        verbose: bool = False,
+        timeout: float | None = None,
+        timeout_callback: Any = None,
+        initial_timeout: float | None = None,
+    ) -> int:
+        return signal_utils.SignalManagedProcess(
+            [],
+            verbose=verbose,
+            timeout=timeout,
+            timeout_callback=timeout_callback,
+            initial_timeout=initial_timeout,
+        )._wait_and_forward_signals(process)
+
     @mock.patch.object(signal, "signal")
     def test_wait_and_forward_signals_leader(
         self,
         mock_signal: mock.Mock,
-        mock_getpgid: mock.Mock,
-        mock_killpg: mock.Mock,
-        mock_kill: mock.Mock,
     ) -> None:
         """Verify that signals are forwarded to the PGID if the child is a group leader."""
-        mock_process = mock.Mock()
-        mock_process.pid = 1234
-        mock_process.returncode = 0
-        mock_getpgid.return_value = 1234  # Same as PID, so it's a leader
+        mock_managed = make_mock_managed_process()
 
-        # Setup handlers to trigger when wait() is called.
         def side_effect() -> int:
-            # Trigger the SIGINT handler.
             for call in mock_signal.call_args_list:
                 if call.args[0] == signal.SIGINT:
                     handler = call.args[1]
                     handler(signal.SIGINT, None)
             return 0
 
-        mock_process.wait.side_effect = side_effect
+        mock_managed.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils._wait_and_forward_signals(mock_process)
+            self._wait_and_forward_signals(mock_managed)
 
         self.assertEqual(cm.exception.return_code, 0)
         self.assertEqual(cm.exception.signum, signal.SIGINT)
+        mock_managed.send_signal.assert_called_once_with(
+            signal.SIGINT, managed_process.ProcessTarget.GROUP
+        )
 
-        mock_killpg.assert_called_once_with(1234, signal.SIGINT)
-        mock_kill.assert_not_called()
-
-    @mock.patch.object(os, "kill")
-    @mock.patch.object(os, "killpg")
-    @mock.patch.object(os, "getpgid")
     @mock.patch.object(signal, "signal")
     def test_wait_and_forward_signals_follower(
         self,
         mock_signal: mock.Mock,
-        mock_getpgid: mock.Mock,
-        mock_killpg: mock.Mock,
-        mock_kill: mock.Mock,
     ) -> None:
         """Verify that signals are forwarded to the PID only if the child is not a group leader."""
-        mock_process = mock.Mock()
-        mock_process.pid = 1234
-        mock_process.returncode = 0
-        mock_getpgid.return_value = (
-            1111  # Different from PID, so it's a follower
+        mock_managed = make_mock_managed_process(
+            pgid=1111, is_group_leader=False
         )
 
         def side_effect() -> int:
@@ -77,31 +96,23 @@ class SignalUtilsTest(unittest.TestCase):
                     handler(signal.SIGINT, None)
             return 0
 
-        mock_process.wait.side_effect = side_effect
+        mock_managed.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils._wait_and_forward_signals(mock_process)
+            self._wait_and_forward_signals(mock_managed)
 
         self.assertEqual(cm.exception.return_code, 0)
-        mock_kill.assert_called_once_with(1234, signal.SIGINT)
-        mock_killpg.assert_not_called()
+        mock_managed.send_signal.assert_called_once_with(
+            signal.SIGINT, managed_process.ProcessTarget.LEADER
+        )
 
-    @mock.patch.object(os, "kill")
-    @mock.patch.object(os, "killpg")
-    @mock.patch.object(os, "getpgid")
     @mock.patch.object(signal, "signal")
     def test_wait_and_forward_signals_failure_preserved(
         self,
         mock_signal: mock.Mock,
-        mock_getpgid: mock.Mock,
-        mock_killpg: mock.Mock,
-        mock_kill: mock.Mock,
     ) -> None:
         """Verify that child failure code is preserved even when interrupted."""
-        mock_process = mock.Mock()
-        mock_process.pid = 1234
-        mock_process.returncode = 1  # Child failed with 1
-        mock_getpgid.return_value = 1234
+        mock_managed = make_mock_managed_process(returncode=1)
 
         def side_effect() -> int:
             for call in mock_signal.call_args_list:
@@ -110,31 +121,21 @@ class SignalUtilsTest(unittest.TestCase):
                     handler(signal.SIGTERM, None)
             return 1
 
-        mock_process.wait.side_effect = side_effect
+        mock_managed.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils._wait_and_forward_signals(mock_process)
+            self._wait_and_forward_signals(mock_managed)
 
         self.assertEqual(cm.exception.return_code, 1)
         self.assertEqual(cm.exception.signum, signal.SIGTERM)
 
-    @mock.patch.object(os, "kill")
-    @mock.patch.object(os, "killpg")
-    @mock.patch.object(os, "getpgid")
     @mock.patch.object(signal, "signal")
     def test_wait_and_forward_signals_negative_rc_conversion(
         self,
         mock_signal: mock.Mock,
-        mock_getpgid: mock.Mock,
-        mock_killpg: mock.Mock,
-        mock_kill: mock.Mock,
     ) -> None:
         """Verify that negative signal status is converted to shell-style (128+N)."""
-        mock_process = mock.Mock()
-        mock_process.pid = 1234
-        # subprocess returns -15 for SIGTERM
-        mock_process.returncode = -15
-        mock_getpgid.return_value = 1234
+        mock_managed = make_mock_managed_process(returncode=-15)
 
         def side_effect() -> int:
             for call in mock_signal.call_args_list:
@@ -143,35 +144,23 @@ class SignalUtilsTest(unittest.TestCase):
                     handler(signal.SIGTERM, None)
             return -15
 
-        mock_process.wait.side_effect = side_effect
+        mock_managed.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils._wait_and_forward_signals(mock_process)
+            self._wait_and_forward_signals(mock_managed)
 
-        # Since child died of SIGTERM (-15), status should be 143.
         self.assertEqual(cm.exception.return_code, 143)
-        # The last received signal was SIGTERM.
         self.assertEqual(cm.exception.signum, signal.SIGTERM)
 
-    @mock.patch.object(os, "kill")
-    @mock.patch.object(os, "killpg")
-    @mock.patch.object(os, "getpgid")
     @mock.patch.object(signal, "signal")
     def test_wait_and_forward_signals_multiple_succession(
         self,
         mock_signal: mock.Mock,
-        mock_getpgid: mock.Mock,
-        mock_killpg: mock.Mock,
-        mock_kill: mock.Mock,
     ) -> None:
         """Verify that multiple different signals are all forwarded correctly."""
-        mock_process = mock.Mock()
-        mock_process.pid = 1234
-        mock_process.returncode = 0
-        mock_getpgid.return_value = 1234
+        mock_managed = make_mock_managed_process()
 
         def side_effect() -> int:
-            # Simulate receiving INT then TERM
             handlers = {
                 call.args[0]: call.args[1]
                 for call in mock_signal.call_args_list
@@ -180,56 +169,26 @@ class SignalUtilsTest(unittest.TestCase):
             handlers[signal.SIGTERM](signal.SIGTERM, None)
             return 0
 
-        mock_process.wait.side_effect = side_effect
+        mock_managed.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils._wait_and_forward_signals(mock_process)
+            self._wait_and_forward_signals(mock_managed)
 
         self.assertEqual(cm.exception.signum, signal.SIGTERM)
-        self.assertEqual(mock_killpg.call_count, 2)
+        self.assertEqual(mock_managed.send_signal.call_count, 2)
 
-    @mock.patch.object(os, "setpgrp")
-    @mock.patch.object(signal, "signal")
-    def test_preexec_setup(
-        self, mock_signal: mock.Mock, mock_setpgrp: mock.Mock
-    ) -> None:
-        """Verify that _preexec_setup resets signals and optionally sets pgrp."""
-        # Test with separate_pgrp=True
-        signal_utils._preexec_setup(separate_pgrp=True)
-        mock_setpgrp.assert_called_once()
-
-        # Verify that expected signals were reset to SIG_DFL
-        expected_signals = [signal.SIGINT, signal.SIGHUP, signal.SIGTERM]
-        if hasattr(signal, "SIGQUIT"):
-            expected_signals.append(signal.SIGQUIT)
-
-        actual_signals_reset = [
-            call.args[0] for call in mock_signal.call_args_list
-        ]
-        for sig in expected_signals:
-            self.assertIn(sig, actual_signals_reset)
-            # Find the call for this signal and verify it used SIG_DFL
-            for call in mock_signal.call_args_list:
-                if call.args[0] == sig:
-                    self.assertEqual(call.args[1], signal.SIG_DFL)
-
-        mock_signal.reset_mock()
-        mock_setpgrp.reset_mock()
-
-        # Test with separate_pgrp=False
-        signal_utils._preexec_setup(separate_pgrp=False)
-        mock_setpgrp.assert_not_called()
-        self.assertGreater(mock_signal.call_count, 0)
-
-    @mock.patch("signal_utils.subprocess.Popen")
-    @mock.patch("signal_utils._wait_and_forward_signals")
+    @mock.patch.object(
+        signal_utils.SignalManagedProcess,
+        "_wait_and_forward_signals",
+        return_value=42,
+    )
+    @mock.patch.object(managed_process.ManagedProcess, "spawn")
     def test_signal_managed_process(
-        self, mock_wait: mock.Mock, mock_popen: mock.Mock
+        self, mock_spawn: mock.Mock, mock_wait: mock.Mock
     ) -> None:
         """Verify SignalManagedProcess correctly orchestrates execution."""
-        mock_process = mock.Mock()
-        mock_popen.return_value = mock_process
-        mock_wait.return_value = 42
+        mock_proc = mock.Mock()
+        mock_spawn.return_value = mock_proc
 
         managed = signal_utils.SignalManagedProcess(
             ["test", "cmd"], separate_pgrp=True, verbose=True, env={"A": "B"}
@@ -237,17 +196,12 @@ class SignalUtilsTest(unittest.TestCase):
         rc = managed.run()
 
         self.assertEqual(rc, 42)
-        mock_popen.assert_called_once()
-        args, kwargs = mock_popen.call_args
-        self.assertEqual(args[0], ["test", "cmd"])
-        self.assertEqual(kwargs["env"], {"A": "B"})
-        self.assertIsInstance(kwargs["preexec_fn"], functools.partial)
-        self.assertEqual(kwargs["preexec_fn"].func, signal_utils._preexec_setup)
-        self.assertEqual(kwargs["preexec_fn"].args, (True,))
+        mock_spawn.assert_called_once_with(
+            ["test", "cmd"], separate_pgrp=True, env={"A": "B"}
+        )
+        mock_wait.assert_called_once_with(mock_proc)
 
-        mock_wait.assert_called_once_with(mock_process, verbose=True)
-
-    @mock.patch("signal_utils.SignalManagedProcess")
+    @mock.patch.object(signal_utils, "SignalManagedProcess")
     def test_run_command(self, mock_managed_class: mock.Mock) -> None:
         """Verify run_command convenience function."""
         mock_instance = mock_managed_class.return_value
@@ -278,7 +232,7 @@ class SignalUtilsTest(unittest.TestCase):
         mock_process.wait.side_effect = fake_wait
         callback_called: list[float] = []
 
-        rc = signal_utils._wait_and_forward_signals(
+        rc = self._wait_and_forward_signals(
             mock_process,
             timeout=0.01,
             timeout_callback=lambda p, elapsed: callback_called.append(elapsed),
@@ -286,15 +240,18 @@ class SignalUtilsTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(len(callback_called), 1)
 
-    @mock.patch("signal_utils._wait_and_forward_signals")
-    @mock.patch.object(subprocess, "Popen")
+    @mock.patch.object(
+        signal_utils.SignalManagedProcess,
+        "_wait_and_forward_signals",
+        return_value=0,
+    )
+    @mock.patch.object(managed_process.ManagedProcess, "spawn")
     def test_signal_managed_process_with_timeout_and_post_spawn(
-        self, mock_popen: mock.Mock, mock_wait: mock.Mock
+        self, mock_spawn: mock.Mock, mock_wait: mock.Mock
     ) -> None:
         """Verify SignalManagedProcess passes timeout, timeout_callback, and invokes post_spawn_callback."""
-        mock_process = mock.Mock()
-        mock_popen.return_value = mock_process
-        mock_wait.return_value = 0
+        mock_proc = mock.Mock()
+        mock_spawn.return_value = mock_proc
 
         post_spawn_called = []
         timeout_cb = lambda p, e: None
@@ -308,14 +265,8 @@ class SignalUtilsTest(unittest.TestCase):
         rc = managed.run()
 
         self.assertEqual(rc, 0)
-        self.assertEqual(post_spawn_called, [mock_process])
-        mock_wait.assert_called_once_with(
-            mock_process,
-            verbose=False,
-            timeout=60.0,
-            timeout_callback=timeout_cb,
-            initial_timeout=None,
-        )
+        self.assertEqual(post_spawn_called, [mock_proc])
+        mock_wait.assert_called_once_with(mock_proc)
 
     def test_wait_and_forward_signals_initial_timeout(self) -> None:
         """Verify initial_timeout is used for the first tick."""
@@ -334,7 +285,7 @@ class SignalUtilsTest(unittest.TestCase):
         mock_process.wait.side_effect = fake_wait
         callback_called: list[float] = []
 
-        rc = signal_utils._wait_and_forward_signals(
+        rc = self._wait_and_forward_signals(
             mock_process,
             timeout=60.0,
             initial_timeout=0.01,
@@ -362,7 +313,7 @@ class SignalUtilsTest(unittest.TestCase):
         mock_process.wait.side_effect = fake_wait
         callback_called: list[float] = []
 
-        rc = signal_utils._wait_and_forward_signals(
+        rc = self._wait_and_forward_signals(
             mock_process,
             timeout=0.01,
             initial_timeout=0.05,
@@ -389,7 +340,7 @@ class SignalUtilsTest(unittest.TestCase):
         mock_process.wait.side_effect = fake_wait
         callback_called: list[float] = []
 
-        rc = signal_utils._wait_and_forward_signals(
+        rc = self._wait_and_forward_signals(
             mock_process,
             initial_timeout=0.01,
             timeout_callback=lambda p, elapsed: callback_called.append(elapsed),
@@ -397,14 +348,18 @@ class SignalUtilsTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(len(callback_called), 1)
 
-    @mock.patch("signal_utils._wait_and_forward_signals")
-    @mock.patch.object(subprocess, "Popen")
+    @mock.patch.object(
+        signal_utils.SignalManagedProcess,
+        "_wait_and_forward_signals",
+        return_value=0,
+    )
+    @mock.patch.object(managed_process.ManagedProcess, "spawn")
     def test_signal_managed_process_with_initial_timeout(
-        self, mock_popen: mock.Mock, mock_wait: mock.Mock
+        self, mock_spawn: mock.Mock, mock_wait: mock.Mock
     ) -> None:
         """Verify SignalManagedProcess passes initial_timeout to _wait_and_forward_signals."""
-        mock_process = mock.Mock()
-        mock_popen.return_value = mock_process
+        mock_proc = mock.Mock()
+        mock_spawn.return_value = mock_proc
         mock_wait.return_value = 0
 
         timeout_cb = lambda p, e: None
@@ -418,13 +373,28 @@ class SignalUtilsTest(unittest.TestCase):
         rc = managed.run()
 
         self.assertEqual(rc, 0)
-        mock_wait.assert_called_once_with(
-            mock_process,
-            verbose=False,
-            timeout=60.0,
-            timeout_callback=timeout_cb,
-            initial_timeout=2.0,
-        )
+        mock_wait.assert_called_once_with(mock_proc)
+
+
+class ScopedSignalHandlersTest(unittest.TestCase):
+    def test_scoped_signal_handlers_restores_previous_handlers(self) -> None:
+        handler_calls: list[int] = []
+
+        def custom_handler(signum: int, frame: Any) -> None:
+            handler_calls.append(signum)
+
+        old_handler = signal.getsignal(signal.SIGINT)
+        try:
+            with signal_utils.scoped_signal_handlers(
+                [signal.SIGINT], custom_handler
+            ):
+                current_handler = signal.getsignal(signal.SIGINT)
+                self.assertEqual(current_handler, custom_handler)
+
+            restored_handler = signal.getsignal(signal.SIGINT)
+            self.assertEqual(restored_handler, old_handler)
+        finally:
+            signal.signal(signal.SIGINT, old_handler)
 
 
 if __name__ == "__main__":

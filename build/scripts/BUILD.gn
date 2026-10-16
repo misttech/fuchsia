@@ -10,8 +10,8 @@ if (is_host) {
     sources = [
       "main_build.py",
       "properties.py",
-      "signal_utils.py",
     ]
+    deps = [ ":signal_utils_lib" ]
     library_deps = [
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
@@ -23,12 +23,17 @@ if (is_host) {
     data_deps = [ "//build/auth:select_auth_method" ]
   }
 
+  python_library("managed_process_lib") {
+    sources = [ "managed_process.py" ]
+  }
+
   python_library("properties_lib") {
     sources = [ "properties.py" ]
   }
 
   python_library("signal_utils_lib") {
     sources = [ "signal_utils.py" ]
+    deps = [ ":managed_process_lib" ]
   }
 
   python_library("pstree_lib") {
@@ -54,6 +59,11 @@ if (is_host) {
     ]
   }
 
+  python_build_time_tests("managed_process_test") {
+    tests = [ "managed_process_test.py" ]
+    deps = [ ":managed_process_lib" ]
+  }
+
   python_build_time_tests("properties_test") {
     tests = [ "properties_test.py" ]
     deps = [ ":properties_lib" ]
@@ -66,7 +76,10 @@ if (is_host) {
 
   python_build_time_tests("signal_utils_test") {
     tests = [ "signal_utils_test.py" ]
-    deps = [ ":signal_utils_lib" ]
+    deps = [
+      ":managed_process_lib",
+      ":signal_utils_lib",
+    ]
   }
 
   python_build_time_tests("pstree_test") {
@@ -84,6 +97,7 @@ group("tests") {
   testonly = true
   deps = [
     ":main_build_test($host_toolchain)",
+    ":managed_process_test($host_toolchain)",
     ":ninjatrace2json_test($host_toolchain)",
     ":properties_test($host_toolchain)",
     ":pstree_test($host_toolchain)",
