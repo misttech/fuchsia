@@ -28,7 +28,7 @@ func TestParseEmpty(t *testing.T) {
 			FailureReason: runtests.FailureReasonFromMessage("[TestparserError] Missing Mobly summary record - potental infra timeout."),
 			SuiteName:     "Synthetic",
 			CaseName:      "Synthetic",
-			Status:        runtests.TestAborted,
+			Status:        runtests.TestFailure,
 			Format:        "Mobly",
 		},
 	})
@@ -278,6 +278,306 @@ Type: Summary
 	testCaseCmp(t, stdout, want)
 }
 
+func TestParseMoblyTestTimeout(t *testing.T) {
+	stdout := `
+Running [InfraDriver]
+======== Mobly config content ========
+MoblyParams:
+  LogPath: /tmp
+TestBeds:
+- Controllers:
+    FuchsiaDevice:
+    - name: fuchsia-emulator
+      transport: fuchsia-controller
+  Name: InfraTestbed
+  TestParams: {}
+
+======================================
+
+[=====MOBLY RESULTS=====]
+---
+Requested Tests:
+- test_aborted
+- test_skip_with_sig
+Type: TestNameList
+...
+---
+Begin Time: 1668122321142
+Details: Test received a SIGTERM.
+End Time: 1668122321145
+Extra Errors: {}
+Extras: null
+Parent: null
+Result: FAIL
+Retry Parent: null
+Signature: test_aborted-1668122321142
+Stacktrace: null
+Termination Signal Type: TestAbortAll
+Test Class: GreetingsTest
+Test Name: test_aborted
+Type: Record
+UID: null
+...
+---
+Begin Time: null
+Details: 'All remaining tests aborted due to: Test received a SIGTERM.'
+End Time: null
+Extra Errors: {}
+Extras: null
+Parent: null
+Result: SKIP
+Retry Parent: null
+Signature: null
+Stacktrace: null
+Termination Signal Type: TestAbortAll
+Test Class: GreetingsTest
+Test Name: test_skip_with_sig
+Type: Record
+UID: null
+...
+---
+Error: 0
+Executed: 1
+Failed: 1
+Passed: 0
+Requested: 2
+Skipped: 1
+Type: Summary
+...
+---
+Details: Test timed out after 0:04:20.
+Type: MoblyDriverTimeout
+...
+`
+
+	// Note: test_skip_with_sig is omitted because parseMoblyTest filters out
+	// SKIP records that have a non-TestSkip Termination Signal Type.
+	want := []runtests.TestCaseResult{
+		{
+			DisplayName:   "GreetingsTest.test_aborted",
+			FailureReason: runtests.FailureReasonFromMessage("[MoblyDriverTimeout] GreetingsTest.test_aborted: Test timed out after 0:04:20."),
+			SuiteName:     "GreetingsTest",
+			CaseName:      "test_aborted",
+			Status:        runtests.TestAborted,
+			Duration:      3 * time.Millisecond,
+			Format:        "Mobly",
+		},
+	}
+
+	testCaseCmp(t, stdout, want)
+}
+
+func TestParseMoblyTestTimeoutWithoutAbortedRecord(t *testing.T) {
+	stdout := `
+Running [InfraDriver]
+======== Mobly config content ========
+MoblyParams:
+  LogPath: /tmp
+TestBeds:
+- Controllers:
+    FuchsiaDevice:
+    - name: fuchsia-emulator
+      transport: fuchsia-controller
+  Name: InfraTestbed
+  TestParams: {}
+
+======================================
+
+[=====MOBLY RESULTS=====]
+---
+Requested Tests:
+- test_hung
+Type: TestNameList
+...
+---
+Details: Test timed out after 0:04:20.
+Type: MoblyDriverTimeout
+...
+`
+
+	want := []runtests.TestCaseResult{
+		{
+			DisplayName:   "MoblyDriverTimeout",
+			FailureReason: runtests.FailureReasonFromMessage("[MoblyDriverTimeout] test_hung: Test timed out after 0:04:20."),
+			SuiteName:     "Synthetic",
+			CaseName:      "Synthetic",
+			Status:        runtests.TestAborted,
+			Format:        "Mobly",
+		},
+	}
+
+	testCaseCmp(t, stdout, want)
+}
+
+func TestParseMoblyTestNonSigtermAbortAll(t *testing.T) {
+	stdout := `
+Running [InfraDriver]
+======== Mobly config content ========
+MoblyParams:
+  LogPath: /tmp
+TestBeds:
+- Controllers:
+    FuchsiaDevice:
+    - name: fuchsia-emulator
+      transport: fuchsia-controller
+  Name: InfraTestbed
+  TestParams: {}
+
+======================================
+
+[=====MOBLY RESULTS=====]
+---
+Requested Tests:
+- test_fatal_device_error
+- test_skipped_after_abort
+Type: TestNameList
+...
+---
+Begin Time: 1668122321142
+Details: FatalDeviceError during test
+End Time: 1668122321145
+Extra Errors: {}
+Extras: null
+Parent: null
+Result: FAIL
+Retry Parent: null
+Signature: test_fatal_device_error-1668122321142
+Stacktrace: null
+Termination Signal Type: TestAbortAll
+Test Class: GreetingsTest
+Test Name: test_fatal_device_error
+Type: Record
+UID: null
+...
+---
+Begin Time: null
+Details: 'All remaining tests aborted due to: FatalDeviceError during test'
+End Time: null
+Extra Errors: {}
+Extras: null
+Parent: null
+Result: SKIP
+Retry Parent: null
+Signature: null
+Stacktrace: null
+Termination Signal Type: TestAbortAll
+Test Class: GreetingsTest
+Test Name: test_skipped_after_abort
+Type: Record
+UID: null
+...
+---
+Error: 0
+Executed: 1
+Failed: 1
+Passed: 0
+Requested: 2
+Skipped: 1
+Type: Summary
+...
+`
+
+	want := []runtests.TestCaseResult{
+		{
+			DisplayName:   "GreetingsTest.test_fatal_device_error",
+			FailureReason: runtests.FailureReasonFromMessage("[TestAbortAll] FatalDeviceError during test"),
+			SuiteName:     "GreetingsTest",
+			CaseName:      "test_fatal_device_error",
+			Status:        runtests.TestFailure,
+			Duration:      3 * time.Millisecond,
+			Format:        "Mobly",
+		},
+	}
+
+	testCaseCmp(t, stdout, want)
+}
+
+func TestParseMoblyTestOnFailAbortAllWithTeardownTimeout(t *testing.T) {
+	stdout := `
+Running [InfraDriver]
+======== Mobly config content ========
+MoblyParams:
+  LogPath: /tmp
+TestBeds:
+- Controllers:
+    FuchsiaDevice:
+    - name: fuchsia-emulator
+      transport: fuchsia-controller
+  Name: InfraTestbed
+  TestParams: {}
+
+======================================
+
+[=====MOBLY RESULTS=====]
+---
+Requested Tests:
+- test_fatal_device_error
+- test_skipped_after_abort
+Type: TestNameList
+...
+---
+Begin Time: 1668122321142
+Details: FatalDeviceError during test
+End Time: 1668122321145
+Extra Errors: {}
+Extras: null
+Parent: null
+Result: FAIL
+Retry Parent: null
+Signature: test_fatal_device_error-1668122321142
+Stacktrace: null
+Termination Signal Type: FatalDeviceError
+Test Class: GreetingsTest
+Test Name: test_fatal_device_error
+Type: Record
+UID: null
+...
+---
+Begin Time: null
+Details: 'All remaining tests aborted due to: Aborting all remaining tests due to fatal device error: FatalDeviceError during test'
+End Time: null
+Extra Errors: {}
+Extras: null
+Parent: null
+Result: SKIP
+Retry Parent: null
+Signature: null
+Stacktrace: null
+Termination Signal Type: TestAbortAll
+Test Class: GreetingsTest
+Test Name: test_skipped_after_abort
+Type: Record
+UID: null
+...
+---
+Details: Test timed out after 0:04:20.
+Type: MoblyDriverTimeout
+...
+`
+
+	want := []runtests.TestCaseResult{
+		{
+			DisplayName:   "GreetingsTest.test_fatal_device_error",
+			FailureReason: runtests.FailureReasonFromMessage("[FatalDeviceError] FatalDeviceError during test"),
+			SuiteName:     "GreetingsTest",
+			CaseName:      "test_fatal_device_error",
+			Status:        runtests.TestFailure,
+			Duration:      3 * time.Millisecond,
+			Format:        "Mobly",
+		},
+		{
+			DisplayName:   "MoblyDriverTimeout",
+			FailureReason: runtests.FailureReasonFromMessage("[MoblyDriverTimeout] GreetingsTest: Test timed out after 0:04:20."),
+			SuiteName:     "Synthetic",
+			CaseName:      "Synthetic",
+			Status:        runtests.TestAborted,
+			Format:        "Mobly",
+		},
+	}
+
+	testCaseCmp(t, stdout, want)
+}
+
 func TestParseMoblyTestSetupClassFailure(t *testing.T) {
 	stdout := `
 Running [InfraDriver]
@@ -437,7 +737,7 @@ UID: null
 			FailureReason: runtests.FailureReasonFromMessage("[TestparserError] Missing Mobly summary record - potental infra timeout."),
 			SuiteName:     "Synthetic",
 			CaseName:      "Synthetic",
-			Status:        runtests.TestAborted,
+			Status:        runtests.TestFailure,
 			Format:        "Mobly",
 		},
 	}
@@ -469,7 +769,7 @@ TestBeds:
 			FailureReason: runtests.FailureReasonFromMessage("[TestparserError] Missing Mobly summary record - potental infra timeout."),
 			SuiteName:     "Synthetic",
 			CaseName:      "Synthetic",
-			Status:        runtests.TestAborted,
+			Status:        runtests.TestFailure,
 			Format:        "Mobly",
 		},
 	}
@@ -508,7 +808,7 @@ Requested Tests:
 			FailureReason: runtests.FailureReasonFromMessage("[TestparserError] Missing Mobly summary record - potental infra timeout."),
 			SuiteName:     "Synthetic",
 			CaseName:      "Synthetic",
-			Status:        runtests.TestAborted,
+			Status:        runtests.TestFailure,
 			Format:        "Mobly",
 		},
 	}

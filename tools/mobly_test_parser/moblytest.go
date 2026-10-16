@@ -22,8 +22,13 @@ const (
 	// LINT.IfChange(mobly_test_end)
 	moblyTestResultYAMLHeaderPatternStr = `^\[=====MOBLY RESULTS=====\]$`
 	// LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py:mobly_test_end)
-	moblyTestCaseType = "Record"
-	moblySummaryType  = "Summary"
+	// LINT.IfChange(mobly_test_timeout)
+	moblyTimeoutType = "MoblyDriverTimeout"
+	// LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py:mobly_test_timeout)
+	moblyTestCaseType       = "Record"
+	moblyTestNameListType   = "TestNameList"
+	moblySummaryType        = "Summary"
+	moblyTestAbortAllSignal = "TestAbortAll"
 )
 
 var (
@@ -34,15 +39,16 @@ type moblyTestCase struct {
 	BeginTimeMillis int `yaml:"Begin Time"`
 	// Description of the cause for test case termination.
 	// This is set to empty string for passed test cases.
-	Details       string `yaml:"Details"`
-	EndTimeMillis int    `yaml:"End Time"`
-	Result        string `yaml:"Result"`
-	TestClass     string `yaml:"Test Class"`
-	TestName      string `yaml:"Test Name"`
+	Details        string   `yaml:"Details"`
+	EndTimeMillis  int      `yaml:"End Time"`
+	RequestedTests []string `yaml:"Requested Tests"`
+	Result         string   `yaml:"Result"`
+	TestClass      string   `yaml:"Test Class"`
+	TestName       string   `yaml:"Test Name"`
 	// TerminationSignal is name of the Python exception class raised on crash/failure.
 	TerminationSignal string `yaml:"Termination Signal Type"`
 	// Type describes the Mobly YAML document entry type which is in the set of
-	// (Record, TestNameList, Summary, ControllerInfo, UserData)
+	// (Record, TestNameList, Summary, ControllerInfo, UserData, MoblyDriverTimeout)
 	Type string `yaml:"Type"`
 }
 
@@ -83,6 +89,12 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 	// Mobly reports a "summary" record at the end of the YAML document. Its
 	// presence means that the Mobly test ran to completion.
 	summarySeen := false
+	timeoutSeen := false
+	var timeoutDetails string
+	var abortedCaseIndices []int
+	var firstTestClass string
+	var requestedTests []string
+	executedTests := make(map[string]bool)
 
 	// Since yaml.Unmarshal() is only capable of parsing a single document,
 	// we use a for-loop and yaml.Decoder() to handle the remaining documents.
@@ -98,13 +110,25 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 			break
 		}
 
+		if tc.TestClass != "" && firstTestClass == "" {
+			firstTestClass = tc.TestClass
+		}
+
 		// Skip records that are not test cases.
 		if tc.Type != moblyTestCaseType {
-			if tc.Type == moblySummaryType {
+			switch tc.Type {
+			case moblySummaryType:
 				summarySeen = true
+			case moblyTimeoutType:
+				timeoutSeen = true
+				timeoutDetails = tc.Details
+			case moblyTestNameListType:
+				requestedTests = append(requestedTests, tc.RequestedTests...)
 			}
 			continue
 		}
+
+		executedTests[tc.TestName] = true
 
 		var status runtests.TestStatus
 		switch tc.Result {
@@ -125,6 +149,12 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 			status = runtests.TestFailure
 		}
 
+		displayName := fmt.Sprintf("%s.%s", tc.TestClass, tc.TestName)
+
+		if tc.TerminationSignal == moblyTestAbortAllSignal {
+			abortedCaseIndices = append(abortedCaseIndices, len(res))
+		}
+
 		failureReason := tc.Details
 		if len(tc.TerminationSignal) != 0 {
 			failureReason = fmt.Sprintf("[%s] %s", tc.TerminationSignal, failureReason)
@@ -136,7 +166,7 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 		}
 
 		res = append(res, runtests.TestCaseResult{
-			DisplayName:   fmt.Sprintf("%s.%s", tc.TestClass, tc.TestName),
+			DisplayName:   displayName,
 			FailureReason: failureReasonStruct,
 			SuiteName:     tc.TestClass,
 			CaseName:      tc.TestName,
@@ -146,9 +176,50 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 		})
 	}
 
-	if !summarySeen {
-		// Generate a synthetic result if the summary record is not seen which
-		// is indicative of an infra test timeout.
+	if timeoutSeen {
+		reason := timeoutDetails
+		if reason == "" {
+			reason = "Test timed out."
+		}
+		if len(abortedCaseIndices) > 0 {
+			for _, idx := range abortedCaseIndices {
+				res[idx].Status = runtests.TestAborted
+				res[idx].FailureReason = runtests.FailureReasonFromMessage(
+					fmt.Sprintf("[%s] %s: %s", moblyTimeoutType, res[idx].DisplayName, reason),
+				)
+			}
+		} else {
+			var nextTest string
+			for _, name := range requestedTests {
+				if !executedTests[name] {
+					nextTest = name
+					break
+				}
+			}
+			var target string
+			if firstTestClass != "" && nextTest != "" {
+				target = fmt.Sprintf("%s.%s", firstTestClass, nextTest)
+			} else if firstTestClass != "" {
+				target = firstTestClass
+			} else if nextTest != "" {
+				target = nextTest
+			}
+			msg := fmt.Sprintf("[%s] %s", moblyTimeoutType, reason)
+			if target != "" {
+				msg = fmt.Sprintf("[%s] %s: %s", moblyTimeoutType, target, reason)
+			}
+			res = append(res, runtests.TestCaseResult{
+				DisplayName:   moblyTimeoutType,
+				FailureReason: runtests.FailureReasonFromMessage(msg),
+				SuiteName:     "Synthetic",
+				CaseName:      "Synthetic",
+				Status:        runtests.TestAborted,
+				Format:        "Mobly",
+			})
+		}
+	} else if !summarySeen {
+		// Generate a synthetic result if the summary record is not seen, which
+		// indicates that the test crashed or exited before Mobly finished.
 		res = append(res, runtests.TestCaseResult{
 			DisplayName: "TestparserError",
 			FailureReason: runtests.FailureReasonFromMessage(
@@ -156,7 +227,7 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 			),
 			SuiteName: "Synthetic",
 			CaseName:  "Synthetic",
-			Status:    runtests.TestAborted,
+			Status:    runtests.TestFailure,
 			Format:    "Mobly",
 		})
 	}

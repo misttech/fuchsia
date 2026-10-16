@@ -4,6 +4,7 @@
 """Unit tests for mobly_driver/driver/infra.py."""
 
 import unittest
+from datetime import timedelta
 from typing import Any
 from unittest.mock import call, mock_open, patch
 
@@ -192,6 +193,39 @@ class InfraMoblyDriverTest(unittest.TestCase):
         mock_rm.assert_called_once_with("path/to/remove")
 
     @patch("mobly_driver.api.api_mobly.get_result_path")
+    @patch(
+        "mobly_driver.api.api_mobly.get_latest_test_output_dir_symlink_path",
+        return_value="path/to/remove",
+    )
+    @patch(
+        "mobly_driver.api.api_infra.TESTPARSER_RESULT_HEADER",
+        "---MOCK_HEADER---",
+    )
+    @patch("builtins.open", new_callable=mock_open, read_data="test_result")
+    @patch("os.remove")
+    @patch("builtins.print")
+    def test_teardown_with_timeout(
+        self, mock_print: Any, mock_rm: Any, *unused_args: Any
+    ) -> None:
+        """Test case for teardown when test timed out"""
+        driver = infra.InfraDriver(
+            tb_json_path="",
+            honeydew_config=_HONEYDEW_CONFIG,
+            output_path="",
+        )
+        driver.teardown(timed_out=True, test_timeout=timedelta(seconds=260))
+
+        self.assertIn(call("---MOCK_HEADER---"), mock_print.call_args_list)
+        self.assertIn(call("test_result"), mock_print.call_args_list)
+        self.assertIn(
+            call(
+                "---\nDetails: Test timed out after 0:04:20.\nType: MoblyDriverTimeout\n...\n"
+            ),
+            mock_print.call_args_list,
+        )
+        mock_rm.assert_called_once_with("path/to/remove")
+
+    @patch("mobly_driver.api.api_mobly.get_result_path")
     @patch("mobly_driver.api.api_mobly.get_latest_test_output_dir_symlink_path")
     @patch("mobly_driver.api.api_infra.TESTPARSER_RESULT_HEADER")
     @patch("builtins.open", side_effect=OSError)
@@ -209,4 +243,35 @@ class InfraMoblyDriverTest(unittest.TestCase):
         driver.teardown()
 
         mock_print.assert_not_called()
+        mock_rm.assert_called_once()
+
+    @patch("mobly_driver.api.api_mobly.get_result_path")
+    @patch("mobly_driver.api.api_mobly.get_latest_test_output_dir_symlink_path")
+    @patch(
+        "mobly_driver.api.api_infra.TESTPARSER_RESULT_HEADER",
+        "---MOCK_HEADER---",
+    )
+    @patch("builtins.open", side_effect=OSError)
+    @patch("os.remove", side_effect=OSError)
+    @patch("builtins.print")
+    def test_teardown_with_timeout_without_test_results(
+        self, mock_print: Any, mock_rm: Any, *unused_args: Any
+    ) -> None:
+        """Test case for teardown emitting timeout record even when results file is missing"""
+        driver = infra.InfraDriver(
+            tb_json_path="",
+            honeydew_config=_HONEYDEW_CONFIG,
+            output_path="",
+        )
+        driver.teardown(timed_out=True, test_timeout=timedelta(seconds=260))
+
+        self.assertEqual(
+            mock_print.call_args_list,
+            [
+                call("---MOCK_HEADER---"),
+                call(
+                    "---\nDetails: Test timed out after 0:04:20.\nType: MoblyDriverTimeout\n...\n"
+                ),
+            ],
+        )
         mock_rm.assert_called_once()

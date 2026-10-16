@@ -4,6 +4,7 @@
 """Implements BaseDriver for the lab infra execution environment."""
 
 import os
+from datetime import timedelta
 from typing import Any, Optional
 
 import yaml
@@ -115,24 +116,51 @@ class InfraDriver(base.BaseDriver):
                 ssh_path=self._ssh_path,
             )
             return yaml.dump(config)
-        except (IOError, OSError):
-            raise common.DriverException("Failed to open file: %")
+        except (IOError, OSError) as e:
+            raise common.DriverException(f"Failed to open file: {e}")
 
-    def teardown(self, *args: Any) -> None:
+    def teardown(
+        self,
+        *args: Any,
+        timed_out: bool = False,
+        test_timeout: Optional[timedelta] = None,
+    ) -> None:
         """Performs any required clean up upon Mobly test completion."""
         results_path = api_mobly.get_result_path(
             self._output_path, self._TESTBED_NAME
         )
+        header_printed = False
         try:
             with open(results_path, "r") as f:
                 # Write test result YAML file to stdout so that Mobly output
                 # integrates with with `testparser`.
                 print(api_infra.TESTPARSER_RESULT_HEADER)
+                header_printed = True
                 print(f.read())
         except OSError:
             # It's possible for the Mobly result file to not exist (e.g. if the
-            # test crashed). In such cases, don't print anything.
+            # test crashed). In such cases, don't print anything unless the test
+            # timed out.
             pass
+
+        if timed_out:
+            if not header_printed:
+                print(api_infra.TESTPARSER_RESULT_HEADER)
+            details = (
+                f"Test timed out after {test_timeout}."
+                if test_timeout is not None
+                else "Test timed out."
+            )
+            print(
+                yaml.dump(
+                    {
+                        "Type": api_infra.TESTPARSER_TIMEOUT_TYPE,
+                        "Details": details,
+                    },
+                    explicit_start=True,
+                    explicit_end=True,
+                )
+            )
 
         # Remove the symlink named `latest`; otherwise infra recipe's artifact
         # upload step fails. This is a workaround for a known artifact upload

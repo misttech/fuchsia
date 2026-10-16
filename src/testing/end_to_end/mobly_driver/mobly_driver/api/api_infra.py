@@ -30,3 +30,9 @@ TESTPARSER_RESULT_HEADER = "[=====MOBLY RESULTS=====]"
 # //tools/testing/tefmocheck/string_in_log_check.go:mobly_test_end,
 # //tools/testing/testparser/moblytest.go:mobly_test_end,
 # )
+
+# LINT.IfChange(mobly_test_timeout)
+TESTPARSER_TIMEOUT_TYPE = "MoblyDriverTimeout"
+# LINT.ThenChange(
+# //tools/mobly_test_parser/moblytest.go:mobly_test_timeout,
+# )

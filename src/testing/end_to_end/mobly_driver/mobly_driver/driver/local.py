@@ -6,6 +6,7 @@
 import os
 import time
 from copy import deepcopy
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 import yaml
@@ -350,5 +351,10 @@ class LocalDriver(base.BaseDriver):
 
         return yaml.dump(config)
 
-    def teardown(self, *args: Any) -> None:
+    def teardown(
+        self,
+        *args: Any,
+        timed_out: bool = False,
+        test_timeout: Optional[timedelta] = None,
+    ) -> None:
         pass

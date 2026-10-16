@@ -8,6 +8,7 @@ interface is used.
 """
 import os
 from abc import ABC, abstractmethod
+from datetime import timedelta
 from typing import Any, Optional
 
 TEST_OUTDIR_ENV = "FUCHSIA_TEST_OUTDIR"
@@ -63,5 +64,10 @@ class BaseDriver(ABC):
         """
 
     @abstractmethod
-    def teardown(self, *args: Any) -> None:
+    def teardown(
+        self,
+        *args: Any,
+        timed_out: bool = False,
+        test_timeout: Optional[timedelta] = None,
+    ) -> None:
         """Performs any required clean up upon Mobly test completion."""

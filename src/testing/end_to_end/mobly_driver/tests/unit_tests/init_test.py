@@ -110,16 +110,21 @@ class MoblyDriverLibTest(unittest.TestCase):
             0,  # Cleanup period succeeds
         ]
 
-        mobly_driver.run(
-            self.mock_driver,
-            "/py/path",
-            "/test/path",
-            timeout=timedelta(seconds=30),
-            cleanup_period=timedelta(seconds=10),
-        )
+        with self.assertRaises(mobly_driver.MoblyTestTimeoutException):
+            mobly_driver.run(
+                self.mock_driver,
+                "/py/path",
+                "/test/path",
+                timeout=timedelta(seconds=30),
+                cleanup_period=timedelta(seconds=10),
+            )
 
         self.mock_process.terminate.assert_called_once()
         self.mock_process.kill.assert_not_called()
+        self.mock_driver.teardown.assert_called_once_with(
+            timed_out=True,
+            test_timeout=timedelta(0),
+        )
 
     @mock.patch("builtins.print")
     @mock.patch("subprocess.Popen")
@@ -134,15 +139,20 @@ class MoblyDriverLibTest(unittest.TestCase):
             0,  # Grace period succeeds
         ]
 
-        mobly_driver.run(
-            self.mock_driver,
-            "/py/path",
-            "/test/path",
-            timeout=timedelta(seconds=30),
-        )
+        with self.assertRaises(mobly_driver.MoblyTestTimeoutException):
+            mobly_driver.run(
+                self.mock_driver,
+                "/py/path",
+                "/test/path",
+                timeout=timedelta(seconds=30),
+            )
 
         self.mock_process.terminate.assert_called_once()
         self.mock_process.kill.assert_not_called()
+        self.mock_driver.teardown.assert_called_once_with(
+            timed_out=True,
+            test_timeout=timedelta(0),
+        )
 
     @mock.patch("builtins.print")
     @mock.patch("subprocess.Popen")
@@ -211,6 +221,32 @@ class MoblyDriverLibTest(unittest.TestCase):
         # It calls terminate for each timeout before the last one
         self.assertEqual(self.mock_process.terminate.call_count, 9)
         self.mock_process.kill.assert_called_once()
+
+    @mock.patch("builtins.print")
+    @mock.patch("subprocess.Popen")
+    def test_interrupted_error_grace_period_succeeds_marks_timed_out(
+        self, mock_popen: Any, *unused_args: Any
+    ) -> None:
+        """Testcase to ensure teardown receives timed_out=True when interrupted by SIGTERM."""
+        mock_popen.return_value.__enter__.return_value = self.mock_process
+        self.mock_process.wait.side_effect = [
+            InterruptedError,  # Main test interrupted by external SIGTERM
+            0,  # Grace period succeeds
+        ]
+
+        with self.assertRaises(mobly_driver.MoblyTestTimeoutException):
+            mobly_driver.run(
+                self.mock_driver,
+                "/py/path",
+                "/test/path",
+            )
+
+        self.mock_process.terminate.assert_called_once()
+        self.mock_process.kill.assert_not_called()
+        self.mock_driver.teardown.assert_called_once_with(
+            timed_out=True,
+            test_timeout=None,
+        )
 
     @mock.patch("builtins.print")
     @mock.patch("subprocess.Popen")

@@ -58,6 +58,21 @@ FINAL_GRACE_PERIOD_WARNINGS = 8
 FINAL_GRACE_PERIOD_TIMEOUT = timedelta(seconds=5)
 
 
+def _get_main_test_timeout(
+    timeout: Optional[timedelta],
+    cleanup_period: Optional[timedelta],
+) -> Optional[timedelta]:
+    """Calculates the main test timeout before cleanup and grace periods."""
+    if timeout is not None:
+        return max(
+            timedelta(0),
+            timeout
+            - (cleanup_period or timedelta(0))
+            - FINAL_GRACE_PERIOD_TIMEOUT * FINAL_GRACE_PERIOD_WARNINGS,
+        )
+    return None
+
+
 def _execute_test(
     driver: base.BaseDriver,
     python_path: str,
@@ -144,14 +159,7 @@ def _execute_test(
 
             # The main test timeout is the total timeout minus the (optional)
             # cleanup period and the final grace period.
-            if timeout is not None:
-                main_test_timeout = (
-                    timeout
-                    - (cleanup_period or timedelta(0))
-                    - FINAL_GRACE_PERIOD_TIMEOUT * FINAL_GRACE_PERIOD_WARNINGS
-                )
-            else:
-                main_test_timeout = None
+            main_test_timeout = _get_main_test_timeout(timeout, cleanup_period)
 
             if main_test_timeout is not None:
                 _LOGGER.info(
@@ -176,7 +184,7 @@ def _execute_test(
                 _LOGGER.info("Sending SIGTERM to begin cleanup period.")
                 proc.terminate()
                 try:
-                    return proc.wait(timeout=cleanup_period.total_seconds())
+                    proc.wait(timeout=cleanup_period.total_seconds())
                 except subprocess.TimeoutExpired:
                     _LOGGER.warning(
                         f"cleanup period timed out after {cleanup_period}."
@@ -184,6 +192,10 @@ def _execute_test(
                 except InterruptedError:
                     _LOGGER.warning(
                         "got out-of-band SIGINT/SIGTERM during cleanup period."
+                    )
+                else:
+                    raise MoblyTestTimeoutException(
+                        "Mobly test timed out and exited during cleanup period."
                     )
 
             _LOGGER.info("Begin final grace period.")
@@ -193,7 +205,7 @@ def _execute_test(
                 )
                 proc.terminate()
                 try:
-                    return proc.wait(
+                    proc.wait(
                         timeout=FINAL_GRACE_PERIOD_TIMEOUT.total_seconds()
                     )
                 except subprocess.TimeoutExpired:
@@ -203,6 +215,10 @@ def _execute_test(
                 except InterruptedError:
                     _LOGGER.warning(
                         "got out-of-band SIGINT/SIGTERM during final grace period."
+                    )
+                else:
+                    raise MoblyTestTimeoutException(
+                        "Mobly test timed out and exited during final grace period."
                     )
 
             _LOGGER.info("Sending SIGKILL")
@@ -261,6 +277,8 @@ def run(
     if cleanup_period is not None and timeout is None:
         raise ValueError("|cleanup_period| must be None if |timeout| is None.")
     _LOGGER.info(f"Running [{driver.__class__.__name__}]")
+    main_test_timeout = _get_main_test_timeout(timeout, cleanup_period)
+    timed_out = False
     try:
         try:
             return_code = _execute_test(
@@ -278,7 +296,13 @@ def run(
                 # TODO(https://fxbug.dev/42070748) - differentiate between legitimate
                 # test failures vs unexpected crashes.
                 raise MoblyTestFailureException(return_code)
+        except MoblyTestTimeoutException:
+            timed_out = True
+            raise
         finally:
-            driver.teardown()
+            driver.teardown(
+                timed_out=timed_out,
+                test_timeout=main_test_timeout if timed_out else None,
+            )
     except BaseException as e:
         unroll_and_raise(e)
