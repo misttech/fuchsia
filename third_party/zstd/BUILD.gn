@@ -187,6 +187,11 @@ static_library("zstd") {
   # (https://fxbug.dev/42144717).
   configs -= [ "//build/config:default_optimize" ]
   configs += [ "//build/config:optimize_speed" ]
+
+  # Do not profile zstd for coverage since we don't need to measure
+  # third_party coverage and many parts of the system are highly sensitive
+  # to the speed of zstd compression.
+  configs += [ "//build/config:no_profile" ]
 }
 
 # LINT.ThenChange(BUILD.bazel)

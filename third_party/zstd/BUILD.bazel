@@ -102,6 +102,9 @@ cc_library(
         "src/lib/zstd_errors.h",
     ],
     copts = [
+        "-O3",
+        "-fno-profile-instr-generate",
+        "-fno-coverage-mapping",
         "-Wno-conversion",
         "-Wno-unused-but-set-variable",
         "-Wno-bitwise-instead-of-logical",
