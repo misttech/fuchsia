@@ -181,6 +181,10 @@ pub mod console_tests_rust;
 pub mod pow2_range_allocator_tests;
 
 #[cfg(all(console_enabled, ktest))]
+#[path = "debugcommands/debugcommands.rs"]
+pub mod debugcommands;
+
+#[cfg(all(console_enabled, ktest))]
 #[path = "lib/unittest/console.rs"]
 pub mod unittest_console;
 

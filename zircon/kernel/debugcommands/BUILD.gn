@@ -4,12 +4,15 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//zircon/kernel/kernel_rust_mod.gni")
+
 source_set("debugcommands") {
   sources = [
     "debugcommands.cc",
     "undefined-behavior.cc",
   ]
   deps = [
+    ":debugcommands-rs",
     "//zircon/kernel/lib/boot-options:boot-options-cli",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/page",
@@ -17,4 +20,9 @@ source_set("debugcommands") {
     "//zircon/kernel/lib/unittest",
     "//zircon/system/ulib/zircon-internal",
   ]
+}
+
+kernel_rust_mod("debugcommands-rs") {
+  sources = [ "debugcommands.rs" ]
+  deps = [ "//src/lib/kprint" ]
 }
