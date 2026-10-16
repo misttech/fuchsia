@@ -35,11 +35,11 @@ from libs.validation import MapValidator
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from openwrt_access_point.lib.access_point_config import (
-    DEFAULT_2G_CHANNEL,
-    DEFAULT_5G_CHANNEL,
     AccessPointConfig,
     Band,
+    BssChannel,
     BssSettings,
+    HeMode,
     RadioConfig,
     Security,
     SecurityWpa2,
@@ -263,9 +263,9 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
             if self.openwrt_ap is not None:
                 channel = (
-                    DEFAULT_2G_CHANNEL
+                    BssChannel(Band.BAND_2G, 1, HeMode(bw=20))
                     if band == Band.BAND_2G
-                    else DEFAULT_5G_CHANNEL
+                    else BssChannel(Band.BAND_5G, 36, HeMode(bw=80))
                 )
                 config = AccessPointConfig(
                     radios=[
