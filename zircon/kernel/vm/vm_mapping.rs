@@ -40,6 +40,8 @@ zr::static_assert!(
 zr::static_assert!(Mergeable::No as u8 == bindings::VmMapping_Mergeable::NO as u8);
 zr::static_assert!(Mergeable::Yes as u8 == bindings::VmMapping_Mergeable::YES as u8);
 
+pub type FlagsRange = bindings::VmMapping_FlagsRange;
+
 /// A representation of the mapping of a VMO into the address space
 #[repr(transparent)]
 pub struct VmMapping {
@@ -479,6 +481,18 @@ impl VmMapping {
         })
     }
 
+    // Accessors for VMO-mapping state.
+    // These can be read under either lock (both locks being held for writing), so we provide two
+    // different accessors, one for each lock.
+    /// Returns the architecture MMU flags and the top of the protection region containing `va`.
+    pub fn arch_mmu_flags_range_locked(
+        &self,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+        va: usize,
+    ) -> FlagsRange {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping` and the aspace lock is held.
+        unsafe { bindings::cpp_vm_mapping_arch_mmu_flags_range_locked(self.as_ffi_ptr(), va) }
+    }
     /// Informs the mapping that a write is going to be performed to the backing VMO.
     ///
     /// If necessary, creates a private clone of the VMO and returns a new mapping.

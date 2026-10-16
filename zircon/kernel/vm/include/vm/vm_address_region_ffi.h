@@ -12,6 +12,24 @@
 
 #include <kernel/ffi.h>
 #include <vm/vm_address_region.h>
+#include <vm/vm_address_region_enumerator.h>
+
+struct CppVmAddressRegionEnumerator {
+  using VmarsAndMappings =
+      VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::VmarsAndMappings, VmAddressRegion>;
+  using MappingsOnly =
+      VmAddressRegionEnumerator<VmAddressRegionEnumeratorType::MappingsOnly, VmAddressRegion>;
+
+  CppVmAddressRegionEnumerator(VmAddressRegionEnumeratorType type, VmAddressRegion& vmar,
+                               vaddr_t min_addr, vaddr_t max_addr) TA_REQ(vmar.lock());
+  ~CppVmAddressRegionEnumerator();
+
+  VmAddressRegionEnumeratorType type;
+  union {
+    VmarsAndMappings vmars_and_mappings;
+    MappingsOnly mappings_only;
+  };
+};
 
 __BEGIN_CDECLS
 
@@ -42,6 +60,15 @@ VmMapping* cpp_vm_address_region_create_vm_mapping(
     uint32_t vmar_flags, const VmObject* vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
     const char* name, vaddr_t* out_base, zx_status_t* out_status);
 
+void cpp_vm_address_region_enumerator_construct(
+    ffi::Uninitialized<CppVmAddressRegionEnumerator>* out, VmAddressRegionEnumeratorType type,
+    VmAddressRegion* vmar, vaddr_t min_addr, vaddr_t max_addr);
+void cpp_vm_address_region_enumerator_destroy(CppVmAddressRegionEnumerator* enumerator);
+VmAddressRegionOrMapping* cpp_vm_address_region_enumerator_next(
+    CppVmAddressRegionEnumerator* enumerator, uint* out_depth);
+void cpp_vm_address_region_enumerator_pause(CppVmAddressRegionEnumerator* enumerator);
+void cpp_vm_address_region_enumerator_resume(CppVmAddressRegionEnumerator* enumerator);
+
 void cpp_vm_mapping_free(VmMapping* mapping);
 void* cpp_vm_mapping_state(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping);
@@ -58,6 +85,8 @@ typedef zx_status_t (*cpp_vm_mapping_enumerate_protection_ranges_cb)(void* ctx, 
 zx_status_t cpp_vm_mapping_enumerate_protection_ranges_locked(
     const VmMapping* mapping, vaddr_t base, size_t size,
     cpp_vm_mapping_enumerate_protection_ranges_cb cb, void* ctx);
+VmMapping::FlagsRange cpp_vm_mapping_arch_mmu_flags_range_locked(const VmMapping* mapping,
+                                                                 vaddr_t offset);
 
 __END_CDECLS
 

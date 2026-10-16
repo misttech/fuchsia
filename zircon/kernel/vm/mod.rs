@@ -34,6 +34,7 @@ pub mod stream_size_manager;
 #[allow(clippy::module_inception)]
 pub mod vm;
 pub mod vm_address_region;
+pub mod vm_address_region_enumerator;
 pub mod vm_aspace;
 pub mod vm_cow_pages;
 pub mod vm_mapping;

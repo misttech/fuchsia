@@ -7,6 +7,9 @@
 use super::arch_vm_aspace::{
     ARCH_MMU_FLAG_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
 };
+use super::vm_address_region_enumerator::{
+    VmAddressRegionEnumerator, VmAddressRegionEnumeratorType,
+};
 use super::vm_aspace::{
     VmAspace, VmAspaceLockClass, VmAspaceMutex, VmAspaceRegionLockClass, VmAspaceRegionMutex,
 };
@@ -18,9 +21,10 @@ use core::cell::UnsafeCell;
 use core::ffi::{CStr, c_char};
 use core::mem::MaybeUninit;
 use core::ops::Deref;
+use core::pin::Pin;
 use core::ptr::NonNull;
 use fbl::{Canary, HasRefCount, Recyclable, RefCounted, RefPtr};
-use ksync::{KCell, LockToken};
+use ksync::{KCell, KMutexGuard, LockToken, RawCriticalMutex};
 use vm_address_region_bindings as bindings;
 use vm_constants_rs as constants;
 use zr::Opaque;
@@ -311,6 +315,28 @@ impl VmAddressRegionOrMapping {
         self.state().is_mapping
     }
 
+    #[inline]
+    pub fn as_vm_address_region(&self) -> Option<RefPtr<VmAddressRegion>> {
+        self.state().canary.assert();
+        if self.is_mapping() {
+            return None;
+        }
+        // SAFETY: `self` is not a mapping, so it is a `VmAddressRegion`, and
+        // `VmAddressRegionOrMapping` is the first base of `VmAddressRegion`.
+        Some(RefPtr::from_ref(unsafe { &*core::ptr::from_ref(self).cast::<VmAddressRegion>() }))
+    }
+
+    #[inline]
+    pub fn as_vm_mapping(&self) -> Option<RefPtr<VmMapping>> {
+        self.state().canary.assert();
+        if !self.is_mapping() {
+            return None;
+        }
+        // SAFETY: `self` is a mapping, so it is a `VmMapping`, and `VmAddressRegionOrMapping` is
+        // the first base of `VmMapping`.
+        Some(RefPtr::from_ref(unsafe { &*core::ptr::from_ref(self).cast::<VmMapping>() }))
+    }
+
     /// Expose our backing lock for annotation purposes.
     #[inline]
     pub fn lock(&self) -> &VmAspaceMutex {
@@ -496,7 +522,7 @@ unsafe impl Send for VmAddressRegion {}
 unsafe impl Sync for VmAddressRegion {}
 
 impl VmAddressRegion {
-    fn as_ffi_ptr(&self) -> *mut bindings::VmAddressRegion {
+    pub(super) fn as_ffi_ptr(&self) -> *mut bindings::VmAddressRegion {
         self.raw.get()
     }
 
@@ -684,6 +710,84 @@ impl VmAddressRegion {
                 arch_mmu_flags,
             )
         })
+    }
+
+    /// Traverses this vmar (and any sub-vmars) starting at this node, in depth-first pre-order. See
+    /// `VmEnumerator` for more details. If this vmar is not alive (in the `LifeCycleState` sense)
+    /// or otherwise not enumerable this returns `Err(Status::BAD_STATE)`, otherwise the result of
+    /// enumeration is returned.
+    pub fn enumerate_children<E: VmEnumerator + ?Sized>(&self, ve: &mut E) -> Result<(), Status> {
+        self.state().canary.assert();
+        let self_ref = RefPtr::from_ref(self);
+        ksync::lock!(let mut guard = self.lock().lock());
+        if self.state_locked(guard.token()) != LifeCycleState::Alive {
+            return Err(Status::BAD_STATE);
+        }
+        match ve.on_vm_address_region(&self_ref, 0, guard.as_mut()) {
+            Status::NEXT => {}
+            Status::STOP => return Ok(()),
+            status => return Err(status),
+        }
+        pin_init::stack_pin_init!(let enumerator = VmAddressRegionEnumerator::new(
+            VmAddressRegionEnumeratorType::VmarsAndMappings,
+            &self_ref,
+            0,
+            usize::MAX,
+            guard.token(),
+        ));
+        while let Some((region_or_mapping, depth)) = enumerator.as_mut().next(guard.token()) {
+            enumerator.as_mut().pause(guard.token());
+            let status = if let Some(mapping) = region_or_mapping.as_vm_mapping() {
+                ve.on_vm_mapping(&mapping, &self_ref, depth, guard.as_mut())
+            } else {
+                let vmar = region_or_mapping
+                    .as_vm_address_region()
+                    .expect("region_or_mapping must be a VmAddressRegion if not a VmMapping");
+                ve.on_vm_address_region(&vmar, depth, guard.as_mut())
+            };
+            match status {
+                Status::NEXT => {}
+                Status::STOP => return Ok(()),
+                status => return Err(status),
+            }
+            enumerator.as_mut().resume(guard.token());
+        }
+        Ok(())
+    }
+}
+
+/// Guard passed to [`VmEnumerator`] callbacks representing the held root `VmAspace` lock.
+pub type VmAspaceGuard<'a> = KMutexGuard<'a, VmAspaceLockClass, RawCriticalMutex>;
+
+/// Interface for walking a `VmAspace`-rooted `VmAddressRegion`/`VmMapping` tree.
+/// Implement this trait and pass an instance to `VmAddressRegion::enumerate_children()`.
+/// `VmAddressRegion::enumerate_children()` will call the `on_*` methods in depth-first pre-order.
+/// `Status::NEXT` and `Status::STOP` can be used to control iteration, with any other
+/// status becoming the return value of this method. The root `VmAspace`'s lock is held during the
+/// traversal and passed in to the callbacks as `guard`. A callback is permitted to temporarily drop
+/// the lock, using `call_unlocked`; `enumerate_children` holds a `RefPtr` across each callback so
+/// the passed references remain valid, with the caveat that after dropping the lock they might
+/// refer to a dead, aka unmapped, object.
+pub trait VmEnumerator {
+    /// `depth` will be 0 for the root `VmAddressRegion`.
+    fn on_vm_address_region(
+        &mut self,
+        _vmar: &VmAddressRegion,
+        _depth: u32,
+        _guard: Pin<&mut VmAspaceGuard<'_>>,
+    ) -> Status {
+        Status::NEXT
+    }
+
+    /// `vmar` is the parent of `map`.
+    fn on_vm_mapping(
+        &mut self,
+        _map: &VmMapping,
+        _vmar: &VmAddressRegion,
+        _depth: u32,
+        _guard: Pin<&mut VmAspaceGuard<'_>>,
+    ) -> Status {
+        Status::NEXT
     }
 }
 

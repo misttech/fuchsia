@@ -43,6 +43,11 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_enumerate_protection_ranges_locked(
         return cb(ctx, base, len, flags);
       });
 }
+FFI_ALWAYS_INLINE VmMapping::FlagsRange cpp_vm_mapping_arch_mmu_flags_range_locked(
+    const VmMapping* mapping, vaddr_t offset) {
+  AssertHeld(mapping->lock_ref());
+  return mapping->arch_mmu_flags_range_locked(offset);
+}
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping,
                                                             VmMapping** out_mapping) {
   auto result = mapping->ForceWritable();
