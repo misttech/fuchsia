@@ -53,7 +53,7 @@ class [[nodiscard]] NaturalThenable : private ThenableBase {
   // receiver (typically `this`) are tightly coupled and always destroyed
   // together in a sequential context, allowing us to avoid additional
   // cancellation mechanisms such as `WeakPtrFactory`. When the client is a
-  // member field of `this`, the answer is almost always using `This` to silence
+  // member field of `this`, the answer is almost always using `Then` to silence
   // pending callbacks at destruction time.
   //
   // Example syntax:
