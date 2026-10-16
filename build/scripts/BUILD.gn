@@ -9,6 +9,7 @@ if (is_host) {
   python_library("main_build_lib") {
     sources = [
       "main_build.py",
+      "properties.py",
       "signal_utils.py",
     ]
     library_deps = [
@@ -20,6 +21,10 @@ if (is_host) {
       "//build/resultstore:rs_profile",
     ]
     data_deps = [ "//build/auth:select_auth_method" ]
+  }
+
+  python_library("properties_lib") {
+    sources = [ "properties.py" ]
   }
 
   python_library("signal_utils_lib") {
@@ -44,6 +49,11 @@ if (is_host) {
     ]
   }
 
+  python_build_time_tests("properties_test") {
+    tests = [ "properties_test.py" ]
+    deps = [ ":properties_lib" ]
+  }
+
   python_build_time_tests("service_profile_test") {
     tests = [ "service_profile_test.py" ]
     deps = [ ":service_profile_lib" ]
@@ -65,6 +75,7 @@ group("tests") {
   deps = [
     ":main_build_test($host_toolchain)",
     ":ninjatrace2json_test($host_toolchain)",
+    ":properties_test($host_toolchain)",
     ":service_profile_test($host_toolchain)",
     ":signal_utils_test($host_toolchain)",
   ]

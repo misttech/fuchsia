@@ -45,6 +45,7 @@ import remote_services_utils
 import workspace_utils
 from bazel_action_file_copy_utils import write_file_if_changed
 from build.rbe import rbe_settings
+from build.scripts import properties
 from fuchsia_idk import generate_repository
 from idk_generator.idk_generator import IdkGenerator
 from pyright_config import create_pyright_base_config
@@ -896,8 +897,67 @@ def main() -> int:
         # make out/dir a symlink of the buildDir for backwards compatibility
         make_relative_symlink(out_default, build_dir)
 
+    if not do_not_change_fuchsia_checkout:
+        maybe_backup_out_config(fuchsia_dir, build_dir)
+
     log("Done.")
     return 0
+
+
+# Backup build configurations to account for ABFS workspace unmounts.
+# See http://artifax/9020260014f8dc51
+_BACKUP_OUT_CONFIG_FLAG_RELPATH = Path(".fx/config/backup-out-config")
+_OUT_CONFIG_BACKUPS_RELPATH = Path(".fx/out-config-backups")
+_BACKUP_OUT_CONFIG_FILES = ("args.gn", "fx.config")
+
+
+def is_backup_out_config_enabled(fuchsia_dir: Path) -> bool:
+    """Returns True if //.fx/config/backup-out-config enables BACKUP_OUT_CONFIG."""
+    props = properties.load_properties(
+        fuchsia_dir / _BACKUP_OUT_CONFIG_FLAG_RELPATH
+    )
+    return properties.str_to_bool(
+        props.get("BACKUP_OUT_CONFIG", ""), default=False
+    )
+
+
+def maybe_backup_out_config(fuchsia_dir: Path, build_dir: Path) -> None:
+    """Mirrors build_dir/{args.gn,fx.config} and the out/default symlink into //.fx/out-config-backups/.
+
+    When //.fx/config/backup-out-config sets BACKUP_OUT_CONFIG=1 (e.g. in ABFS
+    workspaces where //out is excluded from snapshots), this backs up the active
+    build directory's args.gn, fx.config, and out/default symlink under
+    //.fx/out-config-backups/ (matching //out's structure 1:1) so they can be
+    restored across workspace unmounts.
+    """
+    if not is_backup_out_config_enabled(fuchsia_dir):
+        return
+
+    resolved_build_dir = build_dir.resolve()
+    backups_root = fuchsia_dir / _OUT_CONFIG_BACKUPS_RELPATH
+    backup_dir = backups_root / resolved_build_dir.name
+    if backup_dir.is_symlink():
+        backup_dir.unlink()
+    for fname in _BACKUP_OUT_CONFIG_FILES:
+        src = resolved_build_dir / fname
+        if src.is_file():
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            write_file_if_changed(backup_dir / fname, src.read_text())
+
+    out_default = fuchsia_dir / "out" / "default"
+    if out_default.is_symlink():
+        backups_root.mkdir(parents=True, exist_ok=True)
+        backup_default = backups_root / "default"
+        target = os.readlink(out_default)
+        if backup_default.is_symlink():
+            if os.readlink(backup_default) == target:
+                return
+            backup_default.unlink()
+        elif backup_default.is_dir():
+            shutil.rmtree(backup_default)
+        elif backup_default.exists():
+            backup_default.unlink()
+        backup_default.symlink_to(target)
 
 
 def write_icu_build_config(fuchsia_dir: Path, build_dir: Path) -> None:

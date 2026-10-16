@@ -207,5 +207,106 @@ class ContentHashTest(unittest.TestCase):
         )
 
 
+class BackupOutConfigTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self.fuchsia_dir = Path(self._td.name) / "fuchsia"
+        self.fuchsia_dir.mkdir()
+        self.out_dir = self.fuchsia_dir / "out"
+        self.build_dir = self.out_dir / "core.x64-balanced"
+        self.build_dir.mkdir(parents=True)
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def _write_flag(self, content: str) -> None:
+        flag_path = self.fuchsia_dir / ".fx/config/backup-out-config"
+        flag_path.parent.mkdir(parents=True, exist_ok=True)
+        flag_path.write_text(content)
+
+    def test_is_backup_out_config_enabled(self) -> None:
+        self.assertFalse(
+            regenerator.is_backup_out_config_enabled(self.fuchsia_dir)
+        )
+
+        self._write_flag("# comment\nBACKUP_OUT_CONFIG=1\n")
+        self.assertTrue(
+            regenerator.is_backup_out_config_enabled(self.fuchsia_dir)
+        )
+
+        self._write_flag("export BACKUP_OUT_CONFIG=true # inline comment\n")
+        self.assertTrue(
+            regenerator.is_backup_out_config_enabled(self.fuchsia_dir)
+        )
+
+        self._write_flag("BACKUP_OUT_CONFIG=1\nBACKUP_OUT_CONFIG=0\n")
+        self.assertFalse(
+            regenerator.is_backup_out_config_enabled(self.fuchsia_dir)
+        )
+
+    def test_maybe_backup_out_config_disabled_by_default(self) -> None:
+        (self.build_dir / "args.gn").write_text('target_cpu = "x64"\n')
+        (self.build_dir / "fx.config").write_text("FUCHSIA_ARCH=x64\n")
+        (self.out_dir / "default").symlink_to("core.x64-balanced")
+
+        regenerator.maybe_backup_out_config(self.fuchsia_dir, self.build_dir)
+
+        self.assertFalse((self.fuchsia_dir / ".fx/out-config-backups").exists())
+
+    def test_maybe_backup_out_config_mirrors_files_and_default_symlink(
+        self,
+    ) -> None:
+        self._write_flag("BACKUP_OUT_CONFIG=1\n")
+        (self.build_dir / "args.gn").write_text('target_cpu = "x64"\n')
+        (self.build_dir / "fx.config").write_text("FUCHSIA_ARCH=x64\n")
+        out_default = self.out_dir / "default"
+        out_default.symlink_to("core.x64-balanced")
+
+        # Calling via the out/default symlink should still key by the resolved
+        # build directory name ("core.x64-balanced").
+        regenerator.maybe_backup_out_config(self.fuchsia_dir, out_default)
+
+        backup_dir = (
+            self.fuchsia_dir / ".fx/out-config-backups/core.x64-balanced"
+        )
+        backup_default = self.fuchsia_dir / ".fx/out-config-backups/default"
+        self.assertEqual(
+            (backup_dir / "args.gn").read_text(), 'target_cpu = "x64"\n'
+        )
+        self.assertEqual(
+            (backup_dir / "fx.config").read_text(), "FUCHSIA_ARCH=x64\n"
+        )
+        self.assertTrue(backup_default.is_symlink())
+        self.assertEqual(os.readlink(backup_default), "core.x64-balanced")
+
+        # Updating args.gn and adding a second build dir preserves both.
+        (self.build_dir / "args.gn").write_text(
+            'target_cpu = "x64"\nis_debug = true\n'
+        )
+        regenerator.maybe_backup_out_config(self.fuchsia_dir, self.build_dir)
+        self.assertEqual(
+            (backup_dir / "args.gn").read_text(),
+            'target_cpu = "x64"\nis_debug = true\n',
+        )
+
+        second_dir = self.out_dir / "workbench_eng.arm64"
+        second_dir.mkdir(parents=True)
+        (second_dir / "args.gn").write_text('target_cpu = "arm64"\n')
+        out_default.unlink()
+        out_default.symlink_to("workbench_eng.arm64")
+        regenerator.maybe_backup_out_config(self.fuchsia_dir, second_dir)
+
+        self.assertTrue((backup_dir / "args.gn").is_file())
+        self.assertEqual(
+            (
+                self.fuchsia_dir
+                / ".fx/out-config-backups/workbench_eng.arm64/args.gn"
+            ).read_text(),
+            'target_cpu = "arm64"\n',
+        )
+        self.assertTrue(backup_default.is_symlink())
+        self.assertEqual(os.readlink(backup_default), "workbench_eng.arm64")
+
+
 if __name__ == "__main__":
     unittest.main()

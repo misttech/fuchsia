@@ -45,6 +45,7 @@ if str(_FUCHSIA_ROOT) not in sys.path:
 from build.auth import gcloud
 from build.rbe import build_summary, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
+from build.scripts import properties
 
 _JSONPrimitive = str | int | float | bool | None
 JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
@@ -480,40 +481,9 @@ def normalize_resultstore_value(val: Any) -> str:
     return "none"
 
 
-def parse_properties(content: str) -> dict[str, str]:
-    """Parses a simple KEY=VALUE properties string, supporting export syntax."""
-    props: dict[str, str] = {}
-    for line in content.splitlines():
-        line = line.strip()
-        if not line or line.startswith("//"):
-            continue
-        k, sep, v = line.partition("=")
-        if sep:
-            key = k.strip().removeprefix("export ").strip()
-            if key:
-                try:
-                    tokens = shlex.split(v.strip(), comments=True)
-                except ValueError:
-                    continue
-                if tokens:
-                    props[key] = tokens[0]
-    return props
-
-
-def load_properties(path: pathlib.Path) -> dict[str, str]:
-    """Reads a simple KEY=VALUE properties file safely, supporting export syntax."""
-    if not exists(path):
-        return {}
-    try:
-        content = path.read_text()
-    except OSError:
-        return {}
-    return parse_properties(content)
-
-
 def load_user_preference(path: pathlib.Path) -> str | None:
     """Loads resultstore preference, supporting both new and legacy formats."""
-    props = load_properties(path)
+    props = properties.load_properties(path)
     if "resultstore" in props:
         return normalize_resultstore_value(props["resultstore"])
     elif "RESULTSTORE_ENABLED" in props:
@@ -544,16 +514,6 @@ def gcp_instance_name(value: str) -> str:
             "Expected format: 'projects/<project-id>/instances/<instance-name>'"
         )
     return value
-
-
-def str_to_bool(value: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value.lower() in ("true", "1", "yes"):
-        return True
-    elif value.lower() in ("false", "0", "no"):
-        return False
-    raise argparse.ArgumentTypeError(f"Boolean value expected, got {value}")
 
 
 class BuildLock:
@@ -1888,7 +1848,9 @@ def _main_arg_parser() -> argparse.ArgumentParser:
     )
 
     # Custom handling for boolean flags to support --flag=true/false
-    parser.add_argument("--rbe", type=str_to_bool, nargs="?", const=True)
+    parser.add_argument(
+        "--rbe", type=properties.str_to_bool, nargs="?", const=True
+    )
     parser.add_argument("--no-rbe", action="store_false", dest="rbe")
 
     parser.add_argument(
@@ -1907,10 +1869,14 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         help="Disable uploading build events to ResultStore.",
     )
 
-    parser.add_argument("--profile", type=str_to_bool, nargs="?", const=True)
+    parser.add_argument(
+        "--profile", type=properties.str_to_bool, nargs="?", const=True
+    )
     parser.add_argument("--no-profile", action="store_false", dest="profile")
 
-    parser.add_argument("--tui", type=str_to_bool, nargs="?", const=True)
+    parser.add_argument(
+        "--tui", type=properties.str_to_bool, nargs="?", const=True
+    )
     parser.add_argument("--no-tui", action="store_false", dest="tui")
 
     parser.add_argument(

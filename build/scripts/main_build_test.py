@@ -465,29 +465,9 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                 # Even though max_concurrency is set to 16, the Fint job_count override (32) is returned directly
                 self.assertEqual(context.concurrency, 32)
 
-    def test_parse_properties(self) -> None:
-        test_cases = [
-            ("key=value\n", {"key": "value"}),
-            ("  key  =  value  \n", {"key": "value"}),
-            ('export key="value"\n', {"key": "value"}),
-            ("export key='value'\n", {"key": "value"}),
-            ('key="value" # comments!\n', {"key": "value"}),
-            ("=empty_key\nkey=value\n", {"key": "value"}),
-            ("# comments\n// comments\n\nkey=value\n", {"key": "value"}),
-            ("empty_val=\n", {}),
-            ("invalid_value\n", {}),
-            ('key="unclosed\nkey2=value\n', {"key2": "value"}),
-        ]
-        for content, expected in test_cases:
-            self.assertEqual(
-                main_build.parse_properties(content),
-                expected,
-                f"Failed parsing: {content!r}",
-            )
-
     def test_load_user_preference(self) -> None:
         with mock.patch.object(
-            main_build, "exists", return_value=True
+            pathlib.Path, "exists", return_value=True
         ), mock.patch.object(
             pathlib.Path, "read_text", return_value="resultstore=all\n"
         ):
@@ -1559,18 +1539,6 @@ class GcpInstanceNameTest(unittest.TestCase):
         ):
             with self.assertRaises(argparse.ArgumentTypeError):
                 main_build.gcp_instance_name(invalid)
-
-
-class StrToBoolTest(unittest.TestCase):
-    def test_str_to_bool(self) -> None:
-        self.assertTrue(main_build.str_to_bool("true"))
-        self.assertTrue(main_build.str_to_bool("1"))
-        self.assertTrue(main_build.str_to_bool("yes"))
-        self.assertFalse(main_build.str_to_bool("false"))
-        self.assertFalse(main_build.str_to_bool("0"))
-        self.assertFalse(main_build.str_to_bool("no"))
-        with self.assertRaises(Exception):
-            main_build.str_to_bool("maybe")
 
 
 class ParseCfgTest(unittest.TestCase):
