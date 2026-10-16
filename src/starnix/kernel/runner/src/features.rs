@@ -15,14 +15,10 @@ use starnix_core::mm::MlockPinFlavor;
 use starnix_core::task::{Kernel, KernelFeatures, SystemLimits, ThreadLockupDetector};
 use starnix_core::vfs::FsString;
 use starnix_features::Feature;
-use starnix_logging::log_error;
 use starnix_modules::{
     AspectRatio, EventProxyMode, Framebuffer, Modules, StartRelaysArgs, TouchPowerPolicyDevice,
-    ashmem_device_init, booted_device_init, consent_sync_init, cooling_device_init,
-    fastrpc_device_init, gpu_device_init, gralloc_device_init, hvdcp_opti_init, kgsl_device_init,
-    magma_device_init, nanohub_device_init, new_input_relay, nmfs_init, odpm_device_init,
-    register_uinput_device, register_wakeup_test_device, start_perfetto_consumer_thread,
-    thermal_device_init, usb_device_init,
+    booted_device_init, cooling_device_init, magma_device_init, new_input_relay,
+    register_uinput_device, start_perfetto_consumer_thread, thermal_device_init,
 };
 use std::sync::Arc;
 
@@ -41,14 +37,8 @@ pub struct Features {
     /// Limits value passed to the kernel during the initialization.
     pub system_limits: SystemLimits,
 
-    /// Whether to enable ashmem.
-    pub ashmem: bool,
-
     /// Whether to enable a boot notifier device.
     pub boot_notifier: bool,
-
-    /// Whether to enable consent sync.
-    pub data_collection_consent_sync: bool,
 
     /// Whether to boost CPU for a fixed duration.
     pub boot_notifier_cpu_boost: Option<zx::MonotonicDuration>,
@@ -66,17 +56,8 @@ pub struct Features {
     /// The value of the initial view ID annotation.
     pub initial_view_id_annotation: String,
 
-    /// Whether to enable gralloc.
-    pub gralloc: bool,
-
-    /// Whether to enable the Kernel Graphics Support Layer (kgsl) device used by Adreno GPUs.
-    pub kgsl: bool,
-
     /// Supported magma vendor IDs.
     pub magma_supported_vendors: Option<Vec<u16>>,
-
-    /// Whether to enable gfxstream.
-    pub gfxstream: bool,
 
     /// Include the /container directory in the root file system.
     pub container: bool,
@@ -96,15 +77,6 @@ pub struct Features {
     /// Whether to allow the root filesystem to be read/write.
     pub rootfs_rw: bool,
 
-    /// Whether to enable network manager and its filesystem.
-    pub network_manager: bool,
-
-    /// Whether to enable the nanohub module.
-    pub nanohub: bool,
-
-    /// Whether to enable the fastrpc module.
-    pub fastrpc: bool,
-
     pub enable_utc_time_adjustment: bool,
 
     pub thermal: bool,
@@ -116,32 +88,14 @@ pub struct Features {
     /// Whether to add android bootreason to kernel cmdline.
     pub android_bootreason: bool,
 
-    /// Whether to enable hvdcp_opti sysfs logic.
-    ///
-    /// Note: Statically registers IIO devices (`iio:device0`, `iio:device1`).
-    /// Conflicts with `google_odpm`, so they cannot both be enabled simultaneously.
-    pub hvdcp_opti: bool,
-
     pub additional_mounts: Option<Vec<String>>,
-
-    /// Support kernel level suspend/resume tests.
-    pub wakeup_test: bool,
 
     /// Add a stub block device entry for mmcblk0. This is required for certain containers that
     /// query certain functionality based on block device naming.
     pub mmcblk_stub: bool,
 
-    /// Whether to initialize Android-compatible USB monitoring sysfs logic.
-    pub android_usb: bool,
-
     /// Whether to initialize unified tracing with a Fuchsia trace observer.
     pub unified_tracing: bool,
-
-    /// Whether to enable google-odpm power monitoring sysfs logic.
-    ///
-    /// Note: Statically registers `iio:device0`.
-    /// Conflicts with `hvdcp_opti`, so they cannot both be enabled simultaneously.
-    pub google_odpm: bool,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -182,50 +136,34 @@ impl Features {
                     },
                 system_limits,
                 selinux,
-                ashmem,
                 boot_notifier,
                 boot_notifier_cpu_boost,
-                data_collection_consent_sync,
                 framebuffer,
                 aspect_ratio,
                 enable_visual_debugging,
-                gralloc,
-                kgsl,
                 magma_supported_vendors,
-                gfxstream,
                 container,
                 test_data,
                 custom_artifacts,
                 android_serialno,
                 perfetto,
                 rootfs_rw,
-                network_manager,
-                nanohub,
-                fastrpc,
                 enable_utc_time_adjustment,
                 thermal,
                 cooling,
                 android_bootreason,
-                hvdcp_opti,
                 additional_mounts,
-                wakeup_test,
                 mmcblk_stub,
-                android_usb,
                 unified_tracing,
-                google_odpm,
                 initial_view_id_annotation,
             } => {
-                inspect_node.record_bool("google_odpm", *google_odpm);
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("unified_tracing", *unified_tracing);
-                inspect_node.record_bool("ashmem", *ashmem);
                 inspect_node.record_bool("boot_notifier", *boot_notifier);
                 inspect_node.record_string(
                     "initial_view_id_annotation",
                     initial_view_id_annotation.as_str(),
                 );
-                inspect_node
-                    .record_bool("data_collection_consent_sync", *data_collection_consent_sync);
                 inspect_node.record_string(
                     "boot_notifier_cpu_boost",
                     boot_notifier_cpu_boost
@@ -233,8 +171,6 @@ impl Features {
                         .unwrap_or_else(|| "none".to_string()),
                 );
                 inspect_node.record_bool("framebuffer", *framebuffer);
-                inspect_node.record_bool("gralloc", *gralloc);
-                inspect_node.record_bool("kgsl", *kgsl);
                 inspect_node.record_string(
                     "magma_supported_vendors",
                     match magma_supported_vendors {
@@ -246,7 +182,6 @@ impl Features {
                         None => "".to_string(),
                     },
                 );
-                inspect_node.record_bool("gfxstream", *gfxstream);
                 inspect_node.record_bool("container", *container);
                 inspect_node.record_bool("test_data", *test_data);
                 inspect_node.record_bool("custom_artifacts", *custom_artifacts);
@@ -265,9 +200,6 @@ impl Features {
                     perfetto.as_ref().map(|p| p.to_string()).unwrap_or_default(),
                 );
                 inspect_node.record_bool("rootfs_rw", *rootfs_rw);
-                inspect_node.record_bool("network_manager", *network_manager);
-                inspect_node.record_bool("nanohub", *nanohub);
-                inspect_node.record_bool("fastrpc", *fastrpc);
                 inspect_node.record_bool("thermal", *thermal);
                 inspect_node.record_string(
                     "cooling",
@@ -277,7 +209,6 @@ impl Features {
                     },
                 );
                 inspect_node.record_bool("android_bootreason", *android_bootreason);
-                inspect_node.record_bool("hvdcp_opti", *hvdcp_opti);
                 inspect_node.record_string("ping_group_range", {
                     let range = system_limits.socket.icmp_ping_gids.lock();
                     std::format!("{},{}", range.start, range.end - 1)
@@ -312,9 +243,7 @@ impl Features {
                     inspect_node
                         .record_string("additional_mounts", format!("{:?}", additional_mounts));
                     inspect_node.record_uint("dirent_cache_size", *dirent_cache_size as u64);
-                    inspect_node.record_bool("wakeup_test", *wakeup_test);
                     inspect_node.record_bool("mmcblk_stub", *mmcblk_stub);
-                    inspect_node.record_bool("android_usb", *android_usb);
                     inspect_node.record_bool("fake_ion", *fake_ion);
                     inspect_node.record_bool("remotevol_in_process", *remotevol_in_process);
                 });
@@ -324,6 +253,9 @@ impl Features {
 }
 
 /// Parses container features and modules from `start_info` and `kernel_extra_features`.
+///
+/// Legacy module entries found in `program.features`, `kernel_extra_features`, or
+/// `config.extra_features` are translated into [`Modules`] entries for backwards compatibility.
 pub fn parse_features(
     start_info: &ContainerStartInfo,
     kernel_extra_features: &[String],
@@ -374,9 +306,22 @@ pub fn parse_features(
             }
             (Feature::Container, _) => features.container = true,
             (Feature::CustomArtifacts, _) => features.custom_artifacts = true,
-            (Feature::Ashmem, _) => features.ashmem = true,
+            (
+                Feature::AndroidUsb
+                | Feature::Ashmem
+                | Feature::DataCollectionConsentSync
+                | Feature::Fastrpc
+                | Feature::Gfxstream
+                | Feature::GoogleOdpm
+                | Feature::Gralloc
+                | Feature::HvdcpOpti
+                | Feature::Kgsl
+                | Feature::Nanohub
+                | Feature::NetworkManager
+                | Feature::WakeupTest,
+                _,
+            ) => modules.enable(&feature.to_string()),
             (Feature::BootNotifier, _) => features.boot_notifier = true,
-            (Feature::DataCollectionConsentSync, _) => features.data_collection_consent_sync = true,
             (Feature::BootNotifierCpuBoost, Some(arg)) => {
                 let duration = zx::MonotonicDuration::from_seconds(arg.parse::<i64>()?);
                 features.boot_notifier_cpu_boost = Some(duration);
@@ -387,8 +332,6 @@ pub fn parse_features(
                 ));
             }
             (Feature::Framebuffer, _) => features.framebuffer = true,
-            (Feature::Gralloc, _) => features.gralloc = true,
-            (Feature::Kgsl, _) => features.kgsl = true,
             (Feature::Magma, _) => {
                 if features.magma_supported_vendors.is_none() {
                     const VENDOR_ARM: u16 = 0x13B5;
@@ -414,11 +357,7 @@ pub fn parse_features(
                     "Feature format must be: magma_supported_vendors:0x1234[,0xabcd]"
                 ));
             }
-            (Feature::Nanohub, _) => features.nanohub = true,
-            (Feature::Fastrpc, _) => features.fastrpc = true,
             (Feature::UnifiedTracing, _) => features.unified_tracing = true,
-            (Feature::NetworkManager, _) => features.network_manager = true,
-            (Feature::Gfxstream, _) => features.gfxstream = true,
             (Feature::Bpf, Some(version)) => features.kernel.bpf_v2 = version == "v2",
             (Feature::Bpf, None) => {
                 return Err(anyhow!("bpf feature must have an argument (e.g. \"bpf:v2\")"));
@@ -465,16 +404,12 @@ pub fn parse_features(
             (Feature::Cooling, None) => {
                 return Err(anyhow!("cooling feature must have an argument"));
             }
-            (Feature::HvdcpOpti, _) => features.hvdcp_opti = true,
             (Feature::Wifi, _) => features.kernel.wifi = true,
             (Feature::AdditionalMounts, _) => {
                 features.additional_mounts = Some(additional_mounts.clone())
             }
-            (Feature::WakeupTest, _) => features.wakeup_test = true,
             (Feature::MmcblkStub, _) => features.mmcblk_stub = true,
             (Feature::FakeIon, _) => features.kernel.fake_ion = true,
-            (Feature::AndroidUsb, _) => features.android_usb = true,
-            (Feature::GoogleOdpm, _) => features.google_odpm = true,
             (Feature::RemotevolInProcess, _) => features.kernel.remotevol_in_process = true,
             (Feature::LogSysfsLookupMisses, _) => features.kernel.log_sysfs_lookup_misses = true,
         };
@@ -482,12 +417,6 @@ pub fn parse_features(
 
     if features.boot_notifier_cpu_boost.is_some() && !features.boot_notifier {
         return Err(anyhow!("boot_notifier_cpu_boost feature requires boot_notifier"));
-    }
-
-    if features.google_odpm && features.hvdcp_opti {
-        return Err(anyhow!(
-            "features 'google_odpm' and 'hvdcp_opti' cannot be enabled simultaneously"
-        ));
     }
 
     for spec in &start_info.program.modules {
@@ -529,8 +458,7 @@ pub fn parse_features(
     Ok((features, modules))
 }
 
-/// Runs all the features that are enabled in `system_task.kernel()`.
-
+/// Runs container-level kernel features enabled in `features`.
 pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Result<(), Error> {
     if features.framebuffer {
         let framebuffer = Framebuffer::device_init(
@@ -608,26 +536,8 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
 
         framebuffer.start_server(kernel, None);
     }
-    if features.gralloc {
-        // The virtgralloc0 device allows vulkan_selector to indicate to gralloc
-        // whether swiftshader or magma will be used. This is separate from the
-        // magma feature because the policy choice whether to use magma or
-        // swiftshader is in vulkan_selector, and it can potentially choose
-        // switfshader for testing purposes even when magma0 is present. Also,
-        // it's nice to indicate swiftshader the same way regardless of whether
-        // the magma feature is enabled or disabled. If a call to gralloc AIDL
-        // IAllocator allocate2 occurs with this feature disabled, the call will
-        // fail.
-        gralloc_device_init(kernel);
-    }
-    if features.kgsl {
-        kgsl_device_init(kernel);
-    }
     if let Some(supported_vendors) = &features.magma_supported_vendors {
         magma_device_init(kernel, supported_vendors.clone());
-    }
-    if features.gfxstream {
-        gpu_device_init(kernel);
     }
     if let Some(socket_path) = features.perfetto.clone() {
         start_perfetto_consumer_thread(kernel, socket_path)
@@ -636,22 +546,8 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
     if features.unified_tracing {
         kernel.trace_event_manager.init_trace_observer(kernel);
     }
-    if features.ashmem {
-        ashmem_device_init(kernel);
-    }
     if features.boot_notifier {
         booted_device_init(kernel, features.boot_notifier_cpu_boost);
-    }
-    if features.data_collection_consent_sync {
-        consent_sync_init(kernel);
-    }
-    if features.network_manager {
-        if let Err(e) = nmfs_init(kernel) {
-            log_error!("Network manager initialization failed: ({e:?})");
-        }
-    }
-    if features.nanohub {
-        nanohub_device_init(kernel);
     }
     if features.thermal {
         thermal_device_init(kernel)?;
@@ -659,23 +555,8 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
     if let Some(devices) = &features.cooling {
         cooling_device_init(kernel, devices.clone())?;
     }
-    if features.hvdcp_opti {
-        hvdcp_opti_init(kernel);
-    }
-    if features.fastrpc {
-        fastrpc_device_init(kernel);
-    }
-    if features.wakeup_test {
-        register_wakeup_test_device(kernel)?;
-    }
     if features.mmcblk_stub {
         let _device = add_mmc_block_device(kernel).context("Failed to add stub mmcblk0 device")?;
-    }
-    if features.android_usb {
-        usb_device_init(kernel).context("Failed to add android usb device nodes")?;
-    }
-    if features.google_odpm {
-        odpm_device_init(kernel);
     }
     Ok(())
 }
@@ -724,14 +605,34 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn reject_mutually_exclusive_odpm_and_hvdcp_opti() {
+        let start_info =
+            test_start_info(Vec::new(), vec!["google_odpm".to_string(), "hvdcp_opti".to_string()]);
+        assert!(parse_features(&start_info, &[]).is_err());
+
+        let mixed_info =
+            test_start_info(vec!["google_odpm".to_string()], vec!["hvdcp_opti".to_string()]);
+        assert!(parse_features(&mixed_info, &[]).is_err());
+    }
+
+    #[fuchsia::test]
     fn reject_empty_module_specification() {
         let start_info = test_start_info(Vec::new(), vec!["   ".to_string()]);
         assert!(parse_features(&start_info, &[]).is_err());
     }
 
     #[fuchsia::test]
-    fn disable_default_modules() {
-        let start_info = test_start_info(Vec::new(), vec!["-zram".to_string()]);
+    fn disable_default_and_shard_modules() {
+        let start_info = test_start_info(
+            Vec::new(),
+            vec![
+                "-zram".to_string(),
+                "-gfxstream".to_string(),
+                "gfxstream".to_string(),
+                "ashmem".to_string(),
+                "-ashmem".to_string(),
+            ],
+        );
 
         let (_features, modules) =
             parse_features(&start_info, &[]).expect("parse_features should succeed");
@@ -740,6 +641,8 @@ mod tests {
         assert!(modules.is_enabled("power_residency"));
         assert!(!modules.is_enabled("zram"));
         assert_eq!(modules.args("zram"), None);
+        assert!(!modules.is_enabled("gfxstream"));
+        assert!(!modules.is_enabled("ashmem"));
     }
 
     #[fuchsia::test]
@@ -755,7 +658,7 @@ mod tests {
 
     #[fuchsia::test]
     fn reject_unknown_modules_and_invalid_module_arguments() {
-        for invalid_spec in ["unknown_module", "zram --unexpected"] {
+        for invalid_spec in ["unknown_module", "ashmem --unexpected"] {
             let start_info = test_start_info(Vec::new(), vec![invalid_spec.to_string()]);
             assert!(
                 parse_features(&start_info, &[]).is_err(),

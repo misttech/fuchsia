@@ -5,8 +5,8 @@
 // Increase recursion limit because LTO causes overflow.
 #![recursion_limit = "256"]
 
-use anyhow::{Error, anyhow, bail};
-pub use starnix_consent_sync::init as consent_sync_init;
+use anyhow::{Context, Error, anyhow, bail};
+use starnix_consent_sync::init as consent_sync_init;
 use starnix_core::bpf::fs::BpfFs;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::mem::{DevRandom, mem_device_init};
@@ -18,8 +18,9 @@ use starnix_core::fs::tmpfs::tmp_fs;
 use starnix_core::task::Kernel;
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pipe::register_pipe_fs;
-pub use starnix_modules_android_usb::usb_device_init;
-pub use starnix_modules_ashmem::ashmem_device_init;
+use starnix_logging::log_error;
+use starnix_modules_android_usb::usb_device_init;
+use starnix_modules_ashmem::ashmem_device_init;
 use starnix_modules_binderfs::BinderFs;
 pub use starnix_modules_boot::booted_device_init;
 use starnix_modules_cgroupfs::{CgroupV1Fs, cgroup2_fs};
@@ -28,23 +29,23 @@ use starnix_modules_device_mapper::{create_device_mapper, device_mapper_init};
 pub use starnix_modules_devpts::create_main_and_replica;
 use starnix_modules_devpts::{dev_pts_fs, tty_device_init};
 use starnix_modules_ext4::ExtFilesystem;
-pub use starnix_modules_fastrpc::fastrpc_device_init;
+use starnix_modules_fastrpc::fastrpc_device_init;
 pub use starnix_modules_framebuffer::{AspectRatio, Framebuffer};
 use starnix_modules_functionfs::FunctionFs;
 use starnix_modules_fuse::{new_fuse_fs, new_fusectl_fs, open_fuse_device};
-pub use starnix_modules_gpu::gpu_device_init;
-pub use starnix_modules_gralloc::gralloc_device_init;
-pub use starnix_modules_hvdcp_opti::hvdcp_opti_init;
+use starnix_modules_gpu::gpu_device_init;
+use starnix_modules_gralloc::gralloc_device_init;
+use starnix_modules_hvdcp_opti::hvdcp_opti_init;
 use starnix_modules_inotify::inotify::inotify_init;
 pub use starnix_modules_input::uinput::register_uinput_device;
 pub use starnix_modules_input::{EventProxyMode, StartRelaysArgs, new_input_relay};
-pub use starnix_modules_kgsl::kgsl_device_init;
+use starnix_modules_kgsl::kgsl_device_init;
 pub use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_loop::{create_loop_control_device, loop_device_init};
 pub use starnix_modules_magma::{get_magma_params, magma_device_init};
-pub use starnix_modules_nanohub::nanohub_device_init;
-pub use starnix_modules_nmfs::nmfs_init;
-pub use starnix_modules_odpm::odpm_device_init;
+use starnix_modules_nanohub::nanohub_device_init;
+use starnix_modules_nmfs::nmfs_init;
+use starnix_modules_odpm::odpm_device_init;
 pub use starnix_modules_overlayfs::OverlayStack;
 use starnix_modules_overlayfs::new_overlay_fs;
 pub use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
@@ -57,7 +58,7 @@ pub use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
 pub use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
 use starnix_modules_tracefs::trace_fs;
 use starnix_modules_tun::DevTun;
-pub use starnix_modules_wakeup_test::register_wakeup_test_device;
+use starnix_modules_wakeup_test::register_wakeup_test_device;
 use starnix_modules_zram::zram_device_init;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -74,7 +75,25 @@ const DEFAULT_MODULES: &[&str] =
 /// that module.
 pub fn validate_module(name: &str, args: Option<&[&str]>) -> Result<(), Error> {
     match name {
-        "device_mapper" | "hw_random" | "loop" | "power_residency" | "rtc" | "tun" | "zram" => {
+        "android_usb"
+        | "ashmem"
+        | "data_collection_consent_sync"
+        | "device_mapper"
+        | "fastrpc"
+        | "gfxstream"
+        | "google_odpm"
+        | "gralloc"
+        | "hvdcp_opti"
+        | "hw_random"
+        | "kgsl"
+        | "loop"
+        | "nanohub"
+        | "network_manager"
+        | "power_residency"
+        | "rtc"
+        | "tun"
+        | "wakeup_test"
+        | "zram" => {
             if let Some(args) = args
                 && !args.is_empty()
             {
@@ -91,6 +110,11 @@ impl Modules {
         validate_module(name, Some(args))?;
         let registry = &kernel.device_registry;
         match name {
+            "android_usb" => {
+                usb_device_init(kernel).context("Failed to add android usb device nodes")?;
+            }
+            "ashmem" => ashmem_device_init(kernel),
+            "data_collection_consent_sync" => consent_sync_init(kernel),
             "device_mapper" => {
                 registry.register_device(
                     kernel,
@@ -105,6 +129,20 @@ impl Modules {
                 )?;
                 device_mapper_init(kernel)?;
             }
+            "fastrpc" => fastrpc_device_init(kernel),
+            "gfxstream" => gpu_device_init(kernel),
+            // Note: `google_odpm` and `hvdcp_opti` both statically register `iio:device0`;
+            // `Modules::validate` rejects enabling both simultaneously.
+            "google_odpm" => odpm_device_init(kernel),
+            // The virtgralloc0 device allows vulkan_selector to indicate to gralloc whether
+            // swiftshader or magma will be used. This is separate from the magma module because
+            // the policy choice whether to use magma or swiftshader is in vulkan_selector, and it
+            // can potentially choose swiftshader for testing purposes even when magma0 is present.
+            // Also, it's nice to indicate swiftshader the same way regardless of whether the magma
+            // module is enabled or disabled. If a call to gralloc AIDL IAllocator allocate2 occurs
+            // with this module disabled, the call will fail.
+            "gralloc" => gralloc_device_init(kernel),
+            "hvdcp_opti" => hvdcp_opti_init(kernel),
             "hw_random" => {
                 registry.register_device(
                     kernel,
@@ -114,6 +152,7 @@ impl Modules {
                     simple_device_ops::<DevRandom>,
                 )?;
             }
+            "kgsl" => kgsl_device_init(kernel),
             "loop" => {
                 registry.register_device(
                     kernel,
@@ -128,6 +167,12 @@ impl Modules {
                 )?;
                 loop_device_init(kernel)?;
             }
+            "nanohub" => nanohub_device_init(kernel),
+            "network_manager" => {
+                if let Err(e) = nmfs_init(kernel) {
+                    log_error!("Network manager initialization failed: ({e:?})");
+                }
+            }
             "power_residency" => init_power_residency_device(kernel),
             "rtc" => rtc_device_init(kernel)?,
             "tun" => {
@@ -139,6 +184,7 @@ impl Modules {
                     simple_device_ops::<DevTun>,
                 )?;
             }
+            "wakeup_test" => register_wakeup_test_device(kernel)?,
             "zram" => zram_device_init(kernel)?,
             _ => bail!("unsupported module: {name}"),
         }
@@ -239,6 +285,9 @@ impl Modules {
             let arg_refs: Option<Vec<&str>> =
                 args.as_ref().map(|a| a.iter().map(String::as_str).collect());
             validate_module(module, arg_refs.as_deref())?;
+        }
+        if self.is_enabled("google_odpm") && self.is_enabled("hvdcp_opti") {
+            bail!("modules 'google_odpm' and 'hvdcp_opti' cannot be enabled simultaneously");
         }
         Ok(())
     }

@@ -15,54 +15,59 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Copy, PartialEq, EnumString, strum_macros::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum Feature {
-    AndroidSerialno,
-    AndroidBootreason,
+    // Legacy module feature flags retained for backwards compatibility with `ExtraFeatures`,
+    // Product Assembly, and prebuilt container manifests. Prefer configuring modules via
+    // `program.modules` in container manifests.
+    AndroidUsb,
     AspectRatio,
-    Container,
-    CustomArtifacts,
     Ashmem,
     BootNotifier,
     BootNotifierCpuBoost,
-    Framebuffer,
-    Gralloc,
-    Kgsl,
-    Magma,
-    MagmaSupportedVendors,
-    Nanohub,
-    Fastrpc,
-    NetworkManager,
-    Gfxstream,
-    Bpf,
-    EnableSuid,
-    IoUring,
-    ErrorOnFailedReboot,
-    Perfetto,
-    PingGroupRange,
-    RootfsRw,
-    Selinux,
-    SelinuxTestSuite,
-    TestData,
-    Thermal,
     Cooling,
     DataCollectionConsentSync,
-    // Note: HvdcpOpti statically registers IIO devices (`iio:device0`, `iio:device1`).
-    // Conflicts with `GoogleOdpm`, which also statically registers `iio:device0`.
-    // Until dynamic IIO numbering is supported, they must not be used at the same time.
-    HvdcpOpti,
-    Wifi,
-    AdditionalMounts,
-    WakeupTest,
-    MmcblkStub,
-    AndroidUsb,
+    Fastrpc,
+    Framebuffer,
+    Gfxstream,
     // Note: GoogleOdpm statically registers `iio:device0`.
     // Conflicts with `HvdcpOpti`, which also statically registers `iio:device0`.
     // Until dynamic IIO numbering is supported, they must not be used at the same time.
     GoogleOdpm,
+    Gralloc,
+    // Note: HvdcpOpti statically registers IIO devices (`iio:device0`, `iio:device1`).
+    // Conflicts with `GoogleOdpm`, which also statically registers `iio:device0`.
+    // Until dynamic IIO numbering is supported, they must not be used at the same time.
+    HvdcpOpti,
+    Kgsl,
+    Magma,
+    MagmaSupportedVendors,
+    Nanohub,
+    NetworkManager,
+    Perfetto,
+    Thermal,
+    WakeupTest,
+
+    // Container and kernel behavior features.
+    AdditionalMounts,
+    AndroidBootreason,
+    AndroidSerialno,
+    Bpf,
+    Container,
+    CustomArtifacts,
+    EnableSuid,
+    ErrorOnFailedReboot,
     // TODO(https://fxbug.dev/485370648) remove when unnecessary
     FakeIon,
-    UnifiedTracing,
-    RemotevolInProcess,
+    IoUring,
     LogSysfsLookupMisses,
+    MmcblkStub,
+    PingGroupRange,
+    RemotevolInProcess,
+    RootfsRw,
+    Selinux,
+    SelinuxTestSuite,
+    TestData,
+    UnifiedTracing,
+    Wifi,
 }
 
 /// Error returned when a feature is not recognized.

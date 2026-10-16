@@ -46,6 +46,7 @@ rustc_library("modules") {
   deps = [
     "//src/lib/diagnostics/inspect/rust",
     "//src/starnix/kernel/core",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/android_usb",
     "//src/starnix/modules/ashmem",
