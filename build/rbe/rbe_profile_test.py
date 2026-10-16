@@ -158,7 +158,8 @@ class RbeProfileTest(unittest.TestCase):
         }
         with self.assertRaises(ValueError) as ctx:
             rbe_profile.RbeProfile.from_dict(invalid_data)
-        self.assertIn("must define a 'default' worker pool", str(ctx.exception))
+        self.assertIn("missing required pool entries", str(ctx.exception))
+        self.assertIn("'default'", str(ctx.exception))
 
     def test_rbe_profile_worker_pools_missing_large_raises(self) -> None:
         invalid_data = {
@@ -172,7 +173,8 @@ class RbeProfileTest(unittest.TestCase):
         }
         with self.assertRaises(ValueError) as ctx:
             rbe_profile.RbeProfile.from_dict(invalid_data)
-        self.assertIn("must define a 'large' worker pool", str(ctx.exception))
+        self.assertIn("missing required pool entries", str(ctx.exception))
+        self.assertIn("'large'", str(ctx.exception))
 
     def test_rbe_profile_worker_pools_invalid_platform_variable_raises(
         self,
@@ -219,15 +221,22 @@ class RbeProfileTest(unittest.TestCase):
                 rbe_profile._ENV_WORKER_POOLS: '{"default": "Pool=fake-default-pool", "large": "Pool=fake-large-pool"}',
                 rbe_profile._ENV_AUTH_TYPE: "fake-auth",
                 rbe_profile._ENV_PROFILE_NAME: "default",
+                rbe_profile._ENV_RBE_PLATFORM: "container-image=docker://gcr.io/fake/image,Pool=fake-default-pool",
             },
         )
 
+        # Test direct from_env_dict deserialization
+        reconstructed = rbe_profile.RbeProfile.from_env_dict(env_dict)
+        self.assertEqual(reconstructed, profile)
+
         # Fast path: load reconstructs this exact profile directly from env without disk I/O
         loaded = rbe_profile.load(Path("/nonexistent"), env_dict)
-        self.assertEqual(loaded.rbe_instance, profile.rbe_instance)
-        self.assertEqual(loaded.remote_exec_root, profile.remote_exec_root)
-        self.assertEqual(loaded.worker_pools, profile.worker_pools)
-        self.assertEqual(loaded.auth_type, profile.auth_type)
+        self.assertEqual(loaded, profile)
+
+    def test_from_env_dict_missing_rbe_instance_raises(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            rbe_profile.RbeProfile.from_env_dict({})
+        self.assertIn("RBE_instance", str(ctx.exception))
 
     @mock.patch.object(rbe_profile._MANAGER, "load")
     def test_load_with_malformed_worker_pools_json(
@@ -236,6 +245,8 @@ class RbeProfileTest(unittest.TestCase):
         env_dict = {
             rbe_profile._ENV_RBE_INSTANCE: "projects/env-project/instances/env-rbe",
             rbe_profile._ENV_EXEC_ROOT: "/env/exec/root",
+            rbe_profile._ENV_CONTAINER_IMAGE: "docker://gcr.io/fake/image",
+            rbe_profile._ENV_OS_FAMILY: "fake-os",
             rbe_profile._ENV_WORKER_POOLS: "{malformed_json",
         }
         with self.assertRaises(ValueError) as ctx:

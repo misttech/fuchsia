@@ -99,6 +99,7 @@ class RemoteServicesUtilsTest(unittest.TestCase):
             {
                 "instance": "projects/test_project_name/instances/test_instance_name",
                 "rbe_instance": "projects/test_project_name/instances/test_instance_name",
+                "container_image": "docker://gcr.io/fake/image",
                 "rs_instance": "projects/test_rs_project/instances/test_rs_instance",
                 "rs_project": "test_rs_project",
                 "cas_instance": "projects/test_cas_project/instances/test_cas_instance",
@@ -130,6 +131,7 @@ class RemoteServicesUtilsTest(unittest.TestCase):
             {
                 "instance": "projects/test_project_name/instances/test_instance_name",
                 "rbe_instance": "projects/env-project/instances/env-rbe",
+                "container_image": "docker://gcr.io/fake/image",
                 "rs_instance": "projects/env-project/instances/env-rs",
                 "rs_project": "env-project",
                 "cas_instance": "projects/env-project/instances/env-cas",
@@ -221,7 +223,7 @@ my_rs_instance=projects/test_rs_project/instances/test_rs_instance
 my_rs_project=test_rs_project
 my_cas_instance=projects/test_cas_project/instances/test_cas_instance
 my_results_url=http://fake-results-url
-my_container_image=docker://gcr.io/test_project/debian11
+my_container_image=docker://gcr.io/fake/image
 """,
         )
 

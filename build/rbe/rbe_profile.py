@@ -30,6 +30,11 @@ _ENV_OS_FAMILY = "FX_BUILD_INTERNAL_RBE_OS_FAMILY"
 _ENV_WORKER_POOLS = "FX_BUILD_INTERNAL_RBE_WORKER_POOLS"
 _ENV_AUTH_TYPE = "FX_BUILD_INTERNAL_RBE_AUTH_TYPE"
 _ENV_PROFILE_NAME = "FX_BUILD_RBE_PROFILE"
+# RBE_platform is read directly by reclient's rewrapper tool to select default platform properties.
+_ENV_RBE_PLATFORM = "RBE_platform"
+
+# Mandatory pool entries that must be present in worker_pools.
+_REQUIRED_WORKER_POOLS = {"default", "large"}
 
 # Path relative to fuchsia directory for RBE profiles directory
 _PROFILES_DIR = Path("build/rbe/profiles")
@@ -52,6 +57,15 @@ class RbeProfile:
             (e.g., `projects/rbe-fuchsia-prod/instances/default`).
         remote_exec_root: The root path of the execution workspace on remote
             workers (typically `/b/f/w`).
+        container_image: The fully-qualified Docker container image URI for
+            the baseline remote execution environment (e.g. `docker://gcr.io/...`).
+            Individual actions can override this per-action (in GN/Ninja via
+            `--platform=container-image=<uri>` and in Bazel via
+            `exec_properties = {"container-image": "<uri>"}`).
+            Note: If multiple named container environments are needed in the
+            future (e.g. clang_tot, android_ndk, gpu), an optional
+            `container_images: dict[str, str]` mapping abstract environment
+            names to concrete URIs can be added to the profile schema.
         worker_pools: A dictionary mapping abstract worker pool names (e.g.,
             "default", "large") to concrete remote execution platform property
             strings formatted as "key=value" (e.g., "Pool=default",
@@ -77,13 +91,10 @@ class RbeProfile:
             raise ValueError(
                 f"rbe_instance must start with 'projects/', got '{self.rbe_instance}'"
             )
-        if "default" not in self.worker_pools:
+        missing_pools = _REQUIRED_WORKER_POOLS - set(self.worker_pools.keys())
+        if missing_pools:
             raise ValueError(
-                "worker_pools must define a 'default' worker pool entry"
-            )
-        if "large" not in self.worker_pools:
-            raise ValueError(
-                "worker_pools must define a 'large' worker pool entry"
+                f"worker_pools is missing required pool entries: {sorted(missing_pools)}"
             )
         for pool_name, pool_spec in self.worker_pools.items():
             if not isinstance(pool_spec, str) or "=" not in pool_spec:
@@ -93,6 +104,12 @@ class RbeProfile:
 
     def to_env_dict(self) -> dict[str, str]:
         """Serializes properties to standard environment variables for subprocesses."""
+        default_pool = self.worker_pools.get("default")
+        if not default_pool:
+            raise ValueError(
+                "worker_pools must define a 'default' worker pool entry"
+            )
+        platform_spec = f"container-image={self.container_image},{default_pool}"
         return {
             _ENV_RBE_INSTANCE: self.rbe_instance,
             _ENV_EXEC_ROOT: str(self.remote_exec_root),
@@ -101,6 +118,7 @@ class RbeProfile:
             _ENV_WORKER_POOLS: json.dumps(self.worker_pools),
             _ENV_AUTH_TYPE: self.auth_type,
             _ENV_PROFILE_NAME: self.profile_name,
+            _ENV_RBE_PLATFORM: platform_spec,
         }
 
     @classmethod
@@ -111,21 +129,31 @@ class RbeProfile:
         except (KeyError, TypeError) as e:
             raise ValueError(f"Validation failed when parsing RbeProfile: {e}.")
 
-
-def load(
-    fuchsia_dir: Path,
-    environ: Mapping[str, str],
-    name: str | None = None,
-) -> RbeProfile:
-    """Loads the active RBE profile, prioritizing env variables over on-disk files."""
-    if _ENV_RBE_INSTANCE in environ and name is None:
-        # Fast path for subprocesses: reconstruct profile directly from environment variables without disk I/O.
+    @classmethod
+    def from_env_dict(cls, environ: Mapping[str, str]) -> "RbeProfile":
+        """Reconstructs an RbeProfile instance from environment variables."""
+        if _ENV_RBE_INSTANCE not in environ:
+            raise ValueError(
+                f"{_ENV_RBE_INSTANCE} must be present in environment"
+            )
         rbe_instance = environ[_ENV_RBE_INSTANCE]
+
         exec_root_str = environ.get(_ENV_EXEC_ROOT)
         if not exec_root_str or not exec_root_str.startswith("/"):
             raise ValueError(
                 f"{_ENV_EXEC_ROOT} must be an absolute path in environment, got '{exec_root_str}'"
             )
+
+        container_image = environ.get(_ENV_CONTAINER_IMAGE)
+        if not container_image:
+            raise ValueError(
+                f"{_ENV_CONTAINER_IMAGE} must be present in environment"
+            )
+
+        os_family = environ.get(_ENV_OS_FAMILY)
+        if not os_family:
+            raise ValueError(f"{_ENV_OS_FAMILY} must be present in environment")
+
         worker_pools_raw = environ.get(_ENV_WORKER_POOLS, "{}")
         try:
             worker_pools = json.loads(worker_pools_raw)
@@ -133,17 +161,16 @@ def load(
             raise ValueError(
                 f"Failed to decode worker pools JSON from environment: {e}"
             )
-        container_image = environ.get(_ENV_CONTAINER_IMAGE)
-        if not container_image:
+        missing_pools = _REQUIRED_WORKER_POOLS - set(worker_pools.keys())
+        if missing_pools:
             raise ValueError(
-                f"{_ENV_CONTAINER_IMAGE} must be present in environment"
+                f"worker_pools in environment is missing required pool entries: {sorted(missing_pools)}"
             )
-        os_family = environ.get(_ENV_OS_FAMILY)
-        if not os_family:
-            raise ValueError(f"{_ENV_OS_FAMILY} must be present in environment")
+
         auth_type = environ.get(_ENV_AUTH_TYPE, "google")
         profile_name = environ.get(_ENV_PROFILE_NAME, "default")
-        return RbeProfile(
+
+        return cls(
             rbe_instance=rbe_instance,
             remote_exec_root=Path(exec_root_str),
             container_image=container_image,
@@ -152,6 +179,16 @@ def load(
             os_family=os_family,
             auth_type=auth_type,
         )
+
+
+def load(
+    fuchsia_dir: Path,
+    environ: Mapping[str, str],
+    name: str | None = None,
+) -> RbeProfile:
+    """Loads the active RBE profile, prioritizing env variables over on-disk files."""
+    if _ENV_RBE_INSTANCE in environ and name is None:
+        return RbeProfile.from_env_dict(environ)
 
     try:
         return _MANAGER.load(fuchsia_dir, environ, name=name)

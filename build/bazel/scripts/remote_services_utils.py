@@ -85,6 +85,7 @@ def generate_rbe_config(
                 input_files.add(path)
 
     config["rbe_instance"] = rbe_prof.rbe_instance
+    config["container_image"] = rbe_prof.container_image
     config["rs_instance"] = rs_prof.rs_instance
     config["rs_project"] = rs_prof.rs_project
     config["cas_instance"] = rs_prof.cas_instance
@@ -120,7 +121,8 @@ def generate_rbe_template_substitutions(
         "rs_project": config_dict["rs_project"],
         "cas_instance": config_dict["cas_instance"],
         "results_url": config_dict["results_url"],
-        "container_image": platform_vars.get("container-image", ""),
+        "container_image": config_dict.get("container_image")
+        or platform_vars.get("container-image", ""),
     }
 
 

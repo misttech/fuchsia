@@ -136,12 +136,18 @@ class RsProfileTest(unittest.TestCase):
             },
         )
 
+        # Test direct from_env_dict deserialization
+        reconstructed = rs_profile.RsProfile.from_env_dict(env_dict)
+        self.assertEqual(reconstructed, profile)
+
         # Fast path: load reconstructs this exact profile directly from env without disk I/O
         loaded = rs_profile.load(Path("/nonexistent"), env_dict)
-        self.assertEqual(loaded.rs_instance, profile.rs_instance)
-        self.assertEqual(loaded.cas_instance, profile.cas_instance)
-        self.assertEqual(loaded.results_url, profile.results_url)
-        self.assertEqual(loaded.auth_type, profile.auth_type)
+        self.assertEqual(loaded, profile)
+
+    def test_from_env_dict_missing_rs_instance_raises(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            rs_profile.RsProfile.from_env_dict({})
+        self.assertIn("RS_rs_instance", str(ctx.exception))
 
     def test_load_with_missing_cas_or_url_raises(self) -> None:
         env_dict = {

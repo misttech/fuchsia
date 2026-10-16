@@ -19,7 +19,12 @@ Each profile JSON file supports the following fields:
 - `remote_exec_root` (string, required): The root path of the execution
   workspace on remote workers (typically `/b/f/w`).
 - `container_image` (string, required): The fully-qualified Docker container image
-  URI for remote execution environments (e.g., `docker://gcr.io/...`).
+  URI for the baseline remote execution environment (e.g., `docker://gcr.io/...`).
+  Individual actions can override this per-action (in GN/Ninja via
+  `--platform=container-image=<uri>` and in Bazel via
+  `exec_properties = {"container-image": "<uri>"}`).
+  *(Note: If multiple named container environments are required in the future,
+  an optional `container_images` dictionary can map environment names to URIs).*
 - `os_family` (string, required): The operating system family
   of the remote workers (e.g., `"Linux"`).
 - `worker_pools` (object, required): A mapping of abstract worker pool names

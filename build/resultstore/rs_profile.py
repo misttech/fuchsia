@@ -81,15 +81,13 @@ class RsProfile:
         except (KeyError, TypeError) as e:
             raise ValueError(f"Validation failed when parsing RsProfile: {e}.")
 
-
-def load(
-    fuchsia_dir: Path,
-    environ: Mapping[str, str],
-    name: str | None = None,
-) -> RsProfile:
-    """Loads the active ResultStore profile, prioritizing env variables over on-disk files."""
-    if _ENV_RS_INSTANCE in environ and name is None:
-        # Fast path for subprocesses: reconstruct profile directly from environment variables without disk I/O.
+    @classmethod
+    def from_env_dict(cls, environ: Mapping[str, str]) -> "RsProfile":
+        """Reconstructs an RsProfile instance from environment variables."""
+        if _ENV_RS_INSTANCE not in environ:
+            raise ValueError(
+                f"{_ENV_RS_INSTANCE} must be present in environment"
+            )
         rs_instance = environ[_ENV_RS_INSTANCE]
         cas_instance = environ.get(_ENV_CAS_INSTANCE, "")
         results_url = environ.get(_ENV_RESULTS_URL, "")
@@ -103,13 +101,23 @@ def load(
             )
         auth_type = environ.get(_ENV_AUTH_TYPE, "google")
         profile_name = environ.get(_ENV_PROFILE_NAME, "default")
-        return RsProfile(
+        return cls(
             rs_instance=rs_instance,
             cas_instance=cas_instance,
             results_url=results_url,
             profile_name=profile_name,
             auth_type=auth_type,
         )
+
+
+def load(
+    fuchsia_dir: Path,
+    environ: Mapping[str, str],
+    name: str | None = None,
+) -> RsProfile:
+    """Loads the active ResultStore profile, prioritizing env variables over on-disk files."""
+    if _ENV_RS_INSTANCE in environ and name is None:
+        return RsProfile.from_env_dict(environ)
 
     try:
         return _MANAGER.load(fuchsia_dir, environ, name=name)
