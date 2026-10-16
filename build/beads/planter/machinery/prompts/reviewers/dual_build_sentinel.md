@@ -3,7 +3,7 @@
 Verify that Case 2 dual-build packages with `bazel2gn`-convertible targets contain
 `## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` in BUILD.gn, have zero drift between
 BUILD.bazel and the generated BUILD.gn section, migrate all convertible library/code targets
-into BUILD.bazel without skipping them via `# @bazel2gn:skip`, and pass the `verify_bazel2gn` step of
+into BUILD.bazel without skipping them via `# @bazel2gn:skip`, and pass the `shac_check` (`verify_bazel2gn`) step of
 `build_verification` without drift.
 
 ## Sentinel Completeness, Anti-Skip & Verification Audit
@@ -13,7 +13,7 @@ into BUILD.bazel without skipping them via `# @bazel2gn:skip`, and pass the `ver
    - **Package-Only `BUILD.bazel` (`fx_package`) Exception**: `bazel2gn` does NOT convert `fx_package`, `fx_component`, `fx_component_manifest`, `fx_packaged_binary`, `fx_cc_binary`, `fx_unittest_package`, `fx_unittest_component`, or `resource`. When a package's `BUILD.bazel` only defines `fx_package`/`fx_unittest_package` (and its component/manifest/binary/resource/`fx_test`/`exports_files` targets) while `BUILD.gn` retains only GN-only targets (`bazel_test_suite`, `group("tests")`, a test Bazel cannot express yet with its `testonly` test `executable`, or a library whose own deps are still GN-only), `BUILD.gn` MUST NOT have `## BAZEL2GN SENTINEL`. Conversely, if the migrated `fuchsia_package`/`fuchsia_package_with_single_component`/`fuchsia_component` was left behind in `BUILD.gn`, or if `//bundles/assembly/bazel_inputs/<pkg>` was not replaced in `//bundles/assembly/BUILD.bazel` and deleted, reject (`passed=false`).
    - Specifically reject skipping standalone reference or bitrot-prevention targets (such as a `static_library` of C++ reference routines depended upon by `group("tests")` in `BUILD.gn`). Require removing `# @bazel2gn:skip` in `BUILD.bazel`, deleting the manual `static_library` / `source_set` above the sentinel in `BUILD.gn`, using `# @bazel2gn:raw_overwrite:[ "<gn_config_1>", ... ]` on the closing `],` of `copts = [...]` when `copts` flags map to GN `configs`, and re-running `fx bazel2gn` so the target is generated below the sentinel.
 2. **bazel2gn Sync Verification**:
-   - Verify that the generated section below `## BAZEL2GN SENTINEL` matches BUILD.bazel: the `verify_bazel2gn` step of `build_verification` passes. Reject (`passed=false`) on drift.
+   - Verify that the generated section below `## BAZEL2GN SENTINEL` matches BUILD.bazel: the `shac_check` (`verify_bazel2gn`) step of `build_verification` passes. Reject (`passed=false`) on drift.
 
 ## Dual-Build Visibility & bazel2gn Audit
 3. Prioritize Bazel-correctness over GN-workarounds: reject `":__pkg__"` inside `visibility = [...]` in `BUILD.bazel` even when used to trigger `":*"` generation in `BUILD.gn`. `fx bazel2gn` automatically adds `":*"` in `BUILD.gn` when converting restricted `visibility` lists.

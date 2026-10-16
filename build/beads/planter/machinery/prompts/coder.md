@@ -282,7 +282,7 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 
 ## Verify, Then Run the Checks Once
 `run_checks.sh` (on `$PATH`) runs every static check and `build_verification` (`fx build`, GN
-dependents, the shac `verify_bazel2gn` BUILD.gn/BUILD.bazel drift check, and `fx bazel build` for
+dependents, `fx host-tool shac check` (including `verify_bazel2gn` drift), and `fx bazel build` for
 fuchsia and host). Do NOT run full product builds by hand as well. From `$PLANTER_WORKDIR`:
 1. While iterating, run `run_checks.sh --skip-build` (seconds) and fix every ERROR and WARNING.
    If CQ failed with `Failed to rebase` (`checkout|jiri patch`) or `cq_reachability` reports

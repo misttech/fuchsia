@@ -11,8 +11,9 @@
 #            //<dir> (gn_secondary_tree). A change that modifies no file versus
 #            its parent migrates nothing: INFO instead of subject findings.
 #   Test: footers: `fx bazel` commands need --config=..., Bazel labels start
-#            with @//, no redundant //a/b:b labels, bazel2gn verification is
-#            the single line `Test: fx host-tool shac check --only verify_bazel2gn`, listed last.
+#            with @//, no redundant //a/b:b labels, shac/bazel2gn verification is
+#            the single line `Test: fx host-tool shac check`, listed last.
+#            TODO(https://fxbug.dev/538640644): Replace with fx lint once it runs these shac checks.
 # Only runs when HEAD is the task's own commit (PLANTER_CHANGE_BASE != HEAD).
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
@@ -119,13 +120,15 @@ if head and base_rev and head != base_rev:
                 add("test_footer_redundant_label", ln,
                     f"`Test:` footer label `//{pkg}:{name}` repeats the package name.",
                     f"Write `//{pkg}` instead of `//{pkg}:{name}`.")
-        if re.search(r"\bfx bazel2gn\s+\S", cmd) or (
-            re.search(r"verify_bazel2gn", cmd)
-            and cmd != "fx host-tool shac check --only verify_bazel2gn"
+        # TODO(https://fxbug.dev/538640644): Replace with fx lint once it runs these shac checks.
+        if (
+            re.search(r"\bfx bazel2gn\b", cmd)
+            or re.search(r"verify_bazel2gn", cmd)
+            or (re.search(r"\bshac\s+check\b", cmd) and cmd != "fx host-tool shac check")
         ):
             add("test_footer_bazel2gn_form", ln,
-                f"`Test:` footer `{cmd}` verifies bazel2gn in a narrower or indirect form.",
-                "Use the single line `Test: fx host-tool shac check --only verify_bazel2gn` (covers affected bazel2gn targets).")
+                f"`Test:` footer `{cmd}` verifies bazel2gn/shac in a narrower or indirect form.",
+                "Use the single line `Test: fx host-tool shac check` (runs `verify_bazel2gn` and all other shac checks).")
         if re.search(r"\bfx bazel build\b.*:all\b", cmd):
             add("test_footer_build_all_not_test", ln,
                 f"`Test:` footer `{cmd}` builds `:all` instead of building or running the migrated test target.",
@@ -224,11 +227,11 @@ if head and base_rev and head != base_rev:
                     f"Refer to the target by name and give the crate name separately, e.g. target \"{tgt}\" "
                     f"(crate name \"{crate}\"), and say which attribute generates \"{tgt}_test\".")
                 break
-    b2g = [ln for ln, l in test_lines if re.search(r"\bfx bazel2gn\b|verify_bazel2gn", l)]
+    b2g = [ln for ln, l in test_lines if re.search(r"\bfx bazel2gn\b|verify_bazel2gn|\bshac\s+check\b", l)]
     if b2g and test_lines and b2g[-1] != test_lines[-1][0]:
         add("test_footer_bazel2gn_not_last", b2g[-1],
-            "The bazel2gn verification `Test:` line is not last.",
-            "Group build/test commands together and put `Test: fx host-tool shac check --only verify_bazel2gn` last.")
+            "The shac/bazel2gn verification `Test:` line is not last.",
+            "Group build/test commands together and put `Test: fx host-tool shac check` last.")
     # Bazel-Migration-Target: footers (required for every non-empty migration commit).
     is_empty = not changed and not git("status", "--porcelain", "--ignore-submodules=all")
     bmt_lines = [(i + 1, l) for i, l in enumerate(lines) if re.match(r"^Bazel-Migration-Target\s*:", l)]

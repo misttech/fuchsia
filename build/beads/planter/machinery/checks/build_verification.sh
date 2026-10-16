@@ -23,10 +23,14 @@ set -uo pipefail
 #                              GN test after a dependency label or edge changed)
 #                              that Bazel builds and the default `fx build` miss.
 #                              Skipped when gn_build fails.
-#   3. verify_bazel2gn:        `fx host-tool shac check --only verify_bazel2gn
-#                              <changed dirs' BUILD.bazel/BUILD.gn>`, which fails
-#                              if a BUILD.gn has drifted from what `fx bazel2gn`
-#                              generates from BUILD.bazel.
+#   3. shac_check:             `fx host-tool shac check`, which runs shac static
+#                              checks on the change (including `verify_bazel2gn`
+#                              for BUILD.gn/BUILD.bazel drift, buildifier,
+#                              gn_format, fidl_gn2bazel_migration_check, and
+#                              check_licenses), building
+#                              `fx build --host //bundles/buildbot/static_checks`
+#                              and retrying if a host static-check tool is
+#                              missing or out of date.
 #   4. bazel_build_fuchsia:    `fx bazel build --config=fuchsia_platform
 #                              --noexpand_test_suites //<dir>:all`
 #                              for every changed directory with a BUILD.bazel
@@ -516,11 +520,9 @@ steps = [
     ("gn_build", [fx, "build"]),
     ("gn_build_dependents", None),  # Labels are computed once gn_build has regenerated the GN graph.
 ]
-sync_files = [
-    os.path.join(d, f) for d in dirs for f in ("BUILD.bazel", "BUILD.gn") if os.path.isfile(os.path.join(workdir, d, f))
-]
-if sync_files:
-    steps.append(("verify_bazel2gn", [fx, "host-tool", "shac", "check", "--only", "verify_bazel2gn"] + sync_files))
+# TODO(https://fxbug.dev/538640644): Replace with fx lint once it runs these shac checks.
+# `shac check` without file arguments finds and checks all modified files itself.
+steps.append(("shac_check", [fx, "host-tool", "shac", "check"]))
 fuchsia_bazel_dirs = [d for d in bazel_dirs if has_non_suite_bazel_targets(d)]
 if fuchsia_bazel_dirs:
     steps.append((
@@ -536,12 +538,29 @@ if exported_tests["host_tests"] or exported_tests["target_tests"]:
     steps.append(("bazel_tests_exported", None))  # Checks <build dir>/tests.json after gn_build.
 
 ERROR_LINE = re.compile(
-    r"(^ERROR:|^FAILED:|\berror(\[E\d+\])?:|^error\b|: error\b|\bundefined reference\b|"
-    r"no such (target|package)|is not visible|Unable to load|not declared|drift|differs|--- a/|\+\+\+ b/)",
+    r"(^ERROR:|^FAILED:|\berror(\[E\d+\])?:|^error\b|: error\b|/(?:error|warning)\]|^shac: fail:|\(error in\b|"
+    r"\bundefined reference\b|no such (target|package)|is not visible|Unable to load|not declared|"
+    r"out of sync|drift|differs|--- a/|\+\+\+ b/)",
     re.I,
 )
-LOCATION = re.compile(r"(?:-->\s*)?((?:\.\./\.\./)?[\w./+-]+\.(?:rs|cc|h|c|gn|gni|bazel|bzl)):(\d+)")
+# `<path>:<line>` or `<path>(<line>)`, where <path> starts a token (start of line, after whitespace, a
+# quote, or an opening bracket) so log text that merely contains a dotted word is not taken as a location.
+LOCATION = re.compile(
+    r"(?:-->\s*)?(?:^|(?<=[\s'\"`(\[<>]))"
+    r"((?:\.\./\.\./)?[\w./+-]+\.(?:rs|cc|h|c|gn|gni|bazel|bzl|cml|fidl|json5?|md|py|go|star|sh|txt))"
+    r"(?::|\()(\d+)\)?",
+    re.M,
+)
 BUILD_FILE_LOCATION = re.compile(r"((?:\.\./\.\./)?[\w./+-]*(?:BUILD\.gn|BUILD\.bazel|\.gni|\.bzl)):(\d+)")
+# Shac findings: `[<check>/error] <path>(<line>): ...` or `[<check>/warning] <path>: ...`.
+SHAC_FILE_LOCATION = re.compile(r"\[[\w_-]+/(?:error|warning)\]\s+([\w./+-]+)(?:\((\d+)\))?:")
+SHAC_MISSING_TOOL = re.compile(
+    r"(//bundles/buildbot/static_checks|fx build --host|tool_paths\.json|"
+    r"has not been built yet|out of date|flag provided but not defined|"
+    r"unknown flag|unrecognized option|no such file or directory|"
+    r"subcommand .* exited with code|bazel2gn failed:)",
+    re.I,
+)
 
 
 def summarize(output, location=LOCATION):
@@ -556,12 +575,12 @@ def summarize(output, location=LOCATION):
     if len(text) > 6000:
         text = text[:6000] + "\n... (truncated)"
     file, line = "", 0
-    m = location.search(text)
+    m = location.search(text) or SHAC_FILE_LOCATION.search(text)
     if m:
         file = m.group(1).replace("../../", "", 1)
         if file.startswith(workdir + "/"):
             file = file[len(workdir) + 1:]
-        line = int(m.group(2))
+        line = int(m.group(2) or 0)
     return text, file, line
 
 
@@ -577,8 +596,11 @@ REMEDIATION = {
                            "`gn_dep_parity` findings and \"Keep Every GN Dependency Label and Edge Kind\" in the coder "
                            "instructions), re-run `fx bazel2gn -d <dir>` and `fx build <failing label>`. Never edit sources "
                            "or the dependents' BUILD files to make it pass.",
-    "verify_bazel2gn": "BUILD.gn no longer matches BUILD.bazel. Run `fx bazel2gn -d <dir>` for every dual-build directory "
-                       "you touched (never hand-edit below the BAZEL2GN SENTINEL) and re-run this check.",
+    "shac_check": "Fix the `shac check` findings above: if BUILD.gn is out of sync with BUILD.bazel (`verify_bazel2gn`), "
+                  "run `fx bazel2gn -d <dir>` for every dual-build directory you touched (never hand-edit below the "
+                  "BAZEL2GN SENTINEL); if a build or manifest file is unformatted, format it (`fx format-code`); if a "
+                  "host static-check tool is missing or out of date, run `fx build --host //bundles/buildbot/static_checks`; "
+                  "then re-run this check.",
     "bazel_build_fuchsia": "Fix BUILD.bazel so the `bazel_build_fuchsia` command passes. If a dependency has no "
                            "Bazel target yet, migrate that dependency's directory in this change (see the coder instructions).",
     "bazel_build_host": "Fix BUILD.bazel so the `bazel_build_host` command passes. If a dependency has no Bazel target "
@@ -744,11 +766,12 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                 f"Commit message has {len(test_footer_lines)} `Test:` footer lines (at most 3 allowed). "
                 "Per-package incremental build or query lines clutter the commit message when more than 3 `Test:` lines are present."
             ),
+            # TODO(https://fxbug.dev/538640644): Replace with fx lint once it runs these shac checks.
             "remediation": (
                 "Consolidate the commit message `Test:` footers (and `CoderReport.tests_run`) to at most 3 lines: "
                 "one `fx bazel test|build --config=fuchsia_platform @//<dir>:<test>` line for the migrated test targets, "
                 "one `fx bazel test --config=host @//<dir>:<host test>` line when host tests exist, and "
-                "`fx host-tool shac check --only verify_bazel2gn` last; "
+                "`fx host-tool shac check` last; "
                 "remove redundant per-package `fx build` / `fx bazel build` / `fx bazel query` lines."
             ),
         })
@@ -1103,6 +1126,34 @@ for name, cmd in steps:
         output += f"\n(timed out after {timeout}s)"
     if code == 0:
         continue
+    if name == "shac_check" and code != "timeout" and SHAC_MISSING_TOOL.search(output):
+        static_checks_cmd = [fx, "build", "--host", "//bundles/buildbot/static_checks"]
+        try:
+            sc_proc = subprocess.run(
+                static_checks_cmd,
+                cwd=workdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=timeout,
+            )
+            sc_code, sc_output = sc_proc.returncode, sc_proc.stdout
+        except subprocess.TimeoutExpired as e:
+            sc_code = "timeout"
+            sc_output = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            sc_output += f"\n(timed out after {timeout}s)"
+        if sc_code == 0:
+            try:
+                proc = subprocess.run(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
+                code, output = proc.returncode, proc.stdout
+            except subprocess.TimeoutExpired as e:
+                code = "timeout"
+                output = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+                output += f"\n(timed out after {timeout}s)"
+            if code == 0:
+                continue
+        else:
+            output += f"\n\n`{fmt_cmd(static_checks_cmd)}` also failed ({sc_code}):\n{sc_output}"
     if name == "gn_build":
         note = unrelated_bazel_failure(output)
         if note:
