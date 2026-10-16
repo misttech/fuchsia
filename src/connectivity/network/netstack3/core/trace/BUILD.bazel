@@ -1,0 +1,74 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+_COMMON_SRCS = [
+    "src/id.rs",
+    "src/lib.rs",
+]
+
+_COMMON_BUILD_FLAGS = [
+    "//build/config/rust/lints:deny_unused_results",
+    "//src/connectivity/network/netstack3:netstack3_configs",
+]
+
+# @bazel2gn:transformer=deps
+_COMMON_DEPS = select({
+    "@platforms//os:fuchsia": ["//src/lib/trace/rust:trace"],
+    "//conditions:default": [],
+})
+
+rustc_library(
+    name = "netstack3-trace",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    edition = "2024",
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/sync:netstack3-sync",
+    ],
+)
+
+rustc_library(
+    name = "netstack3-trace-instrumented",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_name = "netstack3_trace",
+    edition = "2024",
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/sync:netstack3-sync-instrumented",
+    ],
+)
+
+rustc_library(
+    name = "netstack3-trace-testutils",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_name = "netstack3_trace",
+    edition = "2024",
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/sync:netstack3-sync-testutils",
+    ],
+)
+
+rustc_library(
+    name = "netstack3-trace-loom",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + ["//src/connectivity/network/netstack3/core:loom"],
+    crate_name = "netstack3_trace",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/sync:netstack3-sync-loom",
+    ],
+)
