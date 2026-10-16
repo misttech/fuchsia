@@ -11,7 +11,7 @@ if (is_host) {
 
     environments = [ iris_env ]
 
-    timeout_secs = 900
+    timeout_secs = 430
 
     libraries = [
       "//src/testing/end_to_end/honeydew",
