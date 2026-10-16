@@ -16,6 +16,8 @@ from .adapters import (
     lint_code_action,
 )
 from .installer import (
+    DEFAULT_HOOK_NAMES,
+    LEGACY_HOOK_NAMES,
     HookOperationResult,
     HookStatusResult,
     get_git_hooks_status,
@@ -36,11 +38,13 @@ from .runner import (
 __all__ = [
     "ConsoleReporter",
     "DEFAULT_FORMATTABLE_EXTENSIONS",
+    "DEFAULT_HOOK_NAMES",
     "DEFAULT_PRE_COMMIT_ACTIONS",
     "HookAction",
     "HookContext",
     "HookOperationResult",
     "HookStatusResult",
+    "LEGACY_HOOK_NAMES",
     "commit_msg_action",
     "format_code_action",
     "get_git_hooks_status",

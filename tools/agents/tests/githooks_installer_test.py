@@ -225,6 +225,29 @@ class GitHooksInstallerTest(GitWorkspaceTestCase):
             self.assertEqual(status.total_repos, 2)
             self.assertEqual(status.configured_repos, 1)
 
+    def test_install_git_hooks_cleans_legacy_pre_push(self) -> None:
+        legacy_path = self.hook_fragment_path("pre-push")
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_path.touch()
+        self.assertTrue(legacy_path.is_file())
+
+        installer.install_git_hooks(self.test_dir, dry_run=False)
+        self.assertFalse(legacy_path.exists())
+        self.assertTrue(self.hook_fragment_path("pre-commit").is_file())
+        self.assertTrue(self.hook_fragment_path("commit-msg").is_file())
+
+    def test_uninstall_git_hooks_cleans_legacy_pre_push(self) -> None:
+        legacy_path = self.hook_fragment_path("pre-push")
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_path.touch()
+        self.assertTrue(legacy_path.is_file())
+
+        uninstalled = installer.uninstall_git_hooks(
+            self.test_dir, dry_run=False
+        )
+        self.assertFalse(legacy_path.exists())
+        self.assertIn(legacy_path, uninstalled.modified)
+
 
 if __name__ == "__main__":
     unittest.main()
