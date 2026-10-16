@@ -112,7 +112,6 @@ if (toolchain_environment == "kernel.phys" ||
       "secondary.cc",
       "smccc.S",
       "spinlock.cc",
-      "sysreg.cc",
       "thread.cc",
       "uarch.cc",
       "uspace_entry.S",
@@ -223,6 +222,7 @@ if (toolchain_environment == "kernel.phys" ||
       "src/cache.rs",
       "src/mod.rs",
       "src/restricted.rs",
+      "src/sysreg.rs",
       "src/vm.rs",
     ]
     deps = [
@@ -231,6 +231,8 @@ if (toolchain_environment == "kernel.phys" ||
       ":arm64-restricted-bindings",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
+      "//src/lib/kprint",
+      "//src/lib/regio",
       "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",

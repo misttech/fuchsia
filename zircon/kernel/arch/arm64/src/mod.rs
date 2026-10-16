@@ -6,6 +6,8 @@
 
 pub mod cache;
 pub mod restricted;
+#[cfg(console_enabled)]
+mod sysreg;
 pub mod vm;
 
 use crate::kernel::types::{PAddr, VAddr, cpu_num_t};
