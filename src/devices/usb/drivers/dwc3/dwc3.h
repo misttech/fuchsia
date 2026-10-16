@@ -145,7 +145,6 @@ class Dwc3 : public fdf::DriverBase2,
   }
 
   // For testing.
-  bool poll_end_xfer() const { return poll_end_xfer_; }
   bool supports_gfladj() const { return supports_gfladj_; }
   std::optional<uint32_t> fladj() const { return fladj_; }
   bool fladj_refclk_lpm_sel() const { return fladj_refclk_lpm_sel_; }
@@ -609,11 +608,6 @@ class Dwc3 : public fdf::DriverBase2,
   // disconnect drain is in flight.
   bool is_active() const { return power_on_ && controller_started_ && !disconnect_in_flight_; }
   fuchsia_hardware_usb_descriptor::UsbSpeed connection_speed() const { return connection_speed_; }
-
-  // True if the EndTransfer core command can be polled via CmdAct instead of waiting on a
-  // CommandComplete endpoint irq event. Only available to core versions >= 3.10a. Set during
-  // initialization based on core version.
-  bool poll_end_xfer_{false};
 
   fuchsia_hardware_usb_descriptor::UsbSpeed connection_speed_{
       fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined};

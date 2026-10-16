@@ -172,6 +172,16 @@ bool Dwc3::CmdEpEndTransfer(const Endpoint& ep, bool cmd_ioc) {
                       __func__, ep_num, ep.enabled, static_cast<uint8_t>(ep.type),
                       ep.transfer_state, ep.stalled, rsrc_id);
 
+  // Per Synopsys DWC_usb3 Programming Guide 3.2.2 and Linux dwc3_send_gadget_ep_cmd(),
+  // clear SUSPENDUSB20 and ENBLSLPM before issuing an endpoint command so the USB 2.0 PHY
+  // clock is not gated while the controller executes the command, and restore them afterward.
+  auto gusb2phycfg = GUSB2PHYCFG::Get(0).ReadFrom(mmio);
+  const uint32_t saved_gusb2phycfg = gusb2phycfg.reg_value();
+  const bool restore_gusb2phycfg = gusb2phycfg.SUSPENDUSB20() || gusb2phycfg.ENBLSLPM();
+  if (restore_gusb2phycfg) {
+    gusb2phycfg.set_SUSPENDUSB20(0).set_ENBLSLPM(0).WriteTo(mmio);
+  }
+
   DEPCMDPAR0::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR1::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR2::Get(ep_num).FromValue(0).WriteTo(mmio);
@@ -184,17 +194,16 @@ bool Dwc3::CmdEpEndTransfer(const Endpoint& ep, bool cmd_ioc) {
       .set_HIPRI_FORCERM(1)
       .WriteTo(mmio);
 
-  if (poll_end_xfer_) {
-    return WaitForCmdAct(__func__, ep_num);
+  const bool ok = WaitForCmdAct(__func__, ep_num);
+  if (!cmd_ioc) {
+    // When CMDIOC is not set, no CommandComplete event will be generated; give the hardware time to
+    // finish halting any in-flight DMA burst before software disables DALEPENA or unmaps memory.
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
   }
-  // Rather than synchronize against a CommandComplete endpoint event, just give the core some
-  // time to complete halting any DMA.
-  zx::nanosleep(zx::deadline_after(zx::msec(1)));
-  if (DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
-    fdf::error("Dwc3::CmdEpEndTransfer() Command still active after 1ms for ep{}", ep_num);
-    return false;
+  if (restore_gusb2phycfg) {
+    GUSB2PHYCFG::Get(0).FromValue(saved_gusb2phycfg).WriteTo(mmio);
   }
-  return true;
+  return ok;
 }
 
 void Dwc3::CmdEpSetStall(const Endpoint& ep) {

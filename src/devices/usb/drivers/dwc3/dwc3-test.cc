@@ -1008,28 +1008,25 @@ typedef struct {
 
   // True if the driver is expected to start.
   bool should_start;
-
-  // True if the driver is expected to poll CmdAct on EndTransfer commands.
-  bool poll_end_xfer;
 } Param;
 
 // clang-format off
 const auto kCases = testing::Values(
-    Param{0x00000000, false, false},
-    Param{0xffffffff, false, false},
-    Param{0x5500101a, false, false},
-    Param{0x5532101a, false, false},
-    Param{0x5533101a, true, false},
-    Param{0x5533101a, true, false},
-    Param{0x5533308a, true, false},
-    Param{0x5533309a, true, false},
-    Param{0x5533309b, true, false},
-    Param{0x5533310a, true, true},  // Driver polls in version 3.10a+
-    Param{0x5533310b, true, true},
-    Param{0x5533311a, true, true},
-    Param{0x55333110, true, true},
-    Param{0x5533401a, true, true},
-    Param{0x5534101a, false, false});  // 5534 is invalid core id.
+    Param{0x00000000, false},
+    Param{0xffffffff, false},
+    Param{0x5500101a, false},
+    Param{0x5532101a, false},
+    Param{0x5533101a, true},
+    Param{0x5533101a, true},
+    Param{0x5533308a, true},
+    Param{0x5533309a, true},
+    Param{0x5533309b, true},
+    Param{0x5533310a, true},
+    Param{0x5533310b, true},
+    Param{0x5533311a, true},
+    Param{0x55333110, true},
+    Param{0x5533401a, true},
+    Param{0x5534101a, false});  // 5534 is invalid core id.
 // clang-format on
 
 using Parameterized = TestFixture<false, testing::TestWithParam<Param>>;
@@ -1056,7 +1053,6 @@ TEST_P(Parameterized, TestHwVersion) {
   EXPECT_EQ(WaitForPhy(), ZX_OK);
 
   if (p.should_start) {
-    dut_.RunInDriverContext([&](Dwc3& drv) { EXPECT_EQ(drv.poll_end_xfer(), p.poll_end_xfer); });
     EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
   }
 }
@@ -1786,7 +1782,7 @@ TEST_F(UnmanagedTestFixture, StartPeripheralModeRestoresCoreRegistersAfterExtern
   ASSERT_TRUE(start_res.value().is_ok());
 
   EXPECT_EQ(gsbuscfg0_val->load(), 0xabcd0002u);
-  EXPECT_EQ(GUCTL2::Get().FromValue(guctl2_val->load()).Rst_actbitlater(), 1u);
+  EXPECT_EQ(GUCTL2::Get().FromValue(guctl2_val->load()).Rst_actbitlater(), 0u);
   auto gfladj = GFLADJ::Get().FromValue(gfladj_val->load());
   EXPECT_EQ(gfladj.GFLADJ_30MHZ(), 0x20u);
   EXPECT_EQ(gfladj.GFLADJ_30MHZ_SDBND_SEL(), 1u);

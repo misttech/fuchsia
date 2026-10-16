@@ -5084,6 +5084,7 @@ TEST_P(Dwc3EndpointsTest, DisconnectWhileStartingReturnsRequestAndClearsStaleSta
 TEST_P(Dwc3EndpointsTest, HandleResetEventWhileStartingWaitsForStartAndEndBeforeEp0Start) {
   const bool enqueue_many = GetParam();
   TriggerConnection();
+  dut_.RunInDriverContext([](Dwc3& drv) { TriggerEpTransferStarted(drv, 0, 1); });
 
   const uint8_t ep_address = 0x02;
   const uint8_t ep_num = UsbAddressToEpNum(ep_address);
@@ -5184,6 +5185,7 @@ TEST_P(Dwc3EndpointsTest, HandleResetEventWhileStartingWaitsForStartAndEndBefore
 TEST_P(Dwc3EndpointsTest, HandleConnectionDoneEventWhileCancelingWaitsForIdleAndStartsEp0Once) {
   const bool enqueue_many = GetParam();
   TriggerConnection();
+  dut_.RunInDriverContext([](Dwc3& drv) { TriggerEpTransferStarted(drv, 0, 1); });
 
   const uint8_t ep_address = 0x02;
   const uint8_t ep_num = UsbAddressToEpNum(ep_address);
@@ -5566,15 +5568,93 @@ TEST_F(Dwc3EndpointsTestBase, Ep0ResetWhileStartingSingleEndsStaleStartAndActiva
   dut_.RunInDriverContext([](Dwc3& drv) {
     EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kStartingSingle);
     EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_FALSE(Dwc3TestHelper::IsFifoEmpty(drv));
   });
 
   // Trigger a USB reset before the first DEPSTRTXFER completion arrives. Ep0Reset() records the
-  // in-flight start in stale_starts_to_end and Ep0Start() immediately queues a new SETUP transfer,
-  // putting EP0 OUT back into kStartingSingle.
+  // in-flight start in stale_starts_to_end, preserves `ep0_.shared_fifo` while hardware is still
+  // fetching the live TRB, and Ep0Start() defers issuing the new SETUP DEPSTRTXFER until the stale
+  // start completion arrives and is ended.
   dut_.RunInDriverContext([](Dwc3& drv) {
     Dwc3TestHelper::HandleResetEvent(drv);
+    EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kIdle);
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_FALSE(Dwc3TestHelper::IsFifoEmpty(drv));
+  });
+
+  auto ep0_end_xfer_count = std::make_shared<std::atomic<uint32_t>>(0);
+  auto ep0_start_xfer_count = std::make_shared<std::atomic<uint32_t>>(0);
+  auto ep0_last_end_xfer_cmd = std::make_shared<std::atomic<uint32_t>>(0);
+  auto cleanup_depcmd = DeferClearDepcmdCallbacks(0);
+  dut_.RunInEnvironmentTypeContext(
+      [ep0_end_xfer_count, ep0_start_xfer_count, ep0_last_end_xfer_cmd](Environment& env) {
+        auto& reg = env.reg_region()[DEPCMD::Get(0).addr()];
+        reg.SetReadCallback([]() -> uint64_t { return 0; });
+        reg.SetWriteCallback(
+            [ep0_end_xfer_count, ep0_start_xfer_count, ep0_last_end_xfer_cmd](uint64_t val) {
+              uint32_t cmd_val = static_cast<uint32_t>(val);
+              uint32_t cmd_typ = DEPCMD::Get(0).FromValue(cmd_val).CMDTYP();
+              if (cmd_typ == DEPCMD::DEPENDXFER) {
+                ep0_end_xfer_count->fetch_add(1);
+                ep0_last_end_xfer_cmd->store(cmd_val);
+              } else if (cmd_typ == DEPCMD::DEPSTRTXFER) {
+                // The new SETUP DEPSTRTXFER must only be issued after the stale transfer is ended.
+                EXPECT_EQ(ep0_end_xfer_count->load(), 1u);
+                ep0_start_xfer_count->fetch_add(1);
+              }
+            });
+      });
+
+  // Deliver the stale DEPSTRTXFER completion (rsrc_id = 3) from before the reset. It must be
+  // ended synchronously (CMDIOC == 0) and then start the new SETUP transfer (kStartingSingle).
+  constexpr uint32_t kStaleRsrcId = 3;
+  constexpr uint32_t kNewRsrcId = 4;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    TriggerEpTransferStarted(drv, 0, kStaleRsrcId);
     EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kStartingSingle);
     EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+  });
+  EXPECT_EQ(ep0_end_xfer_count->load(), 1u);
+  EXPECT_EQ(ep0_start_xfer_count->load(), 1u);
+  auto stale_end_cmd = DEPCMD::Get(0).FromValue(ep0_last_end_xfer_cmd->load());
+  EXPECT_EQ(stale_end_cmd.COMMANDPARAM(), kStaleRsrcId);
+  EXPECT_EQ(stale_end_cmd.CMDIOC(), 0u);
+
+  // Deliver the new DEPSTRTXFER completion (rsrc_id = 4) for the post-reset SETUP transfer.
+  // It must transition EP0 OUT to kActiveSingle with kNewRsrcId without issuing DEPENDXFER.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    TriggerEpTransferStarted(drv, 0, kNewRsrcId);
+    EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kActiveSingle);
+    EXPECT_EQ(Dwc3TestHelper::GetEpRsrcId(drv, 0), kNewRsrcId);
+  });
+  EXPECT_EQ(ep0_end_xfer_count->load(), 1u);
+}
+
+TEST_F(Dwc3EndpointsTestBase, Ep0ResetDefersSharedFifoSkipUntilStaleStartEnds) {
+  TriggerConnection();
+
+  dut_.RunInDriverContext([](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kStartingSingle);
+    EXPECT_FALSE(Dwc3TestHelper::IsFifoEmpty(drv));
+
+    // Resetting EP0 while DEPSTRTXFER is still in flight must NOT retire `shared_fifo` TRBs until
+    // hardware delivers DEPEVT_XFER_STARTED and `CmdEpEndTransfer` halts DMA.
+    Dwc3TestHelper::Ep0Reset(drv);
+    EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kIdle);
+    EXPECT_FALSE(Dwc3TestHelper::IsFifoEmpty(drv));
+
+    TriggerEpTransferStarted(drv, 0, 3);
+    EXPECT_TRUE(Dwc3TestHelper::IsFifoEmpty(drv));
+  });
+}
+
+TEST_F(Dwc3EndpointsTestBase, Ep0UnexpectedTransferStartedInNonSetupEndsSynchronously) {
+  TriggerConnection();
+
+  // Place EP0 OUT into kIdle in DataOut so an incoming DEPSTRTXFER event is unexpected.
+  dut_.RunInDriverContext([](Dwc3& drv) {
+    Dwc3TestHelper::SetEpTransferState(drv, 0, TransferState::kIdle);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::DataOut);
   });
 
   auto ep0_end_xfer_count = std::make_shared<std::atomic<uint32_t>>(0);
@@ -5592,28 +5672,15 @@ TEST_F(Dwc3EndpointsTestBase, Ep0ResetWhileStartingSingleEndsStaleStartAndActiva
     });
   });
 
-  // Deliver the stale DEPSTRTXFER completion (rsrc_id = 3) from before the reset. It must be
-  // ended synchronously (CMDIOC == 0) and leave the new SETUP transfer in kStartingSingle.
   constexpr uint32_t kStaleRsrcId = 3;
-  constexpr uint32_t kNewRsrcId = 4;
   dut_.RunInDriverContext([&](Dwc3& drv) {
     TriggerEpTransferStarted(drv, 0, kStaleRsrcId);
-    EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kStartingSingle);
-    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kIdle);
   });
   EXPECT_EQ(ep0_end_xfer_count->load(), 1u);
   auto stale_end_cmd = DEPCMD::Get(0).FromValue(ep0_last_end_xfer_cmd->load());
   EXPECT_EQ(stale_end_cmd.COMMANDPARAM(), kStaleRsrcId);
   EXPECT_EQ(stale_end_cmd.CMDIOC(), 0u);
-
-  // Deliver the new DEPSTRTXFER completion (rsrc_id = 4) for the post-reset SETUP transfer.
-  // It must transition EP0 OUT to kActiveSingle with kNewRsrcId without issuing DEPENDXFER.
-  dut_.RunInDriverContext([&](Dwc3& drv) {
-    TriggerEpTransferStarted(drv, 0, kNewRsrcId);
-    EXPECT_EQ(Dwc3TestHelper::GetEpTransferState(drv, 0), TransferState::kActiveSingle);
-    EXPECT_EQ(Dwc3TestHelper::GetEpRsrcId(drv, 0), kNewRsrcId);
-  });
-  EXPECT_EQ(ep0_end_xfer_count->load(), 1u);
 }
 
 TEST_P(Dwc3EndpointsTest, InputEndpointBabbleUnderflow) {

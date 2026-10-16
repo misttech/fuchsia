@@ -71,8 +71,18 @@ void Dwc3::Ep0Start() {
 void Dwc3::Ep0QueueSetup() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0QueueSetup");
   ep0_.setup_generation++;
+  // EP0 multiplexes `ep0_.out` and `ep0_.in` onto `ep0_.shared_fifo`, passing single-TRB physical
+  // addresses to `DEPSTRTXFER`. If a prior `DEPSTRTXFER` is still in flight (`kStartingSingle`), we
+  // do not yet have its `rsrc_id` to end it; `Ep0CancelTransfers()` records `stale_starts_to_end++`
+  // without retiring the live TRB, and we defer starting the new `TRB_TRBCTL_SETUP` until
+  // `HandleEpTransferStartedEvent` receives `DEPEVT_XFER_STARTED(rsrc_id)`, ends it, and re-invokes
+  // `Ep0QueueSetup()`.
   Ep0CancelTransfers();
   ep0_.test_mode = 0;
+  ep0_.state = Ep0::State::Setup;
+  if (ep0_.out.stale_starts_to_end > 0 || ep0_.in.stale_starts_to_end > 0) {
+    return;
+  }
   if (auto status = ep0_.buffer->CacheFlushInvalidate(0, sizeof(fdescriptor::wire::UsbSetup));
       status.is_error()) {
     fdf::error("CacheFlushInvalidate failed: {}", status);
@@ -80,7 +90,6 @@ void Dwc3::Ep0QueueSetup() {
   }
   EpStartSingleTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_SETUP, ep0_.buffer->phys(),
                         sizeof(fdescriptor::wire::UsbSetup));
-  ep0_.state = Ep0::State::Setup;
 }
 
 void Dwc3::Ep0StartEndpoints() {

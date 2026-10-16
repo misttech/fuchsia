@@ -987,14 +987,8 @@ zx_status_t Dwc3::CheckHwVersion() {
     const uint8_t minor = n2 * 10 + n3;
     const uint8_t rev = n4;
 
-    // Only valid on core versions 3.10a+
-    // clang-format off
-    poll_end_xfer_ = (
-        major > 3
-        || (major == 3 && minor > 10)
-        || (major == 3 && minor == 10 && rev >= 0xa));
-
     // GFLADJ is supported on core versions 2.50a+
+    // clang-format off
     supports_gfladj_ = (
         major > 2
         || (major == 2 && minor >= 50));
@@ -1008,7 +1002,6 @@ zx_status_t Dwc3::CheckHwVersion() {
     auto ver_num = USB31_VER_NUMBER::Get().ReadFrom(mmio);
     auto ver_type = USB31_VER_TYPE::Get().ReadFrom(mmio);
 
-    poll_end_xfer_ = false;  // Unsupported.
     supports_gfladj_ = true;
 
     fdf::info("Detected Synopsys DWC_usb31 core version number 0x{:08x} type 0x{:08x}",
@@ -1081,9 +1074,10 @@ void Dwc3::ConfigureCoreRegisters() {
   auto guctl1 = GUCTL1::Get().ReadFrom(mmio);
   guctl1.set_DEV_TRB_OUT_SPR_IND(1).WriteTo(mmio);
 
-  if (poll_end_xfer_) {
-    GUCTL2::Get().ReadFrom(mmio).set_Rst_actbitlater(1).WriteTo(mmio);
-  }
+  // Leave GUCTL2.Rst_actbitlater cleared (0): when Rst_actbitlater is set on DWC_usb3 3.10a+,
+  // hardware stalls DEPCMD.CMDACT on non-EP0 DEPENDXFER whenever EP0 is not armed in Setup phase,
+  // deadlocking single-threaded dispatchers that also service EP0 setup interrupts. Runtime
+  // endpoint cancels synchronize via DEPEVT_CMD_CMPLT (CMDIOC=1) instead.
 
   // In High-Speed only mode, the SuperSpeed PIPE3 clock is unpowered; force internal 3.0 logic
   // domains onto the USB 2.0 UTMI clock so core operations and soft resets succeed.
@@ -1414,6 +1408,11 @@ void Dwc3::QuiesceCore() {
 
 void Dwc3::StopActiveTransfers() {
   TRACE_DURATION("dwc3", "Dwc3::StopActiveTransfers");
+  if (power_on_) {
+    auto* mmio = get_mmio();
+    // Ensure USB2 PHY clocks remain active while endpoint commands execute (DWC_usb3 Guide 3.2.2).
+    GUSB2PHYCFG::Get(0).ReadFrom(mmio).set_SUSPENDUSB20(0).set_ENBLSLPM(0).WriteTo(mmio);
+  }
   CancelAllEndpointIdleCallbacks();
   // User endpoints first and EP0 last: per the Synopsys databook, a DEPENDXFER on another endpoint
   // is only guaranteed to complete while EP0 still has its SETUP TRB armed.

@@ -257,6 +257,11 @@ void Dwc3::StartEvents() {
   TRACE_DURATION("dwc3", "Dwc3::StartEvents");
   ep0_.out.stale_starts_to_end = 0;
   ep0_.in.stale_starts_to_end = 0;
+  if (ep0_.shared_fifo.TotalSlots() > 0) {
+    ep0_.shared_fifo.SkipTrbs(ep0_.out.queued_trbs + ep0_.in.queued_trbs);
+    ep0_.out.queued_trbs = 0;
+    ep0_.in.queued_trbs = 0;
+  }
   for (UserEndpoint& uep : user_endpoints_) {
     uep.ep.stale_starts_to_end = 0;
     uep.ep.stale_cancels_to_ignore = 0;
@@ -306,7 +311,7 @@ void Dwc3::StopEvents() {
     uint32_t event_count = event_bytes / sizeof(uint32_t);
     if (event_fifo_.TotalSlots() > 0) {
       for (uint32_t event : event_fifo_.Read(event_count)) {
-        if (!(event & DEPEVT_NON_EP) && DEPEVT_TYPE(event) == DEPEVT_CMD_CMPLT &&
+        if (link_connected_ && !(event & DEPEVT_NON_EP) && DEPEVT_TYPE(event) == DEPEVT_CMD_CMPLT &&
             DEPEVT_CMD_CMPLT_CMD_TYPE(event) == DEPCMD::DEPSTRTXFER && DEPEVT_STATUS(event) == 0) {
           Endpoint stale_ep(DEPEVT_PHYS_EP(event));
           stale_ep.rsrc_id = DEPEVT_CMD_CMPLT_RSRC_ID(event);

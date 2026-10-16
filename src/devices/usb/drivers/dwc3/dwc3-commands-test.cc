@@ -135,6 +135,27 @@ TEST_F(Dwc3CommandsTest, CmdEpStartTransfer) {
 TEST_F(Dwc3CommandsTest, CmdEpEndTransfer) {
   MockDepCmd(2, &cmd_written_);
 
+  const uint32_t initial_phycfg =
+      GUSB2PHYCFG::Get(0).FromValue(0).set_SUSPENDUSB20(1).set_ENBLSLPM(1).reg_value();
+  auto phycfg_val = std::make_shared<std::atomic<uint32_t>>(initial_phycfg);
+  auto phycfg_during_cmd = std::make_shared<std::atomic<uint32_t>>(initial_phycfg);
+
+  dut_.RunInEnvironmentTypeContext([this, phycfg_val, phycfg_during_cmd](Environment& env) {
+    auto& phycfg = env.reg_region()[GUSB2PHYCFG::Get(0).addr()];
+    phycfg.SetReadCallback([phycfg_val]() -> uint64_t { return phycfg_val->load(); });
+    phycfg.SetWriteCallback(
+        [phycfg_val](uint64_t val_raw) { phycfg_val->store(static_cast<uint32_t>(val_raw)); });
+
+    auto& depcmd = env.reg_region()[DEPCMD::Get(2).addr()];
+    depcmd.SetReadCallback([this]() -> uint32_t { return depcmd_val_.load(); });
+    depcmd.SetWriteCallback([this, phycfg_val, phycfg_during_cmd](uint64_t val_raw) {
+      uint32_t val = static_cast<uint32_t>(val_raw);
+      cmd_written_.store(true, std::memory_order_relaxed);
+      phycfg_during_cmd->store(phycfg_val->load());
+      depcmd_val_.store(val & ~(1 << 10));
+    });
+  });
+
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     ASSERT_NE(uep, nullptr);
@@ -146,6 +167,9 @@ TEST_F(Dwc3CommandsTest, CmdEpEndTransfer) {
   });
 
   EXPECT_TRUE(cmd_written_.load());
+  EXPECT_EQ(GUSB2PHYCFG::Get(0).FromValue(phycfg_during_cmd->load()).SUSPENDUSB20(), 0u);
+  EXPECT_EQ(GUSB2PHYCFG::Get(0).FromValue(phycfg_during_cmd->load()).ENBLSLPM(), 0u);
+  EXPECT_EQ(phycfg_val->load(), initial_phycfg);
 }
 
 // TODO(b/509735595): Re-enable once the production fixes are landed.

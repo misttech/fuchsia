@@ -610,6 +610,9 @@ void Dwc3::HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id) {
       ep0_.shared_fifo.SkipTrbs(1);
       ZX_DEBUG_ASSERT(ep0_dir.queued_trbs > 0);
       ep0_dir.queued_trbs--;
+      if (ep0_dir.stale_starts_to_end == 0 && !ep0_dir.enabled) {
+        EpEnable(ep0_dir, false);
+      }
       if (ep0_.out.stale_starts_to_end == 0 && ep0_.in.stale_starts_to_end == 0) {
         for (Endpoint* ep0 : {&ep0_.out, &ep0_.in}) {
           const size_t live_trbs = (ep0->transfer_state == Endpoint::TransferState::kIdle) ? 0 : 1;
@@ -617,9 +620,10 @@ void Dwc3::HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id) {
           ep0_.shared_fifo.SkipTrbs(ep0->queued_trbs - live_trbs);
           ep0->queued_trbs = live_trbs;
         }
-      }
-      if (ep0_dir.stale_starts_to_end == 0 && !ep0_dir.enabled) {
-        EpEnable(ep0_dir, false);
+        if (ep0_.out.enabled && ep0_.state == Ep0::State::Setup &&
+            ep0_.out.transfer_state == Endpoint::TransferState::kIdle) {
+          Ep0QueueSetup();
+        }
       }
       return;
     }
