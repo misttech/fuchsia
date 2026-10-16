@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "builders",
+    srcs = [
+        "src/lib.rs",
+        "src/metric_event_builder.rs",
+    ],
+    crate_name = "fuchsia_cobalt_builders",
+    edition = "2024",
+    visibility = [
+        "//src/cobalt/bin/testing/fake_cobalt:__pkg__",
+        "//src/connectivity/location/emergency:__pkg__",
+        "//src/connectivity/policy/reachability/core:__pkg__",
+        "//src/power/power-manager:__pkg__",
+        "//src/sys/pkg/bin:__subpackages__",
+        "//src/sys/time/httpsdate_time_source:__pkg__",
+        "//src/sys/time/timekeeper:__pkg__",
+        "//src/sys/time/timekeeper_integration:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//third_party/cobalt/src/lib/client/rust:cobalt-client",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "builders_test",
+    crate = ":builders",
+    edition = "2024",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fuchsia_cobalt_builders_lib_test",
+    max_log_severity = "FATAL",
+    unit_tests = [":builders_test"],
+    visibility = ["//visibility:public"],
+)
