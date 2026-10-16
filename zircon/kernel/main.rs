@@ -14,7 +14,7 @@
 #![allow(clippy::new_without_default)]
 #![feature(atomic_volatile)]
 #![feature(cfg_sanitize)]
-#![cfg_attr(target_arch = "x86_64", feature(sanitize))]
+#![feature(sanitize)]
 
 #[allow(unused_imports)]
 #[macro_use]
@@ -58,6 +58,9 @@ pub mod counters;
 
 #[path = "lib/debuglog/debuglog.rs"]
 pub mod debuglog_rs;
+
+#[path = "lib/instrumentation/mod.rs"]
+pub mod instrumentation;
 
 #[path = "lib/kconcurrent/src/mod.rs"]
 pub mod kconcurrent;

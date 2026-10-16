@@ -52,3 +52,18 @@ Handle* KernelMappedVmo::Publish(ktl::string_view vmo_name, size_t stream_size) 
   DEBUG_ASSERT(status == ZX_OK);
   return Handle::Make(ktl::move(handle), rights & ~ZX_RIGHT_WRITE).release();
 }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" {
+
+FFI_ALWAYS_INLINE zx_status_t cpp_kernel_mapped_vmo_init(KernelMappedVmo* mapped_vmo, VmObject* vmo,
+                                                         size_t offset, size_t size,
+                                                         const char* name) {
+  return mapped_vmo->Init(fbl::ImportFromRawPtr(vmo), offset, size, name);
+}
+
+FFI_ALWAYS_INLINE vaddr_t cpp_kernel_mapped_vmo_base_locking(const KernelMappedVmo* mapped_vmo) {
+  return mapped_vmo->base_locking();
+}
+
+}  // extern "C"

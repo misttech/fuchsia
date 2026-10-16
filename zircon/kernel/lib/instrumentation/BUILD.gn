@@ -6,6 +6,7 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 static_library("instrumentation") {
   public_deps = [ ":headers" ]
@@ -14,6 +15,7 @@ static_library("instrumentation") {
   if (toolchain_environment == "kernel") {
     sources += [ "vmo.cc" ]
     deps = [
+      ":instrumentation-rs",
       ":memory-profile",
       ":private",
       ":profile",
@@ -108,9 +110,10 @@ if (is_kernel) {
     }
     defines = [ "HAVE_SANCOV=$have_sancov" ]
 
-    sources = [ "sancov.cc" ]
+    sources = [ "sancov_ffi.cc" ]
     deps = [
       ":headers",
+      ":instrumentation-rs",
       ":private",
       "//zircon/kernel/lib/init",
       "//zircon/kernel/lib/ktl",
@@ -124,5 +127,19 @@ if (is_kernel) {
     if (configs + _asan_config - _asan_config != configs) {
       configs -= _asan_config
     }
+  }
+
+  kernel_rust_mod("instrumentation-rs") {
+    sources = [
+      "kernel_mapped_vmo.rs",
+      "kernel_mapped_vmo_ffi.rs",
+      "mod.rs",
+      "sancov.rs",
+      "sancov_ffi.rs",
+    ]
+    deps = [
+      "//sdk/rust/zx-status",
+      "//zircon/system/ulib/fbl/rust:fbl",
+    ]
   }
 }

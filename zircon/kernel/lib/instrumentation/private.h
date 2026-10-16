@@ -32,7 +32,7 @@ struct InstrumentationDataVmo {
 // profile.cc
 InstrumentationDataVmo LlvmProfdataVmo();
 
-// sancov.cc
+// sancov_ffi.cc
 InstrumentationDataVmo SancovGetPcVmo();
 InstrumentationDataVmo SancovGetCountsVmo();
 

@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_LIB_INSTRUMENTATION_INCLUDE_LIB_INSTRUMENTATION_KERNEL_MAPPED_VMO_H_
 #define ZIRCON_KERNEL_LIB_INSTRUMENTATION_INCLUDE_LIB_INSTRUMENTATION_KERNEL_MAPPED_VMO_H_
 
+#include <kernel/ffi.h>
 #include <ktl/array.h>
 #include <ktl/string_view.h>
 #include <vm/pinned_vm_object.h>
@@ -40,5 +41,15 @@ class KernelMappedVmo {
   PinnedVmObject pinned_vmo_;
   fbl::RefPtr<VmMapping> mapping_;
 };
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" {
+
+FFI_ALWAYS_INLINE zx_status_t cpp_kernel_mapped_vmo_init(KernelMappedVmo* mapped_vmo, VmObject* vmo,
+                                                         size_t offset, size_t size,
+                                                         const char* name);
+FFI_ALWAYS_INLINE vaddr_t cpp_kernel_mapped_vmo_base_locking(const KernelMappedVmo* mapped_vmo);
+
+}  // extern "C"
 
 #endif  // ZIRCON_KERNEL_LIB_INSTRUMENTATION_INCLUDE_LIB_INSTRUMENTATION_KERNEL_MAPPED_VMO_H_
