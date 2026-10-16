@@ -185,7 +185,7 @@ void VmCompression::Free(CompressedRef ref) {
 // VMO who created the reference, but we can't refer to that lock here.
 uint32_t VmCompression::GetMetadata(CompressedRef ref) TA_NO_THREAD_SAFETY_ANALYSIS {
   if (unlikely(IsTempReference(ref))) {
-    return instance_.temp_reference_metadata_;
+    return instance_.temp_reference_metadata();
   }
   return storage_->GetMetadata(ref);
 }
@@ -194,7 +194,7 @@ uint32_t VmCompression::GetMetadata(CompressedRef ref) TA_NO_THREAD_SAFETY_ANALY
 // VMO who created the reference, but we can't refer to that lock here.
 void VmCompression::SetMetadata(CompressedRef ref, uint32_t metadata) TA_NO_THREAD_SAFETY_ANALYSIS {
   if (unlikely(IsTempReference(ref))) {
-    instance_.temp_reference_metadata_ = metadata;
+    instance_.set_temp_reference_metadata(metadata);
   } else {
     storage_->SetMetadata(ref, metadata);
   }
@@ -309,15 +309,15 @@ ktl::optional<VmCompression::PageAndMetadata> VmCompression::MoveTempReference(C
   // The owner of the temp ref is the owner as page. So if we are seeing the temporary reference
   // then we know page cannot progress (i.e. FinalizeState can be called), so we can safely
   // perform the copy.
-  ASSERT(instance_.using_temp_reference_);
-  ASSERT(instance_.page_);
-  ASSERT(instance_.spare_page_);
-  void* addr = paddr_to_physmap(instance_.spare_page_->paddr());
+  ASSERT(instance_.IsTempReferenceInUse());
+  ASSERT(instance_.page());
+  ASSERT(instance_.spare_page());
+  void* addr = paddr_to_physmap(instance_.spare_page()->paddr());
   ASSERT(addr);
   uint32_t metadata;
   Decompress(ref, addr, &metadata);
-  vm_page_t* ret = instance_.spare_page_;
-  instance_.spare_page_ = nullptr;
+  vm_page_t* ret = instance_.spare_page();
+  instance_.set_spare_page(nullptr);
   return VmCompression::PageAndMetadata{.page = ret, .metadata = metadata};
 }
 
@@ -329,11 +329,11 @@ void VmCompression::FreeTempReference(CompressedRef ref) TA_NO_THREAD_SAFETY_ANA
 void VmCompression::DecompressTempReference(CompressedRef ref, void* page_dest,
                                             uint32_t* metadata_dest) TA_NO_THREAD_SAFETY_ANALYSIS {
   DEBUG_ASSERT(IsTempReference(ref));
-  ASSERT(instance_.using_temp_reference_);
-  ASSERT(instance_.page_);
-  void* addr = paddr_to_physmap(instance_.page_->paddr());
+  ASSERT(instance_.IsTempReferenceInUse());
+  ASSERT(instance_.page());
+  void* addr = paddr_to_physmap(instance_.page()->paddr());
   ASSERT(addr);
   memcpy(page_dest, addr, kPageSize);
-  *metadata_dest = instance_.temp_reference_metadata_;
+  *metadata_dest = instance_.temp_reference_metadata();
   FreeTempReference(ref);
 }

@@ -42,6 +42,24 @@ FFI_ALWAYS_INLINE VmCompressor* cpp_vmcompression_compressor_guard_get(
   return &guard->get();
 }
 
+FFI_ALWAYS_INLINE FfiCompressResult cpp_vmcompression_compress(VmCompression* compression,
+                                                               const void* page_src) {
+  VmCompression::CompressResult res = compression->Compress(page_src);
+  const auto* ref = ktl::get_if<VmCompression::CompressedRef>(&res);
+  const auto* fail = ktl::get_if<VmCompression::FailTag>(&res);
+  return FfiCompressResult{
+      .tag = static_cast<uint8_t>(res.index()),
+      .ref = ref ? ref->value() : 0,
+      .fail_page = fail ? fail->src_page.page : nullptr,
+      .fail_metadata = fail ? fail->src_page.metadata : 0,
+  };
+}
+
+FFI_ALWAYS_INLINE void cpp_vmcompression_set_metadata(VmCompression* compression, uint32_t ref,
+                                                      uint32_t metadata) {
+  compression->SetMetadata(VmCompression::CompressedRef(ref), metadata);
+}
+
 FFI_ALWAYS_INLINE void cpp_vmcompression_free_reference(VmCompression* compression, uint32_t ref) {
   compression->Free(VmCompression::CompressedRef(ref));
 }

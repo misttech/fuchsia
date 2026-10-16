@@ -228,7 +228,7 @@ class VmCompression final : public fbl::RefCounted<VmCompression> {
    public:
     ~CompressorGuard();
     CompressorGuard(CompressorGuard&& instance) noexcept
-        : instance_guard_(AdoptLock, &instance.instance_.compressor_.instance_lock_,
+        : instance_guard_(AdoptLock, &instance.instance_.compressor().instance_lock_,
                           instance.instance_guard_.take()),
           instance_(instance.instance_) {}
 
@@ -237,7 +237,7 @@ class VmCompression final : public fbl::RefCounted<VmCompression> {
 
    private:
     CompressorGuard(VmCompressor& instance, Guard<Mutex>* guard)
-        : instance_guard_(AdoptLock, &instance.compressor_.instance_lock_, guard->take()),
+        : instance_guard_(AdoptLock, &instance.compressor().instance_lock_, guard->take()),
           instance_(instance) {}
     friend VmCompression;
     // Guard that keeps the instance owned by us, must never be released for the lifetime of this

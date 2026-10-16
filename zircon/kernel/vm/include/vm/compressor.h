@@ -7,7 +7,7 @@
 #ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_COMPRESSOR_H_
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_COMPRESSOR_H_
 
-#include <ktl/optional.h>
+#include <kernel/ffi.h>
 #include <ktl/variant.h>
 #include <vm/vm_page_list.h>
 
@@ -147,10 +147,10 @@ class VmCompressor {
   void ReturnTempReference(CompressedRef ref);
 
   // Returns whether there is an active compression attempt in progress or not.
-  bool IsIdle() const { return state_ == State::Ready || state_ == State::Finalized; }
+  bool IsIdle() const;
 
   // Tests whether the supplied reference is the temporary reference from this compressor.
-  bool IsTempReference(CompressedRef ref) const { return ref.value() == temp_reference_; }
+  bool IsTempReference(CompressedRef ref) const;
 
   // Returns whether the temporary reference is currently in use or not. This is different IsIdle,
   // as compression could be in progress, but the temporary reference already returned due to a
@@ -158,62 +158,41 @@ class VmCompressor {
   //
   // Calling this has the same locking requirements as the |spare_page_| member, whether either the
   // compressor needs to be idle, or the VMO lock must be held.
-  bool IsTempReferenceInUse() const { return using_temp_reference_; }
+  bool IsTempReferenceInUse() const;
 
  private:
-  // Let the compression system be a friend to call the constructor.
+  // Let the compression system be a friend to call the constructor and internal accessors.
   friend VmCompression;
-  VmCompressor(VmCompression& compressor, uint32_t temp_ref)
-      : compressor_(compressor), temp_reference_(temp_ref) {}
+  VmCompressor(VmCompression& compressor, uint32_t temp_ref);
 
-  // Reference to the owning compression system.
-  VmCompression& compressor_;
-  // The value given to us that represent our temporary reference to hand out.
-  const uint32_t temp_reference_;
+  VmCompression& compressor() const;
+  vm_page_t* page() const;
+  vm_page_t* spare_page() const;
+  void set_spare_page(vm_page_t* page);
+  uint32_t temp_reference_metadata() const;
+  void set_temp_reference_metadata(uint32_t metadata);
 
-  enum class State {
-    // The compressor has been armed and is ready to start compression. The temporary reference has
-    // not been given out, and all fields may be mutated.
-    Ready,
-    // The temporary reference has been given out and page_ is non-null. using_temp_reference_ and
-    // spare_page_ will only read/written from the VmCompression coordinator at request of someone
-    // who holds the VMO lock. compression_result_ will be written to by us.
-    Started,
-    // Using temp_reference_ and spare_page_ may be read/written via VmCompression, similar to the
-    // Started state, and also by us, provided we hold the VMO lock. compression_result_ may be read
-    // by the holder of the VMO lock.
-    Compressed,
-    // Compression has completed, no fields are valid, and needs to be re-armed.
-    Finalized,
+  enum class State : uint8_t {
+    Ready = 0,
+    Started = 1,
+    Compressed = 2,
+    Finalized = 3,
   };
-  // Begin in the Finalized state to require Arm to be called initially.
-  State state_ = State::Finalized;
 
-  // Has no load bearing functionality and is only used for assertion checking. Ownership
-  // permissions are the same as for spare_page.
-  bool using_temp_reference_ = false;
+  // Layout description matching Rust `VmCompressor` state for compile-time size/align/offset
+  // assertions.
+  struct StateLayout {
+    VmCompression* compressor;
+    uint32_t temp_reference;
+    State state;
+    bool using_temp_reference;
+    vm_page_t* page;
+    vm_page_t* spare_page;
+    OpaqueStorage<24, 8> compression_result;
+    uint32_t temp_reference_metadata;
+  };
 
-  // The page we are compressing, owned by us.
-  // In the Started and Compressed states this field, and the underlying data it points to, are
-  // read-only.
-  vm_page_t* page_ = nullptr;
-
-  // In the unlikely event that the temporary reference needs to be turned back into a page we may
-  // not be able to perform an allocation. Therefore a spare page is kept around that we can copy
-  // to. As there is only one temporary reference, only one page is needed, and is refreshed in the
-  // Arm step.
-  // In the Started and Compressed states this field is wholly owned, for reads and writes, by the
-  // holder of the VMO lock.
-  vm_page_t* spare_page_ = nullptr;
-
-  // Result of the most recent compression attempt.
-  // Read-only, and must only be accessed in the Compressed state by the holder of the VMO lock.
-  ktl::optional<CompressResult> compression_result_ = ktl::nullopt;
-
-  // User-provided metadata for the page backing the temp reference.
-  // In the Started and Compressed states this field is wholly owned, for reads and writes, by the
-  // holder of the VMO lock.
-  uint32_t temp_reference_metadata_ = 0;
+  [[maybe_unused]] OpaqueStorage<sizeof(StateLayout), alignof(StateLayout)> storage_{};
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_COMPRESSOR_H_
