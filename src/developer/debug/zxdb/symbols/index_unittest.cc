@@ -12,8 +12,10 @@
 
 #include <gtest/gtest.h>
 
+#include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_binary_impl.h"
+#include "src/developer/debug/zxdb/symbols/line_table.h"
 #include "src/developer/debug/zxdb/symbols/module_symbols_impl.h"
 #include "src/developer/debug/zxdb/symbols/symbol_factory.h"
 #include "src/developer/debug/zxdb/symbols/test_symbol_module.h"
@@ -280,6 +282,91 @@ TEST(Index, Fission) {
   ASSERT_EQ(2u, index.dwo_refs().size());
   EXPECT_EQ("other.dwo", index.dwo_refs()[0].dwo_name);
   EXPECT_EQ("main.dwo", index.dwo_refs()[1].dwo_name);
+}
+
+// Verifies that Index::CreateIndex evicts each compilation unit's decoded DIE array immediately
+// after indexing that unit rather than accumulating all units' DIE arrays in memory.
+TEST(Index, CreateIndexEvictsUnitCaches) {
+  TestSymbolModule setup(TestSymbolModule::kCheckedIn);
+  ASSERT_TRUE(setup.Init("", false).ok());
+
+  DwarfBinary* binary = setup.symbols()->binary();
+  ASSERT_GT(binary->GetNormalUnitCount(), 1u);
+
+  fxl::RefPtr<DwarfUnit> unit0 = binary->GetUnitAtIndex(UnitIndex(false, 0));
+  ASSERT_TRUE(unit0);
+
+  // Extracting the full unit DIE tree populates the underlying LLVM unit's DieArray so child DIEs
+  // are visible even when querying getUnitDIE with ExtractUnitDIEOnly = true.
+  ASSERT_TRUE(unit0->GetUnitDie().isValid());
+  EXPECT_TRUE(unit0->GetLLVMUnit()->getUnitDIE(true).getFirstChild().isValid());
+
+  Index index;
+  index.CreateIndex(*binary, IndexNode::SymbolRef::kMainBinary);
+
+  // After CreateIndex completes (without an explicit ClearLLVMCache call), every unit's non-root
+  // DIEs should have been evicted at the end of IndexCompileUnit.
+  for (const auto& llvm_unit : binary->GetLLVMContext()->normal_units()) {
+    ASSERT_TRUE(llvm_unit);
+    EXPECT_FALSE(llvm_unit->getUnitDIE(true).getFirstChild().isValid());
+  }
+
+  // Subsequent on-demand queries on the unit should lazily re-extract the DIEs and line table.
+  EXPECT_TRUE(unit0->GetUnitDie().getFirstChild().isValid());
+  EXPECT_GT(unit0->GetLineTable().GetNumFileNames(), 0u);
+}
+
+// Verifies that DwarfBinaryImpl::ClearLLVMCache drops cached DwarfUnit wrappers from unit_map_
+// without re-populating them while iterating, and that subsequent unit queries lazily re-create
+// the unit wrapper and re-parse its line table on demand.
+TEST(Index, ClearLLVMCacheEvictsUnitsAndLineTables) {
+  TestSymbolModule setup(TestSymbolModule::kCheckedIn);
+  ASSERT_TRUE(setup.Init("", false).ok());
+
+  DwarfBinary* binary = setup.symbols()->binary();
+  ASSERT_GT(binary->GetNormalUnitCount(), 1u);
+
+  // Obtain a weak pointer to unit 0 without keeping a local RefPtr so its lifetime is governed
+  // solely by DwarfBinaryImpl::unit_map_.
+  fxl::WeakPtr<DwarfUnit> weak_unit0 = binary->GetUnitAtIndex(UnitIndex(false, 0))->GetWeakPtr();
+  EXPECT_TRUE(weak_unit0);
+
+  // Populate unit 1's DIE array and line table before clearing the cache, then release the local
+  // RefPtr so only unit_map_ holds the wrapper.
+  fxl::WeakPtr<DwarfUnit> weak_unit1;
+  size_t initial_file_count = 0;
+  std::optional<std::string> initial_file;
+  {
+    fxl::RefPtr<DwarfUnit> unit1 = binary->GetUnitAtIndex(UnitIndex(false, 1));
+    ASSERT_TRUE(unit1);
+    weak_unit1 = unit1->GetWeakPtr();
+    ASSERT_TRUE(unit1->GetUnitDie().isValid());
+    const LineTable& line_table = unit1->GetLineTable();
+    initial_file_count = line_table.GetNumFileNames();
+    ASSERT_GT(initial_file_count, 0u);
+    initial_file = line_table.GetFileNameByIndex(1);
+    ASSERT_TRUE(initial_file.has_value());
+  }
+  EXPECT_TRUE(weak_unit1);
+
+  binary->ClearLLVMCache();
+
+  // Clearing the cache must evict unit_map_ entries and must not re-populate them while iterating.
+  EXPECT_FALSE(weak_unit0);
+  EXPECT_FALSE(weak_unit1);
+  for (const auto& llvm_unit : binary->GetLLVMContext()->normal_units()) {
+    ASSERT_TRUE(llvm_unit);
+    EXPECT_FALSE(llvm_unit->getUnitDIE(true).getFirstChild().isValid());
+  }
+
+  // Re-querying unit 1 after cache eviction must allocate a fresh DwarfUnit wrapper and re-parse
+  // the underlying LLVM line table on demand.
+  fxl::RefPtr<DwarfUnit> reloaded_unit1 = binary->GetUnitAtIndex(UnitIndex(false, 1));
+  ASSERT_TRUE(reloaded_unit1);
+  const LineTable& reloaded_line_table = reloaded_unit1->GetLineTable();
+  EXPECT_EQ(initial_file_count, reloaded_line_table.GetNumFileNames());
+  EXPECT_EQ(initial_file, reloaded_line_table.GetFileNameByIndex(1));
+  EXPECT_GT(reloaded_line_table.GetNumSequences(), 0u);
 }
 
 // Enable and substitute a path on your system to dump the index for a DWARF file.

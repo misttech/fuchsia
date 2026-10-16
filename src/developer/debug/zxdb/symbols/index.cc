@@ -720,6 +720,18 @@ void Index::IndexCompileUnit(const DwarfUnit& unit, int32_t dwo_index, UnitIndex
 
     IndexCompileUnitSourceFiles(unit, unit_index);
   }
+
+  // Evict the unit's decoded line table and DIE array immediately after indexing so transient
+  // parse structures do not accumulate across all compilation units during indexing.
+  unit_die = llvm::DWARFDie();
+  if (llvm::DWARFUnit* llvm_unit = unit.GetLLVMUnit()) {
+    if (DwarfBinary* binary = unit.GetBinary()) {
+      if (llvm::DWARFContext* context = binary->GetLLVMContext()) {
+        context->clearLineTableForUnit(llvm_unit);
+      }
+    }
+    llvm_unit->clear();
+  }
 }
 
 // Skeleton units are units in the main binary that reference a .dwo file containing the symbols

@@ -352,16 +352,30 @@ DwarfDieRef DwarfBinaryImpl::GetDieRefForSignature(uint64_t signature) const {
 
 void DwarfBinaryImpl::ClearLLVMCache() {
   signature_to_die_.reset();
-  for (size_t i = 0; i < GetNormalUnitCount(); i++) {
-    auto llvm_unit = GetUnitAtIndex(UnitIndex(false, i))->GetLLVMUnit();
-    context_->clearLineTableForUnit(llvm_unit);
-    llvm_unit->clear();
+
+  // Drop cached DwarfUnitImpl wrappers accumulated during indexing (and any LineTableImpl wrappers
+  // they own that hold raw pointers into DWARFContext's line tables). Iterate the underlying LLVM
+  // unit vectors directly rather than calling GetUnitAtIndex(), which would invoke FromLLVMUnit()
+  // and immediately re-populate unit_map_ for every unit in the binary. Even though
+  // Index::IndexCompileUnit() evicts each unit's caches as it finishes, cross-unit DIE references
+  // (such as DW_FORM_ref_addr and DW_FORM_ref_sig8) resolved via GetLLVMDieAtOffset() can lazily
+  // re-extract DIE arrays in previously indexed units, so a final sweep is still required here.
+  unit_map_.clear();
+  if (!context_)
+    return;
+
+  for (const auto& unit : context_->normal_units()) {
+    if (unit) {
+      context_->clearLineTableForUnit(unit.get());
+      unit->clear();
+    }
   }
 
-  for (size_t i = 0; i < GetDWOUnitCount(); i++) {
-    auto llvm_unit = GetUnitAtIndex(UnitIndex(true, i))->GetLLVMUnit();
-    context_->clearLineTableForUnit(llvm_unit);
-    llvm_unit->clear();
+  for (const auto& unit : context_->dwo_units()) {
+    if (unit) {
+      context_->clearLineTableForUnit(unit.get());
+      unit->clear();
+    }
   }
 }
 

@@ -109,6 +109,8 @@ class DwarfBinary {
   // DW_AT_signature).
   virtual DwarfDieRef GetDieRefForSignature(uint64_t signature) const = 0;
 
+  // Purges cached per-unit DIE arrays, line tables, type signature maps, and unit wrappers so
+  // transient parse structures can be reclaimed and re-populated lazily on demand.
   virtual void ClearLLVMCache() = 0;
 };
 
