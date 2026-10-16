@@ -199,10 +199,14 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// TODO(https://fxbug.dev/457605523): Support `includes` conversion to `configs` in GN.
 	// Currently the only use case is to set `includes = ["../.."]`, which is covered by
 	// `"//build/config:default_include_dirs"` in GN.
-	"cc_library":               {"aspect_hints": true, "includes": true},
-	"fx_cc_library":            {"aspect_hints": true, "includes": true},
+	"cc_library":               {"includes": true},
+	"fx_cc_library":            {"includes": true},
 	"idk_cc_source_library":    {"includes": true},
 	"idk_cc_shared_library_zx": {"version_script": true},
+	// In Bazel, `include_deps` on `expect_includes` lists transitive
+	// `.shard.cml` file labels needed in the Bazel action sandbox. GN runs `cmc`
+	// outside a sandbox and does not accept file labels in `deps`.
+	"expect_includes": {"include_deps": true},
 	// We do not need to include the "stamp" destination in GN because it is implicitly created by
 	// the rule.
 	"stamp_group": {"stamp": true},
@@ -217,8 +221,9 @@ var attrsToOmitByRules = map[string]map[string]bool{
 
 // Common Bazel attributes that use different names in GN.
 var commonAttrMap = map[string]string{
-	"srcs": "sources",
-	"hdrs": "public",
+	"aspect_hints": "deps",
+	"srcs":         "sources",
+	"hdrs":         "public",
 }
 
 var aliasAttrMap = map[string]string{

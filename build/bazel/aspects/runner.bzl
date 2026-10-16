@@ -2,9 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Provider, rule, and aspect for propagating Fuchsia component runner shards."""
-
-load("//build/bazel/aspects:utils.bzl", "get_target_deps_from_attributes")
+"""Provider and rule for propagating component runner shards."""
 
 FuchsiaRunnerShardInfo = provider(
     doc = "A provider for Fuchsia component runner manifest shards (.shard.cml).",
@@ -27,20 +25,20 @@ fx_runner_shard = rule(
 Used by `fx_unittest_component()` to collect them from its transitive
 dependencies. NOTE: This does *not* work for `fx_component()`.
 
-Note that certain rules, like `cc_library()`, only support depending to strict
+Note that certain rules, like `cc_library()`, only support depending on strict
 target types. For these, using `aspect_hints` instead of `deps` to depend on an
-`fx_runner_shared()` target is required. For example:
+`fx_runner_shard()` target is required. For example:
 
     fx_runner_shard(
         name = "my_shard",
-        shard = "my_shared.cml",
+        shard = "my_shard.cml",
     )
 
     fx_cc_binary(
          name = "my_binary",
          ...,
-         # deps = [ ":my_shared" ]            # This FAILS
-         aspect_hints = [ ":my_shared" ],     # This WORKS!
+         # deps = [ ":my_shard" ]             # This FAILS
+         aspect_hints = [ ":my_shard" ],      # This WORKS!
     )
 
     fx_component(
@@ -61,39 +59,4 @@ at analysis time). """,
         ),
     },
     provides = [FuchsiaRunnerShardInfo],
-)
-
-_DEP_ATTRS = [
-    "crate",
-    "deps",
-    "implementation_deps",
-    "link_deps",
-]
-
-def _collect_runner_shard_aspect_impl(target, aspect_ctx):
-    # The current target is an fx_runner_share(), visited through a regular
-    # dependency. The aspect should exit immediately to avoid a duplicate
-    # provider error.
-    if FuchsiaRunnerShardInfo in target:
-        return []
-
-    transitive_shards = [
-        dep[FuchsiaRunnerShardInfo].shards
-        for dep in get_target_deps_from_attributes(
-            aspect_ctx.rule.attr,
-            attr_names = _DEP_ATTRS + ["aspect_hints"],
-        )
-        if FuchsiaRunnerShardInfo in dep
-    ]
-
-    return [
-        FuchsiaRunnerShardInfo(
-            shards = depset(transitive = transitive_shards),
-        ),
-    ]
-
-collect_runner_shard_aspect = aspect(
-    doc = "An aspect that collects FuchsiaRunnerShardInfo providers from transitive dependencies.",
-    implementation = _collect_runner_shard_aspect_impl,
-    attr_aspects = _DEP_ATTRS,
 )

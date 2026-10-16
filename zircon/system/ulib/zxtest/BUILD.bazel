@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
-load("//build/bazel/rules/components:expect_includes.bzl", "expect_includes")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -67,25 +66,19 @@ _ZXTEST_DEPS = [
     "//zircon/system/ulib/fbl",
 ] + select({
     "@platforms//os:fuchsia": [
-        ":zxtest_runner_shard",
         "//zircon/system/ulib/zx",
     ],
     "//conditions:default": [],
 })
 
-# Makes the test manifests that GN generates use the zxtest runner.
-expect_includes(
-    name = "zxtest_runner_shard",
-    enforce = False,
-    includes = ["//src/sys/test_runners/gtest/zxtest.shard.cml"],
-    visibility = ["//visibility:private"],
-)
-
 fx_cc_library(
     name = "zxtest",
     srcs = _ZXTEST_SRCS,
     hdrs = _ZXTEST_HDRS,
-    aspect_hints = ["//src/sys/test_runners/gtest:zxtest"],
+    aspect_hints = select({
+        "@platforms//os:fuchsia": ["//src/sys/test_runners/gtest:zxtest"],
+        "//conditions:default": [],
+    }),
     # TODO(https://fxbug.dev/42085293): zxtest uses VLAs. GN suppresses the
     # warning for every dependent through a public config, but Bazel copts
     # don't propagate, so dependents that use the zxtest macros need this too.
@@ -104,7 +97,10 @@ fx_cc_library(
     name = "zxtest-streams",
     srcs = _ZXTEST_SRCS,
     hdrs = _ZXTEST_HDRS,
-    aspect_hints = ["//src/sys/test_runners/gtest:zxtest"],
+    aspect_hints = select({
+        "@platforms//os:fuchsia": ["//src/sys/test_runners/gtest:zxtest"],
+        "//conditions:default": [],
+    }),
     copts = ["-Wno-vla-cxx-extension"],
     defines = ["ZXTEST_USE_STREAMABLE_MACROS"],
     includes = ["include"],

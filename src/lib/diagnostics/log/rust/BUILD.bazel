@@ -45,9 +45,7 @@ LIB_DEPS = [
 })
 
 # @bazel2gn:transformer=deps
-LIB_LINK_DEPS = select({
-    # Empty stub in Bazel; an expect_includes() target in GN that checks
-    # dependent components for `syslog/client.shard.cml` in their manifest.
+LIB_ASPECT_HINTS = select({
     "@platforms//os:fuchsia": ["//sdk/lib/syslog:client_includes"],
     "//conditions:default": [],
 })
@@ -55,9 +53,9 @@ LIB_LINK_DEPS = select({
 rustc_library(
     name = "rust",
     srcs = LIB_SRCS,
+    aspect_hints = LIB_ASPECT_HINTS,
     crate_name = "diagnostics_log",
     edition = "2024",
-    link_deps = LIB_LINK_DEPS,
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     proc_macro_deps = LIB_PROC_MACRO_DEPS,
     visibility = ["//:__subpackages__"],
@@ -70,10 +68,10 @@ rustc_library(
 rustc_library(
     name = "no_startup_handle",
     srcs = LIB_SRCS,
+    aspect_hints = LIB_ASPECT_HINTS,
     crate_features = ["no_startup_handle"],
     crate_name = "driver_diagnostics_log",
     edition = "2024",
-    link_deps = LIB_LINK_DEPS,
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     proc_macro_deps = LIB_PROC_MACRO_DEPS,
     visibility = ["//:__subpackages__"],
@@ -96,8 +94,8 @@ rustc_test(
         "@platforms//os:fuchsia": [],
         "//conditions:default": ["--test-threads=1"],
     }),
+    aspect_hints = LIB_ASPECT_HINTS,
     edition = "2024",
-    link_deps = LIB_LINK_DEPS,
     proc_macro_deps = LIB_PROC_MACRO_DEPS,
     # Conditioned on the same constraint as LIB_DEPS above. Using a different
     # condition here (such as :is_host_os) would let the two selects disagree

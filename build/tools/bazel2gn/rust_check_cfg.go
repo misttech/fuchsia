@@ -105,7 +105,7 @@ func rustcCheckCfgBuildFlagsToGN(call *syntax.CallExpr) ([]string, error) {
 	}
 
 	if visArg != nil {
-		lines, err := attrAssignmentToGN(visArg, "config", nil)
+		lines, err := attrAssignmentToGN(visArg, "config", nil /*compiledActionOutputs*/, false /*appendAspectHints*/)
 		if err != nil {
 			return nil, fmt.Errorf("converting visibility attribute to GN: %v", err)
 		}

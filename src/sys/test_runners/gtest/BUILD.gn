@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
+import("//tools/cmc/build/expect_includes.gni")
 
 rustc_library("lib") {
   name = "gtest_runner_lib"
@@ -178,4 +179,10 @@ group("death_test") {
       },
     ]
   }
+}
+
+# Makes the test manifests that GN generates use the zxtest runner.
+expect_includes("zxtest") {
+  enforce = false
+  includes = [ "zxtest.shard.cml" ]
 }

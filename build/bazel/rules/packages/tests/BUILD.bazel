@@ -6,6 +6,10 @@
 
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load(
+    "//build/bazel/rules/components:expect_includes.bzl",
+    "expect_includes",
+)
+load(
     "//build/bazel/rules/components:fx_component.bzl",
     "fx_component",
     "fx_component_manifest",
@@ -345,13 +349,17 @@ filegroup(
     name = "quick_build_only_tests",
     testonly = True,
     srcs = [
+        ":example_check_includes_disabled_package",
         ":example_conflicting_runners_failure_test",
+        ":example_expect_includes_package",
+        ":example_expect_includes_unittest_package",
         ":example_gtest_unittest_package",
         ":example_multi_component_test",
         ":example_multi_unittest_package",
         ":example_rust_unittest_package",
         ":example_test",
         ":example_test_with_test_type",
+        ":example_unenforced_omitted_package",
         ":example_unittest_package",
         ":example_unittest_package_default_name",
         ":example_zxtest_unittest_package",
@@ -511,4 +519,125 @@ verify_fx_test_realms(
         "example_second_test_bin": "",
     },
     test = ":example_multi_unittest_package",
+)
+
+expect_includes(
+    name = "example_enforced_includes",
+    include_deps = ["meta/example_leaf.shard.cml"],
+    includes = ["meta/example_parent.shard.cml"],
+)
+
+expect_includes(
+    name = "example_unenforced_includes",
+    enforce = False,
+    includes = ["meta/example_unenforced.shard.cml"],
+)
+
+fx_cc_binary(
+    name = "example_expect_includes_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    aspect_hints = [
+        ":example_enforced_includes",
+        ":example_unenforced_includes",
+    ],
+    tags = ["manual"],
+)
+
+# Tests that `fx_unittest_package()` automatically includes shards from both
+# enforced and unenforced `expect_includes()` targets in the generated manifest,
+# makes transitive shard `deps` available in the compilation sandbox, and passes
+# `cmc check-includes`.
+fx_unittest_package(
+    name = "example_expect_includes_unittest_package",
+    package_name = "fx-expect-includes-unittest-package-example",
+    unit_tests = [":example_expect_includes_bin"],
+)
+
+fx_packaged_binary(
+    name = "example_expect_includes_packaged_bin",
+    testonly = True,
+    binary = ":example_expect_includes_bin",
+    binary_name = "example_expect_includes",
+)
+
+# Tests that a component whose manifest includes the required enforced shard
+# from `expect_includes()` passes `cmc check-includes`.
+fx_component_manifest(
+    name = "example_expect_includes_manifest",
+    testonly = True,
+    component_name = "example_expect_includes",
+    includes = [
+        "meta/example_leaf.shard.cml",
+        "meta/example_parent.shard.cml",
+    ],
+    manifest = "meta/example_expect_includes.cml",
+)
+
+fx_component(
+    name = "example_expect_includes_component",
+    testonly = True,
+    compiled_manifest = ":example_expect_includes_manifest",
+    component_name = "example_expect_includes",
+    deps = [":example_expect_includes_packaged_bin"],
+)
+
+fx_package(
+    name = "example_expect_includes_package",
+    package_name = "fx-expect-includes-package-example",
+    testonly = True,
+    components = [":example_expect_includes_component"],
+)
+
+# Tests that an unenforced `expect_includes(enforce = False)` shard does not
+# cause `cmc check-includes` to fail when a component (with `check_includes =
+# True`, the default) omits the unenforced shard from its manifest.
+fx_cc_binary(
+    name = "example_unenforced_includes_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    aspect_hints = [
+        ":example_unenforced_includes",
+        "//sdk/lib/syslog:client_includes",
+    ],
+    tags = ["manual"],
+)
+
+fx_packaged_binary(
+    name = "example_unenforced_includes_packaged_bin",
+    testonly = True,
+    binary = ":example_unenforced_includes_bin",
+    binary_name = "example_test",
+)
+
+fx_test_component(
+    name = "example_unenforced_omitted_component",
+    compiled_manifest = ":example_test_manifest",
+    component_name = "example_unenforced_omitted",
+    deps = [":example_unenforced_includes_packaged_bin"],
+)
+
+fx_package(
+    name = "example_unenforced_omitted_package",
+    package_name = "fx-unenforced-omitted-package-example",
+    testonly = True,
+    test_components = [":example_unenforced_omitted_component"],
+)
+
+# Tests that `check_includes = False` skips `cmc check-includes` when a
+# component manifest omits expected includes from its dependencies.
+fx_component(
+    name = "example_check_includes_disabled_component",
+    testonly = True,
+    check_includes = False,
+    compiled_manifest = ":example_helper_manifest",
+    component_name = "example_check_includes_disabled",
+    deps = [":example_expect_includes_packaged_bin"],
+)
+
+fx_package(
+    name = "example_check_includes_disabled_package",
+    package_name = "fx-check-includes-disabled-package-example",
+    testonly = True,
+    components = [":example_check_includes_disabled_component"],
 )

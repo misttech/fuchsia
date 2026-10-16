@@ -15,6 +15,7 @@ def _fx_cc_library_headers_impl(
         deps,
         implementation_deps,
         defines,
+        aspect_hints,
         testonly,
         visibility):
     """Implementation for the `fx_cc_library_headers()` macro."""
@@ -30,6 +31,7 @@ def _fx_cc_library_headers_impl(
         deps = deps,
         implementation_deps = implementation_deps,
         defines = defines,
+        aspect_hints = aspect_hints,
         testonly = testonly,
         visibility = visibility,
     )
@@ -145,6 +147,9 @@ A few important tips to use these efficiently:
         ),
         "defines": attr.string_list(
             doc = "Usual `fx_cc_library()` meaning.",
+        ),
+        "aspect_hints": attr.label_list(
+            doc = "Hints for aspects.",
         ),
         "testonly": attr.bool(
             doc = "Usual meaning.",

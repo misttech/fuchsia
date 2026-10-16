@@ -2425,3 +2425,158 @@ func TestInvalidAnnotations(t *testing.T) {
 		})
 	}
 }
+
+func TestAspectHintsAndExpectIncludes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "expect_includes omits include_deps and preserves deps",
+			bazel: `expect_includes(
+	name = "client_includes",
+	includes = ["client.shard.cml"],
+	deps = [":base_includes"],
+	include_deps = [
+		"offer.shard.cml",
+		"use.shard.cml",
+	],
+)`,
+			wantGN: `expect_includes("client_includes") {
+	includes = [
+		"client.shard.cml",
+	]
+	deps = [
+		":base_includes",
+	]
+}`,
+		},
+		{
+			name: "aspect_hints as only attribute mapping to deps",
+			bazel: `fx_cc_library(
+	name = "foo",
+	srcs = ["foo.cc"],
+	aspect_hints = ["//sdk/lib/syslog:client_includes"],
+	deps = ["//zircon/system/ulib/zx"],
+)`,
+			wantGN: `static_library("foo") {
+	sources = [
+		"foo.cc",
+	]
+	deps = [
+		"//sdk/lib/syslog:client_includes",
+	]
+	public_deps = [
+		"//zircon/system/ulib/zx",
+	]
+}`,
+		},
+		{
+			name: "aspect_hints combined with implementation_deps on fx_cc_library",
+			bazel: `fx_cc_library(
+	name = "foo",
+	srcs = ["foo.cc"],
+	aspect_hints = ["//sdk/lib/syslog:client_includes"],
+	implementation_deps = ["//sdk/lib/fdio"],
+	deps = ["//zircon/system/ulib/zx"],
+)`,
+			wantGN: `static_library("foo") {
+	sources = [
+		"foo.cc",
+	]
+	deps = [
+		"//sdk/lib/fdio",
+	]
+	deps += [
+		"//sdk/lib/syslog:client_includes",
+	]
+	public_deps = [
+		"//zircon/system/ulib/zx",
+	]
+}`,
+		},
+		{
+			name: "aspect_hints combined with deps on rustc_library",
+			bazel: `rustc_library(
+	name = "foo",
+	srcs = ["src/lib.rs"],
+	aspect_hints = select({
+		"@platforms//os:fuchsia": ["//sdk/lib/syslog:client_includes"],
+		"//conditions:default": [],
+	}),
+	deps = ["//third_party/rust_crates/vendor:anyhow"],
+)`,
+			wantGN: `rustc_library("foo") {
+	sources = [
+		"src/lib.rs",
+	]
+	deps = [
+		"//third_party/rust_crates:anyhow",
+	]
+	if (is_fuchsia) {
+		deps += [
+			"//sdk/lib/syslog:client_includes",
+		]
+	}
+}`,
+		},
+		{
+			name: "aspect_hints combined with conditional fuchsia_implementation_deps",
+			bazel: `idk_cc_source_library(
+	name = "foo",
+	aspect_hints = ["//sdk/lib/syslog:client_includes"],
+	fuchsia_implementation_deps = [
+		"//zircon/system/ulib/zx_impl",
+	],
+)`,
+			wantGN: `sdk_source_set("foo") {
+	deps = []
+	if (is_fuchsia) {
+		deps += [
+			"//zircon/system/ulib/zx_impl",
+		]
+	}
+	deps += [
+		"//sdk/lib/syslog:client_includes",
+	]
+}`,
+		},
+		{
+			name: "aspect_hints combined with select deps without default",
+			bazel: `rustc_library(
+	name = "foo",
+	srcs = ["src/lib.rs"],
+	aspect_hints = ["//sdk/lib/syslog:client_includes"],
+	deps = select({
+		"@platforms//os:fuchsia": ["//third_party/rust_crates/vendor:anyhow"],
+	}),
+)`,
+			wantGN: `rustc_library("foo") {
+	deps = []
+	sources = [
+		"src/lib.rs",
+	]
+	if (is_fuchsia) {
+		deps = [
+			"//third_party/rust_crates:anyhow",
+		]
+	}
+	deps += [
+		"//sdk/lib/syslog:client_includes",
+	]
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}

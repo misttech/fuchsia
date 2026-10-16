@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
-import("//tools/cmc/build/expect_includes.gni")
 
 config("zxtest_enable_streamable_assertions") {
   defines = [ "ZXTEST_USE_STREAMABLE_MACROS" ]
@@ -117,24 +116,21 @@ _ZXTEST_DEPS += [
   "//zircon/system/ulib/fbl",
 ]
 if (is_fuchsia) {
-  _ZXTEST_DEPS += [
-    ":zxtest_runner_shard",
-    "//zircon/system/ulib/zx",
-  ]
+  _ZXTEST_DEPS += [ "//zircon/system/ulib/zx" ]
 }
 
 # To avoid "Assignment had no effect" from GN.
 # It's possible this variable is only used in if conditions (e.g. is_host).
 not_needed([ "_ZXTEST_DEPS" ])
 
-expect_includes("zxtest_runner_shard") {
-  enforce = false
-  includes = [ "//src/sys/test_runners/gtest/zxtest.shard.cml" ]
-  visibility = [ ":*" ]
-}
 static_library("zxtest") {
   sources = _ZXTEST_SRCS
   public = _ZXTEST_HDRS
+  if (is_fuchsia) {
+    deps = [ "//src/sys/test_runners/gtest:zxtest" ]
+  } else {
+    deps = []
+  }
   configs += [ "//build/config:Wno-vla-cxx-extension" ]
   public_configs = [
     ":prod_config",
@@ -146,6 +142,11 @@ static_library("zxtest") {
 static_library("zxtest-streams") {
   sources = _ZXTEST_SRCS
   public = _ZXTEST_HDRS
+  if (is_fuchsia) {
+    deps = [ "//src/sys/test_runners/gtest:zxtest" ]
+  } else {
+    deps = []
+  }
   configs += [ "//build/config:Wno-vla-cxx-extension" ]
   defines = [ "ZXTEST_USE_STREAMABLE_MACROS" ]
   public_configs = [

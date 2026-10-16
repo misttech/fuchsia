@@ -6,10 +6,10 @@
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load(
-    "//build/bazel/aspects:runner.bzl",
-    "FuchsiaRunnerShardInfo",
-    "collect_runner_shard_aspect",
+    "//build/bazel/aspects:component_manifests.bzl",
+    "collect_component_manifests_aspect",
 )
+load("//build/bazel/aspects:runner.bzl", "FuchsiaRunnerShardInfo")
 load("//build/bazel/rules/testing:fx_test.bzl", "FuchsiaTestInfo")
 
 def _verify_file_path_impl(ctx):
@@ -131,7 +131,7 @@ verify_runner_shard = rule(
     implementation = _verify_runner_shard_impl,
     attrs = {
         "target": attr.label(
-            aspects = [collect_runner_shard_aspect],
+            aspects = [collect_component_manifests_aspect],
             mandatory = True,
         ),
         "expected_shard": attr.string(

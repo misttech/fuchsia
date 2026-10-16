@@ -310,9 +310,18 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 
 	ret := []string{fmt.Sprintf("%s(%s) {", gnTemplateName, name)}
 
+	// `aspect_hints` maps to `deps` in GN, but Buildifier places `aspect_hints`
+	// near the top of the target before `deps` or `implementation_deps`. If
+	// another attribute on the target also maps to `deps`, move `aspect_hints`
+	// after the last such attribute and append (`+=`) to `deps`.
+	remainingArgs, appendAspectHints, initDeps := reorderAspectHints(remainingArgs, bazelRule)
+	if initDeps {
+		ret = append(ret, indent([]string{"deps = []"}, 1)...)
+	}
+
 	// Loop through all args again to actually build the content of this target.
 	for _, arg := range remainingArgs {
-		lines, err := attrAssignmentToGN(arg, bazelRule, compiledActionOutputs)
+		lines, err := attrAssignmentToGN(arg, bazelRule, compiledActionOutputs, appendAspectHints)
 		if err != nil {
 			return nil, fmt.Errorf("converting Bazel attribute to GN: %v", err)
 		}
@@ -398,6 +407,99 @@ func disableInstrumentationToGN(expr syntax.Expr) ([]string, error) {
 	}
 }
 
+// reorderAspectHints moves `aspect_hints` to immediately follow the last other
+// attribute that converts to `deps` in GN, if any such attribute exists.
+// Returns the reordered slice, whether `aspect_hints` should use `+=`, and
+// whether `deps = []` must be emitted at the start of the target because the
+// preceding `deps`-mapped attributes only assign to `deps` conditionally.
+func reorderAspectHints(args []*syntax.BinaryExpr, bazelRule string) ([]*syntax.BinaryExpr, bool, bool) {
+	aspectHintsIdx := -1
+	lastOtherDepsIdx := -1
+	unconditionallyInitializesDeps := false
+	for i, arg := range args {
+		ident := arg.X.(*syntax.Ident)
+		if ident.Name == "aspect_hints" {
+			aspectHintsIdx = i
+		} else if convertAttrName(ident.Name, bazelRule) == "deps" {
+			lastOtherDepsIdx = i
+			if attrUnconditionallyInitializesGNVar(arg) {
+				unconditionallyInitializesDeps = true
+			}
+		}
+	}
+	if aspectHintsIdx == -1 || lastOtherDepsIdx == -1 {
+		return args, false, false
+	}
+	initDeps := !unconditionallyInitializesDeps
+	if aspectHintsIdx > lastOtherDepsIdx {
+		return args, true, initDeps
+	}
+	aspectHintsArg := args[aspectHintsIdx]
+	reordered := make([]*syntax.BinaryExpr, 0, len(args))
+	for i, arg := range args {
+		if i == aspectHintsIdx {
+			continue
+		}
+		reordered = append(reordered, arg)
+		if i == lastOtherDepsIdx {
+			reordered = append(reordered, aspectHintsArg)
+		}
+	}
+	return reordered, true, initDeps
+}
+
+// attrUnconditionallyInitializesGNVar reports whether converting `arg` to GN
+// unconditionally defines its target GN variable at the outer scope of the
+// target (so a subsequent `+=` will not fail with `Undefined identifier`).
+func attrUnconditionallyInitializesGNVar(arg *syntax.BinaryExpr) bool {
+	lhs := arg.X.(*syntax.Ident)
+	if idkFuchsiaSpecificAttrs[lhs.Name] || idkNonFuchsiaSpecificAttrs[lhs.Name] {
+		return false
+	}
+	if op, ok := bazelAttrToGNAssignmentOps[lhs.Name]; ok && op != "=" {
+		return false
+	}
+	if _, ok := overwrittenRaw(arg); ok {
+		return true
+	}
+	rhsY := unwrapParenExpr(arg.Y)
+	if isSelectCall(rhsY) {
+		return selectHasDefault(rhsY.(*syntax.CallExpr))
+	}
+	if _, ok := rhsY.(*syntax.CondExpr); ok {
+		return true
+	}
+	// Both list concatenation with branching (which emits `<var> = []` first when
+	// op == "=") and plain non-branching expressions unconditionally assign `<var> = ...`.
+	return true
+}
+
+// selectHasDefault reports whether a `select({...})` call contains a
+// `"//conditions:default"` branch.
+func selectHasDefault(expr *syntax.CallExpr) bool {
+	if len(expr.Args) == 0 {
+		return false
+	}
+	dict, ok := expr.Args[0].(*syntax.DictExpr)
+	if !ok {
+		return false
+	}
+	for _, entry := range dict.List {
+		e, ok := entry.(*syntax.DictEntry)
+		if !ok {
+			continue
+		}
+		key, ok := e.Key.(*syntax.Literal)
+		if !ok || len(key.Raw) < 2 {
+			continue
+		}
+		if key.Raw[1:len(key.Raw)-1] == defaultBazelSelectCondition {
+			return true
+		}
+	}
+	return false
+}
+
 // attrAssignmentToGN converts a Bazel assignment [0] to GN. These assignments
 // are used to assign values to fields during target definitions in Bazel.
 //
@@ -408,7 +510,7 @@ func disableInstrumentationToGN(expr syntax.Expr) ([]string, error) {
 // NOTE: Assignment is a special binary expression with operator =.
 //
 // [0] https://github.com/bazelbuild/starlark/blob/master/spec.md#assignments
-func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActionOutputs map[string]string) ([]string, error) {
+func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActionOutputs map[string]string, appendAspectHints bool) ([]string, error) {
 	lhs, ok := expr.X.(*syntax.Ident)
 	if !ok {
 		return nil, fmt.Errorf("expecting an identifier on the left hand side of attribute assignment, got %T", expr.X)
@@ -425,6 +527,9 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 	}
 
 	if idkFuchsiaSpecificAttrs[lhs.Name] || idkNonFuchsiaSpecificAttrs[lhs.Name] {
+		op = "+="
+	}
+	if lhs.Name == "aspect_hints" && appendAspectHints {
 		op = "+="
 	}
 
@@ -533,9 +638,12 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 		if err != nil {
 			return nil, err
 		}
-		// Start with an empty list so it's easy to += new elements from later
-		// conversions.
-		return append([]string{fmt.Sprintf("%s %s []", attrName, op)}, lc...), nil
+		if op == "=" {
+			// Start with an empty list so it's easy to += new elements from later
+			// conversions.
+			return append([]string{fmt.Sprintf("%s = []", attrName)}, lc...), nil
+		}
+		return lc, nil
 	}
 
 	rhs, err := exprToGN(expr.Y, transformers)

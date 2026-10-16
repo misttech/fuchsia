@@ -269,6 +269,7 @@ def _idk_cc_prebuilt_library_impl(
             hdrs = hdrs_for_bazel_library,
             includes = [import_include_path],
             shared_library = ":%s" % exported_target_name,
+            aspect_hints = kwargs.get("aspect_hints"),
             testonly = testonly,
             # In-tree code should depend on the imported shared library.
             visibility = visibility,

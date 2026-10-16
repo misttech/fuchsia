@@ -17,11 +17,12 @@ exports_files(
 
 # Require dependent components to include logsink capabilities in their
 # component manifests.
-#
-# NOTE: this is enforced by GN only. See the stub in
-# //build/bazel/rules/components/expect_includes.bzl.
 expect_includes(
     name = "client_includes",
+    include_deps = [
+        "offer.shard.cml",
+        "use.shard.cml",
+    ],
     includes = ["client.shard.cml"],
     visibility = ["//:__subpackages__"],
 )

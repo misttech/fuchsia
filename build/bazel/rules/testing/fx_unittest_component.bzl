@@ -5,9 +5,13 @@
 """Macro and helper rule for defining a Fuchsia unit test component."""
 
 load(
-    "//build/bazel/aspects:runner.bzl",
-    "FuchsiaRunnerShardInfo",
-    "collect_runner_shard_aspect",
+    "//build/bazel/aspects:component_manifests.bzl",
+    "collect_component_manifests_aspect",
+)
+load("//build/bazel/aspects:runner.bzl", "FuchsiaRunnerShardInfo")
+load(
+    "//build/bazel/rules/components:expect_includes.bzl",
+    "FuchsiaExpectedIncludesInfo",
 )
 load(
     "//build/bazel/rules/components:fx_component.bzl",
@@ -35,23 +39,40 @@ def _fx_unittest_runner_shard_impl(ctx):
     else:
         runner_shard_file = shards[0]
 
+    expected_includes = (
+        binary[FuchsiaExpectedIncludesInfo] if FuchsiaExpectedIncludesInfo in binary else None
+    )
+    auto_include_shards = depset(
+        [runner_shard_file],
+        transitive = [expected_includes.auto_include_shards] if expected_includes else [],
+    )
+    transitive_shards = depset(
+        [runner_shard_file],
+        transitive = [expected_includes.transitive_shards] if expected_includes else [],
+    )
+
     return [
-        DefaultInfo(files = depset([runner_shard_file])),
+        DefaultInfo(files = transitive_shards),
+        FuchsiaExpectedIncludesInfo(
+            enforced_shards = expected_includes.enforced_shards if expected_includes else depset(),
+            auto_include_shards = auto_include_shards,
+            transitive_shards = transitive_shards,
+        ),
     ]
 
 _fx_unittest_runner_shard = rule(
-    doc = """Resolves the component runner manifest shard (.shard.cml) for a unit test binary.
+    doc = """Resolves the runner shard and expected include shards for a unit test binary.
 
-    This rule applies `collect_runner_shard_aspect` to `binary` to gather any
-    `FuchsiaRunnerShardInfo` providers from its transitive dependencies. If no
-    runner shard is found, it falls back to `_default_runner_shard` (the ELF
-    test runner). If multiple conflicting runner shards are found, analysis
-    fails with an error.
+    This rule applies `collect_component_manifests_aspect` to `binary` to gather
+    any `FuchsiaRunnerShardInfo` and `FuchsiaExpectedIncludesInfo` providers
+    from its transitive dependencies. If no runner shard is found, it falls back
+    to `_default_runner_shard` (the ELF test runner). If multiple conflicting
+    runner shards are found, analysis fails with an error.
 
-    The selected `.shard.cml` file is returned in `DefaultInfo.files`, allowing
-    this target to be passed directly to attributes that expect `.shard.cml`
-    file labels (such as `_fx_unittest_manifest.shards` and
-    `fx_component_manifest.includes`).
+    The selected runner shard and all transitive expected include shards (including
+    their `deps`) are returned in `DefaultInfo.files` for compilation sandboxing,
+    while `FuchsiaExpectedIncludesInfo.auto_include_shards` provides the shards to
+    list directly in the generated `.cml` manifest's `include` array.
     """,
     implementation = _fx_unittest_runner_shard_impl,
     attrs = {
@@ -60,7 +81,7 @@ _fx_unittest_runner_shard = rule(
             mandatory = True,
             executable = True,
             cfg = "target",
-            aspects = [collect_runner_shard_aspect],
+            aspects = [collect_component_manifests_aspect],
         ),
         "_default_runner_shard": attr.label(
             default = "//sdk/lib/sys/testing:elf_test_runner",
@@ -70,9 +91,15 @@ _fx_unittest_runner_shard = rule(
 )
 
 def _fx_unittest_manifest_impl(ctx):
+    direct_shards = depset(
+        transitive = [
+            target[FuchsiaExpectedIncludesInfo].auto_include_shards if FuchsiaExpectedIncludesInfo in target else target[DefaultInfo].files
+            for target in ctx.attr.shards
+        ],
+    )
     includes = [
         "//" + shard.short_path
-        for shard in ctx.files.shards
+        for shard in direct_shards.to_list()
     ]
 
     cml_content = json.encode_indent(
@@ -110,9 +137,9 @@ _fx_unittest_manifest = rule(
             mandatory = True,
         ),
         "shards": attr.label_list(
-            doc = "The manifest shard (.shard.cml) files to include in the generated manifest.",
+            doc = "The manifest shard (.shard.cml or .cml) files or targets to include in the generated manifest.",
             mandatory = True,
-            allow_files = [".shard.cml"],
+            allow_files = [".cml"],
         ),
     },
 )
@@ -149,8 +176,6 @@ def _fx_unittest_component_impl(
         tags = tags + ["manual"],
     )
 
-    # TODO(https://fxbug.dev/563978780): Collect shards from `expect_includes`
-    # dependencies once `expect_includes` is implemented in Bazel.
     shards = [
         ":" + runner_shard_name,
         "//sdk/lib/syslog:use.shard.cml",
