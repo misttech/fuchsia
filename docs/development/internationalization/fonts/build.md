@@ -82,7 +82,6 @@ TODO: Add fuchsia/fontdata to validProjects
     name="github.com/googlefonts/noto-cjk"
     path="github.com/googlefonts/noto-cjk"
     remote="https://fuchsia.googlesource.com/third_party/github.com/googlefonts/noto-cjk"
-    remotebranch="upstream/master"
     revision="be6c059ac1587e556e2412b27f5155c8eb3ddbe6"/>
 ```
 
@@ -90,7 +89,6 @@ TODO: Add fuchsia/fontdata to validProjects
 *   `path`: determines where the repo is checked out relative to the root
     _checkout directory_.
 *   `remote`: Git URL of remote repo
-*   `remotebranch`: Branch name in remote repo
 *   `revision`: Git commit hash at which to pin the checkout
 
 #### `contents.json` {#contents-json}
