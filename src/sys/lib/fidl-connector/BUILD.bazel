@@ -2,14 +2,59 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Unused stub target to satisfy Bazel genquery for correct incremental builds.
-# See details in https://fxbug.dev/500609897
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
-# TODO(https://fxbug.dev/507972020): Replace with real targets when available.
-filegroup(
+rustc_library(
     name = "fidl-connector",
-    srcs = [],
+    srcs = ["src/lib.rs"],
+    crate_name = "fidl_connector",
+    edition = "2024",
+    visibility = [
+        "//src/lib/fuchsia-hyper:__pkg__",
+        "//src/session/bin/element_manager:__pkg__",
+        "//src/sys/lib/elf_runner:__pkg__",
+        "//src/sys/pkg/bin/pkg-cache:__pkg__",
+        "//src/sys/pkg/lib/omaha-client-fuchsia:__pkg__",
+    ],
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+# @bazel2gn:skip
+fidl_library(
+    name = "test.fidl.connector",
+    testonly = True,
+    srcs = ["test.fidl"],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fidl-connector_test",
+    crate = ":fidl-connector",
+    edition = "2024",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":test.fidl.connector_rust",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fidl-connector-tests",
+    unit_tests = [":fidl-connector_test"],
     visibility = ["//visibility:public"],
 )

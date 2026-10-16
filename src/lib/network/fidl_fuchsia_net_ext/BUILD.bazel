@@ -2,14 +2,57 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Unused stub target to satisfy Bazel genquery for correct incremental builds.
-# See details in https://fxbug.dev/500609897
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
-# TODO(https://fxbug.dev/507972746): Replace with real targets when available.
-filegroup(
+rustc_library(
     name = "fidl_fuchsia_net_ext",
-    srcs = [],
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:paste",
+    ],
+    visibility = [
+        "//src/connectivity:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/lib/fuchsia-hyper:__pkg__",
+        "//src/lib/network:__subpackages__",
+        "//src/testing/sl4f:__pkg__",
+        "//src/virtualization:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_common",
+        "//src/connectivity/lib/net-types",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:serde",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fidl_fuchsia_net_ext_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":fidl_fuchsia_net_ext",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:paste",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fidl-fuchsia-net-ext-tests",
+    unit_tests = [":fidl_fuchsia_net_ext_test"],
     visibility = ["//visibility:public"],
 )
