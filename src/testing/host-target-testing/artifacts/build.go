@@ -917,8 +917,13 @@ func (b *ProductBundleDirBuild) GetPackageRepository(
 		filepath.Join(b.productBundleDir, productBundle.Repositories[0].BlobsPath),
 	)
 
-	// TODO(https://fxbug.dev/42076853): Read delivery blob type from product bundle.
-	return packages.NewRepository(ctx, b.productBundleDir, blobFS, ffxTool, nil)
+	var blobType *int
+	if productBundle.Repositories[0].DeliveryBlobType != 0 {
+		t := int(productBundle.Repositories[0].DeliveryBlobType)
+		blobType = &t
+	}
+
+	return packages.NewRepository(ctx, b.productBundleDir, blobFS, ffxTool, blobType)
 }
 
 func (b *ProductBundleDirBuild) GetPaverDir(ctx context.Context) (string, error) {
