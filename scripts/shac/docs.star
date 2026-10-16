@@ -133,13 +133,6 @@ def _rfcmeta(ctx):
 
 def register_doc_checks():
     shac.register_check(_codelinks)
-    shac.register_check(shac.check(
-        _doc_checker,
-        # TODO(olivernewman): doc-checker has historically been run from `fx
-        # format-code` even though it's not a formatter and doesn't write
-        # results back to disk. Determine whether anyone depends on doc-checker
-        # running with `fx format-code`, and unset `formatter = True`.
-        formatter = True,
-    ))
+    shac.register_check(_doc_checker)
     shac.register_check(_mdlint)
     shac.register_check(_rfcmeta)

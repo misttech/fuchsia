@@ -233,10 +233,10 @@ that your document uses valid links. When you try to submit a change that
 includes an `.md` file, Gerrit runs `doc-checker` and blocks submission if you
 have broken links.
 
-To run `doc-checker` locally, use the `fx format-code` tool:
+To run `doc-checker` locally, use the `fx lint` tool:
 
 ```posix-terminal
-fx format-code
+fx lint
 ```
 
 ## Headers {#headers}

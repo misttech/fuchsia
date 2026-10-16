@@ -95,10 +95,10 @@ To delete the pages and redirect:
 1. Locate the `_toc.yaml` files where the documents are referenced and remove
    the entries for the deprecated documents.
 
-1.  Ensure that `doc-checker` passes. Run `fx format-code` to run doc-checker:
+1.  Ensure that `doc-checker` passes. Run `fx lint` to run doc-checker:
 
     ```
-    fx format-code
+    fx lint
     ```
 
    Fix any issues that `doc-checker` may signal.
