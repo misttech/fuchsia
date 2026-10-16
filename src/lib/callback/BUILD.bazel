@@ -1,0 +1,69 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_library(
+    name = "callback",
+    srcs = [
+        "destruction_sentinel.cc",
+        "scoped_task_runner.cc",
+    ],
+    hdrs = [
+        "auto_cleanable.h",
+        "capture.h",
+        "destruction_sentinel.h",
+        "scoped_callback.h",
+        "scoped_task_runner.h",
+        "trace_callback.h",
+    ],
+    implementation_deps = ["//sdk/lib/async:async-cpp"],
+    visibility = [
+        "//src/cobalt/bin/testing:__pkg__",
+        "//src/cobalt/bin/utils:__pkg__",
+        "//src/media/audio/audio_core/metrics:__pkg__",
+        "//src/ui/a11y/lib/magnifier:__pkg__",
+    ],
+    deps = [
+        "//sdk/lib/async-default",
+        "//sdk/lib/fit",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl",
+        "//zircon/system/ulib/trace",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
+
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "callback_unittests",
+    testonly = True,
+    srcs = [
+        "auto_cleanable_unittest.cc",
+        "capture_unittest.cc",
+        "destruction_sentinel_unittest.cc",
+        "scoped_callback_unittest.cc",
+        "scoped_task_runner_unittest.cc",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":callback",
+        "//sdk/lib/async-testing",
+        "//src/lib/fxl/test:gtest_main",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "callback_tests",
+    package_name = "callback_tests",
+    unit_tests = [":callback_unittests"],
+    visibility = ["//src/lib:__pkg__"],
+)

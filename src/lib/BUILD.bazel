@@ -11,5 +11,6 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/lib/backoff:backoff_tests",
+        "//src/lib/callback:callback_tests",
     ],
 )

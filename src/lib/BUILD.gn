@@ -16,7 +16,6 @@ group("tests") {
     "atomic-storage:tests",
     "bitrs:tests",
     "buf-read-ext:tests",
-    "callback:tests",
     "captive-thread:tests",
     "chunked-compression:tests",
     "cmdline:tests",
