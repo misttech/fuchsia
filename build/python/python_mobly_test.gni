@@ -197,6 +197,11 @@ import("//build/testing/host_test_data.gni")
 #    Type: list(string)
 #    Default: empty list
 #
+#  needs_package_server (optional)
+#    Whether this test requires a running Fuchsia package server.
+#    Type: boolean
+#    Default: omitted (inherits test_spec default)
+#
 #  multi_fuchsia_device (optional)
 #    Whether a test is a multi-device test (requires 2+ fuchsia devices).
 #    Type: boolean
@@ -556,6 +561,7 @@ template("python_mobly_test") {
     forward_variables_from(invoker,
                            [
                              "isolated",
+                             "needs_package_server",
                              "package_deps",
                              "product_bundle",
                              "timeout_secs",
@@ -746,6 +752,7 @@ template("python_mobly_test") {
       forward_variables_from(invoker,
                              [
                                "isolated",
+                               "needs_package_server",
                                "visibility",
                                "timeout_secs",
                              ])

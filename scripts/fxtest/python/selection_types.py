@@ -93,6 +93,15 @@ class TestSelections:
         """
         return any([entry.needs_device() for entry in self.selected])
 
+    def needs_package_server(self) -> bool:
+        """Determine if this set of test selections has any tests
+        that depend on a running package server.
+
+        Returns:
+            bool: True if a test that requires a package server is selected, False otherwise.
+        """
+        return any([entry.needs_package_server() for entry in self.selected])
+
     def has_e2e_test(self) -> bool:
         """Determine if this set of test selections has any host-driven device tests.
 

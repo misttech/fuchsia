@@ -872,6 +872,48 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 ("fx", "--dir", self.out_dir, "serve"), call_prefixes
             )
 
+    async def test_needs_package_server_false_skips_package_server(
+        self,
+    ) -> None:
+        """Test that an E2E test with needs_package_server=False in tests.json
+        does not start a temporary package server and succeeds even with
+        --no-allow-temporary-package-server."""
+        tests_json_path = os.path.join(self.out_dir, "tests.json")
+        with open(tests_json_path) as f:
+            tests_data = json.load(f)
+
+        for entry in tests_data:
+            if "example_e2e_test" in entry["test"]["name"]:
+                entry["needs_package_server"] = False
+
+        with open(tests_json_path, "w") as f:
+            json.dump(tests_data, f)
+
+        command_mock = self._mock_run_command(0)
+        subprocess_mock = self._mock_subprocess_call(0)
+        self._mock_has_package_server_connected_to_device(False)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(
+                [
+                    "--simple",
+                    "--no-allow-temporary-package-server",
+                    "--only-e2e",
+                ]
+            )
+        )
+        self.assertEqual(ret, 0)
+
+        call_prefixes = self._make_call_args_prefix_set(
+            command_mock.call_args_list
+        )
+        call_prefixes.update(
+            self._make_call_args_prefix_set(subprocess_mock.call_args_list)
+        )
+
+        self.assertNotIn(("fx", "--dir", self.out_dir, "serve"), call_prefixes)
+
     async def test_missing_device_starts_emulator(self) -> None:
         """Test that an emulator is started and stopped when no device is connected."""
         emu_started = False

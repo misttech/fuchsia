@@ -89,6 +89,11 @@ _log_severity_allowed_val = [
 #     supports SSH. This value should be the same for all tests with the same
 #     product_bundle.
 #
+#   needs_package_server (optional)
+#     [bool] Whether the test requires a running Fuchsia package server.
+#     If omitted, test runners decide based on whether the test requires a
+#     target device.
+#
 #   environments (optional, default: Emu for fuchsia; else a VM)
 #     [list of scopes] Device environments in which the test should run.
 #
@@ -371,6 +376,7 @@ template("test_spec") {
                              "product_bundle",
                              "bootup_timeout_secs",
                              "is_boot_test",
+                             "needs_package_server",
                            ])
     expects_ssh = _expects_ssh
     if (defined(is_boot_test) && is_boot_test) {

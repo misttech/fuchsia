@@ -180,3 +180,51 @@ class TestMethodTest(unittest.TestCase):
         self.assertTrue(e2e_test.is_e2e_test())
         self.assertTrue(boot_test.is_boot_test())
         self.assertFalse(boot_test.is_e2e_test())
+
+        test_with_pkg_server_explicit_false = Test(
+            TestEntry(
+                test=TestSection(
+                    name="e2e_no_pkg_server", label="//src/e2e", os="linux"
+                ),
+                environments=[
+                    EnvironmentEntry(
+                        dimensions=DimensionsEntry(device_type="AEMU")
+                    )
+                ],
+                needs_package_server=False,
+            )
+        )
+        test_with_pkg_server_explicit_true = Test(
+            TestEntry(
+                test=TestSection(
+                    name="host_with_pkg_server", label="//src/host", os="linux"
+                ),
+                needs_package_server=True,
+            )
+        )
+        test_default_device = Test(
+            TestEntry(
+                test=TestSection(
+                    name="default_device",
+                    label="//src/default_device",
+                    os="fuchsia",
+                    package_url="fuchsia-pkg://fuchsia.com/pkg#meta/test.cm",
+                ),
+            )
+        )
+        test_default_host = Test(
+            TestEntry(
+                test=TestSection(
+                    name="default_host", label="//src/default_host", os="linux"
+                ),
+            )
+        )
+
+        self.assertFalse(
+            test_with_pkg_server_explicit_false.needs_package_server()
+        )
+        self.assertTrue(
+            test_with_pkg_server_explicit_true.needs_package_server()
+        )
+        self.assertTrue(test_default_device.needs_package_server())
+        self.assertFalse(test_default_host.needs_package_server())

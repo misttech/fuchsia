@@ -123,3 +123,40 @@ class TestFileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "tests.json")
             self.assertRaises(IOError, lambda: TestEntry.from_file(path))
+
+    def test_needs_package_server_parsing(self) -> None:
+        """Ensure needs_package_server field is parsed correctly from tests.json."""
+        contents = [
+            {
+                "test": {
+                    "name": "test_true",
+                    "label": "//src:test_true",
+                    "os": "linux",
+                },
+                "needs_package_server": True,
+            },
+            {
+                "test": {
+                    "name": "test_false",
+                    "label": "//src:test_false",
+                    "os": "linux",
+                },
+                "needs_package_server": False,
+            },
+            {
+                "test": {
+                    "name": "test_none",
+                    "label": "//src:test_none",
+                    "os": "linux",
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "tests.json")
+            with open(path, "w") as f:
+                json.dump(contents, f)
+
+            entries = TestEntry.from_file(path)
+            self.assertTrue(entries[0].needs_package_server)
+            self.assertFalse(entries[1].needs_package_server)
+            self.assertIsNone(entries[2].needs_package_server)

@@ -169,6 +169,16 @@ class Test:
         """
         return self.is_pure_device_test() or self.is_e2e_test()
 
+    def needs_package_server(self) -> bool:
+        """Determine if this test requires a running package server.
+
+        Returns:
+            bool: True only if the test requires a package server to run.
+        """
+        if self.build.needs_package_server is not None:
+            return self.build.needs_package_server
+        return self.needs_device()
+
     def is_host_test(self) -> bool:
         # These are "pure" host tests, which excludes E2E tests
         # that require a device.

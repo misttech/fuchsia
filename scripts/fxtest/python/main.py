@@ -922,7 +922,7 @@ class AsyncMain:
                     pass
                 case self._PackageServerBehavior.START:
                     self._start_package_server()
-                    if selections.has_device_test():
+                    if selections.needs_package_server():
                         recorder.emit_info_message(
                             "Waiting for repository registration..."
                         )
@@ -1427,6 +1427,10 @@ class AsyncMain:
                 "E2E test selected, building updates package"
             )
         elif tests.has_device_test():
+            # Note: We're intentionally not checking `tests.needs_package_server()` here, because
+            # tests that manage their own repository server, like the OTA tests, may still need up
+            # to date packages.
+
             missing_packages: list[str] = []
             try:
                 package_repo = package_repository.PackageRepository.from_env(
@@ -1559,6 +1563,10 @@ class AsyncMain:
                 )
 
         if tests.has_device_test():
+            # Note: We're intentionally not checking `tests.needs_package_server()` here, because
+            # tests that manage their own repository server, like the OTA tests, may still need up
+            # to date packages.
+
             try:
                 await self._publish_packages(build_id)
             except self._PublishException as e:
@@ -1870,7 +1878,7 @@ class AsyncMain:
         flags = self._flags
         recorder = self._recorder
         if (
-            tests.has_device_test()
+            tests.needs_package_server()
             and not await has_package_server_connected_to_device(
                 exec_env,
                 recorder,

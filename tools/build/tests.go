@@ -31,6 +31,10 @@ type TestSpec struct {
 	// a product bundle that supports SSH.
 	ExpectsSSH bool `json:"expects_ssh,omitempty"`
 
+	// NeedsPackageServer specifies whether the test requires a running
+	// package server.
+	NeedsPackageServer *bool `json:"needs_package_server,omitempty"`
+
 	// IsBootTest specifies whether the test is a boot test. This indicates that the
 	// test should be isolated in its own shard.
 	IsBootTest bool `json:"is_boot_test,omitempty"`

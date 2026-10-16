@@ -105,6 +105,7 @@ template("host_test") {
                              "package_deps",
                              "product_bundle",
                              "expects_ssh",
+                             "needs_package_server",
                              "list_cases_argument",
                            ])
 

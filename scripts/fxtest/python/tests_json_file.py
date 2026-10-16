@@ -109,6 +109,9 @@ class TestEntry:
     # Indicates if the test expects an SSH connection to a device.
     expects_ssh: bool | None = None
 
+    # Indicates if the test requires a running Fuchsia package server.
+    needs_package_server: bool | None = None
+
     @classmethod
     def from_file(
         cls: typing.Type[typing.Self], file: str
