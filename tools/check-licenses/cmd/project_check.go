@@ -189,7 +189,7 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 
 	var allTargets []string
 	// For first-party code, the project root is the entire Fuchsia repository (FuchsiaDir).
-	// Scope the crawler's roots to the specific directories containing the targeted files
+	// Scope the crawler's roots to the specific targeted files or directories
 	// (or project roots for third-party code) to avoid walking the entire repository.
 	var crawlRoots []string
 	seenRoots := make(map[string]bool)
@@ -199,7 +199,7 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 		if projectRoot == inputCtx.FuchsiaDir {
 			for _, t := range targets {
 				dir := t
-				if info, err := os.Stat(t); err != nil || !info.IsDir() {
+				if _, err := os.Stat(t); err != nil {
 					dir = filepath.Dir(t)
 				}
 				if !seenRoots[dir] {

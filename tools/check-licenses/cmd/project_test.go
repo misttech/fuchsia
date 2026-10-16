@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/subcommands"
 
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/report"
 )
@@ -671,6 +672,7 @@ int undeclared() { return 2; }
 `
 	undeclaredLicenseFile := filepath.Join(srcDir, "undeclared_license.cc")
 	os.WriteFile(undeclaredLicenseFile, []byte(undeclaredLicenseContent), 0644)
+	os.WriteFile(filepath.Join(srcDir, "Cargo.toml"), []byte("[package]\nname = \"foo\"\n"), 0644)
 
 	cmd := &ProjectCommand{fuchsiaDir: tempDir}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -684,12 +686,17 @@ int undeclared() { return 2; }
 		t.Errorf("Expected ExitSuccess for valid 1st-party file, got %v", status)
 	}
 
-	// Case 2: Valid 1st-party file passes in --fast mode
+	// Case 2: Valid 1st-party file passes in --fast mode without crawling sibling files
+	beforeProcessed, _ := metrics.TotalFilesProcessed.GetCount()
 	fs2 := flag.NewFlagSet("test2", flag.ContinueOnError)
 	cmd.SetFlags(fs2)
 	fs2.Parse([]string{"--fuchsia_dir", tempDir, "check", "--fast", validFile})
 	if status := cmd.Execute(ctx, fs2); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess for valid 1st-party file with --fast, got %v", status)
+	}
+	afterProcessed, _ := metrics.TotalFilesProcessed.GetCount()
+	if delta := afterProcessed - beforeProcessed; delta != 1 {
+		t.Errorf("Expected 1 file processed in --fast mode, got %d", delta)
 	}
 
 	// Case 3: Missing copyright header fails
