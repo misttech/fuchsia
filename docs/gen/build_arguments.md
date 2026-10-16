@@ -907,11 +907,11 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
   ubsan = {
@@ -1781,7 +1781,7 @@ Enable compression of debug sections.
 
 **Current value (from the default):** `"zstd"`
 
-From //build/config/compiler.gni:129
+From //build/config/compiler.gni:136
 
 ### config_example_cpp_greeting
 
@@ -2011,7 +2011,7 @@ From //src/storage/fshost/generated_fshost_config.gni:12
 
 **Current value (from the default):** `"debug"`
 
-From //build/config/compiler.gni:88
+From //build/config/compiler.gni:89
 
 ### default_configs
 
@@ -3459,7 +3459,7 @@ Explicitly specify DWARF version used.
 
 **Current value (from the default):** `5`
 
-From //build/config/compiler.gni:103
+From //build/config/compiler.gni:110
 
 ### e2e_test_labels
 
@@ -8337,11 +8337,12 @@ From //build/toolchain/restat.gni:20
 
 ### riscv64_enable_vector
 
+LINT.IfChange(riscv64_enable_vector)
 Whether to enable the use of RISC-V vector instructions.
 
 **Current value (from the default):** `true`
 
-From //build/config/riscv64/riscv64.gni:10
+From //build/config/riscv64/riscv64.gni:11
 
 ### rust_cap_lints
 
