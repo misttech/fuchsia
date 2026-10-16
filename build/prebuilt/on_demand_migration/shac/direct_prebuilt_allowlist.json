@@ -28,7 +28,6 @@
     "build/bazel/toolchains/clang/toolchains.bzl": 1,
     "build/bazel/toolchains/linux_sysroot.bzl": 1,
     "build/bazel/toplevel.BUILD.bazel": 19,
-    "build/bazel/wrapper.bazel.sh": 1,
     "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/fuchsia_clang_repository.bzl": 1,
     "build/bazel_sdk/tests/scripts/generate_bazel_launcher.py": 3,
     "build/beads/planter/machinery/checks/bazel_minimality.sh": 7,

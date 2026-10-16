@@ -1309,6 +1309,17 @@ class BazelCommandPrintTest(BazelCommandWithBazelWrapperTest):
         self.assertIn(str(self._bazel_bin), stderr)
         self.assertNotEqual(stdout, "")
 
+    def test_bazel_command_without_rs_results_url(self) -> None:
+        stdout, stderr = self._run_bazel_command_with_env(
+            ["info"],
+            {
+                "FUCHSIA_BAZEL_PRINT_COMMANDS": None,
+                "RS_results_url": None,
+            },
+        )
+        self.assertEqual(stderr, "")
+        self.assertNotEqual(stdout, "")
+
 
 if __name__ == "__main__":
     unittest.main()
