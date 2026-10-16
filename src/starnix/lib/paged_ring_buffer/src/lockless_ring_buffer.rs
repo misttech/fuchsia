@@ -1014,8 +1014,7 @@ impl LocklessRingBuffer {
         error!(EAGAIN)
     }
 
-    #[cfg(test)]
-    pub(crate) fn size_bytes(&self) -> usize {
+    pub fn size_bytes(&self) -> usize {
         self.nodes.len() * (*PAGE_SIZE) as usize
     }
 

@@ -203,6 +203,7 @@ impl CallbackState {
                             name: Some("linux.ftrace".to_string()),
                             ftrace_config: Some(FtraceConfig {
                                 ftrace_events: vec!["ftrace/print".to_string()],
+                                buffer_size_kb: Some(2048),
                                 // Enable all supported atrace categories. This could be improved
                                 // in the future to be a subset that is configurable by each trace
                                 // session.

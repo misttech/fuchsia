@@ -121,12 +121,43 @@ impl TraceFs {
                 ),
                 mode!(IFREG, 0o755),
             );
-            dir.entry("buffer_size_kb", ConstFile::new_node("7".into()), mode!(IFREG, 0o755));
+            dir.entry(
+                "buffer_size_kb",
+                BufferSizeKbFile::new_node(event_queue_collection.clone()),
+                mode!(IFREG, 0o666),
+            );
         });
 
         let root_ino = fs.allocate_ino();
         fs.create_root(root_ino, dir);
         Ok(fs)
+    }
+}
+
+#[derive(Clone)]
+struct BufferSizeKbFile {
+    event_queue_collection: Arc<TraceEventQueueList>,
+}
+
+impl BufferSizeKbFile {
+    pub fn new_node(event_queue_collection: Arc<TraceEventQueueList>) -> impl FsNodeOps {
+        BytesFile::new_node(Self { event_queue_collection })
+    }
+}
+
+impl BytesFileOps for BufferSizeKbFile {
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let text = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
+        let trimmed = text.trim();
+        let size_kb: usize = trimmed.parse().map_err(|_| errno!(EINVAL))?;
+        self.event_queue_collection.set_buffer_size_kb(size_kb)?;
+        Ok(())
+    }
+
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let size_kb = self.event_queue_collection.buffer_size_kb();
+        let s = format!("{}\n", size_kb);
+        Ok(Cow::Owned(s.into_bytes()))
     }
 }
 
@@ -379,6 +410,68 @@ mod tests {
             );
             assert!(page_data.windows(large_payload.len()).any(|w| w == large_payload.as_slice()));
             event_queue_collection.disable().expect("disable queue after test");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_buffer_size_kb_read_write() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let event_queue_collection = TraceEventQueueList::from(kernel);
+            let fs = current_task.fs().root().entry.node.fs();
+            let info = FsNodeInfo::new(mode!(IFREG, 0o666), FsCred::root());
+            let node = fs.create_node_and_allocate_node_id(
+                BufferSizeKbFile::new_node(event_queue_collection.clone()),
+                info,
+            );
+            let ns_node = NamespaceNode::new_anonymous_unrooted(current_task, node);
+            let file = ns_node
+                .open(current_task, OpenAccessCheck::skip(OpenFlags::RDWR))
+                .expect("open buffer_size_kb node");
+
+            let mut buffer = VecOutputBuffer::new(64);
+            let bytes_read =
+                file.read_at(current_task, 0, &mut buffer).expect("read buffer_size_kb");
+            assert_eq!(&buffer.data()[..bytes_read], b"2048\n");
+
+            let mut input = starnix_core::vfs::buffers::VecInputBuffer::new(b"4096\n");
+            let bytes_written = file.write(current_task, &mut input).expect("write buffer_size_kb");
+            assert_eq!(bytes_written, 5);
+
+            let mut buffer2 = VecOutputBuffer::new(64);
+            let bytes_read2 =
+                file.read_at(current_task, 0, &mut buffer2).expect("read updated buffer_size_kb");
+            assert_eq!(&buffer2.data()[..bytes_read2], b"4096\n");
+
+            // Writing smaller than 3 pages clamps to 12 KB
+            let mut input3 = starnix_core::vfs::buffers::VecInputBuffer::new(b"4\n");
+            file.write(current_task, &mut input3).expect("write small buffer_size_kb");
+            let mut buffer3 = VecOutputBuffer::new(64);
+            let bytes_read3 =
+                file.read_at(current_task, 0, &mut buffer3).expect("read clamped buffer_size_kb");
+            assert_eq!(&buffer3.data()[..bytes_read3], b"12\n");
+
+            // Writing 0 returns EINVAL
+            let mut input_zero = starnix_core::vfs::buffers::VecInputBuffer::new(b"0\n");
+            assert_eq!(file.write(current_task, &mut input_zero), error!(EINVAL));
+
+            // Writing non-numeric returns EINVAL
+            let mut input_bad = starnix_core::vfs::buffers::VecInputBuffer::new(b"invalid\n");
+            assert_eq!(file.write(current_task, &mut input_bad), error!(EINVAL));
+
+            // Writing while enabled also succeeds
+            event_queue_collection.enable().expect("enable tracing");
+            let mut input_enabled = starnix_core::vfs::buffers::VecInputBuffer::new(b"2048\n");
+            let bytes_written_enabled =
+                file.write(current_task, &mut input_enabled).expect("write enabled buffer_size_kb");
+            assert_eq!(bytes_written_enabled, 5);
+            let mut buffer_enabled = VecOutputBuffer::new(64);
+            let bytes_read_enabled = file
+                .read_at(current_task, 0, &mut buffer_enabled)
+                .expect("read buffer_size_kb while enabled");
+            assert_eq!(&buffer_enabled.data()[..bytes_read_enabled], b"2048\n");
+            event_queue_collection.disable().expect("disable tracing");
         })
         .await;
     }
