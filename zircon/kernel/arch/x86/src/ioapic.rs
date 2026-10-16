@@ -273,7 +273,7 @@ pub fn apic_io_init_safe(io_apic_descs: &[IoApicDescriptor], overrides: &[IoApic
             unsafe {
                 kernel_aspace
                     .alloc_physical(
-                        c"ioapic",
+                        b"ioapic",
                         page::SIZE,
                         &mut vaddr,
                         page::SHIFT as u8,

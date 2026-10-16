@@ -69,7 +69,7 @@ mod aspace_rs {
         let kaspace = VmAspace::kernel_aspace();
         let err = unsafe {
             kaspace.alloc_contiguous(
-                c"test",
+                b"test",
                 alloc_size,
                 &mut ptr,
                 0,
@@ -112,7 +112,7 @@ mod aspace_rs {
         let alloc_size: usize = 16 * 1024;
 
         let aspace =
-            unwrap_some!(VmAspace::create(Type::User, c"test aspace"), "VmAspace::Create pointer");
+            unwrap_some!(VmAspace::create(Type::User, b"test aspace"), "VmAspace::Create pointer");
 
         // SAFETY: Active aspace reference is not invalidated during test.
         let old_aspace = unsafe { thread::current_active_aspace() };
@@ -121,7 +121,7 @@ mod aspace_rs {
 
         // allocate region 0
         let ptr0 = unwrap_ok!(
-            alloc_user(&aspace, c"test0", alloc_size),
+            alloc_user(&aspace, b"test0", alloc_size),
             "VmAspace::Alloc region of memory"
         );
         // fill with known pattern and test
@@ -129,7 +129,7 @@ mod aspace_rs {
 
         // allocate region 1
         let ptr1 = unwrap_ok!(
-            alloc_user(&aspace, c"test1", alloc_size),
+            alloc_user(&aspace, b"test1", alloc_size),
             "VmAspace::Alloc region of memory"
         );
         // fill with known pattern and test
@@ -137,7 +137,7 @@ mod aspace_rs {
 
         // allocate region 2
         let ptr2 = unwrap_ok!(
-            alloc_user(&aspace, c"test2", alloc_size),
+            alloc_user(&aspace, b"test2", alloc_size),
             "VmAspace::Alloc region of memory"
         );
         // fill with known pattern and test
@@ -160,7 +160,7 @@ mod aspace_rs {
         // SAFETY: `ptr` points to a valid pointer storage for `alloc_contiguous`.
         let err = unsafe {
             VmAspace::kernel_aspace().alloc_contiguous(
-                c"test",
+                b"test",
                 PAGE_SIZE_USIZE,
                 &mut ptr,
                 0,
@@ -179,7 +179,7 @@ mod aspace_rs {
         // SAFETY: `ptr` points to a valid pointer storage for `alloc_contiguous`.
         let err = unsafe {
             VmAspace::kernel_aspace().alloc_contiguous(
-                c"test",
+                b"test",
                 zero_size,
                 &mut ptr,
                 0,
@@ -193,7 +193,7 @@ mod aspace_rs {
     /// Allocates a vm address space object directly, allows it to go out of scope.
     #[test]
     fn vmaspace_create_smoke_test() {
-        let aspace = VmAspace::create(Type::User, c"test aspace").expect("VmAspace::create failed");
+        let aspace = VmAspace::create(Type::User, b"test aspace").expect("VmAspace::create failed");
         let err = aspace.destroy();
         expect_ok!(err, "VmAspace::Destroy");
     }
@@ -211,7 +211,7 @@ mod aspace_rs {
                 USER_ASPACE_BASE - 1,
                 4096,
                 Type::User,
-                c"test",
+                b"test",
                 ShareOpt::None
             )
             .is_none()
@@ -221,7 +221,7 @@ mod aspace_rs {
                 KERNEL_ASPACE_BASE - 1,
                 4096,
                 Type::Kernel,
-                c"test",
+                b"test",
                 ShareOpt::None
             )
             .is_none()
@@ -231,7 +231,7 @@ mod aspace_rs {
                 GUEST_PHYSICAL_ASPACE_BASE.wrapping_sub(1),
                 4096,
                 Type::GuestPhysical,
-                c"test",
+                b"test",
                 ShareOpt::None
             )
             .is_none()
@@ -243,7 +243,7 @@ mod aspace_rs {
                 USER_ASPACE_BASE,
                 USER_ASPACE_SIZE + 1,
                 Type::User,
-                c"test",
+                b"test",
                 ShareOpt::None
             )
             .is_none()
@@ -253,7 +253,7 @@ mod aspace_rs {
                 KERNEL_ASPACE_BASE,
                 KERNEL_ASPACE_SIZE + 1,
                 Type::Kernel,
-                c"test",
+                b"test",
                 ShareOpt::None
             )
             .is_none()
@@ -263,7 +263,7 @@ mod aspace_rs {
                 GUEST_PHYSICAL_ASPACE_BASE,
                 GUEST_PHYSICAL_ASPACE_SIZE + 1,
                 Type::GuestPhysical,
-                c"test",
+                b"test",
                 ShareOpt::None
             )
             .is_none()
@@ -275,10 +275,10 @@ mod aspace_rs {
     fn vmaspace_alloc_smoke_test() {
         // Allocates a vm address space object directly, maps something on it,
         // allows it to go out of scope.
-        let mut aspace = VmAspace::create(Type::User, c"test aspace2");
+        let mut aspace = VmAspace::create(Type::User, b"test aspace2");
 
         let _ptr = unwrap_ok!(
-            alloc_user(aspace.as_ref().unwrap(), c"test", PAGE_SIZE_USIZE),
+            alloc_user(aspace.as_ref().unwrap(), b"test", PAGE_SIZE_USIZE),
             "allocating region\n"
         );
 
@@ -478,7 +478,7 @@ mod aspace_rs {
         // Construct an additional aspace to use for mappings and touching pages. This allows us to
         // control whether the aspace is considered active, which can effect reclamation and
         // scanning.
-        let aspace = unwrap_some!(VmAspace::create(Type::User, c"test-aspace"));
+        let aspace = unwrap_some!(VmAspace::create(Type::User, b"test-aspace"));
 
         let _cleanup_aspace = zr::defer(|| {
             let _ = aspace.destroy();
@@ -637,14 +637,14 @@ mod aspace_rs {
             private_aspace_base,
             private_aspace_size,
             Type::User,
-            c"test restricted aspace",
+            b"test restricted aspace",
             ShareOpt::Restricted,
         ));
         let shared_aspace = unwrap_some!(VmAspace::create_with_opts(
             shared_aspace_base,
             shared_aspace_size,
             Type::User,
-            c"test shared aspace",
+            b"test shared aspace",
             ShareOpt::Shared,
         ));
         // SAFETY: `shared_aspace` and `restricted_aspace` are valid and were created as shared and
@@ -653,7 +653,7 @@ mod aspace_rs {
             VmAspace::create_unified(
                 (*shared_aspace).to_mut_ptr(),
                 (*restricted_aspace).to_mut_ptr(),
-                c"test unified aspace",
+                b"test unified aspace",
             )
         });
 
@@ -788,7 +788,7 @@ mod aspace_rs {
     /// Tests memory priority propagation with pager-backed VMOs and clones.
     #[test]
     fn vmaspace_priority_pager_test() {
-        let aspace = VmAspace::create(Type::User, c"test-aspace");
+        let aspace = VmAspace::create(Type::User, b"test-aspace");
         assert_true!(aspace.is_some());
         let aspace = aspace.unwrap();
 
@@ -862,7 +862,7 @@ mod aspace_rs {
     /// Tests memory priority propagation for VMO references.
     #[test]
     fn vmaspace_priority_reference_test() {
-        let aspace = VmAspace::create(Type::User, c"test-aspace").expect("VmAspace::create failed");
+        let aspace = VmAspace::create(Type::User, b"test-aspace").expect("VmAspace::create failed");
 
         let vmar = unwrap_ok!(aspace.root_vmar().unwrap().create_sub_vmar(
             0,
@@ -930,7 +930,7 @@ mod aspace_rs {
     fn vmaspace_priority_propagation_test() {
         // Test that memory priority gets propagated through hierarchies and into newly created
         // objects.
-        let aspace = VmAspace::create(Type::User, c"test-aspace");
+        let aspace = VmAspace::create(Type::User, b"test-aspace");
         assert_true!(aspace.is_some());
         let aspace = aspace.unwrap();
 
@@ -1002,7 +1002,7 @@ mod aspace_rs {
     /// Test that overwriting a mapping maintains priority counts.
     #[test]
     fn vmaspace_priority_mapping_overwrite_test() {
-        let aspace = VmAspace::create(Type::User, c"test-aspace");
+        let aspace = VmAspace::create(Type::User, b"test-aspace");
         assert_true!(aspace.is_some());
         let aspace = aspace.unwrap();
 
@@ -1061,7 +1061,7 @@ mod aspace_rs {
     /// Test that unmapping parts of a mapping preserves priority.
     #[test]
     fn vmaspace_priority_unmap_test() {
-        let aspace = VmAspace::create(Type::User, c"test-aspace");
+        let aspace = VmAspace::create(Type::User, b"test-aspace");
         assert_true!(aspace.is_some());
         let aspace = aspace.unwrap();
 
@@ -1152,7 +1152,7 @@ mod aspace_rs {
     /// Tests memory priority propagation to a child VMO slice.
     #[test]
     fn vmaspace_priority_slice_test() {
-        let aspace = VmAspace::create(Type::User, c"test-aspace");
+        let aspace = VmAspace::create(Type::User, b"test-aspace");
         assert_true!(aspace.is_some());
         let aspace = aspace.unwrap();
 
@@ -1214,7 +1214,7 @@ mod aspace_rs {
     /// Attempt force a high priority region to be writeable.
     #[test]
     fn vm_mapping_force_writeable_high_priority() {
-        let aspace = VmAspace::create(Type::User, c"test-aspace");
+        let aspace = VmAspace::create(Type::User, b"test-aspace");
         assert_true!(aspace.is_some());
         let aspace = aspace.unwrap();
 

@@ -114,7 +114,7 @@ fn probe_hpet() -> Option<Hpet> {
     // SAFETY: FFI call with correct pointers is safe.
     let res = unsafe {
         crate::vm::vm_aspace::VmAspace::kernel_aspace().alloc_physical(
-            c"hpet",
+            b"hpet",
             page::SIZE,
             &mut regs_addr as *mut *mut HpetRegisters as *mut *mut core::ffi::c_void,
             page::SHIFT as u8,

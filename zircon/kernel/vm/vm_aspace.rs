@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
+use super::name::name_to_c_buf;
 use super::vm_address_region::VmAddressRegion;
 use super::vm_mapping::VmMapping;
 use super::vm_object::VmObject;
@@ -125,12 +126,13 @@ impl VmAspace {
     /// [`destroy`](Self::destroy).
     ///
     /// Returns `None` on failure (e.g. due to resource starvation).
-    pub fn create(type_: Type, name: &CStr) -> Option<RefPtr<VmAspace>> {
-        // SAFETY: `name.as_ptr()` is a valid, NUL-terminated C string.
+    pub fn create(type_: Type, name: &[u8]) -> Option<RefPtr<VmAspace>> {
+        let name_buf = name_to_c_buf(name);
+        // SAFETY: `name_buf` is a NUL-terminated C string.
         unsafe {
             Self::import_from_raw_ptr(bindings::cpp_vm_aspace_create(
                 bindings::VmAspace_Type(type_ as _),
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
             ))
         }
     }
@@ -185,16 +187,17 @@ impl VmAspace {
         base: usize,
         size: usize,
         type_: Type,
-        name: &CStr,
+        name: &[u8],
         share_opt: ShareOpt,
     ) -> Option<RefPtr<VmAspace>> {
-        // SAFETY: `name.as_ptr()` is a valid, NUL-terminated C string.
+        let name_buf = name_to_c_buf(name);
+        // SAFETY: `name_buf` is a NUL-terminated C string.
         unsafe {
             Self::import_from_raw_ptr(bindings::cpp_vm_aspace_create_with_opts(
                 base,
                 size,
                 bindings::VmAspace_Type(type_ as _),
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
                 bindings::VmAspace_ShareOpt(share_opt as _),
             ))
         }
@@ -220,15 +223,16 @@ impl VmAspace {
     pub unsafe fn create_unified(
         shared: *mut VmAspace,
         restricted: *mut VmAspace,
-        name: &CStr,
+        name: &[u8],
     ) -> Option<RefPtr<VmAspace>> {
-        // SAFETY: `shared` and `restricted` point to live `VmAspace`s and `name.as_ptr()` is a
-        // valid, NUL-terminated C string.
+        let name_buf = name_to_c_buf(name);
+        // SAFETY: `shared` and `restricted` point to live `VmAspace`s and `name_buf` is a
+        // NUL-terminated C string.
         unsafe {
             Self::import_from_raw_ptr(bindings::cpp_vm_aspace_create_unified(
                 shared.cast(),
                 restricted.cast(),
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
             ))
         }
     }
@@ -243,10 +247,11 @@ impl VmAspace {
     }
 
     /// Renames this address space.
-    pub fn rename(&self, name: &CStr) {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace` and `name.as_ptr()` is a valid
-        // , NUL-terminated C string.
-        unsafe { bindings::cpp_vm_aspace_rename(self.as_ffi_ptr(), name.as_ptr()) }
+    pub fn rename(&self, name: &[u8]) {
+        let name_buf = name_to_c_buf(name);
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace` and `name_buf` is a
+        // NUL-terminated C string.
+        unsafe { bindings::cpp_vm_aspace_rename(self.as_ffi_ptr(), name_buf.as_ptr().cast()) }
     }
 
     pub fn base(&self) -> usize {
@@ -418,7 +423,7 @@ impl VmAspace {
     #[allow(clippy::too_many_arguments)]
     pub unsafe fn alloc_physical(
         &self,
-        name: &CStr,
+        name: &[u8],
         size: usize,
         ptr: *mut *mut c_void,
         align_pow2: u8,
@@ -426,12 +431,13 @@ impl VmAspace {
         vmm_flags: u32,
         arch_mmu_flags: ArchMmuFlags,
     ) -> Result<(), Status> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`, `name.as_ptr()` is a valid C
-        // string, and `ptr` is valid for writes.
+        let name_buf = name_to_c_buf(name);
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`, `name_buf` is a NUL-terminated
+        // C string, and `ptr` is valid for writes.
         Status::ok(unsafe {
             bindings::cpp_vm_aspace_alloc_physical(
                 self.as_ffi_ptr(),
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
                 size,
                 ptr,
                 align_pow2,
@@ -453,19 +459,20 @@ impl VmAspace {
     /// address or specific starting address.
     pub unsafe fn alloc_contiguous(
         &self,
-        name: &CStr,
+        name: &[u8],
         size: usize,
         ptr: *mut *mut c_void,
         align_pow2: u8,
         vmm_flags: u32,
         arch_mmu_flags: ArchMmuFlags,
     ) -> Result<(), Status> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`, `name.as_ptr()` is a valid C
-        // string, and `ptr` is valid for writes.
+        let name_buf = name_to_c_buf(name);
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`, `name_buf` is a NUL-terminated
+        // C string, and `ptr` is valid for writes.
         Status::ok(unsafe {
             bindings::cpp_vm_aspace_alloc_contiguous(
                 self.as_ffi_ptr(),
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
                 size,
                 ptr,
                 align_pow2,
@@ -498,7 +505,7 @@ impl VmAspace {
     pub unsafe fn map_object_internal(
         &self,
         vmo: RefPtr<VmObject>,
-        name: &CStr,
+        name: &[u8],
         offset: u64,
         size: usize,
         align_pow2: u8,
@@ -506,13 +513,14 @@ impl VmAspace {
         arch_mmu_flags: ArchMmuFlags,
     ) -> Result<*mut c_void, Status> {
         let mut ptr = core::ptr::null_mut();
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`, `name.as_ptr()` is a valid C
-        // string, and `ptr` is valid for writes.
+        let name_buf = name_to_c_buf(name);
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`, `name_buf` is a NUL-terminated
+        // C string, and `ptr` is valid for writes.
         Status::ok(unsafe {
             bindings::cpp_vm_aspace_map_object_internal(
                 self.as_ffi_ptr(),
                 VmObject::cast_raw(RefPtr::into_raw(vmo).cast_mut()),
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
                 offset,
                 size,
                 &mut ptr,

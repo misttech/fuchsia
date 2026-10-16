@@ -163,7 +163,7 @@ extern "C" fn run_unittest_thread_entry(arg: *mut c_void) -> i32 {
 }
 
 fn run_testcase_in_thread(testcase: &'static TestSuiteRegistration, repeat: usize) -> bool {
-    let aspace = match VmAspace::create(AspaceType::User, c"unittest") {
+    let aspace = match VmAspace::create(AspaceType::User, b"unittest") {
         Some(a) => a,
         None => {
             kprintln!("failed to create unittest user aspace");

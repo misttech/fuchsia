@@ -200,7 +200,7 @@ pub extern "C" fn apic_vm_init() {
         // SAFETY: Allocating physical LAPIC management page in kernel aspace.
         let res = unsafe {
             kernel_aspace.alloc_physical(
-                c"lapic",
+                b"lapic",
                 page::SIZE,
                 &mut vaddr,
                 page::SHIFT as u8,

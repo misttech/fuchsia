@@ -100,7 +100,7 @@ impl GuestPhysicalAspace {
     /// Creates a new `GuestPhysicalAspace`.
     pub fn create() -> Result<Self, Status> {
         let physical_aspace =
-            VmAspace::create(Type::GuestPhysical, c"guest_physical").ok_or(Status::NO_MEMORY)?;
+            VmAspace::create(Type::GuestPhysical, b"guest_physical").ok_or(Status::NO_MEMORY)?;
         Ok(Self { physical_aspace: Some(physical_aspace) })
     }
 

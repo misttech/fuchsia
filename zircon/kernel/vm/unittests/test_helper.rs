@@ -15,7 +15,7 @@ use crate::vm::vm_aspace::VmAspace;
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
 use core::convert::Infallible;
-use core::ffi::{CStr, c_void};
+use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use core::num::NonZeroI64;
 use core::ptr;
@@ -260,7 +260,7 @@ pub fn fill_and_test_user(ptr: UserInOutPtr<c_void>, len: usize) -> bool {
 /// Helper function to allocate memory in a user address space.
 pub fn alloc_user(
     aspace: &VmAspace,
-    name: &CStr,
+    name: &[u8],
     size: usize,
 ) -> Result<UserInOutPtr<c_void>, Status> {
     assert!(aspace.is_user());
@@ -271,7 +271,7 @@ pub fn alloc_user(
     }
 
     let vmo = VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, size as u64)?;
-    let _ = vmo.set_name(name.to_bytes());
+    let _ = vmo.set_name(name);
     let mapping = aspace.root_vmar().unwrap().create_vm_mapping(
         0,
         size,
@@ -280,7 +280,7 @@ pub fn alloc_user(
         VmObjectPaged::into_vm_object(vmo),
         0,
         ARCH_RW_USER_FLAGS,
-        name.to_bytes(),
+        name,
     )?;
 
     Ok(UserInOutPtr::new(ptr::with_exposed_provenance_mut(mapping.base)))

@@ -68,7 +68,7 @@ fn map_range(paddr: u64, len: usize) -> Result<(NonNull<u8>, usize), Status> {
     // SAFETY: `alloc_physical` maps the specified physical address range into the kernel aspace.
     let status = unsafe {
         VmAspace::kernel_aspace().alloc_physical(
-            c"smbios",
+            b"smbios",
             map_size,
             &mut base_ptr,
             page::SHIFT as u8,

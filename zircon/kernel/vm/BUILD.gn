@@ -1567,6 +1567,7 @@ kernel_rust_mod("vm-rs") {
     "fault.rs",
     "memory_stats.rs",
     "mod.rs",
+    "name.rs",
     "page.rs",
     "page_queues.rs",
     "page_slab_allocator.rs",

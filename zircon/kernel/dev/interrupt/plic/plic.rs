@@ -310,7 +310,7 @@ pub fn plic_init_post_vm(config: &DcfgRiscvPlicDriver) {
     unsafe {
         aspace
             .alloc_physical(
-                c"plic",
+                b"plic",
                 config.size_bytes as usize,
                 &mut plic_base_void,
                 page::SHIFT as u8,

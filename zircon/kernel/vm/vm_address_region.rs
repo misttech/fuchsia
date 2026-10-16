@@ -7,6 +7,7 @@
 use super::arch_vm_aspace::{
     ARCH_MMU_FLAG_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
 };
+use super::name::name_to_c_buf;
 use super::vm_address_region_enumerator::{
     VmAddressRegionEnumerator, VmAddressRegionEnumeratorType,
 };
@@ -30,13 +31,6 @@ use vm_constants_rs as constants;
 use zr::Opaque;
 use zx_status::Status;
 use zx_types::ZX_MAX_NAME_LEN;
-
-fn name_to_c_buf(name: &[u8]) -> [u8; ZX_MAX_NAME_LEN] {
-    let mut buf = [0u8; ZX_MAX_NAME_LEN];
-    let len = name.len().min(buf.len() - 1);
-    buf[..len].copy_from_slice(&name[..len]);
-    buf
-}
 
 pub mod flag {
     use vm_address_region_bindings as bindings;

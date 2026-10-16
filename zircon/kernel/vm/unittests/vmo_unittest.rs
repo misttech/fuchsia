@@ -637,7 +637,7 @@ mod vmo_rs {
             unwrap_ok!(
                 ka.map_object_internal(
                     VmObjectPaged::into_vm_object(vmo),
-                    c"test",
+                    b"test",
                     0,
                     alloc_size,
                     0,
@@ -676,7 +676,7 @@ mod vmo_rs {
             unwrap_ok!(
                 ka.map_object_internal(
                     VmObjectPaged::into_vm_object(vmo.clone()),
-                    c"test",
+                    b"test",
                     0,
                     alloc_size,
                     0,
@@ -709,7 +709,7 @@ mod vmo_rs {
             unwrap_ok!(
                 ka.map_object_internal(
                     VmObjectPaged::into_vm_object(vmo),
-                    c"test",
+                    b"test",
                     0,
                     alloc_size,
                     0,
@@ -751,7 +751,7 @@ mod vmo_rs {
             unwrap_ok!(
                 ka.map_object_internal(
                     VmObjectPaged::into_vm_object(vmo.clone()),
-                    c"test0",
+                    b"test0",
                     0,
                     alloc_size,
                     0,
@@ -775,7 +775,7 @@ mod vmo_rs {
             unwrap_ok!(
                 ka.map_object_internal(
                     VmObjectPaged::into_vm_object(vmo.clone()),
-                    c"test1",
+                    b"test1",
                     0,
                     alloc_size,
                     0,
@@ -801,7 +801,7 @@ mod vmo_rs {
             unwrap_ok!(
                 ka.map_object_internal(
                     VmObjectPaged::into_vm_object(vmo),
-                    c"test2",
+                    b"test2",
                     alloc_offset as u64,
                     alloc_size - alloc_offset,
                     0,
@@ -896,7 +896,7 @@ mod vmo_rs {
             unwrap_ok!(
                 ka.map_object_internal(
                     VmObjectPaged::into_vm_object(vmo.clone()),
-                    c"test",
+                    b"test",
                     0,
                     alloc_size,
                     0,
@@ -1025,7 +1025,7 @@ mod vmo_rs {
                 unwrap_ok!(
                     ka.map_object_internal(
                         VmObjectPhysical::into_vm_object(vmo.clone()),
-                        c"test",
+                        b"test",
                         0,
                         PAGE_SIZE_USIZE,
                         0,
@@ -1054,7 +1054,7 @@ mod vmo_rs {
                 unwrap_ok!(
                     ka.map_object_internal(
                         VmObjectPhysical::into_vm_object(vmo),
-                        c"test",
+                        b"test",
                         0,
                         PAGE_SIZE_USIZE,
                         0,
@@ -1298,7 +1298,7 @@ mod vmo_rs {
             unwrap_ok!(
                 ka.map_object_internal(
                     VmObjectPaged::into_vm_object(vmo),
-                    c"test",
+                    b"test",
                     0,
                     alloc_size,
                     0,
@@ -3014,7 +3014,7 @@ mod vmo_rs {
             let ptr = unwrap_ok!(unsafe {
                 ka.map_object_internal(
                     vmo,
-                    c"test",
+                    b"test",
                     0,
                     alloc_size as usize,
                     0,
@@ -3692,7 +3692,7 @@ mod vmo_rs {
             let ptr = unwrap_ok!(unsafe {
                 ka.map_object_internal(
                     vmo.clone(),
-                    c"test",
+                    b"test",
                     /*offset=*/ PAGE_SIZE,
                     /*size=*/ PAGE_SIZE_USIZE,
                     0,
@@ -4418,7 +4418,7 @@ mod vmo_rs {
         let ptr = unwrap_ok!(unsafe {
             ka.map_object_internal(
                 VmObjectPaged::into_vm_object(unidirectional_clone.clone()),
-                c"test",
+                b"test",
                 /*offset=*/ PAGE_SIZE,
                 /*size=*/ PAGE_SIZE as usize,
                 0,
