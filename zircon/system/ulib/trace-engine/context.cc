@@ -239,7 +239,9 @@ void trace_context::ResetBufferPointers() {
   next_string_index_.store(TRACE_ENCODED_STRING_REF_MIN_INDEX, std::memory_order_relaxed);
   {
     std::scoped_lock lock(string_table_mutex_);
-    string_table_.clear();
+    for (auto& entry : string_table_) {
+      entry.store(kEmptyStringTableEntry, std::memory_order_relaxed);
+    }
   }
   {
     std::scoped_lock lock(vthread_table_mutex_);

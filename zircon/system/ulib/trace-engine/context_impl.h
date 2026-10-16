@@ -97,20 +97,30 @@ struct trace_context {
   bool AllocThreadIndex(trace_thread_index_t* out_index);
   bool AllocStringIndex(trace_string_index_t* out_index);
 
-  // Looks up |bytes_pointer| in the process-wide string literal cache. If not found, allocates a
-  // new string index and invokes |write_record(index)| to write the string record before caching
-  // the assigned index.
+  // Looks up |bytes_pointer| in the process-wide string literal cache using a lock-free
+  // open-addressed read fast path. On a miss, acquires |string_table_mutex_|, allocates a new
+  // string index, invokes |write_record(index)|, and publishes the entry with release semantics.
   template <typename WriteRecordFn>
   bool LookupOrAllocStringIndex(const unsigned char* bytes_pointer, trace_string_index_t* out_index,
                                 WriteRecordFn&& write_record) {
+    const uint64_t key = StringTableKey(bytes_pointer);
+    const size_t start_slot = HashStringTableKey(key);
+    if (FindStringTableEntry(key, start_slot, std::memory_order_acquire, out_index)) {
+      return true;
+    }
+
     std::scoped_lock lock(string_table_mutex_);
-    if (auto it = string_table_.find(bytes_pointer); it != string_table_.end()) {
-      *out_index = it->second;
+    // Re-probe under the lock: another thread may have inserted |key| since the lock-free probe.
+    size_t empty_slot;
+    if (FindStringTableEntry(key, start_slot, std::memory_order_relaxed, out_index, &empty_slot)) {
       return true;
     }
     trace_string_index_t index;
     if (likely(AllocStringIndex(&index) && write_record(index))) {
-      string_table_.emplace(bytes_pointer, index);
+      if (likely(empty_slot < kStringTableCapacity)) {
+        string_table_[empty_slot].store(MakeStringTableEntry(key, index),
+                                        std::memory_order_release);
+      }
       *out_index = index;
       return true;
     }
@@ -217,13 +227,65 @@ struct trace_context {
   // The next string table index to be assigned.
   std::atomic<trace_string_index_t> next_string_index_{TRACE_ENCODED_STRING_REF_MIN_INDEX};
 
-  // Process-wide cache of registered string literals keyed by pointer.
-  // Deduplicates string registrations across threads so short-lived threads do
-  // not repeatedly emit duplicate kString records into the durable buffer.
-  // TODO(https://fxbug.dev/568386405): Replace these with a lockless read design.
+  // Fixed-capacity open-addressed process-wide cache of registered string literals keyed by
+  // pointer address. Each slot packs (pointer, string index) into one 64-bit word so that a probe
+  // costs a single 8-byte atomic load: Zircon user addresses fit in 48 bits (bits above 47 only
+  // ever carry TBI/HWASan tags, which never distinguish objects) and string indices fit in 16 bits.
+  // Entries are insert-only within a trace session and cleared only in ResetBufferPointers() when
+  // no thread holds an acquired context, so readers probe lock-free while insertions serialize on
+  // |string_table_mutex_|. Probing is bounded so that a full or clustered table degrades to an
+  // uncached index allocation instead of a scan of the whole table.
+  static constexpr size_t kStringTableCapacityLog2 = 10;
+  static constexpr size_t kStringTableCapacity = size_t{1} << kStringTableCapacityLog2;
+  static constexpr size_t kStringTableMaxProbes = 32;
+  static constexpr unsigned kStringTableKeyBits = 48;
+  static constexpr uint64_t kStringTableKeyMask = (uint64_t{1} << kStringTableKeyBits) - 1;
+  static constexpr uint64_t kEmptyStringTableEntry = 0;
+  static_assert(sizeof(uintptr_t) == sizeof(uint64_t));
+  static_assert(kStringTableMaxProbes <= kStringTableCapacity);
+  static_assert(TRACE_ENCODED_STRING_REF_MAX_INDEX < (uint64_t{1} << (64 - kStringTableKeyBits)));
+  static_assert(TRACE_ENCODED_STRING_REF_MIN_INDEX > 0, "a populated entry must never be 0");
+  static uint64_t StringTableKey(const unsigned char* ptr) {
+    return reinterpret_cast<uintptr_t>(ptr) & kStringTableKeyMask;
+  }
+  static size_t HashStringTableKey(uint64_t key) {
+    key ^= key >> 33u;
+    return static_cast<size_t>((key * uint64_t{0x9e3779b97f4a7c15}) >>
+                               (uint64_t{64} - kStringTableCapacityLog2));
+  }
+  static uint64_t MakeStringTableEntry(uint64_t key, trace_string_index_t index) {
+    return (static_cast<uint64_t>(index) << kStringTableKeyBits) | key;
+  }
+  static uint64_t StringTableEntryKey(uint64_t entry) { return entry & kStringTableKeyMask; }
+  static trace_string_index_t StringTableEntryIndex(uint64_t entry) {
+    return static_cast<trace_string_index_t>(entry >> kStringTableKeyBits);
+  }
+  // Probes up to kStringTableMaxProbes slots starting at |start_slot|. Returns true and sets
+  // |*out_index| if |key| is present. Otherwise, if |empty_slot| is non-null, sets it to the first
+  // empty slot in the probe window, or kStringTableCapacity if the window is full.
+  bool FindStringTableEntry(uint64_t key, size_t start_slot, std::memory_order order,
+                            trace_string_index_t* out_index, size_t* empty_slot = nullptr) const {
+    if (empty_slot) {
+      *empty_slot = kStringTableCapacity;
+    }
+    for (size_t i = 0; i < kStringTableMaxProbes; ++i) {
+      const size_t slot = (start_slot + i) & (kStringTableCapacity - 1);
+      const uint64_t entry = string_table_[slot].load(order);
+      if (entry == kEmptyStringTableEntry) {
+        if (empty_slot) {
+          *empty_slot = slot;
+        }
+        return false;
+      }
+      if (StringTableEntryKey(entry) == key) {
+        *out_index = StringTableEntryIndex(entry);
+        return true;
+      }
+    }
+    return false;
+  }
   std::mutex string_table_mutex_;
-  std::unordered_map<const unsigned char*, trace_string_index_t> string_table_
-      __TA_GUARDED(string_table_mutex_);
+  std::atomic<uint64_t> string_table_[kStringTableCapacity]{};
 
   // Process-wide cache of registered virtual threads keyed by artificial koid.
   // Deduplicates virtual thread registrations across threads and when a single

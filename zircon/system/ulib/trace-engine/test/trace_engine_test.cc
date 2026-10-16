@@ -9,6 +9,7 @@
 #include <lib/trace-engine/handler.h>
 #include <lib/trace-engine/instrumentation.h>
 
+#include <memory>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -474,8 +475,9 @@ TEST(TraceEngineTest, RegisterStringAcrossThreadsDeduplicates) {
   trace_release_context(main_ctx);
 
   constexpr size_t kNumThreads = 32;
+  std::thread threads[kNumThreads];
   for (size_t i = 0; i < kNumThreads; ++i) {
-    std::thread t([&]() {
+    threads[i] = std::thread([&]() {
       trace_context_t* ctx = trace_acquire_context();
       ASSERT_TRUE(ctx);
       trace_string_ref_t str_ref;
@@ -486,6 +488,8 @@ TEST(TraceEngineTest, RegisterStringAcrossThreadsDeduplicates) {
       EXPECT_EQ(bytes_ref.encoded_value, expected_bytes_ref.encoded_value);
       trace_release_context(ctx);
     });
+  }
+  for (auto& t : threads) {
     t.join();
   }
 
@@ -510,6 +514,114 @@ TEST(TraceEngineTest, RegisterStringAcrossThreadsDeduplicates) {
   EXPECT_EQ(restarted_bytes_ref.encoded_value, expected_str_ref.encoded_value);
   EXPECT_EQ(restarted_str_ref.encoded_value, expected_bytes_ref.encoded_value);
   trace_release_context(main_ctx);
+
+  trace_engine_stop(ZX_OK);
+  trace_engine_terminate();
+  loop.RunUntilIdle();
+}
+
+TEST(TraceEngineTest, RegisterStringThreadLocalCacheOverflowUsesProcessTable) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  // In ONESHOT mode the entire 16384-byte buffer is used for records. Registering 300 distinct
+  // string literal addresses (> 256 thread-local cache capacity) across multiple rounds and
+  // threads must deduplicate via the lockless process-wide string table without allocating new
+  // string indices on repeat lookups.
+  alignas(uint64_t) char buffer[16384];
+  trace_handler_t handler{&ops};
+  ASSERT_EQ(ZX_OK, trace_engine_initialize(loop.dispatcher(), &handler,
+                                           TRACE_BUFFERING_MODE_ONESHOT, buffer, sizeof(buffer)));
+  loop.RunUntilIdle();
+  ASSERT_EQ(ZX_OK, trace_engine_start(TRACE_START_CLEAR_ENTIRE_BUFFER));
+  loop.RunUntilIdle();
+
+  constexpr size_t kNumStrings = 300;
+  char literals[kNumStrings][2];
+  for (size_t i = 0; i < kNumStrings; ++i) {
+    literals[i][0] = 's';
+    literals[i][1] = '\0';
+  }
+  trace_string_ref_t expected_refs[kNumStrings];
+
+  trace_context_t* main_ctx = trace_acquire_context();
+  ASSERT_TRUE(main_ctx);
+  for (size_t i = 0; i < kNumStrings; ++i) {
+    trace_context_register_string_literal(main_ctx, literals[i], &expected_refs[i]);
+    ASSERT_TRUE(trace_is_indexed_string_ref(&expected_refs[i]));
+  }
+  // Strings [256, 300) overflowed the 256-entry thread-local cache; re-registering them on the
+  // same thread and from a second thread must return the exact same indexed references.
+  for (size_t i = 0; i < kNumStrings; ++i) {
+    trace_string_ref_t ref;
+    trace_context_register_string_literal(main_ctx, literals[i], &ref);
+    EXPECT_EQ(ref.encoded_value, expected_refs[i].encoded_value);
+  }
+  trace_release_context(main_ctx);
+
+  std::thread worker([&]() {
+    trace_context_t* ctx = trace_acquire_context();
+    ASSERT_TRUE(ctx);
+    for (size_t i = 0; i < kNumStrings; ++i) {
+      trace_string_ref_t ref;
+      trace_context_register_string_literal(ctx, literals[i], &ref);
+      EXPECT_EQ(ref.encoded_value, expected_refs[i].encoded_value);
+    }
+    trace_release_context(ctx);
+  });
+  worker.join();
+
+  trace_engine_stop(ZX_OK);
+  trace_engine_terminate();
+  loop.RunUntilIdle();
+}
+
+TEST(TraceEngineTest, RegisterStringProcessTableFullDegradesGracefully) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  // 1100 distinct string literal addresses exceed the 1024-entry process-wide string table.
+  // Registrations that can no longer be cached must still produce valid indexed references, and
+  // entries that were cached while the table had room must keep deduplicating across threads.
+  constexpr size_t kBufferSize = 256 * 1024;
+  auto buffer = std::make_unique<char[]>(kBufferSize);
+  trace_handler_t handler{&ops};
+  ASSERT_EQ(ZX_OK,
+            trace_engine_initialize(loop.dispatcher(), &handler, TRACE_BUFFERING_MODE_ONESHOT,
+                                    buffer.get(), kBufferSize));
+  loop.RunUntilIdle();
+  ASSERT_EQ(ZX_OK, trace_engine_start(TRACE_START_CLEAR_ENTIRE_BUFFER));
+  loop.RunUntilIdle();
+
+  constexpr size_t kNumStrings = 1100;
+  constexpr size_t kNumCachedStrings = 256;
+  auto literals = std::make_unique<char[][2]>(kNumStrings);
+  for (size_t i = 0; i < kNumStrings; ++i) {
+    literals[i][0] = 's';
+    literals[i][1] = '\0';
+  }
+  auto expected_refs = std::make_unique<trace_string_ref_t[]>(kNumStrings);
+
+  trace_context_t* main_ctx = trace_acquire_context();
+  ASSERT_TRUE(main_ctx);
+  for (size_t i = 0; i < kNumStrings; ++i) {
+    trace_context_register_string_literal(main_ctx, literals[i], &expected_refs[i]);
+    ASSERT_TRUE(trace_is_indexed_string_ref(&expected_refs[i])) << i;
+  }
+  trace_release_context(main_ctx);
+
+  std::thread worker([&]() {
+    trace_context_t* ctx = trace_acquire_context();
+    ASSERT_TRUE(ctx);
+    for (size_t i = 0; i < kNumStrings; ++i) {
+      trace_string_ref_t ref;
+      trace_context_register_string_literal(ctx, literals[i], &ref);
+      EXPECT_TRUE(trace_is_indexed_string_ref(&ref)) << i;
+      // Strings registered while the table was at most 25% full are cached with bounded probing
+      // and must resolve to the same index from another thread.
+      if (i < kNumCachedStrings) {
+        EXPECT_EQ(ref.encoded_value, expected_refs[i].encoded_value) << i;
+      }
+    }
+    trace_release_context(ctx);
+  });
+  worker.join();
 
   trace_engine_stop(ZX_OK);
   trace_engine_terminate();
