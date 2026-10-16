@@ -89,13 +89,17 @@ def _dirs_to_check(ctx):
     if ctx.scm.affected_files(glob = _BAZEL2GN_INPUTS_GLOB, include_deleted = True):
         return None
 
+    # Include deleted files, e.g. a deleted BUILD.bazel next to a remaining
+    # bazel2gn-managed BUILD.gn must fail the check.
+    affected_build_files = ctx.scm.affected_files(glob = _BUILD_FILES_GLOB, include_deleted = True)
+    if not affected_build_files:
+        return []
+
     gn_files = ctx.scm.all_files(glob = ["BUILD.gn"])
 
     dirs = {}
 
-    # Include deleted files, e.g. a deleted BUILD.bazel next to a remaining
-    # bazel2gn-managed BUILD.gn must fail the check.
-    for path in ctx.scm.affected_files(glob = _BUILD_FILES_GLOB, include_deleted = True):
+    for path in affected_build_files:
         # Check the BUILD.gn in the same directory, which also covers affected
         # BUILD.bazel files.
         d = _dirname(path)
