@@ -665,9 +665,7 @@ impl FxFilesystem {
 
     pub async fn close(&self) -> Result<(), Error> {
         if self.journal().image_builder_mode().is_some() {
-            self.journal().allocate_journal().await?;
-            self.journal().set_image_builder_mode(None);
-            self.journal().force_compact().await?;
+            self.journal().finalize_image_builder().await?;
         }
         assert_eq!(self.closed.swap(true, Ordering::SeqCst), false);
         debug_assert_not_too_long!(self.graveyard.wait_for_reap());
@@ -1412,7 +1410,7 @@ impl<T: ?Sized + Unpin> NextLatest for T where T: Stream {}
 
 #[cfg(test)]
 mod tests {
-    use super::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
+    use super::{FlushReason, ForceMajor, FxFilesystem, FxFilesystemBuilder, SyncOptions};
     use crate::errors::FxfsError;
     use crate::fsck::{fsck, fsck_volume};
     use crate::log::*;
@@ -1422,10 +1420,11 @@ mod tests {
     use crate::object_store::directory::{Directory, replace_child};
     use crate::object_store::journal::JournalOptions;
     use crate::object_store::journal::super_block::SuperBlockInstance;
-    use crate::object_store::transaction::{LockKey, Options, lock_keys};
+    use crate::object_store::transaction::{LockKey, Mutation, Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        HandleOptions, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOptions,
+        HandleOptions, NewChildStoreOptions, ObjectDescriptor, ObjectKey, ObjectStore, ObjectValue,
+        StoreOptions,
     };
     use crate::range::RangeExt;
     use fuchsia_async as fasync;
@@ -2475,6 +2474,120 @@ mod tests {
         let data = read_buf.to_vec();
         assert_eq!(data, [0xf0; 4096]);
         fs.close().await.expect("closed");
+    }
+
+    #[fuchsia::test]
+    async fn test_image_builder_mode_large_store_can_major_compact() {
+        const BLOCK_SIZE: u32 = 4096;
+        let device = DeviceHolder::new(FakeDevice::new(8192, BLOCK_SIZE));
+        let device = {
+            let fs = FxFilesystemBuilder::new()
+                .format(true)
+                .image_builder_mode(Some(SuperBlockInstance::A))
+                .open(device)
+                .await
+                .expect("open failed");
+            fs.enable_allocations();
+            {
+                let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+                let store = root_volume
+                    .new_volume("vol", NewChildStoreOptions::default())
+                    .await
+                    .expect("new_volume failed");
+                let root_dir = Directory::open(&store, store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+                let handle = {
+                    let mut transaction = store
+                        .new_transaction(
+                            lock_keys![LockKey::object(
+                                store.store_object_id(),
+                                root_dir.object_id()
+                            )],
+                            Options::default(),
+                        )
+                        .await
+                        .expect("new_transaction failed");
+                    let handle = root_dir
+                        .create_child_file(&mut transaction, "file")
+                        .await
+                        .expect("create_child_file failed");
+                    transaction.commit().await.expect("commit failed");
+                    handle
+                };
+
+                // Populate enough metadata (> 1 MiB of layer file data) so that `vol`'s store
+                // reservation exceeds the initial `journal::RESERVED_SPACE`.
+                for batch in 0..64 {
+                    let mut transaction = store
+                        .new_transaction(
+                            lock_keys![LockKey::object(
+                                store.store_object_id(),
+                                handle.object_id()
+                            )],
+                            Options::default(),
+                        )
+                        .await
+                        .expect("new_transaction failed");
+                    for j in 0..20 {
+                        let idx = batch * 20 + j;
+                        transaction.add(
+                            store.store_object_id(),
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::extended_attribute(
+                                    handle.object_id(),
+                                    format!("attr_{idx:04}").into_bytes(),
+                                ),
+                                ObjectValue::inline_extended_attribute(vec![0xaa; 1024]),
+                            ),
+                        );
+                    }
+                    transaction.commit().await.expect("commit failed");
+                }
+            }
+            fs.close().await.expect("close failed");
+            fs.take_device().await
+        };
+        device.reopen(false);
+
+        let fs = FxFilesystem::open(device).await.expect("open failed");
+        let object_manager = fs.object_manager();
+        assert!(
+            object_manager.metadata_reservation().amount()
+                >= object_manager.max_store_reservation(),
+            "metadata reservation ({}) is smaller than max store reservation ({}); borrowed={}",
+            object_manager.metadata_reservation().amount(),
+            object_manager.max_store_reservation(),
+            object_manager.borrowed_metadata_space(),
+        );
+
+        // Dirty `vol`, reserve all remaining unreserved disk space, and verify that a forced major
+        // compaction succeeds using only `metadata_reservation`.
+        {
+            let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store =
+                root_volume.volume("vol", StoreOptions::default()).await.expect("volume failed");
+            let root_dir = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir.create_child_file(&mut transaction, "extra").await.expect("create failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        let _hold = fs.allocator().reserve_with(None, |limit| limit);
+        object_manager
+            .flush(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("forced major compaction failed");
+        std::mem::drop(_hold);
+        fsck(fs.clone()).await.expect("fsck failed");
+        fs.close().await.expect("close failed");
     }
 
     #[fuchsia::test]

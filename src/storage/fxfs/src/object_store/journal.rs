@@ -269,6 +269,19 @@ pub struct Journal {
     reclaim_event: Event,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompactionState {
+    Idle,
+    Running,
+    Forced,
+}
+
+impl CompactionState {
+    fn is_running(self) -> bool {
+        !matches!(self, Self::Idle)
+    }
+}
+
 struct Inner {
     super_block_header: SuperBlockHeader,
 
@@ -303,8 +316,8 @@ struct Inner {
     // When true, compactions are paused.
     compactions_paused: bool,
 
-    // True if compactions are running.
-    compaction_running: bool,
+    // Current compaction state.
+    compaction_state: CompactionState,
 
     // Waker for the sync task for when it's waiting for the flush task to finish.
     sync_waker: Option<Waker>,
@@ -338,9 +351,6 @@ struct Inner {
     // If true, indicates that data write requests have been made to the device since the last
     // journal write.
     needs_barrier: bool,
-
-    // True if a compaction is being forced for reasons other than the journal being full.
-    forced_compaction: bool,
 }
 
 impl Inner {
@@ -499,7 +509,7 @@ impl Journal {
                 terminate_reason: None,
                 disable_compactions: false,
                 compactions_paused: false,
-                compaction_running: false,
+                compaction_state: CompactionState::Idle,
                 sync_waker: None,
                 flushed_offset: 0,
                 valid_to: 0,
@@ -508,7 +518,6 @@ impl Journal {
                 image_builder_mode: None,
                 barriers_enabled: options.barriers_enabled,
                 needs_barrier: false,
-                forced_compaction: false,
             }),
             writer_mutex: Mutex::new(()),
             sync_mutex: futures::lock::Mutex::new(()),
@@ -1445,21 +1454,20 @@ impl Journal {
         Ok(())
     }
 
-    /// Normally we allocate the journal when creating the filesystem.
-    /// This is used image_builder_mode when journal allocation is done last.
-    pub async fn allocate_journal(&self) -> Result<(), Error> {
+    /// Finalizes a filesystem built in `image_builder_mode` by preallocating the journal, flushing
+    /// all in-memory object store mutations to layer files, funding the metadata reservation for
+    /// those layers, and writing the super-block.
+    pub async fn finalize_image_builder(&self) -> Result<(), Error> {
         let handle = self.handle.get().unwrap();
         let mut transaction = handle
             .store()
             .new_transaction(
-                lock_keys![LockKey::object(handle.store().store_object_id(), handle.object_id()),],
+                lock_keys![LockKey::object(handle.store().store_object_id(), handle.object_id())],
                 Options { skip_journal_checks: true, ..Default::default() },
             )
             .await?;
         let mut file_range = 0..self.chunk_size();
-        self.handle
-            .get()
-            .unwrap()
+        handle
             .preallocate_range(&mut transaction, &mut file_range)
             .await
             .context("preallocate journal")?;
@@ -1467,7 +1475,47 @@ impl Journal {
             bail!("preallocate_range returned too little space");
         }
         transaction.commit().await?;
-        Ok(())
+
+        {
+            let mut inner = self.inner.lock();
+            inner.image_builder_mode = None;
+            inner.compaction_state = CompactionState::Forced;
+        }
+        scopeguard::defer! {
+            let mut inner = self.inner.lock();
+            inner.compaction_state = CompactionState::Idle;
+            if let Some(waker) = inner.flush_waker.take() {
+                waker.wake();
+            }
+            self.reclaim_event.notify(usize::MAX);
+        }
+
+        let earliest_version = self
+            .objects
+            .flush(FlushReason::Journal(ForceMajor::False))
+            .await
+            .context("Failed to flush objects")?;
+        self.inner.lock().super_block_header.earliest_version = earliest_version;
+
+        // In image builder mode, transactions borrow metadata space and allocate directly from the
+        // allocator rather than from `metadata_reservation`. Now that all stores have been flushed
+        // and their layer sizes are known, top up `metadata_reservation` to
+        // `required_reservation()` so that the finalized image starts with a fully funded metadata
+        // reservation.
+        let reservation = self.objects.metadata_reservation();
+        let needed = self.objects.required_reservation().saturating_sub(reservation.amount());
+        if needed > 0 {
+            reservation.add(
+                self.objects
+                    .allocator()
+                    .reserve(None, needed)
+                    .ok_or(FxfsError::NoSpace)
+                    .context("Failed to reserve metadata space in image builder mode")?
+                    .forget(),
+            );
+        }
+
+        self.write_super_block().await.context("Failed to write superblock")
     }
 
     pub async fn init_superblocks(&self) -> Result<(), Error> {
@@ -1915,7 +1963,7 @@ impl Journal {
                     // the _next_ time we flush the device since the super-block is not guaranteed
                     // to persist until then.
                     if compact_fut.is_none()
-                        && !inner.compaction_running
+                        && !inner.compaction_state.is_running()
                         && !inner.terminate
                         && !inner.disable_compactions
                         && !inner.compactions_paused
@@ -1923,7 +1971,7 @@ impl Journal {
                         && journal_bytes > inner.reclaim_size / 2
                     {
                         compact_fut = Some(Box::pin(self.compact()));
-                        inner.compaction_running = true;
+                        inner.compaction_state = CompactionState::Running;
                     }
                     inner.flush_waker = Some(ctx.waker().clone());
                 }
@@ -1946,7 +1994,7 @@ impl Journal {
                             inner.terminate(Some(e.context("Compaction error")));
                         }
                         compact_fut = None;
-                        inner.compaction_running = false;
+                        inner.compaction_state = CompactionState::Idle;
                         self.reclaim_event.notify(usize::MAX);
                         pending = false;
                         fxfs_trace::counter!(
@@ -2041,9 +2089,8 @@ impl Journal {
         loop {
             debug_assert_not_too_long!({
                 let mut inner = self.inner.lock();
-                if !inner.compaction_running {
-                    inner.compaction_running = true;
-                    inner.forced_compaction = true;
+                if !inner.compaction_state.is_running() {
+                    inner.compaction_state = CompactionState::Forced;
                     break;
                 }
                 self.reclaim_event.listen()
@@ -2051,8 +2098,7 @@ impl Journal {
         }
         scopeguard::defer! {
             let mut inner = self.inner.lock();
-            inner.compaction_running = false;
-            inner.forced_compaction = false;
+            inner.compaction_state = CompactionState::Idle;
             if let Some(waker) = inner.flush_waker.take() {
                 waker.wake();
             }
@@ -2066,7 +2112,7 @@ impl Journal {
             debug_assert_not_too_long!({
                 let mut inner = self.inner.lock();
                 inner.disable_compactions = true;
-                if !inner.compaction_running {
+                if !inner.compaction_state.is_running() {
                     return;
                 }
                 self.reclaim_event.listen()
@@ -2079,7 +2125,7 @@ impl Journal {
             debug_assert_not_too_long!({
                 let mut inner = self.inner.lock();
                 inner.compactions_paused = true;
-                if !inner.compaction_running {
+                if !inner.compaction_state.is_running() {
                     return;
                 }
                 self.reclaim_event.listen()
@@ -2164,7 +2210,7 @@ impl Writer<'_> {
 
 #[cfg(target_os = "fuchsia")]
 mod yielder {
-    use super::Journal;
+    use super::{CompactionState, Journal};
     use crate::lsm_tree::Yielder;
     use fuchsia_async as fasync;
 
@@ -2193,7 +2239,7 @@ mod yielder {
 
             {
                 let inner = self.journal.inner.lock();
-                if inner.forced_compaction {
+                if inner.compaction_state == CompactionState::Forced {
                     return;
                 }
                 let outstanding = self.journal.objects.last_end_offset()
@@ -2768,7 +2814,7 @@ mod tests {
                         .expect("create_child_file failed");
                     transaction.commit().await.expect("commit failed");
 
-                    if fs.journal().inner.lock().compaction_running {
+                    if fs.journal().inner.lock().compaction_state.is_running() {
                         break;
                     }
                     TestExecutor::advance_to(fasync::MonotonicInstant::after(
@@ -2786,7 +2832,7 @@ mod tests {
                     MonotonicDuration::from_millis(1),
                 ))
                 .await;
-                assert!(fs.journal().inner.lock().compaction_running);
+                assert!(fs.journal().inner.lock().compaction_state.is_running());
             }
 
             // Stop the normal task.
@@ -2798,7 +2844,7 @@ mod tests {
 
             // Compaction should still be running because it hasn't been 4 ms since the normal task
             // finished.
-            assert!(fs.journal().inner.lock().compaction_running);
+            assert!(fs.journal().inner.lock().compaction_state.is_running());
 
             // For the next 3ms, compaction should still be running.
             for _ in 0..3 {
@@ -2806,7 +2852,7 @@ mod tests {
                     MonotonicDuration::from_millis(1),
                 ))
                 .await;
-                assert!(fs.journal().inner.lock().compaction_running);
+                assert!(fs.journal().inner.lock().compaction_state.is_running());
             }
 
             // 1 more ms and compaction should be unblocked.
@@ -2817,7 +2863,7 @@ mod tests {
 
             // When the executor next stalls, compaction should be done.
             let _ = TestExecutor::poll_until_stalled(std::future::pending::<()>()).await;
-            assert!(!fs.journal().inner.lock().compaction_running);
+            assert!(!fs.journal().inner.lock().compaction_state.is_running());
 
             fs.close().await.expect("Close failed");
         });
@@ -2910,7 +2956,7 @@ mod tests {
                         .expect("create_child_file failed");
                     transaction.commit().await.expect("commit failed");
 
-                    if fs.journal().inner.lock().compaction_running {
+                    if fs.journal().inner.lock().compaction_state.is_running() {
                         break;
                     }
                     TestExecutor::advance_to(fasync::MonotonicInstant::after(
@@ -2929,12 +2975,12 @@ mod tests {
                     MonotonicDuration::from_millis(20),
                 ))
                 .await;
-                if !fs.journal().inner.lock().compaction_running {
+                if !fs.journal().inner.lock().compaction_state.is_running() {
                     break;
                 }
                 count += 1;
             }
-            assert!(!fs.journal().inner.lock().compaction_running);
+            assert!(!fs.journal().inner.lock().compaction_state.is_running());
 
             // Make sure it took a few iterations to complete.  It's difficult to know what the exact
             // number should be.
@@ -3051,7 +3097,7 @@ mod tests {
 
             // When the executor next stalls, compaction should be done.
             let _ = TestExecutor::poll_until_stalled(std::future::pending::<()>()).await;
-            assert!(!fs.journal().inner.lock().compaction_running);
+            assert!(!fs.journal().inner.lock().compaction_state.is_running());
 
             stop.store(true, Ordering::Relaxed);
             fs.close().await.expect("Close failed");
