@@ -31,6 +31,19 @@ func NewBuilder(fuchsiaDir string) *Builder {
 	return b
 }
 
+func (b *Builder) recordLicenseCategory(path string) {
+	slashPath := filepath.ToSlash(path)
+	if idx := strings.Index(slashPath, "/allowed_licenses/"); idx != -1 {
+		subParts := strings.Split(slashPath[idx+len("/allowed_licenses/"):], "/")
+		if len(subParts) >= 2 && subParts[0] != "" && subParts[1] != "" {
+			if b.Config.Classify.LicenseCategories == nil {
+				b.Config.Classify.LicenseCategories = make(map[string]string)
+			}
+			b.Config.Classify.LicenseCategories[subParts[1]] = subParts[0]
+		}
+	}
+}
+
 // Assemble starts the recursive configuration discovery from the root v2 config file,
 // merging all found JSON files into the internal MasterConfig.
 func (b *Builder) Assemble() error {
@@ -56,20 +69,18 @@ func (b *Builder) Assemble() error {
 		}
 	}
 	for _, assetDir := range assetDirs {
+		if abs, absErr := filepath.Abs(assetDir); absErr == nil && b.seen[abs] {
+			continue
+		}
 		filepath.WalkDir(assetDir, func(path string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return nil
 			}
-			slashPath := filepath.ToSlash(path)
-			if idx := strings.Index(slashPath, "/allowed_licenses/"); idx != -1 {
-				subParts := strings.Split(slashPath[idx+len("/allowed_licenses/"):], "/")
-				if len(subParts) >= 2 && subParts[0] != "" && subParts[1] != "" {
-					if b.Config.Classify.LicenseCategories == nil {
-						b.Config.Classify.LicenseCategories = make(map[string]string)
-					}
-					b.Config.Classify.LicenseCategories[subParts[1]] = subParts[0]
-				}
+			// Skip license text patterns, which are only loaded by the classifier stage.
+			if d.IsDir() && d.Name() == "patterns" {
+				return filepath.SkipDir
 			}
+			b.recordLicenseCategory(path)
 			if d.IsDir() {
 				return nil
 			}
@@ -104,10 +115,24 @@ func (b *Builder) Assemble() error {
 }
 
 func (b *Builder) walkDir(baseDir string) error {
+	absBaseDir, err := filepath.Abs(baseDir)
+	if err != nil {
+		return err
+	}
+	if b.seen[absBaseDir] {
+		return nil
+	}
+	b.seen[absBaseDir] = true
+
 	return filepath.WalkDir(baseDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+		// Skip license text patterns, which are only loaded by the classifier stage.
+		if d.IsDir() && d.Name() == "patterns" {
+			return filepath.SkipDir
+		}
+		b.recordLicenseCategory(path)
 		if d.IsDir() {
 			return nil
 		}
@@ -320,6 +345,10 @@ func (b *Builder) LoadManifests() error {
 				return err
 			}
 			if d.IsDir() {
+				// Skip hidden directories such as .git and .cipd.
+				if strings.HasPrefix(d.Name(), ".") {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 

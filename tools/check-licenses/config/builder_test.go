@@ -68,6 +68,13 @@ func TestBuilder_Assemble(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(osConfigs, "allowed_licenses", "Restricted", "GPL-2.0", "foo.json"), []byte(`{"allowed_licenses": {"GPL-2.0": []}}`), 0644)
+	if err := os.MkdirAll(filepath.Join(osConfigs, "allowed_licenses", "Notice", "MIT"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(osAssets, "patterns", "Restricted", "GPL-2.0"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(osAssets, "patterns", "Restricted", "GPL-2.0", "bad.json"), []byte("{corrupt json"), 0644)
 
 	if err := os.MkdirAll(filepath.Join(osAssets, "readmes", "third_party", "foo", "src"), 0755); err != nil {
 		t.Fatal(err)
@@ -136,6 +143,9 @@ func TestBuilder_Assemble(t *testing.T) {
 
 	if cat := config.CategoryForLicense("GPL-2.0"); cat != "Restricted" {
 		t.Errorf("Expected CategoryForLicense('GPL-2.0') = 'Restricted', got %q", cat)
+	}
+	if cat := config.CategoryForLicense("MIT"); cat != "Notice" {
+		t.Errorf("Expected CategoryForLicense('MIT') = 'Notice', got %q", cat)
 	}
 	if cat := config.CategoryForLicense("Nonexistent"); cat != "Uncategorized" {
 		t.Errorf("Expected CategoryForLicense('Nonexistent') = 'Uncategorized', got %q", cat)
@@ -210,6 +220,17 @@ func TestBuilder_LoadManifests(t *testing.T) {
 </manifest>`
 	os.WriteFile(privateManifest, []byte(privateContent), 0644)
 
+	// Hidden directories (.git, .cipd) should be skipped during manifest walks.
+	for _, hiddenFile := range []string{
+		filepath.Join(fuchsiaDir, "integration", ".git", "objects", "pack", "multi-pack-index"),
+		filepath.Join(fuchsiaDir, "integration", "infra", "config", ".cipd", "lucicfg"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(hiddenFile), 0755); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(hiddenFile, []byte(`<manifest><project name="ignored/proj" path="ignored/hidden"/></manifest>`), 0644)
+	}
+
 	builder := NewBuilder(fuchsiaDir)
 	if err := builder.LoadManifests(); err != nil {
 		t.Fatalf("LoadManifests failed: %v", err)
@@ -229,6 +250,9 @@ func TestBuilder_LoadManifests(t *testing.T) {
 		if name, ok := config.Boundary.ManifestProjectNames[path]; !ok || name != expectedName {
 			t.Errorf("Expected ManifestProjectNames[%q] = %q, got %q", path, expectedName, name)
 		}
+	}
+	if got, exists := config.Boundary.ManifestProjectNames["ignored/hidden"]; exists {
+		t.Errorf("Expected hidden directory manifest to be skipped, got %q", got)
 	}
 
 	// Verify IsPrivateProject
