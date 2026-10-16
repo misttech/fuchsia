@@ -185,3 +185,85 @@ async fn add_multiple_components_succeeds() {
     assert_eq!(hosts[1].id, Some(HostId(2).into()));
     assert_eq!(hosts[1].active, Some(false));
 }
+
+async fn handle_colliding_host_requests(
+    id: HostId,
+    address: Address,
+    mut stream: HostRequestStream,
+) {
+    let mut bonding_delegate_stream = None;
+    while let Some(request) = stream.try_next().await.expect("Valid FIDL request") {
+        match request {
+            HostRequest::WatchState { responder } => {
+                let info = HostInfo {
+                    id,
+                    technology: TechnologyType::DualMode,
+                    active: false,
+                    local_name: None,
+                    discoverable: false,
+                    discovering: false,
+                    addresses: vec![address],
+                };
+                responder.send(&FidlHostInfo::from(info)).expect("WatchState response");
+            }
+            HostRequest::SetBondingDelegate { delegate, .. } => {
+                bonding_delegate_stream = Some(delegate.into_stream());
+            }
+            HostRequest::SetLocalData { .. } => {
+                panic!("Colliding host must not receive SetLocalData (IRK leak)");
+            }
+            req => {
+                panic!("Colliding host received unexpected request: {req:?}");
+            }
+        }
+    }
+    if let Some(mut delegate_stream) = bonding_delegate_stream {
+        if let Some(Ok(req)) = delegate_stream.next().await {
+            panic!("Colliding host must not receive BondingDelegate request: {req:?}");
+        }
+    }
+}
+
+#[fuchsia::test]
+async fn colliding_host_registration_rejected() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+    let registered_id = HostId(1);
+    let registered_address = Address::Public([1; 6]);
+
+    let (receiver_client, receiver_stream) = endpoints::create_proxy_and_stream::<ReceiverMarker>();
+    let _receiver_task = fasync::Task::spawn(run_receiver_server(hd.clone(), receiver_stream));
+
+    // Register initial host (HostId(1), Address::Public([1; 6])).
+    let (host_client1, host_server1) = endpoints::create_request_stream::<HostMarker>();
+    let _run_host_task1 = fasync::Task::spawn(handle_host_requests(registered_id, host_server1));
+    receiver_client.add_host(host_client1).expect("add initial host");
+    assert_eq!(hd.active_host().await.expect("active host").id(), registered_id);
+    assert!(host_is_in_dispatcher(&registered_id, &hd));
+
+    // Seed a bond for `registered_address` in Stash so that `try_restore_bonds` would send
+    // `RestoreBonds` if it were reached for a colliding host.
+    let bond = fuchsia_bluetooth::types::bonding_data::example::bond(
+        registered_address,
+        Address::Public([0xAA; 6]),
+    );
+    hd.store_bond(bond).await.expect("store bond in stash");
+
+    // 1. Host with a distinct HostId(2) but colliding Address::Public([1; 6]).
+    let (colliding_addr_client, colliding_addr_server) =
+        endpoints::create_request_stream::<HostMarker>();
+    receiver_client.add_host(colliding_addr_client).expect("send AddHost for colliding address");
+    handle_colliding_host_requests(HostId(2), registered_address, colliding_addr_server).await;
+
+    // 2. Host with colliding HostId(1) and a distinct Address::Public([2; 6]).
+    let (colliding_id_client, colliding_id_server) =
+        endpoints::create_request_stream::<HostMarker>();
+    receiver_client.add_host(colliding_id_client).expect("send AddHost for colliding HostId");
+    handle_colliding_host_requests(registered_id, Address::Public([2; 6]), colliding_id_server)
+        .await;
+
+    // Verify that the initial host remains the sole registered adapter and was not overwritten.
+    let adapters = hd.get_adapters();
+    assert_eq!(adapters.len(), 1);
+    assert_eq!(adapters[0].id, registered_id);
+    assert_eq!(adapters[0].addresses, vec![registered_address]);
+}

@@ -383,6 +383,7 @@ impl HostDispatcherInspect {
 /// routing commands to the appropriate HostAdapter
 struct HostDispatcherState {
     host_devices: HashMap<HostId, HostDevice>,
+    initializing_hosts: HashMap<HostId, Address>,
     active_id: Option<HostId>,
 
     // Component storage.
@@ -498,7 +499,26 @@ impl HostDispatcherState {
         }
     }
 
+    /// Reserves `id` and `address` for a host currently being initialized, rejecting
+    /// duplicate `HostId`s or colliding `Address`es before any sensitive identity/bonding data
+    /// is sent to the host.
+    fn try_reserve_host(&mut self, id: HostId, address: Address) -> Result<(), Error> {
+        if self.host_devices.contains_key(&id) || self.initializing_hosts.contains_key(&id) {
+            return Err(format_err!("Host with id {id} is already registered or initializing"));
+        }
+        if self.host_devices.values().any(|h| h.public_address() == address)
+            || self.initializing_hosts.values().any(|&a| a == address)
+        {
+            return Err(format_err!(
+                "Host address {address} collides with an already-registered or initializing host"
+            ));
+        }
+        let _ = self.initializing_hosts.insert(id, address);
+        Ok(())
+    }
+
     fn add_host(&mut self, id: HostId, host: HostDevice) {
+        let _ = self.initializing_hosts.remove(&id);
         if self.host_devices.insert(id, host).is_some() {
             warn!("Host replaced: {}", id)
         } else {
@@ -580,6 +600,7 @@ impl HostDispatcher {
         let hd = HostDispatcherState {
             active_id: None,
             host_devices: HashMap::new(),
+            initializing_hosts: HashMap::new(),
             name: None,
             appearance,
             config_settings: config,
@@ -1128,11 +1149,25 @@ impl HostDispatcher {
     /// Finishes initializing a host device by setting host configs and services.
     async fn add_host_device(&self, host_device: &HostDevice) -> Result<(), Error> {
         let dbg_ids = host_device.debug_identifiers();
+        let id = host_device.id();
+        let address = host_device.public_address();
+
+        self.state.write().try_reserve_host(id, address).context(format!(
+            "{:?}: rejected duplicate or colliding bt-host registration",
+            dbg_ids
+        ))?;
+
+        struct ReservationGuard<'a>(&'a RwLock<HostDispatcherState>, HostId);
+        impl Drop for ReservationGuard<'_> {
+            fn drop(&mut self) {
+                let _ = self.0.write().initializing_hosts.remove(&self.1);
+            }
+        }
+        let _reservation_guard = ReservationGuard(&self.state, id);
 
         // TODO(https://fxbug.dev/42145442): Make sure that the bt-host device is left in a well-known state if
         // any of these operations fails.
 
-        let address = host_device.public_address();
         assign_host_data(host_device.clone(), self.clone(), &address)
             .await
             .context(format!("{:?}: failed to assign identity to bt-host", dbg_ids))?;
@@ -1169,7 +1204,7 @@ impl HostDispatcher {
         let became_active = {
             let mut state = self.state.write();
             let was_active = state.active_id.is_some();
-            state.add_host(host_device.id(), host_device.clone());
+            state.add_host(id, host_device.clone());
             !was_active && state.active_id.is_some()
         };
 

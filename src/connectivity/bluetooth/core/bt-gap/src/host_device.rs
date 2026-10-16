@@ -380,8 +380,17 @@ impl HostDevice {
         let proxy = self.0.proxy.clone();
         let info = proxy.watch_state().await?;
         let info: HostInfo = info.try_into()?;
+        let mut current = self.0.info.write();
+        if info.id != current.id || info.addresses.first() != current.addresses.first() {
+            return Err(format_err!(
+                "Host {} ({:?}) reported changed identity in WatchState: {info:?}",
+                current.id,
+                current.addresses
+            )
+            .into());
+        }
         debug!("HostDevice::refresh_host_info: {:?}", info);
-        self.0.info.write().update(info.clone());
+        current.update(info.clone());
         Ok(info)
     }
 

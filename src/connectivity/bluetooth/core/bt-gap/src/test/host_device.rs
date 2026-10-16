@@ -172,8 +172,11 @@ async fn expect_set_bonding_delegate(
     .await
 }
 
-// Updates host with new info
-async fn refresh_host(host: HostDevice, server: &mut HostRequestStream, info: HostInfo) {
+async fn try_refresh_host(
+    host: HostDevice,
+    server: &mut HostRequestStream,
+    info: HostInfo,
+) -> crate::types::Result<HostInfo> {
     let refresh = host.refresh_test_host_info();
     let expect_fidl = expect_call(server, |_, e| match e {
         HostRequest::WatchState { responder } => {
@@ -184,8 +187,13 @@ async fn refresh_host(host: HostDevice, server: &mut HostRequestStream, info: Ho
     });
 
     let (refresh_result, expect_result) = join!(refresh, expect_fidl);
-    let _ = refresh_result.expect("did not receive HostInfo update");
     let _ = expect_result.expect("FIDL result unsatisfied");
+    refresh_result
+}
+
+// Updates host with new info
+async fn refresh_host(host: HostDevice, server: &mut HostRequestStream, info: HostInfo) {
+    let _ = try_refresh_host(host, server, info).await.expect("did not receive HostInfo update");
 }
 
 #[fuchsia::test(allow_stalls = false)]
@@ -270,6 +278,38 @@ async fn bond_data_with_unexpected_address() -> Result<(), Error> {
     let bonds = bonds.lock();
     assert_eq!(bonds.len(), 1);
     assert_eq!(bonds[0].local_address, address_a);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn refresh_host_info_rejects_changed_id_or_address() -> Result<(), Error> {
+    let (client, mut server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
+    let initial_id = HostId(1);
+    let initial_address = Address::Public([0x11; 6]);
+    let host =
+        HostDevice::mock(initial_id, initial_address, "/dev/class/bt-hci/test".to_string(), client);
+    let _delegate = expect_set_bonding_delegate(&mut server).await?;
+
+    // 1. Attempt to change HostId in WatchState response.
+    let mut bad_id_info = host.info();
+    bad_id_info.id = HostId(2);
+    assert!(
+        try_refresh_host(host.clone(), &mut server, bad_id_info).await.is_err(),
+        "Expected error when HostId changes in WatchState"
+    );
+    assert_eq!(host.id(), initial_id);
+    assert_eq!(host.public_address(), initial_address);
+
+    // 2. Attempt to change public identity address in WatchState response.
+    let mut bad_addr_info = host.info();
+    bad_addr_info.addresses = vec![Address::Public([0x22; 6])];
+    assert!(
+        try_refresh_host(host.clone(), &mut server, bad_addr_info).await.is_err(),
+        "Expected error when public address changes in WatchState"
+    );
+    assert_eq!(host.id(), initial_id);
+    assert_eq!(host.public_address(), initial_address);
 
     Ok(())
 }
