@@ -1,18 +1,21 @@
-#!/usr/bin/env python3
+#!/usr/bin/env fuchsia-vendored-python
 #
 # Copyright 2025 The Fuchsia Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import asyncio
 import logging
 import operator
 import time
 from typing import Any
 
+import fuchsia_wlan_base_test
 from antlion.test_utils.abstract_devices import wmm_transceiver
-from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
 from antlion.test_utils.fuchsia import wmm_test_cases
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+)
 from legacy_access_point.access_point import AccessPoint, setup_ap
 from legacy_access_point.ap_lib import hostapd_constants
 from legacy_access_point.ap_lib.hostapd_security import (
@@ -118,19 +121,19 @@ def eval_operator(
     return error <= accepted_error
 
 
-class WlanWmmTest(base_test.WifiBaseTest):
+class WlanWmmTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Tests WMM QoS Functionality (Station only)
 
     Testbed Requirements:
-    * One ACTS compatible wlan_device (staut)
-    * One Whirlwind Access Point
-    * For some tests, One additional ACTS compatible device (secondary_sta)
+    * One Fuchsia device (staut)
+    * One Access Point
+    * For some tests, One additional Fuchsia device (secondary_sta)
 
     For accurate results, must be performed in an RF isolated environment.
     """
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.log = logging.getLogger()
 
         try:
@@ -147,10 +150,6 @@ class WlanWmmTest(base_test.WifiBaseTest):
         if len(self._wmm_transceiver_configs) < 2:
             raise AttributeError("At least 2 WmmTransceivers must be provided.")
 
-        self.wlan_devices = [
-            FuchsiaWlanDevice(device) for device in self.fuchsia_devices
-        ]
-
         # Create STAUT transceiver
         if "staut" not in self._wmm_transceiver_configs:
             raise AttributeError(
@@ -160,11 +159,8 @@ class WlanWmmTest(base_test.WifiBaseTest):
         self.staut = wmm_transceiver.create(
             self._wmm_transceiver_configs["staut"],
             identifier="staut",
-            wlan_devices=self.wlan_devices,
+            wlan_devices=self.fuchsia_devices,
         )
-
-        # Required to for automated power cycling
-        self.dut = self.staut.wlan_device
 
         # Create AP transceiver
         if "access_point" not in self._wmm_transceiver_configs:
@@ -187,38 +183,43 @@ class WlanWmmTest(base_test.WifiBaseTest):
             self.secondary_sta = wmm_transceiver.create(
                 self._wmm_transceiver_configs["secondary_sta"],
                 identifier="secondary_sta",
-                wlan_devices=self.wlan_devices,
+                wlan_devices=self.fuchsia_devices,
             )
             self.wmm_transceivers.append(self.secondary_sta)
         else:
             self.secondary_sta = None
 
+        for tc in self.wmm_transceivers:
+            if tc.wlan_device:
+                await tc.wlan_device.wlan_policy.set_country_code(
+                    KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
+                )
+
         self.wmm_transceiver_map = {
             tc.identifier: tc for tc in self.wmm_transceivers
         }
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def setup_test(self) -> None:
+        await super().setup_test()
         for tc in self.wmm_transceivers:
             if tc.wlan_device:
-                tc.wlan_device.disconnect()
+                await tc.wlan_device.wlan_policy.ensure_clean_state()
             if isinstance(tc.access_point, AccessPoint):
                 tc.access_point.stop_all_aps()
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         for tc in self.wmm_transceivers:
             tc.cleanup_asynchronous_streams()
             if tc.wlan_device:
-                tc.wlan_device.disconnect()
-            self.download_logs()
+                await tc.wlan_device.wlan_policy.ensure_clean_state()
             if isinstance(tc.access_point, AccessPoint):
                 tc.access_point.stop_all_aps()
-        super().teardown_test()
+        await super().teardown_test()
 
-    def teardown_class(self) -> None:
+    async def teardown_class(self) -> None:
         for tc in self.wmm_transceivers:
             tc.destroy_resources()
-        super().teardown_class()
+        await super().teardown_class()
 
     def start_ap_with_wmm_params(
         self,
@@ -330,35 +331,35 @@ class WlanWmmTest(base_test.WifiBaseTest):
         else:
             raise TypeError("Unsupported access point type.")
 
-    def associate_transceiver(
-        self, wmm_transceiver: Any, ap_params: dict[str, Any]
+    async def associate_transceiver(
+        self,
+        transceiver: wmm_transceiver.WmmTransceiver,
+        ap_params: dict[str, Any],
     ) -> None:
         """Associates a WmmTransceiver that has a wlan_device.
 
         Args:
-            wmm_transceiver: transceiver to associate
+            transceiver: transceiver to associate
             ap_params: dict, contains ssid and password, if any, for network
         """
-        if not wmm_transceiver.wlan_device:
+        if not transceiver.wlan_device:
             raise AttributeError(
                 "Cannot associate a WmmTransceiver that does not have a WLAN device."
             )
         ssid = ap_params["ssid"]
         security = ap_params.get("security", SecurityOpen())
         password = ap_params.get("password", None)
-        target_security = ConfigMapper.to_hostapd_security(security)
-        associated = wmm_transceiver.wlan_device.associate(
+        security_type = security.to_fidl_wlan_policy()
+        await transceiver.wlan_device.wlan_policy.save_network(
             ssid,
-            target_security,
+            security_type,
             target_pwd=password,
         )
-        if not associated:
-            raise ConnectionError(
-                f"Failed to associate WmmTransceiver {wmm_transceiver.identifier}."
-            )
-        self.log.info(
-            f"WmmTransceiver {wmm_transceiver.identifier} associated."
+        await transceiver.wlan_device.wlan_policy.connect(
+            ssid,
+            security_type,
         )
+        self.log.info(f"WmmTransceiver {transceiver.identifier} associated.")
 
     def validate_streams_in_phase(
         self, phase_id: str, phases: dict[str, Any], max_bw: float
@@ -679,7 +680,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
         graph_file = save([time_vs_bandwidth_graph])
         self.log.info(f"Saved graph to {graph_file}")
 
-    def run_wmm_test(
+    async def run_wmm_test(
         self,
         phases: dict[str, Any],
         ap_parameters: dict[str, Any] = DEFAULT_AP_PARAMS,
@@ -723,11 +724,11 @@ class WlanWmmTest(base_test.WifiBaseTest):
         # Associate all transceivers with wlan_devices
         for tc in transceivers:
             if tc.wlan_device:
-                self.associate_transceiver(tc, ap_parameters)
+                await self.associate_transceiver(tc, ap_parameters)
 
         # Determine link max bandwidth
         self.log.info("Determining link maximum bandwidth.")
-        uuid = self.staut.run_synchronous_traffic_stream(
+        uuid = await self.staut.run_synchronous_traffic_stream(
             {"receiver": self.access_point_transceiver}, subnet_str
         )
         max_bw = self.staut.get_results(uuid).avg_send_rate
@@ -763,7 +764,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
                     "time": stream_time,
                 }
 
-                uuid = transmitter.prepare_asynchronous_stream(
+                uuid = await transmitter.prepare_asynchronous_stream(
                     stream_params, subnet_str
                 )
                 stream["uuid"] = uuid
@@ -782,7 +783,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
                             "Transmitter's (%s) active streams are not finishing."
                             % transmitter.identifier
                         )
-                    time.sleep(1)
+                    await asyncio.sleep(1)
 
             # Cleanup all streams
             for transmitter in transmitters:
@@ -807,154 +808,154 @@ class WlanWmmTest(base_test.WifiBaseTest):
 
     # Internal Traffic Differentiation
 
-    def test_internal_traffic_diff_VO_VI(self) -> None:
-        self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VO_VI)
+    async def test_internal_traffic_diff_VO_VI(self) -> None:
+        await self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VO_VI)
 
-    def test_internal_traffic_diff_VO_BE(self) -> None:
-        self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VO_BE)
+    async def test_internal_traffic_diff_VO_BE(self) -> None:
+        await self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VO_BE)
 
-    def test_internal_traffic_diff_VO_BK(self) -> None:
-        self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VO_BK)
+    async def test_internal_traffic_diff_VO_BK(self) -> None:
+        await self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VO_BK)
 
-    def test_internal_traffic_diff_VI_BE(self) -> None:
-        self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VI_BE)
+    async def test_internal_traffic_diff_VI_BE(self) -> None:
+        await self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VI_BE)
 
-    def test_internal_traffic_diff_VI_BK(self) -> None:
-        self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VI_BK)
+    async def test_internal_traffic_diff_VI_BK(self) -> None:
+        await self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_VI_BK)
 
-    def test_internal_traffic_diff_BE_BK(self) -> None:
-        self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_BE_BK)
+    async def test_internal_traffic_diff_BE_BK(self) -> None:
+        await self.run_wmm_test(wmm_test_cases.test_internal_traffic_diff_BE_BK)
 
     # External Traffic Differentiation
 
     """Single station, STAUT transmits high priority"""
 
-    def test_external_traffic_diff_staut_VO_ap_VI(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_VO_ap_VI(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_VO_ap_VI
         )
 
-    def test_external_traffic_diff_staut_VO_ap_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_VO_ap_BE(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_VO_ap_BE
         )
 
-    def test_external_traffic_diff_staut_VO_ap_BK(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_VO_ap_BK(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_VO_ap_BK
         )
 
-    def test_external_traffic_diff_staut_VI_ap_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_VI_ap_BE(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_VI_ap_BE
         )
 
-    def test_external_traffic_diff_staut_VI_ap_BK(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_VI_ap_BK(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_VI_ap_BK
         )
 
-    def test_external_traffic_diff_staut_BE_ap_BK(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_BE_ap_BK(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_BE_ap_BK
         )
 
     """Single station, STAUT transmits low priority"""
 
-    def test_external_traffic_diff_staut_VI_ap_VO(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_VI_ap_VO(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_VI_ap_VO
         )
 
-    def test_external_traffic_diff_staut_BE_ap_VO(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_BE_ap_VO(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_BE_ap_VO
         )
 
-    def test_external_traffic_diff_staut_BK_ap_VO(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_BK_ap_VO(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_BK_ap_VO
         )
 
-    def test_external_traffic_diff_staut_BE_ap_VI(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_BE_ap_VI(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_BE_ap_VI
         )
 
-    def test_external_traffic_diff_staut_BK_ap_VI(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_BK_ap_VI(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_BK_ap_VI
         )
 
-    def test_external_traffic_diff_staut_BK_ap_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_external_traffic_diff_staut_BK_ap_BE(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_external_traffic_diff_staut_BK_ap_BE
         )
 
     # # Dual Internal/External Traffic Differentiation (Single station)
 
-    def test_dual_traffic_diff_staut_VO_VI_ap_VI(self) -> None:
-        self.run_wmm_test(
+    async def test_dual_traffic_diff_staut_VO_VI_ap_VI(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_dual_traffic_diff_staut_VO_VI_ap_VI
         )
 
-    def test_dual_traffic_diff_staut_VO_BE_ap_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_dual_traffic_diff_staut_VO_BE_ap_BE(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_dual_traffic_diff_staut_VO_BE_ap_BE
         )
 
-    def test_dual_traffic_diff_staut_VO_BK_ap_BK(self) -> None:
-        self.run_wmm_test(
+    async def test_dual_traffic_diff_staut_VO_BK_ap_BK(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_dual_traffic_diff_staut_VO_BK_ap_BK
         )
 
-    def test_dual_traffic_diff_staut_VI_BE_ap_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_dual_traffic_diff_staut_VI_BE_ap_BE(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_dual_traffic_diff_staut_VI_BE_ap_BE
         )
 
-    def test_dual_traffic_diff_staut_VI_BK_ap_BK(self) -> None:
-        self.run_wmm_test(
+    async def test_dual_traffic_diff_staut_VI_BK_ap_BK(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_dual_traffic_diff_staut_VI_BK_ap_BK
         )
 
-    def test_dual_traffic_diff_staut_BE_BK_ap_BK(self) -> None:
-        self.run_wmm_test(
+    async def test_dual_traffic_diff_staut_BE_BK_ap_BK(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_dual_traffic_diff_staut_BE_BK_ap_BK
         )
 
     # ACM Bit Conformance Tests (Single station, as WFA test below uses two)
 
-    def test_acm_bit_on_VI(self) -> None:
+    async def test_acm_bit_on_VI(self) -> None:
         wmm_params_VI_ACM = (
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VI
         )
-        self.run_wmm_test(
+        await self.run_wmm_test(
             wmm_test_cases.test_acm_bit_on_VI, wmm_parameters=wmm_params_VI_ACM
         )
 
     # AC Parameter Modificiation Tests (Single station, as WFA test below uses two)
 
-    def test_ac_param_degrade_VO(self) -> None:
-        self.run_wmm_test(
+    async def test_ac_param_degrade_VO(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_ac_param_degrade_VO,
             wmm_parameters=WmmParams.DEGRADED_VO,
         )
 
-    def test_ac_param_degrade_VI(self) -> None:
-        self.run_wmm_test(
+    async def test_ac_param_degrade_VI(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_ac_param_degrade_VI,
             wmm_parameters=WmmParams.DEGRADED_VI,
         )
 
-    def test_ac_param_improve_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_ac_param_improve_BE(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_ac_param_improve_BE,
             wmm_parameters=WmmParams.IMPROVE_BE,
         )
 
-    def test_ac_param_improve_BK(self) -> None:
-        self.run_wmm_test(
+    async def test_ac_param_improve_BK(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_ac_param_improve_BK,
             wmm_parameters=WmmParams.IMPROVE_BK,
         )
@@ -963,80 +964,90 @@ class WlanWmmTest(base_test.WifiBaseTest):
 
     """Traffic Differentiation in Single BSS (Single Station)"""
 
-    def test_wfa_traffic_diff_single_station_staut_BE_ap_VI_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_wfa_traffic_diff_single_station_staut_BE_ap_VI_BE(
+        self,
+    ) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_single_station_staut_BE_ap_VI_BE
         )
 
-    def test_wfa_traffic_diff_single_station_staut_VI_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_wfa_traffic_diff_single_station_staut_VI_BE(self) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_single_station_staut_VI_BE
         )
 
-    def test_wfa_traffic_diff_single_station_staut_VI_BE_ap_BE(self) -> None:
-        self.run_wmm_test(
+    async def test_wfa_traffic_diff_single_station_staut_VI_BE_ap_BE(
+        self,
+    ) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_single_station_staut_VI_BE_ap_BE
         )
 
-    def test_wfa_traffic_diff_single_station_staut_BE_BK_ap_BK(self) -> None:
-        self.run_wmm_test(
+    async def test_wfa_traffic_diff_single_station_staut_BE_BK_ap_BK(
+        self,
+    ) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_single_station_staut_BE_BK_ap_BK
         )
 
-    def test_wfa_traffic_diff_single_station_staut_VO_VI_ap_VI(self) -> None:
-        self.run_wmm_test(
+    async def test_wfa_traffic_diff_single_station_staut_VO_VI_ap_VI(
+        self,
+    ) -> None:
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_single_station_staut_VO_VI_ap_VI
         )
 
     """Traffic Differentiation in Single BSS (Two Stations)"""
 
-    def test_wfa_traffic_diff_two_stations_staut_BE_secondary_VI_BE(
+    async def test_wfa_traffic_diff_two_stations_staut_BE_secondary_VI_BE(
         self,
     ) -> None:
         asserts.skip_if(not self.secondary_sta, "No secondary station.")
-        self.run_wmm_test(
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_two_stations_staut_BE_secondary_VI_BE
         )
 
-    def test_wfa_traffic_diff_two_stations_staut_VI_secondary_BE(self) -> None:
+    async def test_wfa_traffic_diff_two_stations_staut_VI_secondary_BE(
+        self,
+    ) -> None:
         asserts.skip_if(not self.secondary_sta, "No secondary station.")
-        self.run_wmm_test(
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_two_stations_staut_VI_secondary_BE
         )
 
-    def test_wfa_traffic_diff_two_stations_staut_BK_secondary_BE_BK(
+    async def test_wfa_traffic_diff_two_stations_staut_BK_secondary_BE_BK(
         self,
     ) -> None:
         asserts.skip_if(not self.secondary_sta, "No secondary station.")
-        self.run_wmm_test(
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_two_stations_staut_BK_secondary_BE_BK
         )
 
-    def test_wfa_traffic_diff_two_stations_staut_VI_secondary_VO_VI(
+    async def test_wfa_traffic_diff_two_stations_staut_VI_secondary_VO_VI(
         self,
     ) -> None:
         asserts.skip_if(not self.secondary_sta, "No secondary station.")
-        self.run_wmm_test(
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_traffic_diff_two_stations_staut_VI_secondary_VO_VI
         )
 
     """Test ACM Bit Conformance (Two Stations)"""
 
-    def test_wfa_acm_bit_on_VI(self) -> None:
+    async def test_wfa_acm_bit_on_VI(self) -> None:
         asserts.skip_if(not self.secondary_sta, "No secondary station.")
         wmm_params_VI_ACM = (
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VI
         )
-        self.run_wmm_test(
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_acm_bit_on_VI,
             wmm_parameters=wmm_params_VI_ACM,
         )
 
     """Test the AC Parameter Modification"""
 
-    def test_wfa_ac_param_degrade_VI(self) -> None:
+    async def test_wfa_ac_param_degrade_VI(self) -> None:
         asserts.skip_if(not self.secondary_sta, "No secondary station.")
-        self.run_wmm_test(
+        await self.run_wmm_test(
             wmm_test_cases.test_wfa_ac_param_degrade_VI,
             wmm_parameters=WmmParams.DEGRADED_VI,
         )

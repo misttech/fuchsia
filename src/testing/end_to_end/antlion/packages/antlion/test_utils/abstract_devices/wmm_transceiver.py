@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env fuchsia-vendored-python
 #
 # Copyright 2025 The Fuchsia Authors
 # Use of this source code is governed by a BSD-style license that can be
@@ -6,15 +6,20 @@
 
 # Blanket ignores to enable mypy in Antlion
 # mypy: disable-error-code="no-untyped-def"
+import asyncio
 import logging
 import multiprocessing
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
 
 from antlion import utils
-from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
+from honeydew.affordances.connectivity.netstack.errors import (
+    HoneydewNetstackError,
+)
+from honeydew.affordances.connectivity.netstack.types import PortClass
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from iperf import iperf_client, iperf_server
 from legacy_access_point.access_point import AccessPoint
 from libs.validation import MapValidator
@@ -52,7 +57,7 @@ class WmmTransceiverError(signals.ControllerError):
 def create(
     config: Mapping[str, Any],
     identifier: str | None = None,
-    wlan_devices: list[FuchsiaWlanDevice] | None = None,
+    wlan_devices: Sequence[FuchsiaDevice] | None = None,
     access_points: Sequence[AccessPoint | OpenWrtAP] | None = None,
 ):
     """Creates a WmmTransceiver from a config.
@@ -110,9 +115,9 @@ def create(
 
 
 def _find_wlan_device(
-    wlan_device_identifier: str, wlan_devices: list[FuchsiaWlanDevice]
-) -> FuchsiaWlanDevice:
-    """Returns WLAN device based on string identifier (e.g. ip, serial, etc.)
+    wlan_device_identifier: str, wlan_devices: Sequence[FuchsiaDevice]
+) -> FuchsiaDevice:
+    """Returns WLAN device based on string identifier (e.g. ip, device_name, etc.)
 
     Args:
         wlan_device_identifier: Identifier for the desired WLAN device
@@ -125,7 +130,10 @@ def _find_wlan_device(
         WmmTransceiverError, if no WLAN devices matches wlan_device_identifier
     """
     for wd in wlan_devices:
-        if wlan_device_identifier == wd.identifier:
+        if wlan_device_identifier == wd.device_name:
+            return wd
+        ssh_addr = wd.ffx.get_target_ssh_address()
+        if ssh_addr and wlan_device_identifier == str(ssh_addr.ip):
             return wd
     raise WmmTransceiverError(
         f'No WLAN device with identifier "{wlan_device_identifier}"'
@@ -161,8 +169,8 @@ class WmmTransceiver(object):
         self,
         iperf_config,
         identifier,
-        wlan_device=None,
-        access_point=None,
+        wlan_device: FuchsiaDevice | None = None,
+        access_point: AccessPoint | OpenWrtAP | None = None,
         port_range_start=5201,
     ):
         self.identifier = identifier
@@ -190,22 +198,22 @@ class WmmTransceiver(object):
 
         # Maps IPerfClients, used for streams from this device, to True if
         # available, False if reserved
-        self._iperf_clients = {}
+        self._iperf_clients: dict[iperf_client.IPerfClientBase, bool] = {}
 
         # Maps IPerfServers, used to receive streams from other devices, to True
         # if available, False if reserved
-        self._iperf_servers = {}
+        self._iperf_servers: dict[Any, bool] = {}
 
         # Maps ports of servers, which are provided to other transceivers, to
         # the actual IPerfServer objects
-        self._iperf_server_ports = {}
+        self._iperf_server_ports: dict[int, Any] = {}
 
         # Maps stream UUIDs to IPerfClients reserved for that streams use
-        self._reserved_clients = {}
+        self._reserved_clients: dict[UUID, iperf_client.IPerfClientBase] = {}
 
         # Maps stream UUIDs to (WmmTransceiver, IPerfServer) tuples, where the
         # server is reserved on the transceiver for that streams use
-        self._reserved_servers = {}
+        self._reserved_servers: dict[UUID, tuple[WmmTransceiver, int]] = {}
 
         # Maps with shared memory functionality to be used across the parallel
         # streams. active_streams holds UUIDs of streams that are currently
@@ -219,17 +227,19 @@ class WmmTransceiver(object):
         # Holds parameters for streams that are prepared to run asynchronously
         # (i.e. resources have been allocated). Maps UUIDs of the future streams
         # to a dict, containing the stream parameters.
-        self._pending_async_streams = {}
+        self._pending_async_streams: dict[UUID, dict[str, Any]] = {}
 
         # Set of UUIDs of asynchronous streams that have at least started, but
         # have not had their resources reclaimed yet
-        self._ran_async_streams = set()
+        self._ran_async_streams: set[UUID] = set()
 
         # Set of stream parallel process, which can be joined if completed
         # successfully, or  terminated and joined in the event of an error
-        self._running_processes = set()
+        self._running_processes: set[
+            multiprocessing.context.ForkProcess
+        ] = set()
 
-    def run_synchronous_traffic_stream(self, stream_parameters, subnet):
+    async def run_synchronous_traffic_stream(self, stream_parameters, subnet):
         """Runs a traffic stream with IPerf3 between two WmmTransceivers and
         saves the results.
 
@@ -249,11 +259,11 @@ class WmmTransceiver(object):
         ) = self._parse_stream_parameters(stream_parameters)
         uuid = uuid4()
 
-        (client, server_ip, server_port) = self._get_stream_resources(
+        (client, server_ip, server_port) = await self._get_stream_resources(
             uuid, receiver, subnet
         )
 
-        self._validate_server_address(server_ip, uuid)
+        await self._validate_server_address(server_ip, uuid)
 
         self.log.info(
             f"Running synchronous stream to {receiver.identifier} WmmTransceiver"
@@ -271,7 +281,7 @@ class WmmTransceiver(object):
         self._return_stream_resources(uuid)
         return uuid
 
-    def prepare_asynchronous_stream(self, stream_parameters, subnet):
+    async def prepare_asynchronous_stream(self, stream_parameters, subnet):
         """Reserves resources and saves configs for upcoming asynchronous
         traffic streams, so they can be started more simultaneously.
 
@@ -291,11 +301,11 @@ class WmmTransceiver(object):
         ) = self._parse_stream_parameters(stream_parameters)
         uuid = uuid4()
 
-        (client, server_ip, server_port) = self._get_stream_resources(
+        (client, server_ip, server_port) = await self._get_stream_resources(
             uuid, receiver, subnet
         )
 
-        self._validate_server_address(server_ip, uuid)
+        await self._validate_server_address(server_ip, uuid)
 
         pending_stream_config = {
             "client": client,
@@ -329,7 +339,7 @@ class WmmTransceiver(object):
             bandwidth = pending_stream_config["bandwidth"]
             time = pending_stream_config["time"]
 
-            process = multiprocessing.Process(
+            process = multiprocessing.get_context("fork").Process(
                 target=self._run_traffic,
                 args=[uuid, client, server_ip, server_port],
                 kwargs={
@@ -477,13 +487,14 @@ class WmmTransceiver(object):
             while current_time < start_time:
                 current_time = time.time()
         path = client.start(server_ip, iperf_flags, f"{uuid}")
+        # TODO(b/573261099): Remove IPerfClient and IPerfResult and parse JSON directly.
         self._stream_results[uuid] = iperf_server.IPerfResult(
             path, reporting_speed_units="mbps"
         )
 
         self._active_streams.pop(uuid)
 
-    def _get_stream_resources(self, uuid, receiver, subnet):
+    async def _get_stream_resources(self, uuid, receiver, subnet):
         """Reserves an IPerfClient and IPerfServer for a stream.
 
         Args:
@@ -497,7 +508,7 @@ class WmmTransceiver(object):
             and server port to use for the stream
         """
         client = self._get_client(uuid)
-        server_ip, server_port = self._get_server(receiver, uuid, subnet)
+        server_ip, server_port = await self._get_server(receiver, uuid, subnet)
         return (client, server_ip, server_port)
 
     def _return_stream_resources(self, uuid):
@@ -533,13 +544,14 @@ class WmmTransceiver(object):
                 reserved_client = client
                 break
         else:
+            # TODO(b/573261099): Remove IPerfClient and IPerfResult and parse JSON directly.
             reserved_client = iperf_client.create([self._iperf_config])[0]
 
         self._iperf_clients[reserved_client] = UNAVAILABLE
         self._reserved_clients[uuid] = reserved_client
         return reserved_client
 
-    def _get_server(self, receiver, uuid, subnet):
+    async def _get_server(self, receiver, uuid, subnet):
         """Retrieves the address and port of a reserved IPerfServer object from
         the receiver object for use in a stream.
 
@@ -553,11 +565,11 @@ class WmmTransceiver(object):
         Returns:
             (string, int) representing the IPerfServer address and port
         """
-        (server_ip, server_port) = receiver._reserve_server(subnet)
+        (server_ip, server_port) = await receiver._reserve_server(subnet)
         self._reserved_servers[uuid] = (receiver, server_port)
         return (server_ip, server_port)
 
-    def _reserve_server(self, subnet):
+    async def _reserve_server(self, subnet):
         """Reserves an available IPerfServer for use in a stream from another
         WmmTransceiver. If none are available, a new one is created.
 
@@ -585,9 +597,17 @@ class WmmTransceiver(object):
         end_time = time.time() + DEFAULT_IP_ADDR_TIMEOUT
         while time.time() < end_time:
             if self.wlan_device:
-                addresses = utils.get_interface_ip_addresses(
-                    self.wlan_device.device, self._test_interface
-                )
+                interfaces = await self.wlan_device.netstack.list_interfaces()
+                for iface in interfaces:
+                    if (
+                        iface.name == self._test_interface
+                        or iface.port_class == PortClass.WLAN_CLIENT
+                    ):
+                        for ipv4_addr in iface.ipv4_addresses:
+                            if ipv4_addr.is_private and utils.ip_in_subnet(
+                                str(ipv4_addr), subnet
+                            ):
+                                return (str(ipv4_addr), reserved_server.port)
             else:
                 assert isinstance(
                     reserved_server, iperf_server.IPerfServerOverSsh
@@ -595,9 +615,10 @@ class WmmTransceiver(object):
                 addresses = reserved_server.get_interface_ip_addresses(
                     self._test_interface
                 )
-            for addr in addresses["ipv4_private"]:
-                if utils.ip_in_subnet(addr, subnet):
-                    return (addr, reserved_server.port)
+                for addr in addresses["ipv4_private"]:
+                    if utils.ip_in_subnet(addr, subnet):
+                        return (addr, reserved_server.port)
+            await asyncio.sleep(1)
         raise AttributeError(
             f"Reserved server has no ipv4 address in the {subnet} subnet"
         )
@@ -614,7 +635,7 @@ class WmmTransceiver(object):
         server.stop()
         self._iperf_servers[server] = AVAILABLE
 
-    def _validate_server_address(self, server_ip, uuid, timeout=60):
+    async def _validate_server_address(self, server_ip, uuid, timeout=60):
         """Verifies server address can be pinged before attempting to run
         traffic, since iperf is unforgiving when the server is unreachable.
 
@@ -629,21 +650,21 @@ class WmmTransceiver(object):
         self.log.info(f"Verifying server address ({server_ip}) is reachable.")
         end_time = time.time() + timeout
         while time.time() < end_time:
-            if self.can_ping(server_ip):
+            if await self.can_ping(server_ip):
                 break
             else:
                 self.log.debug(
                     "Could not ping server address (%s). Retrying in 1 second."
                     % (server_ip)
                 )
-                time.sleep(1)
+                await asyncio.sleep(1)
         else:
             self._return_stream_resources(uuid)
             raise WmmTransceiverError(
                 f"IPerfServer address ({server_ip}) unreachable."
             )
 
-    def can_ping(self, dest_ip):
+    async def can_ping(self, dest_ip):
         """Utilizes can_ping function in wlan_device or access_point device to
         ping dest_ip
 
@@ -655,7 +676,17 @@ class WmmTransceiver(object):
             False, otherwise
         """
         if self.wlan_device:
-            return self.wlan_device.ping(dest_ip).success
+            try:
+                hd_result = await self.wlan_device.netstack.ping(
+                    dest_ip,
+                    count=3,
+                    interval=timedelta(seconds=1),
+                    timeout=timedelta(seconds=1),
+                    size=25,
+                )
+                return hd_result.any_pings_received
+            except HoneydewNetstackError:
+                return False
 
         else:
             assert self.access_point is not None
