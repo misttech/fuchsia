@@ -16,7 +16,7 @@ group("common-package-items") {
   visibility = [ "./*" ]
   public_deps = [
     ":common-package-items.no-userboot",
-    "//zircon/kernel/lib/userabi/userboot",
+    "//src/bringup/bin/userboot",
   ]
 }
 

@@ -14,10 +14,12 @@ group("tests") {
     "kernel-args-forwarder:tests",
     "netsvc:tests",
     "ptysvc:tests",
+    "userboot:tests",
     "virtcon:tests",
   ]
 }
 
 group("boot_tests") {
   testonly = true
+  deps = [ "userboot/tests:boot_tests" ]
 }

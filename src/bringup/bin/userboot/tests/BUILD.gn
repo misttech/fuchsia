@@ -5,8 +5,7 @@
 import("//build/rust/rustc_library.gni")
 import("//build/testing/boot_tests/boot_test.gni")
 import("//build/testing/boot_tests/kernel_zbi_test.gni")
-import(
-    "//zircon/kernel/lib/userabi/userboot/tests/rust_zbi_test_executable.gni")
+import("//src/bringup/bin/userboot/tests/rust_zbi_test_executable.gni")
 import("//zircon/kernel/params.gni")
 
 group("boot_tests") {

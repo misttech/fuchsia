@@ -17,6 +17,7 @@ fidl_rust_next_allowlist = [
   "//sdk/fidl/*",
   "//sdk/lib/async/*",
   "//sdk/lib/driver/*",
+  "//src/bringup/bin/userboot/*",
   "//src/bringup/lib/userboot/*",
   "//src/connectivity/bluetooth/*",
   "//src/connectivity/overnet/*",
@@ -33,7 +34,6 @@ fidl_rust_next_allowlist = [
   "//src/ui/tools/print-input-report/*",
   "//tools/fidl/*",
   "//vendor/google/*",
-  "//zircon/kernel/lib/userabi/userboot/*",
 ]
 
 # LINT.ThenChange(fidl_rust_next.bzl)

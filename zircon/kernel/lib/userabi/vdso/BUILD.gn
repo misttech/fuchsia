@@ -24,9 +24,8 @@ config("max-page-size.defines") {
   defines = [ "VDSO_MAX_PAGE_SIZE=$vdso_max_page_size" ]
 }
 
-# This is how the kernel depends on the built vDSO to embed the image, and
-# userboot depends on it to extract addresses, via the link_output_rspfile()
-# metadata protocol.
+# This is how the kernel depends on the built vDSO to embed the image via the
+# link_output_rspfile() metadata protocol.
 user_basic_redirect("vdso") {
   select = true
 

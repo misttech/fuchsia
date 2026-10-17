@@ -101,10 +101,9 @@ config("target_gen_dir.config") {
 
 # Embed an RODSO layout object and extract address constants from it.
 #
-# The userboot loadable_module() and the vdso (libzircon) shared_library()
-# both use the special RODSO layout (by default in lld or via rodso.ld in
-# gold).  The kernel needs to use address constants extracted from these
-# ELF files' headers and symbols.
+# The vdso (libzircon) loadable_module() uses the special RODSO layout.
+# The kernel needs to use address constants extracted from this ELF file's
+# headers and symbols.
 
 if (current_toolchain == default_toolchain) {
   vdso_rspfile = "$target_gen_dir/vdso.rsp"
@@ -222,7 +221,6 @@ if (is_kernel) {
 
 group("tests") {
   testonly = true
-  deps = [ "userboot:tests" ]
 }
 
 group("kernel-tests") {
@@ -235,8 +233,5 @@ group("phys-tests") {
 
 group("boot_tests") {
   testonly = true
-  deps = [
-    "trivial-test-userboot:boot_tests",
-    "userboot/tests:boot_tests",
-  ]
+  deps = [ "trivial-test-userboot:boot_tests" ]
 }

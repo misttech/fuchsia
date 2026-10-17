@@ -517,8 +517,8 @@ group("non_hermetic_deps") {
   visibility += [ "//tools/check-licenses/build/*" ]
 
   visibility += [
+    "//src/bringup/bin/userboot/tests:*",
     "//src/tests/early-boot-coverage/*",
-    "//zircon/kernel/lib/userabi/userboot/tests:*",
   ]
 
   # TODO(https://fxbug.dev/331492588): Template driver example wraps Bazel output in Ninja, and

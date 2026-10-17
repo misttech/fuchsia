@@ -18,8 +18,8 @@ kernel_package("zircon") {
   visibility = [ ":*" ]
   deps = [
     "..:common-package-items",
+    "//src/bringup/bin/userboot:userboot-test-rust",
     "//zircon/kernel/bin:vmzircon(//zircon/kernel/switch/set/lk_debug_level_0:kernel_${current_cpu}.lk_debug_level_0)",
-    "//zircon/kernel/lib/userabi/userboot:userboot-test-rust",
   ]
 }
 

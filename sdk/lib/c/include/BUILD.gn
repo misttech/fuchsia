@@ -378,7 +378,7 @@ basic_source_set("headers") {
   visibility = [
     "../*",
     "//build/config/zircon:user_deps",
-    "//zircon/kernel/lib/userabi/userboot/*",
+    "//src/bringup/bin/userboot/*",
     "//zircon/system/ulib/ldmsg/*",
     "//zircon/system/utest/core/threads/*",
     "//zircon/third_party/scudo/*",

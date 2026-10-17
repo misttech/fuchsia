@@ -67,7 +67,7 @@ template("rust_zbi_test_executable") {
     "//build/config/fuchsia:dynamic_rust_standard_library",
   ]
 
-  _fdio_stub_label = "//zircon/kernel/lib/userabi/userboot/tests:fdio_stub"
+  _fdio_stub_label = "//src/bringup/bin/userboot/tests:fdio_stub"
   _fdio_stub_dir =
       get_label_info(_fdio_stub_label, "target_out_dir") + "/fdio_stub"
 

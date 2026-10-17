@@ -363,7 +363,7 @@ This is a scope with the following schema:
 - **`is_pic_default`**: A boolean that is true in a toolchain that can build
   ELF position independent code (PIC). This means either an shlib toolchain
   (e.g. `//build/toolchain/fuchsia:x64-shared`), or a base toolchain that
-  produces such code directly (e.g. `//zircon/kernel/lib/userabi/userboot:userboot_arm64`).
+  produces such code directly (e.g. `//src/bringup/bin/userboot:userboot_rust`).
 
 - **`with_shared`**: A boolean that is true if the current toolchain has an shlib
   toolchain to build ELF shared libraries (e.g. `//build/toolchain/fuchsia:x64`)
