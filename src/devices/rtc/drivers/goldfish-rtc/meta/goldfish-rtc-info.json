@@ -1,0 +1,13 @@
+{
+    "short_description": "Google Goldfish Real Time Clock driver",
+    "manufacturer": "Google",
+    "families": [
+        "Goldfish"
+    ],
+    "models": [
+        "goldfish-rtc"
+    ],
+    "areas": [
+        "RTC"
+    ]
+}

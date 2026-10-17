@@ -1,0 +1,73 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bind/bind.gni")
+import("//build/components.gni")
+import("//build/drivers.gni")
+
+fuchsia_driver_dml("goldfish-rtc-dml") {
+  dml = "meta/goldfish-rtc.dml"
+  driver_name = "goldfish-rtc"
+}
+
+driver_bind_rules("goldfish_rtc_bind") {
+  bind_output = "goldfish-rtc.bindbc"
+  dml_label = ":goldfish-rtc-dml"
+  tests = "meta/bind-tests.json"
+  deps = [ "//src/devices/bind/fuchsia.google.platform" ]
+}
+
+fuchsia_rust_driver("goldfish-rtc-driver") {
+  output_name = "goldfish-rtc"
+  edition = "2024"
+  sources = [ "src/lib.rs" ]
+  with_unit_tests = true
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
+  deps = [
+    ":goldfish_rtc_bind",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
+    "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_rust_next",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/mmio/rust:mmio",
+    "//sdk/lib/driver/platform-device/rust:pdev",
+    "//sdk/rust/zx",
+    "//src/devices/rtc/lib/rtc:fuchsia_rtc",
+    "//src/lib/fidl/rust_next/fidl_next",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:bitfield",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+  ]
+  test_deps = [ "//src/lib/fuchsia" ]
+}
+
+fuchsia_driver_component("goldfish-rtc") {
+  dml_label = ":goldfish-rtc-dml"
+  info = "meta/goldfish-rtc-info.json"
+  component_name = "goldfish-rtc"
+  deps = [
+    ":goldfish-rtc-driver",
+    ":goldfish_rtc_bind",
+  ]
+}
+
+fuchsia_driver_package("package") {
+  package_name = "goldfish-rtc"
+  driver_components = [ ":goldfish-rtc" ]
+}
+
+fuchsia_unittest_package("goldfish_rtc_test") {
+  package_name = "goldfish-rtc-test"
+  deps = [ ":goldfish-rtc-driver_test" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":goldfish_rtc_bind_test",
+    ":goldfish_rtc_test",
+  ]
+}

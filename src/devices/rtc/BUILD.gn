@@ -4,7 +4,10 @@
 
 group("drivers") {
   testonly = true
-  deps = [ "drivers/pl031-rtc" ]
+  deps = [
+    "drivers/goldfish-rtc",
+    "drivers/pl031-rtc",
+  ]
 
   if (current_cpu == "x64") {
     deps += [ "drivers/intel-rtc" ]

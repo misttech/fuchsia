@@ -38,11 +38,10 @@ fuchsia_board_configuration(
         # keep-sorted start
         "fuchsia::bus_pci",
         "fuchsia::driver_framework_v2_support",
+        "fuchsia::real_time_clock",
         # TODO: b/299320231 - Remove when ring is supported on riscv64.
         "fuchsia::soft_crypto",
         "fuchsia::usb_host",
-        # See: b/308199171
-        "fuchsia::utc_start_at_startup",
         # keep-sorted end
     ],
     version = build_info_version,

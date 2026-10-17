@@ -36,6 +36,11 @@ board_input_bundle("main_bundle") {
       package_set = "bootfs"
       driver_components = [ "meta/qemu-riscv64.cm" ]
     },
+    {
+      package_target = "//src/devices/rtc/drivers/goldfish-rtc:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/goldfish-rtc.cm" ]
+    },
   ]
   version = build_info_version
 }

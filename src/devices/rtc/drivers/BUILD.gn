@@ -4,7 +4,10 @@
 
 group("tests") {
   testonly = true
-  deps = [ "pl031-rtc:tests" ]
+  deps = [
+    "goldfish-rtc:tests",
+    "pl031-rtc:tests",
+  ]
 
   if (target_cpu == "x64") {
     deps += [ "intel-rtc:tests" ]
