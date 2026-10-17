@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "fuchsia.fuzzer",
+    srcs = [
+        "adapter.fidl",
+        "controller.fidl",
+        "corpus.fidl",
+        "coverage.fidl",
+        "manager.fidl",
+        "options.fidl",
+        "overview.fidl",
+        "registry.fidl",
+        "status.fidl",
+    ],
+    enable_hlcpp = True,
+    visibility = [
+        "//src/developer/ffx/build:__pkg__",
+        "//src/developer/ffx/plugins/fuzz:__pkg__",
+        "//src/sys/fuzzing:__subpackages__",
+        "//src/sys/test_runners/fuzz:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.url",
+        "//zircon/vdso/zx",
+    ],
+)
