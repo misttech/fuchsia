@@ -1,0 +1,73 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "protocol",
+    srcs = [
+        "src/lib.rs",
+        "src/size_constrained.rs",
+        "src/size_of_contents.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "dhcp_protocol",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:num-derive"],
+    visibility = [
+        "//src/connectivity/lib/packet-formats:__pkg__",
+        "//src/connectivity/network/dhcpv4/client/bindings:__pkg__",
+        "//src/connectivity/network/dhcpv4/client/core:__pkg__",
+        "//src/connectivity/network/dhcpv4/lib:__pkg__",
+        "//src/connectivity/network/tests/integration/dhcp-client:__pkg__",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-types",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bstr",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.net.dhcp:fuchsia.net.dhcp_rust",
+            "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "protocol_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":protocol",
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "protocol_host_test",
+    binary_name = "protocol_test",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "dhcpv4_protocol_test",
+    unit_tests = [":protocol_test"],
+)
