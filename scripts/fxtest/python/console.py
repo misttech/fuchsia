@@ -860,14 +860,19 @@ async def _console_event_loop(
                     next_event.payload.test_suite_started.name,
                     style=flags.style,
                 )
-                # Explicitly mark if the suite is hermetic or not.
-                hermeticity = (
-                    ""
-                    if next_event.payload.test_suite_started.hermetic
-                    else statusinfo.warning("(NOT HERMETIC)", style=flags.style)
-                )
+                # Explicitly mark if the suite is a host test or not hermetic.
+                if next_event.payload.test_suite_started.is_host:
+                    suffix_label = statusinfo.highlight(
+                        "(HOST)", style=flags.style
+                    )
+                elif next_event.payload.test_suite_started.hermetic:
+                    suffix_label = ""
+                else:
+                    suffix_label = statusinfo.warning(
+                        "(NOT HERMETIC)", style=flags.style
+                    )
                 if not flags.quiet:
-                    lines_to_print.append(f"\n{label} {val} {hermeticity}")
+                    lines_to_print.append(f"\n{label} {val} {suffix_label}")
             elif next_event.payload.test_suite_ended is not None:
                 # Let the user know a test suite has ended, and
                 # what its status is.

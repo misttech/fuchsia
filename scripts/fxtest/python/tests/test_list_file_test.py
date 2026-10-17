@@ -177,9 +177,23 @@ class TestMethodTest(unittest.TestCase):
             )
         )
 
+        host_test = Test(
+            TestEntry(
+                test=TestSection(
+                    name="host_test",
+                    label="//src/host_test",
+                    os="linux",
+                    path="host_x64/host_test",
+                ),
+            )
+        )
+
         self.assertTrue(e2e_test.is_e2e_test())
+        self.assertFalse(e2e_test.is_host_test())
         self.assertTrue(boot_test.is_boot_test())
         self.assertFalse(boot_test.is_e2e_test())
+        self.assertTrue(host_test.is_host_test())
+        self.assertFalse(host_test.is_e2e_test())
 
         test_with_pkg_server_explicit_false = Test(
             TestEntry(

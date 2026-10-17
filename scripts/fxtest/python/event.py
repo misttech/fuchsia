@@ -228,6 +228,9 @@ class TestSuiteStartedPayload:
     # If true, this test suite is hermetic and may be run in parallel.
     hermetic: bool | None = False
 
+    # If true, this test suite is a host test.
+    is_host: bool | None = False
+
 
 class TestSuiteStatus(enum.Enum):
     """Result status for a test suite's execution."""
@@ -1180,7 +1183,11 @@ class EventRecorder:
         return id
 
     def emit_test_suite_started(
-        self, name: str, hermetic: bool, parent: Id | None = None
+        self,
+        name: str,
+        hermetic: bool,
+        parent: Id | None = None,
+        is_host: bool = False,
     ) -> Id:
         """A test suite has started executing.
 
@@ -1191,6 +1198,7 @@ class EventRecorder:
             name (str): The name of the test suite.
             hermetic (bool): True only if this suite is executed hermetically.
             parent (Id | None ): Parent event. Defaults to global run.
+            is_host (bool): True only if this suite is a host test. Defaults to False.
 
         Returns:
             Id: _description_
@@ -1203,7 +1211,9 @@ class EventRecorder:
                 starting=True,
                 parent=parent,
                 payload=EventPayloadUnion(
-                    test_suite_started=TestSuiteStartedPayload(name, hermetic)
+                    test_suite_started=TestSuiteStartedPayload(
+                        name, hermetic, is_host=is_host
+                    )
                 ),
             )
         )

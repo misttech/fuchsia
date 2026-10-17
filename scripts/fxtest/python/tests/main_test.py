@@ -618,7 +618,11 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 (
                     event.TestSuiteStatus.ABORTED,
                     "Test suite aborted due to user interrupt.",
-                )
+                ),
+                (
+                    event.TestSuiteStatus.SKIPPED,
+                    "Skipping optional end to end test. Pass --e2e to execute this test.",
+                ),
             },
         )
 
@@ -2304,13 +2308,13 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self._mock_has_tests_in_base([])
 
         ret = await main.async_main_wrapper(
-            args.parse_args(["--simple", "--no-build", "--fail"])
+            args.parse_args(
+                ["--simple", "--no-build", "--fail", "--parallel", "2"]
+            )
         )
 
-        # bar_test and baz_test are not hermetic, so cannot run at the same time.
-        # One of them will run before the other, which means --fail
-        # prevents one of them from starting, and we expect to see
-        # only bar_test (since baz_test is defined later in the file)
+        # With --parallel=2, foo-test and bar_test run first while baz_test
+        # is queued behind them, so --fail prevents baz_test from starting.
         call_prefixes = self._make_call_args_prefix_set(
             command_mock.call_args_list
         )
@@ -2364,7 +2368,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
         recorder = event.EventRecorder()
         ret = await main.async_main_wrapper(
-            args.parse_args(["--simple", "--no-build", "--fail"]),
+            args.parse_args(
+                ["--simple", "--no-build", "--fail", "--parallel", "2"]
+            ),
             recorder=recorder,
         )
 
@@ -4562,11 +4568,13 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
         mock_test_1 = mock.MagicMock(spec=test_list_file.Test)
         mock_test_1.info.is_hermetic.return_value = False
+        mock_test_1.is_host_test.return_value = False
         mock_test_1.needs_device.return_value = False
         mock_test_1.name.return_value = "non_hermetic_1"
 
         mock_test_2 = mock.MagicMock(spec=test_list_file.Test)
         mock_test_2.info.is_hermetic.return_value = False
+        mock_test_2.is_host_test.return_value = False
         mock_test_2.needs_device.return_value = False
         mock_test_2.name.return_value = "non_hermetic_2"
 
@@ -4695,6 +4703,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
         mock_test = mock.MagicMock(spec=test_list_file.Test)
         mock_test.info.is_hermetic.return_value = True
+        mock_test.is_host_test.return_value = False
         mock_test.needs_device.return_value = False
         mock_test.name.return_value = "duration_test"
 
@@ -4765,3 +4774,124 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         ret = await asyncio.wait_for(app._main_impl(), timeout=0.5)
         self.assertEqual(ret, 1)
         self.assertTrue(term_event.is_set())
+
+    async def test_host_tests_emit_is_host_and_run_in_parallel(self) -> None:
+        """Test that host tests emit is_host=True in test_suite_started and can run in parallel."""
+        bar_started = asyncio.Event()
+        baz_started = asyncio.Event()
+
+        async def command_handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> mock.MagicMock:
+            command_str = " ".join(str(a) for a in args)
+            if "bar_test" in command_str:
+                bar_started.set()
+                await baz_started.wait()
+            elif "baz_test" in command_str:
+                baz_started.set()
+                await bar_started.wait()
+            return mock.MagicMock(
+                return_code=0,
+                stdout="",
+                stderr="",
+                was_timeout=False,
+            )
+
+        command_mock = self._mock_run_command(0)
+        command_mock.side_effect = command_handler
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        recorder = event.EventRecorder()
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build", "--host"]),
+            recorder=recorder,
+        )
+        self.assertEqual(ret, 0)
+
+        started_suites = {
+            payload_event.name: (payload_event.hermetic, payload_event.is_host)
+            async for e in recorder.iter()
+            if (payload := e.payload) is not None
+            and (payload_event := payload.test_suite_started) is not None
+        }
+        self.assertEqual(started_suites.get("host_x64/bar_test"), (False, True))
+        self.assertEqual(started_suites.get("host_x64/baz_test"), (False, True))
+
+    async def test_run_all_tests_emits_is_host_flag(
+        self,
+    ) -> None:
+        """Test that _run_all_tests passes is_host correctly to emit_test_suite_started."""
+        flags = args.parse_args(["--parallel", "1"])
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+        app = main.AsyncMain(
+            flags,
+            [],
+            recorder,
+            asyncio.Event(),
+            asyncio.Event(),
+        )
+
+        mock_host_test = mock.MagicMock(spec=test_list_file.Test)
+        mock_host_test.info.is_hermetic.return_value = False
+        mock_host_test.is_host_test.return_value = True
+        mock_host_test.needs_device.return_value = False
+        mock_host_test.name.return_value = "host_x64/my_host_test"
+
+        mock_device_test = mock.MagicMock(spec=test_list_file.Test)
+        mock_device_test.info.is_hermetic.return_value = False
+        mock_device_test.is_host_test.return_value = False
+        mock_device_test.needs_device.return_value = True
+        mock_device_test.name.return_value = (
+            "fuchsia-pkg://fuchsia.com/pkg#meta/non_hermetic.cm"
+        )
+
+        test_selections = selection_types.TestSelections(
+            selected=[mock_host_test, mock_device_test],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+
+        exec_env = mock.MagicMock()
+
+        with (
+            mock.patch(
+                "execution.TestExecution.run",
+                new_callable=mock.AsyncMock,
+                return_value=mock.MagicMock(return_code=0),
+            ),
+            mock.patch.object(
+                execution.TestExecution,
+                "command_line",
+                return_value=["fake_cmd"],
+            ),
+        ):
+            app._exec_env = exec_env
+            success = await app._run_all_tests(test_selections)
+            recorder.emit_end()
+
+        self.assertTrue(success)
+        started_events = [
+            e.payload.test_suite_started
+            async for e in recorder.iter()
+            if e.payload is not None
+            and e.payload.test_suite_started is not None
+        ]
+        self.assertEqual(
+            started_events,
+            [
+                event.TestSuiteStartedPayload(
+                    name="fuchsia-pkg://fuchsia.com/pkg#meta/non_hermetic.cm",
+                    hermetic=False,
+                    is_host=False,
+                ),
+                event.TestSuiteStartedPayload(
+                    name="host_x64/my_host_test",
+                    hermetic=False,
+                    is_host=True,
+                ),
+            ],
+        )

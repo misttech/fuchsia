@@ -127,6 +127,14 @@ class TestExecution:
         """
         return self._test.info.is_hermetic()
 
+    def is_host_test(self) -> bool:
+        """Determine if a test is a pure host test.
+
+        Returns:
+            bool: True if the wrapped test is a pure host test, False otherwise.
+        """
+        return bool(self._test.is_host_test())
+
     def command_line(self, test_cases: list[str] | None = None) -> list[str]:
         """Format the command line required to execute this test.
 

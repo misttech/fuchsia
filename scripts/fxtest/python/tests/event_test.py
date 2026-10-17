@@ -172,12 +172,18 @@ class TestEvents(unittest.IsolatedAsyncioTestCase):
                 fuzzy_distance_threshold=3,
             )
         )
-        test_group_id = recorder.emit_test_group(1)
+        test_group_id = recorder.emit_test_group(2)
         suite_id = recorder.emit_test_suite_started(
             "my-test", hermetic=True, parent=test_group_id
         )
         recorder.emit_test_suite_ended(
             suite_id, event.TestSuiteStatus.PASSED, None
+        )
+        host_suite_id = recorder.emit_test_suite_started(
+            "my-host-test", hermetic=False, parent=test_group_id, is_host=True
+        )
+        recorder.emit_test_suite_ended(
+            host_suite_id, event.TestSuiteStatus.PASSED, None
         )
         recorder.emit_end(id=test_group_id)
         recorder.emit_end()

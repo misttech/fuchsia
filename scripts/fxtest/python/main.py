@@ -1967,11 +1967,13 @@ class AsyncMain:
         @dataclass
         class RunState:
             total_running: int = 0
-            non_hermetic_running: int = 0
-            hermetic_test_queue: asyncio.Queue[ExecEntry] = field(
+            # Number of currently running tests that must execute serially
+            # (one at a time, not referring to a serial connection).
+            serial_running: int = 0
+            parallel_test_queue: asyncio.Queue[ExecEntry] = field(
                 default_factory=lambda: asyncio.Queue()
             )
-            non_hermetic_test_queue: asyncio.Queue[ExecEntry] = field(
+            serial_test_queue: asyncio.Queue[ExecEntry] = field(
                 default_factory=lambda: asyncio.Queue()
             )
 
@@ -2004,12 +2006,19 @@ class AsyncMain:
                     # other runs to keep going.
 
                     abort_group = asyncio.Event()
-                if exec.is_hermetic():
-                    run_state.hermetic_test_queue.put_nowait(
+                # Hermetic device tests and pure host tests (excluding E2E/Lacewing
+                # tests that interact with a target device, which are filtered out
+                # by is_host_test()) are placed in the parallel execution queue.
+                # Note that unlike infra runs, fx test executes host binaries
+                # locally without nsjail or filesystem isolation, so they are not
+                # strictly hermetic on the host even though they do not contend
+                # for shared target device state.
+                if exec.is_hermetic() or exec.is_host_test():
+                    run_state.parallel_test_queue.put_nowait(
                         ExecEntry(exec, abort_group)
                     )
                 else:
-                    run_state.non_hermetic_test_queue.put_nowait(
+                    run_state.serial_test_queue.put_nowait(
                         ExecEntry(exec, abort_group)
                     )
 
@@ -2060,7 +2069,9 @@ class AsyncMain:
         async def test_executor() -> None:
             nonlocal test_failure_observed
             to_run: ExecEntry
-            was_non_hermetic: bool = False
+            # Whether the current test was dequeued from serial_test_queue to
+            # run serially (one at a time, not referring to a serial connection).
+            was_serial: bool = False
 
             while True:
                 async with run_condition:
@@ -2073,18 +2084,18 @@ class AsyncMain:
                         return
 
                     if (
-                        run_state.non_hermetic_running == 0
-                        and not run_state.non_hermetic_test_queue.empty()
+                        run_state.serial_running == 0
+                        and not run_state.serial_test_queue.empty()
                     ):
-                        to_run = run_state.non_hermetic_test_queue.get_nowait()
-                        run_state.non_hermetic_running += 1
-                        was_non_hermetic = True
-                    elif not run_state.hermetic_test_queue.empty():
-                        to_run = run_state.hermetic_test_queue.get_nowait()
-                        was_non_hermetic = False
+                        to_run = run_state.serial_test_queue.get_nowait()
+                        run_state.serial_running += 1
+                        was_serial = True
+                    elif not run_state.parallel_test_queue.empty():
+                        to_run = run_state.parallel_test_queue.get_nowait()
+                        was_serial = False
                     elif (
-                        run_state.hermetic_test_queue.empty()
-                        and run_state.non_hermetic_test_queue.empty()
+                        run_state.parallel_test_queue.empty()
+                        and run_state.serial_test_queue.empty()
                     ):
                         run_condition.notify_all()
                         return
@@ -2094,7 +2105,10 @@ class AsyncMain:
                     run_state.total_running += 1
 
                 test_suite_id = recorder.emit_test_suite_started(
-                    to_run.exec.name(), not was_non_hermetic, parent=test_group
+                    to_run.exec.name(),
+                    not was_serial and not to_run.exec.is_host_test(),
+                    parent=test_group,
+                    is_host=to_run.exec.is_host_test(),
                 )
                 status: event.TestSuiteStatus = (
                     event.TestSuiteStatus.FAILED_TO_START
@@ -2240,8 +2254,8 @@ class AsyncMain:
 
                 async with run_condition:
                     run_state.total_running -= 1
-                    if was_non_hermetic:
-                        run_state.non_hermetic_running -= 1
+                    if was_serial:
+                        run_state.serial_running -= 1
                     run_condition.notify_all()
 
         # Wait for the debugger to signal that it is ready.

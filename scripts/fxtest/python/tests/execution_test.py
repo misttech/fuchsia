@@ -244,6 +244,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertFalse(test.is_hermetic())
+        self.assertFalse(test.is_host_test())
         self.assertIsNone(test.environment())
         self.assertTrue(test.should_symbolize())
 
@@ -334,6 +335,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(test.is_hermetic())
+        self.assertFalse(test.is_host_test())
         self.assertIsNone(test.environment())
         self.assertTrue(test.should_symbolize())
 
@@ -411,6 +413,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(test.is_hermetic())
+        self.assertFalse(test.is_host_test())
         self.assertIsNone(test.environment())
         self.assertTrue(test.should_symbolize())
 
@@ -621,6 +624,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(test._test.is_e2e_test())
         self.assertFalse(test.is_hermetic())
+        self.assertFalse(test.is_host_test())
         env = test.environment()
         assert env is not None
         self.assertDictEqual(env, {"CWD": "/out/fuchsia"})
@@ -1489,3 +1493,21 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         mock_cmd.kill.assert_not_called()
         for call in recorder.emit_warning_message.call_args_list:
             self.assertNotIn("did not terminate in time", call[0][0])
+
+    def test_is_host_test(self) -> None:
+        """Test that TestExecution.is_host_test returns True for a pure host test."""
+        exec_env = _make_exec_env("/fuchsia", "/out/fuchsia")
+        test = execution.TestExecution(
+            test_list_file.Test(
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection(
+                        "foo", "//foo", "linux", path="host_x64/foo"
+                    )
+                ),
+                test_list_file.TestListEntry("foo", [], execution=None),
+            ),
+            exec_env,
+            args.parse_args([]),
+        )
+        self.assertTrue(test.is_host_test())
+        self.assertFalse(test.is_hermetic())

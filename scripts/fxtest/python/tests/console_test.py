@@ -35,7 +35,18 @@ class TestConsole(unittest.IsolatedAsyncioTestCase):
             ConsoleTestArgs(
                 "test basic output with --status",
                 ["--status"],
-                expected_present=["Status"],
+                expected_present=["Status", "(HOST)", "(NOT HERMETIC)"],
+                expected_absent=["This is output from program"],
+            ),
+            ConsoleTestArgs(
+                "test basic output with --status and --no-style",
+                ["--status", "--no-style"],
+                expected_present=[
+                    "Status",
+                    "Starting: foo ",
+                    "Starting: bar (HOST)",
+                    "Starting: baz (NOT HERMETIC)",
+                ],
                 expected_absent=["This is output from program"],
             ),
             ConsoleTestArgs(
@@ -106,7 +117,7 @@ class TestConsole(unittest.IsolatedAsyncioTestCase):
             )
             suite_ids.append(
                 recorder.emit_test_suite_started(
-                    "bar", hermetic=True, parent=test_group_id
+                    "bar", hermetic=False, parent=test_group_id, is_host=True
                 )
             )
             suite_ids.append(
@@ -227,3 +238,50 @@ class TestConsole(unittest.IsolatedAsyncioTestCase):
             recorder.emit_end(id=build_id)
             recorder.emit_end()
             await printer_task
+
+    @mock.patch("console.termout.is_valid", return_value=False)
+    async def test_host_vs_non_hermetic_output(
+        self,
+        _is_valid_mock: mock.Mock,
+    ) -> None:
+        """Test that host tests display (HOST) and non-hermetic device tests display (NOT HERMETIC)."""
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            recorder = event.EventRecorder()
+            default_flags = args.parse_args(["--no-status", "--no-style"])
+            status_event = asyncio.Event()
+            printer_task = asyncio.create_task(
+                console.ConsoleOutput().console_printer(
+                    recorder, default_flags, status_event
+                )
+            )
+
+            recorder.emit_init()
+            test_group_id = recorder.emit_test_group(3)
+            hermetic_id = recorder.emit_test_suite_started(
+                "hermetic_suite", hermetic=True, parent=test_group_id
+            )
+            host_id = recorder.emit_test_suite_started(
+                "host_suite",
+                hermetic=False,
+                parent=test_group_id,
+                is_host=True,
+            )
+            non_hermetic_id = recorder.emit_test_suite_started(
+                "non_hermetic_suite",
+                hermetic=False,
+                parent=test_group_id,
+                is_host=False,
+            )
+            for suite_id in [hermetic_id, host_id, non_hermetic_id]:
+                recorder.emit_test_suite_ended(
+                    suite_id, event.TestSuiteStatus.PASSED, None
+                )
+            recorder.emit_end(id=test_group_id)
+            recorder.emit_end()
+            await printer_task
+
+        rendered = output.getvalue()
+        self.assertIn("Starting: hermetic_suite \n", rendered)
+        self.assertIn("Starting: host_suite (HOST)\n", rendered)
+        self.assertIn("Starting: non_hermetic_suite (NOT HERMETIC)\n", rendered)
