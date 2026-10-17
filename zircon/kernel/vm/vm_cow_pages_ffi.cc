@@ -197,4 +197,8 @@ FFI_ALWAYS_INLINE void cpp_vm_cow_pages_debug_get_discardable_page_counts(
   *out_counts = cow->DebugGetDiscardablePageCounts();
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_cow_pages_debug_dump_reclaim_counters() {
+  VmCowPages::DebugDumpReclaimCounters();
+}
+
 }  // extern "C"

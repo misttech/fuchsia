@@ -287,6 +287,20 @@ pub struct MemoryWatchdogState {
 /// Type alias for [`MemoryWatchdogState`].
 pub type MemoryWatchdog = MemoryWatchdogState;
 
+unsafe extern "C" {
+    #[allow(improper_ctypes)]
+    fn cpp_get_memory_watchdog() -> *const MemoryWatchdogState;
+}
+
+/// Returns a reference to the global [`MemoryWatchdog`].
+#[inline]
+pub fn get_memory_watchdog() -> &'static MemoryWatchdog {
+    // SAFETY: `cpp_get_memory_watchdog` returns a pointer to the static `gExecutor`'s
+    // `MemoryWatchdog`, which is layout-compatible with `MemoryWatchdogState` (verified by
+    // `static_assert` in `memory_watchdog.cc`) and valid for `'static`.
+    unsafe { &*cpp_get_memory_watchdog() }
+}
+
 // SAFETY: `MemoryWatchdogState` fields are either initialized once in `init` before any concurrent
 // access, accessed exclusively by the worker thread, or synchronized via atomics (`mem_event_idx`,
 // `continuous_eviction_active`), `AutounsignalEvent`, and `Timer::cancel` ordering before target
@@ -1093,18 +1107,4 @@ pub unsafe extern "C" fn rust_memory_watchdog_dump(storage: *const MemoryWatchdo
     // SAFETY: `storage` points to a valid, initialized `MemoryWatchdogState`.
     let state = unsafe { &*storage };
     state.dump();
-}
-
-/// Returns the worker thread pointer for testing/debugging.
-///
-/// # Safety
-///
-/// `storage` must point to a valid, initialized `MemoryWatchdogState`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_memory_watchdog_debug_get_worker_thread(
-    storage: *const MemoryWatchdogState,
-) -> *mut kernel::thread::Thread {
-    // SAFETY: `storage` points to a valid, initialized `MemoryWatchdogState`.
-    let state = unsafe { &*storage };
-    state.debug_get_worker_thread().map_or(core::ptr::null_mut(), |t| t.as_raw())
 }

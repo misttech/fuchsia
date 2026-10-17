@@ -43,6 +43,8 @@ FFI_ALWAYS_INLINE void cpp_vmcompression_free_reference(VmCompression* compressi
 FFI_ALWAYS_INLINE VmCompression::Stats cpp_vmcompression_get_stats(
     const VmCompression* compression);
 #pragma clang diagnostic pop
+FFI_ALWAYS_INLINE VmCompression* cpp_vmcompression_create_default();
+FFI_ALWAYS_INLINE void cpp_vmcompression_dump(const VmCompression* compression);
 
 __END_CDECLS
 

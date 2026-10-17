@@ -109,6 +109,23 @@ impl VmCompression {
         // SAFETY: `self.as_raw()` points to a live `VmCompression`.
         unsafe { bindings::cpp_vmcompression_get_stats(self.as_raw()) }
     }
+
+    /// Create a default `VmCompression` instance according to the kernel command line, returning
+    /// `None` if either compression is not enabled or required, or if initialization fails.
+    pub fn create_default() -> Option<fbl::RefPtr<Self>> {
+        // SAFETY: `cpp_vmcompression_create_default` returns an exported `RefPtr<VmCompression>`
+        // raw pointer (or null).
+        unsafe {
+            let raw = bindings::cpp_vmcompression_create_default();
+            fbl::RefPtr::try_from_raw(raw.cast::<Self>())
+        }
+    }
+
+    /// Dump debug information about the compression instance.
+    pub fn dump(&self) {
+        // SAFETY: `self.as_raw()` points to a live `VmCompression`.
+        unsafe { bindings::cpp_vmcompression_dump(self.as_raw()) }
+    }
 }
 
 /// An RAII wrapper around holding a locked reference to a `VmCompressor`.

@@ -12,10 +12,9 @@
 #include <zircon/types.h>
 
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <object/event_dispatcher.h>
 #include <object/opaque_storage.h>
-
-struct Thread;
 
 // Object is thread safe.
 // Delegates business logic to its Rust state stored in opaque_storage_.
@@ -41,14 +40,13 @@ class MemoryWatchdog {
   uint64_t DebugNumBytesTillPressureLevel(PressureLevel level);
   void Dump();
 
-  // Debug method to retrieve any current worker thread. Only to be used for testing / debugging
-  // purposes. It is up to the caller to know if this objects is alive or not.
-  Thread* DebugGetWorkerThread();
-
  private:
   OpaqueStorage<kMemoryWatchdogStateSize, kMemoryWatchdogStateAlign> opaque_storage_;
 };
 
 MemoryWatchdog& GetMemoryWatchdog();
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE const MemoryWatchdog* cpp_get_memory_watchdog();
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MEMORY_WATCHDOG_H_

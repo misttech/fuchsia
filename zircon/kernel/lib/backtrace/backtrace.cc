@@ -6,7 +6,13 @@
 
 #include "lib/backtrace.h"
 
+#include <lib/object-constants.h>
+
+#include <kernel/ffi.h>
 #include <phys/handoff/boot-constants.h>
+
+static_assert(sizeof(Backtrace) == kBacktraceSize);
+static_assert(alignof(Backtrace) == kBacktraceAlign);
 
 static constexpr const char* kFormat = "{{{bt:%zu:%p:%s}}}\n";
 static constexpr const char* kRa = "ra";
@@ -26,3 +32,10 @@ void Backtrace::PrintWithoutVersion(FILE* file) const {
     fprintf(file, kFormat, i, reinterpret_cast<void*>(addr_[i]), type);
   }
 }
+
+extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_backtrace_print(const Backtrace* bt) { bt->Print(); }
+
+}  // extern "C"

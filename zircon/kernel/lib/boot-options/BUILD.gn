@@ -9,6 +9,7 @@ import("//build/cpp/library_headers.gni")
 import("//build/testing/golden_files.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//zircon/kernel/kernel_bindgen_crate.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 
 if (current_toolchain == default_toolchain) {
   compiled_action("json") {
@@ -76,8 +77,8 @@ library_headers("headers") {
   }
 }
 
-kernel_bindgen_crate("boot-options-rs") {
-  crate_name = "boot-options"
+kernel_bindgen_crate("boot-options-bindings") {
+  visibility = [ ":*" ]
 
   notice_year = "2026"
 
@@ -151,6 +152,13 @@ kernel_bindgen_crate("boot-options-rs") {
       "\\1",
     ],
   ]
+}
+
+kernel_rust_crate("boot-options-rs") {
+  crate_name = "boot-options"
+  source_root = "boot_options.rs"
+  sources = [ "boot_options.rs" ]
+  deps = [ ":boot-options-bindings" ]
 }
 
 if (toolchain_environment == "kernel") {

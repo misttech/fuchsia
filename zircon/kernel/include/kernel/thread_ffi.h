@@ -49,6 +49,8 @@ FFI_ALWAYS_INLINE zx_status_t cpp_thread_restricted_kick(Thread* thread);
 FFI_ALWAYS_INLINE void cpp_thread_set_memory_stall_state_inactive(Thread* thread);
 FFI_ALWAYS_INLINE void cpp_thread_current_exit(int retcode) __NO_RETURN;
 FFI_ALWAYS_INLINE void cpp_thread_current_kill();
+FFI_ALWAYS_INLINE void cpp_thread_get_backtrace(Thread* thread, Backtrace* out_bt);
+FFI_ALWAYS_INLINE void cpp_thread_dump(const Thread* thread, bool full);
 
 __END_CDECLS
 

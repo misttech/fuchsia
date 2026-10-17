@@ -43,6 +43,9 @@ pub mod hypervisor;
 #[path = "kernel/mod.rs"]
 pub mod kernel;
 
+#[path = "lib/backtrace/backtrace.rs"]
+pub mod backtrace;
+
 #[path = "lib/cbuf/src/mod.rs"]
 pub mod cbuf;
 

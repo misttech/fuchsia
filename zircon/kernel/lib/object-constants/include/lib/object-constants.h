@@ -228,4 +228,8 @@ constexpr size_t kThreadDispatcherStateSize = 64;
 constexpr size_t kThreadDispatcherStateAlign = 8;
 constexpr size_t kThreadDispatcherStateOffset = 416 + (3 * kLockClassIdSize);
 
+// Size and alignment for Backtrace.
+constexpr size_t kBacktraceSize = 272;
+constexpr size_t kBacktraceAlign = 8;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

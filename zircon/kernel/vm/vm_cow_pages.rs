@@ -747,6 +747,14 @@ impl VmCowPages {
         }
         counts
     }
+
+    /// Dumps all the reclamation counters to the debuglog.
+    pub fn debug_dump_reclaim_counters() {
+        // SAFETY: `cpp_vm_cow_pages_debug_dump_reclaim_counters` has no preconditions.
+        unsafe {
+            bindings::cpp_vm_cow_pages_debug_dump_reclaim_counters();
+        }
+    }
 }
 
 fn initialize_page_cache(level: init::LkInitLevel) {

@@ -69,4 +69,13 @@ FFI_ALWAYS_INLINE VmCompression::Stats cpp_vmcompression_get_stats(
   return compression->GetStats();
 }
 
+FFI_ALWAYS_INLINE VmCompression* cpp_vmcompression_create_default() {
+  fbl::RefPtr<VmCompression> compression = VmCompression::CreateDefault();
+  return fbl::ExportToRawPtr(&compression);
+}
+
+FFI_ALWAYS_INLINE void cpp_vmcompression_dump(const VmCompression* compression) {
+  compression->Dump();
+}
+
 }  // extern "C"

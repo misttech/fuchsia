@@ -590,4 +590,12 @@ FFI_ALWAYS_INLINE void cpp_stall_accumulator_apply_context_switch(
   StallAccumulator::ApplyContextSwitch(current_thread, next_thread);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_get_backtrace(Thread* thread, Backtrace* out_bt) {
+  thread->GetBacktrace(*out_bt);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dump(const Thread* thread, bool full) { thread->Dump(full); }
+
 }  // extern "C"

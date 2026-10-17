@@ -71,6 +71,7 @@ bool cpp_vm_cow_pages_is_discardable(const VmCowPages* cow);
 VmCowPages* cpp_vm_cow_pages_upgrade_from_raw(VmCowPages* cow);
 void cpp_vm_cow_pages_debug_get_discardable_page_counts(
     const VmCowPages* cow, VmCowPages::DiscardablePageCounts* out_counts);
+void cpp_vm_cow_pages_debug_dump_reclaim_counters();
 
 void cpp_priority_changer_construct(ffi::Uninitialized<PriorityChanger>* out, VmCowPages* cow,
                                     int64_t delta);

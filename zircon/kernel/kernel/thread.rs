@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::backtrace::Backtrace;
 use crate::platform_rs::timer::{DurationMono, InstantMono};
 use core::ffi::{c_char, c_void};
 use core::marker::{PhantomData, PhantomPinned};
@@ -129,6 +130,8 @@ unsafe extern "C" {
     fn cpp_thread_tid(thread: *const Thread) -> zx_types::zx_koid_t;
     fn cpp_thread_lock_flow_id(thread: *const Thread) -> u64;
     fn cpp_thread_take_next_lock_flow_id(thread: *mut Thread) -> u64;
+    fn cpp_thread_get_backtrace(thread: *mut Thread, out_bt: *mut Backtrace);
+    fn cpp_thread_dump(thread: *const Thread, full: bool);
 }
 
 /// Stall accounting state of a thread.
@@ -527,6 +530,37 @@ impl ThreadPtr {
     pub unsafe fn take_next_lock_flow_id(self) -> u64 {
         // SAFETY: `self` points to a valid `Thread`.
         unsafe { cpp_thread_take_next_lock_flow_id(self.as_raw()) }
+    }
+
+    /// Generate a backtrace for the calling thread.
+    ///
+    /// `out_bt` will be `reset()` prior to be filled in and if a backtrace cannot be obtained, it
+    /// will be left empty.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `self` points to a valid `Thread` that is blocked, sleeping, or
+    /// suspended, and that the caller does not hold `self`'s thread lock or an active chain lock
+    /// transaction.
+    #[inline]
+    pub unsafe fn get_backtrace(self, out_bt: &mut Backtrace) {
+        // SAFETY: `self` points to a valid `Thread`, `out_bt` is a valid `Backtrace`, and the
+        // caller upholds the thread state and locking preconditions.
+        unsafe { cpp_thread_get_backtrace(self.as_raw(), out_bt) }
+    }
+
+    /// Dump the information of a single thread. If `full` is true then a multi-line verbose dump of
+    /// much information is performed, otherwise a single short summary line is dumped.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `self` points to a valid `Thread` and that the caller does not
+    /// hold `self`'s thread lock or an active chain lock transaction.
+    #[inline]
+    pub unsafe fn dump(self, full: bool) {
+        // SAFETY: `self` points to a valid `Thread` and the caller upholds the locking
+        // preconditions.
+        unsafe { cpp_thread_dump(self.as_ptr(), full) }
     }
 }
 
@@ -1419,7 +1453,6 @@ mod tests {
             assert_true!(lock.is_unlocked());
         }
     }
-
     /// Verifies `ThreadLockGuard::proof` and `OwnerGuard::<Thread>` on the current `Thread`.
     #[test]
     fn thread_lock_proof_and_owner_guard() {

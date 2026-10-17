@@ -17,7 +17,6 @@
 #include <vm/page_queues.h>
 #include <vm/pmm.h>
 #include <vm/pmm_node.h>
-#include <vm/scanner.h>
 #include <vm/vm.h>
 
 static_assert(sizeof(MemoryWatchdog) == kMemoryWatchdogStateSize);
@@ -33,7 +32,9 @@ void rust_memory_watchdog_get_mem_pressure_event(
 uint64_t rust_memory_watchdog_debug_num_bytes_till_pressure_level(const void* storage,
                                                                   uint8_t level);
 void rust_memory_watchdog_dump(const void* storage);
-Thread* rust_memory_watchdog_debug_get_worker_thread(const void* storage);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const MemoryWatchdog* cpp_get_memory_watchdog() { return &GetMemoryWatchdog(); }
 
 }  // extern "C"
 
@@ -58,7 +59,3 @@ uint64_t MemoryWatchdog::DebugNumBytesTillPressureLevel(PressureLevel level) {
 }
 
 void MemoryWatchdog::Dump() { rust_memory_watchdog_dump(&opaque_storage_); }
-
-Thread* MemoryWatchdog::DebugGetWorkerThread() {
-  return rust_memory_watchdog_debug_get_worker_thread(&opaque_storage_);
-}
