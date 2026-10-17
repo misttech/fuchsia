@@ -2,7 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -12,16 +21,11 @@ rustc_library(
     srcs = ["src/lib.rs"],
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        "//src/lib/fuchsia",
-        "//third_party/rust_crates/vendor:assert_matches",
-    ],
     visibility = [
         "//src/sys/pkg/tests/omaha-client:__pkg__",
         "//src/sys/pkg/tests/system-update-checker:__pkg__",
         "//src/sys/pkg/tests/system-updater:__pkg__",
     ],
-    with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
@@ -33,4 +37,61 @@ rustc_library(
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:tempfile",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "mock-resolver_test",
+    crate = ":mock-resolver",
+    crate_name = "mock_resolver_lib_test",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "mock-resolver_test_packaged_bin",
+    testonly = True,
+    binary = ":mock-resolver_test",
+    binary_name = "mock_resolver_lib_test",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "mock-resolver-tests-manifest",
+    testonly = True,
+    component_name = "mock-resolver-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/mock-resolver-tests.cml",
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "mock-resolver-tests-component",
+    compiled_manifest = ":mock-resolver-tests-manifest",
+    component_name = "mock-resolver-tests",
+    deps = [":mock-resolver_test_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "mock-resolver-tests-package",
+    package_name = "mock-resolver-tests",
+    test_components = [":mock-resolver-tests-component"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "mock-resolver-tests",
+    package = ":mock-resolver-tests-package",
 )
