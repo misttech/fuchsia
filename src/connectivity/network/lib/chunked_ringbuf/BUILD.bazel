@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "chunked_ringbuf",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = ["//src/connectivity/network/netstack3:__pkg__"],
+    deps = ["//third_party/rust_crates/vendor:thiserror"],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "chunked_ringbuf_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":chunked_ringbuf",
+    edition = "2024",
+    deps = ["//third_party/rust_crates/vendor:test-case"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "chunked-ringbuf-tests",
+    unit_tests = [":chunked_ringbuf_test"],
+)
