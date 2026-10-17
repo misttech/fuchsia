@@ -6,7 +6,7 @@ use crate::bpf::EbpfState;
 use crate::device::remote_block_device::RemoteBlockDeviceRegistry;
 use crate::device::{DeviceMode, DeviceRegistry};
 use crate::execution::CrashReporter;
-use crate::mm::{FutexTable, MappingSummary, MlockPinFlavor, SharedFutexKey};
+use crate::mm::{FutexTable, MappingSummary, MlockPinFlavor};
 use crate::power::{SuspendResumeManagerHandle, create_watcher_for_wake_events};
 use crate::ptrace::StopState;
 use crate::security::{self, AuditLogger};
@@ -315,8 +315,8 @@ pub struct Kernel {
     /// The iptables used for filtering network packets.
     iptables: OnceLock<IpTables>,
 
-    /// The futexes shared across processes.
-    pub shared_futexes: Arc<FutexTable<SharedFutexKey>>,
+    /// The futexes across all processes in the kernel.
+    pub shared_futexes: FutexTable,
 
     /// The default UTS namespace for all tasks.
     ///
@@ -570,7 +570,7 @@ impl Kernel {
             mounts_lock: RwSeqLock::new(MountsWriteToken::new().into()),
             remote_block_device_registry: Default::default(),
             iptables: OnceLock::new(),
-            shared_futexes: Arc::<FutexTable<SharedFutexKey>>::default(),
+            shared_futexes: FutexTable::default(),
             root_uts_ns: Arc::new(UtsNamespace::default().into()),
             vdso: Vdso::new(),
             vdso_arch32: Vdso::new_arch32(),

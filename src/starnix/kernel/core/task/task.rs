@@ -1367,7 +1367,7 @@ impl Task {
         if !user_tid.is_null() {
             let zero: tid_t = 0;
             self.write_object(user_tid, &zero)?;
-            self.kernel().shared_futexes.wake(
+            self.kernel().shared_futexes.wake::<crate::mm::SharedFutexKey>(
                 self,
                 user_tid.addr(),
                 usize::MAX,

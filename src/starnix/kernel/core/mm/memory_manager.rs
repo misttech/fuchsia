@@ -7,10 +7,9 @@ use crate::mm::mapping::MappingBackingMemory;
 use crate::mm::memory::MemoryObject;
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
-    FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, MapInfoCache, Mapping,
-    MappingBacking, MappingFlags, MappingMode, MappingName, MappingNameRef, MlockPinFlavor,
-    PrefetchMessage, PrivateFutexKey, ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload,
-    VmsplicePayloadSegment,
+    FaultRegisterMode, InflightVmsplicedPayloads, MapInfoCache, Mapping, MappingBacking,
+    MappingFlags, MappingMode, MappingName, MappingNameRef, MlockPinFlavor, PrefetchMessage,
+    ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -3927,9 +3926,6 @@ pub struct MemoryManager {
     /// The base address of the root_vmar.
     pub base_addr: UserAddress,
 
-    /// The futexes in this address space.
-    pub futex: Arc<FutexTable<PrivateFutexKey>>,
-
     /// The mapping context for this address space.
     pub mapping_context: MappingContext,
 
@@ -4071,7 +4067,6 @@ impl MemoryManager {
 
         Ok(Arc::new(MemoryManager {
             base_addr: UserAddress::from_ptr(user_vmar_info.base),
-            futex: Arc::<FutexTable<PrivateFutexKey>>::default(),
             mapping_context: MappingContext {
                 user_vmar,
                 user_vmar_info,

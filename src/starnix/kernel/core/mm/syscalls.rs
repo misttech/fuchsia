@@ -522,7 +522,7 @@ fn do_futex<Key: FutexKey>(
     addr2: UserAddress,
     value3: u32,
 ) -> Result<usize, Errno> {
-    let futexes = Key::get_table_from_task(current_task)?;
+    let futexes = &current_task.kernel().shared_futexes;
     let cmd = op & (FUTEX_CMD_MASK as u32);
 
     let is_realtime = match (cmd, op & FUTEX_CLOCK_REALTIME != 0) {
@@ -578,7 +578,9 @@ fn do_futex<Key: FutexKey>(
             do_futex_wait_with_restart::<Key>(current_task, addr, value, bitset, deadline)?;
             Ok(0)
         }
-        FUTEX_WAKE => futexes.wake(current_task, addr, value as usize, FUTEX_BITSET_MATCH_ANY),
+        FUTEX_WAKE => {
+            futexes.wake::<Key>(current_task, addr, value as usize, FUTEX_BITSET_MATCH_ANY)
+        }
         FUTEX_WAKE_OP => {
             track_stub!(TODO("https://fxbug.dev/361181940"), "FUTEX_WAKE_OP");
             error!(ENOSYS)
@@ -595,7 +597,7 @@ fn do_futex<Key: FutexKey>(
             if value3 == 0 {
                 return error!(EINVAL);
             }
-            futexes.wake(current_task, addr, value as usize, value3)
+            futexes.wake::<Key>(current_task, addr, value as usize, value3)
         }
         FUTEX_REQUEUE | FUTEX_CMP_REQUEUE => {
             let wake_count = value as usize;
@@ -604,7 +606,14 @@ fn do_futex<Key: FutexKey>(
                 return error!(EINVAL);
             }
             let expected_value = if cmd == FUTEX_CMP_REQUEUE { Some(value3) } else { None };
-            futexes.requeue(current_task, addr, wake_count, requeue_count, addr2, expected_value)
+            futexes.requeue::<Key>(
+                current_task,
+                addr,
+                wake_count,
+                requeue_count,
+                addr2,
+                expected_value,
+            )
         }
         FUTEX_WAIT_REQUEUE_PI => {
             track_stub!(TODO("https://fxbug.dev/361181558"), "FUTEX_WAIT_REQUEUE_PI");
@@ -616,7 +625,7 @@ fn do_futex<Key: FutexKey>(
         }
         FUTEX_LOCK_PI | FUTEX_LOCK_PI2 => {
             let deadline = read_timeout(current_task)?.unwrap_or(zx::MonotonicInstant::INFINITE);
-            futexes.lock_pi(current_task, addr, deadline)?;
+            futexes.lock_pi::<Key>(current_task, addr, deadline)?;
             Ok(0)
         }
         FUTEX_TRYLOCK_PI => {
@@ -624,7 +633,7 @@ fn do_futex<Key: FutexKey>(
             error!(ENOSYS)
         }
         FUTEX_UNLOCK_PI => {
-            futexes.unlock_pi(current_task, addr)?;
+            futexes.unlock_pi::<Key>(current_task, addr)?;
             Ok(0)
         }
         _ => {
@@ -641,21 +650,23 @@ fn do_futex_wait_with_restart<Key: FutexKey>(
     mask: u32,
     deadline: Option<TargetTime>,
 ) -> Result<(), Errno> {
-    let futexes = Key::get_table_from_task(current_task)?;
+    let futexes = &current_task.kernel().shared_futexes;
     let result = match deadline {
-        None => futexes.wait(current_task, addr, value, mask, zx::MonotonicInstant::INFINITE),
+        None => {
+            futexes.wait::<Key>(current_task, addr, value, mask, zx::MonotonicInstant::INFINITE)
+        }
         Some(TargetTime::Monotonic(mono_deadline)) => {
-            futexes.wait(current_task, addr, value, mask, mono_deadline)
+            futexes.wait::<Key>(current_task, addr, value, mask, mono_deadline)
         }
         Some(TargetTime::BootInstant(boot_deadline)) => {
             let timer_slack = current_task.read().get_timerslack();
-            futexes.wait_boot(current_task, addr, value, mask, boot_deadline, timer_slack)
+            futexes.wait_boot::<Key>(current_task, addr, value, mask, boot_deadline, timer_slack)
         }
         Some(TargetTime::RealTime(utc_deadline)) => {
             // Convert real time deadlines to boot time deadlines since waiting using a UTC deadline is unsupported.
             let (boot_deadline, _) = estimate_boot_deadline_from_utc(utc_deadline);
             let timer_slack = current_task.read().get_timerslack();
-            futexes.wait_boot(current_task, addr, value, mask, boot_deadline, timer_slack)
+            futexes.wait_boot::<Key>(current_task, addr, value, mask, boot_deadline, timer_slack)
         }
     };
     match result {
