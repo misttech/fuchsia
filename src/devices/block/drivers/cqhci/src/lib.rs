@@ -12,7 +12,6 @@ use block_server::{BlockServer, RequestId};
 use cqhci_config::Config;
 use fdf_component::{Driver, DriverContext, DriverError, Node, ServiceInstance, driver_register};
 use fdf_power::{Suspendable, SuspendableDriver};
-use fidl_fuchsia_driver_framework::PowerElementArgs;
 use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_hardware_block_volume as fvolume;
 use fidl_fuchsia_hardware_inlineencryption as finlineencryption;
@@ -256,16 +255,11 @@ impl Driver for CqhciDriver {
             error!(status:?; "Failed to get host info");
         })?;
 
-        if suspend_enabled {
-            if let Some(PowerElementArgs { token: Some(token), .. }) =
-                &context.start_args.power_element_args
-            {
-                let token = token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-                configure_power_management(&context, token).await.inspect_err(|error| {
-                    error!(error:?; "Failed to configure power management");
-                })?;
-                info!("Configured power management successfully (cqhci)");
-            }
+        if suspend_enabled && let Some(token) = context.take_power_element_token() {
+            configure_power_management(&context, token).await.inspect_err(|error| {
+                error!(error:?; "Failed to configure power management");
+            })?;
+            info!("Configured power management successfully (cqhci)");
         }
 
         let mut fs = ServiceFs::new();
@@ -315,7 +309,7 @@ impl Driver for CqhciDriver {
         context.serve_outgoing(&mut fs)?;
 
         let node = Arc::new(context.take_node()?);
-        let node_token = context.start_args.node_token.take().map(Arc::new);
+        let node_token = context.take_node_token().map(Arc::new);
         let inline_crypto_clone = inline_crypto.clone();
         let driver = CqhciDriver {
             _node: node,
