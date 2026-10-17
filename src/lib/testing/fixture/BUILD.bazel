@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_proc_macro(
+    name = "fixture",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    # @bazel2gn:skip
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//sdk/lib/driver/fake-pci/rust:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/lib/testing:__pkg__",
+        "//src/media:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:quote",
+        "//third_party/rust_crates/vendor:syn",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fixture-tests",
+    srcs = ["src/tests.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    proc_macro_deps = [":fixture"],
+    deps = [
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fixture-tests-pkg",
+    package_name = "fixture-tests",
+    unit_tests = [":fixture-tests"],
+)
