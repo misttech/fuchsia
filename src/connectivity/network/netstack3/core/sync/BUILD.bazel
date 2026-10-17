@@ -25,6 +25,7 @@ rustc_check_cfg_build_flags(
 
 _COMMON_SRCS = [
     "src/lib.rs",
+    "src/once.rs",
     "src/rc.rs",
 ]
 

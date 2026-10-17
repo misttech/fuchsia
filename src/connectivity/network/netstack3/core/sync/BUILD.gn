@@ -51,6 +51,7 @@ config("check_cfg_flags") {
 }
 _COMMON_SRCS = [
   "src/lib.rs",
+  "src/once.rs",
   "src/rc.rs",
 ]
 

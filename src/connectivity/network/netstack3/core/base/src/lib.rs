@@ -168,6 +168,7 @@ pub mod sync {
     // types exported from this module.
 
     // Exclusively re-exports from the sync crate.
+    pub use netstack3_sync::once::{Once, OnceLock};
     pub use netstack3_sync::rc::{
         DebugReferences, DynDebugReferences, MapNotifier as MapRcNotifier, Notifier as RcNotifier,
         Primary as PrimaryRc, ResourceToken, ResourceTokenValue, Strong as StrongRc,

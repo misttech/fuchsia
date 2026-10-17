@@ -18,6 +18,7 @@ use net_types::ip::{GenericOverIp, Ip};
 // Re-export atomics module for loom compatibility in appropriate targets.
 pub use sync::atomic;
 
+pub mod once;
 pub mod rc;
 
 #[cfg(not(loom))]
