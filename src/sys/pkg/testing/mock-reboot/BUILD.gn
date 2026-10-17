@@ -2,15 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
 group("hermetic_tests") {
   testonly = true
   deps = [ ":mock-reboot-tests" ]
 }
 
-fuchsia_unittest_package("mock-reboot-tests") {
-  deps = [ ":mock-reboot_test" ]
+bazel_test_suite("mock-reboot-tests") {
+  target_tests = [ "//src/sys/pkg/testing/mock-reboot:mock-reboot-tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -43,17 +43,14 @@ rustc_library("mock-reboot") {
   crate_name = "mock_reboot"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  test_deps = [ "//src/lib/fuchsia" ]
-  version = "0.0.1"
   visibility = [
     ":*",
     "//src/recovery/*",
     "//src/security/*",
     "//src/starnix/*",
     "//src/sys/pkg/*",
-    "//vendor/google/starnix/*",
+    "//vendor/google/*",
   ]
-  with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/rust/zx",

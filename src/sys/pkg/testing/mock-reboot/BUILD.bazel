@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -12,18 +14,13 @@ rustc_library(
     crate_name = "mock_reboot",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        "//src/lib/fuchsia",
-    ],
-    version = "0.0.1",
     visibility = [
         "//src/recovery:__subpackages__",
         "//src/security:__subpackages__",
         "//src/starnix:__subpackages__",
         "//src/sys/pkg:__subpackages__",
-        "//vendor/google/starnix:__subpackages__",
+        "//vendor/google:__subpackages__",
     ],
-    with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
         "//sdk/rust/zx",
@@ -32,4 +29,23 @@ rustc_library(
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:futures",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "mock-reboot_test",
+    crate = ":mock-reboot",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/fuchsia",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "mock-reboot-tests",
+    unit_tests = [":mock-reboot_test"],
+    visibility = ["//visibility:public"],
 )
