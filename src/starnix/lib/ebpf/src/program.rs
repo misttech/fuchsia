@@ -970,7 +970,7 @@ mod test {
         Type::PtrToStruct { id: TEST_ARG_32_BIT_MEMORY_ID.clone(), offset: 0.into(), descriptor }
     });
 
-    impl ProgramArgument for &'_ TestArgument32BitMapped {
+    impl ProgramArgument for &'_ mut TestArgument32BitMapped {
         fn get_type() -> &'static Type {
             &*TEST_ARG_32_BIT_TYPE
         }
@@ -1028,7 +1028,7 @@ mod test {
         type RunContext<'a> = ();
 
         type Packet<'a> = ();
-        type Arg1<'a> = &'a TestArgument32BitMapped;
+        type Arg1<'a> = &'a mut TestArgument32BitMapped;
         type Arg2<'a> = ();
         type Arg3<'a> = ();
         type Arg4<'a> = ();
@@ -1320,6 +1320,21 @@ mod test {
         let mut data = TestArgument::default();
         assert_eq!(program.run_with_1_argument(&mut (), &mut data), 1);
         assert_eq!(data.mutable_field, 0x42);
+    }
+
+    #[test]
+    fn test_mapping_store_mutable_field() {
+        // Store to a remapped mutable field is rewritten at the store instruction's PC.
+        let program = r#"
+          stw [%r1 + 12], 0x42
+          mov %r0, 1
+          exit
+        "#;
+        let program = initialize_test_program_for_32bit_arg(parse_asm(program)).expect("load");
+
+        let mut data = TestArgument32BitMapped(TestArgument::default());
+        assert_eq!(program.run_with_1_argument(&mut (), &mut data), 1);
+        assert_eq!(data.0.mutable_field, 0x42);
     }
 
     #[test]

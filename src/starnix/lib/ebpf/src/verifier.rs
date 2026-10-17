@@ -1750,6 +1750,7 @@ impl ComputationContext {
     fn store_memory(
         &mut self,
         context: &mut VerificationContext<'_>,
+        pc: ProgramCounter,
         addr: &Type,
         field: Field,
         value: Type,
@@ -1776,7 +1777,7 @@ impl ComputationContext {
                 }
 
                 context.register_struct_access(StructAccess {
-                    pc: self.pc,
+                    pc,
                     memory_id: id.clone(),
                     field_offset: field_desc.offset,
                     is_32_bit_ptr_load: false,
@@ -2140,7 +2141,7 @@ impl ComputationContext {
         let loaded_type = self.load_memory(verification_context, &addr, field)?;
         let result = op(self, loaded_type.clone(), value)?;
         let mut next = self.next()?;
-        next.store_memory(verification_context, &addr, field, result)?;
+        next.store_memory(verification_context, self.pc, &addr, field, result)?;
         if fetch {
             next.set_reg(src, loaded_type)?;
         }
@@ -2202,7 +2203,7 @@ impl ComputationContext {
             let (dst, r0) =
                 Type::constraint(&mut next, JumpType::Eq, jump_width, dst.clone(), r0.clone())?;
             next.set_reg(0, dst)?;
-            next.store_memory(verification_context, &addr, field, value)?;
+            next.store_memory(verification_context, self.pc, &addr, field, value)?;
             verification_context.states.push(next);
         }
         // r0 != dst
@@ -2210,7 +2211,7 @@ impl ComputationContext {
             let mut next = self.next()?;
             let (dst, r0) = Type::constraint(&mut next, JumpType::Ne, jump_width, dst, r0)?;
             next.set_reg(0, dst.clone())?;
-            next.store_memory(verification_context, &addr, field, dst)?;
+            next.store_memory(verification_context, self.pc, &addr, field, dst)?;
             verification_context.states.push(next);
         }
 
@@ -4806,7 +4807,7 @@ impl BpfVisitor for ComputationContext {
         };
         let mut next = self.next()?;
         let addr = self.reg(dst)?;
-        next.store_memory(context, &addr, Field::new(offset, width), value)?;
+        next.store_memory(context, self.pc, &addr, Field::new(offset, width), value)?;
         context.states.push(next);
         Ok(())
     }
@@ -4911,7 +4912,7 @@ fn associate_orderings(o1: Ordering, o2: Ordering) -> Option<Ordering> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BPF_ADD, BPF_ALU64, BPF_K, BPF_MOV};
+    use crate::{BPF_ADD, BPF_ALU64, BPF_K, BPF_LDX, BPF_MEM, BPF_MOV, BPF_ST};
     use std::collections::BTreeSet;
     use test_util::{assert_geq, assert_leq};
 
@@ -5632,20 +5633,20 @@ mod tests {
 
         // Store to read-only memory must fail.
         let ro_map_ptr = ptr_with_origin(PointerOrigin::MapReadOnly);
-        let err = next.store_memory(&mut context, &ro_map_ptr, u32_field, Type::from(42));
+        let err = next.store_memory(&mut context, 0, &ro_map_ptr, u32_field, Type::from(42));
         assert_eq!(err, Err(VerifierErrorKind::WriteToReadOnlyMemory));
 
         let ro_kernel_ptr = ptr_with_origin(PointerOrigin::KernelReadOnly);
-        let err = next.store_memory(&mut context, &ro_kernel_ptr, u32_field, Type::from(42));
+        let err = next.store_memory(&mut context, 0, &ro_kernel_ptr, u32_field, Type::from(42));
         assert_eq!(err, Err(VerifierErrorKind::WriteToReadOnlyMemory));
 
         // Store to writable memory must succeed.
         let rw_map_ptr = ptr_with_origin(PointerOrigin::MapWritable);
-        let res = next.store_memory(&mut context, &rw_map_ptr, u32_field, Type::from(42));
+        let res = next.store_memory(&mut context, 0, &rw_map_ptr, u32_field, Type::from(42));
         assert!(res.is_ok());
 
         let rw_kernel_ptr = ptr_with_origin(PointerOrigin::KernelWritable);
-        let res = next.store_memory(&mut context, &rw_kernel_ptr, u32_field, Type::from(42));
+        let res = next.store_memory(&mut context, 0, &rw_kernel_ptr, u32_field, Type::from(42));
         assert!(res.is_ok());
     }
 
@@ -5727,6 +5728,82 @@ mod tests {
         assert_eq!(
             context.check_atomic_access(&Type::from(0), u64_field(0)),
             Err(VerifierErrorKind::AtomicAccessNotAllowed)
+        );
+    }
+
+    #[test]
+    fn test_struct_access_pc() {
+        let descriptor = Arc::new(StructDescriptor {
+            fields: vec![
+                FieldDescriptor { offset: 0, field_type: FieldType::MutableScalar { size: 4 } },
+                FieldDescriptor { offset: 4, field_type: FieldType::Scalar { size: 4 } },
+                FieldDescriptor { offset: 8, field_type: FieldType::MutableScalar { size: 4 } },
+                FieldDescriptor {
+                    offset: 12,
+                    field_type: FieldType::PtrToMemory {
+                        is_32_bit: true,
+                        id: MemoryId::from_raw(20),
+                        buffer_size: 64,
+                    },
+                },
+            ],
+        });
+        let memory_id = MemoryId::from_raw(1);
+        let ptr = Type::PtrToStruct { id: memory_id.clone(), offset: 0.into(), descriptor };
+        let calling_context = CallingContext { args: vec![ptr], ..CallingContext::default() };
+
+        // Instructions:
+        // PC 0: r0 = 0
+        // PC 1: r2 = 42
+        // PC 2: stw [r1 + 0], 10 (BPF_ST - store to offset 0)
+        // PC 3: ldxw r3, [r1 + 4] (BPF_LDX - load scalar from offset 4 right after store at PC 2)
+        // PC 4: stxw [r1 + 8], r2 (BPF_STX - store to offset 8)
+        // PC 5: ldxw r4, [r1 + 12] (BPF_LDX - load 32-bit ptr from offset 12 right after store at PC 4)
+        // PC 6: exit
+        let code = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 2, 0, 0, 42),
+            EbpfInstruction::new(BPF_ST | BPF_MEM | BPF_W, 1, 0, 0, 10),
+            EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 3, 1, 4, 0),
+            EbpfInstruction::new(BPF_STX | BPF_MEM | BPF_W, 1, 2, 8, 0),
+            EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 4, 1, 12, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+
+        let program = verify_program(code, calling_context, &mut NullVerifierLogger)
+            .expect("verification failed");
+
+        let mut accesses = program.struct_access_instructions().to_vec();
+        accesses.sort_by_key(|a| a.pc);
+
+        assert_eq!(
+            accesses,
+            vec![
+                StructAccess {
+                    pc: 2,
+                    memory_id: memory_id.clone(),
+                    field_offset: 0,
+                    is_32_bit_ptr_load: false,
+                },
+                StructAccess {
+                    pc: 3,
+                    memory_id: memory_id.clone(),
+                    field_offset: 4,
+                    is_32_bit_ptr_load: false,
+                },
+                StructAccess {
+                    pc: 4,
+                    memory_id: memory_id.clone(),
+                    field_offset: 8,
+                    is_32_bit_ptr_load: false,
+                },
+                StructAccess {
+                    pc: 5,
+                    memory_id: memory_id.clone(),
+                    field_offset: 12,
+                    is_32_bit_ptr_load: true,
+                },
+            ]
         );
     }
 }
