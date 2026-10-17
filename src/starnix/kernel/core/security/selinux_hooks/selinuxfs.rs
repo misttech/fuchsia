@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use super::{
-    PolicyCapSupport, build_permission_check, check_permission, current_task_state,
-    policycap_support, set_cached_sid, superblock,
+    NonPrivateFsNode, PolicyCapSupport, build_permission_check, check_permission,
+    current_task_state, policycap_support, set_cached_sid, superblock,
 };
 
 use crate::task::CurrentTask;
@@ -20,7 +20,9 @@ pub(in crate::security) fn selinuxfs_init_null(
     null_file_handle: &FileHandle,
 ) {
     // Apply the "devnull" initial SID to the node.
-    set_cached_sid(null_file_handle.node(), InitialSid::Devnull.into());
+    let null_node = NonPrivateFsNode::new(null_file_handle.node())
+        .expect("selinuxfs null file must not be kernel-private");
+    set_cached_sid(null_node, InitialSid::Devnull.into());
 
     let kernel_state = current_task
         .kernel()

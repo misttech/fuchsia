@@ -11,10 +11,10 @@
 //! The LSM hooks layer calls these hooks from the appropriate `security::` entrypoint, and the
 //! SELinux LSM may also delegate to them.  They should never be called into directly.
 
-use crate::security;
+use crate::security::{self, NonPrivateFsNode};
 use crate::task::loader::ResolvedProgram;
 use crate::task::{CurrentTask, Task};
-use crate::vfs::{FsNode, FsStr, FsString, ValueOrSize, XattrOp};
+use crate::vfs::{FsStr, FsString, ValueOrSize, XattrOp};
 use linux_uapi::{
     VFS_CAP_FLAGS_EFFECTIVE, VFS_CAP_REVISION_2, VFS_CAP_REVISION_3, XATTR_NAME_CAPS, vfs_cap_data,
     vfs_cap_data__bindgen_ty_1, vfs_ns_cap_data, vfs_ns_cap_data__bindgen_ty_1,
@@ -176,7 +176,7 @@ fn validate_cap_magic(magic: u32, expected_revision: u32) -> Result<bool, Errno>
     Ok((magic & VFS_CAP_FLAGS_EFFECTIVE) != 0)
 }
 
-/// Reads and validates a `security.capability` extended attribute from [`FsNode`].
+/// Reads and validates a `security.capability` extended attribute from [`NonPrivateFsNode`].
 ///
 /// Only V2 ([`VFS_CAP_REVISION_2`], 20 bytes) and V3 ([`VFS_CAP_REVISION_3`], 24 bytes) capability
 /// attributes are supported; V1 ([`linux_uapi::VFS_CAP_REVISION_1`], 12 bytes) is rejected with
@@ -184,14 +184,14 @@ fn validate_cap_magic(magic: u32, expected_revision: u32) -> Result<bool, Errno>
 /// the filesystem does not support extended attributes.
 fn read_file_capabilities(
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
 ) -> Result<Option<FileCapabilities>, Errno> {
-    if fs_node.security_state.common_cap.has_no_capabilities.load(Ordering::Relaxed) {
+    if fs_node.common_cap_state().has_no_capabilities.load(Ordering::Relaxed) {
         return Ok(None);
     }
 
     let raw_value = match fs_node.ops().get_xattr(
-        fs_node,
+        &fs_node,
         current_task,
         XATTR_NAME_CAPS.to_bytes().into(),
         std::mem::size_of::<vfs_ns_cap_data>(),
@@ -201,7 +201,7 @@ fn read_file_capabilities(
         Err(err) if err == errno!(ERANGE) => return error!(EINVAL),
         Err(err) if err == errno!(ENODATA) || err == errno!(ENOTSUP) || err == errno!(ENOSYS) => {
             // TODO(https://fxbug.dev/565936266): Synchronize with concurrent `setxattr` calls.
-            fs_node.security_state.common_cap.has_no_capabilities.store(true, Ordering::Relaxed);
+            fs_node.common_cap_state().has_no_capabilities.store(true, Ordering::Relaxed);
             return Ok(None);
         }
         Err(err) => return Err(err),
@@ -223,7 +223,7 @@ pub(super) fn creds_capable(creds: &Credentials, capability: Capabilities) -> Re
 /// Corresponds to the `inode_setxattr()` LSM hook.
 pub(super) fn fs_node_setxattr(
     current_task: &CurrentTask,
-    _fs_node: &FsNode,
+    _fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     _value: &FsStr,
     _op: XattrOp,
@@ -239,14 +239,14 @@ pub(super) fn fs_node_setxattr(
     Ok(())
 }
 
-/// Reads a `security.capability` extended attribute from [`FsNode`], coercing V3 attributes
-/// whose `rootid` maps to UID 0 in the reader's user namespace to V2. Returns `Ok(None)` for
-/// non-capability attributes.
+/// Reads a `security.capability` extended attribute from [`NonPrivateFsNode`], coercing V3
+/// attributes whose `rootid` maps to UID 0 in the reader's user namespace to V2. Returns `Ok(None)`
+/// for non-capability attributes.
 ///
 /// Corresponds to the `inode_getsecurity()` LSM hook.
 pub(super) fn fs_node_getsecurity(
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     max_size: usize,
 ) -> Result<Option<ValueOrSize<FsString>>, Errno> {
@@ -266,13 +266,13 @@ pub(super) fn fs_node_getsecurity(
 }
 
 /// Validates and normalizes a `security.capability` extended attribute via [`FileCapabilities`]
-/// before storing it on [`FsNode`], coercing V3 attributes with `rootid == 0` in the initial
-/// user namespace to V2. Returns `Ok(None)` for non-capability attributes.
+/// before storing it on [`NonPrivateFsNode`], coercing V3 attributes with `rootid == 0` in the
+/// initial user namespace to V2. Returns `Ok(None)` for non-capability attributes.
 ///
 /// Corresponds to the `inode_setsecurity()` LSM hook.
 pub(super) fn fs_node_setsecurity(
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     value: &FsStr,
     op: XattrOp,
@@ -280,8 +280,8 @@ pub(super) fn fs_node_setsecurity(
     if name == XATTR_NAME_CAPS.to_bytes() {
         let caps = FileCapabilities::from_bytes(current_task, value)?;
         let serialized = caps.into_bytes(current_task)?;
-        fs_node.ops().set_xattr(fs_node, current_task, name, serialized.as_ref(), op)?;
-        fs_node.security_state.common_cap.has_no_capabilities.store(false, Ordering::Relaxed);
+        fs_node.ops().set_xattr(&fs_node, current_task, name, serialized.as_ref(), op)?;
+        fs_node.common_cap_state().has_no_capabilities.store(false, Ordering::Relaxed);
         return Ok(Some(()));
     }
     Ok(None)
@@ -298,7 +298,7 @@ pub(super) fn fs_node_xattr_skipcap(name: &FsStr) -> bool {
 /// Corresponds to the `inode_removexattr()` LSM hook.
 pub(super) fn fs_node_removexattr(
     current_task: &CurrentTask,
-    _fs_node: &FsNode,
+    _fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
 ) -> Result<(), Errno> {
     if name == XATTR_NAME_CAPS.to_bytes() {
@@ -313,7 +313,7 @@ pub(super) fn fs_node_removexattr(
 /// Corresponds to the `inode_need_killpriv()` LSM hook.
 pub(super) fn fs_node_needs_killpriv(
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
 ) -> Result<bool, Errno> {
     Ok(read_file_capabilities(current_task, fs_node)?.is_some())
 }
@@ -321,14 +321,17 @@ pub(super) fn fs_node_needs_killpriv(
 /// Removes any `security.capability` extended attribute from `fs_node`.
 ///
 /// Corresponds to the `inode_killpriv()` LSM hook.
-pub(super) fn fs_node_killpriv(current_task: &CurrentTask, fs_node: &FsNode) -> Result<(), Errno> {
-    match fs_node.ops().remove_xattr(fs_node, current_task, XATTR_NAME_CAPS.to_bytes().into()) {
+pub(super) fn fs_node_killpriv(
+    current_task: &CurrentTask,
+    fs_node: NonPrivateFsNode<'_>,
+) -> Result<(), Errno> {
+    match fs_node.ops().remove_xattr(&fs_node, current_task, XATTR_NAME_CAPS.to_bytes().into()) {
         Ok(()) => {
-            fs_node.security_state.common_cap.has_no_capabilities.store(true, Ordering::Relaxed);
+            fs_node.common_cap_state().has_no_capabilities.store(true, Ordering::Relaxed);
             Ok(())
         }
         Err(err) if err == errno!(ENODATA) || err == errno!(ENOTSUP) || err == errno!(ENOSYS) => {
-            fs_node.security_state.common_cap.has_no_capabilities.store(true, Ordering::Relaxed);
+            fs_node.common_cap_state().has_no_capabilities.store(true, Ordering::Relaxed);
             Ok(())
         }
         Err(err) => Err(err),
@@ -433,7 +436,9 @@ pub(super) fn bprm_creds_from_file(
     let nosuid = resolved_program.file.name().mount.flags().contains(MountFlags::NOSUID);
     let file_caps = if nosuid {
         None
-    } else {
+    } else if let Some(executable_node) =
+        NonPrivateFsNode::assert_from(resolved_program.file.node())
+    {
         // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
         //
         //   [...] a binary with VFS_CAP_REVISION_3 file capabilities confers
@@ -443,8 +448,9 @@ pub(super) fn bprm_creds_from_file(
         //   that is saved in the extended attribute [...].
         //
         // TODO(https://fxbug.dev/322893829): Check against caller's user namespace root once supported.
-        read_file_capabilities(current_task, resolved_program.file.node())?
-            .filter(|caps| caps.rootid == 0)
+        read_file_capabilities(current_task, executable_node)?.filter(|caps| caps.rootid == 0)
+    } else {
+        None
     };
     let has_file_caps = file_caps.is_some();
 

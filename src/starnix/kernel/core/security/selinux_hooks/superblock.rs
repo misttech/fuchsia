@@ -4,8 +4,8 @@
 
 use super::fs_node::fs_node_init_with_dentry;
 use super::{
-    FileSystemLabel, FileSystemState, FsNodeSidAndClass, check_permission, current_task_state,
-    fs_node_effective_sid_and_class,
+    FileSystemLabel, FileSystemState, FsNodeSidAndClass, NonPrivateDirEntry, NonPrivateFsNode,
+    check_permission, current_task_state, fs_node_effective_sid_and_class,
 };
 
 use crate::task::CurrentTask;
@@ -147,27 +147,31 @@ pub(in crate::security) fn file_system_resolve_security(
 
     // This step will be performed only when the file system label is first resolved.
     if let Some(root_dir_entry) = root_node_to_init {
-        fs_node_init_with_dentry(
-            security_server,
-            current_task,
-            root_dir_entry,
-            /* read_xaddr = */
-            true,
-        )?;
+        if let Some(root_dir_entry) = NonPrivateDirEntry::new(&root_dir_entry) {
+            fs_node_init_with_dentry(
+                security_server,
+                current_task,
+                root_dir_entry,
+                /* read_xaddr = */
+                true,
+            )?;
+        }
     }
 
     // Label the `FsNode`s for any `pending_entries`.
     let labeled_entries = pending_entries.len();
     for dir_entry in pending_entries {
         if let Some(dir_entry) = dir_entry.0.upgrade() {
-            fs_node_init_with_dentry(
-                security_server,
-                current_task,
-                &dir_entry,
-                /* read_xaddr = */
-                true,
-            )
-            .unwrap_or_else(|_| panic!("Failed to resolve FsNode label"));
+            if let Some(dir_entry) = NonPrivateDirEntry::assert_from(&dir_entry) {
+                fs_node_init_with_dentry(
+                    security_server,
+                    current_task,
+                    dir_entry,
+                    /* read_xaddr = */
+                    true,
+                )
+                .unwrap_or_else(|_| panic!("Failed to resolve FsNode label"));
+            }
         }
     }
     log_debug!("Labeled {} entries in {} FileSystem", labeled_entries, file_system.name());
@@ -254,6 +258,7 @@ pub(in crate::security) fn sb_mount(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     path: &NamespaceNode,
+    fs_node: NonPrivateFsNode<'_>,
     flags: MountFlags,
 ) -> Result<(), Errno> {
     let source_sid = current_task_state(current_task).current_sid;
@@ -271,13 +276,12 @@ pub(in crate::security) fn sb_mount(
             (&audit_context).into(),
         )
     } else {
-        let node = path.entry.node.as_ref().as_ref();
         let FsNodeSidAndClass { sid: target_sid, class: target_class } =
-            fs_node_effective_sid_and_class(node);
+            fs_node_effective_sid_and_class(fs_node);
         let FsNodeClass::File(target_class) = target_class else {
             panic!("sb_mount on non-file-like class")
         };
-        let audit_context = [current_task.into(), node.into()];
+        let audit_context = [current_task.into(), fs_node.into()];
         check_permission(
             permission_check,
             current_task,

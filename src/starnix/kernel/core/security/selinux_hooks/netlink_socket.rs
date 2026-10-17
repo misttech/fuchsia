@@ -4,11 +4,11 @@
 
 use crate::security::Auditable;
 use crate::security::selinux_hooks::{
-    KernelPermission, build_permission_check, check_permission_and_xperms, current_task_state,
-    fs_node_effective_sid_and_class, socket,
+    KernelPermission, NonPrivateSocket, build_permission_check, check_permission_and_xperms,
+    current_task_state, fs_node_effective_sid_and_class, socket,
 };
 use crate::task::CurrentTask;
-use crate::vfs::socket::{NetlinkFamily, Socket, SocketDomain};
+use crate::vfs::socket::{NetlinkFamily, SocketDomain};
 use linux_uapi::{
     AUDIT_ADD_RULE, AUDIT_DEL_RULE, AUDIT_FIRST_USER_MSG, AUDIT_FIRST_USER_MSG2, AUDIT_GET,
     AUDIT_GET_FEATURE, AUDIT_LAST_USER_MSG, AUDIT_LAST_USER_MSG2, AUDIT_LIST_RULES, AUDIT_SET,
@@ -139,7 +139,7 @@ fn legacy_permission_for_family_and_message_type(
 pub(in crate::security) fn check_netlink_send_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
     message_type: u16,
 ) -> Result<(), Errno> {
     assert_eq!(
@@ -155,7 +155,6 @@ pub(in crate::security) fn check_netlink_send_access(
         );
         return Ok(());
     };
-    debug_assert!(!socket_node.is_private());
 
     let netlink_family = NetlinkFamily::from_raw(socket.protocol.as_raw());
     let audit_context = &[current_task.into(), Auditable::NlMsgtype(message_type)];
@@ -167,8 +166,8 @@ pub(in crate::security) fn check_netlink_send_access(
             return Ok(());
         };
         let current_sid = current_task_state(current_task).current_sid;
-        let socket_sid = fs_node_effective_sid_and_class(&socket_node).sid;
-        let audit_context = &[audit_context.into(), socket_node.as_ref().as_ref().into()];
+        let socket_sid = fs_node_effective_sid_and_class(socket_node).sid;
+        let audit_context = &[audit_context.into(), socket_node.into()];
         return check_permission_and_xperms(
             &build_permission_check(current_task, security_server),
             current_task,
@@ -193,7 +192,7 @@ pub(in crate::security) fn check_netlink_send_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         legacy_permission,
         audit_context.into(),
     )

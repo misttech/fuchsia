@@ -7,15 +7,14 @@
 
 use super::super::{FsNodeSecurityXattr, check_task_capable};
 use super::{
-    Auditable, FileSystem, FsNodeLabel, FsNodeSidAndClass, PermissionFlags, build_permission_check,
-    check_permission, current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
-    fs_node_set_label_with_task, has_fs_node_permissions, has_fs_node_permissions_dontaudit,
-    permissions_from_flags, set_cached_sid,
+    Auditable, FileSystem, FsNodeLabel, FsNodeSidAndClass, NonPrivateDirEntry, NonPrivateFsNode,
+    PermissionFlags, build_permission_check, check_permission, current_task_state,
+    fs_node_effective_sid_and_class, fs_node_ensure_class, fs_node_set_label_with_task,
+    has_fs_node_permissions, has_fs_node_permissions_dontaudit, permissions_from_flags,
+    set_cached_sid,
 };
 use crate::task::CurrentTask;
-use crate::vfs::{
-    DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
-};
+use crate::vfs::{DirEntryHandle, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp};
 use fuchsia_rcu::RcuReadScope;
 use selinux::policy::{AccessVector, FsUseType};
 use selinux::{
@@ -54,11 +53,9 @@ fn get_fs_relative_path(dir_entry: &DirEntryHandle) -> FsString {
 /// apply the given context string to the node.
 pub(in crate::security) fn fs_node_notify_security_context(
     security_server: &SecurityServer,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     security_context: &FsStr,
 ) -> Result<(), Errno> {
-    debug_assert!(!fs_node.is_private());
-
     let fs = fs_node.fs();
     if !fs.security_state.state.supports_xattr() {
         return error!(ENOTSUP);
@@ -77,20 +74,18 @@ pub(in crate::security) fn fs_node_notify_security_context(
 pub(in crate::security) fn fs_node_init_with_dentry(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    dir_entry: &DirEntryHandle,
+    dir_entry: NonPrivateDirEntry<'_>,
     read_xattr: bool,
 ) -> Result<(), Errno> {
-    debug_assert!(!dir_entry.node.is_private());
-
     // Attempt to derive a specific security class for the `FsNode`, based on its file mode.
     // TODO: This ensures a correct class for nodes with a wrong `FileMode` at
     // creation, but should not really be required.
-    fs_node_ensure_class(&dir_entry.node)?;
+    let fs_node = dir_entry.node();
+    fs_node_ensure_class(fs_node)?;
 
     // This hook is called every time an `FsNode` is linked to a `DirEntry`, so it is expected that
     // the `FsNode` may already have been labeled.
-    let fs_node = &dir_entry.node;
-    let label_class = fs_node.security_state.selinux.read();
+    let label_class = fs_node.selinux_state().read();
     if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
         return Ok(());
     }
@@ -99,9 +94,10 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     // the filesystem's labeling scheme. This allows nodes in per-process and per-task directories
     // in "proc" to inherit the task's label.
     let parent = dir_entry.parent();
-    if let Some(ref parent) = parent {
-        let parent_node = &parent.node;
-        let parent_label = (*parent_node.security_state.selinux.read()).clone();
+    if let Some(ref parent) = parent
+        && let Some(parent_node) = NonPrivateFsNode::new(&parent.node)
+    {
+        let parent_label = (*parent_node.selinux_state().read()).clone();
         if let FsNodeLabel::FromTask { task_state } = &parent_label.label {
             fs_node_set_label_with_task(fs_node, task_state);
             return Ok(());
@@ -115,7 +111,11 @@ pub(in crate::security) fn fs_node_init_with_dentry(
         label
     } else {
         log_debug!("Queuing FsNode for {:?} for labeling", dir_entry);
-        fs.security_state.state.pending_entries.lock().insert(WeakKey::from(dir_entry));
+        fs.security_state
+            .state
+            .pending_entries
+            .lock()
+            .insert(WeakKey::from(dir_entry.as_dir_entry()));
 
         // Labelling may have completed while we were inserting the `DirEntry` so check again.
         let Some(label) = fs.security_state.state.label() else { return Ok(()) };
@@ -134,7 +134,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     // TODO: Ensure that this `get_xattr` bypasses access-checks, so that label
                     // assignment cannot fail.
                     let attr = fs_node.ops().get_xattr(
-                        fs_node,
+                        &fs_node,
                         current_task,
                         XATTR_NAME_SELINUX.to_bytes().into(),
                         SECURITY_SELINUX_XATTR_VALUE_MAX_SIZE,
@@ -160,7 +160,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                                     let root_context =
                                         security_server.sid_to_security_context(root_sid).unwrap();
                                     fs_node.ops().set_xattr(
-                                        fs_node,
+                                        &fs_node,
                                         current_task,
                                         XATTR_NAME_SELINUX.to_bytes().into(),
                                         root_context.as_slice().into(),
@@ -205,11 +205,14 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     // TODO: https://fxbug.dev/381275592 - Use the SID from the creating task,
                     // rather than current_task!
                     let scope = RcuReadScope::new();
+                    let parent_node = parent
+                        .as_ref()
+                        .and_then(|parent| NonPrivateFsNode::assert_from(&parent.node));
                     return fs_node_init_on_create(
                         security_server,
                         current_task,
                         fs_node,
-                        parent.as_ref().map(|x| &**x.node),
+                        parent_node,
                         dir_entry.local_name(&scope),
                     )
                     .map(|_| ());
@@ -218,8 +221,8 @@ pub(in crate::security) fn fs_node_init_with_dentry(
         }
         FileSystemLabelingScheme::GenFsCon { .. } => {
             let fs_type = fs_node.fs().name();
-            let fs_node_class = fs_node.security_state.selinux.read().class();
-            let sub_path = get_fs_relative_path(dir_entry);
+            let fs_node_class = fs_node.selinux_state().read().class();
+            let sub_path = get_fs_relative_path(dir_entry.as_dir_entry());
             security_server
                 .genfscon_label_for_fs_and_path(
                     fs_type.into(),
@@ -237,20 +240,19 @@ pub(in crate::security) fn fs_node_init_with_dentry(
         }
     };
 
-    set_cached_sid(&fs_node, sid);
+    set_cached_sid(fs_node, sid);
 
     Ok(())
 }
 
 // TODO: https://fxbug.dev/455771186 - Clean up with-DirEntry initialization and remove this.
-pub(in crate::security) fn fs_node_init_with_dentry_deferred(dir_entry: &DirEntryHandle) {
-    debug_assert!(!dir_entry.node.is_private());
+pub(in crate::security) fn fs_node_init_with_dentry_deferred(dir_entry: NonPrivateDirEntry<'_>) {
     // This API is only for use when creating artificial file-system nodes prior to policy-load /
     // filesystem label initialization.
-    let fs = dir_entry.node.fs();
+    let fs = dir_entry.node().fs();
     assert!(fs.security_state.state.label().is_none());
     log_debug!("Queuing FsNode for {:?} for labeling", dir_entry);
-    fs.security_state.state.pending_entries.lock().insert(WeakKey::from(dir_entry));
+    fs.security_state.state.pending_entries.lock().insert(WeakKey::from(dir_entry.as_dir_entry()));
 }
 
 /// Returns an [`FsNodeSecurityXattr`] for the security context of `sid`.
@@ -312,7 +314,7 @@ fn compute_new_file_sid(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     fs_label: &FileSystemLabel,
-    parent: Option<&FsNode>,
+    parent: Option<NonPrivateFsNode<'_>>,
     new_file_class: FileClass,
     name: &FsStr,
 ) -> Result<SecurityId, Errno> {
@@ -389,7 +391,7 @@ pub(in crate::security) fn compute_new_fs_node_sid(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     fs_label: &FileSystemLabel,
-    parent: Option<&FsNode>,
+    parent: Option<NonPrivateFsNode<'_>>,
     new_node_class: FsNodeClass,
     name: &FsStr,
 ) -> Result<SecurityId, Errno> {
@@ -412,15 +414,12 @@ pub(in crate::security) fn compute_new_fs_node_sid(
 pub(in crate::security) fn fs_node_init_on_create(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    new_node: &FsNode,
-    parent: Option<&FsNode>,
+    new_node: NonPrivateFsNode<'_>,
+    parent: Option<NonPrivateFsNode<'_>>,
     name: &FsStr,
 ) -> Result<Option<FsNodeSecurityXattr>, Errno> {
-    debug_assert!(!new_node.is_private());
-    debug_assert!(parent.is_none_or(|parent| !parent.is_private()));
-
     // By definition this is a new `FsNode` so should not have already been labeled.
-    let label_class = new_node.security_state.selinux.read();
+    let label_class = new_node.selinux_state().read();
     let is_uninitialized = matches!(label_class.label, FsNodeLabel::Uninitialized);
     assert!(is_uninitialized, "init_on_create() for {:?} with label {:?}", new_node, *label_class);
     if new_node.fs().name() == "overlay" {
@@ -472,16 +471,14 @@ pub(in crate::security) fn fs_node_init_on_create(
     Ok(xattr)
 }
 
-pub fn dentry_create_files_as(
+pub(in crate::security) fn dentry_create_files_as(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
+    parent: NonPrivateFsNode<'_>,
     new_node_mode: FileMode,
     new_node_name: &FsStr,
     new_creds: &mut Credentials,
 ) -> Result<(), Errno> {
-    debug_assert!(!parent.is_private());
-
     // Determine the security class of the new node, and the SID with which it would be labeled.
     let fs = parent.fs();
     let new_node_class = file_class_from_file_mode(new_node_mode)?.into();
@@ -507,11 +504,9 @@ pub fn dentry_create_files_as(
 pub(in crate::security) fn fs_node_init_anon(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    new_node: &FsNode,
+    new_node: NonPrivateFsNode<'_>,
     node_type: &str,
 ) -> Result<(), Errno> {
-    debug_assert!(!new_node.is_private());
-
     let (node_class, node_type): (FsNodeClass, _) = if node_type == "[memfd]" {
         // If the "memfd_class" policy capability is enabled then mem-FD nodes use the anon_inode
         // labeling scheme, but receive their own dedicated security class.
@@ -543,7 +538,7 @@ pub(in crate::security) fn fs_node_init_anon(
         InitialSid::Unlabeled.into()
     };
 
-    new_node.security_state.selinux.update(FsNodeLabel::SecurityId { sid }, node_class);
+    new_node.selinux_state().update(FsNodeLabel::SecurityId { sid }, node_class);
 
     Ok(())
 }
@@ -553,12 +548,10 @@ pub(in crate::security) fn fs_node_init_anon(
 fn may_create(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
+    parent: NonPrivateFsNode<'_>,
     new_file_mode: FileMode, // Only used to determine the file class.
     name: &FsStr,
 ) -> Result<(), Errno> {
-    debug_assert!(!parent.is_private());
-
     let permission_check = build_permission_check(current_task, security_server);
 
     // Verify that the caller has permissions required to add new entries to the target
@@ -637,12 +630,9 @@ fn may_create(
 fn may_link(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
-    existing_node: &FsNode,
+    parent: NonPrivateFsNode<'_>,
+    existing_node: NonPrivateFsNode<'_>,
 ) -> Result<(), Errno> {
-    debug_assert!(!parent.is_private());
-    debug_assert!(!existing_node.is_private());
-
     let audit_context = current_task.into();
 
     let permission_check = build_permission_check(current_task, security_server);
@@ -690,14 +680,11 @@ fn may_link(
 fn may_unlink_or_rmdir(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
-    fs_node: &FsNode,
+    parent: NonPrivateFsNode<'_>,
+    fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     operation: UnlinkKind,
 ) -> Result<(), Errno> {
-    debug_assert!(!parent.is_private());
-    debug_assert!(!fs_node.is_private());
-
     let audit_context = &[current_task.into(), Auditable::Name(name)];
 
     let permission_check = build_permission_check(current_task, security_server);
@@ -752,7 +739,7 @@ fn may_unlink_or_rmdir(
 pub(in crate::security) fn check_fs_node_create_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
+    parent: NonPrivateFsNode<'_>,
     mode: FileMode,
     name: &FsStr,
 ) -> Result<(), Errno> {
@@ -764,7 +751,7 @@ pub(in crate::security) fn check_fs_node_create_access(
 pub(in crate::security) fn check_fs_node_symlink_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
+    parent: NonPrivateFsNode<'_>,
     name: &FsStr,
     _old_path: &FsStr,
 ) -> Result<(), Errno> {
@@ -776,7 +763,7 @@ pub(in crate::security) fn check_fs_node_symlink_access(
 pub(in crate::security) fn check_fs_node_mkdir_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
+    parent: NonPrivateFsNode<'_>,
     mode: FileMode,
     name: &FsStr,
 ) -> Result<(), Errno> {
@@ -788,7 +775,7 @@ pub(in crate::security) fn check_fs_node_mkdir_access(
 pub(in crate::security) fn check_fs_node_mknod_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
+    parent: NonPrivateFsNode<'_>,
     mode: FileMode,
     name: &FsStr,
     _device_id: DeviceId,
@@ -800,8 +787,8 @@ pub(in crate::security) fn check_fs_node_mknod_access(
 pub(in crate::security) fn check_fs_node_link_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    target_directory: &FsNode,
-    existing_node: &FsNode,
+    target_directory: NonPrivateFsNode<'_>,
+    existing_node: NonPrivateFsNode<'_>,
 ) -> Result<(), Errno> {
     may_link(security_server, current_task, target_directory, existing_node)
 }
@@ -810,8 +797,8 @@ pub(in crate::security) fn check_fs_node_link_access(
 pub(in crate::security) fn check_fs_node_unlink_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
-    child: &FsNode,
+    parent: NonPrivateFsNode<'_>,
+    child: NonPrivateFsNode<'_>,
     name: &FsStr,
 ) -> Result<(), Errno> {
     assert!(!child.is_dir());
@@ -830,8 +817,8 @@ pub(in crate::security) fn check_fs_node_unlink_access(
 pub(in crate::security) fn check_fs_node_rmdir_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    parent: &FsNode,
-    child: &FsNode,
+    parent: NonPrivateFsNode<'_>,
+    child: NonPrivateFsNode<'_>,
     name: &FsStr,
 ) -> Result<(), Errno> {
     assert!(child.is_dir());
@@ -843,18 +830,13 @@ pub(in crate::security) fn check_fs_node_rmdir_access(
 pub(in crate::security) fn check_fs_node_rename_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    old_parent: &FsNode,
-    moving_node: &FsNode,
-    new_parent: &FsNode,
-    replaced_node: Option<&FsNode>,
+    old_parent: NonPrivateFsNode<'_>,
+    moving_node: NonPrivateFsNode<'_>,
+    new_parent: NonPrivateFsNode<'_>,
+    replaced_node: Option<NonPrivateFsNode<'_>>,
     old_basename: &FsStr,
     new_basename: &FsStr,
 ) -> Result<(), Errno> {
-    debug_assert!(!old_parent.is_private());
-    debug_assert!(!moving_node.is_private());
-    debug_assert!(!new_parent.is_private());
-    debug_assert!(replaced_node.is_none_or(|node| !node.is_private()));
-
     let permission_check = build_permission_check(current_task, security_server);
     let current_sid = current_task_state(current_task).current_sid;
     let old_parent_sid = fs_node_effective_sid_and_class(old_parent).sid;
@@ -922,7 +904,7 @@ pub(in crate::security) fn check_fs_node_rename_access(
         )?;
     }
 
-    if !std::ptr::eq(old_parent, new_parent) {
+    if !std::ptr::eq(old_parent.as_fs_node(), new_parent.as_fs_node()) {
         // If the parent nodes are the same directory, we have already verified the search
         // permission during the `old_parent_sid` verification.
         check_permission(
@@ -956,9 +938,8 @@ pub(in crate::security) fn check_fs_node_rename_access(
 pub(in crate::security) fn check_fs_node_read_link_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
 ) -> Result<(), Errno> {
-    debug_assert!(!fs_node.is_private());
     let current_sid = current_task_state(current_task).current_sid;
     has_fs_node_permissions(
         &build_permission_check(current_task, security_server),
@@ -975,7 +956,7 @@ pub(in crate::security) fn check_fs_node_read_link_access(
 pub(in crate::security) fn has_dontaudit_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
 ) -> bool {
     fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.has_dontaudit_access");
 
@@ -991,7 +972,7 @@ pub(in crate::security) fn has_dontaudit_access(
 pub(in crate::security) fn fs_node_permission(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     permission_flags: PermissionFlags,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
@@ -1025,9 +1006,8 @@ pub(in crate::security) fn fs_node_permission(
 pub(in crate::security) fn check_fs_node_getattr_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
 ) -> Result<(), Errno> {
-    debug_assert!(!fs_node.is_private());
     let current_sid = current_task_state(current_task).current_sid;
     has_fs_node_permissions(
         &build_permission_check(current_task, security_server),
@@ -1048,7 +1028,7 @@ pub(in crate::security) fn check_fs_node_getattr_access(
 pub(in crate::security) fn path_notify(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     mask: InotifyMask,
 ) -> Result<(), Errno> {
     let FsNodeSidAndClass { sid: target_sid, class } = fs_node_effective_sid_and_class(fs_node);
@@ -1092,10 +1072,9 @@ pub(in crate::security) fn path_notify(
 pub(in crate::security) fn check_fs_node_setattr_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     attributes: &zxio_node_attr_has_t,
 ) -> Result<(), Errno> {
-    debug_assert!(!fs_node.is_private());
     let current_sid = current_task_state(current_task).current_sid;
 
     let permissions = if attributes.mode
@@ -1128,13 +1107,11 @@ pub(in crate::security) fn fs_node_xattr_skipcap(name: &FsStr) -> bool {
 pub(in crate::security) fn check_fs_node_setxattr_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     value: &FsStr,
     _op: XattrOp,
 ) -> Result<(), Errno> {
-    debug_assert!(!fs_node.is_private());
-
     let current_sid = current_task_state(current_task).current_sid;
 
     // If any xattr other than the SELinux label is being set then require the "setattr" permission.
@@ -1216,10 +1193,9 @@ pub(in crate::security) fn check_fs_node_setxattr_access(
 pub(in crate::security) fn check_fs_node_getxattr_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     _name: &FsStr,
 ) -> Result<(), Errno> {
-    debug_assert!(!fs_node.is_private());
     let current_sid = current_task_state(current_task).current_sid;
     has_fs_node_permissions(
         &build_permission_check(current_task, security_server),
@@ -1234,9 +1210,8 @@ pub(in crate::security) fn check_fs_node_getxattr_access(
 pub(in crate::security) fn check_fs_node_listxattr_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
 ) -> Result<(), Errno> {
-    debug_assert!(!fs_node.is_private());
     let current_sid = current_task_state(current_task).current_sid;
     has_fs_node_permissions(
         &build_permission_check(current_task, security_server),
@@ -1251,11 +1226,9 @@ pub(in crate::security) fn check_fs_node_listxattr_access(
 pub(in crate::security) fn check_fs_node_removexattr_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
 ) -> Result<(), Errno> {
-    debug_assert!(!fs_node.is_private());
-
     // Removing the SELinux security label is not permitted.
     if name == XATTR_NAME_SELINUX.to_bytes() {
         return error!(EACCES);
@@ -1274,8 +1247,7 @@ pub(in crate::security) fn check_fs_node_removexattr_access(
 
 /// If `fs_node` is in a filesystem without xattr support, returns the xattr name for the security
 /// label (i.e. "security.selinux"). Otherwise returns None.
-pub(in crate::security) fn fs_node_listsecurity(fs_node: &FsNode) -> Option<FsString> {
-    debug_assert!(!fs_node.is_private());
+pub(in crate::security) fn fs_node_listsecurity(fs_node: NonPrivateFsNode<'_>) -> Option<FsString> {
     if fs_node.fs().security_state.state.supports_xattr() {
         None
     } else {
@@ -1288,11 +1260,10 @@ pub(in crate::security) fn fs_node_listsecurity(fs_node: &FsNode) -> Option<FsSt
 pub(in crate::security) fn fs_node_getsecurity(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     max_size: usize,
 ) -> Result<Option<ValueOrSize<FsString>>, Errno> {
-    debug_assert!(!fs_node.is_private());
     if name != XATTR_NAME_SELINUX.to_bytes() {
         return Ok(None);
     }
@@ -1300,9 +1271,9 @@ pub(in crate::security) fn fs_node_getsecurity(
     // If the SID cached on the node is "unlabeled" then the node may have an xattr with an invalid
     // Security Context, which we should return, so return the `get_xattr()` result, unless it indicates
     // that the filesystem does not support the attribute.
-    let sid = fs_node_effective_sid_and_class(&fs_node).sid;
+    let sid = fs_node_effective_sid_and_class(fs_node).sid;
     if sid == InitialSid::Unlabeled.into() && fs_node.fs().security_state.state.supports_xattr() {
-        let result = fs_node.ops().get_xattr(fs_node, current_task, name, max_size);
+        let result = fs_node.ops().get_xattr(&fs_node, current_task, name, max_size);
         if result != error!(ENOTSUP) {
             return result.map(Some);
         }
@@ -1323,12 +1294,11 @@ pub(in crate::security) fn fs_node_getsecurity(
 pub(in crate::security) fn fs_node_setsecurity(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     value: &FsStr,
     op: XattrOp,
 ) -> Result<Option<()>, Errno> {
-    debug_assert!(!fs_node.is_private());
     if name != XATTR_NAME_SELINUX.to_bytes() {
         return Ok(None);
     }
@@ -1336,7 +1306,7 @@ pub(in crate::security) fn fs_node_setsecurity(
     // If the filesystem is configured to persist labels into xattrs then apply the label to the
     // node.
     if fs_node.fs().security_state.state.supports_xattr() {
-        fs_node.ops().set_xattr(fs_node, current_task, name, value, op)?;
+        fs_node.ops().set_xattr(&fs_node, current_task, name, value, op)?;
     }
 
     // Finally, update the label cached on the file node.
@@ -1350,7 +1320,7 @@ pub(in crate::security) fn fs_node_setsecurity(
 /// Updates `new_creds` with the credentials required to copy-up `fs_node` into a new node.
 pub(in crate::security) fn fs_node_copy_up(
     _current_task: &CurrentTask,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     fs: &FileSystem,
     new_creds: &mut Credentials,
 ) {
@@ -1378,7 +1348,7 @@ mod tests {
     use bstr::BStr;
 
     use crate::testing::spawn_kernel_and_run;
-    use crate::vfs::XattrOp;
+    use crate::vfs::{FsNode, XattrOp};
     use starnix_uapi::errno;
 
     const VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_valid_t:s0";
@@ -1386,32 +1356,33 @@ mod tests {
 
     /// Clears the cached security id on `fs_node`.
     fn clear_cached_sid(fs_node: &FsNode) {
-        fs_node.security_state.selinux.clear_label_for_test();
+        fs_node.security_state.selinux_for_test().clear_label_for_test();
     }
 
     #[fuchsia::test]
     async fn fs_node_resolved_and_effective_sids_for_missing_xattr() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let dir_entry = &testing::create_test_file(current_task).entry;
-            let node = &dir_entry.node;
+            let non_private_dir_entry = NonPrivateDirEntry::new(dir_entry).unwrap();
+            let node = non_private_dir_entry.node();
 
             // Remove the "security.selinux" label, if any.
             let _ =
-                node.ops().remove_xattr(node, &current_task, XATTR_NAME_SELINUX.to_bytes().into());
+                node.ops().remove_xattr(&node, &current_task, XATTR_NAME_SELINUX.to_bytes().into());
             assert_eq!(
                 node.ops()
-                    .get_xattr(node, &current_task, XATTR_NAME_SELINUX.to_bytes().into(), 4096)
+                    .get_xattr(&node, &current_task, XATTR_NAME_SELINUX.to_bytes().into(), 4096)
                     .unwrap_err(),
                 errno!(ENODATA)
             );
 
             // Clear the cached SID and use `fs_node_init_with_dentry()` to re-resolve the label.
-            clear_cached_sid(node);
-            assert_eq!(None, get_cached_sid(node));
+            clear_cached_sid(&node);
+            assert_eq!(None, get_cached_sid(&node));
             fs_node_init_with_dentry(
                 &security_server,
                 &current_task,
-                dir_entry,
+                non_private_dir_entry,
                 /* read_xaddr = */
                 true,
             )
@@ -1431,7 +1402,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(result, Some(ValueOrSize::Value(default_file_context)));
-            assert!(get_cached_sid(node).is_some());
+            assert!(get_cached_sid(&node).is_some());
         })
         .await;
     }
@@ -1440,14 +1411,15 @@ mod tests {
     async fn fs_node_resolved_and_effective_sids_for_invalid_xattr() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let dir_entry = &testing::create_test_file(current_task).entry;
-            let node = &dir_entry.node;
+            let non_private_dir_entry = NonPrivateDirEntry::new(dir_entry).unwrap();
+            let node = non_private_dir_entry.node();
 
             const INVALID_CONTEXT: &[u8] = b"invalid context!";
 
             // Set the security label to a value which is not a valid Security Context.
             node.ops()
                 .set_xattr(
-                    node,
+                    &node,
                     &current_task,
                     XATTR_NAME_SELINUX.to_bytes().into(),
                     INVALID_CONTEXT.into(),
@@ -1456,12 +1428,12 @@ mod tests {
                 .expect("setxattr");
 
             // Clear the cached SID and use `fs_node_init_with_dentry()` to re-resolve the label.
-            clear_cached_sid(node);
-            assert_eq!(None, get_cached_sid(node));
+            clear_cached_sid(&node);
+            assert_eq!(None, get_cached_sid(&node));
             fs_node_init_with_dentry(
                 &security_server,
                 &current_task,
-                dir_entry,
+                non_private_dir_entry,
                 /* read_xaddr = */
                 true,
             )
@@ -1480,7 +1452,7 @@ mod tests {
 
             // The SID cached for the `node` should be "unlabeled".
             let unlabeled_initial_sid = InitialSid::Unlabeled.into();
-            assert_eq!(Some(unlabeled_initial_sid), get_cached_sid(node));
+            assert_eq!(Some(unlabeled_initial_sid), get_cached_sid(&node));
 
             // The effective SID of the node should be "unlabeled".
             assert_eq!(unlabeled_initial_sid, fs_node_effective_sid_and_class(node).sid);
@@ -1492,7 +1464,8 @@ mod tests {
     async fn fs_node_effective_sid_valid_xattr_stored() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let dir_entry = &testing::create_test_file(current_task).entry;
-            let node = &dir_entry.node;
+            let non_private_dir_entry = NonPrivateDirEntry::new(dir_entry).unwrap();
+            let node = non_private_dir_entry.node();
 
             // Store a valid Security Context in the attribute, then clear the cached label and
             // re-resolve it. The hooks test policy defines that "tmpfs" use "fs_use_xattr"
@@ -1500,19 +1473,19 @@ mod tests {
             // the corresponding SID cached.
             node.ops()
                 .set_xattr(
-                    node,
+                    &node,
                     &current_task,
                     XATTR_NAME_SELINUX.to_bytes().into(),
                     VALID_SECURITY_CONTEXT.into(),
                     XattrOp::Set,
                 )
                 .expect("setxattr");
-            clear_cached_sid(node);
-            assert_eq!(None, get_cached_sid(node));
+            clear_cached_sid(&node);
+            assert_eq!(None, get_cached_sid(&node));
             fs_node_init_with_dentry(
                 &security_server,
                 &current_task,
-                dir_entry,
+                non_private_dir_entry,
                 /* read_xaddr = */
                 true,
             )
@@ -1530,7 +1503,7 @@ mod tests {
             assert_eq!(result, Some(ValueOrSize::Value(VALID_SECURITY_CONTEXT_WITH_NUL.into())));
 
             // There should be a SID cached, and it should map to the valid Security Context.
-            let cached_sid = get_cached_sid(node).unwrap();
+            let cached_sid = get_cached_sid(&node).unwrap();
             assert_eq!(
                 security_server.sid_to_security_context(cached_sid).unwrap(),
                 VALID_SECURITY_CONTEXT

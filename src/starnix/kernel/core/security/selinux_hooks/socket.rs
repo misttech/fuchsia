@@ -5,15 +5,15 @@
 use super::audit::Auditable;
 use super::fs_node::compute_new_fs_node_sid;
 use super::{
-    build_permission_check, check_permission, current_task_state, fs_node_effective_sid_and_class,
+    NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile, build_permission_check,
+    check_permission, current_task_state, fs_node_effective_sid_and_class,
 };
 use crate::security::selinux_hooks::{FsNodeSidAndClass, superblock};
 use crate::task::CurrentTask;
 use crate::vfs::socket::{
-    NetlinkFamily, Socket, SocketAddress, SocketDomain, SocketFile, SocketPeer, SocketProtocol,
+    NetlinkFamily, Socket, SocketAddress, SocketDomain, SocketPeer, SocketProtocol,
     SocketShutdownFlags, SocketType, socket_fs,
 };
-use crate::vfs::{DowncastedFile, FsNode};
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFsNodePermission, CommonSocketPermission, ForClass, FsNodeClass, InitialSid,
@@ -28,12 +28,10 @@ pub(super) fn has_socket_permission(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     subject_sid: SecurityId,
-    socket_node: &FsNode,
+    socket_node: NonPrivateFsNode<'_>,
     permission: impl ForClass<SocketClass>,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    debug_assert!(!socket_node.is_private());
-
     let FsNodeSidAndClass { sid: socket_sid, class: socket_class } =
         fs_node_effective_sid_and_class(socket_node);
     let FsNodeClass::Socket(socket_class) = socket_class else {
@@ -179,21 +177,23 @@ pub(in crate::security) fn check_socket_create_access(
 
 /// Sets the peer security context for each socket in the pair.
 pub(in crate::security) fn socket_socketpair(
-    left: DowncastedFile<'_, SocketFile>,
-    right: DowncastedFile<'_, SocketFile>,
+    left: NonPrivateSocketFile<'_>,
+    right: NonPrivateSocketFile<'_>,
 ) -> Result<(), Errno> {
-    let left_sid = fs_node_effective_sid_and_class(left.file().node()).sid;
-    let right_sid = fs_node_effective_sid_and_class(right.file().node()).sid;
+    let left_sid = fs_node_effective_sid_and_class(left.node()).sid;
+    let right_sid = fs_node_effective_sid_and_class(right.node()).sid;
     *left.socket().security.state.peer_sid.lock() = Some(right_sid);
     *right.socket().security.state.peer_sid.lock() = Some(left_sid);
     Ok(())
 }
 
 /// Computes and sets the security class for `socket`.
-pub(in crate::security) fn socket_post_create(security_server: &SecurityServer, socket: &Socket) {
+pub(in crate::security) fn socket_post_create(
+    security_server: &SecurityServer,
+    socket: NonPrivateSocket<'_>,
+) {
     let socket_node = socket.fs_node().expect("socket_post_create without FsNode");
-    debug_assert!(!socket_node.is_private());
-    socket_node.security_state.selinux.update_class(
+    socket_node.selinux_state().update_class(
         compute_socket_security_class(
             security_server,
             socket.domain,
@@ -209,7 +209,7 @@ pub(in crate::security) fn socket_post_create(security_server: &SecurityServer, 
 pub(in crate::security) fn check_socket_bind_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
     _socket_address: &SocketAddress,
 ) -> Result<(), Errno> {
     let Some(socket_node) = socket.fs_node() else {
@@ -225,7 +225,7 @@ pub(in crate::security) fn check_socket_bind_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         CommonSocketPermission::Bind,
         current_task.into(),
     )
@@ -236,7 +236,7 @@ pub(in crate::security) fn check_socket_bind_access(
 pub(in crate::security) fn check_socket_connect_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: DowncastedFile<'_, SocketFile>,
+    socket: NonPrivateSocketFile<'_>,
     _socket_peer: &SocketPeer,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
@@ -247,7 +247,7 @@ pub(in crate::security) fn check_socket_connect_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket.file().node(),
+        socket.node(),
         CommonSocketPermission::Connect,
         current_task.into(),
     )
@@ -257,7 +257,7 @@ pub(in crate::security) fn check_socket_connect_access(
 pub(in crate::security) fn check_socket_listen_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
     _backlog: i32,
 ) -> Result<(), Errno> {
     let Some(socket_node) = socket.fs_node() else {
@@ -273,7 +273,7 @@ pub(in crate::security) fn check_socket_listen_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         CommonSocketPermission::Listen,
         current_task.into(),
     )
@@ -284,25 +284,21 @@ pub(in crate::security) fn check_socket_listen_access(
 pub(in crate::security) fn socket_accept(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    listening_socket: DowncastedFile<'_, SocketFile>,
-    accepted_socket: DowncastedFile<'_, SocketFile>,
+    listening_socket: NonPrivateSocketFile<'_>,
+    accepted_socket: NonPrivateSocketFile<'_>,
 ) -> Result<(), Errno> {
-    debug_assert!(!listening_socket.file().node().is_private());
-    debug_assert!(!accepted_socket.file().node().is_private());
-
     let current_sid = current_task_state(current_task).current_sid;
-    let listening_security_state =
-        (*listening_socket.file().node().security_state.selinux.read()).clone();
+    let listening_security_state = (*listening_socket.node().selinux_state().read()).clone();
     has_socket_permission(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &listening_socket.file().node(),
+        listening_socket.node(),
         CommonSocketPermission::Accept,
         current_task.into(),
     )?;
-    let _lock = accepted_socket.file().node().security_state.selinux.update_lock.lock();
-    accepted_socket.file().node().security_state.selinux.label.update(listening_security_state);
+    let _lock = accepted_socket.node().selinux_state().update_lock.lock();
+    accepted_socket.node().selinux_state().label.update(listening_security_state);
     Ok(())
 }
 
@@ -310,7 +306,7 @@ pub(in crate::security) fn socket_accept(
 pub(in crate::security) fn check_socket_getsockopt_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
     level: u32,
     optname: u32,
 ) -> Result<(), Errno> {
@@ -328,7 +324,7 @@ pub(in crate::security) fn check_socket_getsockopt_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         CommonSocketPermission::GetOpt,
         audit_context.into(),
     )
@@ -338,7 +334,7 @@ pub(in crate::security) fn check_socket_getsockopt_access(
 pub(in crate::security) fn check_socket_setsockopt_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
     level: u32,
     optname: u32,
 ) -> Result<(), Errno> {
@@ -355,7 +351,7 @@ pub(in crate::security) fn check_socket_setsockopt_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         CommonSocketPermission::SetOpt,
         audit_context.into(),
     )
@@ -365,7 +361,7 @@ pub(in crate::security) fn check_socket_setsockopt_access(
 pub(in crate::security) fn check_socket_sendmsg_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
 ) -> Result<(), Errno> {
     let Some(socket_node) = socket.fs_node() else {
         track_stub!(
@@ -379,7 +375,7 @@ pub(in crate::security) fn check_socket_sendmsg_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         CommonFsNodePermission::Write,
         current_task.into(),
     )
@@ -389,7 +385,7 @@ pub(in crate::security) fn check_socket_sendmsg_access(
 pub(in crate::security) fn check_socket_recvmsg_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
 ) -> Result<(), Errno> {
     let Some(socket_node) = socket.fs_node() else {
         track_stub!(
@@ -403,7 +399,7 @@ pub(in crate::security) fn check_socket_recvmsg_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         CommonFsNodePermission::Read,
         current_task.into(),
     )
@@ -413,7 +409,7 @@ pub(in crate::security) fn check_socket_recvmsg_access(
 pub(in crate::security) fn check_socket_getname_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
 ) -> Result<(), Errno> {
     let Some(socket_node) = socket.fs_node() else {
         track_stub!(
@@ -428,7 +424,7 @@ pub(in crate::security) fn check_socket_getname_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         CommonFsNodePermission::GetAttr,
         current_task.into(),
     )
@@ -438,7 +434,7 @@ pub(in crate::security) fn check_socket_getname_access(
 pub(in crate::security) fn check_socket_shutdown_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
     _how: SocketShutdownFlags,
 ) -> Result<(), Errno> {
     let Some(socket_node) = socket.fs_node() else {
@@ -454,7 +450,7 @@ pub(in crate::security) fn check_socket_shutdown_access(
         &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
-        &socket_node,
+        socket_node,
         CommonSocketPermission::Shutdown,
         current_task.into(),
     )
@@ -464,9 +460,8 @@ pub(in crate::security) fn check_socket_shutdown_access(
 pub(in crate::security) fn socket_getpeersec_stream(
     security_server: &SecurityServer,
     _current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
 ) -> Result<Vec<u8>, Errno> {
-    debug_assert!(socket.fs_node().is_none_or(|node| !node.is_private()));
     let peer_sid = socket.security.state.peer_sid.lock().unwrap_or(InitialSid::Unlabeled.into());
     // The SELinux Test Suite assumes that `SO_PEERSEC` will return a NUL terminated label.
     Ok(security_server.sid_to_security_context_with_nul(peer_sid).unwrap())
@@ -477,10 +472,10 @@ pub(in crate::security) fn socket_getpeersec_stream(
 pub(in crate::security) fn socket_getpeersec_dgram(
     security_server: &SecurityServer,
     _current_task: &CurrentTask,
-    socket: &Socket,
+    socket: NonPrivateSocket<'_>,
 ) -> Vec<u8> {
     let socket_sid = if let Some(socket_node) = socket.fs_node() {
-        fs_node_effective_sid_and_class(&socket_node).sid
+        fs_node_effective_sid_and_class(socket_node).sid
     } else {
         track_stub!(TODO("https://fxbug.dev/414583985"), "socket_getpeersec_dgram without FsNode");
         InitialSid::Unlabeled.into()
@@ -493,8 +488,8 @@ pub(in crate::security) fn socket_getpeersec_dgram(
 pub(in crate::security) fn unix_may_send(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    sending_socket: &Socket,
-    receiving_socket: &Socket,
+    sending_socket: NonPrivateSocket<'_>,
+    receiving_socket: NonPrivateSocket<'_>,
 ) -> Result<(), Errno> {
     let (Some(sending_node), Some(receiving_node)) =
         (sending_socket.fs_node(), receiving_socket.fs_node())
@@ -503,12 +498,12 @@ pub(in crate::security) fn unix_may_send(
         return Ok(());
     };
 
-    let sending_sid = fs_node_effective_sid_and_class(&sending_node).sid;
+    let sending_sid = fs_node_effective_sid_and_class(sending_node).sid;
     has_socket_permission(
         &build_permission_check(current_task, security_server),
         current_task,
         sending_sid,
-        &receiving_node,
+        receiving_node,
         CommonSocketPermission::SendTo,
         current_task.into(),
     )
@@ -519,8 +514,8 @@ pub(in crate::security) fn unix_may_send(
 pub(in crate::security) fn unix_stream_connect(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    client_socket: &Socket,
-    listening_socket: &Socket,
+    client_socket: NonPrivateSocket<'_>,
+    listening_socket: NonPrivateSocket<'_>,
     server_socket: &Socket,
 ) -> Result<(), Errno> {
     let (Some(client_node), Some(listening_node)) =
@@ -531,12 +526,12 @@ pub(in crate::security) fn unix_stream_connect(
     };
 
     // Verify whether the `client_socket` has permission to connect to the `listening_socket`.
-    let client_sid = fs_node_effective_sid_and_class(&client_node).sid;
+    let client_sid = fs_node_effective_sid_and_class(client_node).sid;
     has_socket_permission(
         &build_permission_check(current_task, security_server),
         current_task,
         client_sid,
-        &listening_node,
+        listening_node,
         KernelPermission::from(UnixStreamSocketPermission::ConnectTo),
         current_task.into(),
     )?;
@@ -545,7 +540,7 @@ pub(in crate::security) fn unix_stream_connect(
     // another's SIDs, for e.g. `SO_GETPEERSEC` to return.
     // TODO: https://fxbug.dev/414583985 - the `server_socket` does not yet have an associated
     // `FsNode`, nor security label, so the `listening_socket` label must be used for now.
-    let listening_sid = fs_node_effective_sid_and_class(&listening_node).sid;
+    let listening_sid = fs_node_effective_sid_and_class(listening_node).sid;
     *client_socket.security.state.peer_sid.lock() = Some(listening_sid);
     *server_socket.security.state.peer_sid.lock() = Some(client_sid);
 
@@ -598,7 +593,7 @@ mod tests {
             )
             .expect("failed to create socket");
 
-            let socket_label = socket_node.node().security_state.selinux.read();
+            let socket_label = socket_node.node().security_state.selinux_for_test().read();
             assert_eq!(socket_label.class(), SocketClass::UnixStreamSocket.into());
             assert_eq!(get_cached_sid(socket_node.node()), Some(task_sid));
         })

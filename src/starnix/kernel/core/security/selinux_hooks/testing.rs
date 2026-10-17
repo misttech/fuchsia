@@ -120,6 +120,7 @@ pub(in crate::security) fn make_resolved_program(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::NonPrivateFsNode;
     use crate::security::selinux_hooks::fs_node_effective_sid_and_class;
 
     const VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_valid_t:s0";
@@ -128,8 +129,9 @@ mod tests {
     async fn create_test_executable_sets_context() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let dir_entry = &create_test_executable(current_task, VALID_SECURITY_CONTEXT).entry;
+            let node = NonPrivateFsNode::new(&dir_entry.node).unwrap();
 
-            let effective_sid = fs_node_effective_sid_and_class(&dir_entry.node).sid;
+            let effective_sid = fs_node_effective_sid_and_class(node).sid;
             let effective_context = security_server.sid_to_security_context(effective_sid).unwrap();
             assert_eq!(effective_context, VALID_SECURITY_CONTEXT);
         })

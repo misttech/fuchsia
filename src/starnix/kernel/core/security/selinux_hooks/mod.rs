@@ -18,9 +18,13 @@ pub(super) mod superblock;
 pub(super) mod task;
 pub(super) mod testing;
 
-use super::PermissionFlags;
+use super::{
+    NonPrivateDirEntry, NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile, PermissionFlags,
+};
 use crate::task::{CurrentTask, TaskPersistentInfo};
-use crate::vfs::{DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode};
+#[cfg(test)]
+use crate::vfs::FsNode;
+use crate::vfs::{DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps};
 use audit::{Auditable, audit_decision};
 use fuchsia_rcu::{RcuBox, RcuDroppable, RcuReadGuard};
 use indexmap::IndexSet;
@@ -116,13 +120,15 @@ fn has_file_permissions(
     }
 
     // Validate that the `subject` has the desired `permissions`, if any, to the underlying node.
-    if !permissions.is_empty() {
+    if !permissions.is_empty()
+        && let Some(fs_node) = NonPrivateFsNode::new(file.node())
+    {
         let audit_context = [audit_context, file.into()];
         has_fs_node_permissions(
             permission_check,
             current_task,
             subject_sid,
-            file.node(),
+            fs_node,
             permissions,
             (&audit_context).into(),
         )?;
@@ -151,10 +157,9 @@ fn has_file_ioctl_permission(
 
     // Validate that the `subject` has the `ioctl` permission on the underlying node,
     // as well as the specified ioctl extended permission.
-    let fs_node = file.node().as_ref().as_ref();
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(file.node()) else {
         return Ok(());
-    }
+    };
     let FsNodeSidAndClass { sid: target_sid, class: target_class } =
         fs_node_effective_sid_and_class(fs_node);
 
@@ -226,7 +231,7 @@ fn has_fs_node_permissions_dontaudit(
     permission_check: &PermissionCheck<'_>,
     _current_task: &CurrentTask,
     subject_sid: SecurityId,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     permissions: &[impl ForClass<FsNodeClass>],
 ) -> Result<(), Errno> {
     fuchsia_trace::duration!(
@@ -252,17 +257,11 @@ fn has_fs_node_permissions(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     subject_sid: SecurityId,
-    fs_node: &FsNode,
+    fs_node: NonPrivateFsNode<'_>,
     permissions: &[impl ForClass<FsNodeClass>],
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.has_fs_node_permissions");
-
-    // `FileObject` hooks may invoke `has_fs_node_permissions()` for files backed by kernel-private
-    // `FsNode`s after validating `fd { use }` access on the `FileObject` itself.
-    if fs_node.is_private() {
-        return Ok(());
-    }
 
     let target = fs_node_effective_sid_and_class(fs_node);
 
@@ -310,9 +309,8 @@ macro_rules! TODO_DENY {
 
 /// Returns the `SecurityId` and `FsNodeClass` that should be used for SELinux access control checks
 /// against `fs_node`.
-fn fs_node_effective_sid_and_class(fs_node: &FsNode) -> FsNodeSidAndClass {
-    debug_assert!(!fs_node.is_private());
-    let label_class = fs_node.security_state.selinux.read();
+fn fs_node_effective_sid_and_class(fs_node: NonPrivateFsNode<'_>) -> FsNodeSidAndClass {
+    let label_class = fs_node.selinux_state().read();
     if matches!(label_class.label, FsNodeLabel::Uninitialized) {
         // We should never reach here, but for now enforce it in debug builds.
         if cfg!(any(test, debug_assertions)) {
@@ -675,50 +673,49 @@ pub(super) struct BpfProgState {
 
 /// Sets the cached security id associated with `fs_node` to `sid`. Storing the security id will
 /// cause the security id to *not* be recomputed by the SELinux LSM when determining the effective
-/// security id of this [`FsNode`].
-pub(super) fn set_cached_sid(fs_node: &FsNode, sid: SecurityId) {
-    debug_assert!(!fs_node.is_private());
-    fs_node.security_state.selinux.update_label(FsNodeLabel::SecurityId { sid });
+/// security id of this [`NonPrivateFsNode`].
+pub(super) fn set_cached_sid(fs_node: NonPrivateFsNode<'_>, sid: SecurityId) {
+    fs_node.selinux_state().update_label(FsNodeLabel::SecurityId { sid });
 }
 
 /// Sets the Task associated with `fs_node` to `task`.
-/// The effective security id of the [`FsNode`] will be that of the task, even if the security id
-/// of the task changes.
-fn fs_node_set_label_with_task(fs_node: &FsNode, task_persistent_info: &TaskPersistentInfo) {
-    debug_assert!(!fs_node.is_private());
+/// The effective security id of the [`NonPrivateFsNode`] will be that of the task, even if the
+/// security id of the task changes.
+fn fs_node_set_label_with_task(
+    fs_node: NonPrivateFsNode<'_>,
+    task_persistent_info: &TaskPersistentInfo,
+) {
     fs_node
-        .security_state
-        .selinux
+        .selinux_state()
         .update_label(FsNodeLabel::FromTask { task_state: task_persistent_info.clone() });
 }
 
 /// Ensures that the `fs_node`'s security state has an appropriate security class set.
 /// As per the NSA report description, the security class is chosen based on the `FileMode`, unless
 /// a security class more specific than "file" has already been set on the node.
-fn fs_node_ensure_class(fs_node: &FsNode) -> Result<FsNodeClass, Errno> {
-    debug_assert!(!fs_node.is_private());
-    let label_class = fs_node.security_state.selinux.read();
+fn fs_node_ensure_class(fs_node: NonPrivateFsNode<'_>) -> Result<FsNodeClass, Errno> {
+    let label_class = fs_node.selinux_state().read();
     if let Some(class) = label_class.class {
         return Ok(class);
     }
 
     let file_mode = fs_node.info().mode;
-    let _lock = fs_node.security_state.selinux.update_lock.lock();
-    let label_class = fs_node.security_state.selinux.read();
+    let _lock = fs_node.selinux_state().update_lock.lock();
+    let label_class = fs_node.selinux_state().read();
     if let Some(class) = label_class.class {
         return Ok(class);
     }
     let mut new_label_class = (*label_class).clone();
     let class = file_class_from_file_mode(file_mode)?.into();
     new_label_class.class = Some(class);
-    fs_node.security_state.selinux.label.update(new_label_class);
+    fs_node.selinux_state().label.update(new_label_class);
     Ok(class)
 }
 
 #[cfg(test)]
 /// Returns the SID with which the node is labeled, if any, for use by `FsNode` labeling tests.
 pub(super) fn get_cached_sid(fs_node: &FsNode) -> Option<SecurityId> {
-    let label_class = fs_node.security_state.selinux.read();
+    let label_class = fs_node.security_state.selinux_for_test().read();
     if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
         Some(label_class.sid())
     } else {

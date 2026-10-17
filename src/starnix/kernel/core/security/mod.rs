@@ -43,12 +43,11 @@ impl KernelState {
     }
 }
 
-/// Opaque structure holding security state for an [`crate::vfs::FsNode`].
-#[derive(Debug, Default)]
-pub struct FsNodeState {
-    selinux: selinux_hooks::FsNodeState,
-    common_cap: common_cap::FsNodeState,
-}
+/// Wrapper types enforcing at compile time that kernel-private `FsNode`s do not access security
+/// state.
+mod non_private;
+pub use non_private::FsNodeState;
+use non_private::{NonPrivateDirEntry, NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile};
 
 /// Opaque structure holding security state for a [`crate::vfs::socket::Socket`].
 #[derive(Debug, Default)]

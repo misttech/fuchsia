@@ -7,9 +7,10 @@
 
 use super::bpf::{check_bpf_map_access, check_bpf_prog_access};
 use super::{
-    FileObjectOpenState, FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags,
-    build_permission_check, check_permission, current_task_state, fs_node_effective_sid_and_class,
-    has_file_ioctl_permission, has_file_permissions, is_internal_operation, permissions_from_flags,
+    FileObjectOpenState, FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, NonPrivateFsNode,
+    PermissionFlags, build_permission_check, check_permission, current_task_state,
+    fs_node_effective_sid_and_class, has_file_ioctl_permission, has_file_permissions,
+    is_internal_operation, permissions_from_flags,
 };
 use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingNameRef, MappingOptions, ProtectionFlags};
@@ -17,7 +18,7 @@ use crate::security::selinux_hooks::{
     ProcessPermission, check_self_permission, has_fs_node_permissions,
 };
 use crate::task::CurrentTask;
-use crate::vfs::{FileHandle, FileObject, FsNode, canonicalize_ioctl_request};
+use crate::vfs::{FileHandle, FileObject, canonicalize_ioctl_request};
 use linux_uapi::{
     F_GETFL, F_GETSIG, F_SETFL, F_SETOWN, F_SETOWN_EX, F_SETSIG, FIBMAP, FIGETBSZ, FIOASYNC,
     FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION, FS_IOC_SETFLAGS,
@@ -49,7 +50,7 @@ pub(in crate::security) fn file_permission(
     mut permission_flags: PermissionFlags,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
-    if file.node().is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(file.node()) else {
         // `file_open()` is not called for private nodes, so `open_state` is never populated and
         // no `FsNode` permissions apply. Only `fd { use }` is checked, which `has_file_permissions`
         // fast-paths when `current_sid` matches the `FileObject`'s SID.
@@ -61,10 +62,10 @@ pub(in crate::security) fn file_permission(
             NO_PERMISSIONS,
             current_task.into(),
         );
-    }
+    };
 
     let FsNodeSidAndClass { class: file_class, sid: node_sid } =
-        fs_node_effective_sid_and_class(file.node());
+        fs_node_effective_sid_and_class(fs_node);
 
     // Fast-path: If the caller SID, `FsNode` SID, and policy sequence number all match the values
     // cached by `file_open()` then access checks can be skipped, because `file_open()` has already
@@ -94,13 +95,13 @@ pub(in crate::security) fn file_permission(
     )
 }
 
-/// Checks whether `current_task` is allowed to open `file`.
+/// Checks whether `current_task` is allowed to open `file` backed by `fs_node`.
 pub(in crate::security) fn file_open(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file: &FileObject,
+    fs_node: NonPrivateFsNode<'_>,
 ) -> Result<(), Errno> {
-    debug_assert!(!file.node().is_private());
     if is_internal_operation(current_task) {
         return Ok(());
     }
@@ -116,7 +117,7 @@ pub(in crate::security) fn file_open(
     // - If the policy is re-loaded then subsequent `file_permission()` calls will observe the later
     //   sequence number and fail-safe by re-doing the check.
     let policy_version = security_server.policy_seqno();
-    let FsNodeSidAndClass { sid: node_sid, class } = fs_node_effective_sid_and_class(file.node());
+    let FsNodeSidAndClass { sid: node_sid, class } = fs_node_effective_sid_and_class(fs_node);
 
     let current_sid = current_task_state(current_task).current_sid;
     // `file_alloc_security()` ws called by this task immediately before `file_open()`, so the
@@ -193,7 +194,7 @@ pub(in crate::security) fn file_receive(
         return Ok(());
     }
 
-    if file.node().is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(file.node()) else {
         return has_file_permissions(
             &permission_check,
             current_task,
@@ -202,9 +203,9 @@ pub(in crate::security) fn file_receive(
             NO_PERMISSIONS,
             current_task.into(),
         );
-    }
+    };
 
-    let fs_node_class = fs_node_effective_sid_and_class(file.node()).class;
+    let fs_node_class = fs_node_effective_sid_and_class(fs_node).class;
     has_file_permissions(
         &permission_check,
         current_task,
@@ -377,12 +378,12 @@ pub(in crate::security) fn file_mprotect(
         // copy-on-write (e.g. by text relocations) is made executable. From the SELinux Notebook,
         // "execmod: Make executable a file mapping that has been modified by copy-on-write. (Text
         // relocation)".
-        if let MappingNameRef::File(file) = mapping.name() {
-            let node = file.node();
+        if let MappingNameRef::File(file) = mapping.name()
+            && let Some(node) = NonPrivateFsNode::new(file.node())
+        {
             let FsNodeSidAndClass { sid: object_sid, class } =
                 fs_node_effective_sid_and_class(node);
             if let FsNodeClass::File(file_class) = class
-                && !node.is_private()
                 && !mapping_options.contains(MappingOptions::SHARED)
                 // If this can't be determined, check `execmod` (like `fork()` assumes modifications).
                 && mapping.has_cow_modifications().unwrap_or(true)
@@ -408,8 +409,7 @@ pub(in crate::security) fn file_mprotect(
     // file mapping means that the memory is never the file's content.
     let fs_node = match mapping.name() {
         MappingNameRef::File(file) if !mapping_options.contains(MappingOptions::ANONYMOUS) => {
-            let node: &FsNode = file.node();
-            Some(node)
+            NonPrivateFsNode::new(file.node())
         }
         _ => None,
     };
@@ -437,7 +437,7 @@ pub(in crate::security) fn mmap_file(
             current_task.into(),
         )?;
     }
-    let fs_node = file.map(|file| -> &FsNode { file.node() });
+    let fs_node = file.and_then(|file| NonPrivateFsNode::new(file.node()));
     file_map_prot_check(security_server, current_task, fs_node, protection_flags, mapping_options)
 }
 
@@ -446,7 +446,7 @@ pub(in crate::security) fn mmap_file(
 fn file_map_prot_check(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    fs_node: Option<&FsNode>,
+    fs_node: Option<NonPrivateFsNode<'_>>,
     prot: ProtectionFlags,
     mapping_options: MappingOptions,
 ) -> Result<(), Errno> {
@@ -473,9 +473,7 @@ fn file_map_prot_check(
         }
     }
 
-    if let Some(fs_node) = fs_node
-        && !fs_node.is_private()
-    {
+    if let Some(fs_node) = fs_node {
         let node_class = fs_node_effective_sid_and_class(fs_node).class;
         let flags = {
             let mut flags: PermissionFlags = prot.into();

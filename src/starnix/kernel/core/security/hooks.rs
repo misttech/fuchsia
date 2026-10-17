@@ -37,8 +37,9 @@
 
 use super::selinux_hooks::audit::Auditable;
 use super::{
-    BpfMapState, BpfProgState, FileObjectState, FileSystemState, KernelState, PerfEventState,
-    common_cap, selinux_hooks, yama,
+    BpfMapState, BpfProgState, FileObjectState, FileSystemState, KernelState, NonPrivateDirEntry,
+    NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile, PerfEventState, common_cap,
+    selinux_hooks, yama,
 };
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::perf::PerfEventFile;
@@ -84,11 +85,6 @@ macro_rules! track_hook_duration {
     ($cname:literal) => {
         fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, $cname);
     };
-}
-
-/// Returns true if `socket` is backed by a kernel-private [`FsNode`].
-fn is_private_socket(socket: &Socket) -> bool {
-    socket.fs_node().is_some_and(|fs_node| fs_node.is_private())
 }
 
 bitflags::bitflags! {
@@ -486,11 +482,11 @@ pub fn file_permission(
 /// Corresponds to the `file_open()` LSM hook.
 pub fn file_open(current_task: &CurrentTask, file: &FileObject) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.file_open");
-    if file.node().is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(file.node()) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::file::file_open(security_server, current_task, file)
+        selinux_hooks::file::file_open(security_server, current_task, file, fs_node)
     })
 }
 
@@ -504,9 +500,9 @@ pub fn fs_node_init_with_dentry(
     dir_entry: &DirEntryHandle,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.fs_node_init_with_dentry");
-    if dir_entry.node.is_private() {
+    let Some(dir_entry) = NonPrivateDirEntry::new(dir_entry) else {
         return Ok(());
-    }
+    };
     // TODO: https://fxbug.dev/367585803 - Don't use `if_selinux_else()` here, because the `has_policy()`
     // check is racey, so doing non-trivial work in the "else" path is unsafe. Instead, call the SELinux
     // hook implementation, and let it label, or queue, the `FsNode` based on the `FileSystem` label
@@ -529,9 +525,9 @@ pub fn fs_node_init_with_dentry_no_xattr(
     dir_entry: &DirEntryHandle,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.fs_node_init_with_dentry_no_xattr");
-    if dir_entry.node.is_private() {
+    let Some(dir_entry) = NonPrivateDirEntry::new(dir_entry) else {
         return Ok(());
-    }
+    };
     // TODO: https://fxbug.dev/367585803 - Don't use `if_selinux_else()` here, because the `has_policy()`
     // check is racey, so doing non-trivial work in the "else" path is unsafe. Instead, call the SELinux
     // hook implementation, and let it label, or queue, the `FsNode` based on the `FileSystem` label
@@ -554,9 +550,9 @@ pub fn fs_node_init_with_dentry_no_xattr(
 // TODO: https://fxbug.dev/455771186 - Clean up with-DirEntry initialization and remove this.
 pub fn fs_node_init_with_dentry_deferred(kernel: &Kernel, dir_entry: &DirEntryHandle) {
     track_hook_duration!("security.hooks.fs_node_init_with_dentry_no_xattr");
-    if dir_entry.node.is_private() {
+    let Some(dir_entry) = NonPrivateDirEntry::new(dir_entry) else {
         return;
-    }
+    };
     if kernel.security_state.state.is_some() {
         selinux_hooks::fs_node::fs_node_init_with_dentry_deferred(dir_entry);
     }
@@ -574,9 +570,9 @@ pub fn fs_node_notify_security_context(
     context: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.fs_node_notify_security_context");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     if_selinux_else(
         current_task,
         |security_server| {
@@ -608,8 +604,11 @@ pub fn fs_node_init_on_create(
     name: &FsStr,
 ) -> Result<Option<FsNodeSecurityXattr>, Errno> {
     track_hook_duration!("security.hooks.fs_node_init_on_create");
-    debug_assert!(!new_node.is_private());
-    debug_assert!(!parent.is_private());
+    let (Some(new_node), Some(parent)) =
+        (NonPrivateFsNode::assert_from(new_node), NonPrivateFsNode::assert_from(parent))
+    else {
+        return Ok(None);
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::fs_node_init_on_create(
             security_server,
@@ -636,7 +635,9 @@ pub fn dentry_create_files_as(
     new_creds: &mut Credentials,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.dentry_create_files_as");
-    debug_assert!(!parent.is_private());
+    let Some(parent) = NonPrivateFsNode::assert_from(parent) else {
+        return Ok(());
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::dentry_create_files_as(
             security_server,
@@ -659,9 +660,9 @@ pub fn fs_node_init_anon(
     node_type: &str,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.fs_node_init_anon");
-    if new_node.is_private() {
+    let Some(new_node) = NonPrivateFsNode::new(new_node) else {
         return Ok(());
-    }
+    };
     if let Some(state) = current_task.kernel().security_state.state.as_ref() {
         selinux_hooks::fs_node::fs_node_init_anon(&state.server, current_task, new_node, node_type)
     } else {
@@ -679,7 +680,9 @@ pub fn check_fs_node_create_access(
     name: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_create_access");
-    debug_assert!(!parent.is_private());
+    let Some(parent) = NonPrivateFsNode::assert_from(parent) else {
+        return Ok(());
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_create_access(
             security_server,
@@ -701,7 +704,9 @@ pub fn check_fs_node_symlink_access(
     old_path: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_symlink_access");
-    debug_assert!(!parent.is_private());
+    let Some(parent) = NonPrivateFsNode::assert_from(parent) else {
+        return Ok(());
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_symlink_access(
             security_server,
@@ -723,7 +728,9 @@ pub fn check_fs_node_mkdir_access(
     name: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_mkdir_access");
-    debug_assert!(!parent.is_private());
+    let Some(parent) = NonPrivateFsNode::assert_from(parent) else {
+        return Ok(());
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_mkdir_access(
             security_server,
@@ -749,7 +756,9 @@ pub fn check_fs_node_mknod_access(
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_mknod_access");
     assert!(!mode.is_reg());
-    debug_assert!(!parent.is_private());
+    let Some(parent) = NonPrivateFsNode::assert_from(parent) else {
+        return Ok(());
+    };
 
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_mknod_access(
@@ -771,8 +780,11 @@ pub fn check_fs_node_link_access(
     child: &FsNode,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_link_access");
-    debug_assert!(!parent.is_private());
-    debug_assert!(!child.is_private());
+    let (Some(parent), Some(child)) =
+        (NonPrivateFsNode::assert_from(parent), NonPrivateFsNode::assert_from(child))
+    else {
+        return Ok(());
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_link_access(
             security_server,
@@ -792,8 +804,11 @@ pub fn check_fs_node_unlink_access(
     name: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_unlink_access");
-    debug_assert!(!parent.is_private());
-    debug_assert!(!child.is_private());
+    let (Some(parent), Some(child)) =
+        (NonPrivateFsNode::assert_from(parent), NonPrivateFsNode::assert_from(child))
+    else {
+        return Ok(());
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_unlink_access(
             security_server,
@@ -814,8 +829,11 @@ pub fn check_fs_node_rmdir_access(
     name: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_rmdir_access");
-    debug_assert!(!parent.is_private());
-    debug_assert!(!child.is_private());
+    let (Some(parent), Some(child)) =
+        (NonPrivateFsNode::assert_from(parent), NonPrivateFsNode::assert_from(child))
+    else {
+        return Ok(());
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_rmdir_access(
             security_server,
@@ -841,10 +859,22 @@ pub fn check_fs_node_rename_access(
     new_basename: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_rename_access");
-    debug_assert!(!old_parent.is_private());
-    debug_assert!(!moving_node.is_private());
-    debug_assert!(!new_parent.is_private());
-    debug_assert!(replaced_node.is_none_or(|node| !node.is_private()));
+    let (Some(old_parent), Some(moving_node), Some(new_parent)) = (
+        NonPrivateFsNode::assert_from(old_parent),
+        NonPrivateFsNode::assert_from(moving_node),
+        NonPrivateFsNode::assert_from(new_parent),
+    ) else {
+        return Ok(());
+    };
+    let replaced_node = match replaced_node {
+        Some(node) => {
+            let Some(node) = NonPrivateFsNode::assert_from(node) else {
+                return Ok(());
+            };
+            Some(node)
+        }
+        None => None,
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_rename_access(
             security_server,
@@ -866,9 +896,9 @@ pub fn check_fs_node_read_link_access(
     fs_node: &FsNode,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_read_link_access");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_read_link_access(
             security_server,
@@ -887,9 +917,9 @@ pub fn fs_node_permission(
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.fs_node_permission");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::fs_node_permission(
             security_server,
@@ -962,9 +992,9 @@ pub fn fs_node_copy_up(
     fs: &FileSystem,
     new_creds: &mut Credentials,
 ) {
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return;
-    }
+    };
     if_selinux_else(
         current_task,
         |_security_server| {
@@ -1016,9 +1046,9 @@ pub fn check_fs_node_setattr_access(
     attributes: &zxio_node_attr_has_t,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_setattr_access");
-    if node.is_private() {
+    let Some(node) = NonPrivateFsNode::new(node) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_setattr_access(
             security_server,
@@ -1043,13 +1073,13 @@ pub fn task_alloc_for_kernel() -> TaskAttrs {
 /// Corresponds to the `task_to_inode` LSM hook.
 pub fn task_to_fs_node(current_task: &CurrentTask, task: &Task, fs_node: &FsNode) {
     track_hook_duration!("security.hooks.task_to_fs_node");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return;
-    }
+    };
     // The fs_node_init_with_task hook doesn't require any policy-specific information. Only check
     // if SElinux is enabled before running it.
     if current_task.kernel().security_state.state.is_some() {
-        selinux_hooks::task::fs_node_init_with_task(task, &fs_node);
+        selinux_hooks::task::fs_node_init_with_task(task, fs_node);
     }
 }
 
@@ -1072,9 +1102,9 @@ pub fn task_for_context(task: &Task, context: &FsStr) -> Result<TaskAttrs, Errno
 /// This appears to be handled via additional options & flags in other hooks, by LSM.
 pub fn has_dontaudit_access(current_task: &CurrentTask, fs_node: &FsNode) -> bool {
     track_hook_duration!("security.hooks.has_dontaudit_access");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return false;
-    }
+    };
     if_selinux_else(
         current_task,
         |security_server| {
@@ -1221,10 +1251,13 @@ pub fn socket_socketpair(
     right: DowncastedFile<'_, SocketFile>,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.socket_socketpair");
-    if left.file().node().is_private() {
-        debug_assert!(right.file().node().is_private());
+    let Some(left) = NonPrivateSocketFile::new(left) else {
+        debug_assert!(NonPrivateSocketFile::new(right).is_none());
         return Ok(());
-    }
+    };
+    let Some(right) = NonPrivateSocketFile::assert_from(right) else {
+        return Ok(());
+    };
     if_selinux_else_default_ok(current_task, |_| {
         selinux_hooks::socket::socket_socketpair(left, right)
     })
@@ -1234,9 +1267,9 @@ pub fn socket_socketpair(
 /// Corresponds to the `socket_post_create()` LSM hook.
 pub fn socket_post_create(current_task: &CurrentTask, socket: &Socket) {
     track_hook_duration!("security.hooks.socket_post_create");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return;
-    }
+    };
     if let Some(state) = &current_task.kernel().security_state.state {
         selinux_hooks::socket::socket_post_create(&state.server, socket);
     }
@@ -1250,9 +1283,9 @@ pub fn check_socket_bind_access(
     socket_address: &SocketAddress,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_bind_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_bind_access(
             &security_server,
@@ -1271,9 +1304,9 @@ pub fn check_socket_connect_access(
     socket_peer: &SocketPeer,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_connect_access");
-    if socket.file().node().is_private() {
+    let Some(socket) = NonPrivateSocketFile::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_connect_access(
             &security_server,
@@ -1292,9 +1325,9 @@ pub fn check_socket_listen_access(
     backlog: i32,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_listen_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_listen_access(
             &security_server,
@@ -1314,9 +1347,11 @@ pub fn socket_accept(
     accepted_socket: DowncastedFile<'_, SocketFile>,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_getname_access");
-    if listening_socket.file().node().is_private() || accepted_socket.file().node().is_private() {
+    let (Some(listening_socket), Some(accepted_socket)) =
+        (NonPrivateSocketFile::new(listening_socket), NonPrivateSocketFile::new(accepted_socket))
+    else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::socket_accept(
             &security_server,
@@ -1336,9 +1371,9 @@ pub fn check_socket_getsockopt_access(
     optname: u32,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_getsockopt_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_getsockopt_access(
             &security_server,
@@ -1359,9 +1394,9 @@ pub fn check_socket_setsockopt_access(
     optname: u32,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_setsockopt_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_setsockopt_access(
             &security_server,
@@ -1380,9 +1415,9 @@ pub fn check_socket_sendmsg_access(
     socket: &Socket,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_sendmsg_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_sendmsg_access(&security_server, current_task, socket)
     })
@@ -1395,9 +1430,9 @@ pub fn check_socket_recvmsg_access(
     socket: &Socket,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_recvmsg_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_recvmsg_access(&security_server, current_task, socket)
     })
@@ -1410,9 +1445,9 @@ pub fn check_socket_getsockname_access(
     socket: &Socket,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_getname_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_getname_access(&security_server, current_task, socket)
     })
@@ -1425,9 +1460,9 @@ pub fn check_socket_getpeername_access(
     socket: &Socket,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_getname_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_getname_access(&security_server, current_task, socket)
     })
@@ -1441,9 +1476,9 @@ pub fn check_socket_shutdown_access(
     how: SocketShutdownFlags,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_socket_shutdown_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_shutdown_access(
             &security_server,
@@ -1461,9 +1496,9 @@ pub fn socket_getpeersec_stream(
     socket: &Socket,
 ) -> Result<Vec<u8>, Errno> {
     track_hook_duration!("security.hooks.socket_getpeersec_stream");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(Vec::default());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::socket_getpeersec_stream(&security_server, current_task, socket)
     })
@@ -1474,9 +1509,9 @@ pub fn socket_getpeersec_stream(
 /// Corresponds to the `socket_getpeersec_dgram()` LSM hook.
 pub fn socket_getpeersec_dgram(current_task: &CurrentTask, socket: &Socket) -> Vec<u8> {
     track_hook_duration!("security.hooks.socket_getpeersec_dgram");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Vec::default();
-    }
+    };
     if_selinux_else(
         current_task,
         |security_server| {
@@ -1495,9 +1530,11 @@ pub fn unix_may_send(
     receiving_socket: &Socket,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.unix_may_send");
-    if is_private_socket(sending_socket) || is_private_socket(receiving_socket) {
+    let (Some(sending_socket), Some(receiving_socket)) =
+        (NonPrivateSocket::new(sending_socket), NonPrivateSocket::new(receiving_socket))
+    else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::unix_may_send(
             &security_server,
@@ -1518,9 +1555,11 @@ pub fn unix_stream_connect(
     server_socket: &Socket,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.unix_stream_connect");
-    if is_private_socket(client_socket) || is_private_socket(listening_socket) {
+    let (Some(client_socket), Some(listening_socket)) =
+        (NonPrivateSocket::new(client_socket), NonPrivateSocket::new(listening_socket))
+    else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::unix_stream_connect(
             &security_server,
@@ -1541,9 +1580,9 @@ pub fn check_netlink_send_access(
     message_type: u16,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_netlink_send_access");
-    if is_private_socket(socket) {
+    let Some(socket) = NonPrivateSocket::new(socket) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::netlink_socket::check_netlink_send_access(
             &security_server,
@@ -1881,16 +1920,17 @@ pub fn sb_mount(
     flags: MountFlags,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.sb_mount");
-    if path.entry.node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(&path.entry.node) else {
         // Userspace may pass a path to an anonymous private file (e.g. via `/proc/self/fd/<N>`) to
         // `mount()`. Allow the LSM check to succeed and let the VFS reject the mount.
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::superblock::sb_mount(
             &selinux_hooks::build_permission_check(current_task, security_server),
             current_task,
             path,
+            fs_node,
             flags,
         )
     })
@@ -1941,7 +1981,7 @@ pub fn sb_umount(
     flags: UnmountFlags,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.sb_umount");
-    if node.entry.node.is_private() {
+    if NonPrivateFsNode::new(&node.entry.node).is_none() {
         // Userspace may pass a path to an anonymous private file (e.g. via `/proc/self/fd/<N>`) to
         // `umount2()`. Allow the LSM check to succeed and let the VFS reject the unmount.
         return Ok(());
@@ -1963,9 +2003,9 @@ pub fn check_fs_node_getattr_access(
     fs_node: &FsNode,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_getattr_access");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_getattr_access(security_server, current_task, fs_node)
     })
@@ -1980,9 +2020,9 @@ pub fn path_notify(
     mask: InotifyMask,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.path_notify");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::path_notify(security_server, current_task, fs_node, mask)
     })
@@ -2007,9 +2047,9 @@ pub fn check_fs_node_setxattr_access(
     op: XattrOp,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_setxattr_access");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     common_cap::fs_node_setxattr(current_task, fs_node, name, value, op)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_setxattr_access(
@@ -2030,9 +2070,9 @@ pub fn check_fs_node_getxattr_access(
     name: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_getxattr_access");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_getxattr_access(
             security_server,
@@ -2049,9 +2089,9 @@ pub fn check_fs_node_listxattr_access(
     fs_node: &FsNode,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_listxattr_access");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_listxattr_access(
             security_server,
@@ -2068,9 +2108,9 @@ pub fn check_fs_node_removexattr_access(
     name: &FsStr,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_removexattr_access");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     common_cap::fs_node_removexattr(current_task, fs_node, name)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_removexattr_access(
@@ -2088,9 +2128,9 @@ pub fn check_fs_node_removexattr_access(
 /// Corresponds to the `inode_need_killpriv()` LSM hook.
 pub fn fs_node_needs_killpriv(current_task: &CurrentTask, fs_node: &FsNode) -> Result<bool, Errno> {
     track_hook_duration!("security.hooks.fs_node_needs_killpriv");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(false);
-    }
+    };
     common_cap::fs_node_needs_killpriv(current_task, fs_node)
 }
 
@@ -2100,9 +2140,9 @@ pub fn fs_node_needs_killpriv(current_task: &CurrentTask, fs_node: &FsNode) -> R
 /// Corresponds to the `inode_killpriv()` LSM hook.
 pub fn fs_node_killpriv(current_task: &CurrentTask, fs_node: &FsNode) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.fs_node_killpriv");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return Ok(());
-    }
+    };
     common_cap::fs_node_killpriv(current_task, fs_node)
 }
 
@@ -2114,9 +2154,9 @@ pub fn fs_node_killpriv(current_task: &CurrentTask, fs_node: &FsNode) -> Result<
 /// Corresponds to the `inode_listsecurity()` LSM hook.
 pub fn fs_node_listsecurity(current_task: &CurrentTask, fs_node: &FsNode) -> Option<FsString> {
     track_hook_duration!("security.hooks.fs_node_listsecurity");
-    if fs_node.is_private() {
+    let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
         return None;
-    }
+    };
     if_selinux_else(
         current_task,
         |_| selinux_hooks::fs_node::fs_node_listsecurity(fs_node),
@@ -2138,16 +2178,16 @@ pub fn fs_node_getsecurity(
     max_size: usize,
 ) -> Result<ValueOrSize<FsString>, Errno> {
     track_hook_duration!("security.hooks.fs_node_getsecurity");
-    if fs_node.is_private() {
+    let Some(non_private_node) = NonPrivateFsNode::new(fs_node) else {
         return fs_node.ops().get_xattr(fs_node, current_task, name, max_size);
-    }
+    };
     let result = if_selinux_else(
         current_task,
         |security_server| {
             selinux_hooks::fs_node::fs_node_getsecurity(
                 security_server,
                 current_task,
-                fs_node,
+                non_private_node,
                 name,
                 max_size,
             )
@@ -2156,7 +2196,7 @@ pub fn fs_node_getsecurity(
         || None,
     );
     let result = result.or_else(|| {
-        common_cap::fs_node_getsecurity(current_task, fs_node, name, max_size).transpose()
+        common_cap::fs_node_getsecurity(current_task, non_private_node, name, max_size).transpose()
     });
     result.unwrap_or_else(|| fs_node.ops().get_xattr(fs_node, current_task, name, max_size))
 }
@@ -2174,16 +2214,16 @@ pub fn fs_node_setsecurity(
     op: XattrOp,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.fs_node_setsecurity");
-    if fs_node.is_private() {
+    let Some(non_private_node) = NonPrivateFsNode::new(fs_node) else {
         return fs_node.ops().set_xattr(fs_node, current_task, name, value, op);
-    }
+    };
     let result = if_selinux_else(
         current_task,
         |security_server| {
             selinux_hooks::fs_node::fs_node_setsecurity(
                 security_server,
                 current_task,
-                fs_node,
+                non_private_node,
                 name,
                 value,
                 op,
@@ -2193,7 +2233,7 @@ pub fn fs_node_setsecurity(
         || None,
     );
     let result = result.or_else(|| {
-        common_cap::fs_node_setsecurity(current_task, fs_node, name, value, op).transpose()
+        common_cap::fs_node_setsecurity(current_task, non_private_node, name, value, op).transpose()
     });
     result.unwrap_or_else(|| fs_node.ops().set_xattr(fs_node, current_task, name, value, op))
 }
@@ -3019,7 +3059,7 @@ mod tests {
             let sid = security_server
                 .security_context_to_sid(VALID_SECURITY_CONTEXT.into())
                 .expect("security context to SID");
-            selinux_hooks::set_cached_sid(&node, sid);
+            selinux_hooks::set_cached_sid(NonPrivateFsNode::new(node).unwrap(), sid);
 
             // Reading the security attribute should return the Security Context for the SID, rather than delegating.
             let result =
@@ -3593,7 +3633,7 @@ mod tests {
 
             let socket =
                 Socket::get_from_file(&private_socket_file).expect("FileHandle should be a socket");
-            assert!(is_private_socket(socket));
+            assert!(NonPrivateSocket::new(socket).is_none());
         })
         .await;
     }

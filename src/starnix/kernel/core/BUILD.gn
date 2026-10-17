@@ -102,6 +102,7 @@ _starnix_core_sources = [
   "security/common_cap.rs",
   "security/hooks.rs",
   "security/mod.rs",
+  "security/non_private.rs",
   "security/selinux_hooks/audit.rs",
   "security/selinux_hooks/binder.rs",
   "security/selinux_hooks/bpf.rs",

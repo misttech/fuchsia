@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 use crate::security::selinux_hooks::{
-    CommonFsNodePermission, FileClass, KernelPermission, PermissionCheck, PermissionFlagsVec,
-    ProcessPermission, build_permission_check, check_permission, check_self_permission,
-    current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
-    fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
+    CommonFsNodePermission, FileClass, KernelPermission, NonPrivateFsNode, PermissionCheck,
+    PermissionFlagsVec, ProcessPermission, build_permission_check, check_permission,
+    check_self_permission, current_task_state, fs_node_effective_sid_and_class,
+    fs_node_ensure_class, fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
     permissions_from_flags, task_consistent_attrs,
 };
 use crate::security::{Arc, Auditable, ProcAttr, SecurityId, SecurityServer};
 use crate::task::loader::ResolvedProgram;
 use crate::task::{CurrentTask, Task};
-use crate::vfs::{FsNode, FsStr, NamespaceNode};
+use crate::vfs::{FsStr, NamespaceNode};
 use selinux::{
     Cap2Class, CapClass, CommonCap2Permission, CommonCapPermission, FilePermission, ForClass,
     InitialSid, KernelClass, KeyPermission, NullessByteStr, PolicyCap, Process2Permission,
@@ -94,13 +94,13 @@ fn close_inaccessible_file_descriptors(
     // `[child-process] [fd-from-child-fd-table]:fd { use }`,
     // or for any of the file permissions associated with the file mode and flags.
     current_task.files().remap(current_task, |file| {
-        let permissions = if file.node().is_private() {
-            PermissionFlagsVec::new()
-        } else {
+        let permissions = if let Some(fs_node) = NonPrivateFsNode::new(file.node()) {
             permissions_from_flags(
                 file.flags().into(),
-                fs_node_effective_sid_and_class(file.node()).class,
+                fs_node_effective_sid_and_class(fs_node).class,
             )
+        } else {
+            PermissionFlagsVec::new()
         };
         let permission_result = has_file_permissions(
             &permission_check,
@@ -319,7 +319,10 @@ pub(in crate::security) fn bprm_creds_for_exec(
     let TaskAttrs { current_sid, exec_sid, .. } = *task_consistent_attrs(current_task);
 
     let executable: &NamespaceNode = resolved_program.file.name();
-    let executable_sid = fs_node_effective_sid_and_class(&executable.entry.node).sid;
+    let Some(executable_node) = NonPrivateFsNode::assert_from(&executable.entry.node) else {
+        return error!(EACCES);
+    };
+    let executable_sid = fs_node_effective_sid_and_class(executable_node).sid;
 
     let new_sid = if let Some(exec_sid) = exec_sid {
         // Use the proc exec SID if set.
@@ -1047,7 +1050,7 @@ pub(in crate::security) fn set_procattr(
 }
 
 /// Sets the sid of `fs_node` to be that of `task`.
-pub(in crate::security) fn fs_node_init_with_task(task: &Task, fs_node: &FsNode) {
+pub(in crate::security) fn fs_node_init_with_task(task: &Task, fs_node: NonPrivateFsNode<'_>) {
     fs_node_ensure_class(fs_node).unwrap();
     fs_node_set_label_with_task(fs_node, &task.persistent_info);
 }
