@@ -377,7 +377,7 @@ impl VmMapping {
         Status::ok(status)
     }
 
-    fn dump_locked(
+    pub(super) fn dump_locked(
         &self,
         _region_token: &LockToken<'_, VmAspaceRegionLockClass>,
         token: &LockToken<'_, VmAspaceLockClass>,

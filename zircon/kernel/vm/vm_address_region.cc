@@ -466,19 +466,11 @@ zx_status_t VmAddressRegion::DestroyLockedImpl() {
 }
 
 fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegion(vaddr_t addr) {
-  Guard<CriticalMutex> guard{lock()};
-  return FindRegionLocked(addr);
+  return fbl::ImportFromRawPtr(rust_vm_address_region_find_region(this, addr));
 }
 
 fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegionLocked(vaddr_t addr) {
-  if (state_locked() != LifeCycleState::ALIVE) {
-    return nullptr;
-  }
-  // The const_cast here is safe as this method itself is non-const, however subregions_locked()
-  // returns a const references to the subregions. The subregions are const as with only holding
-  // lock_ we are not permitted to modify the subregions_ tree, but we are allowed to manipulate the
-  // objects in the tree, hence can remove const.
-  return fbl::RefPtr(const_cast<VmAddressRegionOrMapping*>(subregions_locked().FindRegion(addr)));
+  return fbl::ImportFromRawPtr(rust_vm_address_region_find_region_locked(this, addr));
 }
 
 VmObject::AttributionCounts VmAddressRegion::GetAttributedMemory() const {
@@ -511,22 +503,7 @@ VmObject::AttributionCounts VmAddressRegion::GetAttributedMemory() const {
 }
 
 VmMapping* VmAddressRegion::FindMappingLocked(vaddr_t va) {
-  AssertCanary();
-
-  const VmAddressRegion* vmar = this;
-  AssertHeld(vmar->lock_ref());
-  while (const VmAddressRegionOrMapping* next = vmar->subregions_locked().FindRegion(va)) {
-    if (auto mapping = next->as_vm_mapping_ptr()) {
-      // The const_cast here is safe as this method itself is non-const, however subregions_locked()
-      // returns a const references to the subregions. The subregions are const as with only holding
-      // lock_ we are not permitted to modify the subregions_ tree, but we are allowed to manipulate
-      // the objects in the tree, hence can remove const.
-      return const_cast<VmMapping*>(mapping);
-    }
-    vmar = next->as_vm_address_region_ptr();
-  }
-
-  return nullptr;
+  return rust_vm_address_region_find_mapping_locked(this, va);
 }
 
 ktl::optional<vaddr_t> VmAddressRegion::CheckGapLockedRegion(const VmAddressRegionOrMapping* prev,
@@ -634,45 +611,10 @@ zx_status_t VmAddressRegion::EnumerateChildren(VmEnumerator* ve) {
 }
 
 void VmAddressRegion::DumpLockedImpl(uint depth, bool verbose) const {
-  AssertCanary();
-  for (uint i = 0; i < depth; ++i) {
-    printf("  ");
-  }
-  printf("vmar %p [%#" PRIxPTR " %#" PRIxPTR "] sz %#zx ref %d state %d '%s' subregions %zu\n",
-         this, base(), base() + (size() - 1), size(), ref_count_debug(), (int)state_locked(),
-         name(), subregions_.size_slow());
-  for (const auto& child : subregions_) {
-    AssertHeld(child.second->lock_ref());
-    AssertHeld(child.second->region_lock_ref());
-    child.second->DumpLocked(depth + 1, verbose);
-  }
+  rust_vm_address_region_dump_locked(this, depth, verbose);
 }
 
-zx_status_t VmAddressRegion::ActivateImpl() {
-  DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY);
-
-  AssertHeld(parent_locked()->lock_ref());
-  AssertHeld(parent_locked()->region_lock_ref());
-
-  // Validate we are a correct child of our parent.
-  DEBUG_ASSERT(parent_locked()->is_in_range(base(), this->size()));
-
-  // Look for a region in the parent starting from our desired base. If any region is found, make
-  // sure we do not intersect with it.
-  auto candidate = parent_locked()->subregions_.IncludeOrHigher(base());
-  if (candidate != parent_locked()->subregions_.end()) {
-    AssertHeld((*candidate).second->lock_ref());
-    ASSERT((*candidate).second->base() >= base() + this->size());
-  }
-
-  zx_status_t status =
-      parent_locked()->subregions_.InsertRegion(fbl::RefPtr<VmAddressRegionOrMapping>(this));
-  if (status != ZX_OK) {
-    return status;
-  }
-  set_state_locked(LifeCycleState::ALIVE);
-  return ZX_OK;
-}
+zx_status_t VmAddressRegion::ActivateImpl() { return rust_vm_address_region_activate(this); }
 
 zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
                                      VmAddressRegionOpChildren op_children,

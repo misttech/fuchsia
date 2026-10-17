@@ -232,7 +232,7 @@ class VmAddressRegionOrMapping : public fbl::Recyclable<VmAddressRegionOrMapping
   // needed for correctness.
   void CommitHighMemoryPriority() TA_EXCL(lock());
 
-  // Transition from NOT_READY to READY, and add references to self to related
+  // Transition from NOT_READY to ALIVE, and add references to self to related
   // structures.
   // On error no state is changed and no references are added.
   zx_status_t Activate() TA_REQ(region_lock()) TA_REQ(lock());
@@ -725,6 +725,16 @@ class RegionList final {
 
 extern "C" {
 void cpp_vm_address_region_free(VmAddressRegion* vmar);
+VmAddressRegionOrMapping* cpp_vm_address_region_subregions_find_region(const VmAddressRegion* vmar,
+                                                                       vaddr_t addr);
+VmAddressRegionOrMapping* cpp_vm_address_region_subregions_include_or_higher(
+    const VmAddressRegion* vmar, vaddr_t base);
+zx_status_t cpp_vm_address_region_subregions_insert_region(VmAddressRegion* vmar,
+                                                           VmAddressRegionOrMapping* region);
+size_t cpp_vm_address_region_subregions_size_slow(const VmAddressRegion* vmar);
+void cpp_vm_address_region_subregions_for_each(const VmAddressRegion* vmar,
+                                               void (*cb)(VmAddressRegionOrMapping*, void*),
+                                               void* ctx);
 }
 
 // A representation of a contiguous range of virtual address space
@@ -837,6 +847,15 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   friend fbl::RefPtr<VmAddressRegion>;
   friend void ::cpp_vm_address_region_free(VmAddressRegion*);
   friend void* ::cpp_vm_address_region_state(VmAddressRegion*);
+  friend VmAddressRegionOrMapping* ::cpp_vm_address_region_subregions_find_region(
+      const VmAddressRegion*, vaddr_t);
+  friend VmAddressRegionOrMapping* ::cpp_vm_address_region_subregions_include_or_higher(
+      const VmAddressRegion*, vaddr_t);
+  friend zx_status_t(::cpp_vm_address_region_subregions_insert_region)(VmAddressRegion*,
+                                                                       VmAddressRegionOrMapping*);
+  friend size_t(::cpp_vm_address_region_subregions_size_slow)(const VmAddressRegion*);
+  friend void ::cpp_vm_address_region_subregions_for_each(
+      const VmAddressRegion*, void (*)(VmAddressRegionOrMapping*, void*), void*);
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmAddressRegion);
@@ -910,6 +929,13 @@ void rust_vm_address_region_destruct(void* storage);
 const char* rust_vm_address_region_name(const VmAddressRegion* vmar);
 void rust_vm_address_region_assert_canary(const VmAddressRegion* vmar);
 bool rust_vm_address_region_has_parent(const VmAddressRegion* vmar);
+VmAddressRegionOrMapping* rust_vm_address_region_find_region(const VmAddressRegion* vmar,
+                                                             vaddr_t addr);
+VmAddressRegionOrMapping* rust_vm_address_region_find_region_locked(const VmAddressRegion* vmar,
+                                                                    vaddr_t addr);
+VmMapping* rust_vm_address_region_find_mapping_locked(const VmAddressRegion* vmar, vaddr_t va);
+zx_status_t rust_vm_address_region_activate(VmAddressRegion* vmar);
+void rust_vm_address_region_dump_locked(const VmAddressRegion* vmar, uint32_t depth, bool verbose);
 }
 
 inline const char* VmAddressRegion::name() const { return rust_vm_address_region_name(this); }

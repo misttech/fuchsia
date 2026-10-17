@@ -48,8 +48,54 @@ FFI_ALWAYS_INLINE void* cpp_vm_address_region_or_mapping_state(
     VmAddressRegionOrMapping* region_or_mapping) {
   return &region_or_mapping->opaque_storage_;
 }
+FFI_ALWAYS_INLINE bool cpp_vm_address_region_or_mapping_lock_is_held(
+    const VmAddressRegionOrMapping* region_or_mapping) {
+  return region_or_mapping->lock_ref().lock().IsHeld();
+}
+FFI_ALWAYS_INLINE bool cpp_vm_address_region_or_mapping_region_lock_is_held(
+    const VmAddressRegionOrMapping* region_or_mapping) {
+  return region_or_mapping->region_lock_ref().lock().IsHeld();
+}
+FFI_ALWAYS_INLINE VmAddressRegion* cpp_vm_address_region_or_mapping_as_vm_address_region(
+    VmAddressRegionOrMapping* region_or_mapping) {
+  return static_cast<VmAddressRegion*>(region_or_mapping);
+}
+FFI_ALWAYS_INLINE VmMapping* cpp_vm_address_region_or_mapping_as_vm_mapping(
+    VmAddressRegionOrMapping* region_or_mapping) {
+  return static_cast<VmMapping*>(region_or_mapping);
+}
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar) {
   return vmar->Destroy();
+}
+FFI_ALWAYS_INLINE VmAddressRegionOrMapping* cpp_vm_address_region_subregions_find_region(
+    const VmAddressRegion* vmar, vaddr_t addr) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // The subregions are const as with only holding lock_ we are not permitted to modify the
+  // subregions_ tree, but we are allowed to manipulate the objects in the tree, hence can remove
+  // const.
+  return const_cast<VmAddressRegionOrMapping*>(vmar->subregions_.FindRegion(addr));
+}
+FFI_ALWAYS_INLINE VmAddressRegionOrMapping* cpp_vm_address_region_subregions_include_or_higher(
+    const VmAddressRegion* vmar, vaddr_t base) TA_NO_THREAD_SAFETY_ANALYSIS {
+  auto it = vmar->subregions_.IncludeOrHigher(base);
+  if (it == vmar->subregions_.end()) {
+    return nullptr;
+  }
+  return const_cast<VmAddressRegionOrMapping*>((*it).second);
+}
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_subregions_insert_region(
+    VmAddressRegion* vmar, VmAddressRegionOrMapping* region) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmar->subregions_.InsertRegion(fbl::RefPtr(region));
+}
+FFI_ALWAYS_INLINE size_t cpp_vm_address_region_subregions_size_slow(const VmAddressRegion* vmar)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmar->subregions_.size_slow();
+}
+FFI_ALWAYS_INLINE void cpp_vm_address_region_subregions_for_each(
+    const VmAddressRegion* vmar, void (*cb)(VmAddressRegionOrMapping*, void*),
+    void* ctx) TA_NO_THREAD_SAFETY_ANALYSIS {
+  for (const auto& child : vmar->subregions_) {
+    cb(const_cast<VmAddressRegionOrMapping*>(child.second), ctx);
+  }
 }
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_set_memory_priority(
     VmAddressRegion* vmar, VmAddressRegion::MemoryPriority priority) {
@@ -154,15 +200,5 @@ FFI_ALWAYS_INLINE void cpp_vm_address_region_enumerator_resume(
       enumerator->mappings_only.resume();
       break;
   }
-}
-FFI_ALWAYS_INLINE VmAddressRegionOrMapping* cpp_vm_address_region_find_region(VmAddressRegion* vmar,
-                                                                              vaddr_t addr) {
-  fbl::RefPtr<VmAddressRegionOrMapping> region = vmar->FindRegion(addr);
-  return fbl::ExportToRawPtr(&region);
-}
-FFI_ALWAYS_INLINE VmAddressRegionOrMapping* cpp_vm_address_region_find_region_locked(
-    VmAddressRegion* vmar, vaddr_t addr) TA_NO_THREAD_SAFETY_ANALYSIS {
-  fbl::RefPtr<VmAddressRegionOrMapping> region = vmar->FindRegionLocked(addr);
-  return fbl::ExportToRawPtr(&region);
 }
 }  // extern "C"

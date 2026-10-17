@@ -36,6 +36,14 @@ __BEGIN_CDECLS
 void cpp_vm_address_region_free(VmAddressRegion* vmar);
 void* cpp_vm_address_region_state(VmAddressRegion* vmar);
 void* cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping* region_or_mapping);
+bool cpp_vm_address_region_or_mapping_lock_is_held(
+    const VmAddressRegionOrMapping* region_or_mapping);
+bool cpp_vm_address_region_or_mapping_region_lock_is_held(
+    const VmAddressRegionOrMapping* region_or_mapping);
+VmAddressRegion* cpp_vm_address_region_or_mapping_as_vm_address_region(
+    VmAddressRegionOrMapping* region_or_mapping);
+VmMapping* cpp_vm_address_region_or_mapping_as_vm_mapping(
+    VmAddressRegionOrMapping* region_or_mapping);
 zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar);
 zx_status_t cpp_vm_address_region_set_memory_priority(VmAddressRegion* vmar,
                                                       VmAddressRegion::MemoryPriority priority);
@@ -59,9 +67,6 @@ VmMapping* cpp_vm_address_region_create_vm_mapping(
     VmAddressRegion* vmar, size_t mapping_offset, size_t size, uint8_t align_pow2,
     uint32_t vmar_flags, const VmObject* vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
     const char* name, vaddr_t* out_base, zx_status_t* out_status);
-VmAddressRegionOrMapping* cpp_vm_address_region_find_region(VmAddressRegion* vmar, vaddr_t addr);
-VmAddressRegionOrMapping* cpp_vm_address_region_find_region_locked(VmAddressRegion* vmar,
-                                                                   vaddr_t addr);
 
 void cpp_vm_address_region_enumerator_construct(
     ffi::Uninitialized<CppVmAddressRegionEnumerator>* out, VmAddressRegionEnumeratorType type,
