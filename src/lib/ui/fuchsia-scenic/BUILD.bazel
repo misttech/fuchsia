@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuchsia-scenic",
+    srcs = [
+        "src/flatland.rs",
+        "src/lib.rs",
+        "src/sysmem.rs",
+        "src/view_ref_pair.rs",
+        "src/view_token_pair.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/lib/ui/carnelian:__pkg__",
+        "//src/lib/ui/fidl_fuchsia_ui_focus_ext:__pkg__",
+        "//src/lib/ui/fidl_fuchsia_ui_views_ext:__pkg__",
+        "//src/session:__subpackages__",
+        "//src/starnix:__subpackages__",
+        "//src/testing/system-validation/ui:__pkg__",
+        "//src/ui:__subpackages__",
+        "//src/virtualization:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+        "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+        "//sdk/fidl/fuchsia.ui.display.color:fuchsia.ui.display.color_rust",
+        "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fuchsia-scenic_test",
+    crate = ":fuchsia-scenic",
+    edition = "2024",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fuchsia-scenic-tests",
+    unit_tests = [":fuchsia-scenic_test"],
+)
