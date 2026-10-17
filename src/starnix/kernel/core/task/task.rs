@@ -141,7 +141,7 @@ pub struct TaskMutableState {
     signals: SignalState,
 
     /// The current run state of the task.
-    pub run_state: RunState,
+    run_state: RunState,
 
     /// Internal signals that have a higher priority than a regular signal.
     ///
@@ -325,13 +325,26 @@ impl TaskMutableState {
         self.run_state.is_blocked()
     }
 
-    /// Sets the task's `RunState` to `run_state`.
-    pub fn set_run_state(&mut self, run_state: RunState) {
-        self.run_state = run_state;
+    /// Sets the task's `RunState` to `run_state` and returns the previous `RunState`.
+    ///
+    /// # Safety
+    /// If `run_state` is `RunState::Event(event_ref)`, the caller must guarantee that `event_ref`
+    /// points to a live `InterruptibleEvent` until `run_state` is reset to `RunState::Running`
+    /// under `Task::write()`.
+    pub(super) unsafe fn set_run_state(&mut self, run_state: RunState) -> RunState {
+        std::mem::replace(&mut self.run_state, run_state)
     }
 
     pub fn run_state(&self) -> RunState {
         self.run_state.clone()
+    }
+
+    /// Unblocks the task by interrupting whatever wait it is currently blocked upon.
+    pub fn wake(&self) {
+        // SAFETY: Holding `&self` (the task's state lock guard) ensures that if `self.run_state` is
+        // `RunState::Event`, the blocked thread has not yet cleared `run_state` in
+        // `CurrentTask::run_in_state_internal`, so the `InterruptibleEvent` outlives this call.
+        unsafe { self.run_state.wake() };
     }
 
     pub fn on_signal_stack(&self, stack_pointer_register: u64) -> bool {
@@ -372,13 +385,13 @@ impl TaskMutableState {
 
     /// Thaw the task if has been frozen
     pub fn thaw(&mut self) {
-        if let RunState::Frozen(waiter) = self.run_state() {
+        if let RunState::Frozen(waiter) = &self.run_state {
             waiter.notify();
         }
     }
 
     pub fn is_frozen(&self) -> bool {
-        matches!(self.run_state(), RunState::Frozen(_))
+        matches!(self.run_state, RunState::Frozen(_))
     }
 
     #[cfg(test)]
@@ -1444,7 +1457,7 @@ impl Task {
             return;
         };
 
-        self.read().run_state.wake();
+        self.read().wake();
         if let Some(thread) = running_state.thread.get() {
             #[allow(
                 clippy::undocumented_unsafe_blocks,

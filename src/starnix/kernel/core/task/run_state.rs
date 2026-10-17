@@ -4,11 +4,48 @@
 
 use crate::task::{TaskStateCode, Waiter, WaiterRef};
 use starnix_sync::InterruptibleEvent;
-use std::sync::Arc;
+use std::ptr::NonNull;
+
+/// A non-owning reference to an [`InterruptibleEvent`] registered in [`RunState::Event`].
+///
+/// # Safety Invariant
+/// An `EventRef` is only stored in `TaskMutableState::run_state` by
+/// `CurrentTask::run_in_state_internal` for the lexical duration of the blocking callback (while
+/// the `InterruptibleEvent` is borrowed), and is cleared back to `RunState::Running` under
+/// `Task::write()` before `run_in_state_internal` returns. `RunState::wake` is only called under
+/// `Task::read()`, so the pointee is guaranteed to remain valid for every `wake` call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventRef(NonNull<InterruptibleEvent>);
+
+// SAFETY: `EventRef` only provides shared (`&InterruptibleEvent`) access to the pointee, and
+// `InterruptibleEvent` is `Sync`.
+unsafe impl Send for EventRef {}
+// SAFETY: `EventRef` only provides shared (`&InterruptibleEvent`) access to the pointee, and
+// `InterruptibleEvent` is `Sync`.
+unsafe impl Sync for EventRef {}
+
+impl EventRef {
+    /// Creates an [`EventRef`] pointing to `event`.
+    ///
+    /// # Safety
+    /// The caller must ensure that `event` remains valid for as long as the resulting
+    /// `RunState::Event` is installed in `TaskMutableState::run_state` and across all concurrent
+    /// `RunState::wake` calls (by clearing `run_state` back to `RunState::Running` under
+    /// `Task::write()` before `event`'s borrow ends).
+    pub(super) unsafe fn new(event: &InterruptibleEvent) -> Self {
+        Self(NonNull::from(event))
+    }
+
+    unsafe fn interrupt(&self) {
+        // SAFETY: By the `EventRef` invariant and `RunState::wake` safety requirement, `self.0`
+        // points to a live `InterruptibleEvent`.
+        unsafe { self.0.as_ref().interrupt() };
+    }
+}
 
 /// Whether, and how, this task is blocked. This enum can be extended with new
 /// variants to optimize different kinds of waiting.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RunState {
     /// This task is not blocked.
     ///
@@ -19,7 +56,7 @@ pub enum RunState {
     Waiter(WaiterRef),
 
     /// This thread is blocked in an `InterruptibleEvent`.
-    Event(Arc<InterruptibleEvent>),
+    Event(EventRef),
 
     /// This thread is frozen by a `Waiter`.
     ///
@@ -60,11 +97,17 @@ impl RunState {
     }
 
     /// Unblock the task by interrupting whatever wait the task is blocked upon.
-    pub fn wake(&self) {
+    ///
+    /// # Safety
+    /// If `self` is `RunState::Event`, the caller must guarantee that the target task has not yet
+    /// cleared its `run_state` in `CurrentTask::run_in_state_internal` (for example, by holding
+    /// the task's state lock while reading `run_state` and calling `wake`).
+    pub(super) unsafe fn wake(&self) {
         match self {
             RunState::Running => (),
             RunState::Waiter(waiter) => waiter.interrupt(),
-            RunState::Event(event) => event.interrupt(),
+            // SAFETY: Guaranteed by the caller.
+            RunState::Event(event) => unsafe { event.interrupt() },
             // When frozen or stopped, the task is immune to any interrupts.
             RunState::Frozen(_) | RunState::TracingStopped => (),
         }
@@ -86,19 +129,6 @@ impl RunState {
             // `TaskStateCode::TracingStop` ('t'). Distinguish them to report
             // `TaskStateCode::Stopped` ('T').
             RunState::TracingStopped => TaskStateCode::TracingStop,
-        }
-    }
-}
-
-impl PartialEq<RunState> for RunState {
-    fn eq(&self, other: &RunState) -> bool {
-        match (self, other) {
-            (RunState::Running, RunState::Running) => true,
-            (RunState::Waiter(lhs), RunState::Waiter(rhs)) => lhs == rhs,
-            (RunState::Event(lhs), RunState::Event(rhs)) => Arc::ptr_eq(lhs, rhs),
-            (RunState::Frozen(lhs), RunState::Frozen(rhs)) => lhs == rhs,
-            (RunState::TracingStopped, RunState::TracingStopped) => true,
-            _ => false,
         }
     }
 }
