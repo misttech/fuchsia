@@ -1792,6 +1792,43 @@ unsafe fn thread_get_lock(thread: *const Thread) -> *const ChainLock {
 pub const K_RECIPROCAL_DEFAULT_FAIR_PERIOD: SchedUtilization = SchedUtilization::from_raw(214);
 pub const USER_PROCESSING_RATE_SCALE: u64 = 1000;
 
+/// Number of fractional bits in the userspace CPU performance scale format.
+const USER_SCALE_FRACTIONAL_BITS: usize = u32::BITS as usize;
+
+/// The fixed-point format of the userspace CPU performance scale.
+type UserScale = Fixed<u64, USER_SCALE_FRACTIONAL_BITS>;
+
+/// Converts a userspace CPU performance scale to a `SchedProcessingRate` value.
+///
+/// The returned value will always be greater than zero.
+#[inline]
+pub fn to_sched_processing_rate(
+    value: zx_types::zx_cpu_performance_scale_t,
+) -> SchedProcessingRate {
+    let raw = ((value.integer_part as u64) << USER_SCALE_FRACTIONAL_BITS)
+        | (value.fractional_part as u64);
+    let user_scale = UserScale::from_raw(raw);
+    let performance_scale = SchedProcessingRate::from(Fixed::<i64, 31>::from_fixed(user_scale));
+    performance_scale.clamp(
+        SchedProcessingRate::from(Fixed::epsilon()),
+        SchedProcessingRate::from(Fixed::from_integer(1)),
+    )
+}
+
+/// Converts a `SchedProcessingRate` value to a userspace CPU performance scale.
+#[inline]
+pub fn to_user_performance_scale(
+    value: SchedProcessingRate,
+) -> zx_types::zx_cpu_performance_scale_t {
+    let user_scale = UserScale::from_fixed(value.into_fixed());
+    let integral = user_scale.integral().raw_value() >> USER_SCALE_FRACTIONAL_BITS;
+    let fractional = user_scale.fraction().raw_value();
+    zx_types::zx_cpu_performance_scale_t {
+        integer_part: integral as u32,
+        fractional_part: fractional as u32,
+    }
+}
+
 /// Represents a requested power level update to be executed at a later stage.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -1879,6 +1916,33 @@ pub struct BandwidthReservationEntry {
     pub finish_time: SchedTime,
     pub utilization: SchedUtilization,
     pub tid: zx_types::zx_koid_t,
+}
+
+impl BandwidthReservationEntry {
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            finish_time: SchedTime::from_raw(0),
+            utilization: SchedUtilization::from_raw(0),
+            tid: zx_types::ZX_KOID_INVALID,
+        }
+    }
+
+    #[inline]
+    pub const fn is_valid(&self) -> bool {
+        self.tid != zx_types::ZX_KOID_INVALID
+    }
+
+    #[inline]
+    pub fn reset(&mut self) {
+        self.tid = zx_types::ZX_KOID_INVALID;
+    }
+}
+
+impl Default for BandwidthReservationEntry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// # Bandwidth Reservation Cache
@@ -2017,6 +2081,154 @@ pub struct BandwidthReservationCache<const N: usize> {
     pub entries: [BandwidthReservationEntry; N],
     /// The total utilization of the deferred reservations tracked by the cache.
     pub total_deferred_utilization: SchedUtilization,
+}
+
+impl<const N: usize> Default for BandwidthReservationCache<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const N: usize> BandwidthReservationCache<N> {
+    #[inline]
+    pub const fn new() -> Self {
+        const { assert!(N > 0) };
+        Self {
+            entries: [BandwidthReservationEntry::new(); N],
+            total_deferred_utilization: SchedUtilization::from_raw(0),
+        }
+    }
+
+    #[inline]
+    pub const fn total_deferred_utilization(&self) -> SchedUtilization {
+        self.total_deferred_utilization
+    }
+
+    /// Adds the given thread, finish time, and utilization to the cache. If the
+    /// given `tid` is already in the cache, the entry is updated and the previous
+    /// utilization is returned.
+    ///
+    /// Returns the utilization of the reservation that was replaced or evicted
+    /// from the cache, if any. This quantity should be removed from the total
+    /// effective utilization bookkeeping.
+    pub fn add(
+        &mut self,
+        tid: zx_types::zx_koid_t,
+        finish_time: SchedTime,
+        utilization: SchedUtilization,
+    ) -> SchedUtilization {
+        const { assert!(N > 0) };
+        debug_assert!(tid != zx_types::ZX_KOID_INVALID);
+        debug_assert!(utilization >= SchedUtilization::from_raw(0));
+
+        // If there is an existing entry for the tid replace it, otherwise find the
+        // first empty element.
+        let mut empty_index: Option<usize> = None;
+        for (i, entry) in self.entries.iter_mut().enumerate() {
+            if entry.tid == tid {
+                let utilization_to_remove = entry.utilization;
+                self.total_deferred_utilization += utilization - utilization_to_remove;
+                debug_assert!(self.total_deferred_utilization >= SchedUtilization::from_raw(0));
+
+                entry.finish_time = finish_time;
+                entry.utilization = utilization;
+                return utilization_to_remove;
+            }
+            if empty_index.is_none() && !entry.is_valid() {
+                empty_index = Some(i);
+            }
+        }
+
+        // If there is an empty element, add the new entry there.
+        if let Some(idx) = empty_index {
+            self.entries[idx] = BandwidthReservationEntry { finish_time, utilization, tid };
+            self.total_deferred_utilization += utilization;
+            debug_assert!(self.total_deferred_utilization >= SchedUtilization::from_raw(0));
+            return SchedUtilization::from_raw(0);
+        }
+
+        // Replace the max finish time when the cache is full. Since N > 0 there will
+        // always be at least one element with the max finish time.
+        let mut max_idx = 0;
+        for i in 1..N {
+            if self.entries[i].finish_time > self.entries[max_idx].finish_time {
+                max_idx = i;
+            }
+        }
+
+        if self.entries[max_idx].finish_time > finish_time {
+            let utilization_to_remove = self.entries[max_idx].utilization;
+            self.total_deferred_utilization += utilization - utilization_to_remove;
+            debug_assert!(self.total_deferred_utilization >= SchedUtilization::from_raw(0));
+
+            self.entries[max_idx] = BandwidthReservationEntry { finish_time, utilization, tid };
+            return utilization_to_remove;
+        }
+
+        utilization
+    }
+
+    /// Removes the given `tid` from the cache, if present.
+    ///
+    /// Returns the utilization of the reservation that was removed from the cache,
+    /// if any.
+    pub fn remove(&mut self, tid: zx_types::zx_koid_t) -> SchedUtilization {
+        for entry in self.entries.iter_mut() {
+            if entry.tid == tid {
+                let utilization_to_remove = entry.utilization;
+                self.total_deferred_utilization -= utilization_to_remove;
+                debug_assert!(self.total_deferred_utilization >= SchedUtilization::from_raw(0));
+
+                entry.reset();
+                return utilization_to_remove;
+            }
+        }
+        SchedUtilization::from_raw(0)
+    }
+
+    /// Removes any expired entries with finish times that are less than or equal
+    /// to the given time.
+    ///
+    /// Returns the total utilization of the reservations that were pruned from the
+    /// cache, if any.
+    pub fn prune(&mut self, now: SchedTime) -> SchedUtilization {
+        let mut utilization_to_remove = SchedUtilization::from_raw(0);
+        for entry in self.entries.iter_mut() {
+            if entry.is_valid() && entry.finish_time <= now {
+                utilization_to_remove += entry.utilization;
+                self.total_deferred_utilization -= entry.utilization;
+                debug_assert!(self.total_deferred_utilization >= SchedUtilization::from_raw(0));
+
+                entry.reset();
+            }
+        }
+        utilization_to_remove
+    }
+
+    /// Clears all entries in the cache.
+    ///
+    /// Returns the total utilization of reservations that were cleared from the
+    /// cache, if any.
+    pub fn clear(&mut self) -> SchedUtilization {
+        let utilization_to_remove = self.total_deferred_utilization;
+        self.total_deferred_utilization = SchedUtilization::from_raw(0);
+        for entry in self.entries.iter_mut() {
+            entry.reset();
+        }
+        utilization_to_remove
+    }
+
+    /// Returns the minimum of the given time and the minimum finish time of any
+    /// active entry in the cache.
+    pub fn clamp_to_next_finish_time(&self, mut time: SchedTime) -> SchedTime {
+        // Find the minimum valid finish time.
+        for entry in self.entries.iter() {
+            if entry.is_valid() && entry.finish_time < time {
+                time = entry.finish_time;
+            }
+        }
+        time
+    }
 }
 
 #[repr(C)]
@@ -3087,6 +3299,741 @@ impl Scheduler {
             "CPU" => Self::round_1000(rate)
         );
     }
+    /// Removes the given `tid` from this scheduler's bandwidth reservation cache.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    unsafe fn bandwidth_reservation_cache_remove(&self, tid: u64) -> SchedUtilization {
+        // SAFETY: `queue_lock_` is held by the caller, serializing mutable access
+        // to `bandwidth_reservation_cache`.
+        unsafe { (*self.state.get()).bandwidth_reservation_cache.remove(tid) }
+    }
+
+    /// Adds or updates `tid` in this scheduler's bandwidth reservation cache.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    unsafe fn bandwidth_reservation_cache_add(
+        &self,
+        tid: u64,
+        finish_time: SchedTime,
+        utilization: SchedUtilization,
+    ) -> SchedUtilization {
+        // SAFETY: `queue_lock_` is held by the caller, serializing mutable access
+        // to `bandwidth_reservation_cache`.
+        unsafe {
+            (*self.state.get()).bandwidth_reservation_cache.add(tid, finish_time, utilization)
+        }
+    }
+
+    /// Returns true if power control is enabled.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_` (or call during
+    /// single-threaded early boot before the scheduler is active).
+    unsafe fn power_level_control_is_enabled(&self) -> bool {
+        // SAFETY: `self` is a valid `Scheduler` and `queue_lock_` is held by the caller.
+        unsafe { cpp_scheduler_power_level_control_is_enabled(self) }
+    }
+
+    /// Returns the target processing rate of this processor (the in-flight
+    /// desired rate if a transition is pending, or the current processing rate).
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    #[inline]
+    unsafe fn target_processing_rate(&self) -> SchedProcessingRate {
+        // SAFETY: `queue_lock_` is held by the caller.
+        if unsafe { self.power_level_control_is_enabled() } {
+            // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+            unsafe { cpp_scheduler_power_state_target_processing_rate(self) }
+        } else {
+            // SAFETY: `queue_lock_` is held by the caller.
+            unsafe { (*self.state.get()).power_level_control.processing_rate }
+        }
+    }
+
+    /// Returns the processing rate of the active power level immediately
+    /// preceding the target power level (the lower bound of the target power level).
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    #[inline]
+    unsafe fn preceding_target_processing_rate(&self) -> SchedProcessingRate {
+        // SAFETY: `queue_lock_` is held by the caller.
+        if unsafe { self.power_level_control_is_enabled() } {
+            // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+            unsafe { cpp_scheduler_power_state_preceding_target_processing_rate(self) }
+        } else {
+            SchedProcessingRate::from_raw(0)
+        }
+    }
+
+    /// Returns true if the targeted active power level has an active power level
+    /// preceding it (i.e. is not the lowest active power level).
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    #[inline]
+    unsafe fn has_preceding_target_power_level(&self) -> bool {
+        // SAFETY: `queue_lock_` is held by the caller.
+        if unsafe { self.power_level_control_is_enabled() } {
+            // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+            unsafe { cpp_scheduler_power_state_has_preceding_target_power_level(self) }
+        } else {
+            false
+        }
+    }
+
+    /// Returns the total normalized utilization demand (deadline + fair) of this
+    /// processor, clamped to the current performance limits.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    #[inline]
+    unsafe fn clamped_total_demand(&self) -> SchedUtilization {
+        // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+        let norm_deadline = unsafe { cpp_scheduler_get_normalized_utilization(self) };
+        // SAFETY: `queue_lock_` is held by the caller, guarding `total_expected_runtime_ns`
+        // and `power_level_control`.
+        unsafe {
+            let state = self.state.get();
+            let fair_demand = K_RECIPROCAL_DEFAULT_FAIR_PERIOD * (*state).total_expected_runtime_ns;
+            (*state).power_level_control.clamp_demand(norm_deadline + fair_demand)
+        }
+    }
+
+    /// Returns true if the clamped demand is above the processing rate of the
+    /// target active power level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    #[inline]
+    unsafe fn processing_rate_should_increase(&self) -> bool {
+        // SAFETY: `queue_lock_` is held by the caller.
+        unsafe { self.clamped_total_demand() > self.target_processing_rate() }
+    }
+
+    /// Returns true if the clamped demand is at or below the processing rate of
+    /// the preceding target active power level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    #[inline]
+    unsafe fn processing_rate_should_decrease(&self) -> bool {
+        // SAFETY: `queue_lock_` is held by the caller.
+        let clamped_demand = unsafe { self.clamped_total_demand() };
+        // SAFETY: `queue_lock_` is held by the caller.
+        unsafe {
+            self.has_preceding_target_power_level()
+                && clamped_demand <= self.preceding_target_processing_rate()
+        }
+    }
+
+    /// Returns true if the clamped demand is outside the processing rate range
+    /// of the target active power level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    #[inline]
+    unsafe fn processing_rate_should_change(&self) -> bool {
+        // SAFETY: `queue_lock_` is held by the caller.
+        unsafe { self.processing_rate_should_decrease() || self.processing_rate_should_increase() }
+    }
+
+    /// Pends a power level request that will later be flushed by
+    /// `send_pending_power_level_request`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    unsafe fn pend_power_level_request(&self, power_level: u8) -> bool {
+        // SAFETY: `this_cpu_` is initialized and immutable after early boot.
+        let cpu = unsafe { self.this_cpu() };
+        let _trace = local_ktrace_begin_scope!(
+            QUEUE,
+            "sched_req_power_level",
+            "cpu" => cpu,
+            "power_level" => power_level as u32,
+        );
+
+        // If there is already a pending request, it can be updated without issuing a reschedule,
+        // since this update raced with dispatch of the previous request and won.
+        let state = self.state.get();
+        // SAFETY: `queue_lock_` is held by the caller, guarding `power_level_control`
+        // and `power_state_`.
+        let had_pending_request =
+            unsafe { (*state).power_level_control.has_pending_update_request };
+        let mut request = PowerLevelUpdateRequest::default();
+        // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+        if unsafe {
+            cpp_scheduler_power_state_request_transition(
+                self as *const Scheduler as *mut Scheduler,
+                cpu,
+                power_level,
+                &mut request,
+            )
+        } {
+            // SAFETY: `queue_lock_` is held by the caller.
+            unsafe {
+                (*state).power_level_control.pending_update_request = request;
+                (*state).power_level_control.has_pending_update_request = true;
+            }
+        }
+        // SAFETY: `queue_lock_` is held by the caller.
+        !had_pending_request && unsafe { (*state).power_level_control.has_pending_update_request }
+    }
+
+    /// Pends a power level request compatible with the given rate that will
+    /// later be flushed by `send_pending_power_level_request`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    unsafe fn pend_power_level_request_for_rate(
+        &self,
+        processing_rate: SchedProcessingRate,
+    ) -> bool {
+        // SAFETY: `queue_lock_` is held by the caller.
+        if unsafe { self.power_level_control_is_enabled() } {
+            // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+            let power_level = unsafe {
+                cpp_scheduler_power_state_find_active_power_level_for_rate(self, processing_rate)
+            };
+            if !power_level.is_null() {
+                // SAFETY: `power_level` is non-null and points to a valid `PowerLevel`
+                // in the domain's model while `queue_lock_` is held.
+                let level = unsafe { cpp_power_level_get_level(power_level) };
+                // SAFETY: `queue_lock_` is held by the caller.
+                return unsafe { self.pend_power_level_request(level) };
+            }
+        }
+        false
+    }
+
+    /// Returns the lock-free value of the total estimated utilization (deadline + fair),
+    /// clamped to the current rate limits, for the given `cpu`.
+    ///
+    /// # Safety
+    ///
+    /// `cpu` must be a valid CPU number (`cpu < PerCpu::processor_count()`) with an
+    /// initialized `Scheduler`.
+    #[inline]
+    pub unsafe fn get_cpu_clamped_total_utilization(cpu: CpuNum) -> SchedUtilization {
+        // SAFETY: `cpu` is a valid CPU number with an initialized `Scheduler`.
+        let sched = unsafe { &*cpp_scheduler_get(cpu) };
+        // SAFETY: `exported_clamped_total_utilization` is an atomic shadow variable
+        // safe for lock-free concurrent reads across CPUs.
+        SchedUtilization::from_raw(unsafe {
+            (*sched.state.get()).exported_clamped_total_utilization.load()
+        })
+    }
+
+    /// Re-evaluates the power level requirements for processors in the same
+    /// domain and pends a power level request if the processing rate should be
+    /// adjusted.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    unsafe fn reevaluate_current_power_level(&self) {
+        let mut max_clamped_demand = SchedUtilization::from_raw(0);
+        // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+        let mut domain_cpus = if unsafe { self.power_level_control_is_enabled() } {
+            unsafe { cpp_scheduler_power_state_domain_cpus(self) }
+        } else {
+            0
+        };
+        while domain_cpus != 0 {
+            let cpu_num = remove_cpu_from_mask(&mut domain_cpus);
+            // SAFETY: `cpu_num` comes from `domain_cpus`, so it is a valid CPU number.
+            max_clamped_demand = core::cmp::max(max_clamped_demand, unsafe {
+                Self::get_cpu_clamped_total_utilization(cpu_num)
+            });
+        }
+
+        // SAFETY: `queue_lock_` is held by the caller.
+        let preceding_rate = unsafe { self.preceding_target_processing_rate() };
+        // SAFETY: `queue_lock_` is held by the caller.
+        let target_rate = unsafe { self.target_processing_rate() };
+
+        local_ktrace_instant!(
+            QUEUE,
+            "ReevaluateCurrentPowerLevel",
+            "max_clamped_utilization" => max_clamped_demand,
+            "preceding_processing_rate" => preceding_rate,
+            "processing_rate" => target_rate,
+        );
+
+        // SAFETY: `queue_lock_` is held by the caller.
+        if (unsafe { self.has_preceding_target_power_level() }
+            && max_clamped_demand <= preceding_rate)
+            || max_clamped_demand > target_rate
+        {
+            // SAFETY: `queue_lock_` is held by the caller.
+            unsafe {
+                self.pend_power_level_request_for_rate(max_clamped_demand);
+            }
+        }
+    }
+
+    /// Sends a pending power level request immediately using the registered
+    /// power level controller.
+    ///
+    /// Because this operation needs to update bookkeeping on other CPUs that are
+    /// currently protected by their respective queue locks, the local CPU's
+    /// queue lock must be temporarily released, which could result in an
+    /// incomplete critical section if local invariants are changed by a remote
+    /// processor. Care must be taken to ensure the caller's invariants are
+    /// either maintained or re-validated across this operation.
+    ///
+    /// Returns the mask of CPUs that should be rescheduled immediately.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_` with interrupts disabled,
+    /// and any caller invariants must tolerate `queue_lock_` being temporarily released
+    /// and re-acquired.
+    unsafe fn send_pending_power_level_request(&self) -> CpuMask {
+        let state = self.state.get();
+        // SAFETY: `queue_lock_` is held by the caller.
+        if !unsafe { (*state).power_level_control.has_pending_update_request } {
+            return 0;
+        }
+        // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+        if !unsafe { cpp_scheduler_power_state_is_serving(self) } {
+            return 0;
+        }
+        // Move the pending request into a local copy, leaving the pending request
+        // member cleared before releasing the queue lock.
+        // SAFETY: `queue_lock_` is held by the caller.
+        let request = unsafe {
+            (*state).power_level_control.has_pending_update_request = false;
+            (*state).power_level_control.pending_update_request
+        };
+
+        let trace = local_ktrace_begin_scope!(
+            QUEUE,
+            "sched_opp_request_fast",
+            "domain_id" => request.domain_id,
+            "control_argument" => request.control_argument,
+        );
+
+        let sched_mut = self as *const Scheduler as *mut Scheduler;
+        // SAFETY: `queue_lock_` is currently held by the caller; we temporarily release
+        // it around `post_update_request` (which may acquire other CPUs' `queue_lock_`s)
+        // and immediately re-acquire it with interrupts remaining disabled.
+        let cpus_to_reschedule_mask = unsafe {
+            cpp_scheduler_unlock_queue(sched_mut);
+            let mask = cpp_scheduler_power_state_post_update_request(self, &request);
+            cpp_scheduler_lock_queue(sched_mut);
+            mask
+        };
+
+        ktrace_rs::end_scope!(
+            trace,
+            "cpus_to_reschedule_mask" => cpus_to_reschedule_mask,
+        );
+
+        cpus_to_reschedule_mask
+    }
+
+    /// Increases the processing rate when the required utilization increases
+    /// beyond the current rate, accounting for current limits.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    unsafe fn power_level_control_update_rate(&self) {
+        // SAFETY: `queue_lock_` is held by the caller.
+        if unsafe {
+            self.power_level_control_is_enabled()
+                && cpp_scheduler_power_state_scheduler_control_enabled(self)
+                && self.processing_rate_should_increase()
+        } {
+            // SAFETY: `queue_lock_` is held by the caller.
+            unsafe {
+                let demand = self.clamped_total_demand();
+                self.pend_power_level_request_for_rate(demand);
+            }
+        }
+    }
+
+    /// Evaluates changing the processing rate when the required utilization
+    /// moves outside the bounds of the current power level. All of the
+    /// processors in the same domain must be re-evaluated to determine whether
+    /// an actual rate change should occur.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    unsafe fn power_level_control_reevaluate_if_needed(&self) {
+        // SAFETY: `queue_lock_` is held by the caller.
+        if unsafe {
+            cpp_scheduler_power_state_scheduler_control_enabled(self)
+                && !(*self.state.get()).power_level_control.has_pending_update_request
+                && self.processing_rate_should_change()
+        } {
+            // SAFETY: `queue_lock_` is held by the caller.
+            unsafe {
+                self.reevaluate_current_power_level();
+            }
+        }
+    }
+
+    /// Updates the scheduler's power level control state after the power domain set
+    /// associated with this scheduler has been updated.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    pub unsafe fn on_power_domain_set_updated(
+        &self,
+        active_rate: SchedProcessingRate,
+        domain_max_rate: SchedProcessingRate,
+        has_domain: bool,
+    ) {
+        // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+        let active_power_coefficient_nw =
+            unsafe { cpp_scheduler_power_state_active_power_coefficient_nw(self) };
+        // SAFETY: `queue_lock_` is held by the caller, serializing mutable access
+        // to `power_level_control` and `exported_max_processing_rate`.
+        unsafe {
+            let state = self.state.get();
+            let plc = &mut (*state).power_level_control;
+            // Set the active power coefficient from the power state config.
+            plc.active_power_coefficient_nw = active_power_coefficient_nw;
+            // Clear the request to ensure that a DPC racing with a domain change cannot latch a
+            // pending request intended for the previous domain and the new domain ref pointer
+            // together.
+            plc.pending_update_request = PowerLevelUpdateRequest::default();
+            plc.has_pending_update_request = false;
+            // Reset the processing rate using either the current rate for the domain or the
+            // default.
+            if active_rate > SchedProcessingRate::from_raw(0) {
+                plc.updated_processing_rate = active_rate;
+            } else {
+                plc.updated_processing_rate = plc.default_processing_rate;
+            }
+            // Set the max processing rate for admission control comparisons.
+            plc.max_processing_rate =
+                if has_domain { domain_max_rate } else { plc.default_processing_rate };
+            // Update the cross-processor shadow value of the max processing rate to match the
+            // current power domain value.
+            (*state)
+                .exported_max_processing_rate
+                .store(plc.clamped_max_processing_rate().raw_value());
+        }
+    }
+
+    /// Called by the power level controller server (e.g. the userspace component servicing the
+    /// kernel power level control interface) for the domain associated with this scheduler to
+    /// acknowledge that a power level request has been completed.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be a valid `Scheduler` and its `queue_lock_` must not already be held
+    /// by the current CPU.
+    pub unsafe fn update_active_power_level(&self, power_level: u8) -> zx_types::zx_status_t {
+        let sched_mut = self as *const Scheduler as *mut Scheduler;
+        // SAFETY: `self` is valid and `queue_lock_` is not already held by the current CPU.
+        let _guard = unsafe { QueueLockIrqSaveGuard::acquire(sched_mut) };
+
+        // SAFETY: `this_cpu_` is initialized and immutable after early boot.
+        let cpu = unsafe { self.this_cpu() };
+        let trace = local_ktrace_begin_scope!(
+            COMMON,
+            "UpdateActivePowerLevel",
+            "cpu" => cpu,
+            "power_level" => power_level as u32,
+        );
+
+        let mut active_rate = SchedProcessingRate::from_raw(0);
+        // SAFETY: `sched_mut` is valid and `_guard` holds `queue_lock_`.
+        let status = unsafe {
+            cpp_scheduler_power_state_update_active_power_level(
+                sched_mut,
+                power_level,
+                &mut active_rate,
+            )
+        };
+        // SAFETY: `_guard` holds `queue_lock_`, serializing access to `power_level_control`.
+        let (processing_rate, updated_processing_rate) = unsafe {
+            let state = self.state.get();
+            if status == zx_types::ZX_OK {
+                (*state).power_level_control.updated_processing_rate = active_rate;
+            }
+            (
+                Self::round_1000((*state).power_level_control.processing_rate) as u32,
+                Self::round_1000((*state).power_level_control.updated_processing_rate) as u32,
+            )
+        };
+        ktrace_rs::end_scope!(
+            trace,
+            "processing_rate" => processing_rate,
+            "updated_processing_rate" => updated_processing_rate,
+        );
+
+        status
+    }
+
+    /// Sets the processing rate on systems that don't provide an energy model and manage OPPs
+    /// exclusively from userspace. User requests are ignored if an energy model is set.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    pub unsafe fn user_set_processing_rate(&self, processing_rate: SchedProcessingRate) {
+        debug_assert!(processing_rate > SchedProcessingRate::from_raw(0));
+        // SAFETY: `queue_lock_` is held by the caller.
+        if !unsafe { self.power_level_control_is_enabled() } {
+            // SAFETY: `queue_lock_` is held by the caller.
+            unsafe {
+                (*self.state.get()).power_level_control.updated_processing_rate = processing_rate;
+            }
+        }
+    }
+
+    /// Sets the processing rate limits for the processor. Returns true if the
+    /// current active power level needs to be updated in response to the new
+    /// limits.
+    ///
+    /// The specified `min` is allowed to be greater than `max` for future
+    /// latency vs. power tradeoff management, which will be documented when
+    /// implemented. Until that time, `max` takes precedence in the case where
+    /// `min > max`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this scheduler's `queue_lock_`.
+    pub unsafe fn user_set_processing_rate_limits(
+        &self,
+        min: SchedProcessingRate,
+        max: SchedProcessingRate,
+    ) -> bool {
+        let zero = SchedProcessingRate::from_raw(0);
+        let one = SchedProcessingRate::from_raw(1 << 31);
+        let state = self.state.get();
+        // SAFETY: `queue_lock_` is held by the caller, serializing access to
+        // `power_level_control` and `exported_max_processing_rate`.
+        unsafe {
+            (*state).power_level_control.processing_rate_limit_min = min.clamp(zero, one);
+            (*state).power_level_control.processing_rate_limit_max = max.clamp(zero, one);
+
+            let clamped_max = (*state).power_level_control.clamped_max_processing_rate();
+            (*state).exported_max_processing_rate.store(clamped_max.raw_value());
+        }
+
+        // SAFETY: `self` is valid and `queue_lock_` is held by the caller.
+        let norm_deadline = unsafe { cpp_scheduler_get_normalized_utilization(self) };
+        // SAFETY: `queue_lock_` is held by the caller.
+        unsafe {
+            let fair_demand = SchedUtilization::from(
+                K_RECIPROCAL_DEFAULT_FAIR_PERIOD * (*state).total_expected_runtime_ns,
+            );
+            let total_demand = norm_deadline + fair_demand;
+
+            let clamped_deadline = (*state).power_level_control.clamp_demand(norm_deadline);
+            let clamped_fair = (*state).power_level_control.clamp_demand(fair_demand);
+            let clamped_total = (*state).power_level_control.clamp_demand(total_demand);
+
+            (*state).exported_clamped_deadline_utilization.store(clamped_deadline.raw_value());
+            (*state).exported_clamped_fair_utilization.store(clamped_fair.raw_value());
+            (*state).exported_clamped_total_utilization.store(clamped_total.raw_value());
+
+            self.processing_rate_should_change()
+        }
+    }
+
+    /// Sets the initial values of the CPU performance scales for this `Scheduler`
+    /// instance from topology data during early boot.
+    ///
+    /// # Safety
+    ///
+    /// Must be called during early boot before the scheduler is active and before
+    /// concurrent access to `self` is possible.
+    pub unsafe fn initialize_processing_rate(&self, scale: SchedProcessingRate) {
+        // Since this happens early in boot, before the scheduler is actually running,
+        // acquiring the queue lock is unnecessary.
+        debug_assert!(scale > SchedProcessingRate::from_raw(0));
+        // SAFETY: Called during single-threaded early boot initialization.
+        debug_assert!(!unsafe { self.power_level_control_is_enabled() });
+        // SAFETY: Called during early boot before concurrent access to `self.state`.
+        unsafe {
+            let state = self.state.get();
+            let plc = &mut (*state).power_level_control;
+            plc.processing_rate = scale;
+            plc.max_processing_rate = scale;
+            plc.default_processing_rate = scale;
+            plc.updated_processing_rate = scale;
+            plc.processing_rate_reciprocal =
+                SchedProcessingRate::from(SchedDuration::from_raw(1) / scale);
+            (*state).exported_processing_rate.store(scale.raw_value());
+            (*state)
+                .exported_max_processing_rate
+                .store(plc.clamped_max_processing_rate().raw_value());
+        }
+    }
+
+    /// Gets the performance scales of up to `info.len()` CPUs. Returns the last
+    /// values requested by userspace, even if they have not yet taken effect.
+    ///
+    /// Requires `info.len() <= num CPUs`.
+    ///
+    /// # Safety
+    ///
+    /// `info.len()` must not exceed `PerCpu::processor_count()`, and no `queue_lock_`
+    /// may already be held by the current CPU.
+    pub unsafe fn get_performance_scales(info: &mut [zx_types::zx_cpu_performance_info_t]) {
+        let processor_count = PerCpu::processor_count();
+        debug_assert!(info.len() <= processor_count);
+        for (i, entry) in info.iter_mut().enumerate() {
+            let cpu = i as CpuNum;
+            // SAFETY: `i < info.len() <= processor_count`, so `cpu` is a valid CPU
+            // with an initialized `Scheduler`, and `queue_lock_` is not held.
+            let sched_ptr = unsafe { cpp_scheduler_get(cpu) };
+            // SAFETY: `sched_ptr` is valid and `queue_lock_` is not already held.
+            let _guard = unsafe { QueueLockIrqSaveGuard::acquire(sched_ptr) };
+            entry.logical_cpu_number = cpu;
+            // SAFETY: `sched_ptr` is valid and `_guard` holds its `queue_lock_`.
+            entry.performance_scale = to_user_performance_scale(unsafe {
+                (*(*sched_ptr).state.get()).power_level_control.updated_processing_rate
+            });
+        }
+    }
+
+    /// Gets the default performance scales of up to `info.len()` CPUs. Returns the
+    /// initial values determined by the system topology, or 1.0 when no topology
+    /// is available.
+    ///
+    /// Requires `info.len() <= num CPUs`.
+    ///
+    /// # Safety
+    ///
+    /// `info.len()` must not exceed `PerCpu::processor_count()`, and no `queue_lock_`
+    /// may already be held by the current CPU.
+    pub unsafe fn get_default_performance_scales(info: &mut [zx_types::zx_cpu_performance_info_t]) {
+        let processor_count = PerCpu::processor_count();
+        debug_assert!(info.len() <= processor_count);
+        for (i, entry) in info.iter_mut().enumerate() {
+            let cpu = i as CpuNum;
+            // SAFETY: `i < info.len() <= processor_count`, so `cpu` is a valid CPU
+            // with an initialized `Scheduler`, and `queue_lock_` is not held.
+            let sched_ptr = unsafe { cpp_scheduler_get(cpu) };
+            // SAFETY: `sched_ptr` is valid and `queue_lock_` is not already held.
+            let _guard = unsafe { QueueLockIrqSaveGuard::acquire(sched_ptr) };
+            entry.logical_cpu_number = cpu;
+            // SAFETY: `sched_ptr` is valid and `_guard` holds its `queue_lock_`.
+            entry.performance_scale = to_user_performance_scale(unsafe {
+                (*(*sched_ptr).state.get()).power_level_control.max_processing_rate
+            });
+        }
+    }
+
+    /// Gets the processing limits of up to `limits.len()` CPUs.
+    ///
+    /// Requires `limits.len() <= num CPUs`.
+    ///
+    /// # Safety
+    ///
+    /// `limits.len()` must not exceed `PerCpu::processor_count()`, and no `queue_lock_`
+    /// may already be held by the current CPU.
+    pub unsafe fn get_processing_limits(limits: &mut [zx_types::zx_cpu_perf_limit_t]) {
+        let processor_count = PerCpu::processor_count();
+        debug_assert!(limits.len() <= processor_count);
+        for (i, entry) in limits.iter_mut().enumerate() {
+            let cpu = i as CpuNum;
+            // SAFETY: `i < limits.len() <= processor_count`, so `cpu` is a valid CPU
+            // with an initialized `Scheduler`, and `queue_lock_` is not held.
+            let sched_ptr = unsafe { cpp_scheduler_get(cpu) };
+            // SAFETY: `sched_ptr` is valid and `queue_lock_` is not already held.
+            let _guard = unsafe { QueueLockIrqSaveGuard::acquire(sched_ptr) };
+
+            entry.logical_cpu_number = cpu;
+            entry.limit_type = zx_types::ZX_CPU_PERF_LIMIT_TYPE_RATE;
+            // SAFETY: `sched_ptr` is valid and `_guard` holds its `queue_lock_`.
+            unsafe {
+                let plc = &(*(*sched_ptr).state.get()).power_level_control;
+                entry.min = Self::round_1000(plc.processing_rate_limit_min);
+                entry.max = Self::round_1000(plc.processing_rate_limit_max);
+            }
+        }
+    }
+    /// Updates the total deadline utilization estimator with the given delta and
+    /// traces/exports the atomic shadow variables for cross-CPU readers.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the scheduler's queue lock is held before calling
+    /// this method to guarantee consistent access to the power level control properties.
+    unsafe fn update_total_deadline_utilization(&self, delta: SchedUtilization) {
+        // Avoid unnecessary trace counter and atomic variable updates.
+        if delta.raw_value() != 0 {
+            // SAFETY: FFI call to C++ power state to update the normalized utilization.
+            // The queue lock is held by the caller as verified by the safety contract.
+            let utilization = unsafe {
+                cpp_scheduler_power_level_control_update_normalized_utilization(
+                    self as *const Scheduler as *mut Scheduler,
+                    delta,
+                )
+            };
+            debug_assert!(utilization.raw_value() >= 0);
+            // SAFETY: The queue lock is held by the caller, allowing safe mutable access to the
+            // state.
+            unsafe {
+                let state = self.state.get();
+                (*state).exported_deadline_utilization.store(utilization.raw_value());
+                let clamped = (*state).power_level_control.clamp_demand(utilization);
+                (*state).exported_clamped_deadline_utilization.store(clamped.raw_value());
+                self.trace_deadline_utilization(utilization);
+            }
+        }
+    }
+
+    /// Updates the current processing rate, reciprocal, and active power coefficient to the
+    /// updated values if a rate update is pending, and exports the atomic shadow variable for
+    /// cross-CPU readers. Called by `reschedule_common` after accounting is performed for the
+    /// time spent at the previous rate.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the scheduler's queue lock is held before calling
+    /// this method to guarantee consistent access to the power level control properties.
+    unsafe fn update_processing_rate(&self, boot_ticks: zx_types::zx_instant_boot_ticks_t) -> bool {
+        let state = self.state.get();
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `power_level_control`
+        // and exported processing rate state.
+        unsafe {
+            if (*state).power_level_control.is_processing_rate_update_pending() {
+                let rate = (*state).power_level_control.updated_processing_rate;
+                (*state).power_level_control.processing_rate = rate;
+                (*state).power_level_control.processing_rate_reciprocal =
+                    SchedProcessingRate::from(SchedDuration::from_raw(1) / rate);
+                let coeff = cpp_scheduler_power_state_active_power_coefficient_nw(self);
+                (*state).power_level_control.active_power_coefficient_nw = coeff;
+                if !self.power_level_control_is_enabled() {
+                    (*state).power_level_control.max_processing_rate = rate;
+                    let clamped_max = (*state).power_level_control.clamped_max_processing_rate();
+                    (*state).exported_max_processing_rate.store(clamped_max.raw_value());
+                }
+                (*state).exported_processing_rate.store(rate.raw_value());
+                self.trace_processing_rate(rate, boot_ticks);
+                true
+            } else {
+                false
+            }
+        }
+    }
 
     /// Converts a time from the monotonic timeline to the variable timeline.
     ///
@@ -4142,6 +5089,81 @@ pub unsafe extern "C" fn rust_scheduler_adjust_fair_bandwidth(
     unsafe { (*sched).adjust_fair_bandwidth(thread, now) };
 }
 
+/// # Safety
+/// The caller must ensure `sched` is valid and `queue_lock_` is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_user_set_processing_rate(
+    sched: *const Scheduler,
+    rate: SchedProcessingRate,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).user_set_processing_rate(rate) };
+}
+
+/// # Safety
+/// The caller must ensure `sched` is valid and `queue_lock_` is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_user_set_processing_rate_limits(
+    sched: *const Scheduler,
+    min: SchedProcessingRate,
+    max: SchedProcessingRate,
+) -> bool {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).user_set_processing_rate_limits(min, max) }
+}
+
+/// # Safety
+/// The caller must ensure `sched` is valid and `queue_lock_` is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_pend_power_level_request(
+    sched: *const Scheduler,
+    power_level: u8,
+) -> bool {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).pend_power_level_request(power_level) }
+}
+
+/// # Safety
+/// The caller must ensure `sched` is valid and `queue_lock_` is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_pend_power_level_request_for_rate(
+    sched: *const Scheduler,
+    processing_rate: SchedProcessingRate,
+) -> bool {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).pend_power_level_request_for_rate(processing_rate) }
+}
+
+/// # Safety
+/// The caller must ensure `sched` is valid and `queue_lock_` is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_reevaluate_current_power_level(sched: *const Scheduler) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).reevaluate_current_power_level() };
+}
+
+/// # Safety
+/// The caller must ensure `sched` is valid and `queue_lock_` is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_update_total_deadline_utilization(
+    sched: *const Scheduler,
+    delta: SchedUtilization,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).update_total_deadline_utilization(delta) };
+}
+
+/// # Safety
+/// The caller must ensure `sched` is valid and `queue_lock_` is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_update_processing_rate(
+    sched: *const Scheduler,
+    boot_ticks: zx_types::zx_instant_boot_ticks_t,
+) -> bool {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).update_processing_rate(boot_ticks) }
+}
+
 /// Initializes a run queue in-place.
 ///
 /// # Safety
@@ -4427,11 +5449,94 @@ pub unsafe extern "C" fn rust_scheduler_validate_invariants_unconditional(sched:
     unsafe { (*sched).validate_invariants_unconditional() };
 }
 
+/// # Safety
+/// `sched` must be valid and its `queue_lock_` must be held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_on_power_domain_set_updated(
+    sched: *mut Scheduler,
+    active_rate: SchedProcessingRate,
+    max_rate: SchedProcessingRate,
+    has_domain: bool,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).on_power_domain_set_updated(active_rate, max_rate, has_domain) };
+}
+
+/// # Safety
+/// `sched` must be valid and its `queue_lock_` must NOT be held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_update_active_power_level(
+    sched: *mut Scheduler,
+    power_level: u8,
+) -> zx_types::zx_status_t {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).update_active_power_level(power_level) }
+}
+
+/// # Safety
+/// `sched` must be valid during early boot topology init.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_initialize_processing_rate(
+    sched: *mut Scheduler,
+    scale: SchedProcessingRate,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).initialize_processing_rate(scale) };
+}
+
+#[unsafe(no_mangle)]
+/// # Safety
+/// `info` must point to `count` valid `zx_cpu_performance_info_t` elements.
+pub unsafe extern "C" fn rust_scheduler_get_performance_scales(
+    info: *mut zx_types::zx_cpu_performance_info_t,
+    count: usize,
+) {
+    // SAFETY: When `count > 0`, the caller guarantees `info` points to `count` valid elements.
+    let slice =
+        if count == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(info, count) } };
+    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
+    unsafe { Scheduler::get_performance_scales(slice) };
+}
+
+/// # Safety
+/// `info` must point to `count` valid `zx_cpu_performance_info_t` elements.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_get_default_performance_scales(
+    info: *mut zx_types::zx_cpu_performance_info_t,
+    count: usize,
+) {
+    // SAFETY: When `count > 0`, the caller guarantees `info` points to `count` valid elements.
+    let slice =
+        if count == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(info, count) } };
+    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
+    unsafe { Scheduler::get_default_performance_scales(slice) };
+}
+
+#[unsafe(no_mangle)]
+/// # Safety
+/// `limits` must point to `count` valid `zx_cpu_perf_limit_t` elements.
+pub unsafe extern "C" fn rust_scheduler_get_processing_limits(
+    limits: *mut zx_types::zx_cpu_perf_limit_t,
+    count: usize,
+) {
+    // SAFETY: When `count > 0`, the caller guarantees `limits` points to `count` valid elements.
+    let slice = if count == 0 {
+        &mut []
+    } else {
+        unsafe { core::slice::from_raw_parts_mut(limits, count) }
+    };
+    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
+    unsafe { Scheduler::get_processing_limits(slice) };
+}
+
 /// Kernel unit tests for Rust scheduler components.
 #[cfg(ktest)]
 #[unittest::suite(name = "scheduler_rust")]
 mod tests {
-    use super::{Affine, SchedTime, Slope};
+    use super::{
+        Affine, BandwidthReservationCache, BaseProfile, EffectiveProfile, SchedDeadlineParams,
+        SchedDuration, SchedTime, SchedUtilization, SchedWeight, Slope, sched_ms, sched_ns,
+    };
 
     // The kernel-side counterpart of `//zircon/kernel/lib/sched/affine-tests.cc`.
     /// Verifies `Affine` timeline transformation properties.
@@ -4518,5 +5623,219 @@ mod tests {
         }
 
         unittest::expect_le!(max_error, error_limit);
+    }
+
+    /// Verifies `EffectiveProfile::get_weight_or_packed_deadline_params` packing logic.
+    #[test]
+    fn test_effective_profile_packing_logic() {
+        let make_deadline_ep = |capacity_ns: SchedDuration, deadline_ns: SchedDuration| {
+            let mut ep = EffectiveProfile::new(&BaseProfile::new_fair(0));
+            ep.set_deadline(
+                SchedDeadlineParams {
+                    capacity_ns,
+                    deadline_ns,
+                    utilization: SchedUtilization::from_raw(0),
+                },
+                false,
+            );
+            ep
+        };
+
+        // Test case 1: Nominal deadline values (multiple of 10us)
+        // Capacity 1ms (100 in 10us units), Deadline 10ms (1000 in 10us units)
+        // Expected packed value: -1001000
+        {
+            let mut ep = make_deadline_ep(sched_ms(1), sched_ms(10));
+            unittest::expect_eq!(ep.get_weight_or_packed_deadline_params(), -1_001_000);
+        }
+
+        // Test case 2: Unaligned capacity
+        // Capacity 1ms + 5us (1,005,000 ns) -> 100 units; Deadline 10ms -> 1000 units.
+        {
+            let mut ep = make_deadline_ep(sched_ns(1_005_000), sched_ms(10));
+            unittest::expect_eq!(ep.get_weight_or_packed_deadline_params(), -1_001_000);
+        }
+
+        // Test case 3: Clamping small values (< 10us -> 1 unit)
+        {
+            let mut ep = make_deadline_ep(sched_ns(1_000), sched_ns(2_000));
+            unittest::expect_eq!(ep.get_weight_or_packed_deadline_params(), -10_001);
+        }
+
+        // Test case 4: Clamping large values (1s -> 9,999 units)
+        {
+            let mut ep = make_deadline_ep(sched_ms(1_000), sched_ms(1_000));
+            unittest::expect_eq!(ep.get_weight_or_packed_deadline_params(), -99_999_999);
+        }
+
+        // Test case 5: Fair weights
+        {
+            let mut ep = EffectiveProfile::new(&BaseProfile::new_fair(0));
+            ep.set_fair(SchedWeight::from_raw(0));
+            unittest::expect_eq!(ep.get_weight_or_packed_deadline_params(), 0);
+
+            ep.set_fair(SchedWeight::from_raw(12345));
+            unittest::expect_eq!(ep.get_weight_or_packed_deadline_params(), 12345);
+        }
+    }
+
+    /// Verifies `BandwidthReservationCache::add` insertion, eviction, and update behavior.
+    #[test]
+    fn test_bandwidth_reservation_cache_add() {
+        let mut cache = BandwidthReservationCache::<4>::new();
+        let t = SchedTime::from_raw;
+        let u = SchedUtilization::from_raw;
+
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
+
+        unittest::expect_eq!(cache.add(1, t(10), u(1)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(2, t(20), u(2)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(3, t(30), u(3)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(4, t(40), u(4)).raw_value(), 0);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 10);
+
+        // Evicts entry with latest finish time (tid 4, finish 40, util 4).
+        unittest::expect_eq!(cache.add(5, t(15), u(5)).raw_value(), 4);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 11);
+
+        // Later finish time than all existing entries has no effect.
+        unittest::expect_eq!(cache.add(6, t(60), u(6)).raw_value(), 6);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 11);
+
+        // Updating existing tid returns previous reservation.
+        unittest::expect_eq!(cache.add(5, t(25), u(6)).raw_value(), 5);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 12);
+    }
+
+    /// Verifies `BandwidthReservationCache::prune` removal of expired reservations.
+    #[test]
+    fn test_bandwidth_reservation_cache_prune() {
+        let mut cache = BandwidthReservationCache::<4>::new();
+        let t = SchedTime::from_raw;
+        let u = SchedUtilization::from_raw;
+
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
+
+        unittest::expect_eq!(cache.add(1, t(10), u(1)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(2, t(20), u(2)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(3, t(30), u(3)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(4, t(40), u(4)).raw_value(), 0);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 10);
+
+        // Pruning to earlier than any finish time should have no effect.
+        unittest::expect_eq!(cache.prune(t(5)).raw_value(), 0);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 10);
+
+        unittest::expect_eq!(cache.prune(t(10)).raw_value(), 1);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 9);
+
+        unittest::expect_eq!(cache.prune(t(25)).raw_value(), 2);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 7);
+
+        // Pruning should remove all entries with earlier finish times.
+        unittest::expect_eq!(cache.prune(t(50)).raw_value(), 7);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
+    }
+
+    /// Verifies `BandwidthReservationCache::clear` removal of all reservations.
+    #[test]
+    fn test_bandwidth_reservation_cache_clear() {
+        let mut cache = BandwidthReservationCache::<4>::new();
+        let t = SchedTime::from_raw;
+        let u = SchedUtilization::from_raw;
+
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
+
+        unittest::expect_eq!(cache.add(1, t(10), u(1)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(2, t(20), u(2)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(3, t(30), u(3)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(4, t(40), u(4)).raw_value(), 0);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 10);
+
+        // Clearing the cache should remove all reservations and deferred utilization.
+        unittest::expect_eq!(cache.clear().raw_value(), 10);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
+    }
+
+    /// Verifies `BandwidthReservationCache::clamp_to_next_finish_time` clamping behavior.
+    #[test]
+    fn test_bandwidth_reservation_cache_clamp_to_next_finish_time() {
+        let mut cache = BandwidthReservationCache::<4>::new();
+        let t = SchedTime::from_raw;
+        let u = SchedUtilization::from_raw;
+
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
+
+        unittest::expect_eq!(cache.add(1, t(10), u(1)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(2, t(20), u(2)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(3, t(30), u(3)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(4, t(40), u(4)).raw_value(), 0);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 10);
+
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(5)).raw_value(), 5);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(10)).raw_value(), 10);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(20)).raw_value(), 10);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(30)).raw_value(), 10);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(40)).raw_value(), 10);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(50)).raw_value(), 10);
+
+        unittest::expect_eq!(cache.remove(1).raw_value(), 1);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 9);
+
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(5)).raw_value(), 5);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(10)).raw_value(), 10);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(20)).raw_value(), 20);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(30)).raw_value(), 20);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(40)).raw_value(), 20);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(50)).raw_value(), 20);
+
+        unittest::expect_eq!(cache.clear().raw_value(), 9);
+
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(5)).raw_value(), 5);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(10)).raw_value(), 10);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(20)).raw_value(), 20);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(30)).raw_value(), 30);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(40)).raw_value(), 40);
+        unittest::expect_eq!(cache.clamp_to_next_finish_time(t(50)).raw_value(), 50);
+    }
+
+    /// Verifies `BandwidthReservationCache` mixed add, evict, prune, and remove operations.
+    #[test]
+    fn test_bandwidth_reservation_cache_mix() {
+        let mut cache = BandwidthReservationCache::<4>::new();
+        let t = SchedTime::from_raw;
+        let u = SchedUtilization::from_raw;
+
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
+
+        unittest::expect_eq!(cache.add(1, t(10), u(1)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(2, t(20), u(2)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(3, t(30), u(3)).raw_value(), 0);
+        unittest::expect_eq!(cache.add(4, t(40), u(4)).raw_value(), 0);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 10);
+
+        // Adding another reservation with an earlier finish time than at least one
+        // existing entry should evict the entry with the latest finish time and
+        // return the reservation that was removed.
+        unittest::expect_eq!(cache.add(5, t(15), u(5)).raw_value(), 4);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 11);
+
+        // Attempting to add another reservation with a later finish time than any
+        // existing entry in the cache should have no effect.
+        unittest::expect_eq!(cache.add(6, t(60), u(6)).raw_value(), 6);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 11);
+
+        // Prune the reservations with finish times less than or equal to 20,
+        // returning the total bandwidth reservation removed.
+        unittest::expect_eq!(cache.prune(t(20)).raw_value(), 8);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 3);
+
+        // Removing an entry that is not in the cache should have no effect.
+        unittest::expect_eq!(cache.remove(6).raw_value(), 0);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 3);
+
+        // Removing an existing entry should return the reservation that was removed.
+        unittest::expect_eq!(cache.remove(3).raw_value(), 3);
+        unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
     }
 }

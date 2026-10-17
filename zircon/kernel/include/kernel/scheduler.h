@@ -287,6 +287,17 @@ SchedTime rust_scheduler_next_thread_timeslice(const Scheduler* sched, Thread* t
                                                SchedTime now);
 void rust_scheduler_update_activation(const Scheduler* sched, Thread* thread, SchedTime now);
 void rust_scheduler_adjust_fair_bandwidth(const Scheduler* sched, Thread* thread, SchedTime now);
+void rust_scheduler_user_set_processing_rate(const Scheduler* sched, SchedProcessingRate rate);
+bool rust_scheduler_user_set_processing_rate_limits(const Scheduler* sched, SchedProcessingRate min,
+                                                    SchedProcessingRate max);
+bool rust_scheduler_pend_power_level_request(const Scheduler* sched, uint8_t power_level);
+bool rust_scheduler_pend_power_level_request_for_rate(const Scheduler* sched,
+                                                      SchedProcessingRate processing_rate);
+void rust_scheduler_reevaluate_current_power_level(const Scheduler* sched);
+void rust_scheduler_update_total_deadline_utilization(const Scheduler* sched,
+                                                      SchedUtilization delta);
+bool rust_scheduler_update_processing_rate(const Scheduler* sched,
+                                           zx_instant_boot_ticks_t boot_ticks);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.
@@ -653,7 +664,9 @@ class Scheduler {
   // values requested by userspace, even if they have not yet taken effect.
   //
   // Requires info.size() <= num CPUs.
-  static void GetPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) TA_EXCL(queue_lock_);
+  static void GetPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) TA_EXCL(queue_lock_) {
+    rust_scheduler_get_performance_scales(info.data(), info.size());
+  }
 
   // Gets the default performance scales of up to info.size() CPUs. Returns the
   // initial values determined by the system topology, or 1.0 when no topology
@@ -661,7 +674,9 @@ class Scheduler {
   //
   // Requires info.size() <= num CPUs.
   static void GetDefaultPerformanceScales(ktl::span<zx_cpu_performance_info_t> info)
-      TA_EXCL(queue_lock_);
+      TA_EXCL(queue_lock_) {
+    rust_scheduler_get_default_performance_scales(info.data(), info.size());
+  }
 
   // Updates the performance limits of the requested CPUs.
   //
@@ -671,7 +686,9 @@ class Scheduler {
   // Gets the processing limits of up to limits.size() CPUs.
   //
   // Requires limits.size() <= num CPUs.
-  static void GetProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) TA_EXCL(queue_lock_);
+  static void GetProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) TA_EXCL(queue_lock_) {
+    rust_scheduler_get_processing_limits(limits.data(), limits.size());
+  }
 
   // Returns the CPU stats for the given CPU number, forward projected to
   // account for idle or normalized busy time elapsed since the last relevant
@@ -772,12 +789,12 @@ class Scheduler {
   // Sets the power domain set for this scheduler instance, returning the previous set.
   PowerDomainSet ExchangePowerDomainSet(PowerDomainSet domain_set) TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    PowerDomainSet previous = power_level_control_.ExchangePowerDomainSet(ktl::move(domain_set));
-
-    // Update the cross-processor shadow value of the max processing rate to match the current power
-    // domain value.
-    rust_state_.exported_max_processing_rate = power_level_control_.clamped_max_processing_rate();
-
+    PowerDomainSet previous = power_state_.UpdatePowerDomainSet(ktl::move(domain_set), this_cpu());
+    const SchedProcessingRate active_rate = power_state_.active_processing_rate();
+    const bool has_domain = static_cast<bool>(power_state_.domain());
+    const SchedProcessingRate max_rate =
+        has_domain ? power_state_.domain()->model().max_processing_rate() : SchedProcessingRate{0};
+    rust_scheduler_on_power_domain_set_updated(this, active_rate, max_rate, has_domain);
     return previous;
   }
 
@@ -793,14 +810,13 @@ class Scheduler {
   // Updates the current power level for this CPU with the value reported by the power level
   // controller. Called by kernel tests and sys_system_set_processor_power_state.
   zx::result<> UpdateActivePowerLevel(uint8_t power_level) TA_EXCL(queue_lock_) {
-    Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return power_level_control_.UpdateActivePowerLevel(power_level);
+    return zx::make_result(rust_scheduler_update_active_power_level(this, power_level));
   }
 
   // Returns the current active power level, if any.
   ktl::optional<uint8_t> GetActivePowerLevel() const TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return power_level_control_.active_power_level();
+    return power_state_.active_power_level();
   }
 
   // Sends a power level request through this scheduler's power level controller for testing. This
@@ -813,25 +829,28 @@ class Scheduler {
   // Returns the current power domain set for this scheduler instance.
   PowerDomainSet GetPowerDomainSetForTesting() TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return power_level_control_.power_domain_set();
+    return power_state_.power_domain_set();
   }
 
   // Returns the current power domain for this scheduler instance.
   fbl::RefPtr<PowerDomain> GetPowerDomainForTesting() TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return power_level_control_.domain();
+    return power_state_.domain();
   }
 
   // Returns the current active power coefficient.
   ktl::optional<uint64_t> GetActivePowerCoefficientNwForTesting() const TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return power_level_control_.active_power_coefficient_nw();
+    if (power_state_.domain()) {
+      return rust_state_.power_level_control.active_power_coefficient_nw;
+    }
+    return ktl::nullopt;
   }
 
   // Returns the max idle power coefficient.
   ktl::optional<uint64_t> GetMaxIdlePowerCoefficientNwForTesting() const TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return power_level_control_.max_idle_power_coefficient_nw();
+    return power_state_.max_idle_power_coefficient_nw();
   }
 
   // Const accessor for static analysis.
@@ -866,7 +885,10 @@ class Scheduler {
 
   // Sets the initial values of the CPU performance scales for this Scheduler
   // instance.
-  void InitializeProcessingRate(SchedProcessingRate scale) TA_NO_THREAD_SAFETY_ANALYSIS;
+  void InitializeProcessingRate(SchedProcessingRate scale) TA_NO_THREAD_SAFETY_ANALYSIS {
+    DEBUG_ASSERT(!power_state_.domain());
+    rust_scheduler_initialize_processing_rate(this, scale);
+  }
 
   static inline void RescheduleMask(cpu_mask_t cpus_to_reschedule_mask);
   static void PreemptLocked(Thread* current_thread, PreemptType preempt_type)

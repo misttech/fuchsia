@@ -3305,14 +3305,6 @@ void Scheduler::TimerTick(SchedTime now) {
   Thread::Current::preemption_state().PreemptSetPending();
 }
 
-void Scheduler::InitializeProcessingRate(SchedProcessingRate scale) TA_NO_THREAD_SAFETY_ANALYSIS {
-  // Since this happens early in boot, before the scheduler is actually running,
-  // acquiring the queue lock is unnecessary.
-  power_level_control_.TopologySetDefaultProcessingRate(scale);
-  rust_state_.exported_processing_rate = scale;
-  rust_state_.exported_max_processing_rate = power_level_control_.clamped_max_processing_rate();
-}
-
 void Scheduler::UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info) {
   DEBUG_ASSERT(info.size() <= percpu::processor_count());
   InterruptDisableGuard irqd;
@@ -3326,36 +3318,14 @@ void Scheduler::UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info)
     Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
 
     // TODO(eieio): Apply a minimum value threshold.
-    scheduler->power_level_control_.UserSetProcessingRate(
-        ToSchedProcessingRate(entry.performance_scale));
+    rust_scheduler_user_set_processing_rate(scheduler,
+                                            ToSchedProcessingRate(entry.performance_scale));
 
     // Return the original performance scale (i.e. processing rate).
     entry.performance_scale = ToUserPerformanceScale(scheduler->processing_rate());
   }
 
   RescheduleMask(cpus_to_reschedule_mask);
-}
-
-void Scheduler::GetPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) {
-  DEBUG_ASSERT(info.size() <= percpu::processor_count());
-  for (cpu_num_t i = 0; i < info.size(); i++) {
-    Scheduler* scheduler = Scheduler::Get(i);
-    Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-    info[i].logical_cpu_number = i;
-    info[i].performance_scale =
-        ToUserPerformanceScale(scheduler->power_level_control_.updated_processing_rate());
-  }
-}
-
-void Scheduler::GetDefaultPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) {
-  DEBUG_ASSERT(info.size() <= percpu::processor_count());
-  for (cpu_num_t i = 0; i < info.size(); i++) {
-    Scheduler* scheduler = Scheduler::Get(i);
-    Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-    info[i].logical_cpu_number = i;
-    info[i].performance_scale =
-        ToUserPerformanceScale(scheduler->power_level_control_.max_processing_rate());
-  }
 }
 
 void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
@@ -3407,26 +3377,6 @@ void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
   }
 
   RescheduleMask(cpus_to_evaluate_updates);
-}
-
-void Scheduler::GetProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
-  DEBUG_ASSERT(limits.size() <= percpu::processor_count());
-  for (cpu_num_t i = 0; i < limits.size(); i++) {
-    Scheduler* scheduler = Scheduler::Get(i);
-    Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-
-    limits[i].logical_cpu_number = i;
-    limits[i].limit_type = ZX_CPU_PERF_LIMIT_TYPE_RATE;
-
-    using power_management::PowerLevel;
-
-    limits[i].min =
-        PowerLevel::FromProcessingRate(scheduler->power_level_control_.processing_rate_limit_min(),
-                                       PowerLevel::kUserProcessingRateScale);
-    limits[i].max =
-        PowerLevel::FromProcessingRate(scheduler->power_level_control_.processing_rate_limit_max(),
-                                       PowerLevel::kUserProcessingRateScale);
-  }
 }
 
 cpu_mask_t Scheduler::SetCpuAffinity(Thread& thread, cpu_mask_t affinity,
@@ -3623,67 +3573,20 @@ bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {
 
 bool Scheduler::PowerLevelControl::UserSetProcessingRateLimits(SchedProcessingRate min,
                                                                SchedProcessingRate max) {
-  AssertHeld(scheduler().queue_lock());
-  state().processing_rate_limit_min =
-      ktl::clamp(min, SchedProcessingRate{0}, SchedProcessingRate{1});
-  state().processing_rate_limit_max =
-      ktl::clamp(max, SchedProcessingRate{0}, SchedProcessingRate{1});
-
-  scheduler().rust_state_.exported_max_processing_rate = clamped_max_processing_rate();
-  scheduler().rust_state_.exported_clamped_deadline_utilization = clamped_deadline_utilization();
-  scheduler().rust_state_.exported_clamped_fair_utilization = clamped_fair_demand();
-  scheduler().rust_state_.exported_clamped_total_utilization = clamped_total_demand();
-
-  return processing_rate_should_change();
+  return rust_scheduler_user_set_processing_rate_limits(&scheduler(), min, max);
 }
 
 bool Scheduler::PowerLevelControl::PendPowerLevelRequest(uint8_t power_level) {
-  AssertHeld(scheduler().queue_lock());
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(QUEUE, "sched_req_power_level", ("cpu", cpu()),
-                                                 ("power_level", power_level));
-
-  // If there is already a pending request, it can be updated without issuing a reschedule,
-  // since this update raced with dispatch of the previous request and won.
-  const bool had_pending_request = state().has_pending_update_request;
-  if (auto request = power_state().RequestTransition(cpu(), power_level)) {
-    state().pending_update_request = *request;
-    state().has_pending_update_request = true;
-  }
-  return !had_pending_request && state().has_pending_update_request;
+  return rust_scheduler_pend_power_level_request(&scheduler(), power_level);
 }
 
 bool Scheduler::PowerLevelControl::PendPowerLevelRequestForRate(
     SchedProcessingRate processing_rate) {
-  AssertHeld(scheduler().queue_lock());
-  if (domain()) {
-    if (const power_management::PowerLevel* power_level =
-            domain()->model().FindActivePowerLevelForRate(processing_rate)) {
-      return PendPowerLevelRequest(power_level->level());
-    }
-  }
-  return false;
+  return rust_scheduler_pend_power_level_request_for_rate(&scheduler(), processing_rate);
 }
 
 void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
-  AssertHeld(scheduler().queue_lock());
-  SchedUtilization max_clamped_demand{0};
-  cpu_mask_t domain_cpus = domain() ? domain()->cpus() : 0;
-  while (domain_cpus != 0) {
-    const cpu_num_t cpu_num = remove_cpu_from_mask(domain_cpus);
-    max_clamped_demand = ktl::max(
-        max_clamped_demand, percpu::Get(cpu_num).scheduler.exported_clamped_total_utilization());
-  }
-
-  LOCAL_KTRACE_INSTANT(QUEUE, "ReevaluateCurrentPowerLevel",
-                       ("max_clamped_utilization", max_clamped_demand),
-                       ("preceding_processing_rate", preceding_target_processing_rate()),
-                       ("processing_rate", target_processing_rate()));
-
-  if ((has_preceding_target_power_level() &&
-       max_clamped_demand <= preceding_target_processing_rate()) ||
-      max_clamped_demand > target_processing_rate()) {
-    PendPowerLevelRequestForRate(max_clamped_demand);
-  }
+  rust_scheduler_reevaluate_current_power_level(&scheduler());
 }
 
 cpu_mask_t Scheduler::PowerLevelControl::SendPendingPowerLevelRequest(
