@@ -382,9 +382,6 @@
                 // TODO(https://fxbug.dev/559170416) deflake and re-enable
                 "pidfd_send_signal01",
 
-                // TODO(https://fxbug.dev/561291072) deflake and re-enable
-                "rt_sigqueueinfo01",
-
                 // TODO(https://fxbug.dev/403612570): This test requires CLONE_INTO_CGROUP.
                 "clone303",
 
