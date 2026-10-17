@@ -7,7 +7,7 @@
 pub use crate::testing::dut::DriverUnderTest;
 use crate::testing::logsink_connector;
 use crate::testing::node::NodeManager;
-use crate::{Driver, Incoming};
+use crate::{Driver, Incoming, PropertyValue};
 use anyhow::Result;
 use fdf::{AsyncDispatcher, DispatcherBuilder};
 use fdf_env::Environment;
@@ -16,6 +16,7 @@ use fidl_fuchsia_driver_framework::Offer;
 use fidl_fuchsia_io as fio;
 use fidl_next::{ClientEnd as NextClientEnd, ServerEnd as NextServerEnd};
 use fidl_next_fuchsia_component_runner::natural::ComponentNamespaceEntry;
+use fidl_next_fuchsia_driver_framework as df_next;
 use fidl_next_fuchsia_driver_framework::DriverStartArgs;
 use fidl_next_fuchsia_driver_framework::natural::Offer as NextOffer;
 use fuchsia_async as fasync;
@@ -39,6 +40,7 @@ pub struct TestHarness<D> {
     scope: fasync::Scope,
     power_element_args: Option<fidl_fuchsia_driver_framework::PowerElementArgs>,
     node_token: Option<zx::Event>,
+    node_properties: Vec<df_next::NodePropertyEntry2>,
     _d: PhantomData<D>,
 }
 
@@ -91,6 +93,7 @@ impl<D: Driver> TestHarness<D> {
             scope,
             power_element_args: None,
             node_token: None,
+            node_properties: Vec::new(),
             _d: PhantomData,
         }
     }
@@ -143,6 +146,29 @@ impl<D: Driver> TestHarness<D> {
     /// Sets the node token for the driver. Consumes and returns self to allow chaining.
     pub fn set_node_token(mut self, token: zx::Event) -> Self {
         self.node_token = Some(token);
+        self
+    }
+
+    /// Adds a property of the parent node named `parent` to the driver's start args, as reported
+    /// by [`crate::DriverContext::node_properties`]. Drivers bound to a single node see their
+    /// properties under the parent name `default`. Consumes and returns self to allow chaining.
+    pub fn add_node_property(
+        mut self,
+        parent: &str,
+        key: impl Into<String>,
+        value: impl Into<PropertyValue>,
+    ) -> Self {
+        let property = df_next::NodeProperty2 {
+            key: key.into(),
+            value: convert::convert_property_value(value.into()),
+        };
+        match self.node_properties.iter_mut().find(|entry| entry.name == parent) {
+            Some(entry) => entry.properties.push(property),
+            None => self.node_properties.push(df_next::NodePropertyEntry2 {
+                name: parent.to_string(),
+                properties: vec![property],
+            }),
+        }
         self
     }
 
@@ -202,6 +228,8 @@ impl<D: Driver> TestHarness<D> {
                 .node_token
                 .as_ref()
                 .and_then(|t| t.duplicate_handle(fidl::Rights::SAME_RIGHTS).ok()),
+            node_properties_2: (!self.node_properties.is_empty())
+                .then(|| self.node_properties.clone()),
             ..DriverStartArgs::default()
         };
 
@@ -236,6 +264,18 @@ mod convert {
     use fidl_fuchsia_driver_framework as df;
     use fidl_next_fuchsia_component_decl as decl_next;
     use fidl_next_fuchsia_driver_framework as df_next;
+
+    pub fn convert_property_value(value: crate::PropertyValue) -> df_next::NodePropertyValue {
+        match value.0 {
+            df::NodePropertyValue::IntValue(v) => df_next::NodePropertyValue::IntValue(v),
+            df::NodePropertyValue::StringValue(v) => df_next::NodePropertyValue::StringValue(v),
+            df::NodePropertyValue::BoolValue(v) => df_next::NodePropertyValue::BoolValue(v),
+            df::NodePropertyValue::EnumValue(v) => df_next::NodePropertyValue::EnumValue(v),
+            df::NodePropertyValue::__SourceBreaking { unknown_ordinal } => {
+                df_next::NodePropertyValue::UnknownOrdinal_(unknown_ordinal)
+            }
+        }
+    }
 
     pub fn convert_df_offer(offer: df::Offer) -> df_next::Offer {
         match offer {
@@ -554,5 +594,95 @@ mod tests {
         let mut harness = TestHarness::<TestDriver>::new();
         let start_result = harness.start_driver().await;
         assert_eq!(start_result.err(), Some(Status::IO_REFUSED));
+    }
+
+    /// Records what the `DriverContext` start-argument accessors returned.
+    struct StartArgsDriver {
+        node_token: Option<zx::Event>,
+        power_element_token: Option<zx::Event>,
+        properties: Vec<(String, String, crate::PropertyValue)>,
+    }
+
+    impl Driver for StartArgsDriver {
+        const NAME: &'static str = "start-args-driver";
+
+        async fn start(mut context: crate::DriverContext) -> Result<Self, DriverError> {
+            let properties = context
+                .node_properties()
+                .map(|p| (p.parent.to_string(), p.key.to_string(), p.value))
+                .collect();
+            let driver = Self {
+                node_token: context.take_node_token(),
+                power_element_token: context.take_power_element_token(),
+                properties,
+            };
+            // Taking is one-shot.
+            assert!(context.take_node_token().is_none());
+            assert!(context.take_power_element_token().is_none());
+            Ok(driver)
+        }
+
+        async fn stop(&self) {}
+    }
+
+    fn koid(handle: &impl zx::AsHandleRef) -> zx::Koid {
+        handle.as_handle_ref().koid().unwrap()
+    }
+
+    #[fuchsia::test]
+    async fn test_start_args_accessors() {
+        let node_token = zx::Event::create();
+        let power_token = zx::Event::create();
+        let mut harness = TestHarness::<StartArgsDriver>::new()
+            .set_node_token(node_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+            .set_power_element_args(fidl_fuchsia_driver_framework::PowerElementArgs {
+                token: Some(power_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                ..Default::default()
+            })
+            .add_node_property("default", "fuchsia.BIND_PROTOCOL", 7u32)
+            .add_node_property("default", "name", "value")
+            .add_node_property("other-parent", "enabled", true)
+            .add_node_property(
+                "other-parent",
+                "kind",
+                crate::PropertyValue(fidl_fuchsia_driver_framework::NodePropertyValue::EnumValue(
+                    "Kind.A".into(),
+                )),
+            );
+
+        let started_driver = harness.start_driver().await.expect("driver starts");
+        let driver = started_driver.get_driver().expect("driver");
+
+        assert_eq!(driver.node_token.as_ref().map(koid), Some(koid(&node_token)));
+        assert_eq!(driver.power_element_token.as_ref().map(koid), Some(koid(&power_token)));
+
+        let as_strs: Vec<(&str, &str)> =
+            driver.properties.iter().map(|(p, k, _)| (p.as_str(), k.as_str())).collect();
+        assert_eq!(
+            as_strs,
+            [
+                ("default", "fuchsia.BIND_PROTOCOL"),
+                ("default", "name"),
+                ("other-parent", "enabled"),
+                ("other-parent", "kind"),
+            ]
+        );
+        assert_eq!(driver.properties[0].2.as_int(), Some(7));
+        assert_eq!(driver.properties[0].2.as_str(), None);
+        assert_eq!(driver.properties[1].2.as_str(), Some("value"));
+        assert_eq!(driver.properties[2].2.as_bool(), Some(true));
+        assert_eq!(driver.properties[3].2.as_enum(), Some("Kind.A"));
+        started_driver.stop_driver().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_start_args_accessors_absent() {
+        let mut harness = TestHarness::<StartArgsDriver>::new();
+        let started_driver = harness.start_driver().await.expect("driver starts");
+        let driver = started_driver.get_driver().expect("driver");
+        assert!(driver.node_token.is_none());
+        assert!(driver.power_element_token.is_none());
+        assert!(driver.properties.is_empty());
+        started_driver.stop_driver().await;
     }
 }

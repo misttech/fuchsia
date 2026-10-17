@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Incoming, Node};
+use crate::{Incoming, Node, ParentProperty, PropertyValue};
 use fuchsia_async::ScopeHandle;
 use fuchsia_component::server::{ServiceFs, ServiceObjTrait};
 use fuchsia_component_config::Config;
@@ -109,6 +109,36 @@ impl DriverContext {
         inspect_publisher::content_publisher(options).map_err(|err| {
             error!("Error creating inspect content publisher: {err}");
             Status::INTERNAL
+        })
+    }
+
+    /// Takes the node token from the start arguments, if the driver host provided one. The token
+    /// identifies the driver's node to other framework services, such as the power framework.
+    ///
+    /// After calling this, [`DriverStartArgs::node_token`] in [`Self::start_args`] will be `None`.
+    pub fn take_node_token(&mut self) -> Option<zx::Event> {
+        self.start_args.node_token.take()
+    }
+
+    /// Takes the power element dependency token from the start arguments. The driver host
+    /// provides it when the driver's manifest opts in to a framework-managed power element.
+    ///
+    /// After calling this, the `token` of [`DriverStartArgs::power_element_args`] in
+    /// [`Self::start_args`] will be `None`.
+    pub fn take_power_element_token(&mut self) -> Option<zx::Event> {
+        self.start_args.power_element_args.as_mut()?.token.take()
+    }
+
+    /// Returns the properties of the driver's parent node(s) from the start arguments, in the
+    /// order the driver host provided them. See [`ParentProperty::parent`] for how the properties
+    /// are grouped.
+    pub fn node_properties(&self) -> impl Iterator<Item = ParentProperty<'_>> + '_ {
+        self.start_args.node_properties_2.iter().flatten().flat_map(|entry| {
+            entry.properties.iter().map(move |property| ParentProperty {
+                parent: &entry.name,
+                key: &property.key,
+                value: PropertyValue(property.value.clone()),
+            })
         })
     }
 
