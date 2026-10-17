@@ -241,8 +241,11 @@
       "${workspaceFolder}/pyproject.toml"
     ],
 
+    // Disable ms-python's built-in language server in favor of basedpyright.
+    "python.languageServer": "None",
+
     // Index more than 2k files
-    "python.analysis.languageServerMode": "full",
+    "basedpyright.analysis.languageServerMode": "full",
 
     ////////
     // Markdown
