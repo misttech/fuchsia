@@ -43,7 +43,12 @@ host_shac_test(
 host_shac_test(
     name = "bazel_test",
     src = "bazel_test.star",
-    data = ["//scripts/shac:starlark_files"],
+    data = [
+        # Executed for real, rather than mocked.
+        "//:prebuilt_python_files",
+        "//scripts/shac:starlark_files",
+        "//scripts/shac/bazel_lint:files",
+    ],
 )
 
 host_shac_test(

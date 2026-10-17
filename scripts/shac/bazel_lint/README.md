@@ -1,7 +1,7 @@
 # Bazel Lint Checks for `shac`
 
-This directory contains Python-based static analysis checks for Bazel files
-(e.g., `*.bazel`, `*.bzl`) invoked by
+This directory contains the pluggable Python-`ast`-based static analysis
+framework and checks for Bazel files (e.g., `*.bazel`, `*.bzl`) invoked by
 [`//scripts/shac/bazel.star`](../bazel.star).
 
 ## Handling False Positives or Requesting Exceptions
@@ -12,6 +12,9 @@ needed:
 1. Reach out to the Build team (see [`//build/OWNERS`](/build/OWNERS)).
 2. File a bug in the Build > Bazel component:
    <https://issues.fuchsia.dev/issues/new?component=1477645>.
+3. Add an entry referencing that bug to the check's allowlist following
+   [`allowlists/README.md`](./allowlists/README.md) and get it reviewed by a
+   member of [`//build/OWNERS`](/build/OWNERS).
 
 ## Running Checks Locally
 
@@ -37,4 +40,42 @@ fx host-tool shac check --only <check_name> --all
 
 ## Implementation Overview
 
-* `checks/`: Contains the individual Bazel lint check implementations.
+* [`checks/`](./checks/README.md): Contains the individual Bazel lint check
+  implementations. See [`checks/README.md`](./checks/README.md) for instructions
+  on adding or modifying a check.
+* [`allowlists/`](./allowlists/README.md): Contains optional per-check JSON
+  allowlists. See [`allowlists/README.md`](./allowlists/README.md) for the JSON
+  schema and guidelines.
+* [`//scripts/shac/bazel.star`](../bazel.star): Registers one `shac` check per
+  rule via a shared factory so findings are attributed per rule in Gerrit and
+  `fx host-tool shac check --only <check_name>` works per rule.
+* [`main.py`](./main.py): CLI entrypoint invoked by `bazel.star`. Validates that
+  all input paths match a supported `FileKind`, loads the check's allowlist (if
+  present), runs the selected check on each file, and emits findings as JSON.
+* [`framework.py`](./framework.py): Parses each file once with Python's `ast`
+  module into a `FileContext` and dispatches to the active `BazelCheck` subclass
+  at four semantic hook points (`check_module`, `check_load`, `check_call`,
+  `check_string`).
+* [`allowlist.py`](./allowlist.py): Validates and matches per-rule allowlist
+  JSON files under [`allowlists/`](./allowlists/README.md).
+
+### Running Tests
+
+When modifying the framework (`framework.py`, `allowlist.py`, `main.py`, or `BUILD.bazel` files), run:
+
+* **Framework unit tests**:
+  ```sh
+  fx test --host //scripts/shac/tests:bazel_lint_test
+  ```
+  (Can also be run directly with `python3 scripts/shac/tests/bazel_lint_test.py` for fast iteration).
+
+* **Hermetic Bazel test**:
+  ```sh
+  fx test --host @//scripts/shac/tests:bazel_test
+  ```
+  Runs `bazel_test.star` inside Bazel's hermetic sandbox to verify that all Python modules, rules, and test files are properly declared in `BUILD.bazel` files and staged in runfiles.
+
+  If a test target is not recognized by `fx test`, register it first by running:
+  ```sh
+  fx add-host-test //scripts/shac/tests
+  ```

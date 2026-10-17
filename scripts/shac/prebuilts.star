@@ -9,6 +9,7 @@ load("./common.star", "cipd_platform_name", "get_fuchsia_dir", "os_exec")
 # LINT.IfChange
 _EXCLUDED_PATHS = (
     "build/bazel/rules/cipd_prebuilt.bzl",
+    "scripts/shac/bazel_lint/checks/tests/root_package_labels_test.star",
     "scripts/shac/prebuilts.star",
     "scripts/shac/tests/prebuilts_test.star",
 )

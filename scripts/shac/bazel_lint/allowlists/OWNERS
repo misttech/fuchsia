@@ -1,0 +1,2 @@
+# Build owners can approve additions and other changes to the allowlists.
+per-file *.json = file: /build/OWNERS

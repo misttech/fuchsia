@@ -32,9 +32,13 @@ python_host_test("python_format_test") {
   ]
 }
 
-python_host_test("bazel_root_package_labels_test") {
-  main_source = "bazel_root_package_labels_test.py"
-  sources = [ "//scripts/shac/bazel_lint/checks/root_package_labels.py" ]
+python_host_test("bazel_lint_test") {
+  main_source = "bazel_lint_test.py"
+  sources = [
+    "//scripts/shac/bazel_lint/allowlist.py",
+    "//scripts/shac/bazel_lint/framework.py",
+    "//scripts/shac/bazel_lint/main.py",
+  ]
 }
 
 python_host_test("check_header_guards_test") {
@@ -60,7 +64,7 @@ group("tests") {
   testonly = true
   deps = [
     ":bazel_defined_tests",
-    ":bazel_root_package_labels_test",
+    ":bazel_lint_test",
     ":check_header_guards_test",
     ":clang_tidy_test",
     ":commit_msg_checker_test",

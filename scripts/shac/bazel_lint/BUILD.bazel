@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+# host_shac_test() runs `shac test` in a minimal checkout containing only the
+# test's declared data, so //scripts/shac/tests:bazel_test depends on this
+# filegroup to stage the framework, check modules, and Starlark check tests
+# that it loads and executes.
+filegroup(
+    name = "files",
+    testonly = True,
+    srcs = [
+        "allowlist.py",
+        "framework.py",
+        "main.py",
+        "//scripts/shac/bazel_lint/checks:files",
+        "//scripts/shac/bazel_lint/checks/tests:files",
+    ],
+    visibility = [
+        "//scripts/shac/tests:__subpackages__",
+    ],
+)

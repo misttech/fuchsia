@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+# Staged into the runfiles of //scripts/shac/tests:bazel_test (via
+# //scripts/shac/bazel_lint:files) so `shac test` can execute main.py against
+# the registered check modules.
+filegroup(
+    name = "files",
+    testonly = True,
+    srcs = [
+        "__init__.py",
+        # LINT.IfChange(all_check_files)
+        "root_package_labels.py",
+        # LINT.ThenChange(//scripts/shac/bazel_lint/checks/__init__.py:all_checks)
+    ],
+    visibility = [
+        "//scripts/shac/bazel_lint:__pkg__",
+    ],
+)

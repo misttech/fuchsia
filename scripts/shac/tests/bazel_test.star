@@ -12,6 +12,10 @@ load(
     "_bazel_no_recursive_glob",
     "_bazel_no_repo_rules_canonical_names",
 )
+load(
+    "//scripts/shac/bazel_lint/checks/tests/checks_test.star",
+    _test_bazel_lint_checks = "test_bazel_lint_checks",
+)
 
 _ALLOWLISTS = testing.file(
     content = json.encode({
@@ -86,61 +90,6 @@ def test_no_repo_rules_canonical_names_apparent_name():
         "BUILD.bazel": "x = \"@internal_sdk//:foo\"\n",
     })
     asserts.eq(res.findings, ())
-
-def test_disallowed_workspace_root_package_labels():
-    res = testing.run(
-        _bazel_disallowed_workspace_root_package_labels,
-        files = {
-            "foo/BUILD.bazel": "x = \"//:foo/bar\"\n",
-            "third_party/foo/src/BUILD.bazel": "",
-            "README.md": "",
-        },
-        exec_mocks = [
-            testing.exec_mock(
-                cmd = [
-                    testing.any_args,
-                    "--root",
-                    testing.root,
-                    "--json",
-                    "foo/BUILD.bazel",
-                ],
-                retcode = 1,
-                stdout = json.encode([{
-                    "filepath": "foo/BUILD.bazel",
-                    "message": "bad label",
-                    "line": 1,
-                    "col": 6,
-                    "end_col": 16,
-                }]),
-            ),
-        ],
-    )
-    asserts.eq(res.findings, (
-        testing.finding(
-            level = "error",
-            message = "bad label",
-            filepath = "foo/BUILD.bazel",
-            line = 1,
-            col = 6,
-            end_col = 16,
-        ),
-    ))
-
-def test_disallowed_workspace_root_package_labels_inconsistent_retcode():
-    asserts.fails(
-        lambda: testing.run(
-            _bazel_disallowed_workspace_root_package_labels,
-            files = {"BUILD.bazel": ""},
-            exec_mocks = [
-                testing.exec_mock(
-                    cmd = [testing.any_args, "--root", testing.root, "--json", "BUILD.bazel"],
-                    retcode = 1,
-                    stdout = "[]",
-                ),
-            ],
-        ),
-        "exited with code 1, but reported 0 findings",
-    )
 
 def _glob_allowlist(*files):
     return testing.file(
@@ -289,3 +238,111 @@ def test_no_recursive_glob_stale_allowlist():
             "clean/BUILD.bazel no longer uses recursive glob patterns; remove it from the allowlist.",
         )],
     )
+
+# The bazel_lint framework tests use a real registered check and sample
+# violation content to verify framework-level behaviors in _make_bazel_lint_check
+# (such as file glob exclusions and allowlists).
+# They use a constant for the file contents and override the allowlist to ensure
+# the tests are actually testing the paths.
+_FRAMEWORK_TEST_CHECK = _bazel_disallowed_workspace_root_package_labels
+_FRAMEWORK_TEST_CHECK_ALLOWLIST = (
+    "scripts/shac/bazel_lint/allowlists/bazel_disallowed_workspace_root_package_labels.json"
+)
+_FRAMEWORK_TEST_EMPTY_ALLOWLIST = testing.file(
+    content = json.encode({"entries": []}),
+    affected = False,
+)
+_FRAMEWORK_TEST_VIOLATION = 'x = "//:foo/bar"\n'
+
+def test_bazel_lint_framework_excluded_globs():
+    # Uses a real registered check with violation content to verify that files
+    # matching framework _EXCLUDED_GLOBS (!/third_party/**/src/** and
+    # !/third_party/bazel_vendor/**) are excluded by _make_bazel_lint_check()
+    # and never passed to the linter, while files not matching them are checked.
+    # Provide an empty allowlist to isolate framework glob behavior from the
+    # check's disk allowlist, ensuring that findings (or lack thereof) are
+    # governed strictly by _EXCLUDED_GLOBS rather than an allowlist.
+    res = testing.run(
+        _FRAMEWORK_TEST_CHECK,
+        files = {
+            _FRAMEWORK_TEST_CHECK_ALLOWLIST: _FRAMEWORK_TEST_EMPTY_ALLOWLIST,
+            # Files matching framework _EXCLUDED_GLOBS are excluded and produce no findings:
+            "third_party/foo/src/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            "third_party/bazel_vendor/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            "third_party/bazel_vendor/foo/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            # Files that do not match _EXCLUDED_GLOBS are not excluded and produce findings:
+            "third_party/foo/source/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            "third_party/bazel/vendor/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+        },
+    )
+    asserts.eq(
+        [(f.filepath, f.line) for f in res.findings],
+        [
+            ("third_party/bazel/vendor/BUILD.bazel", 1),
+            ("third_party/foo/source/BUILD.bazel", 1),
+        ],
+    )
+
+def test_bazel_lint_framework_ignored_unmatched_files():
+    # Uses a real registered check (registered with applies_to_globs = _ALL_BAZEL_FILES)
+    # to verify that files not matching the check's file globs (such as README.md
+    # containing violation strings) are ignored by shac and not checked.
+    res = testing.run(
+        _FRAMEWORK_TEST_CHECK,
+        files = {
+            "README.md": _FRAMEWORK_TEST_VIOLATION,
+        },
+    )
+    asserts.eq(res.findings, ())
+
+def test_bazel_lint_framework_vendor_paths_not_excluded():
+    # Tests that vendor paths are not excluded by default by _make_bazel_lint_check.
+    # Provide an empty allowlist to isolate framework glob behavior from the
+    # check's disk allowlist (which temporarily exempts vendor/).
+    res = testing.run(
+        _FRAMEWORK_TEST_CHECK,
+        files = {
+            _FRAMEWORK_TEST_CHECK_ALLOWLIST: _FRAMEWORK_TEST_EMPTY_ALLOWLIST,
+            "vendor/foo/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            "vendor/foo/src/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            "vendor/google/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            "vendor/google/src/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+        },
+    )
+    asserts.eq(
+        [(f.filepath, f.line) for f in res.findings],
+        [
+            ("vendor/foo/BUILD.bazel", 1),
+            ("vendor/foo/src/BUILD.bazel", 1),
+            ("vendor/google/BUILD.bazel", 1),
+            ("vendor/google/src/BUILD.bazel", 1),
+        ],
+    )
+
+def test_bazel_lint_framework_allowlist():
+    allowlist = testing.file(
+        content = json.encode({
+            "entries": [
+                {
+                    "bug": "https://fxbug.dev/565897544",
+                    "path_prefix": "allowlisted_dir/",
+                },
+                {
+                    "bug": "https://fxbug.dev/565897544",
+                    "path": "allowlisted_file/BUILD.bazel",
+                },
+            ],
+        }),
+        affected = False,
+    )
+    res = testing.run(
+        _FRAMEWORK_TEST_CHECK,
+        files = {
+            _FRAMEWORK_TEST_CHECK_ALLOWLIST: allowlist,
+            "allowlisted_dir/foo/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            "allowlisted_file/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+        },
+    )
+    asserts.eq(res.findings, ())
+
+test_bazel_lint_checks = _test_bazel_lint_checks

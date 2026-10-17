@@ -15,6 +15,7 @@ from collections.abc import Callable, Sequence
 _EXCLUDED_PATHS = frozenset(
     {
         "build/bazel/rules/cipd_prebuilt.bzl",
+        "scripts/shac/bazel_lint/checks/tests/root_package_labels_test.star",
         "scripts/shac/prebuilts.star",
         "scripts/shac/tests/prebuilts_test.star",
     }

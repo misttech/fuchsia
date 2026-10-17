@@ -1,4 +1,3 @@
-#!/usr/bin/env fuchsia-vendored-python
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -12,12 +11,13 @@ package boundaries. Targets in subdirectories should instead be referenced via
 their subpackage (e.g. `//foo:bar` or `//foo/bar`).
 """
 
-import argparse
-import ast
-import json
-import sys
-from pathlib import Path
-from typing import TypedDict
+from framework import (
+    BazelCheck,
+    FileContext,
+    FileKind,
+    StringInfo,
+    register_check,
+)
 
 # Permitted workspace root package label prefixes for files in the main platform
 # workspace. These subdirectories do not have BUILD.bazel files and their contents
@@ -58,15 +58,6 @@ _EXTERNAL_REPO_LABEL_PREFIXES: dict[str, tuple[str, ...]] = {
 }
 
 
-class _Finding(TypedDict):
-    filepath: str
-    line: int
-    col: int
-    end_col: int
-    message: str
-    level: str
-
-
 def _get_correct_label(label: str) -> tuple[str, str]:
     """Computes the corrected subpackage label and the target package directory."""
     if not label.startswith("//:"):
@@ -102,130 +93,39 @@ def _is_label_permitted(label: str, rel_path: str) -> bool:
     return False
 
 
-def _check_file_contents(content: str, rel_path: str) -> list[_Finding]:
+@register_check
+class RootPackageLabelsCheck(BazelCheck):
     """Checks file content for disallowed workspace root package labels."""
-    findings: list[_Finding] = []
-    try:
-        tree = ast.parse(content, filename=rel_path)
-    except SyntaxError as e:
-        line = e.lineno or 1
-        col = e.offset or 1
-        end_col = (
-            e.end_offset if (e.end_offset and e.end_offset > col) else col + 1
-        )
-        findings.append(
-            _Finding(
-                filepath=rel_path,
-                line=line,
-                col=col,
-                end_col=end_col,
-                message=f"Syntax error: {e.msg}",
-                level="error",
-            )
-        )
-        return findings
 
-    lines = content.splitlines()
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
-            continue
-        label = node.value
+    name = "bazel_disallowed_workspace_root_package_labels"
+    file_kinds = frozenset(
+        {
+            FileKind.BUILD,
+            FileKind.BZL,
+            FileKind.MODULE,
+            FileKind.WORKSPACE,
+        }
+    )
+
+    def check_string(self, fc: FileContext, s: StringInfo) -> None:
+        label = s.value
         # Labels in the workspace root package start with '//:'. If they contain a
         # slash, they refer to paths in subdirectories instead of the root package.
         if not label.startswith("//:"):
-            continue
+            return
         stripped = label[3:].rstrip(":")
-        if "/" not in stripped or _is_label_permitted(label, rel_path):
-            continue
+        if "/" not in stripped or _is_label_permitted(label, fc.path):
+            return
 
         suggested_label, target_dir = _get_correct_label(label)
-        line_text = lines[node.lineno - 1]
-        col = line_text.find(label, node.col_offset) + 1
-        end_col = col + len(label)
         msg = (
             f"Disallowed workspace root package label: `{label}`. "
             f"Use `{suggested_label}` instead, and add a `BUILD.bazel` file to `//{target_dir}` if needed."
         )
-        findings.append(
-            _Finding(
-                filepath=rel_path,
-                line=node.lineno,
-                col=col,
-                end_col=end_col,
-                message=msg,
-                level="error",
-            )
+        fc.report_string(
+            msg,
+            s.node,
+            label,
+            level="error",
+            url="https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#prohibited-label-patterns",
         )
-
-    findings.sort(key=lambda f: (f["line"], f["col"]))
-    return findings
-
-
-def check_file(
-    filepath: Path | str, root: Path | None = None
-) -> list[_Finding]:
-    """Checks a single file on disk."""
-    path = Path(filepath)
-    if not path.is_absolute() and root:
-        actual_path = root / path
-    else:
-        actual_path = path
-
-    if not actual_path.is_file():
-        raise FileNotFoundError(f"File not found: {actual_path}")
-
-    content = actual_path.read_text(encoding="utf-8")
-
-    if root and actual_path.is_relative_to(root):
-        rel_path = actual_path.relative_to(root).as_posix()
-    else:
-        rel_path = path.as_posix()
-
-    return _check_file_contents(content, rel_path)
-
-
-def main() -> int:
-    """CLI entrypoint."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--root",
-        type=Path,
-        default=None,
-        help="Repository root directory against which relative paths are resolved.",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Output findings as a JSON array.",
-    )
-    parser.add_argument(
-        "files",
-        nargs="*",
-        type=Path,
-        help="Files to check.",
-    )
-    args = parser.parse_args()
-
-    root = args.root.resolve() if args.root else None
-    all_findings: list[_Finding] = []
-
-    try:
-        for file_path in args.files:
-            all_findings.extend(check_file(file_path, root=root))
-    except Exception as e:
-        print(f"Error checking files: {e}", file=sys.stderr)
-        return 2
-
-    if args.json:
-        print(json.dumps(all_findings, indent=2))
-    else:
-        for f in all_findings:
-            print(
-                f"{f['filepath']}:{f['line']}:{f['col']}: [{f['level']}] {f['message']}"
-            )
-
-    return 1 if all_findings else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -153,7 +153,13 @@ linux_sysroot_libs(
 filegroup(
     name = "prebuilt_python_files",
     srcs = _python_prebuilt_files,
-    visibility = ["//build/bazel/toolchains/python:__pkg__"],
+    visibility = [
+        "//build/bazel/toolchains/python:__pkg__",
+        # Used by host_shac_test() targets that execute Python-based shac
+        # checks, which invoke prebuilt/third_party/python3 directly via
+        # ctx.os.exec() rather than using a Bazel py_* rule.
+        "//scripts/shac/tests:__pkg__",
+    ],
 )
 
 filegroup(

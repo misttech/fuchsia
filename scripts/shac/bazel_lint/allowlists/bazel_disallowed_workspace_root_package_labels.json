@@ -1,0 +1,9 @@
+{
+    "entries": [
+        {
+            "path_prefix": "vendor/",
+            "bug": "https://fxbug.dev/560343570",
+            "comment": "Exclude vendor initially to minimize the risk of this check being reverted. Remove after fixing existing violations in vendor/."
+        }
+    ]
+}

@@ -126,7 +126,6 @@
     "scripts/rust/rustdoc_no_ld_library_path.sh": 1,
     "scripts/shac/tests/BUILD.bazel": 2,
     "scripts/shac/tests/BUILD.gn": 1,
-    "scripts/shac/tests/bazel_root_package_labels_test.py": 1,
     "scripts/tests/fargo-test": 1,
     "scripts/zsh-completion/_fx": 1,
     "scripts/zsh-completion/_fx_build": 1,

@@ -1,0 +1,14 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Runs all Starlark tests for bazel_lint checks."""
+
+load("./root_package_labels_test.star", "run_root_package_labels_tests")
+
+def test_bazel_lint_checks():
+    """Executes all registered bazel_lint check test suites."""
+
+    # LINT.IfChange(run_all_check_tests)
+    run_root_package_labels_tests()
+    # LINT.ThenChange(//scripts/shac/bazel_lint/checks/__init__.py:all_checks)
