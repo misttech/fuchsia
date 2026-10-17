@@ -6,13 +6,13 @@
 
 #include <bits.h>
 #include <lib/boot-options/boot-options.h>
-#include <lib/console.h>
 #include <trace.h>
 
 #include <arch/arch_ops.h>
 #include <arch/mp.h>
 #include <arch/x86/feature.h>
 #include <arch/x86/platform_access.h>
+#include <kernel/ffi.h>
 #include <kernel/percpu.h>
 #include <kernel/recurring_callback.h>
 #include <kernel/timer.h>
@@ -253,59 +253,23 @@ RecurringCallback g_status_callback([]() {
   print_limit_reasons(/*use_log=*/false);
 });
 
-void print_command_usage() {
-  static const struct {
-    const char* cmd_str;
-    const char* help_str;
-  } subcommands[] = {
-      {"status", "toggle status display"},
-      {"limitreason clear", "clear the cpu limit reason log"},
-      {"limitreason log", "print all cpu limit reasons since last clear"},
-      {"limits", "print package power limits"},
-  };
-  printf("usage:\n");
-  for (auto subcommand : subcommands) {
-    printf("\tpower %-32s: %s\n", subcommand.cmd_str, subcommand.help_str);
-  }
-}
-
 }  // namespace
 
-static zx_status_t cmd_power(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-    print_command_usage();
-    return ZX_ERR_INVALID_ARGS;
-  }
+extern "C" {
 
-  if (!PowerLimitSuported()) {
-    printf("Power limit controls not supported\n");
-    return ZX_ERR_NOT_SUPPORTED;
-  }
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_x86_power_limit_suported() { return PowerLimitSuported(); }
 
-  if (!strcmp(argv[1].str, "status")) {
-    g_status_callback.Toggle();
-    return ZX_OK;
-  } else if (!strcmp(argv[1].str, "limitreason")) {
-    if (argc < 3) {
-      print_command_usage();
-      return ZX_ERR_INVALID_ARGS;
-    }
-    if (!strcmp(argv[2].str, "log")) {
-      print_limit_reasons(/*use_log=*/true);
-      return ZX_OK;
-    } else if (!strcmp(argv[2].str, "clear")) {
-      clear_limit_reason_log();
-      return ZX_OK;
-    }
-  } else if (!strcmp(argv[1].str, "limits")) {
-    print_limits();
-    return ZX_OK;
-  }
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_status_callback_toggle() { g_status_callback.Toggle(); }
 
-  print_command_usage();
-  return ZX_ERR_INVALID_ARGS;
-}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_print_limit_reasons(bool use_log) { print_limit_reasons(use_log); }
 
-STATIC_COMMAND_START
-STATIC_COMMAND("power", "power limiting debug commands (for x86 only)", &cmd_power)
-STATIC_COMMAND_END(cpu)
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_clear_limit_reason_log() { clear_limit_reason_log(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_print_limits() { print_limits(); }
+
+}  // extern "C"

@@ -141,6 +141,16 @@ extern "C" void x86_set_local_apic_id(uint32_t apic_id);
 extern "C" {
 uint32_t cpp_x86_percpu_get_apic_id(cpu_num_t cpu_num);
 uint32_t cpp_x86_curr_percpu_get_apic_id();
+X86IdleStates* cpp_x86_mp_bp_idle_states();
+X86IdleStates* cpp_x86_mp_ap_idle_states(size_t idx);
+const char* cpp_x86_idle_state_name(const X86IdleState* state);
+uint32_t cpp_x86_idle_state_mwait_hint(const X86IdleState* state);
+uint64_t cpp_x86_idle_state_times_entered(const X86IdleState* state);
+zx_duration_t cpp_x86_idle_state_cumulative_duration(const X86IdleState* state);
+void cpp_x86_idle_state_reset_counters(X86IdleState* state);
+X86IdleState* cpp_x86_idle_states_states(X86IdleStates* states);
+size_t cpp_x86_idle_states_num_states(const X86IdleStates* states);
+void cpp_x86_idle_states_set_state_mask(X86IdleStates* states, uint32_t mask);
 }
 
 int x86_apic_id_to_cpu_num(uint32_t apic_id);
@@ -183,7 +193,7 @@ inline percpu* arch_get_curr_percpu() { return READ_PERCPU_FIELD(high_level_perc
 
 inline cpu_num_t arch_curr_cpu_num() { return READ_PERCPU_FIELD(cpu_num); }
 
-extern uint8_t x86_num_cpus;
+extern "C" uint8_t x86_num_cpus;
 inline uint arch_max_num_cpus() { return x86_num_cpus; }
 
 void x86_ipi_halt_handler() __NO_RETURN;

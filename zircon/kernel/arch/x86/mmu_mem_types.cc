@@ -8,7 +8,6 @@
 #include <assert.h>
 #include <debug.h>
 #include <lib/arch/intrin.h>
-#include <lib/console.h>
 #include <stdio.h>
 #include <string.h>
 #include <zircon/errors.h>
@@ -24,7 +23,7 @@
 #include <ktl/enforce.h>
 
 /* address widths from mmu.c */
-extern uint8_t g_max_paddr_width;
+extern "C" uint8_t g_max_paddr_width;
 
 /* MTRR MSRs */
 #define IA32_MTRR_NUM_FIX16K 2
@@ -61,9 +60,9 @@ extern uint8_t g_max_paddr_width;
 #define MTRR_PHYSMASK_VALID(x) !!((x) & (1 << 11))
 
 /* Number of variable length MTRRs */
-static uint8_t num_variable = 0;
+extern "C" uint8_t num_variable = 0;
 /* Whether or not fixed range MTRRs are supported */
-static bool supports_fixed_range = false;
+extern "C" bool supports_fixed_range = false;
 /* Whether write-combining memory type is supported */
 static bool supports_wc = false;
 
@@ -241,82 +240,3 @@ static void x86_pat_sync_task(void* raw_context) {
     arch::Yield();
   }
 }
-
-/* Helper for decoding and printing MTRRs */
-static void print_fixed_range_mtrr(uint32_t msr, uint32_t base, uint32_t record_size) {
-  uint64_t val = read_msr(msr);
-  for (int i = 0; i < 8; ++i) {
-    printf("  f %#05x-%#05x: %#02x\n", base, base + record_size - 1, (uint8_t)val);
-    base += record_size;
-    val >>= 8;
-  }
-}
-
-static void print_pat_entries(void* _ignored) {
-  uint64_t pat = read_msr(X86_MSR_IA32_PAT);
-  for (int i = 0; i < 8; ++i) {
-    printf("  Index %d: %#02x\n", i, (uint8_t)pat);
-    pat >>= 8;
-  }
-}
-
-static int cmd_memtype(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-    printf("not enough arguments\n");
-  usage:
-    printf("usage:\n");
-    printf("%s mtrr\n", argv[0].str);
-    printf("%s pat\n", argv[0].str);
-    return ZX_ERR_INTERNAL;
-  }
-
-  if (!strcmp(argv[1].str, "mtrr")) {
-    bool print_fixed = false;
-    if (argc > 2) {
-      if (!strcmp(argv[2].str, "-f")) {
-        print_fixed = true;
-      } else {
-        printf("usage: %s mtrr [-f]\n", argv[0].str);
-        printf("  -f    Display fixed registers\n");
-        return ZX_ERR_INTERNAL;
-      }
-    }
-    uint64_t default_type = read_msr(X86_MSR_IA32_MTRR_DEF_TYPE);
-    printf("MTRR state: master %s, fixed %s\n",
-           MTRR_DEF_TYPE_ENABLE(default_type) ? "enable" : "disable",
-           MTRR_DEF_TYPE_FIXED_ENABLE(default_type) ? "enable" : "disable");
-    printf("  default: %#02x\n", MTRR_DEF_TYPE_TYPE(default_type));
-    if (supports_fixed_range && print_fixed) {
-      print_fixed_range_mtrr(X86_MSR_IA32_MTRR_FIX64K_00000, 0x00000, (1 << 16));
-      for (int i = 0; i < IA32_MTRR_NUM_FIX16K; ++i) {
-        print_fixed_range_mtrr(IA32_MTRR_FIX16K_80000(i), 0x80000 + i * (1 << 17), (1 << 14));
-      }
-      for (int i = 0; i < IA32_MTRR_NUM_FIX4K; ++i) {
-        print_fixed_range_mtrr(IA32_MTRR_FIX4K_C0000(i), 0xC0000 + i * (1 << 15), (1 << 12));
-      }
-    }
-
-    for (uint i = 0; i < num_variable; ++i) {
-      uint64_t base = read_msr(IA32_MTRR_PHYSBASE(i));
-      uint64_t mask = read_msr(IA32_MTRR_PHYSMASK(i));
-      printf("  v (%s) base %#016llx, mask %#016llx: %#02x\n",
-             MTRR_PHYSMASK_VALID(mask) ? "valid" : "invalid", MTRR_PHYSBASE_BASE(base),
-             MTRR_PHYSMASK_MASK(mask), MTRR_PHYSBASE_TYPE(base));
-    }
-  } else if (!strcmp(argv[1].str, "pat")) {
-    uint num_cpus = arch_max_num_cpus();
-    for (cpu_num_t i = 0; i < num_cpus; ++i) {
-      printf("CPU %u Page Attribute Table types:\n", i);
-      mp_sync_exec(mp_ipi_target::MASK, 1u << i, print_pat_entries, nullptr);
-    }
-  } else {
-    printf("unknown command\n");
-    goto usage;
-  }
-
-  return ZX_OK;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND("memtype", "memory type commands", &cmd_memtype)
-STATIC_COMMAND_END(memtype)

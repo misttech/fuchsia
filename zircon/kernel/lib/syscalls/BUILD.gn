@@ -142,6 +142,8 @@ kernel_rust_mod("syscalls-rs") {
     "socket.rs",
     "stream.rs",
     "system.rs",
+    "system_x86.rs",
+    "system_x86_ffi.rs",
     "task.rs",
     "test.rs",
     "thread.rs",

@@ -6,7 +6,6 @@
 // https://opensource.org/licenses/MIT
 
 #include <inttypes.h>
-#include <lib/console.h>
 #include <string.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
@@ -18,6 +17,7 @@
 #include <arch/x86/platform_access.h>
 #include <fbl/bits.h>
 #include <fbl/hard_int.h>
+#include <kernel/ffi.h>
 #include <kernel/lockdep.h>
 #include <kernel/mp.h>
 #include <kernel/spinlock.h>
@@ -201,103 +201,38 @@ bool IntelHwpSupported(const cpu_id::CpuId* cpuid) {
          cpuid->ReadFeatures().HasFeature(cpu_id::Features::HWP_PREF);
 }
 
-namespace {
-
-void CmdPrintUsage() {
-  printf(
-      "usage:\n"
-      "  hwp set-policy <policy-name>  - set performance policy\n"
-      "                                  valid policies include bios-specified, performance,\n"
-      "                                  balanced, power-save, stable-performance.\n"
-      "  hwp set-freq <int>            - set processor frequency to given value.\n"
-      "                                  values map directly onto frequency targets, but the \n"
-      "                                  exact meaning is processor-dependant.\n");
-}
-
-zx_status_t CmdSetPolicy(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc != 1) {
-    CmdPrintUsage();
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  ktl::optional<IntelHwpPolicy> policy = IntelHwpParsePolicy(argv[0].str);
-  if (!policy.has_value()) {
-    printf("Unknown policy '%s'.\n", argv[0].str);
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  mp_sync_exec(
-      mp_ipi_target::ALL, 0,
-      [](void* policy_ptr) {
-        auto policy = reinterpret_cast<ktl::optional<IntelHwpPolicy>*>(policy_ptr)->value();
-        cpu_id::CpuId cpuid;
-        MsrAccess msr;
-        IntelHwpInit(&cpuid, &msr, policy);
-      },
-      &policy);
-
-  printf("Policy updated to '%s'.\n", argv[0].str);
-  return ZX_OK;
-}
-
-zx_status_t CmdSetFreq(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc != 1) {
-    CmdPrintUsage();
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  unsigned long desired_freq = argv[0].u;
-  if (desired_freq == 0 || desired_freq >= 256) {
-    printf("Invalid frequency target.\n");
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  mp_sync_exec(
-      mp_ipi_target::ALL, 0,
-      [](void* desired_freq_ptr) {
-        auto desired_freq = PerformanceLevel(
-            static_cast<uint8_t>(*reinterpret_cast<unsigned long*>(desired_freq_ptr)));
-        MsrAccess msr;
-        msr.write_msr(X86_MSR_IA32_HWP_REQUEST,
-                      MakeHwpRequest(/*min_perf=*/desired_freq, /*max_perf=*/desired_freq,
-                                     /*desired_perf=*/desired_freq, /*epp=*/kMaxPerformanceEPP));
-      },
-      &desired_freq);
-
-  printf("Frequency set to target %lu.\n", desired_freq);
-  return ZX_OK;
-}
-
-zx_status_t CmdHwp(int argc, const cmd_args* argv, uint32_t flags) {
-  // Ensure we have the hardware.
-  cpu_id::CpuId cpuid;
-  if (!IntelHwpSupported(&cpuid)) {
-    printf("HWP not supported on system.\n");
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  // Each command needs at least two tokens: "hwp <subcommand>".
-  if (argc < 2) {
-    CmdPrintUsage();
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  ktl::string_view subcommand(argv[1].str);
-  if (subcommand == "set-policy"sv) {
-    return CmdSetPolicy(argc - 2, argv + 2, flags);
-  }
-
-  if (subcommand == "set-freq"sv) {
-    return CmdSetFreq(argc - 2, argv + 2, flags);
-  }
-
-  CmdPrintUsage();
-  return ZX_ERR_INVALID_ARGS;
-}
-
-}  // namespace
 }  // namespace x86
 
-STATIC_COMMAND_START
-STATIC_COMMAND("hwp", "hardware controlled performance states\n", &x86::CmdHwp)
-STATIC_COMMAND_END(hwp)
+extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_x86_intel_hwp_parse_policy(const char* str, uint8_t* out_policy) {
+  ktl::optional<x86::IntelHwpPolicy> policy = x86::IntelHwpParsePolicy(str);
+  if (!policy.has_value()) {
+    return false;
+  }
+  *out_policy = static_cast<uint8_t>(policy.value());
+  return true;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_intel_hwp_init(uint8_t policy) {
+  cpu_id::CpuId cpuid;
+  MsrAccess msr;
+  x86::IntelHwpInit(&cpuid, &msr, static_cast<x86::IntelHwpPolicy>(policy));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint64_t cpp_x86_make_hwp_request(uint8_t min_perf, uint8_t max_perf,
+                                                    uint8_t desired_perf, uint8_t epp) {
+  return x86::MakeHwpRequest(x86::PerformanceLevel(min_perf), x86::PerformanceLevel(max_perf),
+                             x86::PerformanceLevel(desired_perf), x86::EnergyPerformancePref(epp));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_x86_intel_hwp_supported() {
+  cpu_id::CpuId cpuid;
+  return x86::IntelHwpSupported(&cpuid);
+}
+
+}  // extern "C"

@@ -31,4 +31,12 @@ bool IntelHwpSupported(const cpu_id::CpuId* cpuid);
 
 }  // namespace x86
 
+extern "C" {
+bool cpp_x86_intel_hwp_parse_policy(const char* str, uint8_t* out_policy);
+void cpp_x86_intel_hwp_init(uint8_t policy);
+uint64_t cpp_x86_make_hwp_request(uint8_t min_perf, uint8_t max_perf, uint8_t desired_perf,
+                                  uint8_t epp);
+bool cpp_x86_intel_hwp_supported();
+}  // extern "C"
+
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_HWP_H_

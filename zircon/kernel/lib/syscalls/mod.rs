@@ -44,6 +44,10 @@ mod smc;
 mod socket;
 mod stream;
 mod system;
+#[cfg(all(target_arch = "x86_64", console_enabled))]
+mod system_x86;
+#[cfg(all(target_arch = "x86_64", console_enabled))]
+mod system_x86_ffi;
 mod task;
 mod test;
 mod thread;

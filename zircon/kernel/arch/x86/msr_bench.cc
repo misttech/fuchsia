@@ -6,7 +6,6 @@
 
 #include <assert.h>
 #include <lib/affine/ratio.h>
-#include <lib/console.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
@@ -16,11 +15,13 @@
 #include <arch/x86/feature.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/array.h>
+#include <kernel/ffi.h>
 #include <ktl/array.h>
 #include <ktl/atomic.h>
 #include <ktl/bit.h>
 #include <ktl/iterator.h>
 #include <ktl/limits.h>
+#include <ktl/new.h>
 
 /*
  * MSR Benchmark:
@@ -486,20 +487,21 @@ int BenchmarkState::RunContext(CpuContext& ctx) {
   return 0;
 }
 
-int msr_bench(int argc, const cmd_args* argv, uint32_t flags) {
-  fbl::AllocChecker ac;
-  ktl::unique_ptr<BenchmarkState> benchmark = fbl::make_unique_checked<BenchmarkState>(&ac);
-
-  if (!ac.check()) {
-    printf("Failed to allocate benchmark context!\n");
-    return -1;
-  }
-
-  return benchmark->Run();
-}
+static_assert(sizeof(BenchmarkState) == 56);
+static_assert(alignof(BenchmarkState) == 8);
 
 }  // namespace
 
-STATIC_COMMAND_START
-STATIC_COMMAND("msr_bench", "MSR bechmarks", msr_bench)
-STATIC_COMMAND_END(msr_x64)
+extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE int cpp_x86_benchmark_state_run(void* state) {
+  return static_cast<BenchmarkState*>(state)->Run();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_benchmark_state_destroy(void* state) {
+  static_cast<BenchmarkState*>(state)->~BenchmarkState();
+}
+
+}  // extern "C"

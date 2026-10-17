@@ -5,12 +5,32 @@
 // https://opensource.org/licenses/MIT
 
 pub mod apic;
+#[cfg(console_enabled)]
+pub mod arch;
+#[cfg(console_enabled)]
+mod arch_ffi;
 pub mod cache;
 pub mod fake_msr_access;
 pub mod feature;
+#[cfg(console_enabled)]
+pub mod hwp;
+#[cfg(console_enabled)]
+mod hwp_ffi;
 pub mod interrupts;
 pub mod ioapic;
 pub mod lapic;
+#[cfg(console_enabled)]
+pub mod mmu_mem_types;
+#[cfg(console_enabled)]
+mod mmu_mem_types_ffi;
+#[cfg(console_enabled)]
+pub mod mp;
+#[cfg(console_enabled)]
+mod mp_ffi;
+#[cfg(console_enabled)]
+pub mod msr_bench;
+#[cfg(console_enabled)]
+mod msr_bench_ffi;
 pub mod platform_access;
 pub mod pv;
 pub mod registers;

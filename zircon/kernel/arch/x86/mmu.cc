@@ -58,7 +58,7 @@ static_assert(X86_PAGE_SIZE == kPageSize);
 /* Default address width including virtual/physical address.
  * newer versions fetched below */
 static uint8_t g_max_vaddr_width = 48;
-uint8_t g_max_paddr_width = 32;
+extern "C" uint8_t g_max_paddr_width = 32;
 
 /* True if the system supports 1GB pages */
 static bool supports_huge_pages = false;

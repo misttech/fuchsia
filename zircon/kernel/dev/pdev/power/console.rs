@@ -10,12 +10,15 @@
 // and controlling system power lifecycle states, CPU performance limits, and
 // energy model operating performance points.
 
+#[cfg(not(target_arch = "x86_64"))]
 use super::{
     PowerCpuState, PowerRebootFlags, rust_power_cpu_off, rust_power_cpu_on,
     rust_power_get_cpu_state, rust_power_opp_get, rust_power_opp_get_domain_count,
     rust_power_opp_set, rust_power_reboot, rust_power_shutdown,
 };
-use crate::console::{CMD_AVAIL_ALWAYS, CMD_AVAIL_NORMAL, CmdArgs, static_command};
+#[cfg(not(target_arch = "x86_64"))]
+use crate::console::CMD_AVAIL_NORMAL;
+use crate::console::{CMD_AVAIL_ALWAYS, CmdArgs, static_command};
 use core::ffi::{CStr, c_int};
 use debug::dprintf;
 use zx_status::Status;
@@ -197,6 +200,7 @@ pub unsafe extern "C" fn rppm_console_cmd(argc: c_int, argv: *const CmdArgs, _fl
     0
 }
 
+#[cfg(not(target_arch = "x86_64"))]
 fn power_usage(cmd_name: &str) -> c_int {
     dprintf!(ALWAYS, "Usage: {cmd_name} <subcommand>\n");
     dprintf!(ALWAYS, "  reboot [normal|bootloader|recovery|panic] : reboot the system\n");
@@ -215,6 +219,7 @@ fn power_usage(cmd_name: &str) -> c_int {
 /// # Safety
 ///
 /// If `argc > 0`, `argv` must point to a valid array of `CmdArgs` structures of length `argc`.
+#[cfg(not(target_arch = "x86_64"))]
 pub unsafe extern "C" fn power_console_cmd(
     argc: c_int,
     argv: *const CmdArgs,
@@ -354,6 +359,7 @@ static_command!(
     CMD_AVAIL_ALWAYS
 );
 
+#[cfg(not(target_arch = "x86_64"))]
 static_command!(
     POWER_CMD,
     c"power".as_ptr(),

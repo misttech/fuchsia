@@ -454,4 +454,19 @@ void x86_ras_fill();
 
 }  // extern C
 
+class Backtrace;
+struct CpuContext;
+
+extern "C" {
+zx_status_t cpp_x86_request_context(cpu_num_t target_cpu, zx_duration_mono_t timeout,
+                                    CpuContext* context);
+void cpp_x86_backtrace_print(const Backtrace* bt);
+void cpp_x86_print_frame(const iframe_t* frame);
+void cpp_x86_feature_debug();
+uint64_t cpp_x86_read_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id);
+void cpp_x86_write_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id, uint64_t val);
+int cpp_x86_benchmark_state_run(void* state);
+void cpp_x86_benchmark_state_destroy(void* state);
+}  // extern "C"
+
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_H_

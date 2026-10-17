@@ -14,7 +14,6 @@
 #include <inttypes.h>
 #include <lib/arch/x86/boot-cpuid.h>
 #include <lib/backtrace/global_cpu_context_exchange.h>
-#include <lib/console.h>
 #include <platform.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,6 +36,7 @@
 #include <arch/x86/mp.h>
 #include <hwreg/x86msr.h>
 #include <kernel/cpu.h>
+#include <kernel/ffi.h>
 #include <kernel/mp.h>
 #include <kernel/percpu.h>
 #include <lk/init.h>
@@ -50,47 +50,6 @@
 #ifndef __GCC_HAVE_SYNC_COMPARE_AND_SWAP_16
 #error "missing -mcx16"
 #endif
-
-namespace {
-
-int GetContext(int argc, const cmd_args* argv, uint32_t flags) {
-  auto print_usage = [&]() {
-    printf("usage:\n");
-    printf("%s context <cpu_id> <timeout_ms>\n", argv[0].str);
-  };
-
-  if (argc < 4) {
-    printf("not enough arguments\n");
-    print_usage();
-    return 1;
-  }
-
-  cpu_num_t target = static_cast<cpu_num_t>(argv[2].u);
-  if (target >= percpu::processor_count()) {
-    printf("invalid cpu_id: %u\n", target);
-    return 1;
-  }
-
-  const uint64_t timeout_ms = argv[3].u;
-  printf("requesting context of CPU-%u with timeout %lums\n", target, timeout_ms);
-
-  CpuContext context;
-  zx_status_t status;
-  {
-    InterruptDisableGuard irqd;
-    status = g_cpu_context_exchange.RequestContext(target, ZX_MSEC(timeout_ms), context);
-  }
-  if (status != ZX_OK) {
-    printf("error: %d\n", status);
-    return 1;
-  }
-  context.backtrace.Print();
-  PrintFrame(context.frame);
-
-  return 0;
-}
-
-}  // namespace
 
 void arch_early_init(void) {
   x86_mmu_early_init();
@@ -263,45 +222,37 @@ __NO_SAFESTACK __NO_RETURN void x86_secondary_entry(ktl::atomic<unsigned int>* a
   finish_secondary_entry(aps_still_booting, thread, cpu_num);
 }
 
-static int cmd_cpu(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-    printf("not enough arguments\n");
-  usage:
-    printf("usage:\n");
-    printf("%s features\n", argv[0].str);
-    printf("%s rdmsr <cpu_id> <msr_id>\n", argv[0].str);
-    printf("%s wrmsr <cpu_id> <msr_id> <value>\n", argv[0].str);
-    printf("%s lbr <subcommand>\n", argv[0].str);
-    printf("%s context <cpu_id> <timeout_ms>\n", argv[0].str);
-    return ZX_ERR_INTERNAL;
-  }
+static_assert(sizeof(Backtrace) == 272);
+static_assert(alignof(Backtrace) == 8);
+static_assert(sizeof(CpuContext) == 448);
+static_assert(alignof(CpuContext) == 8);
 
-  if (!strcmp(argv[1].str, "features")) {
-    x86_feature_debug();
-  } else if (!strcmp(argv[1].str, "rdmsr")) {
-    if (argc != 4) {
-      goto usage;
-    }
+extern "C" {
 
-    uint64_t val = read_msr_on_cpu((uint)argv[2].u, (uint)argv[3].u);
-    printf("CPU %lu RDMSR %lxh val %lxh\n", argv[2].u, argv[3].u, val);
-  } else if (!strcmp(argv[1].str, "wrmsr")) {
-    if (argc != 5) {
-      goto usage;
-    }
-
-    printf("CPU %lu WRMSR %lxh val %lxh\n", argv[2].u, argv[3].u, argv[4].u);
-    write_msr_on_cpu((uint)argv[2].u, (uint)argv[3].u, argv[4].u);
-  } else if (!strcmp(argv[1].str, "context")) {
-    return GetContext(argc, argv, flags);
-  } else {
-    printf("unknown command\n");
-    goto usage;
-  }
-
-  return ZX_OK;
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_x86_request_context(cpu_num_t target_cpu,
+                                                      zx_duration_mono_t timeout,
+                                                      CpuContext* context) {
+  return g_cpu_context_exchange.RequestContext(target_cpu, timeout, *context);
 }
 
-STATIC_COMMAND_START
-STATIC_COMMAND("cpu", "cpu test commands", &cmd_cpu)
-STATIC_COMMAND_END(cpu)
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_backtrace_print(const Backtrace* bt) { bt->Print(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_print_frame(const iframe_t* frame) { PrintFrame(*frame); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_feature_debug() { x86_feature_debug(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint64_t cpp_x86_read_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id) {
+  return read_msr_on_cpu(cpu, msr_id);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_x86_write_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id, uint64_t val) {
+  write_msr_on_cpu(cpu, msr_id, val);
+}
+
+}  // extern "C"
