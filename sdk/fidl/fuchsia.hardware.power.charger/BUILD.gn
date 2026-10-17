@@ -34,5 +34,8 @@ fidl("fuchsia.hardware.power.charger") {
   enable_rust_next = true
   stable = false
   visibility = [ "*" ]
-  public_deps = [ "//sdk/fidl/fuchsia.power.system" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.power.system",
+    "//zircon/vdso/zx",
+  ]
 }

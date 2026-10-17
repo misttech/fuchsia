@@ -5,6 +5,7 @@
 library fuchsia.hardware.power.charger;
 
 using fuchsia.power.system;
+using zx;
 
 /// Errors returned by the charger protocols.
 type Error = flexible enum {
@@ -138,8 +139,8 @@ type Health = flexible enum {
 
 /// Configuration options for charger state watching.
 ///
-/// Both fields are optional masks. In both `interest` and `wake_on`, the actual field values within
-/// the `Status` table are ignored; only field presence (set vs. unset) determines the mask.
+/// `interest` and `wake_on` are optional masks: the actual field values within the `Status` table
+/// are ignored; only field presence (set vs. unset) determines the mask.
 ///
 /// An absent mask means "use this field's default"; a present but empty mask means "no fields".
 /// The two defaults differ because the safe choice differs: `interest` defaults to everything the
@@ -157,6 +158,25 @@ type WatchOptions = table {
     /// Defaults to no fields: changes occurring during suspend are deferred until the next system
     /// wakeup and do not wake the device.
     2: wake_on Status;
+
+    /// Maximum time between `Watch` responses. When set, the server completes a pending `Watch`
+    /// with a freshly sampled `Status` once this much time has passed since the previous response,
+    /// even if no field in `interest` changed.
+    /// The time is measured on the boot timeline, so time spent suspended counts towards it.
+    /// Defaults to absent: `Watch` only completes on changes.
+    /// Servers that do not support periodic sampling omit this field from the effective options
+    /// returned by `ConfigureWatch` and from `Spec.supported_options`. Servers may clamp the value,
+    /// and report the interval they will honor in the effective options.
+    /// Samples do not wake the system from suspend unless `wake_on_max_interval` is set: a sample
+    /// that falls due while the system is suspended is taken once the system resumes.
+    3: max_interval zx.Duration;
+
+    /// Whether a `max_interval` sample that falls due while the system is suspended wakes the
+    /// system. Defaults to false; like `wake_on`, waking the system is a cost the client opts into.
+    /// Ignored if `max_interval` is absent.
+    /// Servers that cannot wake the system omit this field from the effective options returned by
+    /// `ConfigureWatch` and from `Spec.supported_options`.
+    4: wake_on_max_interval bool;
 };
 
 /// Static hardware characteristics and driver capabilities.
@@ -194,6 +214,10 @@ type Spec = table {
     ///   [`Charger.GetStatus`].
     /// - `supported_options.wake_on`: Telemetry fields capable of actively waking the system from
     ///   suspend via hardware interrupt lines etc.
+    /// - `supported_options.max_interval`: Present if the server supports periodic sampling; its
+    ///   value is the shortest interval the server will honor.
+    /// - `supported_options.wake_on_max_interval`: True if the server can wake the system from
+    ///   suspend to take a `max_interval` sample.
     6: supported_options WatchOptions;
 
     /// Optional. Trickle/precharge current supplied when battery voltage is below the fast-charge
@@ -343,7 +367,7 @@ open protocol Charger {
     ///
     /// Errors:
     /// - `NOT_SUPPORTED`: Non-empty options were requested, but none of the requested
-    ///   interest/wake fields are supported by the driver.
+    ///   interest/wake fields or periodic sampling are supported by the driver.
     flexible ConfigureWatch(struct {
         options WatchOptions;
     }) -> (struct {
@@ -353,24 +377,25 @@ open protocol Charger {
     /// Watches for changes in charger state using a hanging-get pattern.
     ///
     /// The first call returns the full current hardware state immediately. Subsequent calls block
-    /// until a state change matches the masks in [`ConfigureWatch`]. Each return contains a
-    /// complete telemetry snapshot of all current charger fields, not a sparse delta.
+    /// until a state change matches the masks in [`ConfigureWatch`] or the interval in
+    /// `max_interval` has elapsed. Each return contains a complete telemetry snapshot of all
+    /// current charger fields, not a sparse delta.
     ///
     /// At most one `Watch` call may be outstanding per connection; concurrent calls fail with
     /// `ALREADY_WATCHING`.
     ///
     /// Parameters:
-    /// + `lease`: An optional power lease token used to coordinate handoff between client and
-    ///   server, preventing the system from suspending before critical charger events are handled.
-    ///   If omitted, or if the driver does not support any `wake_on` fields, no lease coordination
-    ///   is performed and any provided token is dropped without returning a `wake_lease`.
+    /// + `lease`: An optional power lease token that keeps the system awake while the server
+    ///   processes the call. If the call is answered immediately, as the first call always is, the
+    ///   server hands it back as `wake_lease` unless it returns a wake lease of its own. If the
+    ///   call is parked, the server drops it.
     ///
     /// Returns:
     /// + `status`: Complete current telemetry snapshot of the charger.
-    /// + `wake_lease`: An optional lease token provided if the change triggered a `wake_on`
-    ///   condition.
-    ///   Omitted if the change did not trigger a wake condition or if suspend coordination is
-    ///   inactive.
+    /// + `wake_lease`: An optional lease token that the client should hold while it handles
+    ///   `status`: the client's `lease` handed back on an immediate reply, or a wake lease provided
+    ///   if the change triggered a `wake_on` condition or a `max_interval` sample woke the system
+    ///   for a client that set `wake_on_max_interval`. Omitted otherwise.
     ///
     /// Errors:
     /// - `ALREADY_WATCHING`: A `Watch` call is already pending on this connection.
