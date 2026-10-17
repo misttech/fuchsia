@@ -39,6 +39,7 @@ class FakeUsbCdcAcmFunction
   explicit FakeUsbCdcAcmFunction() : fdf::DriverBase2("fake-usb-cdc-acm") {}
 
   zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // UsbFunctionInterface:
   void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
@@ -145,10 +146,15 @@ void FakeUsbCdcAcmFunction::InComplete(
 
 void FakeUsbCdcAcmFunction::OutComplete(
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  fbl::AutoLock lock(&mtx_);
   uint8_t buffer[kBulkMaxPacket];
   std::vector<fuchsia_hardware_usb_request::Request> return_reqs;
   for (auto& c : completions) {
     usb::FidlRequest req(std::move(c.request().value()));
+    if (*c.status() != ZX_OK || !configured_) {
+      bulk_out_ep_.PutRequest(std::move(req));
+      continue;
+    }
     uint64_t size = c.transfer_size().value();
     FDF_ASSERT(size <= kBulkMaxPacket);
     auto put_req = fit::defer([&] { return_reqs.emplace_back(req.take_request()); });
@@ -300,6 +306,12 @@ zx::result<> FakeUsbCdcAcmFunction::Start(fdf::DriverContext context) {
   }
 
   return zx::ok();
+}
+
+void FakeUsbCdcAcmFunction::Stop(fdf::StopCompleter completer) {
+  bulk_in_ep_.Close();
+  bulk_out_ep_.Close();
+  completer(zx::ok());
 }
 
 FUCHSIA_DRIVER_EXPORT2(FakeUsbCdcAcmFunction);

@@ -486,6 +486,10 @@ void UsbVirtualBus::Disable(fit::callback<void(zx_status_t)> callback) {
 
   // We want to perform hardware cleanup after the bus has fully disconnected.
   DisconnectInternal([this](zx_status_t status) {
+    for (auto& ep : eps_) {
+      ep.host_.CommonCancelAll();
+      ep.device_.CommonCancelAll();
+    }
     hci_intf_ = {};
     dci_intf_ = {};
     zx_status_t final_status = status;
