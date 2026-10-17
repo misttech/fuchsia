@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/rust/rustc_library.gni")
 import("//build/zircon/migrated_targets.gni")
 
 zx_library("explicit-memory") {
@@ -10,4 +11,15 @@ zx_library("explicit-memory") {
 
   sources = [ "bytes.c" ]
   public_deps = [ "//zircon/system/ulib/fbl:headers" ]
+}
+
+rustc_library("explicit-memory-rs") {
+  name = "explicit_memory"
+  edition = "2024"
+  source_root = "bytes.rs"
+  sources = [ "bytes.rs" ]
+  deps = [
+    ":explicit-memory",
+    "//third_party/rust_crates:zerocopy",
+  ]
 }
