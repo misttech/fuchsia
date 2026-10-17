@@ -7,6 +7,7 @@
 import contextlib
 import pathlib
 import unittest
+from unittest import mock
 
 from tp_shell import PerfettoTraceProcessor
 from trace_processing import (
@@ -89,6 +90,31 @@ class QueriesTest(unittest.TestCase):
                 self.assertEqual(val, 0)
                 found_bool = True
         self.assertTrue(found_bool)
+
+    def test_get_args_map_excludes_chromium_binary_data(self) -> None:
+        fresh_importer = trace_importing_fxt._FxtImporter(self.session)
+        with mock.patch.object(
+            fresh_importer, "_query", wraps=fresh_importer._query
+        ) as mock_query:
+            args_map = fresh_importer._get_args_map()
+
+        mock_query.assert_called_once()
+        executed_sql = mock_query.call_args[0][0]
+        self.assertIn("WHERE key NOT LIKE 'debug.params.%.data'", executed_sql)
+        self.assertGreater(len(args_map), 0)
+
+        # Verify SQLite filter semantics on Perfetto engine
+        filtered = self.session.run_query(
+            "SELECT 'debug.params.page_state.data' AS key "
+            "WHERE 'debug.params.page_state.data' NOT LIKE 'debug.params.%.data'"
+        )
+        self.assertEqual(len(filtered), 0)
+
+        unfiltered = self.session.run_query(
+            "SELECT 'trace_id_is_process_scoped' AS key "
+            "WHERE 'trace_id_is_process_scoped' NOT LIKE 'debug.params.%.data'"
+        )
+        self.assertEqual(len(unfiltered), 1)
 
     def test_get_slices(self) -> None:
         (

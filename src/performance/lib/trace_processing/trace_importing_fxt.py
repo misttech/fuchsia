@@ -158,6 +158,9 @@ class _FxtImporter:
         if self._args_map is not None:
             return self._args_map
 
+        # Filter out serialized binary payloads emitted by Chromium navigation
+        # (e.g. debug.params.page_state.data) which contain non-UTF-8 bytes that
+        # cause UnicodeDecodeError during protobuf deserialization (b/573890571).
         sql = """
         SELECT
           arg_set_id,
@@ -166,6 +169,7 @@ class _FxtImporter:
           COALESCE(real_value, ''),
           COALESCE(string_value, '')
         FROM args
+        WHERE key NOT LIKE 'debug.params.%.data'
         """
         data = self._query(sql)
         arg_set_id_to_args: dict[int, dict[str, Any]] = defaultdict(dict)
