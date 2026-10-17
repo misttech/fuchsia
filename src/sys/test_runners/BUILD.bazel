@@ -8,6 +8,7 @@ exports_files(
     ["tmp_storage.shard.cml"],
     visibility = [
         "//src/lib/files:__pkg__",
+        "//src/sys/pkg/lib/forced-fdr:__pkg__",
         "//src/sys/pkg/lib/fuchsia-pkg:__pkg__",
         "//src/sys/pkg/tests/far:__pkg__",
     ],

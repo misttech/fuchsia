@@ -2,7 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -16,17 +25,10 @@ rustc_library(
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     target_compatible_with = ["@platforms//os:fuchsia"],
-    test_deps = [
-        "//src/lib/fidl/rust/fidl",
-        "//src/lib/fuchsia",
-        "//src/lib/fuchsia-async",
-        "//src/lib/fuchsia-sync",
-        "//third_party/rust_crates/vendor:futures",
-        "//third_party/rust_crates/vendor:tempfile",
+    visibility = [
+        "//src/recovery/factory-reset-trigger:__pkg__",
+        "//src/sys/pkg/lib:__pkg__",
     ],
-    version = "0.1.0",
-    visibility = ["//:__subpackages__"],
-    with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
         "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
@@ -36,4 +38,65 @@ rustc_library(
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:serde_json",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "forced-fdr_test",
+    crate = ":forced-fdr",
+    crate_name = "forced_fdr_lib_test",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "forced-fdr_test_packaged_bin",
+    testonly = True,
+    binary = ":forced-fdr_test",
+    binary_name = "forced_fdr_lib_test",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "forced-fdr-tests-manifest",
+    testonly = True,
+    component_name = "forced-fdr-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/forced-fdr-lib-test.cml",
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "forced-fdr-tests-component",
+    compiled_manifest = ":forced-fdr-tests-manifest",
+    component_name = "forced-fdr-tests",
+    deps = [":forced-fdr_test_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "forced-fdr-tests-package",
+    package_name = "forced-fdr-tests",
+    test_components = [":forced-fdr-tests-component"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "forced-fdr-tests",
+    package = ":forced-fdr-tests-package",
 )
