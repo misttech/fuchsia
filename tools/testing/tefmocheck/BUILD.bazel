@@ -66,6 +66,7 @@ host_go_test(
         "yaml_loader_test.go",
     ],
     embed = [":lib"],
+    embedsrcs = ["check-configs.yaml"],
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools:__pkg__"],
     deps = [

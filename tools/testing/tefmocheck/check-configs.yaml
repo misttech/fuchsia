@@ -666,6 +666,22 @@ failure_mode_checks:
   string: "FAILED (Status read failed (Protocol error))"
   log_types: ["swarmingOutputType"]
 
+# For https://fxbug.dev/559487345.
+- kind: "string_in_log"
+  string: "Target specification \"<target>\" was not found"
+  log_types: ["swarmingOutputType"]
+  skip_passed_task: true
+
+- kind: "string_in_log"
+  string: "timed out writing to fastboot interface"
+  log_types: ["swarmingOutputType"]
+  skip_passed_task: true
+
+- kind: "string_in_log"
+  string: "Could not verify upload: Timed out"
+  log_types: ["swarmingOutputType"]
+  skip_passed_task: true
+
 # For https://fxbug.dev/42130478.
 - kind: "string_in_log"
   string: "botanist ERROR: start target error"
@@ -895,6 +911,15 @@ failure_mode_checks:
   attribute_to_test: true
   add_tag: true
 # LINT.ThenChange(/tools/botanist/common.go:process_finished_with_err, /tools/botanist/cmd/run.go:ffx_usb_driver_failed)
+
+# For https://fxbug.dev/559487345.
+- kind: "string_in_log"
+  string: "botanist ERROR: failed to run health check"
+  log_types: ["swarmingOutputType"]
+
+- kind: "string_in_log"
+  string: "botanist ERROR: failed to reconnect to target"
+  log_types: ["swarmingOutputType"]
 
 # General ffx error check. Keep near the end of Category 3 so more specific
 # test, SSH, and FFX checks above take precedence.

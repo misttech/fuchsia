@@ -5,11 +5,15 @@
 package tefmocheck
 
 import (
+	_ "embed"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
+
+//go:embed check-configs.yaml
+var embeddedCheckConfigsYAML []byte
 
 func TestLoadChecksFromYAML(t *testing.T) {
 	yamlData := `
@@ -176,5 +180,73 @@ func TestLoadChecksFromYAMLEmpty(t *testing.T) {
 
 	if len(checks) != 0 {
 		t.Errorf("Expected 0 checks, got %d", len(checks))
+	}
+}
+
+func TestFastbootAndHealthCheckOrdering(t *testing.T) {
+	tests := []struct {
+		name     string
+		log      string
+		wantName string
+	}{
+		{
+			name:     "target_specification_was_not_found_before_start_target_error",
+			log:      "2026-10-16 14:34:25.309750 botanist: run.go:919: botanist ERROR: botanist failed: start target error: FFX command failed (ffx -v --machine json target flash --product-bundle obj/build/images/fuchsia/product_bundle): Target error: Target specification \"<target>\" was not found. Use `ffx target list` to list known targets, and use a different target query.: exit status 1\n",
+			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/Target_specification_\"<target>\"_was_not_found",
+		},
+		{
+			name:     "timed_out_writing_to_fastboot_interface_before_start_target_error",
+			log:      "2026-10-16 14:30:17.000000 botanist: run.go:919: botanist ERROR: botanist failed: start target error: FFX command failed (ffx -v --machine json target flash --product-bundle obj/build/images/fuchsia/product_bundle): Fastboot interface error: Fastboot send error: timed out writing to fastboot interface: exit status 1\n",
+			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/timed_out_writing_to_fastboot_interface",
+		},
+		{
+			name:     "could_not_verify_upload_timed_out_before_start_target_error",
+			log:      "2026-10-16 15:13:02.141111 botanist: run.go:919: botanist ERROR: botanist failed: start target error: FFX command failed (ffx target bootloader --product-bundle obj/build/images/fuchsia/product_bundle boot): Fastboot interface error: Fastboot error: Upload error: Could not verify upload: Timed out: exit status 1\n",
+			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/Could_not_verify_upload:_Timed_out",
+		},
+		{
+			name:     "failed_to_run_health_check_before_ffx_and_botanist_failed",
+			log:      "2026-10-16 21:52:30.965358 botanist: run.go:919: botanist ERROR: botanist failed: failed to run health check: FFX command failed (ffx --config log.level=debug target wait -t 90): exit status 1\n",
+			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/botanist_ERROR:_failed_to_run_health_check",
+		},
+		{
+			name:     "failed_to_reconnect_to_target_before_botanist_failed",
+			log:      "2026-10-16 21:55:00.000000 botanist: run.go:919: botanist ERROR: botanist failed: failed to reconnect to target: failed to resolve IP: context deadline exceeded\n",
+			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/botanist_ERROR:_failed_to_reconnect_to_target",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			checks, err := LoadChecksFromYAML(embeddedCheckConfigsYAML)
+			if err != nil {
+				t.Fatalf("LoadChecksFromYAML failed: %v", err)
+			}
+			for _, logOutput := range []string{
+				tc.log,
+				tc.log + "botanist ERROR: FFX command failed\n",
+			} {
+				to := TestingOutputs{
+					SwarmingOutput: []byte(logOutput),
+					SwarmingSummary: &SwarmingTaskSummary{
+						Results: &SwarmingRpcsTaskResult{
+							TaskId:  "abc",
+							State:   "COMPLETED",
+							Failure: true,
+						},
+					},
+				}
+				got, err := RunChecks(checks, &to, "")
+				if err != nil {
+					t.Fatalf("RunChecks failed: %v", err)
+				}
+				if len(got) != 1 {
+					t.Fatalf("RunChecks returned %d results, want 1: %+v", len(got), got)
+				}
+				if got[0].Name != tc.wantName {
+					t.Errorf("got check %q, want %q", got[0].Name, tc.wantName)
+				}
+			}
+		})
 	}
 }
