@@ -5,7 +5,6 @@
 #![allow(clippy::let_unit_value)]
 
 use anyhow::{Context, Error};
-use async_trait::async_trait;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, Proxy, ServerEnd};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_paver::PaverRequestStream;
@@ -82,12 +81,12 @@ pub async fn expose_mock_paver(
     Ok(())
 }
 
-#[async_trait(?Send)]
+#[allow(async_fn_in_trait)]
 pub trait TestExecutor<R> {
     async fn run(&self, params: TestParams) -> R;
 }
 
-pub struct TestEnvBuilder<R> {
+pub struct TestEnvBuilder<E> {
     blobfs: Option<ClientEnd<fio::DirectoryMarker>>,
     board: String,
     channel: String,
@@ -96,7 +95,7 @@ pub struct TestEnvBuilder<R> {
     paver: MockPaverServiceBuilder,
     repo_config: Option<RepositoryConfigs>,
     version: String,
-    test_executor: Option<Box<dyn TestExecutor<R>>>,
+    test_executor: Option<E>,
     // The zbi and optional vbmeta contents.
     fuchsia_image: Option<(Vec<u8>, Option<Vec<u8>>)>,
     // The zbi and optional vbmeta contents of the recovery partition.
@@ -105,7 +104,7 @@ pub struct TestEnvBuilder<R> {
     system_image_hash: Option<Hash>,
 }
 
-impl<R> TestEnvBuilder<R> {
+impl<E> TestEnvBuilder<E> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         TestEnvBuilder {
@@ -166,7 +165,7 @@ impl<R> TestEnvBuilder<R> {
         self
     }
 
-    pub fn test_executor(mut self, executor: Box<dyn TestExecutor<R>>) -> Self {
+    pub fn test_executor(mut self, executor: E) -> Self {
         self.test_executor = Some(executor);
         self
     }
@@ -192,7 +191,7 @@ impl<R> TestEnvBuilder<R> {
     }
 
     /// Turn this |TestEnvBuilder| into a |TestEnv|
-    pub async fn build(mut self) -> Result<TestEnv<R>, Error> {
+    pub async fn build(mut self) -> Result<TestEnv<E>, Error> {
         let (repo_config, served_repo, expected_blobfs_contents, merkle) =
             if let Some(repo_config) = self.repo_config {
                 // Use the provided repo config, meaning we don't need to host our own repository.
@@ -293,7 +292,7 @@ impl<R> TestEnvBuilder<R> {
     }
 }
 
-pub struct TestEnv<R> {
+pub struct TestEnv<E> {
     blobfs: Option<ClientEnd<fio::DirectoryMarker>>,
     channel: String,
     omaha: OmahaState,
@@ -304,11 +303,11 @@ pub struct TestEnv<R> {
     update_merkle: Hash,
     board: String,
     version: String,
-    test_executor: Box<dyn TestExecutor<R>>,
+    test_executor: E,
     system_image_hash: Option<Hash>,
 }
 
-impl<R> TestEnv<R> {
+impl<E> TestEnv<E> {
     async fn start_omaha(omaha: OmahaState, merkle: Hash) -> Result<UpdateUrlSource, Error> {
         match omaha {
             OmahaState::Disabled(url) => Ok(match url {
@@ -342,10 +341,12 @@ impl<R> TestEnv<R> {
     }
 
     /// Run the update, consuming this |TestEnv| and returning a |TestResult|.
-    pub async fn run(self) -> R {
-        let update_url_source = TestEnv::<R>::start_omaha(self.omaha, self.update_merkle)
-            .await
-            .expect("Starting Omaha server");
+    pub async fn run<R>(self) -> R
+    where
+        E: TestExecutor<R>,
+    {
+        let update_url_source =
+            Self::start_omaha(self.omaha, self.update_merkle).await.expect("Starting Omaha server");
 
         let mut service_fs = ServiceFs::new();
         let paver_clone = Arc::clone(&self.paver);

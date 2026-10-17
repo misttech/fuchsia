@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Error};
 use assert_matches::assert_matches;
-use async_trait::async_trait;
 use blobfs_ramdisk::BlobfsRamdisk;
 use fidl::endpoints::{RequestStream, ServerEnd};
 use fidl_fuchsia_io as fio;
@@ -55,12 +54,11 @@ impl TestResult {
 
 struct IsolatedOtaTestExecutor {}
 impl IsolatedOtaTestExecutor {
-    pub fn new() -> Box<Self> {
-        Box::new(Self {})
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
-#[async_trait(?Send)]
 impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
     async fn run(&self, params: TestParams) -> TestResult {
         let realm_builder = RealmBuilder::new().await.unwrap();
