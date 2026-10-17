@@ -275,6 +275,18 @@ void cpp_scheduler_save_state_list_move(Scheduler* sched,
 Thread* cpp_save_state_list_pop(Thread::SaveStateList* holder);
 void cpp_save_state_list_destroy(Thread::SaveStateList* holder);
 void rust_scheduler_update_fair_bandwidth_period(const Scheduler* sched, SchedTime now);
+Thread* rust_scheduler_find_earlier_deadline_thread(const Scheduler* sched, SchedTime eligible_time,
+                                                    const Thread* reference_thread);
+SchedTime rust_scheduler_get_next_eligible_time(const Scheduler* sched);
+SchedDuration rust_scheduler_calculate_timeslice(const Scheduler* sched, const Thread* thread);
+SchedTime rust_scheduler_clamp_to_deadline(const Scheduler* sched, SchedTime completion_time);
+SchedTime rust_scheduler_clamp_to_earlier_deadline(const Scheduler* sched,
+                                                   SchedTime completion_time,
+                                                   const Thread* reference_thread);
+SchedTime rust_scheduler_next_thread_timeslice(const Scheduler* sched, Thread* thread,
+                                               SchedTime now);
+void rust_scheduler_update_activation(const Scheduler* sched, Thread* thread, SchedTime now);
+void rust_scheduler_adjust_fair_bandwidth(const Scheduler* sched, Thread* thread, SchedTime now);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.

@@ -1163,109 +1163,11 @@ Thread* Scheduler::FindEarlierFairThread(SchedTime eligible_time, SchedTime fini
 
 Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time,
                                              const Thread* reference_thread) {
-  // The following logic governs how the scheduler finds an earlier deadline
-  // thread than the reference thread based on system load:
-  //
-  // 1. **Scenario A: Feasible Total Demand.** When the combined demand of both
-  //    critical and general queues is within CPU capacity:
-  //    a. If both queues contain eligible tasks, the scheduler selects the task
-  //       with the earliest eligible deadline, regardless of which queue it
-  //       resides in.
-  //    b. If only one queue has eligible tasks, the earliest eligible deadline
-  //       task from that queue is selected.
-  // 2. **Scenario B: Infeasible Total Demand (Oversubscription).** When total
-  //    demand exceeds capacity, the system prioritizes the critical tier:
-  //    a. If the critical deadline queue has eligible tasks, the scheduler
-  //       selects the earliest eligible deadline task from this queue
-  //       exclusively.
-  //    b. The general deadline queue is only serviced if the critical deadline
-  //       queue is empty or only has ineligible tasks.
-  //
-  // If the CPU is oversubscribed, an eligible critical deadline thread takes
-  // precedence over any eligible general deadline thread, including the
-  // reference thread. Otherwise, the scheduler selects the eligible deadline
-  // thread with the earliest deadline, regardless of which type, including the
-  // reference thread.
-
-  const Thread* critical_thread =
-      FindEarliestEligibleThread(&rust_state_.critical_deadline_run_queue, eligible_time);
-  const bool is_oversubscribed =
-      power_level_control_.normalized_deadline_utilization() > kCpuUtilizationLimit;
-
-  const Thread* eligible_thread = nullptr;
-
-  if (is_oversubscribed && critical_thread) {
-    eligible_thread = critical_thread;
-  } else {
-    const Thread* normal_thread =
-        FindEarliestEligibleThread(&rust_state_.deadline_run_queue, eligible_time);
-    eligible_thread = EarliestDeadlineThread(critical_thread, normal_thread);
-  }
-
-  Thread* selected_thread = nullptr;
-  if (eligible_thread != nullptr) {
-    // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
-    // access to the thread's COVs and exclusive access to the thread's SOVs.
-    // This is acceptable because the queue lock is required by this method and
-    // the thread is in a queue protectect by the same lock.
-    MarkHasOwnedThreadAccess(*eligible_thread);
-    const bool eligible_is_critical = IsCriticalDeadlineThread(eligible_thread);
-    const bool reference_is_critical = IsCriticalDeadlineThread(reference_thread);
-
-    if (is_oversubscribed) {
-      if (eligible_is_critical && !reference_is_critical) {
-        selected_thread = const_cast<Thread*>(eligible_thread);
-      } else if (!eligible_is_critical && reference_is_critical) {
-        selected_thread = nullptr;
-      } else if (eligible_thread->scheduler_state().finish_time() <
-                 reference_thread->scheduler_state().finish_time()) {
-        selected_thread = const_cast<Thread*>(eligible_thread);
-      }
-    } else if (eligible_thread->scheduler_state().finish_time() <
-               reference_thread->scheduler_state().finish_time()) {
-      selected_thread = const_cast<Thread*>(eligible_thread);
-    }
-
-    LOCAL_KTRACE_INSTANT(
-        QUEUE, "find_earlier_deadline", ("is_oversubscribed", is_oversubscribed),
-        ("contender_name", eligible_thread->name()), ("contender_tid", eligible_thread->tid()),
-        ("contender_finish_delta_ns",
-         SchedDuration{eligible_thread->scheduler_state().finish_time() - eligible_time}),
-        ("contender_start_delta_ns",
-         SchedDuration{eligible_time - eligible_thread->scheduler_state().start_time()}),
-        ("contender_remaining_slice_ns",
-         eligible_thread->scheduler_state().remaining_time_slice_ns()),
-        ("contender_capacity_ns", eligible_thread->scheduler_state().time_slice_ns()),
-        ("active_name", reference_thread->name()), ("active_tid", reference_thread->tid()),
-        ("active_finish_delta_ns",
-         SchedDuration{reference_thread->scheduler_state().finish_time() - eligible_time}),
-        ("active_start_delta_ns",
-         SchedDuration{eligible_time - reference_thread->scheduler_state().start_time()}),
-        ("active_remaining_slice_ns",
-         reference_thread->scheduler_state().remaining_time_slice_ns()),
-        ("active_capacity_ns", reference_thread->scheduler_state().time_slice_ns()),
-        ("critical_state", (eligible_is_critical && reference_is_critical) ? "both"_intern
-                           : eligible_is_critical                          ? "contender"_intern
-                           : reference_is_critical                         ? "active"_intern
-                                                                           : "none"_intern),
-        ("selected", selected_thread ? "contender"_intern : "active"_intern));
-  }
-
-  return selected_thread;
+  return rust_scheduler_find_earlier_deadline_thread(this, eligible_time, reference_thread);
 }
 
 SchedTime Scheduler::GetNextEligibleTime() const {
-  const auto get_eligible_time = [](const RunQueue& queue) {
-    if (queue.is_empty()) {
-      return SchedTime{ZX_TIME_INFINITE};
-    }
-    const Thread& front = queue.front();
-    MarkHasOwnedThreadAccess(front);
-    return front.scheduler_state().start_time();
-  };
-
-  return ktl::min(get_eligible_time(rust_state_.critical_deadline_run_queue),
-                  get_eligible_time(rust_state_.deadline_run_queue));
+  return rust_scheduler_get_next_eligible_time(this);
 }
 
 Scheduler::DequeueResult Scheduler::DequeueEarlierFairThread(SchedTime eligible_time,
@@ -2755,110 +2657,24 @@ void Scheduler::LockHandoffInternal(SavedState saved_state, Thread* const curren
 }
 
 SchedDuration Scheduler::CalculateTimeslice(const Thread* thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "calculate_timeslice");
-  const SchedulerState& state = thread->scheduler_state();
-  const EffectiveProfile& ep = state.effective_profile_;
-
-  const SchedUtilization fair_utilization = ep.weight() / rust_state_.weight_total;
-  const SchedDuration time_slice_ns = rust_state_.fair_period * fair_utilization;
-
-  trace = KTRACE_END_SCOPE(
-      ("fair utilization", fair_utilization), ("time slice", time_slice_ns),
-      ("weight", ep.weight().raw_value()),
-      ("total weight",
-       KTRACE_ANNOTATED_VALUE(AssertHeld(queue_lock_), rust_state_.weight_total.raw_value())));
-  return time_slice_ns;
+  return rust_scheduler_calculate_timeslice(this, thread);
 }
 
 SchedTime Scheduler::ClampToDeadline(SchedTime completion_time) {
-  return ktl::min(completion_time, GetNextEligibleTime());
+  return rust_scheduler_clamp_to_deadline(this, completion_time);
 }
 
 SchedTime Scheduler::ClampToEarlierDeadline(SchedTime completion_time,
                                             const Thread* reference_thread) {
-  const Thread* const thread = FindEarlierDeadlineThread(completion_time, reference_thread);
-
-  if (thread != nullptr) {
-    AssertInScheduler(*thread);
-    return ktl::min(completion_time, thread->scheduler_state().start_time_);
-  }
-
-  return completion_time;
+  return rust_scheduler_clamp_to_earlier_deadline(this, completion_time, reference_thread);
 }
 
 SchedTime Scheduler::NextThreadTimeslice(Thread* thread, SchedTime now) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "next_timeslice");
-  SchedulerState* const state = &thread->scheduler_state();
-
-  if (IsFairThread(thread)) {
-    state->time_slice_ns_ = CalculateTimeslice(thread);
-  }
-
-  // Calculate the deadline when the remaining time slice is completed. The
-  // time slice is maintained by the deadline queuing logic, no need to update
-  // it here. The target preemption time is based on the time slice scaled by
-  // the performance of the CPU and clamped to the deadline. This increases
-  // capacity on slower processors, however, bandwidth isolation is preserved
-  // because CPU selection attempts to keep scaled total capacity below one.
-  const SchedDuration scaled_time_slice_ns = IsDeadlineThread(thread)
-                                                 ? ScaleUp(state->remaining_time_slice_ns())
-                                                 : state->remaining_time_slice_ns();
-  const SchedTime target_preemption_time_ns =
-      ktl::min<SchedTime>(now + scaled_time_slice_ns, state->finish_time_);
-
-  trace = KTRACE_END_SCOPE(("scaled time slice", scaled_time_slice_ns),
-                           ("target preemption time", target_preemption_time_ns));
-  return target_preemption_time_ns;
+  return rust_scheduler_next_thread_timeslice(this, thread, now);
 }
 
 void Scheduler::UpdateActivation(Thread* thread, SchedTime now) {
-  DEBUG_ASSERT(thread->state() == THREAD_READY);
-  DEBUG_ASSERT(!thread->IsIdle());
-
-  SchedulerState* const state = &thread->scheduler_state();
-  EffectiveProfile& ep = state->effective_profile_;
-
-  ktrace::Scope update_trace = LOCAL_KTRACE_BEGIN_SCOPE(
-      DETAILED, "update", ("remaining timeslice before", state->remaining_time_slice_ns()));
-
-  // Determine how much time is left before the finish time. This might be less
-  // than the remaining time slice or negative if the thread blocked.
-  const SchedDuration time_until_finish_time_ns = state->finish_time_ - now;
-  if (time_until_finish_time_ns <= 0 || state->remaining_time_slice_ns() <= 0) {
-    // Start a new activation and update the period and capacity with the latest
-    // fair or deadline bandwidth parameters. Although the fair capacity is
-    // determined dynamically during reschedules by CalculateTimeslice, use a
-    // non-zero initial value here to ensure that multiple successive calls to
-    // UpdateActivation do not incorrectly start new activations with start
-    // times further into the future.
-    //
-    // For example, such a succession can occur when a fair thread wakes after
-    // its current activation has expired, is re-activated as it enters the run
-    // queue, and is later stolen and potentially re-activated again. Both wake
-    // and steal operations can occur after a thread's activation has expired
-    // and must start a new activation. Using a non-zero value for the new
-    // activation's capacity ensures that the second call to UpdateActivation
-    // during stealing does not enter this conditional block unless enough time
-    // has passed in the run queue for the finish time to expire.
-    const SchedDuration period_ns =
-        IsFairThread(thread) ? rust_state_.fair_period : ep.deadline().deadline_ns;
-    const SchedDuration capacity_ns = IsFairThread(thread) ? period_ns : ep.deadline().capacity_ns;
-    const SchedTime period_finish_ns = state->start_time_ + period_ns;
-
-    state->start_time_ = now >= period_finish_ns ? now : period_finish_ns;
-    state->finish_time_ = state->start_time_ + period_ns;
-    state->time_slice_ns_ = capacity_ns;
-    state->time_slice_used_ns_ = SchedDuration{0};
-    state->activation_count_++;
-  }
-  DEBUG_ASSERT(state->remaining_time_slice_ns() > 0);
-
-  update_trace = KTRACE_END_SCOPE(
-      ("remaining time slice after", state->remaining_time_slice_ns()),
-      ("time until finish time", time_until_finish_time_ns), ("start time", state->start_time()),
-      ("finish time", state->finish_time()),
-      ("effective period", SchedDuration{state->finish_time() - state->start_time()}),
-      ("eligible", state->start_time() <= now));
+  rust_scheduler_update_activation(this, thread, now);
 }
 
 void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
@@ -2932,38 +2748,7 @@ void Scheduler::UpdateFairBandwidthPeriod(SchedTime now) {
 }
 
 void Scheduler::AdjustFairBandwidth(Thread* thread, SchedTime now) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "adjust_bandwidth");
-  SchedulerState& state = thread->scheduler_state();
-  DEBUG_ASSERT(IsFairThread(thread));
-  DEBUG_ASSERT(state.remaining_time_slice_ns() > 0 && state.finish_time() > now);
-
-  // Calculate the new remaining time slice from the current remaining time
-  // slice and the changes to period and utilization, such that lag is
-  // conserved, keeping the same finish time.
-  const SchedDuration time_until_finish_time_ns = state.finish_time() - now;
-  const SchedDuration period_delta = rust_state_.fair_period - state.effective_period();
-  const SchedDuration time_slice_ns = CalculateTimeslice(thread);
-
-  const SchedUtilization old_utilization = state.time_slice_ns() / state.effective_period();
-  const SchedUtilization new_utilization = time_slice_ns * rust_state_.reciprocal_fair_period;
-  const SchedUtilization utilization_delta = new_utilization - old_utilization;
-
-  const SchedDuration old_remaining_time_slice_ns = state.remaining_time_slice_ns();
-  const SchedDuration new_remaining_time_slice =
-      old_remaining_time_slice_ns + utilization_delta * time_until_finish_time_ns;
-
-  // Update the dynamic parameters, clamping the remaining time slice to the end
-  // of the period.
-  state.time_slice_ns_ = time_slice_ns;
-  state.time_slice_used_ns_ =
-      time_slice_ns - ktl::min(new_remaining_time_slice, time_until_finish_time_ns);
-  state.start_time_ = state.finish_time() - rust_state_.fair_period;
-
-  trace =
-      KTRACE_END_SCOPE(("r_i", old_remaining_time_slice_ns), ("r_i'", new_remaining_time_slice),
-                       ("r_{i,e}", state.remaining_time_slice_ns()), ("dU_i", utilization_delta),
-                       ("dT_i", period_delta), ("d_i", time_until_finish_time_ns),
-                       ("eligible", state.start_time() <= now));
+  rust_scheduler_adjust_fair_bandwidth(this, thread, now);
 }
 
 void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {

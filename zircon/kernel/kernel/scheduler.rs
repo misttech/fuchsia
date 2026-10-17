@@ -939,6 +939,18 @@ pub struct SubtreeInvariants {
 }
 
 /// Per-thread state used by the unified version of `Scheduler`.
+///
+/// Locking: the queue-related fields (`start_time`, `finish_time`,
+/// `time_slice_ns`, `time_slice_used_ns`, `activation_count`, the run queue
+/// node, and `subtree_invariants`) are guarded by the owning scheduler's
+/// `queue_lock_`, while `base_profile`, `inherited_profile_values`, and the
+/// `effective_profile` dirty flags are written under the thread's lock alone.
+/// Forming a `&SchedulerState` over a thread in a run queue with only
+/// `queue_lock_` held is the accepted idiom in this file for reading the
+/// queue-guarded fields and the stable `effective_profile` parameters, as the
+/// C++ `MarkHasOwnedThreadAccess` idiom permits: no field read through such a
+/// reference can be concurrently written. Use `EffectiveProfile::discipline_raw`
+/// where the extra invariant validation fields may be written concurrently.
 #[repr(C)]
 pub struct SchedulerState {
     /// The start time of the thread's current bandwidth request. This is the
@@ -2537,6 +2549,82 @@ impl Scheduler {
         }
     }
 
+    /// Updates the thread's start/finish times and capacity if the current
+    /// activation has expired.
+    ///
+    /// # Safety
+    /// `thread` must be valid, and the caller must hold both the scheduler's
+    /// `queue_lock_` and `thread`'s lock exclusively, which together guard the
+    /// `SchedulerState` fields read and written here.
+    unsafe fn update_activation(&self, thread: *mut Thread, now: SchedTime) {
+        // SAFETY: `thread` is valid and both its lock and `queue_lock_` are held
+        // exclusively, so no other reference to its `SchedulerState` is live for
+        // the duration of this borrow.
+        let state = unsafe { &mut *cpp_thread_get_scheduler_state(thread) };
+        debug_assert_eq!(state.state, ThreadState::Ready);
+        // SAFETY: `thread` is valid.
+        debug_assert!(!unsafe { cpp_thread_is_idle(thread) });
+
+        let update_trace = local_ktrace_begin_scope!(
+            DETAILED,
+            "update",
+            "remaining timeslice before" => state.remaining_time_slice_ns(),
+        );
+
+        let ep = &state.effective_profile;
+
+        let is_fair = ep.is_fair();
+        // Determine how much time is left before the finish time. This might be less
+        // than the remaining time slice or negative if the thread blocked.
+        let time_until_finish_time_ns = state.finish_time - now;
+
+        if time_until_finish_time_ns <= 0 || state.remaining_time_slice_ns() <= 0 {
+            // Start a new activation and update the period and capacity with the latest
+            // fair or deadline bandwidth parameters. Although the fair capacity is
+            // determined dynamically during reschedules by calculate_timeslice, use a
+            // non-zero initial value here to ensure that multiple successive calls to
+            // update_activation do not incorrectly start new activations with start
+            // times further into the future.
+            //
+            // For example, such a succession can occur when a fair thread wakes after
+            // its current activation has expired, is re-activated as it enters the run
+            // queue, and is later stolen and potentially re-activated again. Both wake
+            // and steal operations can occur after a thread's activation has expired
+            // and must start a new activation. Using a non-zero value for the new
+            // activation's capacity ensures that the second call to update_activation
+            // during stealing does not enter this conditional block unless enough time
+            // has passed in the run queue for the finish time to expire.
+            let period_ns = if is_fair {
+                // SAFETY: `queue_lock_` is held.
+                unsafe { self.fair_period() }
+            } else {
+                ep.deadline().deadline_ns
+            };
+
+            let capacity_ns = if is_fair { period_ns } else { ep.deadline().capacity_ns };
+
+            let period_finish_ns = state.start_time + period_ns;
+
+            state.start_time = if now >= period_finish_ns { now } else { period_finish_ns };
+            state.finish_time = state.start_time + period_ns;
+            state.time_slice_ns = capacity_ns;
+            state.time_slice_used_ns = SchedDuration::from_raw(0);
+            state.activation_count += 1;
+        }
+
+        debug_assert!(state.remaining_time_slice_ns() > 0);
+
+        ktrace_rs::end_scope!(
+            update_trace,
+            "remaining time slice after" => state.remaining_time_slice_ns(),
+            "time until finish time" => time_until_finish_time_ns,
+            "start time" => state.start_time,
+            "finish time" => state.finish_time,
+            "effective period" => state.finish_time - state.start_time,
+            "eligible" => state.start_time <= now,
+        );
+    }
+
     /// Returns the number of the CPU this scheduler instance is associated with.
     ///
     /// # Safety
@@ -2646,6 +2734,68 @@ impl Scheduler {
     unsafe fn unlock_queue(&self) {
         // SAFETY: `self` points to a valid `Scheduler` instance with `queue_lock_` held.
         unsafe { cpp_scheduler_unlock_queue(self as *const Scheduler as *mut Scheduler) }
+    }
+
+    /// Adjusts the given fair thread's bandwidth and dynamic parameters for
+    /// changes in bandwidth demand since it was last scheduled.
+    ///
+    /// # Safety
+    /// `thread` must be valid, and the caller must hold both the scheduler's
+    /// `queue_lock_` and `thread`'s lock exclusively, which together guard the
+    /// `SchedulerState` fields read and written here.
+    unsafe fn adjust_fair_bandwidth(&self, thread: *mut Thread, now: SchedTime) {
+        let trace = local_ktrace_begin_scope!(DETAILED, "adjust_bandwidth");
+
+        // Calculate the new time slice before borrowing the thread's state mutably,
+        // as `calculate_timeslice` borrows that state itself.
+        // SAFETY: Forwarded from the caller.
+        let time_slice_ns = unsafe { self.calculate_timeslice(thread) };
+
+        // SAFETY: `thread` is valid and both its lock and `queue_lock_` are held
+        // exclusively, so no other reference to its `SchedulerState` is live for
+        // the duration of this borrow.
+        let state = unsafe { &mut *cpp_thread_get_scheduler_state(thread) };
+        debug_assert!(state.effective_profile.is_fair());
+        debug_assert!(state.remaining_time_slice_ns() > 0 && state.finish_time > now);
+
+        // Calculate the new remaining time slice from the current remaining time
+        // slice and the changes to period and utilization, such that lag is
+        // conserved, keeping the same finish time.
+        let time_until_finish_time_ns = state.finish_time - now;
+
+        let old_effective_period = state.effective_period();
+        let old_utilization = SchedUtilization::from(state.time_slice_ns / old_effective_period);
+        // SAFETY: `queue_lock_` is held.
+        let reciprocal_fair_period = unsafe { self.reciprocal_fair_period() };
+
+        let new_utilization = SchedUtilization::from(time_slice_ns * reciprocal_fair_period);
+        let utilization_delta = new_utilization - old_utilization;
+
+        let old_remaining_time_slice_ns = state.remaining_time_slice_ns();
+        let new_remaining_time_slice =
+            old_remaining_time_slice_ns + utilization_delta * time_until_finish_time_ns;
+
+        // Update the dynamic parameters, clamping the remaining time slice to the end
+        // of the period.
+        state.time_slice_ns = time_slice_ns;
+        state.time_slice_used_ns =
+            time_slice_ns - core::cmp::min(new_remaining_time_slice, time_until_finish_time_ns);
+
+        // SAFETY: `queue_lock_` is held.
+        let fair_period = unsafe { self.fair_period() };
+        let period_delta = fair_period - old_effective_period;
+        state.start_time = state.finish_time - fair_period;
+
+        ktrace_rs::end_scope!(
+            trace,
+            "r_i" => old_remaining_time_slice_ns,
+            "r_i'" => new_remaining_time_slice,
+            "r_{i,e}" => state.remaining_time_slice_ns(),
+            "dU_i" => utilization_delta,
+            "dT_i" => period_delta,
+            "d_i" => time_until_finish_time_ns,
+            "eligible" => state.start_time <= now,
+        );
     }
 
     fn arch_yield() {
@@ -2974,6 +3124,25 @@ impl Scheduler {
         *ref_time = unsafe { self.variable_to_monotonic(*ref_time) };
     }
 
+    /// The current fair scheduling period.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn fair_period(&self) -> SchedDuration {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to `fair_period`.
+        unsafe { (*self.state.get()).fair_period }
+    }
+
+    /// The cached reciprocal of the current fair scheduling period.
+    ///
+    /// # Safety
+    /// The caller must ensure that the scheduler's queue lock is held.
+    unsafe fn reciprocal_fair_period(&self) -> SchedUtilization {
+        // SAFETY: The caller holds `queue_lock_`, synchronizing access to
+        // `reciprocal_fair_period`.
+        unsafe { (*self.state.get()).reciprocal_fair_period }
+    }
+
     /// Sets the fair period and updates its cached reciprocal.
     ///
     /// # Safety
@@ -3072,6 +3241,376 @@ impl Scheduler {
             unsafe { self.set_fair_period(K_DEFAULT_FAIR_PERIOD) };
         }
     }
+    /// Scales a duration value by the reciprocal of the processing rate.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the scheduler's queue lock is held before calling
+    /// this method to guarantee consistent access to the power level control properties.
+    unsafe fn scale_up(&self, value: SchedDuration) -> SchedDuration {
+        // SAFETY: Forwarded from the caller.
+        let reciprocal = unsafe { self.processing_rate_reciprocal() };
+        SchedDuration::from(value * reciprocal)
+    }
+
+    /// Scales a duration value by the processing rate.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the scheduler's queue lock is held before calling
+    /// this method to guarantee consistent access to the power level control properties.
+    unsafe fn scale_down(&self, value: SchedDuration) -> SchedDuration {
+        // SAFETY: Forwarded from the caller.
+        let rate = unsafe { self.processing_rate() };
+        SchedDuration::from(value * rate)
+    }
+
+    /// Calculates the timeslice of the thread based on the current run queue
+    /// state.
+    ///
+    /// # Safety
+    /// `thread` must be valid, and the caller must hold the scheduler's
+    /// `queue_lock_` and at least shared access to `thread`'s lock, which guard
+    /// the run queue state and `thread`'s effective profile, respectively.
+    unsafe fn calculate_timeslice(&self, thread: *const Thread) -> SchedDuration {
+        let trace = local_ktrace_begin_scope!(DETAILED, "calculate_timeslice");
+        // SAFETY: `thread` is valid and its lock is held at least shared, so its
+        // `SchedulerState` is valid for shared access.
+        let state = unsafe { &*cpp_thread_get_scheduler_state(thread.cast_mut()) };
+        let ep = &state.effective_profile;
+        debug_assert!(ep.is_fair());
+
+        // SAFETY: `queue_lock_` is held.
+        let weight_total = unsafe { self.weight_total() };
+        let fair_utilization = SchedUtilization::from(ep.weight / weight_total);
+
+        // SAFETY: `queue_lock_` is held.
+        let fair_period = unsafe { self.fair_period() };
+        let time_slice_ns = SchedDuration::from(fair_period * fair_utilization);
+
+        ktrace_rs::end_scope!(
+            trace,
+            "fair utilization" => fair_utilization,
+            "time slice" => time_slice_ns,
+            "weight" => ep.weight.raw_value(),
+            "total weight" => weight_total.raw_value(),
+        );
+
+        time_slice_ns
+    }
+
+    /// Returns the time that the next deadline task will become eligible or infinite
+    /// if there are no ready deadline tasks.
+    ///
+    /// # Safety
+    /// The caller must hold the scheduler's `queue_lock_`, which guards the
+    /// deadline run queues and the queued threads' `SchedulerState`.
+    unsafe fn get_next_eligible_time(&self) -> SchedTime {
+        // SAFETY: `queue_lock_` is held.
+        let critical_deadline_queue = unsafe { &*self.critical_deadline_queue() };
+        // SAFETY: `queue_lock_` is held.
+        let deadline_queue = unsafe { &*self.deadline_queue() };
+
+        let get_eligible_time = |queue: &RunQueue| {
+            queue.front().map_or(SchedTime::from_raw(ZX_TIME_INFINITE), |front| {
+                // SAFETY: `front` is in `queue` and `queue_lock_` is held, so its
+                // `SchedulerState` is valid for shared access (see the locking note on
+                // `SchedulerState`).
+                unsafe { (*cpp_thread_get_scheduler_state(front.as_raw())).start_time }
+            })
+        };
+
+        core::cmp::min(
+            get_eligible_time(critical_deadline_queue),
+            get_eligible_time(deadline_queue),
+        )
+    }
+
+    /// Returns the completion time clamped to the start of the earliest deadline
+    /// thread that will become eligible in that time frame.
+    ///
+    /// # Safety
+    /// The caller must hold the scheduler's `queue_lock_`.
+    unsafe fn clamp_to_deadline(&self, completion_time: SchedTime) -> SchedTime {
+        // SAFETY: Forwarded from the caller.
+        core::cmp::min(completion_time, unsafe { self.get_next_eligible_time() })
+    }
+
+    /// Returns the eligible deadline thread in the run queue with a finish time
+    /// earlier than the given reference thread's finish time and criticality, or
+    /// null if one does not exist.
+    ///
+    /// See the note in `find_earliest_eligible_thread` for lifecycle rules for the
+    /// returned pointer (if any).
+    ///
+    /// # Safety
+    /// `reference_thread` must be valid, and the caller must hold the scheduler's
+    /// `queue_lock_` and at least shared access to `reference_thread`'s lock,
+    /// which guard the deadline run queues and the reference thread's
+    /// `SchedulerState`, respectively.
+    unsafe fn find_earlier_deadline_thread(
+        &self,
+        eligible_time: SchedTime,
+        reference_thread: *const Thread,
+    ) -> *mut Thread {
+        // The following logic governs how the scheduler finds an earlier deadline
+        // thread than the reference thread based on system load:
+        //
+        // 1. **Scenario A: Feasible Total Demand.** When the combined demand of both
+        //    critical and general queues is within CPU capacity:
+        //    a. If both queues contain eligible tasks, the scheduler selects the task
+        //       with the earliest eligible deadline, regardless of which queue it
+        //       resides in.
+        //    b. If only one queue has eligible tasks, the earliest eligible deadline
+        //       task from that queue is selected.
+        // 2. **Scenario B: Infeasible Total Demand (Oversubscription).** When total
+        //    demand exceeds capacity, the system prioritizes the critical tier:
+        //    a. If the critical deadline queue has eligible tasks, the scheduler
+        //       selects the earliest eligible deadline task from this queue
+        //       exclusively.
+        //    b. The general deadline queue is only serviced if the critical deadline
+        //       queue is empty or only has ineligible tasks.
+        //
+        // If the CPU is oversubscribed, an eligible critical deadline thread takes
+        // precedence over any eligible general deadline thread, including the
+        // reference thread. Otherwise, the scheduler selects the eligible deadline
+        // thread with the earliest deadline, regardless of which type, including the
+        // reference thread.
+        // SAFETY: `queue_lock_` is held.
+        let critical_deadline_queue = unsafe { self.critical_deadline_queue() };
+        // SAFETY: `queue_lock_` is held.
+        let deadline_queue = unsafe { self.deadline_queue() };
+
+        // SAFETY: `queue_lock_` is held, keeping the run queue and its threads valid.
+        let critical_thread = unsafe {
+            find_earliest_eligible_thread(&*critical_deadline_queue, eligible_time, accept_all)
+        };
+
+        // SAFETY: `self` is valid and `queue_lock_` is held, which guards the power
+        // level control state.
+        let normalized_utilization = unsafe { cpp_scheduler_get_normalized_utilization(self) };
+        let is_oversubscribed = normalized_utilization > K_CPU_UTILIZATION_LIMIT;
+
+        let eligible_thread = if is_oversubscribed && !critical_thread.is_null() {
+            critical_thread
+        } else {
+            // SAFETY: `queue_lock_` is held, keeping the run queue and its threads valid.
+            let normal_thread = unsafe {
+                find_earliest_eligible_thread(&*deadline_queue, eligible_time, accept_all)
+            };
+            // SAFETY: Both threads are either null or in this scheduler's run queues,
+            // which `queue_lock_` guards.
+            unsafe { self.earliest_deadline_thread(critical_thread, normal_thread) }
+        };
+
+        let mut selected_thread = core::ptr::null_mut();
+        if !eligible_thread.is_null() {
+            // The C++ implementation uses MarkHasOwnedThreadAccess here to satisfy the
+            // static annotations for shared access to the eligible thread's state.
+            // SAFETY: This is acceptable because `queue_lock_` is held and the eligible
+            // thread is in a run queue protected by the same lock, so the fields read
+            // below cannot be concurrently written (see the locking note on
+            // `SchedulerState`).
+            let eligible_state = unsafe { &*cpp_thread_get_scheduler_state(eligible_thread) };
+            // SAFETY: `reference_thread` is valid and its lock is held at least shared.
+            let ref_state =
+                unsafe { &*cpp_thread_get_scheduler_state(reference_thread.cast_mut()) };
+
+            let eligible_is_critical = eligible_state.effective_profile.critical;
+            let reference_is_critical = ref_state.effective_profile.critical;
+
+            if is_oversubscribed {
+                if eligible_is_critical && !reference_is_critical {
+                    selected_thread = eligible_thread;
+                } else if !eligible_is_critical && reference_is_critical {
+                    selected_thread = core::ptr::null_mut();
+                } else if eligible_state.finish_time < ref_state.finish_time {
+                    selected_thread = eligible_thread;
+                }
+            } else if eligible_state.finish_time < ref_state.finish_time {
+                selected_thread = eligible_thread;
+            }
+
+            let critical_state = if eligible_is_critical && reference_is_critical {
+                ktrace_rs::resolve_string!("both")
+            } else if eligible_is_critical {
+                ktrace_rs::resolve_string!("contender")
+            } else if reference_is_critical {
+                ktrace_rs::resolve_string!("active")
+            } else {
+                ktrace_rs::resolve_string!("none")
+            };
+            let selected_str = if !selected_thread.is_null() {
+                ktrace_rs::resolve_string!("contender")
+            } else {
+                ktrace_rs::resolve_string!("active")
+            };
+
+            // SAFETY: Both threads are valid for the duration of this call, as above.
+            local_ktrace_instant!(
+                QUEUE,
+                "find_earlier_deadline",
+                "is_oversubscribed" => is_oversubscribed,
+                "contender_name" => unsafe { thread_name(eligible_thread) }.as_str(),
+                "contender_tid" => unsafe { cpp_thread_get_tid(eligible_thread) },
+                "contender_finish_delta_ns" => eligible_state.finish_time - eligible_time,
+                "contender_start_delta_ns" => eligible_time - eligible_state.start_time,
+                "contender_remaining_slice_ns" => eligible_state.remaining_time_slice_ns(),
+                "contender_capacity_ns" => eligible_state.time_slice_ns,
+                "active_name" => unsafe { thread_name(reference_thread) }.as_str(),
+                "active_tid" => unsafe { cpp_thread_get_tid(reference_thread) },
+                "active_finish_delta_ns" => ref_state.finish_time - eligible_time,
+                "active_start_delta_ns" => eligible_time - ref_state.start_time,
+                "active_remaining_slice_ns" => ref_state.remaining_time_slice_ns(),
+                "active_capacity_ns" => ref_state.time_slice_ns,
+                "critical_state" => critical_state,
+                "selected" => selected_str,
+            );
+        }
+
+        selected_thread
+    }
+
+    /// Returns the thread with the earliest finish time. Either or both threads
+    /// may be null. If there is a tie between `primary` and `secondary`, `primary`
+    /// is returned.
+    ///
+    /// # Safety
+    /// Each non-null thread must be in one of this scheduler's run queues, and the
+    /// caller must hold the scheduler's `queue_lock_`, which guards the queued
+    /// threads' `SchedulerState`.
+    unsafe fn earliest_deadline_thread(
+        &self,
+        primary: *mut Thread,
+        secondary: *mut Thread,
+    ) -> *mut Thread {
+        if primary.is_null() {
+            return secondary;
+        }
+        if secondary.is_null() {
+            return primary;
+        }
+        // SAFETY: Both threads are valid and `queue_lock_` is held.
+        unsafe {
+            self.assert_in_scheduler(primary);
+            self.assert_in_scheduler(secondary);
+        }
+        // SAFETY: Both threads are in this scheduler's run queues, so their
+        // `SchedulerState` is valid for shared access under `queue_lock_`.
+        let primary_state = unsafe { &*cpp_thread_get_scheduler_state(primary) };
+        let secondary_state = unsafe { &*cpp_thread_get_scheduler_state(secondary) };
+        if primary_state.finish_time <= secondary_state.finish_time { primary } else { secondary }
+    }
+
+    /// Returns the completion time clamped to the start of the earliest deadline
+    /// thread that will become eligible in that time frame and also has an earlier
+    /// finish time than the given reference thread, accounting for criticality.
+    ///
+    /// # Safety
+    /// `reference_thread` must be valid, and the caller must hold the scheduler's
+    /// `queue_lock_` and at least shared access to `reference_thread`'s lock.
+    unsafe fn clamp_to_earlier_deadline(
+        &self,
+        completion_time: SchedTime,
+        reference_thread: *const Thread,
+    ) -> SchedTime {
+        // SAFETY: Forwarded from the caller.
+        let thread =
+            unsafe { self.find_earlier_deadline_thread(completion_time, reference_thread) };
+        if !thread.is_null() {
+            // SAFETY: `thread` is in one of this scheduler's run queues, which
+            // `queue_lock_` guards, so its `SchedulerState` is valid for shared access.
+            unsafe { self.assert_in_scheduler(thread) };
+            let state = unsafe { &*cpp_thread_get_scheduler_state(thread) };
+            core::cmp::min(completion_time, state.start_time)
+        } else {
+            completion_time
+        }
+    }
+
+    /// Updates the timeslice of the thread based on the current run queue state.
+    /// Returns the absolute deadline for the next time slice, which may be earlier
+    /// than the completion of the time slice if other threads could preempt the
+    /// given thread before the time slice is exhausted.
+    ///
+    /// # Safety
+    /// `thread` must be valid, and the caller must hold both the scheduler's
+    /// `queue_lock_` and `thread`'s lock exclusively, which together guard the
+    /// `SchedulerState` fields read and written here.
+    unsafe fn next_thread_timeslice(&self, thread: *mut Thread, now: SchedTime) -> SchedTime {
+        let trace = local_ktrace_begin_scope!(DETAILED, "next_timeslice");
+        // SAFETY: `thread` is valid.
+        let state_ptr = unsafe { cpp_thread_get_scheduler_state(thread) };
+        // SAFETY: `thread`'s lock is held exclusively, so its effective profile is stable.
+        let is_fair = unsafe { (*state_ptr).effective_profile.is_fair() };
+
+        if is_fair {
+            // Calculate the time slice before writing it back, as `calculate_timeslice`
+            // borrows the thread's state itself.
+            // SAFETY: Forwarded from the caller.
+            let time_slice_ns = unsafe { self.calculate_timeslice(thread) };
+            // SAFETY: `thread`'s lock and `queue_lock_` are held exclusively and no
+            // reference to its `SchedulerState` is live.
+            unsafe { (*state_ptr).time_slice_ns = time_slice_ns };
+        }
+
+        // SAFETY: As above, no other reference to the `SchedulerState` is live and the
+        // locks held prevent concurrent writes for the remainder of this function.
+        let state = unsafe { &*state_ptr };
+
+        // Calculate the deadline when the remaining time slice is completed. The
+        // time slice is maintained by the deadline queuing logic, no need to update
+        // it here. The target preemption time is based on the time slice scaled by
+        // the performance of the CPU and clamped to the deadline. This increases
+        // capacity on slower processors, however, bandwidth isolation is preserved
+        // because CPU selection attempts to keep scaled total capacity below one.
+        let remaining = state.remaining_time_slice_ns();
+        let scaled_time_slice_ns = if state.effective_profile.is_deadline() {
+            // SAFETY: `queue_lock_` is held.
+            unsafe { self.scale_up(remaining) }
+        } else {
+            remaining
+        };
+
+        let target_preemption_time_ns =
+            core::cmp::min(now + scaled_time_slice_ns, state.finish_time);
+
+        ktrace_rs::end_scope!(
+            trace,
+            "scaled time slice" => scaled_time_slice_ns,
+            "target preemption time" => target_preemption_time_ns,
+        );
+
+        target_preemption_time_ns
+    }
+
+    /// Returns a delta value to additively update a predictor. Compares the given
+    /// sample to the current value of the predictor and returns a delta such that
+    /// the predictor either exponentially peaks or decays toward the sample. The
+    /// rate of decay depends on the alpha parameter, while the rate of peaking
+    /// depends on the beta parameter. The predictor is not permitted to become
+    /// negative.
+    ///
+    /// A single-rate exponential moving average is updated as follows:
+    ///
+    ///   Sn = Sn-1 + a * (Yn - Sn-1)
+    ///
+    /// This function updates the exponential moving average using potentially
+    /// different rates for peak and decay:
+    ///
+    ///   D  = Yn - Sn-1
+    ///        [ Sn-1 + a * D      if D < 0
+    ///   Sn = [
+    ///        [ Sn-1 + b * D      if D >= 0
+    fn peak_decay_delta(value: SchedDuration, sample: SchedDuration) -> SchedDuration {
+        let delta = sample - value;
+        let scaled_delta = if delta >= 0 {
+            SchedDuration::from(K_EXPECTED_RUNTIME_BETA * delta)
+        } else {
+            SchedDuration::from(K_EXPECTED_RUNTIME_ALPHA * delta)
+        };
+        core::cmp::max(scaled_delta, -value)
+    }
 }
 
 // Traits implementations to adapt the WavlTree to Thread with node state in the
@@ -3162,6 +3701,11 @@ pub type RunQueueObserver =
 pub type RunQueue =
     WavlTree<(SchedTime, usize), *mut Thread, DefaultObjectTag, TrackingSize, RunQueueObserver>;
 
+#[inline]
+fn accept_all(_: *mut Thread) -> bool {
+    true
+}
+
 /// Performs an augmented binary search for the task with the earliest finish
 /// time that also has a start time equal to or earlier than the given eligible
 /// time. A predicate may be supplied to filter candidates based on additional
@@ -3187,7 +3731,6 @@ pub type RunQueue =
 /// `run_queue` is valid, not concurrently mutated, and that all `Thread` nodes
 /// in `run_queue` remain valid and associated with this scheduler for the
 /// duration of this call.
-#[inline(always)]
 pub unsafe fn find_earliest_eligible_thread(
     run_queue: &RunQueue,
     eligible_time: SchedTime,
@@ -3369,7 +3912,7 @@ pub unsafe extern "C" fn rust_kernel_run_queue_find_earliest_eligible_thread(
         }
         None => {
             // SAFETY: The caller holds `queue_lock_` for `rq`.
-            unsafe { find_earliest_eligible_thread(rq, eligible_time, |_| true) }
+            unsafe { find_earliest_eligible_thread(rq, eligible_time, accept_all) }
         }
     }
 }
@@ -3499,6 +4042,104 @@ pub unsafe extern "C" fn rust_scheduler_update_fair_bandwidth_period(
 ) {
     // SAFETY: Forwarded from the caller.
     unsafe { (*sched).update_fair_bandwidth_period(now) };
+}
+
+/// # Safety
+/// `sched` and `reference_thread` must be valid, and the caller must hold `sched`'s
+/// `queue_lock_` and at least shared access to `reference_thread`'s lock.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_find_earlier_deadline_thread(
+    sched: *const Scheduler,
+    eligible_time: SchedTime,
+    reference_thread: *const Thread,
+) -> *mut Thread {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).find_earlier_deadline_thread(eligible_time, reference_thread) }
+}
+
+/// # Safety
+/// `sched` must be valid, and the caller must hold its `queue_lock_`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_get_next_eligible_time(
+    sched: *const Scheduler,
+) -> SchedTime {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).get_next_eligible_time() }
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid, and the caller must hold `sched`'s `queue_lock_`
+/// and at least shared access to `thread`'s lock.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_calculate_timeslice(
+    sched: *const Scheduler,
+    thread: *const Thread,
+) -> SchedDuration {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).calculate_timeslice(thread) }
+}
+
+/// # Safety
+/// `sched` must be valid, and the caller must hold its `queue_lock_`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_clamp_to_deadline(
+    sched: *const Scheduler,
+    completion_time: SchedTime,
+) -> SchedTime {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).clamp_to_deadline(completion_time) }
+}
+
+/// # Safety
+/// `sched` and `reference_thread` must be valid, and the caller must hold `sched`'s
+/// `queue_lock_` and at least shared access to `reference_thread`'s lock.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_clamp_to_earlier_deadline(
+    sched: *const Scheduler,
+    completion_time: SchedTime,
+    reference_thread: *const Thread,
+) -> SchedTime {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).clamp_to_earlier_deadline(completion_time, reference_thread) }
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid, and the caller must hold both `sched`'s
+/// `queue_lock_` and `thread`'s lock exclusively.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_next_thread_timeslice(
+    sched: *const Scheduler,
+    thread: *mut Thread,
+    now: SchedTime,
+) -> SchedTime {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).next_thread_timeslice(thread, now) }
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid, and the caller must hold both `sched`'s
+/// `queue_lock_` and `thread`'s lock exclusively.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_update_activation(
+    sched: *const Scheduler,
+    thread: *mut Thread,
+    now: SchedTime,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).update_activation(thread, now) };
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid, and the caller must hold both `sched`'s
+/// `queue_lock_` and `thread`'s lock exclusively.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_adjust_fair_bandwidth(
+    sched: *const Scheduler,
+    thread: *mut Thread,
+    now: SchedTime,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).adjust_fair_bandwidth(thread, now) };
 }
 
 /// Initializes a run queue in-place.
