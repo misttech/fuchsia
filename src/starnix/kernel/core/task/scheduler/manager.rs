@@ -488,6 +488,22 @@ impl SchedulerState {
         self.normal_priority
     }
 
+    /// Returns a monotonic priority key (`0..=139`) for ordering `FUTEX_WAIT` waiters:
+    /// - `0`: `SCHED_IDLE`
+    /// - `1..=40`: `SCHED_NORMAL` / `SCHED_BATCH` (`20` is default nice `0`)
+    /// - `41..=139`: `SCHED_FIFO` / `SCHED_RR` (`40 + realtime_priority`)
+    pub(crate) fn futex_priority(&self) -> u8 {
+        match self.policy {
+            SchedulingPolicy::Idle => 0,
+            SchedulingPolicy::Normal | SchedulingPolicy::Batch => {
+                self.normal_priority.raw_priority()
+            }
+            SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => {
+                NormalPriority::MAX_VALUE.saturating_add(self.realtime_priority.value)
+            }
+        }
+    }
+
     fn is_realtime(&self) -> bool {
         match self.policy {
             SchedulingPolicy::Normal | SchedulingPolicy::Batch | SchedulingPolicy::Idle => false,
@@ -935,5 +951,42 @@ mod tests {
             )),
             error!(EINVAL)
         );
+    }
+
+    #[fuchsia::test]
+    fn futex_priority_orders_policies_and_priorities() {
+        let idle = SchedulerState {
+            policy: SchedulingPolicy::Idle,
+            normal_priority: NormalPriority::from_setpriority_syscall(-20),
+            ..SchedulerState::default()
+        };
+        let normal_low = SchedulerState {
+            policy: SchedulingPolicy::Normal,
+            normal_priority: NormalPriority::from_setpriority_syscall(19),
+            ..SchedulerState::default()
+        };
+        let normal_default = SchedulerState::default();
+        let batch_high = SchedulerState {
+            policy: SchedulingPolicy::Batch,
+            normal_priority: NormalPriority::from_setpriority_syscall(-20),
+            ..SchedulerState::default()
+        };
+        let fifo_min = SchedulerState {
+            policy: SchedulingPolicy::Fifo,
+            realtime_priority: RealtimePriority { value: 1 },
+            ..SchedulerState::default()
+        };
+        let rr_max = SchedulerState {
+            policy: SchedulingPolicy::RoundRobin,
+            realtime_priority: RealtimePriority { value: 99 },
+            ..SchedulerState::default()
+        };
+
+        assert_eq!(idle.futex_priority(), 0);
+        assert_eq!(normal_low.futex_priority(), 1);
+        assert_eq!(normal_default.futex_priority(), 20);
+        assert_eq!(batch_high.futex_priority(), 40);
+        assert_eq!(fifo_min.futex_priority(), 41);
+        assert_eq!(rr_max.futex_priority(), 139);
     }
 }

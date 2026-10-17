@@ -4,7 +4,9 @@
 
 use crate::mm::memory::MemoryObject;
 use crate::mm::{CompareExchangeResult, MemoryManager, ProtectionFlags};
-use crate::task::{CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, Waiter};
+use crate::task::{
+    CurrentTask, EventHandler, NormalPriority, SignalHandler, SignalHandlerInner, Task, Waiter,
+};
 use futures::channel::oneshot;
 use rustc_hash::FxHasher;
 use starnix_sync::{FutexTableStateLock, InterruptibleEvent, LockDepMutex, ordered_lock};
@@ -97,15 +99,22 @@ impl FutexTable {
     ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
         let mm = current_task.mm()?;
-        // Pre-fault the address before acquiring the bucket lock to make page faults or memory
-        // reclamation under the lock highly unlikely.
+        // Pre-fault the address and check if the value already changed before acquiring the
+        // bucket lock to make page faults or memory reclamation under the lock highly unlikely.
         // TODO(https://fxbug.dev/548025031): Implement a non-blocking try_load and retry loop once
         // supported by Zircon.
-        let _ = mm.atomic_load_u32_acquire(addr)?;
+        if mm.atomic_load_u32_acquire(addr)? != value {
+            return error!(EAGAIN);
+        }
         let key = Key::get(&mm, addr)?;
+        // Linux futex_wait(): an already-expired timer returns ETIMEDOUT without sleeping.
+        if deadline != zx::BootInstant::INFINITE && deadline <= zx::BootInstant::get() {
+            return error!(ETIMEDOUT);
+        }
         let b = Self::bucket_index(&key);
+        let prio = task_futex_priority(current_task);
 
-        let node = WaiterNode::new_stack_boot(key, mask, b as u16);
+        let node = WaiterNode::new_stack_boot(key, mask, prio, b as u16);
         let timer = zx::BootTimer::create();
         let signal_handler = SignalHandler {
             inner: SignalHandlerInner::None,
@@ -128,10 +137,6 @@ impl FutexTable {
         if value != loaded_value {
             return error!(EAGAIN);
         }
-        // Linux futex_wait(): an already-expired timer returns ETIMEDOUT without sleeping.
-        if deadline != zx::BootInstant::INFINITE && deadline <= zx::BootInstant::get() {
-            return error!(ETIMEDOUT);
-        }
 
         let queued_guard = StackWaiterGuard::insert_waiter(self, &mut bucket, &node);
         std::mem::drop(bucket);
@@ -153,15 +158,22 @@ impl FutexTable {
     ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
         let mm = current_task.mm()?;
-        // Pre-fault the address before acquiring the bucket lock to make page faults or memory
-        // reclamation under the lock highly unlikely.
+        // Pre-fault the address and check if the value already changed before acquiring the
+        // bucket lock to make page faults or memory reclamation under the lock highly unlikely.
         // TODO(https://fxbug.dev/548025031): Implement a non-blocking try_load and retry loop once
         // supported by Zircon.
-        let _ = mm.atomic_load_u32_acquire(addr)?;
+        if mm.atomic_load_u32_acquire(addr)? != value {
+            return error!(EAGAIN);
+        }
 
         let key = Key::get(&mm, addr)?;
+        // Linux futex_wait(): an already-expired timer returns ETIMEDOUT without sleeping.
+        if deadline != zx::MonotonicInstant::INFINITE && deadline <= zx::MonotonicInstant::get() {
+            return error!(ETIMEDOUT);
+        }
         let b = Self::bucket_index(&key);
-        let node = WaiterNode::new_stack_event(key, mask, 0, b as u16);
+        let prio = task_futex_priority(current_task);
+        let node = WaiterNode::new_stack_event(key, mask, prio, 0, b as u16);
         let event_guard = node.event().begin_wait();
 
         let mut bucket = self.buckets[b].lock();
@@ -172,10 +184,6 @@ impl FutexTable {
         let loaded_value = mm.atomic_load_u32_acquire(addr)?;
         if value != loaded_value {
             return error!(EAGAIN);
-        }
-        // Linux futex_wait(): an already-expired timer returns ETIMEDOUT without sleeping.
-        if deadline != zx::MonotonicInstant::INFINITE && deadline <= zx::MonotonicInstant::get() {
-            return error!(ETIMEDOUT);
         }
 
         let queued_guard = StackWaiterGuard::insert_waiter(self, &mut bucket, &node);
@@ -294,7 +302,7 @@ impl FutexTable {
         let tid = current_task.get_tid() as u32;
         let key = Key::get(&mm, addr)?;
         let b = Self::bucket_index(&key);
-        let node = WaiterNode::new_stack_event(key, u32::MAX, tid, b as u16);
+        let node = WaiterNode::new_stack_event(key, u32::MAX, 0, tid, b as u16);
         let event_guard = node.event().begin_wait();
 
         let mut bucket = self.buckets[b].lock();
@@ -450,7 +458,7 @@ impl FutexTable {
         let (sender, receiver) = oneshot::channel::<()>();
         let waiter =
             UnattachedWaiter::new_external(key, mask, b as u16, Arc::downgrade(&token), sender);
-        bucket.waiters.push_back(waiter);
+        bucket.waiters.insert_by_prio(waiter);
         Ok((token, receiver))
     }
 
@@ -554,6 +562,12 @@ impl FutexKey for SharedFutexKey {
     }
 }
 
+/// Computes a priority key for ordering `FUTEX_WAIT` waiters (matching Linux's priority-ordered
+/// `plist` futex queues).
+fn task_futex_priority(task: &Task) -> u8 {
+    task.read().scheduler_state.futex_priority()
+}
+
 enum WaiterKind {
     /// Stack-allocated `InterruptibleEvent` (used by `wait` and `lock_pi`).
     StackEvent(InterruptibleEvent),
@@ -573,6 +587,9 @@ struct WaiterNode {
     next: Cell<Option<NonNull<WaiterNode>>>,
     key: Cell<FutexKeyValue>,
     mask: u32,
+    /// Scheduling priority used to order `waiters` (`FUTEX_WAIT`); unused (`0`) for
+    /// `rt_mutex_waiters` (`FUTEX_LOCK_PI`).
+    prio: u8,
     attached: Cell<bool>,
     woken: AtomicBool,
     bucket_idx: AtomicU16,
@@ -583,12 +600,13 @@ struct WaiterNode {
 }
 
 impl WaiterNode {
-    fn new_stack_event(key: FutexKeyValue, mask: u32, tid: u32, bucket_idx: u16) -> Self {
+    fn new_stack_event(key: FutexKeyValue, mask: u32, prio: u8, tid: u32, bucket_idx: u16) -> Self {
         Self {
             prev: Cell::new(None),
             next: Cell::new(None),
             key: Cell::new(key),
             mask,
+            prio,
             attached: Cell::new(false),
             woken: AtomicBool::new(false),
             bucket_idx: AtomicU16::new(bucket_idx),
@@ -598,12 +616,13 @@ impl WaiterNode {
         }
     }
 
-    fn new_stack_boot(key: FutexKeyValue, mask: u32, bucket_idx: u16) -> Self {
+    fn new_stack_boot(key: FutexKeyValue, mask: u32, prio: u8, bucket_idx: u16) -> Self {
         Self {
             prev: Cell::new(None),
             next: Cell::new(None),
             key: Cell::new(key),
             mask,
+            prio,
             attached: Cell::new(false),
             woken: AtomicBool::new(false),
             bucket_idx: AtomicU16::new(bucket_idx),
@@ -625,6 +644,7 @@ impl WaiterNode {
             next: Cell::new(None),
             key: Cell::new(key),
             mask,
+            prio: NormalPriority::default().raw_priority(),
             attached: Cell::new(false),
             woken: AtomicBool::new(false),
             bucket_idx: AtomicU16::new(bucket_idx),
@@ -657,7 +677,7 @@ impl WaiterNode {
 /// currently unattached from any [`WaiterList`].
 ///
 /// Consuming `UnattachedWaiter` by value in [`WaiterList::push_back`], [`WaiterList::push_front`],
-/// [`FutexBucket::wake_and_mark_woken`], and
+/// [`WaiterList::insert_by_prio`], [`FutexBucket::wake_and_mark_woken`], and
 /// [`FutexBucket::free_stale_external`] guarantees at compile time that only unattached nodes can
 /// be inserted, woken, or freed, and that no node can be inserted or woken twice.
 #[must_use = "an UnattachedWaiter must be inserted, woken, or freed"]
@@ -829,6 +849,40 @@ impl WaiterList {
         let head = self.head?;
         // SAFETY: `head` is currently linked in `self`.
         Some(unsafe { self.unlink(head) })
+    }
+
+    /// Inserts `waiter` in descending priority order, preserving FIFO order among waiters
+    /// of equal priority.
+    fn insert_by_prio(&mut self, waiter: UnattachedWaiter) {
+        let node_ptr = waiter.0;
+        // SAFETY: `waiter` is an `UnattachedWaiter`, all nodes in `self` are valid, and `&mut self`
+        // proves the enclosing bucket lock is held.
+        unsafe {
+            let node = node_ptr.as_ref();
+            let prio = node.prio;
+            let mut cur = self.tail;
+            while let Some(c) = cur {
+                if c.as_ref().prio >= prio {
+                    // Insert right after `c`.
+                    let _ = waiter.into_raw();
+                    let was_attached = node.attached.replace(true);
+                    debug_assert!(!was_attached);
+                    let next = c.as_ref().next.get();
+                    node.prev.set(Some(c));
+                    node.next.set(next);
+                    c.as_ref().next.set(Some(node_ptr));
+                    if let Some(n) = next {
+                        n.as_ref().prev.set(Some(node_ptr));
+                    } else {
+                        self.tail = Some(node_ptr);
+                    }
+                    return;
+                }
+                cur = c.as_ref().prev.get();
+            }
+        }
+        // `prio` is strictly higher than all existing nodes (or the list is empty).
+        self.push_front(waiter);
     }
 
     /// Unlinks `node_ptr` from `self` and returns it as an [`UnattachedWaiter`].
@@ -1030,7 +1084,7 @@ impl FutexBucket {
     fn requeue_from(&mut self, mut moved: WaiterList, new_key: FutexKeyValue, new_bucket_idx: u16) {
         while let Some(mut waiter) = moved.pop_front() {
             waiter.set_requeued(self, new_key, new_bucket_idx);
-            self.waiters.push_back(waiter);
+            self.waiters.insert_by_prio(waiter);
         }
     }
 
@@ -1096,7 +1150,7 @@ impl<'a> StackWaiterGuard<'a> {
         // SAFETY: The returned `StackWaiterGuard` ensures `node` is unlinked or woken before `'a`
         // ends.
         let unattached = unsafe { UnattachedWaiter::from_stack(node) };
-        bucket.waiters.push_back(unattached);
+        bucket.waiters.insert_by_prio(unattached);
         Self { table, node, is_rt_mutex: false, active: true }
     }
 
@@ -1208,7 +1262,7 @@ mod tests {
         let table = FutexTable::default();
         let key = test_key(0x1000);
         let b = FutexTable::bucket_index(&key);
-        let node = WaiterNode::new_stack_event(key, u32::MAX, 0, b as u16);
+        let node = WaiterNode::new_stack_event(key, u32::MAX, 0, 0, b as u16);
 
         let guard = StackWaiterGuard::insert_waiter(&table, &mut table.buckets[b].lock(), &node);
         assert_eq!(table.buckets[b].lock().waiters.len(), 1);
@@ -1228,7 +1282,7 @@ mod tests {
             .find(|k| FutexTable::bucket_index(k) == b1)
             .unwrap();
 
-        let node = WaiterNode::new_stack_event(key1, u32::MAX, 0, b1 as u16);
+        let node = WaiterNode::new_stack_event(key1, u32::MAX, 0, 0, b1 as u16);
         let guard = StackWaiterGuard::insert_waiter(&table, &mut table.buckets[b1].lock(), &node);
 
         let requeued = table.requeue_by_key(key1, key2, 0, 1, || Ok(())).unwrap();
@@ -1251,7 +1305,7 @@ mod tests {
             .unwrap();
         let b2 = FutexTable::bucket_index(&key2);
 
-        let node = WaiterNode::new_stack_event(key1, u32::MAX, 0, b1 as u16);
+        let node = WaiterNode::new_stack_event(key1, u32::MAX, 0, 0, b1 as u16);
         let guard = StackWaiterGuard::insert_waiter(&table, &mut table.buckets[b1].lock(), &node);
 
         let requeued = table.requeue_by_key(key1, key2, 0, 1, || Ok(())).unwrap();
@@ -1273,7 +1327,7 @@ mod tests {
         let table = FutexTable::default();
         let key = test_key(0x1000);
         let b = FutexTable::bucket_index(&key);
-        let node = WaiterNode::new_stack_event(key, u32::MAX, 0, b as u16);
+        let node = WaiterNode::new_stack_event(key, u32::MAX, 0, 0, b as u16);
         let _event_guard = node.event().begin_wait();
 
         let guard = StackWaiterGuard::insert_waiter(&table, &mut table.buckets[b].lock(), &node);
@@ -1295,7 +1349,7 @@ mod tests {
         let table = FutexTable::default();
         let key = test_key(0x1000);
         let b = FutexTable::bucket_index(&key);
-        let node = WaiterNode::new_stack_boot(key, u32::MAX, b as u16);
+        let node = WaiterNode::new_stack_boot(key, u32::MAX, 0, b as u16);
 
         let guard = StackWaiterGuard::insert_waiter(&table, &mut table.buckets[b].lock(), &node);
 
@@ -1313,8 +1367,8 @@ mod tests {
         let key = test_key(0x1000);
         let b = FutexTable::bucket_index(&key);
 
-        let event_node = WaiterNode::new_stack_event(key, u32::MAX, 0, b as u16);
-        let boot_node = WaiterNode::new_stack_boot(key, u32::MAX, b as u16);
+        let event_node = WaiterNode::new_stack_event(key, u32::MAX, 0, 0, b as u16);
+        let boot_node = WaiterNode::new_stack_boot(key, u32::MAX, 0, b as u16);
 
         let (event_guard, boot_guard) = {
             let mut bucket = table.buckets[b].lock();
@@ -1338,7 +1392,7 @@ mod tests {
         let table = FutexTable::default();
         let key = test_key(0x1000);
         let b = FutexTable::bucket_index(&key);
-        let node = WaiterNode::new_stack_event(key, u32::MAX, 1, b as u16);
+        let node = WaiterNode::new_stack_event(key, u32::MAX, 0, 1, b as u16);
 
         let guard = StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b].lock(), &node);
         assert_eq!(table.buckets[b].lock().rt_mutex_waiters.len(), 1);
@@ -1357,13 +1411,13 @@ mod tests {
         let key = test_key(0x1000);
         let b = FutexTable::bucket_index(&key);
 
-        let node1 = WaiterNode::new_stack_event(key, u32::MAX, 1, b as u16);
+        let node1 = WaiterNode::new_stack_event(key, u32::MAX, 0, 1, b as u16);
         let _eg1 = node1.event().begin_wait();
         let guard1 =
             StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b].lock(), &node1);
         assert_eq!(guard1.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
 
-        let node2 = WaiterNode::new_stack_event(key, u32::MAX, 1, b as u16);
+        let node2 = WaiterNode::new_stack_event(key, u32::MAX, 0, 1, b as u16);
         let _eg2 = node2.event().begin_wait();
         let guard2 =
             StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b].lock(), &node2);
@@ -1388,9 +1442,9 @@ mod tests {
         let key2 = test_key(0x2000);
         let b1 = FutexTable::bucket_index(&key1);
 
-        let n1 = WaiterNode::new_stack_event(key1, 1, 0, b1 as u16);
-        let n2 = WaiterNode::new_stack_event(key1, 2, 0, b1 as u16);
-        let n3 = WaiterNode::new_stack_event(key1, 3, 0, b1 as u16);
+        let n1 = WaiterNode::new_stack_event(key1, 1, 10, 0, b1 as u16);
+        let n2 = WaiterNode::new_stack_event(key1, 2, 10, 0, b1 as u16);
+        let n3 = WaiterNode::new_stack_event(key1, 3, 10, 0, b1 as u16);
         let _e1 = n1.event().begin_wait();
         let _e2 = n2.event().begin_wait();
         let _e3 = n3.event().begin_wait();
@@ -1427,9 +1481,9 @@ mod tests {
             .unwrap();
         let b2 = FutexTable::bucket_index(&key2);
 
-        let n1 = WaiterNode::new_stack_event(key1, u32::MAX, 0, b1 as u16);
-        let n2 = WaiterNode::new_stack_event(key1, u32::MAX, 0, b1 as u16);
-        let n3 = WaiterNode::new_stack_event(key1, u32::MAX, 0, b1 as u16);
+        let n1 = WaiterNode::new_stack_event(key1, u32::MAX, 10, 0, b1 as u16);
+        let n2 = WaiterNode::new_stack_event(key1, u32::MAX, 10, 0, b1 as u16);
+        let n3 = WaiterNode::new_stack_event(key1, u32::MAX, 10, 0, b1 as u16);
         let _e1 = n1.event().begin_wait();
         let _e2 = n2.event().begin_wait();
         let _e3 = n3.event().begin_wait();
@@ -1476,7 +1530,7 @@ mod tests {
                 Arc::downgrade(&token),
                 sender,
             );
-            table.buckets[b].lock().waiters.push_back(waiter);
+            table.buckets[b].lock().waiters.insert_by_prio(waiter);
         } // token is dropped here, so it becomes stale
 
         assert_eq!(table.buckets[b].lock().waiters.len(), 1);
@@ -1496,7 +1550,7 @@ mod tests {
                 Arc::downgrade(&token),
                 sender,
             );
-            table.buckets[b].lock().waiters.push_back(waiter);
+            table.buckets[b].lock().waiters.insert_by_prio(waiter);
         } // token is dropped here, so it becomes stale
 
         assert_eq!(table.buckets[b].lock().waiters.len(), 1);
@@ -1516,7 +1570,7 @@ mod tests {
                 Arc::downgrade(&token),
                 sender,
             );
-            table.buckets[b].lock().waiters.push_back(waiter);
+            table.buckets[b].lock().waiters.insert_by_prio(waiter);
         } // token is dropped here, so it becomes stale
 
         assert_eq!(table.buckets[b].lock().waiters.len(), 1);
@@ -1557,8 +1611,8 @@ mod tests {
             .find(|k| FutexTable::bucket_index(k) == b)
             .unwrap();
 
-        let n1 = WaiterNode::new_stack_event(key1, u32::MAX, 0, b as u16);
-        let n2 = WaiterNode::new_stack_event(key2, u32::MAX, 0, b as u16);
+        let n1 = WaiterNode::new_stack_event(key1, u32::MAX, 10, 0, b as u16);
+        let n2 = WaiterNode::new_stack_event(key2, u32::MAX, 30, 0, b as u16);
         let _e1 = n1.event().begin_wait();
         let _e2 = n2.event().begin_wait();
 
@@ -1570,7 +1624,7 @@ mod tests {
             )
         };
 
-        // Waking key1 must only wake n1 in the same bucket.
+        // Waking key1 must only wake n1 even though n2 has higher priority in the same bucket.
         assert_eq!(wake_key(&table, &key1, 1, FUTEX_BITSET_MATCH_ANY), 1);
         assert_eq!(g1.resolve(Ok(())), Ok(()));
         assert_eq!(table.buckets[b].lock().waiters.len(), 1);
@@ -1602,8 +1656,8 @@ mod tests {
             let b1 = FutexTable::bucket_index(&key1);
             let b2 = FutexTable::bucket_index(&key2);
 
-            let n1 = WaiterNode::new_stack_event(key1, u32::MAX, 0, b1 as u16);
-            let n2 = WaiterNode::new_stack_event(key2, u32::MAX, 0, b2 as u16);
+            let n1 = WaiterNode::new_stack_event(key1, u32::MAX, 10, 0, b1 as u16);
+            let n2 = WaiterNode::new_stack_event(key2, u32::MAX, 10, 0, b2 as u16);
             let _e1 = n1.event().begin_wait();
             let _e2 = n2.event().begin_wait();
 
@@ -1615,6 +1669,77 @@ mod tests {
             assert_eq!(g2.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
         })
         .await;
+    }
+
+    #[fuchsia::test]
+    fn test_futex_waiters_priority_ordering() {
+        let table = FutexTable::default();
+        let key = test_key(0x1000);
+        let b = FutexTable::bucket_index(&key);
+
+        let low_node = WaiterNode::new_stack_event(key, 1, 10, 0, b as u16);
+        let low_eg = low_node.event().begin_wait();
+        let high_node = WaiterNode::new_stack_event(key, 2, 30, 0, b as u16);
+        let high_eg = high_node.event().begin_wait();
+        let mid1_node = WaiterNode::new_stack_event(key, 4, 20, 0, b as u16);
+        let mid1_eg = mid1_node.event().begin_wait();
+        let mid2_node = WaiterNode::new_stack_event(key, 8, 20, 0, b as u16);
+        let mid2_eg = mid2_node.event().begin_wait();
+
+        let (low_guard, high_guard, mid1_guard, mid2_guard) = {
+            let mut bucket = table.buckets[b].lock();
+            (
+                StackWaiterGuard::insert_waiter(&table, &mut bucket, &low_node),
+                StackWaiterGuard::insert_waiter(&table, &mut bucket, &high_node),
+                // `mid1_node` and `mid2_node` are inserted in the middle (after `high_node` and
+                // before `low_node`) and must preserve FIFO order between equal priorities.
+                StackWaiterGuard::insert_waiter(&table, &mut bucket, &mid1_node),
+                StackWaiterGuard::insert_waiter(&table, &mut bucket, &mid2_node),
+            )
+        };
+
+        assert_eq!(wake_key(&table, &key, 1, FUTEX_BITSET_MATCH_ANY), 1);
+        assert_eq!(high_eg.block_until(None, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_eq!(high_guard.resolve(Ok(())), Ok(()));
+
+        assert_eq!(wake_key(&table, &key, 1, FUTEX_BITSET_MATCH_ANY), 1);
+        assert_eq!(mid1_eg.block_until(None, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_eq!(mid1_guard.resolve(Ok(())), Ok(()));
+
+        assert_eq!(wake_key(&table, &key, 1, FUTEX_BITSET_MATCH_ANY), 1);
+        assert_eq!(mid2_eg.block_until(None, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_eq!(mid2_guard.resolve(Ok(())), Ok(()));
+
+        assert_eq!(wake_key(&table, &key, 1, FUTEX_BITSET_MATCH_ANY), 1);
+        assert_eq!(low_eg.block_until(None, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_eq!(low_guard.resolve(Ok(())), Ok(()));
+
+        // Requeuing a higher-priority waiter onto a destination key that already has a
+        // lower-priority waiter queued must insert it ahead of the lower-priority waiter.
+        let dst_key = test_key(0x2000);
+        let dst_b = FutexTable::bucket_index(&dst_key);
+        let dst_low_node = WaiterNode::new_stack_event(dst_key, 1, 10, 0, dst_b as u16);
+        let dst_low_eg = dst_low_node.event().begin_wait();
+        let src_high_node = WaiterNode::new_stack_event(key, 2, 30, 0, b as u16);
+        let src_high_eg = src_high_node.event().begin_wait();
+
+        let dst_low_guard = StackWaiterGuard::insert_waiter(
+            &table,
+            &mut table.buckets[dst_b].lock(),
+            &dst_low_node,
+        );
+        let src_high_guard =
+            StackWaiterGuard::insert_waiter(&table, &mut table.buckets[b].lock(), &src_high_node);
+
+        assert_eq!(table.requeue_by_key(key, dst_key, 0, 1, || Ok(())).unwrap(), 1);
+
+        assert_eq!(wake_key(&table, &dst_key, 1, FUTEX_BITSET_MATCH_ANY), 1);
+        assert_eq!(src_high_eg.block_until(None, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_eq!(src_high_guard.resolve(Ok(())), Ok(()));
+
+        assert_eq!(wake_key(&table, &dst_key, 1, FUTEX_BITSET_MATCH_ANY), 1);
+        assert_eq!(dst_low_eg.block_until(None, zx::MonotonicInstant::ZERO), Ok(()));
+        assert_eq!(dst_low_guard.resolve(Ok(())), Ok(()));
     }
 
     /// `unlock_pi` must hand the mutex to the next live waiter after an earlier waiter cancelled,
@@ -1655,14 +1780,15 @@ mod tests {
             let key = PrivateFutexKey::get(&mm, futex_addr).unwrap();
             let b = FutexTable::bucket_index(&key);
 
-            let next_node = WaiterNode::new_stack_event(key, u32::MAX, NEXT_OWNER_TID, b as u16);
+            let next_node = WaiterNode::new_stack_event(key, u32::MAX, 0, NEXT_OWNER_TID, b as u16);
             let _next_eg = next_node.event().begin_wait();
-            let third_node = WaiterNode::new_stack_event(key, u32::MAX, THIRD_WAITER_TID, b as u16);
+            let third_node =
+                WaiterNode::new_stack_event(key, u32::MAX, 0, THIRD_WAITER_TID, b as u16);
             let _third_eg = third_node.event().begin_wait();
 
             {
                 let cancelled_node =
-                    WaiterNode::new_stack_event(key, u32::MAX, CANCELLED_TID, b as u16);
+                    WaiterNode::new_stack_event(key, u32::MAX, 0, CANCELLED_TID, b as u16);
                 let _cancelled_guard = StackWaiterGuard::insert_rt_mutex(
                     &futex_table,
                     &mut futex_table.buckets[b].lock(),
