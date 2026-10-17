@@ -5,7 +5,6 @@
 use crate::range::Range;
 use crate::repository::{Error, RepoProvider};
 
-#[async_trait::async_trait]
 pub(crate) trait TestEnv: Sized {
     /// Whether or not the repository backend supports Range requests.
     fn supports_range(&self) -> bool;

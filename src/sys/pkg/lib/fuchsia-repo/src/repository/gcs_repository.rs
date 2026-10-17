@@ -32,12 +32,14 @@ const UNKNOWN_CONTENT_LEN_BUF_SIZE: usize = 8_196;
 
 /// Helper trait that lets us mock gcs::client::Client for testing.
 #[doc(hidden)]
-#[async_trait::async_trait]
 pub trait GcsClient<B = gcs::client::ResponseBody> {
-    async fn stream(&self, bucket: &str, object: &str) -> anyhow::Result<Response<B>>;
+    fn stream(
+        &self,
+        bucket: &str,
+        object: &str,
+    ) -> impl Future<Output = anyhow::Result<Response<B>>> + Send;
 }
 
-#[async_trait::async_trait]
 impl GcsClient<gcs::client::ResponseBody> for gcs::client::Client {
     async fn stream(
         &self,
@@ -232,7 +234,6 @@ where
     }
 }
 
-#[async_trait::async_trait]
 impl<T, B> RepoProvider for GcsRepository<T, B>
 where
     T: GcsClient<B> + Debug + Send + Sync + 'static,
@@ -352,7 +353,6 @@ mod tests {
         content_length_header: &'static str,
     }
 
-    #[async_trait::async_trait]
     impl GcsClient<BoxBody> for MockGcsClient {
         async fn stream(
             &self,
@@ -442,7 +442,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl repo_tests::TestEnv for TestEnv {
         fn supports_range(&self) -> bool {
             false

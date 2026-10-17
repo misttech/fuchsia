@@ -687,7 +687,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl repo_tests::TestEnv for TestEnv {
         fn supports_range(&self) -> bool {
             true
