@@ -2,11 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_unittest_package("eager-package-config-lib-tests") {
-  manifest = "meta/eager-package-config-lib-test.cml"
-  deps = [ ":eager-package-config_test" ]
+bazel_test_suite("eager-package-config-lib-tests") {
+  target_tests = [
+    "//src/sys/pkg/lib/eager-package-config:eager-package-config-lib-tests",
+  ]
 }
 
 group("tests") {
@@ -48,17 +49,10 @@ rustc_library("eager-package-config") {
   crate_name = "eager_package_config"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  test_deps = [
-    "//src/lib/fuchsia",
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:pretty_assertions",
-  ]
-  version = "0.0.1"
   visibility = [
     ":*",
     "//src/sys/pkg/*",
   ]
-  with_unit_tests = true
   deps = []
   deps += [
     "//src/lib/fuchsia-url",

@@ -2,7 +2,19 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -16,14 +28,7 @@ rustc_library(
     crate_name = "eager_package_config",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        "//src/lib/fuchsia",
-        "//third_party/rust_crates/vendor:assert_matches",
-        "//third_party/rust_crates/vendor:pretty_assertions",
-    ],
-    version = "0.0.1",
     visibility = ["//src/sys/pkg:__subpackages__"],
-    with_unit_tests = True,
     deps = [
         "//src/lib/fuchsia-url",
         "//src/sys/pkg/lib/channel-config",
@@ -43,4 +48,61 @@ rustc_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "eager-package-config_test",
+    crate = ":eager-package-config",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "eager-package-config_test_packaged_bin",
+    testonly = True,
+    binary = ":eager-package-config_test",
+    binary_name = "eager_package_config_lib_test",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "eager-package-config-lib-tests-manifest",
+    testonly = True,
+    component_name = "eager-package-config-lib-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/eager-package-config-lib-test.cml",
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "eager-package-config-lib-tests-component",
+    compiled_manifest = ":eager-package-config-lib-tests-manifest",
+    component_name = "eager-package-config-lib-tests",
+    deps = [":eager-package-config_test_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "eager-package-config-lib-tests-package",
+    package_name = "eager-package-config-lib-tests",
+    test_components = [":eager-package-config-lib-tests-component"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "eager-package-config-lib-tests",
+    package = ":eager-package-config-lib-tests-package",
 )
