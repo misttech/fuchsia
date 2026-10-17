@@ -2,10 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_unittest_package("mock-space-tests") {
-  deps = [ ":mock-space_test" ]
+bazel_test_suite("mock-space-tests") {
+  target_tests = [ "//src/sys/pkg/testing/mock-space:mock-space-tests" ]
 }
 
 group("hermetic_tests") {
@@ -43,13 +43,10 @@ rustc_library("mock-space") {
   crate_name = "mock_space"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  test_deps = [ "//src/lib/fuchsia" ]
-  version = "0.0.1"
   visibility = [
     ":*",
-    "//src/sys/pkg/*",
+    "//src/sys/pkg/tests/system-update-checker:*",
   ]
-  with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_rust",
     "//src/lib/fidl/rust/fidl",
