@@ -63,7 +63,7 @@ for all supported CPUs, not just $target_cpu.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/phys/BUILD.gn:26
+From //zircon/kernel/phys/BUILD.gn:25
 
 ### all_font_file_paths
 
@@ -907,7 +907,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1781,7 +1781,7 @@ Enable compression of debug sections.
 
 **Current value (from the default):** `"zstd"`
 
-From //build/config/compiler.gni:136
+From //build/config/compiler.gni:129
 
 ### config_example_cpp_greeting
 
@@ -2011,7 +2011,7 @@ From //src/storage/fshost/generated_fshost_config.gni:12
 
 **Current value (from the default):** `"debug"`
 
-From //build/config/compiler.gni:89
+From //build/config/compiler.gni:88
 
 ### default_configs
 
@@ -3459,7 +3459,7 @@ Explicitly specify DWARF version used.
 
 **Current value (from the default):** `5`
 
-From //build/config/compiler.gni:110
+From //build/config/compiler.gni:103
 
 ### e2e_test_labels
 
