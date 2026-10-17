@@ -128,26 +128,18 @@ async fn connect_driver_socket(
         match tokio::net::UnixStream::connect(socket_path).await {
             Ok(s) => return Ok(s),
             Err(e) => {
-                if e.kind() == std::io::ErrorKind::NotFound
-                    || e.kind() == std::io::ErrorKind::PermissionDenied
-                {
-                    return Err(TargetConnectionError::Fatal(
-                        UartConnectionError::ConnectDriverSocket {
-                            path: socket_path.to_path_buf(),
-                            source: e,
-                        }
-                        .into(),
-                    ));
+                let kind = e.kind();
+                let err = UartConnectionError::ConnectDriverSocket {
+                    path: socket_path.to_path_buf(),
+                    source: e,
+                }
+                .into();
+                if kind == std::io::ErrorKind::PermissionDenied {
+                    return Err(TargetConnectionError::Fatal(err));
                 }
                 attempts += 1;
-                if attempts >= CONNECTION_ATTEMPTS {
-                    return Err(TargetConnectionError::Fatal(
-                        UartConnectionError::ConnectDriverSocket {
-                            path: socket_path.to_path_buf(),
-                            source: e,
-                        }
-                        .into(),
-                    ));
+                if kind == std::io::ErrorKind::NotFound || attempts >= CONNECTION_ATTEMPTS {
+                    return Err(TargetConnectionError::NonFatal(err));
                 }
                 fuchsia_async::Timer::new(CONNECTION_RETRY_INTERVAL).await;
             }

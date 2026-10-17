@@ -1797,4 +1797,30 @@ mod test {
             "Resolution should be marked unusable if get_connection is cancelled by a timeout"
         );
     }
+
+    #[fuchsia::test]
+    async fn test_usb_connect_error_to_non_fatal_command_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let missing_socket = temp_dir.path().join("missing_usb.sock");
+        let test_env = ffx_config::test_env()
+            .user_config(keys::USB_ENABLED, serde_json::json!(true))
+            .user_config("connectivity.usb_driver_autostart", serde_json::json!(false))
+            .user_config(
+                usb_driver_api::CONFIG_USB_SOCKET_PATH,
+                serde_json::json!(missing_socket.to_string_lossy()),
+            )
+            .build()
+            .unwrap();
+        let handle = TargetHandle {
+            node_name: Some("usb-target".to_string()),
+            state: discovery::TargetState::Product {
+                addrs: vec![addr::TargetAddr::UsbCtx(4)],
+                serial: None,
+            },
+            manual: false,
+        };
+        let resolution = Resolution::from_target_handle(handle).unwrap();
+        let err = resolution.get_connection(&test_env.context).await.unwrap_err();
+        assert!(err.into_command_error().downcast_non_fatal().is_ok());
+    }
 }

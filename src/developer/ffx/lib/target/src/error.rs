@@ -62,9 +62,6 @@ pub enum FfxTargetCrateError {
     #[error("Identify host failed with error: {0:?}")]
     IdentifyHost(fdomain_fuchsia_developer_remotecontrol::IdentifyHostError),
 
-    #[error("USB Driver error: {0}")]
-    UsbDriver(#[from] usb_driver_api::ProtocolError),
-
     #[error("Invalid network interface ID: {0}")]
     InvalidInterfaceId(#[from] netext::InvalidInterfaceIdError),
 

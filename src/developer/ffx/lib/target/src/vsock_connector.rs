@@ -73,18 +73,20 @@ impl VSockConnector {
             }
         };
 
+        // Connect before wrapping in AsyncFd so epoll observes the socket in
+        // SS_CONNECTING rather than firing immediately on an unconnected socket.
+        if let Err(error) = connect(socket.as_raw_fd(), &addr)
+            && error != Errno::EINPROGRESS
+        {
+            return Err(ConnectError::ConnectFailed(self.cid, port, std::io::Error::from(error)));
+        }
+
         let socket = match tokio::io::unix::AsyncFd::new(socket) {
             Ok(s) => s,
             Err(error) => {
                 return Err(ConnectError::AsyncCreateFailed(self.cid, port, error));
             }
         };
-
-        if let Err(error) = connect(socket.as_raw_fd(), &addr)
-            && error != Errno::EINPROGRESS
-        {
-            return Err(ConnectError::ConnectFailed(self.cid, port, std::io::Error::from(error)));
-        }
 
         // If we got EINPROGRESS above then the connection isn't actually
         // established and we need to block until it is.
@@ -111,11 +113,22 @@ impl VSockConnector {
     }
 }
 
+impl From<ConnectError> for TargetConnectionError {
+    fn from(err: ConnectError) -> Self {
+        use ConnectError::*;
+        // A target rebooting or still starting its VSOCK listener may fail to connect transiently.
+        match err {
+            ConnectFailed(..) | WritableError(..) | CompletionError(..) => {
+                Self::NonFatal(err.into())
+            }
+            CreateFailed(..) | AsyncCreateFailed(..) | VerifyError(..) => Self::Fatal(err.into()),
+        }
+    }
+}
+
 impl VSockConnector {
     async fn connect_overnet(&mut self) -> Result<OvernetConnection, TargetConnectionError> {
-        let conn = self.do_connect(OVERNET_VSOCK_PORT).await.map_err(|e| {
-            TargetConnectionError::Fatal(anyhow::anyhow!("Connection error: {e:?}"))
-        })?;
+        let conn = self.do_connect(OVERNET_VSOCK_PORT).await?;
         let (output, input) = tokio::io::split(conn);
         let output = BufReader::with_capacity(BUFFER_SIZE, output);
         let (_sender, errors) = async_channel::unbounded();
@@ -128,9 +141,7 @@ impl VSockConnector {
     }
 
     async fn connect_fdomain(&mut self) -> Result<FDomainConnection, TargetConnectionError> {
-        let conn = self.do_connect(FDOMAIN_VSOCK_PORT).await.map_err(|e| {
-            TargetConnectionError::Fatal(anyhow::anyhow!("Connection error: {e:?}"))
-        })?;
+        let conn = self.do_connect(FDOMAIN_VSOCK_PORT).await?;
         let (output, input) = tokio::io::split(conn);
         let output = BufReader::with_capacity(BUFFER_SIZE, output);
         let (_sender, errors) = async_channel::unbounded();
@@ -166,7 +177,8 @@ impl TargetConnector for VSockConnector {
     async fn connect(&mut self) -> Result<TargetConnection, TargetConnectionError> {
         match self.connect_fdomain().await {
             Ok(fdomain) => Ok(TargetConnection::FDomain(fdomain)),
-            Err(e) => {
+            Err(TargetConnectionError::Fatal(e)) => Err(TargetConnectionError::Fatal(e)),
+            Err(TargetConnectionError::NonFatal(e)) => {
                 // Eventually we should just return the error here, making
                 // FDomain authoritative about whether the device is
                 // connectable. For now we'll fall through because it's less
@@ -178,6 +190,7 @@ impl TargetConnector for VSockConnector {
     }
 }
 
+#[derive(Debug)]
 struct AsyncVsockSocket(AsyncFd<OwnedFd>);
 
 impl AsyncRead for AsyncVsockSocket {
@@ -226,5 +239,24 @@ impl AsyncWrite for AsyncVsockSocket {
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         Poll::Ready(shutdown(self.0.as_raw_fd(), Shutdown::Write).map_err(std::io::Error::from))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[fuchsia::test]
+    async fn test_do_connect_unconnected_cid_does_not_succeed_prematurely() {
+        let connector = VSockConnector::new(99999);
+        let err = connector
+            .do_connect(FDOMAIN_VSOCK_PORT)
+            .await
+            .expect_err("expected do_connect to fail for unreachable CID 99999");
+        assert!(
+            matches!(err, ConnectError::ConnectFailed(..) | ConnectError::CompletionError(..)),
+            "expected ConnectFailed or CompletionError, got {err:?}"
+        );
+        assert!(matches!(TargetConnectionError::from(err), TargetConnectionError::NonFatal(_)));
     }
 }

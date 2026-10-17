@@ -15,6 +15,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::BufReader;
+use usb_driver_api::{ConnectError, Driver, ProtocolError};
 
 const OVERNET_VSOCK_PORT: u32 = 202;
 const FDOMAIN_VSOCK_PORT: u32 = 203;
@@ -22,7 +23,8 @@ const FDOMAIN_VSOCK_PORT: u32 = 203;
 const CONFIG_START_DRIVER: &str = "connectivity.usb_driver_autostart";
 
 pub struct UsbConnector {
-    driver: usb_driver_api::Driver,
+    socket_path: PathBuf,
+    env_context: EnvironmentContext,
     cid: u32,
 }
 
@@ -38,19 +40,41 @@ impl UsbConnector {
         env_context: &EnvironmentContext,
     ) -> std::result::Result<Self, crate::FfxTargetCrateError> {
         let socket_path: PathBuf = env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH)?;
+        Ok(Self { socket_path, env_context: env_context.clone(), cid })
+    }
+}
 
-        try_daemon_autostart(&socket_path, env_context);
+impl From<ProtocolError> for TargetConnectionError {
+    fn from(err: ProtocolError) -> Self {
+        let is_non_fatal = match &err {
+            ProtocolError::Connect(e) => e.kind() != std::io::ErrorKind::PermissionDenied,
+            ProtocolError::Write(_) | ProtocolError::Read(_) => true,
+            ProtocolError::Fidl(_) | ProtocolError::VersionMismatch(_, _) => false,
+        };
+        if is_non_fatal { Self::NonFatal(err.into()) } else { Self::Fatal(err.into()) }
+    }
+}
 
-        let driver = usb_driver_api::Driver::init(socket_path).await?;
-        Ok(Self { driver, cid })
+impl From<ConnectError> for TargetConnectionError {
+    fn from(err: ConnectError) -> Self {
+        match err {
+            ConnectError::ProtocolError(proto_err) => Self::from(proto_err),
+            // A target that is rebooting or re-enumerating under a new USB CID may temporarily
+            // fail connection attempts or report its previous CID as not found.
+            ConnectError::CidNotFound(_) | ConnectError::Failed(_) => Self::NonFatal(err.into()),
+            ConnectError::CidInvalid(_)
+            | ConnectError::PortInUse(_)
+            | ConnectError::PortOutOfRange(_) => Self::Fatal(err.into()),
+        }
     }
 }
 
 impl UsbConnector {
-    async fn connect_overnet(&mut self) -> Result<OvernetConnection, TargetConnectionError> {
-        let conn = self.driver.connect(self.cid, OVERNET_VSOCK_PORT).await.map_err(|e| {
-            TargetConnectionError::Fatal(anyhow::anyhow!("Connection error: {e:?}"))
-        })?;
+    async fn connect_overnet(
+        &self,
+        driver: &Driver,
+    ) -> Result<OvernetConnection, TargetConnectionError> {
+        let conn = driver.connect(self.cid, OVERNET_VSOCK_PORT).await?;
         let (output, input) = conn.into_split();
         let output = BufReader::with_capacity(BUFFER_SIZE, output);
         let (_sender, errors) = async_channel::unbounded();
@@ -62,10 +86,11 @@ impl UsbConnector {
         })
     }
 
-    async fn connect_fdomain(&mut self) -> Result<FDomainConnection, TargetConnectionError> {
-        let conn = self.driver.connect(self.cid, FDOMAIN_VSOCK_PORT).await.map_err(|e| {
-            TargetConnectionError::Fatal(anyhow::anyhow!("Connection error: {e:?}"))
-        })?;
+    async fn connect_fdomain(
+        &self,
+        driver: &Driver,
+    ) -> Result<FDomainConnection, TargetConnectionError> {
+        let conn = driver.connect(self.cid, FDOMAIN_VSOCK_PORT).await?;
         let (output, input) = conn.into_split();
         let output = BufReader::with_capacity(BUFFER_SIZE, output);
         let (_sender, errors) = async_channel::unbounded();
@@ -99,15 +124,24 @@ impl TargetConnector for UsbConnector {
     const CONNECTION_TYPE: &'static str = "USB VSOCK";
 
     async fn connect(&mut self) -> Result<TargetConnection, TargetConnectionError> {
-        match self.connect_fdomain().await {
+        let driver = match Driver::init(&self.socket_path).await {
+            Ok(driver) => driver,
+            Err(ProtocolError::Connect(_)) => {
+                try_daemon_autostart(&self.socket_path, &self.env_context);
+                Driver::init(&self.socket_path).await?
+            }
+            Err(e) => return Err(e.into()),
+        };
+        match self.connect_fdomain(&driver).await {
             Ok(fdomain) => Ok(TargetConnection::FDomain(fdomain)),
-            Err(e) => {
+            Err(TargetConnectionError::Fatal(e)) => Err(TargetConnectionError::Fatal(e)),
+            Err(TargetConnectionError::NonFatal(e)) => {
                 // Eventually we should just return the error here, making
                 // FDomain authoritative about whether the device is
                 // connectable. For now we'll fall through because it's less
                 // likely to cause breakages prior to migration.
                 log::warn!("Connecting with FDomain encountered error {e:?}");
-                self.connect_overnet().await.map(TargetConnection::Overnet)
+                self.connect_overnet(&driver).await.map(TargetConnection::Overnet)
             }
         }
     }
@@ -262,5 +296,48 @@ mod tests {
 
         // If the socket is already open, try_daemon_autostart should return immediately without error
         try_daemon_autostart(&socket_path, &context);
+    }
+
+    #[fuchsia::test]
+    fn test_usb_error_classification() {
+        let not_found = ProtocolError::Connect(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "missing socket",
+        ));
+        assert!(matches!(
+            TargetConnectionError::from(not_found),
+            TargetConnectionError::NonFatal(_)
+        ));
+
+        let perm_denied = ProtocolError::Connect(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "permission denied",
+        ));
+        assert!(matches!(
+            TargetConnectionError::from(perm_denied),
+            TargetConnectionError::Fatal(_)
+        ));
+
+        let read_err =
+            ProtocolError::Read(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "eof"));
+        assert!(matches!(
+            TargetConnectionError::from(read_err),
+            TargetConnectionError::NonFatal(_)
+        ));
+
+        let version_err = ProtocolError::VersionMismatch(1, 1);
+        assert!(matches!(
+            TargetConnectionError::from(version_err),
+            TargetConnectionError::Fatal(_)
+        ));
+
+        assert!(matches!(
+            TargetConnectionError::from(ConnectError::CidNotFound(4)),
+            TargetConnectionError::NonFatal(_)
+        ));
+        assert!(matches!(
+            TargetConnectionError::from(ConnectError::CidInvalid(2)),
+            TargetConnectionError::Fatal(_)
+        ));
     }
 }
