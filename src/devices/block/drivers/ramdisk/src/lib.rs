@@ -179,7 +179,7 @@ impl Driver for RamdiskController {
 
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
-        let node_token = context.start_args.node_token.take();
+        let node_token = context.take_node_token();
         let volume_svc_dir = Simple::new();
         let scope = ExecutionScope::new();
         let inner = Arc::new(RamdiskControllerInner {
