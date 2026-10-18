@@ -18,6 +18,7 @@ configs: {
   tags: "code-review-agent"
   skills: "rust_best_practices"
   include_filters: {
+    project: "fuchsia"
     project: "vendor/google"
     path_regex: ".*\\.rs"
   }
@@ -30,6 +31,7 @@ configs: {
   tags: "code-review-agent"
   skills: "fuchsia-cpp-guidelines"
   include_filters: {
+    project: "fuchsia"
     project: "vendor/google"
     path_regex: ".*\\.(c|cc|cpp|h|hpp)"
   }
@@ -42,6 +44,7 @@ configs: {
   tags: "code-review-agent"
   skills: "src/devices/skills/rust_driver_best_practices"
   include_filters: {
+    project: "fuchsia"
     project: "vendor/google"
     path_regex: "(.*/)?drivers/.*\\.rs"
   }
@@ -56,6 +59,7 @@ configs: {
   skills: "src/devices/skills/driver_bind_find_instance_name"
   skills: "src/devices/skills/devicetree_schema"
   include_filters: {
+    project: "fuchsia"
     project: "vendor/google"
     path_regex: ".*\\.bind"
     path_regex: ".*\\.dtsi?"
@@ -70,6 +74,7 @@ configs: {
   skills: "src/devices/skills/driver_file_structure"
   skills: "src/devices/skills/fuchsia-suspendable"
   include_filters: {
+    project: "fuchsia"
     project: "vendor/google"
     path_regex: "(.*/)?drivers/.*\\.(rs|cc|h|cml)"
   }
@@ -82,6 +87,7 @@ configs: {
   tags: "code-review-agent"
   skills: "src/testing/end_to_end/.agents/skills/lacewing-timeouts-deadlines-cancellations"
   include_filters: {
+    project: "fuchsia"
     project: "vendor/google"
     path_regex: "(tests/end_to_end|testing/lacewing)/.*\\.py"
   }
@@ -94,7 +100,148 @@ configs: {
   tags: "code-review-agent"
   skills: "docs/skills/edit-fuchsia-doc"
   include_filters: {
+    project: "fuchsia"
     project: "vendor/google"
     path_regex: "docs/.*\\.md"
+  }
+}
+
+configs: {
+  id: "fuchsia-bazel-build-flags"
+  display_name: "Fuchsia Bazel Build Flags"
+  description: "Porting GN config() and compiler_config() targets to Bazel build_flags()."
+  tags: "code-review-agent"
+  skills: "port-gn-config-to-bazel-build-flags"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "build/config/.*\\.(gn|gni|bazel|bzl)"
+    path_regex: "build/bazel/config/.*\\.bzl"
+    path_regex: "build/bazel_sdk/fuchsia_rules_common/build_flags/.*\\.bzl"
+  }
+}
+
+configs: {
+  id: "fuchsia-bazel-non-sdk-rules"
+  display_name: "Fuchsia Bazel Non-SDK Rules"
+  description: "Creating non-SDK in-tree Bazel rules and dependency boundaries."
+  tags: "code-review-agent"
+  skills: "build/bazel/skills/create-non-sdk-rule"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "build/bazel/rules/.*\\.(bzl|bazel)"
+    path_regex: "build/bazel_sdk/fuchsia_rules_common/.*\\.(bzl|bazel)"
+  }
+}
+
+configs: {
+  id: "fuchsia-assembly-bundles"
+  display_name: "Fuchsia Assembly Input Bundles"
+  description: "Maintaining Assembly Input Bundle Bazel targets and GN inputs bridge."
+  tags: "code-review-agent"
+  skills: "build/assembly/skills/update-assembly-bundles"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "bundles/assembly/.*\\.(bazel|bzl|gn|gni)"
+  }
+}
+
+configs: {
+  id: "fuchsia-wlan-api-review"
+  display_name: "Fuchsia WLAN FIDL API Review"
+  description: "WLAN FIDL API review guidelines and layer stability boundaries."
+  tags: "code-review-agent"
+  skills: "src/connectivity/wlan/.agents/skills/wlan-api-review"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "sdk/fidl/fuchsia\\.wlan\\..*\\.fidl"
+    path_regex: "src/connectivity/wlan/.*\\.fidl"
+    path_regex: "src/connectivity/wlan/(.*/)?FIDL\\.md"
+  }
+}
+
+configs: {
+  id: "fuchsia-devicetree-visitor"
+  display_name: "Fuchsia Devicetree Visitor"
+  description: "Devicetree visitor C++ implementation and guidelines."
+  tags: "code-review-agent"
+  skills: "src/devices/skills/devicetree_visitor"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "sdk/lib/driver/devicetree/.*\\.(cc|h)"
+  }
+}
+
+configs: {
+  id: "fuchsia-netstack3-core-and-unit-tests"
+  display_name: "Fuchsia Netstack3 Core & Unit Tests"
+  description: "Netstack3 architecture, Core/Bindings split, static typing, and unit testing principles."
+  tags: "code-review-agent"
+  skills: "src/connectivity/network/.agents/skills/netstack3-docs"
+  skills: "src/connectivity/network/.agents/skills/netstack3-unit-tests"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "src/connectivity/network/netstack3/.*\\.(rs|md)"
+  }
+}
+
+configs: {
+  id: "fuchsia-netstack3-rust-testutils"
+  display_name: "Fuchsia Netstack3 Rust Testutils"
+  description: "Netstack3 testutil visibility and rustc_library_with_features GN pattern."
+  tags: "code-review-agent"
+  skills: "src/connectivity/network/.agents/skills/netstack3-rust-testutils"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "src/connectivity/network/netstack3/.*\\.(gn|gni|rs)"
+  }
+}
+
+configs: {
+  id: "fuchsia-netstack3-integration-tests"
+  display_name: "Fuchsia Netstack3 Integration Tests"
+  description: "Netstack3 integration and FIDL compatibility tests."
+  tags: "code-review-agent"
+  skills: "src/connectivity/network/.agents/skills/netstack3-integration-tests"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "src/connectivity/network/tests/.*\\.(rs|gn|cml|json5)"
+  }
+}
+
+configs: {
+  id: "fuchsia-fxfs-versioning"
+  display_name: "Fuchsia Fxfs On-Disk Versioning"
+  description: "Fxfs on-disk versioning, migration macros, type fingerprints, and golden images."
+  tags: "code-review-agent"
+  skills: "src/storage/.agent/skills/fxfs-versioning"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "src/storage/fxfs/.*\\.(rs|gn)"
+  }
+}
+
+configs: {
+  id: "fuchsia-honeydew-affordances"
+  display_name: "Fuchsia Honeydew Affordances"
+  description: "Honeydew FFX and FIDL affordance architecture and GN wiring."
+  tags: "code-review-agent"
+  skills: "src/testing/end_to_end/.agents/skills/ffx-to-honeydew-affordance"
+  skills: "src/testing/end_to_end/.agents/skills/fidl-to-honeydew-affordance"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "src/testing/end_to_end/honeydew/.*\\.(py|gn)"
+  }
+}
+
+configs: {
+  id: "fuchsia-zircon-cpp-to-rust"
+  display_name: "Fuchsia Zircon C++ to Rust Porting"
+  description: "Zircon C++ to Rust porting rubric and FBL intrusive container porting patterns."
+  tags: "code-review-agent"
+  skills: "zircon/skills/cpp-to-rust-rubric"
+  skills: "zircon/skills/fbl-intrusive-porting"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "zircon/.*\\.(rs|cc|h)"
   }
 }
