@@ -1,0 +1,93 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
+
+package(default_applicable_licenses = ["//:license"])
+
+measure_tape(
+    name = "measure_fuchsia_pkg",
+    fidls = ["//sdk/fidl/fuchsia.pkg"],
+    target_binding = "rust",
+    target_types = [
+        "fuchsia.pkg/PackageIndexEntry",
+        "fuchsia.pkg/BlobId",
+        "fuchsia.pkg/BlobInfo",
+    ],
+)
+
+# The device unit test package (`:fidl-fuchsia-pkg-ext-tests`) stays in BUILD.gn
+# because it packages the GN-only `//src/storage/fxfs:fxfs_component`.
+rustc_library(
+    name = "fidl-fuchsia-pkg-ext",
+    srcs = [
+        "src/base_package_index.rs",
+        "src/cache.rs",
+        "src/errors.rs",
+        "src/fidl_iterator_to_stream.rs",
+        "src/lib.rs",
+        "src/measure.rs",
+        "src/repo.rs",
+        "src/serve_fidl_iterator.rs",
+        "src/types.rs",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:proptest-derive",
+    ],
+    visibility = [
+        "//src/developer:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/recovery:__subpackages__",
+        "//src/security:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        ":measure_fuchsia_pkg",
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+        "//sdk/rust/zx-types",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-url",
+        "//src/lib/http-uri-ext",
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:proptest",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:typed-builder",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/rust/zx-status",
+            "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+            "//src/storage/lib/blob_writer:blob-writer",
+            "//src/sys/pkg/lib/fuchsia-pkg",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+host_rustc_test(
+    name = "fidl-fuchsia-pkg-ext_host_test",
+    crate = ":fidl-fuchsia-pkg-ext",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/rust/zx-status",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
