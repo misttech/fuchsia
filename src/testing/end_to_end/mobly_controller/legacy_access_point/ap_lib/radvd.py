@@ -7,7 +7,6 @@ import shlex
 import tempfile
 import time
 
-from antlion.logger import LogLevel
 from legacy_access_point.ap_lib.radvd_config import RadvdConfig
 from libs.commands import shell
 from libs.proc import job
@@ -138,8 +137,7 @@ class Radvd(object):
             A string of the radvd logs.
         """
         # TODO: Auto pulling of logs when stop is called.
-        with LogLevel(self._runner.log, logging.INFO):
-            return self._shell.read_file(self._log_file)
+        return self._shell.read_file(self._log_file, log_output=False)
 
     def _wait_for_process(self, timeout: int = 60) -> None:
         """Waits for the process to come up.

@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from subprocess import CalledProcessError
 from typing import Any, Iterable
 
-from antlion.logger import LogLevel
 from honeydew.typing.custom_types import MacAddress
 from legacy_access_point.ap_lib import hostapd_constants
 from legacy_access_point.ap_lib.extended_capabilities import (
@@ -526,8 +525,7 @@ class Hostapd(object):
             A string of the hostapd logs.
         """
         # TODO: Auto pulling of logs when stop is called.
-        with LogLevel(self._runner.log, logging.INFO):
-            log = self._shell.read_file(self._log_file)
+        log = self._shell.read_file(self._log_file, log_output=False)
 
         # Convert epoch to human-readable times
         result: list[str] = []

@@ -110,16 +110,19 @@ class ShellCommand(object):
         except CalledProcessError:
             return False
 
-    def read_file(self, file_name: str) -> str:
+    def read_file(self, file_name: str, log_output: bool = True) -> str:
         """Reads a file through the shell.
 
         Args:
             file_name: The name of the file to read.
+            log_output: If true, print stdout and stderr to the debug log.
 
         Returns:
             A string of the files contents.
         """
-        return self._runner.run(["cat", file_name]).stdout.decode("utf-8")
+        return self._runner.run(
+            ["cat", file_name], log_output=log_output
+        ).stdout.decode("utf-8")
 
     def write_file(self, file_name: str, data: str) -> None:
         """Writes a block of data to a file through the shell.

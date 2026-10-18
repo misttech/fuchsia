@@ -80,7 +80,6 @@ python_library("antlion") {
     "libs/__init__.py",
     "libs/proc/__init__.py",
     "libs/proc/process.py",
-    "logger.py",
     "net.py",
     "test_utils/__init__.py",
     "test_utils/abstract_devices/__init__.py",
