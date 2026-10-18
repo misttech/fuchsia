@@ -403,6 +403,12 @@ impl Metadata {
         let (header, _) = HeaderRaw::mut_from_prefix(&mut buffer).unwrap();
         header.hash.copy_from_slice(hasher.finalize().as_slice());
 
+        // Hold an active guard so cancelling the scope does not drop an in-flight metadata write or
+        // flush on `RemoteBlockClient`.
+        let Some(_guard) = fasync::Scope::current().active_guard() else {
+            bail!(zx::Status::CANCELED);
+        };
+
         device.write_at(BufferSlice::Memory(&buffer), offset).await?;
 
         // Always flush after writing metadata.
@@ -714,6 +720,13 @@ impl Fvm {
         let metadata = &inner.metadata;
         let slice_size = metadata.header.slice_size;
         let data_start = metadata.data_start();
+
+        // `RemoteBlockClient` does not support request cancellation (dropping an in-flight request
+        // terminates the underlying FIFO connection), so hold an active guard until all device I/O
+        // operations for this request complete.
+        let Some(_guard) = fasync::Scope::current().active_guard() else {
+            bail!(zx::Status::CANCELED);
+        };
 
         while total_len > 0 {
             let slice = offset / slice_size;
@@ -1957,6 +1970,11 @@ impl Interface for PartitionInterface {
     }
 
     async fn flush(&self, trace_flow_id: Option<NonZero<u64>>) -> Result<(), zx::Status> {
+        // Hold an active guard so cancelling the scope does not drop an in-flight flush on
+        // `RemoteBlockClient`.
+        let Some(_guard) = fasync::Scope::current().active_guard() else {
+            return Err(zx::Status::CANCELED);
+        };
         self.fvm.device.flush_traced(trace_id(trace_flow_id)).await
     }
 

@@ -109,11 +109,20 @@ pub trait Interface: Send + Sync + Unpin + 'static {
             delivery_queue,
         )?;
         Ok(async move {
+            // Hold an active guard on the session scope so cancelling it does not drop `scope`
+            // (which would abort in-flight reads bypassing their active guards) before
+            // `scope.cancel().await` and `on_detach_vmo` complete.
+            let Some(guard) = fasync::Scope::current().active_guard() else {
+                return Ok(());
+            };
             session_manager.interface.on_attach_vmo(&vmo).await?;
             scopeguard::defer! {
                 session_manager.interface.on_detach_vmo(&vmo);
             }
-            let res = session_fut.await;
+            let res = futures::select! {
+                res = session_fut.fuse() => res,
+                _ = guard.on_cancel().fuse() => Ok(()),
+            };
             scope.cancel().await;
             res
         })
@@ -979,6 +988,7 @@ impl<I: Interface + ?Sized> BlockService for AsyncBlockService<I> {
         let vmo_offset = dest_buffer.range().start as u64;
         let vmo = self.allocator.buffer_source().vmo().clone();
         let interface = self.interface.clone();
+        let on_complete = OnComplete(Some(on_complete));
 
         self.scope.spawn(async move {
             let res = interface
@@ -992,12 +1002,33 @@ impl<I: Interface + ?Sized> BlockService for AsyncBlockService<I> {
                 )
                 .await;
             match res {
-                Ok(()) => on_complete(Ok(dest_buffer)),
-                Err(status) => on_complete(Err(anyhow::anyhow!("Read failed: {:?}", status))),
+                Ok(()) => on_complete.call(Ok(dest_buffer)),
+                Err(status) => on_complete.call(Err(Error::from(status).context("Read failed"))),
             }
         });
 
         Ok(())
+    }
+}
+
+// Invokes `on_complete` with `zx::Status::CANCELED` if the spawned read task is dropped before
+// completion (e.g. when the mapper session scope is cancelled before the underlying device starts
+// the request).
+struct OnComplete(Option<Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>>);
+
+impl OnComplete {
+    fn call(mut self, res: Result<OwnedBuffer, Error>) {
+        if let Some(on_complete) = self.0.take() {
+            on_complete(res);
+        }
+    }
+}
+
+impl Drop for OnComplete {
+    fn drop(&mut self) {
+        if let Some(on_complete) = self.0.take() {
+            on_complete(Err(zx::Status::CANCELED.into()));
+        }
     }
 }
 

@@ -209,7 +209,9 @@ impl File {
                     let buffer = match res {
                         Ok(buffer) => buffer,
                         Err(error) => {
-                            log::error!(error:?; "Failed to read blocks for mapped file");
+                            if !is_cancelled(&error) {
+                                log::error!(error:?; "Failed to read blocks for mapped file");
+                            }
                             return ControlFlow::Break(());
                         }
                     };
@@ -242,10 +244,12 @@ impl File {
                     let buffer = match res {
                         Ok(buffer) => buffer,
                         Err(error) => {
-                            log::error!(
-                                error:?;
-                                "Failed to read blocks for compressed mapped file"
-                            );
+                            if !is_cancelled(&error) {
+                                log::error!(
+                                    error:?;
+                                    "Failed to read blocks for compressed mapped file"
+                                );
+                            }
                             return ControlFlow::Break(());
                         }
                     };
@@ -264,7 +268,12 @@ impl File {
                     let buffer = match res {
                         Ok(buffer) => buffer,
                         Err(error) => {
-                            log::error!(error:?; "Failed to read blocks for encrypted mapped file");
+                            if !is_cancelled(&error) {
+                                log::error!(
+                                    error:?;
+                                    "Failed to read blocks for encrypted mapped file"
+                                );
+                            }
                             return ControlFlow::Break(());
                         }
                     };
@@ -734,6 +743,12 @@ pub struct DecodedBlobMetadata {
     pub merkle_leaves: MerkleLeaves,
 }
 
+// Returns true if `error` was caused by `zx::Status::CANCELED` (e.g. when a mapper session is
+// closed while a read is pending).
+fn is_cancelled(error: &Error) -> bool {
+    error.root_cause().downcast_ref::<zx::Status>() == Some(&zx::Status::CANCELED)
+}
+
 /// Reads blob metadata asynchronously from `metadata_extents` using `service`.
 /// Once the metadata is retrieved, deserialized, and parsed, `callback` is invoked with
 /// [`DecodedBlobMetadata`].
@@ -761,9 +776,14 @@ pub fn read_blob_metadata(
     let mut callback = Some(callback);
     let mut metadata_bytes = Some(Vec::with_capacity(total_metadata_len as usize));
     read_aligned_range(metadata_extents, 0..total_metadata_len, service, move |res| {
-        let Ok(buffer) = res else {
-            log::error!(error:? = res.unwrap_err(); "Failed to read metadata blocks");
-            return ControlFlow::Break(());
+        let buffer = match res {
+            Ok(buffer) => buffer,
+            Err(error) => {
+                if !is_cancelled(&error) {
+                    log::error!(error:?; "Failed to read metadata blocks");
+                }
+                return ControlFlow::Break(());
+            }
         };
         let bytes = metadata_bytes.as_mut().unwrap();
         let copy_len = min(buffer.len(), total_metadata_len as usize - bytes.len());

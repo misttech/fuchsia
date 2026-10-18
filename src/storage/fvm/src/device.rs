@@ -20,6 +20,7 @@ pub struct DeviceImpl<C: BlockClient + 'static> {
     buffers: Arc<BufferPool>,
     private_buffers: Arc<BufferPool>,
     shared_vmo_id: VmoId,
+    scope: fasync::Scope,
 }
 
 impl<C: BlockClient> DeviceImpl<C> {
@@ -35,7 +36,14 @@ impl<C: BlockClient> DeviceImpl<C> {
         let private_vmo = zx::Vmo::create(TOTAL_SIZE as u64)?;
         let private_buffers = Arc::new(BufferPool::new(private_vmo)?);
 
-        Ok(Self { client, vmo_ids: Mutex::default(), buffers, private_buffers, shared_vmo_id })
+        Ok(Self {
+            client,
+            vmo_ids: Mutex::default(),
+            buffers,
+            private_buffers,
+            shared_vmo_id,
+            scope: fasync::Scope::new_with_name("device"),
+        })
     }
 
     pub fn shared_vmo_id(&self) -> &VmoId {
@@ -118,10 +126,15 @@ impl<C: BlockClient + 'static> Drop for VmoIdWrapperImpl<C> {
         // anyway so it shouldn't matter.
         let vmo_id = self.1.take().into_id();
         if let Some(device) = self.0.upgrade() {
-            fasync::Task::spawn(async move {
-                let _ = device.client.detach_vmo(VmoId::new(vmo_id)).await;
-            })
-            .detach();
+            // Spawn onto `device.scope` with an active guard so cancelling a partition or session
+            // scope does not abort an in-flight `detach_vmo` FIFO request on `RemoteBlockClient`.
+            if let Some(guard) = device.scope.active_guard() {
+                let device_clone = device.clone();
+                device.scope.spawn(async move {
+                    let _guard = guard;
+                    let _ = device_clone.client.detach_vmo(VmoId::new(vmo_id)).await;
+                });
+            }
         }
     }
 }

@@ -7,18 +7,31 @@ use blob_pager_and_verifier::{BlobPagerAndVerifier, DeliveryQueueProcessor, Test
 use blob_writer::BlobWriter;
 use block_client::BlockClient as _;
 use delivery_blob::{CompressionMode, Type1Blob, Type3Blob};
-use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, create_proxy};
+use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions, VolumesMarker};
 use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobReaderMarker};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_mapping::MappingProviderMarker;
 use fidl_fuchsia_storage_partitions as fpartitions;
-use fs_management::filesystem::{BlockConnector as _, Filesystem as FsManagementFilesystem};
-use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_dir_svc};
+use fs_management::filesystem::{
+    BlockConnector as _, DirBasedBlockConnector, Filesystem as FsManagementFilesystem,
+};
+use fs_management::{Fvm, Fxfs};
+use fuchsia_async as fasync;
+use fuchsia_component::client::{
+    Service, connect_to_protocol, connect_to_protocol_at_dir_root, connect_to_protocol_at_dir_svc,
+};
 use fuchsia_merkle::Hash;
+use fuchsia_runtime::vmar_root_self;
+use std::hint::black_box;
+use std::slice::from_raw_parts;
 use std::sync::Arc;
 use storage_profile::{BlobMessage, Message as _};
 use test_case::test_case;
+use test_vmo_backed_block_server::{
+    InitialContents, VmoBackedServer, VmoBackedServerConnector, VmoBackedServerOptions,
+};
 
 struct TestBlob {
     data: Vec<u8>,
@@ -85,11 +98,11 @@ impl TestPartitionEnv {
                 let block_count = 256 * 1024 * 1024 / block_size;
                 let vmo = zx::Vmo::create(block_count * block_size)?;
                 let block_server = Arc::new(
-                    vmo_backed_block_server::VmoBackedServer::from_vmo(block_size as u32, vmo)
+                    VmoBackedServer::from_vmo(block_size as u32, vmo)
                         .context("Failed to create VmoBackedServer")?,
                 );
                 let gpt_fs = FsManagementFilesystem::new(
-                    vmo_backed_block_server::VmoBackedServerConnector::new(block_server),
+                    VmoBackedServerConnector::new(block_server),
                     fs_management::Gpt { ..fs_management::Gpt::dynamic_child() },
                 );
                 let serving = gpt_fs.serve_multi_volume().await.context("Failed to start GPT")?;
@@ -637,5 +650,129 @@ async fn test_profile_record_and_replay() -> Result<(), Error> {
     assert!(!messages.iter().any(|m| m.id == blob_b.hash));
 
     env.shutdown().await?;
+    Ok(())
+}
+
+#[fuchsia::test(threads = 4)]
+async fn test_mapper_close_during_read_on_fvm() -> Result<(), Error> {
+    let block_size = 4096u64;
+    let block_count = 256 * 1024 * 1024 / block_size;
+    let vmo = zx::Vmo::create(block_count * block_size)?;
+    let block_server = Arc::new(
+        VmoBackedServerOptions {
+            block_size: block_size as u32,
+            initial_contents: InitialContents::FromVmo(vmo),
+            max_jitter_usec: Some(5000),
+            ..Default::default()
+        }
+        .build()
+        .context("Failed to create VmoBackedServer")?,
+    );
+
+    let mut fvm_fs = FsManagementFilesystem::new(
+        VmoBackedServerConnector::new(block_server),
+        Fvm { slice_size: 8 * 1024 * 1024, ..Fvm::dynamic_child() },
+    );
+    fvm_fs.format().await.context("Failed to format FVM")?;
+    let fvm = fvm_fs.serve_multi_volume().await.context("Failed to serve FVM")?;
+    let volumes = connect_to_protocol_at_dir_root::<VolumesMarker>(fvm.exposed_dir())
+        .context("Failed to connect to FVM Volumes")?;
+
+    let (volume_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
+    volumes
+        .create(
+            "fxfs",
+            server_end,
+            CreateOptions {
+                initial_size: Some(64 * 1024 * 1024),
+                type_guid: Some([1u8; 16]),
+                guid: Some([2u8; 16]),
+                ..Default::default()
+            },
+            MountOptions::default(),
+        )
+        .await
+        .context("FIDL error creating FVM volume")?
+        .map_err(zx::Status::err_from_raw)
+        .context("Failed to create FVM volume")?;
+
+    let connector = Arc::new(DirBasedBlockConnector::new(
+        volume_dir,
+        format!("svc/{}", fblock::BlockMarker::PROTOCOL_NAME),
+    ));
+
+    let mut fxfs = FsManagementFilesystem::new(
+        connector.clone(),
+        Fxfs { allow_type3_blobs: true, ..Default::default() },
+    );
+    fxfs.format().await.context("Failed to format Fxfs")?;
+    let serving = fxfs.serve_multi_volume().await.context("Failed to serve Fxfs")?;
+    let volume = serving
+        .create_volume(
+            "blob",
+            CreateOptions::default(),
+            MountOptions { as_blob: Some(true), ..Default::default() },
+        )
+        .await
+        .context("Failed to create blob volume")?;
+
+    let blob_creator = connect_to_protocol_at_dir_svc::<BlobCreatorMarker>(volume.exposed_dir())?;
+    let mapping_provider =
+        connect_to_protocol_at_dir_svc::<MappingProviderMarker>(volume.exposed_dir())?;
+    let block_proxy = connector.connect_block()?.into_proxy();
+    let (mapper_proxy, mapper_server) = create_proxy::<fblock::MapperMarker>();
+    block_proxy
+        .connect_mapper(mapper_server)
+        .await
+        .context("FIDL error on ConnectMapper")?
+        .map_err(zx::Status::err_from_raw)
+        .context("ConnectMapper failed")?;
+    drop(block_proxy);
+
+    let blob = TestBlob::new_type1_compressed(vec![0xAAu8; 128 * 1024]);
+    let writer_client_end = blob_creator
+        .create(&blob.hash.into(), false)
+        .await?
+        .map_err(|e| anyhow!("CreateBlob error: {e:?}"))?;
+    let mut blob_writer =
+        BlobWriter::create(writer_client_end.into_proxy(), blob.delivery_data.len() as u64).await?;
+    blob_writer.write(&blob.delivery_data).await?;
+
+    let root_hash = <[u8; 32]>::from(blob.hash);
+    let blob_pager = BlobPagerAndVerifier::new(&mapping_provider, &mapper_proxy).await?;
+    let paged_vmo = blob_pager.create_vmo(&root_hash).await?;
+    fasync::unblock(move || {
+        let len = 128 * 1024;
+        let addr = vmar_root_self()
+            .map(0, &paged_vmo, 0, len, zx::VmarFlags::PERM_READ)
+            .expect("vmar map failed");
+
+        // SAFETY: `addr` is mapped for `len` bytes and remains mapped until `unmap` below.
+        let slice = unsafe { from_raw_parts(addr as *const u8, len) };
+
+        // Faulting at 0 triggers a 128 KiB readahead that flushes the first 96 KiB early for
+        // verification, waking this thread before 96..128 KiB is supplied. Faulting immediately at
+        // 96 KiB queues a second pager read that is still in flight when `blob_pager` is dropped
+        // below.
+        black_box(slice[0]);
+        black_box(slice[96 * 1024]);
+
+        // SAFETY: Unmaps the region mapped above after `slice` is no longer used.
+        unsafe {
+            let _ = vmar_root_self().unmap(addr, len);
+        }
+    })
+    .await;
+    drop(blob_pager);
+
+    serving.shutdown().await.context("Failed to shutdown Fxfs")?;
+    drop(connector);
+    volumes
+        .remove("fxfs")
+        .await
+        .context("FIDL error removing FVM volume")?
+        .map_err(zx::Status::err_from_raw)
+        .context("Failed to destroy FVM volume")?;
+
     Ok(())
 }
