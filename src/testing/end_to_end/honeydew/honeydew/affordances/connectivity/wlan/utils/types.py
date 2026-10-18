@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Protocol
 
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
@@ -20,100 +19,22 @@ MacAddress = _MacAddress
 _PSK_LENGTH = 64
 
 
-class Credential(Protocol):
-    """Information used to verify access to a target network."""
+def credential_from_password(password: str | None) -> f_wlan_policy.Credential:
+    """Parse a password into a fuchsia.wlan.policy/Credential.
 
-    def type(self) -> str:
-        """Type of credential."""
+    Args:
+        password: String password, pre-shared key in hex form with length 64, or
+            None/empty to represent open.
 
-    def value(self) -> str:
-        """Value of the credential, or empty string if not applicable."""
-
-    def to_fidl(self) -> f_wlan_policy.Credential:
-        """Convert to a fuchsia.wlan.policy/Credential."""
-
-    @staticmethod
-    def from_password(password: str | None) -> Credential:
-        """Parse a password into a Credential.
-
-        Args:
-            password: String password, pre-shared key in hex form with length 64, or
-                None/empty to represent open.
-
-        Return:
-            A fuchsia.wlan.policy/Credential union object.
-        """
-        if not password:
-            return CredentialNone()
-        elif len(password) == _PSK_LENGTH:
-            return CredentialPsk(password)
-        else:
-            return CredentialPassword(password)
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_policy.Credential) -> Credential:
-        """Parse a fuchsia.wlan.policy/Credential."""
-        if fidl.none is not None:
-            return CredentialNone()
-        if fidl.password is not None:
-            return CredentialPassword(bytes(fidl.password).decode("utf-8"))
-        if fidl.psk is not None:
-            return CredentialPsk(bytes(fidl.psk).hex())
-        raise TypeError(
-            f"Unknown value for fuchsia.wlan.policy/Credential: {fidl}"
-        )
-
-
-class CredentialNone(Credential):
-    """Credentials to connect to an unprotected network."""
-
-    def type(self) -> str:
-        return "None"
-
-    def value(self) -> str:
-        return ""
-
-    def to_fidl(self) -> f_wlan_policy.Credential:
-        cred = f_wlan_policy.Credential(none=f_wlan_policy.Empty())
-        return cred
-
-
-@dataclass(frozen=True)
-class CredentialPassword(Credential):
-    """Credentials to connect to an password protected network."""
-
-    password: str
-    """Plaintext password."""
-
-    def type(self) -> str:
-        return "Password"
-
-    def value(self) -> str:
-        return self.password
-
-    def to_fidl(self) -> f_wlan_policy.Credential:
-        cred = f_wlan_policy.Credential(
-            password=list(self.password.encode("utf-8"))
-        )
-        return cred
-
-
-@dataclass(frozen=True)
-class CredentialPsk(Credential):
-    """Credentials to connect to an network using a pre-shared key."""
-
-    psk: str
-    """Hash representation of the network passphrase."""
-
-    def type(self) -> str:
-        return "Psk"
-
-    def value(self) -> str:
-        return self.psk
-
-    def to_fidl(self) -> f_wlan_policy.Credential:
-        cred = f_wlan_policy.Credential(psk=list(bytes.fromhex(self.psk)))
-        return cred
+    Return:
+        A fuchsia.wlan.policy/Credential union object.
+    """
+    if not password:
+        return f_wlan_policy.Credential(none=f_wlan_policy.Empty())
+    elif len(password) == _PSK_LENGTH:
+        return f_wlan_policy.Credential(psk=list(bytes.fromhex(password)))
+    else:
+        return f_wlan_policy.Credential(password=list(password.encode("utf-8")))
 
 
 @dataclass(frozen=True)

@@ -16,7 +16,7 @@ from honeydew import affordances_capable, errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    Credential,
+    credential_from_password,
 )
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
@@ -276,7 +276,7 @@ class WlanPolicyAp(AsyncLazyReady):
                         ssid=list(ssid.encode("utf-8")),
                         type_=security,
                     ),
-                    credential=Credential.from_password(password).to_fidl(),
+                    credential=credential_from_password(password),
                 ),
                 mode=mode,
                 band=band,
@@ -323,7 +323,7 @@ class WlanPolicyAp(AsyncLazyReady):
                         ssid=list(ssid.encode("utf-8")),
                         type_=security,
                     ),
-                    credential=Credential.from_password(password).to_fidl(),
+                    credential=credential_from_password(password),
                 ),
             )
         except FcTransportStatus as status:

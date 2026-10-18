@@ -23,7 +23,7 @@ from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
-    Credential,
+    credential_from_password,
 )
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
@@ -688,11 +688,9 @@ class WlanPolicy(AsyncLazyReady):
 
         for network in await self.get_saved_networks(timeout=timeout):
             assert network.id_, f"{network!r} missing id"
-            assert network.credential, f"{network!r} missing credential"
             await self.forget_network(
                 target_ssid=bytes(network.id_.ssid).decode("utf-8"),
                 security_type=f_wlan_policy.SecurityType(network.id_.type_),
-                target_pwd=Credential.from_fidl(network.credential).value(),
                 timeout=timeout,
             )
 
@@ -701,7 +699,6 @@ class WlanPolicy(AsyncLazyReady):
         self,
         target_ssid: str,
         security_type: f_wlan_policy.SecurityType,
-        target_pwd: str | None = None,
         *,
         timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
@@ -710,8 +707,6 @@ class WlanPolicy(AsyncLazyReady):
         Args:
             target_ssid: The network to remove.
             security_type: The security protocol of the network.
-            target_pwd: The credential being saved with the network. No password
-                is equivalent to an empty string.
             timeout: timeout value.
 
         Raises:
@@ -723,10 +718,9 @@ class WlanPolicy(AsyncLazyReady):
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientController.ForgetNetwork("
-            'ssid="%s", type_="%s", credential="%s")',
+            'ssid="%s", type_="%s")',
             target_ssid,
             security_type,
-            target_pwd,
         )
         try:
             res = await asyncio.wait_for(
@@ -787,9 +781,7 @@ class WlanPolicy(AsyncLazyReady):
                             ssid=list(target_ssid.encode("utf-8")),
                             type_=security_type,
                         ),
-                        credential=Credential.from_password(
-                            target_pwd
-                        ).to_fidl(),
+                        credential=credential_from_password(target_pwd),
                     ),
                 ),
                 None if timeout is None else timeout.total_seconds(),
