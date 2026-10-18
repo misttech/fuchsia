@@ -298,6 +298,9 @@ void rust_scheduler_update_total_deadline_utilization(const Scheduler* sched,
                                                       SchedUtilization delta);
 bool rust_scheduler_update_processing_rate(const Scheduler* sched,
                                            zx_instant_boot_ticks_t boot_ticks);
+void rust_sched_trace_context_switch(Thread* current_thread, Thread* next_thread,
+                                     cpu_num_t current_cpu);
+void rust_sched_trace_wakeup(Thread* thread, cpu_num_t target_cpu);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.

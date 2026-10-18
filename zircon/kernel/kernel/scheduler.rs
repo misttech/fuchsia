@@ -5164,6 +5164,27 @@ pub unsafe extern "C" fn rust_scheduler_update_processing_rate(
     unsafe { (*sched).update_processing_rate(boot_ticks) }
 }
 
+/// # Safety
+/// The caller must ensure `current_thread` and `next_thread` are valid and their
+/// thread locks are held exclusively.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_sched_trace_context_switch(
+    current_thread: *mut Thread,
+    next_thread: *mut Thread,
+    current_cpu: CpuNum,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { sched_trace_context_switch(current_thread, next_thread, current_cpu) };
+}
+
+/// # Safety
+/// The caller must ensure `thread` is valid and its thread lock is held exclusively.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_sched_trace_wakeup(thread: *mut Thread, target_cpu: CpuNum) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { sched_trace_wakeup(thread, target_cpu) };
+}
+
 /// Initializes a run queue in-place.
 ///
 /// # Safety
@@ -5306,6 +5327,100 @@ pub enum UnblockType {
     /// compatible conditions, the woken thread can replace the current thread on
     /// a CPU as it blocks in the same reschedule operation.
     Synchronous = 1,
+}
+
+const IDLE_WEIGHT: i32 = i32::MIN;
+
+#[inline]
+fn sched_user_thread_state(state: ThreadState) -> zx_types::zx_thread_state_t {
+    match state {
+        ThreadState::Initial | ThreadState::Ready => zx_types::ZX_THREAD_STATE_NEW,
+        ThreadState::Running => zx_types::ZX_THREAD_STATE_RUNNING,
+        ThreadState::Blocked | ThreadState::BlockedReadLock | ThreadState::Sleeping => {
+            zx_types::ZX_THREAD_STATE_BLOCKED
+        }
+        ThreadState::Suspended => zx_types::ZX_THREAD_STATE_SUSPENDED,
+        ThreadState::Death => zx_types::ZX_THREAD_STATE_DEAD,
+    }
+}
+
+/// Writes a context switch record to the ktrace buffer. This is always enabled
+/// so that user mode tracing can track which threads are running.
+///
+/// # Safety
+/// `current_thread` and `next_thread` must point to valid `Thread` instances,
+/// their thread locks must be held exclusively, and no active references to
+/// their `SchedulerState` may be held across this call.
+unsafe fn sched_trace_context_switch(
+    current_thread: *mut Thread,
+    next_thread: *mut Thread,
+    current_cpu: CpuNum,
+) {
+    // SAFETY: `current_thread` and `next_thread` are valid with their thread locks held
+    // exclusively. Each `SchedulerState` borrow is a non-overlapping temporary expression
+    // so `current_thread == next_thread` does not alias.
+    unsafe {
+        ktrace_rs::context_switch!(
+            "kernel:sched",
+            current_cpu,
+            sched_user_thread_state((*cpp_thread_get_scheduler_state(current_thread)).state),
+            cpp_thread_get_tid(current_thread),
+            cpp_thread_get_tid(next_thread),
+            "outgoing_weight" => if cpp_thread_is_idle(current_thread) {
+                IDLE_WEIGHT
+            } else {
+                (*cpp_thread_get_scheduler_state(current_thread))
+                    .get_weight_or_packed_deadline_params()
+            },
+            "incoming_weight" => if cpp_thread_is_idle(next_thread) {
+                IDLE_WEIGHT
+            } else {
+                (*cpp_thread_get_scheduler_state(next_thread))
+                    .get_weight_or_packed_deadline_params()
+            },
+        );
+    }
+}
+
+/// Writes a thread wakeup record to the ktrace buffer. This is always enabled
+/// so that user mode tracing can track which threads are waking.
+///
+/// # Safety
+/// `thread` must point to a valid `Thread` whose thread lock is held exclusively,
+/// no active references to its `SchedulerState` may be held across this call, and
+/// the current CPU must have a valid current thread.
+unsafe fn sched_trace_wakeup(thread: *mut Thread, target_cpu: CpuNum) {
+    let current_thread = super::thread::current_get();
+    // SAFETY: `thread` is valid with its lock held exclusively, and `current_thread` is valid
+    // on the current CPU (`is_idle` and `tid` are immutable after thread initialization).
+    unsafe {
+        if !cpp_thread_is_idle(current_thread) {
+            ktrace_rs::thread_wakeup!(
+                "kernel:sched",
+                target_cpu,
+                cpp_thread_get_tid(thread),
+                "weight" => if cpp_thread_is_idle(thread) {
+                    IDLE_WEIGHT
+                } else {
+                    (*cpp_thread_get_scheduler_state(thread))
+                        .get_weight_or_packed_deadline_params()
+                },
+                "waker" => ktrace_rs::Koid(cpp_thread_get_tid(current_thread)),
+            );
+        } else {
+            ktrace_rs::thread_wakeup!(
+                "kernel:sched",
+                target_cpu,
+                cpp_thread_get_tid(thread),
+                "weight" => if cpp_thread_is_idle(thread) {
+                    IDLE_WEIGHT
+                } else {
+                    (*cpp_thread_get_scheduler_state(thread))
+                        .get_weight_or_packed_deadline_params()
+                },
+            );
+        }
+    }
 }
 
 impl Scheduler {

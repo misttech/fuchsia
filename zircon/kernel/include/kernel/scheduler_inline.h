@@ -68,45 +68,11 @@ inline void Scheduler::UpdateTotalExpectedRuntime(SchedDuration delta_ns) {
 
 // Updates the total deadline utilization estimator with the given delta.
 inline void Scheduler::UpdateTotalDeadlineUtilization(SchedUtilization delta) {
-  // Avoid unnecessary trace counter and atomic variable updates.
-  if (delta != 0) {
-    const SchedUtilization utilization = power_level_control_.UpdateNormalizedUtilization(delta);
-    DEBUG_ASSERT_MSG(utilization >= 0, "utilization=%s delta=%s", Format(utilization).c_str(),
-                     Format(delta).c_str());
-    rust_state_.exported_deadline_utilization = utilization;
-    rust_state_.exported_clamped_deadline_utilization =
-        power_level_control_.clamped_deadline_utilization();
-    rust_state_.exported_clamped_total_utilization = power_level_control_.clamped_total_demand();
-
-    auto latched_timestamp = KTrace::LatchedTimestamp();
-    KTRACE_CPU_COUNTER_TIMESTAMP("kernel:sched-demand", "Demand:Constant", latched_timestamp(),
-                                 this_cpu(), ("CPU", ffl::Round<uint64_t>(utilization * 1000)));
-    KTRACE_CPU_COUNTER_TIMESTAMP(
-        "kernel:sched-demand", "Demand:Total", latched_timestamp(), this_cpu(),
-        ("CPU", ffl::Round<uint64_t>(power_level_control_.total_demand() * 1000)));
-
-    if (const ktl::optional<uint32_t> domain_id = power_level_control_.domain_id()) {
-      const SchedUtilization domain_utilization =
-          power_level_control_.domain_deadline_utilization();
-      LOCAL_KTRACE_COUNTER_TIMESTAMP(BANDWIDTH, "Demand:Constant", latched_timestamp(),
-                                     domain_id.value(),
-                                     ("Domain", ffl::Round<uint64_t>(domain_utilization * 1000)));
-    }
-  }
+  rust_scheduler_update_total_deadline_utilization(this, delta);
 }
 
 inline bool Scheduler::UpdateProcessingRate(zx_instant_boot_ticks_t boot_ticks) {
-  if (power_level_control_.is_processing_rate_update_pending()) {
-    const SchedProcessingRate processing_rate = power_level_control_.UpdateProcessingRate();
-    rust_state_.exported_processing_rate = processing_rate;
-    if (!power_level_control_.domain()) {
-      rust_state_.exported_max_processing_rate = power_level_control_.clamped_max_processing_rate();
-    }
-    KTRACE_CPU_COUNTER_TIMESTAMP("kernel:power", "Rate", boot_ticks, this_cpu(),
-                                 ("CPU", ffl::Round<uint64_t>(processing_rate * 1000)));
-    return true;
-  }
-  return false;
+  return rust_scheduler_update_processing_rate(this, boot_ticks);
 }
 
 inline void Scheduler::TraceTotalRunnableThreads() const {
@@ -202,60 +168,18 @@ inline void Scheduler::RescheduleCpus(cpu_mask_t cpu_mask) {
   RescheduleMask(cpu_mask);
 }
 
-inline zx_thread_state_t SchedUserThreadState(const Thread* thread)
-    TA_REQ_SHARED(thread->get_lock()) {
-  switch (thread->state()) {
-    case THREAD_INITIAL:
-    case THREAD_READY:
-      return ZX_THREAD_STATE_NEW;
-    case THREAD_RUNNING:
-      return ZX_THREAD_STATE_RUNNING;
-    case THREAD_BLOCKED:
-    case THREAD_BLOCKED_READ_LOCK:
-    case THREAD_SLEEPING:
-      return ZX_THREAD_STATE_BLOCKED;
-    case THREAD_SUSPENDED:
-      return ZX_THREAD_STATE_SUSPENDED;
-    case THREAD_DEATH:
-      return ZX_THREAD_STATE_DEAD;
-    default:
-      return UINT32_MAX;
-  }
-}
-
-constexpr int32_t kIdleWeight = ktl::numeric_limits<int32_t>::min();
-
 // Writes a context switch record to the ktrace buffer. This is always enabled
 // so that user mode tracing can track which threads are running.
 inline void SchedTraceContextSwitch(Thread* current_thread, Thread* next_thread,
                                     cpu_num_t current_cpu)
     TA_REQ(current_thread->get_lock(), next_thread->get_lock()) {
-  SchedulerState& current_state = current_thread->scheduler_state();
-  SchedulerState& next_state = next_thread->scheduler_state();
-  KTRACE_CONTEXT_SWITCH(
-      "kernel:sched", current_cpu, SchedUserThreadState(current_thread), current_thread->fxt_ref(),
-      next_thread->fxt_ref(),
-      ("outgoing_weight",
-       current_thread->IsIdle() ? kIdleWeight : current_state.GetWeightOrPackedDeadlineParams()),
-      ("incoming_weight",
-       next_thread->IsIdle() ? kIdleWeight : next_state.GetWeightOrPackedDeadlineParams()));
+  rust_sched_trace_context_switch(current_thread, next_thread, current_cpu);
 }
 
 // Writes a thread wakeup record to the ktrace buffer. This is always enabled
 // so that user mode tracing can track which threads are waking.
 inline void SchedTraceWakeup(Thread* thread, cpu_num_t target_cpu) TA_REQ(thread->get_lock()) {
-  SchedulerState& state = thread->scheduler_state();
-  const Thread* current_thread = Thread::Current::Get();
-  if (!current_thread->IsIdle()) {
-    KTRACE_THREAD_WAKEUP(
-        "kernel:sched", target_cpu, thread->fxt_ref(),
-        ("weight", thread->IsIdle() ? kIdleWeight : state.GetWeightOrPackedDeadlineParams()),
-        ("waker", ktrace::Koid{current_thread->tid()}));
-  } else {
-    KTRACE_THREAD_WAKEUP(
-        "kernel:sched", target_cpu, thread->fxt_ref(),
-        ("weight", thread->IsIdle() ? kIdleWeight : state.GetWeightOrPackedDeadlineParams()));
-  }
+  rust_sched_trace_wakeup(thread, target_cpu);
 }
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_INLINE_H_
