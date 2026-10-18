@@ -1078,13 +1078,25 @@ pub fn verify_program(
                 VerifierError { kind: VerifierErrorKind::FellOffProgramEnd, pc: Some(context.pc) },
             );
         }
-        if let Err(kind) = context.visit(&mut verification_context, code[context.pc]) {
+        let first_successor = verification_context.states.len();
+        if let Err(kind) = (&context).visit(&mut verification_context, code[context.pc]) {
             return error_and_log(
                 verification_context.logger,
                 VerifierError { kind, pc: Some(context.pc) },
             );
         }
-        if context.terminated {
+        // All the contexts pushed while visiting `&context` are its successors, and are created
+        // without a parent. Register `context` as their shared parent, or terminate it now if it
+        // has no successors (i.e. `exit`).
+        if let Some((last, rest)) = verification_context.states[first_successor..].split_last_mut()
+        {
+            let parent = Arc::new(context);
+            for successor in rest {
+                successor.parent = Some(Arc::clone(&parent));
+            }
+            last.parent = Some(parent);
+        } else {
+            debug_assert_eq!(code[context.pc].code(), BPF_JMP | BPF_EXIT);
             context.terminate(&mut verification_context)?;
         }
         verification_context.iteration += 1;
@@ -1583,12 +1595,9 @@ struct ComputationContext {
     /// The data dependencies of this context. This is used to broaden a known ending context to
     /// help cutting computation branches.
     dependencies: DependenciesMutex,
-    /// Whether this context has reached an exit instruction. The main loop uses this flag to
-    /// call terminate() on the owned context, avoiding the extra Arc reference that would be
-    /// created by cloning self in the exit handler.
-    terminated: bool,
 }
 
+#[cfg(test)]
 impl Clone for ComputationContext {
     fn clone(&self) -> Self {
         Self {
@@ -1597,11 +1606,10 @@ impl Clone for ComputationContext {
             stack: self.stack.clone(),
             array_bounds: self.array_bounds.clone(),
             resources: self.resources.clone(),
-            parent: self.parent.clone(),
+            parent: None,
             // dependencies are erased as they must always be used on the same instance of the
             // context.
             dependencies: Default::default(),
-            terminated: false,
         }
     }
 }
@@ -1664,7 +1672,7 @@ impl ComputationContext {
     }
 
     fn next(&self) -> Result<Self, VerifierErrorKind> {
-        self.jump_with_offset(0, Arc::new(self.clone()))
+        self.jump_with_offset(0)
     }
 
     /// Returns a new `ComputationContext` where the pc has jump by `offset + 1`. In particular,
@@ -1673,7 +1681,11 @@ impl ComputationContext {
     /// This does not check that the target is inside the program: falling off the end of the
     /// program is reported by the main verification loop. Use `checked_jump_with_offset` for
     /// explicit jumps.
-    fn jump_with_offset(&self, offset: i16, parent: Arc<Self>) -> Result<Self, VerifierErrorKind> {
+    ///
+    /// The returned context has no parent. The parent is set by `verify_program` once the
+    /// current instruction has been fully visited, by moving `self` into an `Arc` shared by all
+    /// its successors, instead of cloning it.
+    fn jump_with_offset(&self, offset: i16) -> Result<Self, VerifierErrorKind> {
         let pc = self
             .pc
             .checked_add_signed(offset.into())
@@ -1685,9 +1697,8 @@ impl ComputationContext {
             stack: self.stack.clone(),
             array_bounds: self.array_bounds.clone(),
             resources: self.resources.clone(),
-            parent: Some(parent),
+            parent: None,
             dependencies: Default::default(),
-            terminated: false,
         };
         Ok(result)
     }
@@ -1698,9 +1709,8 @@ impl ComputationContext {
         &self,
         verification_context: &VerificationContext<'_>,
         offset: i16,
-        parent: Arc<Self>,
     ) -> Result<Self, VerifierErrorKind> {
-        let result = self.jump_with_offset(offset, parent)?;
+        let result = self.jump_with_offset(offset)?;
         if result.pc >= verification_context.code.len() {
             return Err(VerifierErrorKind::JumpOutOfBounds);
         }
@@ -2075,7 +2085,7 @@ impl ComputationContext {
     }
 
     fn alu(
-        &mut self,
+        &self,
         op_name: Option<&str>,
         verification_context: &mut VerificationContext<'_>,
         dst: Register,
@@ -2102,7 +2112,7 @@ impl ComputationContext {
     }
 
     fn log_atomic_operation(
-        &mut self,
+        &self,
         op_name: &str,
         verification_context: &mut VerificationContext<'_>,
         fetch: bool,
@@ -2123,7 +2133,7 @@ impl ComputationContext {
     }
 
     fn raw_atomic_operation(
-        &mut self,
+        &self,
         op_name: &str,
         verification_context: &mut VerificationContext<'_>,
         width: DataWidth,
@@ -2150,7 +2160,7 @@ impl ComputationContext {
     }
 
     fn atomic_operation(
-        &mut self,
+        &self,
         op_name: &str,
         verification_context: &mut VerificationContext<'_>,
         width: DataWidth,
@@ -2176,7 +2186,7 @@ impl ComputationContext {
     }
 
     fn raw_atomic_cmpxchg(
-        &mut self,
+        &self,
         op_name: &str,
         verification_context: &mut VerificationContext<'_>,
         dst: Register,
@@ -2218,7 +2228,7 @@ impl ComputationContext {
         Ok(())
     }
     fn endianness<BO: ByteOrder>(
-        &mut self,
+        &self,
         op_name: &str,
         verification_context: &mut VerificationContext<'_>,
         dst: Register,
@@ -2310,7 +2320,7 @@ impl ComputationContext {
     }
 
     fn conditional_jump(
-        &mut self,
+        &self,
         op_name: &str,
         verification_context: &mut VerificationContext<'_>,
         dst: Register,
@@ -2351,18 +2361,17 @@ impl ComputationContext {
             Ok(next)
         };
         let branch = self.compute_branch(jump_width, &op1, &op2, op)?;
-        let parent = Arc::new(self.clone());
         if branch.unwrap_or(true) {
             // Do the jump
             verification_context.states.push(apply_constraints_and_register(
-                self.checked_jump_with_offset(verification_context, offset, parent.clone())?,
+                self.checked_jump_with_offset(verification_context, offset)?,
                 jump_type,
             )?);
         }
         if !branch.unwrap_or(false) {
             // Skip the jump
             verification_context.states.push(apply_constraints_and_register(
-                self.jump_with_offset(0, parent)?,
+                self.jump_with_offset(0)?,
                 jump_type.invert(),
             )?);
         }
@@ -3497,7 +3506,8 @@ fn display_source(src: Source) -> String {
     }
 }
 
-impl BpfVisitor for ComputationContext {
+/// Visiting an instruction pushes the successors of `self` to `VerificationContext::states`.
+impl BpfVisitor for &ComputationContext {
     type Context<'a> = VerificationContext<'a>;
     type Error = VerifierErrorKind;
 
@@ -3795,7 +3805,6 @@ impl BpfVisitor for ComputationContext {
         if !self.resources.is_empty() {
             return Err(VerifierErrorKind::ResourceLeak);
         }
-        self.terminated = true;
         Ok(())
     }
 
@@ -3805,8 +3814,7 @@ impl BpfVisitor for ComputationContext {
         offset: i16,
     ) -> Result<(), VerifierErrorKind> {
         bpf_log!(self, context, "ja {}", offset);
-        let parent = Arc::new(self.clone());
-        let next = self.checked_jump_with_offset(context, offset, parent)?;
+        let next = self.checked_jump_with_offset(context, offset)?;
         context.states.push(next);
         Ok(())
     }
@@ -4708,8 +4716,7 @@ impl BpfVisitor for ComputationContext {
             }
         };
 
-        let parent = Arc::new(self.clone());
-        let mut next = self.jump_with_offset(1, parent)?;
+        let mut next = self.jump_with_offset(1)?;
         next.set_reg(dst, value.into())?;
 
         context.states.push(next);
@@ -4757,8 +4764,8 @@ impl BpfVisitor for ComputationContext {
         if !self.resources.is_empty() {
             return Err(VerifierErrorKind::ResourceLeak);
         }
-        // `self` is not terminated here: a copy of it is the parent of `next`, and terminates with
-        // the dependencies of both paths once `next` terminates. Terminating `self` would record
+        // `self` is not terminated here: it becomes the parent of `next`, and terminates with the
+        // dependencies of both paths once `next` terminates. Terminating `self` here would record
         // it as a terminating context with the dependencies of the exit path only.
 
         // Handle the case where the load succeed.

@@ -1,0 +1,28 @@
+# Same as err_cmpxchg_both_outcomes.data, but the memory access is in bounds for both outcomes of
+# the cmpxchg, so the program is accepted.
+-- asm
+ldxb %r2, [%r1]
+and %r2, 0xff
+stxdw [%r10-8], %r2
+mov %r0, 0
+mov %r4, 1000
+jeq %r2, 0, +2
+mov %r7, 0
+ja +1
+mov %r7, 63
+lock cmpxchg [%r10-8], %r4
+ldxdw %r5, [%r10-8]
+jgt %r5, 255, +2
+mov %r0, 0
+exit
+mov %r3, %r1
+add %r3, %r7
+ldxb %r0, [%r3]
+exit
+-- mem
+00000000000000000000000000000000
+00000000000000000000000000000000
+00000000000000000000000000000000
+0000000000000000000000000000002a
+-- result
+0x2a
