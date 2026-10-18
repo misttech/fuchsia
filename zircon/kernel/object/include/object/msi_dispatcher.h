@@ -44,9 +44,6 @@ class MsiDispatcher final : public Dispatcher {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  using Dispatcher::UpdateState;
-  using Dispatcher::UpdateStateLocked;
-
  protected:
   Lock<CriticalMutex>* get_lock() const final;
 

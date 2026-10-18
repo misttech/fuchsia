@@ -170,9 +170,6 @@ zx_status_t cpp_dispatcher_make_port_observer(Dispatcher* disp, uint32_t options
 // It implements Recyclable because upon final Release() on the RefPtr
 // it might be necessary to implement a destruction pattern that avoids
 // deep recursion since the kernel stack is very limited.
-//
-// You don't derive directly from this class; instead derive
-// from SoloDispatcher or PeeredDispatcher.
 class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
                    private fbl::Recyclable<Dispatcher> {
  public:
@@ -186,8 +183,6 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
         static_cast<const fbl::RefCountedUpgradeable<Dispatcher>*>(this));
   }
 
-  // Dispatchers are either Solo or Peered. They handle refcounting
-  // and locking differently.
   virtual ~Dispatcher();
 
   zx_koid_t get_koid() const { return koid_; }
@@ -323,9 +318,6 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
   // By the time the result of the function is inspected, the signals may have already
   // changed. Typically should only be used for tests or logging.
   zx_signals_t PollSignals() const TA_EXCL(get_lock());
-
-  // Returns the information for zx_object_get_info(ZX_INFO_HANDLE_BASIC,..).
-  zx_info_handle_basic_t GetHandleInfo(zx_rights_t rights);
 
  protected:
   // At construction, the object is asserting |signals|.
@@ -481,138 +473,6 @@ class SoloDispatcher : public Dispatcher {
   // CriticalMutex here allows us to avoid thrash in common case while
   // preserving system responsiveness in the worst case.
   mutable DECLARE_CRITICAL_MUTEX(SoloDispatcher, Flags) lock_;
-};
-
-// PeeredDispatchers have opposing endpoints to coordinate state
-// with. For example, writing into one endpoint of a Channel needs to
-// modify zx_signals_t state (for the readability bit) on the opposite
-// side. To coordinate their state, they share a mutex, which is held
-// by the PeerHolder. Both endpoints have a RefPtr back to the
-// PeerHolder; no one else ever does.
-
-// Thus creating a pair of peered objects will typically look
-// something like
-//     // Make the two RefPtrs for each endpoint's handle to the mutex.
-//     auto holder0 = AdoptRef(new PeerHolder<Foo>(...));
-//     auto holder1 = peer_holder0;
-//     // Create the opposing sides.
-//     auto foo0 = AdoptRef(new Foo(ktl::move(holder0, ...));
-//     auto foo1 = AdoptRef(new Foo(ktl::move(holder1, ...));
-//     // Initialize the opposing sides, teaching them about each other.
-//     foo0->Init(&foo1);
-//     foo1->Init(&foo0);
-
-// A PeeredDispatcher object, in its |on_zero_handles| call must clear
-// out its peer's |peer_| field. This is needed to avoid leaks, and to
-// ensure that |user_signal| can correctly report ZX_ERR_PEER_CLOSED.
-
-// TODO(kulakowski) We should investigate turning this into one
-// allocation. This would mean PeerHolder would have two EndPoint
-// members, and that PeeredDispatcher would have custom refcounting.
-template <typename Endpoint, lockdep::LockFlags Flags = lockdep::LockFlagsNone>
-class PeerHolder : public fbl::RefCounted<PeerHolder<Endpoint>> {
- public:
-  PeerHolder() = default;
-  ~PeerHolder() = default;
-
-  Lock<CriticalMutex>* get_lock() const { return &lock_; }
-
-  // See |SoloDispatcher::lock_| for explanation of why this is a CriticalMutex.
-  mutable DECLARE_CRITICAL_MUTEX(PeerHolder, Flags) lock_;
-};
-
-template <typename Self, zx_rights_t def_rights, zx_signals_t extra_signals = 0u,
-          lockdep::LockFlags Flags = lockdep::LockFlagsNone>
-class PeeredDispatcher : public Dispatcher {
- public:
-  static constexpr zx_rights_t default_rights() { return def_rights; }
-
-  // At construction, the object is asserting |signals|.
-  explicit PeeredDispatcher(fbl::RefPtr<PeerHolder<Self, Flags>> holder, zx_signals_t signals = 0u)
-      : Dispatcher(signals), holder_(ktl::move(holder)) {}
-  virtual ~PeeredDispatcher() = default;
-
-  zx_koid_t get_related_koid() const final { return peer_koid_; }
-  bool is_waitable() const final { return default_rights() & ZX_RIGHT_WAIT; }
-
-  zx_status_t user_signal_self(uint32_t clear_mask,
-                               uint32_t set_mask) final TA_NO_THREAD_SAFETY_ANALYSIS {
-    auto allowed_signals = ZX_USER_SIGNAL_ALL | extra_signals;
-    if ((set_mask & ~allowed_signals) || (clear_mask & ~allowed_signals))
-      return ZX_ERR_INVALID_ARGS;
-
-    Guard<CriticalMutex> guard{get_lock()};
-
-    UpdateStateLocked(clear_mask, set_mask);
-    return ZX_OK;
-  }
-
-  zx_status_t user_signal_peer(uint32_t clear_mask,
-                               uint32_t set_mask) final TA_NO_THREAD_SAFETY_ANALYSIS {
-    auto allowed_signals = ZX_USER_SIGNAL_ALL | extra_signals;
-    if ((set_mask & ~allowed_signals) || (clear_mask & ~allowed_signals))
-      return ZX_ERR_INVALID_ARGS;
-
-    Guard<CriticalMutex> guard{get_lock()};
-    // object_signal() may race with handle_close() on another thread.
-    if (!peer_)
-      return ZX_ERR_PEER_CLOSED;
-    peer_->UpdateStateLocked(clear_mask, set_mask);
-    return ZX_OK;
-  }
-
-  // All subclasses of PeeredDispatcher must implement a public
-  // |void on_zero_handles_locked()|. The peer lifetime management
-  // (i.e. the peer zeroing) is centralized here.
-  void on_zero_handles() final TA_NO_THREAD_SAFETY_ANALYSIS {
-    Guard<CriticalMutex> guard{get_lock()};
-    auto peer = ktl::move(peer_);
-    static_cast<Self*>(this)->on_zero_handles_locked();
-
-    // This is needed to avoid leaks, and to ensure that
-    // |user_signal| can correctly report ZX_ERR_PEER_CLOSED.
-    if (peer != nullptr) {
-      // This defeats the lock analysis in the usual way: it
-      // can't reason that the peers' get_lock() calls alias.
-      peer->peer_.reset();
-      static_cast<Self*>(peer.get())->OnPeerZeroHandlesLocked();
-    }
-  }
-
-  // Returns true if the peer has closed. Once the peer has closed it
-  // will never re-open.
-  bool PeerHasClosed() const {
-    Guard<CriticalMutex> guard{get_lock()};
-    return peer_ == nullptr;
-  }
-
- protected:
-  Lock<CriticalMutex>* get_lock() const final { return holder_->get_lock(); }
-
-  // Initialize this dispatcher's peer field.
-  //
-  // This method is logically part of the class constructor and must be called exactly once, during
-  // initialization, prior to any other thread obtaining a reference to the object.  These
-  // constraints allow for an optimization where fields are accessed without acquiring the lock,
-  // hence the TA_NO_THREAD_SAFETY_ANALYSIS annotation.
-  void InitPeer(fbl::RefPtr<Self> peer) TA_NO_THREAD_SAFETY_ANALYSIS {
-    DEBUG_ASSERT(!peer_);
-    DEBUG_ASSERT(peer_koid_ == ZX_KOID_INVALID);
-    peer_ = ktl::move(peer);
-    peer_koid_ = peer_->get_koid();
-  }
-
-  const fbl::RefPtr<Self>& peer() const TA_REQ(get_lock()) { return peer_; }
-  zx_koid_t peer_koid() const { return peer_koid_; }
-
-  const fbl::Canary<CanaryTag<Self>::magic> canary_;
-
- private:
-  fbl::RefPtr<Self> peer_ TA_GUARDED(get_lock());
-  // After InitPeer is called, this field is logically const.
-  zx_koid_t peer_koid_{ZX_KOID_INVALID};
-
-  const fbl::RefPtr<PeerHolder<Self, Flags>> holder_;
 };
 
 // DownCastDispatcher checks if a RefPtr<Dispatcher> points to a
