@@ -15,6 +15,8 @@ pub mod readers;
 use readers::{Reader, ReaderError, ReaderExt};
 
 pub mod format;
+pub mod mapper;
+pub use mapper::VolumeMapper;
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,7 +218,7 @@ impl NodeInner {
 
     /// Safely calculate the on-disk offset for a read in this nodes data. This doesn't check out
     /// of bounds errors.
-    fn blkaddr_offset(&self, block_size: u64, offset: u64) -> Result<u64, ParsingError> {
+    pub fn blkaddr_offset(&self, block_size: u64, offset: u64) -> Result<u64, ParsingError> {
         self.blkaddr(block_size)
             .ok_or(ParsingError::InvalidUValue)?
             .checked_mul(block_size)
@@ -237,7 +239,7 @@ impl NodeInner {
     }
 
     /// Offset immediately following this node's metadata and inline xattrs.
-    fn metadata_end_offset(&self) -> Result<u64, ParsingError> {
+    pub fn metadata_end_offset(&self) -> Result<u64, ParsingError> {
         self.inode_offset()
             .checked_add(self.metadata_size())
             .ok_or(ParsingError::Overflow)?

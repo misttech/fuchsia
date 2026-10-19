@@ -47,6 +47,7 @@ rustc_library("vmo-fifo") {
   edition = "2024"
   visibility = [
     ":*",
+    "//src/storage/erofs:*",
     "//src/storage/fxfs/platform:*",
     "//src/storage/fxfs/test:*",
     "//src/storage/gpt/component:*",

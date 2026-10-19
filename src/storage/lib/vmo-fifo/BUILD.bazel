@@ -21,6 +21,7 @@ rustc_library(
         "//third_party/rust_crates/vendor:futures",
     ],
     visibility = [
+        "//src/storage/erofs:__pkg__",
         "//src/storage/fxfs/platform:__pkg__",
         "//src/storage/fxfs/test:__pkg__",
         "//src/storage/gpt/component:__pkg__",
