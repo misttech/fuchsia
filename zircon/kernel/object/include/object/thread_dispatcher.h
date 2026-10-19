@@ -68,7 +68,6 @@ ProcessDispatcher* rust_thread_dispatcher_get_process(const ThreadDispatcher* th
 void rust_thread_dispatcher_assert_canary(const ThreadDispatcher* thread);
 bool rust_thread_dispatcher_is_dying_or_dead(const ThreadDispatcher* thread);
 bool rust_thread_dispatcher_is_dying_or_dead_locked(const ThreadDispatcher* thread);
-bool rust_thread_dispatcher_has_started(const ThreadDispatcher* thread);
 bool rust_thread_dispatcher_has_started_locked(const ThreadDispatcher* thread);
 zx_status_t rust_thread_dispatcher_initialize(const ThreadDispatcher* thread);
 zx_status_t rust_thread_dispatcher_start(const ThreadDispatcher* thread,
@@ -78,7 +77,6 @@ zx_status_t rust_thread_dispatcher_make_runnable(const ThreadDispatcher* thread,
 void rust_thread_dispatcher_kill(const ThreadDispatcher* thread);
 zx_status_t rust_thread_dispatcher_suspend(const ThreadDispatcher* thread);
 void rust_thread_dispatcher_resume(const ThreadDispatcher* thread);
-zx_status_t rust_thread_dispatcher_restricted_kick(const ThreadDispatcher* thread);
 void rust_thread_dispatcher_suspending(const ThreadDispatcher* thread);
 void rust_thread_dispatcher_resuming(const ThreadDispatcher* thread);
 
@@ -185,12 +183,6 @@ class ThreadDispatcher final : public Dispatcher,
   zx_status_t Suspend() { return rust_thread_dispatcher_suspend(this); }
   void Resume() { rust_thread_dispatcher_resume(this); }
 
-  // Issues a restricted kick on the thread which will kick the thread out of restricted
-  // mode to normal mode if it's currently in restricted mode or remember the kick state for
-  // the next attempt to enter restricted state.
-  // Returns ZX_OK on success or ZX_ERR_BAD_STATE iff the thread is dying or dead.
-  zx_status_t RestrictedKick() { return rust_thread_dispatcher_restricted_kick(this); }
-
   // accessors
   ProcessDispatcher* process() const { return rust_thread_dispatcher_get_process(this); }
 
@@ -206,11 +198,6 @@ class ThreadDispatcher final : public Dispatcher,
   bool IsDyingOrDead() const TA_EXCL(get_lock()) {
     return rust_thread_dispatcher_is_dying_or_dead(this);
   }
-
-  // Returns true if the thread was ever started (even if it is dead now).
-  // Threads never return to an INITIAL state after starting, so once this is
-  // true it will never flip back to false.
-  bool HasStarted() const TA_EXCL(get_lock()) { return rust_thread_dispatcher_has_started(this); }
 
   [[nodiscard]] zx_status_t set_name(const char* name, size_t len) final __NONNULL((2))
       TA_EXCL(get_lock());
@@ -427,11 +414,6 @@ class ThreadDispatcher final : public Dispatcher,
   ThreadDispatcher(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags);
   ThreadDispatcher(const ThreadDispatcher&) = delete;
   ThreadDispatcher& operator=(const ThreadDispatcher&) = delete;
-
-  // friend FutexContext so that it can manipulate the blocking_futex_id_ member of
-  // ThreadDispatcher, and so that it can access the "thread_" member of the class so that
-  // wait_queue operations can be performed on ThreadDispatchers
-  friend class FutexContext;
 
   // OwnedWaitQueue is a friend only so that it can access the blocking_futex_id_ member for tracing
   // purposes.

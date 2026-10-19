@@ -378,12 +378,6 @@ pub extern "C" fn rust_thread_dispatcher_resume(thread: &ThreadDispatcher) {
     thread.resume();
 }
 
-/// Kicks this thread out of restricted mode.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_thread_dispatcher_restricted_kick(thread: &ThreadDispatcher) -> zx_status_t {
-    Status::result_into_raw(thread.restricted_kick())
-}
-
 /// Callback from the kernel when the thread is suspending.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_thread_dispatcher_suspending(thread: &ThreadDispatcher) {
@@ -419,12 +413,6 @@ pub unsafe extern "C" fn rust_thread_dispatcher_is_dying_or_dead_locked(
     // being the last reference. See this function's `# Safety` section.
     let token = unsafe { LockToken::new() };
     thread.is_dying_or_dead_locked(&token)
-}
-
-/// Returns whether the thread has ever started.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_thread_dispatcher_has_started(thread: &ThreadDispatcher) -> bool {
-    thread.has_started()
 }
 
 /// Returns whether the thread has ever started, with the state lock already held.

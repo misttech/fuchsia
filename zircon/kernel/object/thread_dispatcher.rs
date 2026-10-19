@@ -479,12 +479,6 @@ impl ThreadDispatcher {
         crate::kernel::thread::current_exit(0)
     }
 
-    /// Marks the current thread for termination. The thread will actually terminate when the
-    /// kernel stack unwinds.
-    pub fn kill_current() {
-        crate::kernel::thread::current_kill();
-    }
-
     /// Kills this thread.
     pub fn kill(&self) {
         self.state().canary.assert();
