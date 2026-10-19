@@ -4,6 +4,8 @@
 
 use crate::table::*;
 use clap::Parser;
+use fidl_fuchsia_inspect as finspect;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{
     self as inspect, ArithmeticArrayProperty, ArrayProperty, DoubleArrayProperty,
     DoubleExponentialHistogramProperty, DoubleLinearHistogramProperty, Inspector, IntArrayProperty,
@@ -12,12 +14,7 @@ use fuchsia_inspect::{
 };
 use futures::FutureExt;
 use std::ops::AddAssign;
-use {
-    fidl_fuchsia_inspect as finspect, fidl_fuchsia_inspect_deprecated as fdeprecated,
-    fuchsia_async as fasync,
-};
 
-pub mod deprecated_fidl_server;
 pub mod table;
 
 pub struct PopulateParams<T> {
@@ -94,19 +91,6 @@ impl ExampleInspectData {
         new_example_lazy_double(node);
         new_example_lazy_uint(node);
     }
-
-    /// Returns an example NodeObject that can used to test fuchsia.inspect.deprecated.inspect.
-    pub fn has_node_object(&self) -> bool {
-        self.table.is_some()
-    }
-
-    pub fn get_node_object(&self) -> NodeObject {
-        self.table.as_ref().unwrap().get_node_object()
-    }
-}
-
-pub async fn serve_deprecated_inspect(stream: fdeprecated::InspectRequestStream, node: NodeObject) {
-    deprecated_fidl_server::spawn_inspect_server(stream, node);
 }
 
 pub async fn serve_inspect_tree(stream: finspect::TreeRequestStream, inspector: &Inspector) {
@@ -123,7 +107,7 @@ pub async fn serve_inspect_tree(stream: finspect::TreeRequestStream, inspector: 
 
 pub fn new_example_table(node: &Node) -> Table {
     let table_node_name = unique_name("table");
-    Table::new(3, 3, &table_node_name, node.create_child(&table_node_name))
+    Table::new(3, 3, node.create_child(&table_node_name))
 }
 
 pub fn new_example_int_array(node: &Node) -> IntArrayProperty {

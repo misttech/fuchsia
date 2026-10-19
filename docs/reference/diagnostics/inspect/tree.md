@@ -11,7 +11,6 @@ A component may expose Inspect data in the following ways:
 
 * [`fuchsia.inspect.Tree`](#tree) (C++, Rust)
 * [`VmoFile`](#vmofile) (Dart)
-* [`fuchsia.inspect.deprecated.Inspect`](#deprecated) (Go)
 
 Components do not need to reach out to other services in
 order to expose Inspect data.
@@ -20,14 +19,14 @@ Components generally do not need to be concerned with which method is
 being used, client libraries abstract out the specific mechanism for
 hosting. Nearly all implementations will eventually use `Tree`.
 
-| Feature                | `fuchsia.inspect.Tree` | `VmoFile` | `fuchsia.inspect.deprecated.Inspect` | Description                                                                         |
-| ---------------------- | ---------------------- | --------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
-| Non-lazy values        | Yes                    | Yes       | Yes                                  | Components may record values such as strings and integers.                          |
-| Lazy values            | Yes                    | No        | Yes                                  | Components may generate values dynamically at read time.                            |
-| Mutable tree           | Yes                    | Yes       | Yes                                  | Components may modify the values stored in their output.                            |
-| Post-mortem inspection | Yes                    | Yes       | No                                   | The values recorded by a component are available after that component exits.        |
-| Low-latency snapshots  | Yes                    | Yes       | No                                   | A full snapshot of the data can be obtained with low-latency.                       |
-| Consistent snapshots   | Yes\*                  | Yes       | No                                   | The snapshot of the tree is guaranteed to represent its state at one point in time. |
+| Feature                | `fuchsia.inspect.Tree` | `VmoFile` | Description                                                                         |
+| ---------------------- | ---------------------- | --------- | ----------------------------------------------------------------------------------- |
+| Non-lazy values        | Yes                    | Yes       | Components may record values such as strings and integers.                          |
+| Lazy values            | Yes                    | No        | Components may generate values dynamically at read time.                            |
+| Mutable tree           | Yes                    | Yes       | Components may modify the values stored in their output.                            |
+| Post-mortem inspection | Yes                    | Yes       | The values recorded by a component are available after that component exits.        |
+| Low-latency snapshots  | Yes                    | Yes       | A full snapshot of the data can be obtained with low-latency.                       |
+| Consistent snapshots   | Yes\*                  | Yes       | The snapshot of the tree is guaranteed to represent its state at one point in time. |
 
 (\*: Each tree's snapshot is consistent, but inter-tree consistency is not guaranteed)
 
@@ -76,23 +75,6 @@ The protocol supports this behavior in the following ways:
   This method accepts a request for `fuchsia.inspect.Tree` that will
   be bound to the tree specified by a given name. Using this method a
   client may iterate through all trees exposed over the root interface.
-
-### `fuchsia.inspect.deprecated.Inspect` {#deprecated}
-
-This deprecated interface is used by Go to expose Inspect data. While
-`fuchsia.inspect.Tree` exposes a "tree of trees," this interface exposes
-only a single tree where subtrees may be dynamically instantiated.
-
-This interface is deprecated in favor of the VMO format hosted by Inspect
-tree for the following reasons:
-
-* VMO format supports low-latency snapshots without communicating with
-the hosting program.
-* VMO format snapshots are always consistent for the whole tree.
-* VMO format supports postmortem inspection, all Inspect data using the
-deprecated interface dies with the component.
-* `Tree` protocol supports the same dynamic features as the deprecated
-interface.
 
 ## Reading Inspect data
 

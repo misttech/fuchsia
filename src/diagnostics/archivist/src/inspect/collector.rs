@@ -6,7 +6,6 @@ use crate::inspect::container::InspectHandle;
 use diagnostics_data::InspectHandleName;
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
 use fidl_fuchsia_inspect::{TreeMarker, TreeProxy};
-use fidl_fuchsia_inspect_deprecated::{InspectMarker, InspectProxy};
 use fidl_fuchsia_io as fio;
 use futures::stream::StreamExt;
 use log::error;
@@ -31,9 +30,6 @@ pub enum InspectData {
 
     /// A connection to a Tree service.
     Tree(TreeProxy),
-
-    /// A connection to the deprecated Inspect service.
-    DeprecatedFidl(InspectProxy),
 }
 
 fn maybe_load_service<P: DiscoverableProtocolMarker>(
@@ -105,14 +101,6 @@ async fn populate_data_map_from_dir(inspect_proxy: &fio::DirectoryProxy) -> Insp
             data_map.push_back((
                 Some(InspectHandleName::filename(entry.name)),
                 InspectData::Tree(proxy),
-            ));
-            continue;
-        }
-
-        if let Ok(Some(proxy)) = maybe_load_service::<InspectMarker>(inspect_proxy, &entry) {
-            data_map.push_back((
-                Some(InspectHandleName::filename(entry.name)),
-                InspectData::DeprecatedFidl(proxy),
             ));
             continue;
         }

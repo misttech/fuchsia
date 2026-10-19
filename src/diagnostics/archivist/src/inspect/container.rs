@@ -7,7 +7,6 @@ use crate::identity::ComponentIdentity;
 use crate::inspect::collector::{self as collector, InspectData};
 use crate::pipeline::ComponentAllowlist;
 use diagnostics_data::{self as schema, InspectHandleName};
-use diagnostics_hierarchy::DiagnosticsHierarchy;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_inspect as finspect;
@@ -20,7 +19,6 @@ use fuchsia_inspect::reader::snapshot::{Snapshot, SnapshotTree};
 use fuchsia_trace as ftrace;
 use futures::channel::oneshot;
 use futures::{FutureExt, Stream};
-use inspect_fidl_load as deprecated_inspect;
 use selectors::SelectorExt;
 use std::collections::HashMap;
 use std::future::Future;
@@ -231,7 +229,6 @@ impl InspectArtifactsContainer {
 pub enum ReadSnapshot {
     Single(Snapshot),
     Tree(SnapshotTree),
-    Finished(DiagnosticsHierarchy),
 }
 
 /// Packet containing a snapshot and all the metadata needed to
@@ -290,18 +287,6 @@ impl SnapshotData {
                 {
                     Ok(snapshot_tree) => {
                         SnapshotData::successful(ReadSnapshot::Tree(snapshot_tree), name, false)
-                    }
-                    Err(e) => SnapshotData::failed(
-                        schema::InspectError { message: format!("{e:?}") },
-                        name,
-                        false,
-                    ),
-                }
-            }
-            InspectData::DeprecatedFidl(inspect_proxy) => {
-                match deprecated_inspect::load_hierarchy(inspect_proxy).await {
-                    Ok(hierarchy) => {
-                        SnapshotData::successful(ReadSnapshot::Finished(hierarchy), name, false)
                     }
                     Err(e) => SnapshotData::failed(
                         schema::InspectError { message: format!("{e:?}") },

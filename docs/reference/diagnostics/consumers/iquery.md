@@ -77,8 +77,6 @@ The files that this command looks for are:
   export inspect data.
 - `*.inspect`: VMO files with inspect data. The standard way the Dart inspect
   library exports inspect data.
-- `fuchsia.inspect.deprecated.Inspect`: A service file. The standard way the Go
-  library exports inspect data.
 
 Example usage:
 
