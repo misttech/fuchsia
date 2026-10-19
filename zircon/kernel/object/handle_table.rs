@@ -246,7 +246,6 @@ impl HandleTable {
 
     /// Removes a slice of raw handle values from this handle table.
     ///
-    /// Matching C++ `HandleTable::RemoveHandles(ProcessDispatcher&, ktl::span<const zx_handle_t>)`,
     /// `ZX_HANDLE_INVALID` entries are skipped, and if any non-zero handle is missing, returns
     /// `ZX_ERR_BAD_HANDLE` after processing the remaining handles.
     #[inline]
@@ -396,8 +395,7 @@ impl HandleTable {
     /// Resolves a handle to a dispatcher of type `T` with the required `rights` in this handle
     /// table, without enforcing the `ZX_POL_BAD_HANDLE` job policy on lookup failure.
     ///
-    /// Mirrors C++ `HandleTable::GetDispatcherWithRightsNoPolicyCheck`. As with
-    /// [`Self::get_dispatcher_with_rights`], `ZX_ERR_WRONG_TYPE` takes precedence over
+    /// As with [`Self::get_dispatcher_with_rights`], `ZX_ERR_WRONG_TYPE` takes precedence over
     /// `ZX_ERR_ACCESS_DENIED`.
     #[inline]
     pub fn get_dispatcher_with_rights_no_policy_check<T>(

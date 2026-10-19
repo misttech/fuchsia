@@ -70,9 +70,6 @@ class Handle final {
   static Handle* FromU32(uint32_t value);
 
   // Get the number of outstanding handles for a given dispatcher.
-  static uint32_t Count(const fbl::RefPtr<const Dispatcher>&);
-
-  // Get the number of outstanding handles for a given dispatcher.
   static uint32_t Count(const Dispatcher&);
 
   // Should only be called by diagnostics.cpp.

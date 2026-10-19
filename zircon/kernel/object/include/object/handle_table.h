@@ -21,7 +21,6 @@
 #include <kernel/thread.h>
 #include <ktl/array.h>
 #include <ktl/forward.h>
-#include <ktl/span.h>
 #include <object/dispatcher.h>
 #include <object/exceptionate.h>
 #include <object/futex_context.h>
@@ -79,57 +78,13 @@ class HandleTable : public fbl::RefCounted<HandleTable> {
   HandleOwner RemoveHandleLocked(ProcessDispatcher& caller, zx_handle_t handle_value) TA_REQ(lock_);
   HandleOwner RemoveHandle(ProcessDispatcher& caller, zx_handle_t handle_value);
 
-  // Remove all of an array of |handles| from the handle table. Returns ZX_OK if all of the
-  // handles were removed, and returns ZX_ERR_BAD_HANDLE if any were not.
-  zx_status_t RemoveHandles(ProcessDispatcher& caller, ktl::span<const zx_handle_t> handles);
-
-  // Get the dispatcher corresponding to this handle value.
-  template <typename T>
-  zx_status_t GetDispatcher(ProcessDispatcher& caller, zx_handle_t handle_value,
-                            fbl::RefPtr<T>* dispatcher) {
-    return GetDispatcherAndRights(caller, handle_value, dispatcher, nullptr);
-  }
-
-  // Get the dispatcher and the rights corresponding to this handle value.
-  template <typename T>
-  zx_status_t GetDispatcherAndRights(ProcessDispatcher& caller, zx_handle_t handle_value,
-                                     fbl::RefPtr<T>* dispatcher, zx_rights_t* out_rights) {
-    fbl::RefPtr<Dispatcher> generic_dispatcher;
-    auto status = GetDispatcherInternal(caller, handle_value, &generic_dispatcher, out_rights);
-    if (status != ZX_OK)
-      return status;
-    *dispatcher = DownCastDispatcher<T>(&generic_dispatcher);
-    if (!*dispatcher)
-      return ZX_ERR_WRONG_TYPE;
-    return ZX_OK;
-  }
-
-  template <typename T>
-  zx_status_t GetDispatcherWithRightsNoPolicyCheck(zx_handle_t handle_value,
-                                                   zx_rights_t desired_rights,
-                                                   fbl::RefPtr<T>* dispatcher,
-                                                   zx_rights_t* out_rights) {
-    return GetDispatcherWithRightsImpl(nullptr, handle_value, desired_rights, dispatcher,
-                                       out_rights);
-  }
-
-  template <typename T>
-  zx_status_t GetDispatcherWithRights(ProcessDispatcher& caller, zx_handle_t handle_value,
-                                      zx_rights_t desired_rights, fbl::RefPtr<T>* dispatcher,
-                                      zx_rights_t* out_rights) {
-    return GetDispatcherWithRightsImpl(&caller, handle_value, desired_rights, dispatcher,
-                                       out_rights);
-  }
-
   // Get the dispatcher corresponding to this handle value, after
   // checking that this handle has the desired rights.
   template <typename T>
   zx_status_t GetDispatcherWithRights(ProcessDispatcher& caller, zx_handle_t handle_value,
                                       zx_rights_t desired_rights, fbl::RefPtr<T>* dispatcher) {
-    return GetDispatcherWithRights(caller, handle_value, desired_rights, dispatcher, nullptr);
+    return GetDispatcherWithRightsImpl(caller, handle_value, desired_rights, dispatcher);
   }
-
-  zx_koid_t GetKoidForHandle(ProcessDispatcher& caller, zx_handle_t handle_value);
 
   // Calls the provided
   // |zx_status_t func(zx_handle_t, zx_rights_t, fbl::RefPtr<Dispatcher>)|
@@ -241,15 +196,11 @@ class HandleTable : public fbl::RefCounted<HandleTable> {
   // WRONG_TYPE is returned before ACCESS_DENIED, because if the
   // wrong handle was passed, evaluating its rights does not have
   // much meaning and also this aids in debugging.
-  // If successful, returns the dispatcher and the rights the
-  // handle currently has.
-  // If |caller| is null, ZX_POL_BAD_HANDLE will not be enforced.
   template <typename T>
-  zx_status_t GetDispatcherWithRightsImpl(ProcessDispatcher* caller, zx_handle_t handle_value,
+  zx_status_t GetDispatcherWithRightsImpl(ProcessDispatcher& caller, zx_handle_t handle_value,
                                           zx_rights_t desired_rights,
-                                          fbl::RefPtr<T>* out_dispatcher, zx_rights_t* out_rights) {
+                                          fbl::RefPtr<T>* out_dispatcher) {
     bool has_desired_rights;
-    zx_rights_t rights;
     fbl::RefPtr<Dispatcher> generic_dispatcher;
 
     {
@@ -260,7 +211,6 @@ class HandleTable : public fbl::RefCounted<HandleTable> {
         return ZX_ERR_BAD_HANDLE;
 
       has_desired_rights = handle->HasRights(desired_rights);
-      rights = handle->rights();
       generic_dispatcher = handle->dispatcher();
     }
 
@@ -274,14 +224,8 @@ class HandleTable : public fbl::RefCounted<HandleTable> {
       return ZX_ERR_ACCESS_DENIED;
 
     *out_dispatcher = ktl::move(dispatcher);
-    if (out_rights)
-      *out_rights = rights;
-
     return ZX_OK;
   }
-
-  zx_status_t GetDispatcherInternal(ProcessDispatcher& caller, zx_handle_t handle_value,
-                                    fbl::RefPtr<Dispatcher>* dispatcher, zx_rights_t* rights);
 
   // Protects |handle_table_| and |handle_table_cursors_|.
   // TODO(https://fxbug.dev/42132512): Allow multiple handle table locks to be acquired at once.

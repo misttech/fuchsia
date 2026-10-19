@@ -147,44 +147,6 @@ HandleOwner HandleTable::RemoveHandleLocked(ProcessDispatcher& caller, zx_handle
   return RemoveHandleLocked(handle);
 }
 
-zx_status_t HandleTable::RemoveHandles(ProcessDispatcher& caller,
-                                       ktl::span<const zx_handle_t> handles) {
-  zx_status_t status = ZX_OK;
-  AutoExpiringPreemptDisabler preempt_disable{Mutex::DEFAULT_TIMESLICE_EXTENSION};
-  Guard<BrwLockPi, BrwLockPi::Writer> guard{get_lock()};
-
-  for (zx_handle_t handle_value : handles) {
-    if (handle_value == ZX_HANDLE_INVALID)
-      continue;
-    auto handle = RemoveHandleLocked(caller, handle_value);
-    if (!handle)
-      status = ZX_ERR_BAD_HANDLE;
-  }
-  return status;
-}
-
-zx_koid_t HandleTable::GetKoidForHandle(ProcessDispatcher& caller, zx_handle_t handle_value) {
-  Guard<BrwLockPi, BrwLockPi::Reader> guard{&lock_};
-  Handle* handle = GetHandleLocked(caller, handle_value);
-  if (!handle)
-    return ZX_KOID_INVALID;
-  return handle->dispatcher()->get_koid();
-}
-
-zx_status_t HandleTable::GetDispatcherInternal(ProcessDispatcher& caller, zx_handle_t handle_value,
-                                               fbl::RefPtr<Dispatcher>* dispatcher,
-                                               zx_rights_t* rights) {
-  Guard<BrwLockPi, BrwLockPi::Reader> guard{&lock_};
-  Handle* handle = GetHandleLocked(caller, handle_value);
-  if (!handle)
-    return ZX_ERR_BAD_HANDLE;
-
-  *dispatcher = handle->dispatcher();
-  if (rights)
-    *rights = handle->rights();
-  return ZX_OK;
-}
-
 HandleTable::HandleCursor::HandleCursor(HandleTable* handle_table) : handle_table_(handle_table) {
   AutoExpiringPreemptDisabler preempt_disable{Mutex::DEFAULT_TIMESLICE_EXTENSION};
   Guard<BrwLockPi, BrwLockPi::Writer> guard{&handle_table_->lock_};
