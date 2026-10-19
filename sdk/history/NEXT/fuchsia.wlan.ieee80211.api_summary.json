@@ -929,6 +929,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.INTERNAL_FAILURE",
+        "value": "264"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.INVALID_PARAMETERS",
         "value": "38"
     },
@@ -976,6 +981,11 @@
         "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.NOT_QOS_STA",
         "value": "50"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.NO_ACK_FROM_PEER",
+        "value": "261"
     },
     {
         "kind": "enum/member",
@@ -1144,6 +1154,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.RESPONSE_TIMEOUT",
+        "value": "262"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.RESTRICTION_FROM_AUTHORIZED_GDB",
         "value": "106"
     },
@@ -1286,6 +1301,11 @@
         "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.UNACCEPTABLE_LIFETIME",
         "value": "6"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.UNEXPECTED_RESPONSE",
+        "value": "263"
     },
     {
         "kind": "enum/member",

@@ -177,6 +177,7 @@ class AuthTest : public SimTest {
   simulation::FakeAp ap_;
 
   wlan_ieee80211::StatusCode connect_status_ = wlan_ieee80211::StatusCode::kSuccess;
+  std::optional<wlan_ieee80211::StatusCode> custom_auth_resp_status_;
   std::list<AuthFrameContent> rx_auth_frames_;
   std::list<AuthFrameContent> expect_auth_frames_;
   uint8_t security_ie_[fuchsia_wlan_ieee80211::kWlanIeMaxLen];
@@ -202,6 +203,19 @@ void AuthTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
   auto auth_frame = std::static_pointer_cast<const simulation::SimAuthFrame>(mgmt_frame);
   auth_frame_count_++;
   rx_auth_frames_.emplace_back(auth_frame->seq_num_, auth_frame->auth_type_, auth_frame->status_);
+
+  if (custom_auth_resp_status_.has_value() && auth_frame->seq_num_ == 1) {
+    simulation::SimAuthFrame auth_resp_frame(kDefaultBssid, auth_frame->src_addr_, 2,
+                                             auth_frame->auth_type_, *custom_auth_resp_status_);
+    auth_resp_frame.sec_proto_type_ = auth_frame->sec_proto_type_;
+    simulation::WlanTxInfo tx_info = {
+        .primary_channel = kDefaultChannel,
+        .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+        .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
+    env_->ScheduleNotification([this, auth_resp_frame, tx_info]() {
+      env_->Tx(auth_resp_frame, tx_info, &ap_);
+    }, zx::msec(1));
+  }
 }
 
 void AuthTest::Init() {
@@ -660,8 +674,8 @@ TEST_F(AuthTest, WEP40ChallengeFailure) {
                                    wlan_ieee80211::StatusCode::kChallengeFailure);
   VerifyAuthFrames();
 
-  // Assoc should have failed
-  EXPECT_NE(connect_status_, wlan_ieee80211::StatusCode::kSuccess);
+  // Assoc should have failed with ChallengeFailure
+  EXPECT_EQ(connect_status_, wlan_ieee80211::StatusCode::kChallengeFailure);
 }
 
 TEST_F(AuthTest, WEPOPEN) {
@@ -804,24 +818,34 @@ TEST_F(AuthTest, WrongSecTypeAuthFail) {
 
   env_->Run(kTestDuration);
 
-  uint32_t max_retries = 0;
-
-  WithSimDevice([this, &max_retries](brcmfmac::SimDevice* device) {
-    brcmf_simdev* sim = device->GetSim();
-    struct brcmf_if* ifp = brcmf_get_ifp(sim->drvr, client_ifc_.iface_id_);
-    zx_status_t status = brcmf_fil_iovar_int_get(ifp, "assoc_retry_max", &max_retries, nullptr);
-    EXPECT_EQ(status, ZX_OK);
-  });
-
-  for (uint32_t i = 0; i < max_retries + 1; i++) {
-    expect_auth_frames_.emplace_back(1, simulation::AUTH_TYPE_OPEN,
-                                     wlan_ieee80211::StatusCode::kSuccess);
-    expect_auth_frames_.emplace_back(2, simulation::AUTH_TYPE_OPEN,
-                                     wlan_ieee80211::StatusCode::kRefusedReasonUnspecified);
-  }
+  expect_auth_frames_.emplace_back(1, simulation::AUTH_TYPE_OPEN,
+                                   wlan_ieee80211::StatusCode::kSuccess);
+  expect_auth_frames_.emplace_back(2, simulation::AUTH_TYPE_OPEN,
+                                   wlan_ieee80211::StatusCode::kRefusedReasonUnspecified);
 
   VerifyAuthFrames();
   EXPECT_EQ(connect_status_, wlan_ieee80211::StatusCode::kRefusedReasonUnspecified);
+}
+
+// Verify that when an AP rejects Open System authentication with a specific 802.11 StatusCode
+// (such as kDeniedNoMoreStas when max_num_sta=0), the driver forwards that StatusCode from
+// BRCMF_E_AUTH to SME.
+TEST_F(AuthTest, OpenAuthFailNoMoreStas) {
+  Init();
+  sec_type_ = SEC_TYPE_WPA2;
+  ap_.SetAssocHandling(simulation::FakeAp::ASSOC_IGNORED);
+  custom_auth_resp_status_ = wlan_ieee80211::StatusCode::kDeniedNoMoreStas;
+  env_->ScheduleNotification(std::bind(&AuthTest::StartConnect, this), zx::msec(10));
+
+  env_->Run(kTestDuration);
+
+  expect_auth_frames_.emplace_back(1, simulation::AUTH_TYPE_OPEN,
+                                   wlan_ieee80211::StatusCode::kSuccess);
+  expect_auth_frames_.emplace_back(2, simulation::AUTH_TYPE_OPEN,
+                                   wlan_ieee80211::StatusCode::kDeniedNoMoreStas);
+
+  VerifyAuthFrames();
+  EXPECT_EQ(connect_status_, wlan_ieee80211::StatusCode::kDeniedNoMoreStas);
 }
 
 // Verify a normal SAE authentication work flow in driver.

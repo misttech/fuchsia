@@ -1452,8 +1452,41 @@ TEST_F(ConnectTest, AssocStatusAndReasonCodeMismatchHandling) {
   // Create our device instance
   Init();
 
-  ConnectErrorEventInject(BRCMF_E_STATUS_NO_ACK, wlan_ieee80211::StatusCode::kSuccess);
-  context_.expected_results.push_back(wlan_ieee80211::StatusCode::kRefusedReasonUnspecified);
+  const std::pair<brcmf_fweh_event_status_t, wlan_ieee80211::StatusCode> kTestCases[] = {
+      {BRCMF_E_STATUS_NO_ACK, wlan_ieee80211::StatusCode::kNoAckFromPeer},
+      {BRCMF_E_STATUS_TIMEOUT, wlan_ieee80211::StatusCode::kResponseTimeout},
+      {BRCMF_E_STATUS_UNSOLICITED, wlan_ieee80211::StatusCode::kUnexpectedResponse},
+      {BRCMF_E_STATUS_ABORT, wlan_ieee80211::StatusCode::kCanceled},
+      {BRCMF_E_STATUS_NO_NETWORKS, wlan_ieee80211::StatusCode::kJoinFailure},
+      {BRCMF_E_STATUS_FAIL, wlan_ieee80211::StatusCode::kInternalFailure},
+  };
+
+  size_t expected_count = 0;
+  for (const auto& [fw_status, expected_status_code] : kTestCases) {
+    WithSimDevice([&](brcmfmac::SimDevice* device) {
+      device->GetSim()->sim_fw->err_inj_.DelErrEventInjCmd(BRCMF_C_SET_SSID);
+    });
+    ConnectErrorEventInject(fw_status, wlan_ieee80211::StatusCode::kSuccess);
+    context_.expected_results.push_back(expected_status_code);
+
+    env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(50));
+    env_->Run(zx::sec(1));
+    expected_count++;
+    EXPECT_EQ(context_.connect_resp_count, expected_count);
+  }
+}
+
+TEST_F(ConnectTest, SetSsidNoNetworksReturnsJoinFailure) {
+  Init();
+
+  WithSimDevice([&](brcmfmac::SimDevice* device) {
+    brcmf_simdev* sim = device->GetSim();
+    sim->sim_fw->err_inj_.AddErrEventInjCmd(BRCMF_C_SET_SSID, BRCMF_E_SET_SSID,
+                                            BRCMF_E_STATUS_NO_NETWORKS,
+                                            wlan_ieee80211::StatusCode::kSuccess, 0,
+                                            client_ifc_.iface_id_);
+  });
+  context_.expected_results.push_back(wlan_ieee80211::StatusCode::kJoinFailure);
 
   env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(50));
   env_->Run(kTestDuration);

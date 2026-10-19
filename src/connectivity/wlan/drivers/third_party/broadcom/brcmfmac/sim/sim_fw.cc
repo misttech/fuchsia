@@ -462,6 +462,7 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
     SendEventToDriver(0, nullptr, ecode, estatus, ifidx, nullptr, flags,
                       static_cast<uint16_t>(fidl::ToUnderlying(reason)), kZeroMac,
                       kAssocEventDelay);
+    bcdc_response_.Set(msg, len);
     return ZX_OK;
   }
 
@@ -1536,7 +1537,12 @@ void SimFirmware::HandleAuthResp(std::shared_ptr<const simulation::SimAuthFrame>
     ZX_ASSERT(auth_state_.state == AuthState::EXPECTING_SECOND);
     ZX_ASSERT(frame->seq_num_ == 2);
     if (frame->status_ != wlan_ieee80211_wire::StatusCode::kSuccess) {
+      assoc_state_.state = AssocState::AUTHENTICATION_CHALLENGE_FAILURE;
+      auth_state_.state = AuthState::NOT_AUTHENTICATED;
       BRCMF_DBG(SIM, "Auth refused, Handle failure");
+      SendEventToDriver(0, nullptr, BRCMF_E_AUTH, BRCMF_E_STATUS_FAIL, kClientIfidx, nullptr, 0,
+                        static_cast<uint32_t>(fidl::ToUnderlying(frame->status_)),
+                        frame->src_addr_);
       AssocHandleFailure(frame->status_);
       return;
     }
@@ -1576,7 +1582,7 @@ void SimFirmware::HandleAuthResp(std::shared_ptr<const simulation::SimAuthFrame>
       auth_req_frame.sec_proto_type_ = auth_state_.sec_type;
       hw_.Tx(auth_req_frame);
     } else if (auth_state_.state == AuthState::EXPECTING_FOURTH && frame->seq_num_ == 4) {
-      if (frame->status_ == wlan_ieee80211_wire::StatusCode::kChallengeFailure) {
+      if (frame->status_ != wlan_ieee80211_wire::StatusCode::kSuccess) {
         assoc_state_.state = AssocState::AUTHENTICATION_CHALLENGE_FAILURE;
         auth_state_.state = AuthState::NOT_AUTHENTICATED;
         BRCMF_DBG(SIM, "Auth shared challenge failure, Handle failure");

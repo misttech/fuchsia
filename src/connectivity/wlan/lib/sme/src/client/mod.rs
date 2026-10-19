@@ -385,7 +385,8 @@ impl ConnectFailure {
         //       whether an association failure is due to timeout.
         match self {
             ConnectFailure::AuthenticationFailure(failure) => match failure {
-                fidl_ieee80211::StatusCode::RejectedSequenceTimeout => true,
+                fidl_ieee80211::StatusCode::RejectedSequenceTimeout
+                | fidl_ieee80211::StatusCode::ResponseTimeout => true,
                 _ => false,
             },
             ConnectFailure::EstablishRsnaFailure(failure) => match failure {
@@ -444,27 +445,21 @@ impl ConnectFailure {
 
             // For WEP, the entire association is always handled by
             // fullmac, so the best we can do is use
-            // fidl_mlme::AssociateResultCode. The code that arises
-            // when WEP fails with rejected credentials is
-            // RefusedReasonUnspecified. This is a catch-all error for
-            // a WEP authentication failure, but it is being
-            // considered good enough for catching rejected
-            // credentials for a deprecated WEP association.
+            // fidl_ieee80211::StatusCode. When shared-key WEP fails
+            // with rejected credentials, the AP returns ChallengeFailure.
             ConnectFailure::AssociationFailure(AssociationFailure {
                 bss_protection: BssProtection::Wep,
-                code: fidl_ieee80211::StatusCode::RefusedUnauthenticatedAccessNotSupported,
+                code: fidl_ieee80211::StatusCode::ChallengeFailure,
             }) => true,
 
             // For WPA3, the AP will not respond to SAE authentication frames
             // if it detects an invalid credential, so we expect the connection
             // attempt to time out.
             ConnectFailure::AssociationFailure(AssociationFailure {
-                bss_protection: BssProtection::Wpa3Personal,
-                code: fidl_ieee80211::StatusCode::RejectedSequenceTimeout,
-            })
-            | ConnectFailure::AssociationFailure(AssociationFailure {
-                bss_protection: BssProtection::Wpa2Wpa3Personal,
-                code: fidl_ieee80211::StatusCode::RejectedSequenceTimeout,
+                bss_protection: BssProtection::Wpa3Personal | BssProtection::Wpa2Wpa3Personal,
+                code:
+                    fidl_ieee80211::StatusCode::RejectedSequenceTimeout
+                    | fidl_ieee80211::StatusCode::ResponseTimeout,
             }) => true,
             _ => false,
         }
@@ -538,15 +533,17 @@ impl RoamFailure {
                     Some(selected_bss) => match selected_bss.protection() {
                         // WEP
                         BssProtection::Wep => match self.status_code {
-                            fidl_ieee80211::StatusCode::RefusedUnauthenticatedAccessNotSupported => true,
+                            fidl_ieee80211::StatusCode::ChallengeFailure => true,
                             _ => false,
                         },
                         // WPA3
-                        BssProtection::Wpa3Personal
-                        | BssProtection::Wpa2Wpa3Personal => match self.status_code {
-                            fidl_ieee80211::StatusCode::RejectedSequenceTimeout => true,
-                            _ => false,
-                        },
+                        BssProtection::Wpa3Personal | BssProtection::Wpa2Wpa3Personal => {
+                            match self.status_code {
+                                fidl_ieee80211::StatusCode::RejectedSequenceTimeout
+                                | fidl_ieee80211::StatusCode::ResponseTimeout => true,
+                                _ => false,
+                            }
+                        }
                         _ => false,
                     },
                     // If selected_bss is unavailable, there's a bigger problem with the roam
@@ -1543,19 +1540,21 @@ mod tests {
         assert!(failure.likely_due_to_credential_rejected());
     }
 
-    #[test]
-    fn test_connect_detection_of_rejected_wpa3_credentials() {
+    #[test_case(fidl_ieee80211::StatusCode::RejectedSequenceTimeout)]
+    #[test_case(fidl_ieee80211::StatusCode::ResponseTimeout)]
+    fn test_connect_detection_of_rejected_wpa3_credentials(code: fidl_ieee80211::StatusCode) {
         let bss = fake_bss_description!(Wpa3);
         let failure = ConnectFailure::AssociationFailure(AssociationFailure {
             bss_protection: bss.protection(),
-            code: fidl_ieee80211::StatusCode::RejectedSequenceTimeout,
+            code,
         });
 
         assert!(failure.likely_due_to_credential_rejected());
     }
 
-    #[test]
-    fn test_roam_detection_of_rejected_wpa3_credentials() {
+    #[test_case(fidl_ieee80211::StatusCode::RejectedSequenceTimeout)]
+    #[test_case(fidl_ieee80211::StatusCode::ResponseTimeout)]
+    fn test_roam_detection_of_rejected_wpa3_credentials(status_code: fidl_ieee80211::StatusCode) {
         let selected_bss = fake_bss_description!(Wpa3);
         let disconnect_info = fidl_sme::DisconnectInfo {
             is_sme_reconnecting: false,
@@ -1565,7 +1564,7 @@ mod tests {
             }),
         };
         let failure = RoamFailure {
-            status_code: fidl_ieee80211::StatusCode::RejectedSequenceTimeout,
+            status_code,
             failure_type: RoamFailureType::ReassociationFailure,
             selected_bssid: selected_bss.bssid,
             disconnect_info,
@@ -1580,7 +1579,7 @@ mod tests {
     fn test_connect_detection_of_rejected_wep_credentials() {
         let failure = ConnectFailure::AssociationFailure(AssociationFailure {
             bss_protection: BssProtection::Wep,
-            code: fidl_ieee80211::StatusCode::RefusedUnauthenticatedAccessNotSupported,
+            code: fidl_ieee80211::StatusCode::ChallengeFailure,
         });
         assert!(failure.likely_due_to_credential_rejected());
     }
@@ -1596,7 +1595,7 @@ mod tests {
             }),
         };
         let failure = RoamFailure {
-            status_code: fidl_ieee80211::StatusCode::RefusedUnauthenticatedAccessNotSupported,
+            status_code: fidl_ieee80211::StatusCode::ChallengeFailure,
             failure_type: RoamFailureType::ReassociationFailure,
             selected_bssid: selected_bss.bssid,
             disconnect_info,
