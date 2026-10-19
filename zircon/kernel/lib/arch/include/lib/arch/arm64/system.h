@@ -977,6 +977,36 @@ ARCH_ARM64_SYSREG(ArmIccSreEl1, "icc_sre_el1");
 ARCH_ARM64_SYSREG(ArmIccSreEl2, "icc_sre_el2");
 ARCH_ARM64_SYSREG(ArmIccSreEl3, "icc_sre_el3");
 
+// [arm/sysreg]/ZCR_EL1: SVE Control Register (EL1)
+struct ArmZcrEl1 : public SysRegBase<ArmZcrEl1, uint64_t> {
+  DEF_RSVDZ_FIELD(63, 9);
+  DEF_FIELD(8, 4, impdef);
+  DEF_FIELD(3, 0, len);
+};
+ARCH_ARM64_SYSREG(ArmZcrEl1, "S3_0_c1_c2_0");
+
+// [arm/sysreg]/CPACR_EL1: Architectural Feature Access Control Register (EL1)
+struct ArmCpacrEl1 : public SysRegBase<ArmCpacrEl1, uint64_t> {
+  enum class Trap : uint8_t {
+    kTrapAll = 0b00,
+    kTrapEl0 = 0b01,
+    kTrapAllAlt = 0b10,
+    kTrapNone = 0b11,
+  };
+
+  DEF_RSVDZ_FIELD(63, 30);
+  DEF_BIT(29, e0poe);
+  DEF_BIT(28, tta);
+  DEF_RSVDZ_FIELD(27, 26);
+  DEF_ENUM_FIELD(Trap, 25, 24, smen);
+  DEF_RSVDZ_FIELD(23, 22);
+  DEF_ENUM_FIELD(Trap, 21, 20, fpen);
+  DEF_RSVDZ_FIELD(19, 18);
+  DEF_ENUM_FIELD(Trap, 17, 16, zen);
+  DEF_RSVDZ_FIELD(15, 0);
+};
+ARCH_ARM64_SYSREG(ArmCpacrEl1, "cpacr_el1");
+
 }  // namespace arch
 
 #endif  // ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_ARM64_SYSTEM_H_

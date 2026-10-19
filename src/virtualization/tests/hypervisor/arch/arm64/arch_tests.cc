@@ -24,6 +24,8 @@ DECLARE_TEST_FUNCTION(vcpu_wfi_pending_interrupt_gicv3)
 DECLARE_TEST_FUNCTION(vcpu_wfi_aarch32)
 DECLARE_TEST_FUNCTION(vcpu_fp)
 DECLARE_TEST_FUNCTION(vcpu_fp_aarch32)
+DECLARE_TEST_FUNCTION(vcpu_sve)
+DECLARE_TEST_FUNCTION(vcpu_sve_zcr)
 DECLARE_TEST_FUNCTION(vcpu_psci_system_off)
 DECLARE_TEST_FUNCTION(vcpu_psci_system_reset)
 DECLARE_TEST_FUNCTION(vcpu_psci_cpu_on)
@@ -56,6 +58,12 @@ bool SupportsAarch32() {
   uint32_t features = 0;
   zx_status_t status = zx_system_get_features(ZX_FEATURE_KIND_CPU, &features);
   return status == ZX_OK && (features & ZX_ARM64_FEATURE_ISA_ARM32) != 0;
+}
+
+bool SupportsSve() {
+  uint32_t features = 0;
+  zx_status_t status = zx_system_get_features(ZX_FEATURE_KIND_CPU, &features);
+  return status == ZX_OK && (features & ZX_ARM64_FEATURE_ISA_SVE) != 0;
 }
 
 TEST(Guest, VcpuReadWriteState) {
@@ -261,6 +269,40 @@ TEST(Guest, VcpuTrappedSystemRegisters) {
       SetupGuest(&test, vcpu_trapped_system_registers_start, vcpu_trapped_system_registers_end));
 
   ASSERT_NO_FATAL_FAILURE(EnterAndCleanExit(&test));
+}
+
+TEST(Guest, VcpuSve) {
+  if (!SupportsSve()) {
+    GTEST_SKIP();
+  }
+
+  {
+    TestCase test;
+    ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, vcpu_sve_start, vcpu_sve_end));
+
+    zx_port_packet_t packet = {};
+    ASSERT_EQ(test.vcpu.enter(&packet), ZX_ERR_NOT_SUPPORTED);
+  }
+
+  {
+    TestCase test;
+    ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, vcpu_sve_zcr_start, vcpu_sve_zcr_end));
+
+    zx_port_packet_t packet = {};
+    ASSERT_EQ(test.vcpu.enter(&packet), ZX_ERR_NOT_SUPPORTED);
+  }
+
+  // Verify that host CPACR_EL1.ZEN was restored on guest exit and host SVE
+  // instructions continue to execute without trapping.
+  uint64_t vl = 0;
+  __asm__ volatile(
+      R"""(
+      .arch_extension sve
+      rdvl %[vl], #1
+      .arch_extension nosve
+      )"""
+      : [vl] "=r"(vl));
+  EXPECT_EQ(vl, 16u);
 }
 
 TEST(Guest, VcpuTimerRegisters) {

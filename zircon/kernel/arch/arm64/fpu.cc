@@ -9,6 +9,7 @@
 #include <trace.h>
 
 #include <arch/arm64.h>
+#include <arch/arm64/feature.h>
 #include <kernel/thread.h>
 
 #define LOCAL_TRACE 0
@@ -40,6 +41,34 @@ void arm64_fpu_restore_state(const Thread* t) {
       :
       : [regs] "r"(fpstate->regs), "m"(fpstate->regs));
 
+  if (arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE)) {
+    static_assert(sizeof(fpstate->p_regs) == static_cast<size_t>(16 * 2));
+    __asm__ volatile(
+        ".arch_extension sve\n"
+        "ldr     p0, [%[ffr]]\n"
+        "wrffr   p0.b\n"
+        "ldr     p0, [%[p_regs], #0, mul vl]\n"
+        "ldr     p1, [%[p_regs], #1, mul vl]\n"
+        "ldr     p2, [%[p_regs], #2, mul vl]\n"
+        "ldr     p3, [%[p_regs], #3, mul vl]\n"
+        "ldr     p4, [%[p_regs], #4, mul vl]\n"
+        "ldr     p5, [%[p_regs], #5, mul vl]\n"
+        "ldr     p6, [%[p_regs], #6, mul vl]\n"
+        "ldr     p7, [%[p_regs], #7, mul vl]\n"
+        "ldr     p8, [%[p_regs], #8, mul vl]\n"
+        "ldr     p9, [%[p_regs], #9, mul vl]\n"
+        "ldr     p10, [%[p_regs], #10, mul vl]\n"
+        "ldr     p11, [%[p_regs], #11, mul vl]\n"
+        "ldr     p12, [%[p_regs], #12, mul vl]\n"
+        "ldr     p13, [%[p_regs], #13, mul vl]\n"
+        "ldr     p14, [%[p_regs], #14, mul vl]\n"
+        "ldr     p15, [%[p_regs], #15, mul vl]\n"
+        ".arch_extension nosve\n"
+        :
+        : [p_regs] "r"(fpstate->p_regs), "m"(fpstate->p_regs), [ffr] "r"(&fpstate->ffr),
+          "m"(fpstate->ffr));
+  }
+
   __arm_wsr64("fpcr", fpstate->fpcr);
   __arm_wsr64("fpsr", fpstate->fpsr);
 }
@@ -70,6 +99,34 @@ void arm64_fpu_save_state(Thread* t) {
       "stp     q30, q31, [%[regs], #(15 * 32)]\n"
       : "=m"(fpstate->regs)
       : [regs] "r"(fpstate->regs));
+
+  if (arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE)) {
+    static_assert(sizeof(fpstate->p_regs) == static_cast<size_t>(16 * 2));
+    __asm__ volatile(
+        ".arch_extension sve\n"
+        "str     p0, [%[p_regs], #0, mul vl]\n"
+        "str     p1, [%[p_regs], #1, mul vl]\n"
+        "str     p2, [%[p_regs], #2, mul vl]\n"
+        "str     p3, [%[p_regs], #3, mul vl]\n"
+        "str     p4, [%[p_regs], #4, mul vl]\n"
+        "str     p5, [%[p_regs], #5, mul vl]\n"
+        "str     p6, [%[p_regs], #6, mul vl]\n"
+        "str     p7, [%[p_regs], #7, mul vl]\n"
+        "str     p8, [%[p_regs], #8, mul vl]\n"
+        "str     p9, [%[p_regs], #9, mul vl]\n"
+        "str     p10, [%[p_regs], #10, mul vl]\n"
+        "str     p11, [%[p_regs], #11, mul vl]\n"
+        "str     p12, [%[p_regs], #12, mul vl]\n"
+        "str     p13, [%[p_regs], #13, mul vl]\n"
+        "str     p14, [%[p_regs], #14, mul vl]\n"
+        "str     p15, [%[p_regs], #15, mul vl]\n"
+        "rdffr   p0.b\n"
+        "str     p0, [%[ffr]]\n"
+        "ldr     p0, [%[p_regs], #0, mul vl]\n"
+        ".arch_extension nosve\n"
+        : "=m"(fpstate->p_regs), "=m"(fpstate->ffr)
+        : [p_regs] "r"(fpstate->p_regs), [ffr] "r"(&fpstate->ffr));
+  }
 
   fpstate->fpcr = static_cast<uint32_t>(__arm_rsr64("fpcr"));
   fpstate->fpsr = static_cast<uint32_t>(__arm_rsr64("fpsr"));

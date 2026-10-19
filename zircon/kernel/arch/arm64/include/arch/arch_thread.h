@@ -54,6 +54,10 @@ struct fpstate {
   alignas(16) uint64_t regs[64];
   uint32_t fpcr;
   uint32_t fpsr;
+
+  // SVE extensions (assuming 128-bit VL max for context save)
+  uint16_t p_regs[16];  // 32 bytes for P0-P15 (16 regs * 2 bytes each)
+  uint16_t ffr;         // 2 bytes used, 2 bytes allocated
 };
 
 struct arm64_percpu;

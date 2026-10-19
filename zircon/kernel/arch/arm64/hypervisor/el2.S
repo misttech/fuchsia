@@ -89,6 +89,7 @@ reg_xa  .req x11
     add reg_xt, reg_xs, \off
     system_register \inst, HSS_TPIDR_EL0, tpidr_el0
     system_register \inst, HSS_TPIDRRO_EL0, tpidrro_el0
+    system_register \inst, HSS_CPACR_EL1, cpacr_el1
     system_register \inst, HSS_MDSCR_EL1, mdscr_el1
     system_register \inst, HSS_TPIDR_EL1, tpidr_el1
 .ifc "\inst", "ldr"
@@ -381,13 +382,15 @@ FUNCTION(arm64_el2_enter)
     orr reg_xt, reg_xt, #MDCR_EL2_TDOSA
     msr mdcr_el2, reg_xt
 
-    // Enable floating-point traps for lazy FP context switch (E2H=1: FPEN = 0b00).
-    movlit reg_xt, CPTR_EL2_E2H1_ZEN | CPTR_EL2_E2H1_SMEN
-    msr cptr_el2, reg_xt
-    isb
-
     host_state stp, HS_XREGS
     host_system_state str, HS_SYSTEM_STATE
+
+    // Enable floating-point, SVE, and SME traps (E2H=1: FPEN = 0b00, ZEN = 0b00, SMEN = 0b00).
+    // SVE and SME are not exposed to guests (see ID_AA64PFR0_EL1 / ID_AA64PFR1_EL1 in vmexit.cc),
+    // so trapping them prevents guests from accessing host P0-P15, FFR, or SME state.
+    msr cptr_el2, xzr
+    isb
+
     guest_enter_state
     guest_system_state ldr, GS_SYSTEM_STATE
     guest_state ldp
@@ -416,8 +419,6 @@ FUNCTION_LABEL(el2_guest_exit)
     guest_xs_state stp, reg_xt
     guest_system_state str, GS_SYSTEM_STATE
     guest_exit_state
-    host_system_state ldr, HS_SYSTEM_STATE
-    host_state ldp, HS_XREGS
 
     // With E2H=1, CPTR_EL2.FPEN (bits [21:20]) is 0b00 when trapping FP and
     // 0b11 when untrapped by el2_fp_enter.
@@ -429,6 +430,9 @@ FUNCTION_LABEL(el2_guest_exit)
     fp_state ldp, HS_FP_STATE
 
 .Lfp_done:
+    host_system_state ldr, HS_SYSTEM_STATE
+    host_state ldp, HS_XREGS
+
     // Disable virtual timer set by guest.
     msr cntv_ctl_el02, xzr
 
@@ -440,7 +444,7 @@ FUNCTION_LABEL(el2_guest_exit)
     ldr x0, [sp, 8]
     pop_stack
 
-    // Restore host MDCR_EL2, CNTHCTL_EL2, HCR_EL2, VBAR_EL2, CPTR_EL2, PAN, and DAIF.
+    // Restore host MDCR_EL2, CNTHCTL_EL2, HCR_EL2, VBAR_EL2, PAN, and DAIF.
     mrs reg_xt, mdcr_el2
     bic reg_xt, reg_xt, #MDCR_EL2_TDOSA
     msr mdcr_el2, reg_xt
@@ -455,8 +459,6 @@ FUNCTION_LABEL(el2_guest_exit)
 
     adr_global reg_xs, arm64_el1_exception
     msr vbar_el2, reg_xs
-    movlit reg_xt, CPTR_EL2_E2H1_FPEN
-    msr cptr_el2, reg_xt
     isb
 
     ldp reg_xs, reg_xt, [sp], 16
@@ -473,8 +475,9 @@ FUNCTION_LABEL(el2_fp_enter)
     // We're returning to the guest so we don't need the return code in [sp, 8].
     str reg_xt, [sp, 8]
 
-    // Disable floating-point traps (E2H=1: FPEN = 0b11) and reset exception syndrome.
-    movlit reg_xs, CPTR_EL2_E2H1_FPEN | CPTR_EL2_E2H1_ZEN | CPTR_EL2_E2H1_SMEN
+    // Disable floating-point traps (E2H=1: FPEN = 0b11) while keeping SVE and SME
+    // trapped (ZEN = 0b00, SMEN = 0b00), and reset exception syndrome.
+    movlit reg_xs, CPTR_EL2_E2H1_FPEN
     msr cptr_el2, reg_xs
     msr esr_el2, xzr
     isb

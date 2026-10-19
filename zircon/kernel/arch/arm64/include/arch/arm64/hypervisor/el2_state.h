@@ -64,7 +64,8 @@
 
 #define HSS_TPIDR_EL0       0
 #define HSS_TPIDRRO_EL0     (HSS_TPIDR_EL0 + 8)
-#define HSS_MDSCR_EL1       (HSS_TPIDRRO_EL0 + 8)
+#define HSS_CPACR_EL1       (HSS_TPIDRRO_EL0 + 8)
+#define HSS_MDSCR_EL1       (HSS_CPACR_EL1 + 8)
 #define HSS_TPIDR_EL1       (HSS_MDSCR_EL1 + 8)
 
 #define ES_RESUME           0
@@ -152,6 +153,7 @@ struct SystemState {
 struct HostSystemState {
   uint64_t tpidr_el0;
   uint64_t tpidrro_el0;
+  uint64_t cpacr_el1;
   uint64_t mdscr_el1;
   uint64_t tpidr_el1;
 };
@@ -237,6 +239,7 @@ static_assert(offsetof(SystemState, spsr_el2) == SS_SPSR_EL2);
 
 static_assert(offsetof(HostSystemState, tpidr_el0) == HSS_TPIDR_EL0);
 static_assert(offsetof(HostSystemState, tpidrro_el0) == HSS_TPIDRRO_EL0);
+static_assert(offsetof(HostSystemState, cpacr_el1) == HSS_CPACR_EL1);
 static_assert(offsetof(HostSystemState, mdscr_el1) == HSS_MDSCR_EL1);
 static_assert(offsetof(HostSystemState, tpidr_el1) == HSS_TPIDR_EL1);
 

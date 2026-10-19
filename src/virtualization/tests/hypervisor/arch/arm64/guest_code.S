@@ -8,7 +8,10 @@
 #include "src/virtualization/tests/hypervisor/constants.h"
 
 .set ICC_IAR1_EL1,              S3_0_C12_C12_0
+#define ID_AA64ZFR0_EL1         S3_0_C0_C4_4
+#define ZCR_EL1                 S3_0_C1_C2_0
 
+.set CPACR_EL1_ZEN_NO_TRAP,     (3 << 16)
 .set CPACR_EL1_FPEN_NO_TRAP,    (3 << 20)
 
 // See ARM ARM Table D1.10.2 for more details.
@@ -591,6 +594,15 @@ FUNCTION vcpu_trapped_system_registers
     cmp    x2, x1
     bne    .Ltrap_sysreg_fail
 
+    // Verify SVE is masked out in ID_AA64PFR0_EL1 (bits [35:32]) and ID_AA64ZFR0_EL1 is RAZ.
+    mrs    x1, id_aa64pfr0_el1
+    ubfx   x1, x1, #32, #4
+    cbnz   x1, .Ltrap_sysreg_fail
+
+    movlit x1, 0x123456789abcdef0
+    mrs    x1, ID_AA64ZFR0_EL1
+    cbnz   x1, .Ltrap_sysreg_fail
+
     // Verify sp_el0 was not corrupted by any Rt == 31 (xzr) trapped instructions.
     mrs    x2, sp_el0
     cmp    x2, x19
@@ -598,6 +610,46 @@ FUNCTION vcpu_trapped_system_registers
 
     test_complete
 .Ltrap_sysreg_fail:
+    test_failure
+END_FUNCTION
+
+// Test that SVE instructions are trapped to EL2 and not enabled for guests.
+FUNCTION vcpu_sve
+    // Verify ID_AA64PFR0_EL1.SVE (bits [35:32]) is masked to 0 and ID_AA64ZFR0_EL1 is RAZ.
+    mrs    x0, id_aa64pfr0_el1
+    ubfx   x0, x0, #32, #4
+    cbnz   x0, .Lsve_fail
+    mrs    x0, ID_AA64ZFR0_EL1
+    cbnz   x0, .Lsve_fail
+
+    // Enable FP and SVE in the guest's CPACR_EL1 (CPACR_EL12 under VHE).
+    // Because CPTR_EL2.ZEN is 0b00, executing an SVE instruction must trap to EL2
+    // and cause vcpu_enter to fail with ZX_ERR_NOT_SUPPORTED.
+    mov    x0, (CPACR_EL1_FPEN_NO_TRAP | CPACR_EL1_ZEN_NO_TRAP)
+    msr    cpacr_el1, x0
+    isb
+
+    .arch_extension sve
+    rdvl   x0, #1
+    .arch_extension nosve
+
+.Lsve_fail:
+    test_failure
+
+    exception_vector CURRENT_EL_ELx_BASE, SYNC_EXC_OFFSET
+    test_failure
+END_FUNCTION
+
+// Test that guest access to ZCR_EL1 is trapped to EL2 and not enabled for guests.
+FUNCTION vcpu_sve_zcr
+    mov    x0, (CPACR_EL1_FPEN_NO_TRAP | CPACR_EL1_ZEN_NO_TRAP)
+    msr    cpacr_el1, x0
+    isb
+
+    mrs    x0, ZCR_EL1
+    test_failure
+
+    exception_vector CURRENT_EL_ELx_BASE, SYNC_EXC_OFFSET
     test_failure
 END_FUNCTION
 

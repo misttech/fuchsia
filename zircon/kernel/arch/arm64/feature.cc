@@ -575,9 +575,7 @@ void arm64_feature_init() {
       arm64_isa_features |= ZX_ARM64_FEATURE_ISA_ASIMD;
     }
     if (pfr0.sve() != arch::ArmIdAa64Pfr0El1::Sve::kNone) {
-      // TODO(https://fxbug.dev/42081850): We do not currently report
-      // ZX_ARM64_FEATURE_ISA_SVE even if the processor supports the feature
-      // because Zircon does not have all the supporting code yet.
+      arm64_isa_features |= ZX_ARM64_FEATURE_ISA_SVE;
     }
 
     auto mmfr0 = arch::ArmIdAa64Mmfr0El1::Read();
@@ -672,6 +670,10 @@ void arm64_feature_init() {
     if (mmfr4.e2h0() == 0) {
       arm64_mmu_features.e2h0 = true;
     }
+  } else {
+    auto pfr0 = arch::ArmIdAa64Pfr0El1::Read();
+    ASSERT((pfr0.sve() != arch::ArmIdAa64Pfr0El1::Sve::kNone) ==
+           arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE));
   }
 
   // read the cache info for each cpu

@@ -12,7 +12,7 @@
 // architectural state including, sctlr2_el1 and tcr2_el1.
 
 // Saves register state into the psci_cpu_resume_context pointed to by
-// \context_reg.  Clobbers x4-x16, so \context_reg must not be one of them.
+// \context_reg.  Clobbers x4-x17, so \context_reg must not be one of them.
 .macro save_resume_context context_reg
   mrs x4, daif
   mrs x5, sctlr_el1
@@ -27,6 +27,15 @@
   mrs x14, tpidr_el1
   mrs x15, tpidrro_el0
   mrs x16, tpidr_el0
+  // Note: Vector/SVE registers (Z0-Z31, P0-P15, FFR) are not saved here because
+  // PSCI CPU/system suspend is only invoked from kernel-only threads
+  // (platform_suspend_cpu and platform_suspend_system assert user_thread == nullptr),
+  // after any user thread's FP/SVE state has already been saved on context switch.
+  mov x17, xzr
+  tbz x9, #16, 0f
+  // zcr_el1 (S3_0_c1_c2_0)
+  mrs x17, S3_0_c1_c2_0
+0:
 
   // Note, we're not saving ttbr0_el1 or ttbr1_el1 because we are relying on the
   // caller of |psci_do_resume| to restore those from global variables.
@@ -36,7 +45,7 @@
   stp x10, x11, [\context_reg, (3 * 16)]
   stp x12, x13, [\context_reg, (4 * 16)]
   stp x14, x15, [\context_reg, (5 * 16)]
-  stp x16, xzr, [\context_reg, (6 * 16)]
+  stp x16, x17, [\context_reg, (6 * 16)]
 
   stp x18, x19, [\context_reg, (7 * 16)]
   stp x20, x21, [\context_reg, (8 * 16)]
@@ -105,7 +114,7 @@
   ldp x10, x11, [x0, (3 * 16)]
   ldp x12, x13, [x0, (4 * 16)]
   ldp x14, x15, [x0, (5 * 16)]
-  ldp x16, xzr, [x0, (6 * 16)]
+  ldp x16, x17, [x0, (6 * 16)]
 
   ldp x18, x19, [x0, (7 * 16)]
   ldp x20, x21, [x0, (8 * 16)]
@@ -123,6 +132,11 @@
   mov sp, x11
   msr osdlr_el1, x10
   msr cpacr_el1, x9
+  tbz x9, #16, 0f
+  isb
+  // zcr_el1 (S3_0_c1_c2_0)
+  msr S3_0_c1_c2_0, x17
+0:
   msr mdscr_el1, x8
 
   msr vbar_el1, x7

@@ -151,4 +151,34 @@ TEST(Arm64System, MairAttributeTranslation) {
   }
 }
 
+TEST(Arm64System, ZcrEl1) {
+  arch::ArmZcrEl1 zcr{};
+  EXPECT_EQ(zcr.reg_value(), 0u);
+
+  zcr.set_len(0xf);
+  EXPECT_EQ(zcr.reg_value(), 0xfu);
+  EXPECT_EQ(zcr.len(), 0xfu);
+
+  zcr.set_impdef(0x1f);
+  EXPECT_EQ(zcr.reg_value(), 0x1ffu);
+  EXPECT_EQ(zcr.impdef(), 0x1fu);
+}
+
+TEST(Arm64System, CpacrEl1) {
+  arch::ArmCpacrEl1 cpacr{};
+  EXPECT_EQ(cpacr.reg_value(), 0u);
+
+  cpacr.set_zen(arch::ArmCpacrEl1::Trap::kTrapNone);
+  EXPECT_EQ(cpacr.reg_value(), 3ULL << 16);
+  EXPECT_EQ(cpacr.zen(), arch::ArmCpacrEl1::Trap::kTrapNone);
+
+  cpacr.set_fpen(arch::ArmCpacrEl1::Trap::kTrapEl0);
+  EXPECT_EQ(cpacr.reg_value(), (1ULL << 20) | (3ULL << 16));
+  EXPECT_EQ(cpacr.fpen(), arch::ArmCpacrEl1::Trap::kTrapEl0);
+
+  cpacr.set_smen(arch::ArmCpacrEl1::Trap::kTrapAllAlt);
+  EXPECT_EQ(cpacr.reg_value(), (2ULL << 24) | (1ULL << 20) | (3ULL << 16));
+  EXPECT_EQ(cpacr.smen(), arch::ArmCpacrEl1::Trap::kTrapAllAlt);
+}
+
 }  // namespace

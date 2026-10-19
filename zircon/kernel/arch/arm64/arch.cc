@@ -227,14 +227,26 @@ void arm64_cpu_early_init() {
   arch::ArmSctlrEl1::Write(sctlr);
   __isb(ARM_MB_SY);
 
-  // Enable the FPU, disable SVE and any other additional vector units.
-  // FPEN bits 0b11 means do not trap in EL0 or EL1.
-  constexpr uint32_t kFpuEnable = (0b11 << 20);
-  __arm_wsr64("cpacr_el1", kFpuEnable);
+  // Enable the FPU, disabling any other additional vector units.
+  auto cpacr = arch::ArmCpacrEl1::Get().FromValue(0);
+  cpacr.set_fpen(arch::ArmCpacrEl1::Trap::kTrapNone);
+  arch::ArmCpacrEl1::Write(cpacr);
   __isb(ARM_MB_SY);
 
   // Save all of the features of the cpu.
   arm64_feature_init();
+
+  // If FEAT_SVE is available, enable it and configure a 128-bit vector length.
+  if (arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE)) {
+    cpacr.set_zen(arch::ArmCpacrEl1::Trap::kTrapNone);
+    arch::ArmCpacrEl1::Write(cpacr);
+    __isb(ARM_MB_SY);
+
+    auto zcr = arch::ArmZcrEl1::Read();
+    zcr.set_len(0);  // 128-bit vector length
+    arch::ArmZcrEl1::Write(zcr);
+    __isb(ARM_MB_SY);
+  }
 
   // If FEAT_MOPS is available, enable it for EL0.
   if (arm64_isa_features & ZX_ARM64_FEATURE_ISA_MOPS) {

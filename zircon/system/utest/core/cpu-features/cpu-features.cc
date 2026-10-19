@@ -5,6 +5,8 @@
 #include <zircon/features.h>
 #include <zircon/syscalls.h>
 
+#include <array>
+
 #include <zxtest/zxtest.h>
 
 namespace {
@@ -85,6 +87,46 @@ TEST(CpuFeatureTests, ArmMopsException) {
         : "cc");
   };
   ASSERT_DEATH(bad_mops);
+}
+
+TEST(CpuFeatureTests, ArmSve) {
+  uint32_t features = 0;
+  ASSERT_OK(zx_system_get_features(ZX_FEATURE_KIND_CPU, &features));
+
+  if ((features & ZX_ARM64_FEATURE_ISA_SVE) == 0) {
+    ASSERT_DEATH([] {
+      uint64_t vl = 0;
+      __asm__ volatile(
+          R"""(
+          .arch_extension sve
+          rdvl %[vl], #1
+          .arch_extension nosve
+          )"""
+          : [vl] "=&r"(vl));
+    });
+    return;
+  }
+
+  uint64_t vl = 0;
+  std::array<uint8_t, 16> out{};
+  uint8_t* out_ptr = out.data();
+  __asm__ volatile(
+      R"""(
+      .arch_extension sve
+      rdvl %[vl], #1
+      ptrue p0.b
+      index z0.b, #1, #1
+      st1b z0.b, p0, [%[out_ptr]]
+      .arch_extension nosve
+      )"""
+      : [vl] "=&r"(vl), "=m"(out)
+      : [out_ptr] "r"(out_ptr)
+      : "z0", "p0");
+
+  EXPECT_EQ(vl, 16u);
+  for (size_t i = 0; i < out.size(); ++i) {
+    EXPECT_EQ(out[i], static_cast<uint8_t>(i + 1));
+  }
 }
 
 #endif
