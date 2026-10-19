@@ -17,7 +17,7 @@ At a high level, the Lacewing test framework consists of three layers of
 abstraction:
 * Test framework - [Mobly](https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/mobly/)
 * Device Controller - [Honeydew](honeydew/README.md)
-* Host-Target Transport - Currently SL4F (eventually [Fuchsia Controller](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/fuchsia-controller/))
+* Host-Target Transport - [Fuchsia Controller](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/fuchsia-controller/)
 
 Why the name Lacewing? Lacewings are insects that keep the Fuchsia plant healthy
 and free of harmful bugs - which is something that this framework aspires to be.
@@ -87,7 +87,7 @@ Lacewing so nothing is required from test authors (besides picking the correct
 
 Multi-device testbeds follows a similar configuration but is out-of-scope of
 this guide - Please direct to
-[Multi-device setup and execution](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/multi_device_test_sl4f/README.md)
+[Multi-device setup and execution](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/multi_device_test/README.md)
 
 ### Lacewing test module
 
@@ -147,17 +147,8 @@ Once the Lacewing target has been defined, trigger the test to run locally via
 
 ```sh
 # Step 1 - Configure build
-
-# 1.a - If Fuchsia-Controller transport.
 $ fx set workbench_eng.x64 \
     --with-host //src/testing/end_to_end/examples/my_test_dir:my_test_target
-
-# 1.b - If SL4F transport.
-$ fx set core.x64 \
-    --with-host //src/testing/end_to_end/examples/my_test_dir:my_test_target \
-    --with //src/testing/sl4f \
-    --with //src/sys/bin/start_sl4f \
-    --args 'core_realm_shards += [ "//src/testing/sl4f:sl4f_core_shard" ]'
 
 # Step 2- Start the emulator, package server and monitor (in separate terminals)
 $ fx serve

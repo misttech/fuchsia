@@ -162,10 +162,7 @@ if (target_cpu == "x64") {
         nuc11_env,
       ]
       override_test_environments = false
-      host_tests = [
-        "//src/testing/end_to_end:core_x64_stable_tests",
-        "//src/testing/end_to_end:core_x64_stable_sl4f_tests",
-      ]
+      host_tests = [ "//src/testing/end_to_end:core_x64_stable_tests" ]
     }
   }
 }

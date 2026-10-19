@@ -66,13 +66,9 @@ python_library("honeydew_no_testonly") {
     "affordances/__init__.py",
     "affordances/affordance.py",
     "affordances/connectivity/bluetooth/__init__.py",
-    "affordances/connectivity/bluetooth/avrcp/__init__.py",
-    "affordances/connectivity/bluetooth/avrcp/avrcp.py",
-    "affordances/connectivity/bluetooth/avrcp/avrcp_using_sl4f.py",
     "affordances/connectivity/bluetooth/bluetooth_common/__init__.py",
     "affordances/connectivity/bluetooth/bluetooth_common/bluetooth_common.py",
     "affordances/connectivity/bluetooth/bluetooth_common/bluetooth_common_using_fc.py",
-    "affordances/connectivity/bluetooth/bluetooth_common/bluetooth_common_using_sl4f.py",
     "affordances/connectivity/bluetooth/gap/__init__.py",
     "affordances/connectivity/bluetooth/gap/gap.py",
     "affordances/connectivity/bluetooth/gap/gap_using_fc.py",
@@ -197,9 +193,6 @@ python_library("honeydew_no_testonly") {
     "transports/serial/errors.py",
     "transports/serial/serial.py",
     "transports/serial/serial_using_unix_socket.py",
-    "transports/sl4f/__init__.py",
-    "transports/sl4f/errors.py",
-    "transports/sl4f/sl4f.py",
     "typing/__init__.py",
     "typing/custom_types.py",
     "utils/__init__.py",
@@ -300,15 +293,6 @@ group("honeydew_fidl_ir_and_deps") {
   ]
 }
 
-# SL4F packages
-group("sl4f_packages") {
-  testonly = true
-  public_deps = [
-    "//src/sys/bin/start_sl4f",
-    "//src/testing/sl4f",
-  ]
-}
-
 # Honeydew unit tests
 # Command to run unit tests:
 # fx set core.x64 --with-host //src/testing/end_to_end/honeydew:unit_tests
@@ -319,7 +303,6 @@ group("unit_tests") {
 
   if (host_os != "mac") {
     public_deps += [
-      "honeydew/affordances/connectivity/bluetooth/avrcp/tests/unit_tests:tests",
       "honeydew/affordances/connectivity/bluetooth/bluetooth_common/tests/unit_tests:tests",
       "honeydew/affordances/connectivity/bluetooth/gap/tests/unit_tests:tests",
       "honeydew/affordances/connectivity/bluetooth/le/tests/unit_tests:tests",
@@ -349,7 +332,6 @@ group("unit_tests") {
       "honeydew/transports/ffx/tests/unit_tests:tests",
       "honeydew/transports/fuchsia_controller/tests/unit_tests:tests",
       "honeydew/transports/serial/tests/unit_tests:tests",
-      "honeydew/transports/sl4f/tests/unit_tests:tests",
       "honeydew/utils/tests/unit_tests:tests($host_toolchain)",
       "tests/unit_tests:tests",
     ]
@@ -363,7 +345,6 @@ group("functional_tests") {
 
   if (host_os != "mac") {
     public_deps += [
-      "honeydew/affordances/connectivity/bluetooth/avrcp/tests/functional_tests:tests",
       "honeydew/affordances/connectivity/bluetooth/gap/tests/functional_tests:tests",
       "honeydew/affordances/connectivity/netstack/tests:functional_tests($host_toolchain)",
       "honeydew/affordances/connectivity/wlan/wlan_policy/tests:functional_tests($host_toolchain)",

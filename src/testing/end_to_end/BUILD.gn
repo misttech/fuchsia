@@ -17,11 +17,7 @@
 #
 # <PRODUCT>.<BOARD>
 #     Stable (Tests that passed for at least 1000+ consecutive runs)
-#         Tests that require SL4F transport, if any
-#         Tests that does not require SL4F transport
 #     Unstable (Tests that are yet to pass 1000 consecutive runs)
-#         Tests that require SL4F transport, if any
-#         Tests that does not require SL4F transport
 #
 # Note: Each entry in test group should refer to a test case along with its
 # dependencies (if any). For example,
@@ -56,12 +52,6 @@ template("group_with_no_dir_target_deps") {
 # `//v/g/bundles/buildbot/<PRODUCT>/<BOARD>/BUILD.gn`
 
 # core.x64
-group_with_no_dir_target_deps("core_x64_stable_sl4f_tests") {
-  testonly = true
-  public_deps =
-      [ "examples/test_soft_reboot:test_soft_reboot_sl4f($host_toolchain)" ]
-}
-
 group_with_no_dir_target_deps("core_x64_stable_tests") {
   testonly = true
   public_deps = [
@@ -84,11 +74,6 @@ group_with_no_dir_target_deps("core_x64_stable_tests") {
   ]
 }
 
-group_with_no_dir_target_deps("core_x64_unstable_sl4f_tests") {
-  testonly = true
-  public_deps = []
-}
-
 group_with_no_dir_target_deps("core_x64_unstable_tests") {
   testonly = true
   public_deps = [
@@ -96,11 +81,6 @@ group_with_no_dir_target_deps("core_x64_unstable_tests") {
     # mechanism.
     "examples/exoneration_failing_test($host_toolchain)",
   ]
-}
-
-group("core_x64_staging_sl4f_tests") {
-  testonly = true
-  public_deps = [ ":core_x64_unstable_sl4f_tests" ]
 }
 
 group("core_x64_staging_tests") {

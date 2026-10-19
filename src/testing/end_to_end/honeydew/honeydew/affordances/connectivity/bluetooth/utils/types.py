@@ -9,16 +9,6 @@ import enum
 import fidl_fuchsia_bluetooth as f_bt
 
 
-class Implementation(enum.StrEnum):
-    """Different Bluetooth affordance implementations available."""
-
-    # Use Bluetooth affordances that is implemented using Fuchsia-Controller
-    FUCHSIA_CONTROLLER = "fuchsia-controller"
-
-    # Use Bluetooth affordances that is implemented using SL4F
-    SL4F = "sl4f"
-
-
 class BluetoothConnectionType(enum.Enum):
     """Transport type of Bluetooth pair and/or connections."""
 
@@ -31,13 +21,6 @@ class BluetoothAcceptPairing(enum.StrEnum):
 
     DEFAULT_INPUT_MODE = "NONE"
     DEFAULT_OUTPUT_MODE = "NONE"
-
-
-class BluetoothAvrcpCommand(enum.StrEnum):
-    """Commands that the AVRCP service can send."""
-
-    PLAY = "Play"
-    PAUSE = "Pause"
 
 
 class BluetoothLEAppearance(enum.IntEnum):

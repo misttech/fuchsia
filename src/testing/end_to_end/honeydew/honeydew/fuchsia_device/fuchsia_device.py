@@ -6,14 +6,12 @@
 import asyncio
 import dataclasses
 import inspect
-import ipaddress
 import json
 import logging
 import os
 import subprocess
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
-from functools import cached_property
 from typing import Any
 
 import fidl_fuchsia_buildinfo as f_buildinfo
@@ -29,15 +27,8 @@ import honeydew.affordances.connectivity.wlan.core as wlan_core
 from honeydew import affordances_capable, errors
 from honeydew.affordances import location
 from honeydew.affordances.connectivity import netstack
-from honeydew.affordances.connectivity.bluetooth.avrcp import (
-    avrcp,
-    avrcp_using_sl4f,
-)
 from honeydew.affordances.connectivity.bluetooth.gap import gap, gap_using_fc
 from honeydew.affordances.connectivity.bluetooth.le import le, le_using_fc
-from honeydew.affordances.connectivity.bluetooth.utils import (
-    types as bluetooth_types,
-)
 from honeydew.affordances.connectivity.wlan import wlan_policy, wlan_policy_ap
 from honeydew.affordances.drivers import battery_manager
 from honeydew.affordances.drivers.fake_battery import (
@@ -111,7 +102,6 @@ from honeydew.transports.fuchsia_controller import (
 )
 from honeydew.transports.serial import serial as serial_transport_interface
 from honeydew.transports.serial import serial_using_unix_socket
-from honeydew.transports.sl4f import sl4f as sl4f_transport
 from honeydew.typing import custom_types
 from honeydew.utils import common, properties
 
@@ -198,7 +188,7 @@ class FuchsiaDevice(
                         }
                     },
                     "affordances": {
-                        "bluetooth": {
+                        "tracing": {
                             "implementation": "fuchsia-controller",
                         },
                     },
@@ -481,28 +471,6 @@ class FuchsiaDevice(
         )
         return serial_obj
 
-    @properties.Transport
-    def sl4f(self) -> sl4f_transport.SL4F:
-        """Returns the SL4F transport object.
-
-        Returns:
-            SL4F transport interface implementation.
-
-        Raises:
-            Sl4fError: Failed to instantiate.
-        """
-        device_ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
-        if self._device_info.ip_port:
-            device_ip = self._device_info.ip_port.ip
-
-        sl4f_obj: sl4f_transport.SL4F = sl4f_transport.SL4F(
-            device_name=self.device_name,
-            device_ip=device_ip,
-            ffx_transport=self.ffx,
-            device_ip_change=self,
-        )
-        return sl4f_obj
-
     # List all the affordances
     @properties.Affordance
     def session(self) -> session_affordance.Session:
@@ -626,24 +594,6 @@ class FuchsiaDevice(
             fuchsia_controller=self.fuchsia_controller,
             ffx_transport=self.ffx,
         )
-
-    @properties.Affordance
-    def bluetooth_avrcp(self) -> avrcp.Avrcp:
-        """Returns a Bluetooth Avrcp affordance object.
-
-        Returns:
-            Bluetooth Avrcp object
-        """
-        if (
-            self._get_bluetooth_affordances_implementation()
-            == bluetooth_types.Implementation.SL4F
-        ):
-            return avrcp_using_sl4f.AvrcpUsingSl4f(
-                device_name=self.device_name,
-                sl4f=self.sl4f,
-                reboot_affordance=self,
-            )
-        raise NotImplementedError
 
     @properties.Affordance
     def bluetooth_le(self) -> le.LE:
@@ -880,9 +830,6 @@ class FuchsiaDevice(
 
         self.fuchsia_controller.check_connection()
 
-        if self._is_sl4f_needed:
-            self.sl4f.check_connection()
-
     def get_inspect_data(
         self,
         selectors: list[str] | None = None,
@@ -961,7 +908,6 @@ class FuchsiaDevice(
 
         Raises:
             FuchsiaControllerError: On communications failure.
-            Sl4fError: On communications failure.
         """
         timestamp: str = datetime.now().strftime("%Y-%m-%d-%I-%M-%S-%p")
         message = f"[Host Time: {timestamp}] - {message}"
@@ -974,12 +920,7 @@ class FuchsiaDevice(
 
         Raises:
             FuchsiaControllerError: On communications failure.
-            Sl4fError: On communications failure.
         """
-        # Restart the SL4F server on device boot up.
-        if self._is_sl4f_needed:
-            await common.retry(fn=self.sl4f.start_server, wait_time=5)
-
         # Create a new Fuchsia controller context for new device connection.
         self.fuchsia_controller.create_context()
 
@@ -1015,7 +956,6 @@ class FuchsiaDevice(
         Raises:
             NotSupportedError: If power switch is not set.
             FuchsiaControllerError: On communications failure.
-            Sl4fError: On communications failure.
         """
         if self._power_switch is None:
             raise errors.NotSupportedError(
@@ -1168,7 +1108,6 @@ class FuchsiaDevice(
 
         Raises:
             FuchsiaControllerError: On communications failure.
-            Sl4fError: On communications failure.
             FuchsiaDeviceError: If device fails to go offline.
         """
         _LOGGER.info("Lacewing is rebooting %s...", self.device_name)
@@ -1328,7 +1267,6 @@ class FuchsiaDevice(
 
         Raises:
             FuchsiaControllerError: On communications failure.
-            Sl4fError: On communications failure.
         """
         _LOGGER.info("Collecting snapshot on %s...", self.device_name)
         # Take the snapshot before creating the directory or file, as
@@ -1720,40 +1658,6 @@ class FuchsiaDevice(
             ) from status
         return await self._read_snapshot_from_channel(channel_client)
 
-    def _get_bluetooth_affordances_implementation(
-        self,
-        should_exist: bool = True,
-    ) -> bluetooth_types.Implementation | None:
-        """Parses the bluetooth affordance config information and returns which bluetooth
-        implementation to use.
-
-        Returns:
-            bluetooth_types.Implementation
-
-        Raises:
-            errors.ConfigError: If bluetooth affordance implementation detail is missing or not valid.
-        """
-        if self._config is None:
-            return None
-
-        bluetooth_affordance_implementation: str | None = common.read_from_dict(
-            self._config,
-            key_path=("affordances", "bluetooth", "implementation"),
-            should_exist=should_exist,
-        )
-        if bluetooth_affordance_implementation is None:
-            return None
-
-        try:
-            return bluetooth_types.Implementation(
-                bluetooth_affordance_implementation
-            )
-        except ValueError as err:
-            raise errors.ConfigError(
-                f"Invalid value passed in config['affordances']['bluetooth']['implementation]. "
-                f"Valid values are: {list(map(str, bluetooth_types.Implementation))}"
-            ) from err
-
     def _get_tracing_affordance_implementation(
         self,
         should_exist: bool = False,
@@ -1779,17 +1683,3 @@ class FuchsiaDevice(
                 f"Invalid value passed in config['affordances']['tracing']['implementation']. "
                 f"Valid values are: {list(map(str, tracing_types.Implementation))}"
             ) from err
-
-    @cached_property
-    def _is_sl4f_needed(self) -> bool:
-        """Returns whether or not SL4F will be used.
-
-        Returns:
-            True if SL4F is needed. False, otherwise.
-        """
-        if (
-            self._get_bluetooth_affordances_implementation(should_exist=False)
-            == bluetooth_types.Implementation.SL4F
-        ):
-            return True
-        return False

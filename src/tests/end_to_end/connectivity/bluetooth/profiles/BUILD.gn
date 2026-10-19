@@ -9,8 +9,5 @@ group("e2e_tests_smoke") {
 
 group("e2e_tests_profile") {
   testonly = true
-  public_deps = [
-    "avrcp:e2e_avrcp_test",
-    "gap:e2e_gap_test",
-  ]
+  public_deps = [ "gap:e2e_gap_test" ]
 }

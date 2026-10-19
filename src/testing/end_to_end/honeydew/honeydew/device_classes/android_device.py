@@ -251,7 +251,6 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
 
         Raises:
             FuchsiaControllerError: On communications failure.
-            Sl4fError: On communications failure.
         """
         try:
             self.adb.on_device_boot()

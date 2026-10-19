@@ -83,6 +83,6 @@ See [Honeydew Contribution][honeydew-contribution].
 [test-cases-example]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/test_cases_example/
 [soft-reboot-test]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/test_soft_reboot/
 [power-cycle-test]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/power_cycle_test/
-[multi-device-test]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/multi_device_test_sl4f/
+[multi-device-test]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/multi_device_test/
 [examples-readme]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/README.md
 [honeydew-contribution]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/honeydew#Contributing

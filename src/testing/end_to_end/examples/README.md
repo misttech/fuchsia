@@ -93,9 +93,6 @@ Available target variants in `test_soft_reboot`:
 * `soft_reboot_test_with_ffx_monitor`: Monitored session variant. Requires an
   active `ffx monitor` daemon in the environment (`use_monitor_state = true`).
 
-* `test_soft_reboot_sl4f`: Legacy SL4F transport variant. Requires the target
-  system image to include SL4F packages (`start_sl4f`).
-
 ### Power cycle test (`power_cycle_test`)
 
 Demonstrates hard power cycling via auxiliary hardware (DMC or PDU). Requires a
@@ -116,15 +113,15 @@ YAML.
 fx test //src/testing/end_to_end/examples/openwrt_ap_test --e2e --output
 ```
 
-### Multi-device test (`multi_device_test_sl4f`)
+### Multi-device test (`multi_device_test`)
 
 Demonstrates coordinating tests across multiple Fuchsia devices in a single
 testbed.
-See the [Multi-Device Test README](multi_device_test_sl4f/README.md) for testbed
+See the [Multi-Device Test README](multi_device_test/README.md) for testbed
 setup.
 
 ```posix-terminal
-fx test //src/testing/end_to_end/examples/multi_device_test_sl4f --e2e --output
+fx test //src/testing/end_to_end/examples/multi_device_test --e2e --output
 ```
 
 ### Revive test cases (`test_case_revive_example` / `test_cases_revive_example`)

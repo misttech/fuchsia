@@ -95,7 +95,7 @@ def create_device(
                         }
                     },
                     "affordances": {
-                        "bluetooth": {
+                        "tracing": {
                             "implementation": "fuchsia-controller",
                         },
                     },

@@ -345,16 +345,6 @@ class TargetSshAddress(IpPort):
 
 
 @dataclass(frozen=True)
-class Sl4fServerAddress(IpPort):
-    """Dataclass that holds sl4f server address information.
-
-    Args:
-        ip: IP Address of SL4F server
-        port: Port where SL4F server is listening for SL4F requests
-    """
-
-
-@dataclass(frozen=True)
 class DeviceInfo:
     """Dataclass that holds Fuchsia device information.
 

@@ -21,7 +21,6 @@ from honeydew.transports.ffx import ffx
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
-from honeydew.transports.sl4f import sl4f as sl4f_transport
 from honeydew.typing import custom_types
 
 # pylint: disable=protected-access
@@ -454,11 +453,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        sl4f_transport.SL4F,
-        "check_connection",
-        autospec=True,
-    )
-    @mock.patch.object(
         fc_transport.FuchsiaController,
         "check_connection",
         autospec=True,
@@ -468,7 +462,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self,
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
-        mock_sl4f_check_connection: mock.Mock,
         mock_adb_verify_supported: mock.Mock,
         mock_adb_check_connection: mock.Mock,
     ) -> None:
@@ -482,7 +475,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_fc_check_connection.assert_called_once_with(
             self.ad_obj.fuchsia_controller
         )
-        mock_sl4f_check_connection.assert_not_called()
         mock_adb_check_connection.assert_called_once_with(self.ad_obj.adb)
 
         self.ad_obj.__dict__.pop("adb", None)
@@ -491,11 +483,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         adb_transport.Adb,
         "verify_supported",
         side_effect=errors.NotSupportedError("ADB not supported"),
-        autospec=True,
-    )
-    @mock.patch.object(
-        sl4f_transport.SL4F,
-        "check_connection",
         autospec=True,
     )
     @mock.patch.object(
@@ -508,7 +495,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self,
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
-        mock_sl4f_check_connection: mock.Mock,
         mock_adb_verify_supported: mock.Mock,
     ) -> None:
         """Testcase for AndroidDevice.health_check() raising NotSupportedError when ADB is not supported."""
@@ -519,15 +505,9 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_fc_check_connection.assert_called_once_with(
             self.ad_obj.fuchsia_controller
         )
-        mock_sl4f_check_connection.assert_not_called()
         mock_adb_verify_supported.assert_called_once()
         self.ad_obj.__dict__.pop("adb", None)
 
-    @mock.patch.object(
-        sl4f_transport.SL4F,
-        "check_connection",
-        autospec=True,
-    )
     @mock.patch.object(
         fc_transport.FuchsiaController,
         "check_connection",
@@ -538,7 +518,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self,
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
-        mock_sl4f_check_connection: mock.Mock,
     ) -> None:
         """Testcase for AndroidDevice.health_check() when target is connected via Pontis."""
         orig_device_info = self.ad_obj._device_info
@@ -559,17 +538,11 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
             mock_fc_check_connection.assert_called_once_with(
                 self.ad_obj.fuchsia_controller
             )
-            mock_sl4f_check_connection.assert_not_called()
             self.assertNotIn("adb", self.ad_obj.__dict__)
         finally:
             self.ad_obj._device_info = orig_device_info
             self.ad_obj.__dict__.pop("adb", None)
 
-    @mock.patch.object(
-        sl4f_transport.SL4F,
-        "check_connection",
-        autospec=True,
-    )
     @mock.patch.object(
         fc_transport.FuchsiaController,
         "check_connection",
@@ -580,7 +553,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self,
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
-        mock_sl4f_check_connection: mock.Mock,
     ) -> None:
         """Testcase for AndroidDevice.health_check() when ADB is disabled in config."""
         orig_config = self.ad_obj._config
@@ -599,7 +571,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
             mock_fc_check_connection.assert_called_once_with(
                 self.ad_obj.fuchsia_controller
             )
-            mock_sl4f_check_connection.assert_not_called()
         finally:
             self.ad_obj._config = orig_config
             self.ad_obj.__dict__.pop("adb", None)
@@ -616,11 +587,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        sl4f_transport.SL4F,
-        "check_connection",
-        autospec=True,
-    )
-    @mock.patch.object(
         fc_transport.FuchsiaController,
         "check_connection",
         autospec=True,
@@ -630,7 +596,6 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self,
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
-        mock_sl4f_check_connection: mock.Mock,
         mock_adb_verify_supported: mock.Mock,
         mock_adb_check_connection: mock.Mock,
     ) -> None:

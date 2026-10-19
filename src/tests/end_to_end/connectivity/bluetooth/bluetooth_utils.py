@@ -5,8 +5,6 @@
 """Bluetooth Utils for Sample Test"""
 import asyncio
 import logging
-import re
-from typing import List
 
 import fidl_fuchsia_bluetooth as f_bt
 from honeydew.fuchsia_device import fuchsia_device
@@ -14,21 +12,6 @@ from honeydew.fuchsia_device import fuchsia_device
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 DEFAULT_WAITING_SECS = 10
 DEFAULT_RETRIES_ATTEMPT = 6
-
-
-def sl4f_bt_mac_address(mac_address: str) -> List[int]:
-    """Converts MAC addresses to reversed BT byte lists.
-    ex. AA:BB:CC:DD:EE:FF
-        AABBCCDDEEFF
-    """
-    if ":" in mac_address:
-        return _convert_reverse_hex(mac_address.split(":"))
-    return _convert_reverse_hex(re.findall("..", mac_address))
-
-
-def _convert_reverse_hex(address: List[str]) -> List[int]:
-    """Reverses ASCII mac address to 64-bit byte lists."""
-    return [int(x, 16) for x in reversed(address)]
 
 
 async def forget_all_bt_devices(

@@ -15,7 +15,7 @@ from parameterized import param, parameterized
 
 CONFIG_DICT: dict[str, Any] = {
     "affordances": {
-        "bluetooth": {
+        "tracing": {
             "implementation": "fuchsia-controller",
         },
     },
@@ -178,7 +178,7 @@ class CommonUtilsTests(unittest.IsolatedAsyncioTestCase):
                 dictionary=CONFIG_DICT,
                 key_path=(
                     "affordances",
-                    "bluetooth",
+                    "tracing",
                 ),
                 should_exist=True,
                 expected_value={
@@ -190,7 +190,7 @@ class CommonUtilsTests(unittest.IsolatedAsyncioTestCase):
                 dictionary=CONFIG_DICT,
                 key_path=(
                     "affordances",
-                    "bluetooth",
+                    "tracing",
                     "implementation",
                 ),
                 should_exist=True,

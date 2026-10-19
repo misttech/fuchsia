@@ -159,7 +159,7 @@ import("//build/testing/host_test_data.gni")
 #         }
 #       }
 #       affordances = {
-#         bluetooth = {
+#         tracing = {
 #           "implementation" = "fuchsia-controller"
 #         }
 #       }

@@ -1,7 +1,7 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Unit tests for honeydew.affordances.sl4f.screenshot.py."""
+"""Unit tests for honeydew.affordances.ui.screenshot.screenshot_using_ffx.py."""
 
 import unittest
 from pathlib import Path

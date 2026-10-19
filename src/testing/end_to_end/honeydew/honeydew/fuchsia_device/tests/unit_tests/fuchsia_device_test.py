@@ -24,7 +24,6 @@ import honeydew.affordances.connectivity.wlan.core as wlan_core
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
 from honeydew import affordances_capable, errors
 from honeydew.affordances import location
-from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp_using_sl4f
 from honeydew.affordances.connectivity.bluetooth.gap import gap_using_fc
 from honeydew.affordances.connectivity.wlan import wlan_policy
 from honeydew.affordances.drivers.fake_battery import fake_battery_using_ffx
@@ -59,7 +58,6 @@ from honeydew.transports.fuchsia_controller import (
 )
 from honeydew.transports.serial import serial as serial_interface
 from honeydew.transports.serial import serial_using_unix_socket
-from honeydew.transports.sl4f import sl4f as sl4f_transport
 from honeydew.typing import custom_types
 from parameterized import param, parameterized
 
@@ -280,16 +278,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 "check_connection",
                 autospec=True,
             ) as mock_fc_check_connection,
-            mock.patch.object(
-                sl4f_transport.SL4F,
-                "start_server",
-                autospec=True,
-            ) as mock_sl4f_start_server,
-            mock.patch.object(
-                sl4f_transport.SL4F,
-                "check_connection",
-                autospec=True,
-            ) as mock_sl4f_check_connection,
         ):
             sync_fd_fc_obj = fuchsia_device.FuchsiaDevice(
                 device_info=custom_types.DeviceInfo(
@@ -299,13 +287,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                     serial_socket=_INPUT_ARGS["device_serial_socket"],
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
-                config={
-                    "affordances": {
-                        "bluetooth": {
-                            "implementation": "fuchsia-controller",
-                        },
-                    }
-                },
             )
             self.fd_fc_obj = sync_fd_fc_obj
             mock_ctx = mock.MagicMock()
@@ -320,74 +301,11 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             )
             mock_fc_check_connection.assert_called()
             mock_ffx_check_connection.assert_called()
-            mock_sl4f_start_server.assert_not_called()
-            mock_sl4f_check_connection.assert_not_called()
-
-        with (
-            mock.patch.object(
-                ffx.FFX,
-                "_check_running_monitor",
-                return_value=False,
-                autospec=True,
-            ),
-            mock.patch.object(
-                fc_transport.FuchsiaController,
-                "create_context",
-                autospec=True,
-            ) as mock_fc_create_context,
-            mock.patch.object(
-                ffx.FFX,
-                "check_connection",
-                autospec=True,
-            ) as mock_ffx_check_connection,
-            mock.patch.object(
-                fc_transport.FuchsiaController,
-                "check_connection",
-                autospec=True,
-            ) as mock_fc_check_connection,
-            mock.patch.object(
-                sl4f_transport.SL4F,
-                "start_server",
-                autospec=True,
-            ) as mock_sl4f_start_server,
-            mock.patch.object(
-                sl4f_transport.SL4F,
-                "check_connection",
-                autospec=True,
-            ) as mock_sl4f_check_connection,
-        ):
-            sync_fd_sl4f_obj = fuchsia_device.FuchsiaDevice(
-                device_info=custom_types.DeviceInfo(
-                    name=_INPUT_ARGS["device_name"],
-                    serial_number=None,
-                    ip_port=None,
-                    serial_socket=_INPUT_ARGS["device_serial_socket"],
-                ),
-                ffx_config_data=_INPUT_ARGS["ffx_config_data"],
-                config={
-                    "affordances": {
-                        "bluetooth": {
-                            "implementation": "sl4f",
-                        },
-                    }
-                },
-            )
-            self.fd_sl4f_obj = sync_fd_sl4f_obj
-            mock_fc_create_context.assert_called_once_with(
-                self.fd_sl4f_obj.fuchsia_controller
-            )
-            mock_fc_check_connection.assert_called()
-            mock_ffx_check_connection.assert_called()
-            mock_sl4f_start_server.assert_called_once_with(
-                self.fd_sl4f_obj.sl4f
-            )
-            mock_sl4f_check_connection.assert_called()
 
     # List all the tests related to __init__
     def test_device_is_a_fuchsia_device(self) -> None:
         """Test case to make sure DUT is a fuchsia device"""
         self.assertIsInstance(self.fd_fc_obj, fuchsia_device.FuchsiaDevice)
-        self.assertIsInstance(self.fd_sl4f_obj, fuchsia_device.FuchsiaDevice)
 
     # List all the tests related to transports
 
@@ -511,21 +429,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.fd_fc_obj.ffx.config.shared_data, "/tmp/shared_data"
         )
-
-    def test_sl4f_impl(self) -> None:
-        """Test case to make sure fuchsia_device does not support sl4f
-        transport."""
-        with (
-            mock.patch.object(
-                sl4f_transport.SL4F,
-                "start_server",
-                autospec=True,
-            ) as mock_sl4f_start_server,
-        ):
-            self.assertIsInstance(self.fd_fc_obj.sl4f, sl4f_transport.SL4F)
-            mock_sl4f_start_server.assert_called_once_with(self.fd_fc_obj.sl4f)
-
-        self.assertIsInstance(self.fd_sl4f_obj.sl4f, sl4f_transport.SL4F)
 
     def test_fuchsia_controller_transport(self) -> None:
         """Test case to make sure fuchsia_device supports fuchsia-controller
@@ -800,29 +703,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             user_input_using_fc.UserInputUsingFc,
         )
 
-    def test_bluetooth_avrcp_fc_transport(self) -> None:
-        """Test case to make sure fuchsia_device only supports
-        SL4F based bluetooth_avrcp affordance."""
-        with self.assertRaises(NotImplementedError):
-            self.fd_fc_obj.bluetooth_avrcp  # pylint: disable=pointless-statement
-
-    @mock.patch.object(
-        avrcp_using_sl4f.AvrcpUsingSl4f,
-        "__init__",
-        autospec=True,
-        return_value=None,
-    )
-    def test_bluetooth_avrcp_sl4f_impl(
-        self, mock_avrcp_init: mock.Mock
-    ) -> None:
-        """Test case to make sure fuchsia_device only supports
-        SL4F based bluetooth_avrcp affordance."""
-        self.assertIsInstance(
-            self.fd_sl4f_obj.bluetooth_avrcp,
-            avrcp_using_sl4f.AvrcpUsingSl4f,
-        )
-        mock_avrcp_init.assert_called_once()
-
     @mock.patch.object(
         gap_using_fc.GapUsingFc,
         "__init__",
@@ -1091,11 +971,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.fd_fc_obj._on_device_close_fns = []
 
     @mock.patch.object(
-        sl4f_transport.SL4F,
-        "check_connection",
-        autospec=True,
-    )
-    @mock.patch.object(
         fc_transport.FuchsiaController,
         "check_connection",
         autospec=True,
@@ -1105,7 +980,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self,
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
-        mock_sl4f_check_connection: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.health_check() when transport is set to
         Fuchsia-Controller"""
@@ -1113,40 +987,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx_check_connection.assert_called_once_with(self.fd_fc_obj.ffx)
         mock_fc_check_connection.assert_called_once_with(
             self.fd_fc_obj.fuchsia_controller
-        )
-        mock_sl4f_check_connection.assert_not_called()
-
-    @mock.patch.object(
-        sl4f_transport.SL4F,
-        "check_connection",
-        autospec=True,
-    )
-    @mock.patch.object(
-        fc_transport.FuchsiaController,
-        "check_connection",
-        autospec=True,
-    )
-    @mock.patch.object(
-        ffx.FFX,
-        "check_connection",
-        autospec=True,
-    )
-    def test_health_check_sl4f(
-        self,
-        mock_ffx_check_connection: mock.Mock,
-        mock_fc_check_connection: mock.Mock,
-        mock_sl4f_check_connection: mock.Mock,
-    ) -> None:
-        """Testcase for FuchsiaDevice.health_check() when transport is set to
-        Fuchsia-Controller-Preferred"""
-        self.fd_sl4f_obj.health_check()
-
-        mock_ffx_check_connection.assert_called_once_with(self.fd_sl4f_obj.ffx)
-        mock_fc_check_connection.assert_called_once_with(
-            self.fd_sl4f_obj.fuchsia_controller
-        )
-        mock_sl4f_check_connection.assert_called_once_with(
-            self.fd_sl4f_obj.sl4f
         )
 
     @mock.patch.object(
@@ -1415,15 +1255,9 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         "create_context",
         autospec=True,
     )
-    @mock.patch.object(
-        sl4f_transport.SL4F,
-        "start_server",
-        autospec=True,
-    )
     async def test_on_device_boot_fc(
         self,
         parameterized_dict: dict[str, Any],
-        mock_sl4f_start_server: mock.Mock,
         mock_fc_create_context: mock.Mock,
         mock_health_check: mock.Mock,
     ) -> None:
@@ -1447,38 +1281,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
         mock_fc_create_context.assert_called_once()
         mock_health_check.assert_called_once()
-        mock_sl4f_start_server.assert_not_called()
-
-    @mock.patch.object(
-        fuchsia_device.FuchsiaDevice,
-        "health_check",
-        autospec=True,
-    )
-    @mock.patch.object(
-        fc_transport.FuchsiaController,
-        "create_context",
-        autospec=True,
-    )
-    @mock.patch.object(
-        sl4f_transport.SL4F,
-        "start_server",
-        autospec=True,
-    )
-    async def test_on_device_boot(
-        self,
-        mock_sl4f_start_server: mock.Mock,
-        mock_fc_create_context: mock.Mock,
-        mock_sl4f_health_check: mock.Mock,
-    ) -> None:
-        """Testcase for FuchsiaDevice.on_device_boot() when transport is set to
-        Fuchsia-Controller-Preferred"""
-        await self.fd_sl4f_obj.on_device_boot()
-
-        mock_sl4f_start_server.assert_called_once_with(self.fd_sl4f_obj.sl4f)
-        mock_fc_create_context.assert_called_once_with(
-            self.fd_sl4f_obj.fuchsia_controller
-        )
-        mock_sl4f_health_check.assert_called_once_with(self.fd_sl4f_obj)
 
     def test_set_power_switch(self) -> None:
         """Testcase for FuchsiaDevice.set_power_switch()"""

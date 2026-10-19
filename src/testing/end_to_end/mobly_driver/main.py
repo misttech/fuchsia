@@ -232,7 +232,7 @@ def generate_honeydew_config() -> dict[str, Any]:
             }
         }
         "affordances": {
-            "bluetooth": {
+            "tracing": {
                 "implementation": "fuchsia-controller"
             }
         }

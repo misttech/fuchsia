@@ -12,7 +12,7 @@ group("examples") {
     "exoneration_failing_test",
     "fidl_hello_world_test",
     "hello_world_test",
-    "multi_device_test_sl4f",
+    "multi_device_test",
     "openwrt_ap_test",
     "power_cycle_test",
     "test_case_revive_example:run_wo_test_case_revive",
@@ -23,7 +23,6 @@ group("examples") {
     "test_soft_reboot:soft_reboot_test",
     "test_soft_reboot:soft_reboot_test.hermetic",
     "test_soft_reboot:soft_reboot_test_with_ffx_monitor",
-    "test_soft_reboot:test_soft_reboot_sl4f",
   ]
 }
 
