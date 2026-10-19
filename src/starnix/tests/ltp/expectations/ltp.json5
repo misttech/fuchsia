@@ -97,6 +97,10 @@
                 "clone09",
                 "cpuacct_1_1",
 
+                // TODO(https://fxbug.dev/574136788): Support ELF core dump generation
+                "coredump01",
+                "coredump02",
+
                 // Depends on real contents in /proc/sys/kernel/perf_event_mlock_kb
                 "cve-2015-3290",
                 "cve-2016-9793",
@@ -323,6 +327,20 @@
                 "keyctl01",
                 "keyctl03",
                 "keyctl06",
+                "keyctl10",
+                "keyctl11",
+                "keyctl12",
+                "keyctl13",
+                "keyctl14",
+                "keyctl15",
+                "keyctl16",
+                "keyctl17",
+                "keyctl18",
+                "keyctl19",
+                "keyctl20",
+                "keyctl21",
+                "keyctl22",
+                "keyctl24",
                 "request_key01",
                 "request_key02",
                 "request_key03",
