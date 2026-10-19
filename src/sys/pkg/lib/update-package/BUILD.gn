@@ -2,26 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_component("test-component") {
-  component_name = "update-package-lib-test"
-  visibility = [ ":*" ]
-  testonly = true
-  deps = [ ":update-package_test" ]
-  manifest = "meta/update-package-lib-test.cml"
-}
-
-fuchsia_test_package("update-package-tests") {
-  test_components = [ ":test-component" ]
+bazel_test_suite("update-package-tests") {
+  target_tests = [ "//src/sys/pkg/lib/update-package:update-package-tests" ]
+  host_tests = [ "//src/sys/pkg/lib/update-package:update-package_host_test" ]
 }
 
 group("tests") {
   testonly = true
-  public_deps = [
-    ":update-package-tests",
-    ":update-package_test($host_toolchain)",
-  ]
+  public_deps = [ ":update-package-tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -52,7 +42,6 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 rust_proto_library("ota_manifest_proto") {
   sources = [ "src/ota_manifest.proto" ]
   packages = [ "fuchsia.update.manifest" ]
-  visibility = [ ":*" ]
 }
 rustc_library("update-package") {
   sources = []
@@ -82,16 +71,6 @@ rustc_library("update-package") {
   rustenv = [ "MANIFEST_DEV_KEY_PATH=" + rebase_path(
                   "//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem",
                   root_build_dir) ]
-  test_deps = []
-  test_deps += [
-    "//src/lib/fuchsia",
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:tempfile",
-  ]
-  if (is_fuchsia) {
-    test_deps += [ "//third_party/rust_crates:proptest" ]
-  }
-  version = "0.1.0"
   visibility = [
     ":*",
     "//src/developer/ffx/plugins/package/ota-manifest/*",
@@ -99,7 +78,6 @@ rustc_library("update-package") {
     "//src/security/lib/scrutiny/collector:*",
     "//src/sys/pkg/*",
   ]
-  with_unit_tests = true
   deps = []
   deps += [
     ":ota_manifest_proto",

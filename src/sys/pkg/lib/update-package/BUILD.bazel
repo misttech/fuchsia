@@ -2,7 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 load("//tools/protobuf:rust_proto_library.bzl", "rust_proto_library")
 
 package(default_applicable_licenses = ["//:license"])
@@ -11,7 +24,6 @@ rust_proto_library(
     name = "ota_manifest_proto",
     srcs = ["src/ota_manifest.proto"],
     packages = ["fuchsia.update.manifest"],
-    visibility = [":__pkg__"],
 )
 
 rustc_library(
@@ -44,22 +56,12 @@ rustc_library(
     rustc_env = {
         "MANIFEST_DEV_KEY_PATH": "src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem",
     },  # @bazel2gn:raw_overwrite:[ "MANIFEST_DEV_KEY_PATH=" + rebase_path("//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem", root_build_dir) ]
-    test_deps = [
-        "//src/lib/fuchsia",
-        "//third_party/rust_crates/vendor:assert_matches",
-        "//third_party/rust_crates/vendor:tempfile",
-    ] + select({
-        "@platforms//os:fuchsia": ["//third_party/rust_crates/vendor:proptest"],
-        "//conditions:default": [],
-    }),
-    version = "0.1.0",
     visibility = [
         "//src/developer/ffx/plugins/package/ota-manifest:__subpackages__",
         "//src/lib/assembly/update_package:__pkg__",
         "//src/security/lib/scrutiny/collector:__pkg__",
         "//src/sys/pkg:__subpackages__",
     ],
-    with_unit_tests = True,
     deps = [
         ":ota_manifest_proto",
         "//src/lib/fuchsia-url",
@@ -87,4 +89,70 @@ rustc_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "update-package_test",
+    crate = ":update-package",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:tempfile",
+    ] + select({
+        "@platforms//os:fuchsia": ["//third_party/rust_crates/vendor:proptest"],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "update-package_host_test",
+    binary_name = "update-package_test",
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "update-package_test_packaged_bin",
+    testonly = True,
+    binary = ":update-package_test",
+    binary_name = "update_package_lib_test",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "test-component-manifest",
+    testonly = True,
+    component_name = "update-package-lib-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/update-package-lib-test.cml",
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "test-component",
+    compiled_manifest = ":test-component-manifest",
+    component_name = "update-package-lib-test",
+    deps = [":update-package_test_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "update-package-tests-package",
+    package_name = "update-package-tests",
+    test_components = [":test-component"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "update-package-tests",
+    package = ":update-package-tests-package",
 )
