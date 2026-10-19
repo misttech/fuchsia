@@ -1,0 +1,46 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wake_lease_rust",
+    srcs = ["src/wake_lease.rs"],
+    crate_name = "wake_lease",
+    crate_root = "src/wake_lease.rs",
+    edition = "2024",
+    test_deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+    with_unit_tests = True,  # Generates wake_lease_rust_test.
+    deps = [
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+rustc_test(
+    name = "wake_lease_rust_integration_test",
+    srcs = ["src/wake_lease_integration_test.rs"],
+    crate_root = "src/wake_lease_integration_test.rs",
+    edition = "2024",
+    deps = [
+        ":wake_lease_rust",
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
