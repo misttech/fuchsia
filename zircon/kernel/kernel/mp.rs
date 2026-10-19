@@ -271,11 +271,11 @@ pub fn unplug_cpu(cpu: cpu_num_t) -> Result<(), Status> {
 #[cfg(ktest)]
 #[unittest::suite(name = "mp_rust")]
 mod tests {
-    use super::{
-        Deadline, MpIpiTarget, get_online_mask, is_cpu_online, sync_exec, wait_for_all_cpus_ready,
-    };
+    use crate::arch_rs::InterruptDisableGuard;
+    use crate::kernel::thread::preempt_is_enabled;
     use crate::platform_rs::timer::InstantUnknown;
-    use core::sync::atomic::{AtomicU32, Ordering};
+    use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use unittest::{assert_false, assert_true, subtest};
 
     /// Verifies querying online CPU mask and per-CPU online status.
     #[test]
@@ -315,5 +315,45 @@ mod tests {
     fn test_mp_ready() {
         let status = wait_for_all_cpus_ready(Deadline::no_slack(InstantUnknown(0)));
         unittest::expect_ok!(status);
+    }
+
+    // Verify that preemption is disabled during mp_sync_exec'd tasks.
+    /// mp_sync_exec_preempt_disabled
+    #[test]
+    fn mp_sync_exec_preempt_disabled() {
+        let test_with_target_mask = subtest!(|target: MpIpiTarget, mask: cpu_mask_t| {
+            assert_true!(preempt_is_enabled());
+
+            let preempt_enabled = AtomicBool::new(false);
+            sync_exec(target, mask, || {
+                if preempt_is_enabled() {
+                    preempt_enabled.store(true, Ordering::Relaxed);
+                }
+            });
+
+            assert_false!(preempt_enabled.load(Ordering::Relaxed));
+
+            assert_true!(preempt_is_enabled());
+        });
+
+        // 1. ALL
+        assert_true!(test_with_target_mask(MpIpiTarget::All, /* ignored */ 0));
+        {
+            let _irqd = InterruptDisableGuard::new();
+            assert_true!(test_with_target_mask(MpIpiTarget::All, /* ignored */ 0));
+        }
+
+        // 2. ALL_BUT_LOCAL
+        {
+            let _irqd = InterruptDisableGuard::new();
+            assert_true!(test_with_target_mask(MpIpiTarget::AllButLocal, /* ignored */ 0));
+        }
+
+        // 3. MASK
+        assert_true!(test_with_target_mask(MpIpiTarget::Mask, CPU_MASK_ALL));
+        {
+            let _irqd = InterruptDisableGuard::new();
+            assert_true!(test_with_target_mask(MpIpiTarget::Mask, CPU_MASK_ALL));
+        }
     }
 }
