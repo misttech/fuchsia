@@ -5,11 +5,17 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
+group("tests") {
+  testonly = true
+  deps = [ ":starnix-procfs-tests" ]
+}
+
 rustc_library("procfs") {
   name = "starnix-modules-procfs"
   edition = "2024"
   version = "0.1.0"
   source_root = "lib.rs"
+  with_unit_tests = true
 
   sources = [
     "cgroups.rs",
@@ -45,6 +51,12 @@ rustc_library("procfs") {
     "zoneinfo.rs",
   ]
 
+  # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+  exclude_toolchain_tags = [
+    "asan",
+    "hwasan",
+  ]
+
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
   visibility = [ "//src/starnix/modules/*" ]
@@ -77,4 +89,12 @@ rustc_library("procfs") {
     "//third_party/rust_crates:regex-lite",
     "//third_party/rust_crates:uuid",
   ]
+
+  test_deps = [ "//src/lib/fuchsia" ]
+}
+
+fuchsia_unittest_package("starnix-procfs-tests") {
+  manifest = "meta/starnix_procfs_tests.cml"
+  deps = [ ":procfs_test" ]
+  test_type = "starnix"
 }

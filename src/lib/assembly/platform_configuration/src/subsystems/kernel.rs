@@ -4,6 +4,7 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::{Context, anyhow};
+use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::board_config::SerialMode;
 use assembly_config_schema::platform_settings::kernel_config::{
     KernelSerialConfig, MemoryReclamationStrategy, OOMBehavior, OOMRebootTimeout,
@@ -61,6 +62,22 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
         if let Some(warning_mb) = kernel_config.oom.warning_mb {
             builder.kernel_arg(KernelArg::OomWarningMib(warning_mb));
         }
+        let oom_capability = |val: Option<u32>| match val {
+            Some(mb) => Config::new(ConfigValueType::Uint32, mb.into()),
+            None => Config::new_void(),
+        };
+        builder.set_config_capability(
+            "fuchsia.kernel.oom.OutOfMemoryMb",
+            oom_capability(kernel_config.oom.out_of_memory_mb),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.kernel.oom.CriticalMb",
+            oom_capability(kernel_config.oom.critical_mb),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.kernel.oom.WarningMb",
+            oom_capability(kernel_config.oom.warning_mb),
+        )?;
         if let Some(imminent_oom_delta_mb) = kernel_config.oom.imminent_oom_delta_mb {
             builder.kernel_arg(KernelArg::OomImminentOomDeltaMib(imminent_oom_delta_mb));
         }
@@ -552,5 +569,54 @@ mod test {
         let error_message = result.unwrap_err().to_string();
         assert!(error_message.contains("Thread roles file is not a json5 file"));
         assert!(error_message.contains(roles_path.as_str()));
+    }
+
+    #[test]
+    fn test_oom_thresholds() {
+        use assembly_config_schema::platform_settings::kernel_config::OomConfig;
+
+        // When OomConfig fields are None, no kernel.oom.* args are emitted and the
+        // configuration capabilities are Void.
+        let completed_config = build_with_platform_kernel_config(Default::default());
+        assert!(completed_config.kernel_args.is_empty());
+        assert_eq!(
+            completed_config.configuration_capabilities["fuchsia.kernel.oom.OutOfMemoryMb"],
+            Config::new_void()
+        );
+        assert_eq!(
+            completed_config.configuration_capabilities["fuchsia.kernel.oom.CriticalMb"],
+            Config::new_void()
+        );
+        assert_eq!(
+            completed_config.configuration_capabilities["fuchsia.kernel.oom.WarningMb"],
+            Config::new_void()
+        );
+
+        // When OomConfig fields are Some(...), both kernel.oom.*-mb args and Uint32
+        // configuration capabilities are emitted.
+        let completed_config = build_with_platform_kernel_config(PlatformKernelConfig {
+            oom: OomConfig {
+                out_of_memory_mb: Some(60),
+                critical_mb: Some(180),
+                warning_mb: Some(360),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        assert!(completed_config.kernel_args.contains("kernel.oom.outofmemory-mb=60"));
+        assert!(completed_config.kernel_args.contains("kernel.oom.critical-mb=180"));
+        assert!(completed_config.kernel_args.contains("kernel.oom.warning-mb=360"));
+        assert_eq!(
+            completed_config.configuration_capabilities["fuchsia.kernel.oom.OutOfMemoryMb"],
+            Config::new(ConfigValueType::Uint32, 60.into())
+        );
+        assert_eq!(
+            completed_config.configuration_capabilities["fuchsia.kernel.oom.CriticalMb"],
+            Config::new(ConfigValueType::Uint32, 180.into())
+        );
+        assert_eq!(
+            completed_config.configuration_capabilities["fuchsia.kernel.oom.WarningMb"],
+            Config::new(ConfigValueType::Uint32, 360.into())
+        );
     }
 }

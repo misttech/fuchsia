@@ -143,6 +143,37 @@
             availability: "transitional",
         },
 
+        // Host kernel free-memory watermarks from Product Assembly (`platform.kernel.oom`).
+        // The defaults must be kept in sync with Zircon's `BootOptions` defaults in
+        // `//zircon/kernel/lib/boot-options/include/lib/boot-options/options.inc`.
+        // LINT.IfChange
+        {
+            config: "fuchsia.kernel.oom.OutOfMemoryMb",
+            from: "parent",
+            key: "out_of_memory_mb_threshold",
+            type: "uint32",
+            default: 50,
+            availability: "transitional",
+        },
+        {
+            config: "fuchsia.kernel.oom.CriticalMb",
+            from: "parent",
+            key: "critical_mb_threshold",
+            type: "uint32",
+            default: 150,
+            availability: "transitional",
+        },
+        {
+            config: "fuchsia.kernel.oom.WarningMb",
+            from: "parent",
+            key: "warning_mb_threshold",
+            type: "uint32",
+            default: 300,
+            availability: "transitional",
+        },
+
+        // LINT.ThenChange(//zircon/kernel/lib/boot-options/include/lib/boot-options/options.inc)
+
         // LINT.IfChange
         {
             config: "fuchsia.starnix.config.container.ExtraFeatures",

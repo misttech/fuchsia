@@ -14,6 +14,16 @@
             to: "#core",
         },
         {
+            config: [
+                "fuchsia.kernel.oom.CriticalMb",
+                "fuchsia.kernel.oom.OutOfMemoryMb",
+                "fuchsia.kernel.oom.WarningMb",
+            ],
+            from: "#config",
+            to: "#core",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.starnix.runner.EnableDataCollection",
             from: "#config",
             to: "#core",

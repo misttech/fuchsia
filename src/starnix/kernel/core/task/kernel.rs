@@ -68,6 +68,15 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use zx::CpuFeatureFlags;
 
+/// Host kernel free-memory watermarks (in MiB) configured via Product Assembly
+/// (`platform.kernel.oom`) and routed to `starnix_kernel` as structured configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OomWatermarksMb {
+    pub out_of_memory_mb: u32,
+    pub critical_mb: u32,
+    pub warning_mb: u32,
+}
+
 /// Kernel features are specified in the component manifest of the starnix container
 /// or explicitly provided to the kernel constructor in tests.
 #[derive(Debug, Default, Clone)]
@@ -140,6 +149,9 @@ pub struct KernelFeatures {
 
     /// Whether to log unexpected lookup misses in `sysfs` via `track_stub_log!`.
     pub log_sysfs_lookup_misses: bool,
+
+    /// Free-memory watermarks (in MiB) for `/proc/zoneinfo`.
+    pub oom_watermarks_mb: Option<OomWatermarksMb>,
 }
 
 impl KernelFeatures {

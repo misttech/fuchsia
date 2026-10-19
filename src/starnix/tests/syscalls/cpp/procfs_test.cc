@@ -942,6 +942,61 @@ TEST_F(ProcfsTest, ZoneInfo) {
                                      "        present  [0-9]+\n"
                                      "(    .*\n)*"
                                      "  pagesets\n"));
+
+  // On Linux the `Normal` zone may be empty (e.g. x86_64 with < 4GiB of RAM), so only
+  // check the watermarks on Starnix, where there is a single `Normal` zone whose
+  // watermarks are derived from the host kernel's OOM thresholds.
+  if (!test_helper::IsStarnix()) {
+    return;
+  }
+
+  std::istringstream iss(content);
+  std::string line;
+  bool in_normal_zone = false;
+  std::optional<uint64_t> min_pages;
+  std::optional<uint64_t> low_pages;
+  std::optional<uint64_t> high_pages;
+  std::optional<uint64_t> present_pages;
+
+  while (std::getline(iss, line)) {
+    if (line.starts_with("Node ")) {
+      in_normal_zone = (line.find("zone   Normal") != std::string::npos);
+      continue;
+    }
+    if (!in_normal_zone) {
+      continue;
+    }
+    std::istringstream line_ss(line);
+    std::string key;
+    uint64_t val = 0;
+    if (line_ss >> key >> val) {
+      if (key == "min") {
+        min_pages = val;
+      } else if (key == "low") {
+        low_pages = val;
+      } else if (key == "high") {
+        high_pages = val;
+      } else if (key == "present") {
+        present_pages = val;
+      }
+    }
+  }
+
+  ASSERT_TRUE(min_pages.has_value());
+  ASSERT_TRUE(low_pages.has_value());
+  ASSERT_TRUE(high_pages.has_value());
+  ASSERT_TRUE(present_pages.has_value());
+
+  EXPECT_LT(*high_pages, *present_pages);
+
+  // The test realm uses the default watermarks from `starnix_kernel.cml`.
+  const long raw_page_size = sysconf(_SC_PAGESIZE);
+  ASSERT_GT(raw_page_size, 0);
+  const uint64_t page_size = static_cast<uint64_t>(raw_page_size);
+  constexpr uint64_t kBytesPerMb = 1024ULL * 1024ULL;
+  EXPECT_EQ(*min_pages, (50ULL * kBytesPerMb) / page_size);
+  EXPECT_EQ(*low_pages, (150ULL * kBytesPerMb) / page_size);
+  EXPECT_EQ(*high_pages, (300ULL * kBytesPerMb) / page_size);
 }
 
 // Verify that /proc/vmstat shape is reasonable.

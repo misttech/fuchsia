@@ -24,6 +24,7 @@ use fuchsia_inspect::health::Reporter;
 use fuchsia_runtime as fruntime;
 use futures::{StreamExt, TryStreamExt};
 use starnix_core::mm::{init_usercopy, zxio_maybe_faultable_copy_impl};
+use starnix_core::task::OomWatermarksMb;
 use starnix_kernel_runner::{
     Container, ContainerServiceConfig, create_component_from_stream, serve_component_runner,
     serve_container_controller, serve_memory_attribution_provider_elfkernel,
@@ -139,8 +140,18 @@ async fn main() -> Result<(), Error> {
         .context("ensuring main process panics kill whole kernel")?;
 
     let kernel_structured_config = KernelStructuredConfig::take_from_startup_handle();
-    let KernelStructuredConfig { extra_features: kernel_extra_features, prefetch, .. } =
-        kernel_structured_config;
+    let KernelStructuredConfig {
+        extra_features: kernel_extra_features,
+        out_of_memory_mb_threshold,
+        critical_mb_threshold,
+        warning_mb_threshold,
+        prefetch,
+    } = kernel_structured_config;
+    let oom_watermarks_mb = OomWatermarksMb {
+        out_of_memory_mb: out_of_memory_mb_threshold,
+        critical_mb: critical_mb_threshold,
+        warning_mb: warning_mb_threshold,
+    };
 
     if prefetch {
         let file_proxy = fuchsia_fs::file::open_in_namespace(
@@ -221,12 +232,16 @@ async fn main() -> Result<(), Error> {
                     let mut config: Option<ContainerServiceConfig> = None;
                     let container = container
                         .get_or_try_init(|| async {
-                            create_component_from_stream(stream, kernel_extra_features).await.map(
-                                |(container, new_config)| {
-                                    config = Some(new_config);
-                                    container
-                                },
+                            create_component_from_stream(
+                                stream,
+                                kernel_extra_features,
+                                oom_watermarks_mb,
                             )
+                            .await
+                            .map(|(container, new_config)| {
+                                config = Some(new_config);
+                                container
+                            })
                         })
                         .await
                         .expect("failed to start container");

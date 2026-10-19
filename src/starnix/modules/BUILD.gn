@@ -26,6 +26,7 @@ group("tests") {
     "odpm:tests",
     "perfetto_consumer:tests",
     "power_residency:tests",
+    "procfs:tests",
     "selinuxfs:tests",
     "syscalls:tests",
     "tracefs:tests",

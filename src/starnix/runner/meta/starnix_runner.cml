@@ -236,6 +236,16 @@
             to: [ "#kernels" ],
         },
         {
+            config: [
+                "fuchsia.kernel.oom.CriticalMb",
+                "fuchsia.kernel.oom.OutOfMemoryMb",
+                "fuchsia.kernel.oom.WarningMb",
+            ],
+            from: "parent",
+            to: [ "#kernels" ],
+            availability: "optional",
+        },
+        {
             protocol: [ "fuchsia.kernel.StallResource" ],
             from: "parent",
             to: "#psi_provider",

@@ -45,7 +45,8 @@ use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::security;
 use starnix_core::task::container_namespace::ContainerNamespace;
 use starnix_core::task::{
-    CurrentTask, ExitStatus, Kernel, RoleOverrides, SchedulerManager, parse_cmdline,
+    CurrentTask, ExitStatus, Kernel, OomWatermarksMb, RoleOverrides, SchedulerManager,
+    parse_cmdline,
 };
 use starnix_core::vfs::{FileSystemOptions, FsContext, LookupContext, Namespace, WhatToMount};
 use starnix_logging::{
@@ -526,6 +527,7 @@ async fn server_component_controller(
 pub async fn create_component_from_stream(
     mut request_stream: frunner::ComponentRunnerRequestStream,
     kernel_extra_features: Vec<String>,
+    oom_watermarks_mb: OomWatermarksMb,
 ) -> Result<(Container, ContainerServiceConfig), Error> {
     if let Some(event) = request_stream.try_next().await? {
         match event {
@@ -533,11 +535,16 @@ pub async fn create_component_from_stream(
                 let request_stream = controller.into_stream();
                 let mut start_info = ContainerStartInfo::new(start_info)?;
                 let (sender, receiver) = oneshot::channel::<TaskResult>();
-                let container = create_container(&mut start_info, &kernel_extra_features, sender)
-                    .await
-                    .with_source_context(|| {
-                        format!("creating container \"{}\"", start_info.program.name)
-                    })?;
+                let container = create_container(
+                    &mut start_info,
+                    &kernel_extra_features,
+                    oom_watermarks_mb,
+                    sender,
+                )
+                .await
+                .with_source_context(|| {
+                    format!("creating container \"{}\"", start_info.program.name)
+                })?;
                 let service_config =
                     ContainerServiceConfig { start_info, request_stream, receiver };
                 return Ok((container, service_config));
@@ -626,6 +633,7 @@ async fn get_bootloader_file_hardware_ddr() -> Result<Option<String>, Error> {
 async fn create_container(
     start_info: &mut ContainerStartInfo,
     kernel_extra_features: &[String],
+    oom_watermarks_mb: OomWatermarksMb,
     task_complete: oneshot::Sender<TaskResult>,
 ) -> Result<Container, Error> {
     fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_CREATE_CONTAINER);
@@ -648,6 +656,7 @@ async fn create_container(
         }
     };
     let (mut features, modules) = parse_features(&start_info, kernel_extra_features)?;
+    features.kernel.oom_watermarks_mb = Some(oom_watermarks_mb);
 
     log_debug!("Creating container with {features:#?}, {modules:#?}");
     let mut kernel_cmdline = BString::from(start_info.program.kernel_cmdline.as_bytes());

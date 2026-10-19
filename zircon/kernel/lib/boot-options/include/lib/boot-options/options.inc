@@ -251,6 +251,7 @@ The current memory availability state can be queried with the command
 `k mem dump`.
 )""")
 
+// LINT.IfChange
 DEFINE_OPTION("kernel.oom.outofmemory-mb", uint64_t, oom_out_of_memory_threshold_mb, {50}, R"""(
 This option specifies the free memory threshold at which the kernel will signal an out-of-memory
 event and take action as specified by `kernel.oom.behavior`, if there is no reclaimable memory that
@@ -266,6 +267,7 @@ DEFINE_OPTION("kernel.oom.warning-mb", uint64_t, oom_warning_threshold_mb, {300}
 This option specifies the free memory threshold at which the kernel will signal a Warning memory
 pressure event, signaling that processes should slow down memory allocations.
 )""")
+// LINT.ThenChange(//src/starnix/kernel/meta/starnix_kernel.cml)
 
 DEFINE_OPTION("kernel.oom.debounce-mb", uint64_t, oom_debounce_mb, {1}, R"""(
 This option specifies the memory debounce value used when computing the memory

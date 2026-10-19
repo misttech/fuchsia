@@ -315,6 +315,16 @@
             to: "#starnix_runner",
         },
         {
+            config: [
+                "fuchsia.kernel.oom.CriticalMb",
+                "fuchsia.kernel.oom.OutOfMemoryMb",
+                "fuchsia.kernel.oom.WarningMb",
+            ],
+            from: "parent",
+            to: "#starnix_runner",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.starnix.runner.EnableDataCollection",
             from: "parent",
             to: "#starnix_runner",

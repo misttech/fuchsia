@@ -7,7 +7,7 @@ use anyhow::{Context, Error, anyhow};
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::block::add_mmc_block_device;
 use starnix_core::mm::MlockPinFlavor;
-use starnix_core::task::{Kernel, KernelFeatures, SystemLimits};
+use starnix_core::task::{Kernel, KernelFeatures, OomWatermarksMb, SystemLimits};
 use starnix_features::Feature;
 use starnix_modules::{Framebuffer, Modules, validate_module};
 use starnix_uapi::error;
@@ -98,6 +98,7 @@ impl Features {
                         fake_ion,
                         remotevol_in_process,
                         log_sysfs_lookup_misses,
+                        oom_watermarks_mb,
                     },
                 system_limits,
                 selinux,
@@ -147,6 +148,13 @@ impl Features {
                     kernel_node
                         .record_uint("cached_zx_map_info_bytes", *cached_zx_map_info_bytes as u64);
                     kernel_node.record_bool("log_sysfs_lookup_misses", *log_sysfs_lookup_misses);
+                    if let Some(OomWatermarksMb { out_of_memory_mb, critical_mb, warning_mb }) =
+                        oom_watermarks_mb
+                    {
+                        kernel_node.record_uint("out_of_memory_mb", *out_of_memory_mb as u64);
+                        kernel_node.record_uint("critical_mb", *critical_mb as u64);
+                        kernel_node.record_uint("warning_mb", *warning_mb as u64);
+                    }
                     inspect_node.record_string(
                         "default_ns_mount_options",
                         format!("{:?}", default_ns_mount_options),
