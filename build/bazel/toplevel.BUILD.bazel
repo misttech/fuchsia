@@ -168,6 +168,15 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# AVB test key, compiled into //src/lib/assembly/test_keys with include_str!().
+# third_party/android/platform/external/avb has no BUILD.bazel file, so this
+# target gives Bazel packages a root package label without a slash.
+filegroup(
+    name = "avb_testkey_atx_psk",
+    srcs = ["third_party/android/platform/external/avb/test/data/testkey_atx_psk.pem"],
+    visibility = ["//src/lib/assembly/test_keys:__pkg__"],
+)
+
 fuchsia_devicetree_toolchain_info(
     name = "fuchsia_devicetree_toolchain_info",
     dtc = "//:prebuilt/third_party/dtc/%s/dtc" % build_config.host_tag,

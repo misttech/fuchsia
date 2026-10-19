@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "test_keys",
+    srcs = ["src/lib.rs"],
+    compile_data = [
+        "//:avb_testkey_atx_psk",  # @bazel2gn:path_overwrite://third_party/android/platform/external/avb/test/data/testkey_atx_psk.pem
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    version = "0.1.0",
+    visibility = ["//src/lib/assembly:__subpackages__"],
+)
