@@ -9,8 +9,6 @@
 
 #include <zircon/types.h>
 
-class JobDispatcher;
-class Handle;
 class ProcessDispatcher;
 class ThreadDispatcher;
 class SignalObserver;
@@ -28,9 +26,7 @@ bool cpp_test_thread_is_dying_or_dead(const ThreadDispatcher* thread);
 bool cpp_test_process_is_running(const ProcessDispatcher* process);
 
 // Rust trampolines callable from C++.
-void rust_root_job_observer_init(void* storage, JobDispatcher* root_job, Handle* root_job_handle);
 void rust_root_job_observer_destroy(void* storage);
-void rust_root_job_observer_halt();
 
 void rust_root_job_observer_on_match(void* rust_ctx, zx_signals_t signals);
 void rust_root_job_observer_on_cancel(void* rust_ctx, zx_signals_t signals);

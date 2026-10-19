@@ -9,17 +9,14 @@
 
 #include <lib/object-constants.h>
 
+#include <fbl/ref_ptr.h>
 #include <ktl/array.h>
-#include <object/job_dispatcher.h>
 #include <object/opaque_storage.h>
+#include <object/process_dispatcher.h>
 
 class RootJobObserver final {
  public:
   ~RootJobObserver();
-
-  // Create a RootJobObserver that halts the system when the root job terminates
-  // (i.e. asserts ZX_JOB_NO_CHILDREN).
-  RootJobObserver(fbl::RefPtr<JobDispatcher> root_job, Handle* root_job_handle);
 
   RootJobObserver(const RootJobObserver&) = delete;
   RootJobObserver& operator=(const RootJobObserver&) = delete;

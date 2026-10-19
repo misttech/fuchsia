@@ -8,9 +8,6 @@
 
 extern "C" {
 void rust_executor_init(Executor* executor);
-void rust_executor_start_root_job_observer(Executor* executor);
 }
 
 void Executor::Init() { rust_executor_init(this); }
-
-void Executor::StartRootJobObserver() { rust_executor_start_root_job_observer(this); }

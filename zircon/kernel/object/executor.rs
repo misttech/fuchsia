@@ -8,9 +8,9 @@ use core::cell::UnsafeCell;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use executor_bindings as bindings;
-use pin_init::{PinInit, pin_data, pin_init};
+use pin_init::pin_data;
 
-use super::handle::{HandleOwner, HandleRef};
+use super::handle::HandleOwner;
 use super::job_dispatcher::JobDispatcher;
 use super::memory_watchdog::MemoryWatchdog;
 use super::root_job_observer::RootJobObserver;
@@ -21,8 +21,9 @@ use super::root_job_observer::RootJobObserver;
 ///
 /// The goals of factoring this into such a layer include:
 ///
-/// - The ability to test code in this layer separately from low-level kernel implementation details,
-///   and from the syscall mechanism. This includes correctness as well as performance tests.
+/// - The ability to test code in this layer separately from low-level kernel implementation
+///   details, and from the syscall mechanism. This includes correctness as well as performance
+///   tests.
 ///
 /// - Centralize resource management in order to make progress on things like not reporting
 ///   `ZX_ERR_NO_MEMORY` when creating a `zx::event`, or reporting bad handle faults.
@@ -78,16 +79,6 @@ zr::static_assert!(
 );
 
 impl Executor {
-    /// Creates a new uninitialized `Executor`.
-    pub fn new() -> impl PinInit<Self, core::convert::Infallible> {
-        pin_init!(Self {
-            root_job: UnsafeCell::new(None),
-            root_job_handle: UnsafeCell::new(None),
-            root_job_observer: UnsafeCell::new(None),
-            memory_watchdog <- MemoryWatchdog::new(),
-        })
-    }
-
     /// Initializes the executor by creating the root job and its handle.
     pub fn init(&self) {
         // Create root job.
@@ -111,18 +102,6 @@ impl Executor {
         // SAFETY: `root_job` is initialized once in `init` before any calls to this method and is
         // not modified afterwards.
         unsafe { (*self.root_job.get()).as_ref().unwrap() }
-    }
-
-    /// Returns a reference to the root job handle.
-    pub fn get_root_job_handle(&self) -> HandleRef<'_> {
-        // SAFETY: `root_job_handle` is initialized once in `init` before any calls to this method
-        // and is not modified afterwards.
-        unsafe { (*self.root_job_handle.get()).as_ref().unwrap().as_ref() }
-    }
-
-    /// Returns a reference to the memory watchdog for this executor.
-    pub fn get_memory_watchdog(&self) -> &MemoryWatchdog {
-        &self.memory_watchdog
     }
 
     /// Start watching the root job, taking a system-level action (such as restart) if

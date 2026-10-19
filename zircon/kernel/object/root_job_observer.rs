@@ -90,9 +90,9 @@ impl RootJobObserver {
     /// - `storage` must be non-null, properly aligned to `kRootJobObserverStorageAlign`,
     ///   and point to valid, uninitialized memory of at least `kRootJobObserverStorageSize` bytes.
     /// - The memory pointed to by `storage` must not be moved while initialized.
-    /// - The instance in `storage` must be destroyed via `rust_root_job_observer_destroy` or
-    ///   `core::ptr::drop_in_place` before freeing or reusing the memory.
-    pub unsafe fn init_in_storage(
+    /// - The instance in `storage` must be dropped in-place via `core::ptr::drop_in_place` before
+    ///   freeing or reusing the memory.
+    unsafe fn init_in_storage(
         storage: *mut MaybeUninit<Self>,
         root_job: RefPtr<JobDispatcher>,
         root_job_handle: Option<HandleRef<'_>>,
@@ -111,13 +111,15 @@ impl RootJobObserver {
         };
         let observer_ptr: *mut Self = observer;
         let signal_observer_ptr = observer.signal_observer.as_mut_ptr();
-        // SAFETY: Passing null context creates a SignalObserver that delivers null to rust_root_job_observer_on_match.
+        // SAFETY: Passing null context creates a SignalObserver that delivers null to
+        // `rust_root_job_observer_on_match`.
         unsafe {
             cpp_root_job_signal_observer_init(signal_observer_ptr, core::ptr::null_mut());
         }
         let handle_ptr = root_job_handle.map_or(core::ptr::null(), |h| h.as_ptr());
         // Observer registration on the root job object will always succeed.
-        // SAFETY: signal_observer is a valid SignalObserver and handle_ptr is a valid handle pointer or null.
+        // SAFETY: `signal_observer` is a valid `SignalObserver` and `handle_ptr` is a valid handle
+        // pointer or null.
         let _ = unsafe {
             (*observer_ptr).root_job.add_observer(
                 signal_observer_ptr,
@@ -143,7 +145,8 @@ impl RootJobObserver {
         }
     }
 
-    /// Creates a new `RootJobObserver` that calls `callback` when the root job asserts `ZX_JOB_NO_CHILDREN`.
+    /// Creates a new `RootJobObserver` that calls `callback` when the root job asserts
+    /// `ZX_JOB_NO_CHILDREN`.
     ///
     /// The callback is called while holding the watched `JobDispatcher`'s lock, so the callback
     /// must avoid calling anything that may attempt to acquire that lock again, introduce a lock
@@ -172,12 +175,14 @@ impl RootJobObserver {
         let ctx = observer_ptr as *mut c_void;
         // SAFETY: observer_ptr is valid and points to the heap-allocated RootJobObserver.
         let signal_observer_ptr = unsafe { (*observer_ptr).signal_observer.as_mut_ptr() };
-        // SAFETY: observer is boxed and has a stable heap address; ctx points to live RootJobObserver.
+        // SAFETY: `observer` is boxed and has a stable heap address; `ctx` points to live
+        // `RootJobObserver`.
         unsafe {
             cpp_root_job_signal_observer_init(signal_observer_ptr, ctx);
         }
         let handle_ptr = root_job_handle.map_or(core::ptr::null(), |h| h.as_ptr());
-        // SAFETY: signal_observer is a valid SignalObserver and handle_ptr is a valid handle pointer or null.
+        // SAFETY: `signal_observer` is a valid `SignalObserver` and `handle_ptr` is a valid handle
+        // pointer or null.
         let _ = unsafe {
             observer.root_job.add_observer(signal_observer_ptr, handle_ptr, ZX_JOB_NO_CHILDREN)
         };
@@ -359,32 +364,6 @@ pub unsafe extern "C" fn rust_root_job_observer_on_cancel(
 ) {
 }
 
-/// Initializes a `RootJobObserver` in the provided `storage` from C++.
-///
-/// # Safety
-///
-/// `storage` must point to valid uninitialized memory of size and alignment matching `RootJobObserver`.
-/// `root_job` must point to a live `JobDispatcher` whose refcount was exported.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_root_job_observer_init(
-    storage: *mut MaybeUninit<RootJobObserver>,
-    root_job: *mut JobDispatcher,
-    root_job_handle: *mut c_void,
-) {
-    // SAFETY: root_job was exported with a transferred refcount and is not null.
-    let root_job_ptr = unsafe { RefPtr::from_raw(root_job) };
-
-    let root_job_handle_ref = core::ptr::NonNull::new(root_job_handle).map(|ptr| {
-        // SAFETY: The caller has ensured that root_job_handle points to a valid handle and there can
-        // be no other possible threads interacting with a handle table so the handle table lock is
-        // not required.
-        unsafe { HandleRef::from_raw(ptr) }
-    });
-
-    // SAFETY: storage is guaranteed by caller to point to valid uninitialized memory for RootJobObserver.
-    unsafe { RootJobObserver::init_in_storage(storage, root_job_ptr, root_job_handle_ref) };
-}
-
 /// Destroys a `RootJobObserver` initialized in `storage`.
 ///
 /// # Safety
@@ -396,12 +375,6 @@ pub unsafe extern "C" fn rust_root_job_observer_destroy(storage: *mut RootJobObs
     unsafe {
         core::ptr::drop_in_place(storage);
     }
-}
-
-/// Halts the platform via `RootJobObserver::halt()`.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_root_job_observer_halt() {
-    RootJobObserver::halt();
 }
 
 /// Notifies Rust that a critical process is dying.
@@ -550,7 +523,7 @@ mod tests {
         expect_true!(event.wait_infinite().is_ok());
     }
 
-    /// Test that by the time the RootJobObserver callback fires due to the root job being killed, all of the root job's children have already been terminated.
+    /// Test that all root job children are already terminated when the callback fires.
     #[test]
     fn test_children_already_dead_when_callback_fires() {
         pin_init::stack_pin_init!(let event = Event::init_unsignaled());
@@ -563,7 +536,8 @@ mod tests {
         let proc_ptr = SendPtr((&**child_process.dispatcher()) as *const ProcessDispatcher);
         let thread_ptr = SendPtr((&**child_thread.dispatcher()) as *const ThreadDispatcher);
 
-        // Create a root job observer. The callback ensures that the child process and thread are both dead when it fires.
+        // Create a root job observer. The callback ensures that the child process and thread are
+        // both dead when it fires.
         let observer = RootJobObserver::new_with_callback(root_job.clone(), None, move || {
             // SAFETY: pointers are valid for the test duration.
             unsafe {
@@ -589,7 +563,7 @@ mod tests {
         expect_true!(event.wait_infinite().is_ok());
     }
 
-    /// Ensure that the RootJobObserver callback fires when the root job has no children, even if the root job itself is not killed.
+    /// Ensure the callback fires when the root job has no children, even if not killed.
     #[test]
     fn test_callback_fires_when_no_children() {
         pin_init::stack_pin_init!(let event = Event::init_unsignaled());
@@ -602,7 +576,8 @@ mod tests {
         let proc_ptr = SendPtr((&**child_process.dispatcher()) as *const ProcessDispatcher);
         let thread_ptr = SendPtr((&**child_thread.dispatcher()) as *const ThreadDispatcher);
 
-        // Create a root job observer. The callback ensures that the child process and thread are both dead when it fires.
+        // Create a root job observer. The callback ensures that the child process and thread are
+        // both dead when it fires.
         let observer = RootJobObserver::new_with_callback(root_job, None, move || {
             let (event_ptr, proc_ptr, thread_ptr) = (event_ptr, proc_ptr, thread_ptr);
             // SAFETY: `event_ptr` points to the pinned `event` on the caller's stack frame.

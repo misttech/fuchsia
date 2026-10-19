@@ -11,11 +11,6 @@
 static_assert(sizeof(RootJobObserver) == kRootJobObserverStorageSize);
 static_assert(alignof(RootJobObserver) == kRootJobObserverStorageAlign);
 
-RootJobObserver::RootJobObserver(fbl::RefPtr<JobDispatcher> root_job, Handle* root_job_handle) {
-  auto raw_root_job = fbl::ExportToRawPtr(&root_job);
-  rust_root_job_observer_init(&opaque_storage_, raw_root_job, root_job_handle);
-}
-
 RootJobObserver::~RootJobObserver() { rust_root_job_observer_destroy(&opaque_storage_); }
 
 void RootJobObserver::SetCriticalProcessDying() {

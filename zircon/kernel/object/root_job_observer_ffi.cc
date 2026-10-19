@@ -57,9 +57,6 @@ FFI_ALWAYS_INLINE bool cpp_test_thread_is_dying_or_dead(const ThreadDispatcher* 
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_start_root_job_observer() { StartRootJobObserver(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_test_process_is_running(const ProcessDispatcher* process) {
   return process->state() == ProcessDispatcher::State::RUNNING;
 }

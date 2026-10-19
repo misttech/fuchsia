@@ -38,12 +38,6 @@ class Executor {
 
   MemoryWatchdog& GetMemoryWatchdog() { return memory_watchdog_; }
 
-  // Start watching the root job, taking a system-level action (such as restart) if
-  // all its children are removed.
-  //
-  // This must be called after the root job has at least one child process or child job.
-  void StartRootJobObserver();
-
  private:
   // All jobs and processes of this Executor are rooted at this job.
   fbl::RefPtr<JobDispatcher> root_job_;

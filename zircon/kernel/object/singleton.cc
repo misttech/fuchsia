@@ -8,19 +8,14 @@
 // * Initialization code for kernel/object module
 // * Singleton instances
 
-#include <inttypes.h>
-#include <lib/crashlog.h>
-#include <zircon/boot/crash-reason.h>
-#include <zircon/syscalls/object.h>
-#include <zircon/types.h>
-
+#include <kernel/ffi.h>
 #include <lk/init.h>
-#include <object/diagnostics.h>
 #include <object/executor.h>
 #include <object/job_dispatcher.h>
 #include <object/memory_watchdog.h>
-#include <platform/crashlog.h>
-#include <platform/halt_helper.h>
+#include <object/root_job_observer_ffi.h>
+
+extern "C" void rust_executor_start_root_job_observer(Executor* executor);
 
 static Executor gExecutor;
 
@@ -32,7 +27,10 @@ const Handle& GetRootJobHandle() { return gExecutor.GetRootJobHandle(); }
 
 MemoryWatchdog& GetMemoryWatchdog() { return gExecutor.GetMemoryWatchdog(); }
 
-void StartRootJobObserver() { gExecutor.StartRootJobObserver(); }
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE void cpp_start_root_job_observer() {
+  rust_executor_start_root_job_observer(&gExecutor);
+}
 
 static void object_init(uint level) TA_NO_THREAD_SAFETY_ANALYSIS {
   Handle::Init();

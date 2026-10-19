@@ -307,10 +307,6 @@ class JobDispatcher final
 const fbl::RefPtr<JobDispatcher>& GetRootJobDispatcher();
 const Handle& GetRootJobHandle();
 
-// Start the RootJobObserver. Must be called after the root job has at
-// least one child process or child job.
-void StartRootJobObserver();
-
 extern "C" {
 bool cpp_job_dispatcher_is_root(const JobDispatcher* job);
 zx_status_t cpp_job_dispatcher_create(uint32_t flags, JobDispatcher* parent,
