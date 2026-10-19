@@ -94,12 +94,6 @@ pub unsafe extern "C" fn rust_futex_context_init(
     Status::result_into_raw(ctx.init(process_type))
 }
 
-/// Grows the `FutexState` free pool by two states.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_futex_context_grow_pool(ctx: &FutexContext) -> zx_status_t {
-    Status::result_into_raw(ctx.grow_futex_state_pool())
-}
-
 /// Shrinks the `FutexState` free pool by two states.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_futex_context_shrink_pool(ctx: &FutexContext) {

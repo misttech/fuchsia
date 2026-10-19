@@ -383,7 +383,7 @@ impl ThreadDispatcher {
         ltrace_entry_obj!(self);
 
         // Make sure we contribute a FutexState object to our process's futex state.
-        self.process().futex_context_grow_pool()?;
+        self.process().futex_context().grow_futex_state_pool()?;
 
         ksync::lock!(let mut guard = self.state().lock_lock());
         // Associate the proc's address space with this thread. All threads start off with the

@@ -626,17 +626,6 @@ impl ProcessDispatcher {
         unsafe { &*cpp_process_dispatcher_futex_context(self.as_ffi()).cast() }
     }
 
-    /// Grows the futex state pool for this process.
-    pub fn futex_context_grow_pool(&self) -> Result<(), Status> {
-        self.futex_context().grow_futex_state_pool()
-    }
-
-    /// Shrinks the futex state pool for this process.
-    pub fn futex_context_shrink_pool(&self) -> Result<(), Status> {
-        self.futex_context().shrink_futex_state_pool();
-        Ok(())
-    }
-
     /// Attaches the normal address space of this process to `core_thread`.
     pub fn attach_normal_aspace_to_thread(&self, core_thread: ThreadPtr) {
         // SAFETY: `self` is a valid `ProcessDispatcher`, and `core_thread` upholds the

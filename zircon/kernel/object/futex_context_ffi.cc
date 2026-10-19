@@ -9,10 +9,6 @@
 static_assert(sizeof(FutexContext) == kFutexContextStorageSize);
 static_assert(alignof(FutexContext) == kFutexContextStorageAlign);
 
-static_assert(static_cast<uint32_t>(FutexContext::OwnerAction::RELEASE) == 0);
-static_assert(static_cast<uint32_t>(FutexContext::OwnerAction::ASSIGN_WOKEN) == 1);
-static_assert(sizeof(FutexContext::OwnerAction) == sizeof(uint32_t));
-
 static_assert(static_cast<uint32_t>(FutexContext::ProcessType::Regular) == 0);
 static_assert(static_cast<uint32_t>(FutexContext::ProcessType::Shared) == 1);
 static_assert(sizeof(FutexContext::ProcessType) == sizeof(uint32_t));
