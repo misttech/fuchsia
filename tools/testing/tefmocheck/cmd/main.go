@@ -62,6 +62,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Serial logs are intentionally kept monolithic rather than split per-test by
+	// time window. In bringup and early-boot test environments (such as runtests
+	// executing over a serial console), buffered UART output from an earlier test
+	// can interleave with the invocation of a subsequent test. Splitting serial
+	// logs by time windows can sever exception blocks (e.g. [===LSAN EXCEPT BLOCK
+	// START===] in lsan-test) across test boundaries, causing spurious failures
+	// attributed to later tests.
 	var serialLogs [][]byte
 	for _, serialLogPath := range serialLogPaths {
 		serialLog, err := os.ReadFile(serialLogPath)
@@ -83,35 +90,20 @@ func main() {
 			log.Fatalf("failed to split swarming output into per-test logs: %s", err)
 		}
 	}
+
+	logBaseNameCounts := make(map[string]int)
+	syslogs, syslogsPerTest, err := tefmocheck.ReadAndSplitLogs(syslogPaths, inputSummary, *outputsDir, logBaseNameCounts)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// inputSummary is empty if -test-summary-json is not specified. This happens
 	// when the recipe detects no summary.json exists.
 	if *outputsDir != "" && *inputSummaryPath != "" {
-		for i := range swarmingOutputPerTest {
-			test := &inputSummary.Tests[i]
-			testLog := &swarmingOutputPerTest[i]
-			// TODO(olivernewman): This check fails when a unit test for
-			// testrunner fails and the failure output contains the TAP output
-			// referencing fake tests used for test data. Make this check less
-			// strict by having `SplitTestLogs` only create a split log for
-			// tests that actually appear in summary.json.
-			if test.Name != testLog.TestName {
-				log.Fatalf("swarmingOutputPerTest[%d].TestName != inputSummary.Tests[%d] (%q vs %q)", i, i, testLog.TestName, test.Name)
-			}
-			relPath, err := filepath.Rel(filepath.Join(*outputsDir, test.OutputDir), testLog.FilePath)
-			if err != nil {
-				log.Fatal(err)
-			}
-			test.OutputFiles = append(test.OutputFiles, relPath)
+		allPerTestLogs := append([][]tefmocheck.TestLog{swarmingOutputPerTest}, syslogsPerTest...)
+		if err := tefmocheck.RecordTestOutputFiles(inputSummary, allPerTestLogs, *outputsDir); err != nil {
+			log.Fatal(err)
 		}
-	}
-
-	var syslogs [][]byte
-	for _, syslogPath := range syslogPaths {
-		syslog, err := os.ReadFile(syslogPath)
-		if err != nil {
-			log.Fatalf("failed to read syslog from %s: %v", syslogPath, err)
-		}
-		syslogs = append(syslogs, syslog)
 	}
 
 	testingOutputs := tefmocheck.TestingOutputs{
@@ -121,6 +113,7 @@ func main() {
 		SwarmingOutput:        swarmingOutput,
 		SwarmingOutputPerTest: swarmingOutputPerTest,
 		Syslogs:               syslogs,
+		SyslogsPerTest:        syslogsPerTest,
 	}
 
 	// These should be ordered from most specific to least specific. If an earlier

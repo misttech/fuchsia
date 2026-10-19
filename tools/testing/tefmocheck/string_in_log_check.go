@@ -42,7 +42,7 @@ type stringInLogCheck struct {
 	// in the Swarming task passed.
 	SkipAllPassedTests bool
 	// SkipPassedTest will cause Check() to return true only if it finds the
-	// log in the per-test swarming output of a failed test.
+	// log in the per-test output (swarming or syslog) of a failed test.
 	SkipPassedTest bool
 	// IgnoreFlakes will cause Check() to behave in the following ways when
 	// combined with other options:
@@ -56,7 +56,7 @@ type stringInLogCheck struct {
 	AlwaysFlake bool
 	// Type of log that will be checked.
 	Type logType
-	// Whether to check the per-test Swarming output for this log and emit a
+	// Whether to check the per-test output for this log and emit a
 	// check that's specific to the test during which the log appeared.
 	AttributeToTest bool
 	// If combined with AttributeToTest, it'll list the test name as a tag instead
@@ -171,7 +171,12 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 		return false
 	}
 
-	if c.Type == swarmingOutputType && (c.AttributeToTest || c.SkipPassedTest) {
+	// Only swarming and syslog outputs support per-test log splitting and attribution.
+	// Serial logs are deliberately excluded to avoid false positives caused by
+	// UART buffering latency and sequential runner command interleaving across
+	// test boundaries.
+	if (c.Type == swarmingOutputType || c.Type == syslogType) && (c.AttributeToTest || c.SkipPassedTest) {
+		_, perTestLogs := to.allLogs(c.Type)
 		type testdata struct {
 			name       string
 			outputFile string
@@ -179,45 +184,50 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 			index      int
 			line       string
 		}
-		failedTestsMap := make(map[string]testdata)
-		for i, testLog := range to.SwarmingOutputPerTest {
-			var testResult runtests.TestStatus
-			if to.TestSummary != nil {
-				testResult = to.TestSummary.Tests[i].Status
-			}
-			if c.SkipPassedTest && testResult == runtests.TestSuccess {
-				if c.IgnoreFlakes {
-					if test, ok := failedTestsMap[testLog.TestName]; ok {
-						test.isFlake = true
-						failedTestsMap[testLog.TestName] = test
-					}
+		matchedTestsMap := make(map[string]testdata)
+		for _, testLogs := range perTestLogs {
+			for i, testLog := range testLogs {
+				var testResult runtests.TestStatus
+				if to.TestSummary != nil && i < len(to.TestSummary.Tests) {
+					testResult = to.TestSummary.Tests[i].Status
 				}
-				continue
-			}
-			found, line := c.checkBytes(to.SwarmingOutput, testLog.Index, testLog.Index+len(testLog.Bytes))
-			if found {
-				failedTestsMap[testLog.TestName] = testdata{testLog.TestName, testLog.FilePath, c.AlwaysFlake, i, string(line)}
+				if c.SkipPassedTest && testResult == runtests.TestSuccess {
+					if c.IgnoreFlakes {
+						if test, ok := matchedTestsMap[testLog.TestName]; ok {
+							test.isFlake = true
+							matchedTestsMap[testLog.TestName] = test
+						}
+					}
+					continue
+				}
+				if len(testLog.Bytes) == 0 {
+					continue
+				}
+				found, line := c.checkBytes(testLog.Bytes)
+				if found {
+					matchedTestsMap[testLog.TestName] = testdata{testLog.TestName, testLog.FilePath, c.AlwaysFlake, i, string(line)}
+				}
 			}
 		}
-		var failedTests []testdata
+		var unflakedMatches []testdata
 		var flakedTests []testdata
-		for _, data := range failedTestsMap {
+		for _, data := range matchedTestsMap {
 			if data.isFlake {
 				flakedTests = append(flakedTests, data)
 			} else {
-				failedTests = append(failedTests, data)
+				unflakedMatches = append(unflakedMatches, data)
 			}
 		}
 		// Prioritize returning the first failure. If there are no failures,
 		// then return the first flake.
-		if len(failedTests) > 0 {
-			slices.SortFunc(failedTests, func(a, b testdata) int {
+		if len(unflakedMatches) > 0 {
+			slices.SortFunc(unflakedMatches, func(a, b testdata) int {
 				return a.index - b.index
 			})
 			if c.AttributeToTest {
-				c.testName = failedTests[0].name
-				c.outputFile = failedTests[0].outputFile
-				c.line = failedTests[0].line
+				c.testName = unflakedMatches[0].name
+				c.outputFile = unflakedMatches[0].outputFile
+				c.line = unflakedMatches[0].line
 			}
 			return true
 		}
@@ -238,18 +248,8 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 		}
 	}
 
-	var toCheck [][]byte
-	switch c.Type {
-	case serialLogType:
-		toCheck = to.SerialLogs
-	case swarmingOutputType:
-		toCheck = [][]byte{to.SwarmingOutput}
-	case syslogType:
-		toCheck = to.Syslogs
-	}
-
-	for _, file := range toCheck {
-		found, line := c.checkBytes(file, 0, len(file))
+	for _, file := range to.logs(c.Type) {
+		found, line := c.checkBytes(file)
 		if found {
 			if c.AlwaysFlake {
 				c.isFlake = true
@@ -261,36 +261,34 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 	return false
 }
 
-func (c *stringInLogCheck) checkBytes(toCheck []byte, start int, end int) (bool, []byte) {
-	toCheckBlock := toCheck[start:end]
+func (c *stringInLogCheck) checkBytes(toCheck []byte) (bool, []byte) {
 	for _, s := range c.ExceptStrings {
-		if bytes.Contains(toCheckBlock, []byte(s)) {
+		if bytes.Contains(toCheck, []byte(s)) {
 			return false, nil
 		}
 	}
-	if found, line := c.checkBytesForString(toCheck, start, end, c.String); found {
+	if found, line := c.checkBytesForString(toCheck, c.String); found {
 		return true, line
 	}
 	if after, ok := strings.CutPrefix(c.String, botanistErrorPrefix); ok {
 		wrapped := botanistErrorPrefix + constants.BotanistFailedMsg + ": " + after
-		return c.checkBytesForString(toCheck, start, end, wrapped)
+		return c.checkBytesForString(toCheck, wrapped)
 	}
 	return false, nil
 }
 
-func (c *stringInLogCheck) checkBytesForString(toCheck []byte, start int, end int, s string) (bool, []byte) {
-	toCheckBlock := toCheck[start:end]
+func (c *stringInLogCheck) checkBytesForString(toCheck []byte, s string) (bool, []byte) {
 	stringBytes := []byte(s)
 	if len(c.ExceptBlocks) == 0 {
-		if idx := bytes.Index(toCheckBlock, stringBytes); idx != -1 {
-			line := getLine(toCheckBlock, idx)
+		if idx := bytes.Index(toCheck, stringBytes); idx != -1 {
+			line := getLine(toCheck, idx)
 			return true, line
 		} else {
 			return false, nil
 		}
 	}
-	index := bytes.Index(toCheckBlock, stringBytes) + start
-	for index >= start && index < end {
+	index := bytes.Index(toCheck, stringBytes)
+	for index >= 0 && index < len(toCheck) {
 		foundString := true
 		beforeBlock := toCheck[:index]
 		nextStartIndex := index + len(stringBytes)

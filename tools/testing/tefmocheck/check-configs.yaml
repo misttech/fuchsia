@@ -53,7 +53,8 @@ failure_mode_checks:
 - kind: "string_in_log"
   string: "Trace size: streamed 400 MB"
   log_types: ["syslogType"]
-  skip_all_passed_tests: true
+  skip_passed_test: true
+  attribute_to_test: true
 
 # Image too large causes booting to fail.
 - kind: "string_in_log"

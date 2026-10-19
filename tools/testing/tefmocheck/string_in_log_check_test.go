@@ -7,6 +7,7 @@ package tefmocheck
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -57,6 +58,8 @@ func TestCheck(t *testing.T) {
 		wantFlake           bool
 		wantLine            string
 		wantTags            []build.TestTag
+		wantOutputFiles     []string
+		setWantOutputFiles  bool
 	}{
 		{
 			name: "should match simple",
@@ -634,6 +637,219 @@ func TestCheck(t *testing.T) {
 			skipPassedTest: true,
 			alwaysFlake:    true,
 		},
+		{
+			name: "should skip if killer string in syslog is from passed test",
+			testingOutputs: TestingOutputs{
+				TestSummary: &runtests.TestSummary{
+					Tests: []runtests.TestDetails{
+						{
+							Name:           "test1",
+							Status:         runtests.TestFailure,
+							StartTime:      time.Date(2026, 10, 5, 14, 0, 0, 0, time.UTC),
+							DurationMillis: 60000,
+						},
+						{
+							Name:           "test2",
+							Status:         runtests.TestSuccess,
+							StartTime:      time.Date(2026, 10, 5, 14, 5, 0, 0, time.UTC),
+							DurationMillis: 60000,
+						},
+					},
+				},
+				Syslogs: [][]byte{
+					[]byte("2026-10-05 14:00:00.000000 test1 output\n" +
+						"2026-10-05 14:05:00.000000 test2 output " + killerString + "\n"),
+				},
+			},
+			skipPassedTest: true,
+			typeToCheck:    syslogType,
+			shouldMatch:    false,
+		},
+		{
+			name: "should match if killer string in syslog is from failed test and attribute to test",
+			testingOutputs: TestingOutputs{
+				TestSummary: &runtests.TestSummary{
+					Tests: []runtests.TestDetails{
+						{
+							Name:           "test1",
+							Status:         runtests.TestFailure,
+							StartTime:      time.Date(2026, 10, 5, 14, 0, 0, 0, time.UTC),
+							DurationMillis: 60000,
+						},
+						{
+							Name:           "test2",
+							Status:         runtests.TestSuccess,
+							StartTime:      time.Date(2026, 10, 5, 14, 5, 0, 0, time.UTC),
+							DurationMillis: 60000,
+						},
+					},
+				},
+				Syslogs: [][]byte{
+					[]byte("2026-10-05 14:00:00.000000 test1 output " + killerString + "\n" +
+						"2026-10-05 14:05:00.000000 test2 output\n"),
+				},
+			},
+			skipPassedTest:  true,
+			attributeToTest: true,
+			typeToCheck:     syslogType,
+			shouldMatch:     true,
+			wantName:        "string_in_log/syslog.txt/KILLER_STRING/test1",
+		},
+		{
+			name: "should match when killer string in failed test syslog but not in passed test syslog",
+			testingOutputs: TestingOutputs{
+				TestSummary: &runtests.TestSummary{
+					Tests: []runtests.TestDetails{
+						{
+							Name:   "test0",
+							Status: runtests.TestSuccess,
+						},
+						{
+							Name:   "test1",
+							Status: runtests.TestFailure,
+						},
+					},
+				},
+				Syslogs: [][]byte{
+					[]byte("test0 output\ntest1 output " + killerString + "\n"),
+				},
+				SyslogsPerTest: [][]TestLog{
+					{
+						{
+							TestName: "test0",
+							Bytes:    []byte("test0 output\n"),
+							FilePath: "test0/syslog.txt",
+							Index:    0,
+						},
+						{
+							TestName: "test1",
+							Bytes:    []byte("test1 output " + killerString + "\n"),
+							FilePath: "test1/syslog.txt",
+							Index:    len("test0 output\n"),
+						},
+					},
+				},
+			},
+			skipPassedTest:     true,
+			attributeToTest:    true,
+			typeToCheck:        syslogType,
+			shouldMatch:        true,
+			wantName:           "string_in_log/syslog.txt/KILLER_STRING/test1",
+			wantOutputFiles:    []string{"test1/syslog.txt"},
+			setWantOutputFiles: true,
+		},
+		{
+			name: "should not match when killer string is in passed test syslog but absent in failed test syslog",
+			testingOutputs: TestingOutputs{
+				TestSummary: &runtests.TestSummary{
+					Tests: []runtests.TestDetails{
+						{
+							Name:   "test0",
+							Status: runtests.TestSuccess,
+						},
+						{
+							Name:   "test1",
+							Status: runtests.TestFailure,
+						},
+					},
+				},
+				Syslogs: [][]byte{
+					[]byte("test0 output " + killerString + "\ntest1 output clean\n"),
+				},
+				SyslogsPerTest: [][]TestLog{
+					{
+						{
+							TestName: "test0",
+							Bytes:    []byte("test0 output " + killerString + "\n"),
+							FilePath: "test0/syslog.txt",
+							Index:    0,
+						},
+						{
+							TestName: "test1",
+							Bytes:    []byte("test1 output clean\n"),
+							FilePath: "test1/syslog.txt",
+							Index:    len("test0 output " + killerString + "\n"),
+						},
+					},
+				},
+			},
+			skipPassedTest:     true,
+			attributeToTest:    true,
+			typeToCheck:        syslogType,
+			shouldMatch:        false,
+			setWantOutputFiles: true,
+			wantOutputFiles:    []string{},
+		},
+		{
+			name: "should not match when killer string is in full syslog but outside all per-test windows",
+			testingOutputs: TestingOutputs{
+				TestSummary: &runtests.TestSummary{
+					Tests: []runtests.TestDetails{
+						{
+							Name:   "test0",
+							Status: runtests.TestFailure,
+						},
+						{
+							Name:   "test1",
+							Status: runtests.TestFailure,
+						},
+					},
+				},
+				Syslogs: [][]byte{
+					[]byte("pre-test log " + killerString + "\ntest0 output clean\ntest1 output clean\n"),
+				},
+				SyslogsPerTest: [][]TestLog{
+					{
+						{
+							TestName: "test0",
+							Bytes:    []byte("test0 output clean\n"),
+							FilePath: "test0/syslog.txt",
+							Index:    len("pre-test log " + killerString + "\n"),
+						},
+						{
+							TestName: "test1",
+							Bytes:    []byte("test1 output clean\n"),
+							FilePath: "test1/syslog.txt",
+							Index:    len("pre-test log " + killerString + "\ntest0 output clean\n"),
+						},
+					},
+				},
+			},
+			skipPassedTest:     true,
+			attributeToTest:    true,
+			typeToCheck:        syslogType,
+			shouldMatch:        false,
+			setWantOutputFiles: true,
+			wantOutputFiles:    []string{},
+		},
+		{
+			name: "should not attribute to test for serial logs even if attribute_to_test is true",
+			testingOutputs: TestingOutputs{
+				TestSummary: &runtests.TestSummary{
+					Tests: []runtests.TestDetails{
+						{
+							Name:           "test0",
+							Status:         runtests.TestSuccess,
+							StartTime:      time.Date(2026, 10, 5, 14, 0, 0, 0, time.UTC),
+							DurationMillis: 60000,
+						},
+						{
+							Name:           "test1",
+							Status:         runtests.TestFailure,
+							StartTime:      time.Date(2026, 10, 5, 14, 5, 0, 0, time.UTC),
+							DurationMillis: 60000,
+						},
+					},
+				},
+				SerialLogs: [][]byte{
+					[]byte("2026-10-05 14:05:00.000000 test1 output " + killerString + "\n"),
+				},
+			},
+			attributeToTest: true,
+			typeToCheck:     serialLogType,
+			shouldMatch:     true,
+			wantName:        "string_in_log/serial_log.txt/KILLER_STRING",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := c // Make a copy to avoid modifying shared state.
@@ -668,13 +884,27 @@ func TestCheck(t *testing.T) {
 				}
 			}
 			c.DebugText() // minimal coverage, check it doesn't crash.
-			swarmingOutputPerTest := tc.testingOutputs.SwarmingOutputPerTest
-			gotOutputFiles := c.OutputFiles()
-			if len(swarmingOutputPerTest) == 0 && len(gotOutputFiles) != 0 {
-				t.Errorf("c.OutputFiles() returned %s, want []", gotOutputFiles)
+			var perTestLogs []TestLog
+			if len(tc.testingOutputs.SwarmingOutputPerTest) > 0 {
+				perTestLogs = tc.testingOutputs.SwarmingOutputPerTest
+			} else if len(tc.testingOutputs.SyslogsPerTest) > 0 {
+				perTestLogs = tc.testingOutputs.SyslogsPerTest[0]
 			}
-			if len(swarmingOutputPerTest) == 1 && (len(gotOutputFiles) != 1 || swarmingOutputPerTest[0].FilePath != gotOutputFiles[0]) {
-				t.Errorf("c.OutputFiles() returned %s, want %q", gotOutputFiles, swarmingOutputPerTest[0].FilePath)
+			gotOutputFiles := c.OutputFiles()
+			if tc.setWantOutputFiles {
+				if diff := cmp.Diff(tc.wantOutputFiles, gotOutputFiles); diff != "" {
+					t.Errorf("c.OutputFiles() returned diff (-want +got): %s", diff)
+				}
+			} else {
+				if len(gotOutputFiles) > 1 {
+					t.Errorf("c.OutputFiles() returned %d files (%v), want at most 1", len(gotOutputFiles), gotOutputFiles)
+				}
+				if len(perTestLogs) == 0 && len(gotOutputFiles) != 0 {
+					t.Errorf("c.OutputFiles() returned %s, want []", gotOutputFiles)
+				}
+				if len(perTestLogs) == 1 && (len(gotOutputFiles) != 1 || perTestLogs[0].FilePath != gotOutputFiles[0]) {
+					t.Errorf("c.OutputFiles() returned %s, want %q", gotOutputFiles, perTestLogs[0].FilePath)
+				}
 			}
 			if tc.wantFlake != c.IsFlake() {
 				t.Errorf("c.IsFlake() returned %t, expected %t", c.IsFlake(), tc.wantFlake)

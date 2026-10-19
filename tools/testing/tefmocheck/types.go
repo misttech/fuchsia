@@ -17,6 +17,66 @@ type TestingOutputs struct {
 	SwarmingOutput        []byte
 	SwarmingOutputPerTest []TestLog
 	Syslogs               [][]byte
+	SyslogsPerTest        [][]TestLog
+}
+
+func (to *TestingOutputs) getLogsPerTest(logs [][]byte, cache *[][]TestLog) [][]TestLog {
+	if *cache != nil {
+		return *cache
+	}
+	if to.TestSummary == nil || len(to.TestSummary.Tests) == 0 {
+		return nil
+	}
+	var res [][]TestLog
+	for _, log := range logs {
+		split := splitLogByTestTime(log, to.TestSummary.Tests)
+		if split != nil {
+			res = append(res, split)
+		}
+	}
+	*cache = res
+	return res
+}
+
+func (to *TestingOutputs) getSyslogsPerTest() [][]TestLog {
+	return to.getLogsPerTest(to.Syslogs, &to.SyslogsPerTest)
+}
+
+// logs returns the raw byte slices for the given log type.
+func (to *TestingOutputs) logs(lt logType) [][]byte {
+	switch lt {
+	case swarmingOutputType:
+		return [][]byte{to.SwarmingOutput}
+	case syslogType:
+		return to.Syslogs
+	case serialLogType:
+		return to.SerialLogs
+	default:
+		return nil
+	}
+}
+
+// perTestLogs returns any per-test logs for the given log type, lazily splitting
+// by test time window if necessary. Only swarmingOutputType and syslogType support
+// per-test logs; serialLogType is intentionally omitted to avoid false positives
+// from serial buffer latency and console command interleaving between sequential tests.
+func (to *TestingOutputs) perTestLogs(lt logType) [][]TestLog {
+	switch lt {
+	case swarmingOutputType:
+		if len(to.SwarmingOutputPerTest) > 0 {
+			return [][]TestLog{to.SwarmingOutputPerTest}
+		}
+		return nil
+	case syslogType:
+		return to.getSyslogsPerTest()
+	default:
+		return nil
+	}
+}
+
+// allLogs returns both raw byte slices and per-test logs for the given log type.
+func (to *TestingOutputs) allLogs(lt logType) (raw [][]byte, perTest [][]TestLog) {
+	return to.logs(lt), to.perTestLogs(lt)
 }
 
 type logType string
