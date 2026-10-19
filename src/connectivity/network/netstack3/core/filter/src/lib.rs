@@ -27,7 +27,7 @@ mod state;
 use logic::nat::NatConfig;
 
 /// A connection as tracked by conntrack.
-pub type ConntrackConnection<I, A, BT> = conntrack::Connection<I, NatConfig<I, A>, BT>;
+pub type ConntrackConnection<I, A, BT> = conntrack::Connection<I, NatConfig<I, A, BT>, BT>;
 
 pub use actions::MarkAction;
 pub use api::FilterApi;

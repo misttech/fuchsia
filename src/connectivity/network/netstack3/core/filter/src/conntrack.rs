@@ -52,7 +52,7 @@ pub(crate) const MAXIMUM_ENTRIES: usize = 100_000;
 /// struct and can be extracted with the [`Connection::external_data()`]
 /// function.
 pub struct Table<I: IpExt, E, BT: FilterBindingsTypes> {
-    inner: Mutex<TableInner<I, E, BT>>,
+    inner: Mutex<TableInner<I, E, BT>, BT::Mutex>,
 }
 
 struct TableInner<I: IpExt, E, BT: FilterBindingsTypes> {
@@ -1113,7 +1113,7 @@ where
 #[derivative(Debug(bound = "E: Debug"))]
 pub struct ConnectionShared<I: IpExt, E, BT: FilterBindingsTypes> {
     inner: ConnectionCommon<I, E>,
-    state: Mutex<ConnectionState<BT>>,
+    state: Mutex<ConnectionState<BT>, BT::Mutex>,
 }
 
 impl<I: IpExt, E, BT: FilterBindingsTypes> ConnectionShared<I, E, BT> {

@@ -981,7 +981,7 @@ mod tests {
     #[derive(Derivative)]
     #[derivative(Default(bound = ""))]
     struct PacketMetadata<I: IpExt + AssignedAddrIpExt, A, BT: FilterBindingsTypes> {
-        conn: Option<(Connection<I, NatConfig<I, A>, BT>, ConnectionDirection)>,
+        conn: Option<(Connection<I, NatConfig<I, A, BT>, BT>, ConnectionDirection)>,
         marks: Marks,
     }
 
@@ -990,16 +990,16 @@ mod tests {
     {
         fn take_connection_and_direction(
             &mut self,
-        ) -> Option<(Connection<I, NatConfig<I, A>, BT>, ConnectionDirection)> {
+        ) -> Option<(Connection<I, NatConfig<I, A, BT>, BT>, ConnectionDirection)> {
             let Self { conn, marks: _ } = self;
             conn.take()
         }
 
         fn replace_connection_and_direction(
             &mut self,
-            new_conn: Connection<I, NatConfig<I, A>, BT>,
+            new_conn: Connection<I, NatConfig<I, A, BT>, BT>,
             direction: ConnectionDirection,
-        ) -> Option<Connection<I, NatConfig<I, A>, BT>> {
+        ) -> Option<Connection<I, NatConfig<I, A, BT>, BT>> {
             let Self { conn, marks: _ } = self;
             conn.replace((new_conn, direction)).map(|(conn, _dir)| conn)
         }

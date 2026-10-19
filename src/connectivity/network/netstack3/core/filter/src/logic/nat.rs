@@ -12,11 +12,10 @@ use derivative::Derivative;
 use log::{error, warn};
 use net_types::SpecifiedAddr;
 use net_types::ip::IpVersionMarker;
-use netstack3_base::sync::Mutex;
+use netstack3_base::sync::{Mutex, OnceLock};
 use netstack3_base::{
     Inspectable, InspectableValue, Inspector as _, IpAddressId as _, IpDeviceAddr, WeakIpAddressId,
 };
-use once_cell::sync::OnceCell;
 use packet_formats::ip::IpExt;
 use rand::RngExt as _;
 
@@ -38,31 +37,31 @@ use crate::state::{FilterPacketMetadata, Hook};
 /// Each type of NAT (source and destination) is configured exactly once for a
 /// given connection, for the first packet encountered on that connection. This
 /// is not to say that all connections are NATed: the configuration can be
-/// either `ShouldNat::Yes` or `ShouldNat::No`, but the `OnceCell` containing
+/// either `ShouldNat::Yes` or `ShouldNat::No`, but the `OnceLock` containing
 /// the configuration should, in most cases, be initialized by the time a
 /// connection is inserted in the conntrack table.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""), Debug(bound = "A: Debug"), PartialEq(bound = ""))]
-pub struct NatConfig<I: IpExt, A> {
-    destination: OnceCell<ShouldNat<I, A>>,
-    source: OnceCell<ShouldNat<I, A>>,
+pub struct NatConfig<I: IpExt, A, BT: FilterBindingsTypes> {
+    destination: OnceLock<ShouldNat<I, A, BT>, BT::Once>,
+    source: OnceLock<ShouldNat<I, A, BT>, BT::Once>,
 }
 
 /// The NAT configuration for a given type of NAT (either source or
 /// destination).
 #[derive(Derivative)]
 #[derivative(Debug(bound = "A: Debug"), PartialEq(bound = ""))]
-pub(crate) enum ShouldNat<I: IpExt, A> {
+pub(crate) enum ShouldNat<I: IpExt, A, BT: FilterBindingsTypes> {
     /// NAT should be performed on this connection.
     ///
     /// Optionally contains a `CachedAddr`, which is a weak reference to the address
     /// used for NAT, if it is a dynamically assigned IP address owned by the stack.
-    Yes(#[derivative(PartialEq = "ignore")] Option<CachedAddr<I, A>>),
+    Yes(#[derivative(PartialEq = "ignore")] Option<CachedAddr<I, A, BT>>),
     /// NAT should not be performed on this connection.
     No,
 }
 
-impl<I: IpExt, A: PartialEq> CompatibleWith for NatConfig<I, A> {
+impl<I: IpExt, A: PartialEq, BT: FilterBindingsTypes> CompatibleWith for NatConfig<I, A, BT> {
     fn compatible_with(&self, other: &Self) -> bool {
         // Check for both SNAT and DNAT that either NAT is configured with the same
         // value, or that it is unconfigured. When determining whether two connections
@@ -75,7 +74,7 @@ impl<I: IpExt, A: PartialEq> CompatibleWith for NatConfig<I, A> {
     }
 }
 
-impl<I: IpExt, A, BT: FilterBindingsTypes> Connection<I, NatConfig<I, A>, BT> {
+impl<I: IpExt, A, BT: FilterBindingsTypes> Connection<I, NatConfig<I, A, BT>, BT> {
     pub fn destination_nat(&self) -> bool {
         match self.external_data().destination.get() {
             Some(ShouldNat::Yes(_)) => true,
@@ -84,15 +83,16 @@ impl<I: IpExt, A, BT: FilterBindingsTypes> Connection<I, NatConfig<I, A>, BT> {
     }
 }
 
-impl<I: IpExt, A: InspectableValue> Inspectable for NatConfig<I, A> {
+impl<I: IpExt, A: InspectableValue, BT: FilterBindingsTypes> Inspectable for NatConfig<I, A, BT> {
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         fn record_nat_status<
             I: IpExt,
             A: InspectableValue,
+            BT: FilterBindingsTypes,
             Inspector: netstack3_base::Inspector,
         >(
             inspector: &mut Inspector,
-            config: &OnceCell<ShouldNat<I, A>>,
+            config: &OnceLock<ShouldNat<I, A, BT>, BT::Once>,
         ) {
             let status = match config.get() {
                 None => "Unconfigured",
@@ -123,23 +123,23 @@ impl<I: IpExt, A: InspectableValue> Inspectable for NatConfig<I, A> {
 /// validity when using the address for NAT.
 #[derive(Derivative)]
 #[derivative(Debug(bound = "A: Debug"))]
-pub(crate) struct CachedAddr<I: IpExt, A> {
-    id: Mutex<Option<A>>,
+pub(crate) struct CachedAddr<I: IpExt, A, BT: FilterBindingsTypes> {
+    id: Mutex<Option<A>, BT::Mutex>,
     _marker: IpVersionMarker<I>,
 }
 
-impl<I: IpExt, A> CachedAddr<I, A> {
+impl<I: IpExt, A, BT: FilterBindingsTypes> CachedAddr<I, A, BT> {
     fn new(id: A) -> Self {
         Self { id: Mutex::new(Some(id)), _marker: IpVersionMarker::new() }
     }
 }
 
-impl<I: IpExt, A: WeakIpAddressId<I::Addr>> CachedAddr<I, A> {
+impl<I: IpExt, A: WeakIpAddressId<I::Addr>, BT: FilterBindingsTypes> CachedAddr<I, A, BT> {
     /// Check whether the provided IP address is still valid to be used for NAT.
     ///
     /// If the address is no longer valid, attempts to acquire a new handle to the
     /// same address.
-    fn validate_or_replace<CC, BT>(
+    fn validate_or_replace<CC>(
         &self,
         core_ctx: &mut CC,
         device: &CC::DeviceId,
@@ -147,7 +147,6 @@ impl<I: IpExt, A: WeakIpAddressId<I::Addr>> CachedAddr<I, A> {
     ) -> Verdict<DropPacket>
     where
         CC: NatContext<I, BT, WeakAddressId = A>,
-        BT: FilterBindingsTypes,
     {
         let Self { id, _marker } = self;
 
@@ -202,8 +201,8 @@ pub(crate) trait NatHook<I: FilterIpExt> {
     fn evaluate_result<P, CC, BC>(
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
-        table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-        conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
+        table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+        conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
@@ -224,7 +223,7 @@ pub(crate) trait NatHook<I: FilterIpExt> {
         core_ctx: &mut CC,
         packet: &P,
         ingress: Option<&CC::DeviceId>,
-    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId>>)>
+    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId, BT>>)>
     where
         P: IpPacket<I>,
         CC: NatContext<I, BT>,
@@ -242,8 +241,8 @@ pub(crate) trait NatHook<I: FilterIpExt> {
 #[derive(Derivative)]
 #[derivative(Debug(bound = "A: Debug"))]
 pub(crate) enum NatConfigurationResult<I: IpExt, A, BT: FilterBindingsTypes> {
-    Result(ShouldNat<I, A>),
-    AdoptExisting(Connection<I, NatConfig<I, A>, BT>),
+    Result(ShouldNat<I, A, BT>),
+    AdoptExisting(Connection<I, NatConfig<I, A, BT>, BT>),
 }
 
 pub(crate) enum IngressHook {}
@@ -254,8 +253,8 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
     fn evaluate_result<P, CC, BC>(
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
-        table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-        conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
+        table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+        conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
@@ -295,7 +294,7 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
         core_ctx: &mut CC,
         packet: &P,
         ingress: Option<&CC::DeviceId>,
-    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId>>)>
+    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId, BT>>)>
     where
         P: IpPacket<I>,
         CC: NatContext<I, BT>,
@@ -329,8 +328,8 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
     fn evaluate_result<P, CC, BC>(
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
-        table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-        conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
+        table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+        conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
@@ -372,7 +371,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
         _: &mut CC,
         _: &P,
         _: Option<&CC::DeviceId>,
-    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId>>)>
+    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId, BT>>)>
     where
         P: IpPacket<I>,
         CC: NatContext<I, BT>,
@@ -395,8 +394,8 @@ impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
     fn evaluate_result<P, CC, BC>(
         _core_ctx: &mut CC,
         _bindings_ctx: &mut BC,
-        _table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-        _conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
+        _table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+        _conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
         _packet: &P,
         _interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
@@ -430,7 +429,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
         _: &mut CC,
         _: &P,
         _: Option<&CC::DeviceId>,
-    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId>>)>
+    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId, BT>>)>
     where
         P: IpPacket<I>,
         CC: NatContext<I, BT>,
@@ -453,8 +452,8 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
     fn evaluate_result<P, CC, BC>(
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
-        table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-        conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
+        table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+        conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
@@ -496,7 +495,7 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
         _: &mut CC,
         _: &P,
         _: Option<&CC::DeviceId>,
-    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId>>)>
+    ) -> Option<(I::Addr, Option<CachedAddr<I, CC::WeakAddressId, BT>>)>
     where
         P: IpPacket<I>,
         CC: NatContext<I, BT>,
@@ -511,12 +510,12 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
     }
 }
 
-impl<I: IpExt, A, BT: FilterBindingsTypes> Connection<I, NatConfig<I, A>, BT> {
+impl<I: IpExt, A, BT: FilterBindingsTypes> Connection<I, NatConfig<I, A, BT>, BT> {
     fn relevant_config(
         &self,
         hook_nat_type: NatType,
         direction: ConnectionDirection,
-    ) -> (&OnceCell<ShouldNat<I, A>>, NatType) {
+    ) -> (&OnceLock<ShouldNat<I, A, BT>, BT::Once>, NatType) {
         let NatConfig { source, destination } = self.external_data();
         match (hook_nat_type, direction) {
             // If either this is a DNAT hook and we are looking at a packet in the
@@ -548,7 +547,7 @@ impl<I: IpExt, A, BT: FilterBindingsTypes> Connection<I, NatConfig<I, A>, BT> {
         &self,
         hook_nat_type: NatType,
         direction: ConnectionDirection,
-    ) -> Option<&ShouldNat<I, A>> {
+    ) -> Option<&ShouldNat<I, A, BT>> {
         let (config, _nat_type) = self.relevant_config(hook_nat_type, direction);
         config.get()
     }
@@ -564,8 +563,8 @@ impl<I: IpExt, A, BT: FilterBindingsTypes> Connection<I, NatConfig<I, A>, BT> {
         &self,
         hook_nat_type: NatType,
         direction: ConnectionDirection,
-        value: ShouldNat<I, A>,
-    ) -> Result<&ShouldNat<I, A>, (ShouldNat<I, A>, NatType)> {
+        value: ShouldNat<I, A, BT>,
+    ) -> Result<&ShouldNat<I, A, BT>, (ShouldNat<I, A, BT>, NatType)> {
         let (config, nat_type) = self.relevant_config(hook_nat_type, direction);
         let mut value = Some(value);
         let config = config.get_or_init(|| value.take().unwrap());
@@ -585,8 +584,8 @@ pub(crate) fn perform_nat<N, I, P, M, CC, BC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     nat_installed: bool,
-    table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-    conn: &mut Connection<I, NatConfig<I, CC::WeakAddressId>, BC>,
+    table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+    conn: &mut Connection<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
     direction: ConnectionDirection,
     hook: &Hook<I, BC, ()>,
     packet: &mut P,
@@ -737,8 +736,8 @@ where
 fn configure_nat<N, I, P, M, CC, BC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
-    table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-    conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
+    table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+    conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
     hook: &Hook<I, BC, ()>,
     packet: &P,
     interfaces: Interfaces<'_, CC::DeviceId>,
@@ -768,8 +767,8 @@ where
 fn configure_redirect_nat<N, I, P, CC, BC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
-    table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-    conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
+    table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+    conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
     packet: &P,
     interfaces: &Interfaces<'_, CC::DeviceId>,
     dst_port_range: Option<RangeInclusive<NonZeroU16>>,
@@ -828,8 +827,8 @@ where
 fn configure_masquerade_nat<I, P, CC, BC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
-    table: &Table<I, NatConfig<I, CC::WeakAddressId>, BC>,
-    conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId>, BC>,
+    table: &Table<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
+    conn: &mut ConnectionExclusive<I, NatConfig<I, CC::WeakAddressId, BC>, BC>,
     packet: &P,
     interfaces: &Interfaces<'_, CC::DeviceId>,
     src_port_range: Option<RangeInclusive<NonZeroU16>>,
@@ -884,8 +883,8 @@ where
 
 fn configure_snat_port<I, A, BC, D>(
     bindings_ctx: &mut BC,
-    table: &Table<I, NatConfig<I, A>, BC>,
-    conn: &mut ConnectionExclusive<I, NatConfig<I, A>, BC>,
+    table: &Table<I, NatConfig<I, A, BC>, BC>,
+    conn: &mut ConnectionExclusive<I, NatConfig<I, A, BC>, BC>,
     src_port_range: Option<RangeInclusive<NonZeroU16>>,
     conflict_strategy: ConflictStrategy,
 ) -> Verdict<DropPacket, NatConfigurationResult<I, A, BC>>
@@ -960,8 +959,8 @@ enum ConflictStrategy {
 /// `ensure_port_in_range` is `true`, also that it fits in the specified range.
 fn rewrite_reply_tuple_port<I, A, BC, D>(
     bindings_ctx: &mut BC,
-    table: &Table<I, NatConfig<I, A>, BC>,
-    conn: &mut ConnectionExclusive<I, NatConfig<I, A>, BC>,
+    table: &Table<I, NatConfig<I, A, BC>, BC>,
+    conn: &mut ConnectionExclusive<I, NatConfig<I, A, BC>, BC>,
     which_port: ReplyTuplePort,
     port_range: RangeInclusive<NonZeroU16>,
     ensure_port_in_range: bool,
@@ -1205,7 +1204,7 @@ where
 /// Perform NAT on a packet, using its connection in the conntrack table as a
 /// guide.
 fn rewrite_packet<I, P, A, BT>(
-    conn: &Connection<I, NatConfig<I, A>, BT>,
+    conn: &Connection<I, NatConfig<I, A, BT>, BT>,
     direction: ConnectionDirection,
     nat: NatType,
     packet: &mut P,
@@ -1292,7 +1291,7 @@ mod tests {
         }
     }
 
-    impl<I, A, BC> ConnectionExclusive<I, NatConfig<I, A>, BC>
+    impl<I, A, BC> ConnectionExclusive<I, NatConfig<I, A, BC>, BC>
     where
         BC: FilterBindingsTypes + TimerContext,
         I: FilterIpExt,
@@ -1306,7 +1305,7 @@ mod tests {
         }
     }
 
-    impl<A, BC> ConnectionExclusive<Ipv4, NatConfig<Ipv4, A>, BC>
+    impl<A, BC> ConnectionExclusive<Ipv4, NatConfig<Ipv4, A, BC>, BC>
     where
         BC: FilterBindingsTypes + TimerContext,
     {
@@ -2312,7 +2311,7 @@ mod tests {
         assert_eq!(
             result,
             Verdict::Proceed(NatConfigurationResult::Result(
-                ShouldNat::<_, FakeWeakAddressId<Ipv4>>::No
+                ShouldNat::<_, FakeWeakAddressId<Ipv4>, _>::No
             ))
         );
         assert_eq!(conn.reply_tuple(), &pre_nat);
@@ -2343,7 +2342,7 @@ mod tests {
         assert_eq!(
             result,
             Verdict::Proceed(NatConfigurationResult::Result(
-                ShouldNat::<_, FakeWeakAddressId<Ipv4>>::No
+                ShouldNat::<_, FakeWeakAddressId<Ipv4>, _>::No
             ))
         );
         assert_eq!(conn.reply_tuple(), &pre_nat);
@@ -2371,9 +2370,11 @@ mod tests {
         );
         assert_eq!(
             result,
-            Verdict::Proceed(NatConfigurationResult::Result(
-                ShouldNat::<_, FakeWeakAddressId<Ipv4>>::Yes(None)
-            ))
+            Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::<
+                _,
+                FakeWeakAddressId<Ipv4>,
+                _,
+            >::Yes(None)))
         );
         assert_eq!(conn.reply_tuple(), &tuple_with_port(which, NEW_PORT.get()));
     }
@@ -2382,7 +2383,7 @@ mod tests {
     #[test_case(ReplyTuplePort::Destination)]
     fn rewrite_port_fails_if_no_available_port_in_range(which: ReplyTuplePort) {
         let mut bindings_ctx = FakeBindingsCtx::<Ipv4>::new();
-        let table: Table<_, NatConfig<_, FakeWeakAddressId<Ipv4>>, _> =
+        let table: Table<_, NatConfig<_, FakeWeakAddressId<Ipv4>, _>, _> =
             Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
 
         // If there is no port available in the specified range that does not conflict
@@ -2458,9 +2459,11 @@ mod tests {
         );
         assert_eq!(
             result,
-            Verdict::Proceed(NatConfigurationResult::Result(
-                ShouldNat::<_, FakeWeakAddressId<Ipv4>>::Yes(None)
-            ))
+            Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::<
+                _,
+                FakeWeakAddressId<Ipv4>,
+                _,
+            >::Yes(None)))
         );
         assert_eq!(conn.reply_tuple(), &tuple_with_port(which, MIN_PORT.get()));
     }
@@ -2469,7 +2472,7 @@ mod tests {
     #[test_case(ReplyTuplePort::Destination)]
     fn rewrite_port_skipped_if_existing_connection_can_be_adopted(which: ReplyTuplePort) {
         let mut bindings_ctx = FakeBindingsCtx::<Ipv4>::new();
-        let table: Table<_, NatConfig<_, FakeWeakAddressId<Ipv4>>, _> =
+        let table: Table<_, NatConfig<_, FakeWeakAddressId<Ipv4>, _>, _> =
             Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
 
         // If there is a conflicting connection already in the table, but the caller

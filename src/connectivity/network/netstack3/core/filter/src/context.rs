@@ -8,11 +8,12 @@ use net_types::SpecifiedAddr;
 use net_types::ip::{IpVersion, Ipv4, Ipv6};
 
 pub use netstack3_base::socket::{EitherIpProto, SocketInfo};
-pub use netstack3_base::{FrameDestination, LocalFrameDestination, Marks, PacketType};
 use netstack3_base::{
-    GsoInfo, InstantBindingsTypes, InterfaceProperties, IpDeviceAddr, IpDeviceAddressIdContext,
-    MatcherBindingsTypes, RngContext, TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes,
+    BindingsSyncTypes, GsoInfo, InstantBindingsTypes, InterfaceProperties, IpDeviceAddr,
+    IpDeviceAddressIdContext, MatcherBindingsTypes, RngContext, TimerBindingsTypes, TimerContext,
+    TxMetadataBindingsTypes,
 };
+pub use netstack3_base::{FrameDestination, LocalFrameDestination, Marks, PacketType};
 use packet::FragmentedByteSlice;
 use packet_formats::ip::IpExt;
 
@@ -23,12 +24,16 @@ use crate::state::State;
 
 /// Trait defining required types for filtering provided by bindings.
 pub trait FilterBindingsTypes:
-    InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + 'static
+    InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + BindingsSyncTypes + 'static
 {
 }
 
-impl<BT: InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + 'static>
-    FilterBindingsTypes for BT
+impl<BT> FilterBindingsTypes for BT where
+    BT: InstantBindingsTypes
+        + MatcherBindingsTypes
+        + TimerBindingsTypes
+        + BindingsSyncTypes
+        + 'static
 {
 }
 
@@ -382,7 +387,11 @@ pub(crate) mod testutil {
 
         pub fn conntrack(
             &mut self,
-        ) -> &conntrack::Table<I, NatConfig<I, FakeWeakAddressId<I>>, FakeBindingsCtx<I>> {
+        ) -> &conntrack::Table<
+            I,
+            NatConfig<I, FakeWeakAddressId<I>, FakeBindingsCtx<I>>,
+            FakeBindingsCtx<I>,
+        > {
             &self.state.conntrack
         }
     }
@@ -580,5 +589,11 @@ pub(crate) mod testutil {
         fn rng(&mut self) -> Self::Rng<'_> {
             self.rng.clone()
         }
+    }
+
+    impl<I: Ip> BindingsSyncTypes for FakeBindingsCtx<I> {
+        type Mutex = netstack3_base::sync::lock_impl::RawMutex;
+        type RwLock = netstack3_base::sync::lock_impl::RawRwLock;
+        type Once = netstack3_base::sync::lock_impl::Once;
     }
 }

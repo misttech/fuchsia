@@ -508,7 +508,7 @@ pub struct State<I: IpExt, A, BT: FilterBindingsTypes> {
     /// that have any references in order to report them in inspect data.
     pub(crate) uninstalled_routines: Vec<UninstalledRoutine<I, BT, ()>>,
     /// Connection tracking state.
-    pub conntrack: conntrack::Table<I, NatConfig<I, A>, BT>,
+    pub conntrack: conntrack::Table<I, NatConfig<I, A, BT>, BT>,
     /// One-way boolean toggle indicating whether any rules have ever been added to
     /// an installed NAT routine. If not, performing NAT can safely be skipped.
     ///
@@ -568,15 +568,15 @@ pub trait FilterIpMetadata<I: IpExt, A, BT: FilterBindingsTypes>: FilterPacketMe
     /// Removes the conntrack connection and packet direction, if they exist.
     fn take_connection_and_direction(
         &mut self,
-    ) -> Option<(conntrack::Connection<I, NatConfig<I, A>, BT>, ConnectionDirection)>;
+    ) -> Option<(conntrack::Connection<I, NatConfig<I, A, BT>, BT>, ConnectionDirection)>;
 
     /// Puts a new conntrack connection and packet direction into the metadata
     /// struct, returning the previous connection value, if one existed.
     fn replace_connection_and_direction(
         &mut self,
-        conn: conntrack::Connection<I, NatConfig<I, A>, BT>,
+        conn: conntrack::Connection<I, NatConfig<I, A, BT>, BT>,
         direction: ConnectionDirection,
-    ) -> Option<conntrack::Connection<I, NatConfig<I, A>, BT>>;
+    ) -> Option<conntrack::Connection<I, NatConfig<I, A, BT>, BT>>;
 }
 
 /// A trait for interacting with packet metadata.
@@ -626,15 +626,16 @@ pub mod testutil {
     impl<I: IpExt, A, BT: FilterBindingsTypes> FilterIpMetadata<I, A, BT> for FakePacketMetadata {
         fn take_connection_and_direction(
             &mut self,
-        ) -> Option<(conntrack::Connection<I, NatConfig<I, A>, BT>, ConnectionDirection)> {
+        ) -> Option<(conntrack::Connection<I, NatConfig<I, A, BT>, BT>, ConnectionDirection)>
+        {
             None
         }
 
         fn replace_connection_and_direction(
             &mut self,
-            _conn: conntrack::Connection<I, NatConfig<I, A>, BT>,
+            _conn: conntrack::Connection<I, NatConfig<I, A, BT>, BT>,
             _direction: ConnectionDirection,
-        ) -> Option<conntrack::Connection<I, NatConfig<I, A>, BT>> {
+        ) -> Option<conntrack::Connection<I, NatConfig<I, A, BT>, BT>> {
             None
         }
     }
