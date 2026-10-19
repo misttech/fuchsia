@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "components",
+    srcs = ["components.fidl"],
+    library_name = "fidl.test.components",
+    visibility = [
+        "//src/sys/component_manager:__subpackages__",
+        "//src/sys/lib/elf_runner/tests/lifecycle:__pkg__",
+    ],
+)
+
+fidl_library(
+    name = "echofactory",
+    testonly = True,
+    srcs = ["echo_factory.fidl"],
+    library_name = "fuchsia.test.echofactory",
+    deps = ["//examples/components/routing/fidl:echo"],
+)
