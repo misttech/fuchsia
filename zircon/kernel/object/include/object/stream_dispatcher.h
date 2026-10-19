@@ -38,8 +38,6 @@ void rust_stream_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_stream_dispatcher_state_get_lock(const void* state);
 bool rust_stream_dispatcher_is_in_append_mode(const StreamDispatcher* dispatcher);
 void rust_stream_dispatcher_set_append_mode(const StreamDispatcher* dispatcher, bool value);
-bool rust_stream_dispatcher_can_resize_vmo(const StreamDispatcher* dispatcher);
-zx_info_stream_t rust_stream_dispatcher_get_info(const StreamDispatcher* dispatcher);
 }
 
 class StreamDispatcher final : public Dispatcher {
@@ -55,16 +53,11 @@ class StreamDispatcher final : public Dispatcher {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  using Dispatcher::UpdateState;
-  using Dispatcher::UpdateStateLocked;
-
   bool IsInAppendMode() const { return rust_stream_dispatcher_is_in_append_mode(this); }
   zx_status_t SetAppendMode(bool value) {
     rust_stream_dispatcher_set_append_mode(this, value);
     return ZX_OK;
   }
-  bool CanResizeVmo() const { return rust_stream_dispatcher_can_resize_vmo(this); }
-  zx_info_stream_t GetInfo() const { return rust_stream_dispatcher_get_info(this); }
 
  protected:
   Lock<CriticalMutex>* get_lock() const final;

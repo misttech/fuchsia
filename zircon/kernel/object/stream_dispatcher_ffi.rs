@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use fbl::RefPtr;
-use zx_types::{zx_info_stream_t, zx_off_t, zx_status_t};
+use zx_types::{zx_off_t, zx_status_t};
 
 use super::KernelHandle;
 use super::stream_dispatcher::{StreamDispatcher, StreamDispatcherState, StreamOptions};
@@ -74,18 +74,4 @@ pub extern "C" fn rust_stream_dispatcher_set_append_mode(
     value: bool,
 ) {
     dispatcher.set_append_mode(value);
-}
-
-/// Returns whether the stream can resize the underlying VMO.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_stream_dispatcher_can_resize_vmo(dispatcher: &StreamDispatcher) -> bool {
-    dispatcher.can_resize_vmo()
-}
-
-/// Returns diagnostic info for the stream dispatcher.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_stream_dispatcher_get_info(
-    dispatcher: &StreamDispatcher,
-) -> zx_info_stream_t {
-    dispatcher.get_info()
 }
