@@ -1,0 +1,12 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+[package]
+name = "document-features"
+version = "0.2.12"
+authors = ["The Fuchsia Authors <rust-fuchsia@fuchsia.com>"]
+edition = "2024"
+
+[lib]
+proc-macro = true

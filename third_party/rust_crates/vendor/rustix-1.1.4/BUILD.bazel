@@ -70,6 +70,8 @@ rust_library(
             "net",  # aarch64-unknown-linux-gnu
             "param",  # aarch64-unknown-linux-gnu
             "pipe",  # aarch64-unknown-linux-gnu
+            "stdio",  # aarch64-unknown-linux-gnu
+            "termios",  # aarch64-unknown-linux-gnu
             "use-libc",  # aarch64-unknown-linux-gnu
             "use-libc-auxv",  # aarch64-unknown-linux-gnu
         ],
@@ -81,6 +83,8 @@ rust_library(
             "net",  # x86_64-unknown-linux-gnu
             "param",  # x86_64-unknown-linux-gnu
             "pipe",  # x86_64-unknown-linux-gnu
+            "stdio",  # x86_64-unknown-linux-gnu
+            "termios",  # x86_64-unknown-linux-gnu
             "use-libc",  # x86_64-unknown-linux-gnu
             "use-libc-auxv",  # x86_64-unknown-linux-gnu
         ],
@@ -156,6 +160,8 @@ cargo_build_script(
             "net",  # aarch64-unknown-linux-gnu
             "param",  # aarch64-unknown-linux-gnu
             "pipe",  # aarch64-unknown-linux-gnu
+            "stdio",  # aarch64-unknown-linux-gnu
+            "termios",  # aarch64-unknown-linux-gnu
             "use-libc",  # aarch64-unknown-linux-gnu
             "use-libc-auxv",  # aarch64-unknown-linux-gnu
         ],
@@ -167,6 +173,8 @@ cargo_build_script(
             "net",  # x86_64-unknown-linux-gnu
             "param",  # x86_64-unknown-linux-gnu
             "pipe",  # x86_64-unknown-linux-gnu
+            "stdio",  # x86_64-unknown-linux-gnu
+            "termios",  # x86_64-unknown-linux-gnu
             "use-libc",  # x86_64-unknown-linux-gnu
             "use-libc-auxv",  # x86_64-unknown-linux-gnu
         ],

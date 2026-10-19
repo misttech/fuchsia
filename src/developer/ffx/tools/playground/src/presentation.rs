@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crossterm::style::{Attribute, Color, StyledContent, style};
+use crossterm::style::{Attribute, Color, StyledContent, Stylize, style};
 use futures::future::{FutureExt, LocalBoxFuture};
 use futures::io::{AsyncWrite, AsyncWriteExt as _};
 use futures::stream::StreamExt;

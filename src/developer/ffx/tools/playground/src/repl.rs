@@ -203,15 +203,9 @@ impl Repl {
     /// Create a new Repl. At the moment this squats on stdin and assumes stdin is a TTY.
     pub fn new() -> io::Result<Self> {
         let fd = stdin().as_raw_fd();
-        enable_raw_mode().map_err(|x| match x {
-            crossterm::ErrorKind::IoError(e) => e,
-            other => panic!("Unexpected crossterm error {other:?}"),
-        })?;
+        enable_raw_mode()?;
 
-        let terminal_size = crossterm::terminal::size().map_err(|x| match x {
-            crossterm::ErrorKind::IoError(e) => e,
-            other => panic!("Unexpected crossterm error {other:?}"),
-        })?;
+        let terminal_size = crossterm::terminal::size()?;
 
         // SAFETY: We just obtained this file from stdout(), which should guarantee its validity.
         let owned_fd = unsafe { std::os::unix::io::OwnedFd::from_raw_fd(fd) };

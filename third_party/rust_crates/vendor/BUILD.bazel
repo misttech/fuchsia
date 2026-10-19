@@ -694,14 +694,14 @@ alias(
 )
 
 alias(
-    name = "crossterm-0.19.0",
-    actual = "//third_party/rust_crates/vendor/crossterm-0.19.0:crossterm",
+    name = "crossterm-0.29.0",
+    actual = "//third_party/rust_crates/vendor/crossterm-0.29.0:crossterm",
     tags = ["manual"],
 )
 
 alias(
     name = "crossterm",
-    actual = "//third_party/rust_crates/vendor/crossterm-0.19.0:crossterm",
+    actual = "//third_party/rust_crates/vendor/crossterm-0.29.0:crossterm",
     tags = ["manual"],
 )
 

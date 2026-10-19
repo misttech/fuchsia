@@ -350,7 +350,7 @@ zeroize = "1.9.0"
 askama = "0.15.6"
 async-fs = "2.2.0"
 cargo_metadata = "0.23.1"
-crossterm = "0.19"
+crossterm = { version = "0.29.0", default-features = false, features = ["events"] }
 fuse3 = { version = "0.9.0", features = ["tokio-runtime", "unprivileged"] }
 home = "0.5.12"
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "rustls-native-certs", "ring", "tls12"] }
@@ -434,14 +434,12 @@ clipboard-win = { path = "empty/clipboard-win" }
 core-foundation-sys = { path = "empty/core-foundation-sys" }
 # TODO(https://fxbug.dev/42084779): Remove when hickory-proto is upgraded to >= 0.26.4.
 critical-section = { path = "empty/critical-section" }
-crossterm_winapi = { path = "empty/crossterm_winapi" }
+document-features = { path = "empty/document-features" }
 hermit-abi = { path = "empty/hermit-abi" }
 iana-time-zone-haiku = { path = "empty/iana-time-zone-haiku" }
 jni = { path = "empty/jni" }
 js-sys-102 = { package = "js-sys", path = "empty/js-sys-102" }
 kqueue = { path = "empty/kqueue" }
-miow = { path = "empty/miow" }
-ntapi = { path = "empty/ntapi" }
 pkg-config = { path = "empty/pkg-config" }
 portable-atomic = { path = "empty/portable-atomic" }
 portable-atomic-util = { path = "empty/portable-atomic-util" }
@@ -1273,6 +1271,9 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 
 [gn.package.sha2."0.10.9"]
 groups = [ { name = "sha2-0.10", visibility = [ ":*", "//src/microfuchsia/tee/runtime/api_impl:*", "//vendor/*" ] } ]
+
+[gn.package.signal-hook."0.3.18"]
+rustflags = []
 
 [gn.package.signal-hook."0.4.4"]
 rustflags = []

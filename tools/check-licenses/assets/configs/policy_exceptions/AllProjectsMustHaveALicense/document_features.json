@@ -1,0 +1,13 @@
+{
+    "policy_exceptions": {
+        "AllProjectsMustHaveALicense": [
+            {
+                "bug": "572666850",
+                "description": "Empty stub for document-features proc-macro.",
+                "paths": [
+                    "third_party/rust_crates/empty/document-features"
+                ]
+            }
+        ]
+    }
+}

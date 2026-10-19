@@ -546,7 +546,7 @@ _NORMAL_DEPENDENCIES = {
             "askama": Label("//third_party/rust_crates/vendor/askama-0.15.6:askama"),
             "async-fs": Label("//third_party/rust_crates/vendor/async-fs-2.2.0:async_fs"),
             "cargo_metadata": Label("//third_party/rust_crates/vendor/cargo_metadata-0.23.1:cargo_metadata"),
-            "crossterm": Label("//third_party/rust_crates/vendor/crossterm-0.19.0:crossterm"),
+            "crossterm": Label("//third_party/rust_crates/vendor/crossterm-0.29.0:crossterm"),
             "fuse3": Label("//third_party/rust_crates/vendor/fuse3-0.9.0:fuse3"),
             "home": Label("//third_party/rust_crates/vendor/home-0.5.12:home"),
             "hyper-rustls": Label("//third_party/rust_crates/vendor/hyper-rustls-0.27.9:hyper_rustls"),

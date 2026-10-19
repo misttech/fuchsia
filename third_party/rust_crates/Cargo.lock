@@ -605,7 +605,7 @@ dependencies = [
  "bt-gatt",
  "futures",
  "log",
- "parking_lot 0.12.5",
+ "parking_lot",
  "pin-project",
  "thiserror 2.0.20",
 ]
@@ -621,7 +621,7 @@ dependencies = [
  "futures",
  "log",
  "num-traits",
- "parking_lot 0.12.5",
+ "parking_lot",
  "thiserror 2.0.20",
 ]
 
@@ -640,7 +640,7 @@ version = "0.0.1"
 dependencies = [
  "bt-common",
  "futures",
- "parking_lot 0.12.5",
+ "parking_lot",
  "thiserror 2.0.20",
 ]
 
@@ -651,7 +651,7 @@ dependencies = [
  "bt-common",
  "bt-gatt",
  "futures",
- "parking_lot 0.12.5",
+ "parking_lot",
  "pin-project",
  "thiserror 2.0.20",
 ]
@@ -663,7 +663,7 @@ dependencies = [
  "bt-common",
  "bt-gatt",
  "futures",
- "parking_lot 0.12.5",
+ "parking_lot",
  "thiserror 2.0.20",
 ]
 
@@ -1099,23 +1099,18 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crossterm"
-version = "0.19.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c36c10130df424b2f3552fcc2ddcd9b28a27b1e54b358b45874f88d1ca6888c"
+checksum = "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b"
 dependencies = [
- "bitflags 1.3.2",
- "crossterm_winapi",
- "lazy_static",
- "libc",
- "mio 0.7.14",
- "parking_lot 0.11.1",
- "signal-hook 0.1.17",
- "winapi",
+ "bitflags 2.13.2",
+ "document-features",
+ "mio",
+ "parking_lot",
+ "rustix",
+ "signal-hook 0.3.18",
+ "signal-hook-mio",
 ]
-
-[[package]]
-name = "crossterm_winapi"
-version = "0.7.0"
 
 [[package]]
 name = "crunchy"
@@ -1456,6 +1451,10 @@ dependencies = [
  "quote",
  "syn 3.0.6",
 ]
+
+[[package]]
+name = "document-features"
+version = "0.2.12"
 
 [[package]]
 name = "downcast"
@@ -1994,7 +1993,7 @@ dependencies = [
  "md-5",
  "memchr",
  "memoffset",
- "mio 1.2.1",
+ "mio",
  "mock-omaha-server",
  "mockall",
  "munge",
@@ -2015,8 +2014,8 @@ dependencies = [
  "openssl",
  "p256 0.11.1",
  "p256 0.14.0",
- "parking_lot 0.12.5",
- "parking_lot_core 0.9.12",
+ "parking_lot",
+ "parking_lot_core",
  "paste",
  "pathdiff",
  "pem",
@@ -2545,7 +2544,7 @@ dependencies = [
  "ipnet",
  "jni",
  "lru-cache",
- "parking_lot 0.12.5",
+ "parking_lot",
  "rand 0.10.3",
  "ring",
  "rustls-pki-types",
@@ -2593,7 +2592,7 @@ dependencies = [
  "metrics",
  "moka",
  "once_cell",
- "parking_lot 0.12.5",
+ "parking_lot",
  "rand 0.10.3",
  "smallvec",
  "thiserror 2.0.20",
@@ -2975,15 +2974,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "instant"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "iota"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3250,19 +3240,6 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "0.7.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8067b404fe97c70829f082dec8bcf4f71225d7eaea1d8645349cb76fa06205cc"
-dependencies = [
- "libc",
- "log",
- "miow",
- "ntapi",
- "winapi",
-]
-
-[[package]]
-name = "mio"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02bd0af71c67b473010cbbc60715ee815645a4dc942899111f494b4b737d6fda"
@@ -3272,10 +3249,6 @@ dependencies = [
  "wasi",
  "windows-sys 0.61.2",
 ]
-
-[[package]]
-name = "miow"
-version = "0.3.7"
 
 [[package]]
 name = "mock-omaha-server"
@@ -3336,7 +3309,7 @@ dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
  "equivalent",
- "parking_lot 0.12.5",
+ "parking_lot",
  "portable-atomic",
  "smallvec",
  "tagptr",
@@ -3439,7 +3412,7 @@ dependencies = [
  "kqueue",
  "libc",
  "log",
- "mio 1.2.1",
+ "mio",
  "notify-types",
  "walkdir",
  "windows-sys 0.60.2",
@@ -3452,13 +3425,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42b8cfee0e339a0337359f3c88165702ac6e600dc01c0cc9579a92d62b08477a"
 dependencies = [
  "bitflags 2.13.2",
-]
-
-[[package]]
-name = "ntapi"
-version = "0.3.4"
-dependencies = [
- "winapi",
 ]
 
 [[package]]
@@ -3728,37 +3694,12 @@ checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
 
 [[package]]
 name = "parking_lot"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d7744ac029df22dca6284efe4e898991d28e3085c706c972bcd7da4a27a15eb"
-dependencies = [
- "instant",
- "lock_api",
- "parking_lot_core 0.8.3",
-]
-
-[[package]]
-name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
 dependencies = [
  "lock_api",
- "parking_lot_core 0.9.12",
-]
-
-[[package]]
-name = "parking_lot_core"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa7a782938e745763fe6907fc6ba86946d72f49fe7e21de074e08128a99fb018"
-dependencies = [
- "cfg-if",
- "instant",
- "libc",
- "redox_syscall 0.2.13",
- "smallvec",
- "winapi",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -3769,7 +3710,7 @@ checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
 dependencies = [
  "cfg-if",
  "libc",
- "redox_syscall 0.5.17",
+ "redox_syscall",
  "smallvec",
  "windows-link",
 ]
@@ -4552,15 +4493,6 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62f25bc4c7e55e0b0b7a1d43fb893f4fa1361d0abe38b9ce4f323c2adfe6ef42"
-dependencies = [
- "bitflags 1.3.2",
-]
-
-[[package]]
-name = "redox_syscall"
 version = "0.5.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5407465600fb0548f1442edf71dd20683c6ed326200ace4b1ef0763521bb3b77"
@@ -5110,7 +5042,7 @@ dependencies = [
 name = "sapphire-sync"
 version = "0.1.0"
 dependencies = [
- "parking_lot 0.12.5",
+ "parking_lot",
 ]
 
 [[package]]
@@ -5349,7 +5281,7 @@ dependencies = [
  "futures-util",
  "log",
  "once_cell",
- "parking_lot 0.12.5",
+ "parking_lot",
  "serial_test_derive",
 ]
 
@@ -5429,12 +5361,11 @@ dependencies = [
 
 [[package]]
 name = "signal-hook"
-version = "0.1.17"
+version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e31d442c16f047a671b5a71e2161d6e68814012b7f5379d269ebd915fac2729"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
 dependencies = [
  "libc",
- "mio 0.7.14",
  "signal-hook-registry",
 ]
 
@@ -5446,6 +5377,17 @@ checksum = "b2a0c28ca5908dbdbcd52e6fdaa00358ab88637f8ab33e1f188dd510eb44b53d"
 dependencies = [
  "libc",
  "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-mio"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
+dependencies = [
+ "libc",
+ "mio",
+ "signal-hook 0.3.18",
 ]
 
 [[package]]
@@ -5928,7 +5870,7 @@ version = "1.53.1"
 dependencies = [
  "bytes",
  "libc",
- "mio 1.2.1",
+ "mio",
  "pin-project-lite",
  "socket2",
  "tokio-macros",
@@ -6082,7 +6024,7 @@ version = "0.3.3"
 dependencies = [
  "autocfg",
  "lock_api",
- "parking_lot 0.12.5",
+ "parking_lot",
 ]
 
 [[package]]
@@ -6142,7 +6084,7 @@ dependencies = [
  "futures-util",
  "lazy_static",
  "lru-cache",
- "parking_lot 0.12.5",
+ "parking_lot",
  "smallvec",
  "thiserror 1.0.69",
  "tracing",
