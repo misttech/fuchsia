@@ -161,6 +161,12 @@ void ConstructFirstThread(Thread* t, ktl::string_view name) {
   DEBUG_ASSERT(arch_ints_disabled());
   new (t) Thread(name);
 
+  // Install the real thread pointer before any code that may consult
+  // Thread::Current::Get(). Until this point the thread pointer refers to a
+  // minimal fake arch_thread set up by early boot code (so that stack-protector
+  // and safe-stack code can run), which is not a valid Thread.
+  arch_thread_construct_first(t);
+
   Guards guard{t};
 
   t->set_detached(true);
@@ -173,8 +179,6 @@ void ConstructFirstThread(Thread* t, ktl::string_view name) {
   // initialization and runtime (e.g. logging).  Preemption is enabled when the
   // idle thread for the current CPU is ready.
   t->preemption_state().PreemptDisable();
-
-  arch_thread_construct_first(t);
 }
 
 }  // namespace
