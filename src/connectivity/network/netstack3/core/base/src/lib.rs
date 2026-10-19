@@ -163,11 +163,13 @@ pub mod socketmap {
 }
 
 /// Sync utilities common to netstack3.
+#[path = "."]
 pub mod sync {
     // TODO(https://fxbug.dev/42062225): Support single-threaded variants of
     // types exported from this module.
 
-    // Exclusively re-exports from the sync crate.
+    mod sync;
+
     pub use netstack3_sync::once::{Once, OnceLock};
     pub use netstack3_sync::rc::{
         DebugReferences, DynDebugReferences, MapNotifier as MapRcNotifier, Notifier as RcNotifier,
@@ -175,7 +177,21 @@ pub mod sync {
         Weak as WeakRc,
     };
     pub use netstack3_sync::{LockGuard, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+    pub use sync::BindingsSyncTypes;
+
+    /// Concrete lock implementations provided by [`netstack3_sync`].
+    ///
+    /// This module is exposed so that bindings and test utilities can implement
+    /// [`BindingsSyncTypes`] using the platform-appropriate raw locks without
+    /// core crates depending directly on concrete `std` or platform lock
+    /// implementations.
+    ///
+    /// TODO(https://fxbug.dev/553027583): Move to testutils once everything is
+    /// using lock_api
+    pub use netstack3_sync::lock_impl;
 }
+
+pub use sync::BindingsSyncTypes;
 
 /// Test utilities provided to all crates.
 #[cfg(any(test, feature = "testutils"))]

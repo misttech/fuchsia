@@ -650,6 +650,12 @@ type InnerFakeBindingsCtx = netstack3_base::testutil::FakeBindingsCtx<
 #[derive(Default, Clone)]
 pub struct FakeBindingsCtx(Arc<Mutex<InnerFakeBindingsCtx>>);
 
+impl netstack3_base::BindingsSyncTypes for FakeBindingsCtx {
+    type Mutex = netstack3_base::sync::lock_impl::RawMutex;
+    type RwLock = netstack3_base::sync::lock_impl::RawRwLock;
+    type Once = netstack3_base::sync::lock_impl::Once;
+}
+
 /// A wrapper type that makes it easier to implement `Deref` (and optionally
 /// `DerefMut`) for a value that is protected by a lock.
 ///

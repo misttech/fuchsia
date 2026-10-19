@@ -129,9 +129,10 @@ use netstack3_core::udp::{
     ReceiveUdpError, UdpBindingsTypes, UdpPacketMeta, UdpReceiveBindingsContext, UdpSocketId,
 };
 use netstack3_core::{
-    CoreTxMetadata, DeferredResourceRemovalContext, EventContext, InstantBindingsTypes,
-    InstantContext, IpExt, MatcherBindingsTypes, RngContext, StackState, StackStateBuilder,
-    TimerBindingsTypes, TimerContext, TimerId, TxMetadataBindingsTypes, neighbor,
+    BindingsSyncTypes, CoreTxMetadata, DeferredResourceRemovalContext, EventContext,
+    InstantBindingsTypes, InstantContext, IpExt, MatcherBindingsTypes, RngContext, StackState,
+    StackStateBuilder, TimerBindingsTypes, TimerContext, TimerId, TxMetadataBindingsTypes,
+    neighbor,
 };
 
 pub(crate) use inspect::InspectPublisher;
@@ -483,6 +484,12 @@ where
     fn get_binding_id(&self, core_id: DeviceId<BindingsCtx>) -> BindingId {
         core_id.bindings_id().id
     }
+}
+
+impl BindingsSyncTypes for BindingsCtx {
+    type Mutex = netstack3_core::sync::lock_impl::RawMutex;
+    type RwLock = netstack3_core::sync::lock_impl::RawRwLock;
+    type Once = netstack3_core::sync::lock_impl::Once;
 }
 
 impl InstantBindingsTypes for BindingsCtx {

@@ -21,6 +21,21 @@ pub use sync::atomic;
 pub mod once;
 pub mod rc;
 
+/// Concrete synchronization primitive implementations for bindings and tests.
+///
+/// This module provides default raw lock and `Once` types so bindings and fake
+/// bindings contexts can implement `BindingsSyncTypes` without duplicating
+/// platform-specific lock selection. Core crates should obtain synchronization
+/// types through `BindingsSyncTypes` rather than using `lock_impl` directly.
+///
+/// TODO(https://fxbug.dev/553027583): Remove this module, this exists only for
+/// ease transition to lock API.
+pub mod lock_impl {
+    pub use fuchsia_sync::{RawMutex, RawRwLock};
+    /// Default [`crate::once::Once`] implementation backed by
+    /// [`std::sync::Once`].
+    pub type Once = std::sync::Once;
+}
 #[cfg(not(loom))]
 pub use inner::*;
 #[cfg(loom)]

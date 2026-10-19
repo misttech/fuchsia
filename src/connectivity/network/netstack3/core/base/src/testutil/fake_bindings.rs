@@ -80,6 +80,14 @@ impl<TimerId, Event: Debug, State, FrameMeta> RngContext
     }
 }
 
+impl<TimerId, Event: Debug, State, FrameMeta> crate::BindingsSyncTypes
+    for FakeBindingsCtx<TimerId, Event, State, FrameMeta>
+{
+    type Mutex = crate::sync::lock_impl::RawMutex;
+    type RwLock = crate::sync::lock_impl::RawRwLock;
+    type Once = crate::sync::lock_impl::Once;
+}
+
 impl<TimerId, Event: Debug, State, FrameMeta> InstantBindingsTypes
     for FakeBindingsCtx<TimerId, Event, State, FrameMeta>
 {

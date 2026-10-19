@@ -230,9 +230,9 @@ pub mod sync {
     use netstack3_sync as _;
 
     pub use netstack3_base::sync::{
-        DebugReferences, DynDebugReferences, LockGuard, MapRcNotifier, Mutex, PrimaryRc,
-        RcNotifier, ResourceToken, ResourceTokenValue, RwLock, RwLockReadGuard, RwLockWriteGuard,
-        StrongRc, WeakRc,
+        BindingsSyncTypes, DebugReferences, DynDebugReferences, LockGuard, MapRcNotifier, Mutex,
+        Once, OnceLock, PrimaryRc, RcNotifier, ResourceToken, ResourceTokenValue, RwLock,
+        RwLockReadGuard, RwLockWriteGuard, StrongRc, WeakRc, lock_impl,
     };
     pub use netstack3_base::{RemoveResourceResult, RemoveResourceResultWithContext};
 }
@@ -276,7 +276,7 @@ pub use context::{CoreCtx, UnlockedCoreCtx};
 pub use inspect::Inspector;
 pub use marker::{BindingsContext, BindingsTypes, CoreContext, IpBindingsContext, IpExt};
 pub use netstack3_base::{
-    ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading, CtxPair,
+    BindingsSyncTypes, ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading, CtxPair,
     DeferredResourceRemovalContext, EventContext, GsoInfo, InstantBindingsTypes, InstantContext,
     Ipv4IdMode, MapDerefExt, MatcherBindingsTypes, NetworkParsingContext,
     NetworkSerializationContext, ProtocolSpecificOffloadSpec, ReferenceNotifiers, RngContext,
