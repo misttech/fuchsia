@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "ffx_emulator_common",
+    srcs = [
+        "src/config.rs",
+        "src/lib.rs",
+        "src/process.rs",
+        "src/tuntap.rs",
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/ffx/plugins/emulator/commands/start:__pkg__",
+        "//src/developer/ffx/plugins/emulator/engines:__pkg__",
+    ],
+    deps = [
+        "//src/developer/ffx/lib/fho:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:cfg-if",
+        "//third_party/rust_crates/vendor:mockall",
+        "//third_party/rust_crates/vendor:nix",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:shared_child",
+        "//third_party/rust_crates/vendor:signal-hook",
+    ],
+)
+
+host_rustc_test(
+    name = "ffx_emulator_common_test",
+    crate = ":ffx_emulator_common",
+    edition = "2024",
+    visibility = ["//src/developer/ffx:__pkg__"],
+    deps = ["//third_party/rust_crates/vendor:libc"],
+)
