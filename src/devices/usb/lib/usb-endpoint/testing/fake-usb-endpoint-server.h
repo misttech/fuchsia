@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
@@ -530,6 +531,81 @@ class FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction, FakeEndpoi
           fuchsia_hardware_usb_function::UsbFunction::Deconfigure>::Sync& completer) override {
     completer.Reply(fit::ok());
   }
+};
+
+template <typename FakeEndpointType>
+class FakeUsbFidlProvider<fuchsia_hardware_usb::Usb, FakeEndpointType>
+    : public FakeUsbFidlProviderBase<fuchsia_hardware_usb::Usb, FakeEndpointType> {
+ public:
+  using Base = FakeUsbFidlProviderBase<fuchsia_hardware_usb::Usb, FakeEndpointType>;
+  using Base::Base;
+
+  void GetDeviceSpeed(
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::GetDeviceSpeed>::Sync& completer)
+      override {
+    completer.Reply(fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined);
+  }
+
+  void GetDeviceId(fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::GetDeviceId>::Sync&
+                       completer) override {
+    completer.Reply(0);
+  }
+
+  void GetDeviceDescriptor(
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::GetDeviceDescriptor>::Sync&
+          completer) override {
+    completer.Reply(fuchsia_hardware_usb_descriptor::UsbDeviceDescriptor{});
+  }
+
+  void GetConfigurationDescriptor(
+      fidl::Request<fuchsia_hardware_usb::Usb::GetConfigurationDescriptor>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::GetConfigurationDescriptor>::Sync&
+          completer) override {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  void GetConfiguration(
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::GetConfiguration>::Sync&
+          completer) override {
+    completer.Reply(0);
+  }
+
+  void SetConfiguration(
+      fidl::Request<fuchsia_hardware_usb::Usb::SetConfiguration>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::SetConfiguration>::Sync&
+          completer) override {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  void SetInterface(fidl::Request<fuchsia_hardware_usb::Usb::SetInterface>& request,
+                    fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::SetInterface>::Sync&
+                        completer) override {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  void ControlTransfer(
+      fidl::Request<fuchsia_hardware_usb::Usb::ControlTransfer>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::ControlTransfer>::Sync& completer)
+      override {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  void EnableEndpoint(
+      fidl::Request<fuchsia_hardware_usb::Usb::EnableEndpoint>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::EnableEndpoint>::Sync& completer)
+      override {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  void ResetEndpoint(
+      fidl::Request<fuchsia_hardware_usb::Usb::ResetEndpoint>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb::Usb::ResetEndpoint>::Sync& completer)
+      override {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb::Usb> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 };
 
 }  // namespace fake_usb_endpoint

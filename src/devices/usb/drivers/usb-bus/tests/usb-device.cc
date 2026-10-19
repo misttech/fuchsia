@@ -30,6 +30,7 @@ namespace usb_bus {
 class DeviceTest : public zxtest::Test {
  public:
   auto& get_fidl() { return fidl_; }
+  auto& get_usb_fidl() { return usb_fidl_; }
 
   auto& get_device() { return *device_; }
 
@@ -45,17 +46,20 @@ class DeviceTest : public zxtest::Test {
     });
 
     auto hci_endpoints = fidl::Endpoints<fuchsia_hardware_usb_hci::UsbHci>::Create();
+    auto usb_endpoints = fidl::Endpoints<fuchsia_hardware_usb::Usb>::Create();
     auto result = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [&]() {
       auto device = fbl::MakeRefCounted<UsbDevice>(
           root_.get(), ddk::UsbHciProtocolClient(hci_->proto()), std::move(hci_endpoints.client),
           kDeviceId, kHubId, kDeviceSpeed, timer_, (*dispatcher_)->async_dispatcher());
       ASSERT_OK(device->Init((*dispatcher_)->async_dispatcher()));
+      device->BindUsbServer((*dispatcher_)->async_dispatcher(), std::move(usb_endpoints.server));
       device_ = device.get();
     });
     EXPECT_TRUE(result.is_ok());
     auto endpoints = fidl::Endpoints<fuchsia_hardware_usb_device::Device>::Create();
     fidl::BindServer((*dispatcher_)->async_dispatcher(), std::move(endpoints.server), device_);
     fidl_.Bind(std::move(endpoints.client));
+    usb_fidl_.Bind(std::move(usb_endpoints.client));
   }
 
   void TearDown() override {
@@ -112,6 +116,7 @@ class DeviceTest : public zxtest::Test {
  private:
   fbl::RefPtr<FakeTimer> timer_;
   fidl::WireSyncClient<fuchsia_hardware_usb_device::Device> fidl_;
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb> usb_fidl_;
   std::unique_ptr<FakeHci> hci_;
   // UsbDevice context pointer owned by us through MockDdk
   UsbDevice* device_;
@@ -535,6 +540,613 @@ TEST_F(DeviceTest, ReinitializeWithoutResettingFails) {
   auto& device = get_device();
   EXPECT_EQ(device.Reinitialize(), ZX_ERR_BAD_STATE);
 }
+
+namespace {
+
+// NOLINTBEGIN(readability-suspicious-call-argument): zxtest macro expands with swapped argument
+// names in comparison lambda.
+
+TEST_F(DeviceTest, UsbServiceGetDeviceSpeed) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::GetDeviceSpeed> speed_res =
+      usb_fidl->GetDeviceSpeed();
+  ASSERT_TRUE(speed_res.ok());
+  EXPECT_EQ(speed_res.value().speed, static_cast<fdescriptor::wire::UsbSpeed>(kDeviceSpeed));
+}
+
+TEST_F(DeviceTest, UsbServiceGetDeviceId) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::GetDeviceId> id_res = usb_fidl->GetDeviceId();
+  ASSERT_TRUE(id_res.ok());
+  EXPECT_EQ(id_res.value().device_id, kDeviceId);
+}
+
+TEST_F(DeviceTest, UsbServiceGetDeviceDescriptor) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::GetDeviceDescriptor> desc_res =
+      usb_fidl->GetDeviceDescriptor();
+  ASSERT_TRUE(desc_res.ok());
+  const fdescriptor::wire::UsbDeviceDescriptor& dev_desc = desc_res.value().descriptor;
+  EXPECT_EQ(dev_desc.b_length, sizeof(usb_device_descriptor_t));
+  EXPECT_EQ(dev_desc.b_descriptor_type, static_cast<uint8_t>(fdescriptor::DescriptorType::kDevice));
+  EXPECT_EQ(dev_desc.id_vendor, kVendorId);
+  EXPECT_EQ(dev_desc.id_product, kProductId);
+  EXPECT_EQ(dev_desc.b_device_class, kDeviceClass);
+  EXPECT_EQ(dev_desc.b_device_sub_class, kDeviceSubclass);
+  EXPECT_EQ(dev_desc.b_device_protocol, kDeviceProtocol);
+}
+
+TEST_F(DeviceTest, UsbServiceGetConfigurationDescriptor) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::GetConfigurationDescriptor> cfg_res =
+      usb_fidl->GetConfigurationDescriptor(1);
+  ASSERT_TRUE(cfg_res.ok());
+  ASSERT_TRUE(cfg_res->is_ok());
+  ASSERT_EQ(cfg_res->value()->descriptor.size(), sizeof(usb_configuration_descriptor_t));
+  const auto* cfg_desc =
+      reinterpret_cast<const usb_configuration_descriptor_t*>(cfg_res->value()->descriptor.data());
+  EXPECT_EQ(cfg_desc->b_length, sizeof(usb_configuration_descriptor_t));
+  EXPECT_EQ(cfg_desc->b_descriptor_type,
+            static_cast<uint8_t>(fdescriptor::DescriptorType::kConfiguration));
+  EXPECT_EQ(cfg_desc->w_total_length, sizeof(usb_configuration_descriptor_t));
+  EXPECT_EQ(cfg_desc->b_configuration_value, 1);
+}
+
+TEST_F(DeviceTest, UsbServiceGetConfigurationDescriptorInvalid) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::GetConfigurationDescriptor> bad_cfg_res =
+      usb_fidl->GetConfigurationDescriptor(99);
+  ASSERT_TRUE(bad_cfg_res.ok());
+  ASSERT_TRUE(bad_cfg_res->is_error());
+  EXPECT_EQ(bad_cfg_res->error_value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(DeviceTest, UsbServiceGetConfiguration) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::GetConfiguration> get_cfg_res =
+      usb_fidl->GetConfiguration();
+  ASSERT_TRUE(get_cfg_res.ok());
+  EXPECT_EQ(get_cfg_res.value().configuration, 1);
+}
+
+TEST_F(DeviceTest, UsbServiceSetConfiguration) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::SetConfiguration> set_cfg_res =
+      usb_fidl->SetConfiguration(2);
+  ASSERT_TRUE(set_cfg_res.ok());
+  EXPECT_TRUE(set_cfg_res->is_ok());
+  EXPECT_EQ(get_configuration(), 2);
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::GetConfiguration> get_cfg_res =
+      usb_fidl->GetConfiguration();
+  ASSERT_TRUE(get_cfg_res.ok());
+  EXPECT_EQ(get_cfg_res.value().configuration, 2);
+}
+
+TEST_F(DeviceTest, UsbServiceResetEndpoint) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ResetEndpoint> reset_ep_res =
+      usb_fidl->ResetEndpoint(0x81);
+  ASSERT_TRUE(reset_ep_res.ok());
+  EXPECT_TRUE(reset_ep_res->is_ok());
+  EXPECT_EQ(get_reset_endpoint(), 0x81);
+}
+
+TEST_F(DeviceTest, UsbServiceSetInterface) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  set_custom_control_handling(true);
+  set_timeout_handler([&](sync_completion_t* completion, zx_duration_t duration) {
+    usb::BorrowedRequestQueue<void> requests = get_pending_requests();
+    std::optional<usb::BorrowedRequest<void>> request = requests.pop();
+    EXPECT_EQ(request->request()->setup.b_request, fdescriptor::StandardRequest::kSetInterface);
+    EXPECT_EQ(request->request()->setup.w_value, 3);
+    EXPECT_EQ(request->request()->setup.w_index, 1);
+    request->Complete(ZX_OK, 0);
+    return sync_completion_wait(completion, ZX_TIME_INFINITE);
+  });
+  fidl::WireResult<fuchsia_hardware_usb::Usb::SetInterface> set_if_res =
+      usb_fidl->SetInterface(1, 3);
+  ASSERT_TRUE(set_if_res.ok());
+  EXPECT_TRUE(set_if_res->is_ok());
+}
+
+TEST_F(DeviceTest, UsbServiceControlTransferIn) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fdescriptor::wire::UsbSetup in_setup{
+      .bm_request_type = kStandardDeviceIn,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
+      .w_value = usb_descriptor_w_value(fdescriptor::DescriptorType::kDevice, 0),
+      .w_index = 0,
+      .w_length = sizeof(usb_device_descriptor_t),
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> in_res =
+      usb_fidl->ControlTransfer(in_setup, ZX_SEC(5), {});
+  ASSERT_TRUE(in_res.ok());
+  ASSERT_TRUE(in_res->is_ok());
+  ASSERT_EQ(in_res->value()->read_data.size(), sizeof(usb_device_descriptor_t));
+  const auto* dev_desc =
+      reinterpret_cast<const usb_device_descriptor_t*>(in_res->value()->read_data.data());
+  EXPECT_EQ(dev_desc->b_length, sizeof(usb_device_descriptor_t));
+  EXPECT_EQ(dev_desc->b_descriptor_type,
+            static_cast<uint8_t>(fdescriptor::DescriptorType::kDevice));
+  EXPECT_EQ(dev_desc->id_vendor, kVendorId);
+  EXPECT_EQ(dev_desc->id_product, kProductId);
+}
+
+TEST_F(DeviceTest, UsbServiceControlTransferSetConfiguration) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  uint8_t out_payload[4] = {0x11, 0x22, 0x33, 0x44};
+  fdescriptor::wire::UsbSetup out_setup{
+      .bm_request_type = kStandardDeviceOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 2,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> out_res = usb_fidl->ControlTransfer(
+      out_setup, ZX_SEC(5), fidl::VectorView<uint8_t>::FromExternal(out_payload, 0));
+  ASSERT_TRUE(out_res.ok());
+  EXPECT_TRUE(out_res->is_ok());
+  EXPECT_EQ(get_configuration(), 2);
+  // Verify usb-bus internal current_config_index_ state was also updated, not bypassed.
+  EXPECT_EQ(get_usb_protocol().GetConfiguration(), 2);
+}
+
+TEST_F(DeviceTest, UsbServiceControlTransferTimeout) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  fdescriptor::wire::UsbSetup in_setup{
+      .bm_request_type = kStandardDeviceIn,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
+      .w_value = usb_descriptor_w_value(fdescriptor::DescriptorType::kDevice, 0),
+      .w_index = 0,
+      .w_length = sizeof(usb_device_descriptor_t),
+  };
+
+  // Verify ControlTransfer honors timeout_ns via waiter_ and cancels EP0 on timeout.
+  set_custom_control_handling(true);
+  bool timeout_observed = false;
+  zx_duration_t observed_timeout = 0;
+  set_timeout_handler([&](sync_completion_t* completion, zx_duration_t duration) -> zx_status_t {
+    if (!timeout_observed) {
+      timeout_observed = true;
+      observed_timeout = duration;
+      return ZX_ERR_TIMED_OUT;
+    }
+    return sync_completion_wait(completion, duration);
+  });
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> timeout_res =
+      usb_fidl->ControlTransfer(in_setup, ZX_MSEC(250), {});
+  ASSERT_TRUE(timeout_res.ok());
+  EXPECT_TRUE(timeout_observed);
+  EXPECT_EQ(observed_timeout, ZX_MSEC(250));
+  ASSERT_TRUE(timeout_res->is_error());
+  EXPECT_EQ(timeout_res->error_value(), ZX_ERR_TIMED_OUT);
+  set_custom_control_handling(false);
+}
+
+TEST_F(DeviceTest, UsbServiceControlTransferValidation) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+
+  uint8_t out_payload[4] = {0x11, 0x22, 0x33, 0x44};
+  fdescriptor::wire::UsbSetup in_setup{
+      .bm_request_type = kStandardDeviceIn,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
+      .w_value = usb_descriptor_w_value(fdescriptor::DescriptorType::kDevice, 0),
+      .w_index = 0,
+      .w_length = sizeof(usb_device_descriptor_t),
+  };
+
+  // Mismatched OUT write_data size vs. setup.w_length is rejected.
+  fdescriptor::wire::UsbSetup bad_out_setup{
+      .bm_request_type = kVendorDeviceOut,
+      .b_request = 0x42,
+      .w_value = 0,
+      .w_index = 0,
+      .w_length = 2,
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> bad_out_res =
+      usb_fidl->ControlTransfer(bad_out_setup, ZX_SEC(5),
+                                fidl::VectorView<uint8_t>::FromExternal(out_payload, 4));
+  ASSERT_TRUE(bad_out_res.ok());
+  ASSERT_TRUE(bad_out_res->is_error());
+  EXPECT_EQ(bad_out_res->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // IN request with non-empty write_data is rejected.
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> bad_in_res =
+      usb_fidl->ControlTransfer(in_setup, ZX_SEC(5),
+                                fidl::VectorView<uint8_t>::FromExternal(out_payload, 4));
+  ASSERT_TRUE(bad_in_res.ok());
+  ASSERT_TRUE(bad_in_res->is_error());
+  EXPECT_EQ(bad_in_res->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // IN request with w_length exceeding maximum limit is rejected.
+  fdescriptor::wire::UsbSetup oversize_in_setup{
+      .bm_request_type = kStandardDeviceIn,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
+      .w_value = 0,
+      .w_index = 0,
+      .w_length = static_cast<uint16_t>(fuchsia_hardware_usb::kMaxControlRequestLen + 10),
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> oversize_in_res =
+      usb_fidl->ControlTransfer(oversize_in_setup, ZX_SEC(5), {});
+  ASSERT_TRUE(oversize_in_res.ok());
+  ASSERT_TRUE(oversize_in_res->is_error());
+  EXPECT_EQ(oversize_in_res->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // SET_CONFIGURATION bypass attempts are rejected.
+  fdescriptor::wire::UsbSetup bad_cfg_val{
+      .bm_request_type = kStandardDeviceOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 0x0102,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> bad_cfg_res =
+      usb_fidl->ControlTransfer(bad_cfg_val, ZX_SEC(5), {});
+  ASSERT_TRUE(bad_cfg_res.ok());
+  ASSERT_TRUE(bad_cfg_res->is_error());
+  EXPECT_EQ(bad_cfg_res->error_value(), ZX_ERR_INVALID_ARGS);
+
+  fdescriptor::wire::UsbSetup bad_cfg_len{
+      .bm_request_type = kStandardDeviceOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 1,
+  };
+  uint8_t dummy_byte = 0;
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> bad_cfg_len_res =
+      usb_fidl->ControlTransfer(bad_cfg_len, ZX_SEC(5),
+                                fidl::VectorView<uint8_t>::FromExternal(&dummy_byte, 1));
+  ASSERT_TRUE(bad_cfg_len_res.ok());
+  ASSERT_TRUE(bad_cfg_len_res->is_error());
+  EXPECT_EQ(bad_cfg_len_res->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // SET_INTERFACE bypass attempts are rejected.
+  fdescriptor::wire::UsbSetup bad_intf_val{
+      .bm_request_type = kStandardInterfaceOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetInterface),
+      .w_value = 0x0100,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> bad_intf_res =
+      usb_fidl->ControlTransfer(bad_intf_val, ZX_SEC(5), {});
+  ASSERT_TRUE(bad_intf_res.ok());
+  ASSERT_TRUE(bad_intf_res->is_error());
+  EXPECT_EQ(bad_intf_res->error_value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(DeviceTest, UsbServiceControlTransferOutPayload) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+  uint8_t out_payload[4] = {0x11, 0x22, 0x33, 0x44};
+
+  // Valid OUT control transfer with non-empty payload.
+  set_custom_control_handling(true);
+  set_timeout_handler([&](sync_completion_t* completion, zx_duration_t duration) {
+    usb::BorrowedRequestQueue<void> requests = get_pending_requests();
+    std::optional<usb::BorrowedRequest<void>> request = requests.pop();
+    EXPECT_EQ(request->request()->setup.bm_request_type, kVendorDeviceOut);
+    EXPECT_EQ(request->request()->setup.b_request, 0x42);
+    EXPECT_EQ(request->request()->header.length, 4u);
+    uint8_t received[4] = {};
+    size_t copied = (*request).CopyFrom(received, 4, 0);
+    EXPECT_EQ(copied, 4u);
+    EXPECT_EQ(received[0], 0x11);
+    EXPECT_EQ(received[1], 0x22);
+    EXPECT_EQ(received[2], 0x33);
+    EXPECT_EQ(received[3], 0x44);
+    request->Complete(ZX_OK, 4);
+    return sync_completion_wait(completion, ZX_TIME_INFINITE);
+  });
+  fdescriptor::wire::UsbSetup valid_vendor_out{
+      .bm_request_type = kVendorDeviceOut,
+      .b_request = 0x42,
+      .w_value = 0,
+      .w_index = 0,
+      .w_length = 4,
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> vendor_out_res =
+      usb_fidl->ControlTransfer(valid_vendor_out, ZX_SEC(5),
+                                fidl::VectorView<uint8_t>::FromExternal(out_payload, 4));
+  ASSERT_TRUE(vendor_out_res.ok());
+  EXPECT_TRUE(vendor_out_res->is_ok());
+  set_custom_control_handling(false);
+}
+
+TEST_F(DeviceTest, UsbServiceControlTransferStallRecovery) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& usb_fidl = get_usb_fidl();
+  uint8_t out_payload[4] = {0x11, 0x22, 0x33, 0x44};
+
+  // EP0 STALL recovery: when Control encounters ZX_ERR_IO_REFUSED, it resets EP0.
+  set_custom_control_handling(true);
+  set_timeout_handler([&](sync_completion_t* completion, zx_duration_t duration) {
+    usb::BorrowedRequestQueue<void> requests = get_pending_requests();
+    std::optional<usb::BorrowedRequest<void>> request = requests.pop();
+    request->Complete(ZX_ERR_IO_REFUSED, 0);
+    return sync_completion_wait(completion, ZX_TIME_INFINITE);
+  });
+  fdescriptor::wire::UsbSetup valid_vendor_out{
+      .bm_request_type = kVendorDeviceOut,
+      .b_request = 0x42,
+      .w_value = 0,
+      .w_index = 0,
+      .w_length = 4,
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ControlTransfer> stall_res =
+      usb_fidl->ControlTransfer(valid_vendor_out, ZX_SEC(5),
+                                fidl::VectorView<uint8_t>::FromExternal(out_payload, 4));
+  ASSERT_TRUE(stall_res.ok());
+  ASSERT_TRUE(stall_res->is_error());
+  EXPECT_EQ(stall_res->error_value(), ZX_ERR_IO_REFUSED);
+  EXPECT_EQ(get_reset_endpoint(), 0);
+  set_custom_control_handling(false);
+}
+
+TEST_F(DeviceTest, UsbServiceEnableAndConnectToEndpoint) {
+  async::Loop hci_loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_OK(hci_loop.StartThread("fake-hci-loop"));
+  auto hci = std::make_unique<FakeHci>(hci_loop.dispatcher());
+  hci->set_include_endpoints_in_config(true);
+
+  uint32_t enabled_in_count = 0;
+  uint32_t enabled_out_count = 0;
+  uint16_t last_in_max_packet_size = 0;
+  bool last_has_ss_comp = false;
+  uint8_t last_max_burst = 0;
+  bool last_enable_flag = false;
+  zx_status_t next_enable_status = ZX_OK;
+  hci->set_enable_endpoint_hook([&](uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
+                                    const usb_ss_ep_comp_descriptor_t* ss_com_desc, bool enable) {
+    EXPECT_EQ(device_id, kDeviceId);
+    if (next_enable_status != ZX_OK) {
+      return next_enable_status;
+    }
+    last_enable_flag = enable;
+    last_has_ss_comp = (ss_com_desc != nullptr);
+    last_max_burst = ss_com_desc ? ss_com_desc->b_max_burst : 0;
+    if (ep_desc->b_endpoint_address == 0x81) {
+      enabled_in_count++;
+      last_in_max_packet_size = usb_ep_max_packet(ep_desc);
+    } else if (ep_desc->b_endpoint_address == 0x01) {
+      enabled_out_count++;
+    }
+    return ZX_OK;
+  });
+
+  auto timer = fbl::MakeRefCounted<FakeTimer>();
+  timer->set_timeout_handler([=](sync_completion_t* completion, zx_duration_t duration) {
+    return sync_completion_wait(completion, duration);
+  });
+
+  std::shared_ptr<MockDevice> custom_root = MockDevice::FakeRootParent();
+  fidl::Endpoints<fuchsia_hardware_usb_hci::UsbHci> hci_endpoints =
+      fidl::Endpoints<fuchsia_hardware_usb_hci::UsbHci>::Create();
+  fidl::BindServer(hci_loop.dispatcher(), std::move(hci_endpoints.server), hci.get());
+
+  fidl::Endpoints<fuchsia_hardware_usb::Usb> usb_endpoints =
+      fidl::Endpoints<fuchsia_hardware_usb::Usb>::Create();
+  UsbDevice* custom_dev = nullptr;
+  zx::result init_res = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [&] {
+    auto dev = fbl::MakeRefCounted<UsbDevice>(
+        custom_root.get(), ddk::UsbHciProtocolClient(hci->proto()), std::move(hci_endpoints.client),
+        kDeviceId, kHubId, kDeviceSpeed, timer, (*dispatcher_)->async_dispatcher());
+    ASSERT_OK(dev->Init((*dispatcher_)->async_dispatcher()));
+    dev->BindUsbServer((*dispatcher_)->async_dispatcher(), std::move(usb_endpoints.server));
+    custom_dev = dev.get();
+  });
+  ASSERT_TRUE(init_res.is_ok());
+
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb> client(std::move(usb_endpoints.client));
+
+  // Invalid endpoints are rejected for ConnectToEndpoint
+  fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint> ep0 =
+      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ConnectToEndpoint> bad_ep =
+      client->ConnectToEndpoint(0x00, std::move(ep0.server));
+  ASSERT_TRUE(bad_ep.ok());
+  ASSERT_TRUE(bad_ep->is_error());
+  EXPECT_EQ(bad_ep->error_value(), ZX_ERR_INVALID_ARGS);
+
+  fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint> ep16 =
+      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ConnectToEndpoint> bad_ep16 =
+      client->ConnectToEndpoint(16, std::move(ep16.server));
+  ASSERT_TRUE(bad_ep16.ok());
+  ASSERT_TRUE(bad_ep16->is_error());
+  EXPECT_EQ(bad_ep16->error_value(), ZX_ERR_INVALID_ARGS);
+
+  fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint> ep_res =
+      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ConnectToEndpoint> bad_ep_res =
+      client->ConnectToEndpoint(0x11, std::move(ep_res.server));
+  ASSERT_TRUE(bad_ep_res.ok());
+  ASSERT_TRUE(bad_ep_res->is_error());
+  EXPECT_EQ(bad_ep_res->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // EnableEndpoint configures the endpoint on the host controller.
+  fdescriptor::wire::UsbEndpointDescriptor ep_out_desc{
+      .b_length = sizeof(usb_endpoint_descriptor_t),
+      .b_descriptor_type = static_cast<uint8_t>(fdescriptor::DescriptorType::kEndpoint),
+      .b_endpoint_address = 0x01,
+      .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk),
+      .w_max_packet_size = 512,
+      .b_interval = 0,
+  };
+  fdescriptor::wire::UsbSsEpCompDescriptor empty_ss_comp{};
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> enable_out_res =
+      client->EnableEndpoint(ep_out_desc, empty_ss_comp, true);
+  ASSERT_TRUE(enable_out_res.ok());
+  EXPECT_TRUE(enable_out_res->is_ok());
+  EXPECT_EQ(enabled_out_count, 1u);
+  EXPECT_TRUE(last_enable_flag);
+  EXPECT_FALSE(last_has_ss_comp);
+
+  // ConnectToEndpoint(0x01) forwards to UsbHci::ConnectToEndpoint.
+  fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint> ep_out =
+      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ConnectToEndpoint> out_res =
+      client->ConnectToEndpoint(0x01, std::move(ep_out.server));
+  ASSERT_TRUE(out_res.ok());
+  EXPECT_TRUE(out_res->is_ok());
+
+  // EnableEndpoint with SuperSpeed Endpoint Companion descriptor passes ss_com_desc through.
+  fdescriptor::wire::UsbEndpointDescriptor ep_in_desc{
+      .b_length = sizeof(usb_endpoint_descriptor_t),
+      .b_descriptor_type = static_cast<uint8_t>(fdescriptor::DescriptorType::kEndpoint),
+      .b_endpoint_address = 0x81,
+      .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk),
+      .w_max_packet_size = 1024,
+      .b_interval = 0,
+  };
+  fdescriptor::wire::UsbSsEpCompDescriptor ss_comp{
+      .b_length = sizeof(usb_ss_ep_comp_descriptor_t),
+      .b_descriptor_type = static_cast<uint8_t>(fdescriptor::DescriptorType::kSsEpCompanion),
+      .b_max_burst = 3,
+      .bm_attributes = 0,
+      .w_bytes_per_interval = 0,
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> enable_in_res =
+      client->EnableEndpoint(ep_in_desc, ss_comp, true);
+  ASSERT_TRUE(enable_in_res.ok());
+  EXPECT_TRUE(enable_in_res->is_ok());
+  EXPECT_EQ(enabled_in_count, 1u);
+  EXPECT_EQ(last_in_max_packet_size, 1024u);
+  EXPECT_TRUE(last_has_ss_comp);
+  EXPECT_EQ(last_max_burst, 3u);
+
+  // If EnableEndpoint fails, it propagates the error.
+  next_enable_status = ZX_ERR_IO_REFUSED;
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> fail_res =
+      client->EnableEndpoint(ep_in_desc, empty_ss_comp, true);
+  ASSERT_TRUE(fail_res.ok());
+  ASSERT_TRUE(fail_res->is_error());
+  EXPECT_EQ(fail_res->error_value(), ZX_ERR_IO_REFUSED);
+  next_enable_status = ZX_OK;
+
+  zx::result tear_res = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [&] {
+    custom_dev->DdkAsyncRemove();
+    mock_ddk::ReleaseFlaggedDevices(custom_root.get());
+  });
+  ASSERT_TRUE(tear_res.is_ok());
+  hci_loop.Shutdown();
+}
+
+TEST_F(DeviceTest, UsbServiceEndpointValidation) {
+  fidl::WireSyncClient<fuchsia_hardware_usb::Usb>& client = get_usb_fidl();
+  fdescriptor::wire::UsbSsEpCompDescriptor empty_ss_comp{};
+
+  // Endpoint 0 is rejected.
+  fdescriptor::wire::UsbEndpointDescriptor bad_ep_desc{
+      .b_length = sizeof(usb_endpoint_descriptor_t),
+      .b_descriptor_type = static_cast<uint8_t>(fdescriptor::DescriptorType::kEndpoint),
+      .b_endpoint_address = 0x00,
+      .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk),
+      .w_max_packet_size = 64,
+      .b_interval = 0,
+  };
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> bad_en_ep0 =
+      client->EnableEndpoint(bad_ep_desc, empty_ss_comp, true);
+  ASSERT_TRUE(bad_en_ep0.ok());
+  ASSERT_TRUE(bad_en_ep0->is_error());
+  EXPECT_EQ(bad_en_ep0->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // Endpoint 0x80 is rejected.
+  bad_ep_desc.b_endpoint_address = 0x80;
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> bad_en_ep80 =
+      client->EnableEndpoint(bad_ep_desc, empty_ss_comp, true);
+  ASSERT_TRUE(bad_en_ep80.ok());
+  ASSERT_TRUE(bad_en_ep80->is_error());
+  EXPECT_EQ(bad_en_ep80->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // Endpoint number > 15 is rejected.
+  bad_ep_desc.b_endpoint_address = 16;
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> bad_en_ep16 =
+      client->EnableEndpoint(bad_ep_desc, empty_ss_comp, true);
+  ASSERT_TRUE(bad_en_ep16.ok());
+  ASSERT_TRUE(bad_en_ep16->is_error());
+  EXPECT_EQ(bad_en_ep16->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // Endpoint address with reserved bits (0x70) set is rejected.
+  bad_ep_desc.b_endpoint_address = 0x11;
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> bad_en_res =
+      client->EnableEndpoint(bad_ep_desc, empty_ss_comp, true);
+  ASSERT_TRUE(bad_en_res.ok());
+  ASSERT_TRUE(bad_en_res->is_error());
+  EXPECT_EQ(bad_en_res->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // Endpoint descriptor length < sizeof(usb_endpoint_descriptor_t) is rejected.
+  bad_ep_desc.b_endpoint_address = 0x01;
+  bad_ep_desc.b_length = sizeof(usb_endpoint_descriptor_t) - 1;
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> bad_en_len =
+      client->EnableEndpoint(bad_ep_desc, empty_ss_comp, true);
+  ASSERT_TRUE(bad_en_len.ok());
+  ASSERT_TRUE(bad_en_len->is_error());
+  EXPECT_EQ(bad_en_len->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // Endpoint descriptor type != Endpoint is rejected.
+  bad_ep_desc.b_length = sizeof(usb_endpoint_descriptor_t);
+  bad_ep_desc.b_descriptor_type = static_cast<uint8_t>(fdescriptor::DescriptorType::kInterface);
+  fidl::WireResult<fuchsia_hardware_usb::Usb::EnableEndpoint> bad_en_type =
+      client->EnableEndpoint(bad_ep_desc, empty_ss_comp, true);
+  ASSERT_TRUE(bad_en_type.ok());
+  ASSERT_TRUE(bad_en_type->is_error());
+  EXPECT_EQ(bad_en_type->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // ResetEndpoint validation:
+  // ep_address == 0x00 is allowed (for EP0 stall recovery)
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ResetEndpoint> reset_ep0 =
+      client->ResetEndpoint(0x00);
+  ASSERT_TRUE(reset_ep0.ok());
+  EXPECT_TRUE(reset_ep0->is_ok());
+
+  // ep_address == 0x80 is rejected (EP0 is bidirectional, 0x80 is invalid)
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ResetEndpoint> reset_ep80 =
+      client->ResetEndpoint(0x80);
+  ASSERT_TRUE(reset_ep80.ok());
+  ASSERT_TRUE(reset_ep80->is_error());
+  EXPECT_EQ(reset_ep80->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // ep_address > 15 is rejected
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ResetEndpoint> reset_ep16 = client->ResetEndpoint(16);
+  ASSERT_TRUE(reset_ep16.ok());
+  ASSERT_TRUE(reset_ep16->is_error());
+  EXPECT_EQ(reset_ep16->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // ep_address with reserved bits set is rejected
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ResetEndpoint> reset_ep_res =
+      client->ResetEndpoint(0x11);
+  ASSERT_TRUE(reset_ep_res.ok());
+  ASSERT_TRUE(reset_ep_res->is_error());
+  EXPECT_EQ(reset_ep_res->error_value(), ZX_ERR_INVALID_ARGS);
+
+  // Valid endpoint resets succeed
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ResetEndpoint> reset_ep1 =
+      client->ResetEndpoint(0x01);
+  ASSERT_TRUE(reset_ep1.ok());
+  EXPECT_TRUE(reset_ep1->is_ok());
+
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ResetEndpoint> reset_ep81 =
+      client->ResetEndpoint(0x81);
+  ASSERT_TRUE(reset_ep81.ok());
+  EXPECT_TRUE(reset_ep81->is_ok());
+}
+
+// NOLINTEND(readability-suspicious-call-argument)
+
+}  // namespace
 
 // A fake HCI that pretends to be a device that does dodgy things with
 // configuration descriptors: namely, changing the size they claim to be

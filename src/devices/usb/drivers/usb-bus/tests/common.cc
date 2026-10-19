@@ -57,6 +57,9 @@ void FakeHci::UsbHciRequestQueue(usb_request_t* usb_request_,
         case fdescriptor::DescriptorType::kDevice: {
           usb_device_descriptor_t* descriptor;
           request.Mmap(reinterpret_cast<void**>(&descriptor));
+          descriptor->b_length = sizeof(*descriptor);
+          descriptor->b_descriptor_type =
+              static_cast<uint8_t>(fdescriptor::DescriptorType::kDevice);
           descriptor->b_num_configurations = 2;
           descriptor->id_vendor = kVendorId;
           descriptor->id_product = kProductId;
@@ -67,8 +70,106 @@ void FakeHci::UsbHciRequestQueue(usb_request_t* usb_request_,
         }
           return;
         case fdescriptor::DescriptorType::kConfiguration: {
+          if (include_endpoints_in_config_) {
+            // Full USB Configuration descriptor bundle (USB 2.0 §9.4.3 & §9.6.3).
+            // A USB configuration response concatenates the Configuration descriptor
+            // followed by all Interface and Endpoint descriptors.
+            //
+            // This mock configuration defines:
+            // - Interface 0, Alt-Setting 0:
+            //     EP 0x81 (IN):  Interrupt, max packet size = 64 bytes, interval = 5ms
+            //     EP 0x01 (OUT): Interrupt, max packet size = 64 bytes, interval = 5ms
+            // - Interface 0, Alt-Setting 1:
+            //     EP 0x81 (IN):  Bulk, max packet size = 512 bytes (0x0200), interval = 0
+            //     EP 0x01 (OUT): Bulk, max packet size = 512 bytes (0x0200), interval = 0
+            //
+            // This allows testing dynamic endpoint reconfiguration when switching
+            // alternate settings via SetInterface.
+            static const uint8_t kFullConfigDesc[55] = {
+                // --- Configuration Descriptor (9 bytes) ---
+                9,  // bLength
+                2,  // bDescriptorType (Configuration = 2)
+                55,
+                0,     // wTotalLength (55 bytes total, little-endian)
+                1,     // bNumInterfaces (1 interface)
+                1,     // bConfigurationValue (overridden with index + 1 below)
+                0,     // iConfiguration (no string index)
+                0x80,  // bmAttributes (Bus-powered, bit 7 reserved = 1)
+                50,    // bMaxPower (50 * 2mA = 100mA)
+
+                // --- Interface 0, Alternate Setting 0 (9 bytes) ---
+                9,     // bLength
+                4,     // bDescriptorType (Interface = 4)
+                0,     // bInterfaceNumber (0)
+                0,     // bAlternateSetting (0)
+                2,     // bNumEndpoints (2 endpoints)
+                0xff,  // bInterfaceClass (Vendor specific)
+                0,     // bInterfaceSubClass
+                0,     // bInterfaceProtocol
+                0,     // iInterface (no string index)
+
+                // Endpoint 1 IN (Interrupt, 64-byte max packet) (7 bytes)
+                7,     // bLength
+                5,     // bDescriptorType (Endpoint = 5)
+                0x81,  // bEndpointAddress (EP 1, IN: 0x80 | 1)
+                3,     // bmAttributes (Interrupt = 3)
+                64,
+                0,  // wMaxPacketSize (64 bytes, little-endian)
+                5,  // bInterval (5ms)
+
+                // Endpoint 1 OUT (Interrupt, 64-byte max packet) (7 bytes)
+                7,     // bLength
+                5,     // bDescriptorType (Endpoint = 5)
+                0x01,  // bEndpointAddress (EP 1, OUT: 0x00 | 1)
+                3,     // bmAttributes (Interrupt = 3)
+                64,
+                0,  // wMaxPacketSize (64 bytes, little-endian)
+                5,  // bInterval (5ms)
+
+                // --- Interface 0, Alternate Setting 1 (9 bytes) ---
+                9,     // bLength
+                4,     // bDescriptorType (Interface = 4)
+                0,     // bInterfaceNumber (0)
+                1,     // bAlternateSetting (1)
+                2,     // bNumEndpoints (2 endpoints)
+                0xff,  // bInterfaceClass (Vendor specific)
+                0,     // bInterfaceSubClass
+                0,     // bInterfaceProtocol
+                0,     // iInterface (no string index)
+
+                // Endpoint 1 IN (Bulk, 512-byte max packet) (7 bytes)
+                7,     // bLength
+                5,     // bDescriptorType (Endpoint = 5)
+                0x81,  // bEndpointAddress (EP 1, IN: 0x80 | 1)
+                2,     // bmAttributes (Bulk = 2)
+                0x00,
+                0x02,  // wMaxPacketSize (512 bytes = 0x0200, little-endian)
+                0,     // bInterval (ignored for bulk)
+
+                // Endpoint 1 OUT (Bulk, 512-byte max packet) (7 bytes)
+                7,     // bLength
+                5,     // bDescriptorType (Endpoint = 5)
+                0x01,  // bEndpointAddress (EP 1, OUT: 0x00 | 1)
+                2,     // bmAttributes (Bulk = 2)
+                0x00,
+                0x02,  // wMaxPacketSize (512 bytes = 0x0200, little-endian)
+                0,     // bInterval (ignored for bulk)
+            };
+            void* mapped;
+            request.Mmap(&mapped);
+            size_t copy_len =
+                std::min<size_t>(request.request()->header.length, sizeof(kFullConfigDesc));
+            memcpy(mapped, kFullConfigDesc, copy_len);
+            auto* descriptor = static_cast<usb_configuration_descriptor_t*>(mapped);
+            descriptor->b_configuration_value = static_cast<uint8_t>(index + 1);
+            request.Complete(ZX_OK, copy_len);
+            return;
+          }
           usb_configuration_descriptor_t* descriptor;
           request.Mmap(reinterpret_cast<void**>(&descriptor));
+          descriptor->b_length = sizeof(*descriptor);
+          descriptor->b_descriptor_type =
+              static_cast<uint8_t>(fdescriptor::DescriptorType::kConfiguration);
           descriptor->w_total_length = sizeof(*descriptor);
           descriptor->b_configuration_value = static_cast<uint8_t>(index + 1);
           request.Complete(ZX_OK, sizeof(*descriptor));

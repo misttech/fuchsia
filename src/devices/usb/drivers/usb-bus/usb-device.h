@@ -46,9 +46,46 @@ using UsbDeviceType = ddk::Device<UsbDevice, ddk::GetProtocolable,
 
 class UsbDevice : public UsbDeviceType,
                   public ddk::UsbProtocol<UsbDevice, ddk::base_protocol>,
-                  public fbl::RefCounted<UsbDevice>,
-                  public fidl::Server<fuchsia_hardware_usb::Usb> {
+                  public fbl::RefCounted<UsbDevice> {
  public:
+  class UsbProtocolServer : public fidl::Server<fuchsia_hardware_usb::Usb> {
+   public:
+    explicit UsbProtocolServer(UsbDevice* owner) : owner_(owner) {}
+    void ConnectToEndpoint(ConnectToEndpointRequest& request,
+                           ConnectToEndpointCompleter::Sync& completer) override;
+    void GetDeviceSpeed(GetDeviceSpeedCompleter::Sync& completer) override;
+    void GetDeviceId(GetDeviceIdCompleter::Sync& completer) override;
+    void GetDeviceDescriptor(GetDeviceDescriptorCompleter::Sync& completer) override;
+    void GetConfigurationDescriptor(GetConfigurationDescriptorRequest& request,
+                                    GetConfigurationDescriptorCompleter::Sync& completer) override;
+    void GetConfiguration(GetConfigurationCompleter::Sync& completer) override;
+    void SetConfiguration(SetConfigurationRequest& request,
+                          SetConfigurationCompleter::Sync& completer) override;
+    void SetInterface(SetInterfaceRequest& request,
+                      SetInterfaceCompleter::Sync& completer) override;
+    void ControlTransfer(ControlTransferRequest& request,
+                         ControlTransferCompleter::Sync& completer) override;
+    void EnableEndpoint(EnableEndpointRequest& request,
+                        EnableEndpointCompleter::Sync& completer) override;
+    void ResetEndpoint(ResetEndpointRequest& request,
+                       ResetEndpointCompleter::Sync& completer) override;
+    void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb::Usb> metadata,
+                               fidl::UnknownMethodCompleter::Sync& completer) override;
+
+    void Bind(async_dispatcher_t* dispatcher,
+              fidl::ServerEnd<fuchsia_hardware_usb::Usb> server_end) {
+      bindings_.AddBinding(dispatcher, std::move(server_end), this, fidl::kIgnoreBindingClosure);
+    }
+
+    fidl::ProtocolHandler<fuchsia_hardware_usb::Usb> CreateHandler(async_dispatcher_t* dispatcher) {
+      return bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure);
+    }
+
+   private:
+    UsbDevice* const owner_;
+    fidl::ServerBindingGroup<fuchsia_hardware_usb::Usb> bindings_;
+  };
+
   UsbDevice(zx_device_t* parent, const ddk::UsbHciProtocolClient& hci,
             fidl::ClientEnd<fuchsia_hardware_usb_hci::UsbHci> hci_new, uint32_t device_id,
             uint32_t hub_id, usb_speed_t speed, fbl::RefPtr<UsbWaiterInterface> waiter,
@@ -58,10 +95,13 @@ class UsbDevice : public UsbDeviceType,
         hub_id_(hub_id),
         speed_(speed),
         hci_(hci),
-        hci_new_(std::move(hci_new)),
         bus_(parent),
         waiter_(waiter),
-        outgoing_(dispatcher) {}
+        usb_server_(this),
+        outgoing_(dispatcher) {
+    ZX_ASSERT(hci_new.is_valid());
+    hci_new_.Bind(std::move(hci_new));
+  }
 
   static zx_status_t Create(zx_device_t* parent, const ddk::UsbHciProtocolClient& hci,
                             fidl::ClientEnd<fuchsia_hardware_usb_hci::UsbHci> hci_new,
@@ -71,27 +111,6 @@ class UsbDevice : public UsbDeviceType,
   // Device protocol implementation.
   zx_status_t DdkGetProtocol(uint32_t proto_id, void* out);
   void DdkRelease();
-
-  // fuchsia_hardware_usb_new.Usb protocol implementation.
-  void ConnectToEndpoint(ConnectToEndpointRequest& request,
-                         ConnectToEndpointCompleter::Sync& completer) override {
-    auto result =
-        hci_new_->ConnectToEndpoint(device_id_, request.ep_addr(), std::move(request.ep()));
-    if (!result.ok()) {
-      zxlogf(ERROR, "(framework) Failed to connect to endpoint: %s",
-             zx_status_get_string(result.error().status()));
-
-      completer.Reply(fit::as_error(result.status()));
-      return;
-    }
-    if (result->is_error()) {
-      zxlogf(ERROR, "Failed to connect to endpoint: %s",
-             zx_status_get_string(result->error_value()));
-      completer.Reply(fit::as_error(result->error_value()));
-      return;
-    }
-    completer.Reply(fit::ok());
-  }
 
   // USB protocol implementation.
   zx_status_t UsbControlOut(uint8_t request_type, uint8_t request, uint16_t value, uint16_t index,
@@ -124,7 +143,7 @@ class UsbDevice : public UsbDeviceType,
   uint64_t UsbGetCurrentFrame();
   size_t UsbGetRequestSize();
 
-  // FIDL messages.
+  // FIDL messages (fuchsia.hardware.usb.device.Device).
   void GetDeviceSpeed(GetDeviceSpeedCompleter::Sync& completer) override;
   void GetDeviceDescriptor(GetDeviceDescriptorCompleter::Sync& completer) override;
   void GetConfigurationDescriptorSize(
@@ -187,6 +206,11 @@ class UsbDevice : public UsbDeviceType,
   zx_status_t Init(async_dispatcher_t* dispatcher);
 
   uint32_t device_id() const { return device_id_; }
+
+  void BindUsbServer(async_dispatcher_t* dispatcher,
+                     fidl::ServerEnd<fuchsia_hardware_usb::Usb> server_end) {
+    usb_server_.Bind(dispatcher, std::move(server_end));
+  }
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbDevice);
@@ -276,8 +300,8 @@ class UsbDevice : public UsbDeviceType,
 
   fbl::RefPtr<UsbWaiterInterface> waiter_;
 
+  UsbProtocolServer usb_server_;
   component::OutgoingDirectory outgoing_;
-  fidl::ServerBindingGroup<fuchsia_hardware_usb::Usb> bindings_;
 };
 
 }  // namespace usb_bus

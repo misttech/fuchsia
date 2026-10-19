@@ -43,7 +43,7 @@ constexpr uint64_t kCurrentFrame = MakeConstant<uint64_t, 7>("fuchsia");
 constexpr size_t kRequestSize = 272;
 extern const char16_t* kStringDescriptors[][2];
 
-constexpr usb_speed_t kDeviceSpeed = MakeConstant<usb_speed_t, 4>("slow");
+constexpr usb_speed_t kDeviceSpeed = USB_SPEED_FULL;
 
 class FakeHci : public ddk::UsbHciProtocol<FakeHci>,
                 public fidl::Server<fuchsia_hardware_usb_hci::UsbHci> {
@@ -126,6 +126,7 @@ class FakeHci : public ddk::UsbHciProtocol<FakeHci>,
   uint8_t configuration() { return selected_configuration_; }
   usb::BorrowedRequestQueue<void> pending_requests() { return std::move(pending_requests_); }
   void set_custom_control_handling(bool enabled) { custom_control_ = enabled; }
+  void set_include_endpoints_in_config(bool enabled) { include_endpoints_in_config_ = enabled; }
 
   void set_enable_endpoint_hook(
       fit::function<zx_status_t(uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
@@ -147,6 +148,7 @@ class FakeHci : public ddk::UsbHciProtocol<FakeHci>,
   zx_status_t error_state_ = ZX_OK;
   bool device_reset_ = false;
   bool custom_control_ = false;
+  bool include_endpoints_in_config_ = false;
   uint8_t selected_configuration_ = 0;
   usb_hci_protocol_t proto_;
   uint8_t reset_endpoint_ = 0;

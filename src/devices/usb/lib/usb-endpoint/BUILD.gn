@@ -87,6 +87,7 @@ source_set("fake-server-sources") {
   public = [ "testing/fake-usb-endpoint-server.h" ]
   sources = [ "testing/fake-usb-endpoint-server.h" ]
   public_deps = [
+    "//sdk/fidl/fuchsia.hardware.usb:fuchsia.hardware.usb_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
     "//sdk/lib/async-default",

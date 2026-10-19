@@ -344,11 +344,19 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
     status = req->request()->response.status;
   } else if (status == ZX_ERR_TIMED_OUT) {
     // cancel transactions and wait for request to be completed
-    sync_completion_reset(&completion);
     status = hci_.CancelAll(device_id_, 0);
     if (status == ZX_OK) {
       waiter_->Wait(&completion, ZX_TIME_INFINITE);
       status = ZX_ERR_TIMED_OUT;
+    }
+  }
+
+  if (status == ZX_ERR_IO_REFUSED || status == ZX_ERR_IO_INVALID) {
+    zxlogf(ERROR, "Control transfer failed with %s; resetting endpoint 0",
+           zx_status_get_string(status));
+    zx_status_t reset_status = hci_.ResetEndpoint(device_id_, 0);
+    if (reset_status != ZX_OK) {
+      zxlogf(ERROR, "Failed to reset endpoint 0: %s", zx_status_get_string(reset_status));
     }
   }
   if (status == ZX_OK && !out) {
@@ -799,6 +807,244 @@ void UsbDevice::SetConfiguration(SetConfigurationRequestView request,
   completer.Reply(status);
 }
 
+void UsbDevice::UsbProtocolServer::ConnectToEndpoint(ConnectToEndpointRequest& request,
+                                                     ConnectToEndpointCompleter::Sync& completer) {
+  constexpr uint32_t kMask = 0x7FU;
+  constexpr uint32_t kReservedMask = 0x70U;
+  const uint32_t ep_addr = request.ep_addr();
+  const uint32_t ep_num = ep_addr & kMask;
+  if (ep_num == 0 || ep_num > 15 || (ep_addr & kReservedMask) != 0) {
+    completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  fidl::WireResult<fuchsia_hardware_usb_hci::UsbHci::ConnectToEndpoint> result =
+      owner_->hci_new_->ConnectToEndpoint(owner_->device_id_, request.ep_addr(),
+                                          std::move(request.ep()));
+  if (!result.ok()) {
+    zxlogf(ERROR, "Failed to call ConnectToEndpoint(): %s",
+           result.error().FormatDescription().c_str());
+    completer.Reply(fit::as_error(result.status()));
+    return;
+  }
+  if (result->is_error()) {
+    zxlogf(ERROR, "ConnectToEndpoint() error: %s", zx_status_get_string(result->error_value()));
+    completer.Reply(fit::as_error(result->error_value()));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void UsbDevice::UsbProtocolServer::GetDeviceSpeed(GetDeviceSpeedCompleter::Sync& completer) {
+  completer.Reply({{.speed = static_cast<fdescriptor::UsbSpeed>(owner_->speed_)}});
+}
+
+void UsbDevice::UsbProtocolServer::GetDeviceId(GetDeviceIdCompleter::Sync& completer) {
+  completer.Reply({{.device_id = owner_->device_id_}});
+}
+
+void UsbDevice::UsbProtocolServer::GetDeviceDescriptor(
+    GetDeviceDescriptorCompleter::Sync& completer) {
+  fdescriptor::UsbDeviceDescriptor desc{{
+      .b_length = owner_->device_desc_.b_length,
+      .b_descriptor_type = owner_->device_desc_.b_descriptor_type,
+      .bcd_usb = le16toh(owner_->device_desc_.bcd_usb),
+      .b_device_class = owner_->device_desc_.b_device_class,
+      .b_device_sub_class = owner_->device_desc_.b_device_sub_class,
+      .b_device_protocol = owner_->device_desc_.b_device_protocol,
+      .b_max_packet_size0 = owner_->device_desc_.b_max_packet_size0,
+      .id_vendor = le16toh(owner_->device_desc_.id_vendor),
+      .id_product = le16toh(owner_->device_desc_.id_product),
+      .bcd_device = le16toh(owner_->device_desc_.bcd_device),
+      .i_manufacturer = owner_->device_desc_.i_manufacturer,
+      .i_product = owner_->device_desc_.i_product,
+      .i_serial_number = owner_->device_desc_.i_serial_number,
+      .b_num_configurations = owner_->device_desc_.b_num_configurations,
+  }};
+  completer.Reply({{.descriptor = desc}});
+}
+
+void UsbDevice::UsbProtocolServer::GetConfigurationDescriptor(
+    GetConfigurationDescriptorRequest& request,
+    GetConfigurationDescriptorCompleter::Sync& completer) {
+  const usb_configuration_descriptor_t* descriptor = owner_->GetConfigDesc(request.config());
+  if (!descriptor) {
+    completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  size_t length = le16toh(descriptor->w_total_length);
+  if (length > fuchsia_hardware_usb::kMaxDescriptorLen) {
+    completer.Reply(fit::as_error(ZX_ERR_OUT_OF_RANGE));
+    return;
+  }
+  const auto* raw = reinterpret_cast<const uint8_t*>(descriptor);
+  completer.Reply(fit::ok(fuchsia_hardware_usb::UsbGetConfigurationDescriptorResponse{
+      {.descriptor = std::vector<uint8_t>(raw, raw + length)}}));
+}
+
+void UsbDevice::UsbProtocolServer::GetConfiguration(GetConfigurationCompleter::Sync& completer) {
+  completer.Reply({{.configuration = owner_->UsbGetConfiguration()}});
+}
+
+void UsbDevice::UsbProtocolServer::SetConfiguration(SetConfigurationRequest& request,
+                                                    SetConfigurationCompleter::Sync& completer) {
+  zx_status_t status = owner_->UsbSetConfiguration(request.configuration());
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void UsbDevice::UsbProtocolServer::SetInterface(SetInterfaceRequest& request,
+                                                SetInterfaceCompleter::Sync& completer) {
+  zx_status_t status = owner_->UsbSetInterface(request.interface_number(), request.alt_setting());
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void UsbDevice::UsbProtocolServer::EnableEndpoint(EnableEndpointRequest& request,
+                                                  EnableEndpointCompleter::Sync& completer) {
+  constexpr uint32_t kMask = 0x7FU;
+  constexpr uint32_t kReservedMask = 0x70U;
+  const uint32_t ep_addr = request.ep_desc().b_endpoint_address();
+  const uint32_t ep_num = ep_addr & kMask;
+  if (ep_num == 0 || ep_num > 15 || (ep_addr & kReservedMask) != 0 ||
+      request.ep_desc().b_length() < sizeof(usb_endpoint_descriptor_t) ||
+      request.ep_desc().b_descriptor_type() !=
+          static_cast<uint8_t>(fdescriptor::DescriptorType::kEndpoint)) {
+    completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  const usb_endpoint_descriptor_t ep_desc = {
+      .b_length = request.ep_desc().b_length(),
+      .b_descriptor_type = request.ep_desc().b_descriptor_type(),
+      .b_endpoint_address = request.ep_desc().b_endpoint_address(),
+      .bm_attributes = request.ep_desc().bm_attributes(),
+      .w_max_packet_size = htole16(request.ep_desc().w_max_packet_size()),
+      .b_interval = request.ep_desc().b_interval(),
+  };
+  const usb_ss_ep_comp_descriptor_t ss_com_desc = {
+      .b_length = request.ss_com_desc().b_length(),
+      .b_descriptor_type = request.ss_com_desc().b_descriptor_type(),
+      .b_max_burst = request.ss_com_desc().b_max_burst(),
+      .bm_attributes = request.ss_com_desc().bm_attributes(),
+      .w_bytes_per_interval = htole16(request.ss_com_desc().w_bytes_per_interval()),
+  };
+  const usb_ss_ep_comp_descriptor_t* ss_com_ptr =
+      (ss_com_desc.b_length >= sizeof(usb_ss_ep_comp_descriptor_t) &&
+       ss_com_desc.b_descriptor_type ==
+           static_cast<uint8_t>(fdescriptor::DescriptorType::kSsEpCompanion))
+          ? &ss_com_desc
+          : nullptr;
+  zx_status_t status = owner_->UsbEnableEndpoint(&ep_desc, ss_com_ptr, request.enable());
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void UsbDevice::UsbProtocolServer::ResetEndpoint(ResetEndpointRequest& request,
+                                                 ResetEndpointCompleter::Sync& completer) {
+  constexpr uint32_t kMask = 0x7FU;
+  constexpr uint32_t kReservedMask = 0x70U;
+  const uint32_t ep_addr = request.ep_address();
+  const uint32_t ep_num = ep_addr & kMask;
+  if ((ep_num == 0 && ep_addr != 0) || ep_num > 15 || (ep_addr & kReservedMask) != 0) {
+    completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  zx_status_t status = owner_->UsbResetEndpoint(request.ep_address());
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void UsbDevice::UsbProtocolServer::ControlTransfer(ControlTransferRequest& request,
+                                                   ControlTransferCompleter::Sync& completer) {
+  // USB 2.0 specification, section 9.2.6.4 specifies a 5-second timeout for control transfers.
+  const zx_duration_t timeout = request.timeout_ns() > 0 ? request.timeout_ns() : ZX_SEC(5);
+  const fdescriptor::UsbSetup& setup = request.setup();
+  const bool is_in = usb_request_is_in(setup.bm_request_type());
+  if (is_in) {
+    if (setup.w_length() > fuchsia_hardware_usb::kMaxControlRequestLen ||
+        !request.write_data().empty()) {
+      completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+      return;
+    }
+    std::vector<uint8_t> buf(setup.w_length());
+    size_t actual = 0;
+    zx_status_t status =
+        owner_->Control(setup.bm_request_type(), setup.b_request(), setup.w_value(),
+                        setup.w_index(), timeout, nullptr, 0, buf.data(), buf.size(), &actual);
+    if (status != ZX_OK) {
+      completer.Reply(fit::as_error(status));
+      return;
+    }
+    buf.resize(std::min(actual, buf.size()));
+    completer.Reply(
+        fit::ok(fuchsia_hardware_usb::UsbControlTransferResponse{{.read_data = std::move(buf)}}));
+    return;
+  }
+
+  if (request.write_data().size() != setup.w_length()) {
+    completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+
+  if (setup.bm_request_type() == kStandardDeviceOut &&
+      setup.b_request() == fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration)) {
+    if (setup.w_length() != 0 || setup.w_index() != 0 || setup.w_value() > UINT8_MAX) {
+      completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+      return;
+    }
+    zx_status_t status = owner_->UsbSetConfiguration(static_cast<uint8_t>(setup.w_value()));
+    if (status != ZX_OK) {
+      completer.Reply(fit::as_error(status));
+      return;
+    }
+    completer.Reply(fit::ok(fuchsia_hardware_usb::UsbControlTransferResponse{{.read_data = {}}}));
+    return;
+  }
+
+  if (setup.bm_request_type() == kStandardInterfaceOut &&
+      setup.b_request() == fidl::ToUnderlying(fdescriptor::StandardRequest::kSetInterface)) {
+    if (setup.w_length() != 0 || setup.w_index() > UINT8_MAX || setup.w_value() > UINT8_MAX) {
+      completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+      return;
+    }
+    zx_status_t status = owner_->UsbSetInterface(static_cast<uint8_t>(setup.w_index()),
+                                                 static_cast<uint8_t>(setup.w_value()));
+    if (status != ZX_OK) {
+      completer.Reply(fit::as_error(status));
+      return;
+    }
+    completer.Reply(fit::ok(fuchsia_hardware_usb::UsbControlTransferResponse{{.read_data = {}}}));
+    return;
+  }
+
+  zx_status_t status = owner_->Control(setup.bm_request_type(), setup.b_request(), setup.w_value(),
+                                       setup.w_index(), timeout, request.write_data().data(),
+                                       request.write_data().size(), nullptr, 0, nullptr);
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok(fuchsia_hardware_usb::UsbControlTransferResponse{{.read_data = {}}}));
+}
+
+void UsbDevice::UsbProtocolServer::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb::Usb> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  zxlogf(WARNING, "usb-bus: unknown fuchsia.hardware.usb/Usb method ordinal %lu",
+         metadata.method_ordinal);
+}
+
 zx_status_t UsbDevice::HubResetPort(uint32_t port) {
   if (!hub_intf_.is_valid()) {
     zxlogf(ERROR, "hub interface not set in usb_bus_reset_hub_port");
@@ -958,7 +1204,7 @@ zx_status_t UsbDevice::Init(async_dispatcher_t* dispatcher) {
 
   zx::result result = outgoing_.AddService<fuchsia_hardware_usb::UsbService>(
       fuchsia_hardware_usb::UsbService::InstanceHandler({
-          .device = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
+          .device = usb_server_.CreateHandler(dispatcher),
       }));
   if (result.is_error()) {
     zxlogf(ERROR, "Failed to add service");

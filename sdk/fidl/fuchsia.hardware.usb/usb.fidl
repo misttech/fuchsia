@@ -5,16 +5,167 @@
 library fuchsia.hardware.usb;
 
 using zx;
+using fuchsia.hardware.usb.descriptor;
 using fuchsia.hardware.usb.endpoint;
 
+/// Maximum length of a configuration descriptor block (32 KiB).
+///
+/// Note: While the USB specification allows configuration descriptors up to 65,535 bytes (64 KiB),
+/// this limit is set to 32,768 bytes (32 KiB) to leave ample headroom (32 KiB) for future FIDL
+/// protocol evolution (new struct fields, handles, or message headers) within Zircon's 64 KiB
+/// channel message limit (`ZX_CHANNEL_MAX_MSG_BYTES`, 65,536 bytes).
+const MAX_DESCRIPTOR_LEN uint32 = 32768;
+
+/// Maximum length of the data stage payload for a control transfer, calculated to fit within
+/// Zircon's 64 KiB channel message limit (`ZX_CHANNEL_MAX_MSG_BYTES`, 65,536 bytes) alongside
+/// FIDL headers and envelopes (48 bytes).
+const MAX_CONTROL_REQUEST_LEN uint64 = 65488;
+
+/// Protocol for managing and communicating with an attached USB device on the host bus.
+///
+/// Unless otherwise noted, methods on this protocol reply only after the corresponding USB bus
+/// transaction (if any) and host controller state update have completed.
 @discoverable
-closed protocol Usb {
-    /// Connects to endpoint. Returns
-    ///  * ZX_ERR_NOT_FOUND: if endpoint address does not exist.
-    ///  * ZX_ERR_ALREADY_BOUND: if the endpoint is already bound.
-    strict ConnectToEndpoint(resource struct {
+open protocol Usb {
+    /// Connects a channel to the specified USB endpoint (`ep_addr`).
+    ///
+    /// Endpoint 0 (the default control pipe) cannot be connected via this method; use
+    /// [`ControlTransfer`] instead.
+    ///
+    /// Closing the [`Usb`] channel does not automatically close open [`Endpoint`] channels, which
+    /// remain bound to the underlying host controller until explicitly closed by the client or
+    /// disconnected when the physical USB device is unplugged.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_INVALID_ARGS` if `ep_addr` refers to endpoint 0 or an endpoint number > 15.
+    ///     * `ZX_ERR_NOT_FOUND` if the device or endpoint address does not exist.
+    ///     * `ZX_ERR_ALREADY_BOUND` if the endpoint is already bound to an active channel.
+    ///     * `ZX_ERR_IO_NOT_PRESENT` if the device has been disconnected.
+    flexible ConnectToEndpoint(resource struct {
         ep_addr uint8;
         ep server_end:fuchsia.hardware.usb.endpoint.Endpoint;
+    }) -> () error zx.Status;
+
+    /// Returns the negotiated bus speed of the USB device.
+    flexible GetDeviceSpeed() -> (struct {
+        speed fuchsia.hardware.usb.descriptor.UsbSpeed;
+    });
+
+    /// Returns the internal device ID assigned by the USB host controller / bus driver.
+    flexible GetDeviceId() -> (struct {
+        device_id uint32;
+    });
+
+    /// Returns the USB device descriptor.
+    flexible GetDeviceDescriptor() -> (struct {
+        descriptor fuchsia.hardware.usb.descriptor.UsbDeviceDescriptor;
+    });
+
+    /// Returns the full raw configuration descriptor hierarchy (in standard USB wire format) for
+    /// the configuration with `bConfigurationValue == config`.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_INVALID_ARGS` if `config` does not match any configuration descriptor on the
+    ///       device.
+    flexible GetConfigurationDescriptor(struct {
+        config uint8;
+    }) -> (struct {
+        descriptor vector<uint8>:MAX_DESCRIPTOR_LEN;
+    }) error zx.Status;
+
+    /// Returns the `bConfigurationValue` of the currently active USB configuration.
+    flexible GetConfiguration() -> (struct {
+        configuration uint8;
+    });
+
+    /// Selects the active USB configuration (`SET_CONFIGURATION`) and updates the host controller
+    /// state.
+    ///
+    /// Replies after the `SET_CONFIGURATION` control transfer and controller state update complete.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_INVALID_ARGS` if `configuration` does not match any configuration on the
+    ///       device.
+    ///     * `ZX_ERR_TIMED_OUT` if the control transfer times out.
+    ///     * `ZX_ERR_IO_REFUSED` if the device stalls the request.
+    ///     * `ZX_ERR_IO_NOT_PRESENT` if the device has been disconnected.
+    ///     * `ZX_ERR_NOT_SUPPORTED` if invoked on an interface-scoped connection that prohibits
+    ///       device-wide configuration changes.
+    flexible SetConfiguration(struct {
+        configuration uint8;
+    }) -> () error zx.Status;
+
+    /// Selects an alternate setting for the specified USB interface (`SET_INTERFACE`) and updates
+    /// the host controller state.
+    ///
+    /// Replies after the `SET_INTERFACE` control transfer and controller state update complete.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_INVALID_ARGS` if `interface_number` or `alt_setting` is invalid.
+    ///     * `ZX_ERR_TIMED_OUT` if the control transfer times out.
+    ///     * `ZX_ERR_IO_REFUSED` if the device stalls the request.
+    ///     * `ZX_ERR_IO_NOT_PRESENT` if the device has been disconnected.
+    flexible SetInterface(struct {
+        interface_number uint8;
+        alt_setting uint8;
+    }) -> () error zx.Status;
+
+    /// Performs a synchronous USB control transfer (IN or OUT) over endpoint 0.
+    ///
+    /// Replies after the control transaction completes on the bus (and any associated host
+    /// controller state updates for standard `SET_CONFIGURATION` or `SET_INTERFACE` requests
+    /// finish).
+    ///
+    /// While this method can be used to read descriptors, prefer [`GetDeviceDescriptor`] and
+    /// [`GetConfigurationDescriptor`] when reading descriptors.
+    ///
+    /// If `timeout_ns` is 0 or negative, a default 5-second timeout is used (per USB 2.0
+    /// Section 9.2.6.4).
+    ///
+    /// * error:
+    ///     * `ZX_ERR_INVALID_ARGS` if the setup packet length or `write_data` size is invalid.
+    ///     * `ZX_ERR_TIMED_OUT` if the control transfer does not complete within the timeout.
+    ///     * `ZX_ERR_IO_REFUSED` if the device returns a STALL handshake.
+    ///     * `ZX_ERR_IO_NOT_PRESENT` if the device has been disconnected.
+    ///     * `ZX_ERR_NOT_SUPPORTED` if the server does not support raw control transfers.
+    // TODO(https://fxbug.dev/42178882): Consider rejecting control requests that are handled by
+    // dedicated methods on this protocol (e.g. configuration/interface selection, descriptor reads).
+    flexible ControlTransfer(struct {
+        setup fuchsia.hardware.usb.descriptor.UsbSetup;
+        timeout_ns zx.Duration;
+        write_data vector<uint8>:MAX_CONTROL_REQUEST_LEN;
+    }) -> (struct {
+        read_data vector<uint8>:MAX_CONTROL_REQUEST_LEN;
+    }) error zx.Status;
+
+    /// Enables or disables a USB endpoint on the host controller, configuring it as specified by
+    /// the provided descriptors.
+    ///
+    /// Replies after the host controller has updated its endpoint context and transfer ring state.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_INVALID_ARGS` if the endpoint descriptor is invalid.
+    ///     * `ZX_ERR_NO_RESOURCES` if the host controller lacks bandwidth or resources.
+    ///     * `ZX_ERR_IO_NOT_PRESENT` if the device has been disconnected.
+    ///     * `ZX_ERR_NOT_SUPPORTED` if the server does not support direct endpoint configuration.
+    flexible EnableEndpoint(struct {
+        ep_desc fuchsia.hardware.usb.descriptor.UsbEndpointDescriptor;
+        ss_com_desc fuchsia.hardware.usb.descriptor.UsbSsEpCompDescriptor;
+        enable bool;
+    }) -> () error zx.Status;
+
+    /// Resets an endpoint on the host controller that is in a halted or error state, returning
+    /// the host controller's endpoint ring and data toggle to a normal running state.
+    ///
+    /// Note: To clear a halt condition on a non-control endpoint, clients should also issue a
+    /// standard `CLEAR_FEATURE(ENDPOINT_HALT)` control request to the device to reset the device's
+    /// data toggle to DATA0.
+    ///
+    /// * error:
+    ///     * `ZX_ERR_INVALID_ARGS` if the endpoint is not halted or the address is invalid.
+    ///     * `ZX_ERR_IO_NOT_PRESENT` if the device has been disconnected.
+    flexible ResetEndpoint(struct {
+        ep_address uint8;
     }) -> () error zx.Status;
 
     // TODO(https://fxbug.dev/42178882): More functions to come. Equivalents to
