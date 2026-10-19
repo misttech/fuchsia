@@ -313,3 +313,46 @@ TEST_F(TestIsValidBatch, InvalidContextStateBufferSize) {
   };
   DoTest(buffer_desc, false, csb->ExecResource());
 }
+
+TEST_F(TestIsValidBatch, BatchOffsetOverflow) {
+  std::shared_ptr<MsdVsiBuffer> buffer;
+  ASSERT_NO_FATAL_FAILURE(CreateAndMapBuffer(default_context(), 4096, 1, 0x10000, &buffer));
+
+  auto command_buffer = std::make_unique<msd::magma_command_buffer>(msd::magma_command_buffer{
+      .resource_count = 1,
+      .batch_buffer_resource_index = 0,
+      .batch_start_offset = std::numeric_limits<uint64_t>::max() - 7,  // 8-byte aligned
+      .wait_semaphore_count = 0,
+      .signal_semaphore_count = 0,
+      .flags = 0,
+  });
+  std::vector<CommandBuffer::ExecResource> resources;
+  resources.emplace_back(CommandBuffer::ExecResource{.buffer = buffer, .offset = 0, .length = 8});
+
+  auto batch =
+      CommandBuffer::Create(default_context(), 0, std::move(command_buffer), std::move(resources),
+                            std::vector<std::shared_ptr<magma::PlatformSemaphore>>{});
+  ASSERT_NE(batch, nullptr);
+  ASSERT_TRUE(batch->PrepareForExecution());
+  EXPECT_FALSE(batch->IsValidBatch());
+}
+
+TEST_F(TestIsValidBatch, ContextStateBufferSizeOverflow) {
+  std::shared_ptr<MsdVsiBuffer> csb_buf;
+  ASSERT_NO_FATAL_FAILURE(CreateAndMapBuffer(default_context(), 4096, 1, 0x10000, &csb_buf));
+
+  CommandBuffer::ExecResource csb_resource = {
+      .buffer = csb_buf,
+      .offset = 0,
+      .length = std::numeric_limits<uint64_t>::max() - 2,
+  };
+
+  BufferDesc buffer_desc = {
+      .buffer_size = 4096,
+      .map_page_count = 1,
+      .data_size = 4088,
+      .batch_offset = 0,
+      .gpu_addr = 0x20000,
+  };
+  DoTest(buffer_desc, false, csb_resource);
+}

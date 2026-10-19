@@ -1034,7 +1034,9 @@ bool MsdVsiDevice::WriteLinkCommand(magma::PlatformBuffer* buf, uint32_t write_o
   // Check if we have enough space for the LINK command.
   uint32_t link_instr_size = kInstructionDwords * sizeof(uint32_t);
 
-  if (buf->size() < write_offset + link_instr_size) {
+  uint32_t required_size;
+  if (__builtin_add_overflow(write_offset, link_instr_size, &required_size) ||
+      buf->size() < required_size) {
     MAGMA_LOG(ERROR, "Buffer does not have %d free bytes for ringbuffer LINK", link_instr_size);
     return false;
   }
@@ -1228,8 +1230,13 @@ bool MsdVsiDevice::SubmitCommandBuffer(std::shared_ptr<MsdVsiContext> context,
         }
         // Write a LINK at the end of the context state buffer that links to the command buffer.
         uint32_t csb_length = magma::to_uint32(magma::round_up(csb->length, sizeof(uint64_t)));
-        bool res = WriteLinkCommand(csb->buffer->platform_buffer(),
-                                    magma::to_uint32(csb_length + csb->offset) /* write_offset */,
+        uint32_t csb_write_offset;
+        if (__builtin_add_overflow(csb_length, csb->offset, &csb_write_offset)) {
+          MAGMA_LOG(ERROR, "CSB write offset overflow: length %u offset %lu", csb_length,
+                    csb->offset);
+          return false;
+        }
+        bool res = WriteLinkCommand(csb->buffer->platform_buffer(), csb_write_offset,
                                     static_cast<uint16_t>(cmd_buf_prefetch), gpu_addr);
         if (!res) {
           MAGMA_LOG(ERROR, "Failed to write LINK from context state buffer to command buffer");

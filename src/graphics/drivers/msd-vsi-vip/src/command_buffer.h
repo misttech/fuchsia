@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef COMMAND_BUFFER_H
-#define COMMAND_BUFFER_H
+#ifndef SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_COMMAND_BUFFER_H_
+#define SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_COMMAND_BUFFER_H_
 
 #include <lib/magma_service/util/accessor.h>
 #include <lib/magma_service/util/command_buffer.h>
@@ -99,7 +99,7 @@ class CommandBuffer : public magma::CommandBuffer<MsdVsiContext, GpuMapping> {
     }
     auto mapping = GetBatchMapping();
     // |GetLength| returns the actual size of the user's data.
-    if (mapping->length() < batch_start_offset() + GetLength() + kAdditionalBytes) {
+    if (!CheckOverflowAndRange(batch_start_offset(), GetLength(), mapping->length())) {
       MAGMA_LOG(ERROR, "insufficient space for LINK command, mapped %lu used %lu need %u\n",
                 mapping->length(), GetLength(), kAdditionalBytes);
       return false;
@@ -110,7 +110,7 @@ class CommandBuffer : public magma::CommandBuffer<MsdVsiContext, GpuMapping> {
       // Check that the mapped length can fit the user data and also an additional LINK command.
       auto csb_mapping = GetContextStateBufferMapping();
       DASSERT(csb_mapping);
-      if (csb_mapping->length() < csb->length + kAdditionalBytes) {
+      if (!CheckOverflowAndRange(0, csb->length, csb_mapping->length())) {
         MAGMA_LOG(ERROR, "CSB: insufficient space for LINK command, mapped %lu used %lu need %u\n",
                   csb_mapping->length(), csb->length, kAdditionalBytes);
         return false;
@@ -120,7 +120,16 @@ class CommandBuffer : public magma::CommandBuffer<MsdVsiContext, GpuMapping> {
   }
 
  private:
+  static bool CheckOverflowAndRange(uint64_t offset, uint64_t length, uint64_t total_length) {
+    uint64_t required_bytes;
+    if (__builtin_add_overflow(offset, length, &required_bytes) ||
+        __builtin_add_overflow(required_bytes, kAdditionalBytes, &required_bytes)) {
+      return false;
+    }
+    return required_bytes <= total_length;
+  }
+
   std::optional<uint32_t> csb_index_;
 };
 
-#endif  // COMMAND_BUFFER_H
+#endif  // SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_COMMAND_BUFFER_H_

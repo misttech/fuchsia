@@ -271,3 +271,17 @@ TEST_F(MsdVsiDeviceTest, UnmapInvalidSram) {
   ASSERT_NE(device_->QuerySram(nullptr), MAGMA_STATUS_OK);
   ASSERT_FALSE(device_->external_sram_->UnmapCpu());  // Should already be unmapped.
 }
+
+TEST_F(MsdVsiDeviceTest, WriteLinkCommandOverflow) {
+  constexpr uint32_t kPageCount = 1;
+  std::unique_ptr<magma::PlatformBuffer> buffer =
+      magma::PlatformBuffer::Create(kPageSize * kPageCount, "test");
+  ASSERT_NE(buffer, nullptr);
+
+  // An offset of 0xFFFFFFF8 + 8 (link_instr_size) overflows uint32_t to 0.
+  EXPECT_FALSE(device_->WriteLinkCommand(buffer.get(), 0xFFFFFFF8 /* write_offset */,
+                                         1 /* link_prefetch */, 0x10000 /* link_addr */));
+  // An offset of 0xFFFFFFFD + 8 overflows uint32_t to 5.
+  EXPECT_FALSE(device_->WriteLinkCommand(buffer.get(), 0xFFFFFFFD /* write_offset */,
+                                         1 /* link_prefetch */, 0x10000 /* link_addr */));
+}

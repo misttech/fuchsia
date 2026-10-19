@@ -456,6 +456,7 @@ class MsdVsiDevice : public msd::Device,
   friend class MsdVsiDeviceTest_Reset_Test;
   friend class MsdVsiDeviceTest_Shutdown_Test;
   friend class MsdVsiDeviceTest_UnmapInvalidSram_Test;
+  friend class MsdVsiDeviceTest_WriteLinkCommandOverflow_Test;
 };
 
 #endif  // SRC_GRAPHICS_DRIVERS_MSD_VSI_VIP_SRC_MSD_VSI_DEVICE_H_
