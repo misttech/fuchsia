@@ -30,7 +30,10 @@ if (!is_kernel) {
 group("tests") {
   testonly = true
   if (!is_kernel) {
-    deps = [ ":range-check-rust-test-pkg" ]
+    deps = [
+      ":range-check-rust-test-pkg",
+      ":range_check_rs_test($host_toolchain)",
+    ]
   }
 }
 

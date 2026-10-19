@@ -416,9 +416,11 @@ kernel_rust_mod("kernel-rs") {
 
   sources = [
     "align.rs",
+    "auto_preempt_disabler.rs",
     "bits.rs",
     "deadline.rs",
     "event.rs",
+    "event_limiter.rs",
     "idle_power_thread.rs",
     "interrupt.rs",
     "koid.rs",
