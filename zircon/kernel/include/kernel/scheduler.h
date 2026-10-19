@@ -2268,6 +2268,10 @@ void cpp_current_mono_time_and_boot_ticks(Scheduler::SchedMonoTimeAndBootTicks* 
 void cpp_scheduler_block(Thread* current_thread);
 void cpp_scheduler_unblock(Thread* thread);
 void cpp_scheduler_unblock_list(Thread::UnblockList* list);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_scheduler_update_power_level(
+    uint32_t domain_id, uint64_t controller_id, power_management::ControlInterface interface,
+    uint64_t arg, cpu_mask_t* out_mask);
 }  // extern "C"
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_H_

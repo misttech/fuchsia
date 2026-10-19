@@ -14,6 +14,7 @@ use core::sync::atomic::{AtomicI32, Ordering};
 /// count. If the reference count ever reaches zero, the object's lifetime is
 /// over and it should be destroyed (`Release()` returns true if this is the case).
 #[repr(C)]
+#[derive(Debug)]
 pub struct RefCounted {
     ref_count: AtomicI32,
 }

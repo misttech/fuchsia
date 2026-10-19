@@ -12,9 +12,8 @@
 
 #[cfg(not(target_arch = "x86_64"))]
 use super::{
-    PowerCpuState, PowerRebootFlags, rust_power_cpu_off, rust_power_cpu_on,
-    rust_power_get_cpu_state, rust_power_opp_get, rust_power_opp_get_domain_count,
-    rust_power_opp_set, rust_power_reboot, rust_power_shutdown,
+    PowerRebootFlags, power_cpu_off, power_cpu_on, power_get_cpu_state, power_opp_get,
+    power_opp_get_domain_count, power_opp_set, power_reboot, power_shutdown,
 };
 #[cfg(not(target_arch = "x86_64"))]
 use crate::console::CMD_AVAIL_NORMAL;
@@ -259,17 +258,17 @@ pub unsafe extern "C" fn power_console_cmd(
         } else {
             PowerRebootFlags::Normal
         };
-        rust_power_reboot(flags);
+        power_reboot(flags);
         return 0;
     }
 
     if subcmd == c"shutdown" {
-        rust_power_shutdown();
+        power_shutdown();
         return 0;
     }
 
     if subcmd == c"cpu-off" {
-        let status = rust_power_cpu_off();
+        let status = power_cpu_off();
         dprintf!(ALWAYS, "cpu_off returned: {status:?}\n");
         return Status::result_into_raw(status);
     }
@@ -280,7 +279,7 @@ pub unsafe extern "C" fn power_console_cmd(
             return power_usage(cmd_name);
         }
         let hw_cpu_id = slice[2].arg_uint as u64;
-        let status = rust_power_cpu_on(hw_cpu_id, 0, 0);
+        let status = power_cpu_on(hw_cpu_id, 0, 0);
         dprintf!(ALWAYS, "cpu_on({hw_cpu_id}) returned: {status:?}\n");
         return Status::result_into_raw(status);
     }
@@ -291,27 +290,21 @@ pub unsafe extern "C" fn power_console_cmd(
             return power_usage(cmd_name);
         }
         let hw_cpu_id = slice[2].arg_uint as u64;
-        let mut state = PowerCpuState::Off;
-        // SAFETY: Stack-allocated `state` pointer is valid and aligned.
-        let status = unsafe { rust_power_get_cpu_state(hw_cpu_id, &mut state) };
-        if status.is_ok() {
-            dprintf!(ALWAYS, "CPU {hw_cpu_id} state: {state:?}\n");
-        } else if let Err(err) = status {
-            dprintf!(ALWAYS, "Failed to get CPU {hw_cpu_id} state: {err}\n");
+        let res = power_get_cpu_state(hw_cpu_id);
+        match res {
+            Ok(state) => dprintf!(ALWAYS, "CPU {hw_cpu_id} state: {state:?}\n"),
+            Err(err) => dprintf!(ALWAYS, "Failed to get CPU {hw_cpu_id} state: {err}\n"),
         }
-        return Status::result_into_raw(status);
+        return Status::result_into_raw(res.map(|_| ()));
     }
 
     if subcmd == c"opp-domains" {
-        let mut count = 0usize;
-        // SAFETY: Stack-allocated `count` pointer is valid and aligned.
-        let status = unsafe { rust_power_opp_get_domain_count(&mut count) };
-        if status.is_ok() {
-            dprintf!(ALWAYS, "OPP domain count: {count}\n");
-        } else if let Err(err) = status {
-            dprintf!(ALWAYS, "Failed to get OPP domain count: {err}\n");
+        let res = power_opp_get_domain_count();
+        match res {
+            Ok(count) => dprintf!(ALWAYS, "OPP domain count: {count}\n"),
+            Err(err) => dprintf!(ALWAYS, "Failed to get OPP domain count: {err}\n"),
         }
-        return Status::result_into_raw(status);
+        return Status::result_into_raw(res.map(|_| ()));
     }
 
     if subcmd == c"opp-get" {
@@ -320,15 +313,12 @@ pub unsafe extern "C" fn power_console_cmd(
             return power_usage(cmd_name);
         }
         let domain_id = slice[2].arg_uint as u32;
-        let mut opp = 0u64;
-        // SAFETY: Stack-allocated `opp` pointer is valid and aligned.
-        let status = unsafe { rust_power_opp_get(domain_id, &mut opp) };
-        if status.is_ok() {
-            dprintf!(ALWAYS, "Domain {domain_id} active OPP: {opp}\n");
-        } else if let Err(err) = status {
-            dprintf!(ALWAYS, "Failed to get domain {domain_id} OPP: {err}\n");
+        let res = power_opp_get(domain_id);
+        match res {
+            Ok(opp) => dprintf!(ALWAYS, "Domain {domain_id} active OPP: {opp}\n"),
+            Err(err) => dprintf!(ALWAYS, "Failed to get domain {domain_id} OPP: {err}\n"),
         }
-        return Status::result_into_raw(status);
+        return Status::result_into_raw(res.map(|_| ()));
     }
 
     if subcmd == c"opp-set" {
@@ -338,7 +328,7 @@ pub unsafe extern "C" fn power_console_cmd(
         }
         let domain_id = slice[2].arg_uint as u32;
         let opp = slice[3].arg_uint as u64;
-        let status = rust_power_opp_set(domain_id, opp);
+        let status = power_opp_set(domain_id, opp);
         if status.is_ok() {
             dprintf!(ALWAYS, "Set domain {domain_id} OPP to {opp}\n");
         } else if let Err(err) = status {

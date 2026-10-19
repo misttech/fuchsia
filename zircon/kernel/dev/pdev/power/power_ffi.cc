@@ -20,9 +20,6 @@ void rust_power_shutdown();
 zx_status_t rust_power_cpu_off();
 zx_status_t rust_power_cpu_on(uint64_t hw_cpu_id, paddr_t entry, uint64_t context);
 zx_status_t rust_power_get_cpu_state(uint64_t hw_cpu_id, power_cpu_state* out_state);
-zx_status_t rust_power_opp_set(uint32_t domain_id, uint64_t opp);
-zx_status_t rust_power_opp_get(uint32_t domain_id, uint64_t* out_opp);
-zx_status_t rust_power_opp_get_domain_count(size_t* out_count);
 
 void rust_pdev_register_power(const pdev_power_ops* ops);
 const pdev_power_ops* rust_pdev_swap_power_for_test(const pdev_power_ops* ops);
@@ -50,29 +47,6 @@ zx::result<power_cpu_state> power_get_cpu_state(uint64_t hw_cpu_id) {
     return zx::error(status);
   }
   return zx::ok(state);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t power_opp_set(uint32_t domain_id, uint64_t opp) {
-  return rust_power_opp_set(domain_id, opp);
-}
-
-zx::result<uint64_t> power_opp_get(uint32_t domain_id) {
-  uint64_t opp = 0;
-  zx_status_t status = rust_power_opp_get(domain_id, &opp);
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-  return zx::ok(opp);
-}
-
-zx::result<size_t> power_opp_get_domain_count() {
-  size_t count = 0;
-  zx_status_t status = rust_power_opp_get_domain_count(&count);
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-  return zx::ok(count);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

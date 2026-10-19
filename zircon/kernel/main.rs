@@ -83,6 +83,9 @@ pub mod percpu_writer;
 #[path = "lib/persistent-debuglog/persistent_debuglog.rs"]
 pub mod persistent_debuglog_rs;
 
+#[path = "lib/power-management/mod.rs"]
+pub mod power_management;
+
 #[path = "lib/root_resource_filter/src/mod.rs"]
 pub mod root_resource_filter;
 

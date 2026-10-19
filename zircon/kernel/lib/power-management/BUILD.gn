@@ -7,6 +7,7 @@
 import("//build/components/fuchsia_unittest_package.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/test.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
   headers = [
@@ -37,12 +38,32 @@ source_set("power-management") {
   public_deps = [ ":headers" ]
   deps = [ "//zircon/system/ulib/fbl" ]
   if (is_kernel) {
-    sources += [ "pdev-power-level-controller.cc" ]
+    sources += [ "pdev_power_level_controller_ffi.cc" ]
     deps += [
+      ":power-management-rs",
       "//zircon/kernel/dev/pdev/power",
       "//zircon/kernel/lib/boot-options",
       "//zircon/kernel/lib/ktl",
     ]
+  }
+}
+
+if (is_kernel) {
+  kernel_rust_mod("power-management-rs") {
+    sources = [
+      "mod.rs",
+      "pdev_power_level_controller.rs",
+      "pdev_power_level_controller_ffi.rs",
+      "power_level_controller.rs",
+    ]
+    deps = [
+      "//sdk/rust/zx-status",
+      "//sdk/rust/zx-types",
+      "//src/lib/ksync",
+      "//src/lib/zr",
+      "//zircon/system/ulib/fbl/rust:fbl",
+    ]
+    test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
   }
 }
 

@@ -17,6 +17,7 @@ kernel_rust_mod("power-rs") {
   sources = [
     "console.rs",
     "power.rs",
+    "power_ffi.rs",
   ]
   deps = [
     "//sdk/rust/zx-status",

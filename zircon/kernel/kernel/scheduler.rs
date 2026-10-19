@@ -26,6 +26,7 @@ use crate::kconcurrent::{
     single_chain_lock_guard,
 };
 use crate::ktrace_rs;
+use crate::power_management::ControlInterface;
 use crate::vm::vm_aspace::VmAspace;
 use core::mem::MaybeUninit;
 use core::pin::Pin;
@@ -34,6 +35,7 @@ use fbl::{
     WavlTreeAugmentedInvariantObserverTraits, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
 };
 use ffl::{FastFixed, Fixed};
+use zx_status::Status;
 
 struct ThreadName {
     buf: [u8; zx_types::ZX_MAX_NAME_LEN],
@@ -463,6 +465,22 @@ pub fn peek_active_mask() -> CpuMask {
     ACTIVE_SCHEDULERS.load(core::sync::atomic::Ordering::Relaxed)
 }
 
+unsafe extern "C" {
+    /// Updates the active power level for `domain_id` in the kernel scheduler.
+    ///
+    /// # Safety
+    ///
+    /// `out_mask` must be a valid, non-null, properly aligned writable pointer to a [`CpuMask`]
+    /// for the duration of this call.
+    fn cpp_scheduler_update_power_level(
+        domain_id: u32,
+        controller_id: u64,
+        interface: ControlInterface,
+        arg: u64,
+        out_mask: *mut CpuMask,
+    ) -> Result<(), Status>;
+}
+
 /// Peek at the current active mask state for a given CPU's scheduler.
 ///
 /// Note that this is just a lockless atomic load. Barring special
@@ -508,6 +526,21 @@ pub fn get_projected_cpu_stats(cpu_num: CpuNum) -> CpuStats {
         cpp_scheduler_get_projected_cpu_stats(cpu_num, stats.as_mut_ptr());
         stats.assume_init()
     }
+}
+
+/// Updates the active power level for the power domain identified by `domain_id`.
+pub fn update_power_level(
+    domain_id: u32,
+    controller_id: u64,
+    interface: ControlInterface,
+    arg: u64,
+) -> Result<CpuMask, Status> {
+    let mut mask = 0;
+    // SAFETY: `mask` is a valid writable `CpuMask` on the stack.
+    unsafe {
+        cpp_scheduler_update_power_level(domain_id, controller_id, interface, arg, &mut mask)
+    }?;
+    Ok(mask)
 }
 
 /// Indicates whether the CPU stats being updated is for a busy or idle time
