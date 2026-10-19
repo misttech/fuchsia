@@ -81,6 +81,7 @@ if (toolchain_environment == "kernel") {
 # Now set the value that will actually be used in GN
 optimize = _optimize
 
+# LINT.IfChange(debuginfo)
 declare_args() {
   # * `none` means no debugging information
   # * `backtrace` means sufficient debugging information to symbolize backtraces
@@ -93,6 +94,12 @@ _debuginfo_valid = [
   "backtrace",
   "debug",
 ]
+
+# LINT.ThenChange(
+#   //build/bazel/config/bazel_args.gni:debuginfo,
+#   //build/bazel/config/select/debuginfo/BUILD.bazel:debuginfo,
+#   //build/bazel/config/variables/BUILD.bazel:debuginfo,
+# )
 
 assert(_debuginfo_valid + [ debuginfo ] - [ debuginfo ] != _debuginfo_valid,
        "`debuginfo=\"...\"` must be one of $_debuginfo_valid")

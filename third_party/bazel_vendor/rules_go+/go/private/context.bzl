@@ -122,6 +122,8 @@ _COMPILER_OPTIONS_DENYLIST = dict({
     "-Werror=": None,
     "-Wstrict-prototypes": None,
     "-std=": None,
+    "-grecord-gcc-switches": None,
+    "-grecord-command-line": None,
     # Symbols are needed by Go, so keep them
     "-g0": None,
 
@@ -137,6 +139,8 @@ _COMPILER_OPTIONS_DENYLIST = dict({
 _LINKER_OPTIONS_DENYLIST = {
     "-Wl,--gc-sections": None,
     "-pie": None,  # See https://github.com/bazelbuild/rules_go/issues/3691.
+    "-grecord-gcc-switches": None,
+    "-grecord-command-line": None,
 }
 
 _UNSUPPORTED_FEATURES = [

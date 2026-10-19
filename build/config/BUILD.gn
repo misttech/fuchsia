@@ -595,6 +595,8 @@ config("optimize_coverage") {
   rustflags = [ "-Copt-level=1" ]
 }
 
+# LINT.IfChange(debuginfo_configs)
+
 # Each of the debuginfo_$debuginfo configs below corresponds to a single setting
 # that controls the amount of debugging information used and is controlled by
 # the debuginfo argument. The default_debuginfo level is set to
@@ -635,6 +637,8 @@ config("debuginfo_debug") {
   rustflags = [ "-Cdebuginfo=2" ]
 }
 
+# LINT.ThenChange(BUILD.bazel:debuginfo_configs)
+
 # LINT.IfChange(dwarf_version)
 config("dwarf_version") {
   cflags = [ "-gdwarf-${dwarf_version}" ]
@@ -672,6 +676,8 @@ config("compress_debuginfo") {
 #   BUILD.bazel:compress_debuginfo,
 #   compress_debuginfo_build_flags.bzl)
 
+# LINT.IfChange(default_debuginfo)
+
 compiler_config("default_debuginfo") {
   cflags = []
   linker_flags = []
@@ -697,6 +703,8 @@ compiler_config("default_debuginfo") {
     linker_flags += [ "/debug:full" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:default_debuginfo)
 
 config("default_frame_pointers") {
   if (enable_frame_pointers) {

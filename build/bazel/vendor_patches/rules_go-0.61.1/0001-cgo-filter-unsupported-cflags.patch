@@ -1,6 +1,6 @@
 --- a/third_party/bazel_vendor/rules_go+/go/private/context.bzl
 +++ b/third_party/bazel_vendor/rules_go+/go/private/context.bzl
-@@ -118,6 +118,10 @@
+@@ -118,6 +118,12 @@ _COMPILER_OPTIONS_DENYLIST = dict({
      "-fmax-errors=": None,
      "-Wall": None,
  
@@ -8,6 +8,17 @@
 +    "-Werror=": None,
 +    "-Wstrict-prototypes": None,
 +    "-std=": None,
++    "-grecord-gcc-switches": None,
++    "-grecord-command-line": None,
      # Symbols are needed by Go, so keep them
      "-g0": None,
  
+@@ -133,6 +139,8 @@ _COMPILER_OPTIONS_DENYLIST = dict({
+ _LINKER_OPTIONS_DENYLIST = {
+     "-Wl,--gc-sections": None,
+     "-pie": None,  # See https://github.com/bazelbuild/rules_go/issues/3691.
++    "-grecord-gcc-switches": None,
++    "-grecord-command-line": None,
+ }
+ 
+ _UNSUPPORTED_FEATURES = [
