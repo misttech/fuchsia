@@ -357,3 +357,134 @@ mod tests {
         }
     }
 }
+
+/// Synchronous IPI unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "sync_ipi_tests_rust")]
+mod sync_ipi_tests {
+    use crate::arch_rs::{
+        InterruptDisableGuard, blocking_disallowed, curr_cpu_num, ints_disabled, max_num_cpus,
+    };
+    use crate::kernel::event::Event;
+    use crate::kernel::thread::{self, DEFAULT_PRIORITY, ThreadPtr};
+    use crate::platform_rs::timer::InstantMono;
+    use core::ffi::c_void;
+    use core::sync::atomic::{AtomicI32, Ordering};
+    use debug::{ltracef, tracef};
+    use kprint::kprintln;
+    use pin_init::stack_pin_init;
+
+    const LOCAL_TRACE: u32 = 0;
+
+    const TEST_RUNS: u32 = 1000;
+
+    fn inorder_count_task(inorder_counter: &AtomicI32) {
+        assert!(ints_disabled());
+        assert!(blocking_disallowed());
+        let cpu_num = curr_cpu_num();
+
+        let oldval = inorder_counter.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(oldval, cpu_num as i32);
+        ltracef!("  CPU {} checked in\n", cpu_num);
+    }
+
+    fn counter_task(counter: &AtomicI32) {
+        assert!(ints_disabled());
+        assert!(blocking_disallowed());
+        counter.fetch_add(1, Ordering::SeqCst);
+    }
+
+    extern "C" fn deadlock_test_thread(arg: *mut c_void) -> i32 {
+        // SAFETY: `arg` points to a valid `Event` that outlives this thread (joined in
+        // `deadlock_test` before `gate` goes out of scope).
+        let gate = unsafe { &*(arg as *const Event) };
+        let _ = gate.wait_infinite();
+
+        let counter = AtomicI32::new(0);
+        let _block_interrupts = InterruptDisableGuard::new();
+        sync_exec(MpIpiTarget::AllButLocal, 0, || counter_task(&counter));
+        0
+    }
+
+    fn deadlock_test() {
+        // Test for a deadlock caused by multiple CPUs broadcasting concurrently.
+        stack_pin_init!(let gate = Event::init_unsignaled());
+        let gate_ptr = (&raw const *gate).cast_mut().cast::<c_void>();
+
+        let mut threads: [Option<ThreadPtr>; 5] = [None; 5];
+        for slot in &mut threads {
+            // SAFETY: `deadlock_test_thread` and `gate_ptr` are valid, and all created threads
+            // are joined below before `gate` goes out of scope.
+            match unsafe {
+                thread::create_with_priority(
+                    c"sync_ipi_deadlock".as_ptr(),
+                    deadlock_test_thread,
+                    gate_ptr,
+                    DEFAULT_PRIORITY,
+                )
+            } {
+                Ok(t) => {
+                    // SAFETY: `t` was just created and has not been resumed or joined yet.
+                    unsafe { t.resume() };
+                    *slot = Some(t);
+                }
+                Err(_) => {
+                    tracef!("  failed to create thread\n");
+                    break;
+                }
+            }
+        }
+
+        gate.signal();
+
+        for thread in threads.into_iter().flatten() {
+            // SAFETY: Each thread in `threads` was created above and has not been joined yet.
+            let _ = unsafe { thread.join(InstantMono::INFINITE) };
+        }
+    }
+
+    /// sync_ipi_tests
+    #[test]
+    fn sync_ipi_tests() {
+        let num_cpus = max_num_cpus();
+        let online = get_online_mask();
+        let expected_online = 1u32.checked_shl(num_cpus).unwrap_or(0).wrapping_sub(1);
+        if online != expected_online {
+            kprintln!("Can only run test with all CPUs online");
+            return true;
+        }
+
+        let runs = TEST_RUNS;
+
+        // Test that we're actually blocking and only signaling the ones we target.
+        for _ in 0..runs {
+            ltracef!("Sequential test\n");
+            let inorder_counter = AtomicI32::new(0);
+            for j in 0..num_cpus {
+                sync_exec(MpIpiTarget::Mask, 1u32 << j, || inorder_count_task(&inorder_counter));
+                ltracef!("  Finished signaling CPU {}\n", j);
+            }
+        }
+
+        // Test that we can signal multiple CPUs at the same time.
+        for _ in 0..runs {
+            ltracef!("Counter test ({} CPUs)\n", num_cpus);
+            let counter = AtomicI32::new(0);
+
+            {
+                let _irqd = InterruptDisableGuard::new();
+
+                sync_exec(MpIpiTarget::AllButLocal, 0, || counter_task(&counter));
+            }
+
+            ltracef!("  Finished signaling all but local ({})\n", counter.load(Ordering::SeqCst));
+            unittest::assert_eq!(counter.load(Ordering::SeqCst) as u32, num_cpus - 1);
+        }
+
+        for _ in 0..runs {
+            ltracef!("Deadlock test\n");
+            deadlock_test();
+            ltracef!("Deadlock test passed\n");
+        }
+    }
+}
