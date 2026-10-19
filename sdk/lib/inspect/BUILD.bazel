@@ -13,5 +13,6 @@ exports_files(
     visibility = [
         "//bundles/assembly:__subpackages__",
         "//src/security/lib/scrutiny/tests/route_verification:__pkg__",
+        "//src/sys/pkg/bin/system-update-checker:__pkg__",
     ],
 )
