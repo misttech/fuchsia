@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Procedural derive macros for SELinux binary policy parsing, serialization, and validation.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Attribute, Data, DeriveInput, Fields, Generics, Ident, Result, TypeParamBound,
+    Attribute, Data, DeriveInput, Field, Fields, Generics, Ident, Result, TypeParamBound,
     parse_macro_input,
 };
 
@@ -74,54 +76,18 @@ fn add_trait_bounds(mut generics: Generics, bound: TypeParamBound) -> Generics {
 #[proc_macro_derive(Parse, attributes(policy))]
 pub fn derive_parse(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
+    let parse_impl =
+        match dispatch_struct_or_wire_enum(&input, "Parse", gen_struct_parse, |data, wire_type| {
+            gen_enum_parse(&input.ident, data, wire_type)
+        }) {
+            Ok(tokens) => tokens,
+            Err(e) => return e.to_compile_error().into(),
+        };
+
+    let name = &input.ident;
     let generics =
         add_trait_bounds(input.generics, syn::parse_quote!(crate::policy::traits::Parse));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let wire_type = match get_wire_type(&input.attrs) {
-        Ok(t) => t,
-        Err(e) => return e.to_compile_error().into(),
-    };
-
-    let parse_impl = match &input.data {
-        Data::Struct(data) => {
-            if wire_type.is_some() {
-                return syn::Error::new_spanned(
-                    &name,
-                    "Structs do not support #[policy(wire_type = ...)] attribute",
-                )
-                .to_compile_error()
-                .into();
-            }
-            match gen_struct_parse(data) {
-                Ok(tokens) => tokens,
-                Err(e) => return e.to_compile_error().into(),
-            }
-        }
-        Data::Enum(data) => {
-            let Some(wire_type) = &wire_type else {
-                return syn::Error::new_spanned(
-                    &name,
-                    "Enums require #[policy(wire_type = ...)] attribute to derive Parse",
-                )
-                .to_compile_error()
-                .into();
-            };
-            match gen_enum_parse(&name, data, wire_type) {
-                Ok(tokens) => tokens,
-                Err(e) => return e.to_compile_error().into(),
-            }
-        }
-        _ => {
-            return syn::Error::new_spanned(
-                &name,
-                "Only structs and enums are supported by Parse derive",
-            )
-            .to_compile_error()
-            .into();
-        }
-    };
 
     let expanded = quote! {
         impl #impl_generics crate::policy::traits::Parse for #name #ty_generics #where_clause {
@@ -186,54 +152,20 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Serialize, attributes(policy))]
 pub fn derive_serialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
-    let generics =
-        add_trait_bounds(input.generics, syn::parse_quote!(crate::policy::traits::Serialize));
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let wire_type = match get_wire_type(&input.attrs) {
-        Ok(t) => t,
+    let serialize_impl = match dispatch_struct_or_wire_enum(
+        &input,
+        "Serialize",
+        gen_struct_serialize,
+        gen_enum_serialize,
+    ) {
+        Ok(tokens) => tokens,
         Err(e) => return e.to_compile_error().into(),
     };
 
-    let serialize_impl = match &input.data {
-        Data::Struct(data) => {
-            if wire_type.is_some() {
-                return syn::Error::new_spanned(
-                    &name,
-                    "Structs do not support #[policy(wire_type = ...)] attribute",
-                )
-                .to_compile_error()
-                .into();
-            }
-            match gen_struct_serialize(data) {
-                Ok(tokens) => tokens,
-                Err(e) => return e.to_compile_error().into(),
-            }
-        }
-        Data::Enum(data) => {
-            let Some(wire_type) = &wire_type else {
-                return syn::Error::new_spanned(
-                    &name,
-                    "Enums require #[policy(wire_type = ...)] attribute to derive Serialize",
-                )
-                .to_compile_error()
-                .into();
-            };
-            match gen_enum_serialize(data, wire_type) {
-                Ok(tokens) => tokens,
-                Err(e) => return e.to_compile_error().into(),
-            }
-        }
-        _ => {
-            return syn::Error::new_spanned(
-                &name,
-                "Only structs and enums are supported by Serialize derive",
-            )
-            .to_compile_error()
-            .into();
-        }
-    };
+    let name = &input.ident;
+    let generics =
+        add_trait_bounds(input.generics, syn::parse_quote!(crate::policy::traits::Serialize));
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
         impl #impl_generics crate::policy::traits::Serialize for #name #ty_generics #where_clause {
@@ -297,29 +229,20 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Validate, attributes(policy))]
 pub fn derive_validate(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
+    let validate_impl = match dispatch_struct_or_wire_enum(
+        &input,
+        "Validate",
+        gen_struct_validate,
+        |data, _wire_type| gen_enum_validate(data),
+    ) {
+        Ok(tokens) => tokens,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    let name = &input.ident;
     let generics =
         add_trait_bounds(input.generics, syn::parse_quote!(crate::policy::traits::Validate));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let validate_impl = match &input.data {
-        Data::Struct(data) => match gen_struct_validate(data) {
-            Ok(tokens) => tokens,
-            Err(e) => return e.to_compile_error().into(),
-        },
-        Data::Enum(data) => match gen_enum_validate(data) {
-            Ok(tokens) => tokens,
-            Err(e) => return e.to_compile_error().into(),
-        },
-        _ => {
-            return syn::Error::new_spanned(
-                &name,
-                "Only structs and enums are supported by Validate derive",
-            )
-            .to_compile_error()
-            .into();
-        }
-    };
 
     let expanded = quote! {
         impl #impl_generics crate::policy::traits::Validate for #name #ty_generics #where_clause {
@@ -339,26 +262,12 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(HasName)]
 pub fn derive_has_name(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let fields = match &input.data {
-        Data::Struct(data) => &data.fields,
-        _ => {
-            return syn::Error::new_spanned(&name, "HasName can only be derived for structs")
-                .to_compile_error()
-                .into();
-        }
-    };
-
-    let has_name_field =
-        fields.iter().any(|f| f.ident.as_ref().map_or(false, |ident| ident == "name"));
-
-    if !has_name_field {
-        return syn::Error::new_spanned(&name, "HasName derive requires a field named 'name'")
-            .to_compile_error()
-            .into();
+    if let Err(e) = find_struct_field(&input, "HasName", "name") {
+        return e.to_compile_error().into();
     }
+
+    let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let expanded = quote! {
         impl #impl_generics crate::policy::traits::HasName for #name #ty_generics #where_clause {
@@ -377,27 +286,14 @@ pub fn derive_has_name(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(HasPolicyId)]
 pub fn derive_has_policy_id(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
+    let id_field = match find_struct_field(&input, "HasPolicyId", "id") {
+        Ok(f) => f,
+        Err(e) => return e.to_compile_error().into(),
+    };
+    let id_field_type = &id_field.ty;
+
+    let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let fields = match &input.data {
-        Data::Struct(data) => &data.fields,
-        _ => {
-            return syn::Error::new_spanned(&name, "HasPolicyId can only be derived for structs")
-                .to_compile_error()
-                .into();
-        }
-    };
-
-    let id_field_type = fields.iter().find_map(|f| {
-        if f.ident.as_ref().map_or(false, |ident| ident == "id") { Some(&f.ty) } else { None }
-    });
-
-    let Some(id_field_type) = id_field_type else {
-        return syn::Error::new_spanned(&name, "HasPolicyId derive requires a field named 'id'")
-            .to_compile_error()
-            .into();
-    };
 
     let expanded = quote! {
         impl #impl_generics crate::policy::traits::HasPolicyId for #name #ty_generics #where_clause {
@@ -411,8 +307,75 @@ pub fn derive_has_policy_id(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// Target type name parsed from `#[policy(wire_type = ...)]` attribute, if present.
-fn get_wire_type(attrs: &[Attribute]) -> Result<Option<Ident>> {
+/// Looks up a named field on a struct input, returning an error if `input` is not a struct or
+/// lacks a field with `field_name`.
+fn find_struct_field<'a>(
+    input: &'a DeriveInput,
+    trait_name: &str,
+    field_name: &str,
+) -> Result<&'a Field> {
+    let fields = match &input.data {
+        Data::Struct(data) => &data.fields,
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                format!("{trait_name} can only be derived for structs"),
+            ));
+        }
+    };
+    fields.iter().find(|f| f.ident.as_ref().is_some_and(|ident| ident == field_name)).ok_or_else(
+        || {
+            syn::Error::new_spanned(
+                &input.ident,
+                format!("{trait_name} derive requires a field named '{field_name}'"),
+            )
+        },
+    )
+}
+
+/// Validates `#[policy(wire_type = ...)]` placement and dispatches code generation for a struct or
+/// wire enum.
+fn dispatch_struct_or_wire_enum<FS, FE>(
+    input: &DeriveInput,
+    trait_name: &str,
+    on_struct: FS,
+    on_enum: FE,
+) -> Result<proc_macro2::TokenStream>
+where
+    FS: FnOnce(&syn::DataStruct) -> Result<proc_macro2::TokenStream>,
+    FE: FnOnce(&syn::DataEnum, &Ident) -> Result<proc_macro2::TokenStream>,
+{
+    let wire_type = parse_wire_type(&input.attrs)?;
+    match &input.data {
+        Data::Struct(data) => {
+            if wire_type.is_some() {
+                return Err(syn::Error::new_spanned(
+                    &input.ident,
+                    "Structs do not support #[policy(wire_type = ...)] attribute",
+                ));
+            }
+            on_struct(data)
+        }
+        Data::Enum(data) => {
+            let Some(wire_type) = &wire_type else {
+                return Err(syn::Error::new_spanned(
+                    &input.ident,
+                    format!(
+                        "Enums require #[policy(wire_type = ...)] attribute to derive {trait_name}"
+                    ),
+                ));
+            };
+            on_enum(data, wire_type)
+        }
+        _ => Err(syn::Error::new_spanned(
+            &input.ident,
+            format!("Only structs and enums are supported by {trait_name} derive"),
+        )),
+    }
+}
+
+/// Parses the target type name from a `#[policy(wire_type = ...)]` attribute, if present.
+fn parse_wire_type(attrs: &[Attribute]) -> Result<Option<Ident>> {
     let mut wire_type = None;
     for attr in attrs {
         if attr.path().is_ident("policy") {
@@ -431,7 +394,7 @@ fn get_wire_type(attrs: &[Attribute]) -> Result<Option<Ident>> {
     Ok(wire_type)
 }
 
-/// Validator ensuring enum contains only unit variants with explicit discriminants.
+/// Validates that an enum contains only unit variants with explicit discriminants.
 fn validate_wire_enum(data_enum: &syn::DataEnum) -> Result<()> {
     for variant in &data_enum.variants {
         if !matches!(variant.fields, Fields::Unit) {
@@ -450,7 +413,7 @@ fn validate_wire_enum(data_enum: &syn::DataEnum) -> Result<()> {
     Ok(())
 }
 
-/// Helper to map across all fields of a struct (named or unnamed).
+/// Maps across all fields of a struct (named or unnamed).
 fn map_struct_fields<F>(data: &syn::DataStruct, mut gen_field: F) -> Vec<proc_macro2::TokenStream>
 where
     F: FnMut(&syn::Type, &syn::Member) -> proc_macro2::TokenStream,
@@ -477,7 +440,7 @@ where
     }
 }
 
-/// Helper to generate sequential `<FieldType as Trait>::method(&self.field, arg)?;` calls for all struct fields.
+/// Generates sequential `<FieldType as Trait>::method(&self.field, arg)?;` calls for all struct fields.
 fn gen_struct_visitor_calls(
     data: &syn::DataStruct,
     trait_path: &proc_macro2::TokenStream,
@@ -492,7 +455,7 @@ fn gen_struct_visitor_calls(
     Ok(quote! { #(#calls)* })
 }
 
-/// Code generator for parsing struct fields sequentially.
+/// Generates code for parsing struct fields sequentially.
 fn gen_struct_parse(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> {
     match &data.fields {
         Fields::Named(_) => {
@@ -523,7 +486,7 @@ fn gen_struct_parse(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> 
     }
 }
 
-/// Code generator for parsing unit enum from its wire representation.
+/// Generates code for parsing a unit enum from its wire representation.
 fn gen_enum_parse(
     name: &Ident,
     data_enum: &syn::DataEnum,
@@ -550,7 +513,7 @@ fn gen_enum_parse(
     })
 }
 
-/// Code generator for serializing struct fields sequentially.
+/// Generates code for serializing struct fields sequentially.
 fn gen_struct_serialize(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> {
     gen_struct_visitor_calls(
         data,
@@ -560,7 +523,7 @@ fn gen_struct_serialize(data: &syn::DataStruct) -> Result<proc_macro2::TokenStre
     )
 }
 
-/// Code generator for serializing unit enum to its wire representation.
+/// Generates code for serializing a unit enum to its wire representation.
 fn gen_enum_serialize(
     data_enum: &syn::DataEnum,
     wire_type: &Ident,
@@ -572,7 +535,7 @@ fn gen_enum_serialize(
     })
 }
 
-/// Code generator for validating struct fields sequentially.
+/// Generates code for validating struct fields sequentially.
 fn gen_struct_validate(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> {
     gen_struct_visitor_calls(
         data,
@@ -582,7 +545,7 @@ fn gen_struct_validate(data: &syn::DataStruct) -> Result<proc_macro2::TokenStrea
     )
 }
 
-/// Code generator for validating unit enum (always succeeds trivially).
+/// Generates code for validating a unit enum (always succeeds trivially).
 fn gen_enum_validate(data_enum: &syn::DataEnum) -> Result<proc_macro2::TokenStream> {
     validate_wire_enum(data_enum)?;
     Ok(quote! {})
