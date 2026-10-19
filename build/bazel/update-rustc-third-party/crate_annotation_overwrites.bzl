@@ -220,4 +220,10 @@ CRATE_ANNOTATION_OVERWRITES = {
             ],
         ),
     ],
+    "libc": [
+        crate.annotation(
+            version = "*",
+            gen_build_script = False,
+        ),
+    ],
 }
