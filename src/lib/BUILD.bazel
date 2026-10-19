@@ -12,5 +12,6 @@ test_suite(
     tests = [
         "//src/lib/backoff:backoff_tests",
         "//src/lib/callback:callback_tests",
+        "//src/lib/cstringify:cstringify-test",
     ],
 )

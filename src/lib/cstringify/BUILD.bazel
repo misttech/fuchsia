@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The cstringify!() macro should only be used in cases where a macro needs to
+# create a C-string literal from a path. Otherwise, the c"..." syntax or
+# CString::new() should be used instead.
+rustc_library(
+    name = "cstringify",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    # Add some friction to discourage use of the cstringify!() macro except when
+    # it's really needed.
+    visibility = [
+        "//src/lib/trace/rust/bench:__pkg__",
+    ],
+    # @bazel2gn:skip
+    with_unit_tests = True,
+)
+
+fx_unittest_package(
+    name = "cstringify-test",
+    package_name = "cstringify-test",
+    environments = ["//build/testing/environments:emu_env"],
+    unit_tests = [":cstringify_test"],
+    visibility = ["//src/lib:__pkg__"],
+)
