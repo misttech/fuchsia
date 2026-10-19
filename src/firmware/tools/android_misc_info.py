@@ -163,13 +163,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
 
     # Reformat any selected --prop(s) into a more Python-friendly dict containing
-    # {name: new_name}. If renaming isn't requested, `name` == `new_name`.
+    # {new_name: name}. If renaming isn't requested, `new_name` == `name`.
     prop_map = {}
     for prop_arg in args.prop:
         parts = prop_arg.split(":", maxsplit=1)
         name = parts[0]
         new_name = parts[1] if len(parts) > 1 else name
-        prop_map[name] = new_name
+        if new_name in prop_map:
+            raise ValueError(f"Duplicate output property name: '{new_name}'")
+        prop_map[new_name] = name
     args.prop = prop_map or None
 
     return args
@@ -183,7 +185,7 @@ def main(argv: list[str] | None = None) -> None:
     # If we got any --prop args, filter to just those properties, potentially
     # also renaming them if requested.
     if args.prop:
-        props = {new_name: props[name] for name, new_name in args.prop.items()}
+        props = {new_name: props[name] for new_name, name in args.prop.items()}
 
     _write_output(props, format=args.format, output=args.output)
 

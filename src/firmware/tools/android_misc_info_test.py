@@ -183,6 +183,23 @@ class AndroidMiscInfoTests(unittest.TestCase):
             json.loads(output), {"new_foo": "123", "new_baz": "789"}
         )
 
+    def test_prop_rename_same_source(self) -> None:
+        output = run_main(
+            "avb_foo_args=--prop foo:123",
+            flags=["--prop", "foo:new_foo_1", "--prop", "foo:new_foo_2"],
+        )
+        self.assertEqual(
+            json.loads(output), {"new_foo_1": "123", "new_foo_2": "123"}
+        )
+
+    def test_prop_rename_duplicate_target_fails(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            run_main(
+                "avb_foo_args=--prop foo:123 --prop bar:456",
+                flags=["--prop", "foo:same_name", "--prop", "bar:same_name"],
+            )
+        self.assertIn("Duplicate output property name", str(ctx.exception))
+
     def test_raw_output_single_prop(self) -> None:
         output = run_main(
             "avb_foo_args=--prop foo:123 --prop bar:456 --prop baz:789",
