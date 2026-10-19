@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+# NOTE: `multi-universal-tool_test` and `multi-universal-tool-tests` remain in
+# BUILD.gn above the sentinel because `multi-universal-tool_test` transitively
+# depends on `//src/storage/lib/vfs/rust:vfs` (`rustc_dylib("vfs_dylib")`),
+# which places two copies of `libvfs-<hash>.so` in Bazel `default_runfiles`.
+# TODO(https://fxbug.dev/574652780): Move :multi-universal-tool_test and :multi-universal-tool-tests to Bazel once the duplicate lib/libvfs-*.so packaging issue is fixed.
+rustc_binary(
+    name = "multi-universal-tool",
+    srcs = ["src/main.rs"],
+    crate_name = "multi_universal_tool",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/sys/pkg/bin/pkgctl:__pkg__",
+        "//src/sys/pkg/bin/update:__pkg__",
+    ],
+    deps = [
+        "//src/sys/pkg/bin/pkgctl:lib",
+        "//src/sys/pkg/bin/update:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
