@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #![allow(unused_imports, unused_macros)]
-use super::owned_wait_queue::OwnedWaitQueue;
+use super::owned_wait_queue::{OwnedWaitQueue, ThreadUnblockList};
 use super::percpu::PerCpu;
 use super::relaxed_atomic::RelaxedAtomicI64;
 use super::scheduler_state::{
@@ -28,6 +28,7 @@ use crate::kconcurrent::{
 use crate::ktrace_rs;
 use crate::vm::vm_aspace::VmAspace;
 use core::mem::MaybeUninit;
+use core::pin::Pin;
 use fbl::{
     Cursor, DefaultObjectTag, TrackingSize, WavlTree, WavlTreeAugmentedInvariantObserver,
     WavlTreeAugmentedInvariantObserverTraits, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
@@ -1776,6 +1777,7 @@ unsafe extern "C" {
     fn cpp_thread_call_migrate_fn_for_cpu(cpu: CpuNum);
     fn cpp_scheduler_block(current_thread: *mut Thread);
     fn cpp_scheduler_unblock(thread: *mut Thread);
+    fn cpp_scheduler_unblock_list(list: *mut core::ffi::c_void);
 }
 
 /// Returns a pointer to the `ChainLock` embedded in `thread`.
@@ -5690,6 +5692,33 @@ pub unsafe fn unblock(thread: OwnerGuard<'_, Thread>, clt_token: &ChainLockTrans
     // and the caller guarantees `thread` is ready to be unblocked in the scheduler.
     unsafe {
         cpp_scheduler_unblock(thread.as_raw());
+    }
+}
+
+/// Finishes unblocking all threads in `list`, placing each into a compatible scheduler's run
+/// queue, releasing its lock, and rescheduling if needed/permitted.
+///
+/// `list` is drained and left empty on return.
+///
+/// # Safety
+///
+/// The caller must ensure that:
+/// - Every [`Thread`] in `list` is a non-idle blocked thread that has been dequeued from its wait
+///   queue, has its lock held in the active transaction (marked as needing release via
+///   `mark_released` / `assert_acquired`), and is ready to be placed into a scheduler run queue
+///   (passing ownership of releasing each thread's lock to the scheduler).
+/// - The active transaction is finalized.
+#[inline]
+pub unsafe fn unblock_list(
+    list: Pin<&mut ThreadUnblockList>,
+    clt_token: &ChainLockTransactionToken,
+) {
+    assert_transaction_active(clt_token);
+    // SAFETY: Every thread in `list` has its lock held in the finalized active transaction and is
+    // ready to be unblocked in the scheduler, and `cpp_scheduler_unblock_list` moves the nodes out
+    // of `list` in-place, leaving `list` as a valid empty `Thread::UnblockList`.
+    unsafe {
+        cpp_scheduler_unblock_list(list.as_raw().cast());
     }
 }
 

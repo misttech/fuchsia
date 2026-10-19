@@ -14,7 +14,6 @@
 #include <fbl/macros.h>
 #include <fbl/wavl_tree_best_node_observer.h>
 #include <kernel/deadline.h>
-#include <kernel/ffi.h>
 #include <kernel/preempt_disabled_token.h>
 #include <kernel/scheduler_state.h>
 #include <kernel/timer.h>
@@ -43,6 +42,9 @@ enum class ForceInheritance : bool { No, Yes };
 extern "C" {
 void cpp_wait_queue_collection_insert(WaitQueueCollection* collection, Thread* thread);
 void cpp_wait_queue_collection_remove(WaitQueueCollection* collection, Thread* thread);
+bool cpp_wait_queue_lock_ops_lock_for_wake_all_in_queue(WaitQueue* queue,
+                                                        zx_status_t wait_queue_error,
+                                                        void* unblock_list_out);
 
 void rust_wait_queue_base_destroy(WaitQueueBase* wait_queue);
 uint32_t rust_wait_queue_base_magic(const WaitQueueBase* wait_queue);
@@ -66,22 +68,17 @@ void rust_wait_queue_base_timeout_handler(Timer* timer, zx_instant_mono_t now, v
 void rust_wait_queue_base_update_blocked_thread_effective_profile(WaitQueueBase* wait_queue,
                                                                   Thread* t);
 
-void cpp_wait_queue_init(ffi::Uninitialized<WaitQueue>* wait_queue);
-zx_status_t cpp_wait_queue_block(WaitQueue* wait_queue, Thread* current_thread,
-                                 const Deadline* deadline, Interruptible interruptible);
-zx_status_t cpp_wait_queue_block_instant(WaitQueue* wait_queue, Thread* current_thread,
-                                         zx_instant_mono_t deadline, Interruptible interruptible);
-zx_status_t cpp_wait_queue_block_etc(WaitQueue* wait_queue, Thread* current_thread,
-                                     const Deadline* deadline, uint32_t signal_mask,
-                                     ResourceOwnership reason, Interruptible interruptible);
-bool cpp_wait_queue_wake_one(WaitQueue* wait_queue, zx_status_t wait_queue_error);
-void cpp_wait_queue_wake_all(WaitQueue* wait_queue, zx_status_t wait_queue_error);
-bool cpp_wait_queue_wake_one_locked(WaitQueue* wait_queue, zx_status_t wait_queue_error,
-                                    bool* out_woken);
-bool cpp_wait_queue_wake_all_locked(WaitQueue* wait_queue, zx_status_t wait_queue_error,
-                                    uint32_t* out_woken);
-void cpp_wait_queue_dequeue_thread(WaitQueue* wait_queue, Thread* t, zx_status_t wait_queue_error);
-void cpp_wait_queue_move_thread(WaitQueue* source, WaitQueue* dest, Thread* t);
+zx_status_t rust_wait_queue_block_etc(WaitQueue* wait_queue, Thread* current_thread,
+                                      const Deadline* deadline, uint32_t signal_mask,
+                                      ResourceOwnership reason, Interruptible interruptible);
+bool rust_wait_queue_wake_one(WaitQueue* wait_queue, zx_status_t wait_queue_error);
+void rust_wait_queue_wake_all(WaitQueue* wait_queue, zx_status_t wait_queue_error);
+bool rust_wait_queue_wake_one_locked(WaitQueue* wait_queue, zx_status_t wait_queue_error,
+                                     bool* out_woken);
+bool rust_wait_queue_wake_all_locked(WaitQueue* wait_queue, zx_status_t wait_queue_error,
+                                     uint32_t* out_woken);
+void rust_wait_queue_dequeue_thread(WaitQueue* wait_queue, Thread* t, zx_status_t wait_queue_error);
+void rust_wait_queue_move_thread(WaitQueue* source, WaitQueue* dest, Thread* t);
 }  // extern "C"
 
 // The collection of threads currently blocked in a wait queue.
@@ -390,8 +387,6 @@ class WaitQueue : public WaitQueueBase {
       TA_REQ(get_lock(), ChainLockable::GetLock(*t));
 
  protected:
-  friend void cpp_wait_queue_move_thread(WaitQueue* source, WaitQueue* dest, Thread* t);
-
   explicit constexpr WaitQueue(uint32_t magic) : WaitQueueBase(magic) {}
 
   // Move the specified thread from the source wait queue to the dest wait queue.

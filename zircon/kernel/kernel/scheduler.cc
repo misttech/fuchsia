@@ -480,6 +480,13 @@ FFI_ALWAYS_INLINE void cpp_scheduler_unblock(Thread* thread) TA_NO_THREAD_SAFETY
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_unblock_list(Thread::UnblockList* list)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(list != nullptr);
+  Scheduler::Unblock(ktl::move(*list));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE cpu_stats* cpp_get_cpu_stats(cpu_num_t cpu_num) TA_NO_THREAD_SAFETY_ANALYSIS {
   return &percpu::Get(cpu_num).stats;
 }
