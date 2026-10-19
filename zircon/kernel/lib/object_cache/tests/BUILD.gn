@@ -4,11 +4,6 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-source_set("tests") {
+group("tests") {
   testonly = true
-  sources = [ "object_cache_tests.cc" ]
-  deps = [
-    "//zircon/kernel/lib/object_cache:headers",
-    "//zircon/kernel/lib/unittest",
-  ]
 }

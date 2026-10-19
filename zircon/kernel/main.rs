@@ -74,6 +74,9 @@ pub mod ktrace_rs;
 #[path = "lib/mmu_rcu/src/mod.rs"]
 pub mod mmu_rcu;
 
+#[path = "lib/object_cache/src/lib.rs"]
+pub mod object_cache;
+
 #[path = "lib/page_cache/page_cache.rs"]
 pub mod page_cache;
 

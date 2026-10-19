@@ -131,6 +131,14 @@
 // instances are allocated from to ensure the memory is valid until the last
 // Child is destroyed, even if that is after the ObjectCache has been destroyed.
 //
+extern "C" {
+void rust_object_cache_count_object_allocation();
+void rust_object_cache_count_object_free();
+void rust_object_cache_count_slab_allocation();
+void rust_object_cache_count_slab_free();
+size_t rust_object_cache_get_processor_count();
+}
+
 namespace object_cache {
 
 // The default allocator for the object cache. Allocates page sized slabs from
@@ -157,10 +165,10 @@ struct DefaultAllocator {
     pmm_free_page(page);
   }
 
-  static void CountObjectAllocation();
-  static void CountObjectFree();
-  static void CountSlabAllocation();
-  static void CountSlabFree();
+  static void CountObjectAllocation() { rust_object_cache_count_object_allocation(); }
+  static void CountObjectFree() { rust_object_cache_count_object_free(); }
+  static void CountSlabAllocation() { rust_object_cache_count_slab_allocation(); }
+  static void CountSlabFree() { rust_object_cache_count_slab_free(); }
 };
 
 // Selects between single cache and per-CPU cache modes when instantiating
@@ -704,7 +712,7 @@ class ObjectCache<T, Option::Single, Allocator> : private Allocator {
 
 namespace internal {
 
-size_t GetProcessorCount();
+inline size_t GetProcessorCount() { return rust_object_cache_get_processor_count(); }
 
 }  // namespace internal
 

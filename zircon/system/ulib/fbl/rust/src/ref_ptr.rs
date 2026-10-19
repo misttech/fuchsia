@@ -40,6 +40,22 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
         unsafe { RefPtr { ptr: NonNull::new_unchecked(ptr as *mut T) } }
     }
 
+    /// Constructs a `RefPtr` from a fresh object that has not been adopted yet.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be valid, non-null, and point to a freshly initialized `T` whose
+    ///   `RefCounted` has not been adopted yet.
+    /// - `ptr` must have been allocated in such a way that calling `T::recycle(ptr)` is a
+    ///   correct way to deallocate the pointer.
+    pub unsafe fn adopt_raw(ptr: *mut T) -> Self {
+        // SAFETY: The caller ensures `ptr` is valid and has not been adopted yet.
+        unsafe {
+            (*ptr).ref_count().adopt();
+            Self::from_raw(ptr)
+        }
+    }
+
     /// Constructs a `RefPtr` from a raw pointer that has already been adopted, unless the pointer
     /// is null.
     ///
@@ -474,6 +490,27 @@ mod tests {
             drop(ref_ptr2);
             assert!(destroyed.load(Ordering::Relaxed));
         }
+    }
+
+    #[test]
+    fn test_adopt_raw() {
+        let destroyed = Arc::new(AtomicBool::new(false));
+        let ptr = TestRustRefCounted::allocate(TestRustRefCounted {
+            ref_count: crate::RefCounted::new(),
+            __fbl_ref_counted_guard: (),
+            destroyed: destroyed.clone(),
+        })
+        .unwrap();
+
+        {
+            // SAFETY: `ptr` was freshly allocated by `TestRustRefCounted::allocate` and has not
+            // been adopted yet.
+            let ref_ptr = unsafe { RefPtr::adopt_raw(ptr.as_ptr()) };
+            assert_eq!(ref_ptr.ref_count().ref_count_debug(), 1);
+            assert!(!destroyed.load(Ordering::Relaxed));
+        }
+
+        assert!(destroyed.load(Ordering::Relaxed));
     }
 
     #[fbl::ref_counted]
