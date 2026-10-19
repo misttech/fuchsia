@@ -15,6 +15,6 @@
 // for a crashlog into the specified FILE target.  Usually, this is just a
 // register dump, but might also include other important things (stuff like the
 // memory immediately surrounding the instruction which triggered the fault).
-void arch_render_crashlog_registers(FILE& target, const crashlog_regs_t& iframe);
+extern "C" void arch_render_crashlog_registers(FILE& target, const crashlog_regs_t& iframe);
 
 #endif  // ZIRCON_KERNEL_INCLUDE_ARCH_CRASHLOG_H_

@@ -93,7 +93,6 @@ if (toolchain_base_environment == "kernel") {
   source_set("riscv64") {
     public_deps = [ ":headers" ]
     sources = [
-      "crashlog.cc",
       "exceptions.S",
       "exceptions.cc",
       "fpu_asm.S",
@@ -416,6 +415,7 @@ if (toolchain_base_environment == "kernel") {
       "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",
       "//zircon/kernel/lib/id_allocator:id-allocator-rs",
+      "//zircon/kernel/lib/libc:rust",
       "//zircon/kernel/lib/page:page-rs",
       "//zircon/system/ulib/affine/rust:affine",
       "//zircon/system/ulib/fbl/rust:fbl",

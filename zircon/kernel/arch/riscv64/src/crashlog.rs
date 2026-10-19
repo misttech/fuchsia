@@ -75,33 +75,21 @@ unsafe fn format_crashlog_registers<W: Write>(w: &mut W, regs: &CrashlogRegs) ->
     write_hex_reg(w, "tval", regs.tval)
 }
 
+/// Render the architecture specific details of an `iframe` in a fashion suitable
+/// for a crashlog into the specified `FILE` target.  Usually, this is just a
+/// register dump, but might also include other important things (stuff like the
+/// memory immediately surrounding the instruction which triggered the fault).
+///
 /// # Safety
-/// Caller guarantees valid callbacks and pointers.
+/// `regs.iframe` must either be null or point at a live `iframe_t` that outlives
+/// the call. It is captured at the time of the crash, so the caller is
+/// responsible for only rendering a crashlog whose frame is still mapped.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_arch_render_crashlog_registers(
-    write_cb: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, usize),
-    ctx: *mut core::ffi::c_void,
-    regs: *const CrashlogRegs,
+pub unsafe extern "C" fn arch_render_crashlog_registers(
+    target: &mut libc::stdio::FILE,
+    regs: &CrashlogRegs,
 ) {
-    if regs.is_null() {
-        return;
-    }
-    struct CbWriter {
-        cb: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, usize),
-        ctx: *mut core::ffi::c_void,
-    }
-    impl core::fmt::Write for CbWriter {
-        fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            // SAFETY: Forwarding string chunk to provided callback.
-            unsafe { (self.cb)(self.ctx, s.as_ptr(), s.len()) };
-            Ok(())
-        }
-    }
-    // SAFETY: null was ruled out above; the caller guarantees the remaining
-    // pointer refers to a live `CrashlogRegs` for the duration of the call.
-    let regs = unsafe { &*regs };
-    let mut writer = CbWriter { cb: write_cb, ctx };
     // SAFETY: `regs.iframe` came from the caller under the same contract this
-    // function documents, and `writer` only forwards to `write_cb`/`ctx`.
-    let _ = unsafe { format_crashlog_registers(&mut writer, regs) };
+    // function documents.
+    let _ = unsafe { format_crashlog_registers(target, regs) };
 }
