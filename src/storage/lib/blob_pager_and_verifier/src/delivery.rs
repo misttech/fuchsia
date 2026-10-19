@@ -7,7 +7,7 @@ use fuchsia_sync::Mutex;
 use mapping::{DELIVERY_VMO_SIZE, DeliveryCommand, RawDeliveryCommand};
 use std::collections::HashMap;
 use std::sync::Arc;
-use storage_ptr_slice::PtrByteSlice;
+use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 use zx;
 
 /// Unverified data pages delivered from the driver to be verified.
@@ -48,6 +48,31 @@ impl<'a> UnverifiedPages<'a> {
     }
 }
 
+/// Parameters for delivering verified parent blob data (or sparse zeroes) into a child VMO.
+pub struct ChildData<'a> {
+    pub parent_key: u64,
+    pub parent_offset: u64,
+    pub offset: u32,
+    pub length: u32,
+    pub payload_region_offset: u64,
+    pub payload: Option<MutPtrByteSlice<'a>>,
+    pub child_key: u64,
+    pub child_target_offset: u64,
+    pub in_chunk_offset: u32,
+    pub child_length: u32,
+}
+
+/// Parameters for delivering an EROFS inline tail directly from the parent blob's VMO in
+/// `pkg-cache`.
+#[derive(Copy, Clone, Debug)]
+pub struct ChildInlineTail {
+    pub parent_key: u64,
+    pub parent_byte_offset: u64,
+    pub child_key: u64,
+    pub child_target_offset: u64,
+    pub tail_length: u32,
+}
+
 /// Trait providing data delivery and blob metadata registration for incoming delivery commands.
 pub trait DeliveryQueueProvider: Send + Sync + 'static {
     /// Delivers data directly from the delivery VMO into the target blob.
@@ -67,6 +92,21 @@ pub trait DeliveryQueueProvider: Send + Sync + 'static {
     ) -> Result<(), Error> {
         let _ = (key, leaf_data, read_alignment);
         Ok(())
+    }
+
+    /// Verifies a parent blob chunk (when `data.length > 0`), applies file-tail zeroing in-place
+    /// in the delivery queue VMO, and supplies the resulting pages to the child VMO.
+    fn deliver_child_pages(&self, _data: ChildData<'_>) -> Result<(), Error> {
+        unreachable!()
+    }
+
+    /// Supplies an EROFS inline tail page by reading directly from the parent blob's VMO.
+    fn deliver_child_inline_tail(
+        &self,
+        _data: ChildInlineTail,
+        _receiver: &vmo_fifo::Receiver<RawDeliveryCommand>,
+    ) -> Result<(), Error> {
+        unreachable!()
     }
 }
 
@@ -142,7 +182,7 @@ impl DeliveryQueueProcessor {
             let receiver = receiver.clone();
             let provider = provider.clone();
             let thread = std::thread::spawn(move || {
-                while let Ok((msg, maybe_cmd)) = receiver.claim_with(|msg| {
+                while let Ok((mut msg, maybe_cmd)) = receiver.claim_with(|msg| {
                     match DeliveryCommand::try_from(**msg) {
                         // Process `RegisterBlob` before releasing the claim lock so that any
                         // subsequent `Data` commands for this blob claimed by other worker threads
@@ -160,14 +200,49 @@ impl DeliveryQueueProcessor {
                         }
                     }
                 }) {
-                    if let Some(cmd) = maybe_cmd {
-                        if let Err(e) = Self::handle_delivery(cmd, &msg, &*provider) {
-                            log::warn!("Failed to handle delivery command: {:?}", e);
+                    match maybe_cmd {
+                        Some(DeliveryCommand::ChildInlineTail {
+                            parent_key,
+                            parent_byte_offset,
+                            child_key,
+                            child_target_offset,
+                            tail_length,
+                        }) => {
+                            // Pop the header-only command from the FIFO before reading from the
+                            // parent blob's VMO so `read_head` can advance even if the parent VMO
+                            // read faults on an evicted or not-yet-supplied parent page.
+                            if let Err(e) = msg.pop() {
+                                log::warn!("Failed to pop delivery message: {:?}", e);
+                                break;
+                            }
+                            if let Err(e) = provider.deliver_child_inline_tail(
+                                ChildInlineTail {
+                                    parent_key,
+                                    parent_byte_offset,
+                                    child_key,
+                                    child_target_offset,
+                                    tail_length,
+                                },
+                                &receiver,
+                            ) {
+                                log::warn!("Failed to handle ChildInlineTail command: {:?}", e);
+                            }
                         }
-                    }
-                    if let Err(e) = msg.pop() {
-                        log::warn!("Failed to pop delivery message: {:?}", e);
-                        break;
+                        Some(cmd) => {
+                            if let Err(e) = Self::handle_delivery(cmd, &mut msg, &*provider) {
+                                log::warn!("Failed to handle delivery command: {:?}", e);
+                            }
+                            if let Err(e) = msg.pop() {
+                                log::warn!("Failed to pop delivery message: {:?}", e);
+                                break;
+                            }
+                        }
+                        None => {
+                            if let Err(e) = msg.pop() {
+                                log::warn!("Failed to pop delivery message: {:?}", e);
+                                break;
+                            }
+                        }
                     }
                 }
             });
@@ -183,7 +258,7 @@ impl DeliveryQueueProcessor {
 
     fn handle_delivery(
         cmd: DeliveryCommand,
-        raw_msg: &vmo_fifo::Message<'_, RawDeliveryCommand>,
+        raw_msg: &mut vmo_fifo::Message<'_, RawDeliveryCommand>,
         provider: &dyn DeliveryQueueProvider,
     ) -> Result<(), Error> {
         match cmd {
@@ -219,7 +294,38 @@ impl DeliveryQueueProcessor {
                 let leaf_data = raw_msg.payload_slice(offset, length);
                 provider.register_blob(key, leaf_data, read_alignment as usize)?;
             }
-            _ => {}
+            DeliveryCommand::ChildData {
+                parent_key,
+                parent_offset,
+                offset,
+                length,
+                child_key,
+                child_target_offset,
+                in_chunk_offset,
+                child_length,
+            } => {
+                let payload_region_offset = raw_msg.payload_region_offset() as u64;
+                let payload = (length > 0
+                    && offset
+                        .checked_add(length)
+                        .is_some_and(|end| end <= DELIVERY_VMO_SIZE as u32))
+                .then(|| raw_msg.payload_mut_slice(offset, length));
+                provider.deliver_child_pages(ChildData {
+                    parent_key,
+                    parent_offset,
+                    offset,
+                    length,
+                    payload_region_offset,
+                    payload,
+                    child_key,
+                    child_target_offset,
+                    in_chunk_offset,
+                    child_length,
+                })?;
+            }
+            DeliveryCommand::ChildInlineTail { .. } => {
+                unreachable!("ChildInlineTail is handled before handle_delivery");
+            }
         }
         Ok(())
     }
