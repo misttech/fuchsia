@@ -407,18 +407,16 @@ class PstreeTest(unittest.TestCase):
             self.assertEqual(ret, 1)
             self.assertIn("Process 999 not found", stderr_buf.getvalue())
 
-    def test_main_cli_broken_pipe_on_flush(self) -> None:
+    @mock.patch.object(pstree, "sys")
+    def test_main_cli_broken_pipe_on_flush(self, mock_sys: mock.Mock) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             proc_root = Path(tmpdir)
             self._create_mock_proc(proc_root, 10, 1, "parent", ["parent"])
 
-            mock_stdout = mock.Mock()
-            mock_stdout.flush.side_effect = BrokenPipeError("Broken pipe")
-
-            with mock.patch("sys.stdout", mock_stdout):
-                ret = pstree.main(["10", "--proc-root", str(proc_root)])
+            mock_sys.stdout.flush.side_effect = BrokenPipeError("Broken pipe")
+            ret = pstree.main(["10", "--proc-root", str(proc_root)])
             self.assertEqual(ret, 0)
-            mock_stdout.close.assert_called_once()
+            mock_sys.stdout.close.assert_called_once()
 
     def test_build_process_tree_handles_ppid_cycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
