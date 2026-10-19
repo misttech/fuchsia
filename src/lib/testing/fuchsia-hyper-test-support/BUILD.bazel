@@ -1,0 +1,56 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The device unit test package (`fuchsia-hyper-test-support-tests`) stays in
+# BUILD.gn because it packages GN-only `//src/connectivity/network/dns:component`
+# and `//src/connectivity/network/netstack3:component-for-tests`.
+rustc_library(
+    name = "fuchsia-hyper-test-support",
+    testonly = True,
+    srcs = [
+        "src/body.rs",
+        "src/fault_injection.rs",
+        "src/handler.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "fuchsia_hyper_test_support",
+    edition = "2024",
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    visibility = ["//src:__subpackages__"],
+    deps = [
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-hyper",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:hyper-util",
+        "//third_party/rust_crates/vendor:rustls",
+        "//third_party/rust_crates/vendor:rustls-pemfile",
+        "//third_party/rust_crates/vendor:tokio",
+        "//third_party/rust_crates/vendor:tokio-rustls",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//third_party/rust_crates/vendor:pin-project",
+        ],
+        "//conditions:default": [
+            "//src/developer/ffx/lib/netext:lib",
+        ],
+    }),
+)
+
+# @bazel2gn:skip
+host_rustc_test(
+    name = "fuchsia-hyper-test-support_host_test",
+    binary_name = "fuchsia_hyper_test_support_lib_test",
+    crate = ":fuchsia-hyper-test-support",
+    edition = "2024",
+)
