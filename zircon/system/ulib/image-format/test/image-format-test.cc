@@ -2232,3 +2232,216 @@ TEST(ImageFormat, LinearImageSizeWithoutBytesPerRowCrashes) {
   image_format.size() = {64u, 64u};
   ASSERT_DEATH([&] { ImageFormatImageSize(image_format); });
 }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+TEST(ImageFormat, PvricFormats_V2) {
+  EXPECT_EQ(fuchsia_images2::kFormatModifierVendorPvr, 0x9200000000000000ul);
+  EXPECT_EQ(fidl::ToUnderlying(fuchsia_images2::PixelFormatModifier::kPvrFbcdc8X8V14),
+            0x9200000000000022ul);
+  EXPECT_EQ(fidl::ToUnderlying(fuchsia_images2::PixelFormatModifier::kPvrFbcdc16X4V14),
+            0x9200000000000027ul);
+
+  const fuchsia_images2::PixelFormat kSupported32BppFormats[] = {
+      fuchsia_images2::PixelFormat::kR8G8B8A8,    fuchsia_images2::PixelFormat::kR8G8B8X8,
+      fuchsia_images2::PixelFormat::kB8G8R8A8,    fuchsia_images2::PixelFormat::kB8G8R8X8,
+      fuchsia_images2::PixelFormat::kA2R10G10B10, fuchsia_images2::PixelFormat::kA2B10G10R10,
+  };
+  const fuchsia_images2::PixelFormatModifier kPvricModifiers[] = {
+      fuchsia_images2::PixelFormatModifier::kPvrFbcdc8X8V14,
+      fuchsia_images2::PixelFormatModifier::kPvrFbcdc16X4V14,
+  };
+
+  for (auto modifier : kPvricModifiers) {
+    for (auto format : kSupported32BppFormats) {
+      PixelFormatAndModifier pfm(format, modifier);
+      EXPECT_TRUE(ImageFormatIsSupported(pfm));
+      EXPECT_FALSE(ImageFormatIsNonTiledSinglePlane(pfm));
+      EXPECT_TRUE(ImageFormatCompatibleWithProtectedMemory(pfm));
+      EXPECT_EQ(32u, ImageFormatBitsPerPixel(pfm));
+      EXPECT_EQ(4u, ImageFormatStrideBytesPerWidthPixel(pfm));
+      EXPECT_EQ(1u, ImageFormatSurfaceWidthMinDivisor(pfm));
+      EXPECT_EQ(1u, ImageFormatSurfaceHeightMinDivisor(pfm));
+      EXPECT_EQ(4u, ImageFormatSampleAlignment(pfm));
+    }
+
+    PixelFormatAndModifier rgb565(fuchsia_images2::PixelFormat::kR5G6B5, modifier);
+    EXPECT_TRUE(ImageFormatIsSupported(rgb565));
+    EXPECT_FALSE(ImageFormatIsNonTiledSinglePlane(rgb565));
+    EXPECT_TRUE(ImageFormatCompatibleWithProtectedMemory(rgb565));
+    EXPECT_EQ(16u, ImageFormatBitsPerPixel(rgb565));
+    EXPECT_EQ(2u, ImageFormatStrideBytesPerWidthPixel(rgb565));
+    EXPECT_EQ(1u, ImageFormatSurfaceWidthMinDivisor(rgb565));
+    EXPECT_EQ(1u, ImageFormatSurfaceHeightMinDivisor(rgb565));
+    EXPECT_EQ(2u, ImageFormatSampleAlignment(rgb565));
+
+    EXPECT_FALSE(ImageFormatIsSupported(
+        PixelFormatAndModifier(fuchsia_images2::PixelFormat::kNv12, modifier)));
+    EXPECT_FALSE(ImageFormatIsSupported(
+        PixelFormatAndModifier(fuchsia_images2::PixelFormat::kB8G8R8, modifier)));
+  }
+
+  // Test 16x4 V14 with 32-bpp (bytes_per_row_per_tile = 64, tile_rows = 4).
+  // For 18x17 with divisor 32: lcm(32, 64) = 64. 18 * 4 = 72 -> rounds up to 128 bytes/row.
+  // width_in_tiles = 128 / 64 = 2.
+  // height_in_tiles = ceil(17 / 4) = 5.
+  // num_tiles = 2 * 5 = 10.
+  // header_size = RoundUp(10, 256) = 256.
+  // data_size = 10 * 256 = 2560.
+  // total_size = 256 + 2560 = 2816.
+  {
+    sysmem_v2::ImageFormatConstraints constraints;
+    constraints.pixel_format() = fuchsia_images2::PixelFormat::kB8G8R8A8;
+    constraints.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kPvrFbcdc16X4V14;
+    constraints.min_size() = {12u, 12u};
+    constraints.max_size() = {100u, 100u};
+    constraints.bytes_per_row_divisor() = 32u;
+    constraints.max_bytes_per_row() = 100000u;
+
+    auto image_format_result = ImageConstraintsToFormat(constraints, 18, 17);
+    ASSERT_TRUE(image_format_result.is_ok());
+    auto image_format = image_format_result.take_value();
+    EXPECT_EQ(128u, image_format.bytes_per_row().value());
+    EXPECT_EQ(2816u, ImageFormatImageSize(image_format));
+
+    auto size_checked = ImageFormatImageSizeChecked(image_format);
+    ASSERT_TRUE(size_checked.IsValid());
+    EXPECT_EQ(2816u, size_checked.ValueOrDie());
+
+    uint64_t plane_offset = 0;
+    EXPECT_TRUE(ImageFormatPlaneByteOffset(image_format, 0, &plane_offset));
+    EXPECT_EQ(256u, plane_offset);
+    EXPECT_FALSE(ImageFormatPlaneByteOffset(image_format, 1, &plane_offset));
+    EXPECT_FALSE(ImageFormatPlaneByteOffset(image_format, 2, &plane_offset));
+    EXPECT_TRUE(ImageFormatPlaneByteOffset(image_format, 3, &plane_offset));
+    EXPECT_EQ(0u, plane_offset);
+    EXPECT_FALSE(ImageFormatPlaneByteOffset(image_format, 4, &plane_offset));
+
+    EXPECT_EQ(256u, ImageFormatPlaneByteOffsetChecked(image_format, 0).ValueOrDie());
+    EXPECT_FALSE(ImageFormatPlaneByteOffsetChecked(image_format, 1).IsValid());
+    EXPECT_FALSE(ImageFormatPlaneByteOffsetChecked(image_format, 2).IsValid());
+    EXPECT_EQ(0u, ImageFormatPlaneByteOffsetChecked(image_format, 3).ValueOrDie());
+    EXPECT_FALSE(ImageFormatPlaneByteOffsetChecked(image_format, 4).IsValid());
+
+    uint32_t row_bytes = 0;
+    EXPECT_TRUE(ImageFormatPlaneRowBytes(image_format, 0, &row_bytes));
+    EXPECT_EQ(128u, row_bytes);
+    EXPECT_FALSE(ImageFormatPlaneRowBytes(image_format, 1, &row_bytes));
+    EXPECT_FALSE(ImageFormatPlaneRowBytes(image_format, 2, &row_bytes));
+    EXPECT_TRUE(ImageFormatPlaneRowBytes(image_format, 3, &row_bytes));
+    EXPECT_EQ(2u, row_bytes);
+    EXPECT_FALSE(ImageFormatPlaneRowBytes(image_format, 4, &row_bytes));
+
+    EXPECT_EQ(128u, ImageFormatPlaneRowBytesChecked(image_format, 0).ValueOrDie());
+    EXPECT_FALSE(ImageFormatPlaneRowBytesChecked(image_format, 1).IsValid());
+    EXPECT_FALSE(ImageFormatPlaneRowBytesChecked(image_format, 2).IsValid());
+    EXPECT_EQ(2u, ImageFormatPlaneRowBytesChecked(image_format, 3).ValueOrDie());
+    EXPECT_FALSE(ImageFormatPlaneRowBytesChecked(image_format, 4).IsValid());
+  }
+
+  // Test 8x8 V14 with 32-bpp at 1920x1080 (bytes_per_row_per_tile = 32, tile_rows = 8).
+  // bytes_per_row = 1920 * 4 = 7680.
+  // width_in_tiles = 7680 / 32 = 240.
+  // height_in_tiles = 1080 / 8 = 135.
+  // num_tiles = 240 * 135 = 32400.
+  // header_size = RoundUp(32400, 256) = 32512.
+  // data_size = 32400 * 256 = 8294400.
+  // total_size = 32512 + 8294400 = 8326912.
+  {
+    sysmem_v2::ImageFormatConstraints constraints;
+    constraints.pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+    constraints.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kPvrFbcdc8X8V14;
+    constraints.min_size() = {1u, 1u};
+    constraints.max_size() = {4096u, 4096u};
+
+    auto image_format_result = ImageConstraintsToFormat(constraints, 1920, 1080);
+    ASSERT_TRUE(image_format_result.is_ok());
+    auto image_format = image_format_result.take_value();
+    EXPECT_EQ(7680u, image_format.bytes_per_row().value());
+    EXPECT_EQ(8326912u, ImageFormatImageSize(image_format));
+    EXPECT_EQ(32512u, ImageFormatPlaneByteOffsetChecked(image_format, 0).ValueOrDie());
+    EXPECT_EQ(0u, ImageFormatPlaneByteOffsetChecked(image_format, 3).ValueOrDie());
+    EXPECT_EQ(7680u, ImageFormatPlaneRowBytesChecked(image_format, 0).ValueOrDie());
+    EXPECT_EQ(240u, ImageFormatPlaneRowBytesChecked(image_format, 3).ValueOrDie());
+  }
+
+  // Test 16x4 V14 with 16-bpp R5G6B5 (bytes_per_row_per_tile = 64, tile_rows = 4).
+  // For width = 18 (36 bytes): rounds up to 64 bytes/row (1 tile wide = 32 pixels).
+  // height = 17: ceil(17 / 4) = 5 tiles high.
+  // num_tiles = 1 * 5 = 5.
+  // header_size = 256, data_size = 1280, total_size = 1536.
+  {
+    sysmem_v2::ImageFormatConstraints constraints;
+    constraints.pixel_format() = fuchsia_images2::PixelFormat::kR5G6B5;
+    constraints.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kPvrFbcdc16X4V14;
+    constraints.min_size() = {1u, 1u};
+    constraints.max_size() = {4096u, 4096u};
+
+    auto image_format_result = ImageConstraintsToFormat(constraints, 18, 17);
+    ASSERT_TRUE(image_format_result.is_ok());
+    auto image_format = image_format_result.take_value();
+    EXPECT_EQ(64u, image_format.bytes_per_row().value());
+    EXPECT_EQ(1536u, ImageFormatImageSize(image_format));
+    EXPECT_EQ(256u, ImageFormatPlaneByteOffsetChecked(image_format, 0).ValueOrDie());
+    EXPECT_EQ(0u, ImageFormatPlaneByteOffsetChecked(image_format, 3).ValueOrDie());
+    EXPECT_EQ(64u, ImageFormatPlaneRowBytesChecked(image_format, 0).ValueOrDie());
+    EXPECT_EQ(1u, ImageFormatPlaneRowBytesChecked(image_format, 3).ValueOrDie());
+  }
+}
+
+TEST(ImageFormat, PvricFormats_V2_wire) {
+  fidl::Arena allocator;
+  sysmem_v2::wire::ImageFormatConstraints constraints(allocator);
+  constraints.set_pixel_format(fuchsia_images2::wire::PixelFormat::kB8G8R8A8);
+  constraints.set_pixel_format_modifier(
+      allocator, fuchsia_images2::wire::PixelFormatModifier::kPvrFbcdc16X4V14);
+  constraints.set_min_size(allocator, fuchsia_math::wire::SizeU{12u, 12u});
+  constraints.set_max_size(allocator, fuchsia_math::wire::SizeU{100u, 100u});
+  constraints.set_bytes_per_row_divisor(32u);
+  constraints.set_max_bytes_per_row(100000u);
+
+  auto image_format_result = ImageConstraintsToFormat(allocator, constraints, 18, 17);
+  ASSERT_TRUE(image_format_result.is_ok());
+  auto image_format = image_format_result.take_value();
+  EXPECT_EQ(128u, image_format.bytes_per_row());
+  EXPECT_EQ(2816u, ImageFormatImageSize(image_format));
+  EXPECT_EQ(2816u, ImageFormatImageSizeChecked(image_format).ValueOrDie());
+  EXPECT_EQ(256u, ImageFormatPlaneByteOffsetChecked(image_format, 0).ValueOrDie());
+  EXPECT_EQ(0u, ImageFormatPlaneByteOffsetChecked(image_format, 3).ValueOrDie());
+  EXPECT_EQ(128u, ImageFormatPlaneRowBytesChecked(image_format, 0).ValueOrDie());
+  EXPECT_EQ(2u, ImageFormatPlaneRowBytesChecked(image_format, 3).ValueOrDie());
+}
+
+TEST(ImageFormat, PvricFormats_V1_wire) {
+  sysmem_v1::wire::PixelFormat format = {
+      .type = sysmem_v1::wire::PixelFormatType::kBgra32,
+      .has_format_modifier = true,
+      .format_modifier =
+          {
+              .value = fidl::ToUnderlying(fuchsia_images2::PixelFormatModifier::kPvrFbcdc16X4V14),
+          },
+  };
+  EXPECT_TRUE(ImageFormatIsSupported(format));
+  EXPECT_TRUE(ImageFormatCompatibleWithProtectedMemory(format));
+
+  sysmem_v1::wire::ImageFormatConstraints constraints = {
+      .pixel_format = format,
+      .min_coded_width = 12,
+      .max_coded_width = 100,
+      .min_coded_height = 12,
+      .max_coded_height = 100,
+      .max_bytes_per_row = 100000,
+      .bytes_per_row_divisor = 32,
+  };
+
+  auto optional_format = ImageConstraintsToFormat(constraints, 18, 17);
+  ASSERT_TRUE(optional_format.is_ok());
+  auto& image_format = optional_format.value();
+  EXPECT_EQ(128u, image_format.bytes_per_row);
+  EXPECT_EQ(2816u, ImageFormatImageSize(image_format));
+  EXPECT_EQ(2816u, ImageFormatImageSizeChecked(image_format).ValueOrDie());
+  EXPECT_EQ(256u, ImageFormatPlaneByteOffsetChecked(image_format, 0).ValueOrDie());
+  EXPECT_EQ(0u, ImageFormatPlaneByteOffsetChecked(image_format, 3).ValueOrDie());
+  EXPECT_EQ(128u, ImageFormatPlaneRowBytesChecked(image_format, 0).ValueOrDie());
+  EXPECT_EQ(2u, ImageFormatPlaneRowBytesChecked(image_format, 3).ValueOrDie());
+}
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)

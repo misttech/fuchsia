@@ -152,6 +152,12 @@
     },
     {
         "kind": "const",
+        "name": "fuchsia.images2/FORMAT_MODIFIER_VENDOR_PVR",
+        "type": "uint64",
+        "value": "10520408729537478656"
+    },
+    {
+        "kind": "const",
         "name": "fuchsia.images2/FORMAT_MODIFIER_VENDOR_QCOM",
         "type": "uint64",
         "value": "360287970189639680"
@@ -435,6 +441,16 @@
         "kind": "enum/member",
         "name": "fuchsia.images2/PixelFormatModifier.LINEAR",
         "value": "0"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.images2/PixelFormatModifier.PVR_FBCDC_16X4_V14",
+        "value": "10520408729537478695"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.images2/PixelFormatModifier.PVR_FBCDC_8X8_V14",
+        "value": "10520408729537478690"
     },
     {
         "kind": "enum",

@@ -1095,13 +1095,244 @@ class ArmTELinearFormats : public ImageFormatSet {
   }
 };
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+class PvricFormats : public ImageFormatSet {
+ public:
+  const char* Name() const override { return "PvricFormats"; }
+
+  bool IsSupported(const PixelFormatAndModifier& pixel_format) const override {
+    switch (pixel_format.pixel_format) {
+      case PixelFormat::kR8G8B8A8:
+      case PixelFormat::kR8G8B8X8:
+      case PixelFormat::kB8G8R8A8:
+      case PixelFormat::kB8G8R8X8:
+      case PixelFormat::kA2R10G10B10:
+      case PixelFormat::kA2B10G10R10:
+      case PixelFormat::kR5G6B5:
+        break;
+      default:
+        return false;
+    }
+    switch (pixel_format.pixel_format_modifier) {
+      case fuchsia_images2::PixelFormatModifier::kPvrFbcdc8X8V14:
+      case fuchsia_images2::PixelFormatModifier::kPvrFbcdc16X4V14:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const override {
+    auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
+    ZX_ASSERT(IsSupported(pixel_format_and_modifier));
+
+    CheckedNumeric<uint32_t> width_in_tiles, height_in_tiles;
+    GetSizeInTiles(image_format, &width_in_tiles, &height_in_tiles);
+    return HeaderSize(width_in_tiles, height_in_tiles) + DataSize(width_in_tiles, height_in_tiles);
+  }
+
+  CheckedNumeric<uint64_t> ImageFormatPlaneByteOffset(const ImageFormat& image_format,
+                                                      uint32_t plane) const override {
+    auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
+    ZX_ASSERT(IsSupported(pixel_format_and_modifier));
+
+    if (plane == kPvricTilesPlane) {
+      CheckedNumeric<uint32_t> width_in_tiles, height_in_tiles;
+      GetSizeInTiles(image_format, &width_in_tiles, &height_in_tiles);
+      return HeaderSize(width_in_tiles, height_in_tiles);
+    }
+    if (plane == kPvricHeaderPlane) {
+      return 0;
+    }
+    return kInvalidCheckedNumeric64;
+  }
+
+  CheckedNumeric<uint32_t> ImageFormatPlaneRowBytes(const ImageFormat& image_format,
+                                                    uint32_t plane) const override {
+    auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
+    ZX_ASSERT(IsSupported(pixel_format_and_modifier));
+
+    if (plane == kPvricTilesPlane) {
+      CheckedNumeric<uint32_t> width_in_tiles, height_in_tiles;
+      GetSizeInTiles(image_format, &width_in_tiles, &height_in_tiles);
+      const auto& tiling_data =
+          GetTilingData(GetTilingTypeForPixelFormat(pixel_format_and_modifier));
+      return width_in_tiles * tiling_data.bytes_per_row_per_tile;
+    }
+    if (plane == kPvricHeaderPlane) {
+      CheckedNumeric<uint32_t> width_in_tiles, height_in_tiles;
+      GetSizeInTiles(image_format, &width_in_tiles, &height_in_tiles);
+      return width_in_tiles;
+    }
+    return kInvalidCheckedNumeric32;
+  }
+
+  bool ImageFormatIsNonTiledSinglePlane(
+      const PixelFormatAndModifier& pixel_format_and_modifier) const override {
+    return false;
+  }
+
+  CheckedNumeric<uint32_t> ImageFormatMinimumRowBytes(
+      const fuchsia_sysmem2::ImageFormatConstraints& constraints,
+      CheckedNumeric<uint32_t> width) const override {
+    auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
+    ZX_ASSERT(IsSupported(pixel_format_and_modifier));
+
+    // Caller must set pixel_format.
+    ZX_ASSERT(constraints.pixel_format().has_value());
+
+    if (constraints.size_alignment().has_value()) {
+      width = CheckRoundUp(width, safemath::CheckedNumeric(constraints.size_alignment()->width()));
+    }
+
+    if (!width.IsValid()) {
+      return kInvalidCheckedNumeric32;
+    }
+
+    if ((constraints.min_size().has_value() &&
+         width.ValueOrDie() < constraints.min_size()->width()) ||
+        (constraints.max_size().has_value() &&
+         width.ValueOrDie() > constraints.max_size()->width())) {
+      return kInvalidCheckedNumeric32;
+    }
+    uint32_t bytes_per_row_divisor = constraints.bytes_per_row_divisor().has_value()
+                                         ? constraints.bytes_per_row_divisor().value()
+                                         : 1;
+    if (bytes_per_row_divisor == 0) {
+      return kInvalidCheckedNumeric32;
+    }
+
+    const auto& tiling_data = GetTilingData(GetTilingTypeForPixelFormat(pixel_format_and_modifier));
+
+    // The row bytes must be a multiple of both the constraints' divisor and the tile width in
+    // bytes, so use their least common multiple.
+    const uint32_t bytes_per_row_per_tile = tiling_data.bytes_per_row_per_tile.ValueOrDie();
+    CheckedNumeric<uint32_t> constraints_bytes_per_row_divisor =
+        CheckMul(bytes_per_row_divisor / std::gcd(bytes_per_row_divisor, bytes_per_row_per_tile),
+                 bytes_per_row_per_tile);
+
+    CheckedNumeric<uint32_t> non_padding_bytes_per_row =
+        CheckedNumeric(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier)) * width;
+    if (!non_padding_bytes_per_row.IsValid()) {
+      return kInvalidCheckedNumeric32;
+    }
+
+    CheckedNumeric<uint32_t> constraints_min_bytes_per_row =
+        constraints.min_bytes_per_row().has_value() ? constraints.min_bytes_per_row().value() : 0;
+    CheckedNumeric<uint32_t> minimum_row_bytes =
+        CheckRoundUp(safemath::CheckMax(non_padding_bytes_per_row, constraints_min_bytes_per_row),
+                     constraints_bytes_per_row_divisor);
+    if (!minimum_row_bytes.IsValid()) {
+      return kInvalidCheckedNumeric32;
+    }
+    if (constraints.max_bytes_per_row().has_value() &&
+        minimum_row_bytes.ValueOrDie() > constraints.max_bytes_per_row().value()) {
+      return kInvalidCheckedNumeric32;
+    }
+    return minimum_row_bytes;
+  }
+
+ private:
+  struct TilingData {
+    CheckedNumeric<uint32_t> tile_rows;
+    CheckedNumeric<uint32_t> bytes_per_row_per_tile;
+  };
+
+  enum class TilingType { k8x8, k16x4 };
+
+  // Each PVRIC tile represents 256 bytes of uncompressed pixel data, with a 1-byte header per tile
+  // in the header section aligned to 256 bytes.
+  static constexpr CheckedNumeric<uint64_t> kPvricTileByteSize = 256;
+  static constexpr CheckedNumeric<uint64_t> kPvricHeaderAlignment = 256;
+  static constexpr uint32_t kPvricTilesPlane = 0;
+  static constexpr uint32_t kPvricHeaderPlane = 3;
+
+  static constexpr TilingData kTilingData[] = {
+      {
+          // k8x8: 8x8 at 32-bpp, 16x8 at 16-bpp
+          .tile_rows = 8,
+          .bytes_per_row_per_tile = 32,
+      },
+      {
+          // k16x4: 16x4 at 32-bpp, 32x4 at 16-bpp
+          .tile_rows = 4,
+          .bytes_per_row_per_tile = 64,
+      },
+  };
+
+  static TilingType GetTilingTypeForPixelFormat(const PixelFormatAndModifier& pixel_format) {
+    switch (pixel_format.pixel_format_modifier) {
+      case fuchsia_images2::PixelFormatModifier::kPvrFbcdc8X8V14:
+        return TilingType::k8x8;
+      case fuchsia_images2::PixelFormatModifier::kPvrFbcdc16X4V14:
+        return TilingType::k16x4;
+      default:
+        ZX_PANIC("Not a PVRIC modifier: 0x%" PRIx64,
+                 fidl::ToUnderlying(pixel_format.pixel_format_modifier));
+    }
+  }
+
+  static const TilingData& GetTilingData(TilingType type) {
+    static_assert(static_cast<size_t>(TilingType::k16x4) < std::size(kTilingData));
+    ZX_ASSERT(static_cast<uint32_t>(type) < std::size(kTilingData));
+    return kTilingData[static_cast<uint32_t>(type)];
+  }
+
+  static void GetSizeInTiles(const ImageFormat& image_format, CheckedNumeric<uint32_t>* width_out,
+                             CheckedNumeric<uint32_t>* height_out) {
+    ZX_ASSERT(width_out);
+    ZX_ASSERT(height_out);
+    *width_out = kInvalidCheckedNumeric32;
+    *height_out = kInvalidCheckedNumeric32;
+
+    auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
+    const auto& tiling_data = GetTilingData(GetTilingTypeForPixelFormat(pixel_format_and_modifier));
+    ZX_ASSERT(image_format.bytes_per_row().has_value());
+    ZX_ASSERT(image_format.size().has_value());
+    CheckedNumeric<uint32_t> bytes_per_row = image_format.bytes_per_row().value();
+
+    const auto& bytes_per_row_per_tile = tiling_data.bytes_per_row_per_tile;
+    const auto& tile_rows = tiling_data.tile_rows;
+
+    *width_out = CheckRoundUp(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
+    *height_out =
+        CheckRoundUp(CheckedNumeric(image_format.size()->height()), tile_rows) / tile_rows;
+
+    if (!width_out->IsValid()) {
+      *height_out = kInvalidCheckedNumeric32;
+    }
+    if (!height_out->IsValid()) {
+      *width_out = kInvalidCheckedNumeric32;
+    }
+  }
+
+  static CheckedNumeric<uint64_t> HeaderSize(CheckedNumeric<uint32_t> width_in_tiles,
+                                             CheckedNumeric<uint32_t> height_in_tiles) {
+    CheckedNumeric<uint64_t> num_tiles = CheckedNumeric<uint64_t>(width_in_tiles) * height_in_tiles;
+    return CheckRoundUp(num_tiles, kPvricHeaderAlignment);
+  }
+
+  static CheckedNumeric<uint64_t> DataSize(CheckedNumeric<uint32_t> width_in_tiles,
+                                           CheckedNumeric<uint32_t> height_in_tiles) {
+    CheckedNumeric<uint64_t> num_tiles = CheckedNumeric<uint64_t>(width_in_tiles) * height_in_tiles;
+    return num_tiles * kPvricTileByteSize;
+  }
+};
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
 constexpr IntelTiledFormats kIntelFormats;
 constexpr AfbcFormats kAfbcFormats;
 constexpr ArmTELinearFormats kArmTELinearFormats;
 constexpr GoldfishFormats kGoldfishFormats;
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+constexpr PvricFormats kPvricFormats;
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 
 constexpr const ImageFormatSet* kImageFormats[] = {
     &kLinearFormats, &kIntelFormats, &kAfbcFormats, &kArmTELinearFormats, &kGoldfishFormats,
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+    &kPvricFormats,
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 };
 
 }  // namespace
