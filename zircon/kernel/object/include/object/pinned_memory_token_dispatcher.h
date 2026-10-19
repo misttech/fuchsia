@@ -51,7 +51,6 @@ class PinnedMemoryTokenDispatcher final : public Dispatcher {
   void on_zero_handles() final;
 
  protected:
-  friend BusTransactionInitiatorDispatcher;
   Lock<CriticalMutex>* get_lock() const final;
 
  private:

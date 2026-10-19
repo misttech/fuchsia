@@ -174,11 +174,16 @@ impl BusTransactionInitiatorDispatcher {
     }
 
     /// Returns the minimum contiguity guarantee in bytes.
+    ///
+    /// [`pin`](Self::pin) will always be able to return addresses that are contiguous for at
+    /// least this many bytes. E.g. if this returns 1MB, then a call to [`pin`](Self::pin) with a
+    /// size of 2MB will return at most two physically-contiguous runs. If the size were 2.5MB, it
+    /// will return at most three physically-contiguous runs.
     pub fn minimum_contiguity(&self) -> u64 {
         self.bti().minimum_contiguity()
     }
 
-    /// Returns the total size of the address space.
+    /// Returns the total size of the address space in bytes (`u64::MAX` if 2^64).
     pub fn aspace_size(&self) -> u64 {
         self.bti().aspace_size()
     }
@@ -194,6 +199,9 @@ impl BusTransactionInitiatorDispatcher {
     }
 
     /// Releases all quarantined PMTs.
+    ///
+    /// The memory pins are released and the VMO references are dropped, so the underlying VMOs may
+    /// be immediately destroyed, and the underlying physical memory may be reallocated.
     pub fn release_quarantine(&self) {
         self.bti().release_quarantine();
     }
