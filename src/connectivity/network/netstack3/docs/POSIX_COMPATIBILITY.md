@@ -139,6 +139,16 @@ packets; this is because TCP implementations are
 incoming multicast or broadcast SYN packets. Netstack3 opts to provide earlier
 notification to the user that the requested operation is invalid for TCP.
 
+### Re-routing locally generated packets after filtering
+
+When a filtering rule in the `LOCAL_EGRESS` hook rewrites a packet, both Linux
+and Netstack3 perform a new route lookup for the packet. Linux
+([`ip_route_me_harder`]) keeps the packet's source address and allows the new
+route to egress an interface that is not assigned that address. Netstack3
+applies its strong host model to the new lookup: a route is only used if its
+egress interface is assigned the packet's source address; otherwise route
+resolution continues to the next matching rule or table.
+
 [Fuchsia RFC-0184]: /docs/contribute/governance/rfcs/0184_posix_compatibility_for_the_system_netstack
 [`fuchsia.posix.socket`]: /sdk/fidl/fuchsia.posix.socket/socket.fidl
 [core and bindings]: ./CORE_BINDINGS.md#core-and-bindings
@@ -149,3 +159,4 @@ notification to the user that the requested operation is invalid for TCP.
 [POSIX buffer sizes]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tagtcjh_8
 [Linux buffer sizes]: https://man7.org/linux/man-pages/man7/socket.7.html
 [TCP RFC 9293: Source Address Validation]: https://datatracker.ietf.org/doc/html/rfc9293#section-3.9.2.3-2.2
+[`ip_route_me_harder`]: https://elixir.bootlin.com/linux/latest/source/net/ipv4/netfilter.c

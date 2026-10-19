@@ -1014,9 +1014,10 @@ where
         return Err(IpSockSendError::Unroutable(ResolveRouteError::Unreachable));
     };
 
-    // If the LOCAL_EGRESS hook ended up rewriting the packet's destination, perform
-    // re-routing based on the new destination.
-    if remote_ip.addr() != previous_dst {
+    // If the LOCAL_EGRESS hook ended up rewriting the packet's destination or
+    // modifying the packet's marks, perform re-routing based on the new
+    // destination and marks.
+    if remote_ip.addr() != previous_dst || packet_metadata.marks() != options.marks() {
         let ResolvedRoute {
             src_addr: new_local_ip,
             device: new_device,
@@ -1030,7 +1031,7 @@ where
             local_ip,
             remote_ip,
             options.transparent(),
-            options.marks(),
+            packet_metadata.marks(),
         ) {
             Ok(r) => r,
             Err(err) => {

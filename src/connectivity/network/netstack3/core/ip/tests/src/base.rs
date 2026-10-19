@@ -44,7 +44,9 @@ use packet_formats::ipv6::{
     IPV6_FIXED_HDR_LEN, Ipv6Packet, Ipv6PacketBuilder, Ipv6PacketBuilderBeforeFragment,
     Ipv6PacketBuilderWithFragmentHeader, Ipv6PacketBuilderWithHbhOptions,
 };
-use packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame;
+use packet_formats::testutil::{
+    parse_icmp_packet_in_ip_packet_in_ethernet_frame, parse_ip_packet_in_ethernet_frame,
+};
 use packet_formats::udp::UdpPacketBuilder;
 use rand::RngExt as _;
 use test_case::test_case;
@@ -62,7 +64,8 @@ use netstack3_core::device::{
     RecvEthernetFrameMeta,
 };
 use netstack3_core::filter::{
-    Action, Hook, IpRoutines, NatRoutines, PacketMatcher, Routine, Routines, Rule, Tuple,
+    Action, Hook, IpRoutines, MarkAction, NatRoutines, PacketMatcher, Routine, Routines, Rule,
+    Tuple,
 };
 use netstack3_core::ip::MarkDomain;
 use netstack3_core::socket::{
@@ -3644,6 +3647,151 @@ fn conntrack_entry_retained_across_loopback<I: TestDualStackIpExt + IpExt>(
         [packet] => assert_eq!(packet, HELLO)
     );
     ctx.test_api().clear_routes_and_remove_device(loopback);
+}
+
+/// Tests that when the LOCAL_EGRESS filtering hook modifies a packet's marks,
+/// the packet is re-routed using its new marks.
+///
+/// Note that re-routing is subject to the strong host model: the packet's
+/// source address was already selected when the socket was created, so the
+/// re-routed packet is only sent via a different device if that device is also
+/// assigned the source address. Otherwise, route resolution falls through to
+/// the main table and the packet is sent via the original device.
+#[netstack3_core::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+#[test_case(true; "shared address")]
+#[test_case(false; "distinct addresses")]
+fn local_egress_mark_change_triggers_reroute<I: IpExt + TestIpExt>(shared_address: bool) {
+    set_logger_for_test();
+
+    const MARK: u32 = 1;
+    const REMOTE_PORT: NonZeroU16 = NonZeroU16::new(1234).unwrap();
+
+    let first_dev_addr = I::TEST_ADDRS.local_ip;
+    let second_dev_addr =
+        if shared_address { first_dev_addr } else { I::get_other_ip_address(254) };
+
+    // Create two devices in the same subnet.
+    let mut builder = FakeCtxBuilder::default();
+    for addr in [first_dev_addr, second_dev_addr] {
+        let idx =
+            builder.add_device_with_ip(I::TEST_ADDRS.local_mac, addr.get(), I::TEST_ADDRS.subnet);
+        builder.add_arp_or_ndp_table_entry(idx, I::TEST_ADDRS.remote_ip, I::TEST_ADDRS.remote_mac);
+    }
+    let (mut ctx, device_ids) = builder.build();
+    let [first_dev_eth, second_dev_eth] =
+        device_ids.try_into().expect("there should be two devices");
+    let first_dev: DeviceId<_> = first_dev_eth.clone().into();
+    let second_dev: DeviceId<_> = second_dev_eth.clone().into();
+
+    let subnet_route = |device: DeviceId<_>| {
+        ip::Entry {
+            subnet: I::TEST_ADDRS.subnet,
+            device,
+            gateway: None,
+            metric: ip::Metric::ExplicitMetric(RawMetric(0)),
+            route_preference: Default::default(),
+        }
+        .with_generation(ip::Generation::initial())
+    };
+
+    // Replace the routes installed by the builder so that the main routing
+    // table only contains an on-link route for the subnet via the first device.
+    let main_table = ctx.core_api().routes::<I>().main_table_id();
+    ctx.core_api().routes::<I>().set_routes(&main_table, vec![subnet_route(first_dev)]);
+
+    // Install a second routing table that routes the subnet via the second
+    // device, and a policy routing rule that uses that table for packets
+    // carrying `MARK` in `Mark1`. Note that the rule for marked packets must be
+    // ordered before the rule for the main table so that the route in the
+    // second table takes precedence over the route in the main table.
+    let second_table = ctx.core_api().routes::<I>().new_table(());
+    ctx.core_api().routes::<I>().set_routes(&second_table, vec![subnet_route(second_dev)]);
+    ctx.test_api().set_rules::<I>(vec![
+        ip::Rule {
+            matcher: ip::RuleMatcher {
+                mark_matchers: MarkMatchers::new([(
+                    MarkDomain::Mark1,
+                    MarkMatcher::Marked { mask: !0, start: MARK, end: MARK, invert: false },
+                )]),
+                ..ip::RuleMatcher::match_all_packets()
+            },
+            action: ip::RuleAction::Lookup(second_table),
+        },
+        ip::Rule {
+            matcher: ip::RuleMatcher::match_all_packets(),
+            action: ip::RuleAction::Lookup(main_table),
+        },
+    ]);
+
+    let _: Vec<_> = ctx.bindings_ctx.take_ethernet_frames();
+
+    // Sends a packet from the (unmarked) UDP socket and returns the device it
+    // was sent via, along with the source address of the packet.
+    let socket = ctx.core_api().udp::<I>().create();
+    let send_and_capture_frame = |ctx: &mut FakeCtx| {
+        ctx.core_api()
+            .udp::<I>()
+            .send_to(
+                &socket,
+                Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+                REMOTE_PORT.into(),
+                Buf::new(b"hello".to_vec(), ..),
+                Default::default(),
+            )
+            .unwrap();
+        let (dev, frame) = assert_matches!(
+            &ctx.bindings_ctx.take_ethernet_frames()[..],
+            [(dev, frame)] => (dev.clone(), frame.clone())
+        );
+        let (_body, _src_mac, _dst_mac, src_ip, dst_ip, _proto, _ttl) =
+            parse_ip_packet_in_ethernet_frame::<I>(&frame, EthernetFrameLengthCheck::NoCheck)
+                .expect("parse sent frame");
+        assert_eq!(dst_ip, I::TEST_ADDRS.remote_ip.get());
+        (dev, src_ip)
+    };
+
+    // Before any filtering rules are installed, the packet is unmarked and is
+    // routed via the first device.
+    assert_eq!(send_and_capture_frame(&mut ctx), (first_dev_eth.downgrade(), first_dev_addr.get()));
+
+    // Install a filter rule in the LOCAL_EGRESS hook that applies `MARK` to
+    // all locally generated packets.
+    fn mark_routines<I: IpExt>() -> Routines<I, FakeBindingsCtx, &'static str> {
+        Routines {
+            ip: IpRoutines {
+                local_egress: Hook {
+                    routines: vec![Routine {
+                        rules: vec![Rule {
+                            matcher: PacketMatcher::default(),
+                            action: Action::Mark {
+                                domain: MarkDomain::Mark1,
+                                action: MarkAction::SetMark { mark: MARK, clearing_mask: 0 },
+                            },
+                            validation_info: "mark in local egress",
+                        }],
+                    }],
+                },
+                ..Default::default()
+            },
+            nat: NatRoutines::default(),
+        }
+    }
+    ctx.core_api()
+        .filter()
+        .set_filter_state(mark_routines::<Ipv4>(), mark_routines::<Ipv6>())
+        .expect("install mark rule");
+
+    // The LOCAL_EGRESS hook now marks the packet, so it is re-routed with the
+    // new marks. The packet's source address was already selected as the first
+    // device's address, so the route via the second device is only usable if
+    // the second device is also assigned that address.
+    let (expected_dev, expected_src) = if shared_address {
+        (second_dev_eth.downgrade(), second_dev_addr.get())
+    } else {
+        (first_dev_eth.downgrade(), first_dev_addr.get())
+    };
+    assert_eq!(send_and_capture_frame(&mut ctx), (expected_dev, expected_src));
 }
 
 #[test]
