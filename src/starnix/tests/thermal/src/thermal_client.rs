@@ -191,6 +191,7 @@ fn check_cpufreq() {
     check_cpufreq_policy_dir(2, 1, "2 3 4 5");
 
     check_scaling_max_freq();
+    check_scaling_min_freq();
 }
 
 fn read_sysfs(path: &str) -> String {
@@ -333,28 +334,92 @@ fn check_scaling_max_freq() {
     assert_eq!("2024000\n", read_sysfs(POLICY0));
 }
 
-/// Checks the cpufreq min-frequency voter nodes and inert governor nodes.
-fn check_inert_cpufreq_nodes(dir: &str, min_frequency_str: &str) {
-    let min_khz: u64 = min_frequency_str.parse().unwrap();
-    let expected_vote = 1_000_000u64.max(min_khz);
-    for rel_path in [
-        "scaling_min_freq",
-        "vote_manager/powerhint_min_freq",
-        "vote_manager/soft_min_freq",
-        "vote_manager/debug_min_freq",
-    ] {
-        let path = format!("{dir}/{rel_path}");
-        std::fs::write(&path, "1000000").unwrap();
-        assert_eq!(&format!("{expected_vote}\n"), &read_sysfs(&path));
-        assert_eq!(&format!("{expected_vote}\n"), &read_sysfs(&format!("{dir}/scaling_min_freq")));
-        std::fs::write(&path, "0").unwrap();
-        assert_eq!(&format!("{min_frequency_str}\n"), &read_sysfs(&path));
-        assert_eq!(
-            &format!("{min_frequency_str}\n"),
-            &read_sysfs(&format!("{dir}/scaling_min_freq"))
-        );
-    }
+/// Exercises `scaling_min_freq` and `vote_manager/*_min_freq`, where each voter holds its own
+/// persistent `fuchsia.power.cpu/DomainController` lease in `CpuFreqDomain`.
+fn check_scaling_min_freq() {
+    const POLICY0: &str = "/sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq";
+    const POLICY2: &str = "/sys/devices/system/cpu/cpufreq/policy2/scaling_min_freq";
+    const CPU1: &str = "/sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq";
 
+    // Initially unconstrained, reporting the lowest operating point of each cluster.
+    assert_eq!("1128000\n", read_sysfs(POLICY0));
+    assert_eq!("512000\n", read_sysfs(POLICY2));
+
+    // An exact match raises the floor to that operating point and persists across `close()`.
+    // 1512000 sits at sorted position 2 but at operating point 1.
+    std::fs::write(POLICY0, "1512000").unwrap();
+    assert_eq!("1512000\n", read_sysfs(POLICY0));
+    assert_eq!("1512000\n", read_sysfs(CPU1));
+    assert_eq!("512000\n", read_sysfs(POLICY2));
+
+    // Writing the domain's lowest frequency (`cpuinfo_min_freq`, which is what `libperfmgr` uses
+    // as `DefaultIndex`) or `0` (used by `Release_Hints`) clears the floor.
+    std::fs::write(CPU1, "1128000").unwrap();
+    assert_eq!("1128000\n", read_sysfs(POLICY0));
+
+    // A request that falls between two operating points snaps up to the higher one.
+    std::fs::write(POLICY0, "1300000").unwrap();
+    assert_eq!("1512000\n", read_sysfs(POLICY0));
+
+    // A request above every operating point clamps to the highest one.
+    std::fs::write(POLICY0, "9999999").unwrap();
+    assert_eq!("2024000\n", read_sysfs(POLICY0));
+
+    // Writing `0` on a held descriptor also releases the floor. An invalid write must fail with
+    // EINVAL without disturbing an active floor.
+    let mut file = std::fs::OpenOptions::new().write(true).open(POLICY0).unwrap();
+    file.write_all(b"1512000").unwrap();
+    assert_eq!("1512000\n", read_sysfs(POLICY0));
+    let err = file.write_all(b"not_a_number").unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::EINVAL));
+    assert_eq!("1512000\n", read_sysfs(POLICY0));
+    file.write_all(b"0").unwrap();
+    assert_eq!("1128000\n", read_sysfs(POLICY0));
+    drop(file);
+    assert_eq!("1128000\n", read_sysfs(POLICY0));
+
+    // Concurrent min-frequency voters aggregate by taking the highest floor, persist across
+    // `close()`, and step down to the remaining active floor when cleared. Each
+    // `vote_manager/*_min_freq` node reads back its own floor (or the domain minimum when
+    // unconstrained), while `scaling_min_freq` reads back the aggregated domain floor.
+    const POWERHINT_MIN: &str =
+        "/sys/devices/system/cpu/cpu0/cpufreq/vote_manager/powerhint_min_freq";
+    const SOFT_MIN: &str = "/sys/devices/system/cpu/cpu0/cpufreq/vote_manager/soft_min_freq";
+    const DEBUG_MIN: &str = "/sys/devices/system/cpu/cpu0/cpufreq/vote_manager/debug_min_freq";
+    assert_eq!("1128000\n", read_sysfs(SOFT_MIN));
+    assert_eq!("1128000\n", read_sysfs(POWERHINT_MIN));
+    assert_eq!("1128000\n", read_sysfs(DEBUG_MIN));
+
+    std::fs::write(SOFT_MIN, "1256000").unwrap();
+    assert_eq!("1256000\n", read_sysfs(SOFT_MIN));
+    assert_eq!("1128000\n", read_sysfs(POWERHINT_MIN));
+    assert_eq!("1256000\n", read_sysfs(POLICY0));
+    std::fs::write(POWERHINT_MIN, "1512000").unwrap();
+    assert_eq!("1512000\n", read_sysfs(POWERHINT_MIN));
+    assert_eq!("1256000\n", read_sysfs(SOFT_MIN));
+    assert_eq!("1512000\n", read_sysfs(POLICY0));
+    std::fs::write(DEBUG_MIN, "2024000").unwrap();
+    assert_eq!("2024000\n", read_sysfs(DEBUG_MIN));
+    assert_eq!("1512000\n", read_sysfs(POWERHINT_MIN));
+    assert_eq!("1256000\n", read_sysfs(SOFT_MIN));
+    assert_eq!("2024000\n", read_sysfs(POLICY0));
+
+    // Clearing the highest voter steps down to the next highest active voter's floor.
+    std::fs::write(DEBUG_MIN, "1128000").unwrap();
+    assert_eq!("1128000\n", read_sysfs(DEBUG_MIN));
+    assert_eq!("1512000\n", read_sysfs(POLICY0));
+    std::fs::write(POWERHINT_MIN, "0").unwrap();
+    assert_eq!("1128000\n", read_sysfs(POWERHINT_MIN));
+    assert_eq!("1256000\n", read_sysfs(SOFT_MIN));
+    assert_eq!("1256000\n", read_sysfs(POLICY0));
+    std::fs::write(SOFT_MIN, "0").unwrap();
+    assert_eq!("1128000\n", read_sysfs(SOFT_MIN));
+    assert_eq!("1128000\n", read_sysfs(POLICY0));
+}
+
+/// Checks the cpufreq nodes that the Power HAL writes but that Fuchsia cannot act on: they must
+/// accept writes and report a stable value, rather than failing the write.
+fn check_inert_cpufreq_nodes(dir: &str) {
     std::fs::write(format!("{dir}/scaling_governor"), "schedutil").unwrap();
     assert_eq!("performance\n", read_sysfs(&format!("{dir}/scaling_governor")));
     assert_eq!("performance\n", read_sysfs(&format!("{dir}/scaling_available_governors")));
@@ -416,10 +481,7 @@ fn check_cpufreq_policy_dir(policy_id: u64, cluster_id: u64, expected_related_cp
         .unwrap()
     );
 
-    check_inert_cpufreq_nodes(
-        &format!("/sys/devices/system/cpu/cpufreq/policy{policy_id}"),
-        min_frequency_str,
-    );
+    check_inert_cpufreq_nodes(&format!("/sys/devices/system/cpu/cpufreq/policy{policy_id}"));
 }
 
 fn check_cpufreq_dir(core_id: u64, cluster_id: u64) {
@@ -467,10 +529,7 @@ fn check_cpufreq_dir(core_id: u64, cluster_id: u64) {
         .unwrap()
     );
 
-    check_inert_cpufreq_nodes(
-        &format!("/sys/devices/system/cpu/cpu{core_id}/cpufreq"),
-        min_frequency_str,
-    );
+    check_inert_cpufreq_nodes(&format!("/sys/devices/system/cpu/cpu{core_id}/cpufreq"));
 
     assert!(std::fs::exists(format!("/sys/devices/system/cpu/cpu{core_id}/topology")).unwrap());
     assert_eq!(
