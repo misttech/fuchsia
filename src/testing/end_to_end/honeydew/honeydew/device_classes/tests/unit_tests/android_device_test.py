@@ -10,6 +10,9 @@ from unittest import mock
 
 import fuchsia_controller_py as fuchsia_controller
 from honeydew import errors
+from honeydew.affordances.android_session import (
+    android_session as android_session_affordance,
+)
 from honeydew.affordances.ui.user_input import types as ui_types
 from honeydew.device_classes import android_device
 from honeydew.fuchsia_device import fuchsia_device
@@ -854,6 +857,15 @@ class AndroidDeviceBaseCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             size = self.device.screen_size()
         self.assertEqual(size, ui_types.Size(600, 800))
         self.assertIn("Failed to query screen size via wm size", log.output[0])
+
+    def test_android_session_affordance(self) -> None:
+        """Verifies android_session returns a cached AndroidSession."""
+        session: Any = self.device.android_session
+        self.assertIsInstance(
+            session, android_session_affordance.AndroidSession
+        )
+        self.assertIs(self.device.android_session, session)
+        self.assertIs(session._adb, self.mock_adb)
 
 
 if __name__ == "__main__":

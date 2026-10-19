@@ -16,6 +16,9 @@ import types
 from typing import Any
 
 from honeydew import errors
+from honeydew.affordances.android_session import (
+    android_session as android_session_affordance,
+)
 from honeydew.affordances.ui.user_input import types as ui_types
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.adb import adb as adb_transport
@@ -312,3 +315,16 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
             return self._default_screen_size
 
         raise ValueError("Screen size not configured for this device")
+
+    # --- Affordances ---
+
+    @properties.Affordance
+    def android_session(self) -> android_session_affordance.AndroidSession:
+        """Returns an Android session affordance object.
+
+        Returns:
+            android_session.AndroidSession object
+        """
+        return android_session_affordance.AndroidSession(
+            device_name=self.device_name, adb=self.adb
+        )
