@@ -244,15 +244,55 @@
             ],
         },
         {
-            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
-            from: "#cobalt",
+            // Note: fuchsia.time.config.WritableUTCTime is not routed here because
+            // Starnix test realms (e.g. syscall_test.gni and gvisor_tests.gni) already
+            // offer it per-test from #config to #timekeeper via
+            // starnix_container_config_offers.
+            config: [
+                "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+                "fuchsia.time.config.FirstSamplingDelaySec",
+                "fuchsia.time.config.MaxFrequencyErrorPpm",
+                "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+                "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+                "fuchsia.time.config.PrimaryTimeSourceUrl",
+                "fuchsia.time.config.PrimaryUsesPull",
+                "fuchsia.time.config.ServeFuchsiaTimeAlarms",
+                "fuchsia.time.config.UtcMaxAllowedDeltaFutureSec",
+                "fuchsia.time.config.UtcMaxAllowedDeltaPastSec",
+            ],
+            from: "#utc-handle-vendor",
             to: [ "#timekeeper" ],
         },
         {
-            config: "fuchsia.time.config.TimeSourceEndpointUrl",
+            // Route remaining Timekeeper configuration capabilities from void so they use their
+            // manifest defaults (e.g. false for DisableDelays and ServeTestProtocols, matching the
+            // legacy starnix-tests.json5 configuration).
+            config: [
+                "fuchsia.time.config.DisableDelays",
+                "fuchsia.time.config.EarlyExit",
+                "fuchsia.time.config.HasAlwaysOnCounter",
+                "fuchsia.time.config.HasRealTimeClock",
+                "fuchsia.time.config.InitialFrequencyPpm",
+                "fuchsia.time.config.MonitorTimeSourceUrl",
+                "fuchsia.time.config.MonitorUsesPull",
+                "fuchsia.time.config.OscillatorErrorStdDevPpm",
+                "fuchsia.time.config.PeriodicRtcUpdateIntervalMinutes",
+                "fuchsia.time.config.PowerTopologyIntegrationEnabled",
+                "fuchsia.time.config.RtcAllowSettingPastUtc",
+                "fuchsia.time.config.ServeTestProtocols",
+                "fuchsia.time.config.TimeSourceEndpointUrl",
+                "fuchsia.time.config.UseConnectivity",
+                "fuchsia.time.config.UtcStartAtStartup",
+                "fuchsia.time.config.UtcStartAtStartupWhenInvalidRtc",
+            ],
             from: "void",
             to: [ "#timekeeper" ],
             availability: "optional",
+        },
+        {
+            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
+            from: "#cobalt",
+            to: [ "#timekeeper" ],
         },
     ],
     environments: [

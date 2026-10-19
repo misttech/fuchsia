@@ -15,10 +15,90 @@
         {
             protocol: [ "fuchsia.time.Maintenance" ],
         },
+        {
+            config: "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+            type: "int64",
+            value: 500,
+        },
+        {
+            // Effectively turn off the time source so that it does not introduce
+            // added indeterminacy in the tests.
+            config: "fuchsia.time.config.FirstSamplingDelaySec",
+            type: "int64",
+            value: 100000,
+        },
+        {
+            config: "fuchsia.time.config.MaxFrequencyErrorPpm",
+            type: "uint32",
+            value: 10,
+        },
+        {
+            config: "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+            type: "uint64",
+            value: 0,
+        },
+        {
+            config: "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+            type: "uint64",
+            value: 0,
+        },
+        {
+            // Timekeeper requires a valid primary time source component URL at startup.
+            // Use the hermetic dev_time_source subpackage bundled with
+            // timekeeper-for-starnix-tests instead of a production network time source.
+            config: "fuchsia.time.config.PrimaryTimeSourceUrl",
+            type: "string",
+            max_size: 4096,
+            value: "dev_time_source#meta/dev_time_source.cm",
+        },
+        {
+            config: "fuchsia.time.config.PrimaryUsesPull",
+            type: "bool",
+            value: false,
+        },
+        {
+            // Serve fuchsia.time.alarms/WakeAlarms so the Starnix kernel can schedule
+            // hardware wake alarms for timer syscalls.
+            config: "fuchsia.time.config.ServeFuchsiaTimeAlarms",
+            type: "bool",
+            value: true,
+        },
+        {
+            // Timekeeper defaults to 0 (rejecting external UTC adjustments); allow ~2.3 days
+            // so Starnix syscall tests (e.g. settimeofday) can shift the UTC clock by large
+            // offsets.
+            config: "fuchsia.time.config.UtcMaxAllowedDeltaFutureSec",
+            type: "int64",
+            value: 200000,
+        },
+        {
+            // Timekeeper defaults to 0 (rejecting external UTC adjustments); allow ~2.3 days
+            // so Starnix syscall tests (e.g. settimeofday) can shift the UTC clock by large
+            // offsets.
+            config: "fuchsia.time.config.UtcMaxAllowedDeltaPastSec",
+            type: "int64",
+            value: 200000,
+        },
     ],
     expose: [
         {
             protocol: [ "fuchsia.time.Maintenance" ],
+            from: "self",
+            to: "parent",
+        },
+        {
+            config: [
+                "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+                "fuchsia.time.config.FirstSamplingDelaySec",
+                "fuchsia.time.config.MaxFrequencyErrorPpm",
+                "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+                "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+                "fuchsia.time.config.PrimaryTimeSourceUrl",
+                "fuchsia.time.config.PrimaryUsesPull",
+                "fuchsia.time.config.ServeFuchsiaTimeAlarms",
+                "fuchsia.time.config.UtcMaxAllowedDeltaFutureSec",
+                "fuchsia.time.config.UtcMaxAllowedDeltaPastSec",
+            ],
             from: "self",
             to: "parent",
         },

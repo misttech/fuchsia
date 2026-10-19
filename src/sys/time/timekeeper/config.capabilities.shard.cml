@@ -12,11 +12,73 @@
             type: "bool",
             value: false,
         },
+        {
+            config: "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+            type: "int64",
+            value: 5,
+        },
+        {
+            config: "fuchsia.time.config.DisableDelays",
+            type: "bool",
+            value: true,
+        },
+        {
+            config: "fuchsia.time.config.HasRealTimeClock",
+            type: "bool",
+            value: true,
+        },
+        {
+            config: "fuchsia.time.config.MaxFrequencyErrorPpm",
+            type: "uint32",
+            value: 10,
+        },
+        {
+            config: "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+            type: "uint64",
+            value: 0,
+        },
+        {
+            config: "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+            type: "uint64",
+            value: 0,
+        },
+        {
+            config: "fuchsia.time.config.PrimaryTimeSourceUrl",
+            type: "string",
+            max_size: 4096,
+            value: "#meta/dev_time_source.cm",
+        },
+        {
+            config: "fuchsia.time.config.PrimaryUsesPull",
+            type: "bool",
+            value: false,
+        },
+        {
+            config: "fuchsia.time.config.ServeTestProtocols",
+            type: "bool",
+            value: true,
+        },
+        {
+            config: "fuchsia.time.config.UtcStartAtStartup",
+            type: "bool",
+            value: true,
+        },
     ],
     expose: [
         {
-            // Give this config bit to parent.
-            config: "fuchsia.time.config.WritableUTCTime",
+            config: [
+                "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+                "fuchsia.time.config.DisableDelays",
+                "fuchsia.time.config.HasRealTimeClock",
+                "fuchsia.time.config.MaxFrequencyErrorPpm",
+                "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+                "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+                "fuchsia.time.config.PrimaryTimeSourceUrl",
+                "fuchsia.time.config.PrimaryUsesPull",
+                "fuchsia.time.config.ServeTestProtocols",
+                "fuchsia.time.config.UtcStartAtStartup",
+                "fuchsia.time.config.WritableUTCTime",
+            ],
             from: "self",
         },
     ],

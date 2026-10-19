@@ -47,8 +47,20 @@
             to: "#realm_builder",
         },
         {
-            // For the time being we have no need to route this from "parent".
-            config: "fuchsia.time.config.WritableUTCTime",
+            // Route the test configuration defaults defined in config.capabilities.shard.cml.
+            config: [
+                "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+                "fuchsia.time.config.DisableDelays",
+                "fuchsia.time.config.HasRealTimeClock",
+                "fuchsia.time.config.MaxFrequencyErrorPpm",
+                "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+                "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+                "fuchsia.time.config.PrimaryTimeSourceUrl",
+                "fuchsia.time.config.PrimaryUsesPull",
+                "fuchsia.time.config.ServeTestProtocols",
+                "fuchsia.time.config.UtcStartAtStartup",
+                "fuchsia.time.config.WritableUTCTime",
+            ],
             from: "self",
             to: "#realm_builder",
         },

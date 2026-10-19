@@ -217,22 +217,59 @@ impl NestedTimekeeper {
             .await
             .unwrap();
 
+        let parent_configs = [
+            "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+            "fuchsia.time.config.DisableDelays",
+            "fuchsia.time.config.HasRealTimeClock",
+            "fuchsia.time.config.MaxFrequencyErrorPpm",
+            "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+            "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+            "fuchsia.time.config.PrimaryTimeSourceUrl",
+            "fuchsia.time.config.PrimaryUsesPull",
+            "fuchsia.time.config.ServeTestProtocols",
+            "fuchsia.time.config.UtcStartAtStartup",
+            "fuchsia.time.config.WritableUTCTime",
+        ];
         builder
             .add_route(
-                Route::new()
-                    .capability(Capability::configuration("fuchsia.time.config.WritableUTCTime"))
+                parent_configs
+                    .into_iter()
+                    .fold(Route::new(), |route, name| {
+                        route.capability(Capability::configuration(name))
+                    })
                     .from(Ref::parent())
                     .to(&timekeeper),
             )
             .await
             .unwrap();
 
+        // Note: `realm_builder_server` automatically sets `Availability::Optional` when routing
+        // configuration capabilities from `Ref::void()`.
+        let void_configs = [
+            "fuchsia.time.config.EarlyExit",
+            "fuchsia.time.config.FirstSamplingDelaySec",
+            "fuchsia.time.config.HasAlwaysOnCounter",
+            "fuchsia.time.config.InitialFrequencyPpm",
+            "fuchsia.time.config.MonitorTimeSourceUrl",
+            "fuchsia.time.config.MonitorUsesPull",
+            "fuchsia.time.config.OscillatorErrorStdDevPpm",
+            "fuchsia.time.config.PeriodicRtcUpdateIntervalMinutes",
+            "fuchsia.time.config.PowerTopologyIntegrationEnabled",
+            "fuchsia.time.config.RtcAllowSettingPastUtc",
+            "fuchsia.time.config.ServeFuchsiaTimeAlarms",
+            "fuchsia.time.config.TimeSourceEndpointUrl",
+            "fuchsia.time.config.UseConnectivity",
+            "fuchsia.time.config.UtcMaxAllowedDeltaFutureSec",
+            "fuchsia.time.config.UtcMaxAllowedDeltaPastSec",
+            "fuchsia.time.config.UtcStartAtStartupWhenInvalidRtc",
+        ];
         builder
             .add_route(
-                Route::new()
-                    .capability(Capability::configuration(
-                        "fuchsia.time.config.TimeSourceEndpointUrl",
-                    ))
+                void_configs
+                    .into_iter()
+                    .fold(Route::new(), |route, name| {
+                        route.capability(Capability::configuration(name))
+                    })
                     .from(Ref::void())
                     .to(&timekeeper),
             )
