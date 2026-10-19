@@ -13,7 +13,6 @@ from honeydew.affordances.power.system_power_state_controller import (
 )
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
-from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows, power
 from honeydew.utils.deadline import Deadline
 from mobly.asserts import assert_equal, assert_less
@@ -86,30 +85,6 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
             device.ffx.run_ssh_cmd(f"display-tweak panel --power {state}")
         except Exception as e:  # pylint: disable=broad-except
             _LOGGER.warning("Failed to power %s display panel: %s", state, e)
-
-    def _set_battery_manager_running(
-        self, device: FuchsiaDevice, running: bool
-    ) -> None:
-        """Start or stop `/core/battery_manager` around suspend.
-
-        On workbench configurations with a battery, `/core/battery_manager`
-        holds a `charging_block_suspension` wake lease that prevents SAG from
-        entering suspend if charger/fuel-gauge disconnect updates are not yet
-        propagated.
-        """
-        action = "start" if running else "stop"
-        _LOGGER.info(
-            "Running `ffx component %s /core/battery_manager` on %s...",
-            action,
-            device.device_name,
-        )
-        try:
-            device.ffx.run(
-                ["component", action, "/core/battery_manager"],
-                machine=ffx_types.MachineFormat.RAW,
-            )
-        except Exception as e:  # pylint: disable=broad-except
-            _LOGGER.warning("Failed to %s /core/battery_manager: %s", action, e)
 
     async def _suspend_resume_with_controller(
         self,
@@ -203,7 +178,6 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
         # On workbench, the display panel must be manually powered off
         # before suspend. Otherwise, the device will not suspend.
         self._set_display_power(self.dut, power_on=False)
-        self._set_battery_manager_running(self.dut, running=False)
         try:
             await power.suspend_resume(
                 self.dut,
@@ -211,7 +185,6 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
                 base_idle_duration=base_idle_duration,
             )
         finally:
-            self._set_battery_manager_running(self.dut, running=True)
             # On workbench, the display panel must be manually powered on after
             # resume.
             self._set_display_power(self.dut, power_on=True)
