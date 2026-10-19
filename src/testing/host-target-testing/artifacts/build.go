@@ -7,6 +7,7 @@ package artifacts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -90,6 +91,72 @@ const (
 	productBundleBuildInfoPath = "build_api/build_info.json"
 )
 
+type ProductBundle interface {
+	// String returns a string identifier for this product bundle.
+	String() string
+
+	// Build returns the Build associated with this product bundle.
+	Build() Build
+
+	// GetProductBundleDir returns the path to the product bundle.
+	GetProductBundleDir(ctx context.Context) (string, error)
+
+	// GetPackageRepository returns a Repository for this product bundle.
+	GetPackageRepository(
+		ctx context.Context,
+		blobFetchMode BlobFetchMode,
+		ffxRunDir ffx.RunDir,
+		version ffx.FfxVersionPolicy,
+		hostFfx *ffx.FFXTool,
+	) (*packages.Repository, error)
+
+	// GetVbmetaPath downloads and returns a path to the zircon-a vbmeta image.
+	GetVbmetaPath(ctx context.Context) (string, error)
+}
+
+type DirProductBundle struct {
+	dir string
+}
+
+func NewDirProductBundle(dir string) *DirProductBundle {
+	return &DirProductBundle{
+		dir: dir,
+	}
+}
+
+func (pb *DirProductBundle) Dir() string {
+	return pb.dir
+}
+
+func (pb *DirProductBundle) RepositoryInfo() (string, *int, error) {
+	return util.ParseProductBundleRepository(pb.dir)
+}
+
+func (pb *DirProductBundle) GetPackageRepository(
+	ctx context.Context,
+	ffxTool *ffx.FFXTool,
+) (*packages.Repository, error) {
+	blobsDir, blobType, err := pb.RepositoryInfo()
+	if err != nil {
+		return nil, err
+	}
+	blobFS := packages.NewDirBlobStore(blobsDir)
+	return packages.NewRepository(ctx, pb.dir, blobFS, ffxTool, blobType)
+}
+
+func (pb *DirProductBundle) GetVbmetaPath() (string, error) {
+	productBundle, err := util.ParseProductBundle(pb.dir)
+	if err != nil {
+		return "", err
+	}
+	return productBundle.GetSystemAImage("vbmeta", "zircon-a")
+}
+
+func (pb *DirProductBundle) TransferManifestBlobs() ([]string, error) {
+	transferManifestPath := filepath.Join(pb.dir, "transfer.json")
+	return util.ParseTransferManifestBlobs(transferManifestPath)
+}
+
 type Build interface {
 	// String returns a string identifier for this build.
 	String() string
@@ -110,17 +177,11 @@ type Build interface {
 	// GetFlashManifest returns the path to the flash manifest used for flashing.
 	GetFlashManifest(ctx context.Context) (string, error)
 
-	// GetProductBundleDir returns the path to the product bundle.
-	GetProductBundleDir(ctx context.Context) (string, error)
-
-	// GetPackageRepository returns a Repository for this build.
-	GetPackageRepository(
+	// GetProductBundle returns a ProductBundle for this build.
+	GetProductBundle(
 		ctx context.Context,
-		blobFetchMode BlobFetchMode,
-		ffxRunDir ffx.RunDir,
-		version ffx.FfxVersionPolicy,
-		hostFfx *ffx.FFXTool,
-	) (*packages.Repository, error)
+		productBundleName string,
+	) (ProductBundle, error)
 
 	// GetPaverDir downloads and returns the directory containing the images
 	// and image manifest.
@@ -131,27 +192,24 @@ type Build interface {
 		ctx context.Context,
 		sshPublicKey ssh.PublicKey,
 	) (paver.Paver, error)
-
-	// GetVbmetaPath downloads and returns a path to the zircon-a vbmeta image.
-	GetVbmetaPath(ctx context.Context) (string, error)
 }
 
 type BuildWithVersion struct {
-	Build         Build
+	ProductBundle ProductBundle
 	Version       ffx.FfxVersionPolicy
 	BlobFetchMode BlobFetchMode
 }
 
 // ArtifactsBuild represents the build artifacts for a specific build.
 type ArtifactsBuild struct {
-	id               string
-	archive          *Archive
-	blobsDir         string
-	buildDir         string
-	packages         *packages.Repository
-	buildImageDir    string
-	productBundleDir string
-	srcs             map[string]struct{}
+	id                   string
+	archive              *Archive
+	blobsDir             string
+	buildDir             string
+	buildImageDir        string
+	productBundles       *util.ProductBundles
+	cachedProductBundles map[string]*ArtifactsProductBundle
+	srcs                 map[string]struct{}
 }
 
 func (b *ArtifactsBuild) OutputDir() string {
@@ -273,16 +331,12 @@ func (b *ArtifactsBuild) GetFlashManifest(ctx context.Context) (string, error) {
 	return flashManifest, nil
 }
 
-func (b *ArtifactsBuild) GetProductBundleDir(ctx context.Context) (string, error) {
-	if b.productBundleDir != "" {
-		return b.productBundleDir, nil
+func (b *ArtifactsBuild) getDefaultProductBundleName(ctx context.Context) (string, error) {
+	if _, ok := b.srcs[productBundleBuildInfoPath]; !ok {
+		return "", fmt.Errorf("%s not found in build %s", productBundleBuildInfoPath, b.id)
 	}
 
-	logger.Infof(ctx, "downloading product bundle for build %s", b.id)
-
 	buildInfoPath := filepath.Join(b.buildDir, productBundleBuildInfoPath)
-
-	// Fetch build_info.json, this is needed to construct the PB path in GCS
 	if err := b.archive.download(
 		ctx,
 		b.id,
@@ -294,86 +348,261 @@ func (b *ArtifactsBuild) GetProductBundleDir(ctx context.Context) (string, error
 		return "", fmt.Errorf("failed to download build info for build %s: %w", b.id, err)
 	}
 
-	f, err := os.Open(buildInfoPath)
-	if err != nil {
-		return "", err
+	return util.ParseBuildInfoProductBundleName(buildInfoPath)
+}
+
+func (b *ArtifactsBuild) GetProductBundle(
+	ctx context.Context,
+	productBundleName string,
+) (ProductBundle, error) {
+	var pbPath string
+	if b.productBundles.Count() > 0 || productBundleName != "" {
+		lookupName := productBundleName
+		if lookupName == "" && b.productBundles.Count() > 1 {
+			if defaultName, err := b.getDefaultProductBundleName(ctx); err == nil && b.productBundles.Has(defaultName) {
+				lookupName = defaultName
+			}
+		}
+
+		var err error
+		pbPath, err = b.productBundles.FindPath(lookupName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find product bundle for build %s: %w", b.id, err)
+		}
 	}
-	defer f.Close()
+	if b.cachedProductBundles == nil {
+		b.cachedProductBundles = make(map[string]*ArtifactsProductBundle)
+	}
+	key := productBundleName + ":" + pbPath
+	if pb, ok := b.cachedProductBundles[key]; ok {
+		return pb, nil
+	}
+	pb := &ArtifactsProductBundle{
+		build:             b,
+		productBundleName: productBundleName,
+		pbPath:            pbPath,
+	}
+	b.cachedProductBundles[key] = pb
+	return pb, nil
+}
 
-	// BuildInfo represent the build info build-api.
-	var buildInfo struct {
-		// Conguration is the array of product/board dictionary.
-		Configurations []struct {
-			// Board is the board name. e.g. "x64", "vim3".
-			Board string `json:"board"`
+type ArtifactsProductBundle struct {
+	build             *ArtifactsBuild
+	productBundleName string
+	pbPath            string
+	productBundle     *DirProductBundle
+	packages          *packages.Repository
+}
 
-			// Product is the product name. e.g. "minimal", "core".
-			Product string `json:"product"`
-		} `json:"configurations"`
+func (pb *ArtifactsProductBundle) String() string {
+	if pb.productBundleName != "" {
+		return fmt.Sprintf("%s/%s", pb.build.id, pb.productBundleName)
+	}
+	return pb.build.id
+}
 
-		// A unique version of this build.
-		Version string `json:"version"`
+func (pb *ArtifactsProductBundle) Build() Build {
+	return pb.build
+}
+
+func (pb *ArtifactsProductBundle) getProductBundle(ctx context.Context) (*DirProductBundle, error) {
+	if pb.productBundle != nil {
+		return pb.productBundle, nil
+	}
+	if pb.pbPath == "" {
+		return nil, fmt.Errorf("no product bundle found for build %s", pb.build.id)
 	}
 
-	if err := json.NewDecoder(f).Decode(&buildInfo); err != nil {
-		return "", fmt.Errorf("failed to read build info: %w", err)
-	}
-
-	// The first entry is the product bundle for the build.
-	config := buildInfo.Configurations[0]
-
-	// Fetch PB from GCS
-	pbPath := fmt.Sprintf("product_bundles/%s.%s", config.Product, config.Board)
-
-	artifacts, err := b.archive.list(ctx, b.id)
-	if err != nil {
-		return "", err
-	}
+	logger.Infof(ctx, "downloading product bundle for build %s", pb.build.id)
 
 	pbArtifacts := []string{}
-	prefix := pbPath + "/"
-	for _, artifact := range artifacts {
+	prefix := pb.pbPath + "/"
+	for artifact := range pb.build.srcs {
 		if strings.HasPrefix(artifact, prefix) {
 			pbArtifacts = append(pbArtifacts, artifact)
 		}
 	}
-
-	productBundleDir := filepath.Join(b.buildDir, pbPath)
-	if err := b.archive.download(
-		ctx,
-		b.id,
-		false,
-		b.buildDir,
-		pbArtifacts,
-	); err != nil {
-		logger.Errorf(ctx, "failed to download product bundle for build %s: %v", b.id, err)
-		return "", fmt.Errorf("failed to download product bundle for build %s: %w", b.id, err)
+	if len(pbArtifacts) == 0 {
+		return nil, fmt.Errorf(
+			"no product bundle artifacts found under %s for build %s",
+			pb.pbPath,
+			pb.build.id,
+		)
 	}
 
-	b.productBundleDir = productBundleDir
-	return b.productBundleDir, nil
+	productBundleDir := filepath.Join(pb.build.buildDir, pb.pbPath)
+	if err := pb.build.archive.download(
+		ctx,
+		pb.build.id,
+		false,
+		pb.build.buildDir,
+		pbArtifacts,
+	); err != nil {
+		logger.Errorf(ctx, "failed to download product bundle for build %s: %v", pb.build.id, err)
+		return nil, fmt.Errorf("failed to download product bundle for build %s: %w", pb.build.id, err)
+	}
+
+	pb.productBundle = NewDirProductBundle(productBundleDir)
+	return pb.productBundle, nil
 }
 
-// GetPackageRepository returns a Repository for this build. It tries to
-// download a package when all the artifacts are stored in individual files,
+func (pb *ArtifactsProductBundle) GetProductBundleDir(ctx context.Context) (string, error) {
+	dirPb, err := pb.getProductBundle(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dirPb.Dir(), nil
+}
+
+// GetPackageRepository returns a Repository for this product bundle. It tries
+// to download a package when all the artifacts are stored in individual files,
 // which is how modern builds publish their build artifacts.
-func (b *ArtifactsBuild) GetPackageRepository(
+func (pb *ArtifactsProductBundle) GetPackageRepository(
 	ctx context.Context,
 	fetchMode BlobFetchMode,
 	ffxRunDir ffx.RunDir,
 	version ffx.FfxVersionPolicy,
 	hostFfx *ffx.FFXTool,
 ) (*packages.Repository, error) {
-	if b.packages != nil {
-		return b.packages, nil
+	if pb.packages != nil {
+		return pb.packages, nil
 	}
 
+	var (
+		repoDir  string
+		blobType *int
+		err      error
+	)
+	_, hasAllBlobs := pb.build.srcs["packages/all_blobs.json"]
+	if pb.pbPath != "" && (pb.productBundleName != "" || !hasAllBlobs) {
+		repoDir, blobType, err = pb.downloadProductBundlePackageRepository(ctx, fetchMode)
+	} else {
+		repoDir, blobType, err = pb.build.downloadPackageRepository(ctx, fetchMode)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var ffxTool *ffx.FFXTool
+	if version == ffx.FfxVersionPolicyLatest && hostFfx != nil {
+		ffxTool = hostFfx
+	} else {
+		ffxTool, err = pb.build.GetFfx(ctx, ffxRunDir, version)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ffx: %w", err)
+		}
+	}
+
+	p, err := packages.NewRepository(
+		ctx,
+		repoDir,
+		&proxyBlobStore{
+			b:        pb.build,
+			ffx:      ffxTool,
+			blobsDir: pb.build.blobsDir,
+			blobType: blobType,
+		},
+		ffxTool,
+		blobType,
+	)
+	if err != nil {
+		return nil, err
+	}
+	pb.packages = p
+
+	return pb.packages, nil
+}
+
+func (pb *ArtifactsProductBundle) downloadProductBundlePackageRepository(
+	ctx context.Context,
+	fetchMode BlobFetchMode,
+) (string, *int, error) {
+	logger.Infof(ctx, "downloading product bundle package repository from %s", pb.pbPath)
+
+	pbJSON := path.Join(pb.pbPath, ProductBundleManifest)
+	transferJSON := path.Join(pb.pbPath, "transfer.json")
+	keysPrefix := path.Join(pb.pbPath, "keys") + "/"
+	repoPrefix := path.Join(pb.pbPath, "repository") + "/"
+
+	packageSrcs := []string{}
+	for src := range pb.build.srcs {
+		if src == pbJSON || src == transferJSON || strings.HasPrefix(src, keysPrefix) || strings.HasPrefix(src, repoPrefix) {
+			packageSrcs = append(packageSrcs, src)
+		}
+	}
+	if len(packageSrcs) == 0 {
+		return "", nil, fmt.Errorf("no product bundle repository artifacts found under %s for build %s", pb.pbPath, pb.build.id)
+	}
+
+	pbDir := filepath.Join(pb.build.buildDir, pb.pbPath)
+
+	if err := pb.build.archive.download(
+		ctx,
+		pb.build.id,
+		false,
+		pb.build.buildDir,
+		packageSrcs,
+	); err != nil {
+		logger.Errorf(ctx, "failed to download product bundle packages for build %s to %s: %v", pb.build.id, pbDir, err)
+		return "", nil, fmt.Errorf("failed to download product bundle packages for build %s to %s: %w", pb.build.id, pbDir, err)
+	}
+
+	dirPb := NewDirProductBundle(pbDir)
+	_, blobType, err := dirPb.RepositoryInfo()
+	if err != nil {
+		return "", nil, err
+	}
+
+	if fetchMode == PrefetchBlobs {
+		blobsList, err := dirPb.TransferManifestBlobs()
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to parse transfer manifest in %s: %w", dirPb.Dir(), err)
+		}
+		logger.Infof(ctx, "transfer.json contains %d blobs", len(blobsList))
+		if err := pb.build.archive.download(
+			ctx,
+			pb.build.id,
+			true,
+			filepath.Dir(pb.build.blobsDir),
+			blobsList,
+		); err != nil {
+			logger.Errorf(ctx, "failed to download blobs to %s: %v", filepath.Dir(pb.build.blobsDir), err)
+			return "", nil, fmt.Errorf("failed to download blobs to %s: %w", filepath.Dir(pb.build.blobsDir), err)
+		}
+	}
+
+	return dirPb.Dir(), blobType, nil
+}
+
+func (pb *ArtifactsProductBundle) GetVbmetaPath(ctx context.Context) (string, error) {
+	path, err := pb.getVbmetaPathFromProductBundle(ctx)
+	if err == nil {
+		return path, nil
+	}
+
+	logger.Warningf(ctx, "failed to get vbmeta from product bundle, trying images: %v", err)
+	return pb.build.getVbmetaPathFromImages(ctx)
+}
+
+func (pb *ArtifactsProductBundle) getVbmetaPathFromProductBundle(ctx context.Context) (string, error) {
+	dirPb, err := pb.getProductBundle(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return dirPb.GetVbmetaPath()
+}
+
+func (b *ArtifactsBuild) downloadPackageRepository(
+	ctx context.Context,
+	fetchMode BlobFetchMode,
+) (string, *int, error) {
 	logger.Infof(ctx, "downloading package repository")
 
 	// Make sure the blob contains the `packages/all_blobs.json`.
 	if _, ok := b.srcs["packages/all_blobs.json"]; !ok {
 		logger.Errorf(ctx, "blobs manifest doesn't exist for build %s", b.id)
-		return nil, fmt.Errorf("blob manifest doesn't exist for build %s", b.id)
+		return "", nil, fmt.Errorf("blob manifest doesn't exist for build %s", b.id)
 	}
 
 	packageSrcs := []string{}
@@ -391,26 +620,25 @@ func (b *ArtifactsBuild) GetPackageRepository(
 		b.buildDir,
 		packageSrcs,
 	); err != nil {
-		logger.Errorf(ctx, "failed to download packages for build %s to %s: %v", packagesDir, b.id, err)
-		return nil, fmt.Errorf("failed to download packages for build %s to %s: %w", packagesDir, b.id, err)
+		logger.Errorf(ctx, "failed to download packages for build %s to %s: %v", b.id, packagesDir, err)
+		return "", nil, fmt.Errorf("failed to download packages for build %s to %s: %w", b.id, packagesDir, err)
 	}
 
 	blobsManifest := filepath.Join(packagesDir, "all_blobs.json")
 	blobsData, err := os.ReadFile(blobsManifest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read blobs manifest: %w", err)
+		return "", nil, fmt.Errorf("failed to read blobs manifest: %w", err)
 	}
 
 	var blobs []build.Blob
-	err = json.Unmarshal(blobsData, &blobs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal blobs JSON: %w", err)
+	if err := json.Unmarshal(blobsData, &blobs); err != nil {
+		return "", nil, fmt.Errorf("failed to unmarshal blobs JSON: %w", err)
 	}
 
 	deliveryBlobConfigPath := filepath.Join(packagesDir, "delivery_blob_config.json")
 	relativeBlobsDir, err := build.GetBlobsDir(deliveryBlobConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get blobs dir: %w", err)
+		return "", nil, fmt.Errorf("failed to get blobs dir: %w", err)
 	}
 
 	var blobsList []string
@@ -428,43 +656,16 @@ func (b *ArtifactsBuild) GetPackageRepository(
 			blobsList,
 		); err != nil {
 			logger.Errorf(ctx, "failed to download blobs to %s: %v", b.blobsDir, err)
-			return nil, fmt.Errorf("failed to download blobs to %s: %w", b.blobsDir, err)
-		}
-	}
-
-	var ffxTool *ffx.FFXTool
-	if version == ffx.FfxVersionPolicyLatest && hostFfx != nil {
-		ffxTool = hostFfx
-	} else {
-		ffxTool, err = b.GetFfx(ctx, ffxRunDir, version)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get ffx: %w", err)
+			return "", nil, fmt.Errorf("failed to download blobs to %s: %w", b.blobsDir, err)
 		}
 	}
 
 	blobType, err := build.GetDeliveryBlobType(deliveryBlobConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get delivery blob type: %w", err)
+		return "", nil, fmt.Errorf("failed to get delivery blob type: %w", err)
 	}
 
-	p, err := packages.NewRepository(
-		ctx,
-		packagesDir,
-		&proxyBlobStore{
-			b:        b,
-			ffx:      ffxTool,
-			blobsDir: b.blobsDir,
-			blobType: blobType,
-		},
-		ffxTool,
-		blobType,
-	)
-	if err != nil {
-		return nil, err
-	}
-	b.packages = p
-
-	return b.packages, nil
+	return packagesDir, blobType, nil
 }
 
 type blobLock struct {
@@ -715,35 +916,6 @@ func (b *ArtifactsBuild) getPaver(
 	return paver.NewBuildPaver(bootserverPath, buildImageDir, paver.SSHPublicKey(sshPublicKey))
 }
 
-func (b *ArtifactsBuild) GetVbmetaPath(ctx context.Context) (string, error) {
-	path, err := b.getVbmetaPathFromProductBundle(ctx)
-	if err == nil {
-		return path, nil
-	}
-
-	logger.Warningf(ctx, "failed to get vbmeta from product bundle, trying images: %v", err)
-	path, err = b.getVbmetaPathFromImages(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	return path, nil
-}
-
-func (b *ArtifactsBuild) getVbmetaPathFromProductBundle(ctx context.Context) (string, error) {
-	productBundleDir, err := b.GetProductBundleDir(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	productBundle, err := util.ParseProductBundle(productBundleDir)
-	if err != nil {
-		return "", err
-	}
-
-	return productBundle.GetSystemAImage("vbmeta", "zircon-a")
-}
-
 func (b *ArtifactsBuild) getVbmetaPathFromImages(ctx context.Context) (string, error) {
 	buildImageDir, err := b.GetBuildImages(ctx)
 	if err != nil {
@@ -779,12 +951,11 @@ func (b *ArtifactsBuild) String() string {
 }
 
 type FuchsiaDirBuild struct {
-	dir string
+	dir            string
+	productBundles *util.ProductBundles
 }
 
-func NewFuchsiaDirBuild(
-	dir string,
-) *FuchsiaDirBuild {
+func NewFuchsiaDirBuild(dir string) *FuchsiaDirBuild {
 	return &FuchsiaDirBuild{
 		dir: dir,
 	}
@@ -815,27 +986,74 @@ func (b *FuchsiaDirBuild) GetFlashManifest(ctx context.Context) (string, error) 
 	return filepath.Join(b.dir, "flash.json"), nil
 }
 
-func (b *FuchsiaDirBuild) GetProductBundleDir(ctx context.Context) (string, error) {
+func (b *FuchsiaDirBuild) getProductBundles() (*util.ProductBundles, error) {
+	if b.productBundles != nil {
+		return b.productBundles, nil
+	}
 	productBundlesPath := filepath.Join(b.dir, "product_bundles.json")
-	f, err := os.Open(productBundlesPath)
+	pbs, err := util.ParseProductBundlesManifest(productBundlesPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open %s: %w", productBundlesPath, err)
+		return nil, err
 	}
-	defer f.Close()
-
-	var productBundles []struct {
-		Path string `json:"path"`
-	}
-
-	if err := json.NewDecoder(f).Decode(&productBundles); err != nil {
-		return "", fmt.Errorf("failed to parse product bundles path %s: %w", productBundlesPath, err)
-	}
-
-	// The first entry is the product bundle for the build.
-	return filepath.Join(b.dir, productBundles[0].Path), nil
+	b.productBundles = pbs
+	return b.productBundles, nil
 }
 
-func (b *FuchsiaDirBuild) GetPackageRepository(
+func (b *FuchsiaDirBuild) GetProductBundle(
+	ctx context.Context,
+	productBundleName string,
+) (ProductBundle, error) {
+	pbs, err := b.getProductBundles()
+	if err == nil {
+		lookupName := productBundleName
+		if lookupName == "" && pbs.Count() > 1 {
+			buildInfoPath := filepath.Join(b.dir, "build_info.json")
+			if defaultName, err := util.ParseBuildInfoProductBundleName(buildInfoPath); err == nil && pbs.Has(defaultName) {
+				lookupName = defaultName
+			}
+		}
+
+		pbPath, err := pbs.FindPath(lookupName)
+		if err != nil {
+			return nil, err
+		}
+		return &FuchsiaDirProductBundle{
+			build:         b,
+			productBundle: NewDirProductBundle(filepath.Join(b.dir, pbPath)),
+		}, nil
+	}
+	if productBundleName != "" || !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	return &FuchsiaDirProductBundle{
+		build: b,
+	}, nil
+}
+
+type FuchsiaDirProductBundle struct {
+	build         *FuchsiaDirBuild
+	productBundle *DirProductBundle
+}
+
+func (pb *FuchsiaDirProductBundle) String() string {
+	if pb.productBundle != nil {
+		return pb.productBundle.Dir()
+	}
+	return pb.build.dir
+}
+
+func (pb *FuchsiaDirProductBundle) Build() Build {
+	return pb.build
+}
+
+func (pb *FuchsiaDirProductBundle) GetProductBundleDir(ctx context.Context) (string, error) {
+	if pb.productBundle == nil {
+		return "", fmt.Errorf("no product bundle in %s: %w", pb.build.dir, os.ErrNotExist)
+	}
+	return pb.productBundle.Dir(), nil
+}
+
+func (pb *FuchsiaDirProductBundle) GetPackageRepository(
 	ctx context.Context,
 	blobFetchMode BlobFetchMode,
 	ffxRunDir ffx.RunDir,
@@ -845,17 +1063,40 @@ func (b *FuchsiaDirBuild) GetPackageRepository(
 	// hostFfx is ignored because FuchsiaDirBuild uses the ffx binary from
 	// its own local build directory. Unlike ArtifactsBuild, it does not
 	// download ffx and does not benefit from the host tool optimization.
-	ffxTool, err := b.GetFfx(ctx, ffxRunDir, version)
+	ffxTool, err := pb.build.GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx: %w", err)
 	}
 
-	blobFS := packages.NewDirBlobStore(filepath.Join(b.dir, "amber-files", "repository", "blobs"))
-	blobType, err := build.GetDeliveryBlobType(filepath.Join(b.dir, "delivery_blob_config.json"))
+	if pb.productBundle != nil {
+		return pb.productBundle.GetPackageRepository(ctx, ffxTool)
+	}
+	logger.Warningf(ctx, "no product bundle configured, falling back to amber-files")
+
+	blobFS := packages.NewDirBlobStore(filepath.Join(pb.build.dir, "amber-files", "repository", "blobs"))
+	blobType, err := build.GetDeliveryBlobType(filepath.Join(pb.build.dir, "delivery_blob_config.json"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get delivery blob type: %w", err)
 	}
-	return packages.NewRepository(ctx, filepath.Join(b.dir, "amber-files"), blobFS, ffxTool, blobType)
+	return packages.NewRepository(ctx, filepath.Join(pb.build.dir, "amber-files"), blobFS, ffxTool, blobType)
+}
+
+func (pb *FuchsiaDirProductBundle) GetVbmetaPath(ctx context.Context) (string, error) {
+	path, err := pb.getVbmetaPathFromProductBundle(ctx)
+	if err == nil {
+		return path, nil
+	}
+
+	logger.Warningf(ctx, "failed to get vbmeta from product bundle, trying images: %v", err)
+	return pb.build.getVbmetaPathFromImages(ctx)
+}
+
+func (pb *FuchsiaDirProductBundle) getVbmetaPathFromProductBundle(ctx context.Context) (string, error) {
+	if pb.productBundle == nil {
+		return "", fmt.Errorf("no product bundle in %s: %w", pb.build.dir, os.ErrNotExist)
+	}
+
+	return pb.productBundle.GetVbmetaPath()
 }
 
 func (b *FuchsiaDirBuild) GetPaverDir(ctx context.Context) (string, error) {
@@ -874,7 +1115,7 @@ func (b *FuchsiaDirBuild) GetPaver(
 	return paver.NewBuildPaver(bootserverPath, b.dir, paver.SSHPublicKey(sshPublicKey))
 }
 
-func (b *FuchsiaDirBuild) GetVbmetaPath(ctx context.Context) (string, error) {
+func (b *FuchsiaDirBuild) getVbmetaPathFromImages(ctx context.Context) (string, error) {
 	imagesJSON := filepath.Join(b.dir, paver.ImageManifest)
 	f, err := os.Open(imagesJSON)
 	if err != nil {
@@ -897,20 +1138,24 @@ func (b *FuchsiaDirBuild) GetVbmetaPath(ctx context.Context) (string, error) {
 }
 
 type ProductBundleDirBuild struct {
-	productBundleDir string
-	outputDir        string
+	productBundle *DirProductBundle
+	outputDir     string
 }
 
 func NewProductBundleDirBuild(
 	productBundleDir string,
 ) *ProductBundleDirBuild {
 	return &ProductBundleDirBuild{
-		productBundleDir: productBundleDir,
+		productBundle: NewDirProductBundle(productBundleDir),
 	}
 }
 
 func (b *ProductBundleDirBuild) String() string {
-	return b.productBundleDir
+	return b.productBundle.Dir()
+}
+
+func (b *ProductBundleDirBuild) Build() Build {
+	return b
 }
 
 func (b *ProductBundleDirBuild) OutputDir() string {
@@ -927,16 +1172,23 @@ func (b *ProductBundleDirBuild) GetFfx(
 	ffxRunDir ffx.RunDir,
 	version ffx.FfxVersionPolicy,
 ) (*ffx.FFXTool, error) {
-	ffxPath := filepath.Join(b.productBundleDir, "ffx")
+	ffxPath := filepath.Join(b.productBundle.Dir(), "ffx")
 	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version, "")
 }
 
 func (b *ProductBundleDirBuild) GetFlashManifest(ctx context.Context) (string, error) {
-	return b.productBundleDir, nil
+	return b.productBundle.Dir(), nil
+}
+
+func (b *ProductBundleDirBuild) GetProductBundle(
+	ctx context.Context,
+	productBundleName string,
+) (ProductBundle, error) {
+	return b, nil
 }
 
 func (b *ProductBundleDirBuild) GetProductBundleDir(ctx context.Context) (string, error) {
-	return b.productBundleDir, nil
+	return b.productBundle.Dir(), nil
 }
 
 func (b *ProductBundleDirBuild) GetPackageRepository(
@@ -954,22 +1206,7 @@ func (b *ProductBundleDirBuild) GetPackageRepository(
 		return nil, fmt.Errorf("failed to get ffx: %w", err)
 	}
 
-	productBundle, err := util.ParseProductBundle(b.productBundleDir)
-	if err != nil {
-		return nil, err
-	}
-
-	blobFS := packages.NewDirBlobStore(
-		filepath.Join(b.productBundleDir, productBundle.Repositories[0].BlobsPath),
-	)
-
-	var blobType *int
-	if productBundle.Repositories[0].DeliveryBlobType != 0 {
-		t := int(productBundle.Repositories[0].DeliveryBlobType)
-		blobType = &t
-	}
-
-	return packages.NewRepository(ctx, b.productBundleDir, blobFS, ffxTool, blobType)
+	return b.productBundle.GetPackageRepository(ctx, ffxTool)
 }
 
 func (b *ProductBundleDirBuild) GetPaverDir(ctx context.Context) (string, error) {
@@ -986,44 +1223,44 @@ func (b *ProductBundleDirBuild) GetPaver(
 }
 
 func (b *ProductBundleDirBuild) GetVbmetaPath(ctx context.Context) (string, error) {
-	productBundle, err := util.ParseProductBundle(b.productBundleDir)
-	if err != nil {
-		return "", err
-	}
-	return productBundle.GetSystemAImage("vbmeta", "zircon-a")
+	return b.productBundle.GetVbmetaPath()
 }
 
 type OmahaBuild struct {
-	build     Build
-	omahatool *omaha_tool.OmahaTool
-	avbtool   *avb.AVBTool
-	zbitool   *zbi.ZBITool
+	productBundle ProductBundle
+	omahatool     *omaha_tool.OmahaTool
+	avbtool       *avb.AVBTool
+	zbitool       *zbi.ZBITool
 }
 
 func NewOmahaBuild(
-	build Build,
+	productBundle ProductBundle,
 	omahatool *omaha_tool.OmahaTool,
 	avbtool *avb.AVBTool,
 	zbitool *zbi.ZBITool,
 ) *OmahaBuild {
 	return &OmahaBuild{
-		build:     build,
-		omahatool: omahatool,
-		avbtool:   avbtool,
-		zbitool:   zbitool,
+		productBundle: productBundle,
+		omahatool:     omahatool,
+		avbtool:       avbtool,
+		zbitool:       zbitool,
 	}
 }
 
 func (b *OmahaBuild) String() string {
-	return b.build.String()
+	return b.productBundle.String()
+}
+
+func (b *OmahaBuild) Build() Build {
+	return b
 }
 
 func (b *OmahaBuild) OutputDir() string {
-	return b.build.OutputDir()
+	return b.productBundle.Build().OutputDir()
 }
 
 func (b *OmahaBuild) GetBootserver(ctx context.Context) (string, error) {
-	return b.build.GetBootserver(ctx)
+	return b.productBundle.Build().GetBootserver(ctx)
 }
 
 func (b *OmahaBuild) GetFfx(
@@ -1031,7 +1268,14 @@ func (b *OmahaBuild) GetFfx(
 	ffxRunDir ffx.RunDir,
 	version ffx.FfxVersionPolicy,
 ) (*ffx.FFXTool, error) {
-	return b.build.GetFfx(ctx, ffxRunDir, version)
+	return b.productBundle.Build().GetFfx(ctx, ffxRunDir, version)
+}
+
+func (b *OmahaBuild) GetProductBundle(
+	ctx context.Context,
+	productBundleName string,
+) (ProductBundle, error) {
+	return b, nil
 }
 
 type versionedFlashManifest struct {
@@ -1064,7 +1308,7 @@ type flashCondition struct {
 }
 
 func (b *OmahaBuild) GetFlashManifest(ctx context.Context) (string, error) {
-	flashManifestPath, err := b.build.GetFlashManifest(ctx)
+	flashManifestPath, err := b.productBundle.Build().GetFlashManifest(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -1143,7 +1387,7 @@ func (b *OmahaBuild) GetFlashManifest(ctx context.Context) (string, error) {
 }
 
 func (b *OmahaBuild) GetProductBundleDir(ctx context.Context) (string, error) {
-	productBundleDir, err := b.build.GetProductBundleDir(ctx)
+	productBundleDir, err := b.productBundle.GetProductBundleDir(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get product bundle dir for %s: %w", b, err)
 	}
@@ -1223,7 +1467,7 @@ func (b *OmahaBuild) updateVBMeta(
 	return nil
 }
 
-// GetPackageRepository returns a Repository for this build.
+// GetPackageRepository returns a Repository for this product bundle.
 func (b *OmahaBuild) GetPackageRepository(
 	ctx context.Context,
 	blobFetchMode BlobFetchMode,
@@ -1231,11 +1475,11 @@ func (b *OmahaBuild) GetPackageRepository(
 	version ffx.FfxVersionPolicy,
 	hostFfx *ffx.FFXTool,
 ) (*packages.Repository, error) {
-	return b.build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version, hostFfx)
+	return b.productBundle.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version, hostFfx)
 }
 
 func (b *OmahaBuild) GetPaverDir(ctx context.Context) (string, error) {
-	return b.build.GetPaverDir(ctx)
+	return b.productBundle.Build().GetPaverDir(ctx)
 }
 
 // GetPaver downloads and returns a paver for the build.
@@ -1271,5 +1515,5 @@ func (b *OmahaBuild) GetPaver(
 }
 
 func (b *OmahaBuild) GetVbmetaPath(ctx context.Context) (string, error) {
-	return b.build.GetVbmetaPath(ctx)
+	return b.productBundle.GetVbmetaPath(ctx)
 }

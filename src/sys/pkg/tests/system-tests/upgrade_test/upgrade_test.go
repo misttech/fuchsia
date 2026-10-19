@@ -127,14 +127,14 @@ func doTest(ctx context.Context) error {
 	}
 
 	for i, buildWithVersion := range chainedBuilds {
-		build := buildWithVersion.Build
+		productBundle := buildWithVersion.ProductBundle
 		// FIXME(https://fxbug.dev/336897946): We need to use the latest ffx because
 		// F11's ffx doesn't actually refresh metadata. We can remove this once
 		// we cut the next stepping stone.
-		logger.Infof(ctx, "Refreshing TUF metadata in build %s with latest ffx", build)
+		logger.Infof(ctx, "Refreshing TUF metadata in %s with latest ffx", productBundle)
 
-		logger.Infof(ctx, "Calling GetPackageRepository with version: %q, blobFetchMode: %q for build %s", buildWithVersion.Version, buildWithVersion.BlobFetchMode, build)
-		repo, err := build.GetPackageRepository(ctx, buildWithVersion.BlobFetchMode, ffxRunDir, buildWithVersion.Version, latestFfx)
+		logger.Infof(ctx, "Calling GetPackageRepository with version: %q, blobFetchMode: %q for %s", buildWithVersion.Version, buildWithVersion.BlobFetchMode, productBundle)
+		repo, err := productBundle.GetPackageRepository(ctx, buildWithVersion.BlobFetchMode, ffxRunDir, buildWithVersion.Version, latestFfx)
 		if err != nil {
 			return fmt.Errorf("error getting repository: %w", err)
 		}
@@ -143,17 +143,21 @@ func doTest(ctx context.Context) error {
 			return fmt.Errorf("failed to refresh TUF metadata latest ffx: %w", err)
 		}
 
-		// Adapt the build for the installer.
-		build, err = c.installerConfig.ConfigureBuild(ctx, deviceClient, build)
+		// Adapt the product bundle for the installer.
+		productBundle, err = c.installerConfig.ConfigureProductBundle(
+			ctx,
+			deviceClient,
+			productBundle,
+		)
 		if err != nil {
-			return fmt.Errorf("failed to configure build for device: %w", err)
+			return fmt.Errorf("failed to configure product bundle for device: %w", err)
 		}
 
-		if build == nil {
-			return fmt.Errorf("installer did not configure a build")
+		if productBundle == nil {
+			return fmt.Errorf("installer did not configure a product bundle")
 		}
 
-		chainedBuilds[i].Build = build
+		chainedBuilds[i].ProductBundle = productBundle
 	}
 
 	if len(chainedBuilds) == 0 {
@@ -279,7 +283,7 @@ func initializeDevice(
 				ctx,
 				device,
 				latestFfxTool,
-				ota.build,
+				ota.productBundle,
 				sshPrivateKey.PublicKey(),
 				ota.version,
 			); err != nil {
@@ -290,7 +294,7 @@ func initializeDevice(
 				ctx,
 				device,
 				latestFfxTool,
-				ota.build,
+				ota.productBundle.Build(),
 				sshPrivateKey.PublicKey(),
 				ota.version,
 			); err != nil {
@@ -300,7 +304,7 @@ func initializeDevice(
 	}
 
 	// The device was initialized, so use the ffx from the build to communicate with it.
-	ffxLegacy, err := ota.build.GetFfx(ctx, ffxRunDir, ota.version)
+	ffxLegacy, err := ota.productBundle.Build().GetFfx(ctx, ffxRunDir, ota.version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx from build: %w", err)
 	}
@@ -336,12 +340,12 @@ func systemOTA(
 ) error {
 	var err error
 
-	currentFfx, err := srcOta.build.GetFfx(ctx, ffxRunDir, srcOta.version)
+	currentFfx, err := srcOta.productBundle.Build().GetFfx(ctx, ffxRunDir, srcOta.version)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build %s: %w", srcOta, err)
 	}
 
-	nextFfx, err := dstOta.build.GetFfx(ctx, ffxRunDir, dstOta.version)
+	nextFfx, err := dstOta.productBundle.Build().GetFfx(ctx, ffxRunDir, dstOta.version)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build %s: %w", dstOta, err)
 	}

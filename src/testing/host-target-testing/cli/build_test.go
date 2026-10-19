@@ -7,6 +7,8 @@ package cli
 import (
 	"context"
 	"flag"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/artifacts"
@@ -188,6 +190,56 @@ func TestRepeatableBuildConfigBlobFetchModeConfigured(t *testing.T) {
 			if builds[0].BlobFetchMode != expectedMode {
 				t.Fatalf("expected %v, got %v", expectedMode, builds[0].BlobFetchMode)
 			}
+			if builds[0].ProductBundle == nil {
+				t.Fatalf("expected ProductBundle to be populated, got nil")
+			}
 		})
+	}
+}
+
+func TestRepeatableBuildConfigProductBundleName(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	pbJSON := `[
+		{"name": "core.arm64", "path": "obj/build/images/fuchsia/product_bundle"},
+		{"name": "workbench_eng.arm64", "path": "obj/build/images/fuchsia/workbench_eng.arm64/product_bundle"}
+	]`
+	if err := os.WriteFile(filepath.Join(tmpDir, "product_bundles.json"), []byte(pbJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Multiple product bundles without -product-bundle-name should fail.
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	c := NewRepeatableBuildConfig(fs, nil, nil, "", "")
+	if err := fs.Parse([]string{"-fuchsia-build-dir", tmpDir}); err != nil {
+		t.Fatalf("failed to parse flags: %v", err)
+	}
+	if _, err := c.GetBuilds(ctx, nil, ""); err == nil {
+		t.Fatal("expected error for multiple product bundles without -product-bundle-name, got nil")
+	}
+
+	// Specifying -product-bundle-name resolves the matching ProductBundle.
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	c = NewRepeatableBuildConfig(fs, nil, nil, "", "")
+	if err := fs.Parse([]string{
+		"-fuchsia-build-dir", tmpDir,
+		"-product-bundle-name", "workbench_eng.arm64",
+	}); err != nil {
+		t.Fatalf("failed to parse flags: %v", err)
+	}
+	builds, err := c.GetBuilds(ctx, nil, "")
+	if err != nil {
+		t.Fatalf("GetBuilds failed: %v", err)
+	}
+	if len(builds) != 1 {
+		t.Fatalf("expected 1 build, got %d", len(builds))
+	}
+	pbDir, err := builds[0].ProductBundle.GetProductBundleDir(ctx)
+	if err != nil {
+		t.Fatalf("GetProductBundleDir failed: %v", err)
+	}
+	wantDir := filepath.Join(tmpDir, "obj/build/images/fuchsia/workbench_eng.arm64/product_bundle")
+	if pbDir != wantDir {
+		t.Errorf("got %q, want %q", pbDir, wantDir)
 	}
 }

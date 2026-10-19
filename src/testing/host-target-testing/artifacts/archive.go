@@ -62,11 +62,12 @@ func (a *Archive) GetBuildByID(
 	}
 
 	return &ArtifactsBuild{
-		id:       id,
-		archive:  a,
-		buildDir: filepath.Join(dir, id),
-		blobsDir: filepath.Join(dir, "blobs"),
-		srcs:     srcsMap,
+		id:             id,
+		archive:        a,
+		buildDir:       filepath.Join(dir, id),
+		blobsDir:       filepath.Join(dir, "blobs"),
+		productBundles: util.NewProductBundlesFromArchiveSrcs(srcsMap, ProductBundleManifest),
+		srcs:           srcsMap,
 	}, nil
 }
 

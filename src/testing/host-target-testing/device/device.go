@@ -859,11 +859,11 @@ func (c *Client) Pave(
 	return nil
 }
 
-// Flash the device to the specified build. Does not reconnect to the device.
+// Flash the device to the specified product bundle. Does not reconnect to the device.
 func (c *Client) Flash(
 	ctx context.Context,
 	ffxTool *ffx.FFXTool,
-	build artifacts.Build,
+	productBundle artifacts.ProductBundle,
 	publicKey ssh.PublicKey,
 ) error {
 	flasher := ffxTool.Flasher()
@@ -872,12 +872,12 @@ func (c *Client) Flash(
 	flasher.SetRetrySleep(c.flashRetrySleep)
 	flasher.SetSSHPublicKey(publicKey)
 
-	if productBundleDir, err := build.GetProductBundleDir(ctx); err == nil {
+	if productBundleDir, err := productBundle.GetProductBundleDir(ctx); err == nil {
 		logger.Infof(ctx, "Flashing with the product bundle %s", productBundleDir)
 		flasher.SetProductBundle(productBundleDir)
 	} else {
 		logger.Warningf(ctx, "Failed to download the product bundle, trying to fall back to the flash manifest: %v", err)
-		manifest, errMan := build.GetFlashManifest(ctx)
+		manifest, errMan := productBundle.Build().GetFlashManifest(ctx)
 		if errMan != nil {
 			return fmt.Errorf("failed to get flash manifest from build: %w", errMan)
 		}

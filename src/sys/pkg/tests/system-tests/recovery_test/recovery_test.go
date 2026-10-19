@@ -107,16 +107,29 @@ func doTest(ctx context.Context) error {
 	if len(builds) == 0 {
 		return fmt.Errorf("no builds configured")
 	}
-	build := builds[0].Build
+	productBundle := builds[0].ProductBundle
 	version := builds[0].Version
 
 	if err := util.RunWithTimeout(ctx, c.paveTimeout, func() error {
-		return initializeDevice(ctx, deviceClient, ffxTool, build, version)
+		return initializeDevice(
+			ctx,
+			deviceClient,
+			ffxTool,
+			productBundle,
+			version,
+		)
 	}); err != nil {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
 
-	return testRecovery(ctx, ffxTool, deviceClient, ffxTool.RunDir(), build, version)
+	return testRecovery(
+		ctx,
+		ffxTool,
+		deviceClient,
+		ffxTool.RunDir(),
+		productBundle,
+		version,
+	)
 }
 
 func testRecovery(
@@ -124,7 +137,7 @@ func testRecovery(
 	ffxTool *ffxpkg.FFXTool,
 	device *device.Client,
 	ffxRunDir ffxpkg.RunDir,
-	build artifacts.Build,
+	productBundle artifacts.ProductBundle,
 	version ffxpkg.FfxVersionPolicy,
 ) error {
 	for i := 1; i <= c.cycleCount; i++ {
@@ -134,7 +147,14 @@ func testRecovery(
 		// setting a timeout on the context, and running the actual test in a
 		// closure.
 		if err := util.RunWithTimeout(ctx, c.cycleTimeout, func() error {
-			return doTestRecovery(ctx, ffxTool, device, ffxRunDir, build, version)
+			return doTestRecovery(
+				ctx,
+				ffxTool,
+				device,
+				ffxRunDir,
+				productBundle,
+				version,
+			)
 		}); err != nil {
 			return fmt.Errorf("Recovery Cycle %d failed: %w", i, err)
 		}
@@ -148,20 +168,26 @@ func doTestRecovery(
 	ffxTool *ffxpkg.FFXTool,
 	device *device.Client,
 	ffxRunDir ffxpkg.RunDir,
-	build artifacts.Build,
+	productBundle artifacts.ProductBundle,
 	version ffxpkg.FfxVersionPolicy,
 ) error {
 	// We don't install an OTA, so we don't need to prefetch the blobs.
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxRunDir, version, ffxTool)
+	repo, err := productBundle.GetPackageRepository(
+		ctx,
+		artifacts.LazilyFetchBlobs,
+		ffxRunDir,
+		version,
+		ffxTool,
+	)
 	if err != nil {
 		return fmt.Errorf("unable to get repository: %w", err)
 	}
 
 	// We should use this ffx after we reboot.
 	// Get the FFX tool matching the version of the build we are testing to use for reconnection.
-	nextFfxTool, err := build.GetFfx(ctx, ffxRunDir, version)
+	nextFfxTool, err := productBundle.Build().GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
-		return fmt.Errorf("failed to get ffx from build %s: %w", build, err)
+		return fmt.Errorf("failed to get ffx from build %s: %w", productBundle, err)
 	}
 
 	updatePackage, err := repo.OpenUpdatePackage(ctx, "update/0")
@@ -220,12 +246,12 @@ func initializeDevice(
 	ctx context.Context,
 	device *device.Client,
 	ffx *ffxpkg.FFXTool,
-	build artifacts.Build,
+	productBundle artifacts.ProductBundle,
 	version ffxpkg.FfxVersionPolicy,
 ) error {
 	logger.Infof(ctx, "Initializing device")
 
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffx.RunDir(), version, ffx)
+	repo, err := productBundle.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffx.RunDir(), version, ffx)
 	if err != nil {
 		return err
 	}
@@ -253,11 +279,25 @@ func initializeDevice(
 		}
 
 		if c.useFlash {
-			if err := flash.FlashDevice(ctx, device, ffx, build, sshPrivateKey.PublicKey(), version); err != nil {
+			if err := flash.FlashDevice(
+				ctx,
+				device,
+				ffx,
+				productBundle,
+				sshPrivateKey.PublicKey(),
+				version,
+			); err != nil {
 				return fmt.Errorf("failed to flash device during initialization: %w", err)
 			}
 		} else {
-			if err := pave.PaveDevice(ctx, device, ffx, build, sshPrivateKey.PublicKey(), version); err != nil {
+			if err := pave.PaveDevice(
+				ctx,
+				device,
+				ffx,
+				productBundle.Build(),
+				sshPrivateKey.PublicKey(),
+				version,
+			); err != nil {
 				return fmt.Errorf("failed to pave device during initialization: %w", err)
 			}
 		}

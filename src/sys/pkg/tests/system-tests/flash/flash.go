@@ -21,7 +21,7 @@ func FlashDevice(
 	ctx context.Context,
 	d *device.Client,
 	ffxTool *ffxpkg.FFXTool,
-	build artifacts.Build,
+	productBundle artifacts.ProductBundle,
 	publicKey ssh.PublicKey,
 	version ffxpkg.FfxVersionPolicy,
 ) error {
@@ -29,12 +29,12 @@ func FlashDevice(
 	startTime := time.Now()
 
 	// Fetch the FFX tool associated with the build we are flashing to use for reconnection after the device reboots.
-	nextFfxTool, err := build.GetFfx(ctx, ffxTool.RunDir(), version)
+	nextFfxTool, err := productBundle.Build().GetFfx(ctx, ffxTool.RunDir(), version)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build: %w", err)
 	}
 
-	if err := d.Flash(ctx, ffxTool, build, publicKey); err != nil {
+	if err := d.Flash(ctx, ffxTool, productBundle, publicKey); err != nil {
 		return fmt.Errorf("device failed to flash: %w", err)
 	}
 

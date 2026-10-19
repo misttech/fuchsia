@@ -158,11 +158,12 @@ func (c *BuildConfig) GetBuild(
 }
 
 type RepeatableBuildConfig struct {
-	archiveConfig  *ArchiveConfig
-	deviceConfig   *DeviceConfig
-	defaultBuildID string
-	blobFetchMode  artifacts.BlobFetchMode
-	builds         []repeatableBuild
+	archiveConfig     *ArchiveConfig
+	deviceConfig      *DeviceConfig
+	defaultBuildID    string
+	blobFetchMode     artifacts.BlobFetchMode
+	productBundleName string
+	builds            []repeatableBuild
 }
 
 func NewRepeatableBuildConfig(
@@ -204,6 +205,12 @@ func NewRepeatableBuildConfig(
 		fmt.Sprintf("%sblob-fetch-mode", prefix),
 		"Default blob fetch mode for builds ('prefetch' or 'lazy', default is 'unspecified')",
 	)
+	fs.StringVar(
+		&c.productBundleName,
+		fmt.Sprintf("%sproduct-bundle-name", prefix),
+		"",
+		"Name of the product bundle to use",
+	)
 
 	return c
 }
@@ -223,26 +230,16 @@ func (c *RepeatableBuildConfig) GetBuilds(
 	var builds []artifacts.BuildWithVersion
 	for _, b := range c.builds {
 		var build artifacts.Build
-		var err error
 		switch b.kind {
 		case builderNameKind:
 			builder := c.archiveConfig.BuildArchive().GetBuilder(b.value)
-			buildID, err := builder.GetLatestBuildID(ctx)
+			artifactsBuild, err := builder.GetLatestBuild(ctx, outputDir)
 			if err != nil {
 				return nil, fmt.Errorf("failed to lookup build id: %w", err)
 			}
-
-			build, err = c.archiveConfig.BuildArchive().GetBuildByID(
-				ctx,
-				buildID,
-				outputDir,
-			)
-			if err != nil {
-				return nil, err
-			}
-
+			build = artifactsBuild
 		case buildIdKind:
-			build, err = c.archiveConfig.BuildArchive().GetBuildByID(
+			artifactsBuild, err := c.archiveConfig.BuildArchive().GetBuildByID(
 				ctx,
 				b.value,
 				outputDir,
@@ -250,13 +247,18 @@ func (c *RepeatableBuildConfig) GetBuilds(
 			if err != nil {
 				return nil, err
 			}
+			build = artifactsBuild
 		case fuchsiaBuildDirKind:
 			build = artifacts.NewFuchsiaDirBuild(b.value)
 		case productBundleDirKind:
 			build = artifacts.NewProductBundleDirBuild(b.value)
 		}
+		productBundle, err := build.GetProductBundle(ctx, c.productBundleName)
+		if err != nil {
+			return nil, err
+		}
 		builds = append(builds, artifacts.BuildWithVersion{
-			Build:         build,
+			ProductBundle: productBundle,
 			Version:       ffx.FfxVersionPolicy(b.versionPolicy),
 			BlobFetchMode: c.blobFetchMode,
 		})
@@ -272,9 +274,13 @@ func (c *RepeatableBuildConfig) GetBuilds(
 		if err != nil {
 			return nil, err
 		}
+		productBundle, err := build.GetProductBundle(ctx, c.productBundleName)
+		if err != nil {
+			return nil, err
+		}
 
 		builds = append(builds, artifacts.BuildWithVersion{
-			Build:         build,
+			ProductBundle: productBundle,
 			Version:       ffx.FfxVersionPolicyLatest,
 			BlobFetchMode: c.blobFetchMode,
 		})

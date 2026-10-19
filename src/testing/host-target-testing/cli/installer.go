@@ -148,12 +148,12 @@ func (c *InstallerConfig) NeedsInitialization() bool {
 	return c.installerMode == Omaha
 }
 
-// ConfigureBuild configures a build for the updater.
-func (c *InstallerConfig) ConfigureBuild(
+// ConfigureProductBundle configures a product bundle for the updater.
+func (c *InstallerConfig) ConfigureProductBundle(
 	ctx context.Context,
 	device *device.Client,
-	build artifacts.Build,
-) (artifacts.Build, error) {
+	productBundle artifacts.ProductBundle,
+) (artifacts.ProductBundle, error) {
 	switch c.installerMode {
 	case Omaha:
 		if c.omahaTool == nil {
@@ -175,17 +175,17 @@ func (c *InstallerConfig) ConfigureBuild(
 		}
 
 		return artifacts.NewOmahaBuild(
-			build,
+			productBundle,
 			c.omahaTool,
 			avbTool,
 			zbiTool,
 		), nil
 
 	case SystemUpdateChecker:
-		return build, nil
+		return productBundle, nil
 
 	case SystemUpdater:
-		return build, nil
+		return productBundle, nil
 
 	default:
 		return nil, fmt.Errorf("Invalid installer mode %v", c.installerMode)

@@ -20,14 +20,14 @@ import (
 
 type otaData struct {
 	name          string
-	build         artifacts.Build
+	productBundle artifacts.ProductBundle
 	repo          *packages.Repository
 	updatePackage *packages.UpdatePackage
 	version       ffx.FfxVersionPolicy
 }
 
 func (o *otaData) String() string {
-	return fmt.Sprintf("%s(%s)", o.name, o.build.String())
+	return fmt.Sprintf("%s(%s)", o.name, o.productBundle.String())
 }
 
 func newOtas(
@@ -45,7 +45,7 @@ func newOtas(
 	// `cycleTimeout` time limit.
 	otas := []*otaData{}
 	for i, buildWithVersion := range builds {
-		build := buildWithVersion.Build
+		productBundle := buildWithVersion.ProductBundle
 		version := buildWithVersion.Version
 		var name string
 		nth := len(builds) - 1 - i
@@ -77,7 +77,7 @@ func newOtas(
 			ctx,
 			rand,
 			latestFfx,
-			build,
+			productBundle,
 			name,
 			blobFetchMode,
 			addRandomData,
@@ -104,7 +104,7 @@ func newOtas(
 		ctx,
 		rand,
 		latestFfx,
-		builds[len(builds)-1].Build,
+		builds[len(builds)-1].ProductBundle,
 		"N-prime",
 		primeBlobFetchMode,
 		addRandomData,
@@ -126,7 +126,7 @@ func newOta(
 	ctx context.Context,
 	rand *rand.Rand,
 	latestFfx *ffx.FFXTool,
-	build artifacts.Build,
+	productBundle artifacts.ProductBundle,
 	name string,
 	blobFetchMode artifacts.BlobFetchMode,
 	addRandomData bool,
@@ -145,7 +145,13 @@ func newOta(
 	if err := latestFfx.EnsureOutputDirsExist(ctx); err != nil {
 		return nil, fmt.Errorf("failed to recreate output dirs: %w", err)
 	}
-	repo, err := build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version, latestFfx)
+	repo, err := productBundle.GetPackageRepository(
+		ctx,
+		blobFetchMode,
+		ffxRunDir,
+		version,
+		latestFfx,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error getting repository: %w", err)
 	}
@@ -188,7 +194,7 @@ func newOta(
 
 	ota := &otaData{
 		name:          name,
-		build:         build,
+		productBundle: productBundle,
 		repo:          repo,
 		updatePackage: updatePackage,
 		version:       version,

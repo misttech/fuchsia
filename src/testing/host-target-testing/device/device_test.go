@@ -39,6 +39,7 @@ func (r fakeResolver) WaitToFindDeviceInNetboot(ctx context.Context) (string, er
 type fakeBuild struct{}
 
 func (b fakeBuild) String() string                                    { return "fake-build" }
+func (b fakeBuild) Build() artifacts.Build                            { return b }
 func (b fakeBuild) OutputDir() string                                 { return "fake-output-dir" }
 func (b fakeBuild) GetBootserver(ctx context.Context) (string, error) { return "", nil }
 func (b fakeBuild) GetFfx(ctx context.Context, ffxRunDir ffx.RunDir, version ffx.FfxVersionPolicy) (*ffx.FFXTool, error) {
@@ -46,6 +47,9 @@ func (b fakeBuild) GetFfx(ctx context.Context, ffxRunDir ffx.RunDir, version ffx
 }
 func (b fakeBuild) GetFlashManifest(ctx context.Context) (string, error) {
 	return "dir/flash.json", nil
+}
+func (b fakeBuild) GetProductBundle(ctx context.Context, productBundleName string) (artifacts.ProductBundle, error) {
+	return b, nil
 }
 func (b fakeBuild) GetProductBundleDir(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no product bundle")

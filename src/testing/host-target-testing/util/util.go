@@ -18,7 +18,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -444,6 +446,195 @@ func ParseProductBundle(path string) (*productbundle.ProductBundle, error) {
 	}
 
 	return productBundle, nil
+}
+
+// ParseProductBundleRepository parses product_bundle.json in pbDir and returns
+// the local blobs directory path and optional delivery blob type for its first
+// repository.
+func ParseProductBundleRepository(pbDir string) (string, *int, error) {
+	productBundle, err := ParseProductBundle(pbDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to parse product bundle in %s: %w", pbDir, err)
+	}
+	if len(productBundle.Repositories) == 0 {
+		return "", nil, fmt.Errorf("product bundle in %s has no repositories", pbDir)
+	}
+
+	repo := productBundle.Repositories[0]
+	var blobType *int
+	if repo.DeliveryBlobType != 0 {
+		t := int(repo.DeliveryBlobType)
+		blobType = &t
+	}
+
+	return filepath.Join(pbDir, repo.BlobsPath), blobType, nil
+}
+
+// ParseTransferManifestBlobs parses a product bundle transfer.json manifest and
+// returns the remote paths (e.g. "blobs/1/<merkle>") for all blob entries.
+func ParseTransferManifestBlobs(transferManifestPath string) ([]string, error) {
+	f, err := os.Open(transferManifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open transfer manifest %s: %w", transferManifestPath, err)
+	}
+	defer f.Close()
+
+	var transferManifest struct {
+		Version string `json:"version"`
+		Entries []struct {
+			Type    string `json:"type"`
+			Remote  string `json:"remote"`
+			Entries []struct {
+				Name string `json:"name"`
+			} `json:"entries"`
+		} `json:"entries"`
+	}
+	if err := json.NewDecoder(f).Decode(&transferManifest); err != nil {
+		return nil, fmt.Errorf("failed to decode transfer manifest %s: %w", transferManifestPath, err)
+	}
+	if transferManifest.Version != "1" {
+		return nil, fmt.Errorf("transfer.json version 1 is supported; found version %s", transferManifest.Version)
+	}
+
+	var blobs []string
+	for _, entry := range transferManifest.Entries {
+		if entry.Type == "blobs" {
+			for _, blob := range entry.Entries {
+				blobs = append(blobs, path.Join(entry.Remote, blob.Name))
+			}
+		}
+	}
+	return blobs, nil
+}
+
+// ProductBundles maps product bundle names to their relative paths within a build.
+type ProductBundles struct {
+	paths map[string]string
+}
+
+func NewProductBundles(paths map[string]string) *ProductBundles {
+	return &ProductBundles{paths: paths}
+}
+
+// ParseProductBundlesManifest parses a product_bundles.json manifest file.
+func ParseProductBundlesManifest(productBundlesPath string) (*ProductBundles, error) {
+	f, err := os.Open(productBundlesPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s: %w", productBundlesPath, err)
+	}
+	defer f.Close()
+
+	var productBundles []struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(f).Decode(&productBundles); err != nil {
+		return nil, fmt.Errorf("failed to parse product bundles path %s: %w", productBundlesPath, err)
+	}
+
+	paths := make(map[string]string, len(productBundles))
+	for _, pb := range productBundles {
+		paths[pb.Name] = pb.Path
+	}
+
+	return NewProductBundles(paths), nil
+}
+
+// NewProductBundlesFromArchiveSrcs extracts the product bundles present in a
+// build archive's file listing (under "product_bundles/<name>/<manifestName>").
+func NewProductBundlesFromArchiveSrcs(srcs map[string]struct{}, manifestName string) *ProductBundles {
+	paths := make(map[string]string)
+	suffix := "/" + manifestName
+	for src := range srcs {
+		if strings.HasPrefix(src, "product_bundles/") && strings.HasSuffix(src, suffix) {
+			name := strings.TrimSuffix(strings.TrimPrefix(src, "product_bundles/"), suffix)
+			if name != "" && !strings.Contains(name, "/") {
+				paths[name] = path.Join("product_bundles", name)
+			}
+		}
+	}
+	return NewProductBundles(paths)
+}
+
+func (pbs *ProductBundles) Count() int {
+	return len(pbs.paths)
+}
+
+func (pbs *ProductBundles) Has(productBundleName string) bool {
+	_, ok := pbs.paths[productBundleName]
+	return ok
+}
+
+func (pbs *ProductBundles) Names() []string {
+	names := make([]string, 0, len(pbs.paths))
+	for name := range pbs.paths {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// FindPath returns the relative path for the named product bundle (or the
+// single entry when productBundleName is empty). Returns an error if no product
+// bundles exist, if the named bundle is not found, or if productBundleName is
+// empty and multiple product bundles are present.
+func (pbs *ProductBundles) FindPath(productBundleName string) (string, error) {
+	if len(pbs.paths) == 0 {
+		return "", fmt.Errorf("no product bundles found")
+	}
+
+	if productBundleName != "" {
+		if p, ok := pbs.paths[productBundleName]; ok {
+			return p, nil
+		}
+		return "", fmt.Errorf(
+			"product bundle %q not found (available: %s)",
+			productBundleName,
+			strings.Join(pbs.Names(), ", "),
+		)
+	}
+
+	if len(pbs.paths) > 1 {
+		return "", fmt.Errorf(
+			"multiple product bundles found (%s); specify --product-bundle-name",
+			strings.Join(pbs.Names(), ", "),
+		)
+	}
+
+	for _, p := range pbs.paths {
+		return p, nil
+	}
+	return "", fmt.Errorf("no product bundles found")
+}
+
+// ParseBuildInfoProductBundleName parses build_info.json and returns the
+// "<product>.<board>" name for its primary configuration.
+func ParseBuildInfoProductBundleName(buildInfoPath string) (string, error) {
+	f, err := os.Open(buildInfoPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	var buildInfo struct {
+		Configurations []struct {
+			Board   string `json:"board"`
+			Product string `json:"product"`
+		} `json:"configurations"`
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(f).Decode(&buildInfo); err != nil {
+		return "", fmt.Errorf("failed to read build info: %w", err)
+	}
+	if len(buildInfo.Configurations) == 0 {
+		return "", fmt.Errorf("no configurations found in %s", buildInfoPath)
+	}
+
+	config := buildInfo.Configurations[0]
+	if config.Product == "" || config.Board == "" {
+		return "", fmt.Errorf("empty product or board in %s", buildInfoPath)
+	}
+	return fmt.Sprintf("%s.%s", config.Product, config.Board), nil
 }
 
 func UpdateProductBundle(productBundleDir string, productBundle *productbundle.ProductBundle) error {
