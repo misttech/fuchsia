@@ -349,8 +349,8 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
     }
     ier.WriteTo(io.io());
 
-    // Clear and set up the FIFO
-    ResetAndEnableFifos(io);
+    // Clear and set up the FIFO and clear any pending interrupts.
+    ClearPendingInterrupts(io);
 
     // Drive flow control bits high since we don't actively manage them.
     auto mcr = ModemControlRegister::Get().FromValue(0);
@@ -369,6 +369,12 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
       (void)CaptureDivisor(
           io,
           LineControlRegister::Get().ReadFrom(io.io()).set_divisor_latch_access(false).reg_value());
+
+      // If the UART became busy while DLAB was set, WriteLcr will have forced
+      // it idle by resetting the FIFOs without being able to read RBR (which
+      // is not addressable while DLAB is set), possibly leaving a character
+      // timeout latched.  So clear any pending interrupts again.
+      ClearPendingInterrupts(io);
     }
   }
 
@@ -514,6 +520,11 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
 
   template <typename IoProvider, typename IrqProvider>
   void InitInterrupt(IoProvider& io, IrqProvider& irq) {
+    // Note that the FIFOs are deliberately not reset here: the TX FIFO may
+    // still hold output written since Init(), and any RX data received since
+    // then will be drained (clearing any character timeout) by Interrupt().
+    // Any other condition latched since Init() is likewise handled there.
+
     // Enable receive interrupts.
     EnableRxInterrupt(io);
 
@@ -545,6 +556,18 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
           // available and loop while reading the amount of bytes in the fifo.
           bool should_drain_rx = true;
           auto lsr = LineStatusRegister::Get().ReadFrom(io.io());
+          if (id == InterruptType::kCharTimeout && !lsr.data_ready()) {
+            // The DesignWare UART can assert kCharTimeout even when no data is
+            // available in the RX FIFO (LSR.DR == 0), e.g. if an earlier stage
+            // reset the RX FIFO via FCR.RFIFOR without reading RBR.  Init(),
+            // WakeupFromSuspend() and ForceIdle() avoid leaving the UART in
+            // this state, but it is not otherwise preventable, so recover
+            // from it here.  Note that this discards the contents of both
+            // FIFOs, including any queued output.
+            ClearStaleCharTimeout(io);
+            ResetAndEnableFifos(io);
+            break;
+          }
           for (; should_drain_rx && lsr.data_ready();
                lsr = LineStatusRegister::Get().ReadFrom(io.io())) {
             auto rx_irq = RxInterrupt(
@@ -657,7 +680,11 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
 
     // FCR is write-only, so it cannot be saved.  Reprogram it the same way
     // Init does.  (FCR is not multiplexed by DLAB.)
-    ResetAndEnableFifos(io);
+    if (lcr_restored) {
+      ClearPendingInterrupts(io);
+    } else {
+      ResetAndEnableFifos(io);
+    }
 
     ModemControlRegister::Get().FromValue(saved_mcr_).WriteTo(io.io());
 
@@ -687,6 +714,74 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
     }
     fcr.set_receiver_trigger(FifoControlRegister::kReceiveTriggerLevel1Char);
     fcr.WriteTo(io.io());
+  }
+
+  // Reset the FIFOs (discarding their contents) and clear any latched
+  // interrupt conditions in the hardware.
+  //
+  // Reading LSR clears receiver line status errors (kRxLineStatus).  A latched
+  // character timeout interrupt (kCharTimeout) is only cleared by reading RBR:
+  // on DW_apb_uart, resetting the RX FIFO via FCR.RFIFOR clears LSR.DR without
+  // clearing the character timeout flip-flop.  So if LSR.DR is set, read RBR
+  // *before* resetting the RX FIFO.  Otherwise, a character timeout may still
+  // be latched from before an earlier stage reset the RX FIFO.  Only if one
+  // actually is, clear it via ClearStaleCharTimeout (which discards the FIFOs'
+  // contents, as resetting them below would anyway).  This is skipped if
+  // LCR.DLAB is set, since then neither RBR nor IER is addressable.
+  //
+  // Reading MSR and USR clears modem status delta (kModemStatus) and busy
+  // detect (kDwBusyDetect) conditions.
+  template <class IoProvider>
+  void ClearPendingInterrupts(IoProvider& io) {
+    if (LineStatusRegister::Get().ReadFrom(io.io()).data_ready()) {
+      // Note that if DLAB happens to be set, this reads DLL instead, which is
+      // harmless.
+      RxBufferRegister::Get().ReadFrom(io.io());
+    } else if (!LineControlRegister::Get().ReadFrom(io.io()).divisor_latch_access() &&
+               CharTimeoutPending(io)) {
+      ClearStaleCharTimeout(io);
+    }
+    ResetAndEnableFifos(io);
+    ModemStatusRegister::Get().ReadFrom(io.io());
+    UartStatusRegister::Get().ReadFrom(io.io());
+  }
+
+  // Returns true if a character timeout interrupt (kCharTimeout) is pending.
+  // IIR only reports enabled interrupt sources, so temporarily enable only the
+  // RX interrupt (IER.ERBFI), restoring IER afterwards.  Leaving IER.ETBEI
+  // clear also ensures that reading IIR does not clear a pending THRE
+  // interrupt.  Since kCharTimeout has a higher priority than everything but
+  // kRxLineStatus (whose IER.ELSI is clear here), IIR reports it if pending.
+  // LCR.DLAB must be clear, since otherwise offset 1 addresses DLH, not IER.
+  // If the UART's IRQ is unmasked, this may assert it briefly, which is
+  // harmless: Interrupt() will find nothing pending in IIR (or handle it).
+  template <class IoProvider>
+  bool CharTimeoutPending(IoProvider& io) {
+    auto ier = InterruptEnableRegister::Get().ReadFrom(io.io());
+    const uint32_t saved_ier = ier.reg_value();
+    ier.set_rx_available(true)
+        .set_tx_empty(false)
+        .set_line_status(false)
+        .set_modem_status(false)
+        .WriteTo(io.io());
+    const bool pending = InterruptIdentRegister::Get().ReadFrom(io.io()).interrupt_id() ==
+                         InterruptType::kCharTimeout;
+    InterruptEnableRegister::Get().FromValue(saved_ier).WriteTo(io.io());
+    return pending;
+  }
+
+  // Clear a character timeout interrupt (kCharTimeout) that may be latched
+  // even though the RX FIFO is empty (LSR.DR == 0).  Per the DW_apb_uart
+  // databook, a character timeout interrupt is only cleared by reading RBR;
+  // reading IIR or LSR does not clear it.  However, when synthesized with
+  // PSLVERR_RESP_EN = 1, reading an empty RBR while FIFOs are enabled
+  // (FCR.FIFOE == 1) generates an APB slave error (PSLVERR).  So disable the
+  // FIFOs before performing a dummy RBR read.  Changing FCR.FIFOE resets both
+  // FIFOs, discarding their contents.  The caller must re-enable the FIFOs.
+  template <class IoProvider>
+  void ClearStaleCharTimeout(IoProvider& io) {
+    FifoControlRegister::Get().FromValue(0).WriteTo(io.io());
+    RxBufferRegister::Get().ReadFrom(io.io());
   }
 
   // Write |value| to LCR, verifying that the write took effect.
@@ -725,10 +820,22 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
   // least once any character currently being shifted out has been sent).
   template <class IoProvider>
   void ForceIdle(IoProvider& io) {
+    // When synthesized with PSLVERR_RESP_EN = 1, reading an empty RBR while
+    // FIFOs are enabled generates an APB slave error (PSLVERR), so only read
+    // RBR if data is ready.  (Note that if DLAB happens to be set, this reads
+    // DLL instead, which is harmless.)
+    //
+    // Read RBR before resetting the RX FIFO, since that clears any character
+    // timeout interrupt (kCharTimeout), which resetting the RX FIFO does not.
+    // Otherwise it would be left latched with LSR.DR == 0.
+    if (LineStatusRegister::Get().ReadFrom(io.io()).data_ready()) {
+      RxBufferRegister::Get().ReadFrom(io.io());
+    }
     ResetAndEnableFifos(io);
-    // Note that if DLAB happens to be set, this reads DLL instead, which is
-    // harmless.
-    RxBufferRegister::Get().ReadFrom(io.io());
+    // A character may have been received since the check above.
+    if (LineStatusRegister::Get().ReadFrom(io.io()).data_ready()) {
+      RxBufferRegister::Get().ReadFrom(io.io());
+    }
   }
 
   // Wait, up to a limit, for all queued output to be transmitted.  Returns

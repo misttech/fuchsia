@@ -14,8 +14,42 @@ using SimpleTestDriver = uart::KernelDriver<uart::dw8250::Driver, uart::mock::Io
                                             uart::UnsynchronizedPolicy, uart::mock::IrqProvider>;
 constexpr zbi_dcfg_simple_t kTestConfig = {};
 
+// The value of IER while Init() runs (PTIME only), and while waking up from
+// suspend (all disabled by PrepareForSuspend).
+constexpr uint32_t kInitIer = 0x80;
+constexpr uint32_t kSuspendedIer = 0x00;
+
+// The sequence of register accesses made by ClearPendingInterrupts when the RX
+// FIFO is empty (LSR.DR == 0), LCR.DLAB is clear, and no character timeout is
+// pending.  |ier| is the current value of IER.
 template <typename Mock>
-void AppendInitPrologue(Mock& mock) {
+void AppendClearPendingInterruptsSequence(Mock& mock, uint32_t ier) {
+  mock.ExpectRead(uint32_t{0x60}, 5)                // LineStatus (clear kRxLineStatus, DR == 0)
+      .ExpectRead(uint32_t{0x03}, 3)                // LineControl (DLAB clear)
+      .ExpectRead(ier, 1)                           // InterruptEnable
+      .ExpectWrite((ier & ~uint32_t{0x0f}) | 1, 1)  // InterruptEnable (ERBFI only)
+      .ExpectRead(uint32_t{0xc1}, 2)                // InterruptIdent (kNone: no kCharTimeout)
+      .ExpectWrite(ier, 1)                          // InterruptEnable (restored)
+      .ExpectWrite(uint32_t{0x17}, 2)               // FifoControlRegister (ResetAndEnableFifos)
+      .ExpectRead(uint32_t{0x00}, 6)                // ModemStatus (clear kModemStatus)
+      .ExpectRead(uint32_t{0x00}, 31);              // UartStatus (clear kDwBusyDetect)
+}
+
+// As above, but with LCR.DLAB stuck set, so the character timeout check (which
+// requires access to IER) is skipped.
+template <typename Mock>
+void AppendClearPendingInterruptsDlabSetSequence(Mock& mock) {
+  mock.ExpectRead(uint32_t{0x60}, 5)    // LineStatus (clear kRxLineStatus, DR == 0)
+      .ExpectRead(uint32_t{0x83}, 3)    // LineControl (DLAB set)
+      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControlRegister (ResetAndEnableFifos)
+      .ExpectRead(uint32_t{0x00}, 6)    // ModemStatus (clear kModemStatus)
+      .ExpectRead(uint32_t{0x00}, 31);  // UartStatus (clear kDwBusyDetect)
+}
+
+// The register accesses made by Init() before it first clears pending
+// interrupts.
+template <typename Mock>
+void AppendInitHead(Mock& mock) {
   mock
       // Init()
       .ExpectRead(uint32_t{0x103d32}, 0x3d)  // ComponentParameterRegister read
@@ -31,16 +65,22 @@ void AppendInitPrologue(Mock& mock) {
                                              //   AFCE_MODE
                                              //   APB_DATA_WIDTH = 2
       .ExpectRead(uint32_t{0x60}, 5)         // LineStatus (THRE and TEMT set: TX drained)
-      .ExpectWrite(uint32_t{0x80}, 1)        // InterruptEnableRegister write
-      .ExpectWrite(uint32_t{0x17}, 2)        // FifoControlRegister write
-      .ExpectWrite(uint32_t{0x03}, 4)        // ModemControlRegister write
-      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
-      .ExpectRead(uint32_t{0x03}, 3);        // LineControl (8N1)
+      .ExpectWrite(uint32_t{0x80}, 1);       // InterruptEnableRegister write
 }
 
+// The register accesses made by Init() after it first clears pending
+// interrupts, up to recording the divisor.
 template <typename Mock>
-void AppendInitSequence(Mock& mock) {
-  AppendInitPrologue(mock);
+void AppendInitBody(Mock& mock) {
+  mock.ExpectWrite(uint32_t{0x03}, 4)  // ModemControlRegister write
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectRead(uint32_t{0x03}, 3);  // LineControl (8N1)
+}
+
+// The register accesses made by Init() when recording the divisor succeeds
+// without the UART ever being busy.
+template <typename Mock>
+void AppendInitRecordDivisor(Mock& mock) {
   mock
       // Record the divisor.
       .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
@@ -51,9 +91,22 @@ void AppendInitSequence(Mock& mock) {
       .ExpectRead(uint32_t{0x08}, 48)  // FractionalDivisorLatch
       .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3)   // LineControl readback (took effect)
-      // End of Init()
-      ;
+      .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (took effect)
+}
+
+template <typename Mock>
+void AppendInitPrologue(Mock& mock) {
+  AppendInitHead(mock);
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
+  AppendInitBody(mock);
+}
+
+template <typename Mock>
+void AppendInitSequence(Mock& mock) {
+  AppendInitPrologue(mock);
+  AppendInitRecordDivisor(mock);
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
+  // End of Init()
 }
 
 // The sequence of register accesses made by PrepareForSuspend.
@@ -78,9 +131,9 @@ void AppendWakeupFromSuspendSequence(Mock& mock) {
       .ExpectWrite(uint32_t{0x01}, 1)   // DivisorLatchUpper
       .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
-      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
-      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectRead(uint32_t{0x03}, 3);   // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kSuspendedIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
       .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
 }
 
@@ -171,9 +224,9 @@ TEST(Dw8250Tests, SuspendResumeAfterSetLineControlRestoresZeroFractionalDivisor)
       .ExpectWrite(uint32_t{0x00}, 1)   // DivisorLatchUpper
       .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
-      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
-      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectRead(uint32_t{0x03}, 3);   // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kSuspendedIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
       .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
 
   driver.Init();
@@ -196,6 +249,7 @@ TEST(Dw8250Tests, SetLineControlIgnoredDlabWrite) {
         .ExpectWrite(uint32_t{0x83}, 3)  // LineControl (8N1 | DLAB)
         .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (ignored)
   }
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
   mock
       // SetLineControl()
       .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
@@ -204,11 +258,11 @@ TEST(Dw8250Tests, SetLineControlIgnoredDlabWrite) {
   AppendPrepareForSuspendSequence(mock);
   mock
       // WakeupFromSuspend() leaves the divisor alone, since none was recorded.
-      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
-      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
-      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kSuspendedIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
       .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
 
   driver.Init();
@@ -315,21 +369,22 @@ TEST(Dw8250Tests, InitWaitsForTxDrained) {
       .ExpectRead(uint32_t{0x00}, 5)         // LineStatus (TX FIFO not empty)
       .ExpectRead(uint32_t{0x20}, 5)         // LineStatus (THRE set, TEMT clear)
       .ExpectRead(uint32_t{0x60}, 5)         // LineStatus (THRE and TEMT set: TX drained)
-      .ExpectWrite(uint32_t{0x80}, 1)        // InterruptEnableRegister write
-      .ExpectWrite(uint32_t{0x17}, 2)        // FifoControlRegister write
-      .ExpectWrite(uint32_t{0x03}, 4)        // ModemControlRegister write
-      .ExpectRead(uint32_t{0x01}, 31)        // UartStatus (busy, e.g. RX in progress)
-      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
-      .ExpectRead(uint32_t{0x03}, 3)         // LineControl (8N1)
-      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x83}, 3)        // LineControl (8N1 | DLAB)
-      .ExpectRead(uint32_t{0x83}, 3)         // LineControl readback (took effect)
-      .ExpectRead(uint32_t{0x0d}, 0)         // DivisorLatchLower
-      .ExpectRead(uint32_t{0x01}, 1)         // DivisorLatchUpper
-      .ExpectRead(uint32_t{0x08}, 48)        // FractionalDivisorLatch
-      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x03}, 3)        // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3);        // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x80}, 1);       // InterruptEnableRegister write
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)  // ModemControlRegister write
+      .ExpectRead(uint32_t{0x01}, 31)  // UartStatus (busy, e.g. RX in progress)
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectRead(uint32_t{0x03}, 3)   // LineControl (8N1)
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x83}, 3)  // LineControl (8N1 | DLAB)
+      .ExpectRead(uint32_t{0x83}, 3)   // LineControl readback (took effect)
+      .ExpectRead(uint32_t{0x0d}, 0)   // DivisorLatchLower
+      .ExpectRead(uint32_t{0x01}, 1)   // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x08}, 48)  // FractionalDivisorLatch
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
 
   driver.Init();
 }
@@ -344,8 +399,10 @@ TEST(Dw8250Tests, InitDoesNotWriteLcrWhileBusy) {
   mock
       // Record the divisor.
       .ExpectRead(uint32_t{0x01}, 31)  // UartStatus (busy, e.g. RX in progress)
+      .ExpectRead(uint32_t{0x61}, 5)   // LineStatus (data_ready == 1)
+      .ExpectRead(uint32_t{0x00}, 0)   // RxBuffer (clear kCharTimeout before FIFO reset)
       .ExpectWrite(uint32_t{0x17}, 2)  // FifoControl (reset FIFOs to force idle)
-      .ExpectRead(uint32_t{0x00}, 0)   // RxBuffer (drain)
+      .ExpectRead(uint32_t{0x60}, 5)   // LineStatus (data_ready == 0, no RBR read)
       .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x83}, 3)  // LineControl (8N1 | DLAB)
       .ExpectRead(uint32_t{0x83}, 3)   // LineControl readback (took effect)
@@ -353,11 +410,16 @@ TEST(Dw8250Tests, InitDoesNotWriteLcrWhileBusy) {
       .ExpectRead(uint32_t{0x01}, 1)   // DivisorLatchUpper
       .ExpectRead(uint32_t{0x08}, 48)  // FractionalDivisorLatch
       .ExpectRead(uint32_t{0x01}, 31)  // UartStatus (busy)
+      .ExpectRead(uint32_t{0x60}, 5)   // LineStatus (data_ready == 0, no RBR read)
       .ExpectWrite(uint32_t{0x17}, 2)  // FifoControl (reset FIFOs to force idle)
+      .ExpectRead(uint32_t{0x61}, 5)   // LineStatus (data_ready == 1, received since reset)
       .ExpectRead(uint32_t{0x00}, 0)   // DivisorLatchLower (drain, DLAB still set)
       .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
       .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (took effect)
+  // The UART was forced idle while DLAB was set, so pending interrupts are
+  // cleared again.
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
   // The divisor was recorded, so it is restored on wakeup.
   AppendPrepareForSuspendSequence(mock);
   AppendWakeupFromSuspendSequence(mock);
@@ -384,8 +446,10 @@ TEST(Dw8250Tests, WakeupRetriesIgnoredLcrWrite) {
       .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
       .ExpectRead(uint32_t{0x00}, 3)    // LineControl readback (ignored, UART became busy)
       .ExpectRead(uint32_t{0x01}, 31)   // UartStatus (busy)
+      .ExpectRead(uint32_t{0x61}, 5)    // LineStatus (data_ready == 1)
+      .ExpectRead(uint32_t{0x00}, 0)    // RxBuffer (clear kCharTimeout before FIFO reset)
       .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl (reset FIFOs to force idle)
-      .ExpectRead(uint32_t{0x00}, 0)    // RxBuffer (drain)
+      .ExpectRead(uint32_t{0x60}, 5)    // LineStatus (data_ready == 0, no RBR read)
       .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
       .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
@@ -397,9 +461,9 @@ TEST(Dw8250Tests, WakeupRetriesIgnoredLcrWrite) {
       .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (ignored, UART became busy)
       .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
       .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
-      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
-      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectRead(uint32_t{0x03}, 3);   // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kSuspendedIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
       .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
 
   driver.Init();
@@ -422,14 +486,15 @@ TEST(Dw8250Tests, WakeupWithoutDivisor) {
         .ExpectWrite(uint32_t{0x83}, 3)  // LineControl (8N1 | DLAB)
         .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (ignored)
   }
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
   AppendPrepareForSuspendSequence(mock);
   mock
       // WakeupFromSuspend()
-      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
-      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
-      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kSuspendedIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
       .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
 
   driver.Init();
@@ -457,6 +522,8 @@ TEST(Dw8250Tests, DivisorNotRecordedIfDlabCannotBeCleared) {
         .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
         .ExpectRead(uint32_t{0x83}, 3);  // LineControl readback (ignored)
   }
+  // DLAB is stuck set, so IER is not touched while clearing pending interrupts.
+  AppendClearPendingInterruptsDlabSetSequence(mock);
   mock
       // PrepareForSuspend()
       .ExpectRead(uint32_t{0x85}, 1)   // InterruptEnable (PTIME | ELSI | ERBFI)
@@ -464,11 +531,11 @@ TEST(Dw8250Tests, DivisorNotRecordedIfDlabCannotBeCleared) {
       .ExpectRead(uint32_t{0x03}, 4)   // ModemControl (RTS | DTR)
       .ExpectRead(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB, still stuck)
       // WakeupFromSuspend() restores LCR (with DLAB clear) but not the divisor.
-      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
-      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
-      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kSuspendedIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
       .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
 
   driver.Init();
@@ -500,7 +567,7 @@ TEST(Dw8250Tests, WakeupDoesNotRestoreIerIfDlabCannotBeCleared) {
   }
   mock.ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
       .ExpectWrite(uint32_t{0x03}, 4);  // ModemControl
-  // No InterruptEnable write.
+  // No ClearPendingInterrupts or InterruptEnable write while DLAB is still set.
 
   driver.Init();
   driver.PrepareForSuspend();
@@ -517,32 +584,33 @@ TEST(Dw8250Tests, SuspendResumeWithoutFractionalDivisor) {
       // Init()
       .ExpectRead(uint32_t{0x103c32}, 0x3d)  // ComponentParameterRegister (no ADDITIONAL_FEAT)
       .ExpectRead(uint32_t{0x60}, 5)         // LineStatus (THRE and TEMT set: TX drained)
-      .ExpectWrite(uint32_t{0x80}, 1)        // InterruptEnableRegister write
-      .ExpectWrite(uint32_t{0x17}, 2)        // FifoControlRegister write
-      .ExpectWrite(uint32_t{0x03}, 4)        // ModemControlRegister write
-      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
-      .ExpectRead(uint32_t{0x03}, 3)         // LineControl (8N1)
-      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x83}, 3)        // LineControl (8N1 | DLAB)
-      .ExpectRead(uint32_t{0x83}, 3)         // LineControl readback (took effect)
-      .ExpectRead(uint32_t{0x0d}, 0)         // DivisorLatchLower
-      .ExpectRead(uint32_t{0x01}, 1)         // DivisorLatchUpper
-      .ExpectRead(uint32_t{0x00}, 31)        // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x03}, 3)        // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3);        // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x80}, 1);       // InterruptEnableRegister write
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)  // ModemControlRegister write
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectRead(uint32_t{0x03}, 3)   // LineControl (8N1)
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x83}, 3)  // LineControl (8N1 | DLAB)
+      .ExpectRead(uint32_t{0x83}, 3)   // LineControl readback (took effect)
+      .ExpectRead(uint32_t{0x0d}, 0)   // DivisorLatchLower
+      .ExpectRead(uint32_t{0x01}, 1)   // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
   AppendPrepareForSuspendSequence(mock);
   mock
       // WakeupFromSuspend()
-      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
-      .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
-      .ExpectWrite(uint32_t{0x0d}, 0)   // DivisorLatchLower
-      .ExpectWrite(uint32_t{0x01}, 1)   // DivisorLatchUpper
-      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
-      .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
-      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
-      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl
-      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x83}, 3)  // LineControl (8N1 | DLAB)
+      .ExpectRead(uint32_t{0x83}, 3)   // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x0d}, 0)  // DivisorLatchLower
+      .ExpectWrite(uint32_t{0x01}, 1)  // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)  // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3);  // LineControl readback (took effect)
+  AppendClearPendingInterruptsSequence(mock, kSuspendedIer);
+  mock.ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
       .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
 
   driver.Init();
@@ -557,6 +625,172 @@ TEST(Dw8250Tests, WakeupWithoutSuspendIsNoop) {
 
   driver.Init();
   driver.WakeupFromSuspend();
+}
+
+// InitInterrupt() must not reset the FIFOs: the TX FIFO may still hold output
+// written since Init(), and any RX data received since then is drained by
+// Interrupt().
+TEST(Dw8250Tests, InitInterruptDoesNotResetFifos) {
+  SimpleTestDriver driver(kTestConfig);
+
+  auto& mock = driver.io().mock();
+  AppendInitSequence(mock);
+  // InitInterrupt()
+  mock.ExpectRead(uint32_t{0x80}, 1)    // InterruptEnable (PTIME)
+      .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable (PTIME | ELSI | ERBFI)
+
+  driver.Init();
+  driver.InitInterrupt();
+}
+
+// If data is ready when Init() runs, it must read RBR (clearing any latched
+// character timeout) before resetting the RX FIFO, without checking IIR.
+TEST(Dw8250Tests, InitReadsRbrBeforeResettingFifosWhenDataReady) {
+  SimpleTestDriver driver(kTestConfig);
+
+  auto& mock = driver.io().mock();
+  AppendInitHead(mock);
+  mock
+      // ClearPendingInterrupts()
+      .ExpectRead(uint32_t{0x61}, 5)    // LineStatus (THRE | TEMT | DR)
+      .ExpectRead(uint32_t{'x'}, 0)     // RxBuffer (clear kCharTimeout before FIFO reset)
+      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl (ResetAndEnableFifos)
+      .ExpectRead(uint32_t{0x00}, 6)    // ModemStatus (clear kModemStatus)
+      .ExpectRead(uint32_t{0x00}, 31);  // UartStatus (clear kDwBusyDetect)
+  AppendInitBody(mock);
+  AppendInitRecordDivisor(mock);
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
+
+  driver.Init();
+}
+
+// If no data is ready but a stale character timeout is pending when Init()
+// runs (e.g. because an earlier boot stage reset the RX FIFO without reading
+// RBR), Init() must clear it with a dummy RBR read with the FIFOs disabled, to
+// avoid PSLVERR.
+TEST(Dw8250Tests, InitClearsStaleCharTimeout) {
+  SimpleTestDriver driver(kTestConfig);
+
+  auto& mock = driver.io().mock();
+  AppendInitHead(mock);
+  mock
+      // ClearPendingInterrupts()
+      .ExpectRead(uint32_t{0x60}, 5)    // LineStatus (DR == 0)
+      .ExpectRead(uint32_t{0x03}, 3)    // LineControl (DLAB clear)
+      .ExpectRead(uint32_t{0x80}, 1)    // InterruptEnable (PTIME)
+      .ExpectWrite(uint32_t{0x81}, 1)   // InterruptEnable (PTIME | ERBFI)
+      .ExpectRead(uint32_t{0xcc}, 2)    // InterruptIdent (FIFOs enabled, kCharTimeout)
+      .ExpectWrite(uint32_t{0x80}, 1)   // InterruptEnable (restored)
+      .ExpectWrite(uint32_t{0x00}, 2)   // FifoControl (disable FIFOs before empty RBR read)
+      .ExpectRead(uint32_t{0x00}, 0)    // RxBuffer (dummy read to clear kCharTimeout)
+      .ExpectWrite(uint32_t{0x17}, 2)   // FifoControl (ResetAndEnableFifos)
+      .ExpectRead(uint32_t{0x00}, 6)    // ModemStatus (clear kModemStatus)
+      .ExpectRead(uint32_t{0x00}, 31);  // UartStatus (clear kDwBusyDetect)
+  AppendInitBody(mock);
+  AppendInitRecordDivisor(mock);
+  AppendClearPendingInterruptsSequence(mock, kInitIer);
+
+  driver.Init();
+}
+
+// WakeupFromSuspend() likewise clears a stale character timeout, leaving IER
+// disabled until it is restored at the end.
+TEST(Dw8250Tests, WakeupClearsStaleCharTimeout) {
+  SimpleTestDriver driver(kTestConfig);
+
+  auto& mock = driver.io().mock();
+  AppendInitSequence(mock);
+  AppendPrepareForSuspendSequence(mock);
+  mock
+      // WakeupFromSuspend()
+      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x83}, 3)   // LineControl (8N1 | DLAB)
+      .ExpectRead(uint32_t{0x83}, 3)    // LineControl readback (took effect)
+      .ExpectWrite(uint32_t{0x08}, 48)  // FractionalDivisorLatch
+      .ExpectWrite(uint32_t{0x0d}, 0)   // DivisorLatchLower
+      .ExpectWrite(uint32_t{0x01}, 1)   // DivisorLatchUpper
+      .ExpectRead(uint32_t{0x00}, 31)   // UartStatus (not busy)
+      .ExpectWrite(uint32_t{0x03}, 3)   // LineControl (8N1)
+      .ExpectRead(uint32_t{0x03}, 3)    // LineControl readback (took effect)
+      // ClearPendingInterrupts()
+      .ExpectRead(uint32_t{0x60}, 5)   // LineStatus (DR == 0)
+      .ExpectRead(uint32_t{0x03}, 3)   // LineControl (DLAB clear)
+      .ExpectRead(uint32_t{0x00}, 1)   // InterruptEnable (all disabled)
+      .ExpectWrite(uint32_t{0x01}, 1)  // InterruptEnable (ERBFI)
+      .ExpectRead(uint32_t{0xcc}, 2)   // InterruptIdent (FIFOs enabled, kCharTimeout)
+      .ExpectWrite(uint32_t{0x00}, 1)  // InterruptEnable (restored)
+      .ExpectWrite(uint32_t{0x00}, 2)  // FifoControl (disable FIFOs before empty RBR read)
+      .ExpectRead(uint32_t{0x00}, 0)   // RxBuffer (dummy read to clear kCharTimeout)
+      .ExpectWrite(uint32_t{0x17}, 2)  // FifoControl (ResetAndEnableFifos)
+      .ExpectRead(uint32_t{0x00}, 6)   // ModemStatus (clear kModemStatus)
+      .ExpectRead(uint32_t{0x00}, 31)  // UartStatus (clear kDwBusyDetect)
+      // Remainder of WakeupFromSuspend()
+      .ExpectWrite(uint32_t{0x03}, 4)   // ModemControl
+      .ExpectWrite(uint32_t{0x85}, 1);  // InterruptEnable
+
+  driver.Init();
+  driver.PrepareForSuspend();
+  driver.WakeupFromSuspend();
+}
+
+// The DesignWare UART can report a character timeout interrupt (kCharTimeout)
+// even when no data is ready in the RX FIFO (LSR.DR == 0).  Because reading RBR
+// is required to clear kCharTimeout, and reading an empty RBR with FIFOs
+// enabled generates PSLVERR when PSLVERR_RESP_EN == 1, Interrupt() must
+// disable FIFOs, perform a dummy RBR read, and re-enable FIFOs.
+TEST(Dw8250Tests, CharTimeoutInterruptWithEmptyFifo) {
+  SimpleTestDriver driver(kTestConfig);
+
+  auto& mock = driver.io().mock();
+  AppendInitSequence(mock);
+  // InitInterrupt()
+  mock.ExpectRead(uint32_t{0x80}, 1)   // InterruptEnable (PTIME)
+      .ExpectWrite(uint32_t{0x85}, 1)  // InterruptEnable (PTIME | ELSI | ERBFI)
+      // Interrupt()
+      .ExpectRead(uint32_t{0xcc}, 2)   // InterruptIdent (FIFOs enabled, kCharTimeout)
+      .ExpectRead(uint32_t{0x60}, 5)   // LineStatus (THRE | TEMT, data_ready == 0)
+      .ExpectWrite(uint32_t{0x00}, 2)  // FifoControl (disable FIFOs before empty RBR read)
+      .ExpectRead(uint32_t{0x00}, 0)   // RxBuffer (dummy read to clear kCharTimeout)
+      .ExpectWrite(uint32_t{0x17}, 2)  // FifoControl (ResetAndEnableFifos)
+      .ExpectRead(uint32_t{0xc1}, 2);  // InterruptIdent (FIFOs enabled, kNone)
+
+  driver.Init();
+  driver.InitInterrupt();
+
+  int rx_call_count = 0;
+  driver.Interrupt([](auto& tx_irq) { FAIL("Unexpected call on |tx| irq callback."); },
+                   [&](auto& rx_irq) { rx_call_count++; });
+  EXPECT_EQ(0, rx_call_count);
+}
+
+TEST(Dw8250Tests, CharTimeoutInterruptWithNonEmptyFifo) {
+  SimpleTestDriver driver(kTestConfig);
+
+  auto& mock = driver.io().mock();
+  AppendInitSequence(mock);
+  // InitInterrupt()
+  mock.ExpectRead(uint32_t{0x80}, 1)   // InterruptEnable (PTIME)
+      .ExpectWrite(uint32_t{0x85}, 1)  // InterruptEnable (PTIME | ELSI | ERBFI)
+      // Interrupt()
+      .ExpectRead(uint32_t{0xcc}, 2)   // InterruptIdent (FIFOs enabled, kCharTimeout)
+      .ExpectRead(uint32_t{0x61}, 5)   // LineStatus (THRE | TEMT | DR)
+      .ExpectRead(uint32_t{'x'}, 0)    // RxBuffer
+      .ExpectRead(uint32_t{0x60}, 5)   // LineStatus (THRE | TEMT, data_ready == 0)
+      .ExpectRead(uint32_t{0xc1}, 2);  // InterruptIdent (FIFOs enabled, kNone)
+
+  driver.Init();
+  driver.InitInterrupt();
+
+  using UnsynchronizedGuard =
+      uart::UnsynchronizedPolicy::Guard<uart::UnsynchronizedPolicy::DefaultLockPolicy>;
+  int rx_call_count = 0;
+  driver.Interrupt([](auto& tx_irq) { FAIL("Unexpected call on |tx| irq callback."); },
+                   [&](auto& rx_irq) {
+                     rx_call_count++;
+                     UnsynchronizedGuard g(&rx_irq.lock(), SOURCE_TAG);
+                     EXPECT_EQ('x', rx_irq.ReadChar());
+                   });
+  EXPECT_EQ(1, rx_call_count);
 }
 
 }  // namespace
