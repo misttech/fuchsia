@@ -1,0 +1,35 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "ffx_bluetooth_common",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/ffx/tools/bluetooth/src/pairable:__pkg__",
+        "//src/developer/ffx/tools/bluetooth/src/peer:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust_fdomain",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/developer/ffx/lib/fho:lib",
+        "//src/developer/ffx/lib/writer:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:regex",
+    ],
+)
+
+host_rustc_test(
+    name = "ffx_bluetooth_common_test",
+    crate = ":ffx_bluetooth_common",
+    visibility = ["//src/developer/ffx:__pkg__"],
+)

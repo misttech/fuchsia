@@ -48,5 +48,6 @@ test_suite(
         "//src/developer/ffx/lib/usb_fastboot_discovery:lib_test",
         "//src/developer/ffx/lib/version:lib_test",
         "//src/developer/ffx/plugins/emulator/common:ffx_emulator_common_test",
+        "//src/developer/ffx/tools/bluetooth/common:ffx_bluetooth_common_test",
     ],
 )
