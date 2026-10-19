@@ -57,23 +57,20 @@ pub(super) async fn update_servers(
     networks_service.update(network::NetworkRegistryUpdate::dns(dns_servers)).await;
 }
 
-/// Creates a stream of RDNSS DNS updates. Returns None if the protocol
-/// is not available on the system, indicating the protocol should not be used.
+/// Creates a stream of RDNSS DNS updates.
 pub(super) async fn create_rdnss_stream(
     watcher_provider: &fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy,
     interface_id: u64,
-) -> Option<
-    Result<
-        impl Stream<
-            Item = Result<
-                (DnsWatcherResultPayload, Vec<fnet_name::DnsServer_>, DnsServerLifetime),
-                fidl::Error,
-            >,
-        > + use<>,
-        fidl::Error,
-    >,
+) -> Result<
+    impl Stream<
+        Item = Result<
+            (DnsWatcherResultPayload, Vec<fnet_name::DnsServer_>, DnsServerLifetime),
+            fidl::Error,
+        >,
+    > + use<>,
+    anyhow::Error,
 > {
-    let watcher_result = fnet_ndp_ext::create_watcher_stream(
+    let watcher = fnet_ndp_ext::create_watcher_stream(
         &watcher_provider,
         &fnet_ndp::RouterAdvertisementOptionWatcherParams {
             interest_types: Some(vec![
@@ -83,16 +80,11 @@ pub(super) async fn create_rdnss_stream(
             ..Default::default()
         },
     )
-    .await?;
+    .await
+    .context("RouterAdvertisementOptionWatcherProvider protocol unavailable")?
+    .context("failed to create watcher stream")?;
 
-    // This cannot be directly returned using `?` operator since the
-    // function returns an Option.
-    let watcher = match watcher_result {
-        Ok(res) => res,
-        Err(e) => return Some(Err(e)),
-    };
-
-    Some(Ok(watcher.filter_map(move |entry_res| async move {
+    Ok(watcher.filter_map(move |entry_res| async move {
         let entry = match entry_res {
             Ok(entry) => entry,
             Err(fnet_ndp_ext::OptionWatchStreamError::Fidl(e)) => {
@@ -175,7 +167,7 @@ pub(super) async fn create_rdnss_stream(
                 None
             }
         }
-    })))
+    }))
 }
 
 pub(super) async fn add_rdnss_watcher(
@@ -185,38 +177,26 @@ pub(super) async fn add_rdnss_watcher(
 ) -> Result<(), anyhow::Error> {
     let source = DnsServersUpdateSource::Ndp { interface_id: interface_id.get() };
 
-    // Returns None when RouterAdvertisementOptionWatcherProvider isn't available on the system.
-    let stream = create_rdnss_stream(watcher_provider, interface_id.get()).await;
-
-    match stream {
-        Some(result) => {
-            let tagged_stream = result
-                .context("failed to create watcher stream")?
-                .tagged(source)
-                .map(|(source, res)| match res {
-                    Ok((payload, servers, lifetime)) => {
-                        DnsServerUpdate { source, payload, lifetime, result: Ok(servers) }
-                    }
-                    Err(e) => DnsServerUpdate {
-                        source,
-                        payload: DnsWatcherResultPayload::Generic,
-                        lifetime: DnsServerLifetime::Undefined,
-                        result: Err(e),
-                    },
-                })
-                .boxed();
-            if let Some(o) = watchers.insert(source, tagged_stream) {
-                let _: Pin<Box<BoxStream<'_, _>>> = o;
-                unreachable!("DNS server watchers must not contain key {:?}", source);
+    let tagged_stream = create_rdnss_stream(watcher_provider, interface_id.get())
+        .await?
+        .tagged(source)
+        .map(|(source, res)| match res {
+            Ok((payload, servers, lifetime)) => {
+                DnsServerUpdate { source, payload, lifetime, result: Ok(servers) }
             }
-            info!("started NDP watcher on host interface (id={interface_id})");
-        }
-        None => {
-            info!(
-                "NDP protocol unavailable: not starting watcher for interface (id={interface_id})"
-            );
-        }
+            Err(e) => DnsServerUpdate {
+                source,
+                payload: DnsWatcherResultPayload::Generic,
+                lifetime: DnsServerLifetime::Undefined,
+                result: Err(e),
+            },
+        })
+        .boxed();
+    if let Some(o) = watchers.insert(source, tagged_stream) {
+        let _: Pin<Box<BoxStream<'_, _>>> = o;
+        unreachable!("DNS server watchers must not contain key {:?}", source);
     }
+    info!("started NDP watcher on host interface (id={interface_id})");
     Ok(())
 }
 
@@ -769,7 +749,7 @@ mod tests {
         responder.send().expect("send Probe response succeeded");
 
         // Complete create_rdnss_stream and retrieve option watcher stream.
-        let Poll::Ready(Some(Ok(stream))) = exec.run_until_stalled(&mut create_stream_fut) else {
+        let Poll::Ready(Ok(stream)) = exec.run_until_stalled(&mut create_stream_fut) else {
             panic!("create_rdnss_stream failed");
         };
         futures::pin_mut!(stream);

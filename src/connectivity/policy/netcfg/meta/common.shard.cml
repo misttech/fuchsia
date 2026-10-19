@@ -37,6 +37,7 @@
                 "fuchsia.net.interfaces.admin.Installer",
                 "fuchsia.net.interfaces.State",
                 "fuchsia.net.name.LookupAdmin",
+                "fuchsia.net.ndp.RouterAdvertisementOptionWatcherProvider",
                 "fuchsia.net.routes.admin.RouteTableV4",
                 "fuchsia.net.routes.admin.RouteTableV6",
                 "fuchsia.net.routes.admin.RuleTableV4",
@@ -46,10 +47,6 @@
         },
         {
             protocol: "fuchsia.net.dhcp.Server",
-            availability: "optional",
-        },
-        {
-            protocol: "fuchsia.net.ndp.RouterAdvertisementOptionWatcherProvider",
             availability: "optional",
         },
         {

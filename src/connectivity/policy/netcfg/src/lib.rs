@@ -720,8 +720,7 @@ pub struct NetCfg<'a> {
 
     dns_servers: DnsServers,
     dns_server_watch_responders: dns::DnsServerWatchResponders,
-    route_advertisement_watcher_provider:
-        Option<fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy>,
+    route_advertisement_watcher_provider: fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy,
 
     forwarded_device_classes: ForwardedDeviceClasses,
 
@@ -1047,11 +1046,11 @@ impl<'a> NetCfg<'a> {
         let installer = svc_connect::<fnet_interfaces_admin::InstallerMarker>(&svc_dir)
             .await
             .context("could not connect to installer")?;
-        let route_advertisement_watcher_provider = optional_svc_connect::<
+        let route_advertisement_watcher_provider = svc_connect::<
             fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker,
         >(&svc_dir)
         .await
-        .context("could not connect to fuchsia.net.ndp.RouteAdvertisementOptionWatcherProvider")?;
+        .context("could not connect to fuchsia.net.ndp.RouterAdvertisementOptionWatcherProvider")?;
         let interface_naming_config =
             interface::InterfaceNamingConfig::from_naming_rules(interface_naming_policy);
         let telemetry_node = inspector.root().create_child(TELEMETRY_INSPECT_NODE_NAME);
@@ -2999,11 +2998,13 @@ impl<'a> NetCfg<'a> {
 
             info!("discovered host interface with id={}, configuring interface", interface_id);
 
-            if let Some(watcher_provider) = &self.route_advertisement_watcher_provider {
-                dns::add_rdnss_watcher(&watcher_provider, interface_id, dns_watchers)
-                    .await
-                    .map_err(errors::Error::NonFatal)?;
-            }
+            dns::add_rdnss_watcher(
+                &self.route_advertisement_watcher_provider,
+                interface_id,
+                dns_watchers,
+            )
+            .await
+            .map_err(errors::Error::NonFatal)?;
 
             if self.enable_socket_proxy && provisioning_type.track_in_network_registry() {
                 if self.locally_provisioned_network_rule_set.is_none() {
@@ -4097,6 +4098,9 @@ mod tests {
             fidl::endpoints::create_proxy::<fidl_fuchsia_net_interfaces_admin::InstallerMarker>();
         let (route_set_v4_provider, route_set_v4_provider_server) =
             fidl::endpoints::create_proxy::<fnet_routes_admin::RouteTableV4Marker>();
+        let (route_advertisement_watcher_provider, _route_advertisement_watcher_provider_server) =
+            fidl::endpoints::create_proxy::<fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker>(
+            );
 
         let (netcfg_dhcpv4_client_provider, netcfg_route_set_v4_provider) = if args
             .serve_noop_dhcpv4
@@ -4134,7 +4138,7 @@ mod tests {
                 interface_metrics: Default::default(),
                 dns_servers: Default::default(),
                 dns_server_watch_responders: Default::default(),
-                route_advertisement_watcher_provider: Default::default(),
+                route_advertisement_watcher_provider,
                 forwarded_device_classes: Default::default(),
                 dhcpv6_prefix_provider_handler: Default::default(),
                 allowed_upstream_device_classes: &DEFAULT_ALLOWED_UPSTREAM_DEVICE_CLASSES,
