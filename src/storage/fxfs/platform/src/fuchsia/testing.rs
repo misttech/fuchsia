@@ -51,6 +51,7 @@ pub struct TestFixtureOptions {
     pub format: bool,
     pub hooks: Option<Arc<HooksHandle>>,
     pub allow_type3_blobs: bool,
+    pub use_driver_blob_paging: bool,
 }
 
 impl Default for TestFixtureOptions {
@@ -61,6 +62,7 @@ impl Default for TestFixtureOptions {
             format: true,
             hooks: None,
             allow_type3_blobs: false,
+            use_driver_blob_paging: false,
         }
     }
 }
@@ -224,6 +226,10 @@ impl TestFixture {
 
             (filesystem, vol, volumes_directory)
         };
+
+        if options.as_blob && options.use_driver_blob_paging {
+            volume.volume().set_use_driver_blob_paging(true);
+        }
 
         let (root, server_end) = create_proxy::<fio::DirectoryMarker>();
         volume.root().clone().serve(fio::PERM_READABLE | fio::PERM_WRITABLE, server_end);

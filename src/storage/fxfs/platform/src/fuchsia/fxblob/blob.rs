@@ -56,18 +56,26 @@ const EMPTY_BLOB_HASH: Hash = Hash::from_array([
     0x38, 0xf9, 0xe3, 0xab, 0x99, 0x4b, 0x00, 0xaf, 0x08, 0xe5, 0xa3, 0xbf, 0xfe, 0x55, 0xfd, 0x8b,
 ]);
 
+/// State for serving page requests via Fxfs's internal pager.
+///
+/// Only populated when `use_driver_blob_paging` is false; when driver blob paging is enabled,
+/// `pkg-cache` creates and pages the blob VMOs directly via the block driver mapper.
+struct FxBlobPagerState {
+    vmo: zx::Vmo,
+    merkle_verifier: ReadSizedMerkleVerifier,
+    compression_info: Option<CompressionInfo>,
+    pager_packet_receiver_registration: Arc<PagerPacketReceiverRegistration<FxBlob>>,
+    chunks_supplied: AtomicBitVec,
+}
+
 /// Represents an immutable blob stored on Fxfs with associated an merkle tree.
 #[derive(ToWeakNode)]
 pub struct FxBlob {
     handle: StoreObjectHandle<FxVolume>,
-    vmo: zx::Vmo,
     open_count: AtomicUsize,
     merkle_root: Hash,
-    merkle_verifier: ReadSizedMerkleVerifier,
-    compression_info: Option<CompressionInfo>,
     uncompressed_size: u64, // always set.
-    pager_packet_receiver_registration: Arc<PagerPacketReceiverRegistration<Self>>,
-    chunks_supplied: AtomicBitVec,
+    pager_state: Option<FxBlobPagerState>,
 }
 
 // Fuchsia can have many open blobs at once. The size of FxBlob is important.
@@ -81,26 +89,10 @@ impl FxBlob {
         let stored_size =
             handle.store().get_attribute_size(handle.object_id(), AttributeId::DATA).await?;
         let metadata = BlobMetadata::read_from(&handle).await?;
-        let (uncompressed_size, compression_info) = match &metadata.format {
-            BlobFormat::Uncompressed => (stored_size, None),
-            BlobFormat::ChunkedZstd { uncompressed_size, chunk_size, compressed_offsets } => (
-                *uncompressed_size,
-                Some(CompressionInfo::new(
-                    *chunk_size,
-                    stored_size,
-                    compressed_offsets,
-                    CompressionAlgorithm::Zstd,
-                )?),
-            ),
-            BlobFormat::ChunkedLz4 { uncompressed_size, chunk_size, compressed_offsets } => (
-                *uncompressed_size,
-                Some(CompressionInfo::new(
-                    *chunk_size,
-                    stored_size,
-                    compressed_offsets,
-                    CompressionAlgorithm::Lz4,
-                )?),
-            ),
+        let uncompressed_size = match &metadata.format {
+            BlobFormat::Uncompressed => stored_size,
+            BlobFormat::ChunkedZstd { uncompressed_size, .. }
+            | BlobFormat::ChunkedLz4 { uncompressed_size, .. } => *uncompressed_size,
         };
 
         // Check the uncompressed size of the blob against the number of merkle leaves. This only
@@ -121,6 +113,36 @@ impl FxBlob {
             (uncompressed_size == 0) == (merkle_root == EMPTY_BLOB_HASH),
             FxfsError::IntegrityError
         );
+
+        if handle.owner().use_driver_blob_paging() {
+            return Ok(Arc::new(Self {
+                handle,
+                open_count: AtomicUsize::new(0),
+                merkle_root,
+                uncompressed_size,
+                pager_state: None,
+            }));
+        }
+
+        let compression_info = match &metadata.format {
+            BlobFormat::Uncompressed => None,
+            BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => {
+                Some(CompressionInfo::new(
+                    *chunk_size,
+                    stored_size,
+                    compressed_offsets,
+                    CompressionAlgorithm::Zstd,
+                )?)
+            }
+            BlobFormat::ChunkedLz4 { chunk_size, compressed_offsets, .. } => {
+                Some(CompressionInfo::new(
+                    *chunk_size,
+                    stored_size,
+                    compressed_offsets,
+                    CompressionAlgorithm::Lz4,
+                )?)
+            }
+        };
         let merkle_verifier = metadata.into_merkle_verifier(merkle_root)?;
 
         let min_chunk_size = min_chunk_size(&compression_info);
@@ -137,14 +159,18 @@ impl FxBlob {
             set_vmo_name(&vmo, &merkle_root);
             Self {
                 handle,
-                vmo,
                 open_count: AtomicUsize::new(0),
                 merkle_root,
-                merkle_verifier,
-                compression_info,
                 uncompressed_size,
-                pager_packet_receiver_registration: Arc::new(pager_packet_receiver_registration),
-                chunks_supplied,
+                pager_state: Some(FxBlobPagerState {
+                    vmo,
+                    merkle_verifier,
+                    compression_info,
+                    pager_packet_receiver_registration: Arc::new(
+                        pager_packet_receiver_registration,
+                    ),
+                    chunks_supplied,
+                }),
             }
         }))
     }
@@ -153,52 +179,88 @@ impl FxBlob {
     pub fn overwrite_me(
         self: &Arc<Self>,
         handle: DataObjectHandle<FxVolume>,
-        merkle_verifier: MerkleVerifier,
-        compression_info: Option<CompressionInfo>,
+        // The Merkle verifier and optional compression metadata needed to initialise the new
+        // blob's `FxBlobPagerState` when Fxfs acts as the pager, or `None` when driver blob paging
+        // is enabled.
+        pager_info: Option<(MerkleVerifier, Option<CompressionInfo>)>,
     ) -> Arc<Self> {
-        let min_chunk_size = min_chunk_size(&compression_info);
-        let merkle_verifier =
-            ReadSizedMerkleVerifier::new(merkle_verifier, min_chunk_size as usize)
-                .expect("The chunk size should have been validated by the delivery blob parser");
-        // The chunk size may have changed between the old blob and the new blob. Preserving the
-        // chunks supplied bits isn't important.
-        let chunks_supplied = AtomicBitVec::new(self.uncompressed_size.div_ceil(min_chunk_size));
-        let vmo = self.vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let pager_state =
+            if let (Some(old_pager_state), Some((merkle_verifier, compression_info))) =
+                (&self.pager_state, pager_info)
+            {
+                let min_chunk_size = min_chunk_size(&compression_info);
+                let merkle_verifier =
+                    ReadSizedMerkleVerifier::new(merkle_verifier, min_chunk_size as usize).expect(
+                        "The chunk size should have been validated by the delivery blob parser",
+                    );
+                // The chunk size may have changed between the old blob and the new blob.
+                // Preserving the chunks supplied bits isn't important.
+                let chunks_supplied =
+                    AtomicBitVec::new(self.uncompressed_size.div_ceil(min_chunk_size));
+                let vmo = old_pager_state.vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+
+                Some(FxBlobPagerState {
+                    vmo,
+                    merkle_verifier,
+                    compression_info,
+                    pager_packet_receiver_registration: old_pager_state
+                        .pager_packet_receiver_registration
+                        .clone(),
+                    chunks_supplied,
+                })
+            } else {
+                None
+            };
 
         let new_blob = Arc::new(Self {
             handle: handle.into_store_object_handle(),
-            vmo,
             open_count: AtomicUsize::new(0),
             merkle_root: self.merkle_root,
-            merkle_verifier,
-            compression_info,
             uncompressed_size: self.uncompressed_size,
-            pager_packet_receiver_registration: self.pager_packet_receiver_registration.clone(),
-            chunks_supplied,
+            pager_state,
         });
 
         // We have tests that rely on the cache being purged and there are races where the
         // `FxBlob::drop` isn't called early enough, which can make the test flaky.
         self.handle.owner().cache().remove(self.as_ref());
 
-        // Lock must be held until the open counts is incremented to prevent concurrent handling of
-        // zero children signals.
-        let receiver_lock =
-            self.pager_packet_receiver_registration.receiver().set_receiver(&new_blob);
-        if receiver_lock.is_strong() {
-            // If there was a strong moved between them, then the counts exchange as well. It is
-            // only important that the increment happen under the lock as it may handle the next
-            // zero children signal, no new requests can now go to the old blob, and because
-            // existing requests hold an open count reference using `try_keep_open` for the duration
-            // of the request, we can immediately decrement the open count of the old blob.
-            new_blob.open_count_add_one();
-            self.clone().open_count_sub_one();
+        if let Some(old_pager_state) = &self.pager_state {
+            // Lock must be held until the open counts is incremented to prevent concurrent handling
+            // of zero children signals.
+            let receiver_lock = old_pager_state
+                .pager_packet_receiver_registration
+                .receiver()
+                .set_receiver(&new_blob);
+            if receiver_lock.is_strong() {
+                // If there was a strong moved between them, then the counts exchange as well. It is
+                // only important that the increment happen under the lock as it may handle the next
+                // zero children signal, no new requests can now go to the old blob, and because
+                // existing requests hold an open count reference using `try_keep_open` for the
+                // duration of the request, we can immediately decrement the open count of the old
+                // blob.
+                new_blob.open_count_add_one();
+                self.clone().open_count_sub_one();
+            }
         }
         new_blob
     }
 
     pub fn root(&self) -> Hash {
         self.merkle_root
+    }
+
+    pub fn byte_size(&self) -> u64 {
+        self.uncompressed_size
+    }
+
+    pub fn has_fxfs_pager(&self) -> bool {
+        self.pager_state.is_some()
+    }
+
+    fn pager_state(&self) -> &FxBlobPagerState {
+        self.pager_state
+            .as_ref()
+            .expect("FxBlob pager state not initialized when use_driver_blob_paging is enabled")
     }
 
     /// Returns the extents mapping logical offsets to device offsets for both merkle and data
@@ -242,21 +304,23 @@ impl FxBlob {
     }
 
     fn record_page_fault_metric(&self, range: &Range<u64>) {
+        let pager_state = self.pager_state();
         let page_size = zx::system_get_page_size() as u64;
-        let chunk_size: u64 = min_chunk_size(&self.compression_info);
+        let chunk_size: u64 = min_chunk_size(&pager_state.compression_info);
         let pages_per_chunk = chunk_size / page_size;
 
         let first_chunk = range.start / chunk_size;
         let full_end_chunk = range.end / chunk_size;
 
         let mut supplied_pages =
-            self.chunks_supplied.test_and_set_range(first_chunk, full_end_chunk) * pages_per_chunk;
+            pager_state.chunks_supplied.test_and_set_range(first_chunk, full_end_chunk)
+                * pages_per_chunk;
 
         // The end of the range may not be chunk aligned if it's the last chunk.
         let trailing_pages = (range.end % chunk_size) / page_size;
         if trailing_pages > 0 {
             supplied_pages +=
-                self.chunks_supplied.test_and_set_range(full_end_chunk, full_end_chunk + 1)
+                pager_state.chunks_supplied.test_and_set_range(full_end_chunk, full_end_chunk + 1)
                     * trailing_pages;
         }
 
@@ -304,12 +368,15 @@ impl OpenedNode<FxBlob> {
     /// Creates a read-only child VMO for this blob backed by the pager. The blob cannot be purged
     /// until all child VMOs have been destroyed.
     ///
+    /// Returns [`Status::NOT_SUPPORTED`] when driver blob paging is enabled on the volume.
+    ///
     /// *WARNING*: We need to ensure the open count is non-zero before invoking this function, so
     /// it is only implemented for [`OpenedNode<FxBlob>`]. This prevents the blob from being purged
     /// before we get a chance to register it with the pager for [`zx::Signals::VMO_ZERO_CHILDREN`].
     pub fn create_child_vmo(&self) -> Result<zx::Vmo, Status> {
         let blob = self.0.as_ref();
-        let child_vmo = blob.vmo.create_child(
+        let pager_state = blob.pager_state.as_ref().ok_or(Status::NOT_SUPPORTED)?;
+        let child_vmo = pager_state.vmo.create_child(
             zx::VmoChildOptions::REFERENCE | zx::VmoChildOptions::NO_WRITE,
             0,
             0,
@@ -360,7 +427,9 @@ impl FxNode for FxBlob {
     }
 
     fn terminate(&self) {
-        self.pager_packet_receiver_registration.stop_watching_for_zero_children();
+        if let Some(pager_state) = &self.pager_state {
+            pager_state.pager_packet_receiver_registration.stop_watching_for_zero_children();
+        }
     }
 
     fn mark_to_be_purged(self: Arc<Self>) {
@@ -402,15 +471,15 @@ impl PagerBacked for FxBlob {
     }
 
     fn pager_packet_receiver_registration(&self) -> &PagerPacketReceiverRegistration<Self> {
-        &self.pager_packet_receiver_registration
+        &self.pager_state().pager_packet_receiver_registration
     }
 
     fn vmo(&self) -> &zx::Vmo {
-        &self.vmo
+        &self.pager_state().vmo
     }
 
     fn page_in(self: Arc<Self>, range: PageInRange<Self>) {
-        let read_ahead_size = if let Some(compression_info) = &self.compression_info {
+        let read_ahead_size = if let Some(compression_info) = &self.pager_state().compression_info {
             read_ahead_size_for_chunk_size(compression_info.chunk_size(), READ_AHEAD_SIZE)
         } else {
             READ_AHEAD_SIZE
@@ -437,13 +506,14 @@ impl PagerBacked for FxBlob {
         ensure!(range.start < self.uncompressed_size, FxfsError::InvalidArgs);
         self.record_page_fault_metric(&range);
 
-        let mut buffer = match self.compression_info {
+        let pager_state = self.pager_state();
+        let mut buffer = match pager_state.compression_info {
             Some(_) => self.allocate_trusted_buffer(range.end - range.start).await,
             None => self.allocate_buffer(range.end - range.start).await,
         };
         let unaligned_bytes =
             (std::cmp::min(range.end, self.uncompressed_size) - range.start) as usize;
-        match &self.compression_info {
+        match &pager_state.compression_info {
             None => self.read_blocks(range.start, buffer.as_mut()).await?,
             Some(compression_info) => {
                 let compressed_offsets =
@@ -512,7 +582,7 @@ impl PagerBacked for FxBlob {
             // TODO(https://fxbug.dev/42073035): This should be offloaded to the kernel at which
             // point we can delete this.
             fxfs_trace::duration!("blob-verify", "len" => unaligned_bytes);
-            self.merkle_verifier.verify_aligned(
+            pager_state.merkle_verifier.verify_aligned(
                 range.start as usize,
                 buffer.as_ptr_slice().subslice(0..buffer.len()),
                 unaligned_bytes,
@@ -599,12 +669,15 @@ mod tests {
     use super::*;
     use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
     use crate::fuchsia::pager::PageInRange;
+    use crate::fuchsia::testing::{TestFixture, TestFixtureOptions};
     use crate::fxblob::testing::open_blob_fixture;
     use assert_matches::assert_matches;
-    use delivery_blob::CompressionMode;
+    use blob_writer::BlobWriter;
     use delivery_blob::compression::{ChunkedArchiveOptions, CompressionAlgorithm};
-
+    use delivery_blob::{CompressionMode, Type1Blob};
     use fuchsia_async::epoch::Epoch;
+    use fuchsia_component_client::connect_to_protocol_at_dir_svc;
+    use fxfs::object_store::{HandleOptions, ObjectStore};
     use fxfs_make_blob_image::FxBlobBuilder;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -1192,14 +1265,20 @@ mod tests {
 
             let blob = fixture.get_opened_blob(hash).await.unwrap();
             // Nothing has been read yet.
-            assert_eq!(&blob.chunks_supplied.to_vec(4), &[false, false, false, false]);
+            assert_eq!(
+                &blob.pager_state().chunks_supplied.to_vec(4),
+                &[false, false, false, false]
+            );
 
-            blob.vmo.read_to_vec::<u8>(4096, 4096).unwrap();
+            blob.pager_state().vmo.read_to_vec::<u8>(4096, 4096).unwrap();
 
-            assert_eq!(&blob.chunks_supplied.to_vec(4), &[true, false, false, false]);
+            assert_eq!(&blob.pager_state().chunks_supplied.to_vec(4), &[true, false, false, false]);
 
-            blob.vmo.read_to_vec::<u8>(READ_AHEAD_SIZE * 2 + 4096, READ_AHEAD_SIZE).unwrap();
-            assert_eq!(&blob.chunks_supplied.to_vec(4), &[true, false, true, true]);
+            blob.pager_state()
+                .vmo
+                .read_to_vec::<u8>(READ_AHEAD_SIZE * 2 + 4096, READ_AHEAD_SIZE)
+                .unwrap();
+            assert_eq!(&blob.pager_state().chunks_supplied.to_vec(4), &[true, false, true, true]);
 
             // We have loaded pages, but only once each.
             assert_eq!(volume.blob_resupplied_count().read(Ordering::SeqCst), 0);
@@ -1222,6 +1301,108 @@ mod tests {
                 volume.blob_resupplied_count().read(Ordering::SeqCst),
                 2 * pages_per_chunk - 1
             );
+        }
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_driver_blob_paging_does_not_create_vmo() {
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(16384, 512)),
+            TestFixtureOptions {
+                encrypted: false,
+                as_blob: true,
+                use_driver_blob_paging: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        {
+            let data = vec![0xabu8; 65_536];
+            let hash = fixture.write_blob(&data, CompressionMode::Always).await;
+
+            let opened_blob = fixture.get_opened_blob(hash).await.expect("get_opened_blob failed");
+            let old_object_id = opened_blob.object_id();
+            assert!(!opened_blob.has_fxfs_pager());
+            assert_eq!(opened_blob.byte_size(), data.len() as u64);
+            assert!(opened_blob.stored_size().await.expect("stored_size failed") > 0);
+            let extents =
+                opened_blob.get_mapping_extents().await.expect("get_mapping_extents failed");
+            assert!(!extents.data.is_empty());
+            assert!(!extents.merkle.is_empty());
+
+            // Creating a child VMO directly on an FxBlob opened without a pager fails with
+            // NOT_SUPPORTED.
+            assert_eq!(
+                opened_blob.create_child_vmo().expect_err("create_child_vmo succeeded"),
+                Status::NOT_SUPPORTED
+            );
+
+            // Overwriting the open blob must also succeed without creating a VMO, while keeping
+            // the old object alive until `opened_blob` is dropped.
+            let delivery_data = Type1Blob::generate(&data, CompressionMode::Never);
+            let writer = fixture.create_blob(&hash.into(), true).await.expect("create_blob failed");
+            let mut blob_writer = BlobWriter::create(writer, delivery_data.len() as u64)
+                .await
+                .expect("BlobWriter::create failed");
+            blob_writer.write(&delivery_data).await.expect("blob_writer.write failed");
+
+            fixture.fs().graveyard().flush().await;
+            assert!(
+                ObjectStore::open_object(
+                    fixture.volume().volume(),
+                    old_object_id,
+                    HandleOptions::default(),
+                    None,
+                )
+                .await
+                .is_ok(),
+                "Overwritten blob object should remain alive while OpenedNode is held"
+            );
+
+            drop(opened_blob);
+            fixture.fs().graveyard().flush().await;
+            assert_matches!(
+                ObjectStore::open_object(
+                    fixture.volume().volume(),
+                    old_object_id,
+                    HandleOptions::default(),
+                    None,
+                )
+                .await
+                .err()
+                .expect("Overwritten blob object should be purged after OpenedNode is dropped")
+                .downcast_ref::<FxfsError>(),
+                Some(FxfsError::NotFound)
+            );
+
+            let overwritten_blob =
+                fixture.get_opened_blob(hash).await.expect("get_opened_blob after overwrite");
+            assert!(!overwritten_blob.has_fxfs_pager());
+            assert_eq!(overwritten_blob.byte_size(), data.len() as u64);
+            assert_eq!(
+                overwritten_blob.stored_size().await.expect("stored_size failed"),
+                data.len() as u64
+            );
+            drop(overwritten_blob);
+
+            // Calling BlobReader.GetVmo falls back to Fxfs's internal blob pager.
+            let blob_reader =
+                connect_to_protocol_at_dir_svc::<fidl_fuchsia_fxfs::BlobReaderMarker>(
+                    fixture.volume_out_dir(),
+                )
+                .expect("connect_to_protocol_at_dir_svc failed");
+            let vmo = blob_reader
+                .get_vmo(&hash.into())
+                .await
+                .expect("get_vmo FIDL failed")
+                .map_err(Status::err_from_raw)
+                .expect("get_vmo failed");
+            let mut read_buf = vec![0u8; data.len()];
+            vmo.read(&mut read_buf, 0).expect("vmo read failed");
+            assert_eq!(read_buf, data);
         }
 
         fixture.close().await;

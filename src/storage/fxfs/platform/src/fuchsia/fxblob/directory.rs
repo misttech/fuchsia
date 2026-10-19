@@ -158,6 +158,13 @@ impl BlobDirectory {
         let keys = lock_keys![LockKey::object(store.store_object_id(), self.directory.object_id())];
         // A lock needs to be held over searching the directory and incrementing the open count.
         let _guard = fs.lock_manager().read_lock(keys.clone()).await;
+        if self.volume().use_driver_blob_paging() {
+            log::warn!(
+                "BlobReader.GetVmo called with driver blob paging enabled; \
+                 falling back to Fxfs blob pager"
+            );
+            self.volume().set_use_driver_blob_paging(false);
+        }
         let blob = self.open_blob_locked(id).await?.ok_or(FxfsError::NotFound)?;
         let vmo = blob.create_child_vmo()?;
         // Downgrade from an OpenedNode<Node> to a Node.
@@ -212,11 +219,27 @@ impl BlobDirectory {
             return Err(FxfsError::Inconsistent)
                 .with_context(|| format!("Blob {} has invalid object descriptor!", id.string));
         }
-        node.into_any()
+        let mut blob = node
+            .into_any()
             .downcast::<FxBlob>()
-            .map(|node| Some(OpenedNode::new(node)))
             .map_err(|_| FxfsError::Inconsistent)
-            .with_context(|| format!("Blob {} has incorrect node type!", id.string))
+            .with_context(|| format!("Blob {} has incorrect node type!", id.string))?;
+        if !self.volume().use_driver_blob_paging() && !blob.has_fxfs_pager() {
+            let object_id = blob.object_id();
+            self.volume().cache().remove(blob.as_ref());
+            drop(blob);
+            let node = self.get_or_load_node(object_id, id).await?;
+            self.directory.directory().owner().dirent_cache().insert(
+                DirentCacheKey::new(self.directory.object_id(), id.string.clone(), false),
+                node.clone(),
+            );
+            blob = node
+                .into_any()
+                .downcast::<FxBlob>()
+                .map_err(|_| FxfsError::Inconsistent)
+                .with_context(|| format!("Blob {} has incorrect node type!", id.string))?;
+        }
+        Ok(Some(OpenedNode::new(blob)))
     }
 
     // Attempts to get a node from the node cache. If the node wasn't present in the cache, loads

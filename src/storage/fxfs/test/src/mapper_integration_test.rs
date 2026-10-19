@@ -72,6 +72,10 @@ struct TestPartitionEnv {
 
 impl TestPartitionEnv {
     async fn new() -> Result<Self, Error> {
+        Self::new_with_options(true).await
+    }
+
+    async fn new_with_options(use_driver_blob_paging: bool) -> Result<Self, Error> {
         log::info!("Connecting to partition service...");
         let (partition_service, partitions_manager, _gpt) = match (
             Service::open(fpartitions::PartitionServiceMarker),
@@ -164,7 +168,11 @@ impl TestPartitionEnv {
             .create_volume(
                 "blob",
                 CreateOptions::default(),
-                MountOptions { as_blob: Some(true), ..Default::default() },
+                MountOptions {
+                    as_blob: Some(true),
+                    use_driver_blob_paging: Some(use_driver_blob_paging),
+                    ..Default::default()
+                },
             )
             .await
             .context("Failed to create blob volume")?;
@@ -486,7 +494,8 @@ enum PagingBackend {
 #[test_case(PagingBackend::DriverBlobPager; "driver_blob_pager")]
 #[fuchsia::test(threads = 4)]
 async fn test_unlink_open_blob(backend: PagingBackend) -> Result<(), Error> {
-    let env = TestPartitionEnv::new().await?;
+    let env = TestPartitionEnv::new_with_options(matches!(backend, PagingBackend::DriverBlobPager))
+        .await?;
 
     let blob_pager = match backend {
         PagingBackend::DriverBlobPager => {

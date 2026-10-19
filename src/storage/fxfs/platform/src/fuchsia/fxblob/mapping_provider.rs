@@ -6,7 +6,6 @@ use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::fxblob::directory::BlobDirectory;
 use crate::fuchsia::node::OpenedNode;
-use crate::fuchsia::pager::PagerBacked;
 use anyhow::Error;
 use fidl_fuchsia_storage_mapping as fmapping;
 use fuchsia_merkle::Hash;

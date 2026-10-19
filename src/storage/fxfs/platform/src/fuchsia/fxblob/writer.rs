@@ -348,28 +348,6 @@ impl DeliveryBlobWriter {
             self.generate_metadata(hashes).context("Failed to generate metadata for blob.")?;
         metadata.write_to(self.stage.handle()).await.context("Failed to write blob metadata")?;
 
-        let compressed_size = self.payload_persisted - self.payload_offset;
-        let compression_info = match &metadata.format {
-            BlobFormat::Uncompressed => None,
-            BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => {
-                Some(CompressionInfo::new(
-                    *chunk_size,
-                    compressed_size,
-                    &compressed_offsets,
-                    CompressionAlgorithm::Zstd,
-                )?)
-            }
-            BlobFormat::ChunkedLz4 { chunk_size, compressed_offsets, .. } => {
-                Some(CompressionInfo::new(
-                    *chunk_size,
-                    compressed_size,
-                    &compressed_offsets,
-                    CompressionAlgorithm::Lz4,
-                )?)
-            }
-        };
-        let merkle_verifier = metadata.into_merkle_verifier(root)?;
-
         let name = format!("{}", self.hash);
         let (volume, store, object_id) = {
             let handle = self.stage.handle();
@@ -406,11 +384,37 @@ impl DeliveryBlobWriter {
         {
             ReplacedChild::None => None,
             ReplacedChild::Object(old) => {
+                let pager_info = if volume.use_driver_blob_paging() {
+                    None
+                } else {
+                    let compressed_size = self.payload_persisted - self.payload_offset;
+                    let compression_info = match &metadata.format {
+                        BlobFormat::Uncompressed => None,
+                        BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => {
+                            Some(CompressionInfo::new(
+                                *chunk_size,
+                                compressed_size,
+                                &compressed_offsets,
+                                CompressionAlgorithm::Zstd,
+                            )?)
+                        }
+                        BlobFormat::ChunkedLz4 { chunk_size, compressed_offsets, .. } => {
+                            Some(CompressionInfo::new(
+                                *chunk_size,
+                                compressed_size,
+                                &compressed_offsets,
+                                CompressionAlgorithm::Lz4,
+                            )?)
+                        }
+                    };
+                    let merkle_verifier = metadata.into_merkle_verifier(root)?;
+                    Some((merkle_verifier, compression_info))
+                };
                 let reservation = match volume.cache().get_or_reserve(object_id).await {
                     GetResult::Placeholder(p) => p,
                     _ => unreachable!(),
                 };
-                Some(((old), reservation))
+                Some((old, reservation, pager_info))
             }
             _ => return Err(FxfsError::Inconsistent.into()),
         };
@@ -422,13 +426,13 @@ impl DeliveryBlobWriter {
                     self.parent.did_remove(&name);
                 }
                 self.parent.did_add(&name, None);
-                if let Some((old_id, reservation)) = replacing {
+                if let Some((old_id, reservation, pager_info)) = replacing {
                     // If the blob is in the cache, then we need to swap it.
-                    match handle.owner().cache().get(old_id) {
+                    let cache = self.parent.volume().cache();
+                    match cache.get(old_id) {
                         Some(old_blob) => {
                             let old_blob = old_blob.into_any().downcast::<FxBlob>().unwrap();
-                            let new_blob =
-                                old_blob.overwrite_me(handle, merkle_verifier, compression_info);
+                            let new_blob = old_blob.overwrite_me(handle, pager_info);
                             old_blob.mark_to_be_purged();
                             reservation.commit(&(new_blob as Arc<dyn FxNode>));
                         }

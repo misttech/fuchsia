@@ -92,9 +92,6 @@ struct MountedVolume {
 
     // True if the volume was forcibly locked.
     locked: bool,
-
-    // True if blob page requests for this volume are handled in the block driver.
-    use_driver_blob_paging: bool,
 }
 
 pub(crate) enum Mode {
@@ -142,6 +139,7 @@ impl MountedVolumesGuard<'_> {
                 name,
                 store,
                 self.volumes_directory.memory_pressure_config,
+                use_driver_blob_paging,
             )
             .await?
         } else {
@@ -149,16 +147,10 @@ impl MountedVolumesGuard<'_> {
                 name,
                 store,
                 self.volumes_directory.memory_pressure_config,
+                false,
             )
             .await?
         };
-        if use_driver_blob_paging {
-            if let Some(mounted) =
-                self.mounted_volumes.get_mut(&volume.volume().store().store_object_id())
-            {
-                mounted.use_driver_blob_paging = true;
-            }
-        }
         // If there is an ongoing startup profile activity across all volumes, apply it to the
         // mounted volume unless this is a blob volume using driver blob paging (where pkg-cache
         // drives blob profiling).
@@ -234,6 +226,7 @@ impl MountedVolumesGuard<'_> {
         name: &str,
         store: Arc<ObjectStore>,
         flush_task_config: MemoryPressureConfig,
+        use_driver_blob_paging: bool,
     ) -> Result<FxVolumeAndRoot, Error> {
         let unique_id = zx::Event::create();
         let volume = FxVolumeAndRoot::new::<T>(
@@ -245,6 +238,9 @@ impl MountedVolumesGuard<'_> {
             self.volumes_directory.memory_pressure_config,
         )
         .await?;
+        if use_driver_blob_paging {
+            volume.volume().set_use_driver_blob_paging(true);
+        }
         volume
             .volume()
             .start_background_task(flush_task_config, self.volumes_directory.mem_monitor.as_ref());
@@ -258,12 +254,7 @@ impl MountedVolumesGuard<'_> {
         let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
         self.mounted_volumes.insert(
             volume.volume().store().store_object_id(),
-            MountedVolume {
-                sequence,
-                volume: volume.clone(),
-                locked: false,
-                use_driver_blob_paging: false,
-            },
+            MountedVolume { sequence, volume: volume.clone(), locked: false },
         );
         if let Some(inspect) = self.volumes_directory.inspect_tree.upgrade() {
             inspect.register_volume(
@@ -521,6 +512,9 @@ impl VolumesDirectory {
         match volume_name.as_ref() {
             Some(volume_name) => {
                 let (volume, is_blob) = volumes.get_unlocked_volume_by_name(&volume_name).await?;
+                if is_blob && volume.volume().use_driver_blob_paging() {
+                    return Err(zx::Status::NOT_SUPPORTED);
+                }
                 if let Err(error) = volume
                     .volume()
                     .record_and_replay_profile(new_profile_state(is_blob), &profile_name)
@@ -536,12 +530,10 @@ impl VolumesDirectory {
                 }
             }
             None => {
-                for MountedVolume { volume, use_driver_blob_paging, .. } in
-                    volumes.mounted_volumes.values()
-                {
+                for MountedVolume { volume, .. } in volumes.mounted_volumes.values() {
                     let is_blob =
                         volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
-                    if is_blob && *use_driver_blob_paging {
+                    if is_blob && volume.volume().use_driver_blob_paging() {
                         continue;
                     }
                     // Just log the errors, don't stop half-way.
@@ -584,6 +576,9 @@ impl VolumesDirectory {
             return Err(zx::Status::SHOULD_WAIT);
         }
         let (volume, is_blob) = volumes.get_unlocked_volume_by_name(&volume_name).await?;
+        if is_blob && volume.volume().use_driver_blob_paging() {
+            return Err(zx::Status::NOT_SUPPORTED);
+        }
 
         let (opened_node, profile_name) = match identifier {
             fidl_fuchsia_fxfs::ProfileIdentifier::BlobHash(hash) => {

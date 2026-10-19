@@ -47,9 +47,7 @@ use refaults_vmo::PageRefaultCounter;
 use scopeguard::ScopeGuard;
 use std::future::Future;
 use std::pin::pin;
-#[cfg(any(test, feature = "testing"))]
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
 use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
@@ -181,6 +179,9 @@ pub struct FxVolume {
     /// (`try_as_slice`/`try_as_mut_slice`) and perform zero-copy Merkle tree verification without
     /// heap copies.
     blob_allocator: OnceLock<Arc<BufferAllocator>>,
+
+    /// True if blob page requests for this volume are handled in the block driver.
+    use_driver_blob_paging: AtomicBool,
 }
 
 #[fxfs_trace::trace]
@@ -211,7 +212,16 @@ impl FxVolume {
             blob_resupplied_count,
             pager_dirty_byte_count: AtomicU64::new(0),
             blob_allocator: OnceLock::new(),
+            use_driver_blob_paging: AtomicBool::new(false),
         })
+    }
+
+    pub fn use_driver_blob_paging(&self) -> bool {
+        self.use_driver_blob_paging.load(Ordering::Relaxed)
+    }
+
+    pub fn set_use_driver_blob_paging(&self, enabled: bool) {
+        self.use_driver_blob_paging.store(enabled, Ordering::Relaxed);
     }
 
     pub fn store(&self) -> &Arc<ObjectStore> {
