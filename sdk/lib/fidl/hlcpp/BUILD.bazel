@@ -32,7 +32,6 @@ hlcpp_bindings_libraries_visibility = [
     "//src/camera/bin/device_watcher:__pkg__",
     "//src/camera/bin/factory:__pkg__",
     "//src/camera/bin/virtual_camera:__pkg__",
-    "//src/connectivity/bluetooth/lib/fidl:__pkg__",
     "//src/connectivity/ethernet/drivers/asix-88179:__pkg__",
     "//src/connectivity/network/testing/netemul/network-context/fidl:__pkg__",
     "//src/connectivity/network/testing/netemul/sync-manager/fidl:__pkg__",

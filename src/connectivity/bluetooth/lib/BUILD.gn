@@ -18,7 +18,6 @@ group("lib") {
     "bt-metrics",
     "bt-obex",
     "bt-rfcomm",
-    "fidl",
     "fuchsia-audio-codec",
     "fuchsia-audio-dai",
     "fuchsia-audio-device",
@@ -35,7 +34,6 @@ group("tests") {
   deps = [
     "bt-a2dp:tests",
     "bt-hfp:tests",
-    "fidl:tests",
     "fuchsia-audio-codec:tests",
     "fuchsia-audio-dai:tests",
     "fuchsia-audio-device:tests",
