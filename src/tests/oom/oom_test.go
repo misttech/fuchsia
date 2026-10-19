@@ -23,6 +23,9 @@ var initMessages []string = []string{
 	"console.shell: enabled",
 	"fshost: lifecycle handler ready",
 	"driver_manager main loop is running",
+	// Wait for driver enumeration and bootup to complete so OOM shutdown does not race
+	// with in-flight boot driver binding in driver-host-root.
+	"Bootup completed.",
 	"archivist: Entering core loop"}
 
 // Triggers the OOM signal without leaking memory. Verifies that filesystems are shut down and the
