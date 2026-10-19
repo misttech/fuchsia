@@ -188,7 +188,7 @@ if (is_host) {
       num_iterations = 20
     }
     environments = [ sorrel_env ]
-    timeout_secs = 1200
+    timeout_secs = 840
   }
 }
 
