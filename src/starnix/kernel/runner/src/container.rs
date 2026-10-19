@@ -329,14 +329,26 @@ struct TaskSchedulerMapping {
     thread: String,
     /// An optional regular expression that will be matched against the task's cgroup path.
     cgroup: Option<String>,
+    /// An optional filter matching whether the task is the thread-group leader (`tid == pid`).
+    is_leader: Option<runner::serde::StoreAsString<bool>>,
+    /// An optional minimum Linux nice value (`-20..=19`, inclusive).
+    min_nice: Option<runner::serde::StoreAsString<i8>>,
+    /// An optional maximum Linux nice value (`-20..=19`, inclusive).
+    max_nice: Option<runner::serde::StoreAsString<i8>>,
 }
 
 impl std::fmt::Debug for TaskSchedulerMapping {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "process `{}` thread `{}` cgroup `{:?}` role `{}`",
-            self.process, self.thread, self.cgroup, self.role
+            "process `{}` thread `{}` cgroup `{:?}` is_leader `{:?}` min_nice `{:?}` max_nice `{:?}` role `{}`",
+            self.process,
+            self.thread,
+            self.cgroup,
+            self.is_leader,
+            self.min_nice,
+            self.max_nice,
+            self.role
         )
     }
 }
@@ -779,7 +791,15 @@ async fn create_container(
     // thread's role.
     let mut task_mappings = RoleOverrides::new();
     for m in &start_info.program.task_role_overrides {
-        task_mappings.add(m.process.clone(), m.thread.clone(), m.cgroup.clone(), m.role.clone());
+        task_mappings.add_with_filters(
+            m.process.clone(),
+            m.thread.clone(),
+            m.cgroup.clone(),
+            m.is_leader.as_ref().map(|v| **v),
+            m.min_nice.as_ref().map(|v| **v),
+            m.max_nice.as_ref().map(|v| **v),
+            m.role.clone(),
+        );
     }
     let task_mappings = task_mappings.build().context("adding custom task role")?;
     let scheduler_manager = SchedulerManager::new(task_mappings);

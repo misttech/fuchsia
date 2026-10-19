@@ -1319,6 +1319,7 @@ impl Task {
             &process_name,
             &thread_name,
             &cpuset_path,
+            self.is_leader(),
             &new_scheduler_state,
         );
         if new_scheduler_state.applied_role_name.as_deref() == Some(role_name) {

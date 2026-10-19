@@ -97,6 +97,7 @@ impl SchedulerManager {
                 &process_name,
                 &thread_name,
                 &cpuset_path,
+                task.is_leader(),
                 scheduler_state,
             ));
         }
@@ -108,11 +109,16 @@ impl SchedulerManager {
         process_name: &TaskCommand,
         thread_name: &TaskCommand,
         cgroup_path: &str,
+        is_leader: bool,
         scheduler_state: &SchedulerState,
     ) -> &str {
-        if let Some(name) =
-            self.role_overrides.get_role_name(process_name, thread_name, cgroup_path)
-        {
+        if let Some(name) = self.role_overrides.get_role_name_with_filters(
+            process_name,
+            thread_name,
+            cgroup_path,
+            is_leader,
+            scheduler_state.normal_priority().as_nice(),
+        ) {
             return name;
         }
         scheduler_state.role_name()

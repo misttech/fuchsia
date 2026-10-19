@@ -12,6 +12,9 @@ pub struct RoleOverrides {
     process_filter: Vec<Regex>,
     thread_filter: Vec<Regex>,
     cgroup_filter: Vec<Option<Regex>>,
+    is_leader_filter: Vec<Option<bool>>,
+    min_nice_filter: Vec<Option<i8>>,
+    max_nice_filter: Vec<Option<i8>>,
     role_names: Vec<String>,
 }
 
@@ -22,6 +25,9 @@ impl RoleOverrides {
             process_patterns: vec![],
             thread_patterns: vec![],
             cgroup_patterns: vec![],
+            is_leader_filters: vec![],
+            min_nice_filters: vec![],
+            max_nice_filters: vec![],
             role_names: vec![],
         }
     }
@@ -33,18 +39,37 @@ impl RoleOverrides {
         thread_name: &TaskCommand,
         cgroup_path: &str,
     ) -> Option<&str> {
+        self.get_role_name_with_filters(process_name, thread_name, cgroup_path, false, 0)
+    }
+
+    /// Get the overridden role name (if any) for provided process, thread, cgroup, leadership, and
+    /// nice attributes.
+    pub fn get_role_name_with_filters<'a>(
+        &self,
+        process_name: &TaskCommand,
+        thread_name: &TaskCommand,
+        cgroup_path: &str,
+        is_leader: bool,
+        nice: i8,
+    ) -> Option<&str> {
         debug_assert_eq!(self.process_filter.len(), self.role_names.len());
         debug_assert_eq!(self.thread_filter.len(), self.role_names.len());
         debug_assert_eq!(self.cgroup_filter.len(), self.role_names.len());
+        debug_assert_eq!(self.is_leader_filter.len(), self.role_names.len());
+        debug_assert_eq!(self.min_nice_filter.len(), self.role_names.len());
+        debug_assert_eq!(self.max_nice_filter.len(), self.role_names.len());
 
         // NOTE(https://fxbug.dev/483609435): This used to be more elegantly expressed
         // via use of regex::bytes::RegexSet, but regex_lite doesn't (yet?) offer RegexSet.
         let process_name = process_name.as_bytes().to_str().ok()?;
         let thread_name = thread_name.as_bytes().to_str().ok()?;
         for index in 0..self.process_filter.len() {
-            if self.process_filter[index].is_match(process_name)
+            if self.is_leader_filter[index].is_none_or(|expected| expected == is_leader)
+                && self.min_nice_filter[index].is_none_or(|min| nice >= min)
+                && self.max_nice_filter[index].is_none_or(|max| nice <= max)
+                && self.process_filter[index].is_match(process_name)
                 && self.thread_filter[index].is_match(thread_name)
-                && self.cgroup_filter[index].as_ref().map_or(true, |r| r.is_match(cgroup_path))
+                && self.cgroup_filter[index].as_ref().is_none_or(|r| r.is_match(cgroup_path))
             {
                 return Some(self.role_names[index].as_str());
             }
@@ -58,6 +83,9 @@ pub struct RoleOverridesBuilder {
     process_patterns: Vec<String>,
     thread_patterns: Vec<String>,
     cgroup_patterns: Vec<Option<String>>,
+    is_leader_filters: Vec<Option<bool>>,
+    min_nice_filters: Vec<Option<i8>>,
+    max_nice_filters: Vec<Option<i8>>,
     role_names: Vec<String>,
 }
 
@@ -70,9 +98,26 @@ impl RoleOverridesBuilder {
         cgroup: Option<String>,
         role_name: impl Into<String>,
     ) {
+        self.add_with_filters(process, thread, cgroup, None, None, None, role_name);
+    }
+
+    /// Add a new override with optional thread-group leader and nice range filters.
+    pub fn add_with_filters(
+        &mut self,
+        process: impl Into<String>,
+        thread: impl Into<String>,
+        cgroup: Option<String>,
+        is_leader: Option<bool>,
+        min_nice: Option<i8>,
+        max_nice: Option<i8>,
+        role_name: impl Into<String>,
+    ) {
         self.process_patterns.push(process.into());
         self.thread_patterns.push(thread.into());
         self.cgroup_patterns.push(cgroup);
+        self.is_leader_filters.push(is_leader);
+        self.min_nice_filters.push(min_nice);
+        self.max_nice_filters.push(max_nice);
         self.role_names.push(role_name.into());
     }
 
@@ -96,6 +141,9 @@ impl RoleOverridesBuilder {
                 .map(|pattern| Regex::new(pattern.as_str()))
                 .collect::<Result<Vec<Regex>, Error>>()?,
             cgroup_filter,
+            is_leader_filter: self.is_leader_filters,
+            min_nice_filter: self.min_nice_filters,
+            max_nice_filter: self.max_nice_filters,
             role_names: self.role_names,
         })
     }
@@ -184,5 +232,59 @@ mod tests {
         assert_eq!(str_role_name(&mappings, "proc", "thread", "/foreground"), Some("fg_role"));
         assert_eq!(str_role_name(&mappings, "proc", "thread", "/other"), Some("default_role"));
         assert_eq!(str_role_name(&mappings, "proc", "thread", "/"), Some("default_role"));
+    }
+
+    #[fuchsia::test]
+    fn leader_and_nice_filters() {
+        let mut builder = RoleOverrides::new();
+        builder.add_with_filters(
+            ".+",
+            ".+",
+            Some("^/active$".to_string()),
+            Some(true),
+            None,
+            None,
+            "leader_role",
+        );
+        builder.add_with_filters(
+            ".+",
+            ".+",
+            Some("^/active$".to_string()),
+            None,
+            Some(1),
+            None,
+            "low_prio_worker_role",
+        );
+        builder.add_with_filters(
+            ".+",
+            ".+",
+            Some("^/active$".to_string()),
+            None,
+            None,
+            Some(-1),
+            "boosted_worker_role",
+        );
+        builder.add(".+", ".+", Some("^/active$".to_string()), "default_worker_role");
+        let mappings = builder.build().unwrap();
+
+        let proc_cmd = TaskCommand::new(b"app");
+        let worker_cmd = TaskCommand::new(b"worker");
+
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc_cmd, &proc_cmd, "/active", true, 0),
+            Some("leader_role")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, 0),
+            Some("default_worker_role")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, 10),
+            Some("low_prio_worker_role")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, -2),
+            Some("boosted_worker_role")
+        );
     }
 }
