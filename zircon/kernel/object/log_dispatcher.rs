@@ -122,8 +122,7 @@ impl LogDispatcher {
     pub fn create(flags: u32) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         let rights = Self::default_rights(flags);
         // SAFETY: `cpp_log_dispatcher_create` initializes `handle` on success.
-        let handle =
-            unsafe { KernelHandle::create(|out| cpp_log_dispatcher_create(flags, rights, out)) }?;
+        let handle = unsafe { KernelHandle::create(|out| cpp_log_dispatcher_create(flags, out)) }?;
         Ok((handle, rights))
     }
 

@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <zircon/rights.h>
-
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/ffi.h>
@@ -15,7 +13,7 @@
 
 extern "C" {
 
-zx_status_t cpp_log_dispatcher_create(uint32_t flags, zx_rights_t rights,
+zx_status_t cpp_log_dispatcher_create(uint32_t flags,
                                       ffi::Uninitialized<KernelHandle<LogDispatcher>>* handle_out) {
   fbl::AllocChecker ac;
   auto disp = fbl::AdoptRef(new (&ac) LogDispatcher(flags));
