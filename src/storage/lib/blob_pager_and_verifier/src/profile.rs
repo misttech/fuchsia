@@ -85,6 +85,7 @@ impl ReplayHandle {
                 // Hold the blobs in cache until replay is stopped. Optional as None indicates
                 // that the blob could not be opened, and we want to cache that failure.
                 let mut local_cache: HashMap<Hash, Option<Arc<zx::Vmo>>> = HashMap::new();
+                let mut prefetch_requests: usize = 0;
                 for msg in messages {
                     if msg.is_open_marker() {
                         continue;
@@ -120,9 +121,17 @@ impl ReplayHandle {
                         log::warn!(error:?; "Failed to send request to replay thread");
                         break;
                     }
+                    prefetch_requests += 1;
                 }
                 drop(cache_clone);
                 sender.close();
+                let opened_blobs = local_cache.values().filter(|entry| entry.is_some()).count();
+                log::info!(
+                    opened_blobs,
+                    total_blobs = local_cache.len(),
+                    prefetch_requests;
+                    "Queued blob profile replay requests"
+                );
                 // Keep `local_cache` alive so replayed blobs stay cached until replay is stopped.
                 let () = std::future::pending().await;
             })
@@ -238,6 +247,7 @@ impl ProfileRecording {
                 }
             })?;
 
+        let opened_blobs = active_recording.opened_hashes.len();
         let mut seen = HashSet::new();
         let blob_messages = file_messages
             .filter_map(|msg| {
@@ -250,9 +260,17 @@ impl ProfileRecording {
             .filter(|&blob_msg| seen.insert(blob_msg));
 
         let recorded_vmo = BlobMessage::encode_to_vmo(blob_messages, PROFILE_BLOCK_SIZE)?;
+        let recorded_entries = seen.len();
 
         match self.cache.mapping_session.write_profile(&self.name, recorded_vmo).await {
-            Ok(Ok(())) => Ok(()),
+            Ok(Ok(())) => {
+                log::info!(
+                    opened_blobs,
+                    recorded_entries;
+                    "Committed blob profile recording"
+                );
+                Ok(())
+            }
             Ok(Err(raw_status)) => {
                 let status = zx::Status::err_from_raw(raw_status);
                 log::warn!(
