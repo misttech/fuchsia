@@ -6,6 +6,7 @@ use loom::sync::Arc;
 use netstack3_base::PositiveIsize;
 use netstack3_base::socket::{SendBufferFullError, SendBufferTracking};
 use netstack3_base::testutil::FakeSocketWritableListener;
+use netstack3_core::testutil::FakeBindingsCtx;
 
 use super::{loom_model, loom_spawn, low_preemption_bound_model};
 
@@ -14,8 +15,10 @@ fn race_sndbuffer_writable() {
     loom_model(low_preemption_bound_model(), || {
         const SNDBUF: PositiveIsize = PositiveIsize::new(4).unwrap();
         const ACQ: PositiveIsize = PositiveIsize::new(3).unwrap();
-        let tracking =
-            Arc::new(SendBufferTracking::new(SNDBUF, FakeSocketWritableListener::default()));
+        let tracking = Arc::new(SendBufferTracking::<_, FakeBindingsCtx>::new(
+            SNDBUF,
+            FakeSocketWritableListener::default(),
+        ));
         let snd = tracking.acquire(ACQ).expect("acquire");
         let ta = {
             let tracking = Arc::clone(&tracking);
@@ -40,8 +43,10 @@ fn race_sndbuffer_writable() {
 fn race_sndbuffer_not_writable() {
     loom_model(low_preemption_bound_model(), || {
         const SNDBUF: PositiveIsize = PositiveIsize::new(4).unwrap();
-        let tracking =
-            Arc::new(SendBufferTracking::new(SNDBUF, FakeSocketWritableListener::default()));
+        let tracking = Arc::new(SendBufferTracking::<_, FakeBindingsCtx>::new(
+            SNDBUF,
+            FakeSocketWritableListener::default(),
+        ));
         // Should have no more space left.
         let snd = tracking.acquire(SNDBUF).expect("acquire");
         tracking.with_listener(|listener| {

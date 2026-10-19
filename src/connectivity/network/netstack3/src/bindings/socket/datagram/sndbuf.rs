@@ -23,12 +23,13 @@ use netstack3_core::socket::{SendBufferFullError, SendBufferSpace, SendBufferTra
 use netstack3_core::types::{BufferSizeSettings, PositiveIsize};
 use thiserror::Error;
 
+use crate::bindings::BindingsCtx;
 use crate::bindings::socket::IntoErrno;
 use crate::bindings::socket::event_pair::SocketEventPair;
 
 /// A send buffer manager for a datagram socket.
 #[derive(Debug, Clone)]
-pub(crate) struct SendBuffer(Arc<SendBufferTracking<SocketEventPair>>);
+pub(crate) struct SendBuffer(Arc<SendBufferTracking<SocketEventPair, BindingsCtx>>);
 
 /// An opaque token representing space acquired in the send buffer for an in-flight packet.
 ///
@@ -44,7 +45,7 @@ pub(crate) struct SendBuffer(Arc<SendBufferTracking<SocketEventPair>>);
 /// writability is signaled on the socket event pair to notify waiting writers.
 #[derive(Debug)]
 pub struct SendBufferToken {
-    tracking: Arc<SendBufferTracking<SocketEventPair>>,
+    tracking: Arc<SendBufferTracking<SocketEventPair, BindingsCtx>>,
     space: Option<SendBufferSpace>,
 }
 

@@ -13,13 +13,13 @@ use core::hash::Hash;
 use core::ops;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
-use netstack3_sync::Mutex;
 
 use assert_matches::assert_matches;
 use netstack3_hashmap::HashMap;
 
 use crate::context::CtxPair;
 use crate::ref_counted_hash_map::{RefCountedHashSet, RemoveResult};
+use crate::sync::{Mutex, lock_impl};
 use crate::time::{
     AtomicInstant, Instant, InstantBindingsTypes, InstantContext, TimerBindingsTypes, TimerContext,
     TimerHandler,
@@ -105,7 +105,7 @@ impl Debug for FakeInstant {
 /// A fake implementation of [`AtomicInstant`] for use in testing.
 #[derive(Debug)]
 pub struct FakeAtomicInstant {
-    value: Mutex<FakeInstant>,
+    value: Mutex<FakeInstant, lock_impl::RawMutex>,
 }
 
 impl AtomicInstant<FakeInstant> for FakeAtomicInstant {

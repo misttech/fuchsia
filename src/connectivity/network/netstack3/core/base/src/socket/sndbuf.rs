@@ -4,14 +4,17 @@
 
 //! Types and traits providing send buffer management for netstack sockets.
 
+use derivative::Derivative;
 use netstack3_sync::Mutex;
 use netstack3_sync::atomic::{AtomicIsize, Ordering};
 
+use crate::BindingsSyncTypes;
 use crate::num::PositiveIsize;
 
 /// Tracks the available send buffer space for a socket.
-#[derive(Debug)]
-pub struct SendBufferTracking<L> {
+#[derive(Derivative)]
+#[derivative(Debug(bound = "L: core::fmt::Debug"))]
+pub struct SendBufferTracking<L, BT: BindingsSyncTypes> {
     /// Keeps track of how many bytes are available in the send buffer.
     ///
     /// Due to overcommit, this is allowed to become negative. Hence, whenever
@@ -20,10 +23,10 @@ pub struct SendBufferTracking<L> {
     /// positive and vice-versa) as part of adding or subtracting in flight
     /// bytes.
     available_bytes: AtomicIsize,
-    inner: Mutex<Inner<L>>,
+    inner: Mutex<Inner<L>, BT::Mutex>,
 }
 
-impl<L> SendBufferTracking<L> {
+impl<L, BT: BindingsSyncTypes> SendBufferTracking<L, BT> {
     /// Creates a new `SendBufferTracking` with the initial available send
     /// buffer space `capacity` and a writable listener `listener`.
     pub fn new(capacity: PositiveIsize, listener: L) -> Self {
@@ -46,7 +49,7 @@ impl<L> SendBufferTracking<L> {
     }
 }
 
-impl<L: SocketWritableListener> SendBufferTracking<L> {
+impl<L: SocketWritableListener, BT: BindingsSyncTypes> SendBufferTracking<L, BT> {
     /// Acquires `bytes` for send with this `SendBufferTracking` instance.
     pub fn acquire(&self, bytes: PositiveIsize) -> Result<SendBufferSpace, SendBufferFullError> {
         let bytes_isize = bytes.into();
@@ -243,9 +246,12 @@ pub(crate) mod testutil {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::FakeBindingsCtx;
     use testutil::FakeSocketWritableListener;
 
     use alloc::vec::Vec;
+
+    type SendBufferTracking<L> = super::SendBufferTracking<L, FakeBindingsCtx<(), (), (), ()>>;
 
     const SNDBUF: PositiveIsize = PositiveIsize::new(4).unwrap();
     const HALF_SNDBUF: PositiveIsize = PositiveIsize::new(SNDBUF.get() / 2).unwrap();

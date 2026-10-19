@@ -39,7 +39,7 @@ pub(crate) mod testutil {
     use rand_xorshift::XorShiftRng;
 
     use crate::RngContext;
-    use crate::sync::Mutex;
+    use crate::sync::{Mutex, lock_impl};
 
     /// A wrapper which implements `Rng` and `CryptoRng` for any `Rng`.
     ///
@@ -50,7 +50,7 @@ pub(crate) mod testutil {
     ///
     /// This is obviously insecure. Don't use it except in testing!
     #[derive(Clone, Debug)]
-    pub struct FakeCryptoRng<R = XorShiftRng>(Arc<Mutex<R>>);
+    pub struct FakeCryptoRng<R = XorShiftRng>(Arc<Mutex<R, lock_impl::RawMutex>>);
 
     impl Default for FakeCryptoRng<XorShiftRng> {
         fn default() -> FakeCryptoRng<XorShiftRng> {
