@@ -2,7 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -15,14 +20,11 @@ rustc_library(
     crate_name = "work_queue",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
-        "//src/lib/fuchsia",
-        "//src/lib/fuchsia-async",
+    visibility = [
+        "//src/sys/pkg/bin/pkg-cache:__pkg__",
+        "//src/sys/pkg/bin/pkg-resolver:__pkg__",
+        "//src/sys/pkg/lib:__pkg__",
     ],
-    version = "0.1.0",
-    visibility = ["//src/sys/pkg:__subpackages__"],
-    with_unit_tests = True,
     deps = [
         "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
         "//src/lib/fuchsia-sync",
@@ -31,4 +33,43 @@ rustc_library(
         "//third_party/rust_crates/vendor:pin-project",
         "//third_party/rust_crates/vendor:thiserror",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "work-queue_test",
+    crate = ":work-queue",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+    ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "work-queue_host_test",
+    binary_name = "work-queue_test",
+)
+
+# @bazel2gn:skip
+fx_unittest_component(
+    name = "test-component",
+    binary = ":work-queue_test",
+    component_name = "work-queue-lib-test",
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "work-queue-tests-package",
+    package_name = "work-queue-tests",
+    test_components = [":test-component"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "work-queue-tests",
+    package = ":work-queue-tests-package",
 )
