@@ -66,12 +66,67 @@ impl<'a> LineWaiter<'a> for Stdin {
 // This is to make the schema make sense as this plugin can output one of these based on the
 // subcommand. An alternative is to break this one plugin into multiple plugins each with their own
 // output type. That is probably preferred but either way works.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum TraceOutput {
     ListCategories(Vec<TraceKnownCategory>),
     ListProviders(Vec<TraceProviderInfo>),
+    Record(TraceRecordOutput),
+    Upload(TraceUploadOutput),
     ListCategoryGroups(HashMap<String, Vec<String>>),
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct TraceRecordOutput {
+    pub output_file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_stats: Option<Vec<TraceProviderStats>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct TraceUploadOutput {
+    pub url: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct TraceProviderStats {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buffering_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buffer_wrapped_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub records_dropped: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub percentage_durable_buffer_used: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub non_durable_bytes_written: Option<u64>,
+}
+
+impl From<ProviderStats> for TraceProviderStats {
+    fn from(stats: ProviderStats) -> Self {
+        let buffering_mode = stats.buffering_mode.map(|mode| match mode {
+            BufferingMode::Oneshot => "oneshot".to_string(),
+            BufferingMode::Circular => "circular".to_string(),
+            BufferingMode::Streaming => "streaming".to_string(),
+        });
+        Self {
+            name: stats.name,
+            pid: stats.pid,
+            buffering_mode,
+            buffer_wrapped_count: stats.buffer_wrapped_count,
+            records_dropped: stats.records_dropped,
+            percentage_durable_buffer_used: stats.percentage_durable_buffer_used,
+            non_durable_bytes_written: stats.non_durable_bytes_written,
+        }
+    }
 }
 
 // These fields are arranged this way because deriving Ord uses field declaration order.
@@ -161,16 +216,68 @@ fn handle_peer_closed(err: fidl::Error) -> errors::FfxError {
     }
 }
 
-fn more_than_init_record(
-    non_durable_bytes_written: u64,
-    durable_buffer_used: f32,
-    buffering_mode: BufferingMode,
-) -> bool {
-    let init_record_size_in_bytes = 16;
-    match buffering_mode {
-        BufferingMode::Oneshot => non_durable_bytes_written > init_record_size_in_bytes,
-        _ => durable_buffer_used > 0.0,
+fn has_non_zero_counter(stats: &ProviderStats) -> bool {
+    stats.buffer_wrapped_count.unwrap_or(0) > 0
+        || stats.records_dropped.unwrap_or(0) > 0
+        || stats.percentage_durable_buffer_used.unwrap_or(0.0) > 0.0
+        || stats.non_durable_bytes_written.unwrap_or(0) > 0
+}
+
+fn strip_ansi_codes(s: &str) -> String {
+    s.replace(&color::Fg(color::Yellow).to_string(), "")
+        .replace(&color::Fg(color::Reset).to_string(), "")
+        .replace(&style::Bold.to_string(), "")
+        .replace(&style::Reset.to_string(), "")
+}
+
+fn collect_stats_warnings(provider_stats: &[ProviderStats], verbose: bool) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut dropped_records_warnings = Vec::new();
+    let mut providers_with_missing_stats = 0;
+    for provider in provider_stats {
+        let (
+            Some(provider_name),
+            Some(_pid),
+            Some(_buffering_mode),
+            Some(_wrapped_count),
+            Some(records_dropped),
+            Some(_durable_buffer_used),
+            Some(_non_durable_bytes_written),
+        ) = (
+            provider.name.as_ref(),
+            provider.pid,
+            provider.buffering_mode,
+            provider.buffer_wrapped_count,
+            provider.records_dropped,
+            provider.percentage_durable_buffer_used,
+            provider.non_durable_bytes_written,
+        )
+        else {
+            providers_with_missing_stats += 1;
+            continue;
+        };
+
+        if records_dropped != 0 {
+            dropped_records_warnings
+                .push(format!("WARNING: {provider_name:?} dropped {records_dropped:?} records!"));
+        }
     }
+
+    if !dropped_records_warnings.is_empty() {
+        dropped_records_warnings.push(
+            "TIP: One or more providers dropped records. Consider increasing the buffer size with `--buffer-size <MB>`."
+                .to_string(),
+        );
+    }
+
+    if verbose && providers_with_missing_stats != 0 {
+        warnings.push(format!(
+            "WARNING: {} producers were missing stats. Perhaps a producer is misconfigured?",
+            providers_with_missing_stats
+        ));
+    }
+    warnings.extend(dropped_records_warnings);
+    warnings
 }
 
 // Scan through the resulting stats of a trace session and build up the output to inform or warn
@@ -180,10 +287,11 @@ fn stats_to_output(provider_stats: Vec<ProviderStats>, verbose: bool) -> Vec<Str
     let mut dropped_records_warnings = Vec::new();
     let mut providers_with_missing_stats = 0;
     for provider in provider_stats {
+        let provider_has_data = has_non_zero_counter(&provider);
         let (
             Some(provider_name),
             Some(pid),
-            Some(buffering_mode),
+            Some(_buffering_mode),
             Some(wrapped_count),
             Some(records_dropped),
             Some(durable_buffer_used),
@@ -211,8 +319,6 @@ fn stats_to_output(provider_stats: Vec<ProviderStats>, verbose: bool) -> Vec<Str
             ));
         }
 
-        let provider_has_data =
-            more_than_init_record(non_durable_bytes_written, durable_buffer_used, buffering_mode);
         if verbose && provider_has_data {
             stats_output.extend([
                 format!("{provider_name:?} (pid: {pid:?}) trace stats"),
@@ -760,15 +866,27 @@ where
         };
 
     let verify_trace = !opts.no_verify_trace;
+    let raw_provider_stats = trace_data.stop_result.provider_stats.unwrap_or_default();
+    let provider_stats = if opts.verbose {
+        Some(
+            raw_provider_stats
+                .iter()
+                .filter(|stats| has_non_zero_counter(stats))
+                .cloned()
+                .map(TraceProviderStats::from)
+                .collect(),
+        )
+    } else {
+        None
+    };
+    let mut warnings = collect_stats_warnings(&raw_provider_stats, opts.verbose);
 
-    for line in
-        stats_to_output(trace_data.stop_result.provider_stats.unwrap_or(vec![]), opts.verbose)
-    {
+    for line in stats_to_output(raw_provider_stats, opts.verbose) {
         writer.line(line)?;
     }
     if verify_trace {
         let categories = if verify_trace { Some(trace_data.categories) } else { None };
-        post_process(
+        let post_process_warnings = post_process(
             &context,
             &trace_data.output_file,
             categories,
@@ -776,6 +894,7 @@ where
             opts.retain_raw_fidl,
             &mut writer,
         )?;
+        warnings.extend(post_process_warnings.into_iter().map(|w| strip_ansi_codes(&w)));
     }
 
     let final_output = if opts.compressed {
@@ -804,8 +923,8 @@ where
     };
 
     writer.line(format!("Results written to {}", final_output))?;
-    if opts.upload {
-        upload_and_print(
+    let url = if opts.upload {
+        let (uploaded_url, upload_warning) = upload_and_print(
             context,
             Path::new(&final_output),
             opts.bucket.as_deref(),
@@ -813,8 +932,22 @@ where
             uploader,
         )
         .await?;
+        if let Some(warning) = upload_warning {
+            warnings.push(warning);
+        }
+        uploaded_url
     } else {
         writer.line("Upload to https://ui.perfetto.dev/#!/ to view.")?;
+        None
+    };
+
+    if writer.is_machine() {
+        writer.machine(&TraceOutput::Record(TraceRecordOutput {
+            output_file: final_output,
+            url,
+            provider_stats,
+            warnings,
+        }))?;
     }
     Ok(())
 }
@@ -825,7 +958,7 @@ async fn upload_and_print<F, Fut>(
     cli_bucket: Option<&str>,
     writer: &mut Writer,
     uploader: F,
-) -> Result<()>
+) -> Result<(Option<String>, Option<String>)>
 where
     F: FnOnce(PathBuf, String, String) -> Fut,
     Fut: Future<Output = Result<String>>,
@@ -839,12 +972,14 @@ where
             writer.line("")?;
             writer.line("View in Perfetto Trace Viewer:")?;
             writer.line(format!("  {}", url))?;
+            Ok((Some(url), None))
         }
         Err(e) => {
-            writer.line(format!("Warning: Failed to upload trace to GCS: {e:#}"))?;
+            let warning = format!("Warning: Failed to upload trace to GCS: {e:#}");
+            writer.line(&warning)?;
+            Ok((None, Some(warning)))
         }
     }
-    Ok(())
 }
 
 async fn trace_upload_impl<F, Fut>(
@@ -872,10 +1007,14 @@ where
     writer.line(format!("Uploading trace to gs://{}...", bucket))?;
     match uploader(path.to_path_buf(), bucket, viewer_base).await {
         Ok(url) => {
-            writer.line("Trace uploaded successfully!")?;
-            writer.line("")?;
-            writer.line("View in Perfetto Trace Viewer:")?;
-            writer.line(format!("  {}", url))?;
+            if writer.is_machine() {
+                writer.machine(&TraceOutput::Upload(TraceUploadOutput { url }))?;
+            } else {
+                writer.line("Trace uploaded successfully!")?;
+                writer.line("")?;
+                writer.line("View in Perfetto Trace Viewer:")?;
+                writer.line(format!("  {}", url))?;
+            }
             Ok(())
         }
         Err(e) => {
@@ -895,7 +1034,7 @@ fn post_process(
     skip_symbolization: bool,
     retain_raw_fidl: bool,
     writer: &mut Writer,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     let expanded_categories =
         ffx_trace::expand_categories(context, categories.clone().unwrap_or(vec![]))
             .map_err(anyhow::Error::from)?;
@@ -911,10 +1050,10 @@ fn post_process(
         categories,
         context,
     )?;
-    for warning in warnings {
+    for warning in &warnings {
         writer.line(format!("{warning}"))?;
     }
-    Ok(())
+    Ok(warnings)
 }
 
 fn resolve_output_paths(output_opt: Option<&str>, compressed: bool) -> Result<(String, String)> {
@@ -2802,6 +2941,23 @@ Triggers:
         expected_output = vec![];
         actual_output = stats_to_output(vec![stats.clone()], false);
         assert_eq!(expected_output, actual_output);
+
+        // Provider with all zero counters should not be output even when verbose is true
+        let zero_stats = tracing_controller::ProviderStats {
+            name: Some("zero_provider".to_string()),
+            pid: Some(5678),
+            buffering_mode: Some(BufferingMode::Streaming),
+            buffer_wrapped_count: Some(0),
+            records_dropped: Some(0),
+            percentage_durable_buffer_used: Some(0.0),
+            non_durable_bytes_written: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(
+            stats_to_output(vec![zero_stats.clone()], true),
+            Vec::<String>::new(),
+            "stats_to_output({zero_stats:?}, true) should be empty"
+        );
     }
 
     #[fuchsia::test]
@@ -2849,5 +3005,274 @@ Triggers:
                 );
             }
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_machine() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(Some(Format::Json), &test_buffers);
+
+        let stop_opts = Stop {
+            output: Some("foo.txt".to_string()),
+            verbose: false,
+            no_symbolize: false,
+            no_verify_trace: true,
+            retain_raw_fidl: false,
+            abort: false,
+            ..Default::default()
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
+        };
+
+        tool.trace_stop(&stop_opts, writer).await.unwrap();
+        let output = test_buffers.into_stdout_str();
+        let parsed: serde_json::Value = serde_json::from_str(&output)
+            .unwrap_or_else(|e| panic!("failed to parse JSON from {output:?}: {e}"));
+        let obj = parsed.as_object().expect("JSON output should be an object");
+        assert!(
+            obj.get("output_file").and_then(|v| v.as_str()).unwrap_or("").ends_with("/foo.txt"),
+            "trace_stop({stop_opts:?}) output_file = {:?}, want suffix '/foo.txt'",
+            obj.get("output_file")
+        );
+        assert_eq!(obj.get("url"), None, "trace_stop({stop_opts:?}) should omit 'url'");
+        assert_eq!(
+            obj.get("provider_stats"),
+            None,
+            "trace_stop({stop_opts:?}) should omit 'provider_stats'"
+        );
+        assert_eq!(obj.get("warnings"), None, "trace_stop({stop_opts:?}) should omit 'warnings'");
+    }
+
+    #[fuchsia::test]
+    async fn test_finalize_trace_verbose_and_upload_machine() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(Some(Format::Json), &test_buffers);
+
+        let stop_opts = Stop {
+            output: Some("streaming-64.fxt".to_string()),
+            verbose: true,
+            upload: true,
+            bucket: Some("my-bucket".to_string()),
+            no_verify_trace: true,
+            ..Default::default()
+        };
+
+        let active_provider = ProviderStats {
+            name: Some("starnix_kernel.cm".to_string()),
+            pid: Some(4321),
+            buffering_mode: Some(BufferingMode::Streaming),
+            buffer_wrapped_count: Some(3),
+            records_dropped: Some(0),
+            percentage_durable_buffer_used: Some(0.0),
+            non_durable_bytes_written: Some(65536),
+            ..Default::default()
+        };
+        let zero_provider = ProviderStats {
+            name: Some("zero_provider.cm".to_string()),
+            pid: Some(9999),
+            buffering_mode: Some(BufferingMode::Streaming),
+            buffer_wrapped_count: Some(0),
+            records_dropped: Some(0),
+            percentage_durable_buffer_used: Some(0.0),
+            non_durable_bytes_written: Some(0),
+            ..Default::default()
+        };
+
+        let trace_data = TraceData {
+            output_file: "streaming-64.fxt".to_string(),
+            categories: vec!["#starnix-ui".to_string()],
+            stop_result: StopResult {
+                provider_stats: Some(vec![active_provider, zero_provider]),
+                ..Default::default()
+            },
+        };
+
+        let expected_url = "https://fuchsia-trace-viewer.corp.goog/trace/b94d27b9";
+        finalize_trace_impl(
+            &env.context,
+            trace_data,
+            &stop_opts,
+            writer,
+            |_path, _bucket, _viewer| async { Ok(expected_url.to_string()) },
+        )
+        .await
+        .unwrap();
+
+        let output = test_buffers.into_stdout_str();
+        let got: TraceRecordOutput = serde_json::from_str(&output)
+            .unwrap_or_else(|e| panic!("failed to deserialize {output:?}: {e}"));
+        let want = TraceRecordOutput {
+            output_file: "streaming-64.fxt".to_string(),
+            url: Some(expected_url.to_string()),
+            provider_stats: Some(vec![TraceProviderStats {
+                name: Some("starnix_kernel.cm".to_string()),
+                pid: Some(4321),
+                buffering_mode: Some("streaming".to_string()),
+                buffer_wrapped_count: Some(3),
+                records_dropped: Some(0),
+                percentage_durable_buffer_used: Some(0.0),
+                non_durable_bytes_written: Some(65536),
+            }]),
+            warnings: vec![],
+        };
+        assert_eq!(got, want, "finalize_trace_impl({stop_opts:?}) = {got:?}, want {want:?}");
+    }
+
+    #[fuchsia::test]
+    async fn test_finalize_trace_warnings_machine() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(Some(Format::Json), &test_buffers);
+
+        let stop_opts = Stop {
+            output: Some("dropped.fxt".to_string()),
+            verbose: true,
+            upload: true,
+            bucket: Some("my-bucket".to_string()),
+            no_verify_trace: true,
+            ..Default::default()
+        };
+
+        let dropping_provider = ProviderStats {
+            name: Some("provider_foo".to_string()),
+            pid: Some(1234),
+            buffering_mode: Some(BufferingMode::Oneshot),
+            buffer_wrapped_count: Some(1),
+            records_dropped: Some(42),
+            percentage_durable_buffer_used: Some(50.0),
+            non_durable_bytes_written: Some(1024),
+            ..Default::default()
+        };
+        let incomplete_provider =
+            ProviderStats { name: Some("broken_provider".to_string()), ..Default::default() };
+
+        let trace_data = TraceData {
+            output_file: "dropped.fxt".to_string(),
+            categories: vec![],
+            stop_result: StopResult {
+                provider_stats: Some(vec![dropping_provider, incomplete_provider]),
+                ..Default::default()
+            },
+        };
+
+        finalize_trace_impl(
+            &env.context,
+            trace_data,
+            &stop_opts,
+            writer,
+            |_path, _bucket, _viewer| async { Err(anyhow!("simulated upload failure")) },
+        )
+        .await
+        .unwrap();
+
+        let output = test_buffers.into_stdout_str();
+        let got: TraceRecordOutput = serde_json::from_str(&output)
+            .unwrap_or_else(|e| panic!("failed to deserialize {output:?}: {e}"));
+        assert_eq!(
+            got.url, None,
+            "finalize_trace_impl({stop_opts:?}) url = {:?}, want None",
+            got.url
+        );
+        assert_eq!(
+            got.warnings,
+            vec![
+                "WARNING: 1 producers were missing stats. Perhaps a producer is misconfigured?"
+                    .to_string(),
+                "WARNING: \"provider_foo\" dropped 42 records!".to_string(),
+                "TIP: One or more providers dropped records. Consider increasing the buffer size with `--buffer-size <MB>`."
+                    .to_string(),
+                "Warning: Failed to upload trace to GCS: simulated upload failure".to_string(),
+            ],
+            "finalize_trace_impl({stop_opts:?}) warnings = {:?}, want clean warnings without ANSI codes",
+            got.warnings
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_start_with_duration_verbose_machine() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(Some(Format::Json), &test_buffers);
+
+        let start_opts = Start {
+            buffer_size: 64,
+            categories: vec![],
+            duration: Some(1),
+            buffering_mode: tracing::BufferingMode::Streaming,
+            output: Some("streaming-64.fxt".to_owned()),
+            background: false,
+            verbose: true,
+            no_verify_trace: true,
+            ..Default::default()
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        tool.trace_start(&start_opts, writer).await.unwrap();
+        let output = test_buffers.into_stdout_str();
+        let got: TraceRecordOutput = serde_json::from_str(&output)
+            .unwrap_or_else(|e| panic!("failed to deserialize {output:?}: {e}"));
+        assert!(
+            got.output_file.ends_with("/streaming-64.fxt"),
+            "trace_start({start_opts:?}) output_file = {:?}, want suffix '/streaming-64.fxt'",
+            got.output_file
+        );
+        assert_eq!(
+            got.provider_stats,
+            Some(vec![TraceProviderStats {
+                name: Some("provider_bar".to_string()),
+                pid: Some(1234),
+                buffering_mode: Some("oneshot".to_string()),
+                buffer_wrapped_count: Some(10),
+                records_dropped: Some(0),
+                percentage_durable_buffer_used: Some(30.0),
+                non_durable_bytes_written: Some(40),
+            }]),
+            "trace_start({start_opts:?}) provider_stats = {:?}",
+            got.provider_stats
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_upload_trace_machine() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(Some(Format::Json), &test_buffers);
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let trace_path = temp_dir.path().join("existing_trace.fxt");
+        std::fs::write(&trace_path, b"placeholder trace data").unwrap();
+
+        let expected_url = "https://fuchsia-trace-viewer.corp.goog/trace/abcdef12";
+        let trace_path_str = trace_path.to_str().unwrap().to_string();
+        trace_upload_impl(
+            &env.context,
+            &trace_path_str,
+            Some("custom-bucket"),
+            writer,
+            |_path, _bucket, _viewer| async move { Ok(expected_url.to_string()) },
+        )
+        .await
+        .unwrap();
+
+        let output = test_buffers.into_stdout_str();
+        let got: TraceUploadOutput = serde_json::from_str(&output)
+            .unwrap_or_else(|e| panic!("failed to deserialize {output:?}: {e}"));
+        let want = TraceUploadOutput { url: expected_url.to_string() };
+        assert_eq!(got, want, "trace_upload_impl({trace_path_str:?}) = {got:?}, want {want:?}");
     }
 }
