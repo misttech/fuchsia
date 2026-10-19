@@ -511,6 +511,48 @@ where
         while self.as_mut().pop_front().is_some() {}
     }
 
+    /// A special clear operation that resets the internal container structure in O(1) time,
+    /// leaving the node state of the current elements unmodified.
+    ///
+    /// Only usable with containers of unmanaged pointers (`!P::IS_MANAGED`); attempting to call
+    /// this on a container of managed pointers (`UniquePtr` or `RefPtr`) fails to compile.
+    ///
+    /// While this can be useful in special cases (such as resetting a free list for a pool or slab
+    /// allocator during destruction), you normally do not want this behavior. Think carefully
+    /// before calling this!
+    ///
+    /// # Safety
+    ///
+    /// Unlike C++, `DoublyLinkedListNode` does not have an `AllowClearUnsafe` node option; this
+    /// safety contract replaces the C++ node-option `static_assert`:
+    /// - After this call, every former element retains stale `next` and `prev` links and still
+    ///   reports `in_container() == true`.
+    /// - The caller must ensure that no former element's node is used again by any list or cursor
+    ///   operation (such as insertion, `erase`, `cursor_at`, `replace_raw`, or
+    ///   `remove_from_container`) until its memory is freed or the node is reinitialized.
+    /// - The caller must ensure that no former element's node is dropped while its `Drop`
+    ///   implementation's `!in_container()` debug assertion would fire (for example, by keeping
+    ///   the node in `ManuallyDrop`, freeing the backing memory without running `Drop`, or
+    ///   manually resetting the node state first).
+    #[inline]
+    pub unsafe fn clear_unsafe(self: Pin<&mut Self>) {
+        const {
+            assert!(
+                !P::IS_MANAGED,
+                "clear_unsafe is not allowed for containers of managed pointers",
+            );
+        }
+
+        let sentinel = self.get_sentinel();
+        let this = self.project();
+        *this.head = sentinel;
+
+        // Update our count bookkeeping.
+        if S::IS_TRACKING {
+            this.size.set(0);
+        }
+    }
+
     /// Erases the given element from the list. Returns the erased element.
     ///
     /// # Safety
@@ -3281,6 +3323,99 @@ mod tests {
         assert!(iter.next().is_none());
 
         list.as_mut().clear();
+    }
+
+    #[test]
+    fn test_clear_unsafe() {
+        use core::mem::ManuallyDrop;
+        use core::ptr::NonNull;
+
+        stack_pin_init!(
+            let list =
+                DoublyLinkedList::<*mut TestObject, DefaultObjectTag, TrackingSize>::new()
+        );
+
+        // `clear_unsafe` on an empty list is a no-op and leaves the list empty and reusable.
+        // SAFETY: The list is empty, so no former elements exist.
+        unsafe {
+            list.as_mut().clear_unsafe();
+        }
+        assert!(list.is_empty());
+        assert_eq!(list.len(), 0);
+
+        // Keep `obj1..=obj3` in `ManuallyDrop` so their `DoublyLinkedListNode::drop` debug
+        // assertion (`!in_container()`) is not triggered after `clear_unsafe`.
+        let mut obj1 = ManuallyDrop::new(TestObject::new(10));
+        let mut obj2 = ManuallyDrop::new(TestObject::new(20));
+        let mut obj3 = ManuallyDrop::new(TestObject::new(30));
+
+        // SAFETY: `obj1`, `obj2`, and `obj3` are valid, unlinked objects that outlive their
+        // presence in `list`.
+        unsafe {
+            list.as_mut().push_back_raw(&mut *obj1);
+            list.as_mut().push_back_raw(&mut *obj2);
+            list.as_mut().push_back_raw(&mut *obj3);
+        }
+
+        assert!(!list.is_empty());
+        assert_eq!(list.len(), 3);
+
+        // SAFETY: `obj1`, `obj2`, and `obj3` are wrapped in `ManuallyDrop` and are never used in
+        // any list or cursor operation again after `clear_unsafe`.
+        unsafe {
+            list.as_mut().clear_unsafe();
+        }
+
+        assert!(list.is_empty());
+        assert_eq!(list.len(), 0);
+        assert!(list.front().is_none());
+        assert!(list.back().is_none());
+        assert!(list.iter().next().is_none());
+
+        // Verify that the former nodes were not modified and still report `in_container()`.
+        assert!(obj1.get_node().in_container());
+        assert!(obj2.get_node().in_container());
+        assert!(obj3.get_node().in_container());
+
+        // Verify that the list can be reused with fresh nodes after `clear_unsafe`.
+        let mut fresh1 = TestObject::new(40);
+        let mut fresh2 = TestObject::new(50);
+        // SAFETY: `fresh1` and `fresh2` are valid, unlinked stack objects cleared before drop.
+        unsafe {
+            list.as_mut().push_back_raw(&mut fresh1);
+            list.as_mut().push_back_raw(&mut fresh2);
+        }
+        assert!(!list.is_empty());
+        assert_eq!(list.len(), 2);
+        let mut iter = list.iter();
+        assert_eq!(iter.next().unwrap().value, 40);
+        assert_eq!(iter.next().unwrap().value, 50);
+        assert!(iter.next().is_none());
+        list.as_mut().clear();
+        assert!(list.is_empty());
+        assert_eq!(list.len(), 0);
+
+        // Also test a `NonNull<TestObject>` list with `NonTrackingSize`.
+        stack_pin_init!(let nn_list = DoublyLinkedList::<NonNull<TestObject>>::new());
+        // SAFETY: The list is empty.
+        unsafe {
+            nn_list.as_mut().clear_unsafe();
+        }
+        assert!(nn_list.is_empty());
+
+        let mut nn_obj1 = ManuallyDrop::new(TestObject::new(1));
+        let mut nn_obj2 = ManuallyDrop::new(TestObject::new(2));
+        // SAFETY: `nn_obj1` and `nn_obj2` are valid, unlinked objects wrapped in `ManuallyDrop`
+        // and never used again after `clear_unsafe`.
+        unsafe {
+            nn_list.as_mut().push_front_raw(NonNull::from(&mut *nn_obj1));
+            nn_list.as_mut().push_front_raw(NonNull::from(&mut *nn_obj2));
+            assert!(!nn_list.is_empty());
+            nn_list.as_mut().clear_unsafe();
+        }
+        assert!(nn_list.is_empty());
+        assert!(nn_obj1.get_node().in_container());
+        assert!(nn_obj2.get_node().in_container());
     }
 
     // FFI Declarations
