@@ -27,7 +27,7 @@ rustc_library(
     crate_name = "inspect_runtime",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    visibility = ["//visibility:private"],
+    visibility = ["//src/sys/pkg/bin/system-update-configurator:__pkg__"],
     deps = [
         "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
         "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",

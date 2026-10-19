@@ -55,6 +55,9 @@ source_set("tee-client-api-static") {
     "//sdk/lib/fidl",
     "//zircon/system/ulib/zx",
   ]
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "//src/sys/pkg/bin/system-update-configurator:*",
+  ]
   public_deps = [ ":tee-client-api-headers" ]
 }

@@ -31,7 +31,7 @@ fx_cc_library(
         "//sdk/lib/fidl",
         "//zircon/system/ulib/zx",
     ],
-    visibility = ["//visibility:private"],
+    visibility = ["//src/sys/pkg/bin/system-update-configurator:__pkg__"],
     deps = [":tee-client-api-headers"],
     alwayslink = True,
 )

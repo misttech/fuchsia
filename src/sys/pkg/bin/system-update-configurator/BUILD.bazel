@@ -2,6 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -10,4 +17,63 @@ exports_files(
         "meta/system-update-shard.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+# `system-update-configurator` is conceptually a binary, but it built as a lib
+# here so it can be aggregated into //src/sys/pkg/bin/grand-swd-binary to save
+# disk space.
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/bridge.rs",
+        "src/bridge/testing.rs",
+        "src/bridge/vx_ta/mod.rs",
+        "src/bridge/vx_ta/tee_client_api.rs",
+        "src/health.rs",
+        "src/main.rs",
+        "src/service.rs",
+    ],
+    crate_name = "system_update_configurator",
+    crate_root = "src/main.rs",
+    edition = "2024",
+    link_deps = [
+        "//src/security/lib/tee/tee-client-api:tee-client-api-static",  # @bazel2gn:path_overwrite://src/security/lib/tee/tee-client-api
+    ],
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    visibility = ["//src/sys/pkg/bin/grand-swd-binary:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.update.config:fuchsia.update.config_rust",
+        "//src/lib/diagnostics/inspect/runtime/rust:lib",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/runtime/rust
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "system-update-configurator-unit-tests",
+    unit_tests = [":lib_test"],
 )
