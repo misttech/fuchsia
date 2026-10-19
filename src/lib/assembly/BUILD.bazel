@@ -15,5 +15,7 @@ test_suite(
         "//src/lib/assembly/blobfs:blobfs_test",
         "//src/lib/assembly/package_copy:package_copy_test",
         "//src/lib/assembly/package_list:package_list_test",
+        "//src/lib/assembly/package_utils:package_utils_test",
+        "//src/lib/assembly/update_packages_manifest:update_packages_manifest_test",
     ],
 )
