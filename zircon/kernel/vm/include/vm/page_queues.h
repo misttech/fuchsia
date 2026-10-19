@@ -109,7 +109,6 @@ bool rust_page_queues_debug_page_is_high_priority(const void* storage, const vm_
 
 void rust_page_queues_start_threads(const void* storage, zx_duration_mono_t min_mru_rotate_time,
                                     zx_duration_mono_t max_mru_rotate_time);
-void rust_page_queues_start_debug_compressor(const void* storage);
 void rust_page_queues_set_active_ratio_multiplier(const void* storage, uint32_t multiplier);
 void rust_page_queues_set_lru_action(const void* storage, int32_t action);
 void rust_page_queues_disable_aging(const void* storage);
@@ -449,11 +448,6 @@ class PageQueues {
   // relevant for unittests that may wish to avoid starting the threads for some tests.
   // It is the responsibility of the caller to only call this once, otherwise it will panic.
   void StartThreads(zx_duration_mono_t min_mru_rotate_time, zx_duration_mono_t max_mru_rotate_time);
-
-  // Initializes and starts the debug compression, which attempts to immediately compress a random
-  // subset of pages added to the page queues. It is an error to call this if there is no compressor
-  // or if not running in debug mode.
-  void StartDebugCompressor();
 
   // Sets the active ratio multiplier.
   void SetActiveRatioMultiplier(uint32_t multiplier);

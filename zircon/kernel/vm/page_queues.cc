@@ -120,8 +120,6 @@ void PageQueues::StartThreads(zx_duration_mono_t min_mru_rotate_time,
   rust_page_queues_start_threads(&storage_, min_mru_rotate_time, max_mru_rotate_time);
 }
 
-void PageQueues::StartDebugCompressor() { rust_page_queues_start_debug_compressor(&storage_); }
-
 void PageQueues::SetActiveRatioMultiplier(uint32_t multiplier) {
   rust_page_queues_set_active_ratio_multiplier(&storage_, multiplier);
 }

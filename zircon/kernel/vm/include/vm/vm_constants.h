@@ -60,14 +60,6 @@ constexpr size_t kVmAddressRegionStateAlign = 4;
 constexpr size_t kVmMappingStateSize = 32;
 constexpr size_t kVmMappingStateAlign = 8;
 
-// Size and alignment for VmDebugCompressor state stored in C++ OpaqueStorage.
-#if WITH_LOCK_DEP
-constexpr size_t kVmDebugCompressorStorageSize = 144;
-#else
-constexpr size_t kVmDebugCompressorStorageSize = 136;
-#endif
-constexpr size_t kVmDebugCompressorStorageAlign = 8;
-
 // Size and alignment for PageQueues state stored in C++ OpaqueStorage.
 #if WITH_LOCK_DEP
 #if ZX_DEBUG_ASSERT_IMPLEMENTED

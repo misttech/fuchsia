@@ -15,13 +15,10 @@ use core::ffi::c_void;
 use core::marker::{PhantomData, PhantomPinned};
 use core::pin::Pin;
 use ksync::guarded;
-use page_bindings::vm_page_t;
-use pin_init::{InPlaceWrite, PinInit, pin_data, pin_init, stack_pin_init};
+use pin_init::{PinInit, pin_data, pin_init, stack_pin_init};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
-use vm_constants_rs as vm_constants;
 use zx_status::Status;
-use zx_types::zx_status_t;
 
 unsafe extern "C" {
     fn cpp_global_prng_draw(buffer: *mut u8, len: usize);
@@ -55,7 +52,6 @@ const ARRAY_SIZE: usize = 128;
 /// can be given with arbitrary locks held.
 #[guarded]
 #[pin_data(PinnedDrop)]
-#[repr(C)]
 pub struct DebugCompressor {
     #[mutex]
     lock: ksync::KMutex<ksync::RawSpinlock>,
@@ -84,13 +80,6 @@ pub struct DebugCompressor {
 
     phantom: PhantomData<PhantomPinned>,
 }
-
-zr::static_assert!(
-    core::mem::size_of::<DebugCompressor>() == vm_constants::kVmDebugCompressorStorageSize
-);
-zr::static_assert!(
-    core::mem::align_of::<DebugCompressor>() == vm_constants::kVmDebugCompressorStorageAlign
-);
 
 impl DebugCompressor {
     /// Creates an in-place initializer for `DebugCompressor`.
@@ -322,86 +311,4 @@ impl PinnedDrop for DebugCompressor {
     fn drop(self: Pin<&mut Self>) {
         self.as_ref().get_ref().shutdown();
     }
-}
-
-/// Initializes the `DebugCompressor` in-place within the provided uninitialized storage.
-///
-/// # Safety
-///
-/// `storage` must point to uninitialized memory of appropriate size and alignment matching
-/// `DebugCompressor`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_debug_compressor_init(storage: *mut c_void) {
-    let slot = storage.cast::<core::mem::MaybeUninit<DebugCompressor>>();
-    let init = DebugCompressor::init();
-    // SAFETY: caller guarantees storage has size and align of DebugCompressor.
-    unsafe {
-        let uninit_mut = &mut *slot;
-        let _ = uninit_mut.write_pin_init(init);
-    }
-}
-
-/// Destroys the `DebugCompressor` in-place within the provided storage.
-///
-/// # Safety
-///
-/// `storage` must point to a live, initialized `DebugCompressor`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_debug_compressor_destroy(storage: *mut c_void) {
-    let ptr = storage.cast::<DebugCompressor>();
-    // SAFETY: caller guarantees storage points to an initialized DebugCompressor.
-    unsafe {
-        core::ptr::drop_in_place(ptr);
-    }
-}
-
-/// Starts the compression worker thread for the compressor.
-///
-/// # Safety
-///
-/// `compressor` must point to a live, initialized `DebugCompressor`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_debug_compressor_start(compressor: &DebugCompressor) -> zx_status_t {
-    Status::result_into_raw(compressor.init_thread())
-}
-
-/// Adds a page to the debug compressor for potential background compression.
-///
-/// # Safety
-///
-/// `compressor` must point to a live, initialized `DebugCompressor`.
-/// `object` must point to a live `VmCowPages`.
-/// `page` must be a valid pointer to a `vm_page_t`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_debug_compressor_add(
-    compressor: &DebugCompressor,
-    page: *mut vm_page_t,
-    object: *mut c_void,
-    offset: u64,
-) {
-    // SAFETY: caller guarantees object points to a live VmCowPages for the duration of the call.
-    let cow = unsafe { &*(object as *const VmCowPages) };
-    // SAFETY: Caller guarantees `page` is a valid page pointer.
-    let page_ptr = unsafe { VmPagePtr::from_ffi(page).expect("Expected non-null page") };
-    compressor.add(page_ptr, cow, offset);
-}
-
-/// Pauses the debug compressor, ignoring future `add` calls until resumed.
-///
-/// # Safety
-///
-/// `compressor` must point to a live, initialized `DebugCompressor`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_debug_compressor_pause(compressor: &DebugCompressor) {
-    compressor.pause();
-}
-
-/// Resumes the debug compressor after being paused.
-///
-/// # Safety
-///
-/// `compressor` must point to a live, initialized `DebugCompressor`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_debug_compressor_resume(compressor: &DebugCompressor) {
-    compressor.resume();
 }

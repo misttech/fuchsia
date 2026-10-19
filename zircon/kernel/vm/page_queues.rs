@@ -4275,19 +4275,6 @@ pub unsafe extern "C" fn rust_page_queues_start_threads(
     }
 }
 
-/// FFI wrapper for [`PageQueues::start_debug_compressor`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call, that `queues.list_lock` and spinlocks are not held by the current
-/// thread, and that this function is called at most once on `queues`.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_start_debug_compressor(queues: &PageQueues) {
-    queues.start_debug_compressor();
-}
-
 /// FFI wrapper for [`PageQueues::set_active_ratio_multiplier`].
 ///
 /// # Safety

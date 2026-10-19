@@ -21,7 +21,6 @@ source_set("vm") {
     "compression.cc",
     "compression_ffi.cc",
     "compressor.cc",
-    "debug_compressor.cc",
     "evictor.cc",
     "kstack.cc",
     "lz4_compressor.cc",
@@ -204,7 +203,6 @@ kernel_bindgen_crate("vm-constants-rs") {
     "kRefCountedAdoptionValidator",
     "kVmAddressRegionState.*",
     "kVmMappingState.*",
-    "kVmDebugCompressor.*",
     "kPhysicalPageProviderState.*",
     "kVmPageList.*",
     "kPmmNodeIndexZeroBits",
@@ -491,7 +489,6 @@ kernel_bindgen_crate("page-queues-bindings") {
   var_allowlist = [ "PageQueues_k.*" ]
   opaque_types = [
     "RelaxedAtomic",
-    "VmDebugCompressor",
     "ktl::atomic",
     "ktl::unique_ptr",
     "std::atomic",
@@ -516,7 +513,6 @@ kernel_bindgen_crate("page-queues-bindings") {
     "pub use zx_types::zx_paddr_t;",
     "pub type Thread = core::ffi::c_void;",
     "pub type VmCowPages = *const core::ffi::c_void;",
-    "pub type VmDebugCompressor = core::ffi::c_void;",
     "pub type VmPageDoublyLinkedList = usize;",
   ]
   expect_lints = [
