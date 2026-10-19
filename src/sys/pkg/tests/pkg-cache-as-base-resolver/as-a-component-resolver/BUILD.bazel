@@ -1,0 +1,81 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "integration_test_bin",
+    srcs = ["integration_test.rs"],
+    # @bazel2gn:skip
+    crate_name = "base_resolver_integration_test_bin",
+    crate_root = "integration_test.rs",  # @bazel2gn:raw_overwrite:"integration_test.rs" output_name = "base_resolver_integration_test_bin"
+    edition = "2024",
+    deps = [
+        ":test.ping_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+    ],
+)
+
+rustc_binary(
+    name = "package_directory_exposer_bin",
+    testonly = True,
+    srcs = ["package_directory_exposer.rs"],
+    crate_root = "package_directory_exposer.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "mock_component_bin",
+    testonly = True,
+    srcs = ["mock_component.rs"],
+    crate_name = "base_resolver_mock_component_bin",
+    crate_root = "mock_component.rs",
+    edition = "2024",
+    deps = [
+        ":test.ping_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "bridge_to_subpackaged_component_bin",
+    testonly = True,
+    srcs = ["bridge_to_subpackaged_component.rs"],
+    crate_name = "base_resolver_bridge_to_subpackaged_component_bin",
+    crate_root = "bridge_to_subpackaged_component.rs",
+    edition = "2024",
+    deps = [
+        ":test.ping_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fidl_library(
+    name = "test.ping",
+    testonly = True,
+    srcs = ["ping.test.fidl"],
+    enable_cpp = False,
+)
