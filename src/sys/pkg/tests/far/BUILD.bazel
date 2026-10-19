@@ -91,5 +91,4 @@ fx_package(
 fx_test(
     name = "far-integration-tests",
     package = ":far-integration-tests-package",
-    visibility = ["//visibility:public"],
 )

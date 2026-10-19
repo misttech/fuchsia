@@ -44,5 +44,4 @@ rustc_test(
 fx_unittest_package(
     name = "mock-health-verification-tests",
     unit_tests = [":mock-health-verification_test"],
-    visibility = ["//visibility:public"],
 )

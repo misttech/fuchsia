@@ -65,5 +65,4 @@ rustc_test(
 fx_unittest_package(
     name = "fidl-fuchsia-update-installer-ext-tests",
     unit_tests = [":fidl_fuchsia_update_installer_ext_lib_test"],
-    visibility = ["//visibility:public"],
 )

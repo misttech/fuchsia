@@ -71,7 +71,6 @@ host_rustc_test(
     crate_features = ["fdomain"],
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_fdomain_flex",
         "//src/lib/fdomain/local",
@@ -83,5 +82,4 @@ host_rustc_test(
 fx_unittest_package(
     name = "mock-installer-tests",
     unit_tests = [":mock_installer_lib_test"],
-    visibility = ["//visibility:public"],
 )

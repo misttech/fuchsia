@@ -51,5 +51,4 @@ rustc_test(
 fx_unittest_package(
     name = "mock-paver-tests",
     unit_tests = [":mock-paver_test"],
-    visibility = ["//visibility:public"],
 )

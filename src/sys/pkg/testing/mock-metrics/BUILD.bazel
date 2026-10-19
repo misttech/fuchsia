@@ -45,5 +45,4 @@ rustc_test(
 fx_unittest_package(
     name = "mock-metrics-tests",
     unit_tests = [":mock-metrics_test"],
-    visibility = ["//visibility:public"],
 )

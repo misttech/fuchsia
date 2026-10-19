@@ -47,5 +47,4 @@ rustc_test(
 fx_unittest_package(
     name = "mock-reboot-tests",
     unit_tests = [":mock-reboot_test"],
-    visibility = ["//visibility:public"],
 )

@@ -40,5 +40,4 @@ rustc_test(
 fx_unittest_package(
     name = "mock-boot-arguments-tests",
     unit_tests = [":lib_test"],
-    visibility = ["//visibility:public"],
 )
