@@ -66,3 +66,5 @@ zx_status_t lantern_get_state(Lantern* lantern, lantern_state_t* out) {
   out->level = lantern->level;
   return ZX_OK;
 }
+
+enum class LanternMode { kDark, kLit };

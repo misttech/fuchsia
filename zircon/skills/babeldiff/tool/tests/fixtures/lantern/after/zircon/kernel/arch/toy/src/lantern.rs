@@ -78,3 +78,10 @@ pub unsafe extern "C" fn lantern_get_state(lantern: *mut Lantern, out: *mut Lant
     // SAFETY: `lantern` is non-null and valid.
     unsafe { lantern::with_chain_lock(lantern, f) }
 }
+
+// Statically initialized, like the C++ globals were.
+static SAVED_LEVEL: u64 = 0;
+
+// Starts out lit, unlike the C++ `kDark` default
+// mode.
+static SAVE_TOUCHES_FRAME: bool = false;

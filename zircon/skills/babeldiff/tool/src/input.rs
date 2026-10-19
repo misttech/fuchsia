@@ -41,6 +41,17 @@ pub struct ChangeSet {
 }
 
 impl ChangeSet {
+    /// Whether this compares whole files (`from_files`) rather than a change,
+    /// so it says nothing about what was added or deleted.
+    pub fn is_file_comparison(&self) -> bool {
+        self.cpp_new.is_empty()
+            && self
+                .cpp_old
+                .iter()
+                .chain(&self.rust_new)
+                .all(|v| v.changed.is_none())
+    }
+
     /// Every function of the given files.
     pub fn from_files(files: &[(String, String)]) -> ChangeSet {
         let mut cs = ChangeSet::default();

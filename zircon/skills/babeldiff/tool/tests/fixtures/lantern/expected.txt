@@ -1,6 +1,6 @@
 babeldiff: 8 pairs, 10 issues, 17 notes; 0 C++ and 1 Rust function unpaired
 issues by kind: call 3, value 3, assert 2, error-path 1, pairing 1
-rubric lints: 3 issues, 0 notes (file-placement 1, provenance-comment 1, invented-lifetime 1); see the end of the report
+rubric lints: 4 issues, 1 note (file-placement 1, provenance-comment 1, invented-lifetime 1, stale-cpp-reference 2); see the end of the report
 legend: = same  ~ note  ! issue  < only in C++  > only in Rust
 
 ==== read_brightness  <->  read_brightness
@@ -280,6 +280,8 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   ! zircon/kernel/arch/toy/lantern.cc:1  [file-placement] lantern.cc was split across 2 Rust files: lantern.rs (6), glow.rs (1, not named after it); convert each C++ file into one Rust file
   ! zircon/kernel/arch/toy/src/glow.rs:31  [invented-lifetime] a reference is made from `buf_ptr`, a raw pointer into `lantern.buffer` (line 29), so its lifetime is invented rather than borrowed from `lantern.buffer`; borrow `lantern.buffer` instead
   ! zircon/kernel/arch/toy/src/lantern.rs:4  [provenance-comment] 2 comments say where the code was ported from (lines 4, 44), such as "Ported from `zircon/kernel/arch/toy/lantern.cc`."; drop them, since they stop being relevant once the change lands
+  ~ zircon/kernel/arch/toy/src/lantern.rs:82  [stale-cpp-reference] 1 comment compares the Rust with C++ this change deletes (line 82), such as "Statically initialized, like the C++ globals were."; it stops being true once the change lands
+  ! zircon/kernel/arch/toy/src/lantern.rs:85  [stale-cpp-reference] 1 comment names C++ that this change deletes (line 85), such as `kDark` in "...lit, unlike the C++ `kDark` default mode."; describe the Rust as it is and move the comparison to the commit message
 
 ==== FFI shims
   lantern_get_state -> lantern_copy_from_syscall  zircon/kernel/arch/toy/src/lantern.rs:44-80

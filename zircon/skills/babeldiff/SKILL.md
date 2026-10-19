@@ -40,12 +40,13 @@ flags deviations from
   Section 3.9, Section 4).
 - **File-Level Rubric Lints** (`extern-signature`, `unsafe-safety`,
   `shim-logic`, `file-placement`, `provenance-comment`, `invented-lifetime`,
-  `unsafe-density`, `mangled-symbol`): Syntax-level checks across changed files
-  verifying FFI signature parity, `// SAFETY:` / `# Safety` documentation,
-  minimal forwarding-only FFI shims, 1:1 C++ to Rust file placement, absence of
-  "Ported from ..." provenance comments, valid reference lifetimes, safe
-  facades, and use of `cpp_*`/`rust_*` FFI functions rather than mangled C++
-  symbols.
+  `unsafe-density`, `mangled-symbol`, `stale-cpp-reference`): Syntax-level
+  checks across changed files verifying FFI signature parity, safety
+  documentation (`// SAFETY:` comments and `# Safety` sections), minimal
+  forwarding-only FFI shims, 1:1 C++ to Rust file placement, absence of "Ported
+  from ..." provenance comments, valid reference lifetimes, safe facades, use of
+  `cpp_*`/`rust_*` FFI functions rather than mangled C++ symbols, and absence of
+  comments that describe C++ the change deletes.
 
 ---
 

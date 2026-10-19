@@ -12,13 +12,16 @@
 //! - `mangled-symbol`: Rust that declares, calls or defines a C++ function
 //!   by its mangled symbol (`_ZN6Thread...`) instead of going through a
 //!   `cpp_*` helper or `rust_*` export.
+//! - `stale-cpp-reference`: a comment on new Rust that describes C++ the
+//!   change deletes, by naming a deleted C++ symbol or by comparing the Rust
+//!   port with the C++ it replaces.
 
 use crate::check::Severity;
 use crate::input::{ChangeSet, Version};
 use crate::model::{Function, Lang, UnitKind};
 use crate::ts;
 use regex::Regex;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
 use tree_sitter::Node;
 
@@ -32,6 +35,7 @@ pub enum LintKind {
     InventedLifetime,
     UnsafeDensity,
     MangledSymbol,
+    StaleCppReference,
 }
 
 impl LintKind {
@@ -46,6 +50,7 @@ impl LintKind {
             LintKind::InventedLifetime => "invented-lifetime",
             LintKind::UnsafeDensity => "unsafe-density",
             LintKind::MangledSymbol => "mangled-symbol",
+            LintKind::StaleCppReference => "stale-cpp-reference",
         }
     }
 
@@ -62,6 +67,7 @@ impl LintKind {
             LintKind::MangledSymbol => {
                 "C++ and Rust call each other through cpp_ and rust_ FFI functions"
             }
+            LintKind::StaleCppReference => "comments don't describe C++ that the change deletes",
         }
     }
 }
@@ -88,6 +94,7 @@ pub fn lint(cs: &ChangeSet) -> Vec<Lint> {
     }
     out.extend(rust_function_lints(cs));
     out.extend(shim_logic(cs));
+    out.extend(stale_cpp_references(cs));
     out.sort_by(|a, b| (&a.path, a.line, a.kind).cmp(&(&b.path, b.line, b.kind)));
     out.dedup();
     out
@@ -1189,6 +1196,327 @@ fn provenance(v: &Version) -> Vec<Lint> {
 }
 
 // ---------------------------------------------------------------------------
+// References to deleted C++
+
+/// Wording that compares Rust with the C++ it replaces, or describes that C++
+/// as it was: "like the C++ global", "unlike the C++", "the C++ enum's",
+/// "was defined in C++".
+static CPP_COMPARISON: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?ix)
+        \b(?:like|unlike|as\s+in|as\s+with)\s+(?:the\s+)?C\+\+
+        | \bthe\s+C\+\+\s+(?:\w+\s+)?
+          (?:enum|class|struct|global|version|implementation|original)(?:'s)?\b
+        | \b(?:was|were)\s+(?:\w+\s+){0,3}in\s+C\+\+",
+    )
+    .unwrap()
+});
+
+/// A backticked span in a comment.
+static BACKTICKED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`([^`]+)`").unwrap());
+
+/// An identifier.
+static IDENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[A-Za-z_][A-Za-z0-9_]*").unwrap());
+
+/// A C++ class, struct or union declaration's name, up to its opening brace,
+/// allowing annotations before the name (`class TA_CAP("mutex") Mutex {`,
+/// `alignas(64)`, `[[nodiscard]]`). Only the head is matched, so declarations
+/// nested in a class body are found too, and a template parameter
+/// (`template <class T>`) is not mistaken for one.
+static CPP_TYPE_HEAD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?x)
+        \b(?:class|struct|union)\s+
+        (?:(?:[A-Z_][A-Z0-9_]*(?:\([^)]*\))?|alignas\([^)]*\)|\[\[[^\]]*\]\])\s+)*
+        ([A-Za-z_]\w*)\s*(?:final\s*)?(?::[^{;]*)?\{",
+    )
+    .unwrap()
+});
+
+/// A C++ enum declaration up to its opening brace, with its name if it has
+/// one (`enum : uint32_t {` doesn't).
+static CPP_ENUM_HEAD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\benum(?:\s+(?:class|struct))?(?:\s+([A-Za-z_]\w*))?\s*(?::[^{;()]*)?\{").unwrap()
+});
+
+/// A C++ `/* ... */` comment.
+static CPP_BLOCK_COMMENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)/\*.*?\*/").unwrap());
+
+/// The name a Rust item declares.
+static RUST_ITEM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\b(?:fn|struct|enum|union|trait|type|const|static|mod)\s+(?:mut\s+)?([A-Za-z_]\w*)",
+    )
+    .unwrap()
+});
+
+/// A Rust enum declaration up to its opening brace.
+static RUST_ENUM_HEAD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\benum\s+[A-Za-z_]\w*[^{;]*\{").unwrap());
+
+/// The shortest deleted C++ name worth matching in a comment.
+const MIN_DELETED_NAME_LEN: usize = 3;
+
+/// C++ words too generic to tie a comment to a deleted declaration.
+const GENERIC_CPP_WORDS: &[&str] = &[
+    "bool", "char", "const", "int", "size_t", "uint32_t", "uint64_t", "int64_t", "void", "this",
+    "true", "false", "nullptr", "std", "ktl", "fbl", "final",
+];
+
+/// Rust prelude names that a deleted C++ name may share; a comment naming
+/// one is about the Rust.
+const RUST_PRELUDE_NAMES: &[&str] = &[
+    "None", "Some", "Ok", "Err", "Option", "Result", "Self", "Box", "Vec", "String", "Default",
+];
+
+/// The paths of the C++ files the change deletes.
+fn deleted_cpp_paths(cs: &ChangeSet) -> BTreeSet<&str> {
+    let new_paths: BTreeSet<&str> = cs.cpp_new.iter().map(|v| v.path.as_str()).collect();
+    cs.cpp_old
+        .iter()
+        .map(|v| v.path.as_str())
+        .filter(|path| !new_paths.contains(path))
+        .collect()
+}
+
+/// The enumerator names in the body of a C++ enum, which starts at `body`.
+fn enumerators(body: &str) -> Vec<String> {
+    let body = &body[..body.find('}').unwrap_or(body.len())];
+    let body = CPP_BLOCK_COMMENT.replace_all(body, " ");
+    let code: Vec<&str> = body
+        .lines()
+        .map(|line| line.split("//").next().unwrap_or(""))
+        .collect();
+    code.join("\n")
+        .split(',')
+        .filter_map(|item| IDENT.find(item.trim_start()).filter(|m| m.start() == 0))
+        .map(|m| m.as_str().to_string())
+        .collect()
+}
+
+/// The variant names of a Rust enum whose body starts at `body`: the
+/// identifiers that open its top-level items, skipping attributes and the
+/// fields of struct and tuple variants.
+fn rust_enum_variants(body: &str) -> Vec<String> {
+    let mut depth = 1;
+    let mut top_level = String::new();
+    for ch in body.chars() {
+        match ch {
+            '{' | '(' | '[' => depth += 1,
+            '}' | ')' | ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            '#' => {}
+            _ if depth == 1 => top_level.push(ch),
+            _ => {}
+        }
+    }
+    top_level
+        .split(',')
+        .filter_map(|item| IDENT.find(item.trim_start()).filter(|m| m.start() == 0))
+        .map(|m| m.as_str().to_string())
+        .collect()
+}
+
+/// Names the new Rust declares, outside its comments: items, enum variants,
+/// and the prelude.
+fn rust_declared_names(cs: &ChangeSet) -> HashSet<String> {
+    let mut names: HashSet<String> = RUST_PRELUDE_NAMES.iter().map(|n| n.to_string()).collect();
+    for v in &cs.rust_new {
+        let code: Vec<&str> = v
+            .text
+            .lines()
+            .map(|line| line.split("//").next().unwrap_or(""))
+            .collect();
+        let code = code.join("\n");
+        names.extend(
+            RUST_ITEM
+                .captures_iter(&code)
+                .map(|captures| captures[1].to_string()),
+        );
+        for head in RUST_ENUM_HEAD.find_iter(&code) {
+            names.extend(rust_enum_variants(&code[head.end()..]));
+        }
+    }
+    names
+}
+
+/// Names that C++ declared before the change and that nothing after it uses:
+/// functions, methods and types (with enumerators) from deleted files, and
+/// functions removed from files that stay. Names still mentioned in C++ the
+/// change leaves behind, or declared by the new Rust, are left out, since a
+/// comment naming them may be about live code.
+fn deleted_cpp_names(cs: &ChangeSet, deleted_paths: &BTreeSet<&str>) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for v in &cs.cpp_old {
+        let deleted_file = deleted_paths.contains(v.path.as_str());
+        for f in crate::extract::extract(Lang::Cpp, &v.path, &v.text).functions {
+            if deleted_file || touched(v, f.start_line..=f.end_line) {
+                names.insert(f.base.clone());
+            }
+        }
+        if deleted_file {
+            names.extend(
+                CPP_TYPE_HEAD
+                    .captures_iter(&v.text)
+                    .map(|captures| captures[1].to_string()),
+            );
+            for captures in CPP_ENUM_HEAD.captures_iter(&v.text) {
+                names.extend(captures.get(1).map(|name| name.as_str().to_string()));
+                let body_start = captures.get(0).expect("group 0 always matches").end();
+                names.extend(enumerators(&v.text[body_start..]));
+            }
+        }
+    }
+    let cpp_still_mentions: HashSet<&str> = cs
+        .cpp_new
+        .iter()
+        .flat_map(|v| IDENT.find_iter(&v.text).map(|m| m.as_str()))
+        .collect();
+    let rust_declares = rust_declared_names(cs);
+    names.retain(|name| {
+        name.len() >= MIN_DELETED_NAME_LEN
+            && !GENERIC_CPP_WORDS.contains(&name.as_str())
+            && !cpp_still_mentions.contains(name.as_str())
+            && !rust_declares.contains(name)
+    });
+    names
+}
+
+/// A comment `stale_cpp_references` found.
+struct StaleComment {
+    line: usize,
+    /// The deleted C++ name the comment gives, if it names one.
+    deleted_name: Option<String>,
+    excerpt: String,
+}
+
+/// Comments on new Rust that describe C++ the change deletes. Such comments
+/// are accurate during review but stop being true once the change lands, so
+/// the comparison belongs in the commit message instead. C++ that stays in
+/// the tree (an FFI counterpart, a type the Rust binds to) is fine to name,
+/// and so is a C++ name the new Rust declares too (`struct Lamp` for a deleted
+/// `class Lamp`), since such a comment may be about the Rust.
+///
+/// - Naming a deleted C++ symbol in a paragraph that mentions C++ is an issue.
+/// - In a Rust file named after a deleted C++ file (as `file-placement`
+///   expects), comparison wording ("like the C++ global", "the C++ enum's")
+///   is a note, unless the comment is a keep-in-sync note or the paragraph a
+///   TODO.
+///
+/// Unlike `provenance-comment`, this checks `// SAFETY:` comments too, since
+/// a safety argument that leans on the deleted C++ goes stale with it. A
+/// comment `provenance-comment` already reports gets no note here. Each is
+/// reported once per file.
+fn stale_cpp_references(cs: &ChangeSet) -> Vec<Lint> {
+    // Comparing files (`babeldiff files`) says nothing about what was deleted.
+    if cs.is_file_comparison() {
+        return Vec::new();
+    }
+    let deleted_paths = deleted_cpp_paths(cs);
+    let deleted_names = deleted_cpp_names(cs, &deleted_paths);
+    if deleted_names.is_empty() && deleted_paths.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for v in &cs.rust_new {
+        let port_of_deleted = deleted_paths
+            .iter()
+            .any(|cpp| crate::placement::expected(cpp, &v.path));
+        let mut named = Vec::new();
+        let mut compared = Vec::new();
+        for comment in comments(v) {
+            // Leave what `provenance-comment` already reports to it.
+            let reported_by_provenance = provenance_match(&comment).is_some();
+            let mut comparison = None;
+            let mut names_deleted = false;
+            for (at, paragraph) in paragraphs(&comment.text) {
+                if !paragraph.contains("C++") {
+                    continue;
+                }
+                let deleted_name = BACKTICKED
+                    .captures_iter(paragraph)
+                    .filter_map(|code| code.get(1))
+                    .flat_map(|span| {
+                        IDENT
+                            .find_iter(span.as_str())
+                            .map(move |m| (span.start() + m.start(), m.as_str()))
+                    })
+                    .find(|(_, name)| deleted_names.contains(*name));
+                if let Some((offset, name)) = deleted_name {
+                    let at = at + offset;
+                    named.push(StaleComment {
+                        line: comment.line_at(at),
+                        deleted_name: Some(name.to_string()),
+                        excerpt: excerpt(&comment.text, at),
+                    });
+                    names_deleted = true;
+                    break;
+                }
+                if comparison.is_some() || !port_of_deleted || reported_by_provenance {
+                    continue;
+                }
+                if let Some(m) = CPP_COMPARISON.find(paragraph) {
+                    let at = at + m.start();
+                    if stays_relevant(&comment, at) {
+                        continue;
+                    }
+                    comparison = Some(StaleComment {
+                        line: comment.line_at(at),
+                        deleted_name: None,
+                        excerpt: excerpt(&comment.text, at),
+                    });
+                }
+            }
+            // A comment that names deleted C++ is reported as that issue only.
+            if !names_deleted {
+                compared.extend(comparison);
+            }
+        }
+        out.extend(stale_cpp_lint(v, Severity::Issue, &named));
+        out.extend(stale_cpp_lint(v, Severity::Note, &compared));
+    }
+    out
+}
+
+/// The one `stale-cpp-reference` lint for the comments `found` in `v`.
+fn stale_cpp_lint(v: &Version, severity: Severity, found: &[StaleComment]) -> Option<Lint> {
+    let first = found.first()?;
+    let n = found.len();
+    let lines: Vec<usize> = found.iter().map(|stale| stale.line).collect();
+    let comments = count_noun(n, "comment");
+    let excerpt = &first.excerpt;
+    let message = match &first.deleted_name {
+        Some(name) => format!(
+            "{comments} name{} C++ that this change deletes ({}), such as `{name}` in \
+             \"{excerpt}\"; describe the Rust as it is and move the comparison to the commit \
+             message",
+            if n == 1 { "s" } else { "" },
+            line_list(&lines),
+        ),
+        None => format!(
+            "{comments} compare{} the Rust with C++ this change deletes ({}), such as \
+             \"{excerpt}\"; {} stop{} being true once the change lands",
+            if n == 1 { "s" } else { "" },
+            line_list(&lines),
+            if n == 1 { "it" } else { "they" },
+            if n == 1 { "s" } else { "" },
+        ),
+    };
+    Some(Lint {
+        kind: LintKind::StaleCppReference,
+        severity,
+        path: v.path.clone(),
+        line: first.line,
+        message,
+        related: None,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // mangled C++ symbols
 
 /// An Itanium C++ mangled name: `_Z` and then a nested name, a length or a
@@ -1834,6 +2162,279 @@ mod tests {
             l[0].message.contains("ported from foo.cc"),
             "{}",
             l[0].message
+        );
+    }
+
+    /// A change that deletes `lamp.cc` (and its `Lamp` class and `Mode` enum),
+    /// keeps `switch.h`, and adds `lamp.rs` and `switch.rs`.
+    fn lamp_port(lamp_rs: &str, switch_rs: &str) -> ChangeSet {
+        let lamp_cc = concat!(
+            "enum class Mode : uint32_t {\n",
+            "  // clang-format off\n",
+            "  Off = 0,\n",
+            "  Dim = 1,\n",
+            "  // clang-format on\n",
+            "};\n",
+            "\n",
+            "class Lamp {\n",
+            " public:\n",
+            "  void TurnOn() { on_ = true; }\n",
+            "\n",
+            " private:\n",
+            "  bool on_ = false;\n",
+            "};\n",
+        );
+        let switch_h = "struct Switch {\n  void Flip();\n};\n";
+        ChangeSet {
+            cpp_old: vec![
+                version("kernel/lamp.cc", lamp_cc),
+                version("kernel/switch.h", switch_h),
+            ],
+            cpp_new: vec![version("kernel/switch.h", switch_h)],
+            rust_new: vec![
+                version("kernel/src/lamp.rs", lamp_rs),
+                version("kernel/src/switch.rs", switch_rs),
+            ],
+        }
+    }
+
+    #[test]
+    fn stale_cpp_references_are_reported() {
+        let lamp_rs = concat!(
+            "/// Turns the lamp on, like the C++ `TurnOn`.\n",
+            "fn turn_on() {}\n",
+            "\n",
+            "// There is no `Off` flag, unlike the C++\n",
+            "// enum. Use `empty()` instead.\n",
+            "fn modes() {}\n",
+            "\n",
+            "/// Statically initialized, like the C++ global was.\n",
+            "static LAMP: u32 = 0;\n",
+            "\n",
+            "// SAFETY: written once at boot, the same as when the lamp was defined in C++.\n",
+            "fn g() {}\n",
+        );
+        let l = stale_cpp_references(&lamp_port(lamp_rs, ""));
+        let got: Vec<(usize, Severity, &str)> = l
+            .iter()
+            .map(|lint| (lint.line, lint.severity, lint.message.as_str()))
+            .collect();
+        assert_eq!(l.len(), 2, "{got:?}");
+        // One issue for the file, covering both named symbols; the second
+        // spans two comment lines.
+        assert_eq!((l[0].line, l[0].severity), (1, Severity::Issue));
+        assert!(
+            l[0].message
+                .starts_with("2 comments name C++ that this change deletes (lines 1, 4)")
+                && l[0].message.contains("`TurnOn`"),
+            "{}",
+            l[0].message
+        );
+        // One note for the comparisons, including the one in a SAFETY comment.
+        assert_eq!((l[1].line, l[1].severity), (8, Severity::Note));
+        assert!(
+            l[1].message.starts_with(
+                "2 comments compare the Rust with C++ this change deletes \
+                 (lines 8, 11)"
+            ),
+            "{}",
+            l[1].message
+        );
+    }
+
+    #[test]
+    fn provenance_comments_are_left_to_provenance() {
+        let lamp_rs = concat!(
+            "// Same check order as the C++ implementation.\n",
+            "fn a() {}\n",
+            "\n",
+            "// SAFETY: the C++\n",
+            "// implementation shared it under the same lock.\n",
+            "unsafe impl Send for A {}\n",
+        );
+        let l = stale_cpp_references(&lamp_port(lamp_rs, ""));
+        let got: Vec<(usize, Severity)> = l.iter().map(|lint| (lint.line, lint.severity)).collect();
+        assert_eq!(got, [(4, Severity::Note)]);
+    }
+
+    #[test]
+    fn keep_in_sync_comments_are_not_reported() {
+        let lamp_rs = concat!(
+            "// Must match the layout of the C++ global, like the C++ struct.\n",
+            "static LAYOUT: u32 = 0;\n",
+            "// TODO: drop this once nothing reads it like the C++ global did.\n",
+            "static OLD: u32 = 0;\n",
+        );
+        let l = stale_cpp_references(&lamp_port(lamp_rs, ""));
+        assert!(l.is_empty(), "{l:?}");
+    }
+
+    #[test]
+    fn references_to_cpp_that_stays_are_not_reported() {
+        // `Switch` is still declared in C++, and `switch.rs` isn't named after
+        // a deleted C++ file, so comparisons there describe live C++.
+        let lamp_rs = "/// Binds to the C++ `Switch::Flip`, which stays in C++.\nfn flip() {}\n";
+        let switch_rs = concat!(
+            "/// Flips the switch, like the C++ `Flip`.\n",
+            "fn flip() {}\n",
+            "\n",
+            "/// Statically initialized, like the C++ global.\n",
+            "static S: u32 = 0;\n",
+        );
+        let l = stale_cpp_references(&lamp_port(lamp_rs, switch_rs));
+        assert!(l.is_empty(), "{l:?}");
+    }
+
+    #[test]
+    fn nothing_is_reported_when_no_cpp_is_deleted() {
+        let v = version(
+            "foo.rs",
+            "/// Like the C++ global was.\nstatic X: u32 = 0;\n",
+        );
+        let cs = ChangeSet {
+            cpp_old: Vec::new(),
+            cpp_new: Vec::new(),
+            rust_new: vec![v],
+        };
+        assert!(stale_cpp_references(&cs).is_empty());
+    }
+
+    #[test]
+    fn nested_cpp_declarations_are_deleted_names() {
+        let lamp_cc = concat!(
+            "class Lamp {\n",
+            " public:\n",
+            "  enum class State { kOff, /* dark */ kDim };\n",
+            "  int enum_count_ = 0;\n",
+            "};\n",
+        );
+        let cs = ChangeSet {
+            cpp_old: vec![version("kernel/lamp.cc", lamp_cc)],
+            cpp_new: Vec::new(),
+            rust_new: vec![version("kernel/src/lamp.rs", "fn on() {}\n")],
+        };
+        let names = deleted_cpp_names(&cs, &deleted_cpp_paths(&cs));
+        let got: Vec<&str> = names.iter().map(String::as_str).collect();
+        assert_eq!(got, ["Lamp", "State", "kDim", "kOff"]);
+    }
+
+    #[test]
+    fn names_the_rust_declares_are_not_deleted() {
+        // `None` is the Rust prelude's, and the Rust keeps the `Lamp` name.
+        let lamp_rs = concat!(
+            "/// Returns `None` if the C++ caller passes null.\n",
+            "fn get() -> Option<u32> { None }\n",
+            "\n",
+            "/// Exported to C++ as an opaque `Lamp` pointer.\n",
+            "pub struct Lamp;\n",
+        );
+        let mut cs = lamp_port(lamp_rs, "");
+        cs.cpp_old[0].text.push_str("enum Status { None, Busy };\n");
+        let l = stale_cpp_references(&cs);
+        assert!(
+            l.iter().all(|lint| lint.severity != Severity::Issue),
+            "{l:?}"
+        );
+    }
+
+    #[test]
+    fn rust_enum_variants_are_declared_names() {
+        let lamp_rs = concat!(
+            "enum Mode {\n",
+            "    Dim { level: u8 },\n",
+            "    #[default]\n",
+            "    Off,\n",
+            "    Lit(u64),\n",
+            "}\n",
+            "// Unlike the C++ `Off` or `Dim`, it stays lit.\n",
+            "static S: u32 = 0;\n",
+        );
+        let cs = lamp_port(lamp_rs, "");
+        let names = rust_declared_names(&cs);
+        assert!(
+            ["Mode", "Dim", "Off", "Lit"]
+                .iter()
+                .all(|n| names.contains(*n)),
+            "{names:?}"
+        );
+        assert!(
+            !names.contains("level") && !names.contains("u64"),
+            "{names:?}"
+        );
+        let l = stale_cpp_references(&cs);
+        assert!(
+            l.iter().all(|lint| lint.severity != Severity::Issue),
+            "{l:?}"
+        );
+    }
+
+    #[test]
+    fn a_deleted_name_after_a_comparison_is_an_issue() {
+        let lamp_rs = concat!(
+            "// Unlike the C++ global, this is static. The C++ `TurnOn` did it.\n",
+            "static ON: bool = false;\n",
+            "\n",
+            "// Same as the C++ `lamp.TurnOn()` call.\n",
+            "static ALSO: bool = false;\n",
+        );
+        let l = stale_cpp_references(&lamp_port(lamp_rs, ""));
+        let got: Vec<(usize, Severity)> = l.iter().map(|lint| (lint.line, lint.severity)).collect();
+        assert_eq!(got, [(1, Severity::Issue)]);
+        assert!(
+            l[0].message.starts_with("2 comments name"),
+            "{}",
+            l[0].message
+        );
+    }
+
+    #[test]
+    fn a_deleted_name_anywhere_in_a_paragraph_about_cpp_is_an_issue() {
+        // "C++" is on the first line and the deleted name on the next.
+        let lamp_rs = concat!(
+            "// In the original C++ implementation, the fields were unguarded.\n",
+            "// `TurnOn` was intentionally unannotated because it runs unlocked.\n",
+            "static ON: bool = false;\n",
+        );
+        let l = stale_cpp_references(&lamp_port(lamp_rs, ""));
+        let got: Vec<(usize, Severity)> = l.iter().map(|lint| (lint.line, lint.severity)).collect();
+        assert_eq!(got, [(2, Severity::Issue)]);
+    }
+
+    #[test]
+    fn comparing_files_reports_nothing() {
+        let cs = ChangeSet::from_files(&[
+            (
+                "kernel/lamp.cc".to_string(),
+                "class Lamp { void TurnOn(); };\n".to_string(),
+            ),
+            (
+                "kernel/lamp.rs".to_string(),
+                "/// Like the C++ `TurnOn`.\nfn turn_on() {}\n".to_string(),
+            ),
+        ]);
+        assert!(stale_cpp_references(&cs).is_empty());
+    }
+
+    #[test]
+    fn templates_annotations_and_anonymous_enums_are_parsed() {
+        let lamp_cc = concat!(
+            "template <class T> struct Holder { T t; };\n",
+            "template <typename U> class Bar {};\n",
+            "class TA_CAP(\"mutex\") LampLock {};\n",
+            "struct alignas(64) Padded {};\n",
+            "struct [[nodiscard]] Res final {};\n",
+            "enum : uint32_t { kAnonA = 1, kAnonB };\n",
+        );
+        let cs = ChangeSet {
+            cpp_old: vec![version("kernel/lamp.cc", lamp_cc)],
+            cpp_new: Vec::new(),
+            rust_new: vec![version("kernel/src/lamp.rs", "fn on() {}\n")],
+        };
+        let names = deleted_cpp_names(&cs, &deleted_cpp_paths(&cs));
+        let got: Vec<&str> = names.iter().map(String::as_str).collect();
+        assert_eq!(
+            got,
+            ["Bar", "Holder", "LampLock", "Padded", "Res", "kAnonA", "kAnonB"]
         );
     }
 

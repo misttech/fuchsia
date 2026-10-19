@@ -459,6 +459,8 @@ fn lantern_finds_the_planted_mistakes() {
             ("lantern.cc", 1, "file-placement"),
             ("glow.rs", 31, "invented-lifetime"),
             ("lantern.rs", 4, "provenance-comment"),
+            ("lantern.rs", 82, "stale-cpp-reference"),
+            ("lantern.rs", 85, "stale-cpp-reference"),
         ]
     );
     let placement: Vec<(&str, Vec<(&str, bool)>)> = report
