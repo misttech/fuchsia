@@ -2,12 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/fuzz.gni")
 import("//build/rust/rustc_fuzzer.gni")
 
-fuchsia_unittest_package("fuchsia-merkle-tests") {
-  deps = [ ":fuchsia-merkle_test" ]
+bazel_test_suite("fuchsia-merkle-tests") {
+  target_tests = [ "//src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle-tests" ]
+  host_tests = [ "//src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle_host_test" ]
 }
 
 rustc_fuzzer("fuchsia-merkle-fuzzer") {
@@ -37,7 +38,6 @@ group("tests") {
   public_deps = [
     ":fuchsia-merkle-fuzzers",
     ":fuchsia-merkle-tests",
-    ":fuchsia-merkle_test($host_toolchain)",
   ]
 }
 
@@ -75,13 +75,17 @@ rustc_library("fuchsia-merkle") {
   ]
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  test_deps = [
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:test-case",
+  visibility = [
+    ":*",
+    "//src/bringup/*",
+    "//src/developer/*",
+    "//src/lib/assembly/*",
+    "//src/recovery/*",
+    "//src/security/*",
+    "//src/storage/*",
+    "//src/sys/*",
+    "//tools/lib/*",
   ]
-  visibility = [ "//*" ]
-  with_unit_tests = true
   deps = [
     "//sdk/rust/zx-status",
     "//src/storage/lib/ptr_slice",
