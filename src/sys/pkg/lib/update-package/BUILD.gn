@@ -3,81 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/rust/rustc_library.gni")
-
-rustc_library("update-package") {
-  version = "0.1.0"
-  edition = "2024"
-  with_unit_tests = true
-
-  deps = [
-    ":ota_manifest_proto",
-    "//src/lib/fuchsia-url",
-    "//src/lib/include_bytes_from_working_dir",
-    "//src/sys/pkg/lib/fuchsia-hash",
-    "//src/sys/pkg/lib/fuchsia-merkle",
-    "//third_party/rust_crates:camino",
-    "//third_party/rust_crates:omaha_client",
-    "//third_party/rust_crates:prost",
-    "//third_party/rust_crates:ring",
-    "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:sha2",
-    "//third_party/rust_crates:thiserror",
-    "//third_party/rust_crates:zerocopy",
-  ]
-  if (is_fuchsia) {
-    deps += [
-      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-      "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
-      "//sdk/rust/zx-status",
-      "//src/lib/fidl/rust/fidl",
-      "//src/lib/fuchsia-fs",
-      "//src/sys/pkg/lib/epoch",
-      "//src/sys/pkg/lib/fuchsia-pkg",
-    ]
-  }
-
-  test_deps = [
-    "//src/lib/fuchsia",
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:tempfile",
-  ]
-  if (is_fuchsia) {
-    test_deps += [ "//third_party/rust_crates:proptest" ]
-  }
-
-  sources = [
-    "src/images.rs",
-    "src/lib.rs",
-    "src/manifest.rs",
-    "src/packages.rs",
-    "src/signed_manifest.rs",
-    "src/update_mode.rs",
-    "src/version.rs",
-  ]
-  if (is_fuchsia) {
-    sources += [
-      "src/target/board.rs",
-      "src/target/epoch.rs",
-      "src/target/hash.rs",
-      "src/target/image.rs",
-      "src/target/mod.rs",
-      "src/target/name.rs",
-    ]
-  }
-
-  inputs = [ "//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem" ]
-  manifest_dev_key_path =
-      rebase_path("//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem",
-                  root_build_dir)
-  rustenv = [ "MANIFEST_DEV_KEY_PATH=$manifest_dev_key_path" ]
-
-  if (!is_host) {
-    deps += [ "//sdk/rust/zx" ]
-  }
-  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
-}
 
 fuchsia_component("test-component") {
   component_name = "update-package-lib-test"
@@ -128,4 +53,79 @@ rust_proto_library("ota_manifest_proto") {
   sources = [ "src/ota_manifest.proto" ]
   packages = [ "fuchsia.update.manifest" ]
   visibility = [ ":*" ]
+}
+rustc_library("update-package") {
+  sources = []
+  sources += [
+    "src/images.rs",
+    "src/lib.rs",
+    "src/manifest.rs",
+    "src/packages.rs",
+    "src/signed_manifest.rs",
+    "src/update_mode.rs",
+    "src/version.rs",
+  ]
+  if (is_fuchsia) {
+    sources += [
+      "src/target/board.rs",
+      "src/target/epoch.rs",
+      "src/target/hash.rs",
+      "src/target/image.rs",
+      "src/target/mod.rs",
+      "src/target/name.rs",
+    ]
+  }
+  inputs = [ "//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem" ]
+  edition = "2024"
+  lint_config = "//build/config/rust/lints:clippy_warn_all"
+  proc_macro_deps = [ "//src/lib/include_bytes_from_working_dir" ]
+  rustenv = [ "MANIFEST_DEV_KEY_PATH=" + rebase_path(
+                  "//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem",
+                  root_build_dir) ]
+  test_deps = []
+  test_deps += [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:tempfile",
+  ]
+  if (is_fuchsia) {
+    test_deps += [ "//third_party/rust_crates:proptest" ]
+  }
+  version = "0.1.0"
+  visibility = [
+    ":*",
+    "//src/developer/ffx/plugins/package/ota-manifest/*",
+    "//src/lib/assembly/update_package:*",
+    "//src/security/lib/scrutiny/collector:*",
+    "//src/sys/pkg/*",
+  ]
+  with_unit_tests = true
+  deps = []
+  deps += [
+    ":ota_manifest_proto",
+    "//src/lib/fuchsia-url",
+    "//src/sys/pkg/lib/fuchsia-hash",
+    "//src/sys/pkg/lib/fuchsia-merkle",
+    "//third_party/rust_crates:camino",
+    "//third_party/rust_crates:omaha_client",
+    "//third_party/rust_crates:prost",
+    "//third_party/rust_crates:ring",
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:sha2",
+    "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:zerocopy",
+  ]
+  if (is_fuchsia) {
+    deps += [
+      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+      "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+      "//sdk/rust/zx",
+      "//sdk/rust/zx-status",
+      "//src/lib/fidl/rust/fidl",
+      "//src/lib/fuchsia-fs",
+      "//src/sys/pkg/lib/epoch",
+      "//src/sys/pkg/lib/fuchsia-pkg",
+    ]
+  }
 }

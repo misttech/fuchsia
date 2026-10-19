@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 load("//tools/protobuf:rust_proto_library.bzl", "rust_proto_library")
 
 package(default_applicable_licenses = ["//:license"])
@@ -11,4 +12,79 @@ rust_proto_library(
     srcs = ["src/ota_manifest.proto"],
     packages = ["fuchsia.update.manifest"],
     visibility = [":__pkg__"],
+)
+
+rustc_library(
+    name = "update-package",
+    srcs = [
+        "src/images.rs",
+        "src/lib.rs",
+        "src/manifest.rs",
+        "src/packages.rs",
+        "src/signed_manifest.rs",
+        "src/update_mode.rs",
+        "src/version.rs",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "src/target/board.rs",
+            "src/target/epoch.rs",
+            "src/target/hash.rs",
+            "src/target/image.rs",
+            "src/target/mod.rs",
+            "src/target/name.rs",
+        ],
+        "//conditions:default": [],
+    }),
+    compile_data = ["//src/sys/pkg/bin/system-updater/keys:manifest_dev_key.pem"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = ["//src/lib/include_bytes_from_working_dir"],
+    # The key is read at compile time relative to the compiler's working
+    # directory: the execroot in Bazel, the build directory in GN.
+    rustc_env = {
+        "MANIFEST_DEV_KEY_PATH": "src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem",
+    },  # @bazel2gn:raw_overwrite:[ "MANIFEST_DEV_KEY_PATH=" + rebase_path("//src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem", root_build_dir) ]
+    test_deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:tempfile",
+    ] + select({
+        "@platforms//os:fuchsia": ["//third_party/rust_crates/vendor:proptest"],
+        "//conditions:default": [],
+    }),
+    version = "0.1.0",
+    visibility = [
+        "//src/developer/ffx/plugins/package/ota-manifest:__subpackages__",
+        "//src/lib/assembly/update_package:__pkg__",
+        "//src/security/lib/scrutiny/collector:__pkg__",
+        "//src/sys/pkg:__subpackages__",
+    ],
+    with_unit_tests = True,
+    deps = [
+        ":ota_manifest_proto",
+        "//src/lib/fuchsia-url",
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:omaha_client",
+        "//third_party/rust_crates/vendor:prost",
+        "//third_party/rust_crates/vendor:ring",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:sha2",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+            "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+            "//sdk/rust/zx",
+            "//sdk/rust/zx-status",
+            "//src/lib/fidl/rust/fidl",
+            "//src/lib/fuchsia-fs",
+            "//src/sys/pkg/lib/epoch",
+            "//src/sys/pkg/lib/fuchsia-pkg",
+        ],
+        "//conditions:default": [],
+    }),
 )
