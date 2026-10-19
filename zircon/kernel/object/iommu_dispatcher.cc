@@ -6,23 +6,9 @@
 
 #include "object/iommu_dispatcher.h"
 
-#include <assert.h>
-#include <inttypes.h>
-#include <trace.h>
-#include <zircon/errors.h>
-#include <zircon/rights.h>
-#include <zircon/syscalls/iommu.h>
-
-#include <new>
-
-#include <dev/iommu/iommu.h>
-#include <dev/iommu/stub/stub.h>
-#if ARCH_ARM64
-#include <dev/arm_smmu/smmu.h>
-#endif
-
 #include <lib/object-constants.h>
 
+#include <dev/iommu/iommu.h>
 #include <kernel/ffi.h>
 
 IommuDispatcher::IommuDispatcher(fbl::RefPtr<Iommu> iommu) : Dispatcher(0u) {
@@ -32,8 +18,6 @@ IommuDispatcher::IommuDispatcher(fbl::RefPtr<Iommu> iommu) : Dispatcher(0u) {
 
 IMPLEMENT_DISPATCHER_RUST_STATE(IommuDispatcher, rust_iommu_dispatcher_state_get_lock,
                                 rust_iommu_dispatcher_state_destroy)
-
-iommu::Iommu& IommuDispatcher::iommu() const { return *rust_iommu_dispatcher_get_iommu(this); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" FFI_ALWAYS_INLINE void cpp_iommu_recycle(iommu::Iommu* iommu) { delete iommu; }

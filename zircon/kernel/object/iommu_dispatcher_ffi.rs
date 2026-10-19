@@ -45,19 +45,3 @@ pub unsafe extern "C" fn rust_iommu_dispatcher_state_init(
         let _ = pin_init::PinInit::__pinned_init(init, state);
     }
 }
-
-/// Returns the raw pointer to the underlying C++ `iommu::Iommu` object.
-///
-/// # Safety
-///
-/// `disp` must point to a valid `IommuDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_iommu_dispatcher_get_iommu(
-    disp: *const IommuDispatcher,
-) -> *mut Iommu {
-    // SAFETY: `disp` points to a valid `IommuDispatcher`.
-    unsafe {
-        let iommu_ref = (*disp).iommu();
-        RefPtr::as_ptr(iommu_ref).cast_mut()
-    }
-}
