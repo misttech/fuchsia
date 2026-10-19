@@ -134,6 +134,12 @@ impl FxblobInstance {
         .expect("failed to connect to Debug protocol")
     }
 
+    pub fn clear_unreferenced_blobs(&self) {
+        if let Some(pager) = &self.pager_and_verifier {
+            pager.clear_cache();
+        }
+    }
+
     pub async fn mount_erofs(&self, blob_hash: &Hash, file_offset: u64) -> ErofsMount {
         let parent_vmo = self.get_vmo(blob_hash).await;
         let backing_vmo = if file_offset > 0 {

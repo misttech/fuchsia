@@ -53,11 +53,16 @@ use fuchsia_hash::{HASH_SIZE, Hash};
 use fuchsia_merkle::{MerkleVerifier, ReadSizedMerkleVerifier};
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt as _;
+use linked_hash_map::LinkedHashMap;
 use std::collections::{HashMap, HashSet, VecDeque, hash_map};
 use std::ops::Range;
 use std::sync::{Arc, OnceLock, Weak};
 use storage_ptr_slice::PtrByteSlice;
 use zx;
+
+/// Default maximum number of unreferenced blobs retained in the LRU cache, matching Fxfs's
+/// `DIRENT_CACHE_LIMIT`.
+const DEFAULT_CACHE_CAPACITY: usize = 2000;
 
 // A `fuchsia_async::PacketReceiver` that watches for a VMO to reach zero children and triggers
 // cache eviction.
@@ -182,6 +187,8 @@ struct CacheState {
     // Maps `(parent_blob_key, child_vmo_key)` to the child VMO registered via
     // `BlobPagerAndVerifier::open_child_session`.
     child_vmos: HashMap<(u64, u64), Arc<ChildVmo>>,
+    // LRU map of `vmo_key`s for `Ready` blobs that currently have zero open child VMOs.
+    unreferenced_lru: LinkedHashMap<u64, ()>,
 }
 
 impl Default for CacheState {
@@ -192,6 +199,7 @@ impl Default for CacheState {
             blob_states_by_key: HashMap::default(),
             recording: None,
             child_vmos: HashMap::default(),
+            unreferenced_lru: LinkedHashMap::default(),
         }
     }
 }
@@ -201,6 +209,25 @@ impl CacheState {
         let key = self.next_key;
         self.next_key += 1;
         key
+    }
+
+    fn evict_excess_unreferenced(&mut self, capacity: usize) -> Vec<Arc<CachedBlob>> {
+        let mut evicted = Vec::new();
+        while self.unreferenced_lru.len() > capacity {
+            let Some((evict_key, ())) = self.unreferenced_lru.pop_front() else {
+                break;
+            };
+            if let Some(BlobState::Ready(cached)) = self.blob_states_by_key.remove(&evict_key) {
+                if let hash_map::Entry::Occupied(entry) = self.keys_by_hash.entry(cached.root_hash)
+                {
+                    if *entry.get() == evict_key {
+                        entry.remove();
+                    }
+                }
+                evicted.push(cached);
+            }
+        }
+        evicted
     }
 }
 
@@ -336,6 +363,7 @@ pub(crate) struct Cache {
     port: zx::Port,
     delivery_vmo: zx::Vmo,
     pub(crate) scope: fasync::ScopeHandle,
+    cache_capacity: usize,
     // Reusable transfer VMOs for supplying `ChildInlineTail` pages.
     transfer_vmos: Mutex<Vec<zx::Vmo>>,
     // Leader-follower queue for servicing `ChildInlineTail` commands so at most one delivery worker
@@ -357,6 +385,7 @@ impl Cache {
         port: zx::Port,
         delivery_vmo: zx::Vmo,
         scope: fasync::ScopeHandle,
+        cache_capacity: usize,
     ) -> Self {
         Self {
             state: Mutex::new(CacheState::default()),
@@ -365,6 +394,7 @@ impl Cache {
             port,
             delivery_vmo,
             scope,
+            cache_capacity,
             transfer_vmos: Mutex::new(Vec::new()),
             inline_tail_queue: Mutex::new(InlineTailQueue::default()),
         }
@@ -608,11 +638,15 @@ impl Cache {
     fn lookup(self: &Arc<Self>, identifier: &[u8; 32]) -> Result<CacheLookup, Error> {
         let mut state = self.state.lock();
         if let Some(&key) = state.keys_by_hash.get(identifier) {
+            let was_unreferenced = state.unreferenced_lru.remove(&key).is_some();
             match state.blob_states_by_key.get(&key) {
                 Some(BlobState::Ready(cached)) => {
                     let child = cached
                         .create_child()
                         .map_err(|s| anyhow!("Failed to create child VMO: {s}"))?;
+                    if was_unreferenced {
+                        cached.wait_for_zero_children();
+                    }
                     return Ok(CacheLookup::Ready(child));
                 }
                 Some(BlobState::Opening { event, .. }) => {
@@ -678,33 +712,31 @@ impl Cache {
     }
 
     fn on_zero_children(&self, blob: &Arc<CachedBlob>) {
-        // On zero children, evict the blob from the cache and close its Fxfs mapping session.
+        // When a blob reaches zero children, move it into the unreferenced LRU queue and evict
+        // the oldest unreferenced blob only if the LRU exceeds `self.cache_capacity`.
         // We must hold this lock before checking `num_children` so `lookup` cannot clone
-        // a child between this check and the following eviction, which would leave that client
-        // holding a VMO whose storage mappings have already been closed.
-        let mut state = self.state.lock();
-        if let Ok(info) = blob.vmo.info() {
-            if info.num_children > 0 {
-                // A concurrent client acquired a child VMO before we processed this packet.
-                // Resume watching for the next ZERO_CHILDREN signal.
-                blob.wait_for_zero_children();
-                return;
-            }
-        }
-        // Evict from `keys_by_hash`.
-        if let hash_map::Entry::Occupied(entry) = state.keys_by_hash.entry(blob.root_hash) {
-            if *entry.get() == blob.vmo_key {
-                entry.remove();
-            }
-        }
-        // Evict from `blob_states_by_key`.
-        if let hash_map::Entry::Occupied(entry) = state.blob_states_by_key.entry(blob.vmo_key) {
-            if let BlobState::Ready(cached) = entry.get() {
-                if Arc::ptr_eq(cached, blob) {
-                    entry.remove();
+        // a child between this check and the following LRU transition/eviction.
+        let evicted = {
+            let mut state = self.state.lock();
+            if let Ok(info) = blob.vmo.info() {
+                if info.num_children > 0 {
+                    // A concurrent client acquired a child VMO before we processed this packet.
+                    // Resume watching for the next ZERO_CHILDREN signal.
+                    blob.wait_for_zero_children();
+                    return;
                 }
             }
-        }
+            let is_current = matches!(
+                state.blob_states_by_key.get(&blob.vmo_key),
+                Some(BlobState::Ready(cached)) if Arc::ptr_eq(cached, blob)
+            );
+            if !is_current {
+                return;
+            }
+            state.unreferenced_lru.insert(blob.vmo_key, ());
+            state.evict_excess_unreferenced(self.cache_capacity)
+        };
+        drop(evicted);
     }
 
     fn create_merkle_verifier(
@@ -1075,7 +1107,44 @@ impl BlobPagerAndVerifier {
         self.cache.delivery_vmo()
     }
 
-    /// Creates a new BlobPagerAndVerifier.
+    /// Evicts all unreferenced blobs from the internal LRU cache.
+    pub fn clear_cache(&self) {
+        let evicted = {
+            let mut state = self.cache.state.lock();
+            state.unreferenced_lru.clear();
+            let unreferenced_keys: Vec<u64> = state
+                .blob_states_by_key
+                .iter()
+                .filter_map(|(&key, blob_state)| match blob_state {
+                    BlobState::Ready(cached) => {
+                        if cached.vmo.info().map(|info| info.num_children == 0).unwrap_or(false) {
+                            Some(key)
+                        } else {
+                            None
+                        }
+                    }
+                    BlobState::Opening { .. } => None,
+                })
+                .collect();
+            let mut evicted = Vec::with_capacity(unreferenced_keys.len());
+            for key in unreferenced_keys {
+                if let Some(BlobState::Ready(cached)) = state.blob_states_by_key.remove(&key) {
+                    if let hash_map::Entry::Occupied(entry) =
+                        state.keys_by_hash.entry(cached.root_hash)
+                    {
+                        if *entry.get() == key {
+                            entry.remove();
+                        }
+                    }
+                    evicted.push(cached);
+                }
+            }
+            evicted
+        };
+        drop(evicted);
+    }
+
+    /// Creates a new BlobPagerAndVerifier with the default LRU cache capacity.
     ///
     /// Establishes a mapping_provider session with FxBlob to receive a shared VMO that will be used
     /// to communicate opened blob extent mappings as well as any closed blobs. Then, opens a
@@ -1085,6 +1154,15 @@ impl BlobPagerAndVerifier {
     pub async fn new(
         mapping_provider: &fmapping::MappingProviderProxy,
         mapper: &fblock::MapperProxy,
+    ) -> Result<Self, Error> {
+        Self::new_with_cache_capacity(mapping_provider, mapper, DEFAULT_CACHE_CAPACITY).await
+    }
+
+    /// Creates a new BlobPagerAndVerifier with the specified unreferenced-blob LRU cache capacity.
+    pub async fn new_with_cache_capacity(
+        mapping_provider: &fmapping::MappingProviderProxy,
+        mapper: &fblock::MapperProxy,
+        cache_capacity: usize,
     ) -> Result<Self, Error> {
         // Establish a mapping_provider session with Fxfs.
         let (mapping_session, session_server) =
@@ -1133,6 +1211,7 @@ impl BlobPagerAndVerifier {
             port,
             delivery_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
             scope_handle,
+            cache_capacity,
         ));
         let _delivery_processor =
             delivery::DeliveryQueueProcessor::spawn(receiver, cache.clone(), delivery_vmo)?;
@@ -1416,7 +1495,7 @@ mod tests {
 
             Self {
                 pager_and_verifier: Arc::new(
-                    BlobPagerAndVerifier::new(&mapping_proxy, &mapper_proxy)
+                    BlobPagerAndVerifier::new_with_cache_capacity(&mapping_proxy, &mapper_proxy, 0)
                         .await
                         .expect("BlobPagerAndVerifier::new failed"),
                 ),
@@ -1592,7 +1671,7 @@ mod tests {
         });
 
         let pager_and_verifier = Arc::new(
-            BlobPagerAndVerifier::new(&mapping_proxy, &mapper_proxy)
+            BlobPagerAndVerifier::new_with_cache_capacity(&mapping_proxy, &mapper_proxy, 0)
                 .await
                 .expect("BlobPagerAndVerifier::new failed"),
         );
@@ -1651,6 +1730,104 @@ mod tests {
         drop(vmo1);
         drop(vmo3);
         drop(vmo2_new);
+
+        drop(pager_and_verifier);
+        mapping_task.await;
+        mapper_task.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_lru_cache_retains_and_evicts_blobs() {
+        use futures::StreamExt;
+
+        let (mapping_proxy, mut mapping_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fmapping::MappingProviderMarker>();
+        let (mapper_proxy, mut mapper_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
+
+        let (close_tx, mut close_rx) = futures::channel::mpsc::unbounded();
+        let mapping_task = fasync::Task::spawn(async move {
+            if let Some(fmapping::MappingProviderRequest::OpenSession { session, responder }) =
+                mapping_stream.try_next().await.expect("try_next failed")
+            {
+                let mapping_vmo = zx::Vmo::create(zx::system_get_page_size().into())
+                    .expect("zx::Vmo::create failed");
+                responder.send(Ok(mapping_vmo)).expect("send failed");
+
+                let mut session_stream = session.into_stream();
+                while let Some(request) = session_stream.try_next().await.expect("try_next failed")
+                {
+                    match request {
+                        fmapping::MappingSessionRequest::Open { responder, .. } => {
+                            responder.send(Ok(8192)).expect("send failed");
+                        }
+                        fmapping::MappingSessionRequest::Close { key, responder } => {
+                            responder.send(Ok(())).expect("send failed");
+                            let _ = close_tx.unbounded_send(key);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+
+        let mapper_task = fasync::Task::spawn(async move {
+            if let Some(fblock::MapperRequest::OpenSession { responder, .. }) =
+                mapper_stream.try_next().await.expect("try_next failed")
+            {
+                responder.send(Ok(())).expect("send failed");
+            }
+        });
+
+        // Create a cache with capacity for 2 unreferenced blobs.
+        let pager_and_verifier = Arc::new(
+            BlobPagerAndVerifier::new_with_cache_capacity(&mapping_proxy, &mapper_proxy, 2)
+                .await
+                .expect("BlobPagerAndVerifier::new_with_cache_capacity failed"),
+        );
+
+        let hash1: [u8; 32] = [0x11; 32];
+        let hash2: [u8; 32] = [0x22; 32];
+        let hash3: [u8; 32] = [0x33; 32];
+
+        let vmo1 = pager_and_verifier.create_vmo(&hash1).await.expect("create_vmo 1 failed");
+        let vmo2 = pager_and_verifier.create_vmo(&hash2).await.expect("create_vmo 2 failed");
+        let (key1, key2) = {
+            let state = pager_and_verifier.cache.state.lock();
+            (*state.keys_by_hash.get(&hash1).unwrap(), *state.keys_by_hash.get(&hash2).unwrap())
+        };
+
+        // Drop both child VMOs: both blobs should enter `unreferenced_lru` without being evicted.
+        drop(vmo1);
+        drop(vmo2);
+        while pager_and_verifier.cache.state.lock().unreferenced_lru.len() < 2 {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(close_rx.try_recv().is_err());
+
+        // Re-open blob 1 from the LRU cache: it should reuse `key1` and re-arm zero-children wait.
+        let vmo1_reopened =
+            pager_and_verifier.create_vmo(&hash1).await.expect("re-open vmo 1 failed");
+        assert_eq!(pager_and_verifier.cache.state.lock().keys_by_hash.get(&hash1), Some(&key1));
+        assert_eq!(pager_and_verifier.cache.state.lock().unreferenced_lru.len(), 1);
+
+        // Drop `vmo1_reopened` so `key1` goes to the back of `unreferenced_lru` (after `key2`).
+        drop(vmo1_reopened);
+        while pager_and_verifier.cache.state.lock().unreferenced_lru.len() < 2 {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        // Open blob 3 and drop its child VMO: `key2` (least recently used) should be evicted.
+        let vmo3 = pager_and_verifier.create_vmo(&hash3).await.expect("create_vmo 3 failed");
+        drop(vmo3);
+        let closed_key = close_rx.next().await.expect("expected close signal for evicted blob 2");
+        assert_eq!(closed_key, key2);
+        {
+            let state = pager_and_verifier.cache.state.lock();
+            assert!(state.keys_by_hash.get(&hash2).is_none());
+            assert_eq!(state.keys_by_hash.get(&hash1), Some(&key1));
+            assert!(state.keys_by_hash.get(&hash3).is_some());
+        }
 
         drop(pager_and_verifier);
         mapping_task.await;
@@ -1905,7 +2082,7 @@ mod tests {
         });
 
         let pager_and_verifier = Arc::new(
-            BlobPagerAndVerifier::new(&mapping_proxy, &mapper_proxy)
+            BlobPagerAndVerifier::new_with_cache_capacity(&mapping_proxy, &mapper_proxy, 0)
                 .await
                 .expect("BlobPagerAndVerifier::new failed"),
         );

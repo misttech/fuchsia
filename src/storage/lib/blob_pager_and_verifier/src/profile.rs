@@ -521,9 +521,9 @@ mod tests {
         });
 
         let pager_and_verifier = Arc::new(
-            BlobPagerAndVerifier::new(&mapping_proxy, &mapper_proxy)
+            BlobPagerAndVerifier::new_with_cache_capacity(&mapping_proxy, &mapper_proxy, 0)
                 .await
-                .expect("BlobPagerAndVerifier::new failed"),
+                .expect("BlobPagerAndVerifier::new_with_cache_capacity failed"),
         );
         let _delivery_vmo = rx_delivery.await.expect("rx_delivery failed");
 

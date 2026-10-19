@@ -551,6 +551,7 @@ impl Benchmark<FxblobInstance> for ColdPageFaultBenchmark {
                 .await
                 .expect("ClearCaches transport error")
                 .expect("ClearCaches failed");
+            fs.clear_unreferenced_blobs();
 
             let vmo = fs.get_vmo(&blob_hash).await;
             let mapped = MappedBlob::new(&vmo);
