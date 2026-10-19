@@ -61,6 +61,79 @@ const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
 // TODO(b/571694521): Release the context once the drain stops writing (fxr/1881111).
 const DRAIN_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(30);
 
+
+/// Supported Android Atrace categories and their corresponding Fuchsia trace category strings.
+/// Each entry is `(android_atrace_category_name, fuchsia_trace_category)`.
+const ALL_ATRACE_CATEGORIES: &[(&str, &str)] = &[
+    ("adb", "starnix:atrace:adb"),
+    ("aidl", "starnix:atrace:aidl"),
+    ("am", "starnix:atrace:am"),
+    ("audio", "starnix:atrace:audio"),
+    ("binder_driver", "starnix:atrace:binder_driver"),
+    ("binder_lock", "starnix:atrace:binder_lock"),
+    ("bionic", "starnix:atrace:bionic"),
+    ("camera", "starnix:atrace:camera"),
+    ("dalvik", "starnix:atrace:dalvik"),
+    ("database", "starnix:atrace:database"),
+    ("gfx", "starnix:atrace:gfx"),
+    ("hal", "starnix:atrace:hal"),
+    ("input", "starnix:atrace:input"),
+    ("network", "starnix:atrace:network"),
+    ("nnapi", "starnix:atrace:nnapi"),
+    ("pm", "starnix:atrace:pm"),
+    ("power", "starnix:atrace:power"),
+    ("res", "starnix:atrace:res"),
+    ("rro", "starnix:atrace:rro"),
+    ("rs", "starnix:atrace:rs"),
+    ("sched", "starnix:atrace:sched"),
+    ("sm", "starnix:atrace:sm"),
+    ("ss", "starnix:atrace:ss"),
+    ("vibrator", "starnix:atrace:vibrator"),
+    ("video", "starnix:atrace:video"),
+    ("view", "starnix:atrace:view"),
+    ("webview", "starnix:atrace:webview"),
+    ("wm", "starnix:atrace:wm"),
+];
+
+/// Trace category that enables application-level tracing (`atrace_apps: ["*"]` and atrace category `"app"`).
+const CATEGORY_ATRACE_APPS: &str = "starnix:atrace:apps";
+
+/// Builds the `FtraceConfig` protobuf for Perfetto based on enabled Fuchsia trace categories.
+///
+/// Returns `None` if no atrace categories or app tracing are enabled.
+fn build_ftrace_config<F>(mut is_category_enabled: F) -> Option<FtraceConfig>
+where
+    F: FnMut(&'static str) -> bool,
+{
+    let blanket_enabled = is_category_enabled(CATEGORY_ATRACE);
+    let apps_enabled = blanket_enabled || is_category_enabled(CATEGORY_ATRACE_APPS);
+
+    let mut atrace_categories =
+        Vec::with_capacity(if blanket_enabled { ALL_ATRACE_CATEGORIES.len() + 1 } else { 0 });
+    for &(atrace_name, fuchsia_cat) in ALL_ATRACE_CATEGORIES {
+        if blanket_enabled || is_category_enabled(fuchsia_cat) {
+            atrace_categories.push(atrace_name.to_string());
+        }
+    }
+    if apps_enabled {
+        atrace_categories.push("app".to_string());
+    }
+
+    let atrace_apps = if apps_enabled { vec!["*".to_string()] } else { Vec::new() };
+
+    if atrace_categories.is_empty() && atrace_apps.is_empty() {
+        None
+    } else {
+        Some(FtraceConfig {
+            ftrace_events: vec!["ftrace/print".to_string()],
+            buffer_size_kb: Some(2048),
+            atrace_categories,
+            atrace_apps,
+            ..Default::default()
+        })
+    }
+}
+
 /// State needed to act upon trace state changes.
 struct CallbackState {
     /// The previously observed trace state.
@@ -198,49 +271,11 @@ impl CallbackState {
                         ..Default::default()
                     },
                 ];
-                if category_enabled(CATEGORY_ATRACE) {
+                if let Some(ftrace_config) = build_ftrace_config(category_enabled) {
                     data_sources.push(DataSource {
                         config: Some(DataSourceConfig {
                             name: Some("linux.ftrace".to_string()),
-                            ftrace_config: Some(FtraceConfig {
-                                ftrace_events: vec!["ftrace/print".to_string()],
-                                buffer_size_kb: Some(2048),
-                                // Enable all supported atrace categories. This could be improved
-                                // in the future to be a subset that is configurable by each trace
-                                // session.
-                                atrace_categories: vec![
-                                    "am".to_string(),
-                                    "adb".to_string(),
-                                    "aidl".to_string(),
-                                    "dalvik".to_string(),
-                                    "audio".to_string(),
-                                    "binder_lock".to_string(),
-                                    "binder_driver".to_string(),
-                                    "bionic".to_string(),
-                                    "camera".to_string(),
-                                    "database".to_string(),
-                                    "gfx".to_string(),
-                                    "hal".to_string(),
-                                    "input".to_string(),
-                                    "network".to_string(),
-                                    "nnapi".to_string(),
-                                    "pm".to_string(),
-                                    "power".to_string(),
-                                    "rs".to_string(),
-                                    "res".to_string(),
-                                    "rro".to_string(),
-                                    "sched".to_string(),
-                                    "sm".to_string(),
-                                    "ss".to_string(),
-                                    "vibrator".to_string(),
-                                    "video".to_string(),
-                                    "view".to_string(),
-                                    "webview".to_string(),
-                                    "wm".to_string(),
-                                ],
-                                atrace_apps: vec!["*".to_string()],
-                                ..Default::default()
-                            }),
+                            ftrace_config: Some(ftrace_config),
                             ..Default::default()
                         }),
                         ..Default::default()
@@ -809,5 +844,77 @@ mod tests {
             assert!(callback_state.connection.is_none(), "Stopping connected to Perfetto");
         })
         .await;
+    }
+
+    #[fuchsia::test]
+    fn test_blanket_category_enables_all() {
+        let ftrace_config = build_ftrace_config(|cat| cat == CATEGORY_ATRACE)
+            .expect("expected ftrace_config to be Some");
+        assert_eq!(ftrace_config.ftrace_events, vec!["ftrace/print".to_string()]);
+        assert_eq!(ftrace_config.atrace_categories.len(), ALL_ATRACE_CATEGORIES.len() + 1);
+        for &(atrace_name, _) in ALL_ATRACE_CATEGORIES {
+            assert!(
+                ftrace_config.atrace_categories.iter().any(|c| c == atrace_name),
+                "missing category: {atrace_name}"
+            );
+        }
+        assert!(ftrace_config.atrace_categories.iter().any(|c| c == "app"));
+        assert_eq!(ftrace_config.atrace_apps, vec!["*".to_string()]);
+    }
+
+    #[fuchsia::test]
+    fn test_blanket_and_granular_combined_no_duplicates() {
+        let enabled: std::collections::HashSet<&str> =
+            [CATEGORY_ATRACE, "starnix:atrace:am", "starnix:atrace:gfx", CATEGORY_ATRACE_APPS]
+                .into();
+        let ftrace_config = build_ftrace_config(|cat| enabled.contains(cat))
+            .expect("expected ftrace_config to be Some");
+        assert_eq!(ftrace_config.atrace_categories.len(), ALL_ATRACE_CATEGORIES.len() + 1);
+        for &(atrace_name, _) in ALL_ATRACE_CATEGORIES {
+            assert_eq!(
+                ftrace_config.atrace_categories.iter().filter(|&c| c == atrace_name).count(),
+                1,
+                "category {atrace_name} should appear exactly once"
+            );
+        }
+        assert_eq!(
+            ftrace_config.atrace_categories.iter().filter(|&c| c == "app").count(),
+            1,
+            "category app should appear exactly once"
+        );
+        assert_eq!(ftrace_config.atrace_apps, vec!["*".to_string()]);
+    }
+
+    #[fuchsia::test]
+    fn test_granular_categories_without_apps() {
+        let enabled: std::collections::HashSet<&str> =
+            ["starnix:atrace:am", "starnix:atrace:gfx"].into();
+        let ftrace_config = build_ftrace_config(|cat| enabled.contains(cat))
+            .expect("expected ftrace_config to be Some");
+        assert_eq!(ftrace_config.atrace_categories, vec!["am".to_string(), "gfx".to_string()]);
+        assert!(ftrace_config.atrace_apps.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_apps_category_enables_both_tag_and_apps() {
+        let ftrace_config = build_ftrace_config(|cat| cat == CATEGORY_ATRACE_APPS)
+            .expect("expected ftrace_config to be Some");
+        assert_eq!(ftrace_config.atrace_categories, vec!["app".to_string()]);
+        assert_eq!(ftrace_config.atrace_apps, vec!["*".to_string()]);
+    }
+
+    #[fuchsia::test]
+    fn test_granular_categories_with_apps() {
+        let enabled: std::collections::HashSet<&str> =
+            ["starnix:atrace:view", CATEGORY_ATRACE_APPS].into();
+        let ftrace_config = build_ftrace_config(|cat| enabled.contains(cat))
+            .expect("expected ftrace_config to be Some");
+        assert_eq!(ftrace_config.atrace_categories, vec!["view".to_string(), "app".to_string()]);
+        assert_eq!(ftrace_config.atrace_apps, vec!["*".to_string()]);
+    }
+
+    #[fuchsia::test]
+    fn test_no_categories_enabled() {
+        assert!(build_ftrace_config(|_| false).is_none());
     }
 }

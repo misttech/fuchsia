@@ -450,7 +450,9 @@ impl CategoryCounter {
         category_counter.remove("kernel:meta");
         category_counter.remove("kernel:sched");
         // "starnix:atrace" delivers events via Perfetto blobs, so the category check will fail.
-        category_counter.remove("starnix:atrace");
+        let is_starnix_atrace = |k: &str| k.starts_with("starnix:atrace");
+        category_counter.retain(|k, _| !is_starnix_atrace(k));
+        wildcard_categories.retain(|k| !is_starnix_atrace(k));
         Self { category_counter, input_categories, wildcard_categories }
     }
 
@@ -555,12 +557,18 @@ mod test {
 
     #[fuchsia::test]
     async fn test_verify_starnix_atrace() {
-        // starnix:atrace doesn't produce events with categories, so we should ignore it.
-        let mut counter = CategoryCounter::new(vec!["starnix:atrace".into()]);
+        // starnix:atrace delivers events via Perfetto blobs, so we ignore it and its subcategories.
+        let mut counter = CategoryCounter::new(vec![
+            "starnix:atrace".into(),
+            "starnix:atrace:am".into(),
+            "starnix:atrace:apps".into(),
+            "unmatched:category".into(),
+        ]);
         counter.increment_category("some");
         counter.increment_category("other");
         counter.increment_category("categories");
-        assert!(counter.get_invalid_category_list().is_empty());
+        let missing = counter.get_invalid_category_list();
+        assert_eq!(missing, vec!["unmatched:category"]);
     }
 
     #[fuchsia::test]
