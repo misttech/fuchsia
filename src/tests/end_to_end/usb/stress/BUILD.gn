@@ -80,7 +80,7 @@ if (is_host) {
     }
     local_config_source = "UsbDisconnectTestbed.yaml"
     environments = [ iris_env ]
-    timeout_secs = 7200
+    timeout_secs = 3900
   }
 
   # Verifies that the device stays discoverable over mDNS across repeated
