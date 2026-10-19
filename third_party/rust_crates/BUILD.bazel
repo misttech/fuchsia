@@ -64,6 +64,7 @@ package_group(
     name = "bincode_visibility",
     packages = [
         "//src/storage/ext4/lib/metadata",
+        "//src/storage/lib/sparse/rust",
     ],
 )
 

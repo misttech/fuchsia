@@ -38,7 +38,6 @@ group("tests") {
     "ramdevice_client:tests",
     "range:tests",
     "sparse/c:tests",
-    "sparse/rust:tests",
     "storage_device:tests",
     "storage_xts:tests",
     "super_parser:tests",

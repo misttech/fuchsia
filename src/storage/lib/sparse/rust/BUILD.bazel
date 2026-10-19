@@ -1,0 +1,160 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:cipd_prebuilt.bzl", "cipd_prebuilt_file")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/host_tests:host_test_data.bzl", "host_test_data_files")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Prebuilt Android simg2img used by the `test_with_simg2img*` unit tests, which
+# expect it at ./host_x64/test_data/storage/sparse/.
+# GN keeps the equivalent host_test_data("simg2img_sources") above the
+# BAZEL2GN sentinel in BUILD.gn for its other users.
+# The prebuilt is only available on linux-x64 hosts, which
+# `target_compatible_with` enforces. Depend on these targets behind an
+# `is_linux_x64` select() so that dependents stay compatible elsewhere.
+# @bazel2gn:skip
+cipd_prebuilt_file(
+    name = "simg2img_bin",
+    testonly = True,
+    path = "//prebuilt/third_party/libsparse/bin/simg2img",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+# @bazel2gn:skip
+cipd_prebuilt_file(
+    name = "simg2img_libcxx",
+    testonly = True,
+    path = "//prebuilt/third_party/libsparse/lib64/libc++.so",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+host_test_data_files(
+    name = "simg2img_files",
+    testonly = True,
+    srcs = [
+        ":simg2img_bin",
+        ":simg2img_libcxx",
+    ],
+    dest_dir = "host_x64/test_data/storage/sparse",
+)
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/builder.rs",
+        "src/format.rs",
+        "src/lib.rs",
+        "src/reader.rs",
+    ],
+    crate_name = "sparse",
+    edition = "2024",
+    version = "0.1.0",
+    visibility = [
+        "//src/developer/ffx/lib/fastboot:__pkg__",
+        "//src/developer/ffx/lib/fastboot/interface:__pkg__",
+        "//src/developer/ffx/plugins/emulator/engines:__pkg__",
+        "//src/developer/ffx/plugins/target/fastboot:__pkg__",
+        "//src/storage/ext4/lib/ext4_extract:__pkg__",
+        "//src/storage/fxfs/make-blob-image:__pkg__",
+        "//src/storage/fxfs/tools:__pkg__",
+        "//tools/make-fuchsia-vol:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:bincode",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": ["//sdk/rust/zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# Host unit tests, exported via //src/storage:host_tests. They are defined
+# separately from `lib` so that the simg2img prebuilt can be passed as
+# `test_data` to the host test.
+host_rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    edition = "2024",
+    test_data = select({
+        # The simg2img prebuilt only exists on linux-x64 hosts.
+        "//build/bazel/platforms:is_linux_x64": [":simg2img_files"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//src/storage:__pkg__"],
+    deps = ["//third_party/rust_crates/vendor:rand"],
+)
+
+# Device unit tests, packaged as the `sparse-test` Fuchsia test package.
+# @bazel2gn:skip
+rustc_test(
+    name = "sparse_lib_test",
+    testonly = True,
+    crate = ":lib",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = ["//third_party/rust_crates/vendor:rand"],
+)
+
+# The tests use `tempfile`, so they need the custom manifest that routes /tmp
+# storage. `fx_unittest_package` generates its own manifest without it.
+fx_packaged_binary(
+    name = "sparse_lib_test_packaged_bin",
+    testonly = True,
+    binary = ":sparse_lib_test",
+    binary_name = "sparse_lib_test",
+)
+
+fx_component_manifest(
+    name = "sparse-test-manifest",
+    testonly = True,
+    component_name = "sparse-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/sparse_test.cml",
+)
+
+fx_test_component(
+    name = "sparse-test-component",
+    compiled_manifest = ":sparse-test-manifest",
+    component_name = "sparse-test",
+    deps = [":sparse_lib_test_packaged_bin"],
+)
+
+fx_package(
+    name = "sparse-test-package",
+    package_name = "sparse-test",
+    test_components = [":sparse-test-component"],
+)
+
+fx_test(
+    name = "sparse-test",
+    package = ":sparse-test-package",
+    visibility = ["//src/storage:__pkg__"],
+)

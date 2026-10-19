@@ -13,6 +13,7 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/storage/fxfs/trace:fxfs-trace-tests-package",
+        "//src/storage/lib/sparse/rust:sparse-test",
         "//src/storage/lib/units:storage-units-tests",
     ],
 )
@@ -22,6 +23,7 @@ test_suite(
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
         "//src/storage/fxfs/trace:fxfs-trace-host-tests",
+        "//src/storage/lib/sparse/rust:lib_test",
         "//src/storage/lib/units:units_host_test",
     ],
 )
