@@ -26,6 +26,7 @@ test_suite(
         "//src/connectivity/bluetooth/lib/packet-encoding:packet-encoding-tests",
         "//src/connectivity/bluetooth/lib/profile-client:profile-client-tests",
         "//src/connectivity/bluetooth/lib/vigil:vigil-tests",
+        "//src/connectivity/bluetooth/testing/bt-affordances/affordances:fuchsia_bt_test_affordances_tests",
         "//src/connectivity/bluetooth/testing/test-call-manager:test-call-manager-tests",
         "//src/connectivity/bluetooth/testing/test-harness-tests:test-harness-crate-tests",
     ],

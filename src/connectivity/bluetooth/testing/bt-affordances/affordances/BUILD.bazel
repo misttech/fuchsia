@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "affordances",
+    srcs = [
+        "src/gatt.rs",
+        "src/le.rs",
+        "src/lib.rs",
+        "src/proxies.rs",
+        "src/sys.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "fuchsia_bt_test_affordances",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/connectivity/bluetooth/testing/bt-affordances:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
+        "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_rust",
+        "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+        "//src/lib/async-utils",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "affordances_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":affordances",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/fuchsia",
+    ],
+)
+
+# run: fx test fuchsia_bt_test_affordances_tests
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fuchsia_bt_test_affordances_tests",
+    package_name = "fuchsia_bt_test_affordances_tests",
+    unit_tests = [":affordances_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
