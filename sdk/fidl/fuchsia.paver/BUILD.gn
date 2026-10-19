@@ -31,5 +31,8 @@ fidl("fuchsia.paver") {
   sources = [ "paver.fidl" ]
   enable_hlcpp = true
   visibility = [ "*" ]
-  public_deps = [ "//sdk/fidl/fuchsia.mem" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.io",
+    "//sdk/fidl/fuchsia.mem",
+  ]
 }

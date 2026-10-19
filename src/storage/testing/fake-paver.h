@@ -88,6 +88,11 @@ class FakePaver : public fidl::WireServer<fuchsia_paver::Paver>,
   void FindDataSink(FindDataSinkRequestView request,
                     FindDataSinkCompleter::Sync& _completer) override;
 
+  void OpenPartitionIo(OpenPartitionIoRequestView request,
+                       OpenPartitionIoCompleter::Sync& _completer) override {
+    request->partition_io.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
   void FindPartitionTableManager(FindPartitionTableManagerRequestView request,
                                  FindPartitionTableManagerCompleter::Sync& _completer) override;
 

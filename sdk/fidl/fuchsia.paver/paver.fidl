@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.paver;
 
+using fuchsia.io;
 using fuchsia.mem;
 using zx;
 
@@ -88,6 +89,9 @@ type WriteFirmwareResult = strict union {
 // The maximum string length for the `firmware type` parameter.
 const MAX_FIRMWARE_TYPE_LENGTH uint32 = 256;
 
+/// The maximum string length for the `partition` name parameter.
+const MAX_PARTITION_NAME_LENGTH uint32 = 128;
+
 @discoverable
 closed protocol Paver {
     /// Attempts to auto-discover the data sink where assets and volumes will get paved to.
@@ -97,6 +101,25 @@ closed protocol Paver {
     /// `data_sink` will be closed on error, with an epitaph provided on failure reason.
     strict FindDataSink(resource struct {
         data_sink server_end:DataSink;
+    });
+
+    /// Opens a `PartitionIo` session backed by block devices in the caller-provided `block_dir`.
+    ///
+    /// Under the capability-delegated permission model, the paver component does not hold ambient
+    /// access to all system block partitions. Instead, the caller (such as `system-updater` or
+    /// `fastboot`) is responsible for routing the required block device capabilities into its own
+    /// namespace (for example, via a scoped `/block` or `/block/ota` directory exposed by `fshost`)
+    /// and passing `block_dir` to the paver for the duration of the `PartitionIo` session.
+    ///
+    /// `block_dir` is expected to follow the `fshost` `/block` directory layout (see
+    /// https://fuchsia.dev/fuchsia-src/development/storage/storage-partition-routing): each entry
+    /// `<entry>/` is a subdirectory containing a `fuchsia.storage.block.Block` protocol node at
+    /// `<entry>/fuchsia.storage.block.Block`.
+    ///
+    /// `partition_io` will be closed on error, with an epitaph provided on failure reason.
+    strict OpenPartitionIo(resource struct {
+        block_dir client_end:fuchsia.io.Directory;
+        partition_io server_end:PartitionIo;
     });
 
     /// Like `FindDataSink`, but the returned block device will be dynamic, supporting partition
@@ -119,6 +142,80 @@ closed protocol Paver {
     strict FindSysconfig(resource struct {
         sysconfig server_end:Sysconfig;
     });
+};
+
+/// Controls how `PartitionIo.WritePartition` handles partition contents beyond the end of the
+/// written payload (`offset + size`).
+type TrailingBehavior = flexible enum {
+    /// Preserve existing partition contents beyond the written range. If `offset + size` is not
+    /// aligned to the partition's block size, the trailing partial block is updated via
+    /// read-modify-write.
+    RETAIN = 1;
+
+    /// Discard existing partition contents beyond the written range. Any trailing partial block
+    /// is zero-padded without reading from storage first, and a best-effort `TRIM` operation is
+    /// issued for the remaining blocks up to the end of the partition, allowing supporting storage
+    /// backends (such as UFS or eMMC) to reclaim unused blocks for garbage collection and wear
+    /// leveling.
+    DISCARD = 2;
+};
+
+/// Protocol for reading and writing raw boot partitions backed by a caller-provided block
+/// directory.
+///
+/// All partition lookups and I/O operations performed through this protocol are scoped to the
+/// `block_dir` directory capability supplied by the caller in `Paver.OpenPartitionIo`. If a
+/// requested partition is not present in `block_dir`, operations return `ZX_ERR_NOT_FOUND`.
+closed protocol PartitionIo {
+    /// Returns the size in bytes of a raw partition by name.
+    strict GetPartitionSize(struct {
+        partition string:MAX_PARTITION_NAME_LENGTH;
+    }) -> (struct {
+        size uint64;
+    }) error zx.Status;
+
+    /// Reads `size` bytes from a raw partition by name starting at `offset`.
+    ///
+    /// Both `offset` and `size` may be arbitrary byte values and do not need to be aligned to the
+    /// partition's block size. The `ZX_PROP_VMO_CONTENT_SIZE` property on the returned `payload`
+    /// VMO will be set to `size`.
+    ///
+    /// Returns `ZX_ERR_INVALID_ARGS` if `size` is 0, or `ZX_ERR_OUT_OF_RANGE` if `offset + size`
+    /// exceeds the partition size.
+    strict ReadPartition(struct {
+        partition string:MAX_PARTITION_NAME_LENGTH;
+        offset uint64;
+        size uint64;
+    }) -> (resource struct {
+        payload zx.Handle:<VMO, zx.RIGHTS_BASIC | zx.RIGHTS_IO | zx.RIGHTS_PROPERTY | zx.Rights.MAP>;
+    }) error zx.Status;
+
+    /// Writes `payload` to a raw partition by name starting at `offset`.
+    ///
+    /// The number of bytes to write is read from the `ZX_PROP_VMO_CONTENT_SIZE` property of
+    /// `payload`. Both `offset` and the write size may be arbitrary byte values and do not need to
+    /// be aligned to the partition's block size.
+    ///
+    /// Any leading partial block (when `offset` is not block-aligned) is always updated via
+    /// read-modify-write to preserve existing bytes prior to `offset`. Behavior for partition
+    /// contents after `offset + size` is controlled by `trailing`.
+    ///
+    /// On some platforms, written data may be buffered in memory and is not guaranteed to be
+    /// persisted to storage until `Flush` is called.
+    ///
+    /// Returns `ZX_ERR_OUT_OF_RANGE` if `offset + size` exceeds the partition size.
+    strict WritePartition(resource struct {
+        partition string:MAX_PARTITION_NAME_LENGTH;
+        offset uint64;
+        payload zx.Handle:<VMO, zx.RIGHTS_BASIC | zx.Rights.READ | zx.Rights.GET_PROPERTY>;
+        trailing TrailingBehavior;
+    }) -> () error zx.Status;
+
+    /// Flushes all previous `WritePartition` operations to persistent storage.
+    ///
+    /// Callers must invoke `Flush` after completing partition writes to ensure that any buffered
+    /// data is persisted to storage.
+    strict Flush() -> () error zx.Status;
 };
 
 /// Protocol for reading and writing boot partitions.

@@ -34,6 +34,13 @@ class Paver : public fidl::WireServer<fuchsia_paver::Paver> {
   void FindDataSink(FindDataSinkRequestView request,
                     FindDataSinkCompleter::Sync& completer) override;
 
+  // Note: C++ paver will not implement OpenPartitionIo because it is being deprecated and we do
+  // not want to add new C++ code. It will be implemented by the Rust paver.
+  void OpenPartitionIo(OpenPartitionIoRequestView request,
+                       OpenPartitionIoCompleter::Sync& completer) override {
+    request->partition_io.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
   void FindPartitionTableManager(FindPartitionTableManagerRequestView request,
                                  FindPartitionTableManagerCompleter::Sync& completer) override;
 
