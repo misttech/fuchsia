@@ -33,6 +33,7 @@ group("tests") {
     "bazel/scripts:type_checked_scripts($host_toolchain)",
     "bazel_sdk:type_checked_scripts($host_toolchain)",
     "beads:tests",
+    "devicetree:tests",
     "dist:tests",
     "fidl:tests",
     "go:tests",

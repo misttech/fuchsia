@@ -4,14 +4,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import argparse
+import os
 import re
 import subprocess
 import sys
 
-# (filename):(line number).(starting character)-(end character)[: ](error message)
-# Warnings do not have a prefix, but Errors do. This is managed by the non-capturing
-# group at the front.
-TARGET_REGEX = r"(?:Error: )?(.*?):(\d+)\.(\d+)-\d+[: ]\s?(.*)$"
+# (filename):(line).(column)[-[(end line).](end column)][: ](message)
+# dtc prints source positions as "L.C", "L.C-C", or "L.C-L.C". Errors raised
+# while parsing have an "Error: " prefix and a space before the message, while
+# check failures (both "ERROR (check)" and "Warning (check)") use ": ".
+TARGET_REGEX = r"^(?:Error: )?(.+?):(\d+)\.(\d+)(?:-(?:\d+\.)?\d+)?[: ]\s?(.*)$"
 LINES_OF_CONTEXT = 5
 LINENUM_WIDTH = 6  # 5 digits plus :
 RED = "\x1b[0;31m"
@@ -39,20 +41,20 @@ def print_context(
 
 
 def print_dtc_stderr(dtc_stderr: str) -> None:
-    """Annotates stderr for users"""
-    has_warnings = False
+    """Annotates each dtc diagnostic that has a source position with context"""
     for line in dtc_stderr.strip().split("\n"):
         print(f"{YELLOW}{line}{RESET}", file=sys.stderr)
         if match := re.search(TARGET_REGEX, line):
             dts_file, line_num, start_char, errmsg = match.groups()
 
-            src_lines = []
             try:
-                with open(dts_file, "r", encoding="ascii") as f:
+                with open(
+                    dts_file, "r", encoding="utf-8", errors="replace"
+                ) as f:
                     src_lines = f.readlines()
             except FileNotFoundError:
                 print(f"Error: '{dts_file}' not found.", file=sys.stderr)
-                return
+                continue
 
             print_context(
                 src_lines,
@@ -60,18 +62,47 @@ def print_dtc_stderr(dtc_stderr: str) -> None:
                 int(start_char),
                 errmsg,
             )
-        elif "Warning" in line:
-            has_warnings = True
 
-    # Make it clear to the user that warnings are considered errors by our build.
-    if has_warnings:
+
+def run_dtc(cmd_args: list[str], dest_file: str) -> bool:
+    """Runs dtc and reports any diagnostics it emits.
+
+    dtc is always run with --force so that it reports every check failure in
+    the tree, and so that an error-free run with warnings and a run with errors
+    produce the same diagnostics. Forced output is removed on failure so it is
+    never consumed by later build steps.
+
+    Returns:
+        True if dtc failed or emitted any errors or warnings.
+        False if successful.
+    """
+    command = subprocess.run(
+        cmd_args, capture_output=True, text=True, check=False
+    )
+
+    if not command.returncode and not command.stderr:
+        return False
+
+    print("%s" % " \\ \r\n  ".join(command.args), file=sys.stderr)
+    print_dtc_stderr(command.stderr)
+
+    # dtc exits successfully on warnings, and on errors when forced. Make it
+    # clear to the user that our build treats them as failures.
+    if not command.returncode:
         print(
-            f"{RED}Returning failure due to warnings in dts compilation{RESET}",
+            f"{RED}Returning failure due to errors or warnings in dtc output{RESET}",
             file=sys.stderr,
         )
 
     # A newline separator between blocks
-    print()
+    print(file=sys.stderr)
+
+    try:
+        os.remove(dest_file)
+    except FileNotFoundError:
+        pass
+
+    return True
 
 
 def dts_compile(args: argparse.Namespace, extra_dtc_args: list[str]) -> bool:
@@ -87,6 +118,7 @@ def dts_compile(args: argparse.Namespace, extra_dtc_args: list[str]) -> bool:
     # dtc [options] <input_file>
     cmd_args = [
         args.dtc_path,
+        "--force",
         "--out-dependency=" + args.dep_file,
         "--out=" + args.dest_file,
     ]
@@ -97,16 +129,7 @@ def dts_compile(args: argparse.Namespace, extra_dtc_args: list[str]) -> bool:
     cmd_args.extend(extra_dtc_args)
     cmd_args.append(args.src_file)
 
-    command = subprocess.run(
-        cmd_args, capture_output=True, text=True, check=False
-    )
-
-    if command.returncode or command.stderr:
-        print("%s" % " \\ \r\n  ".join(command.args), file=sys.stderr)
-        print_dtc_stderr(command.stderr)
-        return True
-
-    return False
+    return run_dtc(cmd_args, args.dest_file)
 
 
 def dtb_decompile(args: argparse.Namespace, extra_dtc_args: list[str]) -> bool:
@@ -121,6 +144,7 @@ def dtb_decompile(args: argparse.Namespace, extra_dtc_args: list[str]) -> bool:
     """
     cmd_args = [
         args.dtc_path,
+        "--force",
         "--sort",
         "--in-format=dtb",
         "--out-format=dts",
@@ -129,15 +153,7 @@ def dtb_decompile(args: argparse.Namespace, extra_dtc_args: list[str]) -> bool:
     cmd_args.extend(extra_dtc_args)
     cmd_args.append(args.src_file)
 
-    command = subprocess.run(
-        cmd_args, capture_output=True, text=True, check=False
-    )
-    if command.returncode or command.stderr:
-        print("%s" % "\r\n\t".join(command.args), file=sys.stderr)
-        print_dtc_stderr(command.stderr)
-        return True
-
-    return False
+    return run_dtc(cmd_args, args.dest_file)
 
 
 def main() -> int:
