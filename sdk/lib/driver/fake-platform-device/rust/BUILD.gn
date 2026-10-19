@@ -26,7 +26,7 @@ rustc_library("rust") {
     "//sdk/lib/driver/fake-resource/cpp",
     "//src/lib/fuchsia",
   ]
-  public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
+  public_configs = [ "//build/config/fuchsia:dynamic_cpp_standard_library" ]
 
   sources = [ "src/lib.rs" ]
 }

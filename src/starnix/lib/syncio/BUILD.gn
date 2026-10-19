@@ -16,7 +16,7 @@ fuchsia_unittest_package("starnix_syncio-tests") {
 
 # zxio is C++, so every binary that links syncio also needs the C++ standard
 # library. Bazel's C++ toolchain adds it at link time, but GN links Rust
-# binaries with rustc and needs the static_cpp_standard_library config on
+# binaries with rustc and needs the dynamic_cpp_standard_library config on
 # each of them. The generated rustc_library below can only list zxio as a
 # private dep, which would stop zxio_static's public configs at syncio, so
 # BUILD.bazel maps its zxio dep to this group, which forces the config onto
@@ -25,7 +25,7 @@ group("zxio_static") {
   visibility = [ ":*" ]
   public_deps = [ "//sdk/lib/zxio:zxio_static" ]
   all_dependent_configs =
-      [ "//build/config/fuchsia:static_cpp_standard_library" ]
+      [ "//build/config/fuchsia:dynamic_cpp_standard_library" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

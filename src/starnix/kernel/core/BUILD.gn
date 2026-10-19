@@ -417,7 +417,7 @@ rustc_library("core") {
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
   # Allows binaries that depend on this library to link.
-  public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
+  public_configs = [ "//build/config/fuchsia:dynamic_cpp_standard_library" ]
 }
 
 rustc_test("starnix_core_test") {

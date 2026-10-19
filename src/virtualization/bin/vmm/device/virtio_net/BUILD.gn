@@ -18,7 +18,7 @@ static_library("guest-ethernet") {
     "src/cpp/guest_ethernet_interface.h",
   ]
 
-  public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
+  public_configs = [ "//build/config/fuchsia:dynamic_cpp_standard_library" ]
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_hlcpp",

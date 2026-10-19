@@ -106,7 +106,7 @@ rustc_library("trace-provider") {
     ":rust-trace-provider",
     "//zircon/system/ulib/trace-provider",
   ]
-  public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
+  public_configs = [ "//build/config/fuchsia:dynamic_cpp_standard_library" ]
 
   sources = [ "trace-provider/src/lib.rs" ]
 }
