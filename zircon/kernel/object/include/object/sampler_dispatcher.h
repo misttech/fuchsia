@@ -25,10 +25,9 @@ extern "C" {
 zx_status_t cpp_sampler_dispatcher_create(
     const zx_sampler_config_t* config,
     ffi::Uninitialized<KernelHandle<SamplerDispatcher>>* handle_out);
-zx_status_t cpp_sampler_dispatcher_start(const SamplerDispatcher* dispatcher);
-zx_status_t cpp_sampler_dispatcher_stop(const SamplerDispatcher* dispatcher);
-zx_status_t cpp_sampler_dispatcher_read_user(const SamplerDispatcher* dispatcher, void* ptr,
-                                             size_t len, size_t* actual_out);
+zx_status_t cpp_sampler_dispatcher_start();
+zx_status_t cpp_sampler_dispatcher_stop();
+zx_status_t cpp_sampler_dispatcher_read_user(void* ptr, size_t len, size_t* actual_out);
 }
 
 // A Sampler manages sampling threads and writing the results out to per cpu buffers.
@@ -60,9 +59,6 @@ class SamplerDispatcher final : public Dispatcher {
   zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
     return ZX_ERR_NOT_SUPPORTED;
   }
-
-  using Dispatcher::UpdateState;
-  using Dispatcher::UpdateStateLocked;
 
  protected:
   Lock<CriticalMutex>* get_lock() const final;

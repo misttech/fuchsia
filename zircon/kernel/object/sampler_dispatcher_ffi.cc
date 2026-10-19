@@ -4,9 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/boot-options/boot-options.h>
 #include <lib/thread_sampler/thread_sampler.h>
-#include <zircon/rights.h>
 
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
@@ -36,16 +34,19 @@ zx_status_t cpp_sampler_dispatcher_create(
   return ZX_OK;
 }
 
-zx_status_t cpp_sampler_dispatcher_start(const SamplerDispatcher* dispatcher) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_sampler_dispatcher_start() {
   return sampler::gThreadSampler.Start().status_value();
 }
 
-zx_status_t cpp_sampler_dispatcher_stop(const SamplerDispatcher* dispatcher) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_sampler_dispatcher_stop() {
   return sampler::gThreadSampler.Stop().status_value();
 }
 
-zx_status_t cpp_sampler_dispatcher_read_user(const SamplerDispatcher* dispatcher, void* ptr,
-                                             size_t len, size_t* actual_out) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_sampler_dispatcher_read_user(void* ptr, size_t len,
+                                                               size_t* actual_out) {
   auto [status, read] = sampler::gThreadSampler.ReadUser(user_out_ptr<void>(ptr), len);
   *actual_out = read;
   return status;

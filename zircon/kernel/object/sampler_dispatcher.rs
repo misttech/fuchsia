@@ -13,7 +13,10 @@ use zx_status::Status;
 use zx_types::{ZX_DEFAULT_SAMPLER_RIGHTS, ZX_OBJ_TYPE_SAMPLER, zx_rights_t, zx_sampler_config_t};
 
 use super::KernelHandle;
-use super::sampler_dispatcher_ffi::cpp_sampler_dispatcher_create;
+use super::sampler_dispatcher_ffi::{
+    cpp_sampler_dispatcher_create, cpp_sampler_dispatcher_read_user, cpp_sampler_dispatcher_start,
+    cpp_sampler_dispatcher_stop,
+};
 
 use object_constants_rs as object_constants;
 
@@ -84,18 +87,17 @@ impl SamplerDispatcher {
 
     /// Starts sampling session for this sampler.
     pub fn start(&self) -> Result<(), Status> {
-        // SAFETY: `self` is a valid SamplerDispatcher pointer.
-        let status = unsafe {
-            super::sampler_dispatcher_ffi::cpp_sampler_dispatcher_start(self as *const _)
-        };
+        // SAFETY: `cpp_sampler_dispatcher_start` takes no pointers, synchronizes access to
+        // `gThreadSampler` internally, and `ThreadSamplerLock` is not held by the caller.
+        let status = unsafe { cpp_sampler_dispatcher_start() };
         Status::ok(status)
     }
 
     /// Stops sampling session for this sampler.
     pub fn stop(&self) -> Result<(), Status> {
-        // SAFETY: `self` is a valid SamplerDispatcher pointer.
-        let status =
-            unsafe { super::sampler_dispatcher_ffi::cpp_sampler_dispatcher_stop(self as *const _) };
+        // SAFETY: `cpp_sampler_dispatcher_stop` takes no pointers, synchronizes access to
+        // `gThreadSampler` internally, and `ThreadSamplerLock` is not held by the caller.
+        let status = unsafe { cpp_sampler_dispatcher_stop() };
         Status::ok(status)
     }
 
@@ -107,16 +109,10 @@ impl SamplerDispatcher {
     /// will be the required minimum size of the buffer to write to.
     pub fn read_user(&self, ptr: UserOutPtr<u8>, len: usize) -> (Result<(), Status>, usize) {
         let mut actual = 0;
-        // SAFETY: `self` is valid, `ptr` is a valid UserOutPtr buffer of `len` bytes, and
-        // `actual` is a local out pointer.
-        let status = unsafe {
-            super::sampler_dispatcher_ffi::cpp_sampler_dispatcher_read_user(
-                self as *const _,
-                ptr.as_ptr().cast(),
-                len,
-                &mut actual,
-            )
-        };
+        // SAFETY: `ptr` is a valid `UserOutPtr` buffer of `len` bytes, `actual` is a valid local
+        // out-pointer, and `ThreadSamplerLock` is not held by the caller.
+        let status =
+            unsafe { cpp_sampler_dispatcher_read_user(ptr.as_ptr().cast(), len, &mut actual) };
         (Status::ok(status), actual)
     }
 }

@@ -17,15 +17,14 @@ unsafe extern "C" {
         handle_out: *mut MaybeUninit<KernelHandle<SamplerDispatcher>>,
     ) -> zx_status_t;
 
-    /// Calls into C++ implementation to start sampling for a dispatcher.
-    pub fn cpp_sampler_dispatcher_start(dispatcher: *const SamplerDispatcher) -> zx_status_t;
+    /// Calls into C++ implementation to start sampling.
+    pub fn cpp_sampler_dispatcher_start() -> zx_status_t;
 
-    /// Calls into C++ implementation to stop sampling for a dispatcher.
-    pub fn cpp_sampler_dispatcher_stop(dispatcher: *const SamplerDispatcher) -> zx_status_t;
+    /// Calls into C++ implementation to stop sampling.
+    pub fn cpp_sampler_dispatcher_stop() -> zx_status_t;
 
     /// Calls into C++ implementation to read sampled records into user memory.
     pub fn cpp_sampler_dispatcher_read_user(
-        dispatcher: *const SamplerDispatcher,
         ptr: *mut core::ffi::c_void,
         len: usize,
         actual_out: *mut usize,
