@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+# NOTE: `component_v2`, `fake_cobalt`, `bin_test`, and `fake-cobalt-tests`
+# remain in BUILD.gn above the sentinel because `bin` transitively depends on
+# `//src/storage/lib/vfs/rust:vfs` (`rustc_dylib("vfs_dylib")`), which places
+# duplicate `lib/libvfs-*.so` entries in Bazel `default_runfiles` and causes
+# `fx_packaged_binary` + `fx_package` to fail.
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "fake_cobalt",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.metrics.test:fuchsia.metrics.test_rust",
+        "//src/lib/cobalt/rust/builders",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
