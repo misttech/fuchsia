@@ -800,7 +800,6 @@ pub fn load_executable(
     )?;
 
     let mut mm_state = mm.state.write();
-    mm_state.stack_size = stack_size;
     mm_state.stack_start = stack.stack_pointer;
     mm_state.auxv_start = stack.auxv_start;
     mm_state.auxv_end = stack.auxv_end;

@@ -104,7 +104,7 @@ const ASLR_RANDOM_BITS: usize = 18;
 const ASLR_32_RANDOM_BITS: usize = 8;
 
 // The biggest we expect stack to be; increase as needed
-// TODO(https://fxbug.dev/322874791): Once setting RLIMIT_STACK is implemented, we should use it.
+// TODO(https://fxbug.dev/571982693): Compute stack layout and growth limits from RLIMIT_STACK.
 const MAX_STACK_SIZE: usize = 512 * 1024 * 1024;
 
 // Value to report temporarily as the VM RSS HWM.
@@ -335,7 +335,6 @@ pub struct MemoryManagerForkableState {
     /// The namespace node that represents the executable associated with this task.
     executable_node: Option<NamespaceNode>,
 
-    pub stack_size: usize,
     pub stack_start: UserAddress,
     pub auxv_start: UserAddress,
     pub auxv_end: UserAddress,
@@ -2626,6 +2625,7 @@ impl MemoryManagerState {
             .ptr()
             .checked_sub(low_addr.ptr())
             .ok_or_else(|| anyhow!("Invalid growth range"))?;
+        // TODO(https://fxbug.dev/571982693): Enforce RLIMIT_STACK on the total grown mapping size.
 
         let mut released_mappings = ReleasedMappings::default();
         self.map_anonymous(

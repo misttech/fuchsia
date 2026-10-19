@@ -18,13 +18,16 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 #include <linux/futex.h>
 
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/lib/fxl/strings/trim.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -365,6 +368,63 @@ TEST(SetRLimitTest, SpliceFromRegularFileToPipeWithZeroFSize) {
     EXPECT_EQ(g_signal_count, 0u);
 
     signal(SIGXFSZ, SIG_DFL);
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(SetRLimitTest, RLimitStack) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([] {
+    struct rlimit initial = {};
+    ASSERT_THAT(getrlimit(RLIMIT_STACK, &initial), SyscallSucceeds());
+    EXPECT_EQ(initial.rlim_cur, 8u * 1024 * 1024);
+    EXPECT_EQ(initial.rlim_max, RLIM_INFINITY);
+
+    // Raising rlim_cur to RLIM_INFINITY must still cap the execve argument size limit at 6 MiB
+    // (3/4 of the default 8 MiB stack limit, per execve(2)).
+    struct rlimit inf_limit = {
+        .rlim_cur = RLIM_INFINITY,
+        .rlim_max = RLIM_INFINITY,
+    };
+    ASSERT_THAT(setrlimit(RLIMIT_STACK, &inf_limit), SyscallSucceeds());
+
+    // Passing > 6 MiB of arguments (60 * 110 KiB = 6.6 MiB, with each argument under the 32-page
+    // per-string limit) must fail with E2BIG before replacing the process image. Pass an existing
+    // executable (/proc/self/exe) so execve does not fail earlier with ENOENT.
+    std::string large_arg(110 * 1024, 'a');
+    std::vector<char*> argv(60, large_arg.data());
+    argv.push_back(nullptr);
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve("/proc/self/exe", argv.data(), envp), SyscallFailsWithErrno(E2BIG));
+
+    // Lowering both soft and hard limits succeeds.
+    struct rlimit lowered = {
+        .rlim_cur = 4 * 1024 * 1024,
+        .rlim_max = 16 * 1024 * 1024,
+    };
+    ASSERT_THAT(setrlimit(RLIMIT_STACK, &lowered), SyscallSucceeds());
+
+    struct rlimit current = {};
+    ASSERT_THAT(getrlimit(RLIMIT_STACK, &current), SyscallSucceeds());
+    EXPECT_EQ(current.rlim_cur, lowered.rlim_cur);
+    EXPECT_EQ(current.rlim_max, lowered.rlim_max);
+
+    // Setting rlim_cur > rlim_max fails with EINVAL.
+    struct rlimit invalid = {
+        .rlim_cur = 32 * 1024 * 1024,
+        .rlim_max = 16 * 1024 * 1024,
+    };
+    EXPECT_THAT(setrlimit(RLIMIT_STACK, &invalid), SyscallFailsWithErrno(EINVAL));
+
+    // Dropping CAP_SYS_RESOURCE and attempting to raise rlim_max fails with EPERM.
+    test_helper::UnsetCapability(CAP_SYS_RESOURCE);
+    struct rlimit raised_max = {
+        .rlim_cur = 4 * 1024 * 1024,
+        .rlim_max = 32 * 1024 * 1024,
+    };
+    EXPECT_THAT(setrlimit(RLIMIT_STACK, &raised_max), SyscallFailsWithErrno(EPERM));
   });
 
   EXPECT_TRUE(helper.WaitForChildren());

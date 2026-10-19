@@ -173,9 +173,6 @@
                 // TODO(https://fxbug.dev/565365826): Unlinking the watched hard link first still pins its
                 // DirEntryHandle in InotifyState::watches.
                 "InotifyTest.UnlinkWatchedHardLinkFirstEmitsDeleteSelfOnLastUnlink",
-
-                // TODO(https://fxbug.dev/322874791): Integrate RLIMIT_STACK with ResourceLimits.
-                "KernelDefaults/RLimitDefaultTest.CurAndMaxDefaults/STACK",
             ],
         },
     ],

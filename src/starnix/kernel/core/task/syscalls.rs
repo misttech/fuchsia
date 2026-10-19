@@ -51,8 +51,8 @@ use starnix_uapi::{
     SECCOMP_FILTER_FLAG_NEW_LISTENER, SECCOMP_FILTER_FLAG_SPEC_ALLOW, SECCOMP_FILTER_FLAG_TSYNC,
     SECCOMP_FILTER_FLAG_TSYNC_ESRCH, SECCOMP_GET_ACTION_AVAIL, SECCOMP_GET_NOTIF_SIZES,
     SECCOMP_MODE_FILTER, SECCOMP_MODE_STRICT, SECCOMP_SET_MODE_FILTER, SECCOMP_SET_MODE_STRICT,
-    c_char, c_int, clone_args, errno, error, gid_t, pid_t, rlimit, rusage, sched_param,
-    sock_filter, uapi, uid_t,
+    c_char, c_int, clone_args, errno, error, gid_t, pid_t, rusage, sched_param, sock_filter, uapi,
+    uid_t,
 };
 use static_assertions::const_assert;
 use std::cmp;
@@ -205,12 +205,13 @@ pub fn sys_execveat(
         return error!(EINVAL);
     }
 
-    // Calculate the limit for argv and environ size as 1/4 of the stack size, floored at 32 pages.
+    // Calculate the limit for argv and environ size as 1/4 of the stack size, floored at 32 pages
+    // and capped at 3/4 of _STK_LIM.
     // See the Limits sections in https://man7.org/linux/man-pages/man2/execve.2.html
     const PAGE_LIMIT: usize = 32;
     let page_limit_size: usize = PAGE_LIMIT * *PAGE_SIZE as usize;
     let rlimit = current_task.thread_group().get_rlimit(Resource::STACK);
-    let stack_limit = rlimit / 4;
+    let stack_limit = cmp::min(rlimit / 4, uapi::_STK_LIM as u64 / 4 * 3);
     let argv_env_limit = cmp::max(page_limit_size, stack_limit as usize);
 
     // The limit per argument or environment variable is 32 pages.
@@ -1289,36 +1290,26 @@ where
 
     let resource = Resource::from_raw(user_resource)?;
 
-    let old_limit = match resource {
-        // TODO: Integrate Resource::STACK with generic ResourceLimits machinery.
-        Resource::STACK => {
-            if !new_limit_ref.is_null() {
-                track_stub!(
-                    TODO("https://fxbug.dev/322874791"),
-                    "prlimit64 cannot set RLIMIT_STACK"
-                );
-            }
-            // The stack size is fixed at the moment, but
-            // if MAP_GROWSDOWN is implemented this should
-            // report the limit that it can be grown.
-            let mm = target_task.mm()?;
-            let mm_state = mm.state.read();
-            let stack_size = mm_state.stack_size as u64;
-            rlimit { rlim_cur: stack_size, rlim_max: stack_size }
+    let new_limit = if new_limit_ref.is_null() {
+        None
+    } else {
+        let new_limit = current_task.read_multi_arch_object(new_limit_ref)?;
+        if new_limit.rlim_cur > new_limit.rlim_max {
+            return error!(EINVAL);
         }
-        _ => {
-            let new_limit = if new_limit_ref.is_null() {
-                None
-            } else {
-                let new_limit = current_task.read_multi_arch_object(new_limit_ref)?;
-                if new_limit.rlim_cur > new_limit.rlim_max {
-                    return error!(EINVAL);
-                }
-                Some(new_limit)
-            };
-            ThreadGroup::adjust_rlimits(current_task, &target_task, resource, new_limit)?
-        }
+        Some(new_limit)
     };
+    let old_limit = ThreadGroup::adjust_rlimits(current_task, &target_task, resource, new_limit)?;
+    // Note: Routing `Resource::STACK` through `ThreadGroup::adjust_rlimits` updates the stored
+    // limit (visible via `getrlimit`/`prlimit64`, `/proc/[pid]/limits`, and `execve` argument size
+    // checks), but Starnix does not yet enforce `RLIMIT_STACK` when creating or growing stack
+    // mappings.
+    if resource == Resource::STACK && new_limit.is_some() {
+        track_stub!(
+            TODO("https://fxbug.dev/571982693"),
+            "prlimit64 does not enforce RLIMIT_STACK on stack growth"
+        );
+    }
     if !old_limit_ref.is_null() {
         current_task.write_multi_arch_object(old_limit_ref, old_limit)?;
     }
@@ -2277,7 +2268,7 @@ mod tests {
                 .thread_group()
                 .limits
                 .lock()
-                .set(Resource::RTPRIO, rlimit { rlim_cur: 255, rlim_max: 255 });
+                .set(Resource::RTPRIO, uapi::rlimit { rlim_cur: 255, rlim_max: 255 });
 
             let scheduler = sys_sched_getscheduler(&current_task, 0).unwrap();
             assert_eq!(scheduler, SCHED_NORMAL, "tasks should have normal scheduler by default");
@@ -2358,6 +2349,101 @@ mod tests {
             assert_eq!(current_task.current_creds().euid, 43);
             assert_eq!(current_task.current_creds().uid, 41);
             assert_eq!(current_task.current_creds().saved_uid, 43);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_prlimit64_stack() {
+        spawn_kernel_and_run(async |current_task| {
+            let mapped_address = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+            let old_limit_ref = UserRef::<uapi::rlimit>::new(mapped_address);
+            let new_limit_ref = UserRef::<uapi::rlimit>::new(
+                (mapped_address + std::mem::size_of::<uapi::rlimit>()).unwrap(),
+            );
+
+            sys_prlimit64(current_task, 0, uapi::RLIMIT_STACK, UserRef::default(), old_limit_ref)
+                .expect("prlimit64 get RLIMIT_STACK");
+            let initial_limit: uapi::rlimit =
+                current_task.read_object(old_limit_ref).expect("read initial limit");
+            assert_eq!(
+                (initial_limit.rlim_cur, initial_limit.rlim_max),
+                (uapi::_STK_LIM as u64, uapi::RLIM_INFINITY as u64)
+            );
+
+            let updated_limit =
+                uapi::rlimit { rlim_cur: 4 * 1024 * 1024, rlim_max: 16 * 1024 * 1024 };
+            current_task.write_object(new_limit_ref, &updated_limit).expect("write new limit");
+            sys_prlimit64(current_task, 0, uapi::RLIMIT_STACK, new_limit_ref, old_limit_ref)
+                .expect("prlimit64 set RLIMIT_STACK");
+            let prev_limit: uapi::rlimit =
+                current_task.read_object(old_limit_ref).expect("read previous limit");
+            assert_eq!(
+                (prev_limit.rlim_cur, prev_limit.rlim_max),
+                (initial_limit.rlim_cur, initial_limit.rlim_max)
+            );
+            let current_limit = current_task.thread_group().limits.lock().get(Resource::STACK);
+            assert_eq!(
+                (current_limit.rlim_cur, current_limit.rlim_max),
+                (updated_limit.rlim_cur, updated_limit.rlim_max)
+            );
+
+            // Setting rlim_cur > rlim_max must fail with EINVAL without changing the limit.
+            let invalid_limit =
+                uapi::rlimit { rlim_cur: 32 * 1024 * 1024, rlim_max: 16 * 1024 * 1024 };
+            current_task.write_object(new_limit_ref, &invalid_limit).expect("write invalid limit");
+            assert_eq!(
+                sys_prlimit64(
+                    current_task,
+                    0,
+                    uapi::RLIMIT_STACK,
+                    new_limit_ref,
+                    UserRef::default()
+                ),
+                error!(EINVAL)
+            );
+            let current_limit = current_task.thread_group().limits.lock().get(Resource::STACK);
+            assert_eq!(
+                (current_limit.rlim_cur, current_limit.rlim_max),
+                (updated_limit.rlim_cur, updated_limit.rlim_max)
+            );
+
+            // Setting rlim_cur = 0 and invoking execve with a non-empty argv must not fail with
+            // E2BIG, because sys_execveat floors argv_env_limit at 32 * PAGE_SIZE.
+            let zero_soft_limit = uapi::rlimit { rlim_cur: 0, rlim_max: 16 * 1024 * 1024 };
+            current_task
+                .write_object(new_limit_ref, &zero_soft_limit)
+                .expect("write zero soft limit");
+            sys_prlimit64(current_task, 0, uapi::RLIMIT_STACK, new_limit_ref, UserRef::default())
+                .expect("prlimit64 set zero RLIMIT_STACK");
+            assert_eq!(current_task.thread_group().get_rlimit(Resource::STACK), 0);
+
+            let arg_addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_memory(arg_addr, b"test-arg\0").expect("write test arg");
+            let empty_path_addr = (arg_addr + 16usize).unwrap();
+            current_task.write_memory(empty_path_addr, b"\0").expect("write empty path");
+            let argv_addr = UserCStringPtr::new(
+                current_task,
+                map_memory(&current_task, UserAddress::default(), *PAGE_SIZE),
+            );
+            current_task
+                .write_multi_arch_ptr(argv_addr.addr(), UserCString::new(current_task, arg_addr))
+                .expect("write argv[0]");
+            current_task
+                .write_multi_arch_ptr(
+                    argv_addr.next().unwrap().addr(),
+                    UserCString::null(current_task),
+                )
+                .expect("write argv[1]");
+            assert_eq!(
+                sys_execve(
+                    current_task,
+                    UserCString::new(current_task, empty_path_addr),
+                    argv_addr,
+                    UserCStringPtr::null(current_task),
+                ),
+                error!(ENOENT)
+            );
         })
         .await;
     }
